@@ -60,6 +60,20 @@ def test_the_deb_touches_no_root_but_its_own_prefix(tmp_path):
     assert "prune_untracked /var" not in postinst
 
 
+def test_the_deb_names_both_spellings_of_the_dhcp_client(tmp_path):
+    """`a | b` is the control file's alternative: Debian and Ubuntu 24.04 have
+    the client in `dhcpcd-base`, Ubuntu 22.04 in `dhcpcd5`, and one package
+    installs on either."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    control = (tmp_path / "DEBIAN/control").read_text()
+    depends = next(line for line in control.splitlines() if line.startswith("Depends:"))
+
+    assert "dhcpcd-base | dhcpcd5" in depends
+    assert "dnsmasq-base" in depends
+    assert depends.startswith("Depends: systemd, ")
+
+
 def test_the_rpm_prunes_from_its_own_file_list_after_the_transaction():
     spec = _spec()
 

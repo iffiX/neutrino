@@ -125,6 +125,52 @@ class SystemPackageController:
         """
         raise NotImplementedError
 
+    def first_available(self, candidates: tuple) -> str:
+        """Which of several spellings of one package this machine has.
+
+        A family that spelled a package one way in an older release and
+        another way in a newer one is two names for the same software, and
+        only the machine can say which of them its repositories carry.
+
+        Args:
+            candidates: Names for the same software, preferred first.
+
+        Returns:
+            The first candidate that is installed or on offer, and the
+            preferred one when the machine offers none of them, so what is
+            reported missing is the name the hub asks for.
+
+        Raises:
+            NotImplementedError: If the family's controller implements neither
+                query.
+        """
+        if len(candidates) == 1:
+            return candidates[0]
+        for name in candidates:
+            if self.is_installed(name) or self.available_version(name):
+                return name
+        return candidates[0]
+
+    def names_for(self, packages: tuple) -> list:
+        """What this machine installs a dependency list under.
+
+        Args:
+            packages: Names as ``constants.py`` writes them.
+
+        Returns:
+            One name per package, spelled the way this family spells it and
+            narrowed to the spelling this release has, with anything this
+            family needs no separate package for left out.
+
+        Raises:
+            NotImplementedError: If the family's controller implements neither
+                query :meth:`first_available` asks.
+        """
+        return [
+            self.first_available(choice)
+            for choice in package_choices(self.family, packages)
+        ]
+
 
 class AptPackageController(SystemPackageController):
     """Debian, Ubuntu and their derivatives."""
@@ -365,12 +411,34 @@ def packages_for(family: str, packages: tuple) -> list:
 
     Returns:
         The names to install, with anything this family has no separate
-        package for left out.
+        package for left out, and a package the family spells two ways named
+        by the preferred one.
+    """
+    return [choice[0] for choice in package_choices(family, packages)]
+
+
+def package_choices(family: str, packages: tuple) -> list:
+    """Every name a family has for each package, preferred first.
+
+    A dependency field of a format that spells alternatives reads this, and
+    so does an install that has to pick one name for the release in front of
+    it; :func:`packages_for` is the same table read for the preferred name
+    alone.
+
+    Args:
+        family: The distribution family, as `machine.distribution_family`
+            reports it.
+        packages: Names as ``constants.py`` writes them.
+
+    Returns:
+        One tuple of names per package, the preferred name first, with
+        anything this family has no separate package for left out.
     """
     renames = SYSTEM_PACKAGE_NAMES.get(family, {})
-    named = []
+    chosen = []
     for package in packages:
         renamed = renames.get(package, package)
-        if renamed is not None:
-            named.append(renamed)
-    return named
+        if renamed is None:
+            continue
+        chosen.append(renamed if isinstance(renamed, tuple) else (renamed,))
+    return chosen

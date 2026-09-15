@@ -115,7 +115,9 @@ SYSTEM_CHECKOUT_PACKAGES = ("python3-venv",)
 
 # Where a family spells one of the names above differently. A name absent from
 # a family's entry keeps the name above; a name mapped to None is one that
-# family has no separate package for, because it is already installed.
+# family has no separate package for, because it is already installed; a name
+# mapped to a tuple is one the family's releases spell two ways, preferred
+# first, and the machine installs the first of them its repositories offer.
 # Measured in containers on 2026-08-31, not inferred: every other name above
 # is spelled the same on Debian, Fedora and Arch.
 SYSTEM_PACKAGE_NAMES = {
@@ -126,7 +128,10 @@ SYSTEM_PACKAGE_NAMES = {
         "dnsmasq": "dnsmasq-base",
         # The same split again: `dhcpcd` pulls in a unit that runs the client
         # on every interface, `dhcpcd-base` is the binary and nothing else.
-        "dhcpcd": "dhcpcd-base",
+        # Debian has carried that name since 12 and Ubuntu since 24.04; before
+        # it Ubuntu has the same daemon in `dhcpcd5`, whose unit the takeover
+        # stands down with every other manager's.
+        "dhcpcd": ("dhcpcd-base", "dhcpcd5"),
     },
     "rhel": {
         "iproute2": "iproute",

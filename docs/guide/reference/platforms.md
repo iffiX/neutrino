@@ -10,13 +10,13 @@ The three packages of one release run on the systems in the tables that follow; 
 
 | System                                                                                   | Architecture | File                                      |
 | ---------------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 24.04 and newer, Raspberry Pi OS 64-bit (bookworm and newer) | x86-64       | `neutrino-hub_0.2.0_amd64.deb`            |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit (bookworm and newer) | x86-64       | `neutrino-hub_0.2.0_amd64.deb`            |
 | the same                                                                                 | ARM64        | `neutrino-hub_0.2.0_arm64.deb`            |
 | Fedora 41 and newer; RHEL 9 family (AlmaLinux, Rocky) with EPEL enabled first            | x86-64       | `neutrino-hub-0.2.0-1.x86_64.rpm`         |
 | the same                                                                                 | ARM64        | `neutrino-hub-0.2.0-1.aarch64.rpm`        |
 | Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.2.0-1-x86_64.pkg.tar.zst` |
 
-The hub package includes its own Python under `/opt/neutrino/python` and depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl and smbclient, with hostapd recommended for a wireless LAN. On the Debian family the dhcpcd dependency is `dhcpcd-base`, a name Ubuntu has from 24.04. That is where the hub's `.deb` starts, one release later than the agent's and the client's.
+The hub package includes its own Python under `/opt/neutrino/python` and depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl and smbclient, with hostapd recommended for a wireless LAN. On the Debian family the dhcpcd dependency is `dhcpcd-base | dhcpcd5`: Ubuntu has the first name from 24.04 and the same daemon in the second on 22.04, and a machine installs whichever of them it has.
 
 ## Agent
 

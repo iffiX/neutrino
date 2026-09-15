@@ -39,7 +39,7 @@
 
 | 中枢 `neutrino-hub`                                          | 架构          | 包                  |
 | ------------------------------------------------------------ | ------------- | ------------------- |
-| Debian 12 及以上、Ubuntu 24.04 及以上、Raspberry Pi OS 64 位 | x86-64、ARM64 | `.deb`              |
+| Debian 12 及以上、Ubuntu 22.04 及以上、Raspberry Pi OS 64 位 | x86-64、ARM64 | `.deb`              |
 | Fedora 41 及以上、RHEL 9 系（AlmaLinux、Rocky）              | x86-64、ARM64 | `.rpm`，先启用 EPEL |
 | Arch、EndeavourOS、Manjaro                                   | x86-64        | `.pkg.tar.zst`      |
 

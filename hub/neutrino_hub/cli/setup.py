@@ -824,11 +824,9 @@ def _step_required_packages(reporter: InstallReporter) -> str:
             missing.
     """
     controller = package_manager.current()
-    wanted = package_manager.packages_for(controller.family, SYSTEM_RUNTIME_PACKAGES)
+    wanted = controller.names_for(SYSTEM_RUNTIME_PACKAGES)
     if not is_packaged():
-        wanted += package_manager.packages_for(
-            controller.family, SYSTEM_CHECKOUT_PACKAGES
-        )
+        wanted += controller.names_for(SYSTEM_CHECKOUT_PACKAGES)
     missing = [name for name in wanted if not controller.is_installed(name)]
     if not missing:
         return f"{len(wanted)} present"

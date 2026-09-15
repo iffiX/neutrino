@@ -8,13 +8,40 @@ against upstream has to survive every way a distribution decorates one.
 import pytest
 
 from neutrino_hub.system import machine
+from neutrino_hub.system.constants import SYSTEM_RUNTIME_PACKAGES
 from neutrino_hub.system.package_manager import (
     AptPackageController,
     DnfPackageController,
     PacmanPackageController,
+    SystemPackageController,
     current,
     is_version_at_least,
 )
+
+# The two names one family has for the DHCP client, preferred first.
+DHCP_NAMES = ("dhcpcd-base", "dhcpcd5")
+
+
+class _MachineController(SystemPackageController):
+    """A machine with some names installed and some on offer."""
+
+    family = "debian"
+
+    def __init__(self, *, installed: tuple = (), offered: tuple = ()):
+        """
+        Args:
+            installed: Names `dpkg` would report present.
+            offered: Names the repositories carry.
+        """
+        self._installed = installed
+        self._offered = offered
+
+    def is_installed(self, package: str) -> bool:
+        return package in self._installed
+
+    def available_version(self, package: str) -> str:
+        return "1.0" if package in self._offered else ""
+
 
 # What `podman` reports, per distribution, against the 4.4 floor Quadlet sets.
 PODMAN_VERSIONS = {
@@ -117,3 +144,58 @@ def test_a_family_listed_as_unsupported_is_refused(tmp_path, monkeypatch):
         machine.require_distribution(
             {"debian": ("zfsutils-linux",), "rhel": None}, "ZFS"
         )
+
+
+def test_the_name_a_release_actually_carries_is_the_one_installed():
+    """Ubuntu 22.04 has the DHCP client in `dhcpcd5` and offers `dhcpcd-base`
+    under no name at all."""
+    machine_22_04 = _MachineController(offered=("dhcpcd5",))
+
+    assert machine_22_04.first_available(DHCP_NAMES) == "dhcpcd5"
+
+
+def test_the_preferred_name_wins_where_a_release_offers_both():
+    both = _MachineController(offered=DHCP_NAMES)
+
+    assert both.first_available(DHCP_NAMES) == "dhcpcd-base"
+
+
+def test_an_installed_alternative_settles_it_before_the_repositories_do():
+    """A machine that already has one of the names is not asked to swap it."""
+    installed = _MachineController(installed=("dhcpcd5",))
+
+    assert installed.first_available(DHCP_NAMES) == "dhcpcd5"
+
+
+def test_a_name_no_release_offers_is_reported_as_the_one_asked_for():
+    """What is missing has to be named the way the hub asks for it, or the
+    line telling somebody to install it names nothing."""
+    neither = _MachineController()
+
+    assert neither.first_available(DHCP_NAMES) == "dhcpcd-base"
+
+
+def test_a_package_with_one_name_asks_the_machine_nothing():
+    """Every other dependency is spelled one way, and a query per package is a
+    package manager run for an answer the table already gave."""
+
+    class _RefusingController(_MachineController):
+        def is_installed(self, package: str) -> bool:
+            raise AssertionError(f"asked about {package}")
+
+        def available_version(self, package: str) -> str:
+            raise AssertionError(f"asked about {package}")
+
+    assert _RefusingController().first_available(("nftables",)) == "nftables"
+
+
+def test_the_dependency_list_is_resolved_for_the_release_in_front_of_it():
+    """`nhub setup` checks the names this machine would install, not the ones
+    the newest release of the family spells."""
+    machine_22_04 = _MachineController(offered=("dnsmasq-base", "dhcpcd5"))
+
+    names = machine_22_04.names_for(SYSTEM_RUNTIME_PACKAGES)
+
+    assert "dhcpcd5" in names
+    assert "dhcpcd-base" not in names
+    assert len(names) == len(SYSTEM_RUNTIME_PACKAGES)

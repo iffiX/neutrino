@@ -231,10 +231,27 @@ def dependencies(family: str) -> list:
         family: One of :data:`SYSTEM_PACKAGE_FAMILIES`.
 
     Returns:
-        Package names, spelled the way that family spells them.
+        Package names, spelled the way that family spells them, and a package
+        the family spells two ways named by the preferred one.
     """
-    packages, resolve = _package_lists()
-    return ["systemd"] + resolve(family, packages["runtime"])
+    packages, package_manager = _package_lists()
+    return ["systemd"] + package_manager.packages_for(family, packages["runtime"])
+
+
+def dependency_choices(family: str) -> list:
+    """The same packages, each with every name this family has for it.
+
+    A format whose dependency field spells alternatives declares all of them,
+    so one package installs on the releases that carry either name.
+
+    Args:
+        family: One of :data:`SYSTEM_PACKAGE_FAMILIES`.
+
+    Returns:
+        One tuple of names per package, the preferred name first.
+    """
+    packages, package_manager = _package_lists()
+    return [("systemd",)] + package_manager.package_choices(family, packages["runtime"])
 
 
 def recommendations(family: str) -> list:
@@ -246,29 +263,28 @@ def recommendations(family: str) -> list:
     Returns:
         Package names, spelled the way that family spells them.
     """
-    packages, resolve = _package_lists()
-    return resolve(family, packages["wifi"])
+    packages, package_manager = _package_lists()
+    return package_manager.packages_for(family, packages["wifi"])
 
 
 def _package_lists():
     """The hub's own dependency constants and the name resolution beside them.
 
     Returns:
-        The lists keyed by role, and the function that spells them for a
-        family.
+        The lists keyed by role, and the module that spells them for a family.
     """
     if str(HUB_ROOT) not in sys.path:
         sys.path.insert(0, str(HUB_ROOT))
+    from neutrino_hub.system import package_manager
     from neutrino_hub.system.constants import (
         SYSTEM_RUNTIME_PACKAGES,
         SYSTEM_WIFI_PACKAGES,
     )
-    from neutrino_hub.system.package_manager import packages_for
 
     return {
         "runtime": SYSTEM_RUNTIME_PACKAGES,
         "wifi": SYSTEM_WIFI_PACKAGES,
-    }, packages_for
+    }, package_manager
 
 
 # What the interpreter carries to install with, dropped once the hub is in the

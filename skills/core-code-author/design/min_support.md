@@ -14,21 +14,22 @@ new floor is written down.
 
 | Package | glibc | What sets it | Oldest system |
 | --- | --- | --- | --- |
-| hub `.deb`, `.rpm` | 2.34 | the cryptography and bcrypt extensions in the environment the package installs (`hub/packaging/venv_tree.py:80`) | Debian 12, Ubuntu 24.04, RHEL 9 |
+| hub `.deb`, `.rpm` | 2.34 | the cryptography and bcrypt extensions in the environment the package installs (`hub/packaging/venv_tree.py:80`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | agent `.deb`, `.rpm` | 2.27 | the RustDesk host binary (`agent/packaging/constants.py:8`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build_release.py:164`) | Debian 12, Ubuntu 22.04 |
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build_release.py:174`) | RHEL 9, AlmaLinux 9 |
 | client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`client/packaging/bundled.py:78`) | macOS 12.3 on Apple silicon |
 | client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`client/packaging/build_msi.py:28`, `client/packaging/build_msi.py:69`) | Windows 10 1809 |
 
-Ubuntu 22.04 has glibc 2.35, above all four Linux floors. The hub's
-`.deb` still starts at Ubuntu 24.04, because it names the package
-`dhcpcd-base` (`hub/neutrino_hub/system/constants.py:129`) and Ubuntu has that
-name from 24.04; 22.04 has the same daemon in `dhcpcd5`, a package that
-installs a unit with it. One table spells the names for every family, and both
-the control field of the `.deb` and the installs `nhub setup` runs read it
-(`hub/neutrino_hub/system/package_manager.py:353`), so an alternative written
-there reaches `apt install` as the name of one package.
+Ubuntu 22.04 has glibc 2.35, above all four Linux floors, and the hub's `.deb`
+reaches it because the DHCP client is named `dhcpcd-base | dhcpcd5`
+(`hub/neutrino_hub/system/constants.py:134`): Ubuntu has the first name from
+24.04 and the same daemon in the second before it, whose unit the takeover
+stands down with every other manager's. One table spells the names for every
+family, and both the control field of the `.deb` and the packages `nhub setup`
+checks read it (`hub/neutrino_hub/system/package_manager.py:420`), so a
+machine installs and is checked against whichever of the two names its
+repositories carry (`hub/neutrino_hub/system/package_manager.py:128`).
 
 The client's `.rpm` reaches RHEL 9 and AlmaLinux 9 because either WebKit2 ABI
 satisfies it, and RHEL 9 has 4.0 (`client/packaging/build_rpm.py:54`). The

@@ -10,7 +10,7 @@ title: 支持的平台
 
 | 系统                                                                            | 架构   | 文件                                      |
 | ------------------------------------------------------------------------------- | ------ | ----------------------------------------- |
-| Debian 12 及以上、Ubuntu 24.04 及以上、Raspberry Pi OS 64 位（bookworm 及以上） | x86-64 | `neutrino-hub_0.2.0_amd64.deb`            |
+| Debian 12 及以上、Ubuntu 22.04 及以上、Raspberry Pi OS 64 位（bookworm 及以上） | x86-64 | `neutrino-hub_0.2.0_amd64.deb`            |
 | 同上                                                                            | ARM64  | `neutrino-hub_0.2.0_arm64.deb`            |
 | Fedora 41 及以上、RHEL 9 系（AlmaLinux、Rocky），先启用 EPEL                    | x86-64 | `neutrino-hub-0.2.0-1.x86_64.rpm`         |
 | 同上                                                                            | ARM64  | `neutrino-hub-0.2.0-1.aarch64.rpm`        |
@@ -20,11 +20,11 @@ title: 支持的平台
 
 | 依赖           | 软件包                                                                                                                 |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| deb 必需       | systemd、nftables、dnsmasq-base、iproute2、wpasupplicant、dhcpcd-base、fail2ban、iw、arp-scan、vnstat、curl、smbclient |
+| deb 必需       | systemd、nftables、dnsmasq-base、iproute2、wpasupplicant、dhcpcd-base \| dhcpcd5、fail2ban、iw、arp-scan、vnstat、curl、smbclient |
 | deb 推荐       | hostapd                                                                                                                |
 | RHEL 系的 EPEL | fail2ban、arp-scan、vnstat                                                                                             |
 
-Debian 系里 dhcpcd 的包名是 dhcpcd-base，Ubuntu 从 24.04 才有这个名字，hub 的 deb 也就从 24.04 起，比被控端和客户端晚一个版本。
+Debian 系里 dhcpcd 的依赖写成 dhcpcd-base | dhcpcd5：Ubuntu 从 24.04 起叫前一个名字，22.04 上同一个守护进程叫后一个，机器上有哪个就装哪个。
 
 ## 被控端
 

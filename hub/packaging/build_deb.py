@@ -2,16 +2,17 @@
 
     python3 hub/packaging/build_deb.py --output-dir dist/
 
-The package carries its own virtual environment under /opt/neutrino/venv and
-touches nothing the system installed: the hub needs thirty packages including
-FastAPI and asyncssh, and pinning a system Python to them is what
+The package carries its own interpreter under /opt/neutrino and touches
+nothing the system installed: the hub needs thirty packages including FastAPI
+and asyncssh, and pinning a system Python to them is what
 `EXTERNALLY-MANAGED` exists to prevent.
 
-Build it on the distribution it is for, in a container. Two things bind the
-package to its build environment: compiled wheels (cryptography, uvloop) fix
-the architecture, and the virtual environment carries no standard library, so
-the target needs the exact interpreter version the build used. Debian 12 gives
-python3.11 and a glibc 2.36 baseline:
+Build it in a container, one per architecture. What binds the package to its
+build is the machine: the carried interpreter's build and the compiled wheels
+beside it (cryptography, uvloop) are for one architecture, and the highest
+glibc those files name is the floor the staged tree is read back against.
+Building in Debian 12 puts that floor at 2.34, which reaches Debian 12 and
+Ubuntu 22.04:
 
     podman run --rm --network=host -v "$PWD:/src:ro" -v "$PWD/dist:/out" \
         debian:12 sh -c 'apt-get -qq update && apt-get -qq install -y \
@@ -30,7 +31,7 @@ from venv_tree import (
     INSTALL_PREFIX,
     PACKAGE_NAME,
     PRUNE_UNTRACKED,
-    dependencies,
+    dependency_choices,
     recommendations,
     PYTHON_DIR,
     build_environment,
@@ -205,7 +206,12 @@ def _lay_out(
         architecture=architecture,
         maintainer=maintainer,
         size=size,
-        depends=", ".join(dependencies("debian")),
+        # `a | b` is the control file's own way of saying either name
+        # satisfies this, which is how one package installs on the
+        # releases that carry the older spelling of a daemon.
+        depends=", ".join(
+            " | ".join(choice) for choice in dependency_choices("debian")
+        ),
         recommends=", ".join(recommendations("debian")),
     )
     write(tree / "DEBIAN/control", control)

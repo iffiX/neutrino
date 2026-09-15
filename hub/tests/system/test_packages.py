@@ -15,7 +15,7 @@ from neutrino_hub.system.constants import (
     SYSTEM_RUNTIME_PACKAGES,
     SYSTEM_WIFI_PACKAGES,
 )
-from neutrino_hub.system.package_manager import packages_for
+from neutrino_hub.system.package_manager import package_choices, packages_for
 
 FAMILIES = tuple(SYSTEM_PACKAGE_NAMES)
 
@@ -92,3 +92,15 @@ def test_wifi_is_wanted_rather_than_needed():
     """A gateway with no radio routes perfectly well without hostapd."""
     assert SYSTEM_WIFI_PACKAGES == ("hostapd",)
     assert "hostapd" not in SYSTEM_RUNTIME_PACKAGES
+
+
+def test_the_dhcp_client_is_named_every_way_the_debian_family_spells_it():
+    """Ubuntu carries `dhcpcd-base` from 24.04 and had the same daemon in
+    `dhcpcd5` before it; a package that names one of them installs on half the
+    family."""
+    choices = package_choices("debian", SYSTEM_RUNTIME_PACKAGES)
+
+    assert ("dhcpcd-base", "dhcpcd5") in choices
+    assert all(choice for choice in choices)
+    assert len(choices) == len(SYSTEM_RUNTIME_PACKAGES)
+    assert ("dhcpcd",) in package_choices("rhel", SYSTEM_RUNTIME_PACKAGES)

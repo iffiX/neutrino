@@ -43,7 +43,7 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 
 | Hub             | Versions                                                                                 | Architectures | Package        |
 | --------------- | ---------------------------------------------------------------------------------------- | ------------- | -------------- |
-| Debian family   | Debian 12 and newer, Ubuntu 24.04 and newer, Raspberry Pi OS 64-bit (bookworm and newer) | x86-64, ARM64 | `.deb`         |
+| Debian family   | Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit (bookworm and newer) | x86-64, ARM64 | `.deb`         |
 | Fedora and RHEL | Fedora 41 and newer; RHEL 9 family (AlmaLinux, Rocky) with EPEL                          | x86-64, ARM64 | `.rpm`         |
 | Arch family     | Arch, EndeavourOS, Manjaro                                                               | x86-64        | `.pkg.tar.zst` |
 
