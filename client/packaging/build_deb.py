@@ -47,9 +47,11 @@ CLIENT_ROOT = payload.CLIENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
 # What the window itself cannot open without: the C stack its bindings load,
-# and the authorization a mount goes through.
+# and the authorization a mount goes through. Either WebKit2 ABI serves the
+# window, so either one's library satisfies the package.
 RUNTIME_DEPENDENCIES = (
-    "gir1.2-webkit2-4.1",
+    "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
+    "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
     "libgirepository-1.0-1",
     "libgtk-3-0t64 | libgtk-3-0",
     "polkitd | policykit-1",

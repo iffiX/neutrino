@@ -20,6 +20,12 @@ import payload
 
 # A readelf whose answer for a file is the version its own name spells, so a
 # tree can be staged with the versions the walk is meant to read.
+# One ldd line per library the compiled bindings link, as ldd prints them.
+LDD_ON_THE_BINDINGS = (
+    "\tlibglib-2.0.so.0 => /carried/libglib-2.0.so.0 (0x00007f00)\n"
+    "\tlibgirepository-1.0.so.1 => /carried/libgirepository-1.0.so.1 (0x00007f01)\n"
+)
+
 FAKE_READELF = """#!{python}
 import sys
 from pathlib import Path
@@ -135,13 +141,22 @@ def test_the_compile_is_two_standalone_programs_against_the_pinned_interpreter(
     def run(command, *, cwd=None):
         commands.append(("pip", command))
 
-    def fake_run(command, capture_output, text, env):
+    carried = tmp_path / "carried"
+    carried.mkdir()
+    (carried / "libgirepository-1.0.so.1").write_text("the library")
+
+    def fake_run(command, capture_output=False, text=False, env=None):
+        if command[0] == "ldd":
+            listed = LDD_ON_THE_BINDINGS.replace("/carried", str(carried))
+            return subprocess.CompletedProcess(command, 0, listed, "")
         commands.append(("nuitka", command, env))
         build = pathlib.Path(command[-2].split("=", 1)[1])
         name = command[-3].split("=", 1)[1]
         dist = build / (pathlib.Path(command[-1]).stem + ".dist")
         dist.mkdir(parents=True, exist_ok=True)
         (dist / name).write_text("")
+        (dist / "gi").mkdir(exist_ok=True)
+        (dist / "gi" / "_gi.so").write_text("")
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(payload, "stage_linux_interpreter", stage_interpreter)
@@ -164,6 +179,7 @@ def test_the_compile_is_two_standalone_programs_against_the_pinned_interpreter(
     assert "--include-package=neutrino_client" not in helper[1]
     assert helper[1][-1].endswith("neutrino_client/cli/mount_helper.py")
     assert (compiled["client"] / "nclient").is_file()
+    assert (compiled["client"] / "libgirepository-1.0.so.1").is_file()
     assert (compiled["helper"] / "mount_helper").is_file()
     assert (compiled["package"] / "data" / "gui" / "index.html").is_file()
 
@@ -224,6 +240,51 @@ def test_the_compiled_programs_land_where_the_package_installs_them(tmp_path):
     assert pathlib.Path(launcher.readlink()) == pathlib.Path(
         "/opt/neutrino_client/nclient"
     )
+
+
+def test_the_introspection_library_travels_beside_the_bindings(tmp_path, monkeypatch):
+    """RHEL 9 carries a girepository older than the bindings compile
+    against, so the container's own copy goes into the package."""
+    carried = tmp_path / "carried"
+    carried.mkdir()
+    (carried / "libgirepository-1.0.so.1").write_text("the library")
+    dist = tmp_path / "entry.dist"
+    (dist / "gi").mkdir(parents=True)
+    (dist / "gi" / "_gi.so").write_text("")
+    listed = LDD_ON_THE_BINDINGS.replace("/carried", str(carried))
+    monkeypatch.setattr(
+        payload.subprocess,
+        "run",
+        lambda command, capture_output, text: subprocess.CompletedProcess(
+            command, 0, listed, ""
+        ),
+    )
+
+    payload.stage_linux_introspection_library(dist)
+
+    landed = dist / "libgirepository-1.0.so.1"
+    assert landed.read_text() == "the library"
+    assert landed.stat().st_mode & 0o777 == 0o755
+
+
+def test_bindings_linking_no_introspection_library_stop_the_build(
+    tmp_path, monkeypatch
+):
+    dist = tmp_path / "entry.dist"
+    (dist / "gi").mkdir(parents=True)
+    (dist / "gi" / "_gi.so").write_text("")
+    monkeypatch.setattr(
+        payload.subprocess,
+        "run",
+        lambda command, capture_output, text: subprocess.CompletedProcess(
+            command, 0, "\tlibglib-2.0.so.0 => /lib/libglib-2.0.so.0 (0x1)\n", ""
+        ),
+    )
+
+    with pytest.raises(SystemExit) as refused:
+        payload.stage_linux_introspection_library(dist)
+
+    assert "libgirepository-1.0.so.1" in str(refused.value)
 
 
 def test_the_licences_the_package_owes_are_staged(tmp_path):

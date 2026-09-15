@@ -152,18 +152,21 @@ AGENT_BUILDS = {
 # floor at 2.34. The client is the only package with C compiled in its
 # container, so it takes the symbol versions of that container's glibc:
 # Fedora 41 redirects strtol and sscanf to the __isoc23_ names glibc 2.38
-# introduced, and every RHEL-family image old enough to avoid that carries
-# WebKit2 4.0 where the window asks for 4.1. The typelibs Nuitka bundles and
-# the binaries it writes therefore both come from Debian 12; what each format
-# names as a dependency is still spelled its own way, in the packaging
-# scripts.
+# introduced. The typelibs Nuitka bundles and the binaries it writes
+# therefore both come from Debian 12; what each format names as a dependency
+# is still spelled its own way, in the packaging scripts.
+#
+# Debian 12 is also the one image carrying both WebKit2 ABIs, so both sets of
+# typelibs go into the container and travel in every Linux package: the
+# window opens on 4.1 where a machine has it and on 4.0 where it has that.
 CLIENT_BUILDS = {
     "debian": {
         "image": "debian:12",
         "install": "apt-get -qq update >/dev/null 2>&1 && "
         "apt-get -qq install -y python3 dpkg dpkg-dev binutils pkg-config "
         "build-essential patchelf ccache libgirepository1.0-dev libcairo2-dev "
-        "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-ayatanaappindicator3-0.1 "
+        "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-webkit2-4.0 "
+        "gir1.2-ayatanaappindicator3-0.1 "
         "ca-certificates >/dev/null 2>&1",
         "script": "build_deb.py",
     },
@@ -172,7 +175,8 @@ CLIENT_BUILDS = {
         "install": "apt-get -qq update >/dev/null 2>&1 && "
         "apt-get -qq install -y python3 dpkg dpkg-dev binutils pkg-config "
         "build-essential patchelf ccache libgirepository1.0-dev libcairo2-dev "
-        "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-ayatanaappindicator3-0.1 "
+        "gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-webkit2-4.0 "
+        "gir1.2-ayatanaappindicator3-0.1 "
         "rpm cpio ca-certificates >/dev/null 2>&1",
         "script": "build_rpm.py",
     },

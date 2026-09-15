@@ -1,4 +1,4 @@
-"""The Linux shell: WebKitGTK, pinned to the 4.1 API.
+"""The Linux shell: WebKitGTK, on whichever WebKit2 ABI the machine has.
 
 The page loads into a ``WebKit2.WebView``; its bridge adapter posts each
 request to the ``neutrino`` script message handler, and the reply is
@@ -8,11 +8,13 @@ trip runs off the GTK main thread, so a slow step never freezes the window.
 Closing the window hides it and leaves the client running; the tray icon
 brings it back and its Quit is what ends the loop.
 
-The bindings are the package's own, built for the interpreter it carries. A
-machine still needs the C libraries under them, which is the one thing this
-can refuse for.
+The bindings are the package's own, built for the interpreter it carries,
+and both ABIs' type descriptions travel with them. A machine still needs one
+of the two WebKit libraries under them, which is the one thing this can
+refuse for.
 """
 
+import ctypes
 import json
 import os
 import threading
@@ -25,13 +27,14 @@ from neutrino_client.constants import (
     CLIENT_GUI_WINDOW_WIDTH,
     CLIENT_TRAY_OPEN_LABEL_KEY,
     CLIENT_TRAY_QUIT_LABEL_KEY,
+    CLIENT_WEBKITGTK_ABIS,
 )
 from neutrino_client.exceptions import GuiShellUnavailableError
 from neutrino_client.gui.tray_linux import LinuxTrayIcon
 
-# The distribution packages the import guard names when the C stack is
-# absent.
-WEBKITGTK_PACKAGES = "gir1.2-webkit2-4.1"
+# The distribution packages the import guard names when neither ABI's C
+# stack is on the machine.
+WEBKITGTK_PACKAGES = "gir1.2-webkit2-4.1 or gir1.2-webkit2-4.0"
 # WebKit's dmabuf renderer aborts the whole process where EGL cannot open a
 # GBM display; the page needs nothing it offers.
 WEBKITGTK_RENDERER_ENVIRONMENT = {"WEBKIT_DISABLE_DMABUF_RENDERER": "1"}
@@ -65,7 +68,8 @@ def open_window(
             safe to call from any thread.
 
     Raises:
-        GuiShellUnavailableError: When WebKitGTK 4.1 is not on the machine.
+        GuiShellUnavailableError: When neither WebKit2 ABI is on the
+            machine.
     """
     for name, value in WEBKITGTK_RENDERER_ENVIRONMENT.items():
         os.environ.setdefault(name, value)
@@ -160,17 +164,40 @@ def _toolkit():
         ``(GLib, Gtk, WebKit2)``.
 
     Raises:
-        GuiShellUnavailableError: When the bindings or the 4.1 API are
-            absent.
+        GuiShellUnavailableError: When the bindings are absent, or neither
+            WebKit2 ABI is.
     """
     try:
         import gi
 
         gi.require_version("Gtk", "3.0")
-        gi.require_version("WebKit2", "4.1")
+        gi.require_version("WebKit2", _webkit_version())
         from gi.repository import GLib, Gtk, WebKit2
     except (ImportError, ValueError) as error:
         raise GuiShellUnavailableError(
             "gui_webkitgtk_missing", {"packages": WEBKITGTK_PACKAGES}
         ) from error
     return GLib, Gtk, WebKit2
+
+
+def _webkit_version() -> str:
+    """The API version of the WebKit2 library this machine carries.
+
+    Both ABIs' type descriptions travel with the package, and a description
+    answers for a version whether or not its library is installed, so the
+    library that opens is what picks the version.
+
+    Returns:
+        The version to pin, the newest ABI the machine has.
+
+    Raises:
+        ValueError: When neither ABI's library opens.
+    """
+    for version, library in CLIENT_WEBKITGTK_ABIS:
+        try:
+            ctypes.CDLL(library)
+        except OSError:
+            continue
+        return version
+    carried = ", ".join(library for _version, library in CLIENT_WEBKITGTK_ABIS)
+    raise ValueError(f"no WebKit2 library on this machine: {carried}")

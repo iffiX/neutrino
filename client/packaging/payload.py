@@ -95,10 +95,10 @@ DEBIAN_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 RPM_ARCHITECTURES = {"x86_64": "x86_64", "aarch64": "aarch64"}
 
 # The Python side of the Linux window, built in the packaging container for
-# the interpreter above and compiled into the client. PyGObject links
-# libgirepository over the C ABI, so the C libraries the package depends on
-# serve the copy built here; the distribution's own python3-gi is never
-# involved, because the client never runs the distribution's Python.
+# the interpreter above and compiled into the client. PyGObject links the
+# introspection library carried below and reads the machine's own GTK and
+# WebKit through it; the distribution's own python3-gi is never involved,
+# because the client never runs the distribution's Python.
 #
 # PyGObject 3.50 is the last release built against girepository-1.0. Every
 # release after it needs the 2.0 library, which arrived with GLib 2.80 —
@@ -122,6 +122,12 @@ LINUX_GUI_SOURCES = (
         "4500ad3dbf331773d8dedf7212544c999a76fc96b63a91b3dcac1e5925a1d103",  # scan: allow
     ),
 )
+
+# The introspection library the bindings link, carried beside them rather
+# than asked of the machine: PyGObject compiles against the closure calls
+# girepository 1.72 added, and RHEL 9 carries 1.68. Nothing else in the
+# process links it, so the copy serves the bindings alone.
+LINUX_GUI_CARRIED_LIBRARY = "libgirepository-1.0.so.1"
 
 # What has to be in the container before those two can be compiled, spelled
 # the way pkg-config names them. Checked first, so the build fails on the
@@ -330,6 +336,31 @@ def stage_linux_gui_bindings(staged_python: Path) -> None:
             )
 
 
+def stage_linux_introspection_library(dist: Path) -> None:
+    """Carry the introspection library the compiled bindings link.
+
+    Args:
+        dist: The client's standalone directory, with the bindings in it.
+
+    Raises:
+        SystemExit: When the bindings link no such library.
+    """
+    extension = dist / "gi" / "_gi.so"
+    listed = subprocess.run(
+        ["ldd", str(extension)], capture_output=True, text=True
+    ).stdout
+    for line in listed.splitlines():
+        name, _, rest = line.partition("=>")
+        if name.strip() != LINUX_GUI_CARRIED_LIBRARY or not rest.strip():
+            continue
+        source = Path(rest.split("(")[0].strip()).resolve()
+        carried = dist / LINUX_GUI_CARRIED_LIBRARY
+        shutil.copyfile(source, carried)
+        carried.chmod(0o755)
+        return
+    raise SystemExit(f"{extension} links no {LINUX_GUI_CARRIED_LIBRARY}")
+
+
 def stage_wheels(
     python: Path,
     target: Path,
@@ -464,7 +495,8 @@ def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
     The pinned interpreter is unpacked into the build directory, the window's
     bindings are built into it, the compiler is installed beside them, and
     two standalone programs come out: the client with the bindings inside
-    it, and the mount helper, which is standard library alone and small.
+    it and the introspection library beside them, and the mount helper,
+    which is standard library alone and small.
 
     Args:
         build: The directory to work under.
@@ -500,6 +532,7 @@ def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
             "--include-module=cairo",
         ),
     )
+    stage_linux_introspection_library(client)
     helper = _compile_standalone(
         python,
         tree,

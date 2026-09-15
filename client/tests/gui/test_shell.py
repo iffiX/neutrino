@@ -290,22 +290,16 @@ def test_a_missing_pywebview_refuses_with_the_shells_own_code(monkeypatch):
     assert refusal.value.params == {"runtime": "the Microsoft Edge WebView2 Runtime"}
 
 
-def test_a_missing_webkitgtk_refuses_naming_the_packages(monkeypatch):
-    class FakeGi:
-        @staticmethod
-        def require_version(namespace, version):
-            raise ValueError(f"Namespace {namespace} not available for {version}")
+def carrying(monkeypatch, *libraries):
+    """Leave the named WebKit libraries on the machine and no others.
 
-    monkeypatch.setitem(sys.modules, "gi", FakeGi())
+    Args:
+        monkeypatch: The fixture the loader is put in place with.
+        libraries: The sonames that open.
 
-    with pytest.raises(GuiShellUnavailableError) as caught:
-        webkitgtk.open_window(title="t", html="<html>", bridge=None)
-
-    assert caught.value.code == "gui_webkitgtk_missing"
-    assert caught.value.params == {"packages": "gir1.2-webkit2-4.1"}
-
-
-def test_the_linux_shell_pins_the_41_api(monkeypatch):
+    Returns:
+        What the shell asked ``gi`` to pin, filled in as it asks.
+    """
     pinned = []
 
     class FakeGi:
@@ -313,14 +307,66 @@ def test_the_linux_shell_pins_the_41_api(monkeypatch):
         def require_version(namespace, version):
             pinned.append((namespace, version))
             if namespace == "WebKit2":
-                raise ValueError("stop here")
+                raise ValueError("stop before the bindings are imported")
+
+    def load(soname):
+        if soname not in libraries:
+            raise OSError(f"{soname}: cannot open shared object file")
+        return object()
 
     monkeypatch.setitem(sys.modules, "gi", FakeGi())
+    monkeypatch.setattr(webkitgtk.ctypes, "CDLL", load)
+    return pinned
+
+
+def test_a_missing_webkitgtk_refuses_naming_both_packages(monkeypatch):
+    class FakeGi:
+        @staticmethod
+        def require_version(namespace, version):
+            raise ValueError(f"Namespace {namespace} not available for {version}")
+
+    monkeypatch.setitem(sys.modules, "gi", FakeGi())
+    monkeypatch.setattr(webkitgtk.ctypes, "CDLL", lambda soname: object())
+
+    with pytest.raises(GuiShellUnavailableError) as caught:
+        webkitgtk.open_window(title="t", html="<html>", bridge=None)
+
+    assert caught.value.code == "gui_webkitgtk_missing"
+    assert caught.value.params == {
+        "packages": "gir1.2-webkit2-4.1 or gir1.2-webkit2-4.0"
+    }
+
+
+def test_the_linux_shell_takes_the_41_api_where_its_library_is_there(monkeypatch):
+    pinned = carrying(monkeypatch, "libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.37")
 
     with pytest.raises(GuiShellUnavailableError):
         webkitgtk.open_window(title="t", html="<html>", bridge=None)
 
     assert pinned == [("Gtk", "3.0"), ("WebKit2", "4.1")]
+
+
+def test_the_linux_shell_takes_the_40_api_where_41_is_not_there(monkeypatch):
+    """The RHEL 9 machine: webkit2gtk3 and no 4.1 library at all."""
+    pinned = carrying(monkeypatch, "libwebkit2gtk-4.0.so.37")
+
+    with pytest.raises(GuiShellUnavailableError):
+        webkitgtk.open_window(title="t", html="<html>", bridge=None)
+
+    assert pinned == [("Gtk", "3.0"), ("WebKit2", "4.0")]
+
+
+def test_neither_webkit_library_refuses_naming_both_packages(monkeypatch):
+    pinned = carrying(monkeypatch)
+
+    with pytest.raises(GuiShellUnavailableError) as caught:
+        webkitgtk.open_window(title="t", html="<html>", bridge=None)
+
+    assert pinned == [("Gtk", "3.0")]
+    assert caught.value.code == "gui_webkitgtk_missing"
+    assert caught.value.params == {
+        "packages": "gir1.2-webkit2-4.1 or gir1.2-webkit2-4.0"
+    }
 
 
 class FakeGLib:

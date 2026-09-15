@@ -269,7 +269,9 @@ def test_each_indicator_entry_reaches_its_own_callback(clicks):
     assert clicks == {"open": 1, "quit": 1}
 
 
-def test_without_the_typelib_the_status_icon_carries_the_same_menu(clicks, monkeypatch):
+def test_without_the_indicator_the_status_icon_carries_the_same_menu(
+    clicks, monkeypatch
+):
     monkeypatch.setattr(tray_module, "load_indicator", lambda: None)
 
     icon = linux_tray(clicks)
@@ -330,5 +332,21 @@ def test_a_toolkit_with_no_status_area_shows_nothing_and_does_not_fail(
 
 
 def test_the_indicator_bindings_are_absent_here():
-    """The typelib is not in the test environment, and that is not a failure."""
+    """Neither the library nor the bindings are in the test environment, and
+    that is not a failure."""
     assert tray_module.load_indicator() is None
+
+
+def test_a_machine_without_the_indicator_library_has_no_indicator(monkeypatch):
+    """The type description travels with the package, so the library alone
+    says whether this desktop has one."""
+    asked = []
+
+    def load(soname):
+        asked.append(soname)
+        raise OSError(f"{soname}: cannot open shared object file")
+
+    monkeypatch.setattr(tray_module.ctypes, "CDLL", load)
+
+    assert tray_module.load_indicator() is None
+    assert asked == ["libayatana-appindicator3.so.1"]

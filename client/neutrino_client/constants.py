@@ -82,6 +82,13 @@ CLIENT_TRAY_OPEN_LABEL_KEY = "ui.tray.open"
 CLIENT_TRAY_QUIT_LABEL_KEY = "ui.tray.quit"
 CLIENT_GUI_WINDOW_WIDTH = 760
 CLIENT_GUI_WINDOW_HEIGHT = 900
+# The WebKit2 ABIs the Linux window opens on, newest first: each API version
+# with the library carrying it. 4.1 is the libsoup3 ABI and 4.0 the libsoup2
+# one; a distribution carries one, the other, or both.
+CLIENT_WEBKITGTK_ABIS = (
+    ("4.1", "libwebkit2gtk-4.1.so.0"),
+    ("4.0", "libwebkit2gtk-4.0.so.37"),
+)
 
 # Where the packages install the client and the binaries it carries.
 CLIENT_INSTALL_PREFIX_LINUX = "/opt/neutrino_client"

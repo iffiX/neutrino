@@ -2,30 +2,37 @@
 
 Closing the window hides it; the client goes on running and the tray icon is
 how the person gets it back. The desktop's own indicator carries the menu,
-falling back to GTK's status icon where the indicator typelib is absent.
+falling back to GTK's status icon on a machine without the indicator.
 """
+
+import ctypes
 
 from neutrino_client.constants import CLIENT_DESKTOP_NAME
 
-# The indicator bindings, and the GTK status icon the fallback uses.
+# The indicator bindings, and the library under them. The type description
+# travels with the package, so the library is what says whether this machine
+# has an indicator at all.
 INDICATOR_NAMESPACE = "AyatanaAppIndicator3"
 INDICATOR_VERSION = "0.1"
+INDICATOR_LIBRARY = "libayatana-appindicator3.so.1"
 
 
 def load_indicator():
-    """The desktop indicator bindings, or None when the typelib is absent.
+    """The desktop indicator bindings, or None where the machine has none.
 
     Returns:
         The ``AyatanaAppIndicator3`` module, or None.
     """
     try:
+        ctypes.CDLL(INDICATOR_LIBRARY)
+
         import gi
 
         gi.require_version(INDICATOR_NAMESPACE, INDICATOR_VERSION)
         from gi.repository import AyatanaAppIndicator3
 
         return AyatanaAppIndicator3
-    except (ImportError, ValueError):
+    except (ImportError, OSError, ValueError):
         return None
 
 

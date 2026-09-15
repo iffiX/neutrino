@@ -179,7 +179,8 @@ def test_the_deb_names_the_c_stack_and_no_python(deb):
     )
 
     assert "Architecture: amd64" in control
-    assert "gir1.2-webkit2-4.1" in depends
+    assert "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0" in depends
+    assert "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37" in depends
     assert "polkitd | policykit-1" in depends
     assert "libgtk-3-0t64 | libgtk-3-0" in depends
     assert "gir1.2-ayatanaappindicator3-0.1" in recommends
@@ -255,8 +256,10 @@ def test_the_rpm_registers_no_unit_either(rpm):
     assert "systemctl" not in build_rpm.SPEC
 
 
-def test_the_rpm_names_the_fedora_libraries(rpm):
-    assert "webkit2gtk4.1" in build_rpm.RUNTIME_REQUIRES
+def test_the_rpm_names_the_rhel_family_libraries(rpm):
+    """Either WebKit2 ABI, as one rich dependency: Fedora has the 4.1
+    package, RHEL 9 the 4.0 one."""
+    assert "(webkit2gtk4.1 or webkit2gtk3)" in build_rpm.RUNTIME_REQUIRES
     assert "polkit" in build_rpm.RUNTIME_REQUIRES
     assert "libayatana-appindicator-gtk3" in build_rpm.RUNTIME_RECOMMENDS
     assert "cifs-utils" in build_rpm.RUNTIME_RECOMMENDS

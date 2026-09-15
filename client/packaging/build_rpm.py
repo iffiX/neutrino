@@ -43,11 +43,15 @@ CLIENT_ROOT = payload.CLIENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
 # The same C stack the .deb names, under the names the RHEL family gives
-# those libraries.
-# The same split the .deb makes: what the window cannot open without is
-# required, what one feature needs is recommended, and dnf installs both.
+# those libraries, and the same split it makes: what the window cannot open
+# without is required, what one feature needs is recommended, and dnf
+# installs both.
+#
+# Either WebKit2 ABI serves the window, and the family splits them over two
+# packages: Fedora 41 and up carry webkit2gtk4.1 alone, RHEL 9 webkit2gtk3
+# alone, which is the 4.0 ABI. A rich dependency takes either.
 RUNTIME_REQUIRES = (
-    "webkit2gtk4.1",
+    "(webkit2gtk4.1 or webkit2gtk3)",
     "gobject-introspection",
     "gtk3",
     "polkit",
