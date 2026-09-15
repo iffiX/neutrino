@@ -2,10 +2,12 @@
 
 An agent's state is what its device is to host, composed from
 ``config/devices/<id>/``; a client's state is the published service list
-resolved for the address it reaches the hub on, and whether it is switched
-off. Each carries the hash the peer's reports name back. One push goes
-down on a connection's first report whose hash differs; after that a push
-happens only when the hub's own copy changes, through the functions here.
+resolved for the scope its socket arrived from, and whether it is switched
+off. Each carries the hash the peer's reports name back; a client's is
+computed on the resolved list, so the same list hashes differently for two
+scopes. One push goes down on a connection's first report whose hash
+differs; after that a push happens only when the hub's own copy changes,
+through the functions here.
 """
 
 import hashlib
@@ -13,8 +15,12 @@ import json
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.modules.devices.agent_reports import device_host
 from neutrino_hub.modules.services.collector import catalog_entries
+from neutrino_hub.modules.services.host_scope import (
+    HostScope,
+    link_scope,
+    scope_of,
+)
 
 
 def agent_state(runtime, device_id: str) -> dict:
@@ -46,17 +52,17 @@ def client_state(runtime, client_id: str) -> dict:
     is_disabled = client is None or client.is_disabled
     services = []
     if not is_disabled:
-        host = runtime.client_catalog_host.get(client_id, "")
-        services = catalog_entries(runtime.published_services.entries_for(host))
+        scope = runtime.client_scope.get(client_id) or link_scope("")
+        services = catalog_entries(runtime.published_services.entries_for(scope))
     body = {"is_disabled": is_disabled, "services": services}
     serialized = json.dumps(body, sort_keys=True).encode("utf-8")
     return {"hash": hashlib.sha256(serialized).hexdigest()[:16], **body}
 
 
-def note_client_host(
+def note_client_scope(
     runtime, client_id: str, *, peer_host: str, reached_host: str
-) -> str:
-    """Settle and keep the address a client reaches the hub on.
+) -> HostScope:
+    """Settle and keep the scope a client's socket arrived from.
 
     Args:
         runtime: The shared runtime.
@@ -65,11 +71,11 @@ def note_client_host(
         reached_host: The address it connected to.
 
     Returns:
-        The bare address.
+        The scope.
     """
-    host = device_host(runtime, peer_host, reached_host)
-    runtime.client_catalog_host[client_id] = host
-    return host
+    scope = scope_of(peer_host, reached_host, runtime.host_scopes())
+    runtime.client_scope[client_id] = scope
+    return scope
 
 
 def push_state(runtime, role: str, key: str) -> None:
@@ -95,12 +101,12 @@ def push_states(runtime, role: str) -> None:
         role: ``agent`` or ``client``.
     """
     registry = _registry(runtime, role)
+    served = runtime.host_scopes() if role != CHANNEL_ROLE_AGENT else []
     for session in registry.sessions():
         if role != CHANNEL_ROLE_AGENT:
-            runtime.client_catalog_host[session.key] = device_host(
-                runtime,
-                session.address,
-                runtime.client_catalog_host.get(session.key, ""),
+            held = runtime.client_scope.get(session.key)
+            runtime.client_scope[session.key] = scope_of(
+                session.address, held.hub_address if held else "", served
             )
         document = _compose(runtime, role, session.key)
         if document["hash"] == session.offered_hash:

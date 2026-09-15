@@ -105,13 +105,14 @@ async def serve_client(
     )
     await sessions.attach(session)
     try:
-        await session.send_json(welcome)
-        channel_state.note_client_host(
+        await asyncio.to_thread(
+            channel_state.note_client_scope,
             runtime,
             client.id,
             peer_host=session.address,
             reached_host=websocket.url.hostname or "",
         )
+        await session.send_json(welcome)
         await asyncio.to_thread(
             ClientRegistry().record_seen,
             client.id,

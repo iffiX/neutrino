@@ -68,8 +68,6 @@ from neutrino_hub.web.models import (
     DeviceInstallTaskView,
     DeviceProcessKill,
     DeviceRequest,
-    DeviceServiceAsk,
-    DeviceServiceAskStarted,
     DeviceServicesView,
     DeviceSshConfig,
     DeviceView,
@@ -92,12 +90,8 @@ AGENT_VERB_REINSTALL = "reinstall"
 AGENT_VERB_KILL = "kill"
 AGENT_VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
 AGENT_VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
-AGENT_VERB_SERVICE = "service"
 # The code the agent's report carries for a reinstall that did not take.
 CODE_REINSTALL_FAILED = "reinstall_failed"
-
-# The service types the page may ask an agent to share or unshare.
-SERVICE_ASK_TYPES = ("rdp",)
 
 LOGIN_KIND = "login"
 AUTH_KEY = "key"
@@ -577,108 +571,15 @@ def list_services(
     """
     key = _require_device(DeviceRegistry(), device_id).id
     entries: list = []
-    host = runtime.device_hub_host.get(key, "")
-    if host:
+    scope = runtime.device_scope.get(key)
+    if scope is not None:
         catalog, _ = runtime.device_catalog.catalog(
-            device_host=host, platform=runtime.device_platform.get(key, {})
+            scope=scope, platform=runtime.device_platform.get(key, {})
         )
         entries = list(catalog.get("services", []))
     return DeviceServicesView(
         accounts=list(runtime.device_accounts.get(key, [])), entries=entries
     )
-
-
-@router.post("/service/share", response_model=DeviceServiceAskStarted)
-def share_service(
-    request: DeviceServiceAsk, runtime: PanelRuntime = Depends(get_runtime)
-) -> DeviceServiceAskStarted:
-    """Publish one service on a device, through its agent.
-
-    A share's access password rides inside the one ask and lands in a
-    root-only file on the machine.
-
-    Args:
-        request: The device, the service type, and the share's own fields.
-        runtime: The shared runtime.
-
-    Returns:
-        The ask's command id.
-
-    Raises:
-        HTTPException: 404 when no device has the id, 400 with
-            ``unknown_request`` for a service type the page cannot share,
-            409 when the agent is not answering.
-    """
-    return _ask_service(runtime, request, "share")
-
-
-@router.post("/service/unshare", response_model=DeviceServiceAskStarted)
-def unshare_service(
-    request: DeviceServiceAsk, runtime: PanelRuntime = Depends(get_runtime)
-) -> DeviceServiceAskStarted:
-    """Withdraw one service a device publishes, through its agent.
-
-    Args:
-        request: The device and the service type.
-        runtime: The shared runtime.
-
-    Returns:
-        The ask's command id.
-
-    Raises:
-        HTTPException: 404 when no device has the id, 400 with
-            ``unknown_request`` for a service type the page cannot share,
-            409 when the agent is not answering.
-    """
-    return _ask_service(runtime, request, "unshare")
-
-
-def _ask_service(
-    runtime: PanelRuntime, request: DeviceServiceAsk, action: str
-) -> DeviceServiceAskStarted:
-    """Run one service action on a device's agent, over its socket.
-
-    Args:
-        runtime: The shared runtime.
-        request: The device, the service type, and the action's own fields.
-        action: The verb, ``share`` or ``unshare``.
-
-    Returns:
-        The ask's command id.
-
-    Raises:
-        HTTPException: 404 when no device has the id, 400 with
-            ``unknown_request`` for a service type outside
-            ``SERVICE_ASK_TYPES``, 409 when the agent is not answering.
-    """
-    key = _require_device(DeviceRegistry(), request.device_id).id
-    if not runtime.agent_sessions.is_online(key):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "agent_offline", "params": {}},
-        )
-    service_type = request.service_type
-    if service_type not in SERVICE_ASK_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "unknown_request", "params": {}},
-        )
-    body = {"action": action, **request.body}
-    command_id = f"service-{service_type}-{secrets.token_hex(4)}"
-    try:
-        runtime.agent_sessions.run_stream_from_thread(
-            key,
-            CHANNEL_STREAM_COMMAND,
-            _command_args(
-                AGENT_VERB_SERVICE, {"service_type": service_type, "body": body}
-            ),
-        )
-    except (AgentOfflineError, StreamRefusedError) as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": error.code, "params": dict(error.params)},
-        ) from error
-    return DeviceServiceAskStarted(command_id=command_id)
 
 
 @router.get("/install_output", response_model=DeviceInstallOutputView)

@@ -93,6 +93,11 @@ SERVICES_SOURCE_DEVICE = "device"
 # Hosts that always mean the hub itself, beside the addresses it holds.
 SERVICES_HUB_SELF_HOSTS = ("127.0.0.1", "0.0.0.0", "::1", "localhost")
 
+# The scope a caller arrived from, beside the served LANs, each of which is
+# its own scope named by its network CIDR.
+SERVICES_SCOPE_OVERLAY = "overlay"
+SERVICES_SCOPE_LINK = "link"
+
 SERVICES_FILE_PROTOCOL = "smb"
 SERVICES_AI_PROTOCOL = "openai"
 SERVICES_RDP_PROTOCOL = "rustdesk"

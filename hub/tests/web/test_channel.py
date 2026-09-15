@@ -3,7 +3,8 @@
 What these pin is the door both peers must match: a join admitted by
 protocol before its ticket is spent, a ticket spent once, a ticket for the
 other role refused, a blank ticket landing on the row whose machine id
-matches, a leave removing the binding; and the hello gate on the socket,
+matches, a client landing on the row that machine already had, a leave
+removing the binding; and the hello gate on the socket,
 where a refusal is one ``refused`` frame then close 4000, a second socket
 for one binding closes the first with 4010, and a refusal leaves the
 binding standing.
@@ -36,10 +37,6 @@ MACHINE = "machine-of-testbox"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
 
 
-class _EmptyNetwork:
-    lan_interfaces: list = []
-
-
 class FakeRuntime:
     """Only the parts of the runtime the three routes touch."""
 
@@ -53,9 +50,9 @@ class FakeRuntime:
         self.device_accounts = {}
         self.device_interfaces = {}
         self.device_address = {}
-        self.device_hub_host = {}
+        self.device_scope = {}
         self.device_last_error = {}
-        self.client_catalog_host = {}
+        self.client_scope = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
@@ -64,8 +61,8 @@ class FakeRuntime:
         self.forgotten: list = []
         self.desired = ("", {"modules": {}, "desktop": {"seat_password": ""}})
 
-    def network(self):
-        return _EmptyNetwork()
+    def host_scopes(self):
+        return []
 
     def desired_state_for(self, device):
         return self.desired
@@ -299,7 +296,51 @@ def test_a_client_joins_on_its_link_and_the_row_records_what_it_said(api):
     assert stored.is_enrolled
     assert (stored.hostname, stored.version) == ("lap", "1.2.3")
     assert stored.platform == PLATFORM
+    assert stored.machine_id == MACHINE
     assert ClientRegistry().find_by_token(binding["token"]).id == client_id
+
+
+def test_a_client_that_joins_again_lands_on_the_row_it_had(api):
+    client, runtime = api
+    first_id, first = joined_client(client, runtime)
+    ClientRegistry().set_disabled(first_id, True)
+    ClientRegistry().set_ai_key_id(first_id, "k1")
+    minted_id = ClientRegistry().create("alice-again")
+    ticket(runtime, "c2", kind="client", client_id=minted_id, name="alice-again")
+
+    answer = client.post(
+        "/api/channel/join",
+        json=join_body(
+            ticket="c2", role="client", software="neutrino_client/1.2.4", name="lap"
+        ),
+    )
+
+    assert answer.status_code == 200, answer.json()
+    binding = answer.json()
+    assert binding["id"] == first_id
+    assert ClientRegistry().get(minted_id) is None
+    assert runtime.forgotten == [("client", minted_id)]
+    row = ClientRegistry().get(first_id)
+    assert row.name == "alice-again"
+    assert (row.is_disabled, row.ai_key_id, row.version) == (True, "k1", "1.2.4")
+    assert ClientRegistry().find_by_token(binding["token"]).id == first_id
+    assert ClientRegistry().find_by_token(first["token"]) is None
+
+
+def test_a_client_on_another_machine_keeps_the_row_its_link_made(api):
+    client, runtime = api
+    first_id, _ = joined_client(client, runtime)
+    minted_id = ClientRegistry().create("bob-laptop")
+    ticket(runtime, "c2", kind="client", client_id=minted_id, name="bob-laptop")
+
+    answer = client.post(
+        "/api/channel/join",
+        json=join_body(ticket="c2", role="client", machine_id="machine-of-another"),
+    )
+
+    assert answer.json()["id"] == minted_id
+    assert ClientRegistry().get(first_id) is not None
+    assert runtime.forgotten == []
 
 
 def test_a_client_ticket_for_a_row_that_is_gone_is_ticket_spent(api):
@@ -463,7 +504,7 @@ def test_a_client_hello_lands_in_the_client_registry(api):
         assert welcome["role"] == "hub"
         assert runtime.client_sessions.is_online(client_id)
         assert not runtime.agent_sessions.is_online(client_id)
-        assert runtime.client_catalog_host[client_id]
+        assert runtime.client_scope[client_id].hub_address == "testserver"
     finally:
         socket.__exit__(None, None, None)
 

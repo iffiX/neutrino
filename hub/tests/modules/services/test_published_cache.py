@@ -8,6 +8,7 @@ import pytest
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.services import published as published_module
 from neutrino_hub.modules.services.config import DeclaredServiceRegistry
+from neutrino_hub.modules.services.host_scope import HostScope, link_scope
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.systemd_ctl import ServiceStatus
@@ -63,6 +64,10 @@ def box(monkeypatch, tmp_path):
 
 
 DEVICE = "device-one"
+LAN = HostScope(
+    id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address="192.168.100.1"
+)
+OVERLAY = HostScope(id="overlay", cidr="100.64.0.0/16", hub_address="100.64.0.1")
 
 
 class StubSessions:
@@ -89,6 +94,7 @@ def cache(
     *,
     sessions=None,
     addresses=None,
+    interfaces=None,
     on_fingerprint_change=None,
     executor=None,
 ) -> PublishedServiceCache:
@@ -98,6 +104,7 @@ def cache(
         units=units,
         agent_sessions=sessions,
         device_addresses=addresses,
+        device_interfaces=interfaces,
         desired_states=DesiredStateStore(),
         on_fingerprint_change=on_fingerprint_change,
         executor=executor,
@@ -217,16 +224,61 @@ def test_the_composition_is_cached_until_expired(box):
     assert after != before
 
 
-def test_entries_for_resolves_the_hub_hosts_for_one_caller(box):
+def test_entries_for_resolves_the_hub_hosts_for_one_callers_scope(box):
     """A module hosted on the hub box's own agent sits at a hub address."""
     hosting_samba()
     sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
 
     resolved = cache(
         StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.1"}
-    ).entries_for("192.168.93.1")
+    ).entries_for(link_scope("192.168.93.1"))
 
     assert resolved[0]["payload"]["host"] == "192.168.93.1"
+
+
+def test_entries_for_hands_a_device_its_address_in_the_callers_scope(box):
+    hosting_samba()
+    sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
+    reported = [
+        {"name": "wt0", "mac": "", "addresses": ["100.64.9.2"]},
+        {"name": "enp1s0", "mac": "", "addresses": ["192.168.100.7"]},
+    ]
+    held = cache(
+        StubUnits(),
+        sessions=sessions,
+        addresses={DEVICE: "192.168.100.7"},
+        interfaces={DEVICE: reported},
+    )
+
+    on_lan = held.entries_for(LAN)[0]["payload"]["host"]
+    on_overlay = held.entries_for(OVERLAY)[0]["payload"]["host"]
+    elsewhere = held.entries_for(link_scope("203.0.113.1"))[0]["payload"]["host"]
+
+    assert (on_lan, on_overlay, elsewhere) == (
+        "192.168.100.7",
+        "100.64.9.2",
+        "192.168.100.7",
+    )
+
+
+def test_the_fingerprint_is_the_unresolved_lists_and_moves_for_no_scope(box):
+    hosting_samba()
+    sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
+    held = cache(
+        StubUnits(),
+        sessions=sessions,
+        addresses={DEVICE: "192.168.100.7"},
+        interfaces={DEVICE: [{"name": "wt0", "mac": "", "addresses": ["100.64.9.2"]}]},
+    )
+
+    entries, before = held.entries()
+    held.entries_for(OVERLAY)
+    held.entries_for(link_scope("203.0.113.1"))
+    unresolved, after = held.entries()
+
+    assert after == before
+    assert unresolved == entries
+    assert unresolved[0]["payload"]["host"] == "192.168.100.7"
 
 
 def test_the_ai_entry_waits_for_a_fed_gateway(box, monkeypatch, tmp_path):

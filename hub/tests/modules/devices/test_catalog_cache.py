@@ -1,4 +1,4 @@
-"""The device catalog: two halves, hashed per device-reachable host."""
+"""The device catalog: two halves, hashed per scope."""
 
 import json
 
@@ -6,6 +6,7 @@ import pytest
 
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.services.collector import hub_self_addresses, resolve_entries
+from neutrino_hub.modules.services.host_scope import link_scope
 
 
 class StubPublished:
@@ -18,11 +19,12 @@ class StubPublished:
     def entries(self):
         return list(self.entries_list), self.fingerprint
 
-    def entries_for(self, target_host):
+    def entries_for(self, scope):
         return resolve_entries(
             self.entries_list,
+            device_hosts={},
             hub_addresses=hub_self_addresses(["192.168.100.1"]),
-            target_host=target_host,
+            hub_host=scope.hub_address,
         )
 
 
@@ -71,7 +73,7 @@ def test_the_catalog_has_two_halves_under_one_hash(box):
     published.entries_list = [port_entry()]
     cache = DeviceCatalogCache(services=published)
 
-    catalog, digest = cache.catalog(device_host="192.168.100.7")
+    catalog, digest = cache.catalog(scope=link_scope("192.168.100.7"))
 
     assert set(catalog) == {"modules", "services"}
     assert catalog["modules"]["anydesk"]["title"] == "Anydesk"
@@ -87,8 +89,8 @@ def test_two_hosts_get_two_catalogs_with_two_hashes(box):
     published.entries_list = [port_entry()]
     cache = DeviceCatalogCache(services=published)
 
-    first, first_hash = cache.catalog(device_host="192.168.100.7")
-    second, second_hash = cache.catalog(device_host="192.168.93.5")
+    first, first_hash = cache.catalog(scope=link_scope("192.168.100.7"))
+    second, second_hash = cache.catalog(scope=link_scope("192.168.93.5"))
 
     assert first["services"][0]["payload"]["host"] == "192.168.100.7"
     assert second["services"][0]["payload"]["host"] == "192.168.93.5"
@@ -98,7 +100,7 @@ def test_two_hosts_get_two_catalogs_with_two_hashes(box):
 def test_the_composition_is_cached_per_host(box, monkeypatch):
     _, published = box
     cache = DeviceCatalogCache(services=published)
-    first, first_hash = cache.catalog(device_host="192.168.100.7")
+    first, first_hash = cache.catalog(scope=link_scope("192.168.100.7"))
 
     composed = []
     monkeypatch.setattr(
@@ -106,7 +108,7 @@ def test_the_composition_is_cached_per_host(box, monkeypatch):
         "entries_for",
         lambda self, target_host: composed.append(target_host) or [],
     )
-    again, again_hash = cache.catalog(device_host="192.168.100.7")
+    again, again_hash = cache.catalog(scope=link_scope("192.168.100.7"))
 
     assert composed == []
     assert (again, again_hash) == (first, first_hash)
@@ -115,11 +117,11 @@ def test_the_composition_is_cached_per_host(box, monkeypatch):
 def test_a_moved_fingerprint_recomposes_for_every_host(box):
     _, published = box
     cache = DeviceCatalogCache(services=published)
-    _, before = cache.catalog(device_host="192.168.100.7")
+    _, before = cache.catalog(scope=link_scope("192.168.100.7"))
 
     published.entries_list = [port_entry()]
     published.fingerprint = "fp2"
-    catalog, after = cache.catalog(device_host="192.168.100.7")
+    catalog, after = cache.catalog(scope=link_scope("192.168.100.7"))
 
     assert after != before
     assert catalog["services"][0]["id"] == "podman_web_8080"

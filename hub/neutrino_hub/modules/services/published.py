@@ -36,6 +36,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_ANSWER_TIMEOUT_S,
     SERVICES_LIST_TTL_S,
 )
+from neutrino_hub.modules.services.host_scope import HostScope, device_host_for
 from neutrino_hub.utils import constants as utils_constants
 from neutrino_hub.utils import json_file
 
@@ -52,6 +53,7 @@ class PublishedServiceCache:
         device_shares=None,
         agent_sessions=None,
         device_addresses=None,
+        device_interfaces=None,
         desired_states=None,
         on_fingerprint_change=None,
         executor=None,
@@ -71,8 +73,11 @@ class PublishedServiceCache:
                 :class:`neutrino_hub.modules.channel.sessions.ChannelSessionRegistry`,
                 whose reports say which device hosts what; None publishes
                 no device-hosted entries.
-            device_addresses: Device key to the address its channel comes
+            device_addresses: Device id to the address its channel comes
                 from, the runtime's own mapping.
+            device_interfaces: Device id to the interfaces its agent last
+                reported, the runtime's own mapping; a device absent here
+                is at its channel's address in every scope.
             desired_states: The :class:`DesiredStateStore` the shares are
                 read from; None builds one.
             on_fingerprint_change: Called with nothing when a refresh
@@ -87,6 +92,9 @@ class PublishedServiceCache:
         self._agent_sessions = agent_sessions
         self._device_addresses = (
             device_addresses if device_addresses is not None else {}
+        )
+        self._device_interfaces = (
+            device_interfaces if device_interfaces is not None else {}
         )
         self._desired_states = (
             desired_states if desired_states is not None else DesiredStateStore()
@@ -123,18 +131,33 @@ class PublishedServiceCache:
             self.refresh()
         return list(self._entries), self._fingerprint
 
-    def entries_for(self, target_host: str) -> list[dict]:
-        """The entries with the hub's own hosts resolved for one caller.
+    def entries_for(self, scope: HostScope) -> list[dict]:
+        """The entries resolved for one caller's scope.
+
+        Every device's entry names the address that device has in the
+        scope, and the hub's own entries name the hub's address there.
 
         Args:
-            target_host: The address the caller reaches the hub on.
+            scope: The caller's scope.
 
         Returns:
             The resolved entries.
         """
         entries, _ = self.entries()
+        device_hosts = {}
+        for entry in entries:
+            device_id = str(entry.get("device_id") or "")
+            if device_id and device_id not in device_hosts:
+                device_hosts[device_id] = device_host_for(
+                    scope,
+                    self._device_interfaces.get(device_id, []),
+                    str(self._device_addresses.get(device_id, "") or ""),
+                )
         return resolve_entries(
-            entries, hub_addresses=self._hub_addresses, target_host=target_host
+            entries,
+            device_hosts=device_hosts,
+            hub_addresses=self._hub_addresses,
+            hub_host=scope.hub_address,
         )
 
     def expire(self) -> None:
@@ -164,9 +187,8 @@ class PublishedServiceCache:
         lan_addresses = self._lan_addresses()
         own_addresses = self._own_addresses()
         # Composed with the address most devices are on, then rewritten per
-        # caller to whatever that one actually reached the hub at. The
-        # composed value only shows through where a caller reaches the box on
-        # nothing the box knows it holds.
+        # caller by :meth:`entries_for`. The composed value only shows
+        # through where a caller's scope names no hub address.
         hub_host = (lan_addresses or own_addresses or ["127.0.0.1"])[0]
         self._hub_addresses = hub_self_addresses(own_addresses)
 

@@ -1,9 +1,10 @@
 """What a client is handed when it opens a ``service`` stream.
 
 The stream's close is the material: ``{host, port, password}`` for a
-desktop, ``{base_url, api_key, model}`` for the AI gateway. The published
-list carries no secret; this is where the one secret a service takes from
-the hub is opened, for one close.
+desktop, ``{base_url, api_key, model}`` for the AI gateway. Every host in
+it is resolved for the scope the client's socket arrived from, at that
+moment. The published list carries no secret; this is where the one
+secret a service takes from the hub is opened, for one close.
 """
 
 from neutrino_hub.exceptions import VaultLockedError
@@ -20,6 +21,11 @@ from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.constants import (
     SERVICES_TYPE_AI,
     SERVICES_TYPE_RDP,
+)
+from neutrino_hub.modules.services.host_scope import (
+    HostScope,
+    device_host_for,
+    link_scope,
 )
 
 
@@ -41,15 +47,18 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         return CHANNEL_CODE_BINDING_UNKNOWN, {}
     if client.is_disabled:
         return CLIENT_CODE_DISABLED, {}
-    host = runtime.client_catalog_host.get(client_id, "")
-    entry = _entry(runtime, host, entry_id)
+    scope = runtime.client_scope.get(client_id) or link_scope("")
+    entry = _entry(runtime, scope, entry_id)
     if entry is None:
         return CLIENT_CODE_SERVICE_UNKNOWN, {"service_id": entry_id}
     if entry["type"] == SERVICES_TYPE_RDP:
-        return _rdp_material(runtime, entry_id)
+        return _rdp_material(runtime, scope, entry_id)
     if entry["type"] == SERVICES_TYPE_AI:
         credential = client_credential(
-            registry, client, hub_host=host, served_models=runtime.served_models
+            registry,
+            client,
+            hub_host=scope.hub_address,
+            served_models=runtime.served_models,
         )
         if credential is None:
             return VaultLockedError.code, {}
@@ -57,21 +66,24 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
     return "", {}
 
 
-def _entry(runtime, host: str, entry_id: str) -> "dict | None":
-    """The published entry one id names, resolved for the client's host."""
-    for entry in catalog_entries(runtime.published_services.entries_for(host)):
+def _entry(runtime, scope: HostScope, entry_id: str) -> "dict | None":
+    """The published entry one id names, resolved for the client's scope."""
+    for entry in catalog_entries(runtime.published_services.entries_for(scope)):
         if entry["id"] == entry_id:
             return entry
     return None
 
 
-def _rdp_material(runtime, entry_id: str) -> tuple:
-    """A shared desktop's address and its seat password."""
+def _rdp_material(runtime, scope: HostScope, entry_id: str) -> tuple:
+    """A shared desktop's address in the client's scope, and its seat password."""
     share_id = entry_id[len(CLIENT_RDP_SERVICE_PREFIX) :]
     for share in runtime.device_shares.live():
         if share.share_id == share_id:
+            host = device_host_for(
+                scope, runtime.device_interfaces.get(share.device_id, []), share.host
+            )
             return "", {
-                "host": share.host,
+                "host": host,
                 "port": share.port,
                 "password": runtime.desired_states.seat_password(share.device_id),
             }

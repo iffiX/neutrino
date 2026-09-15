@@ -46,10 +46,6 @@ class StubSessions:
         return token == SESSION_TOKEN
 
 
-class _EmptyNetwork:
-    lan_interfaces: list = []
-
-
 class FakeRuntime:
     """The runtime both sockets reach, wired to the bus as the panel's is."""
 
@@ -64,7 +60,7 @@ class FakeRuntime:
         self.device_accounts = {}
         self.device_interfaces = {}
         self.device_address = {}
-        self.device_hub_host = {}
+        self.device_scope = {}
         self.device_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
@@ -73,8 +69,8 @@ class FakeRuntime:
         self.agent_sessions.on_presence_change = self._publish_devices
         self.desired = ("", {"modules": {}, "desktop": {}})
 
-    def network(self):
-        return _EmptyNetwork()
+    def host_scopes(self):
+        return []
 
     def desired_state_for(self, device):
         return self.desired

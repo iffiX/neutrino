@@ -12,14 +12,13 @@ against the device the token resolved to, at the address the hub holds,
 and withdrawn when the machine stops or its socket ends.
 """
 
-from types import SimpleNamespace
-
 import pytest
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices import agent_reports
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
+from neutrino_hub.modules.services.host_scope import HostScope, link_scope
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
@@ -37,20 +36,19 @@ class FakeRuntime:
         self.device_accounts = {}
         self.device_interfaces = {}
         self.device_address = {}
-        self.device_hub_host = {}
+        self.device_scope = {}
         self.device_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.pushed: list = []
-        self._lans = [
-            SimpleNamespace(lan=SimpleNamespace(address=address, cidr=cidr))
-            for address, cidr in lans
+        self._scopes = [
+            HostScope(id=cidr, cidr=cidr, hub_address=address) for address, cidr in lans
         ]
 
-    def network(self):
-        return SimpleNamespace(lan_interfaces=self._lans)
+    def host_scopes(self):
+        return list(self._scopes)
 
     def push_desired_state(self, key):
         self.pushed.append(key)
@@ -120,10 +118,12 @@ def test_a_hello_records_the_name_and_the_peer_as_the_address(box):
 
     assert runtime.device_hostname[DEVICE] == "box"
     assert runtime.device_address[DEVICE] == "192.168.100.7"
-    assert runtime.device_hub_host[DEVICE] == "192.168.100.1"
+    assert runtime.device_scope[DEVICE] == HostScope(
+        id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address="192.168.100.1"
+    )
 
 
-def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
+def test_a_device_off_every_served_lan_is_on_the_link_it_reached(box):
     runtime, device = box
 
     agent_reports.record_hello(
@@ -134,7 +134,7 @@ def test_the_device_host_is_the_address_it_reached_off_any_served_lan(box):
         reached_host="192.168.122.92",
     )
 
-    assert runtime.device_hub_host[DEVICE] == "192.168.122.92"
+    assert runtime.device_scope[DEVICE] == link_scope("192.168.122.92")
 
 
 # --- the address ---

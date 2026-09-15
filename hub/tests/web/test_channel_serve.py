@@ -68,15 +68,15 @@ class RecordingEvents:
 
 
 class StubPublishedServices:
-    """Answers one list for every host, counts the recomposes asked for."""
+    """Answers one list for every scope, counts the recomposes asked for."""
 
     def __init__(self):
         self.entries = [ENTRY]
-        self.hosts: list = []
+        self.scopes: list = []
         self.refreshes = 0
 
-    def entries_for(self, target_host):
-        self.hosts.append(target_host)
+    def entries_for(self, scope):
+        self.scopes.append(scope)
         return list(self.entries)
 
     def schedule_refresh(self) -> None:
@@ -123,10 +123,6 @@ class StubModules:
         return SimpleNamespace(path=self.path)
 
 
-class _EmptyNetwork:
-    lan_interfaces: list = []
-
-
 class FakeRuntime:
     def __init__(self, tmp_path: Path):
         self.events = RecordingEvents()
@@ -139,9 +135,9 @@ class FakeRuntime:
         self.device_accounts = {}
         self.device_interfaces = {}
         self.device_address = {}
-        self.device_hub_host = {}
+        self.device_scope = {}
         self.device_last_error = {}
-        self.client_catalog_host = {}
+        self.client_scope = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = SeatPasswords()
@@ -156,8 +152,8 @@ class FakeRuntime:
         self.desired = ("h1", {"modules": {}, "desktop": {"seat_password": ""}})
         self.pushed: list = []
 
-    def network(self):
-        return _EmptyNetwork()
+    def host_scopes(self):
+        return []
 
     def desired_state_for(self, device):
         self.state_requests += 1
@@ -598,7 +594,11 @@ def test_a_clients_first_report_is_handed_the_published_list(api):
             "description_code",
             "description_params",
         }
-        assert runtime.published_services.hosts == ["testserver"]
+        # The TestClient's peer is "testclient": on no served network, so
+        # the scope is the link it reached the hub on.
+        (scope,) = runtime.published_services.scopes
+        assert (scope.id, scope.hub_address) == ("link", "testserver")
+        assert runtime.client_scope[client_id] == scope
         stored = ClientRegistry().get(client_id)
         assert (stored.hostname, stored.version) == ("laptop", "1.2.3")
         assert stored.platform == PLATFORM

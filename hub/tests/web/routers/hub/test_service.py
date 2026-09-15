@@ -2,8 +2,9 @@
 
 The published-list cache is real here, over a fresh config dir and stubbed
 unit states, so what is exercised is the whole read path — declaration to
-entry, probe health folded in, hub-self hosts resolved for the asking
-browser — and the contract that no English sentence ever crosses.
+entry, probe health folded in, every host resolved for the scope the asking
+browser's address falls in — and the contract that no English sentence ever
+crosses.
 """
 
 import pytest
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.services.ops import SambaShareListing
+from neutrino_hub.modules.services.host_scope import HostScope
 from neutrino_hub.modules.services.probe import DeclaredServiceHealth
 from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.systemd_ctl import ServiceStatus
@@ -62,6 +64,10 @@ class StubUnits:
 
 
 DEVICE = "device-one"
+LAN = HostScope(
+    id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address="192.168.100.1"
+)
+OVERLAY = HostScope(id="overlay", cidr="100.64.0.0/16", hub_address="100.64.0.1")
 
 
 class StubSessions:
@@ -77,14 +83,24 @@ class FakeRuntime:
         self.declared_probe = RecordingProbe()
         self.agent_sessions = StubSessions()
         self.device_address = {DEVICE: "192.168.100.7"}
+        self.device_interfaces = {
+            DEVICE: [
+                {"name": "wt0", "mac": "", "addresses": ["100.64.9.2"]},
+                {"name": "enp1s0", "mac": "", "addresses": ["192.168.100.7"]},
+            ]
+        }
         self.published_services = PublishedServiceCache(
             declared_probe=self.declared_probe,
             served_models=StubServedModels(),
             units=units,
             agent_sessions=self.agent_sessions,
             device_addresses=self.device_address,
+            device_interfaces=self.device_interfaces,
             desired_states=DesiredStateStore(),
         )
+
+    def host_scopes(self):
+        return [LAN, OVERLAY]
 
 
 @pytest.fixture
@@ -209,13 +225,52 @@ def test_a_declaration_with_its_own_line_carries_no_code(box):
 
 
 def test_a_hub_self_host_is_shown_as_the_panel_host(box):
+    """The TestClient's peer, "testclient", is on no served network: the
+    scope is the link, whose hub address is the panel host reached."""
     client, _ = box
     declare(client, host="127.0.0.1")
 
     payload = client.get("/api/hub/service").json()
 
-    # The TestClient reaches the panel as "testserver".
     assert payload["services"][0]["payload"]["host"] == "testserver"
+
+
+def hosting_a_share(runtime) -> None:
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "running")
+    store.write(
+        DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}
+    )
+    runtime.agent_sessions.report_by_key[DEVICE] = {
+        "modules": {"samba": {"state": "running", "details": {"is_active": True}}}
+    }
+
+
+def test_a_browser_on_the_overlay_sees_the_devices_overlay_address(box):
+    client, runtime = box
+    hosting_a_share(runtime)
+    declare(client, host="127.0.0.1")
+    app = client.app
+
+    on_overlay = TestClient(app, client=("100.64.3.7", 50000))
+    payload = on_overlay.get("/api/hub/service").json()
+
+    by_source = {entry["source"]: entry for entry in payload["services"]}
+    assert by_source["module"]["payload"]["host"] == "100.64.9.2"
+    assert by_source["declared"]["payload"]["host"] == "100.64.0.1"
+
+
+def test_a_browser_on_the_served_lan_sees_the_lan_addresses(box):
+    client, runtime = box
+    hosting_a_share(runtime)
+    declare(client, host="127.0.0.1")
+
+    on_lan = TestClient(client.app, client=("192.168.100.9", 50000))
+    payload = on_lan.get("/api/hub/service").json()
+
+    by_source = {entry["source"]: entry for entry in payload["services"]}
+    assert by_source["module"]["payload"]["host"] == "192.168.100.7"
+    assert by_source["declared"]["payload"]["host"] == "192.168.100.1"
 
 
 def test_delete_removes_every_entry_of_the_record(box):

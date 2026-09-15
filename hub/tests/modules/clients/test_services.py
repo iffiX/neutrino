@@ -1,9 +1,10 @@
 """The material a ``service`` stream closes with, judged for one client now.
 
-A desktop's material is its address, port and the seat password; the
-gateway's is the base URL, the key and a model. A client that is switched
-off, an entry that is not published, a share that stopped, and a locked
-vault each close with their code and no material.
+A desktop's material is its address in the client's scope, its port and
+the seat password; the gateway's is the base URL at the hub's address in
+that scope, the key and a model. A client that is switched off, an entry
+that is not published, a share that stopped, and a locked vault each close
+with their code and no material.
 """
 
 import pytest
@@ -12,6 +13,7 @@ from neutrino_hub.modules.clients import services
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import service_material
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+from neutrino_hub.modules.services.host_scope import HostScope, link_scope
 
 ENTRY = {
     "id": "web_gitea",
@@ -28,13 +30,17 @@ ENTRY = {
 }
 RDP_ENTRY = {**ENTRY, "id": "rdp_s1", "type": "rdp", "payload": {"host": "h"}}
 AI_ENTRY = {**ENTRY, "id": "ai", "type": "ai", "payload": {"endpoint": "http://x"}}
+LAN = HostScope(
+    id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address="192.168.100.1"
+)
+OVERLAY = HostScope(id="overlay", cidr="100.64.0.0/16", hub_address="100.64.0.1")
 
 
 class StubPublishedServices:
     def __init__(self, entries):
         self.entries = list(entries)
 
-    def entries_for(self, target_host):
+    def entries_for(self, scope):
         return list(self.entries)
 
 
@@ -45,7 +51,8 @@ class StubDesiredStates:
 
 class FakeRuntime:
     def __init__(self, entries=(ENTRY, RDP_ENTRY, AI_ENTRY)):
-        self.client_catalog_host = {}
+        self.client_scope = {}
+        self.device_interfaces = {}
         self.published_services = StubPublishedServices(entries)
         self.device_shares = DeviceShareRegistry()
         self.desired_states = StubDesiredStates()
@@ -71,8 +78,7 @@ def credential(monkeypatch):
     return minted
 
 
-def test_a_desktops_material_is_its_share_and_the_seat_password(config_dir):
-    runtime = FakeRuntime()
+def sharing(runtime) -> None:
     runtime.device_shares.declare(
         device_id="dev",
         share_id="s1",
@@ -80,7 +86,17 @@ def test_a_desktops_material_is_its_share_and_the_seat_password(config_dir):
         host="192.168.100.7",
         port=21118,
     )
+    runtime.device_interfaces["dev"] = [
+        {"name": "wt0", "mac": "", "addresses": ["100.64.9.2"]},
+        {"name": "enp1s0", "mac": "", "addresses": ["192.168.100.7"]},
+    ]
+
+
+def test_a_desktops_material_is_its_share_and_the_seat_password(config_dir):
+    runtime = FakeRuntime()
+    sharing(runtime)
     client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = LAN
 
     code, params = service_material(runtime, client_id, "rdp_s1")
 
@@ -90,6 +106,25 @@ def test_a_desktops_material_is_its_share_and_the_seat_password(config_dir):
         "port": 21118,
         "password": "seat-pass",  # scan: allow
     }
+
+
+def test_a_desktops_address_is_the_one_in_the_clients_scope_now(config_dir):
+    runtime = FakeRuntime()
+    sharing(runtime)
+    client_id = ClientRegistry().create("alice")
+
+    runtime.client_scope[client_id] = OVERLAY
+    on_overlay = service_material(runtime, client_id, "rdp_s1")[1]["host"]
+    runtime.client_scope[client_id] = link_scope("203.0.113.1")
+    elsewhere = service_material(runtime, client_id, "rdp_s1")[1]["host"]
+    del runtime.client_scope[client_id]
+    unsettled = service_material(runtime, client_id, "rdp_s1")[1]["host"]
+
+    assert (on_overlay, elsewhere, unsettled) == (
+        "100.64.9.2",
+        "192.168.100.7",
+        "192.168.100.7",
+    )
 
 
 def test_a_desktop_that_stopped_sharing_is_rdp_not_shared(config_dir):
@@ -102,10 +137,10 @@ def test_a_desktop_that_stopped_sharing_is_rdp_not_shared(config_dir):
     )
 
 
-def test_the_gateways_material_is_minted_for_the_clients_host(config_dir, credential):
+def test_the_gateways_material_is_minted_for_the_clients_scope(config_dir, credential):
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
-    runtime.client_catalog_host[client_id] = "192.168.100.1"
+    runtime.client_scope[client_id] = LAN
 
     code, params = service_material(runtime, client_id, "ai")
 

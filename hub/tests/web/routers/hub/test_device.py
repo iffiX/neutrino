@@ -29,6 +29,7 @@ from neutrino_hub.modules.devices.registry import (
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+from neutrino_hub.modules.services.host_scope import link_scope
 from neutrino_hub.web.constants import WEB_EVENT_DEVICE_REPORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.events import PanelEventBus
@@ -675,7 +676,7 @@ def test_a_machine_with_no_channel_is_refused_and_keeps_its_password(rdp_api):
     assert runtime.agent_sessions.pushes == []
 
 
-# --- the services block: what it reads, and what it may ask ---
+# --- the services block: what it reads ---
 
 
 class ServiceRegistry:
@@ -693,8 +694,8 @@ class StubCatalog:
     def __init__(self):
         self.asked = []
 
-    def catalog(self, *, device_host: str, platform: dict):
-        self.asked.append((device_host, dict(platform)))
+    def catalog(self, *, scope, platform: dict):
+        self.asked.append((scope, dict(platform)))
         entries = [
             {"id": "hub_share_media", "type": "file", "title": "Media"},
             {"id": "web_gitea", "type": "web", "title": "Gitea"},
@@ -706,7 +707,7 @@ class ServiceRuntime:
     def __init__(self):
         self.device_accounts = {}
         self.device_address = {}
-        self.device_hub_host = {}
+        self.device_scope = {}
         self.device_platform = {}
         self.device_catalog = StubCatalog()
         self.agent_sessions = FakeChannelSessions(online=[DEVICE])
@@ -748,7 +749,7 @@ def test_a_device_that_never_beat_reads_empty_rather_than_erroring(service_api):
 
 def test_the_view_is_the_devices_own_catalog(service_api):
     client, runtime = service_api
-    runtime.device_hub_host[DEVICE] = "192.168.100.1"
+    runtime.device_scope[DEVICE] = link_scope("192.168.100.1")
     runtime.device_platform[DEVICE] = {"os": "linux"}
     runtime.device_accounts[DEVICE] = ["pat", "sam"]
 
@@ -759,72 +760,11 @@ def test_the_view_is_the_devices_own_catalog(service_api):
         "web_gitea",
     ]
     assert answer["accounts"] == ["pat", "sam"]
-    # The catalog is composed for the address the device itself reaches the
-    # hub on, so entry URLs match what the machine's own page shows.
-    assert runtime.device_catalog.asked == [("192.168.100.1", {"os": "linux"})]
-
-
-def test_a_share_runs_with_its_account_and_password(service_api):
-    """The access password rides inside the one ask; nothing hub-side keeps
-    it, and the verb is the path's."""
-    client, runtime = service_api
-
-    answer = client.post(
-        f"{SERVICE_PATH}/share",
-        json={
-            "device_id": DEVICE,
-            "service_type": "rdp",
-            "body": {"account": "pat", "password": "pw"},
-        },
-    )
-
-    assert answer.status_code == 200
-    assert answer.json()["command_id"].startswith("service-rdp-")
-    ((_key, module, verb, args),) = runtime.agent_sessions.commands
-    assert (module, verb) == ("agent", "service")
-    assert args == {
-        "service_type": "rdp",
-        "body": {"action": "share", "account": "pat", "password": "pw"},  # scan: allow
-    }
-
-
-def test_an_unshare_is_the_paired_verb(service_api):
-    client, runtime = service_api
-
-    answer = client.post(
-        f"{SERVICE_PATH}/unshare", json={"device_id": DEVICE, "service_type": "rdp"}
-    )
-
-    assert answer.status_code == 200
-    ((_key, _module, _verb, args),) = runtime.agent_sessions.commands
-    assert args["body"] == {"action": "unshare"}
-
-
-@pytest.mark.parametrize("service_type", ["ai", "file", "web"])
-def test_a_type_the_page_cannot_share_is_refused_typed(service_api, service_type):
-    client, runtime = service_api
-
-    answer = client.post(
-        f"{SERVICE_PATH}/share",
-        json={"device_id": DEVICE, "service_type": service_type},
-    )
-
-    assert answer.status_code == 400
-    assert answer.json()["detail"] == {"code": "unknown_request", "params": {}}
-    assert runtime.agent_sessions.commands == []
-
-
-def test_a_device_without_a_socket_takes_no_ask(service_api):
-    client, runtime = service_api
-    runtime.agent_sessions.online.clear()
-
-    answer = client.post(
-        f"{SERVICE_PATH}/share", json={"device_id": DEVICE, "service_type": "rdp"}
-    )
-
-    assert answer.status_code == 409
-    assert answer.json()["detail"] == {"code": "agent_offline", "params": {}}
-    assert runtime.agent_sessions.commands == []
+    # The catalog is composed for the scope the device's own socket arrived
+    # from, so every host is one that machine reaches.
+    assert runtime.device_catalog.asked == [
+        (link_scope("192.168.100.1"), {"os": "linux"})
+    ]
 
 
 # --- the agent install: its credentials, its pre-flight, and the reinstall ---

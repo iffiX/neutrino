@@ -13,8 +13,6 @@ module the hub wanted ``absent`` that the machine now reports absent is
 dropped from it, so the hub's state stops naming software it took off.
 """
 
-import ipaddress
-
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_PRESENT_STATES,
@@ -23,6 +21,7 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.devices.constants import DEVICE_RDP_MODULE
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
+from neutrino_hub.modules.services.host_scope import scope_of
 
 
 def record_hello(
@@ -35,7 +34,7 @@ def record_hello(
         device: The device the token resolved to.
         name: What the hello called the machine.
         peer_host: Where the socket comes from; the device's address until
-            a report names one.
+            a report names one, and what settles the scope it arrived from.
         reached_host: The address the machine connected to.
     """
     key = device.id
@@ -43,8 +42,8 @@ def record_hello(
         runtime.device_hostname[key] = name
     if peer_host:
         runtime.device_address[key] = peer_host
-    runtime.device_hub_host[key] = device_host(
-        runtime, runtime.device_address.get(key, ""), reached_host
+    runtime.device_scope[key] = scope_of(
+        runtime.device_address.get(key, ""), reached_host, runtime.host_scopes()
     )
 
 
@@ -108,36 +107,6 @@ def link_address(network: dict, peer_host: str) -> str:
     link = network.get("link") if isinstance(network, dict) else None
     address = str(link.get("address", "") or "") if isinstance(link, dict) else ""
     return address or peer_host
-
-
-def device_host(runtime, device_ip: str, reached_host: str = "") -> str:
-    """The address a device reaches the hub on.
-
-    A served LAN that holds the device's own address answers first;
-    otherwise the address the device actually connected to, and a served
-    LAN address or the default only stand in when nothing names one.
-
-    Args:
-        runtime: The shared runtime.
-        device_ip: The device's address, to pick the LAN it is on.
-        reached_host: The address the device connected to.
-
-    Returns:
-        The bare address, without a scheme or port.
-    """
-    address = None
-    fallback = None
-    for interface in runtime.network().lan_interfaces:
-        lan = interface.lan
-        fallback = fallback or lan.address
-        try:
-            network = ipaddress.ip_network(lan.cidr, strict=False)
-            if device_ip and ipaddress.ip_address(device_ip) in network:
-                address = lan.address
-                break
-        except ValueError:
-            continue
-    return address or reached_host or fallback or "192.168.100.1"
 
 
 def record_desktop_share(runtime, device, share: dict, host: str) -> None:

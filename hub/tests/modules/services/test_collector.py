@@ -271,8 +271,16 @@ def test_the_catalog_copy_drops_the_detail_code():
     assert "detail_code" not in catalog_entries(entries)[0]
 
 
-def test_resolution_substitutes_every_hub_self_host_for_the_caller_address():
-    addresses = hub_self_addresses([HUB])
+def resolve(entries, *, device_hosts=None, hub_host="192.168.93.1"):
+    return resolve_entries(
+        entries,
+        device_hosts=device_hosts or {},
+        hub_addresses=hub_self_addresses([HUB]),
+        hub_host=hub_host,
+    )
+
+
+def test_resolution_substitutes_every_hub_self_host_for_the_hubs_scope_address():
     entries = collect(
         is_ai_served=True,
         device_modules=[
@@ -287,12 +295,7 @@ def test_resolution_substitutes_every_hub_self_host_for_the_caller_address():
         declared_healths={},
     )
 
-    resolved = {
-        e["id"]: e
-        for e in resolve_entries(
-            entries, hub_addresses=addresses, target_host="192.168.93.1"
-        )
-    }
+    resolved = {e["id"]: e for e in resolve(entries)}
 
     # A module hosted on the hub box's own agent sits at a hub address and
     # resolves like the hub's own.
@@ -304,7 +307,7 @@ def test_resolution_substitutes_every_hub_self_host_for_the_caller_address():
     assert resolved["p1"]["payload"]["host"] == "192.168.93.1"
 
 
-def test_resolution_leaves_a_device_host_alone():
+def test_resolution_leaves_a_device_host_alone_when_the_scope_names_none():
     entries = collect(
         device_modules=[
             hosting(
@@ -314,17 +317,63 @@ def test_resolution_leaves_a_device_host_alone():
         ]
     )
 
-    resolved = {
-        e["id"]: e
-        for e in resolve_entries(
-            entries, hub_addresses=hub_self_addresses([HUB]), target_host="192.168.93.1"
-        )
-    }
+    resolved = {e["id"]: e for e in resolve(entries)}
 
     assert resolved["samba_device-one_media"]["payload"]["host"] == DEVICE_HOST
     assert (
         resolved["gitea_device-one"]["payload"]["url"] == f"http://{DEVICE_HOST}:3000/"
     )
+
+
+def test_a_device_entry_is_rehosted_at_the_devices_address_in_the_scope():
+    entries = collect(
+        device_modules=[
+            hosting(
+                samba={"is_healthy": True, "share_names": ["media"]},
+                gitea={"is_healthy": True, "url": f"http://{DEVICE_HOST}:3000/"},
+                podman={"containers": [container("web", ports=[8080])]},
+            ),
+            hosting(
+                device_id="device-two",
+                host="192.168.100.8",
+                samba={"is_healthy": True, "share_names": ["backup"]},
+            ),
+        ],
+        device_shares=[share(host=DEVICE_HOST)],
+    )
+
+    resolved = {
+        e["id"]: e
+        for e in resolve(entries, device_hosts={DEVICE: "100.64.9.2"}, hub_host="")
+    }
+
+    assert resolved["samba_device-one_media"]["payload"]["host"] == "100.64.9.2"
+    assert resolved["podman_device-one_web_8080"]["payload"]["host"] == "100.64.9.2"
+    assert resolved["gitea_device-one"]["payload"]["url"] == "http://100.64.9.2:3000/"
+    assert resolved["rdp_s1"]["payload"]["host"] == "100.64.9.2"
+    # A device the scope names no address for keeps its composed host.
+    assert resolved["samba_device-two_backup"]["payload"]["host"] == "192.168.100.8"
+
+
+def test_the_hub_boxs_own_agent_resolves_to_the_hubs_scope_address():
+    """Its address in the scope is one of the hub's own, so the hub rule wins."""
+    entries = collect(
+        device_modules=[
+            hosting(host=HUB, samba={"is_healthy": True, "share_names": ["media"]})
+        ]
+    )
+
+    resolved = resolve(entries, device_hosts={DEVICE: HUB}, hub_host="100.64.0.1")
+
+    assert resolved[0]["payload"]["host"] == "100.64.0.1"
+
+
+def test_an_empty_hub_address_leaves_the_hubs_own_hosts_as_composed():
+    entries = collect(is_ai_served=True)
+
+    resolved = resolve(entries, hub_host="")
+
+    assert resolved[0]["payload"]["endpoint"] == f"http://{HUB}:8317"
 
 
 def test_resolution_leaves_a_foreign_host_alone():
@@ -336,12 +385,7 @@ def test_resolution_leaves_a_foreign_host_alone():
         declared_healths={},
     )
 
-    resolved = {
-        e["id"]: e
-        for e in resolve_entries(
-            entries, hub_addresses=hub_self_addresses([HUB]), target_host="192.168.93.1"
-        )
-    }
+    resolved = {e["id"]: e for e in resolve(entries)}
 
     assert resolved["p1"]["payload"]["host"] == "10.0.0.5"
     assert resolved["w1"]["payload"]["url"] == "http://wiki.lan:9000/"
@@ -410,9 +454,7 @@ def test_no_declaration_publishes_no_rdp_entry():
 def test_a_device_host_is_never_rewritten_to_the_hubs_own_address():
     entries = collect(device_shares=[share(host="192.168.100.5")])
 
-    resolved = resolve_entries(
-        entries, hub_addresses=hub_self_addresses([HUB]), target_host="10.0.0.9"
-    )
+    resolved = resolve(entries, hub_host="10.0.0.9")
 
     assert resolved[0]["payload"]["host"] == "192.168.100.5"
 

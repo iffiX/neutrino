@@ -1,13 +1,13 @@
 """Composing the catalog a heartbeat answers with, behind a cache.
 
 The catalog has two halves under one hash: the modules, and the typed service
-list. Both are resolved for the machine that asked — a payload host that is
-the hub's own becomes the address that device reaches, and each module's
-manifest becomes the one entry that device's platform matches. **The agent is
-handed conclusions, never a table to search**, which is what lets it carry no
-manifest logic at all.
+list. Both are resolved for the machine that asked — every payload host
+becomes the address that device reaches in the scope its socket arrived
+from, and each module's manifest becomes the one entry that device's
+platform matches. **The agent is handed conclusions, never a table to
+search**, which is what lets it carry no manifest logic at all.
 
-The composed copy is kept per resolved host and platform, and dropped whole
+The composed copy is kept per scope and platform, and dropped whole
 whenever the manifests or the list move: an agent beats every few seconds,
 and recomposing on each beat would be waste.
 """
@@ -21,6 +21,7 @@ from neutrino_hub.modules.devices.manifests import (
     manifests_stamp,
 )
 from neutrino_hub.modules.services.collector import catalog_entries
+from neutrino_hub.modules.services.host_scope import HostScope
 
 
 def resolve_module(manifest: dict, platform: dict) -> dict:
@@ -74,7 +75,7 @@ def resolved_modules(platform: dict) -> dict:
 
 
 class DeviceCatalogCache:
-    """Composes and hashes the catalog, per device-reachable host and platform."""
+    """Composes and hashes the catalog, per scope and platform."""
 
     def __init__(self, *, services):
         """
@@ -86,11 +87,11 @@ class DeviceCatalogCache:
         self._stamp: tuple | None = None
         self._by_key: dict[tuple, tuple[dict, str]] = {}
 
-    def catalog(self, *, device_host: str, platform: dict | None = None) -> tuple:
+    def catalog(self, *, scope: HostScope, platform: dict | None = None) -> tuple:
         """The catalog and its hash for one device, recomposed when stale.
 
         Args:
-            device_host: The address the device reaches the hub on.
+            scope: The scope the device's socket arrived from.
             platform: The tuple the device reported, which decides which
                 entry each module resolves to.
 
@@ -104,7 +105,7 @@ class DeviceCatalogCache:
             self._stamp = stamp
         platform = platform or {}
         key = (
-            device_host,
+            scope,
             str(platform.get("os", "")),
             str(platform.get("family", "")),
             str(platform.get("arch", "")),
@@ -113,7 +114,7 @@ class DeviceCatalogCache:
         if held is None:
             composed = {
                 "modules": resolved_modules(platform),
-                "services": catalog_entries(self._services.entries_for(device_host)),
+                "services": catalog_entries(self._services.entries_for(scope)),
             }
             serialized = json.dumps(composed, sort_keys=True).encode("utf-8")
             held = (composed, hashlib.sha256(serialized).hexdigest()[:16])

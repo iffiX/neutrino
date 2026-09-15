@@ -1,10 +1,11 @@
 """The Services tab: the typed list of what the hub publishes.
 
 Module-declared entries are read-only rows; manual declarations are created
-and deleted here, and every write answers with the whole refreshed list. A
-payload host that is the hub's own is shown as the address the asking
-browser reaches the panel on, the same substitution each device gets at
-heartbeat time.
+and deleted here, and every write answers with the whole refreshed list.
+Every payload host is resolved for the scope the asking browser's address
+falls in, the same resolution a client gets; a browser on no served
+network, or one the transport names no address for, is in the ``link``
+scope with the panel host it reached.
 
 Errors carry ``{code, params}`` and never a sentence; the pages do the
 wording.
@@ -24,6 +25,7 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_KIND_SAMBA,
     SERVICES_TYPE_TO_KIND,
 )
+from neutrino_hub.modules.services.host_scope import scope_of
 from neutrino_hub.modules.services.ops import list_shares
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -47,8 +49,8 @@ def list_services(
     """Read every published entry.
 
     Args:
-        request: The incoming request, whose host is what hub-self payload
-            hosts resolve to for display.
+        request: The incoming request, whose peer address settles the scope
+            every payload host is resolved for.
         runtime: The shared runtime.
 
     Returns:
@@ -195,8 +197,11 @@ def probe_declared_service(
 
 
 def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:
-    panel_host = request.url.hostname or "127.0.0.1"
-    entries = runtime.published_services.entries_for(panel_host)
+    peer_host = request.client.host if request.client is not None else ""
+    scope = scope_of(
+        peer_host, request.url.hostname or "127.0.0.1", runtime.host_scopes()
+    )
+    entries = runtime.published_services.entries_for(scope)
     return ServiceListView(
         services=[PublishedServiceView(**entry) for entry in entries]
     )

@@ -26,6 +26,7 @@ from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+from neutrino_hub.modules.services.host_scope import HostScope, served_scopes
 from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
@@ -115,13 +116,16 @@ class PanelRuntime:
         # Every client program's live socket, keyed by client id.
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.client_sessions.on_presence_change = self._publish_clients
-        # The address each client reaches this hub on, resolved when its
-        # socket opened; its catalog and its gateway URL are composed with it.
-        self.client_catalog_host: dict[str, str] = {}
+        # The scope each client's socket arrived from, settled at its hello;
+        # its list and its gateway URL are resolved for it.
+        self.client_scope: dict[str, HostScope] = {}
         # Where each device is, keyed by id: the address its socket leaves
         # by, or the peer address when the report names none, refreshed
         # every report.
         self.device_address: dict[str, str] = {}
+        # The interfaces each agent last reported, keyed by device id:
+        # ``[{"name", "mac", "addresses"}]``.
+        self.device_interfaces: dict[str, list] = {}
         # What each device should host, one directory per device under
         # config/, composed into the state its agent applies.
         self.desired_states = DesiredStateStore()
@@ -132,6 +136,7 @@ class PanelRuntime:
             device_shares=self.device_shares,
             agent_sessions=self.agent_sessions,
             device_addresses=self.device_address,
+            device_interfaces=self.device_interfaces,
             desired_states=self.desired_states,
             on_fingerprint_change=self._services_changed,
         )
@@ -158,12 +163,9 @@ class PanelRuntime:
         self.device_hostname: dict[str, str] = {}
         # The human accounts each agent last reported, keyed by device id.
         self.device_accounts: dict[str, list] = {}
-        # The interfaces each agent last reported, keyed by device id:
-        # ``[{"name", "mac", "addresses"}]``.
-        self.device_interfaces: dict[str, list] = {}
-        # The address each device reaches this hub on, resolved when its
-        # socket opened; the services view composes the same catalog with it.
-        self.device_hub_host: dict[str, str] = {}
+        # The scope each device's socket arrived from, settled at its hello;
+        # the drawer's services view resolves the list for it.
+        self.device_scope: dict[str, HostScope] = {}
         # The most recent error each agent reported, keyed by device id:
         # ``{"code", "params"}``.
         self.device_last_error: dict[str, dict] = {}
@@ -199,6 +201,14 @@ class PanelRuntime:
                 with each other.
         """
         write_config("router/network.json", network.to_dict())
+
+    def host_scopes(self) -> list[HostScope]:
+        """The networks a caller can arrive from.
+
+        Returns:
+            Each served LAN and each overlay this box holds an address on.
+        """
+        return served_scopes(self.network(), device_addresses())
 
     def connections(self) -> RouterConnectionSet:
         """Read the wireless networks this box knows how to join.
@@ -450,7 +460,7 @@ class PanelRuntime:
         self.device_accounts.pop(key, None)
         self.device_interfaces.pop(key, None)
         self.device_address.pop(key, None)
-        self.device_hub_host.pop(key, None)
+        self.device_scope.pop(key, None)
         self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
         self.desired_states.forget(key)
@@ -464,7 +474,7 @@ class PanelRuntime:
         Args:
             client_id: The client.
         """
-        self.client_catalog_host.pop(client_id, None)
+        self.client_scope.pop(client_id, None)
         self.client_sessions.refuse_from_thread(client_id, CHANNEL_CODE_BINDING_UNKNOWN)
 
     def publish_node_readings(self, readings: dict) -> None:

@@ -326,34 +326,38 @@ def hub_self_addresses(hub_addresses: list[str]) -> set[str]:
 
 
 def resolve_entries(
-    entries: list[dict], *, hub_addresses: set[str], target_host: str
+    entries: list[dict],
+    *,
+    device_hosts: dict,
+    hub_addresses: set[str],
+    hub_host: str,
 ) -> list[dict]:
-    """Substitute the hub's own payload hosts with the address one caller reaches.
+    """Rewrite every payload host for one caller's scope.
 
-    A host outside the hub's own set is somebody else's machine, a NAS a
-    person declared or a device hosting a module, and is never rewritten;
-    a module hosted on the hub box's own agent sits at a hub address and
-    resolves like the hub's own entries.
+    A device's entry names the address that device has in the scope; an
+    entry at one of the hub's own addresses, a module hosted on the hub
+    box's own agent included, names the hub's address there. A host outside
+    both is somebody else's machine and stands.
 
     Args:
         entries: The composed entries.
+        device_hosts: Device id to its address in the scope; a device absent
+            here keeps its composed host.
         hub_addresses: Every host that means the hub itself.
-        target_host: The address the caller reaches the hub on.
+        hub_host: The hub's own address in the scope; empty leaves the
+            hub's own hosts as composed.
 
     Returns:
-        A new list; a payload host outside the hub's own set is untouched.
+        A new list; the entries themselves are untouched.
     """
     resolved = []
     for entry in entries:
         payload = dict(entry["payload"])
-        if entry["type"] == SERVICES_TYPE_WEB:
-            payload["url"] = _resolve_url(payload["url"], hub_addresses, target_host)
-        elif entry["type"] == SERVICES_TYPE_AI:
-            payload["endpoint"] = _resolve_url(
-                payload["endpoint"], hub_addresses, target_host
-            )
-        elif payload.get("host") in hub_addresses:
-            payload["host"] = target_host
+        device_host = device_hosts.get(entry.get("device_id") or "", "")
+        if device_host:
+            payload = _with_host(entry["type"], payload, device_host)
+        if hub_host and _host_of(entry["type"], payload) in hub_addresses:
+            payload = _with_host(entry["type"], payload, hub_host)
         resolved.append({**entry, "payload": payload})
     return resolved
 
@@ -419,10 +423,27 @@ def _entry(
     }
 
 
-def _resolve_url(url: str, hub_addresses: set[str], target_host: str) -> str:
+def _host_of(entry_type: str, payload: dict) -> "str | None":
+    """The host a payload names, wherever its type keeps it."""
+    if entry_type == SERVICES_TYPE_WEB:
+        return urlsplit(payload["url"]).hostname
+    if entry_type == SERVICES_TYPE_AI:
+        return urlsplit(payload["endpoint"]).hostname
+    return payload.get("host")
+
+
+def _with_host(entry_type: str, payload: dict, host: str) -> dict:
+    """The payload with its host replaced, wherever its type keeps it."""
+    if entry_type == SERVICES_TYPE_WEB:
+        return {**payload, "url": _url_at(payload["url"], host)}
+    if entry_type == SERVICES_TYPE_AI:
+        return {**payload, "endpoint": _url_at(payload["endpoint"], host)}
+    return {**payload, "host": host}
+
+
+def _url_at(url: str, host: str) -> str:
     parts = urlsplit(url)
-    hostname = parts.hostname
-    if hostname is None or hostname not in hub_addresses:
+    if parts.hostname is None:
         return url
-    netloc = target_host if parts.port is None else f"{target_host}:{parts.port}"
+    netloc = host if parts.port is None else f"{host}:{parts.port}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
