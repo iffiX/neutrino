@@ -7,7 +7,8 @@ session and releasing only its entries, the one refusal that unbinds
 removing the binding through the resident, a disabled hub releasing only
 its own, the binding file diffed by id so a rewrite restarts only the
 sessions it changed and the welcome's own write restarts none, the exit
-hub, the disabled check per hub, a start that turns nothing on and clears
+hub chosen and followed with the tools moved in one activation, the
+disabled check per hub, a start that turns nothing on and clears
 what an unclean exit left, and a shutdown that runs its order once, logs a
 line a step, and lets no step hold up the rest.
 """
@@ -28,6 +29,7 @@ from neutrino_client.constants import (
 from neutrino_client.core import enrollment
 from neutrino_client.core.resident import ClientResident
 from neutrino_client.exceptions import GatewayRefused
+from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.base import ServiceTypeHandler
 from neutrino_client.services.file import mount_record_id
 from tests.conftest import (
@@ -191,6 +193,7 @@ class QuietSwitcher:
 
     def __init__(self):
         self.calls = []
+        self.base_urls = []
 
     def is_installed(self) -> bool:
         return True
@@ -203,11 +206,43 @@ class QuietSwitcher:
 
     def activate(self, *, base_url, api_key, tool_configs=None) -> str:
         self.calls.append("activate")
+        self.base_urls.append(base_url)
         return "claude"
 
     def deactivate(self, *, base_url="") -> str:
         self.calls.append("deactivate")
         return ""
+
+
+def run_inline(target) -> None:
+    """The lane's thread starter, running the job right here."""
+    target()
+
+
+def inline_ai(resident) -> tuple:
+    """Put an AI handler under the resident whose grants are scripted per hub.
+
+    Returns:
+        ``(handler, switcher)``; the credential each hub answers with names
+        that hub's own endpoint.
+    """
+    switcher = QuietSwitcher()
+
+    def grant(hub_id: str, entry_id: str) -> dict:
+        return {"base_url": f"http://{hub_id}:8080", "api_key": "k", "model": "m1"}
+
+    handler = AiServiceHandler(
+        store=resident._store,
+        original_dir=str(resident.platform.config_dir()) + "/original",
+        open_service=grant,
+        exit_hub_id=resident.exit_hub_id,
+        log=discard,
+        switcher_module=switcher,
+        on_change=resident.notify,
+        start_thread=run_inline,
+    )
+    resident._services["ai"] = handler
+    return handler, switcher
 
 
 @pytest.fixture
@@ -510,6 +545,149 @@ def test_the_exit_is_the_chosen_hub_or_else_the_first_joined(two_hubs_up, config
     enrollment.set_exit_hub_id("h9")
     resident._adopt_external_binding()
     assert resident.exit_hub_id() == "h1"
+
+
+def test_the_first_joined_binding_is_the_exit_and_the_tools_point_there(
+    two_hubs_up,
+):
+    resident, _scripts = two_hubs_up
+    handler, switcher = inline_ai(resident)
+
+    assert resident.service_action("ai", {"is_enabled": True}) == {}
+
+    assert resident.exit_hub_id() == "h1"
+    assert switcher.calls == ["activate"]
+    assert handler._granted["hub_id"] == "h1"
+    assert handler._granted["base_url"] == "http://h1:8080"
+
+
+def test_set_exit_to_a_joined_hub_moves_the_tools_in_one_activation(
+    two_hubs_up, config_path
+):
+    resident, _scripts = two_hubs_up
+    handler, switcher = inline_ai(resident)
+    resident.service_action("ai", {"is_enabled": True})
+
+    assert resident.set_exit("h2") == {}
+
+    assert resident.exit_hub_id() == "h2"
+    assert enrollment.exit_hub_id() == "h2"
+    assert [row["is_exit"] for row in resident.hubs()] == [False, True]
+    assert switcher.calls == ["activate", "activate"]
+    assert switcher.base_urls == ["http://h1:8080", "http://h2:8080"]
+    assert handler._granted["hub_id"] == "h2"
+
+    assert resident.set_exit("c1") == {}
+    assert resident.exit_hub_id() == "h1"
+    assert switcher.calls == ["activate", "activate", "activate"]
+
+
+def test_a_hub_that_is_not_connected_cannot_be_the_exit(two_hubs_up, config_path):
+    resident, _scripts = two_hubs_up
+    _handler, switcher = inline_ai(resident)
+    office = resident._sessions["c2"]
+
+    office._drop_socket()
+    assert resident.set_exit("h2") == {
+        "code": "no_exit_hub",
+        "params": {"hub_id": "h2"},
+    }
+
+    office._stand_aside()
+    assert resident.set_exit("h2")["code"] == "no_exit_hub"
+
+    assert resident.set_exit("h9") == {
+        "code": "unknown_hub",
+        "params": {"hub_id": "h9"},
+    }
+    assert resident.exit_hub_id() == "h1"
+    assert enrollment.exit_hub_id() == ""
+    assert switcher.calls == []
+
+
+def test_removing_the_exit_binding_moves_the_exit_and_the_tools(
+    two_hubs_up, monkeypatch, config_path
+):
+    resident, _scripts = two_hubs_up
+    handler, switcher = inline_ai(resident)
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident.service_action("ai", {"is_enabled": True})
+
+    resident.disconnect("h1")
+
+    assert resident.exit_hub_id() == "h2"
+    assert enrollment.exit_hub_id() == "h2"
+    assert [row["is_exit"] for row in resident.hubs()] == [True]
+    assert switcher.calls == ["activate", "activate"]
+    assert switcher.base_urls == ["http://h1:8080", "http://h2:8080"]
+    assert handler._granted["hub_id"] == "h2"
+
+
+def test_the_exit_is_pinned_where_it_moved_and_a_rejoin_leaves_it(
+    two_hubs_up, monkeypatch, config_path
+):
+    resident, scripts = two_hubs_up
+    released_handlers(resident)
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident.disconnect("h1")
+    assert enrollment.exit_hub_id() == "h2"
+
+    enrollment.add_binding(dict(BINDING, gateway_url=HOME_URL))
+    resident._adopt_external_binding()
+
+    assert list(sessions_of(resident)) == ["c2", "c1"]
+    assert resident.exit_hub_id() == "h2"
+    assert [row["is_exit"] for row in resident.hubs()] == [True, False]
+
+
+def test_a_binding_gone_from_the_file_moves_the_pinned_exit(two_hubs_up, config_path):
+    resident, _scripts = two_hubs_up
+    released_handlers(resident)
+    time.sleep(0.01)
+    bind(config_path, bindings=[dict(OFFICE_BINDING)])
+
+    resident._adopt_external_binding()
+
+    assert resident.exit_hub_id() == "h2"
+    assert enrollment.exit_hub_id() == "h2"
+
+
+def test_binding_unknown_on_the_exit_moves_it(two_hubs, monkeypatch, config_path):
+    released_handlers(two_hubs)
+    sockets_by_hub(
+        monkeypatch,
+        {
+            "hub.lan": [
+                {"type": "refused", "code": "binding_unknown", "params": {"id": "c1"}}
+            ],
+            "office.lan": [OFFICE_WELCOME, OFFICE_STATE],
+        },
+    )
+    turn(two_hubs, "c2")
+
+    turn(two_hubs, "c1")
+
+    assert two_hubs.exit_hub_id() == "h2"
+    assert enrollment.exit_hub_id() == "h2"
+
+
+def test_with_no_joined_hub_the_tools_are_restored(
+    two_hubs_up, monkeypatch, config_path
+):
+    resident, _scripts = two_hubs_up
+    handler, switcher = inline_ai(resident)
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident.service_action("ai", {"is_enabled": True})
+
+    resident.disconnect("h1")
+    resident.disconnect("h2")
+
+    assert resident.exit_hub_id() == ""
+    assert enrollment.exit_hub_id() == ""
+    assert switcher.calls == ["activate", "activate", "deactivate"]
+    assert handler._granted == {}
+    assert handler.state()["ai"]["is_enabled"] is True
+    assert handler.state()["ai"]["is_active"] is False
 
 
 def test_the_service_stream_is_opened_on_the_hub_named(two_hubs_up):

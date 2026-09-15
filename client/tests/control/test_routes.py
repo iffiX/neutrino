@@ -105,6 +105,29 @@ def test_leaving_a_hub_nobody_joined_is_typed():
     assert resident.disconnected == []
 
 
+def test_choosing_the_exit_answers_the_state_with_the_choice():
+    resident = FakeResident()
+
+    status, state = routes.dispatch("POST", "/api/exit/set", {"hub_id": "h2"}, resident)
+
+    assert status == 200
+    assert resident.exits == ["h2"]
+    assert state["exit_hub_id"] == "h2"
+    assert [hub["is_exit"] for hub in state["hubs"]] == [False, True]
+
+
+def test_only_a_connected_hub_can_be_the_exit():
+    resident = FakeResident()
+    resident.hubs_value[1]["connection_state"] = "reconnecting"
+
+    status, reply = routes.dispatch("POST", "/api/exit/set", {"hub_id": "h2"}, resident)
+    assert (status, reply) == (400, {"code": "no_exit_hub", "params": {"hub_id": "h2"}})
+
+    status, reply = routes.dispatch("POST", "/api/exit/set", {"hub_id": "h9"}, resident)
+    assert (status, reply) == (404, {"code": "unknown_hub", "params": {"hub_id": "h9"}})
+    assert resident.exits == []
+
+
 def test_a_refused_link_reports_typed_on_the_state():
     resident = FakeResident()
     resident.connect_error = EnrollmentError("link_not_for_client", {"kind": "device"})
@@ -179,6 +202,7 @@ def test_a_service_refusal_maps_to_its_status():
         ("client_disabled", 403),
         ("mountpoint_not_empty", 400),
         ("mountpoint_in_use", 400),
+        ("no_exit_hub", 400),
     ):
         resident.service_reply = {"code": code, "params": {}}
         answered, reply = routes.dispatch("POST", "/api/services/file", {}, resident)

@@ -284,16 +284,22 @@ def test_one_row_per_hub_names_it_its_standing_and_its_software():
     assert "ui.hub_version" not in EN_WORDS
 
 
-def test_the_exit_radio_shows_the_exit_hub_and_is_inert_until_its_route():
+def test_the_exit_radio_is_checked_on_the_exit_and_live_on_connected_hubs():
     body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
 
     assert "radio.type = 'radio';" in body
+    assert "radio.name = 'exit_hub';" in body
     assert "radio.checked = !!hub.is_exit;" in body
-    assert "radio.disabled = true;" in body
+    assert "radio.disabled = hub.connection_state !== 'connected';" in body
+    assert (
+        "radio.onchange = () => send('/api/exit/set', { hub_id: hubKey(hub) });" in body
+    )
     assert "t('ui.hub_exit')" in body
     assert "t('ui.hub_is_exit')" in body
-    assert "/api/exit" not in PAGE_JS
+    assert "radio.disabled = true;" not in PAGE_JS
     assert EN_WORDS["ui.hub_exit"] == "Exit"
+    assert EN_WORDS["ui.hub_is_exit"] == "the AI tools point at this hub"
+    assert EN_WORDS["code.no_exit_hub"]
 
 
 def test_the_join_row_is_always_there_and_words_a_refused_link():
@@ -366,6 +372,18 @@ def test_the_ai_panel_of_a_hub_that_is_not_the_exit_is_inert():
     assert "config.disabled = !isExit ||" in body
     assert "apply.disabled = !isExit ||" in body
     assert "toggle.disabled = !isExit ||" in body
+
+
+def test_every_ai_panel_names_the_hub_the_tools_point_at():
+    body = PAGE_JS.split("function drawAiPanel(state, hub, entries, title)")[1].split(
+        "\n}"
+    )[0]
+
+    assert "function exitHubName(state)" in PAGE_JS
+    assert "const exitNote = isExit ? t('ui.hub_is_exit')" in body
+    assert ": exitName ? t('ui.ai_exit_is', { name: exitName }) : '';" in body
+    assert "entryRow(entry, payload.endpoint || '', exitNote)" in body
+    assert EN_WORDS["ui.ai_exit_is"] == "the AI tools point at {name}"
 
 
 def test_leaving_a_text_field_lets_a_held_state_draw():

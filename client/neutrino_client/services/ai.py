@@ -8,9 +8,10 @@ which hub and endpoint the last activation granted, are this run's own and
 go with it.
 
 The staged choices are what each tool is pointed with; the grant's ``model``
-is only the prefill default for a slot nobody has chosen. Deactivation uses
-the endpoint activation recorded, because by then the hub may no longer name
-it.
+is only the prefill default for a slot nobody has chosen. A change of exit
+is one activation at the new hub, never a deactivation first. Deactivation
+uses the endpoint activation recorded, because by then the hub may no
+longer name it.
 
 A run that ended without putting the tools back leaves cc-switch standing on
 the hub and an adopt record beside it; :meth:`AiServiceHandler.clear_leftovers`
@@ -273,6 +274,10 @@ class AiServiceHandler(ServiceTypeHandler):
     def release_hub(self, hub_id: str) -> int:
         """Restore the tools when they point at one hub; the toggle is kept.
 
+        While the toggle is on and another hub is the exit, the tools are
+        left standing: the refresh that follows moves them there in one
+        activation.
+
         Args:
             hub_id: The hub let go of.
 
@@ -281,8 +286,12 @@ class AiServiceHandler(ServiceTypeHandler):
         """
         with self._lock:
             is_pointed_there = self._granted.get("hub_id") == hub_id
-        if is_pointed_there:
-            self.restore()
+            is_enabled = self._is_enabled
+        if not is_pointed_there:
+            return 0
+        if is_enabled and str(self._exit_hub_id() or "") not in ("", hub_id):
+            return 0
+        self.restore()
         return 0
 
     def clear_leftovers(self) -> None:

@@ -6,7 +6,8 @@ pointed with, and the grant's model is only the prefill default for a slot
 nobody has chosen. The store never holds a key and never holds the toggle:
 a handler starts with the tools pointed nowhere, restore puts them back the
 way activation found them, and letting go of the hub the tools point at
-restores them too.
+restores them too, unless another hub is the exit, where the refresh that
+follows moves them in one activation and the adopt record stands.
 """
 
 import json
@@ -80,6 +81,13 @@ class FakeHub:
 
 
 class FakeSwitcher:
+    """A switcher that keeps cc-switch's adopt record the way the real one does.
+
+    Attributes:
+        provider: The provider Claude Code stands on right now.
+        records: The adopt record per tool: what was current before the hub.
+    """
+
     def __init__(self):
         self.active = None
         self.has_cli = True
@@ -87,6 +95,8 @@ class FakeSwitcher:
         self.activate_error = None
         self.deactivate_error = None
         self.active_apps = set()
+        self.provider = "official"
+        self.records = {}
 
     def is_active_for(self, app):
         return app in self.active_apps
@@ -104,6 +114,9 @@ class FakeSwitcher:
         if self.activate_error is not None:
             raise self.activate_error
         self.calls.append(("activate", base_url, api_key, tool_configs))
+        if "claude" not in self.records:
+            self.records["claude"] = {"previous": self.provider}
+        self.provider = "neutrino"
         default = (tool_configs or {}).get("claude", {}).get("default", "")
         if self.active == (base_url, api_key, default):
             return ""
@@ -114,6 +127,7 @@ class FakeSwitcher:
         if self.deactivate_error is not None:
             raise self.deactivate_error
         self.calls.append(("deactivate", base_url))
+        self.provider = self.records.pop("claude", {}).get("previous", "official")
         self.active = None
         return "claude → as it was"
 
@@ -245,6 +259,75 @@ def test_moving_the_exit_is_one_activation_at_the_new_hub(subject):
     assert [call[0] for call in fake.calls] == ["activate", "activate"]
     assert fake.calls[-1][1] == "http://office:8080"
     assert handler._granted["hub_id"] == "h2"
+
+
+def test_two_exit_switches_leave_one_adopt_record_and_the_endpoint_follows(
+    subject,
+):
+    handler, _store, fake, hub = subject
+    office = dict(ENTRY, hub_id="h2")
+    handler.act(entries=[ENTRY, office], body={"is_enabled": True})
+
+    hub.exit_hub_id = "h2"
+    hub.reply = dict(CREDENTIAL, base_url="http://office:8080")
+    handler.refresh(entries=[ENTRY, office])
+    hub.exit_hub_id = "h1"
+    hub.reply = dict(CREDENTIAL)
+    handler.refresh(entries=[ENTRY, office])
+
+    assert [call[0] for call in fake.calls] == ["activate", "activate", "activate"]
+    assert fake.records == {"claude": {"previous": "official"}}
+    assert fake.provider == "neutrino"
+    assert handler._granted == {
+        "hub_id": "h1",
+        "base_url": "http://hub:8080",
+        "model": "m1",
+    }
+    assert [call[1] for call in activations(fake)] == [
+        "http://hub:8080",
+        "http://office:8080",
+        "http://hub:8080",
+    ]
+
+
+def test_letting_go_of_the_exit_leaves_the_tools_for_the_refresh_to_move(subject):
+    """The hub the tools point at goes and another is the exit: no
+    deactivation, one activation at the new hub."""
+    handler, _store, fake, hub = subject
+    office = dict(ENTRY, hub_id="h2")
+    handler.act(entries=[ENTRY, office], body={"is_enabled": True})
+    hub.exit_hub_id = "h2"
+    hub.reply = dict(CREDENTIAL, base_url="http://office:8080")
+
+    assert handler.release_hub("h1") == 0
+    assert [call for call in fake.calls if call[0] == "deactivate"] == []
+    assert handler._granted["hub_id"] == "h1"
+
+    handler.refresh(entries=[office])
+
+    assert [call[0] for call in fake.calls] == ["activate", "activate"]
+    assert handler._granted == {
+        "hub_id": "h2",
+        "base_url": "http://office:8080",
+        "model": "m1",
+    }
+    assert fake.records == {"claude": {"previous": "official"}}
+
+
+def test_letting_go_of_the_exit_with_the_toggle_off_restores_the_tools(subject):
+    handler, _store, fake, hub = subject
+    office = dict(ENTRY, hub_id="h2")
+    handler.act(entries=[ENTRY, office], body={"is_enabled": True})
+    with handler._lock:
+        handler._is_enabled = False
+    hub.exit_hub_id = "h2"
+
+    assert handler.release_hub("h1") == 0
+
+    assert [call for call in fake.calls if call[0] == "deactivate"] == [
+        ("deactivate", "http://hub:8080")
+    ]
+    assert handler._granted == {}
 
 
 def test_letting_go_of_the_hub_the_tools_point_at_restores_them(subject):

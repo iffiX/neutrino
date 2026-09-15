@@ -14,7 +14,15 @@ import pytest
 from neutrino_client.cli import service as service_cli
 from neutrino_client.cli import wording
 from neutrino_client.control.server import ControlServer
-from tests.conftest import FakeClientPlatform, FakeResident, bind, discard, with_hub
+from tests.conftest import (
+    HUB_ROW,
+    OFFICE_ROW,
+    FakeClientPlatform,
+    FakeResident,
+    bind,
+    discard,
+    with_hub,
+)
 
 SERVICE_ENTRIES = [
     {
@@ -77,6 +85,20 @@ SERVICE_ENTRIES = [
     },
 ]
 
+OFFICE_AI_ENTRY = {
+    "id": "ai",
+    "type": "ai",
+    "title": "Office AI",
+    "payload": {
+        "endpoint": "http://office:8080",
+        "protocol": "anthropic",
+        "models": ["o1"],
+    },
+    "is_healthy": True,
+    "source": "module",
+    "description": "",
+}
+
 MOUNTED_ROW = {
     "record_id": "r1",
     "hub_id": "h1",
@@ -95,6 +117,7 @@ class FakeServiceResident(FakeResident):
 
     def __init__(self, *, platform=None):
         super().__init__(platform=platform)
+        self.hubs_value = [dict(HUB_ROW)]
         self.states = {
             "forwards": {},
             "mounts": [],
@@ -110,7 +133,12 @@ class FakeServiceResident(FakeResident):
         }
 
     def service_entries(self) -> list:
-        return with_hub(SERVICE_ENTRIES, "h1") if self.is_bound else []
+        if not self.is_bound:
+            return []
+        entries = with_hub(SERVICE_ENTRIES, "h1")
+        if len(self.hubs_value) > 1:
+            entries += with_hub([OFFICE_AI_ENTRY], "h2")
+        return entries
 
     def service_action(self, service_type, body) -> dict:
         outcome = super().service_action(service_type, body)
@@ -458,6 +486,79 @@ def test_ai_apply_off_puts_the_tools_back(stack, capsys):
     assert code == 0
     assert stack.service_calls[0][1]["is_enabled"] is False
     assert f"off  {service_cli.SERVICE_AI_OFF}" in capsys.readouterr().out
+
+
+def ai_apply(**overrides) -> int:
+    """One ``ai apply hub`` with every knob left as kept, unless overridden."""
+    arguments = dict(
+        is_enabled=True,
+        claude_default=None,
+        claude_opus=None,
+        claude_sonnet=None,
+        claude_haiku=None,
+        codex_model=None,
+        codex_effort=None,
+        gemini_model=None,
+    )
+    arguments.update(overrides)
+    return service_cli.main_ai_apply(**arguments)
+
+
+def test_ai_apply_with_hub_makes_that_hub_the_exit_first(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert ai_apply(hub="office", claude_default="o1") == 0
+
+    assert stack.exits == ["h2"]
+    assert stack.service_calls[0][1]["is_enabled"] is True
+    assert stack.service_calls[0][1]["tool_configs"]["claude"] == {"default": "o1"}
+    assert f"on  {service_cli.SERVICE_AI_ON}" in capsys.readouterr().out
+
+
+def test_ai_apply_checks_the_models_against_the_exit_hubs_gateway(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert ai_apply(hub="office", claude_default="m1") == 2
+
+    assert stack.exits == ["h2"]
+    assert stack.service_calls == []
+    assert "no model m1 at the gateway; it serves: o1" in capsys.readouterr().err
+
+
+def test_ai_apply_with_the_exit_hub_named_changes_nothing_first(stack):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+
+    assert ai_apply(hub="home") == 0
+
+    assert stack.exits == []
+    assert len(stack.service_calls) == 1
+
+
+def test_ai_apply_names_a_hub_nobody_joined(stack, capsys):
+    assert ai_apply(hub="nowhere") == 1
+
+    assert stack.exits == [] and stack.service_calls == []
+    assert "no hub nowhere; see nclient status" in capsys.readouterr().err
+
+
+def test_ai_apply_words_a_hub_that_cannot_be_the_exit(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW, connection_state="reconnecting"))
+
+    assert ai_apply(hub="office") == 1
+
+    assert stack.service_calls == []
+    assert wording.word_code("no_exit_hub") in capsys.readouterr().err
+
+
+def test_ai_show_and_apply_read_the_exit_hubs_entry(stack, capsys):
+    stack.hubs_value.append(dict(OFFICE_ROW))
+    stack.set_exit("h2")
+
+    assert service_cli.main_ai_show() == 0
+    assert "Office AI  http://office:8080" in capsys.readouterr().out
+
+    assert ai_apply(claude_default="m1") == 2
+    assert "it serves: o1" in capsys.readouterr().err
 
 
 def test_ai_apply_refuses_a_model_the_gateway_does_not_serve(stack, capsys):

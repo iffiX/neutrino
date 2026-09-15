@@ -284,15 +284,16 @@ function hubRow(hub) {
   if (lastError) body.appendChild(errorLine(lastError));
   row.innerHTML = '<span class="dot ' + tone + '"></span>';
   row.appendChild(body);
-  // The exit choice arrives with its route; until then the radio only
-  // shows which hub the AI tools point at.
+  // One radio per hub: the AI tools point at the checked one, and only a
+  // connected hub can be chosen.
   const exit = document.createElement('label');
   exit.className = 'chip' + (hub.is_exit ? ' on' : '');
   const radio = document.createElement('input');
   radio.type = 'radio';
   radio.name = 'exit_hub';
   radio.checked = !!hub.is_exit;
-  radio.disabled = true;
+  radio.disabled = hub.connection_state !== 'connected';
+  radio.onchange = () => send('/api/exit/set', { hub_id: hubKey(hub) });
   exit.appendChild(radio);
   exit.appendChild(document.createTextNode(t('ui.hub_exit')));
   row.appendChild(exit);
@@ -591,8 +592,14 @@ function isAiDirty(state, key) {
     JSON.stringify(state.ai_tool_configs || {});
 }
 
-// The tools point at one hub, the exit; the other hubs' panels show their
-// gateway and stay inert until that hub is chosen.
+// The hub the AI tools point at, as the page names it.
+function exitHubName(state) {
+  const exit = (state.hubs || []).filter((hub) => hub.is_exit)[0];
+  return exit ? (exit.hub_name || exit.gateway_url) : '';
+}
+
+// The tools point at one hub, the exit; the other hubs' panels name it and
+// stay inert until their own hub is chosen.
 function drawAiPanel(state, hub, entries, title) {
   const key = hubKey(hub);
   ensureAiStaged(state, key);
@@ -606,7 +613,10 @@ function drawAiPanel(state, hub, entries, title) {
   const work = row.work || {};
   const isWorking = work.state === 'working';
   const noteKey = 'ai_' + serviceKey(entry);
-  const head = entryRow(entry, payload.endpoint || '', '');
+  const exitName = exitHubName(state);
+  const exitNote = isExit ? t('ui.hub_is_exit')
+    : exitName ? t('ui.ai_exit_is', { name: exitName }) : '';
+  const head = entryRow(entry, payload.endpoint || '', exitNote);
   const config = document.createElement('button');
   config.className = 'ghost';
   config.textContent = t('ui.config');

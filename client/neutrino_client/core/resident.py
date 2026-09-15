@@ -34,7 +34,7 @@ from neutrino_client.constants import (
     CLIENT_STREAM_TIMEOUT_S,
 )
 from neutrino_client.core import enrollment
-from neutrino_client.core.session import ClientHubSession
+from neutrino_client.core.session import CONNECTION_CONNECTED, ClientHubSession
 from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayUnreachable,
@@ -188,7 +188,8 @@ class ClientResident:
 
         Returns:
             The chosen hub's id when it names a hub joined, otherwise the
-            first hub joined, empty while none has answered.
+            first hub joined, empty while none has answered. The choice
+            follows a removed exit to that hub and is pinned there.
         """
         with self._lock:
             chosen = self._chosen_exit_hub_id
@@ -374,7 +375,31 @@ class ClientResident:
             self._log(f"could not tell the hub we are leaving: {error}")
         enrollment.remove_binding(binding["id"])
         self._forget_session(session)
+        self._follow_exit()
         self._log("left the hub")
+
+    def set_exit(self, hub_id: str) -> dict:
+        """Choose the hub whose AI gateway the tools point at, and point them.
+
+        The choice is written to the binding file; the AI handler follows it
+        in one activation at the new hub's ``ai`` entry.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+
+        Returns:
+            Empty on success; ``unknown_hub`` when this person has not joined
+            that hub, ``no_exit_hub`` while its socket is not up.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        if session.connection_state() != CONNECTION_CONNECTED:
+            return {"code": "no_exit_hub", "params": {"hub_id": hub_id}}
+        self._pin_exit(session.hub_id())
+        self._services["ai"].refresh(entries=self.service_entries())
+        self.notify()
+        return {}
 
     def reconnect(self, hub_id: str = "") -> None:
         """Take one binding back from the socket that replaced it, and connect now.
@@ -594,6 +619,7 @@ class ClientResident:
         except OSError as error:
             self._log(f"could not remove the binding: {error}")
         self._forget_session(session)
+        self._follow_exit()
 
     def _adopt_external_binding(self) -> None:
         """Pick up a binding file another process wrote.
@@ -624,10 +650,12 @@ class ClientResident:
             self._binding_stamp = stamp
             self._chosen_exit_hub_id = config["exit_hub_id"]
             held = list(self._sessions.values())
+        dropped = []
         for session in held:
             fresh = on_disk.get(session.binding_id)
             if fresh is None or not is_same_join(fresh, session.binding()):
                 self._forget_session(session)
+                dropped.append(session.binding_id)
                 self._log(f"dropped the binding {session.binding_id} written on disk")
         with self._lock:
             missing = [
@@ -638,8 +666,27 @@ class ClientResident:
         for binding in missing:
             self._make_session(binding)
             self._log(f"adopted the binding {binding['id']} written on disk")
+        if dropped:
+            self._follow_exit()
         if missing:
             self.notify()
+
+    def _follow_exit(self) -> None:
+        """Pin the stored choice on the hub the exit moved to, when it moved."""
+        effective = self.exit_hub_id()
+        with self._lock:
+            is_moved = effective != self._chosen_exit_hub_id
+        if is_moved:
+            self._pin_exit(effective)
+
+    def _pin_exit(self, hub_id: str) -> None:
+        """Write one hub as the exit and hold it as the choice."""
+        try:
+            enrollment.set_exit_hub_id(hub_id)
+        except OSError as error:
+            self._log(f"could not write the exit hub: {error}")
+        with self._lock:
+            self._chosen_exit_hub_id = hub_id
 
     def _clear_leftovers(self) -> None:
         """Undo what a run that did not end cleanly left on this machine."""

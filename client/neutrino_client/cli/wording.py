@@ -54,6 +54,7 @@ CLIENT_CODE_WORDS = {
         "this hub no longer knows this client; join it again with a new link"
     ),
     "unknown_hub": "this client has not joined that hub",
+    "no_exit_hub": "the AI tools can only point at a connected hub",
     "hub_unreachable": "the hub cannot be reached",
     "hub_reply_unreadable": "the hub sent a reply this client could not read",
     "protocol_too_old": (

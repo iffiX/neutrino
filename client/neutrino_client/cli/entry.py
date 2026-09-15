@@ -213,6 +213,12 @@ def _add_service_parser(subparsers):
             help=f"{description}; omit to keep, pass '' for the gateway default",
         )
     ai_apply.add_argument(
+        "--hub",
+        default="",
+        metavar="<name>",
+        help="make this hub the exit first; omit to keep the exit as it is",
+    )
+    ai_apply.add_argument(
         "--codex-effort",
         choices=AI_REASONING_EFFORTS + ("",),
         metavar="<effort>",
@@ -286,6 +292,7 @@ def _run_service(arguments, service_parser, kind_parsers) -> int:
             codex_model=arguments.codex_model,
             codex_effort=arguments.codex_effort,
             gemini_model=arguments.gemini_model,
+            hub=arguments.hub,
         )
     if kind == "desktop" and arguments.desktop_action == "connect":
         return service.main_desktop_connect(arguments.ref)

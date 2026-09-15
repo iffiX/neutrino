@@ -30,6 +30,7 @@ SERVICE_KIND_TITLES = (
 SERVICES_EMPTY = "nothing is published for this person yet"
 SERVICE_UNHEALTHY = "not reachable now"
 SERVICE_NO_AI = "no AI service is published for this person"
+SERVICE_NO_HUB = "no hub {name}; see nclient status"
 SERVICE_NO_RECORD = (
     "no saved login for this share; set one: nclient service file config"
 )
@@ -260,11 +261,10 @@ def main_ai_show() -> int:
     state = wording.read_state()
     if state is None:
         return 1
-    rows = _entries(state, "ai")
-    if not rows:
+    entry = _exit_ai_entry(state)
+    if entry is None:
         print(SERVICE_NO_AI, file=sys.stderr)
         return 1
-    entry = rows[0]
     payload = entry.get("payload") or {}
     print(f"{entry.get('title', '')}  {payload.get('endpoint', '')}")
     print(f"  {_ai_line(state)}")
@@ -281,6 +281,7 @@ def main_ai_apply(
     codex_model: "str | None",
     codex_effort: "str | None",
     gemini_model: "str | None",
+    hub: str = "",
 ) -> int:
     """Point the tools at the hub or put them back, exactly the page's Apply.
 
@@ -296,6 +297,8 @@ def main_ai_apply(
         codex_model: Codex's model.
         codex_effort: Codex's reasoning effort.
         gemini_model: Gemini's model.
+        hub: The hub to make the exit first, by name or id; empty keeps
+            the exit as it is.
 
     Returns:
         Process exit status.
@@ -303,11 +306,14 @@ def main_ai_apply(
     state = wording.read_state()
     if state is None:
         return 1
-    rows = _entries(state, "ai")
-    if not rows:
+    if hub:
+        state = _choose_exit(state, hub)
+        if state is None:
+            return 1
+    entry = _exit_ai_entry(state)
+    if entry is None:
         print(SERVICE_NO_AI, file=sys.stderr)
         return 1
-    entry = rows[0]
     if is_enabled and not entry.get("is_healthy"):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
@@ -389,6 +395,65 @@ def _ai_line(state: dict) -> str:
     where = SERVICE_AI_ON if row.get("is_active") else SERVICE_AI_OFF
     switch = "on" if row.get("is_enabled") else "off"
     return f"{switch}  {where}  ({standing})"
+
+
+def _exit_ai_entry(state: dict) -> "dict | None":
+    """The exit hub's AI entry, or None while no hub publishes one.
+
+    Args:
+        state: The state payload.
+
+    Returns:
+        The entry; with no exit named, the first AI entry published.
+    """
+    rows = _entries(state, "ai")
+    exit_hub_id = str(state.get("exit_hub_id", "") or "")
+    for entry in rows:
+        if entry.get("hub_id") == exit_hub_id:
+            return entry
+    return rows[0] if rows and not exit_hub_id else None
+
+
+def _hub_row(state: dict, needle: str) -> "dict | None":
+    """One hub row by its name, its id or its binding's id, or None."""
+    for hub in state.get("hubs") or []:
+        if isinstance(hub, dict) and needle in (
+            hub.get("hub_name"),
+            hub.get("hub_id"),
+            hub.get("binding_id"),
+        ):
+            return hub
+    return None
+
+
+def _choose_exit(state: dict, needle: str) -> "dict | None":
+    """Make one hub the exit, refusals worded here.
+
+    Args:
+        state: The state payload.
+        needle: The hub's name, id or binding id.
+
+    Returns:
+        The state payload with that hub as the exit, or None after the
+        refusal was printed.
+    """
+    hub = _hub_row(state, needle)
+    if hub is None:
+        print(SERVICE_NO_HUB.format(name=needle), file=sys.stderr)
+        return None
+    if hub.get("is_exit"):
+        return state
+    answer = wording.request("POST", "/api/exit/set", {"hub_id": hub.get("hub_id")})
+    if answer is None:
+        return None
+    _, reply = answer
+    if reply.get("code"):
+        print(
+            wording.word_code(str(reply.get("code")), reply.get("params")),
+            file=sys.stderr,
+        )
+        return None
+    return reply
 
 
 def _address(entry: dict) -> dict:

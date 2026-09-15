@@ -388,6 +388,7 @@ class FakeResident:
         self.is_bound = True
         self.hubs_value = [dict(HUB_ROW), dict(OFFICE_ROW)]
         self.reconnects = []
+        self.exits = []
         self.states = {
             "forwards": {"h1/svc_tcp": {"local_port": 5432, "is_active": True}},
             "mounts": [
@@ -484,6 +485,18 @@ class FakeResident:
         hub = self._hub(hub_id)
         self.reconnects.append(hub_id)
         hub["connection_state"] = "reconnecting"
+
+    def set_exit(self, hub_id: str) -> dict:
+        rows = self.hubs_value if self.is_bound else []
+        chosen = [row for row in rows if hub_id in (row["hub_id"], row["binding_id"])]
+        if not chosen:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        if chosen[0]["connection_state"] != "connected":
+            return {"code": "no_exit_hub", "params": {"hub_id": hub_id}}
+        self.exits.append(chosen[0]["hub_id"])
+        for row in rows:
+            row["is_exit"] = row is chosen[0]
+        return {}
 
     def request_show(self) -> None:
         self.shows += 1

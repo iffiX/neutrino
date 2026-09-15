@@ -148,10 +148,19 @@ def test_ai_apply_names_the_provider_and_the_knobs(monkeypatch):
     assert calls[0]["is_enabled"] is True
     assert calls[0]["claude_default"] == "m2"
     assert calls[0]["codex_effort"] is None
+    assert calls[0]["hub"] == ""
 
     monkeypatch.setattr(entry.sys, "argv", ["nclient", "service", "ai", "apply", "off"])
     entry.main()
     assert calls[1]["is_enabled"] is False
+
+    monkeypatch.setattr(
+        entry.sys,
+        "argv",
+        ["nclient", "service", "ai", "apply", "hub", "--hub", "office"],
+    )
+    entry.main()
+    assert calls[2]["hub"] == "office"
 
 
 def test_the_removed_verbs_are_gone(monkeypatch, capsys):

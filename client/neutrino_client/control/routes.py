@@ -89,6 +89,8 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _disconnect(resident, payload)
         if route == "/api/session/start":
             return _start_session(resident, payload)
+        if route == "/api/exit/set":
+            return _set_exit(resident, payload)
         if route.startswith(SERVICES_PREFIX):
             return _service_action(resident, route[len(SERVICES_PREFIX) :], payload)
         if route == "/api/fs":
@@ -170,6 +172,13 @@ def _start_session(resident, body: dict):
         resident.reconnect(hub_id)
     except KeyError:
         return _unknown_hub(hub_id)
+    return 200, state_payload(resident)
+
+
+def _set_exit(resident, body: dict):
+    outcome = resident.set_exit(str(body.get("hub_id", "")))
+    if outcome:
+        return refusal_status(str(outcome.get("code", ""))), outcome
     return 200, state_payload(resident)
 
 
