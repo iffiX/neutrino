@@ -45,15 +45,15 @@
 
 | 被控端 `neutrino-agent`                                      | 架构          | 包     |
 | ------------------------------------------------------------ | ------------- | ------ |
-| Debian 12 及以上、Ubuntu 24.04 及以上、Raspberry Pi OS 64 位 | x86-64、ARM64 | `.deb` |
+| Debian 12 及以上、Ubuntu 22.04 及以上、Raspberry Pi OS 64 位 | x86-64、ARM64 | `.deb` |
 | Fedora 41 及以上、RHEL 9 系                                  | x86-64、ARM64 | `.rpm` |
 
 | 客户端 `neutrino-client`                          | 架构          | 包     |
 | ------------------------------------------------- | ------------- | ------ |
-| Debian 12 及以上、Ubuntu 24.04 及以上，带桌面会话 | x86-64、ARM64 | `.deb` |
-| Fedora 41 及以上、RHEL 9 系，带桌面会话           | x86-64、ARM64 | `.rpm` |
-| Windows 10、Windows 11                            | x86-64        | `.msi` |
-| macOS，Apple 芯片                                 | ARM64         | `.pkg` |
+| Debian 12 及以上、Ubuntu 22.04 及以上，带桌面会话 | x86-64、ARM64 | `.deb` |
+| RHEL 9 系（AlmaLinux、Rocky）、Fedora 41 及以上，带桌面会话 | x86-64、ARM64 | `.rpm` |
+| Windows 10 1809 及以上、Windows 11                | x86-64        | `.msi` |
+| macOS 12.3 及以上，Apple 芯片                     | ARM64         | `.pkg` |
 
 ## 安装
 
@@ -96,7 +96,7 @@ sudo nhub setup
 
 ```bash
 sudo apt install ./neutrino-agent_0.2.0_amd64.deb
-sudo nagent connect '<enroll-link>'
+sudo nagent join '<enroll-link>'
 ```
 
 链接来自面板设备页的 **用链接添加**（Add by link），五分钟内有效。
@@ -107,7 +107,7 @@ sudo nagent connect '<enroll-link>'
 
 ```bash
 sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm
-sudo nagent connect '<enroll-link>'
+sudo nagent join '<enroll-link>'
 ```
 
 连上之后，这台机器出现在设备页的 **已管理的设备**（Managed devices）里。

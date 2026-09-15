@@ -50,6 +50,7 @@ and leave this pointing at it.**
 | [misc/config.md](skills/core-code-author/misc/config.md) | Touching `config/`: which files are secrets, how examples map to real ones. |
 | [misc/operations.md](skills/core-code-author/misc/operations.md) | Verifying an install, or running the appliance. |
 | [doc-author/](skills/doc-author/SKILL.md) | Writing any `.md`: the gate before drafting, the kind of page, the rules and budgets, each language's register, the checklist after. |
+| [design/min_support.md](skills/core-code-author/design/min_support.md) | Changing a dependency, a build container, or a `Depends` or `Requires` line: the glibc floor of each package and what sets it, the versions the hub, the agent and the client require of the system, and how a build holds the floor. |
 | [agent_work_rule/release.md](skills/core-code-author/agent_work_rule/release.md) | Cutting a release: the tag, the changelog prefixes, and which package each platform installs. |
 
 ## Commands

@@ -11,10 +11,10 @@ The client is one package per system. A link from a hub's **Clients** page joins
 Check the computer against these requirements:
 
 - It is a computer a person uses, on one of these systems:
-  - Debian 12 or newer, or Ubuntu 24.04 or newer, with a desktop session
-  - Fedora 41 or newer, or the RHEL 9 family, with a desktop session
-  - Windows 10 or 11 on x86-64
-  - macOS on Apple silicon
+  - Debian 12 or newer, or Ubuntu 22.04 or newer, with a desktop session
+  - The RHEL 9 family, or Fedora 41 or newer, with a desktop session
+  - Windows 10 version 1809 or newer, or Windows 11, on x86-64
+  - macOS 12.3 or newer on Apple silicon
 - You run the client from your own account. The client rejects root with `root_refused`.
 - It reaches port 8443 on every hub it joins, the channel each one listens on.
 

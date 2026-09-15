@@ -10,7 +10,7 @@ A machine joins the hub with a link pasted on it or with an SSH install from the
 
 The machine needs all of the following:
 
-- It runs Linux, x86-64 or ARM64: Debian 12 or newer, Ubuntu 24.04 or newer, Raspberry Pi OS 64-bit, Fedora 41 or newer, or the RHEL 9 family.
+- It runs Linux, x86-64 or ARM64: Debian 12 or newer, Ubuntu 22.04 or newer, Raspberry Pi OS 64-bit, Fedora 41 or newer, or the RHEL 9 family.
 - You have root on it. Every `nagent` command runs as root.
 - It reaches port 8443 on the hub, the channel the agent connects on.
 

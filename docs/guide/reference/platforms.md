@@ -16,13 +16,13 @@ The three packages of one release run on the systems in the tables that follow; 
 | the same                                                                                 | ARM64        | `neutrino-hub-0.2.0-1.aarch64.rpm`        |
 | Arch, EndeavourOS, Manjaro                                                               | x86-64       | `neutrino-hub-0.2.0-1-x86_64.pkg.tar.zst` |
 
-The hub package includes its own Python under `/opt/neutrino/python` and depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl and smbclient, with hostapd recommended for a wireless LAN.
+The hub package includes its own Python under `/opt/neutrino/python` and depends on systemd, nftables, dnsmasq, iproute2, wpa_supplicant, dhcpcd, fail2ban, iw, arp-scan, vnstat, curl and smbclient, with hostapd recommended for a wireless LAN. On the Debian family the dhcpcd dependency is `dhcpcd-base`, a name Ubuntu has from 24.04. That is where the hub's `.deb` starts, one release later than the agent's and the client's.
 
 ## Agent
 
 | System                                                              | Architecture | File                                 |
 | ------------------------------------------------------------------- | ------------ | ------------------------------------ |
-| Debian 12 and newer, Ubuntu 24.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.2.0_amd64.deb`     |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.2.0_amd64.deb`     |
 | the same                                                            | ARM64        | `neutrino-agent_0.2.0_arm64.deb`     |
 | Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.2.0-1.x86_64.rpm`  |
 | the same                                                            | ARM64        | `neutrino-agent-0.2.0-1.aarch64.rpm` |
@@ -31,16 +31,16 @@ The agent is Linux only, runs as root and has no window; its package includes it
 
 ## Client
 
-| System                                                              | Architecture | File                                      |
-| ------------------------------------------------------------------- | ------------ | ----------------------------------------- |
-| Debian 12 and newer, Ubuntu 24.04 and newer, with a desktop session | x86-64       | `neutrino-client_0.2.0_amd64.deb`         |
-| the same                                                            | ARM64        | `neutrino-client_0.2.0_arm64.deb`         |
-| Fedora 41 and newer; RHEL 9 family, with a desktop session          | x86-64       | `neutrino-client-0.2.0-1.x86_64.rpm`      |
-| the same                                                            | ARM64        | `neutrino-client-0.2.0-1.aarch64.rpm`     |
-| Windows 10 and 11                                                   | x86-64       | `neutrino-client-0.2.0-windows-amd64.msi` |
-| macOS on Apple silicon                                              | ARM64        | `neutrino-client-0.2.0-macos-arm64.pkg`   |
+| System                                                                           | Architecture | File                                      |
+| -------------------------------------------------------------------------------- | ------------ | ----------------------------------------- |
+| Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session              | x86-64       | `neutrino-client_0.2.0_amd64.deb`         |
+| the same                                                                         | ARM64        | `neutrino-client_0.2.0_arm64.deb`         |
+| RHEL 9 family (AlmaLinux, Rocky) and Fedora 41 and newer, with a desktop session | x86-64       | `neutrino-client-0.2.0-1.x86_64.rpm`      |
+| the same                                                                         | ARM64        | `neutrino-client-0.2.0-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                                            | x86-64       | `neutrino-client-0.2.0-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                                            | ARM64        | `neutrino-client-0.2.0-macos-arm64.pkg`   |
 
-The Linux client is compiled and depends on WebKitGTK, the appindicator library, `cifs-utils` and polkit. The Windows build is x86-64 only, because cc-switch has no Windows ARM64 build, and it bootstraps WebView2 when the runtime is absent. The macOS build is Apple silicon only.
+The Linux client is compiled and opens on either WebKitGTK ABI, 4.1 or 4.0, so a distribution with one of them is enough. It also needs `cifs-utils` and polkit. Without the appindicator library the tray is drawn as a GTK status icon. The Windows build is x86-64 only, because cc-switch has no Windows ARM64 build, and it installs WebView2 when the runtime is absent. The macOS build is Apple silicon only.
 
 ## Which package
 

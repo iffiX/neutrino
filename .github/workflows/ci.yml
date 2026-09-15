@@ -13,8 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 3.11 is what the hub's package depends on, so the tests run against
-      # the interpreter the .deb will find on a target.
+      # The hub's package installs its own 3.13, so this pins the other end:
+      # 3.11 is the oldest interpreter hub/pyproject.toml declares support for.
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -63,8 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The agent's package declares python3 (>= 3.9) and carries no
-      # interpreter, so the oldest Raspbian still has to be able to run it.
+      # The agent's package installs its own 3.13 too, and the agent source
+      # declares 3.9, so a checkout on the oldest Raspbian has to run it.
       - uses: actions/setup-python@v7
         with:
           python-version: "3.9"

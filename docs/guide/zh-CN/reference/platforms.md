@@ -24,11 +24,13 @@ title: 支持的平台
 | deb 推荐       | hostapd                                                                                                                |
 | RHEL 系的 EPEL | fail2ban、arp-scan、vnstat                                                                                             |
 
+Debian 系里 dhcpcd 的包名是 dhcpcd-base，Ubuntu 从 24.04 才有这个名字，hub 的 deb 也就从 24.04 起，比被控端和客户端晚一个版本。
+
 ## 被控端
 
 | 系统                                                         | 架构   | 文件                                 |
 | ------------------------------------------------------------ | ------ | ------------------------------------ |
-| Debian 12 及以上、Ubuntu 24.04 及以上、Raspberry Pi OS 64 位 | x86-64 | `neutrino-agent_0.2.0_amd64.deb`     |
+| Debian 12 及以上、Ubuntu 22.04 及以上、Raspberry Pi OS 64 位 | x86-64 | `neutrino-agent_0.2.0_amd64.deb`     |
 | 同上                                                         | ARM64  | `neutrino-agent_0.2.0_arm64.deb`     |
 | Fedora 41 及以上、RHEL 9 系                                  | x86-64 | `neutrino-agent-0.2.0-1.x86_64.rpm`  |
 | 同上                                                         | ARM64  | `neutrino-agent-0.2.0-1.aarch64.rpm` |
@@ -37,16 +39,16 @@ title: 支持的平台
 
 ## 客户端
 
-| 系统                                              | 架构   | 文件                                      |
-| ------------------------------------------------- | ------ | ----------------------------------------- |
-| Debian 12 及以上、Ubuntu 24.04 及以上，带桌面会话 | x86-64 | `neutrino-client_0.2.0_amd64.deb`         |
-| 同上                                              | ARM64  | `neutrino-client_0.2.0_arm64.deb`         |
-| Fedora 41 及以上、RHEL 9 系，带桌面会话           | x86-64 | `neutrino-client-0.2.0-1.x86_64.rpm`      |
-| 同上                                              | ARM64  | `neutrino-client-0.2.0-1.aarch64.rpm`     |
-| Windows 10、Windows 11                            | x86-64 | `neutrino-client-0.2.0-windows-amd64.msi` |
-| macOS，Apple 芯片                                 | ARM64  | `neutrino-client-0.2.0-macos-arm64.pkg`   |
+| 系统                                                        | 架构   | 文件                                      |
+| ----------------------------------------------------------- | ------ | ----------------------------------------- |
+| Debian 12 及以上、Ubuntu 22.04 及以上，带桌面会话           | x86-64 | `neutrino-client_0.2.0_amd64.deb`         |
+| 同上                                                        | ARM64  | `neutrino-client_0.2.0_arm64.deb`         |
+| RHEL 9 系（AlmaLinux、Rocky）、Fedora 41 及以上，带桌面会话 | x86-64 | `neutrino-client-0.2.0-1.x86_64.rpm`      |
+| 同上                                                        | ARM64  | `neutrino-client-0.2.0-1.aarch64.rpm`     |
+| Windows 10 1809 及以上、Windows 11                          | x86-64 | `neutrino-client-0.2.0-windows-amd64.msi` |
+| macOS 12.3 及以上，Apple 芯片                               | ARM64  | `neutrino-client-0.2.0-macos-arm64.pkg`   |
 
-客户端是编译好的程序，不带解释器。Linux 包依赖 gir1.2-webkit2-4.1、libgirepository-1.0-1、gir1.2-ayatanaappindicator3-0.1、cifs-utils 和 polkitd。Windows 没有 ARM64 包，因为 cc-switch 没有 Windows ARM64 构建；macOS 没有 Intel 包。源码包 `neutrino-0.2.0-source.tar.gz` 和 `SHA256SUMS` 与它们放在一起。
+客户端是编译好的程序，不带解释器。窗口用 WebKitGTK，4.1 和 4.0 两个 ABI 任选其一，发行版有哪个就用哪个。包自带 libgirepository，另外需要 cifs-utils 和 polkitd。机器上没有 gir1.2-ayatanaappindicator3-0.1 时，托盘画成 GTK 状态图标。Windows 没有 ARM64 包，因为 cc-switch 没有 Windows ARM64 构建；macOS 没有 Intel 包。源码包 `neutrino-0.2.0-source.tar.gz` 和 `SHA256SUMS` 与它们放在一起。
 
 ## 选哪个包
 

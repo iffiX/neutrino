@@ -49,15 +49,15 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 
 | Agent           | Versions                                                            | Architectures | Package |
 | --------------- | ------------------------------------------------------------------- | ------------- | ------- |
-| Debian family   | Debian 12 and newer, Ubuntu 24.04 and newer, Raspberry Pi OS 64-bit | x86-64, ARM64 | `.deb`  |
+| Debian family   | Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64, ARM64 | `.deb`  |
 | Fedora and RHEL | Fedora 41 and newer; RHEL 9 family                                  | x86-64, ARM64 | `.rpm`  |
 
 | Client          | Versions                                                            | Architectures | Package |
 | --------------- | ------------------------------------------------------------------- | ------------- | ------- |
-| Debian family   | Debian 12 and newer, Ubuntu 24.04 and newer, with a desktop session | x86-64, ARM64 | `.deb`  |
-| Fedora and RHEL | Fedora 41 and newer; RHEL 9 family, with a desktop session          | x86-64, ARM64 | `.rpm`  |
-| Windows         | Windows 10 and 11                                                   | x86-64        | `.msi`  |
-| macOS           | Apple silicon                                                       | ARM64         | `.pkg`  |
+| Debian family   | Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session | x86-64, ARM64 | `.deb`  |
+| Fedora and RHEL | RHEL 9 family (AlmaLinux, Rocky), Fedora 41 and newer, with a desktop session | x86-64, ARM64 | `.rpm`  |
+| Windows         | Windows 10 version 1809 and newer, Windows 11                       | x86-64        | `.msi`  |
+| macOS           | macOS 12.3 and newer, Apple silicon                                 | ARM64         | `.pkg`  |
 
 ## Install
 
@@ -93,7 +93,7 @@ Setup runs the same six-screen wizard, and the panel is at `http://<hub>:8080` a
 ```bash
 sudo apt install ./neutrino-agent_0.2.0_amd64.deb      # Debian family
 sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm   # Fedora family
-sudo nagent connect '<link>'
+sudo nagent join '<link>'
 ```
 
 `<link>` is what **Add by link** on the **Devices** page shows; it is valid for five minutes, and the machine then appears under **Managed devices**.

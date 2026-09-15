@@ -159,11 +159,12 @@ def test_the_deb_carries_the_binaries_the_client_drives(deb):
     assert (deb / "opt/neutrino_client/rustdesk/rustdesk").is_file()
 
 
-def test_the_deb_carries_the_licences_of_both(deb):
+def test_the_deb_carries_the_licences_of_everything_in_it(deb):
     carried = deb / "usr/share/doc/neutrino-client/licenses"
 
     assert sorted(path.name for path in carried.iterdir()) == [
         "cc_switch.txt",
+        "gobject_introspection.txt",
         "rustdesk.txt",
     ]
 

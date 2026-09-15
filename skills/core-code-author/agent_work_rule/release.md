@@ -140,7 +140,7 @@ client. 32-bit ARM is not published, because no interpreter build is.
 
 ```bash
 sudo apt install ./neutrino-agent_<version>_amd64.deb
-sudo nagent connect '<enrollment link from the Devices page>'
+sudo nagent join '<enrollment link from the Devices page>'
 ```
 
 Most people never download these: the hub carries them, and installs the right
@@ -169,7 +169,7 @@ what the build runner is.
 
 ```bash
 sudo apt install ./neutrino-client_<version>_amd64.deb
-nclient connect '<client link from the Clients page>'
+nclient join '<client link from the Clients page>'
 ```
 
 ### Source archive
@@ -223,17 +223,14 @@ URLs, and a build given none carries the entries it seeded and refuses the
 rest by name. A package dropped under `config/devices/packages` still wins
 over both.
 
-Two things bind a hub package to the machine that built it, and both are why
-the container is not optional:
-
-- **The virtual environment carries no standard library.** It has a copy of
-  the interpreter binary, so the target must have the very version it was
-  built against. This is why the package depends on `python3.11` rather than
-  `python3 (>= 3.11)`: the looser form is satisfied by 3.12 and then fails at
-  run time with *could not find platform independent libraries*.
-- **glibc only works forwards.** Built on Ubuntu 26.04 the package wants
-  GLIBC 2.38 and installs on nothing older; built on Debian 12 it wants 2.35
-  and installs on Debian 12, Ubuntu 22.04 and everything newer.
+What binds a hub package to the machines it installs on is glibc, which only
+works forwards. Nothing is compiled during the build: the pip install passes
+`--only-binary=:all:`, so the floor is the highest manylinux tag pip resolves
+for the dependencies, together with the upstream binaries the package installs.
+After the tree is staged, `require_glibc_floor` reads every ELF in it and fails
+the build when one names a version above `PACKAGING_GLIBC_FLOOR`. The floor of
+each package, and the one item that sets it, is in
+[../design/min_support.md](../design/min_support.md).
 
 Building the hub on a developer's own machine produces a package that installs
 only on machines like it. That is the mistake this container exists to stop.

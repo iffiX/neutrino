@@ -293,14 +293,16 @@ def test_the_licences_the_package_owes_are_staged(tmp_path):
     carried = tmp_path / "usr/share/doc/neutrino-client/licenses"
     assert sorted(path.name for path in carried.iterdir()) == [
         "cc_switch.txt",
+        "gobject_introspection.txt",
         "rustdesk.txt",
     ]
     assert "MIT License" in (carried / "cc_switch.txt").read_text()
     assert "AFFERO" in (carried / "rustdesk.txt").read_text()
+    assert "LESSER" in (carried / "gobject_introspection.txt").read_text()
 
 
 def test_a_licence_the_checkout_does_not_have_is_refused_by_name(tmp_path, monkeypatch):
-    monkeypatch.setattr(payload, "CARRIED_LICENSES", ("nothing.txt",))
+    monkeypatch.setattr(payload, "LINUX_CARRIED_LICENSES", ("nothing.txt",))
 
     with pytest.raises(SystemExit) as refused:
         payload.stage_licenses(tmp_path)

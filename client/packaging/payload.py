@@ -142,6 +142,9 @@ LINUX_GUI_BUILD_HEADERS = (
 # The licences of what the client packages carry, by the file name they have
 # in the repository's own ``licenses/``.
 CARRIED_LICENSES = ("cc_switch.txt", "rustdesk.txt")
+# The Linux packages also install :data:`LINUX_GUI_CARRIED_LIBRARY`, which is
+# under the LGPL and has no counterpart in the Windows and macOS packages.
+LINUX_CARRIED_LICENSES = CARRIED_LICENSES + ("gobject_introspection.txt",)
 
 # What both maintainer scripts run before the files a resident is running
 # from are replaced or taken away. The client's services exist only while it
@@ -414,7 +417,7 @@ def stage_wheels(
 
 
 def stage_licenses(tree: Path) -> None:
-    """Copy the licences of what the package carries into the tree.
+    """Copy the licences of what a Linux package carries into the tree.
 
     Args:
         tree: The staging directory standing in for the filesystem root.
@@ -424,7 +427,7 @@ def stage_licenses(tree: Path) -> None:
     """
     destination = tree / "usr/share/doc" / PACKAGE_NAME / "licenses"
     destination.mkdir(parents=True, exist_ok=True)
-    for name in CARRIED_LICENSES:
+    for name in LINUX_CARRIED_LICENSES:
         source = REPO_ROOT / "licenses" / name
         if not source.is_file():
             raise SystemExit(
