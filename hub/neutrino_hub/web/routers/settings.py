@@ -49,6 +49,7 @@ from neutrino_hub.web.constants import (
     WEB_THEMES,
 )
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.identity import hub_name, set_hub_name
 from neutrino_hub.web.models import (
     AboutView,
     AcknowledgementView,
@@ -102,6 +103,8 @@ BACKUP_ERROR_UNEXPECTED_MEMBER = "backup_unexpected_member"
 # ships.
 SETTINGS_ERROR_LANGUAGE_UNKNOWN = "language_unknown"
 SETTINGS_ERROR_THEME_UNKNOWN = "theme_unknown"
+# The 422 the page words when it is asked to name the hub nothing.
+SETTINGS_ERROR_HUB_NAME_REQUIRED = "hub_name_required"
 
 
 @router.get("", response_model=PanelSettings)
@@ -112,13 +115,14 @@ def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> PanelSettings
         runtime: The shared runtime.
 
     Returns:
-        The port the panel answers on, and the language and the palette it is
-        drawn in.
+        The port the panel answers on, the language and the palette it is
+        drawn in, and the name clients show this hub as.
     """
     return PanelSettings(
         listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
         language=str(runtime.settings.get("language", WEB_DEFAULT_LANGUAGE)),
         theme=str(runtime.settings.get("theme", WEB_DEFAULT_THEME)),
+        hub_name=hub_name(),
     )
 
 
@@ -136,20 +140,21 @@ def update_settings(
     asked on closes.
 
     Args:
-        request: The port to answer on, and the language and the palette to
-            draw in. A body leaving one of those out leaves it as it is.
+        request: The port to answer on, the language and the palette to draw
+            in, and the hub's name. A body leaving one of those out leaves it
+            as it is.
         background: Where the restart is queued.
         runtime: The shared runtime.
 
     Returns:
-        The port the panel is moving to, and the language and the palette it
-        is drawn in.
+        The port the panel is moving to, the language and the palette it is
+        drawn in, and the hub's name.
 
     Raises:
         HTTPException: 400 when the port is not one a listener may take, 422
             with ``language_unknown`` for a language this panel does not
-            ship, and 422 with ``theme_unknown`` for a theme it does not
-            have.
+            ship, 422 with ``theme_unknown`` for a theme it does not have,
+            and 422 with ``hub_name_required`` for a blank name.
     """
     if not WEB_PORT_MIN <= request.listen_port <= WEB_PORT_MAX:
         raise _coded_bad_request(
@@ -174,6 +179,12 @@ def update_settings(
                 "params": {"theme": request.theme},
             },
         )
+    is_renaming = "hub_name" in request.model_fields_set
+    if is_renaming and not request.hub_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": SETTINGS_ERROR_HUB_NAME_REQUIRED, "params": {}},
+        )
     settings = read_config(PANEL_SETTINGS_FILE)
     stored_language = str(settings.get("language", WEB_DEFAULT_LANGUAGE))
     language = (
@@ -192,10 +203,15 @@ def update_settings(
         runtime.settings["listen_port"] = request.listen_port
         runtime.settings["language"] = language
         runtime.settings["theme"] = theme
+    if is_renaming:
+        set_hub_name(request.hub_name)
     if is_moving:
         background.add_task(_restart_panel)
     return PanelSettings(
-        listen_port=request.listen_port, language=language, theme=theme
+        listen_port=request.listen_port,
+        language=language,
+        theme=theme,
+        hub_name=hub_name(),
     )
 
 

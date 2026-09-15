@@ -29,6 +29,7 @@ ARCHITECTURE_NORMALIZATION = {
 ANY_ARCHITECTURE = "*"
 
 OS_RELEASE_PATH = Path("/etc/os-release")
+MACHINE_ID_PATH = Path("/etc/machine-id")
 
 # Which family a distribution belongs to decides its package manager, its
 # package names and some of its service names. Matched against the ID field of
@@ -75,6 +76,19 @@ def require_architecture(supported: tuple, what: str) -> None:
             f"{what} does not support this machine ({architecture}); "
             f"it runs on: {', '.join(supported)}"
         )
+
+
+def machine_id() -> str:
+    """The id systemd gave this machine.
+
+    Returns:
+        The contents of ``/etc/machine-id`` without surrounding whitespace,
+        or empty when the file is missing or empty.
+    """
+    try:
+        return MACHINE_ID_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def distribution_family() -> str:

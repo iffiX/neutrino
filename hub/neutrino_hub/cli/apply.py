@@ -36,7 +36,7 @@ from neutrino_hub.modules.router.routes import lookup_xray_uid
 from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
 )
-from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
+from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_GENERATED_DIR
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
@@ -50,7 +50,9 @@ from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
+    WEB_IDENTITY_FILE,
 )
+from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
@@ -110,6 +112,12 @@ def main() -> int:
             f"({error})",
             file=sys.stderr,
         )
+
+    try:
+        if ensure_hub_identity():
+            print(f"hub identity generated at {UTILS_CONFIG_DIR / WEB_IDENTITY_FILE}")
+    except (OSError, ValueError) as error:
+        print(f"error: the hub has no identity ({error})", file=sys.stderr)
 
     try:
         if ensure_management_key():

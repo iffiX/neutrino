@@ -84,9 +84,11 @@ from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.web.agent_tls import ensure_certificate
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
+    WEB_IDENTITY_FILE,
     WEB_SETUP_GRACE_S,
     WEB_SETUP_WAIT_S,
 )
+from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.web.setup_app import WebSetupServer, WebSetupSession
 
 from neutrino_hub.cli.password import is_password_set, store_password
@@ -1029,9 +1031,13 @@ def _step_config_files(reporter: InstallReporter) -> str:
         shutil.copy2(example_path, real_path)
         real_path.chmod(0o600)
         created.append(relative_path)
+    if created:
+        reporter.note(f"copied from examples: {', '.join(created)}")
+    if ensure_hub_identity():
+        reporter.note(f"generated {WEB_IDENTITY_FILE}")
+        created.append(WEB_IDENTITY_FILE)
     if not created:
-        return f"{len(CONFIG_FILES)} files present"
-    reporter.note(f"copied from examples: {', '.join(created)}")
+        return f"{len(CONFIG_FILES) + 1} files present"
     return f"created {len(created)}"
 
 

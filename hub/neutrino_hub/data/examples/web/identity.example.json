@@ -1,0 +1,5 @@
+{
+  "_comment": "The hub's own identity, written by `nhub setup`, `nhub apply` or `nhub run` when the file is missing and deleted by `nhub reset all`; this example is never copied over it. `id` is a uuid4 hex string generated once. `name` defaults to the hostname and the Settings page changes it. A client groups its hubs by id and labels them by name.",
+  "id": "PLACEHOLDER_UUID4_HEX",
+  "name": "PLACEHOLDER_HOSTNAME"
+}

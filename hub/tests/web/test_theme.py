@@ -28,6 +28,7 @@ def client(monkeypatch):
     stored: dict = {"listen_port": 8080, "language": "en", "theme": "dark"}
     restarts: list = []
     monkeypatch.setattr(settings_router, "read_config", lambda name: dict(stored))
+    monkeypatch.setattr(settings_router, "hub_name", lambda: "gateway")
     monkeypatch.setattr(
         settings_router, "write_config", lambda name, data: stored.update(data)
     )

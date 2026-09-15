@@ -46,6 +46,8 @@ RESET_COLLECTED_PATHS = (
     # The agent channel's certificate and key go with the fleet that pinned
     # them; the next setup generates a fresh identity for its own.
     "web/agent_tls",
+    # The id clients group this hub by; the next setup generates a new one.
+    "web/identity.json",
     # Sealed under the vault's data key, which this reset also clears: left
     # behind, it is a file the next owner's vault cannot open, and the AI
     # gateway's management API stays unreachable until somebody deletes it
@@ -70,6 +72,8 @@ RESET_STATE_DIRS = ("agent_module_cache", "cliproxyapi")
 # has not enrolled.
 RESET_DEVICES_DIR = "devices"
 RESET_EXAMPLE_SUFFIX = ".example.json"
+# Examples of files the next setup generates; no reset copies them over.
+RESET_GENERATED_EXAMPLES = ("web/identity.example.json",)
 RESET_PANEL_UNIT = "web"
 RESET_TARGETS = {
     "password": "the panel password, leaving every other setting alone",  # scan: allow
@@ -240,7 +244,7 @@ def _restore_examples() -> int:
         relative = example_path.relative_to(UTILS_EXAMPLES_DIR)
         # A device directory's examples document a shape; no device of the
         # next owner's stands behind them.
-        if len(relative.parts) > 2:
+        if len(relative.parts) > 2 or relative.as_posix() in RESET_GENERATED_EXAMPLES:
             continue
         real_path = UTILS_CONFIG_DIR / relative.with_name(
             relative.name.replace(RESET_EXAMPLE_SUFFIX, ".json")

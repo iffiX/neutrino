@@ -346,6 +346,8 @@ export function SettingsPage() {
           )}
         </section>
 
+        <HubNamePanel />
+
         <LanguagePanel />
 
         <AppearancePanel />
@@ -484,6 +486,91 @@ export function SettingsPage() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The name every client that joined this hub shows it under.
+ *
+ * The id a client groups its hubs by never changes; the name is the label
+ * beside it, stored on the box with the hub's identity.
+ */
+function HubNamePanel() {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const resource = useApiResource<PanelSettings>("/settings");
+  const [name, setName] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resource.data !== null) {
+      setName(resource.data.hub_name);
+    }
+  }, [resource.data]);
+
+  const applied = resource.data?.hub_name ?? null;
+  const trimmed = (name ?? "").trim();
+  const isDirty = name !== null && applied !== null && name !== applied;
+
+  const apply = async () => {
+    if (resource.data === null) {
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    try {
+      const saved = await apiPut<PanelSettings>("/settings", {
+        listen_port: resource.data.listen_port,
+        hub_name: trimmed,
+      });
+      resource.setData(saved);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <section className={`card ${isDirty ? "card--dirty" : ""}`}>
+      <div className="card_header">
+        <div className="card_title">
+          <h2>{t("ui.settings.hub_name_title")}</h2>
+        </div>
+      </div>
+
+      <div className="settings_form">
+        {resource.data === null ? (
+          <div className="skeleton" style={{ height: 72 }} />
+        ) : (
+          <label className="field">
+            <span className="field_label">
+              {t("ui.settings.hub_name_field")}
+            </span>
+            <input
+              className="input"
+              value={name ?? ""}
+              onChange={(event) => {
+                setError(null);
+                setName(event.target.value);
+              }}
+            />
+            <span className="field_hint">{t("ui.settings.hub_name_hint")}</span>
+          </label>
+        )}
+
+        <ApplyBar
+          isDirty={isDirty && trimmed !== ""}
+          isBusy={isBusy}
+          label={t("ui.settings.hub_name_apply")}
+          hint={t("ui.settings.hub_name_apply_hint")}
+          error={error}
+          onReset={() => setName(applied)}
+          onApply={() => void apply()}
+        />
+      </div>
+    </section>
   );
 }
 

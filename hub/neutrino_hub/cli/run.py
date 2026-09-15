@@ -77,6 +77,7 @@ from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
 )
+from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.utils.json_file import read_config
 
 # --- config ---
@@ -345,6 +346,10 @@ def _serve_panel(arguments) -> int:
         Process exit status.
     """
     port = arguments.port if arguments.port is not None else _configured_port()
+    try:
+        ensure_hub_identity()
+    except (OSError, ValueError) as error:
+        print(f"error: the hub has no identity ({error})", file=sys.stderr)
     # The same belt the agent key gets: the usage collector reads the working
     # copy, and a panel started fresh after a restore has none yet.
     if not resolve_management_key():

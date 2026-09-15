@@ -53,6 +53,7 @@
   "code.file_exists": "Something of that name is already there.",
   "code.gateway_settings_refused": "The AI gateway will not take these settings: {detail}",
   "code.gateway_unreachable": "The gateway is not answering, so it cannot be asked.",
+  "code.hub_name_required": "The hub needs a name.",
   "code.hub_refused": "The hub turned the machine away.",
   "code.hub_unreachable": "The device could not reach the hub for the download: {detail}",
   "code.hub_untrusted": "The hub did not present the certificate this machine pins.",

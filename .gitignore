@@ -5,6 +5,7 @@ config/router/network.json
 config/router/connections.json
 config/web/settings.json
 config/web/agent_tls/
+config/web/identity.json
 config/devices/*/
 config/devices/devices.json
 config/clients/clients.json

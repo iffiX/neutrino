@@ -4,7 +4,7 @@ These are the contract the frontend's ``api_types.ts`` mirrors field for field,
 so a rename here is a rename there.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE, WEB_DEFAULT_THEME
 
@@ -1245,11 +1245,14 @@ class PanelSettings(BaseModel):
             out leaves it as it is.
         theme: The palette the panel is drawn in. A write that leaves it out
             leaves it as it is.
+        hub_name: The name clients show this hub as. A write that leaves it
+            out leaves it as it is.
     """
 
     listen_port: int
     language: str = WEB_DEFAULT_LANGUAGE
     theme: str = WEB_DEFAULT_THEME
+    hub_name: str = ""
 
 
 class PanelLanguage(BaseModel):
@@ -1406,6 +1409,220 @@ class ClientModulePackage(BaseModel):
 
     token: str
     artifact_key: str
+
+
+# --- the channel ---
+# The frames and the sections of the channel, as protocol.md defines them.
+# Every model here is pinned by tests/web/channel_schema.json; a change fails
+# that test until PROTOCOL moves or the change is shown to be additive.
+
+
+class ChannelJoinRequest(BaseModel):
+    """What a peer sends to ``POST /api/channel/join``."""
+
+    ticket: str
+    role: str
+    protocol: int = 0
+    machine_id: str = ""
+    name: str = ""
+    software: str = ""
+    platform: dict = Field(default_factory=dict)
+
+
+class ChannelJoinView(BaseModel):
+    """The binding a successful join leaves on the peer."""
+
+    id: str
+    token: str
+
+
+class ChannelLeaveRequest(BaseModel):
+    """What a peer sends to ``POST /api/channel/leave``."""
+
+    id: str
+    token: str
+
+
+class ChannelHello(BaseModel):
+    """The identity card a peer opens the socket with."""
+
+    protocol: int = 0
+    role: str = ""
+    id: str = ""
+    name: str = ""
+    software: str = ""
+    token: str = ""
+
+
+class ChannelWelcome(BaseModel):
+    """The hub's identity card, answered to a hello."""
+
+    protocol: int
+    role: str
+    id: str
+    name: str
+    software: str
+
+
+class ChannelRefused(BaseModel):
+    """Why a hello was turned away; close 4000 follows."""
+
+    code: str
+    params: dict = Field(default_factory=dict)
+
+
+class ChannelOpen(BaseModel):
+    """A stream begins; the kind's own arguments ride beside these."""
+
+    model_config = ConfigDict(extra="allow")
+
+    stream: int
+    kind: str
+
+
+class ChannelClose(BaseModel):
+    """A stream ends with its result; a code makes the close a refusal."""
+
+    stream: int
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+
+
+class ChannelCredit(BaseModel):
+    """The sender may send this many more bytes on the stream."""
+
+    stream: int
+    bytes: int
+
+
+class ChannelModuleState(BaseModel):
+    """What one module on a device is to be."""
+
+    want: str
+    config: dict = Field(default_factory=dict)
+    install: dict = Field(default_factory=dict)
+    uninstall: dict = Field(default_factory=dict)
+
+
+class ChannelDesktopState(BaseModel):
+    """The desktop share's settings."""
+
+    seat_password: str = ""
+
+
+class ChannelAgentState(BaseModel):
+    """The ``state`` frame to an agent."""
+
+    hash: str
+    modules: dict[str, ChannelModuleState] = Field(default_factory=dict)
+    desktop: ChannelDesktopState = Field(default_factory=ChannelDesktopState)
+
+
+class ChannelMachine(BaseModel):
+    """The ``machine`` section of an agent's report."""
+
+    hostname: str = ""
+    platform: dict = Field(default_factory=dict)
+    accounts: list[str] = Field(default_factory=list)
+    metrics: dict = Field(default_factory=dict)
+
+
+class ChannelLink(BaseModel):
+    """The interface the socket runs on, as the agent sees it."""
+
+    interface: str = ""
+    mac: str = ""
+    address: str = ""
+
+
+class ChannelInterface(BaseModel):
+    """One interface of the machine."""
+
+    name: str = ""
+    mac: str = ""
+    addresses: list[str] = Field(default_factory=list)
+
+
+class ChannelNetwork(BaseModel):
+    """The ``network`` section of an agent's report."""
+
+    link: ChannelLink = Field(default_factory=ChannelLink)
+    interfaces: list[ChannelInterface] = Field(default_factory=list)
+
+
+class ChannelModuleReport(BaseModel):
+    """What the agent observed of one module."""
+
+    state: str = ""
+    is_active: bool = False
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+    details: dict = Field(default_factory=dict)
+
+
+class ChannelDesktopReport(BaseModel):
+    """What the machine last said about sharing its desktop."""
+
+    is_shared: bool = False
+    account: str = ""
+    share_id: str = ""
+    port: int = 0
+    attention: str = ""
+    connected_count: int = 0
+
+
+class ChannelError(BaseModel):
+    """The agent's most recent failure worth showing."""
+
+    code: str
+    params: dict = Field(default_factory=dict)
+
+
+class ChannelAgentReport(BaseModel):
+    """The ``report`` frame from an agent."""
+
+    state_hash: str = ""
+    machine: ChannelMachine = Field(default_factory=ChannelMachine)
+    network: ChannelNetwork = Field(default_factory=ChannelNetwork)
+    modules: dict[str, ChannelModuleReport] = Field(default_factory=dict)
+    desktop: ChannelDesktopReport = Field(default_factory=ChannelDesktopReport)
+    error: ChannelError | None = None
+
+
+class ChannelServiceEntry(BaseModel):
+    """One published service as a client is given it."""
+
+    id: str
+    type: str
+    title: str
+    payload: dict
+    is_healthy: bool | None = None
+    source: str
+    description: str = ""
+    description_code: str = ""
+    description_params: dict = Field(default_factory=dict)
+
+
+class ChannelClientState(BaseModel):
+    """The ``state`` frame to a client."""
+
+    hash: str
+    is_disabled: bool = False
+    services: list[ChannelServiceEntry] = Field(default_factory=list)
+
+
+class ChannelClientMachine(BaseModel):
+    """The ``machine`` section of a client's report."""
+
+    hostname: str = ""
+    platform: dict = Field(default_factory=dict)
+
+
+class ChannelClientReport(BaseModel):
+    """The ``report`` frame from a client."""
+
+    state_hash: str = ""
+    machine: ChannelClientMachine = Field(default_factory=ChannelClientMachine)
 
 
 class DeviceModuleView(BaseModel):

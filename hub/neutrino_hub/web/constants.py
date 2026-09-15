@@ -42,6 +42,9 @@ WEB_AGENT_TLS_SUBJECT = "neutrino-hub"
 # Verification is the pinned fingerprint, not the validity window, so the
 # certificate simply has to outlive the box.
 WEB_AGENT_TLS_VALIDITY_DAYS = 3650
+# The hub's own identity, ``{id, name}``: the id clients group it by and the
+# name they show. Generated when missing; deleted by ``nhub reset all``.
+WEB_IDENTITY_FILE = "web/identity.json"
 # What a listener may be moved to. Port 0 asks the kernel to choose, which is
 # not an answer anybody can then type into a browser.
 WEB_PORT_MIN = 1

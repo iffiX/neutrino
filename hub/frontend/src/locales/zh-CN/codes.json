@@ -53,6 +53,7 @@
   "code.file_exists": "那里已经有同名的东西了。",
   "code.gateway_settings_refused": "AI 网关不接受这些设置：{detail}",
   "code.gateway_unreachable": "网关没有应答，无法向它询问。",
+  "code.hub_name_required": "hub 需要一个名称。",
   "code.hub_refused": "中枢拒绝了这台机器。",
   "code.hub_unreachable": "设备无法连到 hub 下载：{detail}",
   "code.hub_untrusted": "中枢出示的证书不是这台机器固定的那一张。",

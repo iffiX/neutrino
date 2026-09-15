@@ -1,0 +1,1000 @@
+{
+  "models": {
+    "ChannelAgentReport": {
+      "$defs": {
+        "ChannelDesktopReport": {
+          "description": "What the machine last said about sharing its desktop.",
+          "properties": {
+            "account": {
+              "default": "",
+              "title": "Account",
+              "type": "string"
+            },
+            "attention": {
+              "default": "",
+              "title": "Attention",
+              "type": "string"
+            },
+            "connected_count": {
+              "default": 0,
+              "title": "Connected Count",
+              "type": "integer"
+            },
+            "is_shared": {
+              "default": false,
+              "title": "Is Shared",
+              "type": "boolean"
+            },
+            "port": {
+              "default": 0,
+              "title": "Port",
+              "type": "integer"
+            },
+            "share_id": {
+              "default": "",
+              "title": "Share Id",
+              "type": "string"
+            }
+          },
+          "title": "ChannelDesktopReport",
+          "type": "object"
+        },
+        "ChannelError": {
+          "description": "The agent's most recent failure worth showing.",
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "title": "ChannelError",
+          "type": "object"
+        },
+        "ChannelInterface": {
+          "description": "One interface of the machine.",
+          "properties": {
+            "addresses": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Addresses",
+              "type": "array"
+            },
+            "mac": {
+              "default": "",
+              "title": "Mac",
+              "type": "string"
+            },
+            "name": {
+              "default": "",
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "title": "ChannelInterface",
+          "type": "object"
+        },
+        "ChannelLink": {
+          "description": "The interface the socket runs on, as the agent sees it.",
+          "properties": {
+            "address": {
+              "default": "",
+              "title": "Address",
+              "type": "string"
+            },
+            "interface": {
+              "default": "",
+              "title": "Interface",
+              "type": "string"
+            },
+            "mac": {
+              "default": "",
+              "title": "Mac",
+              "type": "string"
+            }
+          },
+          "title": "ChannelLink",
+          "type": "object"
+        },
+        "ChannelMachine": {
+          "description": "The ``machine`` section of an agent's report.",
+          "properties": {
+            "accounts": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Accounts",
+              "type": "array"
+            },
+            "hostname": {
+              "default": "",
+              "title": "Hostname",
+              "type": "string"
+            },
+            "metrics": {
+              "additionalProperties": true,
+              "title": "Metrics",
+              "type": "object"
+            },
+            "platform": {
+              "additionalProperties": true,
+              "title": "Platform",
+              "type": "object"
+            }
+          },
+          "title": "ChannelMachine",
+          "type": "object"
+        },
+        "ChannelModuleReport": {
+          "description": "What the agent observed of one module.",
+          "properties": {
+            "code": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            },
+            "details": {
+              "additionalProperties": true,
+              "title": "Details",
+              "type": "object"
+            },
+            "is_active": {
+              "default": false,
+              "title": "Is Active",
+              "type": "boolean"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            },
+            "state": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          "title": "ChannelModuleReport",
+          "type": "object"
+        },
+        "ChannelNetwork": {
+          "description": "The ``network`` section of an agent's report.",
+          "properties": {
+            "interfaces": {
+              "items": {
+                "$ref": "#/$defs/ChannelInterface"
+              },
+              "title": "Interfaces",
+              "type": "array"
+            },
+            "link": {
+              "$ref": "#/$defs/ChannelLink"
+            }
+          },
+          "title": "ChannelNetwork",
+          "type": "object"
+        }
+      },
+      "description": "The ``report`` frame from an agent.",
+      "properties": {
+        "desktop": {
+          "$ref": "#/$defs/ChannelDesktopReport"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChannelError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "machine": {
+          "$ref": "#/$defs/ChannelMachine"
+        },
+        "modules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ChannelModuleReport"
+          },
+          "title": "Modules",
+          "type": "object"
+        },
+        "network": {
+          "$ref": "#/$defs/ChannelNetwork"
+        },
+        "state_hash": {
+          "default": "",
+          "title": "State Hash",
+          "type": "string"
+        }
+      },
+      "title": "ChannelAgentReport",
+      "type": "object"
+    },
+    "ChannelAgentState": {
+      "$defs": {
+        "ChannelDesktopState": {
+          "description": "The desktop share's settings.",
+          "properties": {
+            "seat_password": {
+              "default": "",
+              "title": "Seat Password",
+              "type": "string"
+            }
+          },
+          "title": "ChannelDesktopState",
+          "type": "object"
+        },
+        "ChannelModuleState": {
+          "description": "What one module on a device is to be.",
+          "properties": {
+            "config": {
+              "additionalProperties": true,
+              "title": "Config",
+              "type": "object"
+            },
+            "install": {
+              "additionalProperties": true,
+              "title": "Install",
+              "type": "object"
+            },
+            "uninstall": {
+              "additionalProperties": true,
+              "title": "Uninstall",
+              "type": "object"
+            },
+            "want": {
+              "title": "Want",
+              "type": "string"
+            }
+          },
+          "required": [
+            "want"
+          ],
+          "title": "ChannelModuleState",
+          "type": "object"
+        }
+      },
+      "description": "The ``state`` frame to an agent.",
+      "properties": {
+        "desktop": {
+          "$ref": "#/$defs/ChannelDesktopState"
+        },
+        "hash": {
+          "title": "Hash",
+          "type": "string"
+        },
+        "modules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ChannelModuleState"
+          },
+          "title": "Modules",
+          "type": "object"
+        }
+      },
+      "required": [
+        "hash"
+      ],
+      "title": "ChannelAgentState",
+      "type": "object"
+    },
+    "ChannelClientMachine": {
+      "description": "The ``machine`` section of a client's report.",
+      "properties": {
+        "hostname": {
+          "default": "",
+          "title": "Hostname",
+          "type": "string"
+        },
+        "platform": {
+          "additionalProperties": true,
+          "title": "Platform",
+          "type": "object"
+        }
+      },
+      "title": "ChannelClientMachine",
+      "type": "object"
+    },
+    "ChannelClientReport": {
+      "$defs": {
+        "ChannelClientMachine": {
+          "description": "The ``machine`` section of a client's report.",
+          "properties": {
+            "hostname": {
+              "default": "",
+              "title": "Hostname",
+              "type": "string"
+            },
+            "platform": {
+              "additionalProperties": true,
+              "title": "Platform",
+              "type": "object"
+            }
+          },
+          "title": "ChannelClientMachine",
+          "type": "object"
+        }
+      },
+      "description": "The ``report`` frame from a client.",
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/ChannelClientMachine"
+        },
+        "state_hash": {
+          "default": "",
+          "title": "State Hash",
+          "type": "string"
+        }
+      },
+      "title": "ChannelClientReport",
+      "type": "object"
+    },
+    "ChannelClientState": {
+      "$defs": {
+        "ChannelServiceEntry": {
+          "description": "One published service as a client is given it.",
+          "properties": {
+            "description": {
+              "default": "",
+              "title": "Description",
+              "type": "string"
+            },
+            "description_code": {
+              "default": "",
+              "title": "Description Code",
+              "type": "string"
+            },
+            "description_params": {
+              "additionalProperties": true,
+              "title": "Description Params",
+              "type": "object"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "is_healthy": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Is Healthy"
+            },
+            "payload": {
+              "additionalProperties": true,
+              "title": "Payload",
+              "type": "object"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "title": {
+              "title": "Title",
+              "type": "string"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "title",
+            "payload",
+            "source"
+          ],
+          "title": "ChannelServiceEntry",
+          "type": "object"
+        }
+      },
+      "description": "The ``state`` frame to a client.",
+      "properties": {
+        "hash": {
+          "title": "Hash",
+          "type": "string"
+        },
+        "is_disabled": {
+          "default": false,
+          "title": "Is Disabled",
+          "type": "boolean"
+        },
+        "services": {
+          "items": {
+            "$ref": "#/$defs/ChannelServiceEntry"
+          },
+          "title": "Services",
+          "type": "array"
+        }
+      },
+      "required": [
+        "hash"
+      ],
+      "title": "ChannelClientState",
+      "type": "object"
+    },
+    "ChannelClose": {
+      "description": "A stream ends with its result; a code makes the close a refusal.",
+      "properties": {
+        "code": {
+          "default": "",
+          "title": "Code",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "stream": {
+          "title": "Stream",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stream"
+      ],
+      "title": "ChannelClose",
+      "type": "object"
+    },
+    "ChannelCredit": {
+      "description": "The sender may send this many more bytes on the stream.",
+      "properties": {
+        "bytes": {
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "stream": {
+          "title": "Stream",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stream",
+        "bytes"
+      ],
+      "title": "ChannelCredit",
+      "type": "object"
+    },
+    "ChannelDesktopReport": {
+      "description": "What the machine last said about sharing its desktop.",
+      "properties": {
+        "account": {
+          "default": "",
+          "title": "Account",
+          "type": "string"
+        },
+        "attention": {
+          "default": "",
+          "title": "Attention",
+          "type": "string"
+        },
+        "connected_count": {
+          "default": 0,
+          "title": "Connected Count",
+          "type": "integer"
+        },
+        "is_shared": {
+          "default": false,
+          "title": "Is Shared",
+          "type": "boolean"
+        },
+        "port": {
+          "default": 0,
+          "title": "Port",
+          "type": "integer"
+        },
+        "share_id": {
+          "default": "",
+          "title": "Share Id",
+          "type": "string"
+        }
+      },
+      "title": "ChannelDesktopReport",
+      "type": "object"
+    },
+    "ChannelDesktopState": {
+      "description": "The desktop share's settings.",
+      "properties": {
+        "seat_password": {
+          "default": "",
+          "title": "Seat Password",
+          "type": "string"
+        }
+      },
+      "title": "ChannelDesktopState",
+      "type": "object"
+    },
+    "ChannelError": {
+      "description": "The agent's most recent failure worth showing.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "ChannelError",
+      "type": "object"
+    },
+    "ChannelHello": {
+      "description": "The identity card a peer opens the socket with.",
+      "properties": {
+        "id": {
+          "default": "",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "protocol": {
+          "default": 0,
+          "title": "Protocol",
+          "type": "integer"
+        },
+        "role": {
+          "default": "",
+          "title": "Role",
+          "type": "string"
+        },
+        "software": {
+          "default": "",
+          "title": "Software",
+          "type": "string"
+        },
+        "token": {
+          "default": "",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "title": "ChannelHello",
+      "type": "object"
+    },
+    "ChannelInterface": {
+      "description": "One interface of the machine.",
+      "properties": {
+        "addresses": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Addresses",
+          "type": "array"
+        },
+        "mac": {
+          "default": "",
+          "title": "Mac",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "title": "ChannelInterface",
+      "type": "object"
+    },
+    "ChannelJoinRequest": {
+      "description": "What a peer sends to ``POST /api/channel/join``.",
+      "properties": {
+        "machine_id": {
+          "default": "",
+          "title": "Machine Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "platform": {
+          "additionalProperties": true,
+          "title": "Platform",
+          "type": "object"
+        },
+        "protocol": {
+          "default": 0,
+          "title": "Protocol",
+          "type": "integer"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "software": {
+          "default": "",
+          "title": "Software",
+          "type": "string"
+        },
+        "ticket": {
+          "title": "Ticket",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket",
+        "role"
+      ],
+      "title": "ChannelJoinRequest",
+      "type": "object"
+    },
+    "ChannelJoinView": {
+      "description": "The binding a successful join leaves on the peer.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "token": {
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "token"
+      ],
+      "title": "ChannelJoinView",
+      "type": "object"
+    },
+    "ChannelLeaveRequest": {
+      "description": "What a peer sends to ``POST /api/channel/leave``.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "token": {
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "token"
+      ],
+      "title": "ChannelLeaveRequest",
+      "type": "object"
+    },
+    "ChannelLink": {
+      "description": "The interface the socket runs on, as the agent sees it.",
+      "properties": {
+        "address": {
+          "default": "",
+          "title": "Address",
+          "type": "string"
+        },
+        "interface": {
+          "default": "",
+          "title": "Interface",
+          "type": "string"
+        },
+        "mac": {
+          "default": "",
+          "title": "Mac",
+          "type": "string"
+        }
+      },
+      "title": "ChannelLink",
+      "type": "object"
+    },
+    "ChannelMachine": {
+      "description": "The ``machine`` section of an agent's report.",
+      "properties": {
+        "accounts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accounts",
+          "type": "array"
+        },
+        "hostname": {
+          "default": "",
+          "title": "Hostname",
+          "type": "string"
+        },
+        "metrics": {
+          "additionalProperties": true,
+          "title": "Metrics",
+          "type": "object"
+        },
+        "platform": {
+          "additionalProperties": true,
+          "title": "Platform",
+          "type": "object"
+        }
+      },
+      "title": "ChannelMachine",
+      "type": "object"
+    },
+    "ChannelModuleReport": {
+      "description": "What the agent observed of one module.",
+      "properties": {
+        "code": {
+          "default": "",
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "is_active": {
+          "default": false,
+          "title": "Is Active",
+          "type": "boolean"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "state": {
+          "default": "",
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "title": "ChannelModuleReport",
+      "type": "object"
+    },
+    "ChannelModuleState": {
+      "description": "What one module on a device is to be.",
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "title": "Config",
+          "type": "object"
+        },
+        "install": {
+          "additionalProperties": true,
+          "title": "Install",
+          "type": "object"
+        },
+        "uninstall": {
+          "additionalProperties": true,
+          "title": "Uninstall",
+          "type": "object"
+        },
+        "want": {
+          "title": "Want",
+          "type": "string"
+        }
+      },
+      "required": [
+        "want"
+      ],
+      "title": "ChannelModuleState",
+      "type": "object"
+    },
+    "ChannelNetwork": {
+      "$defs": {
+        "ChannelInterface": {
+          "description": "One interface of the machine.",
+          "properties": {
+            "addresses": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Addresses",
+              "type": "array"
+            },
+            "mac": {
+              "default": "",
+              "title": "Mac",
+              "type": "string"
+            },
+            "name": {
+              "default": "",
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "title": "ChannelInterface",
+          "type": "object"
+        },
+        "ChannelLink": {
+          "description": "The interface the socket runs on, as the agent sees it.",
+          "properties": {
+            "address": {
+              "default": "",
+              "title": "Address",
+              "type": "string"
+            },
+            "interface": {
+              "default": "",
+              "title": "Interface",
+              "type": "string"
+            },
+            "mac": {
+              "default": "",
+              "title": "Mac",
+              "type": "string"
+            }
+          },
+          "title": "ChannelLink",
+          "type": "object"
+        }
+      },
+      "description": "The ``network`` section of an agent's report.",
+      "properties": {
+        "interfaces": {
+          "items": {
+            "$ref": "#/$defs/ChannelInterface"
+          },
+          "title": "Interfaces",
+          "type": "array"
+        },
+        "link": {
+          "$ref": "#/$defs/ChannelLink"
+        }
+      },
+      "title": "ChannelNetwork",
+      "type": "object"
+    },
+    "ChannelOpen": {
+      "additionalProperties": true,
+      "description": "A stream begins; the kind's own arguments ride beside these.",
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "stream": {
+          "title": "Stream",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stream",
+        "kind"
+      ],
+      "title": "ChannelOpen",
+      "type": "object"
+    },
+    "ChannelRefused": {
+      "description": "Why a hello was turned away; close 4000 follows.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "ChannelRefused",
+      "type": "object"
+    },
+    "ChannelServiceEntry": {
+      "description": "One published service as a client is given it.",
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "description_code": {
+          "default": "",
+          "title": "Description Code",
+          "type": "string"
+        },
+        "description_params": {
+          "additionalProperties": true,
+          "title": "Description Params",
+          "type": "object"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "is_healthy": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Healthy"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "title",
+        "payload",
+        "source"
+      ],
+      "title": "ChannelServiceEntry",
+      "type": "object"
+    },
+    "ChannelWelcome": {
+      "description": "The hub's identity card, answered to a hello.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "protocol": {
+          "title": "Protocol",
+          "type": "integer"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "software": {
+          "title": "Software",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "role",
+        "id",
+        "name",
+        "software"
+      ],
+      "title": "ChannelWelcome",
+      "type": "object"
+    }
+  },
+  "protocol": 1
+}

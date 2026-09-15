@@ -30,6 +30,7 @@ def box(tmp_path, monkeypatch):
             "credentials/vault.example.json",
             {"version": 2, "secrets": {}},
         ),
+        ("web/identity.example.json", {"id": "PLACEHOLDER", "name": "PLACEHOLDER"}),
     ):
         path = examples / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +57,9 @@ def box(tmp_path, monkeypatch):
     )
     (config / "web/agent_tls").mkdir()
     (config / "web/agent_tls/certificate.pem").write_text("cert")
+    (config / "web/identity.json").write_text(
+        json.dumps({"id": "a" * 32, "name": "gateway"})
+    )
     (config / "cliproxyapi").mkdir(exist_ok=True)
     (config / "cliproxyapi/management_key.sealed").write_text("{}")
 
@@ -93,6 +97,13 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     assert not (box / "web/agent_tls").exists()
     assert not (box.parent / "state" / "session.secret").exists()
     assert not (box.parent / "state" / "vault.key").exists()
+
+
+def test_reset_all_forgets_the_hubs_own_identity(box):
+    """The next setup mints a new id; the example is not copied over it."""
+    reset._reset_all()
+
+    assert not (box / "web/identity.json").exists()
 
 
 def test_reset_all_forgets_the_accounts_somebody_signed_the_gateway_in_with(box):
