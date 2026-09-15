@@ -4,18 +4,21 @@ What these pin: every field the hello and the report carry and where each
 comes from; the rejection counter and the three-refusal self-unbind, with a
 replaced socket and a broken wire counting for nothing; the wire-generation
 reinstall and its once-per-target latch; the binding file shared with the
-CLI; the self-update a welcome triggers; and what ``sync`` and ``probe`` do.
-Nothing here talks to a network.
+CLI; the self-update a welcome triggers; what ``sync`` and ``probe`` do; and
+the wake flag cleared before a turn rather than after it. Nothing here
+talks to a network.
 """
 
 import json
 import os
+import threading
 
 import pytest
 
 import neutrino_agent.core.loop as loop_module
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
+    AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
     AGENT_HEARTBEAT_INTERVAL_S,
     AGENT_REINSTALL_RESULT_NAME,
@@ -743,3 +746,47 @@ def test_a_module_command_that_took_is_reported_at_once(config_path, monkeypatch
 
     assert refreshed == [True]
     assert agent._news.is_set()
+
+
+# --- the wake flag ---
+
+
+class _Stop(Exception):
+    """Ends ``run_forever`` from a scripted turn."""
+
+
+class _WatchedEvent(threading.Event):
+    """An event whose waits return at once, recording whether it was set."""
+
+    def __init__(self):
+        super().__init__()
+        self.waits: list = []
+
+    def wait(self, timeout=None):
+        self.waits.append(self.is_set())
+        return True
+
+
+def test_news_during_a_turn_starts_the_next_turn_without_waiting(
+    config_path, monkeypatch
+):
+    """A stop or a ``nagent sync`` that lands while a turn runs is still
+    standing when the wait begins, so the backoff is not waited out."""
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "apply_baseline", lambda: None)
+    agent._news = _WatchedEvent()
+    turns: list = []
+
+    def turn():
+        turns.append(True)
+        if len(turns) == 2:
+            raise _Stop()
+        agent.report_soon()
+        return AGENT_BACKOFF_MAX_S
+
+    monkeypatch.setattr(agent, "run_once", turn)
+
+    with pytest.raises(_Stop):
+        agent.run_forever()
+
+    assert agent._news.waits == [True]

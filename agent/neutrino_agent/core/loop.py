@@ -326,8 +326,10 @@ class Agent:
         # and reaches the LAN and nothing else from the first start.
         self._rdp.apply_baseline()
         while True:
-            delay = self.run_once()
+            # Cleared before the turn: news set during it is still standing
+            # when the wait begins.
             self._news.clear()
+            delay = self.run_once()
             self._news.wait(timeout=delay)
 
     def run_once(self) -> int:
