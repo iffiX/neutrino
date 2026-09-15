@@ -13,7 +13,11 @@ from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import wording
 from neutrino_client.control import client
 from neutrino_client.core import enrollment
-from neutrino_client.core.session import CONNECTION_CONNECTED, CONNECTION_UNBOUND
+from neutrino_client.core.session import (
+    CONNECTION_CONNECTED,
+    CONNECTION_REPLACED,
+    CONNECTION_UNBOUND,
+)
 from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
@@ -89,6 +93,8 @@ def _why(state: dict) -> str:
     Returns:
         The wording after a colon, empty when there is nothing to add.
     """
+    if state.get("connection_state") == CONNECTION_REPLACED:
+        return f": {wording.word_state(CONNECTION_REPLACED)}"
     error = state.get("last_error")
     if not isinstance(error, dict) or not error.get("code"):
         return ""

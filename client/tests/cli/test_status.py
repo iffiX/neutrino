@@ -61,6 +61,20 @@ def test_a_reconnecting_socket_is_not_a_clean_status(resident, config_path, caps
     assert "resident   running" in out
 
 
+def test_a_replaced_socket_is_not_a_clean_status(resident, config_path, capsys):
+    bind(config_path, url=GATEWAY_URL)
+    resident.connection_state_value = "replaced"
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert (
+        f"hub        {GATEWAY_URL}   replaced: another client took this connection"
+        in out
+    )
+    assert "resident   running" in out
+
+
 def test_bound_and_dead_reads_the_binding_file(platform, config_path, capsys):
     bind(config_path, url=GATEWAY_URL)
 
@@ -93,7 +107,8 @@ def test_unbound_and_dead_says_both(platform, capsys):
     "error, fragment",
     [
         ({"code": "hub_refused", "params": {}}, "refused this client's token"),
-        ({"code": "hub_untrusted", "params": {}}, "not the hub this link pins"),
+        ({"code": "hub_untrusted", "params": {}}, "the hub's identity changed"),
+        ({"code": "binding_unknown", "params": {}}, "no longer knows this client"),
         ({"code": "hub_unreachable", "params": {"detail": "no route"}}, "no route"),
         (
             {
@@ -108,10 +123,6 @@ def test_unbound_and_dead_says_both(platform, capsys):
                 "params": {"peer": 1, "hub": 3, "min": 2},
             },
             "this client speaks protocol 1; the hub accepts 2 and up",
-        ),
-        (
-            {"code": "self_unbound", "params": {"cause": "hub_untrusted"}},
-            "the hub's identity changed",
         ),
         ({"code": "client_disabled", "params": {}}, "switched this client off"),
     ],

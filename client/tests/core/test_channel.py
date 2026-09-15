@@ -21,7 +21,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 import neutrino_client.core.enrollment as enrollment
-from neutrino_client.constants import CLIENT_JOIN_PATH, CLIENT_LEAVE_PATH
+from neutrino_client.constants import (
+    CLIENT_BACKOFF_MAX_S,
+    CLIENT_JOIN_PATH,
+    CLIENT_LEAVE_PATH,
+)
 from neutrino_client.core.channel import GatewayHttpChannel
 from neutrino_client.core.session import ClientSession
 from neutrino_client.exceptions import (
@@ -148,34 +152,19 @@ def test_an_https_url_without_a_pin_sends_nothing(tls_server):
     assert RecordingHandler.requests == []
 
 
-def test_three_mismatched_connections_unbind_the_person(tls_server, config_path):
+def test_a_mismatched_pin_keeps_the_binding_and_asks_again_a_minute_later(
+    tls_server, config_path
+):
     url, _ = tls_server
     bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
     session = ClientSession(log=discard, platform=FakeClientPlatform())
 
-    for _ in range(3):
-        session.run_once()
+    delays = [session.run_once() for _ in range(3)]
 
-    assert session.is_connected() is False
-    assert json.loads(config_path.read_text())["bindings"] == []
-    assert session.last_error() == {
-        "code": "self_unbound",
-        "params": {"cause": "hub_untrusted"},
-    }
-    assert RecordingHandler.requests == []
-
-
-def test_two_mismatched_connections_keep_the_binding(tls_server, config_path):
-    url, _ = tls_server
-    bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
-    session = ClientSession(log=discard, platform=FakeClientPlatform())
-
-    for _ in range(2):
-        session.run_once()
-
+    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
     assert session.is_connected() is True
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error()["code"] == "hub_untrusted"
+    assert session.last_error() == {"code": "hub_untrusted", "params": {}}
     assert RecordingHandler.requests == []
 
 

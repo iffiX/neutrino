@@ -56,13 +56,6 @@ def test_every_mount_record_state_has_cli_words():
         ), f"mount state {state} has no CLI wording"
 
 
-def test_every_unbind_cause_the_catalogs_word_is_worded():
-    for cause in catalog_keys("cause."):
-        assert cause in wording.CLIENT_UNBIND_CAUSE_WORDS, f"cause {cause} has no words"
-        worded = wording.word_code("self_unbound", {"cause": cause})
-        assert wording.CLIENT_UNBIND_CAUSE_WORDS[cause] in worded
-
-
 def test_the_new_codes_of_the_client_are_worded():
     for code in (
         "bundle_missing",
@@ -71,8 +64,16 @@ def test_the_new_codes_of_the_client_are_worded():
         "resident_not_running",
         "link_not_for_client",
         "control_socket_unavailable",
+        "binding_unknown",
+        "unknown_hub",
     ):
         assert wording.word_code(code, {}) not in ("", code)
+
+
+def test_nothing_of_the_unbind_causes_is_left():
+    assert not hasattr(wording, "CLIENT_UNBIND_CAUSE_WORDS")
+    assert "self_unbound" not in wording.CLIENT_CODE_WORDS
+    assert wording.word_code("self_unbound", {"cause": "hub_refused"}) == "self_unbound"
 
 
 def test_a_code_outside_the_table_prints_as_itself():

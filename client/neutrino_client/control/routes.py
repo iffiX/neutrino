@@ -88,6 +88,8 @@ def dispatch(method: str, path: str, body: "dict | None", session):
         if route == "/api/disconnect":
             session.disconnect()
             return 200, state_payload(session)
+        if route == "/api/session/start":
+            return _start_session(session, payload)
         if route.startswith(SERVICES_PREFIX):
             return _service_action(session, route[len(SERVICES_PREFIX) :], payload)
         if route == "/api/fs":
@@ -108,10 +110,10 @@ def refusal_status(code: str) -> int:
         code: The refusal code.
 
     Returns:
-        404 for an unknown request, 403 for a refused scope or path, 400
-        otherwise.
+        404 for an unknown request or hub, 403 for a refused scope or path,
+        400 otherwise.
     """
-    if code == "unknown_request":
+    if code in ("unknown_request", "unknown_hub"):
         return 404
     if code in ("control_peer_refused", "fs_refused", "client_disabled"):
         return 403
@@ -151,6 +153,16 @@ def _connect(session, body: dict):
         state = state_payload(session)
         state["error"] = {"code": error.code, "params": dict(error.params)}
         return 200, state
+    return 200, state_payload(session)
+
+
+def _start_session(session, body: dict):
+    hub_id = str(body.get("hub_id", ""))
+    try:
+        session.reconnect(hub_id)
+    except KeyError:
+        outcome = {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        return refusal_status(outcome["code"]), outcome
     return 200, state_payload(session)
 
 

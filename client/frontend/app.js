@@ -72,10 +72,6 @@ function wordError(e) {
   if (!e || !e.code) return '';
   const p = e.params || {};
   if (e.code === 'hub_unreachable' && p.detail) return p.detail;
-  if (e.code === 'self_unbound') {
-    const cause = hasWord('cause.' + p.cause) ? p.cause : 'hub_refused';
-    return t('code.self_unbound', { cause: t('cause.' + cause) });
-  }
   return wordCode(e.code, p);
 }
 
@@ -238,17 +234,27 @@ function drawConnection(state) {
   if (state.is_connected) {
     const row = document.createElement('div');
     row.className = 'row';
-    // Bound is not the same as reached: the socket may be down while the
-    // binding stands, and the page says which.
+    // Bound is not the same as reached: the socket may be down, or another
+    // client's may hold the binding, while the binding stands, and the page
+    // says which.
+    const isReplaced = state.connection_state === 'replaced';
     const isReaching = state.connection_state === 'reconnecting';
-    const tone = state.is_disabled ? 'off' : isReaching ? 'wait' : 'ok';
-    const word = state.is_disabled ? t('ui.disabled')
+    const tone = isReplaced || state.is_disabled ? 'off'
+      : isReaching ? 'wait' : 'ok';
+    const word = isReplaced ? t('state.replaced')
+      : state.is_disabled ? t('ui.disabled')
       : isReaching ? t('ui.reconnecting') : t('ui.connected');
     const version = state.hub_version
       ? ' · ' + t('ui.hub_version', { version: state.hub_version }) : '';
     row.innerHTML = '<span class="dot ' + tone + '"></span><div style="flex:1"><div>' +
       word + '</div><div class="sub">' + state.gateway_url + version +
       '</div></div>';
+    if (isReplaced) {
+      const reconnect = document.createElement('button');
+      reconnect.textContent = t('ui.reconnect');
+      reconnect.onclick = () => send('/api/session/start');
+      row.appendChild(reconnect);
+    }
     const leave = document.createElement('button');
     leave.className = 'danger';
     leave.textContent = t('ui.disconnect');

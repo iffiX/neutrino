@@ -22,6 +22,8 @@ CLIENT_ROLE = "client"
 CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
 # The refusals the hub answers a protocol number it does not speak with.
 CLIENT_PROTOCOL_REFUSAL_CODES = ("protocol_too_old", "protocol_too_new")
+# The one refusal that unbinds: the hub holds no such binding.
+CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 
 # What the hub answers as in its welcome.
 CLIENT_HUB_ROLE = "hub"
@@ -36,10 +38,6 @@ CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
 # hub opened with.
 CLIENT_STREAM_KIND_SERVICE = "service"
 CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
-
-# How many rejections in a row the hub may answer with before the client drops
-# its binding. One counter for every kind of rejection.
-CLIENT_REFUSALS_BEFORE_UNBIND = 3
 
 # How often an unbound resident looks at its configuration again.
 CLIENT_IDLE_POLL_INTERVAL_S = 2

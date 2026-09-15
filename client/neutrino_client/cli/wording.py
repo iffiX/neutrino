@@ -49,7 +49,11 @@ CLIENT_CODE_WORDS = {
     ),
     "enroll_no_token": "the hub sent no token back",
     "hub_refused": "the hub refused this client's token",
-    "hub_untrusted": "what answers is not the hub this link pins",
+    "hub_untrusted": "the hub's identity changed; if it was reset, join it again",
+    "binding_unknown": (
+        "this hub no longer knows this client; join it again with a new link"
+    ),
+    "unknown_hub": "this client has not joined that hub",
     "hub_unreachable": "the hub cannot be reached",
     "hub_reply_unreadable": "the hub sent a reply this client could not read",
     "protocol_too_old": (
@@ -60,7 +64,6 @@ CLIENT_CODE_WORDS = {
         "this client speaks protocol {peer}; the hub speaks {hub}, "
         "so update the hub first"
     ),
-    "self_unbound": "{cause}; rejoin by pasting a fresh link from the hub",
     "no_endpoint": "the hub has not granted this person a key yet",
     "mountpoint_not_empty": "that folder is not empty",
     "credentials_missing": (
@@ -93,12 +96,14 @@ CLIENT_DETAIL_CODES = (
     "forward_failed",
 )
 
-# The ai row's standing, and the word for a row that has not reported.
+# The ai row's standing, the word for a row that has not reported, and the
+# hub socket another client took.
 CLIENT_STATE_WORDS = {
     "installed": "ready",
     "absent": "not installed",
     "failed": "failed",
     "unknown": "waiting for the client",
+    "replaced": "another client took this connection",
 }
 
 # The ai lane's step while it runs, shown in place of the row's standing.
@@ -113,12 +118,6 @@ CLIENT_MOUNT_STATE_WORDS = {
     "pending": "waiting to mount",
     "mounted": "mounted",
     "detached": "not mounted",
-}
-
-# What an unbind names as its cause.
-CLIENT_UNBIND_CAUSE_WORDS = {
-    "hub_untrusted": "the hub's identity changed (it was reset or reinstalled)",
-    "hub_refused": "the hub no longer knows this client",
 }
 
 
@@ -139,11 +138,6 @@ def word_code(code: str, params: "dict | None" = None) -> str:
         return str(values.get("detail", "")) or CLIENT_STATE_WORDS["failed"]
     if code == "hub_unreachable" and values.get("detail"):
         return str(values["detail"])
-    if code == "self_unbound":
-        cause = str(values.get("cause", ""))
-        values["cause"] = CLIENT_UNBIND_CAUSE_WORDS.get(
-            cause, CLIENT_UNBIND_CAUSE_WORDS["hub_refused"]
-        )
     word = CLIENT_CODE_WORDS.get(code)
     return _fill(word, values) if word else code
 

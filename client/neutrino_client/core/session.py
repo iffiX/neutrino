@@ -40,7 +40,7 @@ from neutrino_client.constants import (
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
     CLIENT_ORIGINAL_DIR_NAME,
     CLIENT_PROTOCOL_REFUSAL_CODES,
-    CLIENT_REFUSALS_BEFORE_UNBIND,
+    CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
     CLIENT_SHUTDOWN_DEADLINE_S,
@@ -57,7 +57,6 @@ from neutrino_client.core.channel import refusal_error
 from neutrino_client.core.streams import ClientStreamRegistry
 from neutrino_client.core.ws_client import WebSocketClient, close_error
 from neutrino_client.exceptions import (
-    GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
@@ -72,9 +71,10 @@ from neutrino_client.services.rdp import RdpViewerHandler
 from neutrino_client.services.store import ClientServiceStore
 from neutrino_client.services.web import WebServiceHandler
 
-# How the three connection states are named to every surface.
+# How the four connection states are named to every surface.
 CONNECTION_CONNECTED = "connected"
 CONNECTION_RECONNECTING = "reconnecting"
+CONNECTION_REPLACED = "replaced"
 CONNECTION_UNBOUND = "unbound"
 
 # How long a shutdown waits for the loop thread to come back.
@@ -122,12 +122,9 @@ def channel_error(error: Exception) -> dict:
         return {"code": error.code, "params": dict(error.params)}
     if isinstance(error, GatewayUntrusted):
         return {"code": "hub_untrusted", "params": {}}
-    if isinstance(error, GatewayProtocolRefused):
-        return {
-            "code": error.code,
-            "params": {"peer": error.peer, "hub": error.hub, "min": error.minimum},
-        }
     if isinstance(error, GatewayRefused):
+        if error.code:
+            return {"code": error.code, "params": dict(error.params)}
         return {"code": "hub_refused", "params": {}}
     return {"code": "hub_unreachable", "params": {"detail": str(error)}}
 
@@ -224,7 +221,8 @@ class ClientSession:
         self._binding: dict = {}
         self._binding_stamp = 0
         self._backoff_s = CLIENT_BACKOFF_MIN_S
-        self._refusals = 0
+        # Set while another socket holds this binding; only a person clears it.
+        self._is_replaced = False
         self._last_error: "dict | None" = None
         self._services_list: list = []
         self._state_hash = ""
@@ -254,10 +252,12 @@ class ClientSession:
             return bool(self._binding)
 
     def connection_state(self) -> str:
-        """Where the hub socket stands: connected, reconnecting or unbound."""
+        """Where the hub socket stands, one of the four ``CONNECTION_*`` states."""
         with self._lock:
             if not self._binding:
                 return CONNECTION_UNBOUND
+            if self._is_replaced:
+                return CONNECTION_REPLACED
             return (
                 CONNECTION_CONNECTED if self._is_welcomed else CONNECTION_RECONNECTING
             )
@@ -440,6 +440,22 @@ class ClientSession:
         """Cut the wait before the next connection attempt short."""
         self._news.set()
 
+    def reconnect(self, hub_id: str = "") -> None:
+        """Take the binding back from the socket that replaced it, and connect now.
+
+        Args:
+            hub_id: The hub to connect to; empty names the one binding held.
+
+        Raises:
+            KeyError: If ``hub_id`` names no hub this person has joined.
+        """
+        with self._lock:
+            if hub_id and hub_id != self._binding.get("hub_id"):
+                raise KeyError(hub_id)
+            self._is_replaced = False
+        self._news.set()
+        self.notify()
+
     def request_show(self) -> None:
         """Ask the window to come to the front, when one is listening."""
         callback = self.on_show
@@ -517,8 +533,10 @@ class ClientSession:
 
         Returns:
             How many seconds to wait before the next one: the shortest delay
-            after a clean close, a backing-off delay after a broken wire, and
-            a short idle wait while the person belongs to no hub.
+            after a clean close, a backing-off delay after a broken wire, a
+            minute after a refusal the binding survives, and a short idle
+            wait while the person belongs to no hub or another socket holds
+            the binding.
         """
         self._adopt_external_binding()
         client = self._open_client()
@@ -559,10 +577,11 @@ class ClientSession:
         self._log("shut down")
 
     def _open_client(self) -> "WebSocketClient | None":
-        """A socket for the current binding, or None while unbound."""
+        """A socket for the current binding, or None while unbound or replaced."""
         with self._lock:
             binding = dict(self._binding)
-        if not binding:
+            is_replaced = self._is_replaced
+        if not binding or is_replaced:
             return None
         parts = urllib.parse.urlsplit(binding["gateway_url"])
         return WebSocketClient(
@@ -606,7 +625,6 @@ class ClientSession:
             self._hub_software = str(welcome.get("software", "") or "")
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             self._last_error = None
-            self._refusals = 0
         self.notify()
 
     def _serve(self, client) -> "Exception | None":
@@ -617,7 +635,7 @@ class ClientSession:
 
         Returns:
             What ended it, or None when a shutdown, a close from here, or
-            the hub replacing this socket did.
+            another socket replacing this one did.
         """
         failure = None
         ended = threading.Event()
@@ -632,7 +650,9 @@ class ClientSession:
             try:
                 kind, payload = client.recv()
             except SocketClosed as closed:
-                if closed.code != CLIENT_WS_CLOSE_REPLACED:
+                if closed.code == CLIENT_WS_CLOSE_REPLACED:
+                    self._stand_aside()
+                else:
                     failure = close_error(closed.code, closed.reason)
                 break
             except GatewayUnreachable as error:
@@ -854,8 +874,14 @@ class ClientSession:
         if client is not None:
             self._end_socket(client)
 
+    def _stand_aside(self) -> None:
+        """Another socket holds this binding: open no more until a person acts."""
+        with self._lock:
+            self._is_replaced = True
+        self._log("another client took this binding; not reconnecting until asked")
+
     def _on_unreachable(self, error: Exception) -> int:
-        """Back off after a broken wire; the rejection count stands."""
+        """Back off after a broken wire."""
         with self._lock:
             self._last_error = channel_error(error)
             delay = self._backoff_s
@@ -865,7 +891,7 @@ class ClientSession:
         return delay
 
     def _on_rejected(self, error: Exception) -> int:
-        """Take a definitive rejection for what it is, after a short grace.
+        """Take a refusal: the one that unbinds, or one the binding survives.
 
         Args:
             error: What the channel raised.
@@ -874,21 +900,16 @@ class ClientSession:
             Seconds until the next loop turn.
         """
         rejection = channel_error(error)
-        if isinstance(error, GatewayProtocolRefused):
-            # A hub that does not speak this number has not forgotten this
-            # client: the binding stays, and the client asks again later.
-            with self._lock:
-                self._last_error = rejection
-                self._refusals = 0
-            self._log(f"{error}; asking again later")
-            return CLIENT_BACKOFF_MAX_S
+        if rejection["code"] == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
+            return self._unbind(rejection)
         with self._lock:
-            self._refusals += 1
-            rejections = self._refusals
             self._last_error = rejection
-        if rejections < CLIENT_REFUSALS_BEFORE_UNBIND:
-            self._log(f"{error}; asking again")
-            return CLIENT_BACKOFF_MIN_S
+        self._log(f"{error}; asking again in {CLIENT_BACKOFF_MAX_S}s")
+        self.notify()
+        return CLIENT_BACKOFF_MAX_S
+
+    def _unbind(self, rejection: dict) -> int:
+        """Let the binding go: the hub holds no such binding any more."""
         with self._lock:
             binding_id = self._binding.get("id", "")
         enrollment.remove_binding(binding_id)
@@ -896,11 +917,9 @@ class ClientSession:
         self._reset_binding_state()
         self._load_connection()
         with self._lock:
-            self._last_error = {
-                "code": "self_unbound",
-                "params": {"cause": rejection["code"]},
-            }
-        self._log(f"unbound: {rejection['code']}")
+            self._last_error = rejection
+        self._log("unbound: the hub no longer knows this client")
+        self.notify()
         return CLIENT_IDLE_POLL_INTERVAL_S
 
     def _clear_leftovers(self) -> None:
@@ -957,7 +976,7 @@ class ClientSession:
     def _reset_binding_state(self) -> None:
         with self._lock:
             self._last_error = None
-            self._refusals = 0
+            self._is_replaced = False
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             self._services_list = []
             self._state_hash = ""

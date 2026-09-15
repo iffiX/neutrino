@@ -81,10 +81,41 @@ def test_service_actions_carry_only_the_body():
     assert "forwards" in state
 
 
+def test_starting_the_session_takes_a_replaced_binding_back():
+    session = FakeSession()
+    session.connection_state_value = "replaced"
+
+    status, state = routes.dispatch("POST", "/api/session/start", {}, session)
+
+    assert status == 200
+    assert session.reconnects == [""]
+    assert state["connection_state"] == "reconnecting"
+
+
+def test_starting_the_session_names_the_hub_when_the_body_does():
+    session = FakeSession()
+
+    status, _state = routes.dispatch(
+        "POST", "/api/session/start", {"hub_id": "h1"}, session
+    )
+    assert status == 200
+    assert session.reconnects == ["h1"]
+
+    status, reply = routes.dispatch(
+        "POST", "/api/session/start", {"hub_id": "h9"}, session
+    )
+    assert (status, reply) == (
+        404,
+        {"code": "unknown_hub", "params": {"hub_id": "h9"}},
+    )
+    assert session.reconnects == ["h1"]
+
+
 def test_a_service_refusal_maps_to_its_status():
     session = FakeSession()
     for code, status in (
         ("unknown_request", 404),
+        ("unknown_hub", 404),
         ("fs_refused", 403),
         ("client_disabled", 403),
         ("mountpoint_not_empty", 400),

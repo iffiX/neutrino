@@ -282,7 +282,9 @@ class FakeSession:
         self.is_bound = True
         self.error_payload = None
         self.hub_version_value = "0.2.0"
+        self.hub_id_value = "h1"
         self.connection_state_value = "connected"
+        self.reconnects = []
         self.is_disabled_value = False
         self.states = {
             "forwards": {"svc_tcp": {"local_port": 5432, "is_active": True}},
@@ -378,6 +380,12 @@ class FakeSession:
     def disconnect(self) -> None:
         self.is_disconnected = True
         self.is_bound = False
+
+    def reconnect(self, hub_id: str = "") -> None:
+        if hub_id and hub_id != self.hub_id_value:
+            raise KeyError(hub_id)
+        self.reconnects.append(hub_id)
+        self.connection_state_value = "reconnecting"
 
     def request_show(self) -> None:
         self.shows += 1

@@ -215,8 +215,19 @@ def test_the_detail_fallback_names_each_of_its_codes():
     assert "DETAIL_CODES.indexOf(code) >= 0" in PAGE_JS
 
 
-def test_every_unbind_cause_has_a_word():
-    assert catalog_keys("cause.") == {"hub_refused", "hub_untrusted"}
+def test_nothing_of_the_unbind_causes_is_left():
+    assert catalog_keys("cause.") == set()
+    assert "self_unbound" not in PAGE_JS
+    assert "self_unbound" not in catalog_keys("code.")
+
+
+def test_the_one_refusal_that_unbinds_and_the_pin_mismatch_are_worded():
+    assert EN_WORDS["code.binding_unknown"] == (
+        "this hub no longer knows this client; join it again with a new link"
+    )
+    assert EN_WORDS["code.hub_untrusted"] == (
+        "the hub's identity changed; if it was reset, join it again"
+    )
 
 
 # --- the two sections and the five panels ---
@@ -368,6 +379,18 @@ def test_everything_greys_while_the_hub_has_the_client_switched_off():
     assert "function isHeld(state)" in PAGE_JS
     assert PAGE_JS.count("isHeld(state)") >= 6
     assert EN_WORDS["ui.disabled"] == "Switched off by the hub"
+
+
+def test_a_replaced_socket_shows_its_state_and_one_reconnect_button():
+    body = PAGE_JS.split("function drawConnection(state)")[1].split("\n}")[0]
+
+    assert "state.connection_state === 'replaced'" in body
+    assert "t('state.replaced')" in body
+    assert "reconnect.textContent = t('ui.reconnect');" in body
+    assert "send('/api/session/start')" in body
+    assert body.count("t('ui.reconnect')") == 1
+    assert EN_WORDS["state.replaced"] == "Replaced by another client"
+    assert EN_WORDS["ui.reconnect"] == "Reconnect"
 
 
 def test_every_choice_the_page_offers_goes_through_the_one_picker():

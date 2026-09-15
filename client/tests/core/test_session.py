@@ -6,10 +6,11 @@ pinned here is the hello's six fields, the welcome written onto the binding,
 a refused first frame, a state that replaces what was held and feeds the
 handlers, the disabled switch letting go once and resuming, the report
 after every state and on the interval, a service stream correlated to its
-close, three refusals unbinding, the backoff after a broken wire, a start
-that turns nothing on and clears what an unclean exit left, and a shutdown
-that runs its order once, logs a line a step, and lets no step hold up the
-rest.
+close, the one refusal that unbinds and the ones the binding survives, a
+replaced socket waiting for a person, the backoff after a broken wire, a
+start that turns nothing on and clears what an unclean exit left, and a
+shutdown that runs its order once, logs a line a step, and lets no step
+hold up the rest.
 """
 
 import json
@@ -24,6 +25,7 @@ from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
     CLIENT_DEFAULT_THEME,
+    CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
     CLIENT_ROLE,
     CLIENT_SOFTWARE_PREFIX,
@@ -404,31 +406,69 @@ def test_a_refused_first_frame_naming_the_protocol_keeps_the_binding(
     delays = [bound.run_once() for _ in range(5)]
 
     assert bound.is_connected() is True
+    assert bound.connection_state() == "reconnecting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert bound.last_error() == {
         "code": code,
         "params": {"peer": 1, "hub": 2, "min": 2},
     }
     assert released == []
-    assert delays[-1] == CLIENT_BACKOFF_MAX_S
+    assert delays == [CLIENT_BACKOFF_MAX_S] * 5
     assert all(made.is_closed for made in script.made)
 
 
-def test_a_refused_first_frame_of_another_code_counts_as_a_refusal(
+def test_binding_unknown_is_the_one_refusal_that_unbinds(
+    bound, monkeypatch, config_path
+):
+    script = socket_of(
+        monkeypatch,
+        [{"type": "refused", "code": "binding_unknown", "params": {"id": "c1"}}],
+    )
+    released = released_handlers(bound)
+
+    delay = bound.run_once()
+    bound.run_once()
+
+    assert delay == CLIENT_IDLE_POLL_INTERVAL_S
+    assert bound.is_connected() is False
+    assert bound.connection_state() == "unbound"
+    assert json.loads(config_path.read_text())["bindings"] == []
+    assert released == ["ai", "file", "port", "rdp"]
+    assert bound.last_error() == {
+        "code": "binding_unknown",
+        "params": {"id": "c1"},
+    }
+    assert len(script.made) == 1
+
+
+def test_a_refused_first_frame_of_another_code_keeps_the_binding(
     bound, monkeypatch, config_path
 ):
     socket_of(
-        monkeypatch, [{"type": "refused", "code": "binding_unknown", "params": {}}]
+        monkeypatch,
+        [{"type": "refused", "code": "ticket_spent", "params": {"id": "c1"}}],
     )
+    released = released_handlers(bound)
 
-    bound.run_once()
-    bound.run_once()
+    delays = [bound.run_once() for _ in range(3)]
+
+    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
     assert bound.is_connected() is True
-    assert bound.last_error()["code"] == "hub_refused"
-    bound.run_once()
+    assert bound.connection_state() == "reconnecting"
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
+    assert bound.last_error() == {"code": "ticket_spent", "params": {"id": "c1"}}
+    assert released == []
 
-    assert bound.is_connected() is False
-    assert json.loads(config_path.read_text())["bindings"] == []
+
+def test_a_welcome_after_a_refusal_clears_the_error(bound, monkeypatch):
+    socket_of(monkeypatch, [{"type": "refused", "code": "ticket_spent", "params": {}}])
+    bound.run_once()
+    assert bound.last_error()["code"] == "ticket_spent"
+
+    connected(bound, socket_of(monkeypatch, [WELCOME]))
+
+    assert bound.last_error() is None
+    assert bound.connection_state() == "connected"
 
 
 def test_a_refused_frame_carries_its_code_on_the_exception(bound, monkeypatch):
@@ -701,41 +741,84 @@ def test_a_broken_wire_backs_off_and_keeps_the_binding(bound, monkeypatch):
     assert bound.last_error()["code"] == "hub_unreachable"
 
 
-def test_a_replaced_socket_reconnects_quietly(bound, monkeypatch):
-    """The hub took this socket over; nothing about that is a problem."""
-    socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
+def test_a_replaced_socket_waits_for_a_person(bound, monkeypatch, config_path):
+    """Another socket holds this binding; this one opens no more on its own."""
+    script = socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
+    released = released_handlers(bound)
 
+    bound.run_once()
     delay = bound.run_once()
 
-    assert delay == 5
+    assert bound.connection_state() == "replaced"
     assert bound.is_connected() is True
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert bound.last_error() is None
+    assert released == []
+    assert delay == CLIENT_IDLE_POLL_INTERVAL_S
+    assert len(script.made) == 1
+
+
+def test_a_person_takes_a_replaced_binding_back(bound, monkeypatch):
+    script = socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
+    bound.run_once()
+    bound._news.clear()
+
+    bound.reconnect()
+
+    assert bound.connection_state() == "reconnecting"
+    assert bound._news.is_set()
+    bound.run_once()
+    assert len(script.made) == 2
+    assert script.made[1].sent[0]["type"] == "hello"
+
+
+def test_reconnect_names_the_hub_held_or_none(bound, monkeypatch):
+    socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
+    bound.run_once()
+
+    with pytest.raises(KeyError):
+        bound.reconnect("h9")
+    assert bound.connection_state() == "replaced"
+
+    bound.reconnect("h2")
+    assert bound.connection_state() == "reconnecting"
+
+
+def test_a_binding_written_on_disk_ends_the_replaced_state(
+    bound, monkeypatch, config_path
+):
+    socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
+    bound.run_once()
+    assert bound.connection_state() == "replaced"
+
+    config_path.write_text("{}")
+    bound.run_once()
+
+    assert bound.connection_state() == "unbound"
 
 
 @pytest.mark.parametrize(
-    "error, cause",
+    "error, code",
     [
         (GatewayRefused("401"), "hub_refused"),
         (GatewayUntrusted("pin"), "hub_untrusted"),
+        (GatewayRefused("refused", code="role_mismatch"), "role_mismatch"),
     ],
 )
-def test_three_refusals_of_any_kind_unbind(
-    bound, monkeypatch, config_path, error, cause
+def test_a_refusal_the_binding_survives_asks_again_a_minute_later(
+    bound, monkeypatch, config_path, error, code
 ):
     socket_of(monkeypatch, [], connect_error=error)
     released = released_handlers(bound)
 
-    bound.run_once()
-    bound.run_once()
-    assert bound.is_connected() is True
-    assert bound.last_error()["code"] == cause
-    bound.run_once()
+    delays = [bound.run_once() for _ in range(3)]
 
-    assert bound.is_connected() is False
-    assert bound.connection_state() == "unbound"
-    assert json.loads(config_path.read_text())["bindings"] == []
-    assert bound.last_error() == {"code": "self_unbound", "params": {"cause": cause}}
-    assert released == ["ai", "file", "port", "rdp"]
+    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
+    assert bound.is_connected() is True
+    assert bound.connection_state() == "reconnecting"
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
+    assert bound.last_error()["code"] == code
+    assert released == []
 
 
 @pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
@@ -759,38 +842,24 @@ def test_a_hub_that_does_not_speak_this_protocol_never_unbinds(
         "params": {"peer": 1, "hub": 2, "min": 2},
     }
     assert released == []
-    assert delays[-1] == CLIENT_BACKOFF_MAX_S
+    assert delays == [CLIENT_BACKOFF_MAX_S] * 5
 
 
-def test_a_close_4000_without_a_frame_refuses_the_same_way(
+def test_a_close_4000_without_a_frame_is_hub_refused_and_keeps_the_binding(
     bound, monkeypatch, config_path
 ):
     """The close arrives instead of the welcome, which is when the hub sends
     one."""
     socket_of(monkeypatch, [SocketClosed(4000, "")])
+    released = released_handlers(bound)
 
-    for _ in range(3):
-        bound.run_once()
+    delays = [bound.run_once() for _ in range(3)]
 
-    assert bound.is_connected() is False
-    assert bound.last_error() == {
-        "code": "self_unbound",
-        "params": {"cause": "hub_refused"},
-    }
-
-
-def test_an_unreachable_hub_between_refusals_neither_counts_nor_resets(
-    bound, monkeypatch
-):
-    socket_of(monkeypatch, [], connect_error=GatewayRefused("401"))
-    bound.run_once()
-    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
-    bound.run_once()
-    socket_of(monkeypatch, [], connect_error=GatewayRefused("401"))
-    bound.run_once()
-
+    assert delays == [CLIENT_BACKOFF_MAX_S] * 3
     assert bound.is_connected() is True
-    assert bound._refusals == 2
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
+    assert bound.last_error() == {"code": "hub_refused", "params": {}}
+    assert released == []
 
 
 # --- the binding, and the way out ---
