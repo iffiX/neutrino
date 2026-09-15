@@ -82,12 +82,12 @@ def masquerades_out_of(device: str) -> bool:
 
 
 def put_mode(panel, mode: str) -> None:
-    status, answer = panel.call("PUT", "/network/mode", {"mode": mode})
+    status, answer = panel.call("POST", "/hub/network/mode/set", {"mode": mode})
     assert status == 200, answer
 
 
 def settings_of(panel, name: str) -> dict:
-    for entry in panel.read("/network")["interfaces"]:
+    for entry in panel.read("/hub/network")["interfaces"]:
         if entry["settings"]["name"] == name:
             return entry["settings"]
     raise AssertionError(f"{name} is not on the network page")
@@ -100,12 +100,12 @@ def put_interface(panel, name: str, **changes) -> None:
             body[key] = {**body[key], **value}
         else:
             body[key] = value
-    status, answer = panel.call("PUT", f"/network/interfaces/{name}", body)
+    status, answer = panel.call("POST", "/hub/network/interface/set", body)
     assert status == 200, answer
 
 
 def put_options(panel, **changes) -> None:
-    view = panel.read("/network")
+    view = panel.read("/hub/network")
     body = {
         "uplink_policy": view["uplink_policy"],
         "is_inter_lan_allowed": view["is_inter_lan_allowed"],
@@ -116,16 +116,16 @@ def put_options(panel, **changes) -> None:
         ],
     }
     body.update(changes)
-    status, answer = panel.call("PUT", "/network", body)
+    status, answer = panel.call("POST", "/hub/network/set", body)
     assert status == 200, answer
 
 
 def put_proxy(panel, **changes) -> None:
-    body = dict(panel.read("/proxy"))
+    body = dict(panel.read("/hub/proxy"))
     body.update(changes)
-    status, answer = panel.call("PUT", "/proxy", body)
+    status, answer = panel.call("POST", "/hub/proxy/set", body)
     assert status == 200, answer
-    status, answer = panel.call("POST", "/proxy/apply")
+    status, answer = panel.call("POST", "/hub/proxy/apply")
     assert status == 200, answer
     assert answer.get("is_applied"), answer
 
@@ -176,7 +176,7 @@ def wiring(panel, before) -> dict:
     """
     physical = [
         entry["settings"]["name"]
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
         if entry["link"]["is_present"]
         and entry["settings"]["vlan"] is None
         and entry["link"]["kind"] == "ethernet"
@@ -196,7 +196,7 @@ def wiring(panel, before) -> dict:
 
 
 def test_the_box_arrives_a_server(panel, wiring):
-    assert panel.read("/network")["mode"] == "server"
+    assert panel.read("/hub/network")["mode"] == "server"
     assert "policy accept" in machine_state.run(
         ["nft", "list", "chain", "inet", "neutrino", "forward"]
     )
@@ -208,8 +208,8 @@ def test_the_box_arrives_a_server(panel, wiring):
 
 def test_a_server_proxies_its_ports_and_itself(panel):
     """The scopes that do not need a forwarded network work without one."""
-    if not panel.read("/proxy/nodes")["nodes"]:
-        assert panel.status("POST", "/proxy/nodes", {"link": NODE_LINK}) == 201
+    if not panel.read("/hub/proxy/node")["nodes"]:
+        assert panel.status("POST", "/hub/proxy/node/add", {"link": NODE_LINK}) == 201
     put_proxy(
         panel,
         is_local_proxy_enabled=True,
@@ -230,7 +230,7 @@ def test_the_lan_switch_does_nothing_on_a_server(panel):
     put_proxy(panel, is_proxy_enabled=True)
 
     assert "iifname !=" not in firewall()
-    assert panel.read("/proxy")["is_proxy_enabled"]
+    assert panel.read("/hub/proxy")["is_proxy_enabled"]
 
 
 def test_a_server_can_put_its_proxy_away(panel):
@@ -251,7 +251,7 @@ def test_a_server_can_put_its_proxy_away(panel):
 def test_a_server_becomes_a_side_gateway(panel, wiring):
     put_mode(panel, "side_gateway")
 
-    view = panel.read("/network")
+    view = panel.read("/hub/network")
     joined = settings_of(panel, wiring["way_in"])
     assert view["mode"] == "side_gateway"
     assert joined["role"] == "lan"
@@ -356,12 +356,12 @@ def test_the_lan_moves_onto_a_tag(panel, wiring):
     put_interface(panel, wiring["way_in"], role="split")
     name = f'{wiring["way_in"]}.{ONE_ARM_TAG}'
     status, answer = panel.call(
-        "PUT",
-        f"/network/interfaces/{name}",
+        "POST",
+        "/hub/network/interface/set",
         vlan_lan_body(wiring["way_in"], ONE_ARM_TAG, ONE_ARM_ADDRESS),
     )
     assert status == 200, answer
-    view = panel.read("/network")
+    view = panel.read("/hub/network")
     exposed = [
         entry["settings"]["name"]
         for entry in view["interfaces"]
@@ -385,7 +385,7 @@ def test_the_tag_hands_back_to_two_arms(panel, wiring):
     assert not device_exists(name)
     assert all(
         entry["settings"]["name"] != name
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
     )
     if wiring["lan"] is not None:
         put_interface(panel, wiring["lan"], role="lan", lan=lan_body(LAN_ADDRESS))
@@ -403,7 +403,7 @@ def test_a_second_way_out_joins_and_balances(panel, wiring):
         lambda: "/" in addresses_on(wiring["wan2"]),
         message="the second uplink never took a lease",
     )
-    lines = panel.read("/network")["lines"]
+    lines = panel.read("/hub/network")["lines"]
     assert len(lines) == 2
 
     put_options(panel, uplink_policy="balance")
@@ -455,7 +455,7 @@ def test_the_diversion_follows_the_mode_with_nothing_retyped(panel):
     mode's, and a server forwards nobody — so the diversion is gone from the
     kernel while the answer is still on the page.
     """
-    assert panel.read("/proxy")["is_proxy_enabled"]
+    assert panel.read("/hub/proxy")["is_proxy_enabled"]
     assert "tproxy" not in firewall()
 
 
@@ -496,7 +496,7 @@ def test_the_diversion_comes_back_with_the_network_to_divert(panel):
     """The other half of it: a mode that forwards again is a mode where the
     switch means something, and the mode's own apply is what puts the rules
     back — no visit to the Proxy page, no second Apply."""
-    assert panel.read("/proxy")["is_proxy_enabled"]
+    assert panel.read("/hub/proxy")["is_proxy_enabled"]
     assert "tproxy" in firewall()
 
 
@@ -506,11 +506,11 @@ def test_the_diversion_comes_back_with_the_network_to_divert(panel):
 def test_the_side_gateway_returns_to_a_server(panel, wiring):
     put_mode(panel, "server")
 
-    assert panel.read("/network")["mode"] == "server"
+    assert panel.read("/hub/network")["mode"] == "server"
     assert settings_of(panel, wiring["way_in"])["role"] == "disabled"
     assert "masquerade" not in firewall()
     assert machine_state.is_active(wiring["manager"])
     # The proxy's answers survived the whole walk.
-    assert panel.status("GET", "/proxy") == 200
-    status, answer = panel.call("POST", "/proxy/apply")
+    assert panel.status("GET", "/hub/proxy") == 200
+    status, answer = panel.call("POST", "/hub/proxy/apply")
     assert status == 200 and answer.get("is_applied"), answer

@@ -39,7 +39,7 @@ Every subcommand that acts on one hub takes `--hub`, whose value is that hub's n
 ## What status prints
 
 ```text
-neutrino-client 0.2.0
+neutrino-client 0.3.0
 hub        home    https://192.168.100.1:8443  connected  exit
 hub        office  https://10.8.0.1:8443       reconnecting: the hub cannot be reached
 resident   running

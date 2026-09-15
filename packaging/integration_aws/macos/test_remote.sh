@@ -34,7 +34,7 @@ fi
 # already joined; the walk starts from unbound by leaving first.
 if nclient status > /dev/null 2>&1; then
     step "leave the hub a previous walk joined"
-    nclient disconnect || fail "nclient disconnect failed"
+    nclient leave || fail "nclient leave failed"
 fi
 
 step "status before joining (expects exit 1: unbound)"
@@ -42,7 +42,7 @@ nclient status
 [ $? -eq 1 ] || fail "nclient status did not exit 1"
 
 step "join the hub"
-nclient connect "$LINK" --yes || fail "nclient connect failed"
+nclient join "$LINK" || fail "nclient join failed"
 
 step "run the resident"
 nohup nclient gui --hidden > "$HOME/neutrino/resident.log" 2>&1 &

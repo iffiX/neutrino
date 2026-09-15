@@ -5,7 +5,7 @@
 [English](README.md) · 简体中文
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![Hub: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 [![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 [![Client: Linux · Windows · macOS](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
@@ -61,7 +61,7 @@
 <summary><b>中枢</b> · Debian、Ubuntu、Raspberry Pi OS</summary>
 
 ```bash
-sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+sudo apt install ./neutrino-hub_0.3.0_amd64.deb
 sudo nhub setup
 ```
 
@@ -73,7 +73,7 @@ sudo nhub setup
 
 ```bash
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
 sudo nhub setup
 ```
 
@@ -84,7 +84,7 @@ sudo nhub setup
 <summary><b>中枢</b> · Arch、EndeavourOS、Manjaro</summary>
 
 ```bash
-sudo pacman -U neutrino-hub-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
 sudo nhub setup
 ```
 
@@ -95,7 +95,7 @@ sudo nhub setup
 <summary><b>被控端</b> · Debian 系</summary>
 
 ```bash
-sudo apt install ./neutrino-agent_0.2.0_amd64.deb
+sudo apt install ./neutrino-agent_0.3.0_amd64.deb
 sudo nagent join '<enroll-link>'
 ```
 
@@ -106,7 +106,7 @@ sudo nagent join '<enroll-link>'
 <summary><b>被控端</b> · Fedora、RHEL 系</summary>
 
 ```bash
-sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm
 sudo nagent join '<enroll-link>'
 ```
 
@@ -117,7 +117,7 @@ sudo nagent join '<enroll-link>'
 <summary><b>客户端</b> · Debian 系</summary>
 
 ```bash
-sudo apt install ./neutrino-client_0.2.0_amd64.deb
+sudo apt install ./neutrino-client_0.3.0_amd64.deb
 nclient gui
 ```
 
@@ -128,7 +128,7 @@ nclient gui
 <summary><b>客户端</b> · Fedora、RHEL 系</summary>
 
 ```bash
-sudo dnf install ./neutrino-client-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-client-0.3.0-1.x86_64.rpm
 nclient gui
 ```
 
@@ -139,7 +139,7 @@ nclient gui
 <summary><b>客户端</b> · Windows</summary>
 
 ```powershell
-msiexec /i neutrino-client-0.2.0-windows-amd64.msi
+msiexec /i neutrino-client-0.3.0-windows-amd64.msi
 ```
 
 安装程序显示一个把 `nclient` 加进 PATH 的选项；装完从开始菜单打开 Neutrino Client，图标进任务栏角落。
@@ -149,7 +149,7 @@ msiexec /i neutrino-client-0.2.0-windows-amd64.msi
 <summary><b>客户端</b> · macOS</summary>
 
 ```bash
-sudo installer -pkg neutrino-client-0.2.0-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 ```
 
 也可以右键 pkg 选“打开”；应用装在 /Applications，点图标即打开窗口。

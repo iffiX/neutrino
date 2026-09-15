@@ -1,81 +1,107 @@
 """Every operation the Modules page offers, and what it refuses.
 
 Nothing here installs anything: an install is minutes of package manager on a
-box these tests are meant to leave as they found it. What is checked is the
-list the page is drawn from and every refusal around it.
+machine these tests are meant to leave as they found it, and it needs an agent
+answering. What is checked is the list the page is drawn from and every
+refusal around it, against a device that has never joined.
 """
 
 import pytest
 
-CORE_UNREACHABLE_ACTIONS = [("router", "stop"), ("web", "disable")]
+MODULE_VERBS = ["install", "start", "stop", "uninstall"]
+# A row the page can offer, and one no catalog has.
+KNOWN_MODULE = "samba"
+UNKNOWN_MODULE = "nosuchmodule"
+# The states a row may report, the closed set the panel words.
+STATE_WORDS = frozenset(
+    {
+        "absent",
+        "installed",
+        "stopped",
+        "running",
+        "installing",
+        "uninstalling",
+        "failed",
+        "unsupported",
+        "unknown",
+    }
+)
 
 
 @pytest.fixture(scope="module")
-def modules(panel) -> list:
-    """Every module as the page lists it."""
-    return panel.read("/modules")["modules"]
+def device_id(panel):
+    """A stored device with no agent, adopted from a scan row of its own."""
+    status, device = panel.call(
+        "POST",
+        "/hub/device/set",
+        {"device_id": "scan:52:54:00:cc:dd:ee", "name": "modules audit"},
+    )
+    assert status == 200, device
+    yield device["id"]
+    panel.call("POST", "/hub/device/remove", {"device_id": device["id"]})
 
 
-def test_a_fresh_box_has_installed_no_optional_module(modules):
-    """A box that reports every module installed is a box whose Modules page
-    offers no way to install one — which is what a systemd whose wording
-    changed used to produce."""
-    optional = [entry for entry in modules if not entry.get("is_core")]
-
-    assert [entry["name"] for entry in optional if entry["is_installed"]] == []
+@pytest.fixture(scope="module")
+def modules(panel, device_id) -> list:
+    """Every module as the page lists it for that device."""
+    return panel.read(f"/agent/module?device_id={device_id}")["modules"]
 
 
-def test_every_core_unit_is_running(modules):
-    core = [entry for entry in modules if entry.get("is_core")]
-
-    assert core, "a box with no core units is not a gateway"
-    assert [entry["name"] for entry in core if not entry["is_active"]] == []
-
-
-@pytest.mark.parametrize("action", ["enable", "start"])
-def test_a_module_that_is_not_installed_cannot_be_acted_on(panel, modules, action):
-    absent = [
-        entry
-        for entry in modules
-        if not entry.get("is_core") and not entry["is_installed"]
-    ]
-    if not absent:
-        pytest.skip("every optional module is installed on this box")
-    name = absent[0]["name"]
-
-    assert panel.status("POST", f"/modules/{name}/{action}", {}) == 400
+def test_the_catalog_is_listed_for_a_device_with_no_agent(modules):
+    """A page that cannot say why draws every row as "not installed", so the
+    list answers even when nothing is beating."""
+    assert modules, "a hub with no module catalog has no Modules page"
+    assert KNOWN_MODULE in {entry["name"] for entry in modules}
 
 
-@pytest.mark.parametrize("name,action", CORE_UNREACHABLE_ACTIONS)
-def test_a_core_unit_cannot_be_stopped_or_disabled(panel, name, action):
-    """The panel hides these buttons, which is not the same as the gateway
-    refusing them: a stopped core unit leaves the same dark box whoever asked."""
-    assert panel.status("POST", f"/modules/{name}/{action}", {}) == 400
+def test_every_row_carries_a_state_of_the_closed_set(modules):
+    assert {entry["state"] for entry in modules} <= STATE_WORDS
 
 
-def test_an_action_that_is_not_one_is_refused(panel):
-    assert panel.status("POST", "/modules/router/sing", {}) == 400
+def test_a_device_that_never_joined_asks_nothing_of_any_module(modules):
+    """``want`` is what the hub asks; a device it has asked nothing of holds
+    no want at all."""
+    assert [entry["name"] for entry in modules if entry["want"]] == []
 
 
-def test_a_service_that_is_not_one_is_a_404(panel):
-    assert panel.status("POST", "/modules/nosuchmodule/start", {}) == 404
+@pytest.mark.parametrize("verb", MODULE_VERBS)
+def test_a_verb_needs_an_agent_on_the_socket(panel, device_id, verb):
+    body = {"device_id": device_id, "module": KNOWN_MODULE}
+
+    status, answer = panel.call("POST", f"/agent/module/{verb}", body)
+    assert status == 409, answer
+    assert answer["detail"]["code"] == "agent_offline"
 
 
-def test_the_journal_of_a_unit_that_is_not_installed_still_answers(panel):
-    """An empty journal is an answer; an error here is a page that cannot be
-    drawn for the module somebody is about to install."""
-    assert panel.status("GET", "/modules/netbird/journal") == 200
+@pytest.mark.parametrize("verb", MODULE_VERBS)
+def test_a_module_the_catalog_lacks_is_a_404(panel, device_id, verb):
+    body = {"device_id": device_id, "module": UNKNOWN_MODULE}
+
+    status, answer = panel.call("POST", f"/agent/module/{verb}", body)
+    assert status == 404, answer
+    assert answer["detail"]["code"] == "module_unknown"
 
 
-def test_the_install_plan_of_a_module_answers(panel):
-    assert panel.status("GET", "/modules/samba/install_plan") == 200
+@pytest.mark.parametrize("verb", MODULE_VERBS)
+def test_a_device_the_hub_lacks_is_a_404(panel, verb):
+    body = {"device_id": "00000000000000000000000000000000", "module": KNOWN_MODULE}
+
+    status, answer = panel.call("POST", f"/agent/module/{verb}", body)
+    assert status == 404, answer
+    assert answer["detail"]["code"] == "device_unknown"
 
 
-def test_the_install_plan_of_a_module_that_is_not_one_is_a_404(panel):
-    assert panel.status("GET", "/modules/nosuchmodule/install_plan") == 404
+def test_the_list_of_a_device_the_hub_lacks_is_a_404(panel):
+    path = "/agent/module?device_id=00000000000000000000000000000000"
+
+    assert panel.status("GET", path) == 404
 
 
-def test_a_box_running_no_job_lists_none(panel):
-    """The listing a page reads on load to adopt an install it was watching
-    before the browser was reloaded."""
-    assert panel.read("/modules/tasks")["tasks"] == []
+def test_a_modules_own_page_needs_a_device_the_hub_manages(panel, device_id):
+    """The configuration pane belongs to a machine the hub has a binding
+    with: a row nobody's agent ever joined has nothing to configure."""
+    path = f"/agent/module/{KNOWN_MODULE}?device_id={device_id}"
+
+    status, answer = panel.call("GET", path)
+    assert status == 404, answer
+    assert answer["detail"]["code"] == "device_unknown"

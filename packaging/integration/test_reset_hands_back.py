@@ -41,7 +41,12 @@ def test_the_addresses_and_routes_it_arrived_with_are_intact(before):
 
 
 def test_the_network_configuration_files_are_untouched(before):
-    assert machine_state.config_trees() == before["config_trees"]
+    """The hooks openresolv drops are left out of both sides: they arrive
+    with the package the hub depends on, at install time rather than at
+    reset, and the snapshot was taken before either."""
+    assert machine_state.without_package_hooks(
+        machine_state.config_trees()
+    ) == machine_state.without_package_hooks(before["config_trees"])
 
 
 def test_it_still_resolves(before):

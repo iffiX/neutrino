@@ -45,7 +45,7 @@ def reinstalled(package, panel):
     Returns:
         What was true before, so the checks can compare against it.
     """
-    assert panel.status("GET", "/network") == 200
+    assert panel.status("GET", "/hub/network") == 200
     before = {
         "config": machine_state.config_digests(),
         "started": {unit: machine_state.started_at(unit) for unit in HUB_UNITS},
@@ -80,4 +80,4 @@ def test_the_panel_answers_again(reinstalled, panel, request):
     from a browser the moment the package lands."""
     panel.sign_in(request.config.getoption("--password"))
 
-    assert panel.status("GET", "/network") == 200
+    assert panel.status("GET", "/hub/network") == 200

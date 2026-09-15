@@ -49,7 +49,7 @@ if (($all | Where-Object { $_.Extension -in '.py', '.pyc' }).Count -ne 0) { Fail
 if ($LASTEXITCODE -ne 1) {
     Step "leave the hub a previous walk joined"
     & $nclient quit | Out-Null
-    & $nclient disconnect
+    & $nclient leave
 }
 
 Step "status before joining (expects exit 1: unbound)"
@@ -57,8 +57,8 @@ Step "status before joining (expects exit 1: unbound)"
 if ($LASTEXITCODE -ne 1) { Fail "nclient status exited $LASTEXITCODE, expected 1" }
 
 Step "join the hub"
-& $nclient connect $Link --yes
-if ($LASTEXITCODE -ne 0) { Fail "nclient connect exited $LASTEXITCODE" }
+& $nclient join $Link
+if ($LASTEXITCODE -ne 0) { Fail "nclient join exited $LASTEXITCODE" }
 
 Step "run the resident"
 Start-Process -FilePath $nclient -ArgumentList 'gui', '--hidden'

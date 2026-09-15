@@ -22,7 +22,7 @@ CROWD_VLAN_IDS = range(100, 130)
 @pytest.fixture(scope="module")
 def ports(panel) -> list:
     """The interfaces this machine has, in the order the panel lists them."""
-    view = panel.read("/network")
+    view = panel.read("/hub/network")
     return [entry["settings"]["name"] for entry in view["interfaces"]]
 
 
@@ -63,7 +63,7 @@ def pristine(name: str) -> dict:
 
 def options_body(panel, **over) -> dict:
     """The page-wide options as they are now, with some of them changed."""
-    view = panel.read("/network")
+    view = panel.read("/hub/network")
     body = {
         "uplink_policy": view["uplink_policy"],
         "is_inter_lan_allowed": view["is_inter_lan_allowed"],
@@ -75,7 +75,7 @@ def options_body(panel, **over) -> dict:
 
 def interface_body(panel, name: str, **over) -> dict:
     """One interface's settings as they are now, with some of them changed."""
-    for entry in panel.read("/network")["interfaces"]:
+    for entry in panel.read("/hub/network")["interfaces"]:
         if entry["settings"]["name"] != name:
             continue
         body = dict(entry["settings"])
@@ -91,7 +91,7 @@ def exposed_now(panel) -> list:
     """Which interfaces the firewall lets in, sorted."""
     return sorted(
         entry["settings"]["name"]
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
         if entry["settings"]["is_exposed"]
     )
 
@@ -100,7 +100,7 @@ def vlan_names(panel) -> list:
     """Every interface that rides on a trunk."""
     return [
         entry["settings"]["name"]
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
         if entry["settings"].get("vlan")
     ]
 
@@ -119,22 +119,22 @@ def clean_slate(panel, ports: list) -> None:
     every later save of that interface and every check after it reads as broken
     for the wrong reason.
     """
-    panel.call("PUT", "/network/mode", {"mode": "server"})
+    panel.call("POST", "/hub/network/mode/set", {"mode": "server"})
     for name in ports:
-        panel.call("PUT", f"/network/interfaces/{name}", pristine(name))
+        panel.call("POST", "/hub/network/interface/set", pristine(name))
 
 
 # --- what the page is drawn from ---------------------------------------------
 
 
 def test_the_page_reads(panel):
-    view = panel.read("/network")
+    view = panel.read("/hub/network")
 
     assert view["interfaces"], "a machine with no interfaces is not a gateway"
 
 
 def test_every_mode_is_offered(panel):
-    view = panel.read("/network")
+    view = panel.read("/hub/network")
 
     assert [mode["key"] for mode in view["modes"]] == MODES
 
@@ -145,26 +145,26 @@ def test_every_mode_is_offered(panel):
 def test_an_interface_this_machine_lacks_is_refused(panel):
     body = options_body(panel, exposed_interfaces=["enp9s9"])
 
-    assert panel.status("PUT", "/network", body) == 400
+    assert panel.status("POST", "/hub/network/set", body) == 400
 
 
 def test_an_unknown_uplink_policy_is_refused(panel):
     body = options_body(panel, uplink_policy="round_robin")
 
-    assert panel.status("PUT", "/network", body) == 400
+    assert panel.status("POST", "/hub/network/set", body) == 400
 
 
 def test_every_interface_can_answer_at_once(panel, ports):
     body = options_body(panel, exposed_interfaces=ports)
 
-    assert panel.status("PUT", "/network", body) == 200
+    assert panel.status("POST", "/hub/network/set", body) == 200
     assert exposed_now(panel) == sorted(ports)
 
 
 def test_naming_one_twice_exposes_it_once(panel, ports):
     body = options_body(panel, exposed_interfaces=[ports[0], ports[0]])
 
-    assert panel.status("PUT", "/network", body) == 200
+    assert panel.status("POST", "/hub/network/set", body) == 200
     assert exposed_now(panel) == [ports[0]]
 
 
@@ -174,10 +174,12 @@ def test_every_interface_can_be_closed(panel, ports):
     deciding who may lock themselves out."""
     body = options_body(panel, exposed_interfaces=[])
 
-    assert panel.status("PUT", "/network", body) == 200
+    assert panel.status("POST", "/hub/network/set", body) == 200
     assert exposed_now(panel) == []
 
-    panel.call("PUT", "/network", options_body(panel, exposed_interfaces=ports))
+    panel.call(
+        "POST", "/hub/network/set", options_body(panel, exposed_interfaces=ports)
+    )
 
 
 # --- the mode switch ----------------------------------------------------------
@@ -188,13 +190,13 @@ def test_the_box_becomes_each_mode(panel, ports, mode):
     if mode == "side_gateway":
         clean_slate(panel, ports)
 
-    assert panel.status("PUT", "/network/mode", {"mode": mode}) == 200
-    assert panel.read("/network")["mode"] == mode
+    assert panel.status("POST", "/hub/network/mode/set", {"mode": mode}) == 200
+    assert panel.read("/hub/network")["mode"] == mode
 
 
 def test_a_server_gives_no_port_a_role(panel):
     roles = {
-        entry["settings"]["role"] for entry in panel.read("/network")["interfaces"]
+        entry["settings"]["role"] for entry in panel.read("/hub/network")["interfaces"]
     }
 
     assert sorted(roles) == ["disabled"]
@@ -202,11 +204,11 @@ def test_a_server_gives_no_port_a_role(panel):
 
 def test_a_side_gateway_joins_one_network_and_keeps_its_address(panel, ports):
     clean_slate(panel, ports)
-    panel.call("PUT", "/network/mode", {"mode": "side_gateway"})
+    panel.call("POST", "/hub/network/mode/set", {"mode": "side_gateway"})
 
     joined = [
         entry
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
         if entry["settings"]["role"] == "lan"
     ]
 
@@ -218,13 +220,15 @@ def test_a_side_gateway_joins_one_network_and_keeps_its_address(panel, ports):
 
 def test_a_mode_that_is_not_one_is_refused(panel):
     """One-arm is a layout the wizard offers, not a mode the box stores."""
-    assert panel.status("PUT", "/network/mode", {"mode": "one_arm_router"}) == 400
+    assert (
+        panel.status("POST", "/hub/network/mode/set", {"mode": "one_arm_router"}) == 400
+    )
 
 
 def test_the_mode_it_is_already_in_is_accepted(panel):
-    panel.call("PUT", "/network/mode", {"mode": "server"})
+    panel.call("POST", "/hub/network/mode/set", {"mode": "server"})
 
-    assert panel.status("PUT", "/network/mode", {"mode": "server"}) == 200
+    assert panel.status("POST", "/hub/network/mode/set", {"mode": "server"}) == 200
 
 
 # --- one interface at a time --------------------------------------------------
@@ -234,7 +238,7 @@ def test_the_mode_it_is_already_in_is_accepted(panel):
 def served(panel, ports) -> str:
     """A router with one served network on its last port."""
     clean_slate(panel, ports)
-    assert panel.status("PUT", "/network/mode", {"mode": "router"}) == 200
+    assert panel.status("POST", "/hub/network/mode/set", {"mode": "router"}) == 200
     name = ports[-1]
     body = interface_body(
         panel,
@@ -250,7 +254,7 @@ def served(panel, ports) -> str:
             "upstream_gateway": None,
         },
     )
-    assert panel.status("PUT", f"/network/interfaces/{name}", body) == 200
+    assert panel.status("POST", "/hub/network/interface/set", body) == 200
     return name
 
 
@@ -301,31 +305,26 @@ def served(panel, ports) -> str:
 def test_a_served_network_refuses_what_it_cannot_serve(panel, served, label, patch):
     body = interface_body(panel, served, role="lan", **patch)
 
-    assert panel.status("PUT", f"/network/interfaces/{served}", body) == 400
-
-
-def test_the_name_in_the_path_must_be_the_name_in_the_body(panel, ports, served):
-    other = next((name for name in ports if name != served), "")
-    if not other:
-        pytest.skip("this machine has one interface")
-    body = interface_body(panel, served)
-
-    assert panel.status("PUT", f"/network/interfaces/{other}", body) == 400
+    assert panel.status("POST", "/hub/network/interface/set", body) == 400
 
 
 def test_an_interface_this_machine_lacks_cannot_be_configured(panel, served):
     body = dict(interface_body(panel, served), name="enp9s9")
 
-    assert panel.status("PUT", "/network/interfaces/enp9s9", body) == 400
+    assert panel.status("POST", "/hub/network/interface/set", body) == 400
 
 
 def test_a_physical_port_cannot_be_removed(panel, served):
     """It is a socket on the board. Only what the panel created comes off."""
-    assert panel.status("DELETE", f"/network/interfaces/{served}") == 400
+    assert (
+        panel.status("POST", "/hub/network/interface/remove", {"name": served}) == 400
+    )
 
 
 def test_removing_an_interface_that_is_not_there_is_a_404(panel):
-    assert panel.status("DELETE", "/network/interfaces/enp9s9") == 404
+    assert (
+        panel.status("POST", "/hub/network/interface/remove", {"name": "enp9s9"}) == 404
+    )
 
 
 def test_two_networks_cannot_serve_one_subnet(panel, ports, served):
@@ -346,7 +345,7 @@ def test_two_networks_cannot_serve_one_subnet(panel, ports, served):
         },
     )
 
-    assert panel.status("PUT", f"/network/interfaces/{ports[0]}", body) == 400
+    assert panel.status("POST", "/hub/network/interface/set", body) == 400
 
 
 # --- VLANs on a trunk ---------------------------------------------------------
@@ -356,17 +355,17 @@ def test_two_networks_cannot_serve_one_subnet(panel, ports, served):
 def trunk(panel, ports) -> str:
     """A router with its last port split into a trunk."""
     clean_slate(panel, ports)
-    panel.call("PUT", "/network/mode", {"mode": "router"})
+    panel.call("POST", "/hub/network/mode/set", {"mode": "router"})
     name = ports[-1]
     body = interface_body(panel, name, role="split")
-    assert panel.status("PUT", f"/network/interfaces/{name}", body) == 200
+    assert panel.status("POST", "/hub/network/interface/set", body) == 200
     return name
 
 
 def test_splitting_a_port_brings_its_untagged_main(panel, trunk):
     mains = [
         entry["settings"]["name"]
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
         if entry["settings"].get("vlan") and entry["settings"]["vlan"]["id"] is None
     ]
 
@@ -377,14 +376,12 @@ def test_splitting_a_port_brings_its_untagged_main(panel, trunk):
 def test_a_vlan_id_is_one_the_wire_can_carry(panel, trunk, vlan_id, want):
     body = vlan_body(trunk, vlan_id)
 
-    assert panel.status("PUT", f"/network/interfaces/{trunk}.{vlan_id}", body) == want
+    assert panel.status("POST", "/hub/network/interface/set", body) == want
 
 
 def test_a_trunk_carries_more_vlans_than_anybody_would_type(panel, trunk):
     made = sum(
-        panel.status(
-            "PUT", f"/network/interfaces/{trunk}.{vlan_id}", vlan_body(trunk, vlan_id)
-        )
+        panel.status("POST", "/hub/network/interface/set", vlan_body(trunk, vlan_id))
         == 200
         for vlan_id in CROWD_VLAN_IDS
     )
@@ -397,26 +394,37 @@ def test_exposure_follows_a_vlan_that_is_removed(panel, trunk):
     """A name left in the exposed set is one the firewall would name and nft
     would refuse, which is the whole ruleset failing to load."""
     panel.call(
-        "PUT", "/network", options_body(panel, exposed_interfaces=[f"{trunk}.1"])
+        "POST",
+        "/hub/network/set",
+        options_body(panel, exposed_interfaces=[f"{trunk}.1"]),
     )
     assert exposed_now(panel) == [f"{trunk}.1"]
 
-    assert panel.status("DELETE", f"/network/interfaces/{trunk}.1") == 200
+    assert (
+        panel.status("POST", "/hub/network/interface/remove", {"name": f"{trunk}.1"})
+        == 200
+    )
     assert exposed_now(panel) == []
 
 
 def test_the_untagged_main_cannot_be_removed_on_its_own(panel, trunk):
-    assert panel.status("DELETE", f"/network/interfaces/{trunk}.main") == 400
+    assert (
+        panel.status("POST", "/hub/network/interface/remove", {"name": f"{trunk}.main"})
+        == 400
+    )
 
 
 def test_one_vlan_can_be_removed(panel, trunk):
-    assert panel.status("DELETE", f"/network/interfaces/{trunk}.4094") == 200
+    assert (
+        panel.status("POST", "/hub/network/interface/remove", {"name": f"{trunk}.4094"})
+        == 200
+    )
 
 
 def test_leaving_the_trunk_role_takes_every_vlan_with_it(panel, trunk):
     body = interface_body(panel, trunk, role="disabled")
 
-    assert panel.status("PUT", f"/network/interfaces/{trunk}", body) == 200
+    assert panel.status("POST", "/hub/network/interface/set", body) == 200
     assert vlan_names(panel) == []
 
 
@@ -425,14 +433,16 @@ def test_leaving_the_trunk_role_takes_every_vlan_with_it(panel, trunk):
 
 @pytest.mark.parametrize("port", [0, 65536, -1])
 def test_a_port_the_panel_cannot_take_is_refused(panel, port):
-    assert panel.status("PUT", "/settings", {"listen_port": port}) == 400
+    assert panel.status("POST", "/hub/setting/set", {"listen_port": port}) == 400
 
 
 def test_the_port_it_is_already_on_is_accepted(panel):
     """Saving an unchanged port must not be a restart into nothing."""
-    settings = panel.read("/settings")
+    settings = panel.read("/hub/setting")
 
     assert (
-        panel.status("PUT", "/settings", {"listen_port": settings["listen_port"]})
+        panel.status(
+            "POST", "/hub/setting/set", {"listen_port": settings["listen_port"]}
+        )
         == 200
     )

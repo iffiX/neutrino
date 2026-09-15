@@ -7,7 +7,7 @@
 **English** · [中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![Hub: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
 [![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
 [![Client: Linux · Windows · macOS](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
@@ -64,7 +64,7 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 <details><summary><b>Hub · Debian, Ubuntu, Raspberry Pi OS</b></summary>
 
 ```bash
-sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+sudo apt install ./neutrino-hub_0.3.0_amd64.deb
 sudo nhub setup
 ```
 
@@ -73,7 +73,7 @@ sudo nhub setup
 <details><summary><b>Hub · Fedora, RHEL, AlmaLinux, Rocky</b></summary>
 
 ```bash
-sudo dnf install ./neutrino-hub-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
 sudo nhub setup
 ```
 
@@ -82,7 +82,7 @@ On RHEL, AlmaLinux and Rocky, run `sudo dnf install -y epel-release` first: fail
 <details><summary><b>Hub · Arch, EndeavourOS, Manjaro</b></summary>
 
 ```bash
-sudo pacman -U neutrino-hub-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
 sudo nhub setup
 ```
 
@@ -91,8 +91,8 @@ Setup runs the same six-screen wizard, and the panel is at `http://<hub>:8080` a
 <details><summary><b>Agent · Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL</b></summary>
 
 ```bash
-sudo apt install ./neutrino-agent_0.2.0_amd64.deb      # Debian family
-sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm   # Fedora family
+sudo apt install ./neutrino-agent_0.3.0_amd64.deb      # Debian family
+sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm   # Fedora family
 sudo nagent join '<link>'
 ```
 
@@ -101,8 +101,8 @@ sudo nagent join '<link>'
 <details><summary><b>Client · Debian, Ubuntu, Fedora, RHEL</b></summary>
 
 ```bash
-sudo apt install ./neutrino-client_0.2.0_amd64.deb      # Debian family
-sudo dnf install ./neutrino-client-0.2.0-1.x86_64.rpm   # Fedora family
+sudo apt install ./neutrino-client_0.3.0_amd64.deb      # Debian family
+sudo dnf install ./neutrino-client-0.3.0-1.x86_64.rpm   # Fedora family
 nclient gui
 ```
 
@@ -111,8 +111,8 @@ Run the client from your own account, then paste the link from the **Clients** p
 <details><summary><b>Client · Windows 10 and 11, macOS on Apple silicon</b></summary>
 
 ```bash
-msiexec /i neutrino-client-0.2.0-windows-amd64.msi                    # Windows
-sudo installer -pkg neutrino-client-0.2.0-macos-arm64.pkg -target /  # macOS
+msiexec /i neutrino-client-0.3.0-windows-amd64.msi                    # Windows
+sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /  # macOS
 ```
 
 Opening the `.msi` from Explorer, or the `.pkg` from its context menu with **Open**, runs the same installer. The Windows installer offers to put `nclient` on `PATH`. The client then sits in the taskbar corner on Windows or in the menu bar on macOS.

@@ -8,10 +8,10 @@ This walk takes about half an hour. At the end, a hub in server mode runs on one
 
 ## What you need
 
-- A Linux box for the hub, `home-hub` in the screenshots. It is x86-64, runs Debian 12 or newer or Ubuntu 24.04 or newer, and has root and a route to the internet.
+- A Linux box for the hub, `home-hub` in the screenshots. It is x86-64, runs Debian 12 or newer or Ubuntu 22.04 or newer, and has root and a route to the internet.
 - A second Linux machine of the same family to manage, `studio` in the screenshots.
 - A computer with a desktop session for the client, `laptop` in the screenshots.
-- The three package files of one release from the [releases page](https://github.com/iffiX/neutrino/releases): `neutrino-hub_0.2.0_amd64.deb`, `neutrino-agent_0.2.0_amd64.deb` and `neutrino-client_0.2.0_amd64.deb`.
+- The three package files of one release from the [releases page](https://github.com/iffiX/neutrino/releases): `neutrino-hub_0.3.0_amd64.deb`, `neutrino-agent_0.3.0_amd64.deb` and `neutrino-client_0.3.0_amd64.deb`.
 
 The three machines are on one network. Server mode keeps every address the hub box has, and the rest of the network stays as it is.
 
@@ -20,7 +20,7 @@ The three machines are on one network. Server mode keeps every address the hub b
 On `home-hub`, install the package:
 
 ```bash
-sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+sudo apt install ./neutrino-hub_0.3.0_amd64.deb
 ```
 
 Then run the setup wizard:
@@ -61,7 +61,7 @@ The **Dashboard** opens, with a sidebar in two groups, **Hub** and **Agent**.
 1. Open **Devices** in the panel.
 1. Select **Add by link**. A notice shows a `neutrino://enroll/` link, valid for five minutes, with a **Copy** button.
    ![The enrollment link notice](/guide/en/devices_enroll_link.webp)
-1. On `studio`, run `sudo apt install ./neutrino-agent_0.2.0_amd64.deb`.
+1. On `studio`, run `sudo apt install ./neutrino-agent_0.3.0_amd64.deb`.
 1. On `studio`, run `sudo nagent join '<link>'`, where `<link>` is the copied link.
 
 `studio` appears under **Managed devices** within seconds, next to `home-hub`, which the setup wizard enrolled.
@@ -74,7 +74,7 @@ The **Dashboard** opens, with a sidebar in two groups, **Hub** and **Agent**.
 1. Select **New client link**.
    ![The new client link form](/guide/en/clients_create_link.webp)
 1. Type `laptop` as the name and select **Create link**. The notice shows the link and a **Copy** button; the link is valid for five minutes.
-1. On `laptop`, run `sudo apt install ./neutrino-client_0.2.0_amd64.deb`.
+1. On `laptop`, run `sudo apt install ./neutrino-client_0.3.0_amd64.deb`.
 1. On `laptop`, run `nclient gui` as yourself, without `sudo`. The window opens with **Not connected** and a field for the link.
    ![The client window before joining](/guide/en/client_disconnected.webp)
 1. Paste the link into the field and select **Connect**.
@@ -89,7 +89,6 @@ The status card reads **Connected** with the hub's version, and the **Services**
 1. Under **Enabled devices**, tick `home-hub` and select **Apply devices**. A consent dialog names what is installed on the box; confirm it.
 1. Under **Users**, select **Add user**, type `alex` as the name and a password, and select **Apply users**.
 1. Under **Shares**, select **Add share**, name it `media` with a **Path** on the box, and select **Apply shares**.
-   ![The Samba page with the media share](/guide/en/samba_share.webp)
 1. Open **Services**. `media` is listed under **Files**, published by the samba module on `home-hub`.
    ![The Services page listing the share](/guide/en/services_list.webp)
 1. On `laptop`, in the client's **Files** panel, select **Config**.

@@ -19,7 +19,7 @@ COUNTER_FIELDS = (
 
 def test_usage_answers_the_contract_shape(panel):
     for range_name, bucket_count in USAGE_RANGES.items():
-        status, body = panel.call("GET", f"/cliproxyapi/usage?range={range_name}")
+        status, body = panel.call("GET", f"/hub/ai/gateway/usage?range={range_name}")
         assert status == 200, body
         assert body["range"] == range_name
         assert body["generated_at"].endswith("Z")
@@ -38,9 +38,9 @@ def test_usage_answers_the_contract_shape(panel):
 
 
 def test_usage_providers_come_in_served_order(panel):
-    status, listed = panel.call("GET", "/ai/providers")
+    status, listed = panel.call("GET", "/hub/ai")
     assert status == 200, listed
-    status, body = panel.call("GET", "/cliproxyapi/usage?range=day")
+    status, body = panel.call("GET", "/hub/ai/gateway/usage?range=day")
     assert status == 200, body
     assert [entry["provider_id"] for entry in body["providers"]] == [
         provider["id"] for provider in listed["providers"]
@@ -48,63 +48,65 @@ def test_usage_providers_come_in_served_order(panel):
 
 
 def test_usage_refusals_are_coded(panel):
-    status, body = panel.call("GET", "/cliproxyapi/usage?range=fortnight")
+    status, body = panel.call("GET", "/hub/ai/gateway/usage?range=fortnight")
     assert status == 422
     assert body["detail"] == {
         "code": "invalid_range",
         "params": {"range": "fortnight"},
     }
 
-    status, body = panel.call("GET", "/cliproxyapi/usage?range=day&key_id=no-such")
+    status, body = panel.call("GET", "/hub/ai/gateway/usage?range=day&key_id=no-such")
     assert status == 404
     assert body["detail"]["code"] == "unknown_key"
 
 
 def test_the_journal_serves_lines(panel):
-    status, body = panel.call("GET", "/cliproxyapi/journal?lines=5")
+    status, body = panel.call("GET", "/hub/ai/gateway/journal?lines=5")
     assert status == 200, body
     assert isinstance(body["lines"], list)
     assert all(isinstance(line, str) for line in body["lines"])
 
 
 def test_the_status_carries_the_day_counters(panel):
-    status, body = panel.call("GET", "/cliproxyapi")
+    status, body = panel.call("GET", "/hub/ai/gateway")
     assert status == 200, body
     assert body["requests_today"] >= 0
     assert body["tokens_today"] >= 0
 
 
 def test_an_apply_leaves_nothing_stale(panel):
-    status, body = panel.call("POST", "/cliproxyapi/apply")
+    status, body = panel.call("POST", "/hub/ai/gateway/apply")
     assert status == 200, body
-    status, body = panel.call("GET", "/cliproxyapi")
+    status, body = panel.call("GET", "/hub/ai/gateway")
     assert status == 200, body
     assert body["is_serving_stale"] is False
 
 
 def test_the_order_roundtrip_and_its_refusal(panel):
-    status, listed = panel.call("GET", "/ai/providers")
+    status, listed = panel.call("GET", "/hub/ai")
     assert status == 200, listed
     original = [provider["id"] for provider in listed["providers"]]
 
     status, body = panel.call(
-        "PUT", "/ai/providers/order", {"provider_ids": ["no-such", *original]}
+        "POST", "/hub/ai/provider/order/set", {"provider_ids": ["no-such", *original]}
     )
     assert status == 422
     assert body["detail"]["code"] == "provider_order_mismatch"
     assert body["detail"]["params"]["unknown"] == ["no-such"]
 
     reordered = list(reversed(original))
-    status, body = panel.call("PUT", "/ai/providers/order", {"provider_ids": reordered})
+    status, body = panel.call(
+        "POST", "/hub/ai/provider/order/set", {"provider_ids": reordered}
+    )
     assert status == 200, body
     assert [provider["id"] for provider in body["providers"]] == reordered
     try:
-        status, body = panel.call("GET", "/ai/providers")
+        status, body = panel.call("GET", "/hub/ai")
         assert [provider["id"] for provider in body["providers"]] == reordered
     finally:
         status, body = panel.call(
-            "PUT", "/ai/providers/order", {"provider_ids": original}
+            "POST", "/hub/ai/provider/order/set", {"provider_ids": original}
         )
         assert status == 200, body
-    status, listed = panel.call("GET", "/ai/providers")
+    status, listed = panel.call("GET", "/hub/ai")
     assert [provider["id"] for provider in listed["providers"]] == original

@@ -16,26 +16,26 @@ CROWD_DOMAIN_COUNT = 1000
 
 def routing_body(panel, **over) -> dict:
     """The routing options as they are now, with some of them changed."""
-    body = dict(panel.read("/proxy"))
+    body = dict(panel.read("/hub/proxy"))
     body.update(over)
     return body
 
 
 def node_ids(panel) -> list:
     """Every node in the list."""
-    return [node["id"] for node in panel.read("/proxy/nodes")["nodes"]]
+    return [node["id"] for node in panel.read("/hub/proxy/node")["nodes"]]
 
 
 def is_proxy_on(panel) -> bool:
     """Whether the master switch is on."""
-    return panel.read("/proxy")["is_proxy_enabled"]
+    return panel.read("/hub/proxy")["is_proxy_enabled"]
 
 
 @pytest.fixture(scope="module")
 def empty_list(panel):
     """A box with no exit node at all."""
     for node_id in node_ids(panel):
-        panel.call("DELETE", f"/proxy/nodes/{node_id}")
+        panel.call("POST", "/hub/proxy/node/remove", {"node_id": node_id})
     return panel
 
 
@@ -51,24 +51,24 @@ def test_deleting_the_last_node_switches_the_proxy_off(empty_list, panel):
 
 def test_applying_a_box_with_no_nodes_succeeds(empty_list, panel):
     """This used to fail for ever, with the one thing that fixed it hidden."""
-    assert panel.status("POST", "/proxy/apply") == 200
+    assert panel.status("POST", "/hub/proxy/apply") == 200
 
 
 def test_the_switch_cannot_be_turned_on_with_an_empty_list(empty_list, panel):
     body = routing_body(panel, is_proxy_enabled=True)
 
-    assert panel.status("PUT", "/proxy", body) == 400
+    assert panel.status("POST", "/hub/proxy/set", body) == 400
 
 
 @pytest.mark.parametrize("link", ["hello", ""])
 def test_a_link_that_is_not_one_is_refused(empty_list, panel, link):
-    assert panel.status("POST", "/proxy/nodes", {"link": link}) == 400
+    assert panel.status("POST", "/hub/proxy/node/add", {"link": link}) == 400
 
 
 def test_a_node_is_added_once(empty_list, panel):
-    assert panel.status("POST", "/proxy/nodes", {"link": SHARE_LINK}) == 201
-    assert panel.status("POST", "/proxy/nodes", {"link": SHARE_LINK}) == 400
-    assert panel.status("POST", "/proxy/nodes", {"link": SECOND_LINK}) == 201
+    assert panel.status("POST", "/hub/proxy/node/add", {"link": SHARE_LINK}) == 201
+    assert panel.status("POST", "/hub/proxy/node/add", {"link": SHARE_LINK}) == 400
+    assert panel.status("POST", "/hub/proxy/node/add", {"link": SECOND_LINK}) == 201
     assert len(node_ids(panel)) == 2
 
 
@@ -78,14 +78,35 @@ def test_one_of_two_disabled_leaves_the_switch_as_it_was(panel):
     was_on = is_proxy_on(panel)
     node_id = node_ids(panel)[0]
 
-    assert panel.status("PUT", f"/proxy/nodes/{node_id}", {"name": "renamed"}) == 200
-    assert panel.status("PUT", f"/proxy/nodes/{node_id}", {"is_enabled": False}) == 200
+    assert (
+        panel.status(
+            "POST", "/hub/proxy/node/set", {"node_id": node_id, "name": "renamed"}
+        )
+        == 200
+    )
+    assert (
+        panel.status(
+            "POST",
+            "/hub/proxy/node/set",
+            {"node_id": node_id, "is_enabled": False},
+        )
+        == 200
+    )
     assert is_proxy_on(panel) == was_on
 
 
 def test_a_node_that_is_not_there_is_a_404(panel):
-    assert panel.status("PUT", "/proxy/nodes/nosuchnode", {"is_enabled": True}) == 404
-    assert panel.status("DELETE", "/proxy/nodes/nosuchnode") == 404
+    assert (
+        panel.status(
+            "POST",
+            "/hub/proxy/node/set",
+            {"node_id": "nosuchnode", "is_enabled": True},
+        )
+        == 404
+    )
+    assert (
+        panel.status("POST", "/hub/proxy/node/remove", {"node_id": "nosuchnode"}) == 404
+    )
 
 
 @pytest.mark.parametrize(
@@ -98,12 +119,12 @@ def test_a_node_that_is_not_there_is_a_404(panel):
 def test_a_balancer_the_observatory_cannot_keep_is_refused(panel, balancer):
     body = dict({"probe_url": "https://example.com"}, **balancer)
 
-    assert panel.status("PUT", "/proxy/balancer", body) == 400
+    assert panel.status("POST", "/hub/proxy/balancer/set", body) == 400
 
 
 def test_the_list_empties_again(panel):
     for node_id in node_ids(panel):
-        panel.call("DELETE", f"/proxy/nodes/{node_id}")
+        panel.call("POST", "/hub/proxy/node/remove", {"node_id": node_id})
 
     assert node_ids(panel) == []
 
@@ -114,8 +135,10 @@ def test_the_list_empties_again(panel):
 def test_one_direct_listener(panel):
     body = routing_body(panel, socks_ports=[{"port": 1080, "is_proxied": False}])
 
-    assert panel.status("PUT", "/proxy", body) == 200
-    assert panel.read("/proxy")["socks_ports"] == [{"port": 1080, "is_proxied": False}]
+    assert panel.status("POST", "/hub/proxy/set", body) == 200
+    assert panel.read("/hub/proxy")["socks_ports"] == [
+        {"port": 1080, "is_proxied": False}
+    ]
 
 
 def test_two_listeners_cannot_share_a_port(panel):
@@ -127,22 +150,22 @@ def test_two_listeners_cannot_share_a_port(panel):
         ],
     )
 
-    assert panel.status("PUT", "/proxy", body) == 400
+    assert panel.status("POST", "/hub/proxy/set", body) == 400
 
 
 def test_a_port_no_listener_can_take_is_refused(panel):
     body = routing_body(panel, socks_ports=[{"port": 0, "is_proxied": False}])
 
-    assert panel.status("PUT", "/proxy", body) == 400
+    assert panel.status("POST", "/hub/proxy/set", body) == 400
 
 
 def test_a_port_the_box_already_holds_is_refused(panel):
     """xray builds this configuration without binding it and its unit reports
     started at fork, so accepting it is a proxy that is simply absent."""
-    held = panel.read("/settings")["listen_port"]
+    held = panel.read("/hub/setting")["listen_port"]
     body = routing_body(panel, socks_ports=[{"port": held, "is_proxied": False}])
 
-    assert panel.status("PUT", "/proxy", body) == 400
+    assert panel.status("POST", "/hub/proxy/set", body) == 400
 
 
 def test_a_proxied_listener_is_allowed_with_the_proxy_off(panel):
@@ -150,7 +173,7 @@ def test_a_proxied_listener_is_allowed_with_the_proxy_off(panel):
     contradiction to refuse."""
     body = routing_body(panel, socks_ports=[{"port": 1081, "is_proxied": True}])
 
-    assert panel.status("PUT", "/proxy", body) == 200
+    assert panel.status("POST", "/hub/proxy/set", body) == 200
 
 
 def test_thirty_listeners_are_all_kept(panel):
@@ -161,15 +184,15 @@ def test_thirty_listeners_are_all_kept(panel):
         ],
     )
 
-    assert panel.status("PUT", "/proxy", body) == 200
-    assert len(panel.read("/proxy")["socks_ports"]) == len(CROWD_PORTS)
+    assert panel.status("POST", "/hub/proxy/set", body) == 200
+    assert len(panel.read("/hub/proxy")["socks_ports"]) == len(CROWD_PORTS)
 
 
 def test_the_listeners_can_be_deleted_to_none(panel):
     body = routing_body(panel, socks_ports=[])
 
-    assert panel.status("PUT", "/proxy", body) == 200
-    assert panel.read("/proxy")["socks_ports"] == []
+    assert panel.status("POST", "/hub/proxy/set", body) == 200
+    assert panel.read("/hub/proxy")["socks_ports"] == []
 
 
 # --- the routing lists --------------------------------------------------------
@@ -179,8 +202,8 @@ def test_a_thousand_direct_domains_are_all_kept(panel):
     domains = [f"domain:host{index}.example" for index in range(CROWD_DOMAIN_COUNT)]
     body = routing_body(panel, direct_domains=domains)
 
-    assert panel.status("PUT", "/proxy", body) == 200
-    assert len(panel.read("/proxy")["direct_domains"]) == CROWD_DOMAIN_COUNT
+    assert panel.status("POST", "/hub/proxy/set", body) == 200
+    assert len(panel.read("/hub/proxy")["direct_domains"]) == CROWD_DOMAIN_COUNT
 
 
 @pytest.mark.parametrize(
@@ -197,13 +220,13 @@ def test_a_direct_list_xray_will_not_load_is_refused(panel, lists):
     is a page that saves and then fails every Apply after it."""
     body = routing_body(panel, **lists)
 
-    assert panel.status("PUT", "/proxy", body) == 400
+    assert panel.status("POST", "/hub/proxy/set", body) == 400
 
 
 def test_the_direct_lists_can_be_emptied(panel):
     body = routing_body(panel, direct_domains=[], direct_ips=[])
 
-    assert panel.status("PUT", "/proxy", body) == 200
+    assert panel.status("POST", "/hub/proxy/set", body) == 200
 
 
 @pytest.mark.parametrize(
@@ -213,8 +236,8 @@ def test_the_direct_lists_can_be_emptied(panel):
 def test_a_resolver_that_cannot_be_asked_is_refused(panel, resolver):
     body = routing_body(panel, direct_dns=resolver)
 
-    assert panel.status("PUT", "/proxy", body) == 400
+    assert panel.status("POST", "/hub/proxy/set", body) == 400
 
 
 def test_applying_with_nothing_to_apply_succeeds(panel):
-    assert panel.status("POST", "/proxy/apply") == 200
+    assert panel.status("POST", "/hub/proxy/apply") == 200

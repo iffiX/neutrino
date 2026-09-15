@@ -10,12 +10,15 @@ reconfigures a box's network, installs packages, or both.
 | --- | --- |
 | `test_panel_api_network.py` | Every operation the Network page offers: exposure, the three modes, one interface at a time, VLANs on a trunk, the panel's own port. |
 | `test_panel_api_proxy.py` | The exit-node list, the SOCKS listeners, the direct lists and the resolvers. |
-| `test_panel_api_services.py` | What the Services page is drawn from, and every action it refuses. |
-| `test_install_a_module.py` | That a module actually installs through the panel — the one check here that runs a package manager, and the one that catches a sandbox the installer cannot work inside. |
-| `test_panel_api_devices.py` | The device register: adding, renaming, forgetting, and fifty at once. |
+| `test_declared_services.py` | What the Services page is drawn from, and every action it refuses. |
+| `test_panel_api_modules.py` | The Modules page for a device with no agent: the catalog, the states, and every refusal. |
+| `test_install_a_module.py` | That a module actually installs on a managed machine through the panel — the one check here that runs a package manager. |
+| `test_panel_api_devices.py` | The device register: naming a scan row, renaming by id, forgetting, and fifty at once. |
 | `test_install_footprint.py` | That a server or side_gateway install left the machine addressing itself. |
 | `test_mode_matrix.py` | Every mode, every ordered switch between them, the one-arm and multi-uplink shapes, and the proxy's behaviour in each — the contract network.md states. |
 | `test_reinstall.py` | That installing the same version over a working box keeps every configuration file and restarts what runs the new code. |
+| `test_agent_channel.py` | The channel end to end: the link's role and fingerprint, the join over pinned TLS, and a tampered link refused on the device. |
+| `test_device_lifecycle.py` | Every transition of the binding: scan, name, install, self-update, the two protocol refusals, the hub forgetting, the link back, and leaving. |
 | `test_reset_hands_back.py` | That `nhub reset all` gave the network back. |
 | `run_on_box.sh` | The single-mode lifecycle, from an uninstalled machine and back to one. |
 | `run_mode_matrix.sh` | The matrix lifecycle: install, server, the whole walk, reset. |
@@ -38,7 +41,7 @@ The whole lifecycle, from a machine with no hub on it, as root. It installs
 the distribution's pytest if the box has none:
 
 ```bash
-./run_on_box.sh /path/to/neutrino-hub_0.1.0_amd64.deb side_gateway
+./run_on_box.sh /path/to/neutrino-hub_0.3.0_amd64.deb side_gateway
 ```
 
 Options, each also readable from the environment:
@@ -60,12 +63,12 @@ The matrix wants a machine with three ports and a neighbour to serve, and
 `setup_vms.sh` builds exactly that on a libvirt host:
 
 ```bash
-./setup_vms.sh debian 12          # or: ubuntu 24.04, alma 9, arch rolling …
+./setup_vms.sh debian 12          # or: ubuntu 22.04, alma 9, arch rolling …
 python3 vm_exec.py nmxhub 'mkdir -p /opt/integration'
 for f in *.py *.sh pytest.ini; do python3 vm_exec.py nmxhub push "$PWD/$f" "/opt/integration/$f"; done
 python3 vm_exec.py nmxhub push ~/.local/share/neutrino_vm_lab/id_lab /opt/integration/id_lab
 python3 vm_exec.py nmxhub 'chmod 600 /opt/integration/id_lab'
-python3 vm_exec.py nmxhub push neutrino-hub_0.1.0_amd64.deb /tmp/hub.deb
+python3 vm_exec.py nmxhub push neutrino-hub_0.3.0_amd64.deb /tmp/hub.deb
 python3 vm_exec.py nmxhub 'bash /opt/integration/run_mode_matrix.sh /tmp/hub.deb --client'
 ```
 

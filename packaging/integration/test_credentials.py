@@ -23,7 +23,9 @@ from pathlib import Path
 
 import pytest
 
-TEST_MAC = "02:00:00:00:00:71"
+# The device these start from is a scan row nothing on this network
+# answers for: naming one adopts it under an id of its own.
+TEST_SCAN_ID = "scan:02:00:00:00:00:71"
 
 
 def _suffix() -> str:
@@ -48,25 +50,30 @@ def test_login_lifecycle(panel):
     name = f"itest login {_suffix()}"
     status, created = panel.call(
         "POST",
-        "/credentials/logins",
+        "/hub/credential/login/add",
         {"name": name, "password": "pw-one"},  # scan: allow
     )
     assert status == 200, created
     assert "password" not in created
     assert created["device_count"] == 0
 
-    listed = panel.read("/credentials/logins")["logins"]
+    listed = panel.read("/hub/credential/login")["logins"]
     assert any(entry["id"] == created["id"] for entry in listed)
 
-    assert panel.status("DELETE", f"/credentials/logins/{created['id']}") == 200
-    listed = panel.read("/credentials/logins")["logins"]
+    assert (
+        panel.status(
+            "POST", "/hub/credential/login/remove", {"login_id": created["id"]}
+        )
+        == 200
+    )
+    listed = panel.read("/hub/credential/login")["logins"]
     assert not any(entry["id"] == created["id"] for entry in listed)
 
 
 def test_a_login_carries_its_username_but_never_its_password(panel):
     status, created = panel.call(
         "POST",
-        "/credentials/logins",
+        "/hub/credential/login/add",
         {
             "name": f"itest nas {_suffix()}",
             "username": "smbuser",
@@ -77,93 +84,107 @@ def test_a_login_carries_its_username_but_never_its_password(panel):
     assert created["username"] == "smbuser"
     assert "password" not in created
 
-    listed = panel.read("/credentials/logins")["logins"]
+    listed = panel.read("/hub/credential/login")["logins"]
     stored = next(entry for entry in listed if entry["id"] == created["id"])
     assert stored["username"] == "smbuser"
     assert "password" not in stored
 
-    assert panel.status("DELETE", f"/credentials/logins/{created['id']}") == 200
+    assert (
+        panel.status(
+            "POST", "/hub/credential/login/remove", {"login_id": created["id"]}
+        )
+        == 200
+    )
 
 
 def test_deleting_a_login_clears_the_device_that_referenced_it(panel):
     status, login = panel.call(
         "POST",
-        "/credentials/logins",
+        "/hub/credential/login/add",
         {"name": f"itest sudo {_suffix()}", "password": "pw-sudo"},  # scan: allow
     )
     assert status == 200, login
 
     status, device = panel.call(
-        "PUT",
-        f"/devices/{TEST_MAC}",
+        "POST",
+        "/hub/device/set",
         {
+            "device_id": TEST_SCAN_ID,
             "name": "itest box",
             "ssh": {
                 "host": "192.0.2.71",
                 "port": 22,
                 "username": "itest",
                 "auth": "password",
-                "password_id": login["id"],
-                "sudo_password_id": login["id"],
+                "login_id": login["id"],
+                "sudo_login_id": login["id"],
             },
         },
     )
     assert status == 200, device
+    device_id = device["id"]
     ssh_view = device["ssh"]
-    assert ssh_view["password_id"] == login["id"]
+    assert ssh_view["login_id"] == login["id"]
     assert "password" not in ssh_view and "sudo_password" not in ssh_view
 
-    status, cleared = panel.call("DELETE", f"/credentials/logins/{login['id']}")
+    status, cleared = panel.call(
+        "POST", "/hub/credential/login/remove", {"login_id": login["id"]}
+    )
     assert status == 200, cleared
     assert cleared == {"cleared": {"device_count": 1}}
 
     stored = next(
         entry
-        for entry in panel.read("/devices")["devices"]
-        if entry["mac_address"].lower() == TEST_MAC
+        for entry in panel.read("/hub/device")["devices"]
+        if entry["id"] == device_id
     )
-    assert stored["ssh"]["password_id"] is None
-    assert stored["ssh"]["sudo_password_id"] is None
-    assert panel.status("DELETE", f"/devices/{TEST_MAC}") == 200
+    assert stored["ssh"]["login_id"] is None
+    assert stored["ssh"]["sudo_login_id"] is None
+    assert panel.status("POST", "/hub/device/remove", {"device_id": device_id}) == 200
 
 
 def test_device_refuses_a_bogus_credential_reference(panel):
     status, answer = panel.call(
-        "PUT",
-        f"/devices/{TEST_MAC}",
+        "POST",
+        "/hub/device/set",
         {
+            "device_id": TEST_SCAN_ID,
             "name": "itest box",
             "ssh": {
                 "host": "192.0.2.71",
                 "port": 22,
                 "username": "itest",
                 "auth": "password",
-                "password_id": "0" * 32,
+                "login_id": "0" * 32,
             },
         },
     )
     assert status == 400, answer
     assert answer["detail"]["code"] == "unknown_credential"
-    panel.call("DELETE", f"/devices/{TEST_MAC}")
 
 
 def test_ssh_key_material_never_reads_back(panel):
     status, created = panel.call(
         "POST",
-        "/credentials/ssh_keys",
+        "/hub/credential/ssh_key/add",
         {"name": f"itest key {_suffix()}", "private_key": _throwaway_key_text()},
     )
     assert status == 200, created
     assert created["fingerprint"].startswith("SHA256:")
     assert "private_key" not in created and "passphrase" not in created
 
-    assert panel.status("DELETE", f"/credentials/ssh_keys/{created['id']}") == 200
+    assert (
+        panel.status(
+            "POST", "/hub/credential/ssh_key/remove", {"key_id": created["id"]}
+        )
+        == 200
+    )
 
 
 def test_deleting_a_token_clears_the_provider_that_referenced_it(panel):
     status, token = panel.call(
         "POST",
-        "/credentials/tokens",
+        "/hub/credential/token/add",
         {"name": f"itest relay key {_suffix()}", "value": "sk-itest"},  # scan: allow
     )
     assert status == 200, token
@@ -171,7 +192,7 @@ def test_deleting_a_token_clears_the_provider_that_referenced_it(panel):
 
     status, created = panel.call(
         "POST",
-        "/ai/providers",
+        "/hub/ai/provider/add",
         {
             "name": f"itest relay {_suffix()}",
             "kind": "custom",
@@ -183,27 +204,32 @@ def test_deleting_a_token_clears_the_provider_that_referenced_it(panel):
     assert created["secret_id"] == token["id"]
     assert "api_key" not in created
 
-    listed = panel.read("/credentials/tokens")["tokens"]
+    listed = panel.read("/hub/credential/token")["tokens"]
     referenced = next(entry for entry in listed if entry["id"] == token["id"])
     assert referenced["provider_count"] == 1
 
-    status, cleared = panel.call("DELETE", f"/credentials/tokens/{token['id']}")
+    status, cleared = panel.call(
+        "POST", "/hub/credential/token/remove", {"token_id": token["id"]}
+    )
     assert status == 200, cleared
     assert cleared == {"cleared": {"provider_count": 1, "node_count": 0}}
 
     stripped = next(
         entry
-        for entry in panel.read("/ai/providers")["providers"]
+        for entry in panel.read("/hub/ai")["providers"]
         if entry["id"] == created["id"]
     )
     assert stripped["secret_id"] is None
-    assert panel.status("DELETE", f"/ai/providers/{created['id']}") == 200
+    assert (
+        panel.status("POST", "/hub/ai/provider/remove", {"provider_id": created["id"]})
+        == 200
+    )
 
 
 def test_a_provider_refuses_a_bogus_token_reference(panel):
     status, answer = panel.call(
         "POST",
-        "/ai/providers",
+        "/hub/ai/provider/add",
         {
             "name": f"itest relay {_suffix()}",
             "kind": "custom",
@@ -231,12 +257,12 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     marker = f"itest backup {_suffix()}"
     status, secret = panel.call(
         "POST",
-        "/credentials/logins",
+        "/hub/credential/login/add",
         {"name": marker, "password": "pw-backup"},  # scan: allow
     )
     assert status == 200, secret
 
-    status, archive_bytes = panel.download("POST", "/settings/backup")
+    status, archive_bytes = panel.download("POST", "/hub/setting/backup")
     assert status == 200
     contents = _archive_contents(archive_bytes)
     names = list(contents)
@@ -263,26 +289,26 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     assert "pw-backup" not in contents["config/credentials/vault.json"].decode()
 
     status, refused = panel.upload(
-        "/settings/restore", filename="backup.bin", content=archive_bytes
+        "/hub/setting/restore", filename="backup.bin", content=archive_bytes
     )
     assert status == 400 and refused["detail"]["code"] == "backup_wrong_extension"
 
     status, refused = panel.upload(
-        "/settings/restore", filename="backup.tar.gz", content=archive_bytes
+        "/hub/setting/restore", filename="backup.tar.gz", content=archive_bytes
     )
     assert status == 400 and refused["detail"]["code"] == "vault_passphrase_needed"
 
     status, refused = panel.upload(
-        "/settings/restore",
+        "/hub/setting/restore",
         filename="backup.tar.gz",
         content=archive_bytes,
         fields={"vault_passphrase": "Not-the-passphrase-1!"},
     )
     assert status == 400 and refused["detail"]["code"] == "vault_passphrase_wrong"
 
-    started_at = panel.read("/auth/session").get("panel_started_at", "")
+    started_at = panel.read("/hub/auth/session").get("panel_started_at", "")
     status, restored = panel.upload(
-        "/settings/restore",
+        "/hub/setting/restore",
         filename="backup.tar.gz",
         content=archive_bytes,
         fields={"vault_passphrase": vault_passphrase},
@@ -296,7 +322,7 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
     deadline = time.monotonic() + 150
     while time.monotonic() < deadline:
         time.sleep(2)
-        code, state = panel.call("GET", "/auth/session")
+        code, state = panel.call("GET", "/hub/auth/session")
         if (
             code == 200
             and isinstance(state, dict)
@@ -307,21 +333,26 @@ def test_backup_is_plain_digested_and_restores_the_vault(panel, vault_passphrase
         raise AssertionError("the panel never restarted after the restore")
     panel.sign_in(os.environ["NEUTRINO_PANEL_PASSWORD"])
 
-    listed = panel.read("/credentials/logins")["logins"]
+    listed = panel.read("/hub/credential/login")["logins"]
     survivor = next(entry for entry in listed if entry["name"] == marker)
-    assert panel.status("DELETE", f"/credentials/logins/{survivor['id']}") == 200
+    assert (
+        panel.status(
+            "POST", "/hub/credential/login/remove", {"login_id": survivor["id"]}
+        )
+        == 200
+    )
 
 
 def test_a_backup_carries_no_ai_client_key(panel):
     """Generating a key restarts the gateway, so this runs on a spare box only."""
     name = f"itest ai key {_suffix()}"
-    status, created = panel.call("POST", "/cliproxyapi/keys", {"name": name})
+    status, created = panel.call("POST", "/hub/ai/gateway/key/add", {"name": name})
     assert status == 200, created
     issued = next(key for key in created["client_keys"] if key["name"] == name)
     assert issued["key"]
 
     try:
-        status, archive_bytes = panel.download("POST", "/settings/backup")
+        status, archive_bytes = panel.download("POST", "/hub/setting/backup")
         assert status == 200
         stored = _archive_contents(archive_bytes)[
             "config/cliproxyapi/cliproxyapi.json"
@@ -335,4 +366,7 @@ def test_a_backup_carries_no_ai_client_key(panel):
         assert "key" not in record
         assert record["key_sealed"]["nonce"] and record["key_sealed"]["data"]
     finally:
-        assert panel.status("DELETE", f"/cliproxyapi/keys/{issued['id']}") == 200
+        assert (
+            panel.status("POST", "/hub/ai/gateway/key/remove", {"key_id": issued["id"]})
+            == 200
+        )

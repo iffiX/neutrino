@@ -36,6 +36,15 @@ MACHINE_MANAGERS = (
     "iwd",
     "systemd-resolved",
 )
+# Files a dependency of the hub's own package drops into those trees when it
+# is installed: the Debian family's dhcpcd recommends openresolv, whose two
+# ifupdown hooks land under /etc/network. They arrive with the package and
+# have nothing to do with what the hub configured, so a comparison of the
+# trees names them rather than reading them as damage.
+MACHINE_PACKAGE_HOOKS = (
+    "/etc/network/if-up.d/000resolvconf",
+    "/etc/network/if-down.d/resolvconf",
+)
 MACHINE_RESOLV_PATH = Path("/etc/resolv.conf")
 # The note a mode that took a machine over leaves behind, so a reset knows what
 # to hand back. A server or side_gateway install writes none.
@@ -101,6 +110,25 @@ def config_trees() -> dict:
             digest, _, path = line.partition("  ")
             digests[path] = digest
     return digests
+
+
+def without_package_hooks(digests: dict) -> dict:
+    """The same digests, less the hooks a dependency's install dropped.
+
+    Args:
+        digests: What :func:`config_trees` returned, or a recorded snapshot
+            of it.
+
+    Returns:
+        The digests with every path in :data:`MACHINE_PACKAGE_HOOKS` left
+        out, so a snapshot taken before the install compares against a tree
+        read after it.
+    """
+    return {
+        path: digest
+        for path, digest in digests.items()
+        if path not in MACHINE_PACKAGE_HOOKS
+    }
 
 
 # The hub's own configuration: the whole of what a set-up box is, and what a

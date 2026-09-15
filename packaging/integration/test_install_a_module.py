@@ -1,129 +1,215 @@
-"""Installing an optional module the way the Services page does.
+"""Installing a module on a managed machine the way the Modules page does.
 
 Its own file because it is the one check here that takes minutes and changes
-the box: everything in `test_panel_api_modules.py` reads the list and the
-refusals around it, deliberately installing nothing.
+a second machine: everything in `test_panel_api_modules.py` reads the list and
+the refusals around it, deliberately installing nothing.
 
-That gap is why a real failure reached a person before it reached a test. The
-panel's unit is root with `NoNewPrivileges` and systemd's sandboxing, and
-under those the effective capability set loses `CAP_SETUID`; apt drops to the
-`_apt` account to fetch, cannot, and every download dies with
-`seteuid 42 failed`. Nothing that only reads the page can see that — it takes
-an install, through the panel, on a machine with a package manager.
+That gap is why a real failure reached a person before it reached a test. What
+the panel writes is a want; what makes it true is the device's own package
+manager, run by the agent's unit, with the lines coming back up the channel.
+Nothing that only reads the page can see that chain break — it takes an
+install, through the panel, on a machine with a package manager.
 
-`netbird` is the module used, and deliberately: its installer is a vendor
-script that runs the machine's own package manager a level below anything the
-hub can pass a flag to, which is the hardest shape of the failure above. A
-module whose packages happen to be cached would pass with the bug still in
-place.
+`samba` is the module used, and deliberately: the platform carries it, so the
+install is the machine's own package manager reaching its own archive, which
+is the shape every other platform-tier module has.
 
-`podman` would do as well now that a version without Quadlet installs and is
-driven through plain units — but netbird's shape is the one that broke.
+It needs the same second machine the lifecycle walk does: a client VM on the
+served wire answering SSH with the ``id_lab`` key beside this file.
 """
-
-import json
-import time
 
 import pytest
 
-import machine_state
+import test_device_lifecycle as lifecycle
+import test_mode_matrix as matrix
 
-MODULE = "netbird"
-# Something every family's package manager has to reach. Only its resolvability
-# is checked: whether the archive answers is the install's own business.
-REPOSITORY_HOST = "deb.debian.org"
-# An install is a package manager fetching over somebody's network.
-INSTALL_LIMIT_S = 600
-INSTALL_POLL_S = 3.0
+MODULE = "samba"
+MODULE_LAN = "192.168.95.1"
+
+CLIENT_TIMEOUT_S = 180
+INSTALL_TIMEOUT_S = 600
+
+
+def modules_of(panel, device_id) -> dict:
+    """The device's module rows, by name."""
+    view = panel.read(f"/agent/module?device_id={device_id}")
+    return {entry["name"]: entry for entry in view["modules"]}
+
+
+def row_of(panel, device_id) -> dict:
+    """The one module this file walks."""
+    rows = modules_of(panel, device_id)
+    assert MODULE in rows, sorted(rows)
+    return rows[MODULE]
+
+
+def wait_state(panel, device_id, wanted, states) -> dict:
+    """Wait until the hub asks for ``wanted`` and the machine reports one of
+    ``states``, which is both surfaces agreeing."""
+
+    def settled():
+        row = row_of(panel, device_id)
+        return row if row["want"] == wanted and row["state"] in states else None
+
+    return lifecycle.wait_for(
+        f"{MODULE} to read {wanted} on the hub and {states} on the machine",
+        settled,
+        INSTALL_TIMEOUT_S,
+    )
 
 
 @pytest.fixture(scope="module")
-def installed(panel):
-    """The module, installed through the panel, with its job watched to the end.
-
-    Returns:
-        What the Services page says about it afterwards.
-    """
-    # An install is a package manager fetching from a repository, so a box
-    # that cannot resolve one is a box this has nothing to say about. Skipped
-    # rather than failed: the answer would be about the lab's network, and a
-    # red test that means "the VM had no DNS" teaches nobody anything.
-    if not machine_state.run(["getent", "hosts", REPOSITORY_HOST]).strip():
-        pytest.skip(f"this box cannot resolve {REPOSITORY_HOST}")
-    entry = _entry(panel)
-    if entry["is_installed"]:
-        pytest.skip(f"{MODULE} is already installed on this box")
-    if not entry["is_installable"] or not entry["is_machine_supported"]:
-        pytest.skip(
-            f"{MODULE} does not install on this machine: "
-            f"{entry.get('unsupported_reason') or 'not offered'}"
+def serving(panel, before):
+    """A router serving the spare wire, wired by this file itself."""
+    if not lifecycle.ID_LAB.is_file():
+        pytest.fail(
+            f"no lab key at {lifecycle.ID_LAB}: push it beside these tests "
+            "(vm_exec.py <hub> push <lab>/id_lab /opt/integration/id_lab, "
+            "then chmod 600). This walk installs on a second machine and "
+            "cannot pass without one."
         )
+    physical = [
+        entry["settings"]["name"]
+        for entry in panel.read("/hub/network")["interfaces"]
+        if entry["link"]["is_present"]
+        and entry["settings"]["vlan"] is None
+        and entry["link"]["kind"] == "ethernet"
+    ]
+    spares = [name for name in physical if name != before["interface"]]
+    if not spares:
+        pytest.skip("this box has no spare port to serve on")
+    matrix.put_mode(panel, "router")
+    # The way in becomes the way out, whatever role an earlier file left
+    # on it: a router with no uplink serves a network with nothing behind
+    # it, and the machine on it cannot reach a package archive.
+    matrix.put_interface(panel, before["interface"], role="wan")
+    matrix.put_interface(panel, spares[-1], role="lan", lan=matrix.lan_body(MODULE_LAN))
+    exposed = [
+        entry["settings"]["name"]
+        for entry in panel.read("/hub/network")["interfaces"]
+        if entry["settings"]["is_exposed"]
+    ]
+    if spares[-1] not in exposed:
+        matrix.put_options(panel, exposed_interfaces=exposed + [spares[-1]])
+    return spares[-1]
 
-    status, answer = panel.call("POST", f"/modules/{MODULE}/install", {})
+
+@pytest.fixture(scope="module")
+def managed(panel, serving):
+    """The second machine, joined to this hub, and let go again afterwards."""
+
+    def scanned_candidate():
+        status, listed = panel.call("POST", "/hub/device/scan")
+        assert status == 200
+        for entry in listed["devices"]:
+            if (
+                entry["is_online"]
+                and not entry["is_stored"]
+                and entry["client"] is None
+                and entry["ipv4_address"].startswith(MODULE_LAN.rsplit(".", 1)[0])
+            ):
+                return entry
+        return None
+
+    candidate = lifecycle.wait_for(
+        "the client's lease on the served wire", scanned_candidate, CLIENT_TIMEOUT_S
+    )
+    host = candidate["ipv4_address"]
+    if lifecycle.ssh_to(host, "true").returncode != 0:
+        pytest.skip("the scanned machine does not answer the lab key")
+
+    status, key = panel.call(
+        "POST",
+        "/hub/credential/ssh_key/add",
+        {"name": "module lab key", "private_key": lifecycle.ID_LAB.read_text()},
+    )
+    assert status == 200, key
+    status, saved = panel.call(
+        "POST",
+        "/hub/device/set",
+        {"device_id": candidate["id"], "name": "module client"},
+    )
+    assert status == 200, saved
+    device_id = saved["id"]
+    status, started = panel.call(
+        "POST",
+        "/hub/device/agent/install",
+        {
+            "device_id": device_id,
+            "host": host,
+            "port": 22,
+            "username": "lab",
+            "key_id": key["id"],
+        },
+    )
+    assert status == 200, started
+    lifecycle.wait_for(
+        "the installed agent's first heartbeat",
+        lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),
+        INSTALL_TIMEOUT_S,
+    )
+    yield device_id
+    lifecycle.ssh_to(host, "sudo nagent leave")
+    panel.call("POST", "/hub/device/remove", {"device_id": device_id})
+    panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})
+
+
+@pytest.fixture(scope="module")
+def installed(panel, managed):
+    """The module, installed through the panel and watched to its state."""
+    row = row_of(panel, managed)
+    if not row["is_supported"]:
+        pytest.skip(f"{MODULE} is not offered on this machine")
+    if row["state"] != "absent":
+        pytest.skip(f"{MODULE} already reads {row['state']} on this machine")
+
+    status, answer = panel.call(
+        "POST", "/agent/module/install", {"device_id": managed, "module": MODULE}
+    )
     assert status == 200, answer
-    task_id = answer["task_id"]
-
-    # The list holds running jobs only, so "gone from it" is how a job that
-    # finished is told from one that has not started yet — and the poll has to
-    # see it there once before it can call its absence an ending.
-    deadline = time.monotonic() + INSTALL_LIMIT_S
-    is_seen = False
-    while time.monotonic() < deadline:
-        running = [task["id"] for task in panel.read("/modules/tasks")["tasks"]]
-        if task_id in running:
-            is_seen = True
-        elif is_seen:
-            break
-        time.sleep(INSTALL_POLL_S)
-    return _entry(panel)
-
-
-def _entry(panel) -> dict:
-    for entry in panel.read("/modules")["modules"]:
-        if entry["name"] == MODULE:
-            return entry
-    raise AssertionError(f"{MODULE} is not on the Services page")
+    return wait_state(panel, managed, "installed", ("installed", "stopped", "running"))
 
 
 def test_the_module_is_installed_afterwards(installed):
-    """Not "the job ended": a job that fails ends too. What the page says
-    about the module is the only answer that matters to the person who
-    pressed the button."""
-    assert installed["is_installed"], f"{MODULE} did not install"
+    """Not "the want was written": a want a machine cannot satisfy is written
+    just as easily. What the page says about the module is the only answer
+    that matters to the person who pressed the button."""
+    assert installed["state"] != "failed", installed
+    assert installed["want"] == "installed"
 
 
-def test_it_is_running(installed):
-    """Installing a thing and leaving it dark would only add a second step
-    everyone performs."""
-    assert installed["is_active"], f"{MODULE} installed but is not running"
+def test_the_machine_says_why_when_it_can(installed):
+    """A row that installed carries no failure code; one that failed carries
+    the machine's own words rather than only that something went wrong."""
+    assert installed["code"] == "", installed
 
 
-def test_the_package_manager_was_able_to_fetch(installed):
-    """The failure this file exists for. apt cannot drop to `_apt` inside the
-    panel's sandbox, so every download dies before a byte arrives — and the
-    module simply never appears, with the reason only in a job's output."""
-    journal = machine_state.run(
-        ["journalctl", "-u", "neutrino_hub_web", "--no-pager", "--since", "-30 min"]
+def test_starting_it_makes_the_machine_run_it(panel, managed, installed):
+    status, answer = panel.call(
+        "POST", "/agent/module/start", {"device_id": managed, "module": MODULE}
     )
+    assert status == 200, answer
 
-    assert "seteuid" not in journal
+    row = wait_state(panel, managed, "running", ("running",))
+    assert row["is_active"] is True, row
 
 
-def test_the_install_ran_outside_the_panels_own_unit(installed):
-    """It is handed to systemd rather than run in-process, which is what gives
-    it a unit with none of this one's hardening. Read from what systemd
-    recorded rather than from our own logging, so the check fails if the
-    escape is quietly dropped."""
-    journal = machine_state.run(
-        ["journalctl", "--no-pager", "--since", "-30 min", "-o", "cat"]
+def test_stopping_it_leaves_it_installed(panel, managed, installed):
+    status, answer = panel.call(
+        "POST", "/agent/module/stop", {"device_id": managed, "module": MODULE}
     )
+    assert status == 200, answer
 
-    assert "run-u" in journal or "run-r" in journal, "no transient unit was started"
+    row = wait_state(panel, managed, "stopped", ("stopped",))
+    assert row["is_active"] is False, row
 
 
-def test_the_page_offers_to_uninstall_what_is_installed(installed, panel):
+def test_the_page_offers_to_uninstall_what_is_installed(panel, managed, installed):
     """The other half of the button, and the state the next install starts
-    from."""
-    status, answer = panel.call("POST", f"/modules/{MODULE}/uninstall", {})
+    from. The machine's data stays; only the package goes."""
+    status, answer = panel.call(
+        "POST", "/agent/module/uninstall", {"device_id": managed, "module": MODULE}
+    )
+    assert status == 200, answer
 
-    assert status == 200, json.dumps(answer)[:200]
+    assert wait_state(panel, managed, "absent", ("absent",))["state"] == "absent"

@@ -148,13 +148,6 @@ ran $?
 # Last, and it leaves the box a router with a served network on whatever it
 # has: every check after this one would be asking about a machine this walk
 # has already reconfigured.
-# Before the page walk, which leaves the box a router: an install is a
-# package manager reaching the internet, and it needs the way out the box
-# arrived with.
-phase "installing a module through the panel"
-python3 -m pytest "$HERE/test_install_a_module.py" -q
-ran $?
-
 phase "the panel, every page"
 python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
     --ignore="$HERE/test_reset_hands_back.py" \
@@ -164,17 +157,25 @@ python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
     --ignore="$HERE/test_agent_channel.py"
 ran $?
 
-# The two walks below rewire the box into a router serving the spare wire and
-# drive a second machine, so nothing may still be asking about this one. The
-# channel walk proves the pinned transport; the lifecycle walk proves the
-# state machine that rides it. Both reach the second machine with
-# id_lab beside them, and both fail naming it when it is not there.
+# The three walks below rewire the box into a router serving the spare wire
+# and drive a second machine, so nothing may still be asking about this one.
+# The channel walk proves the pinned transport, the lifecycle walk the state
+# machine that rides it, and the module walk what the two carry. All three
+# reach the second machine with id_lab beside them, and all three fail naming
+# it when it is not there.
 phase "the agent channel, pinned end to end"
 python3 -m pytest "$HERE/test_agent_channel.py" -q
 ran $?
 
 phase "the device lifecycle, end to end"
 python3 -m pytest "$HERE/test_device_lifecycle.py" -q
+ran $?
+
+# Last of the three, because it is the slowest: a module installs on the
+# second machine, which means that machine's own package manager reaching
+# its own archive with the lines coming back up the channel.
+phase "installing a module on a managed machine"
+python3 -m pytest "$HERE/test_install_a_module.py" -q
 ran $?
 
 echo

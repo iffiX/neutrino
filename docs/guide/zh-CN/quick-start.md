@@ -20,7 +20,7 @@ title: 快速上手
 1. 在 `home-hub` 上安装包。
 
    ```bash
-   sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+   sudo apt install ./neutrino-hub_0.3.0_amd64.deb
    ```
 
 1. 启动向导。
@@ -80,7 +80,7 @@ title: 快速上手
 1. 在 `studio` 上安装被控端。
 
    ```bash
-   sudo apt install ./neutrino-agent_0.2.0_amd64.deb
+   sudo apt install ./neutrino-agent_0.3.0_amd64.deb
    ```
 
 1. 在 `studio` 上用刚复制的链接接入。
@@ -103,7 +103,7 @@ title: 快速上手
 1. 在 `laptop` 上安装客户端。
 
    ```bash
-   sudo apt install ./neutrino-client_0.2.0_amd64.deb
+   sudo apt install ./neutrino-client_0.3.0_amd64.deb
    ```
 
 1. 以你自己的账户打开窗口。
@@ -132,9 +132,6 @@ title: 快速上手
 1. 在确认框里点 **应用设备**。安装完成后，页面下方出现这台机器的 Samba 面板。
 1. 在 **用户**（Users）里点 **添加用户**（Add user），用户名填 `alex`，密码任填一个，点 **应用用户**（Apply users）。
 1. 在 **共享**（Shares）里点 **添加共享**（Add share），名称填 `media`，路径填一个目录，点 **应用共享**（Apply shares）。
-
-   ![一个共享](/guide/zh/samba_share.webp)
-
 1. 打开 **服务**（Services）页。`media` 在 **文件**（Files）组里，来源写着由 `home-hub` 上的 samba 模块发布。
 
    ![服务页](/guide/zh/services_list.webp)

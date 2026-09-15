@@ -65,7 +65,7 @@ pack_tree() {
 panel_post() {
     local path="$1" body="$2" jar
     jar="$(mktemp)"
-    curl -s -f -c "$jar" -X POST "http://$(hub_ip):$PANEL_PORT/api/auth/login" \
+    curl -s -f -c "$jar" -X POST "http://$(hub_ip):$PANEL_PORT/api/hub/auth/login" \
         -H 'content-type: application/json' \
         -d "{\"password\":\"$(state panel_password)\"}" -o /dev/null
     curl -s -f -b "$jar" -X POST "http://$(hub_ip):$PANEL_PORT$path" \
@@ -75,7 +75,7 @@ panel_post() {
 panel_get() {
     local path="$1" jar
     jar="$(mktemp)"
-    curl -s -f -c "$jar" -X POST "http://$(hub_ip):$PANEL_PORT/api/auth/login" \
+    curl -s -f -c "$jar" -X POST "http://$(hub_ip):$PANEL_PORT/api/hub/auth/login" \
         -H 'content-type: application/json' \
         -d "{\"password\":\"$(state panel_password)\"}" -o /dev/null
     curl -s -f -b "$jar" "http://$(hub_ip):$PANEL_PORT$path"
@@ -85,13 +85,13 @@ panel_get() {
 # A link lives five minutes, so it is minted the moment a device is about to
 # paste it and never earlier.
 mint_link() {
-    panel_post /api/devices/enrollment "{\"name\":\"$1\"}" \
+    panel_post /api/hub/device/enrollment/create "{\"name\":\"$1\"}" \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["link"])'
 }
 
 # A person's link, for the client: the same five minutes, the same moment.
 mint_client_link() {
-    panel_post /api/clients/enrollment "{\"name\":\"$1\"}" \
+    panel_post /api/hub/client/enrollment/create "{\"name\":\"$1\"}" \
         | python3 -c 'import json,sys; print(json.load(sys.stdin)["link"])'
 }
 
@@ -100,7 +100,7 @@ mint_client_link() {
 wait_device_online() {
     local name="$1" i
     for ((i = 0; i < 12; i++)); do
-        panel_get /api/devices > "$STATE/devices.json"
+        panel_get /api/hub/device > "$STATE/devices.json"
         if python3 - "$STATE/devices.json" "$name" <<'PY'
 import json, sys
 
@@ -133,7 +133,7 @@ PY
 wait_client_online() {
     local name="$1" i
     for ((i = 0; i < 12; i++)); do
-        panel_get /api/clients > "$STATE/clients.json"
+        panel_get /api/hub/client > "$STATE/clients.json"
         if python3 - "$STATE/clients.json" "$name" <<'PY'
 import json, sys
 

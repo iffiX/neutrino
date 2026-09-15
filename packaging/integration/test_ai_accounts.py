@@ -21,7 +21,7 @@ def accounts_or_skip(panel):
     Returns:
         The decoded accounts view.
     """
-    status, body = panel.call("GET", "/cliproxyapi/accounts")
+    status, body = panel.call("GET", "/hub/ai/gateway/account")
     if status == 502:
         pytest.skip(f"gateway not answering: {body['detail']['code']}")
     assert status == 200, body
@@ -44,7 +44,7 @@ def test_accounts_answer_the_contract_shape(panel):
 
 def test_the_status_counts_the_accounts(panel):
     body = accounts_or_skip(panel)
-    status, view = panel.call("GET", "/cliproxyapi")
+    status, view = panel.call("GET", "/hub/ai/gateway")
     assert status == 200, view
     assert view["account_count"] == len(body["accounts"])
 
@@ -52,7 +52,7 @@ def test_the_status_counts_the_accounts(panel):
 def test_a_login_hands_back_a_url_and_stays_pending(panel):
     accounts_or_skip(panel)
     status, login = panel.call(
-        "POST", "/cliproxyapi/account_logins", {"kind": "anthropic"}
+        "POST", "/hub/ai/gateway/account_login/start", {"kind": "anthropic"}
     )
     assert status == 200, login
     assert login["state"]
@@ -60,26 +60,32 @@ def test_a_login_hands_back_a_url_and_stays_pending(panel):
     assert login["flow"] == "redirect"
     try:
         status, state = panel.call(
-            "GET", f"/cliproxyapi/account_logins/{login['state']}"
+            "GET", f"/hub/ai/gateway/account_login?state={login['state']}"
         )
         assert status == 200, state
         assert state["status"] == "pending"
     finally:
-        panel.call("DELETE", f"/cliproxyapi/account_logins/{login['state']}")
+        panel.call(
+            "POST", "/hub/ai/gateway/account_login/stop", {"state": login["state"]}
+        )
 
 
 def test_a_device_login_hands_back_a_code_to_type(panel):
     accounts_or_skip(panel)
-    status, login = panel.call("POST", "/cliproxyapi/account_logins", {"kind": "kimi"})
+    status, login = panel.call(
+        "POST", "/hub/ai/gateway/account_login/start", {"kind": "kimi"}
+    )
     assert status == 200, login
     assert login["flow"] == "device"
     assert login["user_code"]
-    panel.call("DELETE", f"/cliproxyapi/account_logins/{login['state']}")
+    panel.call("POST", "/hub/ai/gateway/account_login/stop", {"state": login["state"]})
 
 
 def test_refusals_are_coded(panel):
     accounts_or_skip(panel)
-    status, body = panel.call("POST", "/cliproxyapi/account_logins", {"kind": "gemini"})
+    status, body = panel.call(
+        "POST", "/hub/ai/gateway/account_login/start", {"kind": "gemini"}
+    )
     assert status == 422
     assert body["detail"] == {
         "code": "unsupported_kind",
@@ -87,12 +93,16 @@ def test_refusals_are_coded(panel):
     }
 
     status, body = panel.call(
-        "PUT", "/cliproxyapi/account_logins/no-such-state/code", {"code": "x"}
+        "POST",
+        "/hub/ai/gateway/account_login/code/set",
+        {"state": "no-such-state", "code": "x"},
     )
     assert status == 404
     assert body["detail"]["code"] == "login_expired"
 
-    status, body = panel.call("DELETE", "/cliproxyapi/accounts/no-such-account.json")
+    status, body = panel.call(
+        "POST", "/hub/ai/gateway/account/remove", {"name": "no-such-account.json"}
+    )
     assert status == 404
     assert body["detail"]["code"] == "unknown_account"
 
@@ -100,15 +110,17 @@ def test_refusals_are_coded(panel):
 def test_signing_in_is_not_a_configuration_change(panel):
     """Accounts are state: starting one never asks the page to apply."""
     accounts_or_skip(panel)
-    status, before = panel.call("GET", "/cliproxyapi")
+    status, before = panel.call("GET", "/hub/ai/gateway")
     assert status == 200, before
     status, login = panel.call(
-        "POST", "/cliproxyapi/account_logins", {"kind": "anthropic"}
+        "POST", "/hub/ai/gateway/account_login/start", {"kind": "anthropic"}
     )
     assert status == 200, login
     try:
-        status, after = panel.call("GET", "/cliproxyapi")
+        status, after = panel.call("GET", "/hub/ai/gateway")
         assert status == 200, after
         assert after["is_serving_stale"] == before["is_serving_stale"]
     finally:
-        panel.call("DELETE", f"/cliproxyapi/account_logins/{login['state']}")
+        panel.call(
+            "POST", "/hub/ai/gateway/account_login/stop", {"state": login["state"]}
+        )

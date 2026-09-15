@@ -32,21 +32,21 @@ title: 安装客户端
 ::: code-group
 
 ```bash [Debian 系]
-sudo apt install ./neutrino-client_0.2.0_amd64.deb
+sudo apt install ./neutrino-client_0.3.0_amd64.deb
 nclient gui
 ```
 
 ```bash [RHEL 系]
-sudo dnf install ./neutrino-client-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-client-0.3.0-1.x86_64.rpm
 nclient gui
 ```
 
 ```powershell [Windows]
-msiexec /i neutrino-client-0.2.0-windows-amd64.msi
+msiexec /i neutrino-client-0.3.0-windows-amd64.msi
 ```
 
 ```bash [macOS]
-sudo installer -pkg neutrino-client-0.2.0-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 ```
 
 :::

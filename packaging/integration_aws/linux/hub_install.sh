@@ -33,14 +33,14 @@ grep -E "panel is at|enroll" /tmp/setup.log || true
 echo "== enrollment link"
 COOKIES="$(mktemp)"
 for _ in $(seq 1 30); do
-    if curl -s -f -c "$COOKIES" -X POST "$PANEL/api/auth/login" \
+    if curl -s -f -c "$COOKIES" -X POST "$PANEL/api/hub/auth/login" \
         -H 'content-type: application/json' \
         -d "{\"password\":\"$NEUTRINO_PANEL_PASSWORD\"}" > /dev/null; then
         break
     fi
     sleep 1
 done
-LINK="$(curl -s -f -b "$COOKIES" -X POST "$PANEL/api/devices/enrollment" \
+LINK="$(curl -s -f -b "$COOKIES" -X POST "$PANEL/api/hub/device/enrollment/create" \
     -H 'content-type: application/json' \
     -d "{\"name\":\"${NEUTRINO_DEVICE_NAME:-}\"}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["link"])')"
 rm -f "$COOKIES"

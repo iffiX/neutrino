@@ -57,11 +57,11 @@ title: 安装被控端
 ::: code-group
 
 ```bash [Debian 系]
-sudo apt install ./neutrino-agent_0.2.0_amd64.deb
+sudo apt install ./neutrino-agent_0.3.0_amd64.deb
 ```
 
 ```bash [RHEL 系]
-sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm
 ```
 
 :::

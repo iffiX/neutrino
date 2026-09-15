@@ -20,16 +20,16 @@ hub 装在家里一台常开的 Linux 机器上。一条安装命令加一次初
 ::: code-group
 
 ```bash [Debian、Ubuntu、树莓派 OS]
-sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+sudo apt install ./neutrino-hub_0.3.0_amd64.deb
 ```
 
 ```bash [Fedora、RHEL 系]
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
 ```
 
 ```bash [Arch]
-sudo pacman -U neutrino-hub-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
 ```
 
 :::

@@ -34,19 +34,19 @@ The notice reads **Paste this link into the client program for** followed by the
 ::: code-group
 
 ```bash [Debian, Ubuntu]
-sudo apt install ./neutrino-client_0.2.0_amd64.deb
+sudo apt install ./neutrino-client_0.3.0_amd64.deb
 ```
 
 ```bash [Fedora, RHEL, AlmaLinux, Rocky]
-sudo dnf install ./neutrino-client-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-client-0.3.0-1.x86_64.rpm
 ```
 
 ```powershell [Windows]
-msiexec /i neutrino-client-0.2.0-windows-amd64.msi
+msiexec /i neutrino-client-0.3.0-windows-amd64.msi
 ```
 
 ```bash [macOS]
-sudo installer -pkg neutrino-client-0.2.0-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 ```
 
 :::

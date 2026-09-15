@@ -5,7 +5,7 @@
 #   setup_vms.sh <distro> <version> [prefix]
 #
 #   setup_vms.sh debian 12
-#   setup_vms.sh ubuntu 24.04 mx
+#   setup_vms.sh ubuntu 22.04 mx
 #
 # Run on a libvirt host. Naming the distro and version is what pins a
 # behaviour to a release: the image comes from the distribution's own cloud

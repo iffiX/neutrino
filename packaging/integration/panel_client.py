@@ -39,7 +39,7 @@ class PanelClient:
         Raises:
             RuntimeError: If the panel refused, or could not be reached.
         """
-        status, answer = self.call("POST", "/auth/login", {"password": password})
+        status, answer = self.call("POST", "/hub/auth/login", {"password": password})
         if status != 200 or not isinstance(answer, dict):
             raise RuntimeError(f"could not sign in to {self.base_url}: {answer}")
         if not answer.get("is_authenticated"):

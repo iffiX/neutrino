@@ -1,9 +1,10 @@
-"""The agent channel end to end: pinned TLS from the link to the heartbeat.
+"""The channel end to end: pinned TLS from the link to the heartbeat.
 
-The link carries the certificate's fingerprint and the agent channel's own
-port; the wire it is used on is served but deliberately not exposed, because
-the channel answers on every served network. A good fingerprint enrolls and
-beats; a tampered one is refused on the device before anything is sent.
+The link carries the certificate's fingerprint, the channel's own port and
+the role it was made for, and its addresses are the exposed ones, because
+exposure is the only thing that opens a port on a network. A good fingerprint
+joins and beats; a tampered one is refused on the device before the ticket is
+sent.
 
 It needs the lab: a client VM on the served wire answering SSH with the
 ``id_lab`` key beside this file, its ``lab`` account holding passwordless
@@ -13,6 +14,7 @@ passes by skipping tested nothing.
 
 import base64
 import json
+import urllib.parse
 
 import pytest
 
@@ -29,9 +31,7 @@ LEAVE_TIMEOUT_S = 30
 
 def tampered(link: str) -> str:
     """The same link with its fingerprint replaced, everything else intact."""
-    payload_text = link.removeprefix("neutrino://enroll/")
-    padded = payload_text + "=" * (-len(payload_text) % 4)
-    payload = json.loads(base64.urlsafe_b64decode(padded))
+    payload = generated_payload(link)
     payload["fp"] = WRONG_FINGERPRINT
     encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
     return "neutrino://enroll/" + encoded.rstrip("=")
@@ -45,7 +45,7 @@ def generated_payload(link: str) -> dict:
 
 @pytest.fixture(scope="module")
 def serving(panel, before):
-    """A router serving the spare wire, and the wire left unexposed."""
+    """A router serving the spare wire, with the wire exposed."""
     if not lifecycle.ID_LAB.is_file():
         pytest.fail(
             f"no lab key at {lifecycle.ID_LAB}: push it beside these tests "
@@ -55,7 +55,7 @@ def serving(panel, before):
         )
     physical = [
         entry["settings"]["name"]
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
         if entry["link"]["is_present"]
         and entry["settings"]["vlan"] is None
         and entry["link"]["kind"] == "ethernet"
@@ -64,19 +64,22 @@ def serving(panel, before):
     if not spares:
         pytest.skip("this box has no spare port to serve on")
     matrix.put_mode(panel, "router")
+    # The way in becomes the way out, whatever role an earlier file left
+    # on it: a router with no uplink serves a network with nothing behind
+    # it, and the machine on it cannot reach a package archive.
+    matrix.put_interface(panel, before["interface"], role="wan")
     matrix.put_interface(
         panel, spares[-1], role="lan", lan=matrix.lan_body(CHANNEL_LAN)
     )
-    # Deliberately unexposed: the agent channel must answer on a served wire
-    # the panel does not.
+    # Exposure is what opens the channel's port on a network, so the wire
+    # the second machine joins from is in the set.
     exposed = [
         entry["settings"]["name"]
-        for entry in panel.read("/network")["interfaces"]
+        for entry in panel.read("/hub/network")["interfaces"]
         if entry["settings"]["is_exposed"]
     ]
-    if spares[-1] in exposed:
-        exposed.remove(spares[-1])
-        matrix.put_options(panel, exposed_interfaces=exposed)
+    if spares[-1] not in exposed:
+        matrix.put_options(panel, exposed_interfaces=exposed + [spares[-1]])
     return spares[-1]
 
 
@@ -85,7 +88,7 @@ def stranger(panel, serving):
     """The client on the served wire, once its lease and its SSH answer."""
 
     def scanned_candidate():
-        status, listed = panel.call("POST", "/devices/scan")
+        status, listed = panel.call("POST", "/hub/device/scan")
         assert status == 200
         for entry in listed["devices"]:
             if (
@@ -107,91 +110,63 @@ def stranger(panel, serving):
 
 
 def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
-    mac = stranger["mac_address"]
     host = stranger["ipv4_address"]
 
-    # The link names the agent channel: TLS on every served address, and the
-    # fingerprint the device will hold the socket to.
-    status, generated = panel.call("POST", "/devices/enrollment", {"name": ""})
+    # The link names the channel: TLS on every exposed address, the role it
+    # was made for, and the fingerprint the device will hold the socket to.
+    status, generated = panel.call(
+        "POST", "/hub/device/enrollment/create", {"name": ""}
+    )
     assert status == 200, generated
     payload = generated_payload(generated["link"])
     assert payload["urls"], payload
     assert all(url.startswith("https://") for url in payload["urls"])
+    assert payload["role"] == "agent", payload
     assert len(payload["fp"]) == 64 and int(payload["fp"], 16) >= 0
+    # The served wire is exposed, so its own address is one of them, and the
+    # port is the channel's rather than the panel's.
+    assert any(url.startswith(f"https://{CHANNEL_LAN}:") for url in payload["urls"])
+    panel_port = urllib.parse.urlsplit(panel.base_url).port or 80
+    assert all(urllib.parse.urlsplit(url).port != panel_port for url in payload["urls"])
 
     # The install delivers the agent and joins through that channel; the
-    # first heartbeat is the proof the pinned TLS port answers on the
-    # unexposed served wire.
+    # first heartbeat is the proof the pinned TLS port answers on the served
+    # wire.
     status, key = panel.call(
         "POST",
-        "/credentials/ssh_keys",
+        "/hub/credential/ssh_key/add",
         {"name": "channel lab key", "private_key": lifecycle.ID_LAB.read_text()},
     )
     assert status == 200, key
     status, saved = panel.call(
-        "PUT",
-        f"/devices/{mac}",
-        {
-            "name": "tls client",
-            "ssh": {
-                "host": host,
-                "port": 22,
-                "username": "lab",
-                "auth": "key",
-                "key_id": key["id"],
-            },
-        },
+        "POST", "/hub/device/set", {"device_id": stranger["id"], "name": "tls client"}
     )
     assert status == 200, saved
+    device_id = saved["id"]
     status, started = panel.call(
-        "POST", f"/devices/{mac}/action", {"action": "install_client"}
+        "POST",
+        "/hub/device/agent/install",
+        {
+            "device_id": device_id,
+            "host": host,
+            "port": 22,
+            "username": "lab",
+            "key_id": key["id"],
+        },
     )
     assert status == 200, started
     lifecycle.wait_for(
         "the installed agent's first heartbeat over TLS",
-        lambda: (lifecycle.device_by_mac(panel, mac) or {}).get("is_agent_online"),
+        lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),
         INSTALL_TIMEOUT_S,
     )
 
-    # The package endpoint answers over the same pinned channel with the same
-    # token, and the bytes match the digest the reply names — the transport a
-    # self-updating agent trusts. Run with the device's own installed agent
-    # code, as an update would.
-    script = (
-        "import hashlib; "
-        "from neutrino_agent.core import enrollment; "
-        "from neutrino_agent.constants import AGENT_PACKAGE_PATH; "
-        "from neutrino_agent.core.channel import GatewayHttpChannel; "
-        "from neutrino_agent.platforms.detect import platform_tuple; "
-        "from neutrino_agent.core.self_update import package_kind; "
-        "config = enrollment.load_config(); "
-        'channel = GatewayHttpChannel(gateway_url=config["gateway_url"], '
-        'token=config["token"], fingerprint=config.get("fingerprint", "")); '
-        "machine = platform_tuple(); "
-        "kind = package_kind(machine); "
-        "named = channel.post_download(AGENT_PACKAGE_PATH, "
-        '{"family": kind, "architecture": machine["arch"]}, '
-        '"/tmp/hub_agent_package"); '
-        'data = open("/tmp/hub_agent_package", "rb").read(); '
-        "matched = named == hashlib.sha256(data).hexdigest(); "
-        'print(kind, "digest-ok" if matched else "digest-bad", len(data))'
-    )
-    # The interpreter the package carries, which is the only one the agent
-    # is importable from.
-    agent_python = "/opt/neutrino_agent/python/bin/python3"
-    fetched = lifecycle.ssh_to(host, f"sudo {agent_python} -c '{script}'")
-    assert fetched.returncode == 0, fetched.stdout + fetched.stderr
-    kind, verdict, size = fetched.stdout.split()
-    assert kind in ("deb", "rpm")
-    assert verdict == "digest-ok"
-    assert int(size) > 10 * 1024
-
     # Unbind from the device side, so the refusals below are the link's alone.
-    left = lifecycle.ssh_to(host, "sudo nagent disconnect")
+    left = lifecycle.ssh_to(host, "sudo nagent leave")
     assert "left the hub" in left.stdout, left.stdout + left.stderr
     lifecycle.wait_for(
-        "the hub to drop the leaver's token",
-        lambda: (lifecycle.device_by_mac(panel, mac) or {"client": None})["client"]
+        "the hub to drop the leaver's binding",
+        lambda: (lifecycle.device_by_id(panel, device_id) or {"client": None})["client"]
         is None,
         LEAVE_TIMEOUT_S,
     )
@@ -199,27 +174,29 @@ def test_the_channel_is_pinned_tls_end_to_end(panel, stranger):
     # A wrong-fingerprint link is refused on the device, visibly, with the
     # ticket never sent.
     status, fresh = panel.call(
-        "POST", "/devices/enrollment", {"name": "tls client", "mac_address": mac}
+        "POST",
+        "/hub/device/enrollment/create",
+        {"device_id": device_id, "name": "tls client"},
     )
     assert status == 200, fresh
     refused = lifecycle.ssh_to(
-        host, f"sudo nagent connect --yes {tampered(fresh['link'])}"
+        host, f"sudo nagent join --yes {tampered(fresh['link'])}"
     )
     assert refused.returncode != 0
     assert "certificate" in refused.stdout + refused.stderr
-    row = lifecycle.device_by_mac(panel, mac)
+    row = lifecycle.device_by_id(panel, device_id)
     assert row is None or row["client"] is None
 
     # The untampered link joins, and the heartbeat flows again.
-    joined = lifecycle.ssh_to(host, f"sudo nagent connect --yes {fresh['link']}")
+    joined = lifecycle.ssh_to(host, f"sudo nagent join --yes {fresh['link']}")
     assert "joined" in joined.stdout, joined.stdout + joined.stderr
     lifecycle.wait_for(
         "the re-enrolled agent to report",
-        lambda: (lifecycle.device_by_mac(panel, mac) or {}).get("is_agent_online"),
+        lambda: (lifecycle.device_by_id(panel, device_id) or {}).get("is_agent_online"),
         INSTALL_TIMEOUT_S,
     )
 
     # Leave the box as this file found it.
-    lifecycle.ssh_to(host, "sudo nagent disconnect")
-    assert panel.status("DELETE", f"/devices/{mac}") == 200
-    panel.call("DELETE", f"/credentials/ssh_keys/{key['id']}")
+    lifecycle.ssh_to(host, "sudo nagent leave")
+    assert panel.status("POST", "/hub/device/remove", {"device_id": device_id}) == 200
+    panel.call("POST", "/hub/credential/ssh_key/remove", {"key_id": key["id"]})

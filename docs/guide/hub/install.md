@@ -10,7 +10,7 @@ Installing the hub is one package and one run of `sudo nhub setup`. When the wiz
 
 The box must meet these conditions:
 
-- It stays on, and it runs one of the supported systems: Debian 12 or newer, Ubuntu 24.04 or newer, Raspberry Pi OS 64-bit, Fedora 41 or newer, the RHEL 9 family, or Arch. [Supported platforms](../reference/platforms.md) has the full matrix.
+- It stays on, and it runs one of the supported systems: Debian 12 or newer, Ubuntu 22.04 or newer, Raspberry Pi OS 64-bit, Fedora 41 or newer, the RHEL 9 family, or Arch. [Supported platforms](../reference/platforms.md) has the full matrix.
 - You have root on it.
 - It has internet access, because the setup fetches packages.
 
@@ -21,25 +21,25 @@ The other shapes, side gateway and router, take over the box's interfaces; [the 
 ::: code-group
 
 ```bash [Debian, Ubuntu, Raspberry Pi OS]
-sudo apt install ./neutrino-hub_0.2.0_amd64.deb
+sudo apt install ./neutrino-hub_0.3.0_amd64.deb
 ```
 
 ```bash [Fedora]
-sudo dnf install ./neutrino-hub-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
 ```
 
 ```bash [RHEL, AlmaLinux, Rocky]
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
 ```
 
 ```bash [Arch, EndeavourOS, Manjaro]
-sudo pacman -U neutrino-hub-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
 ```
 
 :::
 
-On ARM64 the file is `neutrino-hub_0.2.0_arm64.deb` or `neutrino-hub-0.2.0-1.aarch64.rpm`. The package includes its own Python under `/opt/neutrino/python`. On the RHEL family, fail2ban, arp-scan and vnstat come from EPEL.
+On ARM64 the file is `neutrino-hub_0.3.0_arm64.deb` or `neutrino-hub-0.3.0-1.aarch64.rpm`. The package includes its own Python under `/opt/neutrino/python`. On the RHEL family, fail2ban, arp-scan and vnstat come from EPEL.
 
 ## Start the setup wizard
 

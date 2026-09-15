@@ -45,16 +45,16 @@ The hub rejects a machine that reports another operating system with `unsupporte
 ::: code-group
 
 ```bash [Debian, Ubuntu, Raspberry Pi OS]
-sudo apt install ./neutrino-agent_0.2.0_amd64.deb
+sudo apt install ./neutrino-agent_0.3.0_amd64.deb
 ```
 
 ```bash [Fedora, RHEL, AlmaLinux, Rocky]
-sudo dnf install ./neutrino-agent-0.2.0-1.x86_64.rpm
+sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm
 ```
 
 :::
 
-On ARM64 the file is `neutrino-agent_0.2.0_arm64.deb` or `neutrino-agent-0.2.0-1.aarch64.rpm`. The package includes its own interpreter and the RustDesk host; the desktop libraries it depends on are for that host. The service starts on install and binds to a hub with `sudo nagent join '<link>'`; `--yes` replaces an existing binding.
+On ARM64 the file is `neutrino-agent_0.3.0_arm64.deb` or `neutrino-agent-0.3.0-1.aarch64.rpm`. The package includes its own interpreter and the RustDesk host; the desktop libraries it depends on are for that host. The service starts on install and binds to a hub with `sudo nagent join '<link>'`; `--yes` replaces an existing binding.
 
 ## The hub's own agent
 
