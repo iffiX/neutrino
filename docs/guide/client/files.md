@@ -4,17 +4,17 @@ title: Files
 
 # Files
 
-The client's **Files** panel mounts a share the hub publishes under your home directory, or on a drive letter on Windows. The same panel unmounts it.
+The **Files** panel in a hub's group mounts a share that hub publishes, under your home directory or on a drive letter on Windows. The same panel unmounts it.
 
 ## Where the entries come from
 
-An entry in the **Files** panel is an SMB share the hub published, from one of these sources:
+An entry in a **Files** panel is an SMB share the hub of its group published, from one of these sources:
 
 - the Samba module on a managed machine
 - a dataset shared from the ZFS page
 - a share on another server, declared by hand on the hub's **Services** page
 
-The line under the entry says which.
+The line under the entry says which. Each hub publishes into its own group, and two hubs that publish the same server's share show it twice, once in each group.
 
 ## Config
 
@@ -26,7 +26,7 @@ The line under the entry says which.
 
 ![The drive letter picker on Windows](/guide/en/win_files_drive_letter.webp)
 
-The client rejects a path outside your home with `mountpoint_invalid`, and a folder that is not empty with `mountpoint_not_empty`. On Windows, only an unused drive letter is accepted; anything else is `mountpoint_not_drive_letter`.
+The client rejects a path outside your home with `mountpoint_invalid`, and a folder that is not empty with `mountpoint_not_empty`. On Windows, only an unused drive letter is accepted; anything else is `mountpoint_not_drive_letter`. One path holds one share. A path another entry already mounts at, from this hub or from any other, is rejected with `mountpoint_in_use`.
 
 ## Mount and unmount
 
@@ -36,7 +36,9 @@ The client rejects a path outside your home with `mountpoint_invalid`, and a fol
 
 ![The mapped drive in File Explorer](/guide/os/win_explorer_mapped.webp)
 
-The share is at the path or the drive letter until **Unmount**, and the login stays saved for the next **Mount**. The password is kept in a credentials file on your computer that only your account can read. When that file is gone, a mount is rejected with `credentials_missing`, and **Config** takes the password again. From a terminal, `nclient service file config <ref> --path <path> --username <name>` saves the login and mounts, and `mount` and `unmount` with the same `<ref>` attach and detach it.
+The share is at the path or the drive letter until **Unmount**, and the login stays saved for the next **Mount**. The password is kept in a credentials file on your computer that only your account can read. When that file is gone, a mount is rejected with `credentials_missing`, and **Config** takes the password again. Leaving the hub unmounts every share it published, and the saved logins stay on this computer.
+
+From a terminal, `nclient service file config <ref> --path <path> --username <name>` saves the login and mounts, and `mount` and `unmount` with the same `<ref>` attach and detach it. Each of the three takes `--hub` for the hub's name, which one hub joined makes optional. `<ref>` is the entry's number under that hub in `nclient service list`, or its id.
 
 ## The polkit helper on Linux
 

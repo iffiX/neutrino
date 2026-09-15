@@ -4,7 +4,7 @@ title: Install the client
 
 # Install the client
 
-The client is one package per system. It joins the hub with a link pasted into its window, and then reads **Connected** with its five panels.
+The client is one package per system. A link from a hub's **Clients** page joins it to that hub, and the window holds one row per hub joined, with that hub's services under it.
 
 ## Before you start
 
@@ -16,7 +16,7 @@ Check the computer against these requirements:
   - Windows 10 or 11 on x86-64
   - macOS on Apple silicon
 - You run the client from your own account. The client rejects root with `root_refused`.
-- It reaches port 8443 on the hub, the channel the client connects on.
+- It reaches port 8443 on every hub it joins, the channel each one listens on.
 
 ## Create a client link
 
@@ -61,19 +61,28 @@ On Windows, double-clicking the `.msi` runs the same installer. It has two check
 
 On macOS, Gatekeeper stops a package downloaded from a browser: open the `.pkg` from its context menu and choose **Open**. The app opens from its icon and sits in the menu bar.
 
-## Paste the link
+## Join the first hub
 
-1. Open the client: **Neutrino client** in the application menu on Linux, the Start menu on Windows, or its icon on macOS, or run `nclient gui` in a terminal. The window opens with **Not connected** and a field for the link.
+1. Open the client: **Neutrino client** in the application menu on Linux, the Start menu on Windows, or its icon on macOS, or run `nclient gui` in a terminal. The **Hubs** section reads **No hub joined yet**, with a **Join a hub** row under it.
    ![The client window before joining](/guide/en/client_disconnected.webp)
-1. Paste the link into the field and select **Connect**.
+1. Paste the link into the field of that row and select **Join**.
 
-The status card reads **Connected** with the hub's version, and the **Services** section draws **Web**, **Ports**, **AI**, **Files** and **Remote desktops**.
+The hub gets a row of its own reading **Connected**, with its address and the package it runs. Under the hub's name, the **Services** section draws **Web**, **Ports**, **AI**, **Files** and **Remote desktops**.
 
-![The client window connected on Linux](/guide/en/client_connected.webp)
+![The client window joined to a hub on Linux](/guide/en/client_connected.webp)
 
-![The client window connected on Windows](/guide/en/win_client_connected.webp)
+![The client window joined to a hub on Windows](/guide/en/win_client_connected.webp)
 
-From a terminal, `nclient connect '<link>'` joins the same way. A link from the **Devices** page is rejected with `link_not_for_client`, and an expired one with `enroll_refused`.
+From a terminal, `nclient join '<link>'` joins the same way, where the link is the one the **Clients** page issued. A link from the **Devices** page is rejected with `link_not_for_client`, and an expired one with `enroll_refused`.
+
+## Join another hub
+
+This computer belongs to as many hubs as it holds links for. Each hub issues its own link, keeps its own name for the computer, and publishes its own services; nothing is shared between them.
+
+1. In the second hub's panel, create a client link the same way.
+1. Paste it into the **Join a hub** row and select **Join**.
+
+The **Hubs** section grows a row and the **Services** section grows a group. From a terminal, `nclient join` adds a hub and `nclient leave --hub` leaves the one you name.
 
 ## Using the services
 

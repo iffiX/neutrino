@@ -4,13 +4,13 @@ title: 安装客户端
 
 # 安装客户端
 
-客户端装在一个人的电脑上，以这个人的普通账户运行，Linux、Windows 和 macOS 都有包。装好并粘贴链接后，窗口显示 **已连接**（Connected）和五个面板。
+客户端装在一个人的电脑上，以这个人的普通账户运行，Linux、Windows 和 macOS 都有包。粘一条链接就加入一个 hub；加入几个，窗口里就有几行，每行下面是那个 hub 发布的服务。
 
 ## 开始之前
 
 - 一台有桌面会话的电脑。支持的系统在[支持的平台](../reference/platforms.md)里。
 - 一个普通账户。`nclient` 拒绝以 root 运行。
-- 这台电脑能访问 hub 的 8443 端口。
+- 这台电脑能访问每一个要加入的 hub 的 8443 端口。
 
 ## 在客户端页新建链接
 
@@ -63,25 +63,36 @@ macOS 上的包只有 Apple 芯片版本，应用装在 `/Applications`，`nclie
 
 ![Windows 托盘菜单](/guide/os/win_tray_flyout.webp)
 
-## 粘贴链接
+## 加入第一个 hub
 
-1. 打开窗口。状态卡写着 **未连接**（Not connected），下面一行提示粘贴 hub 客户端页面上的链接。
+1. 打开窗口。**Hub** 区写着 **尚未加入任何 hub**（No hub joined yet），下面是 **加入 hub**（Join a hub）那一行。
 
-   ![未连接](/guide/zh/client_disconnected.webp)
+   ![尚未加入](/guide/zh/client_disconnected.webp)
 
-1. 把链接粘进输入框，点 **连接**（Connect）。
+1. 把链接粘进那一行的输入框，点 **加入**（Join）。
 
-状态卡变成 **已连接**，写着 hub 的版本；**服务**（Services）区画出五个面板。
+这个 hub 多出一行，写着 **已连接**（Connected）、它的地址和它运行的软件包。**服务**（Services）区在这个 hub 的名字下面画出五个面板。
 
-![已连接](/guide/zh/client_connected.webp)
+![已加入一个 hub](/guide/zh/client_connected.webp)
 
-![Windows 上已连接](/guide/zh/win_client_connected.webp)
+![Windows 上已加入](/guide/zh/win_client_connected.webp)
 
-同一件事在终端里是一条命令：
+终端里同一件事：
 
 ```bash
-nclient connect 'neutrino://enroll/PLACEHOLDER_LINK'
+nclient join 'neutrino://enroll/PLACEHOLDER_LINK'
 ```
+
+链接过期时客户端返回 `enroll_refused`。
+
+## 再加入一个 hub
+
+有几条链接就能加入几个 hub。每个 hub 各发各的链接，各记各的电脑名字，各发布各的服务，几个 hub 之间没有共享。
+
+1. 在另一个 hub 的面板里，同样新建一条客户端链接。
+1. 把链接粘进 **加入 hub** 那一行，点 **加入**。
+
+**Hub** 区多一行，**服务** 区多一组。终端里 `nclient join` 加入一个 hub，`nclient leave --hub` 离开指定的那个。
 
 ## 五类服务的用法
 

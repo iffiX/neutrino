@@ -4,11 +4,11 @@ title: Remote desktops
 
 # Remote desktops
 
-One button in the client's **Remote desktops** panel opens another machine's desktop in a viewer, with the password supplied by the hub.
+One button in a **Remote desktops** panel opens another machine's desktop in a viewer, with the password supplied by the hub that published it.
 
 ## Where the entries come from
 
-An entry is a desktop a managed machine shares with `sudo nagent rdp start`, described as **shared from** that device. The entry stays while the machine is sharing and online; `sudo nagent rdp stop` on the machine removes it. The hub's **Devices** page describes the sharing side.
+An entry is a desktop a managed machine shares with `sudo nagent rdp start`, described as **shared from** that device. The entry stays while the machine is sharing and online; `sudo nagent rdp stop` on the machine removes it. It appears in the group of the hub that manages the machine. The hub's **Devices** page describes the sharing side.
 
 ## Connect
 
@@ -16,7 +16,7 @@ An entry is a desktop a managed machine shares with `sudo nagent rdp start`, des
 
 ![The Remote desktops panel with a viewer open](/guide/en/client_desktop_connect.webp)
 
-The hub sets the seat password and sends it to the viewer in the reply to that one press. The viewer signs in with it. The client includes the viewer; the connection is direct, on port 21118 of that machine. From a terminal, `nclient service desktop connect <ref>` opens the same viewer, where `<ref>` is the entry's number in `nclient service list` or its id.
+The hub sets the seat password and sends it in the reply to that one press. The viewer signs in with it. The client includes the viewer; the connection is direct, on port 21118 of that machine. From a terminal, `nclient service desktop connect <ref>` opens the same viewer. `<ref>` is the entry's number under its hub in `nclient service list`, or its id, and `--hub` takes the hub's name unless only one is joined.
 
 ## When there is no entry
 

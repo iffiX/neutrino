@@ -4,26 +4,36 @@ title: The window
 
 # The window
 
-The window, titled **Neutrino client**, has a **Status** section and a **Services** section. This page names every part of both and covers connecting, disconnecting and the language.
+The window, titled **Neutrino client**, has a **Hubs** section and a **Services** section. Each hub this computer has joined holds one row in the first and one group of panels in the second. This page names every part of both.
 
-## The status card
+## The Hubs section
 
-| The card reads              | Meaning                                                                                               |
-| --------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Connected**               | joined, with the hub's address and `hub` followed by its version, and a **Disconnect** button         |
-| **Not connected**           | not joined, with a field that takes the link from the hub's **Clients** page and a **Connect** button |
-| **Reconnecting to the hub** | joined, and the hub is not answering right now; the client keeps trying by itself                     |
-| **Switched off by the hub** | disabled on the **Clients** page; every button is greyed until the hub enables it again               |
+Each row holds one hub: its name, the state it is in, its address and the package the hub runs. Each row has the **Exit** radio and **Leave**. A row reading **Replaced by another client** has **Reconnect** as well, and every button acts on that hub and no other. The **Join a hub** row under them stays whether or not any hub is joined, and takes a link from any hub's **Clients** page.
 
-![The window connected](/guide/en/client_connected.webp)
+![The window with a hub joined](/guide/en/client_connected.webp)
 
-![The window before joining](/guide/en/client_disconnected.webp)
+| The row reads                  | Meaning                                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| **Connected**                  | the channel to that hub is open and its services are in the **Services** section               |
+| **Reconnecting to the hub**    | the binding is kept and the channel is down; the client opens it again on its own              |
+| **Switched off by the hub**    | that hub's **Clients** page has this client switched off, and its panels are inert             |
+| **Replaced by another client** | a second client took this binding, and the channel stays closed until you select **Reconnect** |
 
-**Disconnect** leaves the hub, and the **Services** section then reads **Services appear once you join a hub.** From a terminal, `nclient connect '<link>'` joins, where `<link>` is the link from the **Clients** page, and `nclient disconnect` leaves.
+**Leave** tells that hub, removes its row and its group, and undoes everything it published on this computer: its mounts, its forwards and its viewers. Every other hub is untouched. From a terminal, `nclient join '<link>'` joins a hub and `nclient leave --hub <name>` leaves one, where the name is the one in its row.
 
-## The five panels
+![The window with no hub joined](/guide/en/client_disconnected.webp)
 
-**Services** draws five panels in a fixed order, whether or not each has entries: **Web**, **Ports**, **AI**, **Files** and **Remote desktops**. An empty panel reads a line such as **no port is published**. An entry the hub cannot reach right now is greyed and reads **not reachable now**. The line under each entry names its source:
+## The exit hub
+
+One hub of those joined is the exit, and your AI tools point at that hub's gateway. The **Exit** radio on a row makes that hub the exit. Its row then reads **the AI tools point at this hub**, and every other hub's AI panel names the hub they point at instead.
+
+The first hub joined is the exit until another is chosen. Leaving the exit hub moves the exit to the next hub joined. Only a row reading **Connected** takes the radio, and a hub whose channel is down is rejected with `no_exit_hub`. The [AI page](./ai.md) covers what the tools are pointed at.
+
+## The Services section
+
+Each hub's group opens with **Published by** and the hub's name. It draws five panels in a fixed order, whether or not each has entries: **Web**, **Ports**, **AI**, **Files** and **Remote desktops**. An empty panel reads a line such as **no port is published**. An entry the hub cannot reach right now is greyed and reads **not reachable now**. A group whose hub is not connected reads that hub's state in place of its panels.
+
+The line under each entry names its source:
 
 | The line reads                              | The source                                   |
 | ------------------------------------------- | -------------------------------------------- |
@@ -45,10 +55,19 @@ The window's language and theme are the client's own; the panel's are set on the
 
 ## The tray
 
-Closing the window hides it, and the client keeps running. **Open** in the tray icon's menu shows the window again, and **Quit** stops the client. On Windows the icon is in the taskbar corner, on Linux in the indicator area of the panel, and on macOS in the menu bar. `nclient gui --hidden` starts the client in the tray with no window, and `nclient quit` stops it from a terminal.
+Closing the window hides it, and the client keeps running with every hub joined. **Open** in the tray icon's menu shows the window again, and **Quit** stops the client. On Windows the icon is in the taskbar corner, on Linux in the indicator area of the panel, and on macOS in the menu bar. `nclient gui --hidden` starts the client in the tray with no window, and `nclient quit` stops it from a terminal.
 
 ![The tray menu on Windows](/guide/os/win_tray_flyout.webp)
 
-## A different version
+## What a refusal does to the binding
 
-The three packages share one version number. A client newer than the hub is rejected with `client_newer_than_hub` and leaves the hub. Its window then reads that the hub is upgraded first and a fresh link pasted afterwards. A client older than the hub is offered an upgrade. A hub that was reset or reinstalled rejects the old binding with `hub_untrusted`, and a fresh link joins again.
+A refusal keeps the binding. The row keeps its place, shows the code under the hub's name, and the client opens the channel again a minute later. One code ends the binding, and the row goes with it.
+
+| The row shows      | What the code means                                              | The binding                                    |
+| ------------------ | ---------------------------------------------------------------- | ---------------------------------------------- |
+| `protocol_too_old` | this client speaks an older protocol number than the hub accepts | stays; install a newer client                  |
+| `protocol_too_new` | this client speaks a newer protocol number than the hub speaks   | stays; upgrade that hub first                  |
+| `hub_untrusted`    | the certificate at that address is not the one the link pinned   | stays; a hub that was reset takes a fresh link |
+| `binding_unknown`  | that hub's **Clients** page no longer holds this client          | goes; a fresh link joins again                 |
+
+Either protocol code prints the numbers, this client's and the hub's, so the row names the side that is behind. Package versions take no part in it, and a client and a hub on different versions that speak one protocol number stay connected.
