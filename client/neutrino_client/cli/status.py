@@ -1,8 +1,8 @@
 """``nclient status``: what this person is bound to, and whether it works.
 
 Three things break independently: the person never joined, the resident is
-not running, or the hub cannot be reached from here. This says which, on two
-lines: hub and resident.
+not running, or a hub cannot be reached from here. This says which: one
+line per hub, then the resident's.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -13,11 +13,7 @@ from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import wording
 from neutrino_client.control import client
 from neutrino_client.core import enrollment
-from neutrino_client.core.session import (
-    CONNECTION_CONNECTED,
-    CONNECTION_REPLACED,
-    CONNECTION_UNBOUND,
-)
+from neutrino_client.core.session import CONNECTION_CONNECTED, CONNECTION_REPLACED
 from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.detect import detect_platform
 
@@ -29,19 +25,18 @@ def main() -> int:
     """Report the three things that break independently.
 
     Returns:
-        Process exit status: 0 when bound, running and connected, 1
-        otherwise.
+        Process exit status: 0 when bound, running and every hub connected,
+        1 otherwise.
     """
     print(f"neutrino-client {CLIENT_VERSION}")
     state = _local_state()
     if state is not None:
         return _status_from_resident(state)
     held = enrollment.bindings()
-    gateway_url = held[0]["gateway_url"] if held else ""
-    if not gateway_url:
+    if not held:
         print(f"hub        {wording.NOT_JOINED}")
-    else:
-        print(f"hub        {gateway_url}")
+    for binding in held:
+        print(f"hub        {binding['gateway_url']}")
     print(f"resident   {RESIDENT_NOT_RUNNING}")
     return 1
 
@@ -72,30 +67,35 @@ def _status_from_resident(state: dict) -> int:
         state: The page's state payload.
 
     Returns:
-        Process exit status: 0 when bound and connected, 1 otherwise.
+        Process exit status: 0 when bound and every hub connected, 1
+        otherwise.
     """
-    connection = str(state.get("connection_state", CONNECTION_UNBOUND))
-    if connection == CONNECTION_UNBOUND:
+    hubs = [hub for hub in state.get("hubs") or [] if isinstance(hub, dict)]
+    if not hubs:
         print(f"hub        {wording.NOT_JOINED}")
         print(f"resident   {RESIDENT_RUNNING}")
         return 1
-    print(f"hub        {state.get('gateway_url', '')}   {connection}{_why(state)}")
+    is_clean = True
+    for hub in hubs:
+        connection = str(hub.get("connection_state", ""))
+        print(f"hub        {hub.get('gateway_url', '')}   {connection}{_why(hub)}")
+        is_clean = is_clean and connection == CONNECTION_CONNECTED
     print(f"resident   {RESIDENT_RUNNING}")
-    return 0 if connection == CONNECTION_CONNECTED else 1
+    return 0 if is_clean else 1
 
 
-def _why(state: dict) -> str:
-    """What the resident last had to say about the socket, if anything.
+def _why(hub: dict) -> str:
+    """What the resident last had to say about one hub's socket, if anything.
 
     Args:
-        state: The page's state payload.
+        hub: The hub's row of the state payload.
 
     Returns:
         The wording after a colon, empty when there is nothing to add.
     """
-    if state.get("connection_state") == CONNECTION_REPLACED:
+    if hub.get("connection_state") == CONNECTION_REPLACED:
         return f": {wording.word_state(CONNECTION_REPLACED)}"
-    error = state.get("last_error")
+    error = hub.get("last_error")
     if not isinstance(error, dict) or not error.get("code"):
         return ""
     return f": {wording.word_code(str(error['code']), error.get('params'))}"

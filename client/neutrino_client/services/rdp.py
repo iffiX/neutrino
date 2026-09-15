@@ -3,7 +3,8 @@
 Connect opens a ``service`` stream to the hub for the share's address and
 access password, then starts the carried RustDesk viewer at it. The password
 travels in the one close and the one argument vector and lands in no log
-and no state. The viewer processes are tracked so a shutdown closes them.
+and no state. The viewer processes are tracked by service key so a shutdown,
+or a hub letting go, closes them.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -20,6 +21,8 @@ from neutrino_client.services.base import (
     ServiceTypeHandler,
     channel_refusal,
     find_entry,
+    hub_of_key,
+    service_key,
 )
 from neutrino_client.services.worker import ServiceWorker
 
@@ -91,9 +94,9 @@ class RdpViewerHandler(ServiceTypeHandler):
         """
         Args:
             platform: The machine's platform, behind the contract.
-            open_service: Callable ``(entry_id) -> dict`` opening the entry's
-                ``service`` stream and returning its close's params; raises
-                the channel's exceptions.
+            open_service: Callable ``(hub_id, entry_id) -> dict`` opening
+                the entry's ``service`` stream on that hub and returning its
+                close's params; raises the channel's exceptions.
             log: Callable used for progress messages.
             on_change: Called after every change of standing; None for
                 nobody listening.
@@ -104,6 +107,7 @@ class RdpViewerHandler(ServiceTypeHandler):
         self._open_service = open_service
         self._log = log
         self._lock = threading.Lock()
+        # The viewer processes, by service key.
         self._viewers: dict = {}
         self._on_change = on_change if on_change is not None else _nobody
         self._worker = ServiceWorker(
@@ -114,26 +118,35 @@ class RdpViewerHandler(ServiceTypeHandler):
         """Connect to one shared desktop.
 
         Args:
-            entries: The catalog's service list.
-            body: ``{"action": "connect", "id"}``.
+            entries: The merged service list.
+            body: ``{"action": "connect", "hub_id", "id"}``.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
         if str(body.get("action", "")) != RDP_ACTION_CONNECT:
             return {"code": "unknown_request", "params": {}}
-        entry = find_entry(entries, self.service_type, str(body.get("id", "")))
+        entry = find_entry(
+            entries,
+            self.service_type,
+            str(body.get("hub_id", "")),
+            str(body.get("id", "")),
+        )
         if entry is None:
             return {"code": "unknown_request", "params": {}}
-        return self._worker.submit(
-            f"{RDP_STEP_CONNECTING}:{entry.get('id')}", lambda: self._open(entry)
-        )
+        key = service_key(str(entry.get("hub_id", "")), str(entry.get("id", "")))
 
-    def _open(self, entry: dict) -> dict:
+        def open_viewer() -> dict:
+            return self._open(entry, key)
+
+        return self._worker.submit(f"{RDP_STEP_CONNECTING}:{key}", open_viewer)
+
+    def _open(self, entry: dict, key: str) -> dict:
         """Take the seat's material from the hub and start the viewer at it.
 
         Args:
             entry: The desktop's service entry.
+            key: The entry's service key.
 
         Returns:
             Empty when the viewer started, ``{"code", "params"}`` otherwise.
@@ -142,7 +155,9 @@ class RdpViewerHandler(ServiceTypeHandler):
         if not binary:
             return bundled.bundle_missing("rustdesk")
         try:
-            reply = self._open_service(str(entry.get("id", "")))
+            reply = self._open_service(
+                str(entry.get("hub_id", "")), str(entry.get("id", ""))
+            )
         except Exception as error:  # noqa: BLE001 - a refusal, never a crash
             return channel_refusal(error)
         try:
@@ -161,19 +176,19 @@ class RdpViewerHandler(ServiceTypeHandler):
         except (OSError, subprocess.SubprocessError) as error:
             return {"code": "rdp_launch_failed", "params": {"detail": str(error)}}
         with self._lock:
-            self._viewers[str(entry.get("id"))] = process
-        self._log(f"opened the desktop viewer for {entry.get('id')}")
+            self._viewers[key] = process
+        self._log(f"opened the desktop viewer for {key}")
         return {}
 
     def state(self) -> dict:
         """Which desktops a viewer is open on.
 
         Returns:
-            ``{"viewers": {entry_id: {"is_running"}}}``.
+            ``{"viewers": {service_key: {"is_running"}}}``.
         """
         with self._lock:
             self._prune()
-            viewers = {entry_id: {"is_running": True} for entry_id in self._viewers}
+            viewers = {key: {"is_running": True} for key in self._viewers}
         return {"viewers": viewers, "rdp_work": self._worker.status()}
 
     def release(self) -> int:
@@ -184,6 +199,25 @@ class RdpViewerHandler(ServiceTypeHandler):
         """
         return self.close_all()
 
+    def release_hub(self, hub_id: str) -> int:
+        """Close every viewer open on one hub's desktops.
+
+        Args:
+            hub_id: The hub whose viewers are closed.
+
+        Returns:
+            How many were still running and were ended.
+        """
+        with self._lock:
+            viewers = {
+                key: process
+                for key, process in self._viewers.items()
+                if hub_of_key(key) == hub_id
+            }
+            for key in viewers:
+                self._viewers.pop(key, None)
+        return self._terminate(viewers)
+
     def close_all(self) -> int:
         """Terminate every viewer process still running.
 
@@ -193,6 +227,10 @@ class RdpViewerHandler(ServiceTypeHandler):
         with self._lock:
             viewers = dict(self._viewers)
             self._viewers = {}
+        return self._terminate(viewers)
+
+    @staticmethod
+    def _terminate(viewers: dict) -> int:
         closed = 0
         for process in viewers.values():
             if process.poll() is not None:
@@ -210,6 +248,6 @@ class RdpViewerHandler(ServiceTypeHandler):
 
     def _prune(self) -> None:
         """Forget viewers the person already closed. Call under the lock."""
-        for entry_id in list(self._viewers):
-            if self._viewers[entry_id].poll() is not None:
-                self._viewers.pop(entry_id, None)
+        for key in list(self._viewers):
+            if self._viewers[key].poll() is not None:
+                self._viewers.pop(key, None)

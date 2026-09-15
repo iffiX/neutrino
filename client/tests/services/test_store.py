@@ -3,8 +3,9 @@
 What the store keeps is what somebody typed, the language, the theme, the
 tool choices and the mount records, and the one thing it makes itself: the
 installation's id, generated on the first read and stable after. Nothing
-about a service standing on is in it, and a file an older build wrote reads
-without the keys it had.
+about a service standing on is in it, a file an older build wrote reads
+without the keys it had, and a mount record that names no hub is dropped
+on request.
 """
 
 import json
@@ -16,6 +17,7 @@ from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE, CLIENT_DEFAULT_TH
 from neutrino_client.services.store import ClientServiceStore
 
 RECORD = {
+    "hub_id": "h1",
     "entry_id": "share_media",
     "host": "hub",
     "share": "media",
@@ -108,6 +110,18 @@ def test_a_file_an_older_build_wrote_is_read_without_its_keys(tmp_path):
         "ai": {"tool_configs": {"claude": {"default": "m2"}}},
         "mounts": {"r1": RECORD},
     }
+
+
+def test_a_record_that_names_no_hub_is_read_and_dropped_on_request(store):
+    hubless = {key: value for key, value in RECORD.items() if key != "hub_id"}
+    store.set_mount("old", hubless)
+    store.set_mount("r1", RECORD)
+
+    assert store.mounts() == {"old": hubless, "r1": RECORD}
+    assert store.drop_hubless_mounts() == ["old"]
+
+    assert store.mounts() == {"r1": RECORD}
+    assert store.drop_hubless_mounts() == []
 
 
 def test_the_machine_id_is_made_once_and_kept(store, tmp_path):

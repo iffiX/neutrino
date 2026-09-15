@@ -5,12 +5,14 @@ becomes a credentials file only this person reads and never travels to the
 hub. Mount attaches, Unmount detaches. The privileged part of a mount is the
 platform's: on Linux it goes through the root helper under ``pkexec``.
 
-A record in the store is the login and the path this person typed, nothing
-more: what is attached is this run's own. The reconcile remounts what this
-run attached and lost, which is what brings a share back after the network
-dropped; a record from an earlier run waits for the person to ask. A record
-whose credentials file is gone reports ``credentials_missing`` and waits for
-the password to be entered again.
+A record in the store is the hub and entry a share came from, the login and
+the path this person typed, nothing more: what is attached is this run's
+own. The reconcile remounts what this run attached and lost, which is what
+brings a share back after the network dropped; a record from an earlier run
+waits for the person to ask. A record whose credentials file is gone reports
+``credentials_missing`` and waits for the password to be entered again. A
+record that names no hub was written by an older build and is dropped at
+start, after whatever it left mounted is unmounted by path.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -28,17 +30,19 @@ from neutrino_client.services.base import ServiceTypeHandler, find_entry
 MOUNT_RECORD_ID_LENGTH = 16
 
 
-def mount_record_id(entry_id: str, location: str) -> str:
+def mount_record_id(hub_id: str, entry_id: str, location: str) -> str:
     """The stable id one mount is kept under.
 
     Args:
+        hub_id: The hub the entry came from.
         entry_id: The service entry mounted.
         location: The mount point.
 
     Returns:
-        A short hex id; the same entry at the same path is the same record.
+        A short hex id; the same entry of the same hub at the same path is
+        the same record.
     """
-    digest = hashlib.sha256(f"{entry_id}\n{location}".encode("utf-8"))
+    digest = hashlib.sha256(f"{hub_id}\n{entry_id}\n{location}".encode("utf-8"))
     return digest.hexdigest()[:MOUNT_RECORD_ID_LENGTH]
 
 
@@ -89,9 +93,9 @@ class FileServiceHandler(ServiceTypeHandler):
         """Mount a share with the staged config, or unmount one record.
 
         Args:
-            entries: The catalog's service list.
-            body: ``{"action": "mount", "id", "username", "password",
-                "path"}`` for a fresh or reconfigured mount,
+            entries: The merged service list.
+            body: ``{"action": "mount", "hub_id", "id", "username",
+                "password", "path"}`` for a fresh or reconfigured mount,
                 ``{"action": "mount", "record_id"}`` to remount with the
                 kept credentials, or ``{"action": "unmount", "record_id"}``;
                 the record and its credentials stay.
@@ -103,11 +107,14 @@ class FileServiceHandler(ServiceTypeHandler):
         if action == "mount" and body.get("record_id"):
             return self.remount(record_id=str(body.get("record_id", "")))
         if action == "mount":
-            entry = find_entry(entries, self.service_type, str(body.get("id", "")))
+            hub_id = str(body.get("hub_id", ""))
+            entry_id = str(body.get("id", ""))
+            entry = find_entry(entries, self.service_type, hub_id, entry_id)
             if entry is None:
                 return {"code": "unknown_request", "params": {}}
             return self.attach(
-                entry_id=str(body.get("id", "")),
+                hub_id=hub_id,
+                entry_id=entry_id,
                 payload=entry.get("payload") or {},
                 username=str(body.get("username", "")),
                 password=str(body.get("password", "")),
@@ -135,22 +142,33 @@ class FileServiceHandler(ServiceTypeHandler):
         Returns:
             How many records were detached.
         """
-        detached = 0
         with self._lock:
-            self._attached = set()
-            for record_id, record in sorted(self._store.mounts().items()):
-                location = str(record.get("path", ""))
-                try:
-                    if self._platform.is_share_attached(location=location):
-                        self._platform.detach_share(location=location)
-                        detached += 1
-                except (ShareAttachError, PlatformUnsupportedError) as error:
-                    self._log(f"could not unmount {location}: {error}")
-                self._stages.pop(record_id, None)
+            return self._detach_records(sorted(self._store.mounts().items()))
+
+    def release_hub(self, hub_id: str) -> int:
+        """Detach every attached record of one hub; the records and logins stay.
+
+        Args:
+            hub_id: The hub whose shares are unmounted.
+
+        Returns:
+            How many records were detached.
+        """
+        with self._lock:
+            detached = self._detach_records(
+                [
+                    (record_id, record)
+                    for record_id, record in sorted(self._store.mounts().items())
+                    if record.get("hub_id") == hub_id
+                ]
+            )
+        if detached:
+            self._on_change()
         return detached
 
     def clear_leftovers(self) -> None:
-        """Detach every record an earlier run left attached."""
+        """Detach every record an earlier run left attached, then drop the
+        records that name no hub and their credentials."""
         with self._lock:
             records = sorted(self._store.mounts().items())
         for _record_id, record in records:
@@ -163,10 +181,15 @@ class FileServiceHandler(ServiceTypeHandler):
                 self._log(f"could not unmount {location}: {error}")
                 continue
             self._log(f"unmounted {location} after an unclean exit")
+        with self._lock:
+            for record_id in self._store.drop_hubless_mounts():
+                self._discard_credentials(record_id)
+                self._log(f"dropped mount record {record_id}: it names no hub")
 
     def attach(
         self,
         *,
+        hub_id: str,
         entry_id: str,
         payload: dict,
         username: str,
@@ -176,14 +199,17 @@ class FileServiceHandler(ServiceTypeHandler):
         """Mount one published share at a path.
 
         Args:
-            entry_id: The entry's id in the service list.
+            hub_id: The hub the entry came from.
+            entry_id: The entry's id in that hub's list.
             payload: The entry's payload, naming the host and share.
             username: The share's own username.
             password: The share's own password; it stays on this machine.
             path: The mount point.
 
         Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
+            Empty on success, ``{"code", "params"}`` on a refusal;
+            ``mountpoint_in_use`` when another record already holds the
+            path.
         """
         refusal = self._platform.validate_mount_location(location=path)
         if refusal is not None:
@@ -197,7 +223,9 @@ class FileServiceHandler(ServiceTypeHandler):
             if refusal is not None:
                 return refusal
             for old_id, old in list(self._store.mounts().items()):
-                if old.get("entry_id") != entry_id:
+                if old.get("hub_id") != hub_id or old.get("entry_id") != entry_id:
+                    if str(old.get("path", "")) == location:
+                        return {"code": "mountpoint_in_use", "params": {"path": path}}
                     continue
                 old_location = str(old.get("path", ""))
                 try:
@@ -210,8 +238,9 @@ class FileServiceHandler(ServiceTypeHandler):
                 self._problems.pop(old_id, None)
                 self._stages.pop(old_id, None)
                 self._attached.discard(old_id)
-            record_id = mount_record_id(entry_id, location)
+            record_id = mount_record_id(hub_id, entry_id, location)
             record = {
+                "hub_id": hub_id,
                 "entry_id": entry_id,
                 "host": str(payload.get("host", "")),
                 "share": str(payload.get("share", "")),
@@ -318,6 +347,7 @@ class FileServiceHandler(ServiceTypeHandler):
             rows.append(
                 {
                     "record_id": record_id,
+                    "hub_id": record.get("hub_id", ""),
                     "entry_id": record.get("entry_id", ""),
                     "host": record.get("host", ""),
                     "share": record.get("share", ""),
@@ -406,6 +436,21 @@ class FileServiceHandler(ServiceTypeHandler):
         self._problems.pop(record_id, None)
         self._stages.pop(record_id, None)
         self._log(f"mounted {_share_url(record)} at {location}")
+
+    def _detach_records(self, records: list) -> int:
+        """Detach ``(record_id, record)`` pairs and forget their standing; under the lock."""
+        detached = 0
+        for record_id, record in records:
+            location = str(record.get("path", ""))
+            try:
+                if self._platform.is_share_attached(location=location):
+                    self._platform.detach_share(location=location)
+                    detached += 1
+            except (ShareAttachError, PlatformUnsupportedError) as error:
+                self._log(f"could not unmount {location}: {error}")
+            self._stages.pop(record_id, None)
+            self._attached.discard(record_id)
+        return detached
 
     def _tooling_refusal(self) -> "dict | None":
         """Refuse when the machine has no way to attach a share.

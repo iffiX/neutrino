@@ -27,7 +27,7 @@ from neutrino_client.constants import (
     CLIENT_LEAVE_PATH,
 )
 from neutrino_client.core.channel import GatewayHttpChannel
-from neutrino_client.core.session import ClientSession
+from neutrino_client.core.resident import ClientResident
 from neutrino_client.exceptions import (
     GatewayProtocolRefused,
     GatewayRefused,
@@ -157,14 +157,15 @@ def test_a_mismatched_pin_keeps_the_binding_and_asks_again_a_minute_later(
 ):
     url, _ = tls_server
     bind(config_path, url=url, fingerprint=WRONG_FINGERPRINT)
-    session = ClientSession(log=discard, platform=FakeClientPlatform())
+    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    (session,) = resident._sessions.values()
 
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.is_connected() is True
+    assert resident.is_connected() is True
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() == {"code": "hub_untrusted", "params": {}}
+    assert resident.hubs()[0]["last_error"] == {"code": "hub_untrusted", "params": {}}
     assert RecordingHandler.requests == []
 
 

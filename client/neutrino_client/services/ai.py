@@ -1,10 +1,11 @@
-"""The ai service type: pointing this person's AI tools at the hub's gateway.
+"""The ai service type: pointing this person's AI tools at the exit hub's gateway.
 
 The page stages one Enabled toggle and per-tool model choices, and Apply
-commits them here in one step: the tools are pointed at once the hub has
-answered the ``ai`` entry's ``service`` stream with a credential. The store
-keeps the model choices only; whether the tools point at the hub, and the
-endpoint the last activation granted, are this run's own and go with it.
+commits them here in one step: the tools are pointed at once the exit hub
+has answered its ``ai`` entry's ``service`` stream with a credential. The
+store keeps the model choices only; whether the tools point at a hub, and
+which hub and endpoint the last activation granted, are this run's own and
+go with it.
 
 The staged choices are what each tool is pointed with; the grant's ``model``
 is only the prefill default for a slot nobody has chosen. Deactivation uses
@@ -101,17 +102,22 @@ def resolved_configs(credential: dict, tool_configs: dict) -> dict:
 AI_STEP_SWITCHING = "switching"
 
 
-def ai_entry_id(entries: list) -> str:
-    """The id of the published AI gateway entry.
+def ai_entry_id(entries: list, hub_id: str) -> str:
+    """The id of the AI gateway entry one hub publishes.
 
     Args:
-        entries: The hub's service list.
+        entries: The merged service list, each entry stamped with ``hub_id``.
+        hub_id: The hub whose entry is wanted.
 
     Returns:
-        The first ``ai`` entry's id, empty when none is published.
+        That hub's first ``ai`` entry's id, empty when it publishes none.
     """
     for entry in entries or []:
-        if isinstance(entry, dict) and entry.get("type") == "ai":
+        if (
+            isinstance(entry, dict)
+            and entry.get("type") == "ai"
+            and entry.get("hub_id") == hub_id
+        ):
             return str(entry.get("id", "") or "")
     return ""
 
@@ -131,6 +137,7 @@ class AiServiceHandler(ServiceTypeHandler):
         store,
         original_dir,
         open_service,
+        exit_hub_id,
         log=print,
         switcher_module=None,
         on_change=None,
@@ -140,10 +147,12 @@ class AiServiceHandler(ServiceTypeHandler):
         Args:
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`.
             original_dir: Where the switcher keeps its adopt records.
-            open_service: Callable ``(entry_id) -> dict`` opening the entry's
-                ``service`` stream and returning its close's params, the
-                credential ``{"base_url", "api_key", "model"}``; raises the
-                channel's exceptions.
+            open_service: Callable ``(hub_id, entry_id) -> dict`` opening
+                the entry's ``service`` stream on that hub and returning its
+                close's params, the credential ``{"base_url", "api_key",
+                "model"}``; raises the channel's exceptions.
+            exit_hub_id: Callable ``() -> str`` naming the hub whose
+                gateway the tools point at, empty when there is none.
             log: Callable used for progress messages.
             switcher_module: The switcher to drive; None uses the real one.
             on_change: Called after every change of standing; None for
@@ -154,11 +163,16 @@ class AiServiceHandler(ServiceTypeHandler):
         self._store = store
         self._original_dir = original_dir
         self._open_service = open_service
+        self._exit_hub_id = exit_hub_id
         self._log = log
         self._switcher = switcher_module if switcher_module is not None else switcher
         self._lock = threading.Lock()
+        # The exit hub and its ai entry, as of the last apply or refresh.
+        self._hub_id = ""
         self._entry_id = ""
         self._is_enabled = False
+        # What the last activation pointed the tools at: hub_id, base_url
+        # and the default model.
         self._granted: dict = {}
         self._status: dict = self._steady(is_active=False)
         self._on_change = on_change if on_change is not None else _nobody
@@ -170,8 +184,9 @@ class AiServiceHandler(ServiceTypeHandler):
         """Commit one apply: the toggle and the tool configs together.
 
         Args:
-            entries: The hub's service list.
-            body: ``{"is_enabled": bool, "tool_configs": {...}}``.
+            entries: The merged service list.
+            body: ``{"is_enabled": bool, "tool_configs": {...}}``; the hub
+                acted on is the exit hub.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
@@ -183,8 +198,8 @@ class AiServiceHandler(ServiceTypeHandler):
         tool_configs = body.get("tool_configs")
         if isinstance(tool_configs, dict):
             self._store.set_ai_tool_configs(clean_tool_configs(tool_configs))
+        self._aim(entries)
         with self._lock:
-            self._entry_id = ai_entry_id(entries)
             self._is_enabled = bool(body.get("is_enabled"))
         return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
 
@@ -202,24 +217,24 @@ class AiServiceHandler(ServiceTypeHandler):
         return {"ai": status, "ai_tool_configs": self._store.ai_tool_configs()}
 
     def refresh(self, *, entries: list) -> None:
-        """Converge on what the hub grants now, after its state changed.
+        """Converge on what the exit hub grants now, after a state changed.
 
         Args:
-            entries: The hub's service list.
+            entries: The merged service list.
         """
-        with self._lock:
-            self._entry_id = ai_entry_id(entries)
+        self._aim(entries)
         # The hub's word is never dropped: a lane at work runs it next.
         self._worker.submit(AI_STEP_SWITCHING, self.reconcile, if_busy=IF_BUSY_KEEP_ONE)
 
     def reconcile(self) -> None:
         """Point the tools where the choice says, once, and record it."""
         with self._lock:
+            hub_id = self._hub_id
             entry_id = self._entry_id
             is_enabled = self._is_enabled
         try:
             if is_enabled:
-                status = self._activate(entry_id)
+                status = self._activate(hub_id, entry_id)
             else:
                 status = self._deactivate()
         except ToolSwitchError as error:
@@ -255,6 +270,21 @@ class AiServiceHandler(ServiceTypeHandler):
         self.restore()
         return 0
 
+    def release_hub(self, hub_id: str) -> int:
+        """Restore the tools when they point at one hub; the toggle is kept.
+
+        Args:
+            hub_id: The hub let go of.
+
+        Returns:
+            Zero: the tools are one thing, put back or already back.
+        """
+        with self._lock:
+            is_pointed_there = self._granted.get("hub_id") == hub_id
+        if is_pointed_there:
+            self.restore()
+        return 0
+
     def clear_leftovers(self) -> None:
         """Put the tools back when an earlier run did not.
 
@@ -280,11 +310,18 @@ class AiServiceHandler(ServiceTypeHandler):
                 return True
         return False
 
-    def _activate(self, entry_id: str) -> dict:
+    def _aim(self, entries: list) -> None:
+        """Take the exit hub and its ai entry from the merged list."""
+        hub_id = str(self._exit_hub_id() or "")
+        with self._lock:
+            self._hub_id = hub_id
+            self._entry_id = ai_entry_id(entries, hub_id)
+
+    def _activate(self, hub_id: str, entry_id: str) -> dict:
         if not entry_id:
             return self._no_endpoint()
         try:
-            credential = self._open_service(entry_id)
+            credential = self._open_service(hub_id, entry_id)
         except (GatewayUntrusted, GatewayUnreachable) as error:
             return dict(
                 channel_refusal(error), state=self._steady_state(), is_active=False
@@ -310,7 +347,11 @@ class AiServiceHandler(ServiceTypeHandler):
         if switched:
             self._log(f"ai service: pointed {switched} at the hub")
         with self._lock:
-            self._granted = {"base_url": base_url, "model": default_model}
+            self._granted = {
+                "hub_id": hub_id,
+                "base_url": base_url,
+                "model": default_model,
+            }
         return {"state": "installed", "code": "", "params": {}, "is_active": True}
 
     def _deactivate(self) -> dict:

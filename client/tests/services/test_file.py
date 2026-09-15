@@ -1,10 +1,13 @@
 """The file service: the platform does the privileged part, typed refusals.
 
 The password is proven absent three ways: never on argv, never in the
-store, never in a state payload. A record is the login and the path this
-person typed; what is attached is this run's own, so a record of an earlier
-run waits to be asked for. A declined authorization is typed and not retried
-on the timer.
+store, never in a state payload. A record is the hub and entry a share came
+from, the login and the path this person typed; what is attached is this
+run's own, so a record of an earlier run waits to be asked for. A declined
+authorization is typed and not retried on the timer. One hub's records are
+let go of without touching another's, two hubs cannot share one mount
+point, and a record an older build wrote without a hub is unmounted by path
+and dropped at start.
 """
 
 import json
@@ -20,8 +23,9 @@ from tests.conftest import FakeClientPlatform, discard
 PAYLOAD = {"protocol": "smb", "host": "hub", "share": "media"}
 
 
-def entry_for(payload):
+def entry_for(payload, hub_id="h1"):
     return {
+        "hub_id": hub_id,
         "id": "share_media",
         "type": "file",
         "title": "media",
@@ -45,10 +49,11 @@ def service(tmp_path):
     return subject, platform, store, tmp_path
 
 
-def attach(subject, *, path, password="pw"):
+def attach(subject, *, path, password="pw", hub_id="h1", entry_id="share_media"):
     """Queue a mount and, when accepted, run the worker's pass by hand."""
     reply = subject.attach(
-        entry_id="share_media",
+        hub_id=hub_id,
+        entry_id=entry_id,
         payload=PAYLOAD,
         username="media",
         password=password,
@@ -68,8 +73,9 @@ def test_a_creatable_path_is_made_and_mounted(service):
     assert platform.fs_calls == [("mkdir", location)]
     call = platform.attach_calls[0]
     assert call["share_url"] == "//hub/media" and call["location"] == location
-    record = store.mounts()[mount_record_id("share_media", location)]
+    record = store.mounts()[mount_record_id("h1", "share_media", location)]
     assert record["path"] == location
+    assert record["hub_id"] == "h1"
     assert "password" not in record and "account" not in record
 
 
@@ -81,6 +87,7 @@ def test_the_password_lands_only_in_a_0600_credentials_file(service):
         entries=[entry_for(PAYLOAD)],
         body={
             "action": "mount",
+            "hub_id": "h1",
             "id": "share_media",
             "username": "media",
             "password": "pw-secret",  # scan: allow
@@ -139,6 +146,7 @@ def test_a_queued_mount_reports_its_stage_before_the_worker_runs(service):
     subject, _platform, _store, tmp_path = service
 
     reply = subject.attach(
+        hub_id="h1",
         entry_id="share_media",
         payload=PAYLOAD,
         username="media",
@@ -251,6 +259,7 @@ def test_release_detaches_everything_and_keeps_the_records(service):
     assert attach(subject, path=str(tmp_path / "a")) == {}
     entry_b = dict(PAYLOAD, share="b")
     reply = subject.attach(
+        hub_id="h1",
         entry_id="share_b",
         payload=entry_b,
         username="media",
@@ -278,6 +287,7 @@ def test_act_mounts_and_unmounts_by_typed_entry(service):
         entries=[entry_for(PAYLOAD)],
         body={
             "action": "mount",
+            "hub_id": "h1",
             "id": "share_media",
             "username": "media",
             "password": "pw",  # scan: allow
@@ -300,6 +310,10 @@ def test_act_mounts_and_unmounts_by_typed_entry(service):
         "code": "unknown_request",
         "params": {},
     }
+    assert subject.act(
+        entries=[entry_for(PAYLOAD)],
+        body={"action": "mount", "hub_id": "h2", "id": "share_media", "path": "/x"},
+    ) == {"code": "unknown_request", "params": {}}
     assert subject.act(entries=[], body={"action": "share"}) == {
         "code": "unknown_request",
         "params": {},
@@ -358,11 +372,94 @@ def test_a_clean_machine_has_no_mount_to_clear(service, tmp_path):
     assert platform.detach_calls == []
 
 
-def test_the_rows_carry_no_account_field(service):
+def test_the_rows_carry_the_hub_and_no_account_field(service):
     subject, _platform, _store, tmp_path = service
     assert attach(subject, path=str(tmp_path / "nas")) == {}
 
     (row,) = subject.rows()
 
     assert "account" not in row
-    assert set(row) >= {"record_id", "entry_id", "path", "state", "code", "params"}
+    assert row["hub_id"] == "h1"
+    assert set(row) >= {"record_id", "hub_id", "entry_id", "path", "state", "code"}
+
+
+def test_the_same_share_on_two_hubs_is_two_records(service):
+    subject, platform, store, tmp_path = service
+    assert attach(subject, path=str(tmp_path / "home")) == {}
+    assert attach(subject, path=str(tmp_path / "office"), hub_id="h2") == {}
+
+    assert sorted(record["hub_id"] for record in store.mounts().values()) == [
+        "h1",
+        "h2",
+    ]
+    assert len(platform.attached) == 2
+
+
+def test_two_hubs_cannot_claim_one_mount_point(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+
+    refused = attach(subject, path=location, hub_id="h2")
+
+    assert refused == {"code": "mountpoint_in_use", "params": {"path": location}}
+    assert [record["hub_id"] for record in store.mounts().values()] == ["h1"]
+    assert len(platform.attach_calls) == 1
+
+
+def test_reconfiguring_the_same_share_at_its_path_is_not_in_use(service):
+    subject, _platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+
+    assert attach(subject, path=location, password="new") == {}
+
+    assert len(store.mounts()) == 1
+
+
+def test_release_hub_detaches_only_that_hubs_records(service):
+    subject, platform, store, tmp_path = service
+    assert attach(subject, path=str(tmp_path / "home")) == {}
+    assert attach(subject, path=str(tmp_path / "office"), hub_id="h2") == {}
+
+    assert subject.release_hub("h2") == 1
+    assert subject.release_hub("h2") == 0
+
+    assert platform.detach_calls == [str(tmp_path / "office")]
+    assert platform.attached == {str(tmp_path / "home")}
+    assert len(store.mounts()) == 2
+    assert sorted((row["hub_id"], row["state"]) for row in subject.rows()) == [
+        ("h1", "mounted"),
+        ("h2", "detached"),
+    ]
+    subject.reconcile()
+    assert platform.attached == {str(tmp_path / "home")}
+
+
+def test_a_record_without_a_hub_is_unmounted_by_path_then_dropped(service):
+    """What a 0.2.x build kept: mounted by path first, then forgotten."""
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "old")
+    store.set_mount(
+        "old",
+        {
+            "entry_id": "share_media",
+            "host": "hub",
+            "share": "media",
+            "username": "media",
+            "path": location,
+        },
+    )
+    platform.attached.add(location)
+    credentials = tmp_path / "config" / "mount_credentials"
+    credentials.mkdir(parents=True)
+    (credentials / "old.credentials").write_text("username=media")
+
+    subject.clear_leftovers()
+
+    assert platform.detach_calls == [location]
+    assert store.mounts() == {}
+    assert not (credentials / "old.credentials").exists()
+    assert subject.rows() == []
+    assert attach(subject, path=str(tmp_path / "new")) == {}
+    assert [row["hub_id"] for row in subject.rows()] == ["h1"]

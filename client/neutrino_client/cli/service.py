@@ -2,7 +2,8 @@
 
 One panel per type, Web, Ports, AI, Files, Remote desktops, nested the way
 the page nests them: a kind heading, then numbered entries in the state's
-own order. Actions address an entry by that number or by its id.
+own order, over every hub joined. Actions address an entry by that number
+or by its id, and reach the resident with the hub it came from.
 
 The resident reports refusals as ``{"code", "params"}``; the wording lives
 in ``wording.py``. A share password is read from the terminal and travels
@@ -16,6 +17,7 @@ from __future__ import annotations
 import sys
 
 from neutrino_client.cli import wording
+from neutrino_client.services.base import service_key
 
 SERVICE_KIND_TITLES = (
     ("web", "Web"),
@@ -85,7 +87,7 @@ def main_web_open(ref: str) -> int:
     if not entry.get("is_healthy"):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
-    if _act("web", {"id": entry.get("id")}) is None:
+    if _act("web", _address(entry)) is None:
         return 1
     print(f"opening {(entry.get('payload') or {}).get('url', '')}")
     return 0
@@ -108,7 +110,7 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0) -> int:
     entry = _resolve(state, "port", ref)
     if entry is None:
         return 2
-    forward = (state.get("forwards") or {}).get(entry.get("id")) or {}
+    forward = _forward_of(state, entry)
     if is_enabled and forward.get("is_active"):
         print(f"{FORWARD_HOST}:{forward.get('local_port')}")
         return 0
@@ -118,14 +120,14 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0) -> int:
     if not is_enabled and not forward.get("is_active"):
         print(f"no forward is running for {entry.get('title', '')}")
         return 0
-    body = {"id": entry.get("id"), "is_enabled": is_enabled}
+    body = dict(_address(entry), is_enabled=is_enabled)
     if is_enabled and local_port:
         body["local_port"] = local_port
     reply = _act("port", body)
     if reply is None:
         return 1
     if is_enabled:
-        fresh = (reply.get("forwards") or {}).get(entry.get("id")) or {}
+        fresh = _forward_of(reply, entry)
         print(f"{FORWARD_HOST}:{fresh.get('local_port')}")
     else:
         print(f"closed {FORWARD_HOST}:{forward.get('local_port')}")
@@ -156,13 +158,13 @@ def main_file_config(ref: str, *, path: str, username: str) -> int:
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
     password = wording.ask_secret("Share password: ")
-    body = {
-        "action": "mount",
-        "id": entry.get("id"),
-        "username": username,
-        "password": password,
-        "path": path,
-    }
+    body = dict(
+        _address(entry),
+        action="mount",
+        username=username,
+        password=password,
+        path=path,
+    )
     reply = _act("file", body)
     if reply is None:
         return 1
@@ -194,7 +196,14 @@ def main_file_mount(ref: str) -> int:
     if record.get("is_attached"):
         print(f"already mounted at {record.get('path', '')}")
         return 0
-    reply = _act("file", {"action": "mount", "record_id": record.get("record_id")})
+    reply = _act(
+        "file",
+        {
+            "hub_id": entry.get("hub_id", ""),
+            "action": "mount",
+            "record_id": record.get("record_id"),
+        },
+    )
     if reply is None:
         return 1
     fresh = _record_at(reply, entry, str(record.get("path", "")))
@@ -227,7 +236,14 @@ def main_file_unmount(ref: str) -> int:
             f"{record.get('path', '')}: {wording.CLIENT_MOUNT_STATE_WORDS['detached']}"
         )
         return 0
-    reply = _act("file", {"action": "unmount", "record_id": record.get("record_id")})
+    reply = _act(
+        "file",
+        {
+            "hub_id": entry.get("hub_id", ""),
+            "action": "unmount",
+            "record_id": record.get("record_id"),
+        },
+    )
     if reply is None:
         return 1
     fresh = _record_at(reply, entry, str(record.get("path", "")))
@@ -346,7 +362,7 @@ def main_desktop_connect(ref: str) -> int:
     if not entry.get("is_healthy"):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
-    reply = _act("rdp", {"action": "connect", "id": entry.get("id")})
+    reply = _act("rdp", dict(_address(entry), action="connect"))
     if reply is None:
         return 1
     print(f"opening {entry.get('title', '')}")
@@ -373,6 +389,24 @@ def _ai_line(state: dict) -> str:
     where = SERVICE_AI_ON if row.get("is_active") else SERVICE_AI_OFF
     switch = "on" if row.get("is_enabled") else "off"
     return f"{switch}  {where}  ({standing})"
+
+
+def _address(entry: dict) -> dict:
+    """What names one entry to the resident: its hub and its id.
+
+    Args:
+        entry: The entry.
+
+    Returns:
+        ``{"hub_id", "id"}``.
+    """
+    return {"hub_id": entry.get("hub_id", ""), "id": entry.get("id", "")}
+
+
+def _forward_of(state: dict, entry: dict) -> dict:
+    """One entry's forward row, empty when none runs."""
+    key = service_key(str(entry.get("hub_id", "")), str(entry.get("id", "")))
+    return (state.get("forwards") or {}).get(key) or {}
 
 
 def _entries(state: dict, kind: str = "") -> list:
@@ -457,7 +491,7 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
         essence = str(payload.get("url", ""))
     elif kind == "port":
         essence = f"{payload.get('host', '')}:{payload.get('port', '')}"
-        forward = (state.get("forwards") or {}).get(entry.get("id")) or {}
+        forward = _forward_of(state, entry)
         if forward.get("is_active"):
             essence += f" -> {FORWARD_HOST}:{forward.get('local_port')}"
     elif kind == "ai":
@@ -480,7 +514,9 @@ def _records(state: dict, entry: dict) -> list:
     return [
         record
         for record in state.get("mounts") or []
-        if isinstance(record, dict) and record.get("entry_id") == entry.get("id")
+        if isinstance(record, dict)
+        and record.get("hub_id") == entry.get("hub_id")
+        and record.get("entry_id") == entry.get("id")
     ]
 
 

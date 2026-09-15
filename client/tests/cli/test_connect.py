@@ -18,7 +18,7 @@ from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayUntrusted,
 )
-from tests.conftest import FakeClientPlatform, FakeSession, bind, discard, link_for
+from tests.conftest import FakeClientPlatform, FakeResident, bind, discard, link_for
 
 GATEWAY_URL = "https://hub.lan:8443"
 OLD_GATEWAY_URL = "https://old.lan:8443"
@@ -55,7 +55,7 @@ def joined_hub(monkeypatch):
 def resident(joined_hub):
     """A live resident on this person's socket."""
     server = ControlServer(
-        session=FakeSession(),
+        resident=FakeResident(),
         platform=joined_hub,
         log=discard,
         socket_path=joined_hub.control_socket_path(),

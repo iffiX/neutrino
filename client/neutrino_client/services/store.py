@@ -3,9 +3,9 @@
 The file is the person's own, mode 0600, under the client's configuration
 directory. It holds this installation's id, the language this person
 reads, the palette the window draws in, the AI tool choices and the mount
-records: a share's host, its login name and where it goes. Nothing about a
-service standing on is here; that is the running client's own and starts
-clean.
+records: the hub and entry a share came from, its host, its login name and
+where it goes. Nothing about a service standing on is here; that is the
+running client's own and starts clean.
 
 Secrets never enter it: a mount's password lives in that record's own
 credentials file, and the gateway key arrives fresh in every poll reply.
@@ -32,7 +32,7 @@ from neutrino_client.constants import (
 )
 
 # What one mount record keeps; a record's other fields are dropped.
-STORE_MOUNT_KEYS = ("entry_id", "host", "share", "username", "path")
+STORE_MOUNT_KEYS = ("hub_id", "entry_id", "host", "share", "username", "path")
 
 
 def _tool_configs(raw) -> dict:
@@ -241,6 +241,26 @@ class ClientServiceStore:
             data["mounts"].pop(record_id, None)
 
         self._mutate(change)
+
+    def drop_hubless_mounts(self) -> list:
+        """Drop every mount record that names no hub.
+
+        Returns:
+            The ids of the records dropped, in the file's order.
+        """
+        with self._lock:
+            dropped = [
+                record_id
+                for record_id, record in self._read()["mounts"].items()
+                if not record.get("hub_id")
+            ]
+
+            def change(data: dict) -> None:
+                for record_id in dropped:
+                    data["mounts"].pop(record_id, None)
+
+            self._mutate(change)
+            return dropped
 
     def _read(self) -> dict:
         try:

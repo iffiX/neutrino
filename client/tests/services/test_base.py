@@ -1,5 +1,5 @@
-"""The handler contract: typed entries by id, the honest default answers, and
-the code a hub that did not answer reads as."""
+"""The handler contract: typed entries by hub and id, the service key, the
+honest default answers, and the code a hub that did not answer reads as."""
 
 import pytest
 
@@ -12,16 +12,31 @@ from neutrino_client.services.base import (
     ServiceTypeHandler,
     channel_refusal,
     find_entry,
+    hub_of_key,
+    service_key,
 )
 from tests.conftest import SERVICES
 
 
-def test_an_entry_is_found_by_type_and_id():
-    assert find_entry(SERVICES, "web", "svc_wiki")["title"] == "Wiki"
-    assert find_entry(SERVICES, "port", "svc_wiki") is None
-    assert find_entry(SERVICES, "web", "nothing") is None
-    assert find_entry(None, "web", "svc_wiki") is None
-    assert find_entry(["not an entry"], "web", "svc_wiki") is None
+def test_an_entry_is_found_by_type_hub_and_id():
+    assert find_entry(SERVICES, "web", "h1", "svc_wiki")["title"] == "Wiki"
+    assert find_entry(SERVICES, "web", "h2", "svc_wiki") is None
+    assert find_entry(SERVICES, "port", "h1", "svc_wiki") is None
+    assert find_entry(SERVICES, "web", "h1", "nothing") is None
+    assert find_entry(None, "web", "h1", "svc_wiki") is None
+    assert find_entry(["not an entry"], "web", "h1", "svc_wiki") is None
+
+
+def test_the_same_id_on_two_hubs_is_two_entries():
+    assert find_entry(SERVICES, "port", "h1", "svc_tcp")["payload"]["host"] == "h"
+    assert find_entry(SERVICES, "port", "h2", "svc_tcp")["payload"]["host"] == "office"
+
+
+def test_the_service_key_is_the_hub_then_the_id():
+    assert service_key("h1", "svc_tcp") == "h1/svc_tcp"
+    assert service_key("h2", "svc_tcp") != service_key("h1", "svc_tcp")
+    assert hub_of_key("h1/svc_tcp") == "h1"
+    assert hub_of_key("h1/") == "h1"
 
 
 def test_the_base_handler_refuses_and_holds_nothing():
@@ -31,6 +46,7 @@ def test_the_base_handler_refuses_and_holds_nothing():
     assert handler.state() == {}
     assert handler.start() is None
     assert handler.release() is None
+    assert handler.release_hub("h1") is None
 
 
 @pytest.mark.parametrize(

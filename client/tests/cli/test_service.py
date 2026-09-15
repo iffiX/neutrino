@@ -1,9 +1,10 @@
 """``nclient service``: the person's walk over the Services section.
 
 The listing is nested the way the page nests it; every action addresses an
-entry by that number or its id; the cells pin the words printed, the exit
-status, the bodies posted, and that a share password reaches the resident
-through the terminal and never argv.
+entry by that number or its id and reaches the resident with the hub it
+came from; the cells pin the words printed, the exit status, the bodies
+posted, and that a share password reaches the resident through the terminal
+and never argv.
 """
 
 import sys
@@ -13,7 +14,7 @@ import pytest
 from neutrino_client.cli import service as service_cli
 from neutrino_client.cli import wording
 from neutrino_client.control.server import ControlServer
-from tests.conftest import FakeClientPlatform, FakeSession, bind, discard
+from tests.conftest import FakeClientPlatform, FakeResident, bind, discard, with_hub
 
 SERVICE_ENTRIES = [
     {
@@ -78,6 +79,7 @@ SERVICE_ENTRIES = [
 
 MOUNTED_ROW = {
     "record_id": "r1",
+    "hub_id": "h1",
     "entry_id": "share_media",
     "path": "/home/alice/nas/media",
     "username": "alice",
@@ -88,8 +90,8 @@ MOUNTED_ROW = {
 }
 
 
-class FakeServiceSession(FakeSession):
-    """The session with every service type published and reacting."""
+class FakeServiceResident(FakeResident):
+    """The resident with every service type published by one hub and reacting."""
 
     def __init__(self, *, platform=None):
         super().__init__(platform=platform)
@@ -108,20 +110,21 @@ class FakeServiceSession(FakeSession):
         }
 
     def service_entries(self) -> list:
-        return list(SERVICE_ENTRIES) if self.is_bound else []
+        return with_hub(SERVICE_ENTRIES, "h1") if self.is_bound else []
 
     def service_action(self, service_type, body) -> dict:
         outcome = super().service_action(service_type, body)
         if outcome:
             return outcome
         if service_type == "port":
+            key = f"{body.get('hub_id')}/{body.get('id')}"
             if body.get("is_enabled"):
-                self.states["forwards"][body["id"]] = {
+                self.states["forwards"][key] = {
                     "local_port": body.get("local_port") or 15432,
                     "is_active": True,
                 }
             else:
-                self.states["forwards"].pop(body.get("id"), None)
+                self.states["forwards"].pop(key, None)
         if service_type == "file" and body.get("action") == "mount":
             if body.get("record_id"):
                 for row in self.states["mounts"]:
@@ -131,6 +134,7 @@ class FakeServiceSession(FakeSession):
                 self.states["mounts"].append(
                     {
                         "record_id": "r_cfg",
+                        "hub_id": body.get("hub_id"),
                         "entry_id": body.get("id"),
                         "path": body.get("path"),
                         "username": body.get("username"),
@@ -166,9 +170,9 @@ class FakeGetpass:
 def stack(monkeypatch, config_path):
     """One running resident on a bound person, asked as that person."""
     platform = FakeClientPlatform()
-    session = FakeServiceSession(platform=platform)
+    resident = FakeServiceResident(platform=platform)
     server = ControlServer(
-        session=session,
+        resident=resident,
         platform=platform,
         log=discard,
         socket_path=platform.control_socket_path(),
@@ -176,7 +180,7 @@ def stack(monkeypatch, config_path):
     assert server.start()
     monkeypatch.setattr(wording, "detect_platform", lambda: platform)
     bind(config_path)
-    yield session
+    yield resident
     server.stop()
 
 
@@ -184,7 +188,7 @@ def stack(monkeypatch, config_path):
 
 
 def test_list_nests_by_kind_and_numbers_per_kind(stack, capsys):
-    stack.states["forwards"]["svc_tcp"] = {"local_port": 15432, "is_active": True}
+    stack.states["forwards"]["h1/svc_tcp"] = {"local_port": 15432, "is_active": True}
     stack.states["mounts"].append(dict(MOUNTED_ROW))
 
     assert service_cli.main_list() == 0
@@ -234,7 +238,7 @@ def test_web_open_resolves_by_number_and_by_id(stack, capsys):
     assert service_cli.main_web_open("1") == 0
     assert service_cli.main_web_open("svc_wiki") == 0
 
-    assert stack.service_calls == [("web", {"id": "svc_wiki"})] * 2
+    assert stack.service_calls == [("web", {"hub_id": "h1", "id": "svc_wiki"})] * 2
     assert "opening http://wiki/" in capsys.readouterr().out
 
 
@@ -257,7 +261,9 @@ def test_an_unknown_ref_resolves_to_nothing(stack, capsys):
 def test_port_forward_posts_the_pages_body_and_prints_the_loopback(stack, capsys):
     assert service_cli.main_port("1", is_enabled=True) == 0
 
-    assert stack.service_calls == [("port", {"id": "svc_tcp", "is_enabled": True})]
+    assert stack.service_calls == [
+        ("port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True})
+    ]
     assert "127.0.0.1:15432" in capsys.readouterr().out
 
 
@@ -265,17 +271,22 @@ def test_port_forward_carries_a_preferred_local_port(stack, capsys):
     assert service_cli.main_port("1", is_enabled=True, local_port=9000) == 0
 
     assert stack.service_calls == [
-        ("port", {"id": "svc_tcp", "is_enabled": True, "local_port": 9000})
+        (
+            "port",
+            {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True, "local_port": 9000},
+        )
     ]
     assert "127.0.0.1:9000" in capsys.readouterr().out
 
 
 def test_port_unforward_closes_and_names_the_loopback(stack, capsys):
-    stack.states["forwards"]["svc_tcp"] = {"local_port": 15432, "is_active": True}
+    stack.states["forwards"]["h1/svc_tcp"] = {"local_port": 15432, "is_active": True}
 
     assert service_cli.main_port("1", is_enabled=False) == 0
 
-    assert stack.service_calls == [("port", {"id": "svc_tcp", "is_enabled": False})]
+    assert stack.service_calls == [
+        ("port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": False})
+    ]
     assert "closed 127.0.0.1:15432" in capsys.readouterr().out
 
 
@@ -311,6 +322,7 @@ def test_file_config_asks_the_terminal_and_never_argv(stack, monkeypatch, capsys
     assert kind == "file"
     assert body == {
         "action": "mount",
+        "hub_id": "h1",
         "id": "share_media",
         "username": "alice",
         "password": asked.secret,  # scan: allow
@@ -330,7 +342,9 @@ def test_file_mount_reuses_the_kept_record(stack, capsys):
 
     assert service_cli.main_file_mount("1") == 0
 
-    assert stack.service_calls == [("file", {"action": "mount", "record_id": "r1"})]
+    assert stack.service_calls == [
+        ("file", {"hub_id": "h1", "action": "mount", "record_id": "r1"})
+    ]
     assert wording.CLIENT_MOUNT_STATE_WORDS["queued"] in capsys.readouterr().out
 
 
@@ -355,7 +369,9 @@ def test_file_unmount_detaches_and_words_the_record(stack, capsys):
 
     assert service_cli.main_file_unmount("1") == 0
 
-    assert stack.service_calls == [("file", {"action": "unmount", "record_id": "r1"})]
+    assert stack.service_calls == [
+        ("file", {"hub_id": "h1", "action": "unmount", "record_id": "r1"})
+    ]
     assert wording.CLIENT_MOUNT_STATE_WORDS["detached"] in capsys.readouterr().out
 
 
@@ -468,7 +484,10 @@ def test_desktop_connect_addresses_an_entry_by_number_and_id(stack, capsys):
     assert service_cli.main_desktop_connect("1") == 0
     assert service_cli.main_desktop_connect("rdp_s9") == 0
 
-    assert stack.service_calls == [("rdp", {"action": "connect", "id": "rdp_s9"})] * 2
+    assert (
+        stack.service_calls
+        == [("rdp", {"hub_id": "h1", "action": "connect", "id": "rdp_s9"})] * 2
+    )
     assert "opening studio" in capsys.readouterr().out
 
 

@@ -2,14 +2,15 @@
 
 The page is plain HTML, CSS and JavaScript under ``client/frontend/``, so
 what can be checked here is the contract's visible surface: the two
-sections in order, the five service panels in their fixed order with the
-line each carries while nothing is published, the redraw guards, the
-bridge adapter with no direct network reach, and the word catalogs asserted
-complete: the two languages carry the same keys, every key the page asks
-for is in them, and every ``{code}`` and every state token the client can
-emit is enumerated from the source and must have a wording, so a new code
-or state without a word fails this suite. Nothing of the agent's Modules
-section is left.
+sections in order, one hub row per hub and the join row always there, the
+services grouped by hub and then the five panels in their fixed order with
+the line each carries while nothing is published, the staging keyed by hub
+and by service key, the redraw guards, the bridge adapter with no direct
+network reach, and the word catalogs asserted complete: the two languages
+carry the same keys, every key the page asks for is in them, and every
+``{code}`` and every state token the client can emit is enumerated from the
+source and must have a wording, so a new code or state without a word fails
+this suite. Nothing of the agent's Modules section is left.
 """
 
 import pathlib
@@ -144,8 +145,8 @@ def test_the_document_carries_both_catalogs_so_the_page_fetches_nothing():
 
     for language in CLIENT_LANGUAGES:
         assert f'"{language}"' in document
-    assert EN_WORDS["ui.section_status"] in document
-    assert CATALOGS["zh-CN"]["ui.section_status"] in document
+    assert EN_WORDS["ui.section_hubs"] in document
+    assert CATALOGS["zh-CN"]["ui.section_hubs"] in document
     assert "fetch(" not in document
 
 
@@ -234,8 +235,9 @@ def test_the_one_refusal_that_unbinds_and_the_pin_mismatch_are_worded():
 
 
 def test_the_two_sections_are_titled_and_nothing_of_modules_is_left():
-    assert EN_WORDS["ui.section_status"] == "Status"
+    assert EN_WORDS["ui.section_hubs"] == "Hubs"
     assert EN_WORDS["ui.section_services"] == "Services"
+    assert "section_status" not in PAGE_JS
     assert "section_modules" not in PAGE_JS
     for gone in (
         "drawModules",
@@ -254,11 +256,121 @@ def test_the_two_sections_are_titled_and_nothing_of_modules_is_left():
         assert gone not in PAGE_JS, gone
 
 
-def test_the_sections_render_status_then_services():
+def test_the_sections_render_hubs_then_services():
     assert (
-        "section(t('ui.section_status')"
+        "section(t('ui.section_hubs')"
         in PAGE_JS.split("section(t('ui.section_services')")[0]
     )
+
+
+# --- the Hubs section ---
+
+
+def test_one_row_per_hub_names_it_its_standing_and_its_software():
+    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+
+    assert "for (const hub of hubs) card.appendChild(hubRow(hub));" in PAGE_JS
+    assert "hub.hub_name || hub.gateway_url" in body
+    assert "t('ui.hub_software', { software: hub.hub_software })" in body
+    assert "hub.connection_state === 'reconnecting'" in body
+    assert "hub.is_disabled ? t('ui.disabled')" in body
+    assert "wordError(hub.last_error)" in body
+    assert (
+        "leave.onclick = () => send('/api/disconnect', { hub_id: hubKey(hub) });"
+        in (body)
+    )
+    assert EN_WORDS["ui.disconnect"] == "Leave"
+    assert "hub_version" not in PAGE_JS
+    assert "ui.hub_version" not in EN_WORDS
+
+
+def test_the_exit_radio_shows_the_exit_hub_and_is_inert_until_its_route():
+    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+
+    assert "radio.type = 'radio';" in body
+    assert "radio.checked = !!hub.is_exit;" in body
+    assert "radio.disabled = true;" in body
+    assert "t('ui.hub_exit')" in body
+    assert "t('ui.hub_is_exit')" in body
+    assert "/api/exit" not in PAGE_JS
+    assert EN_WORDS["ui.hub_exit"] == "Exit"
+
+
+def test_the_join_row_is_always_there_and_words_a_refused_link():
+    body = PAGE_JS.split("function joinRow(state)")[1].split("\n}")[0]
+
+    assert "card.appendChild(joinRow(state));" in PAGE_JS
+    assert "t('ui.add_hub')" in body and "t('ui.paste_hint')" in body
+    assert "send('/api/connect', { link: input.value })" in body
+    assert "wordCode(state.error.code, state.error.params)" in body
+    assert "input.onblur = settle;" in body
+    assert EN_WORDS["ui.add_hub"] == "Join a hub"
+    assert EN_WORDS["ui.connect"] == "Join"
+    assert "t('ui.no_hubs')" in PAGE_JS
+    assert "not_connected" not in PAGE_JS
+
+
+def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
+    assert "function hubKey(hub) {\n  return hub.hub_id || hub.binding_id;" in PAGE_JS
+    assert "function serviceKey(entry) {\n  return entry.hub_id + '/' + entry.id;" in (
+        PAGE_JS
+    )
+
+
+# --- the services, grouped by hub ---
+
+
+def test_the_services_are_grouped_by_hub_then_by_kind():
+    body = PAGE_JS.split("function drawServices(state)")[1].split("\n}")[0]
+    group = PAGE_JS.split("function hubGroup(state, hub)")[1].split("\n}")[0]
+
+    assert "for (const hub of hubs) groups.push(hubGroup(state, hub));" in body
+    assert "t('ui.hub_services', { name: hub.hub_name || hub.gateway_url })" in group
+    assert "entriesOf(state, hub, type)" in group
+    assert "entry.hub_id === hub.hub_id && entry.type === type" in PAGE_JS
+    assert "hub.connection_state !== 'connected'" in group
+    assert EN_WORDS["ui.hub_services"] == "Published by {name}"
+
+
+def test_every_action_names_the_entrys_hub():
+    for sent in (
+        "{ hub_id: entry.hub_id, id: entry.id }",
+        "{ hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn }",
+        "{ action: 'connect', hub_id: entry.hub_id, id: entry.id }",
+        "action: 'mount', hub_id: entry.hub_id, id: entry.id,",
+        "{ action: 'mount', hub_id: entry.hub_id, record_id: record.record_id }",
+        "{ action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id }",
+        "hub_id: entry.hub_id,\n      is_enabled: staged.is_enabled,",
+    ):
+        assert sent in PAGE_JS, sent
+
+
+def test_the_staging_is_keyed_by_hub_and_by_service_key():
+    assert "let aiStaged = {};" in PAGE_JS
+    assert "function ensureAiStaged(state, key)" in PAGE_JS
+    assert "delete aiStaged[key];" in PAGE_JS
+    assert "const staged = fileStaged[key];" in PAGE_JS
+    assert "(state.forwards || {})[serviceKey(entry)]" in PAGE_JS
+    assert "(state.viewers || {})[serviceKey(entry)]" in PAGE_JS
+    assert "record.hub_id === entry.hub_id && record.entry_id === entry.id" in PAGE_JS
+    assert "serviceNotes[noteKey]" in PAGE_JS
+    assert "serviceNotes.ai" not in PAGE_JS
+
+
+def test_the_ai_panel_of_a_hub_that_is_not_the_exit_is_inert():
+    body = PAGE_JS.split("function drawAiPanel(state, hub, entries, title)")[1].split(
+        "\n}"
+    )[0]
+
+    assert "const isExit = !!hub.is_exit;" in body
+    assert "config.disabled = !isExit ||" in body
+    assert "apply.disabled = !isExit ||" in body
+    assert "toggle.disabled = !isExit ||" in body
+
+
+def test_leaving_a_text_field_lets_a_held_state_draw():
+    # The join link, the login pair, and the mount path.
+    assert PAGE_JS.count("onblur = settle;") == 3
 
 
 def test_one_panel_per_service_type():
@@ -279,7 +391,7 @@ def test_the_panels_draw_in_their_fixed_order():
 
 
 def test_a_group_with_no_entry_draws_its_heading_and_its_empty_line():
-    body = PAGE_JS.split("function drawServices")[1].split("\n}")[0]
+    body = PAGE_JS.split("function hubGroup")[1].split("\n}")[0]
 
     assert "entries.length === 0" in body
     assert "emptyPanel(title, empty)" in body
@@ -290,9 +402,9 @@ def test_a_group_with_no_entry_draws_its_heading_and_its_empty_line():
 
 def test_the_ai_panel_is_one_toggle_config_and_apply():
     assert EN_WORDS["ui.ai_enabled"] == "Enabled"
-    assert "aiStaged.is_enabled = !isOn" in PAGE_JS
-    assert "is_enabled: aiStaged.is_enabled" in PAGE_JS
-    assert "tool_configs: aiStaged.tool_configs" in PAGE_JS
+    assert "staged.is_enabled = !isOn" in PAGE_JS
+    assert "is_enabled: staged.is_enabled" in PAGE_JS
+    assert "tool_configs: staged.tool_configs" in PAGE_JS
     assert "targets" not in PAGE_JS
 
 
@@ -310,7 +422,7 @@ def test_the_ai_knobs_mirror_the_clients_own():
 
 def test_the_desktops_panel_only_connects():
     body = PAGE_JS.split("function drawDesktopsPanel")[1].split("\n}")[0]
-    assert "{ action: 'connect', id: entry.id }" in body
+    assert "{ action: 'connect', hub_id: entry.hub_id, id: entry.id }" in body
     assert "password" not in body
     assert "share" not in body
 
@@ -375,19 +487,20 @@ def test_an_unhealthy_entry_is_greyed_never_dropped():
     assert EN_WORDS["ui.unhealthy"] == "not reachable now"
 
 
-def test_everything_greys_while_the_hub_has_the_client_switched_off():
-    assert "function isHeld(state)" in PAGE_JS
-    assert PAGE_JS.count("isHeld(state)") >= 6
+def test_everything_of_a_hub_greys_while_it_has_the_client_switched_off():
+    assert "function isHeld(hub)" in PAGE_JS
+    assert PAGE_JS.count("isHeld(hub)") >= 6
+    assert "isHeld(state)" not in PAGE_JS
     assert EN_WORDS["ui.disabled"] == "Switched off by the hub"
 
 
 def test_a_replaced_socket_shows_its_state_and_one_reconnect_button():
-    body = PAGE_JS.split("function drawConnection(state)")[1].split("\n}")[0]
+    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
 
-    assert "state.connection_state === 'replaced'" in body
+    assert "hub.connection_state === 'replaced'" in body
     assert "t('state.replaced')" in body
     assert "reconnect.textContent = t('ui.reconnect');" in body
-    assert "send('/api/session/start')" in body
+    assert "send('/api/session/start', { hub_id: hubKey(hub) })" in body
     assert body.count("t('ui.reconnect')") == 1
     assert EN_WORDS["state.replaced"] == "Replaced by another client"
     assert EN_WORDS["ui.reconnect"] == "Reconnect"
@@ -508,7 +621,7 @@ def test_the_lanes_standing_greys_and_spins():
     assert "const isWorking = work.state === 'working';" in PAGE_JS
     assert "t('ui.ai_switching')" in PAGE_JS
     assert "t('ui.rdp_connecting')" in PAGE_JS
-    assert "work.step === 'connecting:' + entry.id" in PAGE_JS
+    assert "work.step === 'connecting:' + serviceKey(entry)" in PAGE_JS
     assert EN_WORDS["code.busy"]
 
 

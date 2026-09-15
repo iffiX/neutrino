@@ -1,15 +1,12 @@
-"""The resident itself: the binding, the socket to the hub, and the services.
+"""One hub's session: a binding, its socket, and the reconnect that holds it.
 
-One object owns everything the person's page and the hub both talk to. It
-runs whether or not the person belongs to a hub yet: an unbound resident
-still serves its page, waiting for a link.
-
-While bound, the resident holds one socket open to the hub and reconnects
-when it drops. The hub pushes its ``state``, the services it publishes and
-whether the client is switched off, and the client answers each state and
-every interval with a ``report``. What a service handler needs from the hub
-comes down a ``service`` stream it opens. Joining and leaving stay HTTP:
-both happen when there is no socket to carry them.
+A session belongs to one binding and speaks to one hub. It holds the socket
+open and reconnects when it drops; the hub pushes its ``state``, the
+services it publishes and whether this client is switched off, and the
+session answers each state and every interval with a ``report``. What a
+service handler needs from the hub comes down a ``service`` stream the
+session opens on request. The resident owns the handlers and the store; the
+session tells it what changed through its callbacks and never touches them.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -20,11 +17,7 @@ does its own wording.
 from __future__ import annotations
 
 import json
-import os
-import socket
-import sys
 import threading
-import time
 import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
@@ -32,20 +25,14 @@ from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
     CLIENT_BACKOFF_MIN_S,
     CLIENT_CHANNEL_WS_PATH,
-    CLIENT_DEFAULT_LANGUAGE,
-    CLIENT_DEFAULT_THEME,
     CLIENT_HELLO_TIMEOUT_S,
     CLIENT_HUB_ROLE,
     CLIENT_IDLE_POLL_INTERVAL_S,
-    CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
-    CLIENT_ORIGINAL_DIR_NAME,
     CLIENT_PROTOCOL_REFUSAL_CODES,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
-    CLIENT_SHUTDOWN_DEADLINE_S,
     CLIENT_SOFTWARE_PREFIX,
-    CLIENT_STATE_FILE_NAME,
     CLIENT_STREAM_CODE_KIND_UNKNOWN,
     CLIENT_STREAM_KIND_SERVICE,
     CLIENT_STREAM_TIMEOUT_S,
@@ -63,50 +50,14 @@ from neutrino_client.exceptions import (
     GatewayUntrusted,
     SocketClosed,
 )
-from neutrino_client.platforms.detect import detect_platform, platform_tuple
-from neutrino_client.services.ai import AiServiceHandler
-from neutrino_client.services.file import FileServiceHandler
-from neutrino_client.services.port import PortServiceHandler
-from neutrino_client.services.rdp import RdpViewerHandler
-from neutrino_client.services.store import ClientServiceStore
-from neutrino_client.services.web import WebServiceHandler
 
-# How the four connection states are named to every surface.
+# How the three connection states of a session are named to every surface.
 CONNECTION_CONNECTED = "connected"
 CONNECTION_RECONNECTING = "reconnecting"
 CONNECTION_REPLACED = "replaced"
-CONNECTION_UNBOUND = "unbound"
 
-# How long a shutdown waits for the loop thread to come back.
-SHUTDOWN_JOIN_TIMEOUT_S = 5
-# What a shutdown lets go of, in order: the handler, the name its line
-# carries, and how that line reads.
-SHUTDOWN_STEPS = (
-    ("ai", "ai", "restored"),
-    ("file", "mounts", "{count} detached"),
-    ("port", "forwards", "{count} closed"),
-    ("rdp", "viewers", "{count} closed"),
-)
-# How long a burst of changes is left to settle before the watchers hear.
-ANNOUNCE_SETTLE_S = 0.05
-
-
-def end_process(status: int = 0) -> None:
-    """End this process now, whatever the window's runtime left running.
-
-    The shutdown is what restores the machine, and it has already run by the
-    time this is called. What can still be standing is the window runtime's
-    own: on Windows the embedded browser's helper processes and the threads
-    .NET holds, none of which answer to this interpreter. A resident that
-    lingers there holds this person's socket and hands the next install a
-    file it cannot replace.
-
-    Args:
-        status: The exit status.
-    """
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(status)
+# How long a stop waits for the loop thread to come back.
+STOP_JOIN_TIMEOUT_S = 5
 
 
 def channel_error(error: Exception) -> dict:
@@ -157,124 +108,113 @@ def _hello_refusal(message: dict) -> Exception:
     )
 
 
-class ClientSession:
-    """Everything the resident is, bound to a hub or waiting for a link."""
+def _nobody(*_args) -> None:
+    """Nobody listening."""
 
-    def __init__(self, *, log=print, platform=None):
+
+class ClientHubSession:
+    """One binding's socket to its hub, reconnecting until stopped."""
+
+    def __init__(
+        self,
+        *,
+        binding: dict,
+        hostname: str,
+        platform_tuple: dict,
+        log=print,
+        on_change=None,
+        on_services=None,
+        on_disabled=None,
+        on_unbound=None,
+    ):
         """
         Args:
+            binding: The binding this session speaks for.
+            hostname: This machine's hostname, sent in every report.
+            platform_tuple: This machine's platform tuple, sent in every
+                report.
             log: Callable used for progress messages.
-            platform: The machine's platform; None detects it.
+            on_change: Called with no arguments after every change of what
+                a page draws; None for nobody listening.
+            on_services: Called with this session after a state replaced
+                the services held, while the hub has not switched this
+                client off; None for nobody listening.
+            on_disabled: Called with this session once when the hub
+                switches this client off; None for nobody listening.
+            on_unbound: Called with this session when the hub says it holds
+                no such binding; None for nobody listening.
         """
         self._log = log
         self._lock = threading.Lock()
-        self.platform = platform if platform is not None else detect_platform()
-        self._platform_tuple = platform_tuple()
-        config_dir = self.platform.config_dir()
-        self._store = ClientServiceStore(
-            path=os.path.join(config_dir, CLIENT_STATE_FILE_NAME)
-        )
-        # Whoever draws the state, told after every change of it; the
-        # announcements of one burst are folded into one.
-        self._watchers: list = []
-        self._announce_lock = threading.Lock()
-        self._is_announcing = False
-        self._services = {
-            handler.service_type: handler
-            for handler in (
-                WebServiceHandler(platform=self.platform),
-                PortServiceHandler(log=log, on_change=self.notify),
-                AiServiceHandler(
-                    store=self._store,
-                    original_dir=os.path.join(config_dir, CLIENT_ORIGINAL_DIR_NAME),
-                    open_service=self.open_service,
-                    log=log,
-                    on_change=self.notify,
-                ),
-                FileServiceHandler(
-                    platform=self.platform,
-                    store=self._store,
-                    credentials_dir=os.path.join(
-                        config_dir, CLIENT_MOUNT_CREDENTIALS_DIR_NAME
-                    ),
-                    log=log,
-                    on_change=self.notify,
-                ),
-                RdpViewerHandler(
-                    platform=self.platform,
-                    open_service=self.open_service,
-                    log=log,
-                    on_change=self.notify,
-                ),
-            )
-        }
-        # Set whenever the loop should stop waiting: a binding was written, or
-        # the resident is shutting down.
+        self._binding = dict(binding)
+        self._hostname = hostname
+        self._platform_tuple = dict(platform_tuple)
+        self._on_change = on_change if on_change is not None else _nobody
+        self._on_services = on_services if on_services is not None else _nobody
+        self._on_disabled = on_disabled if on_disabled is not None else _nobody
+        self._on_unbound = on_unbound if on_unbound is not None else _nobody
+        # Set whenever the loop should stop waiting: a person asked for a
+        # connection now, or the session is stopping.
         self._news = threading.Event()
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
-        self._is_shut_down = False
         self._client: "WebSocketClient | None" = None
         self._streams: "ClientStreamRegistry | None" = None
         self._is_welcomed = False
-        # The first binding on disk; empty while unbound.
-        self._binding: dict = {}
-        self._binding_stamp = 0
         self._backoff_s = CLIENT_BACKOFF_MIN_S
         # Set while another socket holds this binding; only a person clears it.
         self._is_replaced = False
+        self._is_unbound = False
         self._last_error: "dict | None" = None
         self._services_list: list = []
         self._state_hash = ""
         self._hub_software = ""
         self._is_disabled = False
         self._was_disabled = False
-        self.on_show = None
-        self._load_connection()
 
-    # --- what the local page reads ---
+    # --- what the resident reads ---
 
-    def platform_tuple(self) -> dict:
-        """This machine's platform tuple."""
-        return dict(self._platform_tuple)
+    @property
+    def binding_id(self) -> str:
+        """The binding's id, the same for the life of the session."""
+        return self._binding.get("id", "")
 
-    def home(self) -> str:
-        """This person's home directory."""
-        return self.platform.home()
-
-    def hostname(self) -> str:
-        """This machine's hostname."""
-        return socket.gethostname()
-
-    def is_connected(self) -> bool:
-        """Whether this person belongs to a hub."""
+    def binding(self) -> dict:
+        """The binding this session speaks for, as it stands now."""
         with self._lock:
-            return bool(self._binding)
+            return dict(self._binding)
+
+    def hub_id(self) -> str:
+        """The hub's id, as its welcome named it; empty before the first."""
+        with self._lock:
+            return self._binding.get("hub_id", "")
+
+    def hub_name(self) -> str:
+        """The hub's name, as its welcome named it; empty before the first."""
+        with self._lock:
+            return self._binding.get("hub_name", "")
+
+    def gateway_url(self) -> str:
+        """The hub's address on its agent port."""
+        with self._lock:
+            return self._binding.get("gateway_url", "")
+
+    def hub_software(self) -> str:
+        """What the hub's welcome named as its software, empty before one."""
+        with self._lock:
+            return self._hub_software
 
     def connection_state(self) -> str:
-        """Where the hub socket stands, one of the four ``CONNECTION_*`` states."""
+        """Where the socket stands, one of the three ``CONNECTION_*`` states."""
         with self._lock:
-            if not self._binding:
-                return CONNECTION_UNBOUND
             if self._is_replaced:
                 return CONNECTION_REPLACED
             return (
                 CONNECTION_CONNECTED if self._is_welcomed else CONNECTION_RECONNECTING
             )
 
-    def gateway_url(self) -> str:
-        """The hub this person belongs to, empty when none."""
-        with self._lock:
-            return self._binding.get("gateway_url", "")
-
-    def hub_version(self) -> str:
-        """The version the hub's welcome named, after the package name."""
-        with self._lock:
-            software = self._hub_software
-        return software.partition("/")[2] or software
-
     def is_disabled(self) -> bool:
-        """Whether the hub has switched this person off."""
+        """Whether the hub has switched this client off."""
         with self._lock:
             return self._is_disabled
 
@@ -284,200 +224,29 @@ class ClientSession:
             return dict(self._last_error) if self._last_error else None
 
     def service_entries(self) -> list:
-        """The typed service list, as the hub last sent it."""
+        """The typed service list the hub last sent, while its socket is up.
+
+        Returns:
+            The entries; empty while the socket is down, so a hub that is
+            unreachable publishes nothing.
+        """
         with self._lock:
+            if not self._is_welcomed:
+                return []
             return [entry for entry in self._services_list if isinstance(entry, dict)]
 
-    def suggest_mount_location(self) -> str:
-        """What the platform offers as a mount location before one is typed."""
-        return self.platform.suggest_mount_location()
-
-    def mount_location_choices(self) -> list:
-        """The fixed set of mount locations, when the platform has one."""
-        return self.platform.mount_location_choices()
-
-    def mount_location_shape(self) -> str:
-        """What a mount location is here: ``path`` or ``drive_letter``."""
-        return self.platform.mount_location_shape
-
-    def language(self) -> str:
-        """The language every surface of this client words itself in.
-
-        The first run has none kept, and takes the machine's own; what it
-        takes is written back, so the answer never changes underfoot.
-
-        Returns:
-            One of ``CLIENT_LANGUAGES``.
-        """
-        kept = self._store.language()
-        if kept:
-            return kept
-        self._store.set_language(self.platform.system_language())
-        return self._store.language() or CLIENT_DEFAULT_LANGUAGE
-
-    def set_language(self, language: str) -> None:
-        """Keep the language every surface words itself in, and say so.
-
-        Args:
-            language: One of ``CLIENT_LANGUAGES``.
-        """
-        self._store.set_language(language)
-        self.notify()
-
-    def theme(self) -> str:
-        """The palette the window draws itself in.
-
-        Returns:
-            One of ``CLIENT_THEMES``; the default until one is picked.
-        """
-        return self._store.theme() or CLIENT_DEFAULT_THEME
-
-    def set_theme(self, theme: str) -> None:
-        """Keep the palette the window draws in, and say so.
-
-        Args:
-            theme: One of ``CLIENT_THEMES``.
-        """
-        self._store.set_theme(theme)
-        self.notify()
-
-    def subscribe(self, watcher) -> None:
-        """Be told after every change of the state the page draws.
-
-        Args:
-            watcher: Called with no arguments, on a thread of the session's.
-        """
-        with self._lock:
-            self._watchers.append(watcher)
-
-    def notify(self) -> None:
-        """Announce a change of state to every watcher, once per burst.
-
-        Changes arriving while the watchers are being told are folded into
-        the round that follows, so a burst of them costs one redraw.
-        """
-        with self._announce_lock:
-            if self._is_announcing:
-                self._is_pending_announcement = True
-                return
-            self._is_announcing = True
-            self._is_pending_announcement = False
-        threading.Thread(target=self._announce, daemon=True).start()
-
-    def _announce(self) -> None:
-        while True:
-            time.sleep(ANNOUNCE_SETTLE_S)
-            # Everything that arrived while settling is this round's.
-            with self._announce_lock:
-                self._is_pending_announcement = False
-            with self._lock:
-                watchers = list(self._watchers)
-            for watcher in watchers:
-                try:
-                    watcher()
-                except Exception as error:  # noqa: BLE001 - a watcher's own
-                    self._log(f"a state watcher failed: {error}")
-            with self._announce_lock:
-                if not self._is_pending_announcement:
-                    self._is_announcing = False
-                    return
-
-    def service_states(self) -> dict:
-        """Every service type's state, merged for the page payload."""
-        merged = {}
-        for handler in self._services.values():
-            merged.update(handler.state())
-        return merged
-
-    def list_directories(self, path: str) -> list:
-        """The subdirectory names under a directory, as this person."""
-        return self.platform.list_directories(path=path)
-
-    def make_directory(self, path: str) -> None:
-        """Create a directory as this person, parents included."""
-        self.platform.make_directory(path=path)
-
-    # --- what the local page does ---
-
-    def connect(self, link: str) -> None:
-        """Join the hub an enrollment link points at.
-
-        Args:
-            link: The link the person pasted.
-
-        Raises:
-            EnrollmentError: If the link is unusable or the hub refuses.
-        """
-        enrollment.enroll(link)
-        self._reset_binding_state()
-        self._load_connection()
-        self._log("joined the hub")
-        self.reconnect_soon()
-        self.notify()
-
-    def disconnect(self) -> None:
-        """Leave the hub and let go of everything it published.
-
-        The hub is told first; one that cannot be reached does not hold the
-        person here.
-        """
-        with self._lock:
-            binding = dict(self._binding)
-        if binding:
-            try:
-                enrollment.leave(binding)
-            except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
-                self._log(f"could not tell the hub we are leaving: {error}")
-            enrollment.remove_binding(binding["id"])
-        self._drop_socket()
-        self._release()
-        self._reset_binding_state()
-        self._load_connection()
-        self._log("left the hub")
-        self.notify()
+    # --- what the resident does ---
 
     def reconnect_soon(self) -> None:
         """Cut the wait before the next connection attempt short."""
         self._news.set()
 
-    def reconnect(self, hub_id: str = "") -> None:
-        """Take the binding back from the socket that replaced it, and connect now.
-
-        Args:
-            hub_id: The hub to connect to; empty names the one binding held.
-
-        Raises:
-            KeyError: If ``hub_id`` names no hub this person has joined.
-        """
+    def reconnect(self) -> None:
+        """Take the binding back from the socket that replaced it, and connect now."""
         with self._lock:
-            if hub_id and hub_id != self._binding.get("hub_id"):
-                raise KeyError(hub_id)
             self._is_replaced = False
         self._news.set()
-        self.notify()
-
-    def request_show(self) -> None:
-        """Ask the window to come to the front, when one is listening."""
-        callback = self.on_show
-        if callback is not None:
-            callback()
-
-    def service_action(self, service_type: str, body: dict) -> dict:
-        """Hand one page action to the handler for its service type.
-
-        Args:
-            service_type: The type the page acted on.
-            body: The action's own fields.
-
-        Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal.
-        """
-        handler = self._services.get(service_type)
-        if handler is None:
-            return {"code": "unknown_request", "params": {}}
-        if self.is_disabled():
-            return {"code": "client_disabled", "params": {}}
-        return handler.act(entries=self.service_entries(), body=body)
+        self._on_change()
 
     def open_service(
         self, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
@@ -499,28 +268,30 @@ class ClientSession:
         with self._lock:
             streams = self._streams
             if streams is None or not self._is_welcomed:
-                raise GatewayUnreachable("this person's hub is not connected")
+                raise GatewayUnreachable("this hub is not connected")
         stream = streams.open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
         return stream.wait_close(timeout_s)
 
     # --- the loop ---
 
     def start(self) -> None:
-        """Clear what an unclean exit left, then run the handlers and the loop.
-
-        Nothing this person had on is turned on again: the client opens with
-        every service off, and the leftovers of a run that did not shut down
-        are undone before the hub's first state arrives.
-        """
-        self._clear_leftovers()
-        for handler in self._services.values():
-            handler.start()
-        self._thread = threading.Thread(target=self.run_forever, daemon=True)
+        """Run the loop on a thread of its own."""
+        self._thread = threading.Thread(
+            target=self.run_forever, name=f"hub_session_{self.binding_id}", daemon=True
+        )
         self._thread.start()
 
+    def stop(self) -> None:
+        """Close the socket and end the loop. Idempotent."""
+        self._stop.set()
+        self._news.set()
+        self._drop_socket()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=STOP_JOIN_TIMEOUT_S)
+
     def run_forever(self) -> None:
-        """Hold the socket, or wait to be enrolled, until the resident stops."""
-        self._log(f"neutrino_client {CLIENT_VERSION} starting on {self.hostname()}")
+        """Hold the socket until the session is stopped."""
         while not self._stop.is_set():
             # Cleared before the turn, so news that lands during it, the
             # stop included, is still standing when the wait begins.
@@ -529,16 +300,15 @@ class ClientSession:
             self._news.wait(timeout=delay)
 
     def run_once(self) -> int:
-        """One connection's lifetime, or one idle turn while unbound.
+        """One connection's lifetime, or one idle turn.
 
         Returns:
             How many seconds to wait before the next one: the shortest delay
             after a clean close, a backing-off delay after a broken wire, a
             minute after a refusal the binding survives, and a short idle
-            wait while the person belongs to no hub or another socket holds
-            the binding.
+            wait while another socket holds the binding or the hub has
+            forgotten it.
         """
-        self._adopt_external_binding()
         client = self._open_client()
         if client is None:
             return CLIENT_IDLE_POLL_INTERVAL_S
@@ -555,33 +325,12 @@ class ClientSession:
             return self._on_rejected(failure)
         return self._on_unreachable(failure)
 
-    def shutdown(self) -> None:
-        """Let go of everything and stop the loop. Idempotent.
-
-        The order is the one that leaves the machine as it was found: the
-        tools restored, the shares unmounted, the forwards closed, the
-        viewers closed. The four share ``CLIENT_SHUTDOWN_DEADLINE_S``; a
-        step past its part of what is left is given up and the next runs.
-        """
-        with self._lock:
-            if self._is_shut_down:
-                return
-            self._is_shut_down = True
-        self._stop.set()
-        self._news.set()
-        self._drop_socket()
-        self._release_in_time()
-        thread = self._thread
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=SHUTDOWN_JOIN_TIMEOUT_S)
-        self._log("shut down")
-
     def _open_client(self) -> "WebSocketClient | None":
-        """A socket for the current binding, or None while unbound or replaced."""
+        """A socket for the binding, or None while replaced or unbound."""
         with self._lock:
             binding = dict(self._binding)
-            is_replaced = self._is_replaced
-        if not binding or is_replaced:
+            is_idle = self._is_replaced or self._is_unbound
+        if is_idle:
             return None
         parts = urllib.parse.urlsplit(binding["gateway_url"])
         return WebSocketClient(
@@ -625,7 +374,12 @@ class ClientSession:
             self._hub_software = str(welcome.get("software", "") or "")
             self._backoff_s = CLIENT_BACKOFF_MIN_S
             self._last_error = None
-        self.notify()
+            # A hub whose state hash the report matches pushes no state; what
+            # it published last is published again once the socket is up.
+            has_services = bool(self._services_list) and not self._is_disabled
+        if has_services:
+            self._on_services(self)
+        self._on_change()
 
     def _serve(self, client) -> "Exception | None":
         """Read frames until the socket ends, reporting on the interval.
@@ -634,7 +388,7 @@ class ClientSession:
             client: The connected socket.
 
         Returns:
-            What ended it, or None when a shutdown, a close from here, or
+            What ended it, or None when a stop, a close from here, or
             another socket replacing this one did.
         """
         failure = None
@@ -737,7 +491,6 @@ class ClientSession:
         with self._lock:
             self._binding["hub_id"] = hub_id
             self._binding["hub_name"] = hub_name
-            self._binding_stamp = enrollment.config_stamp()
 
     def _report(self, client) -> None:
         """Send what is true of this machine and the hash of the state held.
@@ -756,7 +509,7 @@ class ClientSession:
                     "type": protocol.FRAME_REPORT,
                     "state_hash": state_hash,
                     "machine": {
-                        "hostname": self.hostname(),
+                        "hostname": self._hostname,
                         "platform": dict(self._platform_tuple),
                     },
                 }
@@ -821,11 +574,11 @@ class ClientSession:
             self._state_hash = str(message.get("hash", "") or "")
         self._take_disabled(is_disabled)
         if not is_disabled:
-            self._services["ai"].refresh(entries=self.service_entries())
-        self.notify()
+            self._on_services(self)
+        self._on_change()
 
     def _take_disabled(self, is_disabled: bool) -> None:
-        """Let go of everything once when the hub switches this client off."""
+        """Tell the resident once when the hub switches this client off."""
         with self._lock:
             was_disabled = self._was_disabled
             self._is_disabled = is_disabled
@@ -836,7 +589,7 @@ class ClientSession:
                 self._last_error = None
         if is_disabled and not was_disabled:
             self._log("the hub switched this client off")
-            self._release()
+            self._on_disabled(self)
 
     def _refuse_open(self, client, message: dict) -> None:
         """Close a stream the hub opened: a client serves no kind."""
@@ -865,7 +618,7 @@ class ClientSession:
         client.close()
         if streams is not None:
             streams.end_all()
-        self.notify()
+        self._on_change()
 
     def _drop_socket(self) -> None:
         """End the socket from this side, when there is one."""
@@ -887,7 +640,7 @@ class ClientSession:
             delay = self._backoff_s
             self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
         self._log(f"hub socket failed: {error}; retrying in {delay}s")
-        self.notify()
+        self._on_change()
         return delay
 
     def _on_rejected(self, error: Exception) -> int:
@@ -905,108 +658,14 @@ class ClientSession:
         with self._lock:
             self._last_error = rejection
         self._log(f"{error}; asking again in {CLIENT_BACKOFF_MAX_S}s")
-        self.notify()
+        self._on_change()
         return CLIENT_BACKOFF_MAX_S
 
     def _unbind(self, rejection: dict) -> int:
-        """Let the binding go: the hub holds no such binding any more."""
+        """Hand the binding back: the hub holds no such binding any more."""
         with self._lock:
-            binding_id = self._binding.get("id", "")
-        enrollment.remove_binding(binding_id)
-        self._release()
-        self._reset_binding_state()
-        self._load_connection()
-        with self._lock:
+            self._is_unbound = True
             self._last_error = rejection
         self._log("unbound: the hub no longer knows this client")
-        self.notify()
+        self._on_unbound(self)
         return CLIENT_IDLE_POLL_INTERVAL_S
-
-    def _clear_leftovers(self) -> None:
-        """Undo what a run that did not end cleanly left on this machine."""
-        for service_type in ("ai", "file"):
-            try:
-                self._services[service_type].clear_leftovers()
-            except Exception as error:  # noqa: BLE001 - reported, never fatal
-                self._log(f"{service_type}: could not clear what was left: {error}")
-
-    def _release(self) -> None:
-        """Undo everything the handlers hold, in the shutdown order."""
-        for service_type, _name, _word in SHUTDOWN_STEPS:
-            try:
-                self._services[service_type].release()
-            except Exception as error:  # noqa: BLE001 - the rest must still run
-                self._log(f"{service_type}: could not release: {error}")
-
-    def _release_in_time(self) -> None:
-        """Release every handler in order, none of them holding up the rest."""
-        deadline = time.monotonic() + CLIENT_SHUTDOWN_DEADLINE_S
-        for index, (service_type, name, word) in enumerate(SHUTDOWN_STEPS):
-            left = max(deadline - time.monotonic(), 0)
-            share = left / (len(SHUTDOWN_STEPS) - index)
-            outcome: dict = {}
-            step = threading.Thread(
-                target=self._release_one,
-                args=(service_type, outcome),
-                name=f"client_release_{service_type}",
-                daemon=True,
-            )
-            step.start()
-            step.join(timeout=share)
-            if step.is_alive():
-                self._log(f"{name}: gave up after {share:.1f}s")
-            elif "error" in outcome:
-                self._log(f"{name}: could not release: {outcome['error']}")
-            else:
-                count = outcome.get("count") or 0
-                self._log(f"{name}: " + word.format(count=count))
-
-    def _release_one(self, service_type: str, outcome: dict) -> None:
-        """Run one handler's release, its count or its failure in ``outcome``.
-
-        Args:
-            service_type: The handler to release.
-            outcome: Filled with ``count`` or with ``error``.
-        """
-        try:
-            outcome["count"] = self._services[service_type].release()
-        except Exception as error:  # noqa: BLE001 - the rest must still run
-            outcome["error"] = error
-
-    def _reset_binding_state(self) -> None:
-        with self._lock:
-            self._last_error = None
-            self._is_replaced = False
-            self._backoff_s = CLIENT_BACKOFF_MIN_S
-            self._services_list = []
-            self._state_hash = ""
-            self._hub_software = ""
-            self._is_disabled = False
-            self._was_disabled = False
-
-    def _load_connection(self) -> None:
-        """Take the first binding on disk, or none."""
-        bindings = enrollment.bindings()
-        with self._lock:
-            self._binding = dict(bindings[0]) if bindings else {}
-            self._binding_stamp = enrollment.config_stamp()
-
-    def _adopt_external_binding(self) -> None:
-        """Pick up a binding another process wrote.
-
-        ``nclient connect`` and ``nclient disconnect`` edit the configuration
-        from their own process; the resident notices the file changing and
-        converges without a restart.
-        """
-        with self._lock:
-            if enrollment.config_stamp() == self._binding_stamp:
-                return
-            binding = self._binding
-        self._load_connection()
-        with self._lock:
-            if self._binding == binding:
-                return
-        self._drop_socket()
-        self._release()
-        self._reset_binding_state()
-        self._log("adopted the binding written on disk")

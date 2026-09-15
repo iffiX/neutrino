@@ -1,4 +1,4 @@
-"""``nclient status``: two lines that never lie about the machine.
+"""``nclient status``: one line per hub and one for the resident, never lying.
 
 The matrix is walked as the person types it: bound and unbound, connected
 and reconnecting, the resident alive and dead. The running resident is asked
@@ -11,7 +11,14 @@ from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import status as status_cli
 from neutrino_client.cli import wording
 from neutrino_client.control.server import ControlServer
-from tests.conftest import FakeClientPlatform, FakeSession, bind, discard
+from tests.conftest import (
+    BINDING,
+    OFFICE_BINDING,
+    FakeClientPlatform,
+    FakeResident,
+    bind,
+    discard,
+)
 
 GATEWAY_URL = "https://hub.lan:8443"
 
@@ -25,10 +32,10 @@ def platform(monkeypatch):
 
 @pytest.fixture
 def resident(platform):
-    """A live resident on this person's socket, scripted through its session."""
-    session = FakeSession()
+    """A live resident on this person's socket, scripted."""
+    session = FakeResident()
     server = ControlServer(
-        session=session,
+        resident=session,
         platform=platform,
         log=discard,
         socket_path=platform.control_socket_path(),
@@ -46,24 +53,29 @@ def test_bound_and_connected_reads_from_the_resident(resident, config_path, caps
     out = capsys.readouterr().out
     assert f"neutrino-client {CLIENT_VERSION}" in out
     assert f"hub        {GATEWAY_URL}   connected" in out
+    assert "hub        https://office.lan:8443   connected" in out
     assert "resident   running" in out
 
 
 def test_a_reconnecting_socket_is_not_a_clean_status(resident, config_path, capsys):
     bind(config_path, url=GATEWAY_URL)
-    resident.connection_state_value = "reconnecting"
-    resident.error_payload = {"code": "hub_unreachable", "params": {"detail": "down"}}
+    resident.hubs_value[0]["connection_state"] = "reconnecting"
+    resident.hubs_value[0]["last_error"] = {
+        "code": "hub_unreachable",
+        "params": {"detail": "down"},
+    }
 
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
     assert f"hub        {GATEWAY_URL}   reconnecting: down" in out
+    assert "hub        https://office.lan:8443   connected" in out
     assert "resident   running" in out
 
 
 def test_a_replaced_socket_is_not_a_clean_status(resident, config_path, capsys):
     bind(config_path, url=GATEWAY_URL)
-    resident.connection_state_value = "replaced"
+    resident.hubs_value[0]["connection_state"] = "replaced"
 
     assert status_cli.main() == 1
 
@@ -76,12 +88,16 @@ def test_a_replaced_socket_is_not_a_clean_status(resident, config_path, capsys):
 
 
 def test_bound_and_dead_reads_the_binding_file(platform, config_path, capsys):
-    bind(config_path, url=GATEWAY_URL)
+    bind(
+        config_path,
+        bindings=[dict(BINDING, gateway_url=GATEWAY_URL), dict(OFFICE_BINDING)],
+    )
 
     assert status_cli.main() == 1
 
     out = capsys.readouterr().out
     assert f"hub        {GATEWAY_URL}" in out
+    assert f"hub        {OFFICE_BINDING['gateway_url']}" in out
     assert f"resident   {status_cli.RESIDENT_NOT_RUNNING}" in out
 
 
@@ -129,8 +145,8 @@ def test_unbound_and_dead_says_both(platform, capsys):
 )
 def test_every_socket_refusal_is_worded(resident, config_path, capsys, error, fragment):
     bind(config_path, url=GATEWAY_URL)
-    resident.connection_state_value = "reconnecting"
-    resident.error_payload = error
+    resident.hubs_value[0]["connection_state"] = "reconnecting"
+    resident.hubs_value[0]["last_error"] = error
 
     assert status_cli.main() == 1
 
@@ -144,7 +160,7 @@ def test_a_resident_of_another_account_reads_as_none(platform, config_path, caps
     bind(config_path, url=GATEWAY_URL)
     platform.peer = {"account": "bob", "uid": 1001, "is_same_user": False}
     server = ControlServer(
-        session=FakeSession(),
+        resident=FakeResident(),
         platform=platform,
         log=discard,
         socket_path=platform.control_socket_path(),

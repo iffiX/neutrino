@@ -44,6 +44,8 @@ h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
 .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .sect { display: flex; flex-direction: column; gap: 12px; }
 .sect_title { margin: 0; font-size: 16px; font-weight: 600; }
+.hub_title { margin: 4px 0 0; font-size: 12px; font-weight: 600;
+             color: var(--color-text-muted); letter-spacing: .04em; }
 .sub { color: var(--color-text-muted); font-size: 12px;
        font-family: ui-monospace, monospace; }
 .card { border: 1px solid var(--color-border); border-radius: 12px;
@@ -99,6 +101,8 @@ button:disabled { opacity: .4; cursor: not-allowed;
         cursor: pointer; }
 .chip.on { border-color: color-mix(in srgb, var(--color-ok) 60%, transparent);
            color: var(--color-ok); }
+.chip input[type="radio"] { flex: none; width: auto; margin: 0; padding: 0;
+                            accent-color: var(--color-ok); }
 .err { color: var(--color-error); font-size: 12px; }
 .muted { color: var(--color-text-muted); }
 .form { display: flex; flex-direction: column; gap: 8px;

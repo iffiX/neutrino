@@ -1,11 +1,12 @@
-"""The AI service: one person's apply, converged on the service stream's grant.
+"""The AI service: one person's apply, converged on the exit hub's grant.
 
-The credential comes from the ``ai`` entry's ``service`` stream, opened on
-every reconcile; the staged choices are what each tool is pointed with, and
-the grant's model is only the prefill default for a slot nobody has chosen.
-The store never holds a key and never holds the toggle: a handler starts
-with the tools pointed nowhere, and restore puts them back the way
-activation found them.
+The credential comes from the exit hub's ``ai`` entry over its ``service``
+stream, opened on every reconcile; the staged choices are what each tool is
+pointed with, and the grant's model is only the prefill default for a slot
+nobody has chosen. The store never holds a key and never holds the toggle:
+a handler starts with the tools pointed nowhere, restore puts them back the
+way activation found them, and letting go of the hub the tools point at
+restores them too.
 """
 
 import json
@@ -34,6 +35,7 @@ def run_inline(target):
 
 
 ENTRY = {
+    "hub_id": "h1",
     "id": "ai",
     "type": "ai",
     "title": "AI tools",
@@ -54,18 +56,27 @@ CREDENTIAL = {
 
 
 class FakeHub:
-    """The close the hub answers the ai entry's service stream with, scripted."""
+    """The close a hub answers the ai entry's service stream with, scripted.
+
+    Attributes:
+        exit_hub_id: What the resident names as the exit hub.
+        opened: ``(hub_id, entry_id)`` for every stream opened, in order.
+    """
 
     def __init__(self, reply=None, error=None):
         self.reply = dict(CREDENTIAL) if reply is None else reply
         self.error = error
+        self.exit_hub_id = "h1"
         self.opened = []
 
-    def open_service(self, entry_id):
-        self.opened.append(entry_id)
+    def open_service(self, hub_id, entry_id):
+        self.opened.append((hub_id, entry_id))
         if self.error is not None:
             raise self.error
         return dict(self.reply)
+
+    def exit(self) -> str:
+        return self.exit_hub_id
 
 
 class FakeSwitcher:
@@ -116,6 +127,7 @@ def subject(tmp_path):
         store=store,
         original_dir=str(tmp_path / "original"),
         open_service=hub.open_service,
+        exit_hub_id=hub.exit,
         log=discard,
         switcher_module=fake,
         start_thread=run_inline,
@@ -135,7 +147,7 @@ def test_apply_opens_the_entrys_stream_and_activates_with_the_prefill_default(
     outcome = handler.act(entries=[ENTRY], body={"is_enabled": True})
 
     assert outcome == {}
-    assert hub.opened == ["ai"]
+    assert hub.opened == [("h1", "ai")]
     kind, base_url, api_key, tool_configs = fake.calls[-1]
     assert (kind, base_url, api_key) == ("activate", "http://hub:8080", "key-1")
     assert tool_configs["claude"] == {
@@ -199,8 +211,57 @@ def test_enabling_with_no_ai_entry_published_waits_for_one(subject):
 
     handler.refresh(entries=[ENTRY])
 
-    assert hub.opened == ["ai"]
+    assert hub.opened == [("h1", "ai")]
     assert handler.state()["ai"]["is_active"] is True
+
+
+def test_only_the_exit_hubs_entry_is_asked(subject):
+    """Another hub's gateway, even one with the same entry id, is not it."""
+    handler, _store, fake, hub = subject
+    office = dict(ENTRY, hub_id="h2", payload=dict(ENTRY["payload"], endpoint="o"))
+    hub.exit_hub_id = "h2"
+
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+    assert handler.state()["ai"]["code"] == "no_endpoint"
+    assert hub.opened == []
+
+    handler.refresh(entries=[ENTRY, office])
+
+    assert hub.opened == [("h2", "ai")]
+    assert handler.state()["ai"]["is_active"] is True
+    assert handler._granted["hub_id"] == "h2"
+
+
+def test_moving_the_exit_is_one_activation_at_the_new_hub(subject):
+    handler, _store, fake, hub = subject
+    office = dict(ENTRY, hub_id="h2")
+    handler.act(entries=[ENTRY, office], body={"is_enabled": True})
+    hub.exit_hub_id = "h2"
+    hub.reply = dict(CREDENTIAL, base_url="http://office:8080")
+
+    handler.refresh(entries=[ENTRY, office])
+
+    assert hub.opened == [("h1", "ai"), ("h2", "ai")]
+    assert [call[0] for call in fake.calls] == ["activate", "activate"]
+    assert fake.calls[-1][1] == "http://office:8080"
+    assert handler._granted["hub_id"] == "h2"
+
+
+def test_letting_go_of_the_hub_the_tools_point_at_restores_them(subject):
+    handler, _store, fake, _hub = subject
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    assert handler.release_hub("h2") == 0
+    assert [call for call in fake.calls if call[0] == "deactivate"] == []
+
+    assert handler.release_hub("h1") == 0
+    assert handler.release_hub("h1") == 0
+
+    assert [call for call in fake.calls if call[0] == "deactivate"] == [
+        ("deactivate", "http://hub:8080")
+    ]
+    assert handler.state()["ai"]["is_enabled"] is True
+    assert handler.state()["ai"]["is_active"] is False
 
 
 def test_a_grant_with_no_endpoint_is_no_endpoint(subject):
@@ -248,7 +309,7 @@ def test_a_refresh_activates_once_the_hub_grants(subject):
     hub.error = None
     handler.refresh(entries=SERVICES)
 
-    assert hub.opened == ["ai", "ai"]
+    assert hub.opened == [("h1", "ai"), ("h1", "ai")]
     assert handler.state()["ai"]["is_active"] is True
 
 
@@ -296,7 +357,7 @@ def test_disabling_uses_the_endpoint_the_activation_granted(subject):
     assert outcome == {}
     assert ("deactivate", "http://hub:8080") in fake.calls
     assert handler.state()["ai"]["is_active"] is False
-    assert hub.opened == ["ai"]
+    assert hub.opened == [("h1", "ai")]
 
     handler.act(entries=[ENTRY], body={"is_enabled": False})
     assert len([call for call in fake.calls if call[0] == "deactivate"]) == 1
@@ -371,6 +432,7 @@ def test_the_toggle_of_a_previous_run_is_not_kept(subject, tmp_path):
         store=store,
         original_dir=str(tmp_path / "original"),
         open_service=hub.open_service,
+        exit_hub_id=hub.exit,
         log=discard,
         switcher_module=fake,
         start_thread=run_inline,
@@ -436,12 +498,14 @@ def test_the_key_never_reaches_the_store_or_the_state(subject, tmp_path):
     assert "key-1" not in json.dumps(handler.state())
 
 
-def test_the_ai_entry_is_found_by_type_whatever_its_id():
-    assert ai_entry_id(SERVICES) == "ai"
-    assert ai_entry_id([dict(ENTRY, id="gateway")]) == "gateway"
-    assert ai_entry_id([SERVICES[1]]) == ""
-    assert ai_entry_id([]) == ""
-    assert ai_entry_id(None) == ""
+def test_the_ai_entry_is_found_by_hub_and_type_whatever_its_id():
+    assert ai_entry_id(SERVICES, "h1") == "ai"
+    assert ai_entry_id(SERVICES, "h2") == "ai"
+    assert ai_entry_id(SERVICES, "h9") == ""
+    assert ai_entry_id([dict(ENTRY, id="gateway")], "h1") == "gateway"
+    assert ai_entry_id([SERVICES[1]], "h1") == ""
+    assert ai_entry_id([], "h1") == ""
+    assert ai_entry_id(None, "h1") == ""
 
 
 def test_tool_configs_are_cleaned_of_unknown_knobs():

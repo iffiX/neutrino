@@ -1,8 +1,10 @@
 """What a service type handler is.
 
-The hub publishes one typed service list; every entry is
+Every hub publishes one typed service list; every entry is
 ``{"id", "type", "title", "payload", "is_healthy", "source", "description"}``
-and the types are closed. One handler per type lives in this package,
+and the types are closed. The resident merges the lists and stamps each
+entry with the ``hub_id`` it came from, so an entry is addressed by hub and
+id together: the service key. One handler per type lives in this package,
 dispatched by ``type``.
 
 Every refusal a handler returns is ``{"code", "params"}``; each surface does
@@ -18,6 +20,8 @@ from neutrino_client.exceptions import (
     GatewayUnreachable,
     GatewayUntrusted,
 )
+
+SERVICE_KEY_SEPARATOR = "/"
 
 
 def channel_refusal(error: Exception) -> dict:
@@ -40,21 +44,51 @@ def channel_refusal(error: Exception) -> dict:
     return {"code": "hub_refused", "params": {"detail": type(error).__name__}}
 
 
-def find_entry(entries: list, service_type: str, entry_id: str) -> "dict | None":
-    """One typed entry by id, or None.
+def service_key(hub_id: str, entry_id: str) -> str:
+    """The one key an entry is held under, across every hub.
 
     Args:
-        entries: The catalog's service list.
+        hub_id: The hub the entry came from.
+        entry_id: The entry's id in that hub's list.
+
+    Returns:
+        ``"<hub_id>/<entry_id>"``.
+    """
+    return f"{hub_id}{SERVICE_KEY_SEPARATOR}{entry_id}"
+
+
+def hub_of_key(key: str) -> str:
+    """The hub a service key names.
+
+    Args:
+        key: A key from :func:`service_key`.
+
+    Returns:
+        The hub id before the separator.
+    """
+    return key.partition(SERVICE_KEY_SEPARATOR)[0]
+
+
+def find_entry(
+    entries: list, service_type: str, hub_id: str, entry_id: str
+) -> "dict | None":
+    """One typed entry of one hub by id, or None.
+
+    Args:
+        entries: The merged service list, each entry stamped with ``hub_id``.
         service_type: The type the entry must carry.
+        hub_id: The hub the entry must come from.
         entry_id: The entry's id.
 
     Returns:
-        The entry, or None when the list holds no such entry of that type.
+        The entry, or None when the list holds no such entry of that type
+        from that hub.
     """
     for entry in entries or []:
         if (
             isinstance(entry, dict)
             and entry.get("type") == service_type
+            and entry.get("hub_id") == hub_id
             and entry.get("id") == entry_id
         ):
             return entry
@@ -70,8 +104,8 @@ class ServiceTypeHandler:
         """Perform one page action on this type.
 
         Args:
-            entries: The catalog's service list.
-            body: The action's own fields.
+            entries: The merged service list.
+            body: The action's own fields; ``hub_id`` names the hub.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
@@ -92,3 +126,10 @@ class ServiceTypeHandler:
 
     def release(self) -> None:
         """Undo everything this type holds on the machine. Idempotent."""
+
+    def release_hub(self, hub_id: str) -> None:
+        """Undo what this type holds for one hub. Idempotent.
+
+        Args:
+            hub_id: The hub whose entries are let go of.
+        """

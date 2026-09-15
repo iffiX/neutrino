@@ -1,16 +1,14 @@
-"""The resident's socket: the hello, the welcome, the state, the report, the streams.
+"""One hub's session: the hello, the welcome, the state, the report, the streams.
 
 One scripted socket stands in for the wire: a test hands the session the
 frames the hub would send and reads back what the client sent. What is
 pinned here is the hello's six fields, the welcome written onto the binding,
-a refused first frame, a state that replaces what was held and feeds the
-handlers, the disabled switch letting go once and resuming, the report
+a refused first frame, a state that replaces what was held and reaches the
+resident through the callbacks, the disabled switch told once, the report
 after every state and on the interval, a service stream correlated to its
-close, the one refusal that unbinds and the ones the binding survives, a
-replaced socket waiting for a person, the backoff after a broken wire, a
-start that turns nothing on and clears what an unclean exit left, and a
-shutdown that runs its order once, logs a line a step, and lets no step
-hold up the rest.
+close, the one refusal that hands the binding back and the ones the binding
+survives, a replaced socket waiting for a person, the backoff after a
+broken wire, and a stop that closes the socket.
 """
 
 import json
@@ -19,20 +17,17 @@ import time
 
 import pytest
 
-import neutrino_client.core.channel as channel
 import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
-    CLIENT_DEFAULT_THEME,
     CLIENT_IDLE_POLL_INTERVAL_S,
-    CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
     CLIENT_ROLE,
     CLIENT_SOFTWARE_PREFIX,
     PROTOCOL,
 )
 from neutrino_client.core import protocol
-from neutrino_client.core.session import ClientSession
+from neutrino_client.core.session import ClientHubSession
 from neutrino_client.exceptions import (
     GatewayProtocolRefused,
     GatewayRefused,
@@ -41,9 +36,7 @@ from neutrino_client.exceptions import (
     GatewayUntrusted,
     SocketClosed,
 )
-from neutrino_client.services.base import ServiceTypeHandler
-from neutrino_client.services.file import mount_record_id
-from tests.conftest import SERVICES, FakeClientPlatform, bind, discard
+from tests.conftest import BINDING, HUB_SERVICES, bind, discard
 
 WELCOME = {
     "type": "welcome",
@@ -53,8 +46,9 @@ WELCOME = {
     "name": "office",
     "software": "neutrino_hub/0.3.0",
 }
-STATE = {"type": "state", "hash": "h1", "is_disabled": False, "services": SERVICES}
+STATE = {"type": "state", "hash": "h1", "is_disabled": False, "services": HUB_SERVICES}
 MATERIAL = {"host": "h", "port": 21118, "password": "p"}  # scan: allow
+PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
 
 
 class ScriptedSocket:
@@ -110,63 +104,12 @@ class ScriptedSocket:
         self.is_open = False
 
 
-class RecordingHandler(ServiceTypeHandler):
-    """A handler that remembers the lifecycle calls it was given.
-
-    Attributes:
-        starts: How often the resident started it.
-        cleared: How often it was asked to clear leftovers.
-        refreshed: The entries of every refresh, in order.
-        is_holding: Set while a release that hangs is held.
-    """
-
-    def __init__(self, service_type: str, log: list, *, count=None, is_hanging=False):
-        """
-        Args:
-            service_type: The type this stands in for.
-            log: Appended to on every release, in order.
-            count: What its release reports letting go of.
-            is_hanging: Whether its release blocks until it is let go.
-        """
-        self.service_type = service_type
-        self.starts = 0
-        self.cleared = 0
-        self.refreshed = []
-        self._log = log
-        self._count = count
-        self._is_hanging = is_hanging
-        self._held = threading.Event()
-        self.is_holding = threading.Event()
-
-    def act(self, *, entries, body):
-        return {}
-
-    def refresh(self, *, entries) -> None:
-        self.refreshed.append(list(entries))
-
-    def start(self) -> None:
-        self.starts += 1
-
-    def clear_leftovers(self) -> None:
-        self.cleared += 1
-
-    def release(self):
-        self._log.append(self.service_type)
-        if self._is_hanging:
-            self.is_holding.set()
-            self._held.wait(timeout=5)
-        return self._count
-
-    def let_go(self) -> None:
-        """Let a hanging release finish, so the test leaves no thread behind."""
-        self._held.set()
-
-
 class SocketScript:
     """A fresh scripted socket for every connection, all from one script.
 
     Attributes:
         made: Every socket handed out, in the order they were opened.
+        hosts: The host each socket was opened for.
     """
 
     def __init__(self, frames, connect_error=None):
@@ -178,18 +121,64 @@ class SocketScript:
         self._frames = list(frames)
         self._connect_error = connect_error
         self.made = []
+        self.hosts = []
 
     def __call__(self, **kwargs) -> ScriptedSocket:
         made = ScriptedSocket(self._frames, connect_error=self._connect_error)
         self.made.append(made)
+        self.hosts.append(kwargs.get("host", ""))
         return made
 
 
+class Listener:
+    """What the resident hears from a session, recorded in order.
+
+    Attributes:
+        changes: How often the session announced a change.
+        events: ``(name, session)`` for every services, disabled and
+            unbound callback, in order.
+    """
+
+    def __init__(self):
+        self.changes = 0
+        self.events = []
+
+    def on_change(self) -> None:
+        self.changes += 1
+
+    def on_services(self, session) -> None:
+        self.events.append(("services", session))
+
+    def on_disabled(self, session) -> None:
+        self.events.append(("disabled", session))
+
+    def on_unbound(self, session) -> None:
+        self.events.append(("unbound", session))
+
+    def names(self) -> list:
+        return [name for name, _session in self.events]
+
+
 def socket_of(monkeypatch, frames, *, connect_error=None) -> SocketScript:
-    """Put a scripted socket under every connection the session opens."""
+    """Put a scripted socket under every connection a session opens."""
     script = SocketScript(frames, connect_error=connect_error)
     monkeypatch.setattr(session_module, "WebSocketClient", script)
     return script
+
+
+def session_for(binding=None, listener=None, log=discard) -> ClientHubSession:
+    """A session over one binding, its callbacks on the listener."""
+    listener = listener if listener is not None else Listener()
+    return ClientHubSession(
+        binding=dict(BINDING, gateway_url="https://hub.lan:8443", **(binding or {})),
+        hostname="box",
+        platform_tuple=PLATFORM,
+        log=log,
+        on_change=listener.on_change,
+        on_services=listener.on_services,
+        on_disabled=listener.on_disabled,
+        on_unbound=listener.on_unbound,
+    )
 
 
 def connected(session, script) -> ScriptedSocket:
@@ -218,94 +207,21 @@ def reports(made) -> list:
     return [frame for frame in made.sent if frame["type"] == "report"]
 
 
-def released_handlers(session, counts=None) -> list:
-    """Swap every releasable handler for one that records, and return the log."""
-    log = []
-    counts = counts or {}
-    for service_type in ("ai", "file", "port", "rdp"):
-        session._services[service_type] = RecordingHandler(
-            service_type, log, count=counts.get(service_type)
-        )
-    return log
-
-
-class QuietSwitcher:
-    """A switcher over a machine with nothing pointed at the hub."""
-
-    def __init__(self):
-        self.calls = []
-
-    def is_installed(self) -> bool:
-        return True
-
-    def find_cli(self) -> str:
-        return "/opt/neutrino_client/bin/cc-switch"
-
-    def is_active_for(self, app: str) -> bool:
-        return False
-
-    def activate(self, *, base_url, api_key, tool_configs=None) -> str:
-        self.calls.append("activate")
-        return "claude"
-
-    def deactivate(self, *, base_url="") -> str:
-        self.calls.append("deactivate")
-        return ""
-
-
 @pytest.fixture
 def bound(config_path):
     bind(config_path, url="https://hub.lan:8443")
-    return ClientSession(log=discard, platform=FakeClientPlatform())
-
-
-def test_the_first_start_takes_the_machines_language_and_keeps_it(bound):
-    """The machine is asked once; what it answered is the client's own from then."""
-    bound.platform.language = "zh-CN"
-
-    assert bound.language() == "zh-CN"
-
-    bound.platform.language = "en"
-    assert bound.language() == "zh-CN"
-
-
-def test_a_picked_language_is_kept_and_the_watchers_are_told(bound):
-    told = []
-    bound.subscribe(lambda: told.append(1))
-
-    bound.set_language("zh-CN")
-
-    assert bound.language() == "zh-CN"
-    deadline = time.time() + 2
-    while not told and time.time() < deadline:
-        time.sleep(0.01)
-    assert told == [1]
-
-
-def test_a_picked_theme_is_kept_and_the_watchers_are_told(bound):
-    told = []
-    bound.subscribe(lambda: told.append(1))
-
-    bound.set_theme("light")
-
-    assert bound.theme() == "light"
-    deadline = time.time() + 2
-    while not told and time.time() < deadline:
-        time.sleep(0.01)
-    assert told == [1]
-
-
-def test_the_theme_is_the_default_until_one_is_picked(bound):
-    assert bound.theme() == CLIENT_DEFAULT_THEME
+    listener = Listener()
+    return session_for(listener=listener), listener
 
 
 # --- the handshake ---
 
 
 def test_the_hello_is_the_bindings_identity_card(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(monkeypatch, [WELCOME, STATE])
 
-    bound.run_once()
+    session.run_once()
 
     hello = script.made[0].sent[0]
     assert hello == {
@@ -322,26 +238,37 @@ def test_the_hello_is_the_bindings_identity_card(bound, monkeypatch):
         assert absent not in hello
 
 
+def test_the_socket_is_opened_at_the_bindings_hub(bound, monkeypatch):
+    session, _listener = bound
+    script = socket_of(monkeypatch, [WELCOME])
+
+    session.run_once()
+
+    assert script.hosts == ["hub.lan"]
+
+
 def test_the_first_report_follows_the_hello_with_the_machine_and_no_hash(
     bound, monkeypatch
 ):
+    session, _listener = bound
     script = socket_of(monkeypatch, [WELCOME])
 
-    bound.run_once()
+    session.run_once()
 
     report = script.made[0].sent[1]
     assert report == {
         "type": "report",
         "state_hash": "",
-        "machine": {"hostname": bound.hostname(), "platform": bound.platform_tuple()},
+        "machine": {"hostname": "box", "platform": PLATFORM},
     }
 
 
 def test_the_next_connections_first_report_carries_the_hash_held(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(monkeypatch, [WELCOME, STATE])
 
-    bound.run_once()
-    bound.run_once()
+    session.run_once()
+    session.run_once()
 
     assert reports(script.made[0])[0]["state_hash"] == ""
     assert reports(script.made[1])[0]["state_hash"] == "h1"
@@ -350,12 +277,13 @@ def test_the_next_connections_first_report_carries_the_hash_held(bound, monkeypa
 def test_the_welcome_names_the_hub_and_is_written_onto_the_binding(
     bound, monkeypatch, config_path
 ):
+    session, _listener = bound
     socket_of(monkeypatch, [WELCOME, STATE])
 
-    bound.run_once()
+    session.run_once()
 
-    assert bound.hub_version() == "0.3.0"
-    assert bound.is_connected() is True
+    assert session.hub_software() == "neutrino_hub/0.3.0"
+    assert (session.hub_id(), session.hub_name()) == ("h2", "office")
     (binding,) = json.loads(config_path.read_text())["bindings"]
     assert (binding["hub_id"], binding["hub_name"]) == ("h2", "office")
     assert (binding["id"], binding["token"]) == ("c1", "tok")
@@ -364,121 +292,123 @@ def test_the_welcome_names_the_hub_and_is_written_onto_the_binding(
 def test_a_welcome_naming_what_the_binding_holds_writes_nothing(
     bound, monkeypatch, config_path
 ):
+    session, _listener = bound
     socket_of(monkeypatch, [dict(WELCOME, id="h1", name="home")])
     before = config_path.stat().st_mtime_ns
 
-    bound.run_once()
+    session.run_once()
 
     assert config_path.stat().st_mtime_ns == before
-    assert bound.is_connected() is True
+    assert session.hub_id() == "h1"
 
 
 def test_a_first_frame_that_is_not_a_welcome_is_unreachable(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(monkeypatch, [STATE])
 
-    delay = bound.run_once()
+    delay = session.run_once()
 
     assert delay == 5
-    assert bound.last_error()["code"] == "hub_unreachable"
+    assert session.last_error()["code"] == "hub_unreachable"
     assert script.made[0].is_closed is True
 
 
 def test_a_welcome_of_another_role_is_unreachable(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(monkeypatch, [dict(WELCOME, role="agent")])
 
-    bound.run_once()
+    session.run_once()
 
-    assert bound.last_error()["code"] == "hub_unreachable"
+    assert session.last_error()["code"] == "hub_unreachable"
     assert script.made[0].is_closed is True
-    assert bound.connection_state() == "reconnecting"
+    assert session.connection_state() == "reconnecting"
 
 
 @pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
 def test_a_refused_first_frame_naming_the_protocol_keeps_the_binding(
     bound, monkeypatch, config_path, code
 ):
+    session, listener = bound
     script = socket_of(
         monkeypatch,
         [{"type": "refused", "code": code, "params": {"peer": 1, "hub": 2, "min": 2}}],
     )
-    released = released_handlers(bound)
 
-    delays = [bound.run_once() for _ in range(5)]
+    delays = [session.run_once() for _ in range(5)]
 
-    assert bound.is_connected() is True
-    assert bound.connection_state() == "reconnecting"
+    assert session.connection_state() == "reconnecting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert bound.last_error() == {
+    assert session.last_error() == {
         "code": code,
         "params": {"peer": 1, "hub": 2, "min": 2},
     }
-    assert released == []
+    assert listener.events == []
     assert delays == [CLIENT_BACKOFF_MAX_S] * 5
     assert all(made.is_closed for made in script.made)
 
 
-def test_binding_unknown_is_the_one_refusal_that_unbinds(
+def test_binding_unknown_is_the_one_refusal_that_hands_the_binding_back(
     bound, monkeypatch, config_path
 ):
+    session, listener = bound
     script = socket_of(
         monkeypatch,
         [{"type": "refused", "code": "binding_unknown", "params": {"id": "c1"}}],
     )
-    released = released_handlers(bound)
 
-    delay = bound.run_once()
-    bound.run_once()
+    delay = session.run_once()
+    session.run_once()
 
     assert delay == CLIENT_IDLE_POLL_INTERVAL_S
-    assert bound.is_connected() is False
-    assert bound.connection_state() == "unbound"
-    assert json.loads(config_path.read_text())["bindings"] == []
-    assert released == ["ai", "file", "port", "rdp"]
-    assert bound.last_error() == {
+    assert listener.events == [("unbound", session)]
+    assert session.last_error() == {
         "code": "binding_unknown",
         "params": {"id": "c1"},
     }
+    # The session opens no more; the resident removes the binding.
     assert len(script.made) == 1
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
 
 
 def test_a_refused_first_frame_of_another_code_keeps_the_binding(
     bound, monkeypatch, config_path
 ):
+    session, listener = bound
     socket_of(
         monkeypatch,
         [{"type": "refused", "code": "ticket_spent", "params": {"id": "c1"}}],
     )
-    released = released_handlers(bound)
 
-    delays = [bound.run_once() for _ in range(3)]
+    delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert bound.is_connected() is True
-    assert bound.connection_state() == "reconnecting"
+    assert session.connection_state() == "reconnecting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert bound.last_error() == {"code": "ticket_spent", "params": {"id": "c1"}}
-    assert released == []
+    assert session.last_error() == {"code": "ticket_spent", "params": {"id": "c1"}}
+    assert listener.events == []
 
 
 def test_a_welcome_after_a_refusal_clears_the_error(bound, monkeypatch):
+    session, _listener = bound
     socket_of(monkeypatch, [{"type": "refused", "code": "ticket_spent", "params": {}}])
-    bound.run_once()
-    assert bound.last_error()["code"] == "ticket_spent"
+    session.run_once()
+    assert session.last_error()["code"] == "ticket_spent"
 
-    connected(bound, socket_of(monkeypatch, [WELCOME]))
+    connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    assert bound.last_error() is None
-    assert bound.connection_state() == "connected"
+    assert session.last_error() is None
+    assert session.connection_state() == "connected"
 
 
 def test_a_refused_frame_carries_its_code_on_the_exception(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(
         monkeypatch,
         [{"type": "refused", "code": "binding_unknown", "params": {"id": "c1"}}],
     )
 
     with pytest.raises(GatewayRefused) as refused:
-        connected(bound, script)
+        connected(session, script)
 
     assert refused.value.code == "binding_unknown"
     assert refused.value.params == {"id": "c1"}
@@ -488,105 +418,120 @@ def test_a_refused_frame_carries_its_code_on_the_exception(bound, monkeypatch):
 # --- the state ---
 
 
-def test_a_state_replaces_what_was_held(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+def test_a_state_replaces_what_was_held_and_reaches_the_resident(bound, monkeypatch):
+    session, listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(bound, made, STATE)
-    assert [entry["id"] for entry in bound.service_entries()] == [
-        entry["id"] for entry in SERVICES
+    take(session, made, STATE)
+    assert [entry["id"] for entry in session.service_entries()] == [
+        entry["id"] for entry in HUB_SERVICES
     ]
-    take(bound, made, {"type": "state", "hash": "h2", "services": []})
+    take(session, made, {"type": "state", "hash": "h2", "services": []})
 
-    assert bound.service_entries() == []
-    assert bound._state_hash == "h2"
+    assert session.service_entries() == []
+    assert session._state_hash == "h2"
+    assert listener.names() == ["services", "services"]
 
 
 def test_every_state_is_answered_with_a_report_carrying_its_hash(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(bound, made, STATE)
-    take(bound, made, dict(STATE, hash="h2"))
+    take(session, made, STATE)
+    take(session, made, dict(STATE, hash="h2"))
 
     assert [report["state_hash"] for report in reports(made)] == ["", "h1", "h2"]
-    assert reports(made)[-1]["machine"]["hostname"] == bound.hostname()
+    assert reports(made)[-1]["machine"]["hostname"] == "box"
 
 
 def test_a_state_of_the_wrong_shape_is_typed_and_never_fatal(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(
         monkeypatch,
         [WELCOME, {"type": "state", "hash": "h2", "services": "not a list"}],
     )
     made = script()
-    bound._connect(made)
+    session._connect(made)
 
-    failure = bound._serve(made)
+    failure = session._serve(made)
 
     assert isinstance(failure, GatewayUnreachable)
-    assert bound._last_error["code"] == "hub_reply_unreadable"
+    assert session._last_error["code"] == "hub_reply_unreadable"
 
 
-def test_a_state_hands_its_services_to_the_ai_handler(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
-    released_handlers(bound)
+def test_the_services_of_a_hub_whose_socket_is_down_are_nothing(bound, monkeypatch):
+    """A hub that is unreachable publishes nothing; what it published comes
+    back with its socket, without a new state."""
+    session, listener = bound
+    script = socket_of(monkeypatch, [WELCOME, STATE])
+    made = script()
+    session._connect(made)
+    session._serve(made)
+    assert session.service_entries() == []
+    assert session._state_hash == "h1"
 
-    take(bound, made, STATE)
+    connected(session, script)
 
-    assert bound._services["ai"].refreshed == [SERVICES]
+    assert [entry["id"] for entry in session.service_entries()] == [
+        entry["id"] for entry in HUB_SERVICES
+    ]
+    assert listener.names() == ["services", "services"]
 
 
-def test_disabled_lets_go_of_everything_but_the_binding(
-    bound, monkeypatch, config_path
-):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
-    released = released_handlers(bound)
+def test_a_welcome_with_nothing_held_announces_no_services(bound, monkeypatch):
+    session, listener = bound
 
-    take(bound, made, dict(STATE, is_disabled=True))
+    connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    assert bound.is_disabled() is True
-    assert bound.is_connected() is True
+    assert listener.names() == []
+
+
+def test_disabled_is_told_once_and_keeps_the_binding(bound, monkeypatch, config_path):
+    session, listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, dict(STATE, is_disabled=True))
+    take(session, made, dict(STATE, is_disabled=True))
+
+    assert session.is_disabled() is True
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert bound.last_error() == {"code": "client_disabled", "params": {}}
-    assert released == ["ai", "file", "port", "rdp"]
-    assert bound._services["ai"].refreshed == []
-    assert bound.service_action("port", {"id": "svc_tcp", "is_enabled": True}) == {
-        "code": "client_disabled",
-        "params": {},
-    }
+    assert session.last_error() == {"code": "client_disabled", "params": {}}
+    assert listener.names() == ["disabled"]
 
 
-def test_a_disabled_client_is_released_once_then_resumes(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
-    released = released_handlers(bound)
+def test_a_disabled_client_resumes_with_the_next_state(bound, monkeypatch):
+    session, listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(bound, made, dict(STATE, is_disabled=True))
-    take(bound, made, dict(STATE, is_disabled=True))
-    take(bound, made, dict(STATE, is_disabled=False))
+    take(session, made, dict(STATE, is_disabled=True))
+    take(session, made, dict(STATE, is_disabled=False))
 
-    assert released == ["ai", "file", "port", "rdp"]
-    assert bound.is_disabled() is False
-    assert bound.last_error() is None
-    assert bound._services["ai"].refreshed == [SERVICES]
+    assert session.is_disabled() is False
+    assert session.last_error() is None
+    assert listener.names() == ["disabled", "services"]
 
 
 def test_an_unknown_frame_is_ignored(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(bound, made, {"type": "something_else"})
-    take(bound, made, STATE)
+    take(session, made, {"type": "something_else"})
+    take(session, made, STATE)
 
-    assert [entry["id"] for entry in bound.service_entries()] == [
-        entry["id"] for entry in SERVICES
+    assert [entry["id"] for entry in session.service_entries()] == [
+        entry["id"] for entry in HUB_SERVICES
     ]
-    assert bound.last_error() is None
+    assert session.last_error() is None
 
 
 def test_a_report_goes_up_on_the_interval(bound, monkeypatch):
+    session, _listener = bound
     monkeypatch.setattr(session_module, "CLIENT_REPORT_INTERVAL_S", 0.02)
     hold = threading.Event()
     script = socket_of(monkeypatch, [WELCOME, STATE, hold])
     made = script()
-    bound._connect(made)
-    served = threading.Thread(target=bound._serve, args=(made,))
+    session._connect(made)
+    served = threading.Thread(target=session._serve, args=(made,))
 
     served.start()
     deadline = time.monotonic() + 5
@@ -603,10 +548,11 @@ def test_a_report_goes_up_on_the_interval(bound, monkeypatch):
 
 
 def test_a_service_stream_goes_up_odd_and_its_close_comes_back(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
     answered = _open_while(
-        bound, made, {"type": "close", "stream": 1, "params": MATERIAL}
+        session, made, {"type": "close", "stream": 1, "params": MATERIAL}
     )
 
     opened = made.sent[-1]
@@ -615,10 +561,11 @@ def test_a_service_stream_goes_up_odd_and_its_close_comes_back(bound, monkeypatc
 
 
 def test_a_second_stream_takes_the_next_odd_id(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
-    _open_while(bound, made, {"type": "close", "stream": 1, "params": {}})
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    _open_while(session, made, {"type": "close", "stream": 1, "params": {}})
 
-    _open_while(bound, made, {"type": "close", "stream": 3, "params": {}})
+    _open_while(session, made, {"type": "close", "stream": 3, "params": {}})
 
     assert [frame["stream"] for frame in made.sent if frame["type"] == "open"] == [
         1,
@@ -627,11 +574,12 @@ def test_a_second_stream_takes_the_next_odd_id(bound, monkeypatch):
 
 
 def test_a_close_carrying_a_code_is_the_hubs_own_refusal(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
     with pytest.raises(GatewayRefusedDetail) as refused:
         _open_while(
-            bound,
+            session,
             made,
             {
                 "type": "close",
@@ -646,24 +594,28 @@ def test_a_close_carrying_a_code_is_the_hubs_own_refusal(bound, monkeypatch):
 
 
 def test_a_stream_with_no_socket_is_unreachable(bound):
+    session, _listener = bound
+
     with pytest.raises(GatewayUnreachable):
-        bound.open_service("rdp_s9")
+        session.open_service("rdp_s9")
 
 
 def test_a_stream_nobody_closes_gives_up(bound, monkeypatch):
-    connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    connected(session, socket_of(monkeypatch, [WELCOME]))
 
     with pytest.raises(GatewayUnreachable):
-        bound.open_service("rdp_s9", timeout_s=0.05)
+        session.open_service("rdp_s9", timeout_s=0.05)
 
 
 def test_a_socket_that_ends_wakes_the_stream_unreachable(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
     outcome = {}
 
     def wait() -> None:
         try:
-            bound.open_service("rdp_s9", timeout_s=5)
+            session.open_service("rdp_s9", timeout_s=5)
         except GatewayUnreachable as error:
             outcome["error"] = error
 
@@ -671,30 +623,31 @@ def test_a_socket_that_ends_wakes_the_stream_unreachable(bound, monkeypatch):
     waiter.start()
     while len(made.sent) < 3:
         time.sleep(0.01)
-    bound._end_socket(made)
+    session._end_socket(made)
     waiter.join(timeout=5)
 
     assert isinstance(outcome.get("error"), GatewayUnreachable)
-    assert bound._streams is None
+    assert session._streams is None
 
 
 def test_a_close_for_nobody_is_dropped(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(bound, made, {"type": "close", "stream": 9, "params": {}})
+    take(session, made, {"type": "close", "stream": 9, "params": {}})
 
-    assert bound.last_error() is None
+    assert session.last_error() is None
 
 
-def test_credit_and_bytes_from_the_hub_are_dropped(bound, monkeypatch):
+def test_credit_and_bytes_from_the_hub_are_dropped(monkeypatch, config_path):
     lines = []
-    bound._log = lines.append
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session = session_for(log=lines.append)
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(bound, made, {"type": "credit", "stream": 1, "bytes": 4096})
-    take(bound, made, protocol.encode_binary(1, b"line\n"))
+    take(session, made, {"type": "credit", "stream": 1, "bytes": 4096})
+    take(session, made, protocol.encode_binary(1, b"line\n"))
 
-    assert bound.last_error() is None
+    assert session.last_error() is None
     assert [line for line in lines if line.startswith("dropping")] == [
         "dropping credit on stream 1",
         "dropping 5 bytes the hub sent on stream 1",
@@ -703,9 +656,10 @@ def test_credit_and_bytes_from_the_hub_are_dropped(bound, monkeypatch):
 
 
 def test_a_stream_the_hub_opens_is_closed_kind_unknown(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(bound, made, {"type": "open", "stream": 2, "kind": "shell", "cols": 80})
+    take(session, made, {"type": "open", "stream": 2, "kind": "shell", "cols": 80})
 
     assert made.sent[-1] == {
         "type": "close",
@@ -713,88 +667,64 @@ def test_a_stream_the_hub_opens_is_closed_kind_unknown(bound, monkeypatch):
         "code": "kind_unknown",
         "params": {"kind": "shell"},
     }
-    assert bound.last_error() is None
+    assert session.last_error() is None
 
 
 def test_a_binary_frame_shorter_than_an_id_is_typed_and_never_fatal(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(monkeypatch, [WELCOME, b"\x00\x01"])
     made = script()
-    bound._connect(made)
+    session._connect(made)
 
-    failure = bound._serve(made)
+    failure = session._serve(made)
 
     assert isinstance(failure, GatewayUnreachable)
-    assert bound._last_error["code"] == "hub_reply_unreadable"
+    assert session._last_error["code"] == "hub_reply_unreadable"
 
 
 # --- what ends a connection ---
 
 
 def test_a_broken_wire_backs_off_and_keeps_the_binding(bound, monkeypatch):
+    session, _listener = bound
     socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
 
-    delays = [bound.run_once() for _ in range(3)]
+    delays = [session.run_once() for _ in range(3)]
 
     assert delays == [5, 10, 20]
-    assert bound.is_connected() is True
-    assert bound.connection_state() == "reconnecting"
-    assert bound.last_error()["code"] == "hub_unreachable"
+    assert session.connection_state() == "reconnecting"
+    assert session.last_error()["code"] == "hub_unreachable"
 
 
 def test_a_replaced_socket_waits_for_a_person(bound, monkeypatch, config_path):
     """Another socket holds this binding; this one opens no more on its own."""
+    session, listener = bound
     script = socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
-    released = released_handlers(bound)
 
-    bound.run_once()
-    delay = bound.run_once()
+    session.run_once()
+    delay = session.run_once()
 
-    assert bound.connection_state() == "replaced"
-    assert bound.is_connected() is True
+    assert session.connection_state() == "replaced"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert bound.last_error() is None
-    assert released == []
+    assert session.last_error() is None
+    assert listener.events == []
     assert delay == CLIENT_IDLE_POLL_INTERVAL_S
     assert len(script.made) == 1
 
 
 def test_a_person_takes_a_replaced_binding_back(bound, monkeypatch):
+    session, _listener = bound
     script = socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
-    bound.run_once()
-    bound._news.clear()
+    session.run_once()
+    session._news.clear()
 
-    bound.reconnect()
+    session.reconnect()
 
-    assert bound.connection_state() == "reconnecting"
-    assert bound._news.is_set()
-    bound.run_once()
+    assert session.connection_state() == "reconnecting"
+    assert session._news.is_set()
+    session.run_once()
     assert len(script.made) == 2
     assert script.made[1].sent[0]["type"] == "hello"
-
-
-def test_reconnect_names_the_hub_held_or_none(bound, monkeypatch):
-    socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
-    bound.run_once()
-
-    with pytest.raises(KeyError):
-        bound.reconnect("h9")
-    assert bound.connection_state() == "replaced"
-
-    bound.reconnect("h2")
-    assert bound.connection_state() == "reconnecting"
-
-
-def test_a_binding_written_on_disk_ends_the_replaced_state(
-    bound, monkeypatch, config_path
-):
-    socket_of(monkeypatch, [WELCOME, SocketClosed(4010, "replaced")])
-    bound.run_once()
-    assert bound.connection_state() == "replaced"
-
-    config_path.write_text("{}")
-    bound.run_once()
-
-    assert bound.connection_state() == "unbound"
 
 
 @pytest.mark.parametrize(
@@ -808,40 +738,38 @@ def test_a_binding_written_on_disk_ends_the_replaced_state(
 def test_a_refusal_the_binding_survives_asks_again_a_minute_later(
     bound, monkeypatch, config_path, error, code
 ):
+    session, listener = bound
     socket_of(monkeypatch, [], connect_error=error)
-    released = released_handlers(bound)
 
-    delays = [bound.run_once() for _ in range(3)]
+    delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert bound.is_connected() is True
-    assert bound.connection_state() == "reconnecting"
+    assert session.connection_state() == "reconnecting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert bound.last_error()["code"] == code
-    assert released == []
+    assert session.last_error()["code"] == code
+    assert listener.events == []
 
 
 @pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
 def test_a_hub_that_does_not_speak_this_protocol_never_unbinds(
     bound, monkeypatch, config_path, code
 ):
+    session, listener = bound
     socket_of(
         monkeypatch,
         [],
         connect_error=GatewayProtocolRefused(code=code, peer=1, hub=2, minimum=2),
     )
-    released = released_handlers(bound)
 
-    delays = [bound.run_once() for _ in range(5)]
+    delays = [session.run_once() for _ in range(5)]
 
-    assert bound.is_connected() is True
-    assert bound.connection_state() == "reconnecting"
+    assert session.connection_state() == "reconnecting"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert bound.last_error() == {
+    assert session.last_error() == {
         "code": code,
         "params": {"peer": 1, "hub": 2, "min": 2},
     }
-    assert released == []
+    assert listener.events == []
     assert delays == [CLIENT_BACKOFF_MAX_S] * 5
 
 
@@ -850,270 +778,79 @@ def test_a_close_4000_without_a_frame_is_hub_refused_and_keeps_the_binding(
 ):
     """The close arrives instead of the welcome, which is when the hub sends
     one."""
+    session, listener = bound
     socket_of(monkeypatch, [SocketClosed(4000, "")])
-    released = released_handlers(bound)
 
-    delays = [bound.run_once() for _ in range(3)]
+    delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert bound.is_connected() is True
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert bound.last_error() == {"code": "hub_refused", "params": {}}
-    assert released == []
+    assert session.last_error() == {"code": "hub_refused", "params": {}}
+    assert listener.events == []
 
 
-# --- the binding, and the way out ---
+# --- the loop and the way out ---
 
 
-def test_an_unbound_resident_idles_and_opens_no_socket(monkeypatch, config_path):
-    session = ClientSession(log=discard, platform=FakeClientPlatform())
-    script = socket_of(monkeypatch, [WELCOME])
-
-    delay = session.run_once()
-
-    assert delay == 2
-    assert session.connection_state() == "unbound"
-    assert script.made == []
-
-
-def test_an_external_binding_is_adopted_by_its_stamp(monkeypatch, config_path):
-    session = ClientSession(log=discard, platform=FakeClientPlatform())
-    assert session.is_connected() is False
-    script = socket_of(monkeypatch, [WELCOME])
-
-    bind(config_path, url="https://hub.lan:8443")
-    session.run_once()
-
-    assert session.is_connected() is True
-    assert script.made[0].sent[0]["type"] == "hello"
-
-
-def test_the_hubs_name_written_by_the_welcome_is_not_adopted_as_news(
-    bound, monkeypatch
-):
-    """The welcome's write is the session's own; the next turn must not
-    drop the socket over it."""
-    script = socket_of(monkeypatch, [WELCOME, STATE])
-    lines = []
-    bound._log = lines.append
-
-    bound.run_once()
-    bound.run_once()
-
-    assert len(script.made) == 2
-    assert "adopted the binding written on disk" not in lines
-
-
-def test_an_external_disconnect_releases_everything(bound, monkeypatch, config_path):
-    socket_of(monkeypatch, [WELCOME, STATE])
-    released = released_handlers(bound)
-    bound.run_once()
-
-    config_path.write_text("{}")
-    delay = bound.run_once()
-
-    assert bound.is_connected() is False
-    assert bound.service_entries() == []
-    assert released == ["ai", "file", "port", "rdp"]
-    assert delay == 2
-
-
-def test_disconnect_tells_the_hub_over_http_first_and_lets_go(
-    bound, monkeypatch, config_path
-):
-    posted = []
-
-    def post(self, path, payload):
-        posted.append((path, payload))
-        return {}
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post, raising=True)
-    released = released_handlers(bound)
-
-    bound.disconnect()
-
-    assert posted == [("/api/channel/leave", {"id": "c1", "token": "tok"})]
-    assert bound.is_connected() is False
-    assert json.loads(config_path.read_text())["bindings"] == []
-    assert released == ["ai", "file", "port", "rdp"]
-
-
-def test_disconnect_lets_go_when_the_hub_refuses_the_leave(
-    bound, monkeypatch, config_path
-):
-    def refuse(self, path, payload):
-        raise GatewayRefused("401")
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", refuse, raising=True)
-
-    bound.disconnect()
-
-    assert bound.is_connected() is False
-    assert json.loads(config_path.read_text())["bindings"] == []
-
-
-# --- the start, and the one way out ---
-
-
-def test_the_start_turns_nothing_on(config_path, tmp_path):
-    """Opening the client shows a clean machine: a record is a preference,
-    never a mount to bring back."""
-    platform = FakeClientPlatform()
-    session = ClientSession(log=discard, platform=platform)
-    session._services["ai"]._switcher = QuietSwitcher()
-    location = str(tmp_path / "nas")
-    record_id = mount_record_id("share_media", location)
-    session._store.set_mount(
-        record_id,
-        {
-            "entry_id": "share_media",
-            "host": "hub",
-            "share": "media",
-            "username": "media",
-            "path": location,
-        },
-    )
-    credentials = tmp_path / "config" / CLIENT_MOUNT_CREDENTIALS_DIR_NAME
-    credentials.mkdir(parents=True)
-    (credentials / f"{record_id}.credentials").write_text("username=media")
+def test_stop_closes_the_socket_and_ends_the_loop(bound, monkeypatch):
+    session, _listener = bound
+    hold = threading.Event()
+    script = socket_of(monkeypatch, [WELCOME, hold])
 
     session.start()
-    try:
-        session._services["file"].reconcile()
-    finally:
-        session.shutdown()
+    deadline = time.monotonic() + 5
+    while not script.made and time.monotonic() < deadline:
+        time.sleep(0.01)
+    while script.made and len(script.made[0].sent) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    hold.set()
+    session.stop()
+    session.stop()
 
-    assert platform.attach_calls == []
-    states = session.service_states()
-    assert states["ai"]["is_enabled"] is False
-    assert states["ai"]["is_active"] is False
-    assert [row["state"] for row in states["mounts"]] == ["detached"]
-
-
-def test_the_start_clears_what_an_unclean_exit_left(config_path):
-    session = ClientSession(log=discard, platform=FakeClientPlatform())
-    released_handlers(session)
-
-    session.start()
-    session.shutdown()
-
-    assert session._services["ai"].cleared == 1
-    assert session._services["file"].cleared == 1
-    assert session._services["ai"].starts == 1
+    assert script.made[0].is_closed is True
+    assert session.connection_state() == "reconnecting"
+    assert not session._thread.is_alive()
 
 
-def test_a_handler_that_cannot_clear_is_logged_and_never_fatal(config_path):
-    lines = []
-    session = ClientSession(log=lines.append, platform=FakeClientPlatform())
-    released_handlers(session)
+def test_a_stop_during_a_turn_ends_the_loop_without_waiting_out_the_delay(bound):
+    """The stop lands while a turn runs; the wait after it must not sleep."""
+    session, _listener = bound
+    turns = []
 
-    def refuse() -> None:
-        raise OSError("busy")
+    def one_turn():
+        turns.append(1)
+        session.stop()
+        return 60
 
-    session._services["file"].clear_leftovers = refuse
-
-    session.start()
-    session.shutdown()
-
-    assert any(line.startswith("file: could not clear") for line in lines)
-    assert session._services["file"].starts == 1
-
-
-def test_the_shutdown_logs_one_line_a_step_in_order(config_path):
-    lines = []
-    session = ClientSession(log=lines.append, platform=FakeClientPlatform())
-    released_handlers(session, counts={"file": 2, "port": 1, "rdp": 0})
-
-    session.shutdown()
-
-    assert lines == [
-        "ai: restored",
-        "mounts: 2 detached",
-        "forwards: 1 closed",
-        "viewers: 0 closed",
-        "shut down",
-    ]
-
-
-def test_a_step_that_hangs_is_given_up_and_the_others_still_run(
-    config_path, monkeypatch
-):
-    monkeypatch.setattr(session_module, "CLIENT_SHUTDOWN_DEADLINE_S", 0.4)
-    lines = []
-    session = ClientSession(log=lines.append, platform=FakeClientPlatform())
-    released = released_handlers(session)
-    hanging = RecordingHandler("ai", released, is_hanging=True)
-    session._services["ai"] = hanging
-
+    session.run_once = one_turn
     started = time.monotonic()
-    session.shutdown()
-    hanging.let_go()
+    session.run_forever()
 
-    assert hanging.is_holding.is_set()
-    assert released == ["ai", "file", "port", "rdp"]
-    assert lines[0].startswith("ai: gave up after ")
-    assert lines[-1] == "shut down"
+    assert turns == [1]
     assert time.monotonic() - started < 5
 
 
-def test_shutdown_runs_the_order_once_and_is_idempotent(bound):
-    released = released_handlers(bound)
+def test_a_socket_that_ends_while_stopping_is_no_failure(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    session._stop.set()
 
-    bound.shutdown()
-    bound.shutdown()
+    failure = session._serve(made)
 
-    assert released == ["ai", "file", "port", "rdp"]
-
-
-def test_shutdown_survives_a_handler_that_refuses(bound):
-    released = []
-
-    class Refusing(RecordingHandler):
-        def release(self):
-            raise OSError("busy")
-
-    bound._services["ai"] = Refusing("ai", released)
-    for service_type in ("file", "port", "rdp"):
-        bound._services[service_type] = RecordingHandler(service_type, released)
-
-    bound.shutdown()
-
-    assert released == ["file", "port", "rdp"]
+    assert failure is None
+    assert session.last_error() is None
 
 
-def test_shutdown_closes_the_socket(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
+def test_every_change_the_page_draws_is_announced(bound, monkeypatch):
+    session, listener = bound
+    script = socket_of(monkeypatch, [WELCOME, STATE])
 
-    bound.shutdown()
+    session.run_once()
 
-    assert made.is_closed is True
-
-
-def test_the_state_carries_every_handlers_keys(bound):
-    states = bound.service_states()
-
-    assert set(states) >= {"forwards", "mounts", "ai", "ai_tool_configs", "viewers"}
-
-
-def test_an_unknown_service_type_is_refused(bound):
-    assert bound.service_action("nothing", {}) == {
-        "code": "unknown_request",
-        "params": {},
-    }
-
-
-def test_show_reaches_the_registered_window(bound):
-    shown = []
-
-    def show() -> None:
-        shown.append(1)
-
-    bound.on_show = show
-    bound.request_show()
-    bound.on_show = None
-    bound.request_show()
-
-    assert shown == [1]
+    # The welcome, the state, the socket's end and the backoff after it each
+    # announce once.
+    assert listener.changes == 4
+    assert script.made[0].is_closed is True
 
 
 def _open_while(session, made, close_frame):
@@ -1126,7 +863,7 @@ def _open_while(session, made, close_frame):
             once the open has gone up.
 
     Returns:
-        What :meth:`ClientSession.open_service` returned.
+        What :meth:`ClientHubSession.open_service` returned.
 
     Raises:
         Exception: Whatever the open raised.
@@ -1153,89 +890,3 @@ def _open_while(session, made, close_frame):
     if "error" in outcome:
         raise outcome["error"]
     return outcome["result"]
-
-
-def test_a_burst_of_changes_reaches_the_watchers_once(bound, monkeypatch):
-    monkeypatch.setattr(session_module, "ANNOUNCE_SETTLE_S", 0.05)
-    heard = []
-    done = threading.Event()
-
-    def watcher():
-        heard.append(1)
-        done.set()
-
-    bound.subscribe(watcher)
-
-    for _ in range(5):
-        bound.notify()
-
-    assert done.wait(timeout=5)
-    time.sleep(0.2)
-    assert heard == [1]
-
-
-def test_a_change_during_the_announcement_brings_one_more_round(bound, monkeypatch):
-    monkeypatch.setattr(session_module, "ANNOUNCE_SETTLE_S", 0.05)
-    heard = []
-    second = threading.Event()
-
-    def watcher():
-        heard.append(1)
-        if len(heard) == 1:
-            bound.notify()
-        else:
-            second.set()
-
-    bound.subscribe(watcher)
-    bound.notify()
-
-    assert second.wait(timeout=5)
-    time.sleep(0.2)
-    assert heard == [1, 1]
-
-
-def test_a_watcher_that_fails_does_not_stop_the_others(bound, monkeypatch):
-    monkeypatch.setattr(session_module, "ANNOUNCE_SETTLE_S", 0.01)
-    heard = threading.Event()
-
-    def broken():
-        raise RuntimeError("no window")
-
-    bound.subscribe(broken)
-    bound.subscribe(heard.set)
-    bound.notify()
-
-    assert heard.wait(timeout=5)
-
-
-def test_a_stop_during_a_turn_ends_the_loop_without_waiting_out_the_delay(bound):
-    """The stop lands while a turn runs; the wait after it must not sleep."""
-    turns = []
-
-    def one_turn():
-        turns.append(1)
-        bound.shutdown()
-        return 60
-
-    bound.run_once = one_turn
-    started = time.monotonic()
-    bound.run_forever()
-
-    assert turns == [1]
-    assert time.monotonic() - started < 5
-
-
-def test_a_socket_that_ends_while_stopping_is_no_failure(bound, monkeypatch):
-    made = connected(bound, socket_of(monkeypatch, [WELCOME]))
-    bound._stop.set()
-
-    failure = bound._serve(made)
-
-    assert failure is None
-    assert bound.last_error() is None
-
-
-def test_the_handlers_announce_through_the_session(bound):
-    for service_type in ("port", "ai", "file", "rdp"):
-        handler = bound._services[service_type]
-        assert handler._on_change == bound.notify

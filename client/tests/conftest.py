@@ -1,11 +1,13 @@
 """Suite-wide isolation and the shared fakes, defined once.
 
 The autouse redirect keeps every store off the real machine: the platform's
-configuration directory, and with it the binding, the state store and the
+configuration directory, and with it the bindings, the state store and the
 mount credentials, all land in ``tmp_path``, and the control socket in a
 runtime directory of its own. The fakes here are the ones more than one
-directory drives: the client platform, the session, the injected clock, the
-link builder and the log sink.
+directory drives: the client platform, the resident, the injected clock,
+the link builder and the log sink. ``HUB_SERVICES`` is what one hub sends
+in a state; ``SERVICES`` is the two-hub list the resident merges from it,
+each entry stamped with its ``hub_id``.
 """
 
 import base64
@@ -25,7 +27,7 @@ from neutrino_client.platforms.windows import WindowsPlatform
 SAME_USER = {"account": "alice", "uid": 1000, "is_same_user": True}
 OTHER_USER = {"account": "bob", "uid": 1001, "is_same_user": False}
 
-SERVICES = [
+HUB_SERVICES = [
     {
         "id": "ai",
         "type": "ai",
@@ -76,6 +78,67 @@ SERVICES = [
         "description": "shared from studio",
     },
 ]
+
+# What the second hub sends; its ids overlap the first's on purpose.
+OFFICE_SERVICES = [
+    {
+        "id": "ai",
+        "type": "ai",
+        "title": "Office AI",
+        "payload": {
+            "endpoint": "http://office:8080",
+            "protocol": "anthropic",
+            "models": ["o1"],
+        },
+        "is_healthy": True,
+        "source": "module",
+        "description": "",
+    },
+    {
+        "id": "svc_docs",
+        "type": "web",
+        "title": "Docs",
+        "payload": {"url": "http://docs/"},
+        "is_healthy": True,
+        "source": "declared",
+        "description": "declared by hand",
+    },
+    {
+        "id": "svc_tcp",
+        "type": "port",
+        "title": "office db",
+        "payload": {"host": "office", "port": 5432},
+        "is_healthy": True,
+        "source": "module",
+        "description": "",
+    },
+    {
+        "id": "share_media",
+        "type": "file",
+        "title": "office media",
+        "payload": {"protocol": "smb", "host": "office", "share": "media"},
+        "is_healthy": True,
+        "source": "module",
+        "description": "",
+    },
+    {
+        "id": "rdp_lab",
+        "type": "rdp",
+        "title": "lab",
+        "payload": {"protocol": "rustdesk", "host": "10.0.0.6", "port": 21118},
+        "is_healthy": True,
+        "source": "device",
+        "description": "shared from lab",
+    },
+]
+
+
+def with_hub(entries: list, hub_id: str) -> list:
+    """One hub's entries the way the resident merges them, stamped with the hub."""
+    return [dict(entry, hub_id=hub_id) for entry in entries]
+
+
+SERVICES = with_hub(HUB_SERVICES, "h1") + with_hub(OFFICE_SERVICES, "h2")
 
 
 @pytest.fixture(autouse=True)
@@ -135,13 +198,56 @@ BINDING = {
     "fingerprint": "",
     "token": "tok",
 }
+OFFICE_BINDING = {
+    "id": "c2",
+    "name": "box",
+    "hub_id": "h2",
+    "hub_name": "office",
+    "gateway_url": "https://office.lan:8443",
+    "fingerprint": "",
+    "token": "tok2",
+}
 
 
-def bind(path, url="http://127.0.0.1:9", fingerprint="") -> None:
-    """One binding on disk, the way ``client.json`` keeps it."""
+def bind(path, url="http://127.0.0.1:9", fingerprint="", bindings=None) -> None:
+    """The bindings on disk, the way ``client.json`` keeps them.
+
+    Args:
+        path: The binding file.
+        url: The first binding's gateway url.
+        fingerprint: The first binding's fingerprint.
+        bindings: Every binding to write; None writes the one binding.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    binding = dict(BINDING, gateway_url=url, fingerprint=fingerprint)
-    path.write_text(json.dumps({"bindings": [binding], "exit_hub_id": "h1"}))
+    if bindings is None:
+        bindings = [dict(BINDING, gateway_url=url, fingerprint=fingerprint)]
+    path.write_text(json.dumps({"bindings": list(bindings), "exit_hub_id": ""}))
+
+
+HUB_ROW = {
+    "hub_id": "h1",
+    "hub_name": "home",
+    "hub_software": "neutrino_hub/0.3.0",
+    "binding_id": "c1",
+    "name": "box",
+    "gateway_url": "https://hub.lan:8443",
+    "connection_state": "connected",
+    "is_disabled": False,
+    "is_exit": True,
+    "last_error": None,
+}
+OFFICE_ROW = {
+    "hub_id": "h2",
+    "hub_name": "office",
+    "hub_software": "neutrino_hub/0.3.0",
+    "binding_id": "c2",
+    "name": "box",
+    "gateway_url": "https://office.lan:8443",
+    "connection_state": "connected",
+    "is_disabled": False,
+    "is_exit": False,
+    "last_error": None,
+}
 
 
 class FakeClientPlatform(ClientPlatform):
@@ -263,8 +369,8 @@ class FakeProcess:
         self.returncode = -9
 
 
-class FakeSession:
-    """The session the route table and the CLI talk to, scripted."""
+class FakeResident:
+    """The resident the route table and the CLI talk to, scripted."""
 
     def __init__(self, *, platform=None):
         self.platform = platform if platform is not None else FakeClientPlatform()
@@ -272,7 +378,7 @@ class FakeSession:
         self.language_value = "en"
         self.theme_value = "dark"
         self.connect_error = None
-        self.is_disconnected = False
+        self.disconnected = []
         self.service_calls = []
         self.service_reply = {}
         self.service_error = None
@@ -280,17 +386,14 @@ class FakeSession:
         self.shutdowns = 0
         self.is_shut_down = threading.Event()
         self.is_bound = True
-        self.error_payload = None
-        self.hub_version_value = "0.2.0"
-        self.hub_id_value = "h1"
-        self.connection_state_value = "connected"
+        self.hubs_value = [dict(HUB_ROW), dict(OFFICE_ROW)]
         self.reconnects = []
-        self.is_disabled_value = False
         self.states = {
-            "forwards": {"svc_tcp": {"local_port": 5432, "is_active": True}},
+            "forwards": {"h1/svc_tcp": {"local_port": 5432, "is_active": True}},
             "mounts": [
                 {
                     "record_id": "r1",
+                    "hub_id": "h1",
                     "entry_id": "share_media",
                     "path": "/home/alice/nas/media",
                     "username": "alice",
@@ -344,23 +447,17 @@ class FakeSession:
     def is_connected(self) -> bool:
         return self.is_bound
 
-    def connection_state(self) -> str:
-        return self.connection_state_value if self.is_bound else "unbound"
+    def exit_hub_id(self) -> str:
+        for hub in self.hubs():
+            if hub.get("is_exit"):
+                return hub["hub_id"]
+        return ""
 
-    def gateway_url(self) -> str:
-        return "https://hub.lan:8443" if self.is_bound else ""
-
-    def hub_version(self) -> str:
-        return self.hub_version_value
-
-    def is_disabled(self) -> bool:
-        return self.is_disabled_value
-
-    def last_error(self):
-        return self.error_payload
+    def hubs(self) -> list:
+        return json.loads(json.dumps(self.hubs_value)) if self.is_bound else []
 
     def service_entries(self) -> list:
-        return list(SERVICES) if self.is_bound else []
+        return json.loads(json.dumps(SERVICES)) if self.is_bound else []
 
     def service_states(self) -> dict:
         return json.loads(json.dumps(self.states))
@@ -377,15 +474,16 @@ class FakeSession:
         self.connected_links.append(link)
         self.is_bound = True
 
-    def disconnect(self) -> None:
-        self.is_disconnected = True
-        self.is_bound = False
+    def disconnect(self, hub_id: str = "") -> None:
+        hub = self._hub(hub_id)
+        self.disconnected.append(hub["hub_id"])
+        self.hubs_value = [row for row in self.hubs_value if row is not hub]
+        self.is_bound = bool(self.hubs_value)
 
     def reconnect(self, hub_id: str = "") -> None:
-        if hub_id and hub_id != self.hub_id_value:
-            raise KeyError(hub_id)
+        hub = self._hub(hub_id)
         self.reconnects.append(hub_id)
-        self.connection_state_value = "reconnecting"
+        hub["connection_state"] = "reconnecting"
 
     def request_show(self) -> None:
         self.shows += 1
@@ -402,6 +500,18 @@ class FakeSession:
         if self.service_error is not None:
             raise self.service_error
         return dict(self.service_reply)
+
+    def _hub(self, needle: str) -> dict:
+        """The hub row a needle names, the way the resident resolves one."""
+        rows = self.hubs_value if self.is_bound else []
+        if not needle:
+            if len(rows) == 1:
+                return rows[0]
+            raise KeyError(needle)
+        for hub in rows:
+            if needle in (hub["hub_id"], hub["binding_id"]):
+                return hub
+        raise KeyError(needle)
 
 
 def completed(command=(), returncode=0, stdout="", stderr=""):

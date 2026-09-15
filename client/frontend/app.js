@@ -78,15 +78,29 @@ function wordError(e) {
 let lastState = null;
 let lastSerialized = '';
 let pendingState = null;
+// Notes a refusal left on one entry, by type and service key.
 let serviceNotes = {};
-// The staged AI apply: the toggle and what each tool points with.
-// Committed only by Apply; null rebuilds from the next server state.
-let aiStaged = null;
+// The staged AI apply per hub, by hub key: the toggle and what each tool
+// points with. Committed only by Apply; a missing key rebuilds from the
+// next server state.
+let aiStaged = {};
 // Records whose unmount is in flight, so the button greys at once.
 const fileAsked = {};
-// The staged file configs, one per entry id: {is_open, username, password,
-// path}. The password lives only here and in the one request that sends it.
+// The staged file configs, one per service key: {is_open, username,
+// password, path}. The password lives only here and in the one request
+// that sends it.
 let fileStaged = {};
+
+// What one hub is keyed by on this page: its id once its welcome named
+// it, its binding's id before that.
+function hubKey(hub) {
+  return hub.hub_id || hub.binding_id;
+}
+
+// What one entry is keyed by: its hub and its id, as the resident keys it.
+function serviceKey(entry) {
+  return entry.hub_id + '/' + entry.id;
+}
 // Dialogs are built outside draw() and counted here, so a poll never
 // redraws under one.
 let openDialogs = 0;
@@ -212,7 +226,7 @@ function draw(state) {
   content.style.display = 'flex';
   content.style.flexDirection = 'column';
   content.style.gap = '24px';
-  content.appendChild(section(t('ui.section_status'), [drawConnection(state)]));
+  content.appendChild(section(t('ui.section_hubs'), [drawHubs(state)]));
   content.appendChild(section(t('ui.section_services'), drawServices(state)));
 }
 
@@ -227,61 +241,101 @@ function section(title, panels) {
   return box;
 }
 
-function drawConnection(state) {
-  const conn = document.createElement('div');
-  conn.className = 'card';
-  const lastError = wordError(state.last_error);
-  if (state.is_connected) {
-    const row = document.createElement('div');
-    row.className = 'row';
-    // Bound is not the same as reached: the socket may be down, or another
-    // client's may hold the binding, while the binding stands, and the page
-    // says which.
-    const isReplaced = state.connection_state === 'replaced';
-    const isReaching = state.connection_state === 'reconnecting';
-    const tone = isReplaced || state.is_disabled ? 'off'
-      : isReaching ? 'wait' : 'ok';
-    const word = isReplaced ? t('state.replaced')
-      : state.is_disabled ? t('ui.disabled')
-      : isReaching ? t('ui.reconnecting') : t('ui.connected');
-    const version = state.hub_version
-      ? ' · ' + t('ui.hub_version', { version: state.hub_version }) : '';
-    row.innerHTML = '<span class="dot ' + tone + '"></span><div style="flex:1"><div>' +
-      word + '</div><div class="sub">' + state.gateway_url + version +
-      '</div></div>';
-    if (isReplaced) {
-      const reconnect = document.createElement('button');
-      reconnect.textContent = t('ui.reconnect');
-      reconnect.onclick = () => send('/api/session/start');
-      row.appendChild(reconnect);
-    }
-    const leave = document.createElement('button');
-    leave.className = 'danger';
-    leave.textContent = t('ui.disconnect');
-    leave.onclick = () => send('/api/disconnect');
-    row.appendChild(leave);
-    conn.appendChild(row);
-    if (lastError) conn.appendChild(errorLine(lastError));
-  } else {
-    conn.innerHTML = '<div class="row" style="margin-bottom:12px">' +
-      '<span class="dot off"></span><div><div>' + t('ui.not_connected') +
-      '</div><div class="sub">' + t('ui.paste_hint') + '</div></div></div>';
-    const row = document.createElement('div');
-    row.className = 'row';
-    const input = document.createElement('input');
-    input.placeholder = 'neutrino://enroll/...';
-    input.onkeydown = (e) => { if (e.key === 'Enter') join(); };
-    const button = document.createElement('button');
-    button.textContent = t('ui.connect');
-    button.onclick = join;
-    function join() { send('/api/connect', { link: input.value }); }
-    row.appendChild(input);
-    row.appendChild(button);
-    conn.appendChild(row);
-    const refusal = state.error ? wordCode(state.error.code, state.error.params) : '';
-    if (refusal || lastError) conn.appendChild(errorLine(refusal || lastError));
+// --- the Hubs section: one row per hub, and the row that joins another ---
+
+function drawHubs(state) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const hubs = state.hubs || [];
+  for (const hub of hubs) card.appendChild(hubRow(hub));
+  if (hubs.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'feat';
+    none.innerHTML = '<span class="dot off"></span><div class="body"><div>' +
+      t('ui.no_hubs') + '</div></div>';
+    card.appendChild(none);
   }
-  return conn;
+  card.appendChild(joinRow(state));
+  return card;
+}
+
+// Bound is not the same as reached: the socket may be down, or another
+// client's may hold the binding, while the binding stands, and the row
+// says which.
+function hubRow(hub) {
+  const row = document.createElement('div');
+  row.className = 'feat';
+  const isReplaced = hub.connection_state === 'replaced';
+  const isReaching = hub.connection_state === 'reconnecting';
+  const tone = isReplaced || hub.is_disabled ? 'off'
+    : isReaching ? 'wait' : 'ok';
+  const word = isReplaced ? t('state.replaced')
+    : hub.is_disabled ? t('ui.disabled')
+    : isReaching ? t('ui.reconnecting') : t('ui.connected');
+  const software = hub.hub_software
+    ? ' · ' + t('ui.hub_software', { software: hub.hub_software }) : '';
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.innerHTML = '<div class="title">' + (hub.hub_name || hub.gateway_url) +
+    '</div><div class="note">' + word + '</div>' +
+    '<div class="sub">' + hub.gateway_url + software + '</div>' +
+    (hub.is_exit ? '<div class="note muted">' + t('ui.hub_is_exit') + '</div>' : '');
+  const lastError = wordError(hub.last_error);
+  if (lastError) body.appendChild(errorLine(lastError));
+  row.innerHTML = '<span class="dot ' + tone + '"></span>';
+  row.appendChild(body);
+  // The exit choice arrives with its route; until then the radio only
+  // shows which hub the AI tools point at.
+  const exit = document.createElement('label');
+  exit.className = 'chip' + (hub.is_exit ? ' on' : '');
+  const radio = document.createElement('input');
+  radio.type = 'radio';
+  radio.name = 'exit_hub';
+  radio.checked = !!hub.is_exit;
+  radio.disabled = true;
+  exit.appendChild(radio);
+  exit.appendChild(document.createTextNode(t('ui.hub_exit')));
+  row.appendChild(exit);
+  if (isReplaced) {
+    const reconnect = document.createElement('button');
+    reconnect.textContent = t('ui.reconnect');
+    reconnect.onclick = () => send('/api/session/start', { hub_id: hubKey(hub) });
+    row.appendChild(reconnect);
+  }
+  const leave = document.createElement('button');
+  leave.className = 'danger';
+  leave.textContent = t('ui.disconnect');
+  leave.onclick = () => send('/api/disconnect', { hub_id: hubKey(hub) });
+  row.appendChild(leave);
+  return row;
+}
+
+// The row that is always there: paste a link, join one more hub.
+function joinRow(state) {
+  const wrap = document.createElement('div');
+  wrap.className = 'feat';
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.innerHTML = '<div class="title">' + t('ui.add_hub') + '</div>' +
+    '<div class="note">' + t('ui.paste_hint') + '</div>';
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.marginTop = '8px';
+  const input = document.createElement('input');
+  input.placeholder = 'neutrino://enroll/...';
+  input.onkeydown = (e) => { if (e.key === 'Enter') join(); };
+  input.onblur = settle;
+  const button = document.createElement('button');
+  button.textContent = t('ui.connect');
+  button.onclick = join;
+  function join() { send('/api/connect', { link: input.value }); }
+  row.appendChild(input);
+  row.appendChild(button);
+  body.appendChild(row);
+  const refusal = state.error ? wordCode(state.error.code, state.error.params) : '';
+  if (refusal) body.appendChild(errorLine(refusal));
+  wrap.appendChild(body);
+  return wrap;
 }
 
 // The settings dialog: what this window keeps for itself, the language and
@@ -347,18 +401,40 @@ function errorLine(text) {
   return err;
 }
 
-function entriesOf(state, type) {
-  return (state.services || []).filter((entry) => entry.type === type);
+function entriesOf(state, hub, type) {
+  return (state.services || []).filter(
+    (entry) => entry.hub_id === hub.hub_id && entry.type === type);
 }
 
+// The Services section: one group per hub, the five kinds inside each.
 function drawServices(state) {
-  const panels = [];
-  if (!state.is_connected) {
+  const hubs = state.hubs || [];
+  if (hubs.length === 0) {
     const wait = document.createElement('div');
     wait.className = 'card';
     wait.innerHTML = '<span class="muted">' + t('ui.services_wait_join') +
       '</span>';
     return [wait];
+  }
+  const groups = [];
+  for (const hub of hubs) groups.push(hubGroup(state, hub));
+  return groups;
+}
+
+function hubGroup(state, hub) {
+  const group = document.createElement('div');
+  group.className = 'sect';
+  const heading = document.createElement('h3');
+  heading.className = 'hub_title';
+  heading.textContent = t('ui.hub_services', { name: hub.hub_name || hub.gateway_url });
+  group.appendChild(heading);
+  if (hub.connection_state !== 'connected') {
+    const down = document.createElement('div');
+    down.className = 'card';
+    down.innerHTML = '<span class="muted">' + (hub.connection_state === 'replaced'
+      ? t('state.replaced') : t('ui.reconnecting')) + '</span>';
+    group.appendChild(down);
+    return group;
   }
   // Every kind draws, in this order, whether or not it carries entries.
   const kinds = [
@@ -369,12 +445,12 @@ function drawServices(state) {
     ['rdp', t('ui.panel_desktops'), drawDesktopsPanel, t('ui.empty_desktops')],
   ];
   for (const [type, title, build, empty] of kinds) {
-    const entries = entriesOf(state, type);
-    panels.push(entries.length === 0
+    const entries = entriesOf(state, hub, type);
+    group.appendChild(entries.length === 0
       ? emptyPanel(title, empty)
-      : build(state, entries, title));
+      : build(state, hub, entries, title));
   }
-  return panels;
+  return group;
 }
 
 function emptyPanel(title, line) {
@@ -422,34 +498,35 @@ function describeEntry(entry) {
   return entry.description || '';
 }
 
-// Every button greys while the hub has this client switched off.
-function isHeld(state) {
-  return !!state.is_disabled;
+// Every button of a hub greys while that hub has this client switched off.
+function isHeld(hub) {
+  return !!hub.is_disabled;
 }
 
-function drawWebPanel(state, entries, title) {
+function drawWebPanel(state, hub, entries, title) {
   const card = panelCard(title, false);
   for (const entry of entries) {
     const payload = entry.payload || {};
-    const noteKey = 'web_' + entry.id;
+    const noteKey = 'web_' + serviceKey(entry);
     const row = entryRow(entry, payload.url || '', serviceNotes[noteKey] || '');
     const open = document.createElement('button');
     open.textContent = t('ui.open');
-    open.disabled = !entry.is_healthy || isHeld(state);
-    open.onclick = () => serviceAction('web', { id: entry.id }, noteKey);
+    open.disabled = !entry.is_healthy || isHeld(hub);
+    open.onclick = () => serviceAction('web',
+      { hub_id: entry.hub_id, id: entry.id }, noteKey);
     row.appendChild(open);
     card.appendChild(row);
   }
   return card;
 }
 
-function drawPortsPanel(state, entries, title) {
+function drawPortsPanel(state, hub, entries, title) {
   const card = panelCard(title, false);
   for (const entry of entries) {
     const payload = entry.payload || {};
-    const forward = (state.forwards || {})[entry.id] || {};
+    const forward = (state.forwards || {})[serviceKey(entry)] || {};
     const isOn = !!forward.is_active;
-    const noteKey = 'port_' + entry.id;
+    const noteKey = 'port_' + serviceKey(entry);
     const local = isOn
       ? ' → ' + t('ui.forwarding_to', { port: forward.local_port }) : '';
     const note = serviceNotes[noteKey] || '';
@@ -458,9 +535,9 @@ function drawPortsPanel(state, entries, title) {
     const button = document.createElement('button');
     button.className = isOn ? 'danger' : '';
     button.textContent = isOn ? t('ui.port_disconnect') : t('ui.port_connect');
-    button.disabled = (!entry.is_healthy && !isOn) || isHeld(state);
+    button.disabled = (!entry.is_healthy && !isOn) || isHeld(hub);
     button.onclick = () => serviceAction('port',
-      { id: entry.id, is_enabled: !isOn }, noteKey);
+      { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn }, noteKey);
     row.appendChild(button);
     card.appendChild(row);
   }
@@ -469,16 +546,16 @@ function drawPortsPanel(state, entries, title) {
 
 // --- the remote desktops panel: connect there ---
 
-function drawDesktopsPanel(state, entries, title) {
+function drawDesktopsPanel(state, hub, entries, title) {
   const card = panelCard(title, false);
   const work = state.rdp_work || {};
   const isWorking = work.state === 'working';
   for (const entry of entries) {
     const payload = entry.payload || {};
-    const noteKey = 'rdp_' + entry.id;
-    const viewer = (state.viewers || {})[entry.id] || {};
+    const noteKey = 'rdp_' + serviceKey(entry);
+    const viewer = (state.viewers || {})[serviceKey(entry)] || {};
     const open = viewer.is_running ? ' — ' + t('ui.rdp_open') : '';
-    const isThisOne = work.step === 'connecting:' + entry.id;
+    const isThisOne = work.step === 'connecting:' + serviceKey(entry);
     const row = entryRow(
       entry, (payload.host || '') + ':' + (payload.port || '') + open,
       serviceNotes[noteKey] || '');
@@ -488,9 +565,9 @@ function drawDesktopsPanel(state, entries, title) {
     } else {
       connect.textContent = t('ui.rdp_connect');
     }
-    connect.disabled = isWorking || !entry.is_healthy || isHeld(state);
+    connect.disabled = isWorking || !entry.is_healthy || isHeld(hub);
     connect.onclick = () => serviceAction('rdp',
-      { action: 'connect', id: entry.id }, noteKey);
+      { action: 'connect', hub_id: entry.hub_id, id: entry.id }, noteKey);
     row.appendChild(connect);
     card.appendChild(row);
   }
@@ -498,64 +575,71 @@ function drawDesktopsPanel(state, entries, title) {
   return card;
 }
 
-// --- the AI panel: one toggle + Config + Apply, staged ---
+// --- the AI panel: one toggle + Config + Apply, staged per hub ---
 
-function ensureAiStaged(state) {
-  if (aiStaged !== null) return;
-  aiStaged = {
+function ensureAiStaged(state, key) {
+  if (aiStaged[key]) return;
+  aiStaged[key] = {
     is_enabled: !!(state.ai || {}).is_enabled,
     tool_configs: JSON.parse(JSON.stringify(state.ai_tool_configs || {})),
   };
 }
 
-function isAiDirty(state) {
-  if (aiStaged.is_enabled !== !!(state.ai || {}).is_enabled) return true;
-  return JSON.stringify(aiStaged.tool_configs) !==
+function isAiDirty(state, key) {
+  if (aiStaged[key].is_enabled !== !!(state.ai || {}).is_enabled) return true;
+  return JSON.stringify(aiStaged[key].tool_configs) !==
     JSON.stringify(state.ai_tool_configs || {});
 }
 
-function drawAiPanel(state, entries, title) {
-  ensureAiStaged(state);
+// The tools point at one hub, the exit; the other hubs' panels show their
+// gateway and stay inert until that hub is chosen.
+function drawAiPanel(state, hub, entries, title) {
+  const key = hubKey(hub);
+  ensureAiStaged(state, key);
+  const staged = aiStaged[key];
   const entry = entries[0];
-  const isDirty = isAiDirty(state);
+  const isExit = !!hub.is_exit;
+  const isDirty = isExit && isAiDirty(state, key);
   const card = panelCard(title, isDirty);
   const payload = entry.payload || {};
   const row = (state.ai || {});
   const work = row.work || {};
   const isWorking = work.state === 'working';
+  const noteKey = 'ai_' + serviceKey(entry);
   const head = entryRow(entry, payload.endpoint || '', '');
   const config = document.createElement('button');
   config.className = 'ghost';
   config.textContent = t('ui.config');
-  config.disabled = !entry.is_healthy || isHeld(state) || isWorking;
-  config.onclick = () => openConfigDialog(payload.models || []);
+  config.disabled = !isExit || !entry.is_healthy || isHeld(hub) || isWorking;
+  config.onclick = () => openConfigDialog(staged, payload.models || []);
   const apply = document.createElement('button');
-  if (isWorking) {
+  if (isExit && isWorking) {
     apply.innerHTML = '<span class="spin"></span>' + t('ui.ai_switching');
   } else {
     apply.textContent = t('ui.apply');
   }
   // A failed switch leaves Apply live: pressing it asks for the same again.
-  apply.disabled = isWorking || !(isDirty || work.code) || !entry.is_healthy ||
-    isHeld(state);
+  apply.disabled = !isExit || isWorking || !(isDirty || work.code) ||
+    !entry.is_healthy || isHeld(hub);
   apply.onclick = () => {
     serviceAction('ai', {
-      is_enabled: aiStaged.is_enabled,
-      tool_configs: aiStaged.tool_configs,
-    }, 'ai').then((ok) => { if (ok) { aiStaged = null; redraw(); } });
+      hub_id: entry.hub_id,
+      is_enabled: staged.is_enabled,
+      tool_configs: staged.tool_configs,
+    }, noteKey).then((ok) => { if (ok) { delete aiStaged[key]; redraw(); } });
   };
   head.appendChild(config);
   head.appendChild(apply);
   card.appendChild(head);
 
   const toggle = document.createElement('button');
-  const isOn = !!aiStaged.is_enabled;
+  const isOn = isExit && !!staged.is_enabled;
   toggle.className = isOn ? 'chip on' : 'chip';
-  toggle.disabled = !entry.is_healthy || isHeld(state) || isWorking;
-  toggle.innerHTML = '<span class="dot ' + (row.is_active ? 'ok' : 'off') +
+  toggle.disabled = !isExit || !entry.is_healthy || isHeld(hub) || isWorking;
+  toggle.innerHTML = '<span class="dot ' + (isExit && row.is_active ? 'ok' : 'off') +
     '"></span>' + t('ui.ai_enabled');
   toggle.onclick = () => {
-    aiStaged.is_enabled = !isOn;
+    staged.is_enabled = !isOn;
     redraw();
   };
   const line = document.createElement('div');
@@ -564,14 +648,14 @@ function drawAiPanel(state, entries, title) {
   line.appendChild(toggle);
   const where = document.createElement('span');
   where.className = 'note muted';
-  where.textContent = row.is_active ? t('ui.ai_on') : t('ui.ai_off');
+  where.textContent = !isExit ? '' : row.is_active ? t('ui.ai_on') : t('ui.ai_off');
   line.appendChild(where);
   card.appendChild(line);
 
   const notes = [];
-  if (row.code) notes.push(wordCode(row.code, row.params));
-  if (work.code) notes.push(wordCode(work.code, work.params));
-  if (serviceNotes.ai) notes.push(serviceNotes.ai);
+  if (isExit && row.code) notes.push(wordCode(row.code, row.params));
+  if (isExit && work.code) notes.push(wordCode(work.code, work.params));
+  if (serviceNotes[noteKey]) notes.push(serviceNotes[noteKey]);
   for (const text of notes) card.appendChild(errorLine(text));
   return card;
 }
@@ -654,8 +738,8 @@ function modelSelect(id, models, chosen, onPick) {
   return picker(id, options, value, onPick, false);
 }
 
-function openConfigDialog(models) {
-  const draft = JSON.parse(JSON.stringify(aiStaged.tool_configs || {}));
+function openConfigDialog(staged, models) {
+  const draft = JSON.parse(JSON.stringify(staged.tool_configs || {}));
   for (const tool of ['claude', 'codex', 'gemini']) {
     if (!draft[tool]) draft[tool] = {};
   }
@@ -717,7 +801,7 @@ function openConfigDialog(models) {
   const save = document.createElement('button');
   save.textContent = t('ui.save');
   save.onclick = () => {
-    aiStaged.tool_configs = draft;
+    staged.tool_configs = draft;
     closeDialog(overlay);
     redraw();
   };
@@ -761,35 +845,38 @@ function mountDefaultPath(payload, state) {
   return (state.home || '') + '/nas/' + (payload.share || '');
 }
 
-function drawFilesPanel(state, entries, title) {
-  // A form staged for an entry the catalog no longer carries is gone.
-  const present = new Set(entries.map((entry) => entry.id));
-  for (const id of Object.keys(fileStaged)) {
-    if (!present.has(id)) delete fileStaged[id];
+function drawFilesPanel(state, hub, entries, title) {
+  // A form staged for an entry no hub carries any more is gone.
+  const present = new Set((state.services || []).map(serviceKey));
+  for (const key of Object.keys(fileStaged)) {
+    if (!present.has(key)) delete fileStaged[key];
   }
-  const isDirty = Object.keys(fileStaged).some(
-    (id) => fileStaged[id] && fileStaged[id].is_open);
+  const isDirty = entries.some((entry) => {
+    const staged = fileStaged[serviceKey(entry)];
+    return staged && staged.is_open;
+  });
   const card = panelCard(title, isDirty);
   for (const entry of entries) {
+    const key = serviceKey(entry);
     const payload = entry.payload || {};
     const records = (state.mounts || []).filter(
-      (record) => record.entry_id === entry.id);
-    const noteKey = 'file_' + entry.id;
+      (record) => record.hub_id === entry.hub_id && record.entry_id === entry.id);
+    const noteKey = 'file_' + key;
     const note = serviceNotes[noteKey] || '';
     const row = entryRow(
       entry, '//' + (payload.host || '') + '/' + (payload.share || ''), note);
 
-    const staged = fileStaged[entry.id];
+    const staged = fileStaged[key];
     const config = document.createElement('button');
     config.className = 'ghost';
     config.textContent = t('ui.config');
-    config.disabled = isHeld(state);
+    config.disabled = isHeld(hub);
     config.onclick = () => {
       if (staged && staged.is_open) {
-        delete fileStaged[entry.id];
+        delete fileStaged[key];
       } else {
         const kept = records[0];
-        fileStaged[entry.id] = {
+        fileStaged[key] = {
           is_open: true, username: kept ? (kept.username || '') : '',
           password: '',
           path: kept ? kept.path : mountDefaultPath(payload, state),
@@ -799,15 +886,15 @@ function drawFilesPanel(state, entries, title) {
     };
     row.appendChild(config);
 
-    const mount = mountButton(entry, records[0], staged, state, noteKey);
-    if (isHeld(state)) mount.disabled = true;
+    const mount = mountButton(entry, records[0], staged, noteKey);
+    if (isHeld(hub)) mount.disabled = true;
     row.appendChild(mount);
     card.appendChild(row);
 
     for (const record of records)
       card.appendChild(drawMountRecord(record, state, noteKey));
     if (staged && staged.is_open)
-      card.appendChild(drawFileForm(entry.id, staged, state));
+      card.appendChild(drawFileForm(staged, state));
   }
   return card;
 }
@@ -819,20 +906,21 @@ function mountBusyWord(state) {
 
 // The one button position beside Config: Mount morphs through the
 // transients and into Unmount, never a second button anywhere.
-function mountButton(entry, record, staged, state, noteKey) {
+function mountButton(entry, record, staged, noteKey) {
   const button = document.createElement('button');
+  const key = serviceKey(entry);
   if (record === undefined) {
     button.textContent = t('ui.mount');
     button.disabled = !entry.is_healthy || !staged || !staged.is_open ||
       !staged.path;
     button.onclick = async () => {
       const sent = {
-        action: 'mount', id: entry.id, username: staged.username,
-        password: staged.password, path: staged.path,
+        action: 'mount', hub_id: entry.hub_id, id: entry.id,
+        username: staged.username, password: staged.password, path: staged.path,
       };
       staged.password = '';
       if (await serviceAction('file', sent, noteKey)) {
-        delete fileStaged[entry.id];
+        delete fileStaged[key];
         redraw();
       }
     };
@@ -849,7 +937,8 @@ function mountButton(entry, record, staged, state, noteKey) {
   if (record.state === 'detached' || record.code) {
     button.textContent = t('ui.mount');
     button.onclick = () => serviceAction('file',
-      { action: 'mount', record_id: record.record_id }, noteKey);
+      { action: 'mount', hub_id: entry.hub_id, record_id: record.record_id },
+      noteKey);
     return button;
   }
   button.className = 'danger';
@@ -858,7 +947,8 @@ function mountButton(entry, record, staged, state, noteKey) {
     fileAsked[record.record_id] = 'unmounting';
     redraw();
     serviceAction('file',
-      { action: 'unmount', record_id: record.record_id }, noteKey
+      { action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id },
+      noteKey
     ).then(() => { delete fileAsked[record.record_id]; redraw(); });
   };
   return button;
@@ -884,7 +974,7 @@ function drawMountRecord(record, state, noteKey) {
   return line;
 }
 
-function drawFileForm(entryId, staged, state) {
+function drawFileForm(staged, state) {
   const form = document.createElement('div');
   form.className = 'form';
   const fields = [
@@ -899,6 +989,8 @@ function drawFileForm(entryId, staged, state) {
     input.placeholder = hint;
     input.value = staged[name];
     input.oninput = () => { staged[name] = input.value; };
+    // Leaving the field lets a state that arrived while typing draw.
+    input.onblur = settle;
     line.appendChild(input);
     form.appendChild(line);
   }
@@ -919,6 +1011,7 @@ function mountPathLine(staged) {
   path.placeholder = t('ui.path_hint');
   path.value = staged.path;
   path.oninput = () => { staged.path = path.value; };
+  path.onblur = settle;
   const browse = document.createElement('button');
   browse.className = 'ghost';
   browse.textContent = t('ui.browse');

@@ -15,12 +15,12 @@ from neutrino_client.control import routes
 class InProcessChannel:
     """Answers the page from the route table without a transport."""
 
-    def __init__(self, *, session):
+    def __init__(self, *, resident):
         """
         Args:
-            session: The running :class:`~neutrino_client.core.session.ClientSession`.
+            resident: The running :class:`~neutrino_client.core.resident.ClientResident`.
         """
-        self._session = session
+        self._resident = resident
 
     def request(
         self, *, method: str, path: str, body: "dict | None" = None
@@ -35,4 +35,4 @@ class InProcessChannel:
         Returns:
             The status code and the reply object.
         """
-        return routes.dispatch(method, path, body, self._session)
+        return routes.dispatch(method, path, body, self._resident)

@@ -1,9 +1,10 @@
 """The desktop viewer: the service stream answers, the viewer dials, nothing kept.
 
-Connect opens the entry's ``service`` stream for the share's address and
-password, starts the carried viewer with ``--connect`` and ``--password``,
-and the password lands in no log line and no state payload. Every viewer
-opened is closed by ``close_all``.
+Connect opens the entry's ``service`` stream on its hub for the share's
+address and password, starts the carried viewer with ``--connect`` and
+``--password``, and the password lands in no log line and no state payload.
+Every viewer opened is closed by ``close_all``, and one hub's by
+``release_hub``.
 """
 
 import json
@@ -24,8 +25,9 @@ from neutrino_client.services.rdp import (
 )
 from tests.conftest import SERVICES, FakeClientPlatform, FakeProcess
 
-ENTRY = SERVICES[-1]
-CONNECT_BODY = {"action": "connect", "id": "rdp_s9"}
+ENTRY = SERVICES[4]
+OFFICE_ENTRY = SERVICES[-1]
+CONNECT_BODY = {"action": "connect", "hub_id": "h1", "id": "rdp_s9"}
 
 
 class FakeHub:
@@ -44,8 +46,8 @@ class FakeHub:
         self.error = error
         self.opened = []
 
-    def open_service(self, entry_id):
-        self.opened.append(entry_id)
+    def open_service(self, hub_id, entry_id):
+        self.opened.append((hub_id, entry_id))
         if self.error is not None:
             raise self.error
         return dict(self.reply)
@@ -88,7 +90,7 @@ def test_connect_opens_the_entrys_service_stream_and_dials_the_viewer(handler):
     outcome = subject.act(entries=[ENTRY], body=CONNECT_BODY)
 
     assert outcome == {}
-    assert hub.opened == ["rdp_s9"]
+    assert hub.opened == [("h1", "rdp_s9")]
     (process,) = platform.started
     assert process.argv == [
         "/opt/rustdesk",
@@ -98,7 +100,7 @@ def test_connect_opens_the_entrys_service_stream_and_dials_the_viewer(handler):
         "hunter2",  # scan: allow
     ]
     assert subject.state() == {
-        "viewers": {"rdp_s9": {"is_running": True}},
+        "viewers": {"h1/rdp_s9": {"is_running": True}},
         "rdp_work": IDLE_WORK,
     }
 
@@ -163,9 +165,15 @@ def test_a_missing_viewer_is_a_bundle_refusal(handler, monkeypatch):
 def test_an_entry_nobody_published_is_refused(handler):
     subject, _platform, hub, _lines = handler
 
-    refusal = subject.act(entries=[ENTRY], body={"action": "connect", "id": "x"})
+    refusal = subject.act(
+        entries=[ENTRY], body={"action": "connect", "hub_id": "h1", "id": "x"}
+    )
+    other_hub = subject.act(
+        entries=[ENTRY], body={"action": "connect", "hub_id": "h2", "id": "rdp_s9"}
+    )
 
     assert refusal == {"code": "unknown_request", "params": {}}
+    assert other_hub == {"code": "unknown_request", "params": {}}
     assert hub.opened == []
 
 
@@ -225,13 +233,35 @@ def test_close_all_terminates_every_viewer_and_is_idempotent(handler):
     subject, platform, _hub, _lines = handler
     subject.act(entries=[ENTRY], body=CONNECT_BODY)
     second = dict(ENTRY, id="rdp_s10")
-    subject.act(entries=[ENTRY, second], body={"action": "connect", "id": "rdp_s10"})
+    subject.act(
+        entries=[ENTRY, second],
+        body={"action": "connect", "hub_id": "h1", "id": "rdp_s10"},
+    )
 
     subject.close_all()
     subject.release()
 
     assert all(process.is_terminated for process in platform.started)
     assert subject.state() == {"viewers": {}, "rdp_work": IDLE_WORK}
+
+
+def test_release_hub_closes_only_that_hubs_viewers(handler):
+    subject, platform, hub, _lines = handler
+    subject.act(entries=[ENTRY, OFFICE_ENTRY], body=CONNECT_BODY)
+    subject.act(
+        entries=[ENTRY, OFFICE_ENTRY],
+        body={"action": "connect", "hub_id": "h2", "id": "rdp_lab"},
+    )
+    assert hub.opened == [("h1", "rdp_s9"), ("h2", "rdp_lab")]
+    assert sorted(subject.state()["viewers"]) == ["h1/rdp_s9", "h2/rdp_lab"]
+
+    assert subject.release_hub("h2") == 1
+    assert subject.release_hub("h2") == 0
+
+    home, office = platform.started
+    assert office.is_terminated is True
+    assert home.is_terminated is False
+    assert list(subject.state()["viewers"]) == ["h1/rdp_s9"]
 
 
 def test_a_viewer_the_person_closed_leaves_the_state(handler):
@@ -286,10 +316,10 @@ def test_a_second_connect_while_one_is_in_flight_is_busy(monkeypatch):
 
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
     assert subject.state()["rdp_work"]["state"] == "working"
-    assert subject.state()["rdp_work"]["step"] == "connecting:rdp_s9"
+    assert subject.state()["rdp_work"]["step"] == "connecting:h1/rdp_s9"
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {
         "code": "busy",
-        "params": {"step": "connecting:rdp_s9"},
+        "params": {"step": "connecting:h1/rdp_s9"},
     }
 
     held[0]()

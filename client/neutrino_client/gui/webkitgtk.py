@@ -145,6 +145,7 @@ def open_window(
     )
     if not is_hidden:
         window.show_all()
+        window.present()
     if on_show_ready is not None:
         on_show_ready(show_window)
     if on_push_ready is not None:

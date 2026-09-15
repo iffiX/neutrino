@@ -12,7 +12,7 @@ from neutrino_client.cli import wording
 from neutrino_client.control import routes
 from neutrino_client.control.server import ControlServer
 from neutrino_client.exceptions import ControlSocketUnavailableError
-from tests.conftest import FakeClientPlatform, FakeSession, discard
+from tests.conftest import FakeClientPlatform, FakeResident, discard
 
 
 @pytest.fixture
@@ -27,15 +27,15 @@ def resident(platform, monkeypatch):
     """A live resident on this person's socket, its process end recorded."""
     monkeypatch.setattr(routes, "QUIT_ANSWER_GRACE_S", 0)
     monkeypatch.setattr(routes, "end_process", lambda: None)
-    session = FakeSession()
+    resident = FakeResident()
     server = ControlServer(
-        session=session,
+        resident=resident,
         platform=platform,
         log=discard,
         socket_path=platform.control_socket_path(),
     )
     assert server.start()
-    yield session
+    yield resident
     server.stop()
 
 

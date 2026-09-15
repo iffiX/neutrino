@@ -1,8 +1,8 @@
 """``nclient gui``: the resident, walked as the person invokes it.
 
-One process binds the socket, starts the session and the socket server, and
-runs the window on the main thread; when the loop ends everything shuts
-down. The tray's Quit reaches the session, and so does every signal that
+One process binds the socket, starts the resident and the socket server,
+and runs the window on the main thread; when the loop ends everything shuts
+down. The tray's Quit reaches the resident, and so does every signal that
 means this process is ending. The window's own show is what a second
 invocation's ask lands on. That second invocation finds the socket held,
 asks the running one to show its window, and exits 0. Refusals are the
@@ -21,23 +21,25 @@ from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
     GuiShellUnavailableError,
 )
-from tests.conftest import FakeClientPlatform, FakeSession, discard
+from tests.conftest import FakeClientPlatform, FakeResident, discard
 
 
-class FakeSessionFactory:
-    """Stands in for ``ClientSession``, remembering the one it made."""
+class FakeResidentFactory:
+    """Stands in for ``ClientResident``, remembering the one it made."""
 
     def __init__(self):
         self.made = []
 
     def __call__(self, *, platform, log=print):
-        session = FakeSession(platform=platform)
-        session.started = 0
-        session.shutdowns = 0
-        session.start = lambda: setattr(session, "started", session.started + 1)
-        session.shutdown = lambda: setattr(session, "shutdowns", session.shutdowns + 1)
-        self.made.append(session)
-        return session
+        resident = FakeResident(platform=platform)
+        resident.started = 0
+        resident.shutdowns = 0
+        resident.start = lambda: setattr(resident, "started", resident.started + 1)
+        resident.shutdown = lambda: setattr(
+            resident, "shutdowns", resident.shutdowns + 1
+        )
+        self.made.append(resident)
+        return resident
 
 
 @pytest.fixture
@@ -48,9 +50,9 @@ def platform(monkeypatch):
 
 
 @pytest.fixture
-def sessions(monkeypatch):
-    factory = FakeSessionFactory()
-    monkeypatch.setattr(gui_cli, "ClientSession", factory)
+def residents(monkeypatch):
+    factory = FakeResidentFactory()
+    monkeypatch.setattr(gui_cli, "ClientResident", factory)
     return factory
 
 
@@ -66,7 +68,7 @@ def test_a_platform_without_a_socket_is_refused(monkeypatch, capsys):
 
 
 def test_the_resident_binds_starts_serves_and_shows_the_window(
-    platform, sessions, monkeypatch
+    platform, residents, monkeypatch
 ):
     opened = []
 
@@ -83,7 +85,7 @@ def test_the_resident_binds_starts_serves_and_shows_the_window(
 
     assert gui_cli.main() == 0
 
-    (session,) = sessions.made
+    (resident,) = residents.made
     window = opened[0]
     assert window["os_name"] == "linux"
     assert window["title"] == "Neutrino client"
@@ -91,12 +93,12 @@ def test_the_resident_binds_starts_serves_and_shows_the_window(
     assert '"ui.tray.open"' in window["html"]
     assert window["socket"] == 200
     assert window["reply"]["body"]["hostname"] == "box"
-    assert session.started == 1
-    assert session.shutdowns == 1
+    assert resident.started == 1
+    assert resident.shutdowns == 1
 
 
 def test_quit_shuts_the_resident_down_before_the_loop_ends(
-    platform, sessions, monkeypatch
+    platform, residents, monkeypatch
 ):
     order = []
 
@@ -108,13 +110,13 @@ def test_quit_shuts_the_resident_down_before_the_loop_ends(
 
     assert gui_cli.main() == 0
 
-    (session,) = sessions.made
+    (resident,) = residents.made
     assert order == ["quit"]
-    assert session.shutdowns >= 1
+    assert resident.shutdowns >= 1
 
 
 def test_the_window_registers_the_show_the_resident_hands_asks_to(
-    platform, sessions, monkeypatch
+    platform, residents, monkeypatch
 ):
     shown = []
 
@@ -128,12 +130,12 @@ def test_the_window_registers_the_show_the_resident_hands_asks_to(
 
     assert gui_cli.main() == 0
 
-    (session,) = sessions.made
-    session.on_show()
+    (resident,) = residents.made
+    resident.on_show()
     assert shown == [1]
 
 
-def test_hidden_reaches_the_shell(platform, sessions, monkeypatch):
+def test_hidden_reaches_the_shell(platform, residents, monkeypatch):
     asked = []
 
     def fake_shell(*, is_hidden, **rest):
@@ -147,10 +149,10 @@ def test_hidden_reaches_the_shell(platform, sessions, monkeypatch):
     assert asked == [True, False]
 
 
-def test_a_second_invocation_posts_show_and_exits(platform, sessions, monkeypatch):
-    running = FakeSession()
+def test_a_second_invocation_posts_show_and_exits(platform, residents, monkeypatch):
+    running = FakeResident()
     server = ControlServer(
-        session=running,
+        resident=running,
         platform=platform,
         log=discard,
         socket_path=platform.control_socket_path(),
@@ -165,16 +167,16 @@ def test_a_second_invocation_posts_show_and_exits(platform, sessions, monkeypatc
         server.stop()
 
     assert running.shows == 1
-    assert all(session.started == 0 for session in sessions.made)
+    assert all(resident.started == 0 for resident in residents.made)
 
 
 def test_a_held_socket_that_answers_nobody_is_worded(
-    platform, sessions, monkeypatch, capsys
+    platform, residents, monkeypatch, capsys
 ):
-    running = FakeSession()
+    running = FakeResident()
     platform.peer = {"account": "bob", "uid": 1001, "is_same_user": False}
     server = ControlServer(
-        session=running,
+        resident=running,
         platform=platform,
         log=discard,
         socket_path=platform.control_socket_path(),
@@ -190,7 +192,7 @@ def test_a_held_socket_that_answers_nobody_is_worded(
 
 
 def test_a_missing_shell_prints_the_wording_that_names_the_package(
-    platform, sessions, monkeypatch, capsys
+    platform, residents, monkeypatch, capsys
 ):
     def refuse(**kwargs):
         raise GuiShellUnavailableError(
@@ -206,10 +208,12 @@ def test_a_missing_shell_prints_the_wording_that_names_the_package(
     assert streams.err.strip().splitlines()[-1] == wording.word_code(
         "gui_webkitgtk_missing", {"packages": "gir1.2-webkit2-4.1"}
     )
-    assert sessions.made[0].shutdowns == 1
+    assert residents.made[0].shutdowns == 1
 
 
-def test_the_socket_is_released_when_the_window_closes(platform, sessions, monkeypatch):
+def test_the_socket_is_released_when_the_window_closes(
+    platform, residents, monkeypatch
+):
     monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
 
     assert gui_cli.main() == 0
@@ -220,15 +224,15 @@ def test_the_socket_is_released_when_the_window_closes(platform, sessions, monke
         )
 
 
-def test_hidden_is_accepted_and_starts_the_resident(platform, sessions, monkeypatch):
+def test_hidden_is_accepted_and_starts_the_resident(platform, residents, monkeypatch):
     monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
 
     assert gui_cli.main(is_hidden=True) == 0
-    assert sessions.made[0].started == 1
+    assert residents.made[0].started == 1
 
 
 def test_nothing_is_printed_for_a_person_to_copy(
-    platform, sessions, monkeypatch, capsys
+    platform, residents, monkeypatch, capsys
 ):
     monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
 
@@ -261,19 +265,19 @@ def test_a_signal_shuts_the_resident_down_and_ends_the_process(monkeypatch):
     )
     ended = []
     monkeypatch.setattr(gui_cli, "end_process", lambda: ended.append(1))
-    session = FakeSession()
+    resident = FakeResident()
     server = FakeControlServer()
 
-    gui_cli._install_quit_signals(session, server)
+    gui_cli._install_quit_signals(resident, server)
     installed[signal.SIGTERM](signal.SIGTERM, None)
 
     assert set(installed) >= {signal.SIGTERM, signal.SIGINT}
-    assert session.shutdowns == 1
+    assert resident.shutdowns == 1
     assert server.stops == 1
     assert ended == [1]
 
 
-def test_the_resident_installs_them_as_it_starts(platform, sessions, monkeypatch):
+def test_the_resident_installs_them_as_it_starts(platform, residents, monkeypatch):
     installed = []
     monkeypatch.setattr(
         gui_cli.signal, "signal", lambda number, handler: installed.append(number)
@@ -291,7 +295,7 @@ def test_a_signal_a_thread_may_not_take_is_no_reason_to_refuse(monkeypatch):
 
     monkeypatch.setattr(gui_cli.signal, "signal", refuse)
 
-    gui_cli._install_quit_signals(FakeSession(), FakeControlServer())
+    gui_cli._install_quit_signals(FakeResident(), FakeControlServer())
 
 
 def test_the_windows_resident_ends_its_process_after_the_cleanup(monkeypatch):
@@ -315,7 +319,7 @@ def test_elsewhere_the_resident_just_returns(monkeypatch):
 
 
 def test_the_window_is_pushed_the_state_after_every_change(
-    platform, sessions, monkeypatch
+    platform, residents, monkeypatch
 ):
     pushed = []
 
@@ -326,10 +330,10 @@ def test_the_window_is_pushed_the_state_after_every_change(
 
     assert gui_cli.main() == 0
 
-    (session,) = sessions.made
-    (watcher,) = session.watchers
+    (resident,) = residents.made
+    (watcher,) = resident.watchers
     watcher()
-    assert pushed[0]["hostname"] == session.hostname()
+    assert pushed[0]["hostname"] == resident.hostname()
     assert "services" in pushed[0]
 
 
@@ -352,7 +356,7 @@ def test_the_resident_writes_its_lines_to_a_file_and_turns_it(tmp_path):
     assert path.read_text(encoding="utf-8").endswith("after the turn\n")
 
 
-def test_the_log_lives_beside_the_state(platform, sessions, monkeypatch):
+def test_the_log_lives_beside_the_state(platform, residents, monkeypatch):
     seen = []
     monkeypatch.setattr(gui_cli, "open_shell_window", lambda **kwargs: None)
     monkeypatch.setattr(

@@ -19,7 +19,7 @@ from neutrino_client.platforms.windows_pipe import (
     pipe_security_sddl,
 )
 from neutrino_client.platforms.base import ClientPlatform
-from tests.conftest import FakeClientPlatform, FakeSession, discard
+from tests.conftest import FakeClientPlatform, FakeResident, discard
 
 PIPE_NAME = "\\\\.\\pipe\\neutrino_client_test"
 
@@ -87,7 +87,7 @@ class RecordingPlatform(FakeClientPlatform):
 def serve_one_exchange(api, platform):
     """Run the pipe server over the scripted client until it answers."""
     server = ControlPipeHttpServer(PIPE_NAME, _ControlRequestHandler, api=api)
-    server.control_session = FakeSession()
+    server.control_resident = FakeResident()
     server.control_platform = platform
     server.control_log = discard
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -202,7 +202,7 @@ def test_the_control_server_builds_the_pipe_transport_for_a_pipe_path():
     windows_pipe.ControlPipeHttpServer = InjectedServer
     try:
         server = ControlServer(
-            session=FakeSession(), platform=PipePlatform(), log=discard
+            resident=FakeResident(), platform=PipePlatform(), log=discard
         )
         assert server.start()
         assert server.socket_path == PIPE_NAME

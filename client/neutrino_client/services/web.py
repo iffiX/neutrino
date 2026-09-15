@@ -27,13 +27,18 @@ class WebServiceHandler(ServiceTypeHandler):
         """Open one published link.
 
         Args:
-            entries: The catalog's service list.
-            body: ``{"id"}``.
+            entries: The merged service list.
+            body: ``{"hub_id", "id"}``.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
-        entry = find_entry(entries, self.service_type, str(body.get("id", "")))
+        entry = find_entry(
+            entries,
+            self.service_type,
+            str(body.get("hub_id", "")),
+            str(body.get("id", "")),
+        )
         if entry is None:
             return {"code": "unknown_request", "params": {}}
         url = str((entry.get("payload") or {}).get("url", ""))

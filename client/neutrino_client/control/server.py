@@ -52,15 +52,15 @@ def is_socket_live(path: str) -> bool:
 class ControlServer:
     """Serves the control socket or pipe from the shared route table."""
 
-    def __init__(self, *, session, platform, log=print, socket_path: str = ""):
+    def __init__(self, *, resident, platform, log=print, socket_path: str = ""):
         """
         Args:
-            session: The running :class:`~neutrino_client.core.session.ClientSession`.
+            resident: The running :class:`~neutrino_client.core.resident.ClientResident`.
             platform: The machine's platform, behind the contract.
             log: Callable used for progress messages.
             socket_path: The control socket path; empty asks the platform.
         """
-        self._session = session
+        self._resident = resident
         self._platform = platform
         self._log = log
         self._socket_path = socket_path
@@ -97,7 +97,7 @@ class ControlServer:
         except OSError as error:
             self._log(f"control socket not available: {error}")
             return False
-        server.control_session = self._session
+        server.control_resident = self._resident
         server.control_platform = self._platform
         server.control_log = self._log
         self._socket_path = path
@@ -194,7 +194,7 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
                 return
             body = self._read_body() if method == "POST" else None
             status, reply = routes.dispatch(
-                method, self.path, body, self.server.control_session
+                method, self.path, body, self.server.control_resident
             )
             self._send_json(reply, status=status)
         except Exception as error:  # noqa: BLE001 - answered, never a dropped wire

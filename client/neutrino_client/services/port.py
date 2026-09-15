@@ -2,7 +2,8 @@
 
 A published port forwards to ``127.0.0.1`` on a click: a standard-library
 relay on the same number when it is free and otherwise on a free one the row
-names. Runtime state only: forwards die with the resident.
+names. Runtime state only: forwards die with the resident. Forwards are held
+by service key, so two hubs publishing the same entry id never collide.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -12,7 +13,12 @@ from __future__ import annotations
 import socket
 import threading
 
-from neutrino_client.services.base import ServiceTypeHandler, find_entry
+from neutrino_client.services.base import (
+    ServiceTypeHandler,
+    find_entry,
+    hub_of_key,
+    service_key,
+)
 
 FORWARD_BIND_HOST = "127.0.0.1"
 FORWARD_BUFFER_BYTES = 65536
@@ -56,6 +62,7 @@ class PortServiceHandler(ServiceTypeHandler):
         """
         self._log = log
         self._lock = threading.Lock()
+        # The running relays, by service key.
         self._relays: dict = {}
         self._on_change = on_change if on_change is not None else _nobody
 
@@ -63,19 +70,21 @@ class PortServiceHandler(ServiceTypeHandler):
         """Connect or disconnect one published port's loopback forward.
 
         Args:
-            entries: The catalog's service list.
-            body: ``{"id", "is_enabled", "local_port"}``; ``local_port`` is
-                optional and asks for a particular loopback number.
+            entries: The merged service list.
+            body: ``{"hub_id", "id", "is_enabled", "local_port"}``;
+                ``local_port`` is optional and asks for a particular
+                loopback number.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
         """
+        hub_id = str(body.get("hub_id", ""))
         entry_id = str(body.get("id", ""))
-        entry = find_entry(entries, self.service_type, entry_id)
+        entry = find_entry(entries, self.service_type, hub_id, entry_id)
         if entry is None:
             return {"code": "unknown_request", "params": {}}
         if not body.get("is_enabled"):
-            return self.stop(entry_id=entry_id)
+            return self.stop(hub_id=hub_id, entry_id=entry_id)
         payload = entry.get("payload") or {}
         try:
             port = int(payload.get("port", 0))
@@ -83,6 +92,7 @@ class PortServiceHandler(ServiceTypeHandler):
         except (TypeError, ValueError):
             return {"code": "unknown_request", "params": {}}
         return self.forward(
+            hub_id=hub_id,
             entry_id=entry_id,
             host=str(payload.get("host", "")),
             port=port,
@@ -93,16 +103,13 @@ class PortServiceHandler(ServiceTypeHandler):
         """The forwards this machine is running, for the state payload.
 
         Returns:
-            ``{"forwards": {entry_id: {"local_port", "is_active"}}}``.
+            ``{"forwards": {service_key: {"local_port", "is_active"}}}``.
         """
         with self._lock:
             return {
                 "forwards": {
-                    entry_id: {
-                        "local_port": relay.local_port,
-                        "is_active": relay.is_active,
-                    }
-                    for entry_id, relay in self._relays.items()
+                    key: {"local_port": relay.local_port, "is_active": relay.is_active}
+                    for key, relay in self._relays.items()
                 }
             }
 
@@ -115,17 +122,44 @@ class PortServiceHandler(ServiceTypeHandler):
         with self._lock:
             relays = dict(self._relays)
             self._relays = {}
-        for relay in relays.values():
-            relay.close()
-        return len(relays)
+        return self._close_all(relays)
+
+    def release_hub(self, hub_id: str) -> int:
+        """Close every forward of one hub's entries.
+
+        Args:
+            hub_id: The hub whose forwards are closed.
+
+        Returns:
+            How many forwards were closed.
+        """
+        with self._lock:
+            relays = {
+                key: relay
+                for key, relay in self._relays.items()
+                if hub_of_key(key) == hub_id
+            }
+            for key in relays:
+                self._relays.pop(key, None)
+        closed = self._close_all(relays)
+        if closed:
+            self._on_change()
+        return closed
 
     def forward(
-        self, *, entry_id: str, host: str, port: int, local_port: int = 0
+        self,
+        *,
+        hub_id: str,
+        entry_id: str,
+        host: str,
+        port: int,
+        local_port: int = 0,
     ) -> dict:
         """Start forwarding one published port to the loopback.
 
         Args:
-            entry_id: The entry's id in the service list.
+            hub_id: The hub the entry came from.
+            entry_id: The entry's id in that hub's list.
             host: The address the published port answers on.
             port: The published port number.
             local_port: The loopback number preferred; 0 means the
@@ -134,8 +168,9 @@ class PortServiceHandler(ServiceTypeHandler):
         Returns:
             Empty on success, ``{"code", "params"}`` when nothing can bind.
         """
+        key = service_key(hub_id, entry_id)
         with self._lock:
-            relay = self._relays.get(entry_id)
+            relay = self._relays.get(key)
             if relay is not None and relay.is_active:
                 return {}
             relay = _ForwardRelay(host=host, port=port, local_port=local_port or port)
@@ -146,27 +181,34 @@ class PortServiceHandler(ServiceTypeHandler):
                     "code": "forward_failed",
                     "params": {"detail": str(error)[:200]},
                 }
-            self._relays[entry_id] = relay
+            self._relays[key] = relay
         self._log(f"forwarding {FORWARD_BIND_HOST}:{bound} to {host}:{port}")
         self._on_change()
         return {}
 
-    def stop(self, *, entry_id: str) -> dict:
+    def stop(self, *, hub_id: str, entry_id: str) -> dict:
         """Stop one forward, closing its listener and every connection.
 
         Args:
+            hub_id: The hub the entry came from.
             entry_id: The entry whose forward to stop.
 
         Returns:
             Empty; stopping what is not running is nothing.
         """
         with self._lock:
-            relay = self._relays.pop(entry_id, None)
+            relay = self._relays.pop(service_key(hub_id, entry_id), None)
         if relay is not None:
             relay.close()
             self._log(f"stopped forwarding to {relay.host}:{relay.port}")
             self._on_change()
         return {}
+
+    @staticmethod
+    def _close_all(relays: dict) -> int:
+        for relay in relays.values():
+            relay.close()
+        return len(relays)
 
 
 class _ForwardRelay:

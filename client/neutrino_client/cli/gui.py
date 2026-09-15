@@ -1,8 +1,8 @@
 """``nclient gui``: the resident, its tray icon, and its window.
 
 One process is the whole client: it binds this person's control socket,
-holds the socket to the hub, keeps the service handlers, and runs the window
-on the main thread. Closing the window hides it; the tray's Quit is what
+holds one socket per hub joined, keeps the service handlers, and runs the
+window on the main thread. Closing the window hides it; the tray's Quit is what
 stops the resident. A second invocation finds the socket held, asks the
 running one to show its window, and exits.
 
@@ -31,7 +31,7 @@ from neutrino_client.constants import (
 from neutrino_client.control import client, routes
 from neutrino_client.control.page import control_page_html, window_icon_path
 from neutrino_client.control.server import ControlServer
-from neutrino_client.core.session import ClientSession, end_process
+from neutrino_client.core.resident import ClientResident, end_process
 from neutrino_client.gui.bridge import GuiBridge
 from neutrino_client.gui.channel import InProcessChannel
 from neutrino_client.exceptions import (
@@ -58,19 +58,19 @@ def main(*, is_hidden: bool = False) -> int:
         print(wording.word_code(error.code), file=sys.stderr)
         return 1
     log = ResidentLog(path=os.path.join(platform.config_dir(), CLIENT_LOG_FILE_NAME))
-    session = ClientSession(platform=platform, log=log)
+    resident = ClientResident(platform=platform, log=log)
     server = ControlServer(
-        session=session, platform=platform, log=log, socket_path=socket_path
+        resident=resident, platform=platform, log=log, socket_path=socket_path
     )
     if not server.bind():
         return _show_running(socket_path)
-    session.start()
+    resident.start()
     server.start()
-    _install_quit_signals(session, server)
+    _install_quit_signals(resident, server)
     try:
-        status = _open(platform.os_name, session, is_hidden=is_hidden)
+        status = _open(platform.os_name, resident, is_hidden=is_hidden)
     finally:
-        session.shutdown()
+        resident.shutdown()
         server.stop()
     return _end(status)
 
@@ -90,19 +90,19 @@ def _end(status: int) -> int:
     return status
 
 
-def _install_quit_signals(session, server) -> None:
+def _install_quit_signals(resident, server) -> None:
     """Quit on the signals that mean this process is being ended.
 
     An installer, a package upgrade, ``systemctl --user stop`` and a logout
     all send one; each is the person asking the client to stop.
 
     Args:
-        session: The running session.
+        resident: The running resident.
         server: The control server serving beside it.
     """
 
     def on_signal(_number, _frame) -> None:
-        session.shutdown()
+        resident.shutdown()
         server.stop()
         end_process()
 
@@ -174,12 +174,12 @@ def _show_running(socket_path: str) -> int:
     return 1
 
 
-def _open(os_name: str, session, *, is_hidden: bool) -> int:
+def _open(os_name: str, resident, *, is_hidden: bool) -> int:
     """Open the platform's shell over the in-process channel.
 
     Args:
         os_name: The platform's ``os_name``.
-        session: The running session.
+        resident: The running resident.
         is_hidden: Whether to start in the tray with no window shown.
 
     Returns:
@@ -187,22 +187,25 @@ def _open(os_name: str, session, *, is_hidden: bool) -> int:
     """
 
     def register_show(show) -> None:
-        session.on_show = show
+        resident.on_show = show
 
     def register_push(push) -> None:
-        session.subscribe(lambda: push(routes.state_payload(session)))
+        def push_state() -> None:
+            push(routes.state_payload(resident))
 
-    language = session.language()
+        resident.subscribe(push_state)
+
+    language = resident.language()
     try:
         open_shell_window(
             os_name=os_name,
             title=words.word(language, CLIENT_GUI_WINDOW_TITLE_KEY),
             language=language,
             html=control_page_html(),
-            bridge=GuiBridge(channel=InProcessChannel(session=session)),
+            bridge=GuiBridge(channel=InProcessChannel(resident=resident)),
             icon_path=window_icon_path(),
             is_hidden=is_hidden,
-            on_quit=session.shutdown,
+            on_quit=resident.shutdown,
             on_show_ready=register_show,
             on_push_ready=register_push,
         )

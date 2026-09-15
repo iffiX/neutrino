@@ -66,6 +66,7 @@ CLIENT_CODE_WORDS = {
     ),
     "no_endpoint": "the hub has not granted this person a key yet",
     "mountpoint_not_empty": "that folder is not empty",
+    "mountpoint_in_use": "another share is already set to mount at {path}",
     "credentials_missing": (
         "the saved login is gone; enter it again: nclient service file config"
     ),
