@@ -1,10 +1,11 @@
 """A shell on a real pseudo-terminal, served through a fake channel.
 
 What these pin: the shell's output arrives as bytes, its exit status is
-the close, the first size and a resize both reach the terminal, the hub's
-bytes reach the shell's input with credit offered back, a close from the
-hub ends a shell that would run on, and a container shell is refused
-typed when podman does not list the container.
+the close's params, the first size and a resize both reach the terminal,
+the hub's bytes reach the shell's input with credit offered back as each
+piece is written, a close from the hub ends a shell that would run on, and
+a container shell is refused typed when podman does not list the
+container.
 """
 
 import threading
@@ -39,8 +40,9 @@ def test_output_arrives_as_bytes_and_the_exit_status_closes():
     closed = run_shell(channel, ["/bin/sh", "-c", "echo hi; exit 3"])
 
     assert b"hi" in channel.output()
-    assert closed == {"exit_code": 3, "code": "", "params": {}}
+    assert closed == {"code": "", "params": {"exit_code": 3}}
     assert channel.credits[0] > 0
+    assert channel.closed is None
 
 
 def test_the_first_size_is_the_terminals():
@@ -68,7 +70,7 @@ def test_the_hubs_bytes_reach_the_shells_input_and_credit_comes_back():
     closed = run_shell(channel, ["/bin/sh"])
 
     assert b"typed" in channel.output()
-    assert closed["exit_code"] == 4
+    assert closed["params"]["exit_code"] == 4
     assert channel.credits[1:] == [len(b"echo typed\n"), len(b"exit 4\n")]
 
 
@@ -87,7 +89,7 @@ def test_a_close_from_the_hub_ends_a_shell_that_would_run_on():
 
     assert not thread.is_alive()
     assert outcome["code"] == ""
-    assert outcome["exit_code"] != 0
+    assert outcome["params"]["exit_code"] != 0
 
 
 def test_a_command_that_cannot_start_closes_typed():
@@ -95,8 +97,8 @@ def test_a_command_that_cannot_start_closes_typed():
 
     closed = run_shell(channel, ["/nonexistent/shell"])
 
-    assert closed["exit_code"] == 1
     assert closed["code"] == "shell_failed"
+    assert "detail" in closed["params"]
 
 
 def test_login_shell_is_usable_and_absolute():

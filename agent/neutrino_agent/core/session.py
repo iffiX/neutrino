@@ -2,15 +2,16 @@
 
 The socket carries everything: the hello that opens it and the welcome that
 answers, a report every few seconds and at once when something changed, the
-hub's state whenever its copy changes, and every stream the hub opens. A
-reader thread takes frames off the socket and dispatches them; the caller's
-thread runs the report loop; each stream runs on a thread of its own so a
-long install never blocks the reader.
+hub's state whenever its copy changes, and every stream either side opens.
+A reader thread takes frames off the socket and dispatches them; the
+caller's thread runs the report loop; each stream the hub opens runs on a
+thread of its own so a long install never blocks the reader.
 
-Orders, commands and validations are one call each and close with the
-call's result. The shell and file kinds carry bytes both ways: each runs
-behind a :class:`StreamChannel`, which hands it what the hub sends and
-sends what it produces, no faster than the hub's credit allows.
+A stream exists as soon as its open arrives, and its close is its result:
+``{stream, code, params}``, with a code making it a refusal. The hub's
+streams number even, this side's odd. Every stream sits behind a
+:class:`StreamChannel`: bytes go out no faster than the hub's credit
+allows, and a stream's text output is its binary frames, one line each.
 
 Errors cross the wire as ``{"code", "params"}``, never an English sentence;
 every surface does its own wording.
@@ -20,6 +21,7 @@ every surface does its own wording.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import functools
 import json
 import threading
 
@@ -27,7 +29,7 @@ from neutrino_agent.constants import (
     AGENT_CODE_CHANNEL_REFUSED,
     AGENT_HEARTBEAT_INTERVAL_S,
     AGENT_HUB_ROLE,
-    AGENT_WS_STREAM_ID_LENGTH,
+    AGENT_WS_STREAM_ID_BYTES,
 )
 from neutrino_agent.core.ws_client import close_error
 from neutrino_agent.exceptions import (
@@ -44,9 +46,15 @@ STREAM_KIND_ORDER = "order"
 STREAM_KIND_COMMAND = "command"
 STREAM_KIND_VALIDATE = "validate"
 
+# The fields of an open that are not the kind's own arguments.
+OPEN_ENVELOPE_FIELDS = ("type", "stream", "kind")
+# The first id this side allots; the hub counts from an even one.
+FIRST_OWN_STREAM_ID = 1
+STREAM_ID_LIMIT = 1 << (8 * AGENT_WS_STREAM_ID_BYTES)
+
 
 class AgentSession:
-    """The live socket: hello, reports, and the streams the hub opens.
+    """The live socket: hello, reports, and the streams on it.
 
     Attributes:
         hub_id: The hub's id, from the welcome; empty until it arrived.
@@ -91,12 +99,13 @@ class AgentSession:
                 the hash and nothing else.
             validate: Called with ``(module, config)``; returns empty when
                 the configuration is sound, ``{"code", "params"}`` when
-                not. None refuses the validate stream kind.
+                not. None closes the validate kind ``kind_unknown``.
             stream_kinds: Stream kind to its handler factory, called with
                 ``(channel, args)``. A handler has ``open()``, which may
                 raise :class:`StreamRefused`, and ``run()``, which returns
-                what the stream closes with. None serves the shell and
-                file kinds of :mod:`neutrino_agent.streams`.
+                ``{"code", "params"}``, what the stream closes with. None
+                serves the shell and file kinds of
+                :mod:`neutrino_agent.streams`.
         """
         self._client = client
         self._hello = dict(hello)
@@ -109,9 +118,18 @@ class AgentSession:
         self._on_tick = on_tick
         self._on_state = on_state
         self._validate = validate
-        self._stream_kinds = dict(
-            STREAM_KINDS if stream_kinds is None else stream_kinds
-        )
+        kinds = {
+            STREAM_KIND_ORDER: functools.partial(_CallStream, call=self._serve_order),
+            STREAM_KIND_COMMAND: functools.partial(
+                _CallStream, call=self._serve_command
+            ),
+        }
+        if validate is not None:
+            kinds[STREAM_KIND_VALIDATE] = functools.partial(
+                _CallStream, call=self._serve_validate
+            )
+        kinds.update(STREAM_KINDS if stream_kinds is None else stream_kinds)
+        self._stream_kinds = kinds
         self.hub_id = ""
         self.hub_name = ""
         self.hub_software = ""
@@ -119,8 +137,8 @@ class AgentSession:
         self._lock = threading.Lock()
         self._is_closed = threading.Event()
         self._failure: "Exception | None" = None
-        self._open_streams: set = set()
         self._channels: dict = {}
+        self._next_stream_id = FIRST_OWN_STREAM_ID
         self._reader: "threading.Thread | None" = None
 
     @property
@@ -187,6 +205,32 @@ class AgentSession:
         self._client.close()
         self._news.set()
 
+    def open_stream(self, kind: str, **args) -> StreamChannel:
+        """Open a stream to the hub, on the next odd id.
+
+        Args:
+            kind: The stream kind.
+            **args: The kind's arguments, sent beside it in the open.
+
+        Returns:
+            The stream's channel; closing it ends the stream with its result.
+
+        Raises:
+            GatewayUnreachable: When the socket is gone.
+        """
+        with self._lock:
+            stream_id = self._next_stream_id
+            self._next_stream_id += 2
+            channel = StreamChannel(self, stream_id)
+            self._channels[stream_id] = channel
+        try:
+            self._send({"type": "open", "stream": stream_id, "kind": kind, **args})
+        except GatewayUnreachable:
+            with self._lock:
+                self._channels.pop(stream_id, None)
+            raise
+        return channel
+
     def _take_welcome(self) -> dict:
         """The hub's first frame: its identity card, or why it said no."""
         kind, payload = self._client.recv()
@@ -206,8 +250,18 @@ class AgentSession:
     def _send(self, message: dict) -> None:
         self._client.send_text(json.dumps(message))
 
-    def _send_bytes(self, stream_id: str, data: bytes) -> None:
-        self._client.send_bytes(stream_id.encode("ascii") + data)
+    def _send_bytes(self, stream_id: int, data: bytes) -> None:
+        self._client.send_bytes(
+            stream_id.to_bytes(AGENT_WS_STREAM_ID_BYTES, "big") + data
+        )
+
+    def _close_stream(self, stream_id: int, code: str, params: dict) -> None:
+        """Send a stream's close and forget it."""
+        with self._lock:
+            self._channels.pop(stream_id, None)
+        self._send(
+            {"type": "close", "stream": stream_id, "code": code, "params": params}
+        )
 
     def _end(self, failure: "Exception | None") -> None:
         with self._lock:
@@ -245,15 +299,18 @@ class AgentSession:
         if message is None:
             return
         message_type = message.get("type")
-        stream_id = str(message.get("stream", ""))
+        stream_id = message.get("stream")
         if message_type == "open":
             self._open(message)
         elif message_type == "close":
             with self._lock:
-                self._open_streams.discard(stream_id)
-                channel = self._channels.get(stream_id)
+                channel = self._channels.pop(stream_id, None)
             if channel is not None:
-                channel._end()
+                params = message.get("params")
+                channel._end(
+                    str(message.get("code", "") or ""),
+                    dict(params) if isinstance(params, dict) else {},
+                )
         elif message_type == "state":
             self.state_hash = str(message.get("hash", "") or "")
             if self._on_state is not None:
@@ -278,53 +335,35 @@ class AgentSession:
             self._log(f"ignoring a {message_type!r} frame from the hub")
 
     def _dispatch_bytes(self, payload: bytes) -> None:
-        stream_id = bytes(payload[:AGENT_WS_STREAM_ID_LENGTH]).decode(
-            "ascii", "replace"
-        )
+        if len(payload) < AGENT_WS_STREAM_ID_BYTES:
+            self._log(f"dropping a binary frame of {len(payload)} bytes")
+            return
+        stream_id = int.from_bytes(payload[:AGENT_WS_STREAM_ID_BYTES], "big")
         channel = self._channel(stream_id)
         if channel is not None:
-            channel._feed(("data", bytes(payload[AGENT_WS_STREAM_ID_LENGTH:])))
+            channel._feed(("data", bytes(payload[AGENT_WS_STREAM_ID_BYTES:])))
 
-    def _channel(self, stream_id: str) -> "StreamChannel | None":
+    def _channel(self, stream_id) -> "StreamChannel | None":
         with self._lock:
             return self._channels.get(stream_id)
 
     def _open(self, message: dict) -> None:
-        stream_id = str(message.get("stream", ""))
+        """Serve one stream the hub opened: the kind table decides how."""
+        stream_id = message.get("stream")
+        if not isinstance(stream_id, int) or not 0 <= stream_id < STREAM_ID_LIMIT:
+            self._log(f"dropping an open with stream id {stream_id!r}")
+            return
         kind = str(message.get("kind", ""))
-        args = message.get("args") if isinstance(message.get("args"), dict) else {}
-        handlers = {
-            STREAM_KIND_ORDER: self._serve_order,
-            STREAM_KIND_COMMAND: self._serve_command,
+        args = {
+            key: value
+            for key, value in message.items()
+            if key not in OPEN_ENVELOPE_FIELDS
         }
-        if self._validate is not None:
-            handlers[STREAM_KIND_VALIDATE] = self._serve_validate
-        handler = handlers.get(kind)
         factory = self._stream_kinds.get(kind)
-        if (handler is None and factory is None) or len(
-            stream_id
-        ) != AGENT_WS_STREAM_ID_LENGTH:
-            self._send(
-                {
-                    "type": "refused",
-                    "stream": stream_id,
-                    "code": "stream_unknown",
-                    "params": {"kind": kind},
-                }
-            )
+        if factory is None:
+            self._close_stream(stream_id, "kind_unknown", {"kind": kind})
             return
-        with self._lock:
-            self._open_streams.add(stream_id)
-        if handler is not None:
-            self._send({"type": "opened", "stream": stream_id})
-            threading.Thread(
-                target=self._guarded,
-                args=(handler, stream_id, args),
-                name=f"agent_stream_{stream_id}",
-                daemon=True,
-            ).start()
-            return
-        channel = StreamChannel(self, stream_id, message.get("credit", 0))
+        channel = StreamChannel(self, stream_id)
         with self._lock:
             self._channels[stream_id] = channel
         threading.Thread(
@@ -335,121 +374,92 @@ class AgentSession:
         ).start()
 
     def _serve_channel(self, factory, channel: StreamChannel, args: dict) -> None:
-        """Open one byte-carrying stream, run it, and close it typed."""
-        stream_id = channel.id
+        """Open one stream, run it, and close it with its result."""
         try:
             try:
                 stream = factory(channel, args)
                 stream.open()
             except StreamRefused as refused:
-                with self._lock:
-                    self._open_streams.discard(stream_id)
-                    self._channels.pop(stream_id, None)
-                self._send(
-                    {
-                        "type": "refused",
-                        "stream": stream_id,
-                        "code": refused.code,
-                        "params": dict(refused.params),
-                    }
-                )
+                channel.close(refused.code, dict(refused.params))
                 return
-            self._send({"type": "opened", "stream": stream_id})
             info = stream.run()
         except GatewayUnreachable:
-            with self._lock:
-                self._channels.pop(stream_id, None)
             return
         except StreamClosed:
-            info = {"exit_code": 1, "code": "", "params": {}}
+            info = {"code": "", "params": {}}
         except Exception as error:  # noqa: BLE001 - reported, never fatal
-            self._log(f"stream {stream_id} failed: {error}")
+            self._log(f"stream {channel.id} failed: {error}")
             info = {
-                "exit_code": 1,
                 "code": "agent_internal",
                 "params": {"error": type(error).__name__},
             }
-        with self._lock:
-            self._channels.pop(stream_id, None)
         try:
-            self._finish(stream_id, dict(info or {}))
-        except GatewayUnreachable:
-            return
-
-    def _guarded(self, handler, stream_id: str, args: dict) -> None:
-        try:
-            handler(stream_id, args)
-        except GatewayUnreachable:
-            return
-        except Exception as error:  # noqa: BLE001 - reported, never fatal
-            self._log(f"stream {stream_id} failed: {error}")
-            self._finish(
-                stream_id,
-                {
-                    "state": "failed",
-                    "exit_code": 1,
-                    "code": "agent_internal",
-                    "params": {"error": type(error).__name__},
-                    "output": "",
-                },
+            channel.close(
+                str(info.get("code", "") or ""), dict(info.get("params") or {})
             )
+        except GatewayUnreachable:
+            return
 
-    def _serve_order(self, stream_id: str, args: dict) -> None:
+    def _serve_order(self, channel: StreamChannel, args: dict) -> dict:
         def on_line(line: str) -> None:
-            self._event(stream_id, line)
+            self._send_line(channel, line)
 
         result = self._run_order(args, on_line)
-        self._finish(
-            stream_id,
-            {
-                "state": str(result.get("state", "failed")),
-                "code": str(result.get("code", "") or ""),
-                "params": dict(result.get("params") or {}),
-                "output": str(result.get("output", "") or ""),
-            },
-        )
+        params = dict(result.get("params") or {})
+        params["state"] = str(result.get("state", "failed"))
+        params["output"] = str(result.get("output", "") or "")
+        return {"code": str(result.get("code", "") or ""), "params": params}
 
-    def _serve_command(self, stream_id: str, args: dict) -> None:
+    def _serve_command(self, channel: StreamChannel, args: dict) -> dict:
         def on_line(line: str) -> None:
-            self._event(stream_id, line)
+            self._send_line(channel, line)
 
         outcome = self._run_command(
             str(args.get("action", "")),
             args.get("args") if isinstance(args.get("args"), dict) else {},
             on_line,
         )
-        info = {
-            "exit_code": int(outcome.get("exit_code", 1)),
-            "code": str(outcome.get("code", "") or ""),
-            "params": dict(outcome.get("params") or {}),
-            "output": str(outcome.get("output", "") or ""),
-        }
+        params = dict(outcome.get("params") or {})
+        params["exit_code"] = int(outcome.get("exit_code", 1))
+        params["output"] = str(outcome.get("output", "") or "")
         if isinstance(outcome.get("result"), dict) and outcome["result"]:
-            info["result"] = dict(outcome["result"])
-        self._finish(stream_id, info)
+            params["result"] = dict(outcome["result"])
+        return {"code": str(outcome.get("code", "") or ""), "params": params}
 
-    def _serve_validate(self, stream_id: str, args: dict) -> None:
+    def _serve_validate(self, channel: StreamChannel, args: dict) -> dict:
         config = args.get("config") if isinstance(args.get("config"), dict) else {}
-        refusal = self._validate(str(args.get("module", "")), config)
-        self._finish(
-            stream_id,
-            {
-                "is_valid": not refusal,
-                "code": str((refusal or {}).get("code", "") or ""),
-                "params": dict((refusal or {}).get("params") or {}),
-            },
-        )
+        refusal = self._validate(str(args.get("module", "")), config) or {}
+        params = dict(refusal.get("params") or {})
+        params["is_valid"] = not refusal
+        return {"code": str(refusal.get("code", "") or ""), "params": params}
 
-    def _event(self, stream_id: str, line: str) -> None:
-        with self._lock:
-            if stream_id not in self._open_streams:
-                return
-        self._send({"type": "event", "stream": stream_id, "line": line})
+    def _send_line(self, channel: StreamChannel, line: str) -> None:
+        """One output line up the stream; a stream the hub closed takes none."""
+        try:
+            channel.send_line(line)
+        except StreamClosed:
+            return
 
-    def _finish(self, stream_id: str, info: dict) -> None:
-        with self._lock:
-            self._open_streams.discard(stream_id)
-        self._send({"type": "close", "stream": stream_id, **info})
+
+class _CallStream:
+    """A kind that is one call: it opens at once and closes with what the
+    call returned."""
+
+    def __init__(self, channel: StreamChannel, args: dict, *, call):
+        self._channel = channel
+        self._args = args
+        self._call = call
+
+    def open(self) -> None:
+        """Nothing to check: the call itself answers."""
+
+    def run(self) -> dict:
+        """Run the call.
+
+        Returns:
+            ``{"code", "params"}``, what the stream closes with.
+        """
+        return self._call(self._channel, self._args)
 
 
 def _decode(kind: str, payload) -> "dict | None":

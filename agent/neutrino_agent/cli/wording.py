@@ -71,7 +71,6 @@ CLI_CODE_WORDS = {
     "verify_failed": "this machine could not tell whether the software is there",
     "unknown_kind": "the agent does not know this kind of module",
     "unknown_action": "the hub asked for something this agent does not know",
-    "stream_unknown": "the hub opened a stream this agent does not know",
     "shell_failed": "the shell could not start: {detail}",
     "path_invalid": "{path} is not a path this agent can act on",
     "path_missing": "{path} is not there",

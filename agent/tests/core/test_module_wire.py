@@ -1,13 +1,13 @@
 """The module half of the wire, in both directions.
 
 What comes down is one order stream for a module the state names; what goes
-up is each line as it happens and the close that says how it went, plus the
-module's state on every report.
+up is each line as a binary frame on the stream and the close that says
+how it went, plus the module's state on every report.
 """
 
 from neutrino_agent.constants import AGENT_MODULE_PACKAGE_PATH
 from tests.core.test_loop import WELCOME, scripted_agent
-from tests.core.test_session import ScriptedClient
+from tests.core.test_session import ScriptedClient, frame
 
 ORDER = {
     "id": "order-1",
@@ -43,14 +43,15 @@ def test_an_order_stream_runs_the_engine_and_closes_with_its_result(
     session = agent._open_session()
     session._client = client
     session.connect()
-    client.feed({"type": "open", "stream": "00000001", "kind": "order", "args": ORDER})
+    client.feed({"type": "open", "stream": 2, "kind": "order", **ORDER})
+    client.feed({"type": "credit", "stream": 2, "bytes": 4096})
 
     (closed,) = client.wait_for("close")
 
-    assert closed["state"] == "failed"
     assert closed["code"] == "install_unconfirmed"
-    assert "fakedesk: install" in closed["output"]
-    assert [event["line"] for event in client.frames("event")] == ["fakedesk: install"]
+    assert closed["params"]["state"] == "failed"
+    assert "fakedesk: install" in closed["params"]["output"]
+    assert client.sent_bytes == [frame(2, b"fakedesk: install\n")]
     # The module the state names is reported.
     assert "fakedesk" in agent.module_states()
     session.close()

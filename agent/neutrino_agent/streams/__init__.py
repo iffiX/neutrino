@@ -6,9 +6,10 @@ kind is one class the session opens on a thread of its own, reading the
 hub's frames off its :class:`~neutrino_agent.streams.channel.StreamChannel`
 and sending through it.
 
-Every kind and what it takes and closes with:
+Every kind the hub opens, what it takes, and the ``params`` its close
+carries when it did what it was asked:
 
-| kind | args | close |
+| kind | args | close ``params`` |
 | --- | --- | --- |
 | ``shell`` | ``{cols, rows}`` | ``{exit_code}`` |
 | ``container_shell`` | ``{name}`` | ``{exit_code}`` |
@@ -17,8 +18,8 @@ Every kind and what it takes and closes with:
 | ``file_upload`` | ``{path, size}`` | ``{}`` |
 | ``file_op`` | ``{op, path, new_path}`` | ``{}`` |
 
-Every close carries ``code`` and ``params`` beside those, empty when the
-stream did what it was asked. Paths are absolute; the agent is root.
+A close with a ``code`` is a refusal, and its ``params`` are what the
+code's wording names. Paths are absolute; the agent is root.
 """
 
 from neutrino_agent.streams.files import (

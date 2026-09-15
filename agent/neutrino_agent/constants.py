@@ -29,8 +29,9 @@ AGENT_WS_PATH = "/api/channel/socket"
 # How long the socket may stay silent before it is taken for dead. The hub
 # pings well inside this.
 AGENT_WS_SILENCE_TIMEOUT_S = 45
-# A binary frame starts with the stream id, this many ASCII characters.
-AGENT_WS_STREAM_ID_LENGTH = 8
+# A binary frame starts with the stream id, a big-endian unsigned integer
+# of this many bytes.
+AGENT_WS_STREAM_ID_BYTES = 4
 # The largest binary frame either side sends on one stream.
 AGENT_WS_CHUNK_BYTES = 64 * 1024
 # What the hub may send on one stream before this side grants more: one

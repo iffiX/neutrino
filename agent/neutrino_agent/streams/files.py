@@ -1,10 +1,11 @@
 """The file channel: a listing, a download, an upload, the small operations.
 
-Each is one stream. A listing closes with its entries; a download sends the
-file's bytes, or a gzip tar of a directory, and closes with how many; an
-upload takes the hub's bytes into a temporary file beside the target and
-renames it into place once every announced byte is there; an operation
-makes, renames or deletes and closes.
+Each is one stream, and its result is its close's params. A listing closes
+with its entries; a download sends the file's bytes, or a gzip tar of a
+directory, and closes with how many; an upload takes the hub's bytes into
+a temporary file beside the target, granting credit as each piece is
+written, and renames it into place once every announced byte is there; an
+operation makes, renames or deletes and closes.
 
 Paths are absolute, and the agent is root. A stream that cannot be served
 at all is refused typed before it opens; one that fails under way closes
@@ -55,7 +56,7 @@ def _require_absolute(path: str) -> None:
 
 
 def _done(**fields) -> dict:
-    return {"code": "", "params": {}, **fields}
+    return {"code": "", "params": dict(fields)}
 
 
 def _failed(code: str, **params) -> dict:
@@ -99,8 +100,9 @@ class FileListStream:
         """Read the directory.
 
         Returns:
-            ``{"path", "entries"}`` with the path resolved, each entry
-            ``{"name", "path", "kind", "size", "modified_at", "mode"}``.
+            ``{"code", "params"}``, the params ``{"path", "entries"}`` with
+            the path resolved and each entry ``{"name", "path", "kind",
+            "size", "modified_at", "mode"}``.
         """
         resolved = os.path.realpath(self._path)
         entries = []
@@ -177,12 +179,9 @@ class FileDownloadStream:
     def run(self) -> dict:
         """Send the bytes.
 
-        A plain file announces its size in one event before the first byte,
-        so the hub can promise a length; an archive's size is known only
-        once it is done.
-
         Returns:
-            ``{"size"}``, how many bytes went up.
+            ``{"code", "params"}``, the params ``{"size"}``: how many bytes
+            went up.
         """
         try:
             if self._is_archived:
@@ -192,8 +191,6 @@ class FileDownloadStream:
             return _failed(_error_code(error), path=self._path)
 
     def _send_file(self) -> int:
-        size = os.path.getsize(self._path)
-        self._channel.event(size=size)
         sent = 0
         with open(self._path, "rb") as source:
             while True:
@@ -248,8 +245,9 @@ class FileUploadStream:
         """Take the bytes and put the file in place.
 
         Returns:
-            Empty on success; ``write_failed`` when more bytes came than
-            announced, the hub closed early, or the disk refused.
+            ``{"code", "params"}``: empty params on success; ``write_failed``
+            when more bytes came than announced, the hub closed early, or
+            the disk refused.
         """
         parent = os.path.dirname(self._path) or "/"
         name = os.path.basename(self._path)
@@ -277,7 +275,11 @@ class FileUploadStream:
         return _done()
 
     def _receive(self, handle) -> "dict | None":
-        """Write the hub's bytes until the announced size is there."""
+        """Write the hub's bytes until the announced size is there.
+
+        One window of credit opens the transfer; each piece written grants
+        as much again, so a large upload never waits on this side.
+        """
         self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
         received = 0
         while received < self._size:
@@ -333,8 +335,8 @@ class FileOpStream:
         """Carry the operation out.
 
         Returns:
-            Empty on success; ``path_missing``, ``path_invalid`` or
-            ``op_failed`` when the file system refused.
+            ``{"code", "params"}``: empty params on success; ``path_missing``,
+            ``path_invalid`` or ``op_failed`` when the file system refused.
         """
         try:
             if self._op == "mkdir":

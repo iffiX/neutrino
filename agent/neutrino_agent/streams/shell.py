@@ -3,7 +3,7 @@
 The hub's bytes go to the shell's terminal; whatever the terminal produces
 goes up as binary frames, no faster than the hub's credit allows; a resize
 sets the terminal's window. The stream ends when the shell exits or the
-hub closes it, and closes with the shell's exit status.
+hub closes it, and closes with the shell's exit status in its params.
 
 The shell runs as the agent runs, which is root. Closing the stream kills
 the shell's whole terminal session, background jobs included, so a closed
@@ -164,7 +164,9 @@ class ShellStream:
         """Serve the shell until it exits or the hub closes the stream.
 
         Returns:
-            ``{"exit_code", "code", "params"}``.
+            ``{"code", "params"}``, with ``exit_code`` in the params once the
+            shell ran, ``shell_failed`` with ``detail`` when it could not
+            start.
         """
         master_fd, slave_fd = pty.openpty()
         self._master_fd = master_fd
@@ -182,11 +184,7 @@ class ShellStream:
         except OSError as error:
             os.close(master_fd)
             self._master_fd = None
-            return {
-                "exit_code": 1,
-                "code": "shell_failed",
-                "params": {"detail": str(error)[:200]},
-            }
+            return {"code": "shell_failed", "params": {"detail": str(error)[:200]}}
         finally:
             # The child holds the slave end now; a copy here would keep the
             # master from ever reading end-of-file.
@@ -202,7 +200,7 @@ class ShellStream:
             self._is_done.set()
             exit_code = self._close()
             feeder.join(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
-        return {"exit_code": exit_code, "code": "", "params": {}}
+        return {"code": "", "params": {"exit_code": exit_code}}
 
     def _pump_output(self) -> None:
         """Send the terminal's output until it ends or the hub is gone."""

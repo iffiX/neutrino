@@ -2,7 +2,8 @@
 
 A handler reads what the hub sent off the channel's queue and sends what it
 produced through it. Bytes go out no faster than the hub's credit allows;
-bytes come in no faster than the credit this side offers.
+bytes come in no faster than the credit this side offers, granted as the
+handler consumes.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -17,28 +18,29 @@ from neutrino_agent.exceptions import StreamClosed
 
 
 class StreamChannel:
-    """One byte-carrying stream, as its handler sees it.
+    """One stream, as its handler sees it.
 
-    The session that opened it hands items in and takes frames out; a
-    handler only ever reads the queue, sends, and offers credit.
+    The session hands items in and takes frames out; a handler reads the
+    queue, sends, offers credit, and closes.
 
     What the hub sends queues up in order: ``("data", bytes)`` for a binary
-    frame, ``("resize", cols, rows)`` for a resize, and ``("close",)`` once
-    the hub closed the stream or the socket went away. What the handler
-    sends goes out at once, except bytes, which wait for the hub's credit.
+    frame, ``("resize", cols, rows)`` for a resize, and ``("close", code,
+    params)`` once the hub closed the stream or the socket went away. What
+    the handler sends goes out at once, except bytes, which wait for the
+    hub's credit.
 
     Attributes:
         id: The stream id.
     """
 
-    def __init__(self, session, stream_id: str, credit: int):
+    def __init__(self, session, stream_id: int, credit: int = 0):
         """
         Args:
             session: The session the stream rides, which sends its frames.
-            stream_id: The stream id the hub assigned.
+            stream_id: The stream id.
             credit: How many bytes the hub will take before granting more.
         """
-        self.id = stream_id
+        self.id = int(stream_id)
         self._session = session
         self._credit = max(0, int(credit))
         self._granted = threading.Condition()
@@ -47,7 +49,7 @@ class StreamChannel:
 
     @property
     def is_closed(self) -> bool:
-        """Whether the hub ended the stream, or the socket is gone."""
+        """Whether the stream ended, from either side, or the socket is gone."""
         return self._is_closed
 
     def recv(self, timeout: "float | None" = None) -> "tuple | None":
@@ -87,21 +89,47 @@ class StreamChannel:
             self._session._send_bytes(self.id, bytes(view[:size]))
             view = view[size:]
 
+    def send_line(self, text: str) -> None:
+        """Send one line of text as one binary frame.
+
+        Args:
+            text: The line, without its newline.
+
+        Raises:
+            StreamClosed: When the stream ended before it was sent.
+            GatewayUnreachable: When the socket is gone.
+        """
+        self.send_bytes((text + "\n").encode("utf-8"))
+
     def offer_credit(self, size: int) -> None:
         """Let the hub send this many more bytes.
 
         Args:
             size: The bytes granted.
+
+        Raises:
+            GatewayUnreachable: When the socket is gone.
         """
         self._session._send({"type": "credit", "stream": self.id, "bytes": int(size)})
 
-    def event(self, **fields) -> None:
-        """Send one event on the stream.
+    def close(self, code: str = "", params: "dict | None" = None) -> None:
+        """End the stream from this side, with its result.
+
+        A stream the hub already ended sends nothing.
 
         Args:
-            **fields: What the event carries beside its type and stream.
+            code: The refusal; empty when the stream did what it was asked.
+            params: The result, or what the code's wording names.
+
+        Raises:
+            GatewayUnreachable: When the socket is gone.
         """
-        self._session._send({"type": "event", "stream": self.id, **fields})
+        with self._granted:
+            if self._is_closed:
+                return
+            self._is_closed = True
+            self._granted.notify_all()
+        self._session._close_stream(self.id, code, dict(params or {}))
 
     def _grant(self, size: int) -> None:
         with self._granted:
@@ -111,8 +139,8 @@ class StreamChannel:
     def _feed(self, item: tuple) -> None:
         self._inbound.put(item)
 
-    def _end(self) -> None:
+    def _end(self, code: str = "", params: "dict | None" = None) -> None:
         with self._granted:
             self._is_closed = True
             self._granted.notify_all()
-        self._inbound.put(("close",))
+        self._inbound.put(("close", code, dict(params or {})))

@@ -1,10 +1,12 @@
 """The file channel over trees under ``tmp_path``.
 
-What these pin: a listing's shape and its resolved path, a file download
-announcing its size before its bytes, a directory download as a gzip tar
-that unpacks to the tree, an upload landing by rename with the announced
-size honoured and every refusal typed, and the three operations with a
-directory delete that is recursive.
+What these pin: a listing's shape and its resolved path in the close's
+params, a file download as its bytes with the count in the close, a
+directory download as a gzip tar that unpacks to the tree, an upload
+landing by rename with the announced size honoured, credit granted as each
+piece is written so a large one proceeds past the first window, every
+refusal typed, and the three operations with a directory delete that is
+recursive.
 """
 
 import io
@@ -14,6 +16,7 @@ import tarfile
 
 import pytest
 
+from neutrino_agent.constants import AGENT_WS_CHUNK_BYTES, AGENT_WS_STREAM_CREDIT_BYTES
 from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.streams.files import (
     FileDownloadStream,
@@ -55,8 +58,9 @@ def test_a_listing_names_every_entry_with_its_kind(tree):
     closed = served(FileListStream(channel, {"path": str(tree / "docs")}))
 
     assert closed["code"] == ""
-    assert closed["path"] == os.path.realpath(tree / "docs")
-    by_name = {entry["name"]: entry for entry in closed["entries"]}
+    assert set(closed["params"]) == {"path", "entries"}
+    assert closed["params"]["path"] == os.path.realpath(tree / "docs")
+    by_name = {entry["name"]: entry for entry in closed["params"]["entries"]}
     assert set(by_name) == {"note.txt", "deep", "link", "sub"}
     assert by_name["note.txt"]["kind"] == "file"
     assert by_name["note.txt"]["size"] == 5
@@ -67,7 +71,7 @@ def test_a_listing_names_every_entry_with_its_kind(tree):
     assert by_name["note.txt"]["mode"] == stat.S_IMODE(
         (tree / "docs" / "note.txt").stat().st_mode
     )
-    assert [entry["name"] for entry in closed["entries"]] == sorted(
+    assert [entry["name"] for entry in closed["params"]["entries"]] == sorted(
         by_name, key=str.lower
     )
     assert channel.sent == []
@@ -89,16 +93,15 @@ def test_a_listing_of_a_missing_or_relative_or_file_path_is_refused(tree):
 # --- download ---
 
 
-def test_a_file_download_announces_its_size_then_sends_its_bytes(tree):
+def test_a_file_download_is_its_bytes_and_closes_with_the_count(tree):
     channel = FakeChannel()
 
     closed = served(
         FileDownloadStream(channel, {"path": str(tree / "docs" / "note.txt")})
     )
 
-    assert channel.events == [{"size": 5}]
-    assert channel.output() == b"hello"
-    assert closed == {"code": "", "params": {}, "size": 5}
+    assert channel.sent == [b"hello"]
+    assert closed == {"code": "", "params": {"size": 5}}
 
 
 def test_a_directory_download_is_a_gzip_tar_of_the_tree(tree):
@@ -106,8 +109,7 @@ def test_a_directory_download_is_a_gzip_tar_of_the_tree(tree):
 
     closed = served(FileDownloadStream(channel, {"path": str(tree / "docs")}))
 
-    assert channel.events == []
-    assert closed["size"] == len(channel.output())
+    assert closed["params"]["size"] == len(channel.output())
     with tarfile.open(fileobj=io.BytesIO(channel.output()), mode="r:gz") as archive:
         names = sorted(archive.getnames())
         inner = archive.extractfile("docs/deep/inner.bin").read()
@@ -158,6 +160,24 @@ def test_an_upload_lands_by_rename_once_every_byte_is_there(tree):
     assert channel.credits[0] > 0
     assert channel.credits[1:] == [3, 3]
     assert stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
+def test_a_large_upload_is_credited_as_it_is_written(tree):
+    channel = FakeChannel()
+    target = tree / "docs" / "large.bin"
+    size = 2 * AGENT_WS_STREAM_CREDIT_BYTES + 5
+    chunks = [
+        bytes([index % 251]) * min(AGENT_WS_CHUNK_BYTES, size - offset)
+        for index, offset in enumerate(range(0, size, AGENT_WS_CHUNK_BYTES))
+    ]
+
+    closed = upload(channel, target, size, chunks)
+
+    assert closed == {"code": "", "params": {}}
+    assert target.stat().st_size == size
+    assert target.read_bytes() == b"".join(chunks)
+    assert channel.credits[0] == AGENT_WS_STREAM_CREDIT_BYTES
+    assert channel.credits[1:] == [len(chunk) for chunk in chunks]
 
 
 def test_an_upload_over_an_existing_file_keeps_its_mode(tree):
