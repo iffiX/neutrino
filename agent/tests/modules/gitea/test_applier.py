@@ -79,6 +79,27 @@ def test_apply_restarts_a_running_server(box, monkeypatch):
     assert ["systemctl", "restart", "neutrino_gitea.service"] in commands.calls
 
 
+def test_apply_leaves_a_running_server_alone_when_the_file_is_the_same(
+    box, monkeypatch
+):
+    commands, _, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/app.ini").write_text("[server]\n")
+
+    assert GiteaConfigApplier().apply("[server]\n") == "unchanged"
+    assert ["systemctl", "restart", "neutrino_gitea.service"] not in commands.calls
+
+
+def test_apply_starts_a_stopped_server_on_an_unchanged_file(box):
+    commands, _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/app.ini").write_text("[server]\n")
+
+    assert GiteaConfigApplier().apply("[server]\n") == "started"
+    assert ["systemctl", "enable", "--now", "neutrino_gitea.service"] in commands.calls
+
+
 def test_apply_without_the_git_account_leaves_the_work_root_alone(box, monkeypatch):
     _, chowns, tmp_path = box
 

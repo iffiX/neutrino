@@ -148,15 +148,44 @@ class GiteaConfigApplier:
     def apply(self, rendered: str) -> str:
         """Install the rendered configuration and run the server on it.
 
+        The file is written when its text differs from the one on disk, and
+        a running server is restarted only then: Gitea reads ``app.ini`` at
+        start alone, and a restart ends every session and transfer.
+
         Args:
             rendered: The full ``app.ini`` text.
 
         Returns:
-            A short summary of what was done.
+            ``unchanged``, ``restarted`` or ``started``.
 
         Raises:
             subprocess.CalledProcessError: If the server refuses to come up.
         """
+        is_changed = self._installed_text() != rendered
+        if is_changed:
+            self._write(rendered)
+        self._own_work_root()
+        if unit_state(GITEA_UNIT) == "active":
+            if not is_changed:
+                return "unchanged"
+            run(["systemctl", "restart", GITEA_UNIT])
+            return "restarted"
+        run(["systemctl", "enable", "--now", GITEA_UNIT])
+        return "started"
+
+    @staticmethod
+    def _installed_text() -> "str | None":
+        """The ``app.ini`` on disk; None for a missing file or a symlink."""
+        if os.path.islink(GITEA_CONF_PATH) or not os.path.isfile(GITEA_CONF_PATH):
+            return None
+        try:
+            with open(GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
+                return stream.read()
+        except OSError:
+            return None
+
+    @staticmethod
+    def _write(rendered: str) -> None:
         os.makedirs(GITEA_ETC_DIR, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=GITEA_ETC_DIR, prefix=".app_")
         try:
@@ -173,13 +202,6 @@ class GiteaConfigApplier:
             if os.path.exists(temporary):
                 os.unlink(temporary)
             raise
-        self._own_work_root()
-        if unit_state(GITEA_UNIT) == "active":
-            # Gitea re-reads app.ini only at start.
-            run(["systemctl", "restart", GITEA_UNIT])
-            return "restarted"
-        run(["systemctl", "enable", "--now", GITEA_UNIT])
-        return "started"
 
     def stop(self) -> None:
         """Take the server down until the next apply; the unit stays enabled."""

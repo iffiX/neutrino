@@ -19,3 +19,7 @@ GITEA_SECRET_NAMES = ("SECRET_KEY", "INTERNAL_TOKEN", "JWT_SECRET", "LFS_JWT_SEC
 # The verbs a ``command {module: gitea}`` names, beside ``validate``.
 GITEA_COMMAND_ADMIN = "admin"
 GITEA_COMMAND_PASSWORD = "password"
+# How long the version and the administrator list stand before they are
+# read again. Each read starts two gitea processes, and the agent reports
+# every few seconds.
+GITEA_SURVEY_TTL_S = 60.0

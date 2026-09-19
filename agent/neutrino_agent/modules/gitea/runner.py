@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.base import ModuleRunner, command_outcome
@@ -29,6 +30,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_BINARY_PATH,
     GITEA_COMMAND_ADMIN,
     GITEA_COMMAND_PASSWORD,
+    GITEA_SURVEY_TTL_S,
     GITEA_UNIT,
 )
 from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer
@@ -44,6 +46,8 @@ class GiteaModuleRunner(ModuleRunner):
     def __init__(self, *, platform, log=print, publish=None):
         super().__init__(platform=platform, log=log, publish=publish)
         self._config: "GiteaConfig | None" = None
+        self._survey = None
+        self._surveyed_at = 0.0
 
     def verify(self, resolved: dict) -> bool:
         """Whether the binary is on the machine.
@@ -74,6 +78,7 @@ class GiteaModuleRunner(ModuleRunner):
             if output.strip():
                 self._log(output.strip())
         GiteaInstaller().install(package_path)
+        self._survey = None
 
     def uninstall(self, resolved: dict) -> None:
         """Take the unit, the binary and the configuration off; keep the data.
@@ -137,10 +142,7 @@ class GiteaModuleRunner(ModuleRunner):
             port is the held configuration's, else the installed
             ``app.ini``'s.
         """
-        try:
-            state = GiteaAdminManager().survey()
-        except (OSError, subprocess.SubprocessError):
-            state = None
+        state = self._surveyed()
         config = self._config
         return {
             "is_running": unit_state(GITEA_UNIT) == "active",
@@ -193,4 +195,23 @@ class GiteaModuleRunner(ModuleRunner):
             return command_outcome(
                 1, "command_failed", {"detail": command_detail(error)[:500]}
             )
+        self._survey = None
         return command_outcome(0, output=f"{subject}\n")
+
+    def _surveyed(self):
+        """The version and the administrators, read at most once a minute.
+
+        Returns:
+            The last survey while it stands, a fresh one past that, None
+            when the read fails.
+        """
+        now = time.monotonic()
+        if self._survey is not None and now - self._surveyed_at < GITEA_SURVEY_TTL_S:
+            return self._survey
+        try:
+            self._survey = GiteaAdminManager().survey()
+        except (OSError, subprocess.SubprocessError):
+            self._survey = None
+            return None
+        self._surveyed_at = now
+        return self._survey

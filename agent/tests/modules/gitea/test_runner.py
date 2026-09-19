@@ -64,9 +64,11 @@ class FakeAdmins:
     admins: list = []
     created: list = []
     changed: list = []
+    surveys: list = []
     error = None
 
     def survey(self):
+        FakeAdmins.surveys.append(list(FakeAdmins.admins))
         return GiteaState(True, "1.27.3", list(FakeAdmins.admins))
 
     def create_admin(self, *, username, password, email):
@@ -235,6 +237,34 @@ def test_observe_reads_the_binary_the_unit_and_the_port(runner, monkeypatch, tmp
     assert present["details"]["admins"] == []
     runner.apply(CONFIG)
     assert runner.observe({})["details"]["port"] == 3000
+
+
+def test_the_survey_stands_for_a_minute(runner, monkeypatch, tmp_path):
+    (tmp_path / "gitea").write_text("")
+    monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(tmp_path / "gitea"))
+    clock = [1000.0]
+    monkeypatch.setattr(runner_module.time, "monotonic", lambda: clock[0])
+
+    runner.observe({})
+    runner.observe({})
+    clock[0] += 61.0
+    runner.observe({})
+
+    assert len(FakeAdmins.surveys) == 2
+
+
+def test_a_new_administrator_is_surveyed_at_once(runner, monkeypatch, tmp_path):
+    (tmp_path / "gitea").write_text("")
+    monkeypatch.setattr(runner_module, "GITEA_BINARY_PATH", str(tmp_path / "gitea"))
+    monkeypatch.setattr(runner_module.time, "monotonic", lambda: 1000.0)
+    runner.observe({})
+
+    runner.command("admin", {"username": "ann", "password": "pw", "email": "a@b"})
+
+    # The verb reads once for itself; the observe after it reads again
+    # rather than answering from the survey taken before the account existed.
+    assert runner.observe({})["details"]["admins"] == ["ann"]
+    assert FakeAdmins.surveys == [[], [], ["ann"]]
 
 
 def test_a_refused_gitea_verb_is_typed(runner):
