@@ -106,9 +106,14 @@ post_upgrade() {
 }
 
 pre_remove() {
-    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_cliproxyapi neutrino_hub_netbird neutrino_hub_easytier; do
+    for unit in neutrino_hub_web neutrino_hub_router neutrino_hub_xray neutrino_hub_dnsmasq neutrino_hub_cliproxyapi neutrino_hub_netbird neutrino_hub_easytier; do
         systemctl stop "${unit}.service" >/dev/null 2>&1 || true
         systemctl disable "${unit}.service" >/dev/null 2>&1 || true
+    done
+    # One instance per radio and per uplink, named at runtime rather than
+    # here, so each family is stopped by its pattern.
+    for template in neutrino_hub_dhcpcd neutrino_hub_hostapd neutrino_hub_supplicant; do
+        systemctl stop "${template}@*.service" >/dev/null 2>&1 || true
     done
     # The router unit stops without tearing anything down, so removing the
     # package is where the firewall and the policy route go.
@@ -118,8 +123,13 @@ pre_remove() {
 
 post_remove() {
     # What is left once pacman removes its own files is the bytecode the
-    # interpreter wrote while it ran.
+    # interpreter wrote while it ran, and the units `nhub setup` wrote into
+    # /etc/systemd/system at runtime: pacman never owned those, and they name
+    # an interpreter that has just gone.
     rm -rf /opt/neutrino
+    rm -f /etc/systemd/system/neutrino_hub_*.service
+    rm -f /etc/systemd/system/*.wants/neutrino_hub_*.service
+    systemctl daemon-reload >/dev/null 2>&1 || true
     echo "  Leaving /etc/neutrino/hub in place; remove it by hand if you"
     echo "  no longer need the node credentials and device keys it holds."
 }
