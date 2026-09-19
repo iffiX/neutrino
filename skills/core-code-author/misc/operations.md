@@ -132,8 +132,30 @@ setting is usually called "Wake on LAN" or "Power on by PCIe" in the BIOS.
 
 | What | Where |
 | --- | --- |
-| Routing state | `journalctl -u neutrino_router` |
+| Routing state | `journalctl -u neutrino_hub_router` |
 | Proxy | `journalctl -u neutrino_hub_xray` |
 | DNS queries | `journalctl -u neutrino_hub_dnsmasq` (also the panel's Dashboard) |
-| Control panel | `journalctl -u neutrino_web` |
+| Control panel | `journalctl -u neutrino_hub_web` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
+
+## Trying a change on an installed box
+
+A package install puts the hub under `/opt/neutrino/python/lib/python3.13/site-packages/neutrino_hub/`
+and the agent under `/opt/neutrino_agent/python/lib/python3.13/site-packages/neutrino_agent/`.
+A `.py` copied over one of those files is not what runs until its compiled
+copy is gone: the carried interpreter loads `__pycache__/<name>.cpython-313.pyc`
+without checking the source (the packaged files are unchecked-hash pycs), so
+a pushed file whose change is missing at runtime has a stale `.pyc` beside it.
+
+```bash
+SP=/opt/neutrino/python/lib/python3.13/site-packages/neutrino_hub
+sudo cp module.py $SP/web/routers/agent/module.py
+sudo rm -f $SP/web/routers/agent/__pycache__/module.cpython-313.pyc
+sudo systemctl restart neutrino_hub_web
+```
+
+The built panel under `neutrino_hub/data/frontend/` is served from disk, so a
+copied build shows on the next page load with no restart. Restarting
+`neutrino_hub_web` closes every agent channel for a moment: an install in
+progress on a device fails with `hub_unreachable` and the agent retries on
+its own, so restart between installs, not during one.
