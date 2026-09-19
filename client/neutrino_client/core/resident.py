@@ -483,8 +483,9 @@ class ClientResident:
             sessions = list(self._sessions.values())
         for session in sessions:
             session.start()
-        self._thread = threading.Thread(target=self.run_forever, daemon=True)
-        self._thread.start()
+        thread = threading.Thread(target=self.run_forever, daemon=True)
+        thread.start()
+        self._thread = thread
 
     def run_forever(self) -> None:
         """Watch the binding file until the resident stops."""

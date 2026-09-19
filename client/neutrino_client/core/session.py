@@ -284,11 +284,17 @@ class ClientHubSession:
     # --- the loop ---
 
     def start(self) -> None:
-        """Run the loop on a thread of its own."""
-        self._thread = threading.Thread(
+        """Run the loop on a thread of its own.
+
+        The thread is published only once it runs, so a ``stop()`` from
+        another thread meanwhile joins nothing: the loop sees the stop on
+        its first turn and ends by itself.
+        """
+        thread = threading.Thread(
             target=self.run_forever, name=f"hub_session_{self.binding_id}", daemon=True
         )
-        self._thread.start()
+        thread.start()
+        self._thread = thread
 
     def stop(self) -> None:
         """Close the socket and end the loop. Idempotent."""

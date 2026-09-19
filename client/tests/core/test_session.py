@@ -867,6 +867,24 @@ def test_stop_closes_the_socket_and_ends_the_loop(bound, monkeypatch):
     assert not session._thread.is_alive()
 
 
+def test_a_stop_before_the_thread_is_published_joins_nothing_and_still_ends_it(
+    bound,
+):
+    """A stop from another thread can land between the thread being made
+    and it running; it has nothing to join, and the loop it did not see
+    ends on its first turn."""
+    session, _listener = bound
+    turns = []
+    session.run_once = lambda: turns.append(1) or 60
+
+    session.stop()
+    session.start()
+    session._thread.join(timeout=5)
+
+    assert not session._thread.is_alive()
+    assert turns == []
+
+
 def test_a_stop_during_a_turn_ends_the_loop_without_waiting_out_the_delay(bound):
     """The stop lands while a turn runs; the wait after it must not sleep."""
     session, _listener = bound
