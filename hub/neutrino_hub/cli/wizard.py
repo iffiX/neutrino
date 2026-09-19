@@ -33,7 +33,7 @@ from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
     WEB_LANGUAGES,
 )
-from neutrino_hub.utils.constants import UTILS_LOG_DIR
+from neutrino_hub.utils.constants import UTILS_SETUP_LOG_PATH
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODES_BY_KEY,
     ROUTER_MODE_SERVER,
@@ -72,9 +72,6 @@ WIZARD_TITLES = (
 # counter: the one before the questions asking how they will be answered, the
 # one waiting for a browser to take them, and the one after everything.
 WIZARD_WELCOME_TITLE = "Welcome"
-# Where the run writes itself down, named here so the screen that warns
-# about losing the session can say where to read what happened.
-SETUP_LOG_PATH = UTILS_LOG_DIR / "setup.log"
 WIZARD_DONE_TITLE = "Add your devices"
 # How often the last screen looks for a device that has joined.
 WIZARD_POLL_INTERVAL_S = 2.0
@@ -876,7 +873,7 @@ class SetupWizard:
             self._say(
                 f"The panel will be at http://{self._address}:{self._listen_port}"
             )
-            self._say(f"and the run is written to {SETUP_LOG_PATH}.")
+            self._say(f"and the run is written to {UTILS_SETUP_LOG_PATH}.")
         else:
             self._say("Saying yes here replaces the firewall and starts the")
             self._say("services. Every address on this machine is left as it")

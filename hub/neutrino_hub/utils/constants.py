@@ -76,6 +76,10 @@ UTILS_GEODATA_DIR = UTILS_STATE_ROOT / "geodata"
 
 UTILS_LOG_DIR = UTILS_LOG_ROOT
 
+# What one `nhub setup` run wrote down. The installer truncates it as it
+# starts, so the file is that run and no earlier one, and it needs no cap.
+UTILS_SETUP_LOG_PATH = UTILS_LOG_ROOT / "setup.log"
+
 
 def resolve_config_dir() -> Path:
     """Where this instance reads and writes its configuration.

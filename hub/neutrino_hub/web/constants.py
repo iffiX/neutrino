@@ -3,7 +3,6 @@
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
     UTILS_DATA_DIR,
-    UTILS_LOG_ROOT,
     UTILS_RUNTIME_ROOT,
     UTILS_STATE_ROOT,
 )
@@ -133,7 +132,6 @@ WEB_LOGIN_LOCKOUT_STEPS_S = (30, 60, 300, 3600, 86400)
 WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 
 WEB_STATS_PUSH_INTERVAL_S = 1.0
-WEB_DNS_LOG_PATH = UTILS_LOG_ROOT / "dnsmasq.log"
 # Where a name was resolved. One word per answer dnsmasq can write beside a
 # query: the proxy's own resolver, another resolver, dnsmasq's cache, or
 # dnsmasq answering from its own configuration. A query whose answer line has

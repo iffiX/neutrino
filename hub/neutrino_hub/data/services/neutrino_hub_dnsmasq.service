@@ -28,5 +28,10 @@ ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-dnsmasq
 Restart=on-failure
 RestartSec=5
 
+# Every query line goes to the journal, and the panel's DNS tab reads them
+# there. journald drops what a unit writes past 10000 messages in 30 seconds,
+# which a DNS storm passes; the tab would then show a gap it cannot explain.
+LogRateLimitIntervalSec=0
+
 [Install]
 WantedBy=multi-user.target

@@ -257,7 +257,10 @@ class InstallSessionReporter(InstallReporter):
 
 
 def _opened(path: Path | None):
-    """Open the log to append to, or nothing when there is nowhere to write.
+    """Open the log for this run, or nothing when there is nowhere to write.
+
+    The file is truncated: it describes one setup, so the run that is happening
+    now replaces the one before it and the file needs no size limit.
 
     Args:
         path: Where the copy goes, or None for a run that keeps none.
@@ -270,6 +273,6 @@ def _opened(path: Path | None):
         return None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        return path.open("a", encoding="utf-8")
+        return path.open("w", encoding="utf-8")
     except OSError:
         return None

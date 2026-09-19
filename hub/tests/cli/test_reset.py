@@ -67,12 +67,19 @@ def box(tmp_path, monkeypatch):
     state.mkdir()
     (state / "session.secret").write_text("aa" * 32)
     (state / "vault.key").write_text("bb" * 32)
+    (state / "xray_node_health.json").write_text("{}")
     (state / "cliproxyapi/auth").mkdir(parents=True)
     (state / "cliproxyapi/auth/claude-somebody.json").write_text("{}")
+
+    logs = config.parent / "log"
+    logs.mkdir()
+    (logs / "setup.log").write_text("step 1")
+    (logs / "panel.log").write_text("started")
 
     monkeypatch.setattr(reset, "UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "UTILS_EXAMPLES_DIR", examples)
     monkeypatch.setattr(reset, "UTILS_STATE_ROOT", state)
+    monkeypatch.setattr(reset, "UTILS_LOG_ROOT", logs)
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config)
     monkeypatch.setattr(reset, "stop_everything", lambda: 0)
     monkeypatch.setattr(reset, "stop", lambda names: 0)
@@ -97,6 +104,23 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     assert not (box / "web/agent_tls").exists()
     assert not (box.parent / "state" / "session.secret").exists()
     assert not (box.parent / "state" / "vault.key").exists()
+
+
+def test_reset_all_forgets_what_this_box_read_about_its_nodes(box):
+    """The readings describe nodes the next owner does not have."""
+    reset._reset_all()
+
+    assert not (box.parent / "state" / "xray_node_health.json").exists()
+
+
+def test_reset_all_clears_what_the_hub_wrote_to_var_log(box):
+    """design/files.md says a reset clears /var/log of everything the hub
+    wrote. The directory stays: the accounts that write into it do."""
+    reset._reset_all()
+
+    logs = box.parent / "log"
+    assert logs.is_dir()
+    assert list(logs.iterdir()) == []
 
 
 def test_reset_all_forgets_the_hubs_own_identity(box):

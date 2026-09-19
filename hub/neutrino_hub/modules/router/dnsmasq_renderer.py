@@ -5,7 +5,6 @@ xray DNS inbound on loopback, so a LAN name is resolved at the exit node and no
 plaintext query ever leaves a WAN interface.
 """
 
-from neutrino_hub.utils.constants import UTILS_LOG_DIR
 from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
 
 from neutrino_hub.modules.router.interfaces import RouterInterface, RouterNetworkConfig
@@ -50,9 +49,11 @@ class RouterDnsmasqRenderer:
             "bogus-priv",
             "cache-size=1000",
             "",
-            "# Query log feeds the panel's DNS tab.",
+            "# Query log feeds the panel's DNS tab. `-` is stderr, which the",
+            "# unit hands to systemd, so the journal holds it under its own",
+            "# size limits rather than a file of ours growing without one.",
             "log-queries",
-            f"log-facility={UTILS_LOG_DIR / 'dnsmasq.log'}",
+            "log-facility=-",
             "log-async=25",
             "",
         ]

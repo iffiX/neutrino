@@ -115,9 +115,27 @@ def test_the_only_upstream_is_the_local_xray_inbound(tmp_path):
     """The whole point of the DNS path: no query leaves by the uplink in clear."""
     config = render(lan_entry("enp1s0", address="192.168.100.1"))
 
+    servers = [line for line in config.splitlines() if line.startswith("server=")]
+
     assert "no-resolv" in config
-    assert "server=127.0.0.1#15353" in config
-    assert config.count("server=") == 1
+    assert servers == ["server=127.0.0.1#15353"]
+    validate_dnsmasq(config, tmp_path)
+
+
+def test_the_query_log_goes_to_the_journal_rather_than_a_file(tmp_path):
+    """A file of ours grows without a limit; the journal has its own.
+
+    `log-facility=-` is what `man dnsmasq` documents as stderr, which the unit
+    hands to systemd. `log-queries` stays: the panel's DNS tab reads the query
+    lines.
+    """
+    config = render(lan_entry("enp1s0", address="192.168.100.1"))
+
+    directives = without_comments(config)
+    assert "log-facility=-" in directives
+    assert "/var/log/neutrino" not in directives
+    assert "log-queries" in directives
+    assert "log-async=25" in directives
     validate_dnsmasq(config, tmp_path)
 
 

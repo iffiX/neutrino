@@ -34,6 +34,7 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
     UTILS_EXAMPLES_DIR,
+    UTILS_LOG_ROOT,
     UTILS_STATE_ROOT,
 )
 
@@ -54,11 +55,17 @@ RESET_COLLECTED_PATHS = (
     # by hand.
     "cliproxyapi/management_key.sealed",
 )
-# The secrets under /var/lib/neutrino that `all` clears for the same reason:
+# The files under /var/lib/neutrino that `all` clears for the same reason:
 # state a fresh box generates for itself, and the next owner must not inherit.
 # The vault's data key in particular — left behind, it opens whatever store
-# the next owner restores under the same wrap.
-RESET_STATE_PATHS = ("session.secret", "vault.key", "agent_tls_key.pem")
+# the next owner restores under the same wrap. The node health file is not a
+# secret; it is this box's readings of nodes the next owner does not have.
+RESET_STATE_PATHS = (
+    "session.secret",
+    "vault.key",
+    "agent_tls_key.pem",
+    "xray_node_health.json",
+)
 # Directories under the state root the hub filled itself. The module cache is
 # a cache in the strict sense, so handing the box back costs the next owner a
 # download and nothing else. The AI gateway's directory is the opposite kind:
@@ -152,7 +159,7 @@ def _reset_all() -> int:
     stop(["web", "router"])
     with router_lock():
         network = _hand_back_network()
-    collected = _forget_collected()
+    collected = _forget_collected() + _forget_logs()
     restored = _restore_examples()
     clear_password()
 
@@ -230,6 +237,27 @@ def _forget_collected() -> list:
         if path.is_dir():
             shutil.rmtree(path)
             removed.append(str(path))
+    return removed
+
+
+def _forget_logs() -> list:
+    """Empty the log root, which holds nothing but what the hub wrote.
+
+    The directory itself stays. The accounts that write into it still exist,
+    and `nhub setup` is what hands it to them.
+
+    Returns:
+        What was removed, by path.
+    """
+    if not UTILS_LOG_ROOT.is_dir():
+        return []
+    removed = []
+    for path in sorted(UTILS_LOG_ROOT.iterdir()):
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        removed.append(str(path))
     return removed
 
 

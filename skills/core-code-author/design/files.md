@@ -12,7 +12,7 @@ answers rather than to add a directory.
 | `/opt/neutrino/` | The interpreter, `xray`, `cli-proxy-api` | What did the hub's package put here? |
 | `/etc/neutrino/` | `hub/`, `agent/` | What has somebody decided? |
 | `/var/lib/neutrino/` | `generated/`, `geodata/`, `cliproxyapi/`, the working vault key, the session secret, statistics | What has this machine accumulated? |
-| `/var/log/neutrino/` | The panel's and dnsmasq's logs | What happened? |
+| `/var/log/neutrino/` | The setup log | What happened during setup? |
 | `/run/neutrino/` | The login lockout | What is true only until the next boot? |
 
 The agent is a second package, and a machine may carry both, so it answers
@@ -97,6 +97,9 @@ testable. Details of the files themselves:
     agent_cache/        the agent packages this hub hands out
     stood_down.json     which units the hub stopped so it could drive the
                         network
+    xray_node_health.json
+                        each exit node's recent measurements and the exit the
+                        hub last pinned. Losing it costs one probe round
 ```
 
 State, not configuration: everything here is either derived from
@@ -132,11 +135,17 @@ and the `xray -test` that validates a render before it is accepted. A path that
 forgets fails at the moment a configuration is checked, which is the failure
 this arrangement is written down to prevent.
 
-## /var/log/neutrino — what happened
+## /var/log/neutrino — what happened during setup
 
-The panel's own log and the dnsmasq query log the DNS page reads. Owned by the
-unprivileged service accounts that write them, which is why the installer
-chowns rather than leaves them to root.
+One file, `setup.log`, holding the run of `nhub setup` that wrote it. Each run
+truncates it, so its length is one setup rather than every setup this box has
+had.
+
+Everything else the hub runs logs to its unit's journal, where journald bounds
+it by its own configuration. xray's access log is switched off in the rendered
+config, its error log takes the console, and dnsmasq takes the console with
+`log-facility=-`. The panel's DNS page reads dnsmasq's journal with
+`journalctl --after-cursor`.
 
 ## /run/neutrino — what is true until the next boot
 

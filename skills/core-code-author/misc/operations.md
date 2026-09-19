@@ -133,7 +133,7 @@ setting is usually called "Wake on LAN" or "Power on by PCIe" in the BIOS.
 | What | Where |
 | --- | --- |
 | Routing state | `journalctl -u neutrino_router` |
-| Proxy | `journalctl -u xray`, `/var/log/neutrino/xray_error.log` |
-| DNS queries | `/var/log/neutrino/dnsmasq.log` (also the panel's Dashboard) |
+| Proxy | `journalctl -u neutrino_hub_xray` |
+| DNS queries | `journalctl -u neutrino_hub_dnsmasq` (also the panel's Dashboard) |
 | Control panel | `journalctl -u neutrino_web` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
