@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import os
 import socket
@@ -154,18 +155,22 @@ def is_configured() -> bool:
 
 
 def config_stamp() -> int:
-    """A marker that moves whenever the binding file does.
+    """A marker that moves whenever the binding file's content does.
 
     The resident compares it between polls, so a binding written by
     ``nclient join`` or ``nclient leave`` is adopted without a restart.
+    A digest of the bytes rather than the mtime: the kernel stamps every
+    write inside one tick of its clock alike, and the file is small.
 
     Returns:
-        The file's mtime in nanoseconds, or 0 when it does not exist.
+        A digest of the file's bytes, or 0 when it does not exist.
     """
     try:
-        return os.stat(config_path()).st_mtime_ns
+        with open(config_path(), "rb") as stream:
+            data = stream.read()
     except OSError:
         return 0
+    return int.from_bytes(hashlib.blake2b(data, digest_size=8).digest(), "big")
 
 
 def bindings() -> list:

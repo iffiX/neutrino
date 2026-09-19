@@ -10,7 +10,6 @@ log sink.
 
 import base64
 import json
-import os
 
 import pytest
 
@@ -64,13 +63,7 @@ MACHINE_ID = "machine-1"
 
 
 def bind(path, url="http://127.0.0.1:9", fingerprint="") -> None:
-    """Write a complete binding file, the way a join leaves it.
-
-    The file's mtime is what the service watches, and two writes inside one
-    tick of the kernel's file clock share one, so a rewrite is stamped past
-    the file it replaces.
-    """
-    previous = path.stat().st_mtime_ns if path.exists() else 0
+    """Write a complete binding file, the way a join leaves it."""
     path.write_text(
         json.dumps(
             {
@@ -82,9 +75,6 @@ def bind(path, url="http://127.0.0.1:9", fingerprint="") -> None:
             }
         )
     )
-    stamped = path.stat()
-    if stamped.st_mtime_ns <= previous:
-        os.utime(path, ns=(stamped.st_atime_ns, previous + 1))
 
 
 class FakeControlPlatform(AgentPlatform):
