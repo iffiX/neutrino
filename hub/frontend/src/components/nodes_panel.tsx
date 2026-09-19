@@ -205,12 +205,16 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     }
   };
 
-  // No body means every node, in one request rather than one per card.
+  // A request naming no node means every node, in one request rather than one
+  // per card.
   const handleTestAll = async () => {
     setActionError(null);
     setTestingIds(draftNodes.map((node) => node.id));
+    const request: NodeTestRequest = {};
     try {
-      resource.setData(await apiPost<NodesResponse>("/hub/proxy/node/test"));
+      resource.setData(
+        await apiPost<NodesResponse>("/hub/proxy/node/test", request),
+      );
     } catch (cause: unknown) {
       setActionError(describeError(cause));
     } finally {

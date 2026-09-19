@@ -333,7 +333,7 @@ the page's whole view.
 | `POST /api/hub/proxy/node/add` | a share link or a node | |
 | `POST /api/hub/proxy/node/set` | `{node_id, ...}` | |
 | `POST /api/hub/proxy/node/remove` | `{node_id}` | |
-| `POST /api/hub/proxy/node/test` | `{node_id}` | one latency probe |
+| `POST /api/hub/proxy/node/test` | `{node_id}`, or `{}` for every node | measures now, returns the node list |
 | `POST /api/hub/proxy/balancer/set` | the balancer's settings | |
 | `POST /api/hub/proxy/geodata/scan` | | reads the two latest releases from GitHub; returns the read's `geodata` block with `latest` filled |
 | `POST /api/hub/proxy/geodata/update` | | fetches both files, checks their sha256, writes them atomically, restarts the xray unit; returns `TaskStarted`, output on `/ws/hub/task` |
