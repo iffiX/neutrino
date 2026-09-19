@@ -16,8 +16,13 @@ sentence, so every surface does its own wording.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from neutrino_agent.constants import AGENT_MODULE_VERB_VALIDATE
+from neutrino_agent.constants import (
+    AGENT_MODULE_JOURNAL_LINES,
+    AGENT_MODULE_VERB_JOURNAL,
+    AGENT_MODULE_VERB_VALIDATE,
+)
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.modules.subprocess_run import units_journal
 
 
 def _ignore_status(name: str, status: dict) -> None:
@@ -152,14 +157,23 @@ class ModuleRunner:
         """
         return False
 
+    def journal_units(self) -> list:
+        """The units whose journal is this module's output.
+
+        Returns:
+            The unit names; empty for a module that runs as no unit.
+        """
+        return []
+
     def command(self, verb: str, args: dict, on_line=None) -> dict:
         """Run one of this module's verbs.
 
-        Every module answers ``validate``; the rest are the module's own.
+        Every module answers ``validate`` and ``journal``; the rest are the
+        module's own.
 
         Args:
             verb: The verb on the wire, without the module's name.
-            args: What the verb takes.
+            args: What the verb takes; ``{"lines"}`` for the journal.
             on_line: Called with each output line as it is produced.
 
         Returns:
@@ -168,7 +182,20 @@ class ModuleRunner:
         """
         if verb == AGENT_MODULE_VERB_VALIDATE:
             return self._validate_command(args)
+        if verb == AGENT_MODULE_VERB_JOURNAL:
+            return self._journal_command(args)
         return command_outcome(1, "verb_unknown", {"module": self.name, "verb": verb})
+
+    def _journal_command(self, args: dict) -> dict:
+        """The tail of the module's units' journal, as the verb answers it."""
+        try:
+            lines = int(args.get("lines", AGENT_MODULE_JOURNAL_LINES))
+        except (TypeError, ValueError):
+            lines = AGENT_MODULE_JOURNAL_LINES
+        lines = max(1, min(lines, AGENT_MODULE_JOURNAL_LINES))
+        return command_outcome(
+            0, output="\n".join(units_journal(self.journal_units(), lines))
+        )
 
     def _validate_command(self, args: dict) -> dict:
         """Check the configuration the verb carries, typed either way."""

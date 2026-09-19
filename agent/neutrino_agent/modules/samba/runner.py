@@ -128,6 +128,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Whether this machine's Samba unit is active."""
         return unit_state(self._unit) == "active"
 
+    def journal_units(self) -> list:
+        """This machine's Samba unit."""
+        return [self._unit]
+
     def details(self, resolved: dict) -> dict:
         """What Samba serves, who it serves, and each account's state.
 

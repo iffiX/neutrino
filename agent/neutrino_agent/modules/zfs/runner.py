@@ -50,6 +50,7 @@ from neutrino_agent.modules.zfs.constants import (
     ZFS_OP_OFFLINE,
     ZFS_OP_ONLINE,
     ZFS_OP_REPLACE,
+    ZFS_ZED_UNIT,
     ZFS_OP_SCRUB,
     ZFS_OP_STOP_SCRUB,
     ZFS_OPS,
@@ -102,6 +103,10 @@ class ZfsModuleRunner(SystemPackageModuleRunner):
     def is_active(self) -> bool:
         """Whether the ZFS kernel module is loaded; there is no unit to ask."""
         return os.path.isdir(ZFS_KERNEL_MODULE_DIR)
+
+    def journal_units(self) -> list:
+        """The event daemon's unit, the one place ZFS writes about itself."""
+        return [ZFS_ZED_UNIT]
 
     def details(self, resolved: dict) -> dict:
         """The whole storage picture.

@@ -24,7 +24,7 @@ cannot be edited or driven, and says so with ``agent_offline``.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from neutrino_hub.modules.devices.agent_module_cache import (
     platform_keys,
@@ -38,6 +38,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_RUNNING,
     CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_STREAM_COMMAND,
+    CHANNEL_VERB_JOURNAL,
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.devices.constants import (
@@ -51,12 +52,14 @@ from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.models import (
     ApplyResult,
     DeviceModuleListView,
     DeviceModuleRequest,
     DeviceModuleView,
     DeviceRequest,
+    JournalView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -262,6 +265,36 @@ def uninstall_module(
         HTTPException: As :func:`install_module`.
     """
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
+
+
+@router.get("/journal", response_model=JournalView)
+def module_journal(
+    device_id: str,
+    module: str,
+    lines: int = Query(default=200, ge=1, le=WEB_JOURNAL_LINE_LIMIT),
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> JournalView:
+    """Read the tail of one module's units' journal on the device.
+
+    Args:
+        device_id: The device, from the query.
+        module: The module name, from the query.
+        lines: How many lines to keep.
+        runtime: The shared runtime.
+
+    Returns:
+        The journal text, empty for a module that runs as no unit.
+
+    Raises:
+        HTTPException: 404 ``device_unknown`` or ``module_unknown``, 409
+            ``agent_offline``, 502 with the agent's code.
+    """
+    if module not in load_module_manifests():
+        raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
+    context = device_context(runtime, module, device_id)
+    info = run_command(runtime, context, CHANNEL_VERB_JOURNAL, {"lines": lines})
+    text = str(info.get("output", "") or "")
+    return JournalView(text="\n".join(text.splitlines()[-lines:]))
 
 
 def module_router(

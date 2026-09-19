@@ -17,6 +17,7 @@ import { ZfsPanels } from "../components/zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
 import { useApiResource } from "../use_api_resource";
+import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
 import {
   HUB_EVENT_CONFIG,
@@ -37,6 +38,7 @@ import type {
   DeviceOnlineView,
   DeviceRequest,
   DevicesOnlineResponse,
+  ServiceJournal,
 } from "../api_types";
 
 import "./modules_page.css";
@@ -47,12 +49,15 @@ import "./modules_page.css";
  * The page opens on a machine the way Terminals and Files do. Under the
  * chips, one small tab per module the machine's page shows, each wearing the
  * state its agent last reported, and a `+` that picks which modules the page
- * shows for this machine. Under the current tab sit the lines the agent sent
- * up for its last install or uninstall, then the four presses that write
- * what the hub wants of the module, and Configure, which opens the module's
- * own panels and closes them on the next press. The first Configure on a
+ * shows for this machine. Under the current tab sits the module's output: the
+ * lines the agent sends up while it installs or uninstalls, and the tail of
+ * the module's own journal on the machine the rest of the time, polled while
+ * the page is open. Then the four presses that write what the hub wants of
+ * the module, and Configure, which opens the module's own panels and closes
+ * them on the next press. The first Configure on a
  * module the hub holds no configuration for imports what the machine already
- * has, so the first push changes nothing on it.
+ * has, so the first push changes nothing on it. The machine, the tab and the
+ * sections open are kept between visits, until a reload.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -153,6 +158,9 @@ const DEVICE_QUERY = "device";
 /** How tall the tab row is while the first list is still on its way. */
 const SKELETON_HEIGHT_PX = 120;
 
+/** How much of the module's journal the output box shows. */
+const JOURNAL_LINES = 200;
+
 export function ModulesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -228,6 +236,29 @@ export function ModulesPage() {
       ? null
       : activeRow.task_id,
   );
+  // The task's lines while it runs and after it fails; the machine's own
+  // journal for the module otherwise, once the software is on the machine.
+  const isTaskShown =
+    activeRow !== undefined &&
+    activeRow.task_id !== "" &&
+    (task.isRunning || (task.exitCode !== null && task.exitCode !== 0));
+  const isJournalShown =
+    !isTaskShown &&
+    activeRow !== undefined &&
+    isAgentOnline &&
+    activeModule !== null &&
+    deviceId !== null &&
+    (PRESENT_STATES.includes(activeRow.state) || activeRow.state === "failed");
+  const journal = usePolledResource<ServiceJournal>(
+    isJournalShown
+      ? apiPath("/agent/module/journal", {
+          device_id: deviceId,
+          module: activeModule,
+          lines: JOURNAL_LINES,
+        })
+      : null,
+  );
+  const journalText = journal.data?.text ?? null;
   const logRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
@@ -235,7 +266,7 @@ export function ModulesPage() {
     if (node !== null) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [task.lines]);
+  }, [task.lines, journalText]);
 
   const noteShown = (shown: string[]) => {
     if (online.data === null || deviceId === null) {
@@ -412,26 +443,41 @@ export function ModulesPage() {
                 <div className="modules_log">
                   <div className="modules_log_head">
                     <span className="section_label">
-                      {t("ui.modules.output")}
+                      {isJournalShown
+                        ? t("ui.journal.label", { lines: JOURNAL_LINES })
+                        : t("ui.modules.output")}
                     </span>
-                    {activeRow.task_id !== "" && (
+                    {isTaskShown && (
                       <StatusDot
                         tone={taskTone(task.isRunning, task.exitCode)}
                         isPulsing={task.isRunning}
                         label={t(taskKey(task.isRunning, task.exitCode))}
                       />
                     )}
+                    {isJournalShown && journalText !== null && (
+                      <StatusDot tone="ok" isPulsing label={t("state.live")} />
+                    )}
                   </div>
                   <pre className="modules_log_output" ref={logRef}>
-                    {activeRow.task_id === "" ? (
+                    {isTaskShown ? (
+                      stripAnsi(task.lines.join("\n"))
+                    ) : isJournalShown ? (
+                      journalText === null ? (
+                        <span className="faint">
+                          {journal.isLoading ? "" : t("ui.journal.unavailable")}
+                        </span>
+                      ) : journalText.trim().length > 0 ? (
+                        journalText
+                      ) : (
+                        <span className="faint">{t("ui.journal.empty")}</span>
+                      )
+                    ) : (
                       <span className="faint">
                         {t("ui.modules.output_empty")}
                       </span>
-                    ) : (
-                      stripAnsi(task.lines.join("\n"))
                     )}
                   </pre>
-                  {task.error !== null && (
+                  {isTaskShown && task.error !== null && (
                     <span className="field_error">{task.error}</span>
                   )}
                 </div>

@@ -153,7 +153,7 @@ def test_an_op_outside_the_table_is_refused(runner):
 
 
 def test_a_verb_the_module_does_not_have_is_refused(runner):
-    assert runner.command("journal", {})["code"] == "verb_unknown"
+    assert runner.command("control", {})["code"] == "verb_unknown"
 
 
 def test_observe_is_the_tools_the_kernel_module_and_the_picture(

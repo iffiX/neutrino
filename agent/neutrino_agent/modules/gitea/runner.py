@@ -131,6 +131,10 @@ class GiteaModuleRunner(ModuleRunner):
         """Whether the git server's unit is active."""
         return unit_state(GITEA_UNIT) == "active"
 
+    def journal_units(self) -> list:
+        """The git server's unit."""
+        return [GITEA_UNIT]
+
     def details(self, resolved: dict) -> dict:
         """Whether it runs, where it answers, and who administers it.
 

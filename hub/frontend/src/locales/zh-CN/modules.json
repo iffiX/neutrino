@@ -217,7 +217,7 @@
   "ui.modules.no_pick_hint": "在上面选一台机器来查看它的模块。",
   "ui.modules.no_tabs": "还没有模块标签；用 + 添加。",
   "ui.modules.output": "输出",
-  "ui.modules.output_empty": "还没有输出。安装或卸载时，被控端的输出会显示在这里。",
+  "ui.modules.output_empty": "还没有输出。装上之后，这里显示它在这台机器上的日志。",
   "ui.modules.pick_hint": "下面的模块在这台机器上。",
   "ui.modules.start": "启动",
   "ui.modules.stop": "停止",

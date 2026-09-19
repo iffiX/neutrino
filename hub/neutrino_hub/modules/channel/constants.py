@@ -53,10 +53,12 @@ CHANNEL_FILE_OP_DIRECTORY_DOWNLOAD = "directory_download"
 
 # The ``module`` a ``command`` names for the agent's own verbs, and the two
 # verbs the hub sends outside a module's router: a shell's later size, and
-# a configuration checked before it is stored, which every module answers.
+# the two every module answers, a configuration checked before it is stored
+# and the tail of the module's units' journal.
 CHANNEL_COMMAND_MODULE_AGENT = "agent"
 CHANNEL_VERB_RESIZE = "resize"
 CHANNEL_VERB_VALIDATE = "validate"
+CHANNEL_VERB_JOURNAL = "journal"
 
 # The hub allots even stream ids from here; a peer's ids are odd.
 CHANNEL_FIRST_HUB_STREAM_ID = 0

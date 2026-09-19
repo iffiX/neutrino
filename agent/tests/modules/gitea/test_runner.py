@@ -276,3 +276,19 @@ def test_a_refused_gitea_verb_is_typed(runner):
 
     assert outcome["code"] == "command_failed"
     assert "db locked" in outcome["params"]["detail"]
+
+
+def test_journal_reads_the_servers_unit(runner, monkeypatch):
+    asked: list = []
+
+    def journal(units, lines):
+        asked.append((list(units), lines))
+        return ["2026-09-19T10:00:00-0500 box gitea[1]: Starting"]
+
+    monkeypatch.setattr("neutrino_agent.modules.base.units_journal", journal)
+
+    outcome = runner.command("journal", {"lines": 50})
+
+    assert outcome["exit_code"] == 0
+    assert outcome["output"].endswith("Starting")
+    assert asked == [(["neutrino_gitea.service"], 50)]

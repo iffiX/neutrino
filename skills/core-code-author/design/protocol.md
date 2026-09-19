@@ -448,6 +448,7 @@ the page's whole view.
 | `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running` |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent` |
+| `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's units' journal on the device; empty for a module that runs as no unit |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
 | `POST /api/agent/module/samba/share/set` | `{device_id, shares}` | |
@@ -801,10 +802,14 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 | `module` | Verbs |
 | --- | --- |
 | `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto the last three |
-| `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin/password` on `gitea`, `control/journal` on `podman`, `op`, `scan` and `validate` on `zfs` |
+| `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin/password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
 
-`validate` is a module verb: `command {module: <name>, verb: validate, config}`
-checks a configuration before it is saved. A terminal's first size is in its
+Two verbs every module answers: `validate`, as `command {module: <name>,
+verb: validate, config}`, checks a configuration before it is saved; and
+`journal`, as `command {module: <name>, verb: journal, lines}`, closes with
+the tail of the module's units' journal in `output`, merged by time when the
+module runs as more than one unit. On `podman`, a `journal` naming a
+container is that container's; one naming none is the module's own. A terminal's first size is in its
 `open`; a later size is `open {kind: command, module: agent, verb: resize,
 shell: <id>, cols, rows}`, closed as soon as it is applied.
 

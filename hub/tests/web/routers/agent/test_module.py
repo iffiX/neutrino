@@ -83,6 +83,41 @@ def test_an_agent_whose_socket_closed_is_not_online(api):
     assert not answer["is_agent_online"]
 
 
+def test_the_journal_is_read_on_the_agent_under_the_modules_name(api):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.agent_sessions.outcome = {
+        "exit_code": 0,
+        "code": "",
+        "params": {},
+        "output": "one\ntwo\nthree\n",
+    }
+
+    answer = client.get(
+        f"{MODULE_PATH}/journal",
+        params={"device_id": DEVICE, "module": "fakedesk", "lines": 2},
+    )
+
+    assert answer.status_code == 200
+    assert answer.json() == {"text": "two\nthree"}
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "fakedesk", "journal", {"lines": 2})
+    ]
+
+
+def test_a_journal_of_a_module_nobody_ships_is_refused_by_name(api):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+
+    answer = client.get(
+        f"{MODULE_PATH}/journal", params={"device_id": DEVICE, "module": "nope"}
+    )
+
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "module_unknown"
+    assert runtime.agent_sessions.commands == []
+
+
 def test_a_row_is_what_the_agent_reported_beside_what_the_hub_asks(api):
     client, runtime = api
     runtime.agent_sessions.online.add(DEVICE)

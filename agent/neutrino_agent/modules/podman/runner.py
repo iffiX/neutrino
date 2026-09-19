@@ -127,6 +127,11 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """Whether the engine's own unit is active."""
         return unit_state(PODMAN_UNIT) == "active"
 
+    def journal_units(self) -> list:
+        """The engine's unit and one per declared container."""
+        config = self._config or PodmanConfig()
+        return [PODMAN_UNIT] + [f"{name}.service" for name in config.declared_names]
+
     def details(self, resolved: dict) -> dict:
         """Every container podman knows, and the engine's own state.
 
@@ -153,14 +158,17 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
 
         Args:
             verb: ``control``, ``journal``, or ``validate``.
-            args: ``{"name", "action"}`` for control, ``{"name"}`` for the
-                journal.
+            args: ``{"name", "action"}`` for control, ``{"name"}`` for one
+                container's journal, ``{"lines"}`` for the module's own.
             on_line: Called with each output line.
 
         Returns:
             ``{"exit_code", "code", "params", "output"}``.
         """
-        if verb not in (PODMAN_COMMAND_CONTROL, PODMAN_COMMAND_JOURNAL):
+        # A journal that names no container is the module's own.
+        if verb not in (PODMAN_COMMAND_CONTROL, PODMAN_COMMAND_JOURNAL) or (
+            verb == PODMAN_COMMAND_JOURNAL and not args.get("name")
+        ):
             return super().command(verb, args, on_line)
         name = str(args.get("name", ""))
         if not CONTAINER_NAME_PATTERN.match(name):

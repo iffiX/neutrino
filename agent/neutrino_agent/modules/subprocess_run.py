@@ -120,3 +120,29 @@ def unit_state(unit: str) -> str:
         return run(["systemctl", "is-active", unit], is_checked=False).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+def units_journal(units: list, lines: int) -> list:
+    """The tail of the journal of one or more units, oldest line first.
+
+    Args:
+        units: The unit names; journald merges them by time.
+        lines: How many lines to read at most.
+
+    Returns:
+        The lines, empty when there is no unit to ask or journald cannot be
+        asked.
+    """
+    if not units:
+        return []
+    command = ["journalctl"]
+    for unit in units:
+        command += ["-u", unit]
+    command += ["-n", str(lines), "--no-pager", "--output", "short-iso"]
+    try:
+        result = run(command, is_checked=False)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if not result.is_success:
+        return []
+    return [line for line in result.stdout.splitlines() if line.strip()]

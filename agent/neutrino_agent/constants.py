@@ -59,6 +59,9 @@ AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
 # every module answers: checking a configuration before the hub stores it.
 AGENT_COMMAND_MODULE = "agent"
 AGENT_MODULE_VERB_VALIDATE = "validate"
+AGENT_MODULE_VERB_JOURNAL = "journal"
+# How many lines of a module's units' journal one read returns at most.
+AGENT_MODULE_JOURNAL_LINES = 200
 
 # What the hub's state may want a module to be. The agent makes each
 # mentioned module's actual state equal its want.

@@ -406,3 +406,17 @@ def test_the_journal_streams_its_lines_and_carries_them_in_the_output(runner):
     assert lines == ["a", "b"]
     assert outcome["output"] == "a\nb"
     assert outcome["exit_code"] == 0
+
+
+def test_a_journal_naming_no_container_is_the_modules_own(runner, monkeypatch):
+    asked: list = []
+    monkeypatch.setattr(
+        "neutrino_agent.modules.base.units_journal",
+        lambda units, lines: asked.append(list(units)) or ["line"],
+    )
+    runner.apply(CONFIG)
+
+    outcome = runner.command("journal", {})
+
+    assert outcome == {"exit_code": 0, "code": "", "params": {}, "output": "line"}
+    assert asked == [["podman.socket", "web.service"]]
