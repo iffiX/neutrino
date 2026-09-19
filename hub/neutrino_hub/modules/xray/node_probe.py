@@ -1,43 +1,50 @@
-"""Measuring whether each node is reachable, and how fast.
+"""Measuring one node: whether its front door answers, and what it costs.
 
-xray's own observatory drives the balancer, but its API only reports which node
-the balancer currently selects — there is no per-node latency to read back. The
-panel needs a number for every node, so it measures them here instead: a TCP
-connect to the node's own address and port, timed.
+Two numbers per node, and nothing kept between calls — the health store owns
+the window.
 
-That measures the path to the node endpoint rather than a full proxy round
-trip. It is the right thing to show anyway, because it answers the question the
-Nodes tab is actually asking — can this box reach this node from where it is
-sitting, and how far away is it.
+``connect_ms`` times a TCP connect to the node's own address and port.
+``request_ms`` times a whole HTTP request through that node, over the SOCKS
+inbound xray renders one account per node on: the account name is the node's
+outbound tag, and one routing rule per account sends it out that node.
 
-Every probe leaves under xray's own egress mark. Without it, a box proxying
-its own traffic diverts the probe into its own TPROXY socket: the handshake
-completes locally in no time at all, so every node reads alive at 0 ms
-whatever the node is doing. The mark is the same exemption xray stamps on its
-outbound sockets, and for the same reason — the connection xray makes to a
-node is direct, so the measurement of it has to be.
+Every direct connection leaves under xray's own egress mark. Without it, a box
+proxying its own traffic diverts the probe into its own TPROXY socket: the
+handshake completes locally in no time at all, so every node reads alive at
+0 ms whatever the node is doing. The loopback hop to the probe inbound takes no
+mark: the router's output chain returns on the reserved address set, and
+127.0.0.0/8 is in it.
 
-A node's name is resolved here as well, at the direct resolver and under the
-same mark, never through the machine's own resolver: on a box whose names
-resolve through the proxy that resolver is the proxy, and a probe of an exit
-that waits on the exit is no measurement. The lookup finishes before the
-clock starts.
+A node's name is resolved at the direct resolver, never at the machine's own:
+on a box whose names resolve through the proxy, that resolver is the proxy.
+The lookup finishes before the clock starts.
+
+A probed request does not verify TLS. A fault in this box's CA store would
+otherwise read as every exit dying at once while the direct reference stayed
+green.
+
+The reference is fetched directly rather than through xray. One that rode xray
+could not tell an uplink that is down from an xray that is down, and it has to
+answer while xray is restarting.
 """
 
+import ipaddress
 import socket
+import ssl
 import struct
 import time
-from datetime import datetime, timezone
-from concurrent.futures import ThreadPoolExecutor
+import urllib.parse
 from dataclasses import dataclass
-import ipaddress
 
-from neutrino_hub.modules.xray.constants import XRAY_EGRESS_MARK
+from neutrino_hub.modules.xray.constants import (
+    XRAY_EGRESS_MARK,
+    XRAY_PROBE_LISTEN,
+    XRAY_PROBE_PASSWORD,
+    XRAY_PROBE_PORT,
+    XRAY_PROBE_TIMEOUT_S,
+)
 from neutrino_hub.modules.xray.node_config import XrayNodeConfig
 
-PROBE_TIMEOUT_S = 5.0
-PROBE_CACHE_TTL_S = 30.0
-PROBE_WORKER_LIMIT = 8
 # One plain query for A records, answered by the direct resolver.
 RESOLVE_TIMEOUT_S = 3.0
 DNS_TYPE_A = 1
@@ -46,141 +53,23 @@ DNS_FLAG_RECURSION_DESIRED = 0x0100
 DNS_HEADER_LENGTH = 12
 DNS_ANSWER_LIMIT_BYTES = 512
 
+# The SOCKS5 wire, as the probe inbound speaks it.
+SOCKS_VERSION = 5
+SOCKS_AUTH_PASSWORD = 2
+SOCKS_AUTH_VERSION = 1
+SOCKS_AUTH_GRANTED = 0
+SOCKS_COMMAND_CONNECT = 1
+SOCKS_ADDRESS_IPV4 = 1
+SOCKS_ADDRESS_DOMAIN = 3
+SOCKS_ADDRESS_IPV6 = 4
+SOCKS_REPLY_GRANTED = 0
 
-@dataclass
-class NodeProbeResult:
-    """One node's measured reachability.
-
-    Attributes:
-        tag: The node's outbound tag.
-        is_alive: Whether the connect succeeded within the timeout.
-        delay_ms: Connect time in milliseconds, or None when it failed.
-        probed_at: When the measurement was taken, as an ISO stamp; empty
-            for a node that has not been probed.
-    """
-
-    tag: str
-    is_alive: bool
-    delay_ms: int | None
-    probed_at: str = ""
-
-
-class XrayNodeProbe:
-    """Probes nodes and caches the results for a short while.
-
-    The cache matters: the dashboard pushes a frame every two seconds, and
-    opening six TCP connections that often would be both wasteful and, on a
-    metered upstream, rude.
-    """
-
-    def __init__(self, *, timeout_s: float = PROBE_TIMEOUT_S, resolver_of=None):
-        """
-        Args:
-            timeout_s: How long to wait for a connect before calling the node
-                unreachable.
-            resolver_of: Called with nothing, answers ``(address, port)`` of
-                the direct resolver a node's name is looked up at. None
-                resolves nothing: a node named by a hostname then reads
-                unreachable, and one at a literal address is probed as is.
-        """
-        self._timeout_s = timeout_s
-        self._resolver_of = resolver_of
-        self._cache: dict[str, NodeProbeResult] = {}
-        # None, not zero: `time.monotonic()` on Linux counts from boot, so a
-        # panel that starts early in one is younger than the cache's own age
-        # and never probes at all — every node reads unreachable until the
-        # machine has been up for longer than the window.
-        self._probed_at: float | None = None
-
-    def results(self, nodes: list[XrayNodeConfig]) -> list[NodeProbeResult]:
-        """Read every node's reachability, probing only when the cache is stale.
-
-        Args:
-            nodes: The nodes to report on.
-
-        Returns:
-            One result per node, in the order given.
-        """
-        if (
-            self._probed_at is None
-            or time.monotonic() - self._probed_at > PROBE_CACHE_TTL_S
-        ):
-            self.refresh(nodes)
-        return [
-            self._cache.get(node.tag, NodeProbeResult(node.tag, False, None))
-            for node in nodes
-        ]
-
-    def refresh(self, nodes: list[XrayNodeConfig]) -> list[NodeProbeResult]:
-        """Probe every node now, ignoring the cache.
-
-        Args:
-            nodes: The nodes to probe.
-
-        Returns:
-            One fresh result per node.
-        """
-        if not nodes:
-            self._probed_at = time.monotonic()
-            return []
-        worker_count = min(PROBE_WORKER_LIMIT, len(nodes))
-        with ThreadPoolExecutor(max_workers=worker_count) as pool:
-            results = list(pool.map(self.probe, nodes))
-        self._cache = {result.tag: result for result in results}
-        self._probed_at = time.monotonic()
-        return results
-
-    def probe(self, node: XrayNodeConfig) -> NodeProbeResult:
-        """Time a TCP connect to one node.
-
-        Args:
-            node: The node to reach.
-
-        Returns:
-            The measurement. A refused connection, a timeout, and a name that
-            does not resolve all read as unreachable rather than raising, since
-            every one of them means the same thing to the operator.
-        """
-        address = self._address_of(node)
-        if address is None:
-            return NodeProbeResult(
-                tag=node.tag, is_alive=False, delay_ms=None, probed_at=_now()
-            )
-        started_at = time.monotonic()
-        try:
-            with _direct_connection(address, node.port, timeout_s=self._timeout_s):
-                elapsed_ms = int((time.monotonic() - started_at) * 1000)
-        except OSError:
-            return NodeProbeResult(
-                tag=node.tag, is_alive=False, delay_ms=None, probed_at=_now()
-            )
-        return NodeProbeResult(
-            tag=node.tag, is_alive=True, delay_ms=elapsed_ms, probed_at=_now()
-        )
-
-    def _address_of(self, node: XrayNodeConfig) -> "str | None":
-        """The address to connect to, resolved at the direct resolver.
-
-        Args:
-            node: The node.
-
-        Returns:
-            Its IPv4 address, or None when the name did not resolve.
-        """
-        if _is_ip_address(node.address):
-            return node.address
-        if self._resolver_of is None:
-            return None
-        try:
-            server, port = self._resolver_of()
-            return resolve_direct(node.address, server=server, port=int(port))
-        except (OSError, ValueError, TypeError):
-            return None
-
-
-def _now() -> str:
-    """The moment, as the frame carries it."""
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+# What a probed request sends and how much of the answer it reads. Only the
+# status line is read; the body is never looked at.
+PROBE_USER_AGENT = "neutrino-hub"
+STATUS_LINE_LIMIT_BYTES = 512
+STATUS_OK_FLOOR = 200
+STATUS_OK_CEILING = 400
 
 
 def resolve_direct(
@@ -223,6 +112,422 @@ def resolve_direct(
     finally:
         connection.close()
     return _first_a_record(answer)
+
+
+@dataclass
+class XrayNodeMeasurement:
+    """What one probe of one node measured.
+
+    Attributes:
+        tag: The node's outbound tag.
+        connect_ms: The TCP connect to the node's own address and port, in
+            milliseconds; None when it did not answer.
+        request_ms: A whole request through the node, in milliseconds; None
+            when it failed.
+        is_xray_reachable: Whether the probe inbound on loopback accepted the
+            connection. False means nothing was measured about the node.
+    """
+
+    tag: str
+    connect_ms: int | None
+    request_ms: int | None
+    is_xray_reachable: bool
+
+    @property
+    def is_success(self) -> bool:
+        """Whether the request through the node completed."""
+        return self.request_ms is not None
+
+
+class XrayNodeProbe:
+    """Takes one measurement of one node, and the direct reference beside it."""
+
+    def __init__(self, *, timeout_s: float = XRAY_PROBE_TIMEOUT_S, resolver_of=None):
+        """
+        Args:
+            timeout_s: One measurement's patience, start to finish.
+            resolver_of: Called with nothing, answers ``(address, port)`` of
+                the direct resolver a name is looked up at. None resolves
+                nothing: a node named by a hostname then reads unreachable,
+                and one at a literal address is probed as is.
+        """
+        self._timeout_s = timeout_s
+        self._resolver_of = resolver_of
+
+    def probe(self, node: XrayNodeConfig, *, url: str) -> XrayNodeMeasurement:
+        """Measure one node's front door and one request through it.
+
+        Args:
+            node: The node to measure.
+            url: The URL fetched through the node.
+
+        Returns:
+            The measurement. A refused connection, a timeout, a name that does
+            not resolve and a status the server refused all read as a failed
+            measurement rather than raising, since every one of them means the
+            same thing to the operator.
+        """
+        connect_ms = self._connect_ms(node)
+        request_ms, is_xray_reachable = self._request_ms(node.tag, url)
+        return XrayNodeMeasurement(
+            tag=node.tag,
+            connect_ms=connect_ms,
+            request_ms=request_ms,
+            is_xray_reachable=is_xray_reachable,
+        )
+
+    def probe_reference(self, url: str) -> "int | None":
+        """Fetch one URL straight out the uplink, past xray.
+
+        Args:
+            url: The reference URL.
+
+        Returns:
+            How long the fetch took in milliseconds, or None when it did not
+            answer. None with every node failing is an uplink that is down;
+            a number with every node failing is the nodes.
+        """
+        try:
+            host, port, path, is_tls = _split_url(url)
+        except ValueError:
+            return None
+        address = self._resolved(host)
+        if address is None:
+            return None
+        started_at = time.monotonic()
+        deadline = started_at + self._timeout_s
+        try:
+            connection = _direct_connection(address, port, timeout_s=self._timeout_s)
+        except OSError:
+            return None
+        try:
+            status = _fetch_status(
+                connection,
+                host=host,
+                port=port,
+                path=path,
+                is_tls=is_tls,
+                deadline=deadline,
+            )
+        except OSError:
+            return None
+        finally:
+            connection.close()
+        if not _is_status_ok(status):
+            return None
+        return int((time.monotonic() - started_at) * 1000)
+
+    def _connect_ms(self, node: XrayNodeConfig) -> "int | None":
+        """Time a TCP connect to the node's own address and port."""
+        address = self._resolved(node.address)
+        if address is None:
+            return None
+        started_at = time.monotonic()
+        try:
+            with _direct_connection(address, node.port, timeout_s=self._timeout_s):
+                return int((time.monotonic() - started_at) * 1000)
+        except OSError:
+            return None
+
+    def _request_ms(self, tag: str, url: str) -> "tuple[int | None, bool]":
+        """Time one request through a node, and say whether xray answered."""
+        try:
+            host, port, path, is_tls = _split_url(url)
+        except ValueError:
+            return None, True
+        try:
+            channel = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        except OSError:
+            return None, False
+        try:
+            channel.settimeout(self._timeout_s)
+            channel.connect((XRAY_PROBE_LISTEN, XRAY_PROBE_PORT))
+        except OSError:
+            channel.close()
+            return None, False
+        # The clock starts here: the loopback hop is microseconds and is not
+        # the node's.
+        started_at = time.monotonic()
+        deadline = started_at + self._timeout_s
+        try:
+            _socks_connect(
+                channel, account=tag, host=host, port=port, deadline=deadline
+            )
+            status = _fetch_status(
+                channel,
+                host=host,
+                port=port,
+                path=path,
+                is_tls=is_tls,
+                deadline=deadline,
+            )
+        except OSError:
+            return None, True
+        finally:
+            channel.close()
+        if not _is_status_ok(status):
+            return None, True
+        return int((time.monotonic() - started_at) * 1000), True
+
+    def _resolved(self, name: str) -> "str | None":
+        """The address to connect to, resolved at the direct resolver."""
+        if _is_ip_address(name):
+            return name
+        if self._resolver_of is None:
+            return None
+        try:
+            server, port = self._resolver_of()
+            return resolve_direct(name, server=server, port=int(port))
+        except (OSError, ValueError, TypeError):
+            return None
+
+
+def _split_url(url: str) -> "tuple[str, int, str, bool]":
+    """The host, port, path and TLS answer a fetch needs.
+
+    Args:
+        url: The URL as ``config/`` carries it.
+
+    Returns:
+        Host, port, the path with its query, and whether it is TLS.
+
+    Raises:
+        ValueError: If the URL names no host.
+    """
+    parsed = urllib.parse.urlsplit(url)
+    is_tls = parsed.scheme == "https"
+    host = parsed.hostname or ""
+    if not host:
+        raise ValueError(f"probe url names no host: {url!r}")
+    port = parsed.port or (443 if is_tls else 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    return host, port, path, is_tls
+
+
+def _socks_connect(
+    connection, *, account: str, host: str, port: int, deadline: float
+) -> None:
+    """Ask the probe inbound for a connection out one node's outbound.
+
+    Args:
+        connection: The socket already connected to the probe inbound.
+        account: The SOCKS account name, which is the node's outbound tag.
+        host: The host the node is to reach, sent as a domain so the exit
+            resolves it the way a real connection through it would.
+        port: Its port.
+        deadline: When this measurement runs out of time.
+
+    Raises:
+        ConnectionError: If the inbound refuses the account or the connection.
+        OSError: If the exchange runs out of time.
+    """
+    _send(connection, bytes([SOCKS_VERSION, 1, SOCKS_AUTH_PASSWORD]), deadline=deadline)
+    greeting = _receive(connection, 2, deadline=deadline)
+    if greeting != bytes([SOCKS_VERSION, SOCKS_AUTH_PASSWORD]):
+        raise ConnectionError("the probe inbound did not offer password authentication")
+    name = account.encode("utf-8")
+    secret = XRAY_PROBE_PASSWORD.encode("utf-8")
+    _send(
+        connection,
+        bytes([SOCKS_AUTH_VERSION, len(name)]) + name + bytes([len(secret)]) + secret,
+        deadline=deadline,
+    )
+    answer = _receive(connection, 2, deadline=deadline)
+    if answer != bytes([SOCKS_AUTH_VERSION, SOCKS_AUTH_GRANTED]):
+        raise ConnectionError(f"the probe inbound refused the account {account!r}")
+    target = _host_bytes(host)
+    _send(
+        connection,
+        bytes(
+            [SOCKS_VERSION, SOCKS_COMMAND_CONNECT, 0, SOCKS_ADDRESS_DOMAIN, len(target)]
+        )
+        + target
+        + struct.pack("!H", port),
+        deadline=deadline,
+    )
+    reply = _receive(connection, 4, deadline=deadline)
+    if reply[0] != SOCKS_VERSION or reply[1] != SOCKS_REPLY_GRANTED:
+        raise ConnectionError(f"the node refused a connection to {host}:{port}")
+    _receive(connection, _bound_address_length(reply[3]) + 2, deadline=deadline)
+
+
+def _bound_address_length(kind: int) -> int:
+    """How many bytes of bound address follow a SOCKS5 reply header.
+
+    Args:
+        kind: The reply's address type.
+
+    Returns:
+        The byte count.
+
+    Raises:
+        ConnectionError: If the address type is not one of the three.
+    """
+    if kind == SOCKS_ADDRESS_IPV4:
+        return 4
+    if kind == SOCKS_ADDRESS_IPV6:
+        return 16
+    if kind == SOCKS_ADDRESS_DOMAIN:
+        return 1
+    raise ConnectionError(f"the probe inbound answered with address type {kind}")
+
+
+def _fetch_status(
+    connection, *, host: str, port: int, path: str, is_tls: bool, deadline: float
+) -> int:
+    """Send one GET over an open connection and read the status back.
+
+    Args:
+        connection: The connected socket, plain.
+        host: The host header's value.
+        port: The port, named in the host header when it is not the default.
+        path: The path with its query.
+        is_tls: Whether to wrap the connection in TLS first.
+        deadline: When this measurement runs out of time.
+
+    Returns:
+        The status code.
+
+    Raises:
+        ConnectionError: If the answer carries no status line.
+        OSError: If the exchange runs out of time.
+    """
+    stream = _tls_wrapped(connection, host) if is_tls else connection
+    authority = host if port in (80, 443) else f"{host}:{port}"
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {authority}\r\n"
+        f"User-Agent: {PROBE_USER_AGENT}\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("ascii")
+    _send(stream, request, deadline=deadline)
+    return _status_code(_status_line(stream, deadline=deadline))
+
+
+def _tls_wrapped(connection, host: str):
+    """Wrap a connection in TLS without verifying anything.
+
+    Args:
+        connection: The connected socket.
+        host: The name presented in the handshake.
+
+    Returns:
+        The wrapped socket.
+    """
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context.wrap_socket(connection, server_hostname=host)
+
+
+def _status_line(connection, *, deadline: float) -> bytes:
+    """Read the first line of an HTTP answer.
+
+    Args:
+        connection: The connected socket.
+        deadline: When this measurement runs out of time.
+
+    Returns:
+        The line, without its ending.
+
+    Raises:
+        ConnectionError: If the answer ends before a line does.
+        OSError: If the read runs out of time.
+    """
+    line = b""
+    while b"\n" not in line and len(line) < STATUS_LINE_LIMIT_BYTES:
+        connection.settimeout(_remaining(deadline))
+        piece = connection.recv(STATUS_LINE_LIMIT_BYTES)
+        if not piece:
+            break
+        line += piece
+    if b"\n" not in line:
+        raise ConnectionError("the answer carried no status line")
+    return line.split(b"\n", 1)[0].strip()
+
+
+def _status_code(line: bytes) -> int:
+    """The status code of an HTTP status line.
+
+    Args:
+        line: The line as it was read.
+
+    Returns:
+        The code.
+
+    Raises:
+        ConnectionError: If the line is not an HTTP status line.
+    """
+    fields = line.split()
+    if len(fields) < 2 or not fields[0].startswith(b"HTTP/"):
+        raise ConnectionError("the answer did not start with an HTTP status")
+    try:
+        return int(fields[1])
+    except ValueError as error:
+        raise ConnectionError("the answer carried no status code") from error
+
+
+def _is_status_ok(status: int) -> bool:
+    """Whether a status counts the measurement as a success."""
+    return STATUS_OK_FLOOR <= status < STATUS_OK_CEILING
+
+
+def _send(connection, payload: bytes, *, deadline: float) -> None:
+    """Write a whole payload, with what is left of the deadline."""
+    connection.settimeout(_remaining(deadline))
+    connection.sendall(payload)
+
+
+def _receive(connection, count: int, *, deadline: float) -> bytes:
+    """Read exactly so many bytes, with what is left of the deadline.
+
+    Args:
+        connection: The connected socket.
+        count: How many bytes to read.
+        deadline: When this measurement runs out of time.
+
+    Returns:
+        The bytes.
+
+    Raises:
+        ConnectionError: If the other end closed first.
+        OSError: If the read runs out of time.
+    """
+    buffer = b""
+    while len(buffer) < count:
+        connection.settimeout(_remaining(deadline))
+        piece = connection.recv(count - len(buffer))
+        if not piece:
+            raise ConnectionError("the probe channel closed early")
+        buffer += piece
+    return buffer
+
+
+def _remaining(deadline: float) -> float:
+    """What is left of one measurement's patience.
+
+    Args:
+        deadline: When it runs out.
+
+    Returns:
+        The seconds left.
+
+    Raises:
+        TimeoutError: If the deadline has passed.
+    """
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise TimeoutError("the probe ran out of time")
+    return left
+
+
+def _host_bytes(host: str) -> bytes:
+    """A host as the SOCKS request carries it."""
+    if host.isascii():
+        return host.encode("ascii")
+    return host.encode("idna")
 
 
 def _first_a_record(message: bytes) -> "str | None":
@@ -288,7 +593,7 @@ def _direct_connection(address: str, port: int, *, timeout_s: float):
     """Open a TCP connection that the proxy will not divert.
 
     Args:
-        address: The node's address, resolved.
+        address: The address, resolved.
         port: Its port.
         timeout_s: How long to wait for the connect.
 

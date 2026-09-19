@@ -27,7 +27,7 @@ class XrayConfigRenderer:                   # inbounds, outbounds, routing in on
 
 - One cohesive concept is one class. Do not shatter a single concept into a
   config class plus a data class plus a renderer plus an applier. The full xray
-  config — inbounds, outbounds, balancer, observatory, routing — is rendered by
+  config — inbounds, outbounds, balancer, routing — is rendered by
   one `XrayConfigRenderer`. Applying it (validate + restart) is a *different*
   concept and belongs in `xray/apply.py`, not because of formatting but because
   rendering is pure and applying has effects (see

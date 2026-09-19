@@ -11,6 +11,8 @@ import pytest
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 
+PROBE_TAG = "socks_probe_in"
+
 NODES = {
     "nodes": [
         {
@@ -29,7 +31,21 @@ NODES = {
     "balancer": {
         "strategy": "leastPing",
         "probe_url": "https://www.gstatic.com/generate_204",
+        "reference_url": "http://www.msftconnecttest.com/connecttest.txt",
         "probe_interval_s": 60,
+    },
+}
+
+SWITCHED_OFF_NODE = {
+    "id": "hk2",
+    "name": "Osaka",
+    "address": "203.0.113.11",
+    "is_enabled": False,
+    "protocol": "shadowsocks",
+    "secret_id": "1" * 32,
+    "shadowsocks": {
+        "port": 5800,
+        "method": "aes-256-gcm",
     },
 }
 
@@ -65,8 +81,33 @@ def render(*, is_resolved: bool = True, **routing) -> dict:
     ).render()
 
 
+def render_with_a_switched_off_node(**routing) -> dict:
+    """A render of two nodes, the second one switched off."""
+    nodes = {**NODES, "nodes": [NODES["nodes"][0], SWITCHED_OFF_NODE]}
+    node_list = XrayNodeList.from_dict(nodes)
+    for node in node_list.nodes:
+        node.password = "secret"
+    settings = {"is_proxy_enabled": True, "socks_ports": [], **routing}
+    return XrayConfigRenderer(node_list=node_list, routing=settings).render()
+
+
 def tags(config: dict, section: str) -> list[str]:
     return [entry["tag"] for entry in config[section]]
+
+
+def published_socks_tags(config: dict) -> list[str]:
+    """The tags of the per-port listeners, which the probe listener is not."""
+    return [
+        tag
+        for tag in tags(config, "inbounds")
+        if tag.startswith("socks_") and tag != PROBE_TAG
+    ]
+
+
+def rule_named(config: dict, rule_tag: str) -> dict:
+    return next(
+        rule for rule in config["routing"]["rules"] if rule["ruleTag"] == rule_tag
+    )
 
 
 # --- The LAN switch ---------------------------------------------------------
@@ -77,18 +118,37 @@ def test_the_proxy_on_balances_across_the_nodes():
 
     assert "balancers" in config["routing"]
     assert "node_hk1" in tags(config, "outbounds")
-    assert "burstObservatory" in config
 
 
 def test_the_proxy_off_sends_everything_straight_out():
+    """Nothing anybody sends reaches an exit: every rule that carries real
+    traffic leaves directly, and none of them reaches the balancer. The nodes
+    stay rendered and stay measurable on loopback, so the panel can still say
+    which one is worth switching back on."""
     config = render(is_proxy_enabled=False)
 
-    assert "balancers" not in config["routing"]
-    assert "node_hk1" not in tags(config, "outbounds")
+    rules = config["routing"]["rules"]
+    traffic_rules = [
+        rule for rule in rules if not rule["ruleTag"].startswith("rule_probe_")
+    ]
+
+    assert not any("balancerTag" in rule for rule in rules)
+    assert [rule["outboundTag"] for rule in traffic_rules] == [
+        "api",
+        "direct",
+        "direct",
+        "direct",
+    ]
     # The DNS inbound is still wired up and still has to answer from somewhere.
-    catch_all = config["routing"]["rules"][-1]
+    catch_all = rules[-1]
     assert catch_all["inboundTag"] == ["tproxy_in", "dns_in"]
     assert catch_all["outboundTag"] == "direct"
+    # The exit is out of the path, not out of the file.
+    assert "node_hk1" in tags(config, "outbounds")
+    assert PROBE_TAG in tags(config, "inbounds")
+    # And the balancer stands, so the hub can override it the moment a scope
+    # is switched back on.
+    assert config["routing"]["balancers"][0]["selector"] == ["node_hk1"]
 
 
 def test_the_proxy_off_needs_no_nodes_at_all():
@@ -103,8 +163,8 @@ def test_the_proxy_off_needs_no_nodes_at_all():
         routing={"is_proxy_enabled": False},
     ).render()
 
-    assert "burstObservatory" not in config
     assert tags(config, "outbounds") == ["direct", "block"]
+    assert PROBE_TAG not in tags(config, "inbounds")
 
 
 def test_the_proxy_on_with_no_enabled_node_renders_as_off():
@@ -150,11 +210,14 @@ def test_a_listener_nobody_asked_for_leaves_no_trace():
     """A second way out of the box should be as revocable as the proxy itself."""
     config = render(socks_ports=[])
 
-    assert not [tag for tag in tags(config, "inbounds") if tag.startswith("socks_")]
+    assert published_socks_tags(config) == []
     named = [
         rule
         for rule in config["routing"]["rules"]
-        if any(tag.startswith("socks_") for tag in rule.get("inboundTag", []))
+        if any(
+            tag.startswith("socks_") and tag != PROBE_TAG
+            for tag in rule.get("inboundTag", [])
+        )
     ]
     assert named == []
 
@@ -312,62 +375,161 @@ def test_every_scope_off_is_the_way_out_of_a_bad_direct_entry():
     assert "geoip:nope" not in body
 
 
-def test_the_direct_resolver_is_not_named_while_the_proxy_is_off():
-    """It is the resolver for the names the split sends directly, and with the
-    proxy off every name goes directly — so the split's own entry is one more
-    place a bad value would be read from."""
+def test_the_split_list_is_not_read_by_the_resolver_while_the_proxy_is_off():
+    """The direct resolver answers the names the split sends directly, and
+    with the proxy off every name goes directly — so the split's own entry is
+    one more place a bad value would be read from."""
     config = render(is_proxy_enabled=False, is_geoip_split_enabled=True)
 
-    assert config["dns"]["servers"] == ["1.1.1.1"]
+    assert not any(
+        "geosite:cn" in server.get("domains", []) for server in config["dns"]["servers"]
+    )
 
 
-# --- what happens when no exit answers ----------------------------------------
+def test_the_remote_resolver_keeps_the_port_it_was_given():
+    """The DNS inbound dials that port, and the panel takes both halves."""
+    config = render(remote_dns={"address": "9.9.9.9", "port": 5353})
+
+    assert {"address": "9.9.9.9", "port": 5353} in config["dns"]["servers"]
+    inbound = next(entry for entry in config["inbounds"] if entry["tag"] == "dns_in")
+    assert inbound["settings"]["port"] == 5353
 
 
-def test_without_the_fallback_a_dead_exit_takes_the_traffic_with_it():
-    """The default: what was sent to the proxy fails rather than leaving in
-    the clear under the real address."""
-    config = render()
-
-    assert "fallbackTag" not in config["routing"]["balancers"][0]
+# --- the nodes xray holds, and the one it sends traffic to --------------------
 
 
-def test_the_fallback_names_the_direct_outbound():
-    config = render(is_direct_fallback_enabled=True)
+def test_a_switched_off_node_is_still_measured_but_never_selected():
+    """Switched off means not eligible to be selected, and nothing else: the
+    hub measures every node it has, so a node can be switched back on with a
+    reading already beside it."""
+    config = render_with_a_switched_off_node()
 
-    assert config["routing"]["balancers"][0]["fallbackTag"] == "direct"
+    listener = next(entry for entry in config["inbounds"] if entry["tag"] == PROBE_TAG)
+    accounts = [account["user"] for account in listener["settings"]["accounts"]]
+
+    assert "node_hk2" in tags(config, "outbounds")
+    assert "node_hk2" in accounts
+    assert config["routing"]["balancers"][0]["selector"] == ["node_hk1"]
 
 
-@pytest.mark.parametrize("strategy", ["leastPing", "roundRobin", "random"])
-def test_the_fallback_brings_the_observatory_with_it(strategy):
-    """xray refuses the whole configuration with "not all dependencies are
-    resolved" when a balancer names a fallbackTag and no observatory is
-    configured: falling back means knowing every node is dead, and the
-    observatory is what knows it. Only leastPing needs one for its own sake,
-    so turning the fallback on under either other strategy used to render a
-    config xray would not load — measured on Debian 12, xray 26.3.27."""
-    node_list = resolved_nodes()
-    node_list.strategy = strategy
+def test_every_node_switched_off_is_still_rendered_and_still_measured():
+    """The state the measurements matter most in: switching the last node off
+    switches every scope off, and a box that measured nothing there could
+    never say which node to switch back on. xray refuses an empty selector,
+    so the balancer is the one thing that goes."""
+    nodes = {**NODES, "nodes": [{**NODES["nodes"][0], "is_enabled": False}]}
+    node_list = XrayNodeList.from_dict(nodes)
+    for node in node_list.nodes:
+        node.password = "secret"
+
     config = XrayConfigRenderer(
         node_list=node_list,
-        routing={"is_proxy_enabled": True, "is_direct_fallback_enabled": True},
+        routing={"is_proxy_enabled": True, "socks_ports": []},
     ).render()
 
-    assert config["routing"]["balancers"][0]["fallbackTag"] == "direct"
-    assert "burstObservatory" in config
+    assert "node_hk1" in tags(config, "outbounds")
+    assert PROBE_TAG in tags(config, "inbounds")
+    assert rule_named(config, "rule_probe_hk1")["outboundTag"] == "node_hk1"
+    # The probe dials the node, so the resolver it dials by is still reached.
+    assert rule_named(config, "rule_dns_direct")["outboundTag"] == "direct"
+    assert "balancers" not in config["routing"]
+    assert not any("balancerTag" in rule for rule in config["routing"]["rules"])
 
 
-@pytest.mark.parametrize("strategy", ["roundRobin", "random"])
-def test_without_the_fallback_those_strategies_need_no_observatory(strategy):
-    """They pick without measuring, and probing every node for nothing is a
-    request a minute to somebody's exit."""
-    nodes = dict(NODES, balancer=dict(NODES["balancer"], strategy=strategy))
+def test_the_probe_listener_carries_one_account_per_node():
+    """One listener, one account per node, and the account name is the tag the
+    routing rule matches on."""
+    config = render_with_a_switched_off_node()
+
+    listeners = [entry for entry in config["inbounds"] if entry["tag"] == PROBE_TAG]
+    assert len(listeners) == 1
+    assert listeners[0]["listen"] == "127.0.0.1"
+    assert listeners[0]["port"] == 10086
+    assert listeners[0]["settings"]["auth"] == "password"
+    assert listeners[0]["settings"]["udp"] is False
+    assert [account["user"] for account in listeners[0]["settings"]["accounts"]] == [
+        "node_hk1",
+        "node_hk2",
+    ]
+    # A sniffed name would put a lookup in front of every measurement.
+    assert "sniffing" not in listeners[0]
+
+
+def test_each_probe_account_leaves_by_its_own_node():
+    config = render_with_a_switched_off_node()
+
+    rule = rule_named(config, "rule_probe_hk2")
+
+    assert rule["inboundTag"] == [PROBE_TAG]
+    assert rule["user"] == ["node_hk2"]
+    assert rule["outboundTag"] == "node_hk2"
+
+
+def test_every_probe_rule_sits_ahead_of_the_destination_rules():
+    """The probe target is somebody's own URL and may well be a name the
+    direct lists claim, which would measure the uplink instead of the exit."""
+    config = render_with_a_switched_off_node(
+        is_geoip_split_enabled=True,
+        direct_domains=["geosite:cn"],
+        direct_ips=["geoip:cn"],
+    )
+
+    rules = config["routing"]["rules"]
+    probes = [
+        index
+        for index, rule in enumerate(rules)
+        if rule["ruleTag"].startswith("rule_probe_")
+    ]
+    destinations = [
+        index for index, rule in enumerate(rules) if "domain" in rule or "ip" in rule
+    ]
+    assert probes and destinations
+    assert max(probes) < min(destinations)
+
+
+def test_every_rule_says_which_one_it_is():
+    """`xray api lsrules` reads these back, and two rules under one name are
+    two rules nobody can tell apart."""
+    config = render_with_a_switched_off_node()
+
+    rule_tags = [rule["ruleTag"] for rule in config["routing"]["rules"]]
+
+    assert all(rule_tags)
+    assert len(rule_tags) == len(set(rule_tags))
+
+
+def test_the_direct_outbound_is_what_an_unmatched_connection_takes():
+    """xray sends a connection no rule matched to the first outbound, and a
+    node outbound may be one somebody switched off."""
+    config = render_with_a_switched_off_node()
+
+    assert tags(config, "outbounds")[0] == "direct"
+
+
+# --- how the balancer is picked from ------------------------------------------
+
+
+def test_the_balancer_needs_nothing_measured():
+    """The hub measures the nodes itself and names the winner to xray, so the
+    rendered strategy is the one that reads no measurement from xray."""
+    node_list = resolved_nodes()
     config = XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict(nodes),
+        node_list=node_list,
         routing={"is_proxy_enabled": True},
     ).render()
 
-    assert "burstObservatory" not in config
+    balancer = config["routing"]["balancers"][0]
+
+    assert balancer["strategy"] == {"type": "roundRobin"}
+    assert "fallbackTag" not in balancer
+
+
+def test_the_fallback_is_not_something_the_balancer_carries():
+    """A dead exit is answered by overriding the balancer with the direct
+    outbound, which is the panel's switch, not a rendered field."""
+    config = render(is_direct_fallback_enabled=True)
+
+    assert "fallbackTag" not in config["routing"]["balancers"][0]
 
 
 def test_a_dangling_reference_excludes_the_node():
@@ -376,7 +538,44 @@ def test_a_dangling_reference_excludes_the_node():
 
     assert "node_hk1" not in tags(config, "outbounds")
     assert "balancers" not in config["routing"]
-    assert "burstObservatory" not in config
+    assert PROBE_TAG not in tags(config, "inbounds")
+
+
+# --- what dnsmasq's queries do inside xray ------------------------------------
+
+
+def test_the_lan_scope_hands_the_dns_inbound_to_the_dns_outbound():
+    config = render()
+
+    dns_out = next(entry for entry in config["outbounds"] if entry["tag"] == "dns_out")
+    rule = rule_named(config, "rule_dns_in")
+
+    assert dns_out["protocol"] == "dns"
+    assert dns_out["settings"]["nonIPQuery"] == "drop"
+    assert rule["inboundTag"] == ["dns_in"]
+    assert rule["outboundTag"] == "dns_out"
+
+
+def test_without_the_lan_scope_nothing_reaches_the_dns_outbound():
+    """dnsmasq asks the direct resolver itself with that scope off, so the
+    DNS inbound is answered directly and the outbound has no caller."""
+    config = render(is_proxy_enabled=False, is_local_proxy_enabled=True)
+
+    assert "dns_out" not in tags(config, "outbounds")
+    assert "dns_in" in rule_named(config, "rule_inbound_direct")["inboundTag"]
+
+
+# --- what xray writes down ----------------------------------------------------
+
+
+def test_the_access_log_is_off_and_the_error_log_is_the_journal():
+    """A line per connection that nothing here reads. xray defaults the access
+    log to the console, so it is turned off by name; the error log is given no
+    path, which leaves it on the console for journald to bound."""
+    config = render()
+
+    assert config["log"]["access"] == "none"
+    assert "error" not in config["log"]
 
 
 # --- how an exit's own name is resolved ---------------------------------------
@@ -424,6 +623,7 @@ def test_the_resolvers_own_queries_reach_the_direct_resolver_directly():
     assert config["dns"]["tag"] == "dns_internal"
     assert {
         "type": "field",
+        "ruleTag": "rule_dns_direct",
         "inboundTag": ["dns_internal"],
         "ip": ["223.5.5.5"],
         "outboundTag": "direct",
@@ -439,8 +639,8 @@ def test_an_exit_at_a_literal_address_leaves_only_the_probe_host():
 
 
 def test_the_resolvers_other_queries_follow_the_balancer():
-    """A query nothing routes goes to the first outbound, alive or not,
-    and the observatory ranks exits by what it resolved through it."""
+    """A query nothing routes goes to the first outbound, and the direct
+    outbound is first, so the resolver's own queries are routed by name."""
     config = render_with_exit("exit.example.net")
 
     balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
@@ -461,11 +661,24 @@ def test_the_overlay_scope_sends_the_transparent_inbound_to_the_balancer():
     assert "node_hk1" in tags(config, "outbounds")
 
 
-def test_with_every_scope_off_the_exits_names_are_nobodys_to_resolve():
+def test_with_every_scope_off_an_exits_name_still_resolves_where_it_answers():
+    """The hub keeps measuring with every scope off, and a node addressed by
+    name is dialled by an address xray looks up itself. Only the direct
+    resolver answers that name correctly without the proxy: on a poisoned
+    uplink the remote one hands back a forged address, and a healthy node
+    then reads as unreachable."""
     config = render_with_exit("exit.example.net", is_proxy_enabled=False)
 
-    assert config["dns"]["servers"] == ["1.1.1.1"]
-    assert not any(
-        rule.get("inboundTag") == ["dns_internal"]
-        for rule in config["routing"]["rules"]
-    )
+    assert config["dns"]["servers"][0] == {
+        "address": "223.5.5.5",
+        "port": 53,
+        "domains": ["full:exit.example.net", "full:www.gstatic.com"],
+        "skipFallback": True,
+    }
+    assert rule_named(config, "rule_dns_direct") == {
+        "type": "field",
+        "ruleTag": "rule_dns_direct",
+        "inboundTag": ["dns_internal"],
+        "ip": ["223.5.5.5"],
+        "outboundTag": "direct",
+    }

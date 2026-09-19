@@ -86,14 +86,22 @@ XRAY_GEODATA_VERSION_PATH = UTILS_GEODATA_DIR / "version.json"
 XRAY_GEODATA_SOURCE_PACKAGE = "package"
 XRAY_GEODATA_SOURCE_RELEASE = "release"
 
-# What the observatory's probe interval may be. Zero is not a fast probe, it
-# is xray probing in a loop; the ceiling is a day, past which a "latency" is a
-# number from another era.
-XRAY_PROBE_INTERVAL_MIN_S = 5
-XRAY_PROBE_INTERVAL_MAX_S = 86400
-# One probe's patience, and how many recent probes an exit's delay averages.
-XRAY_PROBE_TIMEOUT_S = 5
-XRAY_PROBE_SAMPLING = 2
+# How often the hub measures every node, switched on or off. The floor is not
+# xray's: one round is a request through every node, so ten seconds across six
+# nodes is a request leaving somebody's exit every 1.7 seconds.
+XRAY_PROBE_INTERVAL_MIN_S = 10
+XRAY_PROBE_INTERVAL_MAX_S = 3600
+XRAY_PROBE_INTERVAL_DEFAULT_S = 60
+# One measurement's patience, start to finish: the loopback connect, the SOCKS
+# handshake, the TLS handshake and the status line.
+XRAY_PROBE_TIMEOUT_S = 5.0
+# How many nodes are measured at once; a round opens one connection per node.
+XRAY_PROBE_WORKER_LIMIT = 8
+# What each node is measured against, and what says the uplink itself is up.
+# The reference is fetched directly, so it has to answer without the proxy: a
+# reference that needs an exit reads every uplink outage as every node failing.
+XRAY_PROBE_URL_DEFAULT = "https://www.gstatic.com/generate_204"
+XRAY_REFERENCE_URL_DEFAULT = "http://www.msftconnecttest.com/connecttest.txt"
 
 # How much of the address digest a node's id carries. Eight hexadecimal
 # characters is short enough to read in a URL and long enough that two servers
@@ -155,7 +163,74 @@ XRAY_BALANCER_TAG = "proxy_balance"
 # xray's own egress apart from traffic that still needs proxying.
 XRAY_EGRESS_MARK = 255
 
-XRAY_BALANCER_STRATEGIES = ("leastPing", "roundRobin", "random")
+# The balancer's strategy. It is never consulted while the hub holds an
+# override, and roundRobin is the one strategy that needs no observatory, so a
+# box whose panel is not running still reaches every enabled exit.
+XRAY_BALANCER_STRATEGY = "roundRobin"
+
+# The probe inbound. One SOCKS listener on loopback carries one account per
+# node, and one routing rule per account sends it out that node, so measuring
+# a chosen exit needs no listener of its own. The account name is the node's
+# outbound tag, which is what the rule matches.
+XRAY_PROBE_LISTEN = "127.0.0.1"
+XRAY_PROBE_PORT = 10086
+XRAY_PROBE_TAG = "socks_probe_in"
+# The password the rendered accounts carry. It guards nothing: the listener
+# answers loopback only, and the account name is what selects the exit. SOCKS5
+# has no account without a password, so there is one.
+XRAY_PROBE_PASSWORD = "probe"  # scan: allow
+
+# Where dnsmasq's queries go once they are inside xray. The DNS outbound hands
+# them to the resolver the dns object configures, so a client's lookup takes
+# the same per-domain split and the same UseIPv4 that xray's own lookups take.
+XRAY_DNS_OUTBOUND_TAG = "dns_out"
+# What that outbound does with a query that is neither A nor AAAA. Dropping it
+# keeps the property that no plaintext query leaves this box.
+XRAY_DNS_NON_IP_QUERY = "drop"
+
+# Every rendered routing rule carries one of these, so `xray api lsrules`
+# names what it is looking at.
+XRAY_RULE_TAG_API = "rule_api"
+XRAY_RULE_TAG_PROBE = "rule_probe_{node_id}"
+XRAY_RULE_TAG_DNS_IN = "rule_dns_in"
+XRAY_RULE_TAG_DNS_DIRECT = "rule_dns_direct"
+XRAY_RULE_TAG_SOCKS_DIRECT = "rule_socks_direct"
+XRAY_RULE_TAG_INBOUND_DIRECT = "rule_inbound_direct"
+XRAY_RULE_TAG_SPLIT_DOMAIN = "rule_split_domain"
+XRAY_RULE_TAG_SPLIT_IP = "rule_split_ip"
+XRAY_RULE_TAG_BALANCER = "rule_balancer"
+
+# The measurement window each node keeps. The count bounds the state file and
+# the arithmetic; the age bounds how stale a reading may be after the box was
+# off, whatever the interval is set to.
+XRAY_HEALTH_WINDOW_SAMPLES = 20
+XRAY_HEALTH_SAMPLE_MAX_AGE_S = 3600
+# What one failure costs a node's score, in milliseconds, spread over a full
+# window. A node that drops one connection in ten loses to a node two hundred
+# milliseconds slower that drops none.
+XRAY_HEALTH_FAILURE_PENALTY_MS = 2000
+
+# What it takes to move the exit off a node that still answers: the challenger
+# is better by all three at once. Without them two nodes a millisecond apart
+# trade the exit every round.
+XRAY_EXIT_SWITCH_RATIO = 0.2
+XRAY_EXIT_SWITCH_MARGIN_MS = 30
+XRAY_EXIT_DWELL_S = 300
+# How many times the override is set after a restart before the hub leaves it
+# for the next round. The unit is Type=simple, so systemd reports the restart
+# before the API inbound is listening.
+XRAY_EXIT_REASSERT_TRIES = 6
+XRAY_EXIT_REASSERT_DELAY_S = 0.5
+
+# Where the measurements live between runs, under the state root.
+XRAY_NODE_HEALTH_RELATIVE = "xray_node_health.json"
+
+# xray's own logs. The access log is a line per connection that nothing reads,
+# so it is never written. The error log is given no path, which leaves it on
+# the console, where systemd collects it into the journal and journald bounds
+# it without anything here rotating a file.
+XRAY_ACCESS_LOG = "none"
+XRAY_LOG_LEVEL = "warning"
 XRAY_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 
 # The direct lists reach xray as one routing rule each. An entry naming a

@@ -16,8 +16,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from neutrino_hub.modules.xray.constants import (
     XRAY_NODE_ID_DIGEST,
-    XRAY_BALANCER_STRATEGIES,
     XRAY_NODE_TAG_PREFIX,
+    XRAY_PROBE_INTERVAL_DEFAULT_S,
+    XRAY_PROBE_URL_DEFAULT,
+    XRAY_REFERENCE_URL_DEFAULT,
 )
 
 SHADOWSOCKS_PROTOCOL = "shadowsocks"
@@ -99,7 +101,8 @@ class XrayNodeConfig:
         id: Stable identifier used in the outbound tag and the panel.
         name: Human-readable label.
         address: Server hostname or address.
-        is_enabled: Disabled nodes are left out of the rendered config.
+        is_enabled: Whether the node may be selected as the exit. A node
+            switched off is still rendered, so the hub keeps measuring it.
         protocol: Either ``shadowsocks`` or ``vless``.
         port: Server port for the active protocol.
         secret_id: The vault ``token`` object holding the node's secret —
@@ -173,7 +176,8 @@ class XrayNodeConfig:
     def tag(self) -> str:
         """Outbound tag for this node.
 
-        The balancer selects by this prefix, so every node tag starts with it.
+        The balancer's selector names it, and so does the node's own probe
+        account, which is what the probe rule matches on.
         """
         return f"{XRAY_NODE_TAG_PREFIX}{self.id}"
 
@@ -186,9 +190,9 @@ class XrayNodeConfig:
     def has_secret_material(self) -> bool:
         """Whether the node's secret is in memory, ready to render.
 
-        False for a stored node until resolution opens its reference — and
+        False for a stored node until resolution opens its reference, and
         for one whose reference dangles, which is what excludes it from the
-        rendered config the way a disabled node is excluded.
+        rendered config.
         """
         if self.protocol == SHADOWSOCKS_PROTOCOL:
             return bool(self.password)
@@ -225,18 +229,20 @@ class XrayNodeConfig:
 
 @dataclass
 class XrayNodeList:
-    """The whole node list plus the balancer settings.
+    """The whole node list plus the measurement settings.
 
     Attributes:
         nodes: Every configured node, enabled or not.
-        strategy: Balancer strategy name.
-        probe_url: URL the observatory fetches to measure latency.
-        probe_interval_s: Seconds between observatory probes.
+        probe_url: URL the hub fetches through each node to measure it.
+        reference_url: URL the hub fetches directly to tell a node that is
+            down from an uplink that is down. It has to answer without the
+            proxy, so it is not the same host as ``probe_url``.
+        probe_interval_s: Seconds between measurement rounds.
     """
 
     nodes: list[XrayNodeConfig]
-    strategy: str
     probe_url: str
+    reference_url: str
     probe_interval_s: int
 
     @classmethod
@@ -250,31 +256,23 @@ class XrayNodeList:
             The parsed list.
 
         Raises:
-            ValueError: If the balancer strategy is not one xray supports.
+            ValueError: If a node names an unknown protocol or is missing the
+                block that protocol needs.
         """
         balancer = data.get("balancer", {})
-        strategy = balancer.get("strategy", "leastPing")
-        if strategy not in XRAY_BALANCER_STRATEGIES:
-            raise ValueError(
-                f"unknown balancer strategy {strategy!r}; "
-                f"expected one of {', '.join(XRAY_BALANCER_STRATEGIES)}"
-            )
         return cls(
             nodes=[XrayNodeConfig.from_dict(entry) for entry in data.get("nodes", [])],
-            strategy=strategy,
-            probe_url=balancer.get("probe_url", "https://www.gstatic.com/generate_204"),
-            probe_interval_s=balancer.get("probe_interval_s", 60),
+            probe_url=balancer.get("probe_url", XRAY_PROBE_URL_DEFAULT),
+            reference_url=balancer.get("reference_url", XRAY_REFERENCE_URL_DEFAULT),
+            probe_interval_s=balancer.get(
+                "probe_interval_s", XRAY_PROBE_INTERVAL_DEFAULT_S
+            ),
         )
 
     @property
     def enabled_nodes(self) -> list[XrayNodeConfig]:
-        """Only the nodes that should appear in the rendered config."""
+        """Only the nodes eligible to be selected as the exit."""
         return [node for node in self.nodes if node.is_enabled]
-
-    @property
-    def is_observatory_needed(self) -> bool:
-        """Whether latency probing has to run for the chosen strategy."""
-        return self.strategy == "leastPing"
 
     def to_dict(self) -> dict:
         """Serialize back to the ``config/`` shape.
@@ -285,8 +283,8 @@ class XrayNodeList:
         return {
             "nodes": [node.to_dict() for node in self.nodes],
             "balancer": {
-                "strategy": self.strategy,
                 "probe_url": self.probe_url,
+                "reference_url": self.reference_url,
                 "probe_interval_s": self.probe_interval_s,
             },
         }

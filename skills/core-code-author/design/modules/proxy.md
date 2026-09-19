@@ -1,10 +1,10 @@
 # The proxy the hub runs
 
-The proxy is one xray process on the hub, a set of exit nodes it balances
-across, and three switches that each send one scope of traffic to those
-exits. The firewall decides what reaches xray, dnsmasq decides where the
-served networks' names resolve, and xray decides which exit a connection
-takes. This page states each of those decisions and what follows from it.
+The proxy is one xray process on the hub, a set of exit nodes, and three
+switches that each send one scope of traffic to those exits. The firewall
+states what reaches xray, dnsmasq states where the served networks' names
+resolve, and the hub states which exit a connection takes. This page holds
+each of those rules and what follows from it.
 
 ## Scopes
 
@@ -24,7 +24,11 @@ firewall's `input` chain accepts what TPROXY diverted from any served
 network, exposed or not: the mark is set on the way in and on nothing else.
 
 Destinations inside `reserved_v4` (private, link-local, loopback, multicast)
-are never diverted, whatever the scope.
+leave undiverted, whatever the scope.
+
+A fourth listener reaches xray outside every scope: `socks_probe_in`, on
+loopback, which carries the hub's own measurement of each node. "Exit
+selection" holds it.
 
 ## What an overlay member can and cannot do
 
@@ -47,27 +51,62 @@ overlay is the case a laptop away from home has.
 
 ## Exit selection
 
-Every enabled node with a readable secret is an outbound tagged `node_<id>`,
-and the balancer `proxy_balance` selects among them by
-`config/xray/nodes.json`'s `balancer.strategy`.
+Every node with a readable secret is an outbound tagged `node_<id>`, switched
+on or off. The hub picks one of them and sets it as the balancer's override
+with `xray api bo`. `is_enabled` states whether a node is eligible for that
+pick, and nothing else.
 
-| Strategy | Picks | Needs the observatory |
+The rendered balancer `proxy_balance` holds `roundRobin` over the eligible
+tags. It applies in the seconds between an xray restart and the hub's next
+override, and it reads no measurement from xray.
+
+### The two measurements
+
+Every `balancer.probe_interval_s` seconds the hub measures every node,
+switched on or off:
+
+| Number | How the hub takes it | What it states |
 | --- | --- | --- |
-| `leastPing` | the alive node with the lowest measured delay | yes |
-| `roundRobin`, `random` | in turn, or at random, alive or not | only with the direct fallback |
+| `connect_ms` | a timed TCP connect to the node's address and port, under the egress mark | whether the node's port accepts a connection |
+| `request_ms` | one HTTP request to `balancer.probe_url` through that node | what one connection through this node costs |
 
-The observatory fetches `balancer.probe_url` through every node at once,
-every `balancer.probe_interval_s` seconds, in xray's burst form: the
-sequential form sleeps the interval between one node and the next, and with
-six nodes notices a dead one six intervals later. A node whose fetch fails
-is not alive and `leastPing` skips it within one interval. With no alive
-node `leastPing` names nothing, and xray sends the connection to the first
-outbound; with `is_direct_fallback_enabled` it sends it out the uplink
-instead.
+The request reaches the node through `socks_probe_in`, a SOCKS listener on
+loopback with one account per node. Each account takes the name of that node's
+outbound tag, and one routing rule per account sends its traffic out that
+node. Those rules sit ahead of every rule that matches on a destination, so a
+probe URL inside `geoip:cn` still leaves through the exit.
 
-The panel's own probe is separate: a TCP connect to each node's port every
-30 seconds, under xray's egress mark. It is the delay the Proxy page shows
-and the liveness the status strip reads; it does not choose the exit.
+Each round also fetches `balancer.reference_url` out the uplink, past xray.
+The hub records a node's failure against that node when the reference
+succeeded in the same round. When both fail, the round reports the uplink as
+unreachable and records nothing. The reference URL answers without the proxy,
+so it names a different host from the probe URL.
+
+### The score and the switch
+
+Each node holds its last twenty samples, none older than an hour. They give a
+success rate, a median delay and a jitter, and one score orders the nodes:
+
+```
+score_ms = median_ms + jitter_ms + 2000 * (1 - success_rate)
+```
+
+A node is a candidate while it is switched on, present in the running xray,
+and its latest sample succeeded. The hub moves the exit at once when the
+current one stops being a candidate.
+
+Moving off a node that still answers takes three conditions together. The
+challenger scores a fifth lower, it scores thirty milliseconds lower, and the
+current exit has held for five minutes. A failure of the pinned node is
+measured a second time in the same round before it counts.
+
+With no candidate and `is_direct_fallback_enabled` on, the hub overrides the
+balancer with `direct`. With no candidate and the fallback off, the override
+stands where it is.
+
+`/var/lib/neutrino/xray_node_health.json` holds the samples, so a panel
+restart and an xray restart both keep them. After an apply restarts xray, the
+hub sets the override again within a second.
 
 ## Where names resolve
 
@@ -77,9 +116,9 @@ assigned resolver.
 | Lookup | Resolver | Path |
 | --- | --- | --- |
 | an exit node's own name | `direct_dns` | xray's resolver, out the uplink, under the egress mark |
-| the observatory's probe host | `direct_dns` | the same |
-| the panel's node probe | `direct_dns` | a plain A query from the hub, under the egress mark |
-| a served network's names, LAN scope on | `remote_dns` | dnsmasq → xray `dns_in` → the balancer → the exit |
+| the hub's probe host | `direct_dns` | the same |
+| the hub's connect measurement | `direct_dns` | a plain A query from the hub, under the egress mark |
+| a served network's names, LAN scope on | the split below | dnsmasq → xray `dns_in` → `dns_out` → xray's resolver |
 | a served network's names, LAN scope off | `direct_dns` | dnsmasq → the uplink |
 | the hub's own names | dnsmasq | the row above that matches; with the hub scope on the query to `direct_dns` is diverted like any other |
 | the names xray resolves for the split | `direct_dns` for `direct_domains`, `remote_dns` otherwise | the query to `remote_dns` follows the balancer |
@@ -109,8 +148,9 @@ the box resolves at dnsmasq behind NetBird's resolver.
 | --- | --- |
 | every exit node down, direct fallback off | forwarded and hub-scope traffic fails, and so do the served networks' names; the panel and the proxy's own lookups keep working |
 | every exit node down, direct fallback on | that traffic leaves through the uplink; dnsmasq asks `direct_dns` after xray does not answer |
-| one exit node down under `leastPing` | the observatory marks it dead within one probe interval and the balancer skips it |
-| one exit node down under `roundRobin` | every n-th connection fails |
+| the exit node goes down | the hub measures the failure twice, then overrides the balancer with the next node by score |
+| a node other than the exit goes down | the hub records the failure and drops that node from the candidates |
+| the panel process stops | the override xray holds stays in place; a restart of xray drops it and `roundRobin` takes over |
 | hub scope on | the hub's updates, package installs and overlay management traffic go through the exit; a dead exit takes them with it |
 | an exit named by a hostname that `direct_dns` cannot resolve | the node is unreachable to the probe and to xray alike, and reads so on the Proxy page |
 | the geoip split on | names in `direct_domains` and addresses in `direct_ips` leave through the uplink whatever the scope |

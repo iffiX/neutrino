@@ -7,32 +7,47 @@ import pytest
 from tests.conftest import FakeChannelSessions
 
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.xray.exit_controller import XrayExitStatus
+from neutrino_hub.modules.xray.node_config import XrayNodeConfig
+from neutrino_hub.modules.xray.node_health import XrayNodeHealth, XrayNodeSample
 from neutrino_hub.modules.xray.stats_client import OutboundTraffic
 from neutrino_hub.web import stats_collector
-from neutrino_hub.web.models import OutboundTrafficView, StatsFrame
+from neutrino_hub.web.models import NodeProbeView, OutboundTrafficView, StatsFrame
 from neutrino_hub.web.stats_collector import PanelStatsCollector
 
 BEATING_DEVICE = "device-one"
 UPLINK = "enp2s0"
+PINNED_AT = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
+NODE = XrayNodeConfig(
+    id="hk1",
+    name="Tokyo",
+    address="203.0.113.10",
+    is_enabled=True,
+    protocol="shadowsocks",
+    port=5800,
+    method="aes-256-gcm",
+)
 
 
 class StubStats:
-    def selected_node_tags(self) -> list[str]:
-        return ["node_hk1"]
-
     def outbound_traffic(self) -> list:
         return [OutboundTraffic(tag="node_hk1", uplink_bytes=11, downlink_bytes=22)]
 
 
 class StubNodeList:
-    enabled_nodes: list = []
-    strategy = "leastPing"
+    nodes: list = [NODE]
+    enabled_nodes: list = [NODE]
 
 
-class StubNodeProbe:
-    def results(self, nodes) -> list:
-        del nodes
-        return []
+class StubExitController:
+    """The controller as the collector reads it: a status and the windows."""
+
+    def __init__(self, *, status=None, healths=None):
+        self.status = status or XrayExitStatus(exit_tag="node_hk1", since=PINNED_AT)
+        self._healths = healths or {}
+
+    def healths(self) -> dict:
+        return dict(self._healths)
 
 
 class StubNetwork:
@@ -74,9 +89,9 @@ class StubUplink:
 class StubRuntime:
     """The runtime as the panel holds it: built once, at startup."""
 
-    def __init__(self, online=()):
+    def __init__(self, online=(), controller=None):
         self.stats = StubStats()
-        self.node_probe = StubNodeProbe()
+        self.exit_controller = controller or StubExitController()
         self.agent_sessions = FakeChannelSessions(online)
         # Every node reading this collector published, newest last.
         self.node_readings: list = []
@@ -97,7 +112,7 @@ class StubRuntime:
         return None
 
 
-def frame(*, proxy_scope: str) -> StatsFrame:
+def frame(*, proxy_scope: str, exit_tag: str = "node_hk1") -> StatsFrame:
     return StatsFrame(
         timestamp="2026-08-28T00:00:00+00:00",
         outbounds=[
@@ -105,6 +120,7 @@ def frame(*, proxy_scope: str) -> StatsFrame:
             OutboundTrafficView(tag="direct", uplink_bytes=5, downlink_bytes=5),
         ],
         proxy_scope=proxy_scope,
+        exit_tag=exit_tag,
     )
 
 
@@ -112,6 +128,17 @@ def test_the_busiest_exits_are_named_while_the_proxy_carries_traffic():
     collector = PanelStatsCollector(runtime=StubRuntime())
 
     assert collector.active_exit_tags(frame(proxy_scope="lan")) == [
+        "node_hk1",
+        "direct",
+    ]
+
+
+def test_the_pinned_exit_is_named_even_before_it_has_carried_a_byte():
+    """A freshly pinned node is where the next request goes, and a gateway
+    that names nothing until traffic flows reads as unconfigured."""
+    collector = PanelStatsCollector(runtime=StubRuntime())
+
+    assert collector.active_exit_tags(frame(proxy_scope="lan", exit_tag="direct")) == [
         "node_hk1",
         "direct",
     ]
@@ -241,4 +268,78 @@ def test_each_cycle_hands_on_what_the_nodes_panel_draws(uplink):
 
     PanelStatsCollector(runtime=runtime).collect()
 
-    assert runtime.node_readings == [{"node_hk1": ((11, 22), None)}]
+    assert runtime.node_readings == [
+        {
+            "node_hk1": (
+                (11, 22),
+                NodeProbeView(
+                    tag="node_hk1",
+                    is_alive=False,
+                    is_enabled=True,
+                    is_selected=True,
+                ).model_dump(),
+            )
+        }
+    ]
+
+
+def test_a_measured_node_reaches_the_frame_with_what_it_measured(uplink):
+    """The nodes panel reads these off the frame rather than asking again."""
+    del uplink
+    health = XrayNodeHealth(
+        tag="node_hk1",
+        samples=[XrayNodeSample(at=PINNED_AT, connect_ms=12, request_ms=140)],
+        probed_at=PINNED_AT,
+        succeeded_at=PINNED_AT,
+    )
+    runtime = StubRuntime(controller=StubExitController(healths={"node_hk1": health}))
+
+    pushed = PanelStatsCollector(runtime=runtime).collect()
+
+    assert pushed.nodes == [
+        NodeProbeView(
+            tag="node_hk1",
+            is_alive=True,
+            is_enabled=True,
+            is_selected=True,
+            connect_ms=12,
+            request_ms=140,
+            probed_at=PINNED_AT.isoformat(),
+            success_rate=1.0,
+        )
+    ]
+
+
+def test_the_frame_carries_the_pinned_exit_and_when_it_was_pinned(uplink):
+    """The strip names one exit, and it is the hub's pin rather than a guess
+    from the counters."""
+    del uplink
+
+    pushed = PanelStatsCollector(runtime=StubRuntime()).collect()
+
+    assert pushed.exit_tag == "node_hk1"
+    assert pushed.exit_since == PINNED_AT.isoformat()
+
+
+def test_a_round_that_found_nothing_answering_says_so_on_the_frame(uplink):
+    """A node cannot be blamed for a WAN that is down or an xray that is not
+    answering, so the strip is told which of the two it is."""
+    del uplink
+    controller = StubExitController(
+        status=XrayExitStatus(
+            exit_tag="",
+            is_wan_reachable=False,
+            is_xray_reachable=False,
+            is_in_sync=False,
+        )
+    )
+
+    pushed = PanelStatsCollector(runtime=StubRuntime(controller=controller)).collect()
+
+    assert (
+        pushed.exit_tag,
+        pushed.exit_since,
+        pushed.is_wan_reachable,
+        pushed.is_xray_reachable,
+        pushed.is_in_sync,
+    ) == ("", "", False, False, False)

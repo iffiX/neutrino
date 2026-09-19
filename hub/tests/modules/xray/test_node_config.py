@@ -6,7 +6,11 @@ it is what "this link is already in the list" is decided on. Two servers that
 read as one id are one node the person cannot have both of.
 """
 
-from neutrino_hub.modules.xray.node_config import parse_share_link
+from neutrino_hub.modules.xray.constants import (
+    XRAY_PROBE_URL_DEFAULT,
+    XRAY_REFERENCE_URL_DEFAULT,
+)
+from neutrino_hub.modules.xray.node_config import XrayNodeList, parse_share_link
 
 # Links to servers that do not exist, with a placeholder credential in them.
 FIRST_HOST = "ss://YWVzLTI1Ni1nY206eA==@203.0.113.10:5800#a"  # scan: allow
@@ -38,3 +42,18 @@ def test_the_same_link_always_reads_as_the_same_node():
 def test_a_named_host_keeps_its_name_in_the_id():
     """An id that is only a digest is one nobody can recognise in a URL."""
     assert parse_share_link(NAMED_HOST).id.startswith("c12s3_")
+
+
+def test_the_balancer_block_holds_the_three_measurement_settings():
+    """The hub measures the nodes and names the exit to xray itself, so the
+    block is what a round needs and nothing else. A stored file carrying a key
+    that is not one of the three has a key nobody reads."""
+    stored = XrayNodeList.from_dict(
+        {"nodes": [], "balancer": {"strategy": "leastPing", "probe_interval_s": 30}}
+    )
+
+    assert stored.to_dict()["balancer"] == {
+        "probe_url": XRAY_PROBE_URL_DEFAULT,
+        "reference_url": XRAY_REFERENCE_URL_DEFAULT,
+        "probe_interval_s": 30,
+    }

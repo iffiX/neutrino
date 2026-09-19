@@ -1,21 +1,28 @@
-"""What the exit-node list does to the proxy switch.
+"""What the exit-node list does to the proxy switch, and what a node write
+leaves behind.
 
-The pairing these guard: a proxy that is on and a list with nothing enabled in
-it is not a state — the balancer has nothing to select, so rendering the xray
-configuration raises and every Apply after it fails with that. The panel used
-to let somebody reach it by deleting the last node, and then offered no way
-out: the one thing that fixes it is the switch the page never mentioned.
+Two pairings are guarded here. A proxy that is on and a list with nothing
+enabled in it is not a state: the balancer has nothing to select, so rendering
+the xray configuration raises and every Apply after it fails with that. And a
+node write reaches the exit controller rather than the render, so switching
+one on or off takes effect at once and leaves nothing to apply.
 """
+
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.xray.exit_controller import XrayExitStatus
 from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_health import XrayNodeHealth, XrayNodeSample
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import proxy_node as nodes_router
 from neutrino_hub.web.routers.hub import proxy as proxy_router
 from tests.conftest import unlock_vault
+
+MEASURED_AT = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
 
 # One reachable-looking node, as a share link and as stored configuration.
 SHARE_LINK = "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.10:5800#Tokyo"  # scan: allow
@@ -32,11 +39,12 @@ STORED = {
         }
     ],
     "balancer": {
-        "strategy": "leastPing",
         "probe_url": "https://www.gstatic.com/generate_204",
+        "reference_url": "http://www.msftconnecttest.com/connecttest.txt",
         "probe_interval_s": 60,
     },
 }
+BALANCER = dict(STORED["balancer"])
 
 
 class FakeRuntime:
@@ -58,7 +66,7 @@ class FakeRuntime:
         }
         self.is_config_dirty = False
         self.stats = _NoTraffic()
-        self.node_probe = _NoProbes()
+        self.exit_controller = _ExitController(self)
         self.listening_ports = _HeldPorts()
 
     def node_list(self) -> XrayNodeList:
@@ -80,9 +88,38 @@ class _NoTraffic:
         return []
 
 
-class _NoProbes:
-    def results(self, nodes) -> list:
-        return []
+class _ExitController:
+    """The exit rounds as these routes reach them.
+
+    Records every call, so a test reads what the route asked for rather than
+    what it measured; the measurements themselves are written down by hand.
+    """
+
+    def __init__(self, runtime: FakeRuntime):
+        self._runtime = runtime
+        self.status = XrayExitStatus()
+        self.windows: dict = {}
+        self.refreshed: list = []
+        self.reselect_count = 0
+        self.wake_count = 0
+
+    def healths(self) -> dict:
+        return dict(self.windows)
+
+    def refresh(self, *, only: "str | None" = None) -> XrayExitStatus:
+        self.refreshed.append(only)
+        if only is not None and not any(
+            node.id == only for node in self._runtime.node_list().nodes
+        ):
+            raise KeyError(f"no node with id {only!r}")
+        return self.status
+
+    def reselect(self) -> XrayExitStatus:
+        self.reselect_count += 1
+        return self.status
+
+    def wake(self) -> None:
+        self.wake_count += 1
 
 
 @pytest.fixture
@@ -203,17 +240,15 @@ def test_a_port_no_listener_can_take_is_refused(client, port):
         ({"probe_interval_s": 999999}, "a probe interval of days"),
         ({"probe_url": "not a url"}, "a probe target that is not a URL"),
         ({"probe_url": ""}, "no probe target at all"),
+        ({"reference_url": "not a url"}, "a reference that is not a URL"),
+        ({"reference_url": ""}, "no reference at all"),
     ],
 )
-def test_the_balancer_refuses_what_the_observatory_cannot_keep(client, settings, label):
-    """These reach xray's observatory, which fails at run time rather than at
-    load time: a bad one is a proxy that starts and then never picks a node."""
+def test_the_balancer_refuses_what_a_round_cannot_keep(client, settings, label):
+    """A round fetches both addresses and sleeps the interval between two of
+    them, so a bad one is a hub that measures nothing and never says why."""
     opened, _ = client
-    body = {
-        "strategy": "leastPing",
-        "probe_url": "https://www.gstatic.com/generate_204",
-        "probe_interval_s": 60,
-    }
+    body = dict(BALANCER)
     body.update(settings)
 
     response = opened.post("/api/hub/proxy/balancer/set", json=body)
@@ -380,3 +415,156 @@ def test_removing_a_node_takes_its_vault_object_with_it(client):
     from neutrino_hub.modules.credentials.vault import SecretVault
 
     assert SecretVault().get(stored["secret_id"]) is None
+
+
+def measured(*, request_ms: "int | None") -> XrayNodeHealth:
+    """One node's window, as a round would leave it."""
+    return XrayNodeHealth(
+        tag="node_hk1",
+        samples=[XrayNodeSample(at=MEASURED_AT, connect_ms=12, request_ms=request_ms)],
+        probed_at=MEASURED_AT,
+        succeeded_at=MEASURED_AT if request_ms is not None else None,
+    )
+
+
+def test_the_list_reports_what_the_controller_measured(client):
+    """The list reads the windows the controller already holds; it measures
+    nothing and reaches xray for nothing."""
+    opened, runtime = client
+    runtime.exit_controller.windows = {"node_hk1": measured(request_ms=140)}
+    runtime.exit_controller.status = XrayExitStatus(exit_tag="node_hk1")
+
+    node = opened.get("/api/hub/proxy/node").json()["nodes"][0]
+
+    assert node["is_alive"]
+    assert node["is_selected"]
+    assert (node["connect_ms"], node["request_ms"]) == (12, 140)
+    assert node["probed_at"] == MEASURED_AT.isoformat()
+    assert node["success_rate"] == 1.0
+    assert node["score_ms"] == 140
+
+
+def test_a_node_nobody_has_measured_reads_as_neither_alive_nor_timed(client):
+    """An empty window is ignorance, not a failure, and the page says so by
+    showing no number at all."""
+    opened, _ = client
+
+    node = opened.get("/api/hub/proxy/node").json()["nodes"][0]
+
+    assert not node["is_alive"]
+    assert (node["connect_ms"], node["request_ms"], node["score_ms"]) == (
+        None,
+        None,
+        None,
+    )
+    assert node["probed_at"] == ""
+
+
+def test_a_switched_off_node_is_still_reported_with_its_measurement(client):
+    """Every node stays resident in xray and keeps a window, so the page can
+    show what a node does before anybody enables it."""
+    opened, runtime = client
+    runtime.exit_controller.windows = {"node_hk1": measured(request_ms=140)}
+    opened.post("/api/hub/proxy/node/set", json={"node_id": "hk1", "is_enabled": False})
+
+    nodes = opened.get("/api/hub/proxy/node").json()["nodes"]
+
+    assert [node["id"] for node in nodes] == ["hk1"]
+    assert not nodes[0]["is_enabled"]
+    assert nodes[0]["is_alive"]
+
+
+def test_testing_one_node_measures_that_one_and_answers_with_the_list(client):
+    """A write answers with what the matching read answers, so the page
+    replaces its state rather than merging a single node into it."""
+    opened, runtime = client
+
+    response = opened.post("/api/hub/proxy/node/test", json={"node_id": "hk1"})
+
+    assert response.status_code == 200
+    assert runtime.exit_controller.refreshed == ["hk1"]
+    assert [node["id"] for node in response.json()["nodes"]] == ["hk1"]
+
+
+def test_testing_with_no_node_measures_them_all_in_one_round(client):
+    """Test-all used to be one request per node, each holding a thread for a
+    whole probe timeout."""
+    opened, runtime = client
+
+    response = opened.post("/api/hub/proxy/node/test", json={})
+
+    assert response.status_code == 200
+    assert runtime.exit_controller.refreshed == [None]
+
+
+def test_testing_a_node_that_is_not_in_the_list_is_refused_by_name(client):
+    opened, _ = client
+
+    response = opened.post("/api/hub/proxy/node/test", json={"node_id": "gone"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "node_unknown",
+        "params": {"node": "gone"},
+    }
+
+
+def test_switching_a_node_on_reaches_the_controller_and_leaves_no_apply(client):
+    """Every node is resident in xray, so enabling one changes which node may
+    be chosen and nothing that has to be rendered."""
+    opened, runtime = client
+
+    response = opened.post(
+        "/api/hub/proxy/node/set", json={"node_id": "hk1", "is_enabled": True}
+    )
+
+    assert response.status_code == 200
+    assert runtime.exit_controller.reselect_count == 1
+    assert not runtime.is_config_dirty
+
+
+def test_renaming_a_node_leaves_nothing_to_apply(client):
+    opened, runtime = client
+
+    opened.post("/api/hub/proxy/node/set", json={"node_id": "hk1", "name": "Osaka"})
+
+    assert runtime.files["xray/nodes.json"]["nodes"][0]["name"] == "Osaka"
+    assert not runtime.is_config_dirty
+
+
+def test_losing_the_last_enabled_node_does_leave_something_to_apply(client):
+    """The scopes are switched off in `config/`, and that is a render the box
+    is not running yet."""
+    opened, runtime = client
+
+    opened.post("/api/hub/proxy/node/set", json={"node_id": "hk1", "is_enabled": False})
+
+    assert runtime.is_config_dirty
+
+
+def test_the_measurement_settings_take_effect_without_an_apply(client):
+    """None of the three reaches the xray configuration; the next round reads
+    them out of `config/`."""
+    opened, runtime = client
+
+    response = opened.post(
+        "/api/hub/proxy/balancer/set", json=dict(BALANCER, probe_interval_s=30)
+    )
+
+    assert response.status_code == 200
+    assert runtime.files["xray/nodes.json"]["balancer"]["probe_interval_s"] == 30
+    assert runtime.exit_controller.wake_count == 1
+    assert not runtime.is_config_dirty
+
+
+def test_the_reference_address_is_kept_beside_the_probe_address(client):
+    opened, runtime = client
+
+    opened.post(
+        "/api/hub/proxy/balancer/set",
+        json=dict(BALANCER, reference_url="http://example.net/probe"),
+    )
+
+    balancer = runtime.files["xray/nodes.json"]["balancer"]
+    assert balancer["reference_url"] == "http://example.net/probe"
+    assert balancer["probe_url"] == BALANCER["probe_url"]

@@ -46,8 +46,16 @@ class NodeView(BaseModel):
     port: int
     is_enabled: bool
     has_reality: bool
+    # What the hub's own measurements say. Alive is a window whose newest
+    # sample succeeded; selected is the exit pinned in xray.
     is_alive: bool = False
-    delay_ms: int | None = None
+    is_selected: bool = False
+    connect_ms: int | None = None
+    request_ms: int | None = None
+    # When the node was last measured; empty for one nobody has measured.
+    probed_at: str = ""
+    success_rate: float = 0.0
+    score_ms: int | None = None
     uplink_bytes: int = 0
     downlink_bytes: int = 0
 
@@ -66,11 +74,17 @@ class NodeUpdate(BaseModel):
     name: str | None = None
 
 
-class BalancerSettings(BaseModel):
-    """How the balancer picks between nodes."""
+class NodeTestRequest(BaseModel):
+    """A request to measure one node, or every node at once."""
 
-    strategy: str
+    node_id: str | None = None
+
+
+class BalancerSettings(BaseModel):
+    """How the hub measures the nodes it picks the exit from."""
+
     probe_url: str
+    reference_url: str
     probe_interval_s: int
 
 
@@ -80,14 +94,6 @@ class NodeListView(BaseModel):
     nodes: list[NodeView]
     balancer: BalancerSettings
     is_dirty: bool
-
-
-class NodeTestResult(BaseModel):
-    """Outcome of probing one node."""
-
-    tag: str
-    is_alive: bool
-    delay_ms: int | None = None
 
 
 class ApplyResult(BaseModel):
@@ -106,14 +112,18 @@ class OutboundTrafficView(BaseModel):
 
 
 class NodeProbeView(BaseModel):
-    """The latest reachability probe of one node."""
+    """The latest measurement of one node."""
 
     tag: str
     is_alive: bool
-    delay_ms: int | None = None
-    # When it was taken: a frame repeats the same probe for as long as it
-    # stands, and a chart of probes reads this to add each one once.
+    is_enabled: bool = True
+    is_selected: bool = False
+    connect_ms: int | None = None
+    request_ms: int | None = None
+    # When it was taken: a frame repeats the same measurement for as long as
+    # it stands, and a chart of them reads this to add each one once.
     probed_at: str = ""
+    success_rate: float = 0.0
 
 
 class StatsFrame(BaseModel):
@@ -148,10 +158,16 @@ class StatsFrame(BaseModel):
     # this box can see is not a machine it manages, and an SSH login is not
     # an agent.
     agent_device_count: int = 0
-    # How traffic is spread, and over how many exits. The strip needs both to
-    # answer "where is my traffic going": under leastPing there is one exit to
-    # name, and under the others there deliberately is not.
-    balancer_strategy: str = "leastPing"
+    # The exit the hub has pinned in xray and when that pin last moved, so
+    # the strip can answer "where is my traffic going" with one name.
+    exit_tag: str = ""
+    exit_since: str = ""
+    # What the last round found: whether the uplink answered directly,
+    # whether xray answered its API, and whether xray carries the exits the
+    # render names.
+    is_wan_reachable: bool = True
+    is_xray_reachable: bool = True
+    is_in_sync: bool = True
     enabled_node_count: int = 0
 
 

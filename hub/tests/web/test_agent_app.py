@@ -17,6 +17,13 @@ class StubLinkSampler:
         return None
 
 
+class StubExitController:
+    """The exit rounds, which the application starts and nothing here runs."""
+
+    def start(self) -> None:
+        return None
+
+
 class StubUsageCollector:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -31,6 +38,7 @@ class StubRuntime:
     def __init__(self):
         self.served_models = None
         self.link_sampler = StubLinkSampler()
+        self.exit_controller = StubExitController()
 
     def publish_ai_usage(self) -> None:
         return None

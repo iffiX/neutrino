@@ -8,23 +8,38 @@ import ipaddress
 import urllib.parse
 
 from neutrino_hub.modules.xray.constants import (
+    XRAY_ACCESS_LOG,
     XRAY_API_INBOUND_TAG,
     XRAY_API_LISTEN,
     XRAY_API_PORT,
     XRAY_API_TAG,
+    XRAY_BALANCER_STRATEGY,
     XRAY_BALANCER_TAG,
     XRAY_BLOCK_TAG,
     XRAY_DIRECT_TAG,
     XRAY_DNS_INTERNAL_TAG,
     XRAY_DNS_LISTEN,
+    XRAY_DNS_NON_IP_QUERY,
+    XRAY_DNS_OUTBOUND_TAG,
     XRAY_DNS_PORT,
     XRAY_DNS_QUERY_STRATEGY,
     XRAY_DNS_TAG,
     XRAY_EGRESS_MARK,
+    XRAY_LOG_LEVEL,
     XRAY_NODE_DOMAIN_STRATEGY,
-    XRAY_NODE_TAG_PREFIX,
-    XRAY_PROBE_SAMPLING,
-    XRAY_PROBE_TIMEOUT_S,
+    XRAY_PROBE_LISTEN,
+    XRAY_PROBE_PASSWORD,
+    XRAY_PROBE_PORT,
+    XRAY_PROBE_TAG,
+    XRAY_RULE_TAG_API,
+    XRAY_RULE_TAG_BALANCER,
+    XRAY_RULE_TAG_DNS_DIRECT,
+    XRAY_RULE_TAG_DNS_IN,
+    XRAY_RULE_TAG_INBOUND_DIRECT,
+    XRAY_RULE_TAG_PROBE,
+    XRAY_RULE_TAG_SOCKS_DIRECT,
+    XRAY_RULE_TAG_SPLIT_DOMAIN,
+    XRAY_RULE_TAG_SPLIT_IP,
     XRAY_SOCKS_LISTEN,
     XRAY_SOCKS_TAG,
     XRAY_TPROXY_LISTEN,
@@ -37,18 +52,15 @@ from neutrino_hub.modules.xray.node_config import (
     XrayNodeList,
 )
 
-from neutrino_hub.utils.constants import UTILS_LOG_DIR
-
 
 class XrayConfigRenderer:
     """Builds the xray config: inbounds, outbounds, balancer, and routing.
 
-    Four inbounds are always present. ``tproxy_in`` receives everything the
-    router diverts from the LAN and goes to the balancer. ``socks_direct_in``
-    goes straight out the WAN, so applications that must look like they come
-    from this network (remote desktop back home, for one) have a path that
-    skips the proxy. ``dns_in`` is dnsmasq's only upstream.
-    ``api_in`` exposes traffic statistics to the panel on loopback.
+    ``tproxy_in`` takes what the router diverts, ``dns_in`` is dnsmasq's only
+    upstream, ``api_in`` answers the panel on loopback, and one SOCKS listener
+    per published port leaves the way its entry says. ``socks_probe_in``
+    carries one account per resident node, and one rule per account sends that
+    account out its own node.
     """
 
     def __init__(
@@ -62,19 +74,26 @@ class XrayConfigRenderer:
             node_list: Parsed ``config/xray/nodes.json``.
             routing: Parsed ``config/xray/routing.json``.
         """
+        # Every node whose secret resolved is resident: an outbound and a
+        # probe account, whatever the scopes say, so the hub can measure it on
+        # a box that proxies nothing and name the one worth switching back on.
+        # Only an enabled node is selectable, which is the whole of what the
+        # switch means. A node whose reference dangles is in neither list: the
+        # caller resolves before rendering, and a dangling reference must not
+        # take the whole apply with it.
+        self._resident_nodes = [
+            node for node in node_list.nodes if node.has_secret_material
+        ]
+        self._selectable_nodes = [
+            node for node in self._resident_nodes if node.is_enabled
+        ]
         # A scope switched on with nothing to go out through renders as off.
-        # Raising instead made every apply fail on a box in that state — and
+        # Raising instead made every apply fail on a box in that state, and
         # the one thing that fixes it, switching the scope off, is what the
         # failure prevented anybody from applying. The panel writes the
         # switches off when the list empties, so the two agree; this is what
-        # keeps a hand-edited file from being unrenderable. A node whose
-        # secret reference did not resolve is excluded the same way a
-        # disabled one is: the caller resolves before rendering, and a
-        # dangling reference must not take the whole apply with it.
-        self._renderable_nodes = [
-            node for node in node_list.enabled_nodes if node.has_secret_material
-        ]
-        has_exit = bool(self._renderable_nodes)
+        # keeps a hand-edited file from being unrenderable.
+        has_exit = bool(self._selectable_nodes)
         # The forwarded scopes read alike here: what the firewall diverts,
         # LAN or overlay, arrives on the one transparent inbound.
         self._is_lan_proxied = routing.get("is_proxy_enabled", True) and has_exit
@@ -94,24 +113,6 @@ class XrayConfigRenderer:
         ]
         self._node_list = node_list
         self._routing = routing
-
-    @property
-    def _is_observatory_needed(self) -> bool:
-        """Whether the balancer depends on the observatory being configured.
-
-        Two things need it and only one of them is the strategy. `leastPing`
-        ranks the nodes by what it measures, and `fallbackTag` has to know
-        every node is dead before it can fall back — so a `roundRobin`
-        balancer that never needed probing needs one the moment somebody
-        turns the fallback on. Rendered without it, xray refuses the whole
-        configuration with "not all dependencies are resolved".
-        """
-        return self._node_list.is_observatory_needed or self._is_fallback_enabled
-
-    @property
-    def _is_fallback_enabled(self) -> bool:
-        """Whether the balancer sends traffic out directly when no node answers."""
-        return bool(self._routing.get("is_direct_fallback_enabled", False))
 
     @property
     def _is_anything_proxied(self) -> bool:
@@ -136,12 +137,8 @@ class XrayConfigRenderer:
         Returns:
             A JSON-ready object for ``/var/lib/neutrino/generated/xray_config.json``.
         """
-        config = {
-            "log": {
-                "loglevel": "warning",
-                "access": str(UTILS_LOG_DIR / "xray_access.log"),
-                "error": str(UTILS_LOG_DIR / "xray_error.log"),
-            },
+        return {
+            "log": {"loglevel": XRAY_LOG_LEVEL, "access": XRAY_ACCESS_LOG},
             "stats": {},
             "api": {
                 "tag": XRAY_API_TAG,
@@ -160,29 +157,35 @@ class XrayConfigRenderer:
             "outbounds": self._render_outbounds(),
             "routing": self._render_routing(),
         }
-        if self._is_anything_proxied and self._is_observatory_needed:
-            config["burstObservatory"] = self._render_observatory()
-        return config
 
     def _render_dns(self) -> dict:
         remote = self._routing.get("remote_dns", {})
         direct = self._routing.get("direct_dns", {})
-        servers: list = [remote.get("address", "1.1.1.1")]
+        servers: list = [
+            {
+                "address": remote.get("address", "1.1.1.1"),
+                "port": remote.get("port", 53),
+            }
+        ]
         if self._is_geoip_split_enabled and self._is_anything_proxied:
             servers.insert(
                 0,
                 {
                     "address": direct.get("address", "223.5.5.5"),
+                    "port": direct.get("port", 53),
                     "domains": self._routing.get("direct_domains", []),
                     "skipFallback": True,
                 },
             )
         own_names = self._exit_hostnames + self._probe_hostnames
-        if own_names and self._is_anything_proxied:
+        if own_names and self._resident_nodes:
             # The proxy's own names resolve at the direct resolver: an exit's
-            # address, and the host the observatory fetches through each
-            # exit to rank them. A lookup sent through an exit waits on the
-            # exit it is asking about.
+            # address, and the host the hub fetches through each exit to
+            # measure it. It is the resolver that answers those names
+            # correctly without the proxy, and a lookup sent through an exit
+            # waits on the exit it is asking about. Both hold while a node is
+            # rendered, whatever the scopes say, because the probe dials that
+            # node by the address this pin resolves.
             servers.insert(
                 0,
                 {
@@ -202,16 +205,14 @@ class XrayConfigRenderer:
     def _exit_hostnames(self) -> list[str]:
         """The exit nodes addressed by name, in configuration order."""
         names = []
-        for node in self._renderable_nodes:
+        for node in self._resident_nodes:
             if not _is_ip_address(node.address) and node.address not in names:
                 names.append(node.address)
         return names
 
     @property
     def _probe_hostnames(self) -> list[str]:
-        """The observatory's probe host, when it is a name and is needed."""
-        if not self._is_observatory_needed:
-            return []
+        """The probe target's host, when it is a name of its own."""
         host = urllib.parse.urlsplit(self._node_list.probe_url).hostname or ""
         if not host or _is_ip_address(host) or host in self._exit_hostnames:
             return []
@@ -253,6 +254,8 @@ class XrayConfigRenderer:
                 },
             },
         ]
+        if self._resident_nodes:
+            inbounds.append(self._render_probe_inbound())
         # One inbound per published port, tagged by the port so a rule can name
         # exactly the listeners that leave one way.
         for entry in self._socks_ports:
@@ -267,6 +270,26 @@ class XrayConfigRenderer:
                 }
             )
         return inbounds
+
+    def _render_probe_inbound(self) -> dict:
+        """The loopback listener the hub measures every node through."""
+        # No sniffing: the destination arrives as a domain in the SOCKS
+        # request and the rule matches on the account, so a sniffed name would
+        # only put a lookup in front of every measurement.
+        return {
+            "tag": XRAY_PROBE_TAG,
+            "listen": XRAY_PROBE_LISTEN,
+            "port": XRAY_PROBE_PORT,
+            "protocol": "socks",
+            "settings": {
+                "udp": False,
+                "auth": "password",
+                "accounts": [
+                    {"user": node.tag, "pass": XRAY_PROBE_PASSWORD}
+                    for node in self._resident_nodes
+                ],
+            },
+        }
 
     def _socks_tags(self, *, is_proxied: bool) -> list[str]:
         """The inbound tags of the listeners that leave one way.
@@ -285,19 +308,27 @@ class XrayConfigRenderer:
         ]
 
     def _render_outbounds(self) -> list[dict]:
-        outbounds = (
-            [self._render_node_outbound(node) for node in self._renderable_nodes]
-            if self._is_anything_proxied
-            else []
-        )
-        outbounds.append(
+        # xray sends a connection no rule matched to the first outbound, and a
+        # node outbound may be one the person switched off.
+        outbounds: list[dict] = [
             {
                 "tag": XRAY_DIRECT_TAG,
                 "protocol": "freedom",
                 "settings": {"domainStrategy": "UseIP"},
                 "streamSettings": {"sockopt": {"mark": XRAY_EGRESS_MARK}},
             }
-        )
+        ]
+        outbounds += [self._render_node_outbound(node) for node in self._resident_nodes]
+        if self._is_lan_proxied:
+            # With the LAN scope off dnsmasq asks the direct resolver itself,
+            # so nothing reaches the DNS inbound and this has no caller.
+            outbounds.append(
+                {
+                    "tag": XRAY_DNS_OUTBOUND_TAG,
+                    "protocol": "dns",
+                    "settings": {"nonIPQuery": XRAY_DNS_NON_IP_QUERY},
+                }
+            )
         outbounds.append({"tag": XRAY_BLOCK_TAG, "protocol": "blackhole"})
         return outbounds
 
@@ -346,21 +377,43 @@ class XrayConfigRenderer:
         }
 
     def _render_routing(self) -> dict:
+        # Every rule matching by inbound comes before every rule matching by
+        # destination. The probe target is somebody's own URL and may well be
+        # a name the direct lists claim, which would measure the uplink
+        # instead of the exit.
         rules: list[dict] = [
             {
                 "type": "field",
+                "ruleTag": XRAY_RULE_TAG_API,
                 "inboundTag": [XRAY_API_INBOUND_TAG],
                 "outboundTag": XRAY_API_TAG,
             },
         ]
-        if self._is_anything_proxied:
+        rules += self._render_probe_rules()
+        if self._is_lan_proxied:
+            # dnsmasq's queries reach the resolver the dns object configures,
+            # so a LAN client's lookup takes the same split and the same
+            # UseIPv4 that xray's own lookups take.
+            rules.append(
+                {
+                    "type": "field",
+                    "ruleTag": XRAY_RULE_TAG_DNS_IN,
+                    "inboundTag": [XRAY_DNS_TAG],
+                    "outboundTag": XRAY_DNS_OUTBOUND_TAG,
+                }
+            )
+        if self._resident_nodes:
             # The direct resolver is reached directly, whatever the split
             # says about its address: the exits' names are looked up there,
-            # and a lookup sent through an exit waits on its own answer.
+            # and a lookup sent through an exit waits on its own answer. It
+            # is rendered with the pin above rather than left to the first
+            # outbound, which carries an unmatched query only by accident of
+            # the order.
             direct = self._routing.get("direct_dns", {})
             rules.append(
                 {
                     "type": "field",
+                    "ruleTag": XRAY_RULE_TAG_DNS_DIRECT,
                     "inboundTag": [XRAY_DNS_INTERNAL_TAG],
                     "ip": [direct.get("address", "223.5.5.5")],
                     "outboundTag": XRAY_DIRECT_TAG,
@@ -371,6 +424,7 @@ class XrayConfigRenderer:
             rules.append(
                 {
                     "type": "field",
+                    "ruleTag": XRAY_RULE_TAG_SOCKS_DIRECT,
                     "inboundTag": direct_ports,
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
@@ -385,98 +439,86 @@ class XrayConfigRenderer:
             balanced = [XRAY_TPROXY_TAG] + balanced
         else:
             direct_inbounds.append(XRAY_TPROXY_TAG)
-        if self._is_lan_proxied:
-            balanced = balanced + [XRAY_DNS_TAG]
-        else:
+        if not self._is_lan_proxied:
             direct_inbounds.append(XRAY_DNS_TAG)
         if direct_inbounds:
             rules.append(
                 {
                     "type": "field",
+                    "ruleTag": XRAY_RULE_TAG_INBOUND_DIRECT,
                     "inboundTag": direct_inbounds,
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )
+        # With nothing sent to the balancer the split has nothing to split and
+        # the direct lists are not read at all, which is what makes switching
+        # every scope off the way out of a bad entry in one of them: a config
+        # xray rejects takes the whole apply with it.
         if balanced:
             # The resolver's other queries, for the names the split and the
             # direct outbound resolve, go the way proxied traffic goes: an
             # unrouted query would go to the first outbound, alive or not.
             balanced = balanced + [XRAY_DNS_INTERNAL_TAG]
-        if not balanced:
-            # Nothing is sent to the balancer, so the split has nothing to
-            # split and the lists are not read at all — which is what makes
-            # switching every scope off the way out of a bad entry in one of
-            # them: a rejected config takes the whole apply with it.
-            return {"domainStrategy": "IPIfNonMatch", "rules": rules}
+            if self._is_geoip_split_enabled:
+                direct_domains = self._routing.get("direct_domains", [])
+                direct_ips = self._routing.get("direct_ips", [])
+                if direct_domains:
+                    rules.append(
+                        {
+                            "type": "field",
+                            "ruleTag": XRAY_RULE_TAG_SPLIT_DOMAIN,
+                            "domain": direct_domains,
+                            "outboundTag": XRAY_DIRECT_TAG,
+                        }
+                    )
+                if direct_ips:
+                    rules.append(
+                        {
+                            "type": "field",
+                            "ruleTag": XRAY_RULE_TAG_SPLIT_IP,
+                            "ip": direct_ips,
+                            "outboundTag": XRAY_DIRECT_TAG,
+                        }
+                    )
+            rules.append(
+                {
+                    "type": "field",
+                    "ruleTag": XRAY_RULE_TAG_BALANCER,
+                    "inboundTag": balanced,
+                    "balancerTag": XRAY_BALANCER_TAG,
+                }
+            )
+        routing: dict = {"domainStrategy": "IPIfNonMatch"}
+        # The balancer stands whether a rule names it or not, so the hub has
+        # something to override the moment a scope is switched on. xray
+        # refuses an empty selector, so with no enabled node there is none.
+        if self._selectable_nodes:
+            routing["balancers"] = [self._render_balancer()]
+        routing["rules"] = rules
+        return routing
 
-        if self._is_geoip_split_enabled:
-            direct_domains = self._routing.get("direct_domains", [])
-            direct_ips = self._routing.get("direct_ips", [])
-            if direct_domains:
-                rules.append(
-                    {
-                        "type": "field",
-                        "domain": direct_domains,
-                        "outboundTag": XRAY_DIRECT_TAG,
-                    }
-                )
-            if direct_ips:
-                rules.append(
-                    {
-                        "type": "field",
-                        "ip": direct_ips,
-                        "outboundTag": XRAY_DIRECT_TAG,
-                    }
-                )
-        rules.append(
+    def _render_probe_rules(self) -> list[dict]:
+        """One rule per probe account, sending that account out its own node."""
+        return [
             {
                 "type": "field",
-                "inboundTag": balanced,
-                "balancerTag": XRAY_BALANCER_TAG,
+                "ruleTag": XRAY_RULE_TAG_PROBE.format(node_id=node.id),
+                "inboundTag": [XRAY_PROBE_TAG],
+                "user": [node.tag],
+                "outboundTag": node.tag,
             }
-        )
-        return {
-            "domainStrategy": "IPIfNonMatch",
-            "balancers": [self._render_balancer()],
-            "rules": rules,
-        }
+            for node in self._resident_nodes
+        ]
 
     def _render_balancer(self) -> dict:
-        """The balancer, and what it does when no exit answers.
-
-        Without a fallback a dead exit is a dead network: what was sent to the
-        proxy fails, and so does every name, because the LAN's resolver is
-        this same balancer. With one, that traffic leaves directly instead —
-        which is connectivity bought with the thing the proxy was for, and so
-        is the person's switch to throw rather than a default.
-
-        Returns:
-            The balancer object.
-        """
-        balancer = {
-            "tag": XRAY_BALANCER_TAG,
-            "selector": [XRAY_NODE_TAG_PREFIX],
-            "strategy": {"type": self._node_list.strategy},
-        }
-        if self._is_fallback_enabled:
-            balancer["fallbackTag"] = XRAY_DIRECT_TAG
-        return balancer
-
-    def _render_observatory(self) -> dict:
-        """The observatory that ranks the exits, probing all of them at once.
-
-        The burst form, not the sequential one: that one sleeps the interval
-        between one exit and the next, so with six exits an exit that died
-        is noticed six intervals later.
-        """
+        """The balancer, selecting the exact tags of the enabled nodes."""
+        # Exact tags rather than the node prefix: every node is rendered now,
+        # and a prefix would let the strategy cycle through switched-off ones
+        # between an xray restart and the hub's next override.
         return {
-            "subjectSelector": [XRAY_NODE_TAG_PREFIX],
-            "pingConfig": {
-                "destination": self._node_list.probe_url,
-                "interval": f"{self._node_list.probe_interval_s}s",
-                "timeout": f"{XRAY_PROBE_TIMEOUT_S}s",
-                "sampling": XRAY_PROBE_SAMPLING,
-            },
+            "tag": XRAY_BALANCER_TAG,
+            "selector": [node.tag for node in self._selectable_nodes],
+            "strategy": {"type": XRAY_BALANCER_STRATEGY},
         }
 
     @property

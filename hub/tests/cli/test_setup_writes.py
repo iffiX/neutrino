@@ -34,8 +34,8 @@ def config_dir(tmp_path, monkeypatch):
 
 
 def test_the_nodes_replace_the_examples_and_keep_their_settings(config_dir):
-    """Building a fresh list dropped the balancer strategy and the probe, and
-    the constructor refused it — on a VM, not here."""
+    """Building a fresh list dropped the measurement settings the example
+    states, and the wizard has no screen that asks for them."""
     from neutrino_hub.utils.json_file import read_config
 
     setup._write_proxy(
@@ -46,7 +46,10 @@ def test_the_nodes_replace_the_examples_and_keep_their_settings(config_dir):
     # The id carries a digest of the address and port, so two servers a
     # provider hands out under one first label stay two nodes.
     assert [node["id"].split("_")[0] for node in nodes["nodes"]] == ["hk"]
-    assert nodes["balancer"]["strategy"], "the example's strategy survived"
+    assert nodes["balancer"]["probe_url"], "the example's probe address survived"
+    assert nodes["balancer"][
+        "reference_url"
+    ], "the example's reference address survived"
     # The link's password lands sealed in the vault, never in the file.
     stored = nodes["nodes"][0]
     assert stored["secret_id"]
@@ -202,7 +205,7 @@ def test_the_log_is_named_before_the_first_step(monkeypatch):
 
     setup._setup(reporter, [], _NoAnswers())
 
-    assert any(str(setup.SETUP_LOG_PATH) in line for line in said)
+    assert any(str(setup.UTILS_SETUP_LOG_PATH) in line for line in said)
     assert any("will finish on its own" in line for line in said)
 
 

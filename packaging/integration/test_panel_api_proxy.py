@@ -110,14 +110,24 @@ def test_a_node_that_is_not_there_is_a_404(panel):
 
 
 @pytest.mark.parametrize(
-    "balancer",
+    "settings",
     [
-        {"strategy": "coin_flip", "probe_interval_s": 60},
-        {"strategy": "leastPing", "probe_interval_s": 0},
+        {"probe_interval_s": 0},
+        {"probe_interval_s": 5},
+        {"probe_interval_s": 4000},
+        {"probe_url": "example.com"},
+        {"reference_url": "example.com"},
     ],
 )
-def test_a_balancer_the_observatory_cannot_keep_is_refused(panel, balancer):
-    body = dict({"probe_url": "https://example.com"}, **balancer)
+def test_measurement_settings_the_hub_cannot_keep_are_refused(panel, settings):
+    body = dict(
+        {
+            "probe_url": "https://example.com",
+            "reference_url": "http://example.net",
+            "probe_interval_s": 60,
+        },
+        **settings,
+    )
 
     assert panel.status("POST", "/hub/proxy/balancer/set", body) == 400
 

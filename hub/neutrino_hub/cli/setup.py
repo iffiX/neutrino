@@ -65,6 +65,7 @@ from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
     UTILS_LOG_DIR,
     UTILS_PACKAGE_ROOT,
+    UTILS_SETUP_LOG_PATH,
 )
 from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.system import package_manager
@@ -136,10 +137,6 @@ SETUP_AGENT_PACKAGE_FAMILIES = AGENT_PACKAGE_FAMILY_OF_PLATFORM
 # Installing the package and joining the hub over the agent channel, which
 # includes the first handshake with a panel that has just started.
 SETUP_AGENT_JOIN_TIMEOUT_S = 120
-# Where the run is written down as well as printed. A first run
-# reconfigures the interface it is often watched over, so the terminal can
-# go away in the middle of one — this is where to read what happened.
-SETUP_LOG_PATH = UTILS_LOG_DIR / "setup.log"
 # Asking for this port is asking the operating system for whichever one is
 # free, which is what the wizard falls back to when the panel's is taken.
 SETUP_BROWSER_ANY_PORT = 0
@@ -200,7 +197,7 @@ def main() -> int:
         reporter = InstallReporter(
             total_step_count=len(steps) + 3,
             is_color_enabled=is_coloured,
-            log_path=SETUP_LOG_PATH,
+            log_path=UTILS_SETUP_LOG_PATH,
         )
     else:
         steps = _panel_started_last(steps)
@@ -208,7 +205,7 @@ def main() -> int:
             session=server.session,
             total_step_count=len(steps) + 3,
             is_color_enabled=is_coloured,
-            log_path=SETUP_LOG_PATH,
+            log_path=UTILS_SETUP_LOG_PATH,
         )
     return _setup(reporter, steps, answers, server=server)
 
@@ -508,7 +505,7 @@ def _setup(
     reporter.banner("Neutrino Hub setup")
     # Before the first step rather than after the last: somebody who loses the
     # session at step nine needs to have already read where to look.
-    reporter.note(f"this run is written to {SETUP_LOG_PATH}")
+    reporter.note(f"this run is written to {UTILS_SETUP_LOG_PATH}")
     reporter.note(
         "The initialization process will finish on its own, network might be "
         "interrupted, please reconnect when interruption happens"
@@ -691,8 +688,8 @@ def _write_proxy(proxy) -> None:
     Args:
         proxy: What the wizard collected.
     """
-    # Read and replace rather than build: the list carries a balancer strategy
-    # and probe settings that are the example's to state, not the wizard's.
+    # Read and replace rather than build: the list carries the measurement
+    # settings, which are the example's to state and not the wizard's.
     nodes = XrayNodeList.from_dict(read_config("xray/nodes.json"))
     nodes.nodes = list(proxy.nodes)
     for node in nodes.nodes:

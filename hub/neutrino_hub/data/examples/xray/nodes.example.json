@@ -36,9 +36,9 @@
     }
   ],
   "balancer": {
-    "_comment": "strategy: leastPing picks the lowest-latency node (needs the observatory probe), roundRobin cycles, random picks per connection.",
-    "strategy": "leastPing",
+    "_comment": "probe_url is fetched through every node, each on its own probe account, to measure it; reference_url is fetched directly, which tells a node that is down apart from an uplink that is down, so it must answer without the proxy and must not be the probe_url host; probe_interval_s is the seconds between rounds. The hub picks the exit from those measurements and names it to xray.",
     "probe_url": "https://www.gstatic.com/generate_204",
+    "reference_url": "http://www.msftconnecttest.com/connecttest.txt",
     "probe_interval_s": 60
   }
 }

@@ -71,10 +71,11 @@ class XrayConfigApplier:
 
         The candidate is written to a temporary path so a broken render cannot
         overwrite the config the running service would reload, and its log
-        destinations are stripped first. ``run -test`` builds the whole server,
-        loggers included, so validating the config verbatim would create the log
-        files — as root, since applying runs as root — and the service, which
-        runs as the unprivileged xray user, could then never open them.
+        block is cut down to the level. ``run -test`` builds the whole server,
+        loggers included, so a log block naming a file would create that file
+        as root, since applying runs as root, and the service, which runs as
+        the unprivileged xray user, could then never open it. Nothing the
+        renderer produces names one.
 
         Args:
             config: The rendered configuration object.

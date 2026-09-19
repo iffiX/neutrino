@@ -50,7 +50,6 @@ NODES = {
         }
     ],
     "balancer": {
-        "strategy": "leastPing",
         "probe_url": "https://www.gstatic.com/generate_204",
         "probe_interval_s": 60,
     },
@@ -89,6 +88,9 @@ class FakeRuntime:
         self.is_config_dirty = False
         self.listening_ports = _HeldPorts()
         self.tasks = FakeTasks()
+        self.exit_controller = _ExitController()
+        # What the next Apply raises, for the paths that have to survive one.
+        self.apply_failure: "Exception | None" = None
 
     def node_list(self) -> XrayNodeList:
         return XrayNodeList.from_dict(self.files["xray/nodes.json"])
@@ -96,10 +98,30 @@ class FakeRuntime:
     def routing(self) -> dict:
         return dict(self.files["xray/routing.json"])
 
+    async def apply_all(self) -> str:
+        if self.apply_failure is not None:
+            raise self.apply_failure
+        return "applied 1 nodes"
+
 
 class _HeldPorts:
     def ports(self, *, ignoring: str = "") -> set:
         return set()
+
+
+class _ExitController:
+    """The exit rounds as the Apply route reaches them."""
+
+    def __init__(self):
+        self.reassert_count = 0
+        self.wake_count = 0
+
+    def reassert(self) -> bool:
+        self.reassert_count += 1
+        return True
+
+    def wake(self) -> None:
+        self.wake_count += 1
 
 
 class FakeApplier:
@@ -180,6 +202,31 @@ def test_saving_the_settings_answers_with_the_same_view(client):
     saved = opened.post("/api/hub/proxy/set", json=ROUTING).json()
 
     assert saved["geodata"] == opened.get("/api/hub/proxy").json()["geodata"]
+
+
+def test_an_apply_pins_the_stored_exit_again(client):
+    """A restart drops the override, and the unit reports the restart before
+    xray's API inbound is listening. Waiting for the next round would leave
+    the box on the balancer's own choice for up to an interval."""
+    opened, runtime = client
+
+    response = opened.post("/api/hub/proxy/apply")
+
+    assert response.json()["is_applied"]
+    assert runtime.exit_controller.reassert_count == 1
+    assert runtime.exit_controller.wake_count == 1
+
+
+def test_an_apply_that_was_refused_leaves_the_exit_alone(client):
+    """xray is running what it was running before, its override included."""
+    opened, runtime = client
+    runtime.apply_failure = RuntimeError("xray rejected the rendered config")
+
+    response = opened.post("/api/hub/proxy/apply")
+
+    assert not response.json()["is_applied"]
+    assert runtime.exit_controller.reassert_count == 0
+    assert runtime.exit_controller.wake_count == 0
 
 
 def test_a_scan_answers_with_what_is_held_and_what_is_published(client):

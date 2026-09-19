@@ -19,7 +19,7 @@
   "_comment_local": "is_local_proxy_enabled controls the hub's OWN traffic (the box itself, tailscaled included), in any network mode and independently of the LAN switch above. false = straight out the WAN. true = through the proxy, which is the fallback when Tailscale's control plane is unreachable locally. The web panel toggles this.",
   "is_local_proxy_enabled": false,
 
-  "_comment_dns": "remote_dns resolves proxied names at the exit node; direct_dns resolves the geoip-split direct names locally. LAN clients always ask dnsmasq, which forwards to xray, so plaintext DNS never leaves the WAN.",
+  "_comment_dns": "remote_dns resolves proxied names at the exit node; direct_dns resolves the geoip-split direct names locally, and both address and port are used. With is_proxy_enabled on, LAN clients ask dnsmasq, dnsmasq asks xray's DNS inbound, and xray answers from these two, so a proxied name is never looked up in the clear. With it off, dnsmasq asks direct_dns itself and the DNS inbound answers nobody.",
   "remote_dns": { "address": "1.1.1.1", "port": 53 },
   "direct_dns": { "address": "223.5.5.5", "port": 53 }
 }

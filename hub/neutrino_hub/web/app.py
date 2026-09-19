@@ -144,9 +144,10 @@ def _runtime() -> PanelRuntime:
 def _start_samplers() -> None:
     """The process-wide background readers, started with the panel application.
 
-    Both watch something no write announces — what the gateway metered, and
-    what the interfaces are doing — and publish an event when the reading
-    moves, so no page has to ask on a timer.
+    Each watches something no write announces: what the gateway metered, what
+    the interfaces are doing, and what every exit node measures. Each
+    publishes an event when its reading moves, so no page has to ask on a
+    timer.
     """
     global _usage_collector
     runtime = _runtime()
@@ -157,6 +158,7 @@ def _start_samplers() -> None:
         )
         _usage_collector.start()
     runtime.link_sampler.start()
+    runtime.exit_controller.start()
 
 
 def _mount_frontend(app: FastAPI) -> None:

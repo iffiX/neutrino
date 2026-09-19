@@ -8,10 +8,12 @@ by itself.
 
 import asyncio
 import ipaddress
+import json
 import re
 import subprocess
 
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
+from neutrino_hub.modules.router.routes import install_dnsmasq
 from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
@@ -28,7 +30,6 @@ from neutrino_hub.modules.services.probe import DeclaredServiceProbe
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.host_scope import HostScope, served_scopes
 from neutrino_hub.modules.services.published import PublishedServiceCache
-from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
     WEB_EVENT_AI_USAGE,
@@ -52,9 +53,8 @@ from neutrino_hub.utils.json_file import (
     read_config,
     set_config_write_hook,
     write_config,
-    write_generated,
 )
-from neutrino_hub.utils.subprocess_run import command_failure_text, run
+from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.events import PanelEventBus
@@ -71,18 +71,15 @@ from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
-from neutrino_hub.modules.xray.constants import XRAY_SCOPE_SWITCHES
+from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH, XRAY_SCOPE_SWITCHES
+from neutrino_hub.modules.xray.exit_controller import XrayExitController
 from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
 from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
 from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 
-from neutrino_hub.modules.router.constants import (
-    ROUTER_DNSMASQ_PATH,
-    ROUTER_NFT_PATH,
-)
-
-DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
+from neutrino_hub.modules.router.constants import ROUTER_NFT_PATH
 
 
 class PanelRuntime:
@@ -104,6 +101,20 @@ class PanelRuntime:
         self.listening_ports = ListeningPortReader()
         self.stats = XrayStatsClient()
         self.node_probe = XrayNodeProbe(resolver_of=self._direct_resolver)
+        # Every node's measurement window, and the one thing that measures
+        # them and pins the exit. Built here and started by the application;
+        # a CLI run builds a runtime and never wants the thread.
+        self.node_health = XrayNodeHealthStore()
+        self.exit_controller = XrayExitController(
+            probe=self.node_probe,
+            store=self.node_health,
+            api=self.stats,
+            node_list_of=self.node_list,
+            routing_of=self.routing,
+            rendered_config_of=self.rendered_xray_config,
+            on_change=self._publish_nodes,
+            on_out_of_sync=self._mark_config_dirty,
+        )
         self.declared_probe = DeclaredServiceProbe()
         self.served_models = CliproxyApiServedModelCache()
         # What each managed machine last said about sharing its desktop.
@@ -247,6 +258,19 @@ class PanelRuntime:
             Parsed ``config/xray/nodes.json``.
         """
         return XrayNodeList.from_dict(read_config("xray/nodes.json"))
+
+    def rendered_xray_config(self) -> dict:
+        """Read the xray configuration the last apply installed.
+
+        Returns:
+            The parsed generated file. Only its outbound tags are read by the
+            exit controller; the file itself carries every node's secret.
+
+        Raises:
+            OSError: If the generated file cannot be read.
+            ValueError: If it does not parse as JSON.
+        """
+        return json.loads(XRAY_CONFIG_PATH.read_text(encoding="utf-8"))
 
     def link_status(self) -> RouterLinkStatus:
         """Build a reader for the live state of the interfaces.
@@ -493,7 +517,6 @@ class PanelRuntime:
         self.events.publish(WEB_EVENT_AI_USAGE)
 
     def _apply_all_blocking(self) -> str:
-        network = self.network()
         node_list = self.node_list()
         routing = self._settled_routing(node_list)
 
@@ -502,9 +525,7 @@ class PanelRuntime:
             node_list=node_list,
             routing=routing,
         ).render()
-        dnsmasq_config = RouterDnsmasqRenderer(
-            network=network, routing=routing
-        ).render()
+        dnsmasq_config = self._dnsmasq_config()
 
         # A refused xray configuration does not stop the other two. The
         # firewall is what makes the LAN reachable and dnsmasq is what answers
@@ -516,8 +537,7 @@ class PanelRuntime:
             xray_failure = command_failure_text(error)
 
         results = self._router_controller().reconcile()
-        write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
-        run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+        install_dnsmasq(dnsmasq_config)
 
         if xray_failure:
             raise RuntimeError(
@@ -528,10 +548,7 @@ class PanelRuntime:
             raise RuntimeError(router_failure)
 
         self.is_config_dirty = False
-        return (
-            f"applied {len(node_list.enabled_nodes)} nodes, "
-            f"strategy {node_list.strategy}"
-        )
+        return f"applied {len(node_list.enabled_nodes)} nodes"
 
     def _settled_routing(self, node_list: XrayNodeList) -> dict:
         """The routing options, with the scopes switched off if they cannot run.
@@ -554,20 +571,32 @@ class PanelRuntime:
             write_config("xray/routing.json", routing)
         return routing
 
-    def _apply_network_blocking(self, only: str | None) -> str:
-        network = self.network()
-        dnsmasq_config = RouterDnsmasqRenderer(
-            network=network, routing=self.routing()
+    def _dnsmasq_config(self) -> str:
+        """The dnsmasq configuration every apply path installs.
+
+        Rendered from the settled routing, so a network apply and a full apply
+        produce the same file instead of each overwriting the other's.
+
+        Returns:
+            The rendered configuration.
+        """
+        return RouterDnsmasqRenderer(
+            network=self.network(),
+            routing=self._settled_routing(self.node_list()),
         ).render()
+
+    def _apply_network_blocking(self, only: str | None) -> str:
+        dnsmasq_config = self._dnsmasq_config()
 
         # The interface must carry its new address before dnsmasq is told to
         # bind it, or the restart fails with nothing to listen on. This is also
         # the step that drops the connection the request arrived on, when a LAN
         # address is what changed.
         results = self._router_controller().reconcile(only=only)
-        write_generated(ROUTER_DNSMASQ_PATH, dnsmasq_config)
-        run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+        is_dnsmasq_restarted = install_dnsmasq(dnsmasq_config)
         changes = [line for result in results for line in result.changes]
+        if is_dnsmasq_restarted:
+            changes.append("dnsmasq restarted")
         changes += self._push_desired_states()
         router_failure = failure_text(results)
         if router_failure:
@@ -608,6 +637,24 @@ class PanelRuntime:
         if refused:
             notes.append(f"desired state not pushed to {', '.join(refused)}")
         return notes
+
+    def _publish_nodes(self, status) -> None:
+        """Say the pinned exit moved.
+
+        Args:
+            status: What the round concluded; the pages read it back.
+        """
+        del status
+        self.events.publish(WEB_EVENT_NODES)
+
+    def _mark_config_dirty(self, status) -> None:
+        """Record that xray does not carry the exits the render names.
+
+        Args:
+            status: What the round concluded, with the tags that do not match.
+        """
+        del status
+        self.is_config_dirty = True
 
     def _publish_devices(self) -> None:
         """Say the device list moved, and recompose what devices publish."""

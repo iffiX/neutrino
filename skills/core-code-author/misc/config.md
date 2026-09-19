@@ -114,9 +114,10 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
 - **`nodes.json`** — `nodes[]` (each with `id`, `name`, `address`,
   `is_enabled`, `protocol`, `secret_id` — the vault `token` holding the node's
   password or uuid — and a `shadowsocks` or `vless` block) plus `balancer`
-  (`strategy`: `leastPing` | `roundRobin` | `random`, `probe_url`,
-  `probe_interval_s`). Disabled nodes and nodes whose reference does not
-  resolve are dropped from the rendered config.
+  (`probe_url`, `reference_url`, `probe_interval_s`). Every node whose
+  reference resolves is rendered, switched on or off, so the hub measures all
+  of them; `is_enabled` states which ones the hub may pick as the exit. A node
+  whose reference does not resolve is dropped from the rendered config.
 - **`routing.json`** — `is_geoip_split_enabled` (default `true`: CN domains/IPs
   go direct, everything else through JustMySocks), `is_local_proxy_enabled`
   (the gateway's own traffic through the proxy — default `false`), and the DNS
