@@ -46,11 +46,12 @@ import "./modules_page.css";
  * The page opens on a machine the way Terminals and Files do. Under the
  * chips, one small tab per module the machine's page shows, each wearing the
  * state its agent last reported, and a `+` that picks which modules the page
- * shows for this machine. Under the current tab sit the four presses that
- * write what the hub wants of the module, and Configure, which opens the
- * module's own panels. The first Configure on a module the hub holds no
- * configuration for imports what the machine already has, so the first push
- * changes nothing on it.
+ * shows for this machine. Under the current tab sit the lines the agent sent
+ * up for its last install or uninstall, then the four presses that write
+ * what the hub wants of the module, and Configure, which opens the module's
+ * own panels and closes them on the next press. The first Configure on a
+ * module the hub holds no configuration for imports what the machine already
+ * has, so the first push changes nothing on it.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -260,9 +261,15 @@ export function ModulesPage() {
   };
 
   // Configure wants the module running, and imports what the machine has
-  // first where the hub holds nothing for it yet.
+  // first where the hub holds nothing for it yet. Pressed while its section
+  // is open, it closes the section and asks nothing of the machine.
   const configure = async () => {
     if (deviceId === null || activeModule === null || activeRow === undefined) {
+      return;
+    }
+    const key = configuredKey(deviceId, activeModule);
+    if (configuredKeys.includes(key)) {
+      setConfiguredKeys((current) => current.filter((held) => held !== key));
       return;
     }
     setBusyAction("configure");
@@ -282,7 +289,6 @@ export function ModulesPage() {
       modules.setData(
         await apiPost<DeviceModuleListView>("/agent/module/start", request),
       );
-      const key = configuredKey(deviceId, activeModule);
       setConfiguredKeys((current) =>
         current.includes(key) ? current : [...current, key],
       );
@@ -392,6 +398,32 @@ export function ModulesPage() {
                     </div>
                   </div>
                 )}
+                <div className="modules_log">
+                  <div className="modules_log_head">
+                    <span className="section_label">
+                      {t("ui.modules.output")}
+                    </span>
+                    {activeRow.task_id !== "" && (
+                      <StatusDot
+                        tone={taskTone(task.isRunning, task.exitCode)}
+                        isPulsing={task.isRunning}
+                        label={t(taskKey(task.isRunning, task.exitCode))}
+                      />
+                    )}
+                  </div>
+                  <pre className="modules_log_output" ref={logRef}>
+                    {activeRow.task_id === "" ? (
+                      <span className="faint">
+                        {t("ui.modules.output_empty")}
+                      </span>
+                    ) : (
+                      stripAnsi(task.lines.join("\n"))
+                    )}
+                  </pre>
+                  {task.error !== null && (
+                    <span className="field_error">{task.error}</span>
+                  )}
+                </div>
                 <div className="modules_actions">
                   <ActionButton
                     action="install"
@@ -434,8 +466,11 @@ export function ModulesPage() {
                   />
                   <button
                     type="button"
-                    className="button button--primary"
+                    className={
+                      isConfiguring ? "button" : "button button--primary"
+                    }
                     disabled={!canAct || !isPresent}
+                    aria-expanded={isConfiguring}
                     onClick={() => void configure()}
                   >
                     {busyAction === "configure" ? (
@@ -443,7 +478,11 @@ export function ModulesPage() {
                     ) : (
                       <Icon name="settings" size={14} />
                     )}
-                    {t("ui.modules.configure")}
+                    {t(
+                      isConfiguring
+                        ? "ui.modules.configure_close"
+                        : "ui.modules.configure",
+                    )}
                   </button>
                 </div>
 
@@ -459,27 +498,6 @@ export function ModulesPage() {
                     <div className="notice_body">
                       {describeFailure(activeRow)}
                     </div>
-                  </div>
-                )}
-
-                {activeRow.task_id !== "" && (
-                  <div className="modules_log">
-                    <div className="modules_log_head">
-                      <span className="section_label">
-                        {t("ui.modules.output")}
-                      </span>
-                      <StatusDot
-                        tone={taskTone(task.isRunning, task.exitCode)}
-                        isPulsing={task.isRunning}
-                        label={t(taskKey(task.isRunning, task.exitCode))}
-                      />
-                    </div>
-                    <pre className="modules_log_output" ref={logRef}>
-                      {stripAnsi(task.lines.join("\n"))}
-                    </pre>
-                    {task.error !== null && (
-                      <span className="field_error">{task.error}</span>
-                    )}
                   </div>
                 )}
               </>
