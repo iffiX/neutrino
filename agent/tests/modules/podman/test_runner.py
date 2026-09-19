@@ -218,6 +218,21 @@ def test_the_own_check_is_the_engines_binary(runner, monkeypatch):
     assert runner.verify({}) is False
 
 
+def test_a_declaration_is_surveyed_while_its_start_still_waits(runner, monkeypatch):
+    """The declared names reach the survey before the units are started,
+    so a report taken during an image pull lists the container."""
+    seen: list = []
+
+    def start(self, rendered, *, autostart_names):
+        seen.append(runner.details({})["containers"])
+
+    monkeypatch.setattr(FakeUnitApplier, "apply", start)
+
+    runner.apply(CONFIG)
+
+    assert [c["name"] for c in seen[0] if c["is_declared"]] == ["web"]
+
+
 def test_details_separate_declared_from_ad_hoc(runner):
     runner.apply(CONFIG)
 

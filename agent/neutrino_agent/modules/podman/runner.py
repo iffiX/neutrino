@@ -81,6 +81,10 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """
         parsed = PodmanConfig.from_dict(config)
         parsed.validate()
+        # Held before the units are started: a start waits on the image
+        # pull, and a report taken meanwhile lists the declared container
+        # as not created yet rather than not at all.
+        self._config = parsed
         try:
             mirror_note = PodmanRegistriesApplier().apply(
                 PodmanRegistriesRenderer(config=parsed).render()
@@ -97,7 +101,6 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
             )
-        self._config = parsed
         self._log(f"podman: {note}; {mirror_note}")
 
     def stop(self) -> None:
