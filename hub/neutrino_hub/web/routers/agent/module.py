@@ -481,8 +481,8 @@ def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: di
     except StreamRefusedError as error:
         raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
     params = dict(verdict.get("params") or {})
-    if verdict.get("code") or not params.get("is_valid"):
-        for name in ("is_valid", "exit_code", "output", "result"):
+    if verdict.get("code") or int(params.get("exit_code", 1) or 0) != 0:
+        for name in ("exit_code", "output", "result"):
             params.pop(name, None)
         raise _refusal(
             status.HTTP_400_BAD_REQUEST,

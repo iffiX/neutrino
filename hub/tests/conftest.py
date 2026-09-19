@@ -372,7 +372,12 @@ class FakeChannelSessions:
         }
         if verb == "validate":
             self.validations.append((key.lower(), module, dict(rest["config"])))
-            return _close_of(self.verdict, is_valid=bool(self.verdict.get("is_valid")))
+            return _close_of(
+                self.verdict,
+                exit_code=0 if self.verdict.get("is_valid") else 1,
+                output="",
+                result={},
+            )
         self.commands.append((key.lower(), module, verb, rest))
         after = self.after_command
         if after is not None:
