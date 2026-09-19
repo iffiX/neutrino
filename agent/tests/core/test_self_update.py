@@ -91,10 +91,13 @@ def launched(monkeypatch):
     """Recorded systemd-run invocations, with the real subprocess never hit."""
     commands = []
 
+    # Every run in the agent captures text, so the stand-in answers with
+    # empty text: the metrics read that reaches nvidia-smi on a box with a
+    # card parses what comes back.
     def record(command, **kwargs):
         if list(command[:1]) == ["systemd-run"]:
             commands.append(list(command))
-        return subprocess.CompletedProcess(command, 0)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     monkeypatch.setattr(self_update.subprocess, "run", record)
     return commands
