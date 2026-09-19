@@ -57,6 +57,12 @@ const SCOPE_OPTIONS: { value: TrafficScope; labelKey: string }[] = [
   { value: "proxied", labelKey: "ui.dashboard.scope_proxied" },
   { value: "direct", labelKey: "ui.dashboard.scope_direct" },
 ];
+/** What the chosen scope counts. */
+const SCOPE_HINT_KEYS: Record<TrafficScope, string> = {
+  all: "ui.dashboard.scope_all_hint",
+  proxied: "ui.dashboard.scope_proxied_hint",
+  direct: "ui.dashboard.scope_direct_hint",
+};
 const HISTORY_RANGE_OPTIONS: {
   value: TrafficHistoryRange;
   labelKey: string;
@@ -274,6 +280,7 @@ export function DashboardPage() {
                 />
               </div>
             </div>
+            <p className="field_hint">{t(SCOPE_HINT_KEYS[scope])}</p>
 
             {trafficSeries.length === 0 ? (
               <div className="placeholder">

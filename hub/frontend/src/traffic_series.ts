@@ -4,21 +4,42 @@ import type { StatsFrame, TrafficSample } from "./api_types";
 /**
  * Turning counters into the series the dashboard charts draw.
  *
- * xray and vnstat both report totals, never rates, so every rate on the
- * dashboard is a difference computed here. Counters also reset when xray
- * restarts, which shows up as a negative delta; those are clamped to zero so a
- * restart leaves a flat gap in the chart instead of a spike into the negative.
+ * The frame carries two kinds of number. The machine's own uplink arrives as
+ * a rate the backend already worked out from the kernel's counters, and
+ * everything crossing the WAN is in it. xray's per-outbound counters arrive as
+ * totals, so a rate out of those is a difference computed here; they also
+ * reset when xray restarts, which shows up as a negative delta and is clamped
+ * to zero so a restart leaves a flat gap in the chart instead of a spike into
+ * the negative.
+ *
+ * Direct is the first minus the second rather than xray's own `direct`
+ * outbound counter, because that counter only sees traffic that entered xray
+ * and was then routed straight out: an overlay daemon's traffic crosses the
+ * WAN without ever entering xray, and no xray counter can see it. Two things
+ * follow from the subtraction. The proxied figure is xray's count of the bytes
+ * it handed to the outbound, which is a few percent under the bytes on the
+ * wire, so direct comes out slightly high. And the kernel's counters and
+ * xray's are not read at the same instant, so the subtraction can come out
+ * negative and is clamped like every other one.
  */
 
 const MIN_INTERVAL_S = 0.5;
 /** Matches WEB_STATS_PUSH_INTERVAL_S on the backend. */
 const NOMINAL_INTERVAL_S = 1;
-/** Matches XRAY_NODE_TAG_PREFIX and XRAY_DIRECT_TAG on the backend. */
+/** Matches XRAY_NODE_TAG_PREFIX on the backend. */
 const NODE_TAG_PREFIX = "node_";
-const DIRECT_TAG = "direct";
 
-/** Which outbounds a live series counts: every one, the exits, or direct. */
+/** Which traffic a live series counts: everything, the exits, or the rest. */
 export type TrafficScope = "all" | "proxied" | "direct";
+
+/**
+ * One uplink and downlink figure. Byte totals where a frame's counters are
+ * summed, bytes per second once two frames have been differenced.
+ */
+interface TrafficPair {
+  uplink: number;
+  downlink: number;
+}
 
 export interface TrafficPoint {
   label: string;
@@ -37,9 +58,9 @@ export interface HistoryPoint {
  *
  * Args:
  *   frames: Retained stats frames, oldest first.
- *   scope: Which outbounds count. `all` is the frame's own total; the other
- *     two sum the exits or the direct outbound out of the frame's per-tag
- *     counters.
+ *   scope: Which traffic counts. `all` is the machine's own uplink, the same
+ *     counters the dashboard tiles read; `proxied` is what went out through an
+ *     exit; `direct` is what crossed the WAN without going through one.
  *
  * Returns:
  *   One point per interval between frames, so a window of n frames yields
@@ -60,38 +81,72 @@ export function toTrafficSeries(
       MIN_INTERVAL_S,
       elapsedSeconds(previous.timestamp, current.timestamp),
     );
-    const before = scopedTotals(previous, scope);
-    const now = scopedTotals(current, scope);
+    const rates = scopedRates(previous, current, intervalS, scope);
     points.push({
       label: formatClock(current.timestamp),
-      downlink_bytes_per_s: perSecond(now.downlink, before.downlink, intervalS),
-      uplink_bytes_per_s: perSecond(now.uplink, before.uplink, intervalS),
+      downlink_bytes_per_s: rates.downlink,
+      uplink_bytes_per_s: rates.uplink,
     });
   }
   return points;
 }
 
-/** A frame's counters summed over the outbounds a scope names. */
-function scopedTotals(
-  frame: StatsFrame,
+/** The rates one scope counts over the interval between two frames. */
+function scopedRates(
+  previous: StatsFrame,
+  current: StatsFrame,
+  intervalS: number,
   scope: TrafficScope,
-): { uplink: number; downlink: number } {
+): TrafficPair {
+  const wan = wanRates(current);
   if (scope === "all") {
-    return {
-      uplink: frame.total_uplink_bytes,
-      downlink: frame.total_downlink_bytes,
-    };
+    return wan;
   }
+  const proxied = proxiedRates(previous, current, intervalS);
+  if (scope === "proxied") {
+    return proxied;
+  }
+  return {
+    uplink: Math.max(0, wan.uplink - proxied.uplink),
+    downlink: Math.max(0, wan.downlink - proxied.downlink),
+  };
+}
+
+/**
+ * What the machine's uplink is carrying, as the kernel counts it.
+ *
+ * Already per second, so nothing is differenced here.
+ */
+function wanRates(frame: StatsFrame): TrafficPair {
+  return {
+    uplink: frame.interface_tx_bytes_per_s,
+    downlink: frame.interface_rx_bytes_per_s,
+  };
+}
+
+/** What left through an exit, out of xray's per-outbound totals. */
+function proxiedRates(
+  previous: StatsFrame,
+  current: StatsFrame,
+  intervalS: number,
+): TrafficPair {
+  const before = nodeTotals(previous);
+  const now = nodeTotals(current);
+  return {
+    uplink: perSecond(now.uplink, before.uplink, intervalS),
+    downlink: perSecond(now.downlink, before.downlink, intervalS),
+  };
+}
+
+/** One frame's counters summed over the node outbounds. */
+function nodeTotals(frame: StatsFrame): TrafficPair {
   const totals = { uplink: 0, downlink: 0 };
   for (const outbound of frame.outbounds) {
-    const isCounted =
-      scope === "proxied"
-        ? outbound.tag.startsWith(NODE_TAG_PREFIX)
-        : outbound.tag === DIRECT_TAG;
-    if (isCounted) {
-      totals.uplink += outbound.uplink_bytes;
-      totals.downlink += outbound.downlink_bytes;
+    if (!outbound.tag.startsWith(NODE_TAG_PREFIX)) {
+      continue;
     }
+    totals.uplink += outbound.uplink_bytes;
+    totals.downlink += outbound.downlink_bytes;
   }
   return totals;
 }
