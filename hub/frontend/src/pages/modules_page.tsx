@@ -24,6 +24,7 @@ import {
   HUB_EVENT_DEVICES,
   HUB_EVENT_TASK,
 } from "../use_hub_events";
+import { usePageMemory } from "../use_page_memory";
 import { useTaskStream } from "../use_task_stream";
 import type { IconName } from "../components/icon";
 import type { PickableModule } from "../components/module_picker";
@@ -159,12 +160,22 @@ export function ModulesPage() {
     invalidateOn: ONLINE_INVALIDATE_ON,
   });
   const [searchParams] = useSearchParams();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeModule, setActiveModule] = useState<string | null>(null);
+  // The machine, the tab and the open sections are kept between visits.
+  const [selectedId, setSelectedId] = usePageMemory<string | null>(
+    "modules.device",
+    null,
+  );
+  const [activeModule, setActiveModule] = usePageMemory<string | null>(
+    "modules.tab",
+    null,
+  );
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // The `<device>:<module>` pairs whose configuration section is open.
-  const [configuredKeys, setConfiguredKeys] = useState<string[]>([]);
+  const [configuredKeys, setConfiguredKeys] = usePageMemory<string[]>(
+    "modules.configured",
+    [],
+  );
   const confirm = useConfirm();
 
   // A link from a device's drawer names the machine it came from.
@@ -173,7 +184,7 @@ export function ModulesPage() {
     if (askedDeviceId !== null) {
       setSelectedId(askedDeviceId);
     }
-  }, [askedDeviceId]);
+  }, [askedDeviceId, setSelectedId]);
 
   const devices = online.data?.devices ?? [];
   const selectedDevice =
@@ -208,7 +219,7 @@ export function ModulesPage() {
         ? current
         : (shown[0] ?? null),
     );
-  }, [shownKey]);
+  }, [shownKey, setActiveModule]);
 
   const activeRow = activeModule === null ? undefined : rows[activeModule];
   const isAgentOnline = modules.data?.is_agent_online ?? false;

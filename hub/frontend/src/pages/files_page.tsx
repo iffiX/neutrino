@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { DevicePick } from "../components/device_pick";
@@ -6,6 +6,7 @@ import { ErrorPanel } from "../components/error_panel";
 import { FileBrowser } from "../components/file_browser";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { usePageMemory } from "../use_page_memory";
 import { HUB_EVENT_DEVICES } from "../use_hub_events";
 import type { DevicesOnlineResponse } from "../api_types";
 
@@ -15,7 +16,8 @@ import type { DevicesOnlineResponse } from "../api_types";
  * The page opens on a machine the way every other Agent-group page does: the
  * chips are the machines whose agent is answering, the hub box among them,
  * and the browser below belongs to whichever one is picked. A drawer's Files
- * link arrives with `?device=` and lands on that machine.
+ * link arrives with `?device=` and lands on that machine. The machine picked
+ * and the directory open on it are kept between visits, until a reload.
  */
 
 // What moves the list of machines: an agent's channel opening or ending.
@@ -31,7 +33,10 @@ export function FilesPage() {
     invalidateOn: INVALIDATE_ON,
   });
   const [searchParams] = useSearchParams();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = usePageMemory<string | null>(
+    "files.device",
+    null,
+  );
 
   // A link from a device's drawer names the machine it came from.
   const askedDeviceId = searchParams.get(DEVICE_QUERY);
@@ -39,7 +44,7 @@ export function FilesPage() {
     if (askedDeviceId !== null) {
       setSelectedId(askedDeviceId);
     }
-  }, [askedDeviceId]);
+  }, [askedDeviceId, setSelectedId]);
 
   const devices = resource.data?.devices ?? [];
   const selectedDevice =

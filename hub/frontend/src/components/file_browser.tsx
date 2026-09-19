@@ -10,6 +10,7 @@ import {
   describeError,
 } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { usePageMemory } from "../use_page_memory";
 import type { DeviceFileEntry, DeviceFileListView } from "../api_types";
 
 import "./file_browser.css";
@@ -82,12 +83,26 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
     [deviceId],
   );
 
+  // The directory open on this machine, read back on the next visit. Where
+  // this mount starts is fixed at the first render: what changes it after
+  // that is this browser's own navigation, already loaded.
+  const [rememberedPath, rememberPath] = usePageMemory(
+    `files.path.${deviceId}`,
+    ROOT_PATH,
+  );
+  const startPath = useRef(rememberedPath);
+
   useEffect(() => {
     setListing(null);
-    void load(ROOT_PATH);
+    void load(startPath.current);
   }, [load]);
 
   const path = listing?.path ?? ROOT_PATH;
+  useEffect(() => {
+    if (listing !== null) {
+      rememberPath(listing.path);
+    }
+  }, [listing, rememberPath]);
   const crumbs = toCrumbs(path);
 
   const handleOpen = (entry: DeviceFileEntry) => {
