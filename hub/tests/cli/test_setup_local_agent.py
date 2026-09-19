@@ -82,7 +82,7 @@ def test_the_agent_comes_from_the_hubs_own_cache_and_joins_this_hub(box):
     assert manager.installed == [
         ("/var/lib/neutrino/agent_cache/neutrino-agent_0.2.0_amd64.deb",)
     ]
-    assert commands == [["nagent", "connect", "neutrino://x", "--yes"]]
+    assert commands == [["nagent", "join", "neutrino://x", "--yes"]]
     assert reporter.done_notes == ["installed and joined"]
     assert reporter.started[0][1] == setup.SETUP_STEP_LOCAL_AGENT
 

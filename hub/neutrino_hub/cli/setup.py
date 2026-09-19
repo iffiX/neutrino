@@ -657,7 +657,7 @@ def _install_local_agent(password: str, reporter) -> None:
         if not link:
             reporter.failed(note)
             return
-        run(["nagent", "connect", link, "--yes"], timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S)
+        run(["nagent", "join", link, "--yes"], timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S)
     except (
         subprocess.SubprocessError,
         OSError,
