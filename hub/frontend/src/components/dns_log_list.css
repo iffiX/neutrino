@@ -63,12 +63,6 @@
   text-overflow: ellipsis;
 }
 
-.dns_log_outbound--proxy {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-  background: var(--color-accent-wash);
-  color: var(--color-accent);
-}
-
 .dns_log_outbound--direct {
   border-color: color-mix(in srgb, var(--color-ok) 40%, transparent);
   background: var(--color-ok-wash);

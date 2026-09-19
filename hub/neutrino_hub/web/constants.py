@@ -132,11 +132,13 @@ WEB_LOGIN_LOCKOUT_STEPS_S = (30, 60, 300, 3600, 86400)
 WEB_LOGIN_LOCKOUT_STATE_PATH = UTILS_RUNTIME_ROOT / "login_lockout.json"
 
 WEB_STATS_PUSH_INTERVAL_S = 1.0
-# Where a name was resolved. One word per answer dnsmasq can write beside a
-# query: the proxy's own resolver, another resolver, dnsmasq's cache, or
-# dnsmasq answering from its own configuration. A query whose answer line has
-# not been read yet carries none of them.
-WEB_DNS_OUTBOUND_PROXY = "proxy"
+# Who answered a query, as far as dnsmasq can tell. One word per answer it
+# can write beside a query: xray's DNS inbound, which splits the lookup
+# between the two resolvers itself and reports nothing back about which one
+# it chose; the direct resolver, asked straight; dnsmasq's cache; or dnsmasq
+# answering from its own configuration. A query whose answer line has not
+# been read yet carries none of them.
+WEB_DNS_OUTBOUND_XRAY = "xray"
 WEB_DNS_OUTBOUND_DIRECT = "direct"
 WEB_DNS_OUTBOUND_CACHED = "cached"
 WEB_DNS_OUTBOUND_CONFIG = "config"

@@ -18,6 +18,7 @@ from neutrino_hub.web import dns_log
 from neutrino_hub.web.dns_log import DNSMASQ_UNIT, PENDING_AGE_S, DnsLogReader
 
 # The second every record is stamped at unless a test moves the clock.
+DNSMASQ_PID = 271460
 BASE_S = 1_725_190_300.0
 
 # One lookup as dnsmasq writes it into the journal, plus a lease line from its
@@ -69,7 +70,7 @@ class StubJournal:
                 {
                     "__CURSOR": f"s=1;i={len(self.records) + 1}",
                     "__REALTIME_TIMESTAMP": str(int(at_s * 1_000_000)),
-                    "MESSAGE": message,
+                    "MESSAGE": f"dnsmasq[{DNSMASQ_PID}]: {message}",
                 }
             )
 
@@ -192,7 +193,7 @@ def test_the_tail_is_newest_first(journal, reader):
 def test_a_lookup_sent_to_the_proxy_resolver_is_proxy(journal, reader):
     journal.write(*LOOKUP)
 
-    assert reader.tail()[0].outbound == "proxy"
+    assert reader.tail()[0].outbound == "xray"
 
 
 def test_a_lookup_sent_anywhere_else_is_direct(journal, reader):
@@ -224,7 +225,7 @@ def test_a_repeated_forward_still_makes_one_entry(journal, reader):
 
     entries = reader.tail()
     assert [(entry.domain, entry.outbound) for entry in entries] == [
-        ("slow.example", "proxy")
+        ("slow.example", "xray")
     ]
 
 
@@ -243,7 +244,7 @@ def test_interleaved_lookups_each_get_their_own_answer(journal, reader):
     entries = reader.tail()
     assert [(entry.domain, entry.outbound) for entry in entries] == [
         ("plain.example", "direct"),
-        ("proxied.example", "proxy"),
+        ("proxied.example", "xray"),
     ]
 
 
@@ -261,8 +262,8 @@ def test_a_reply_answers_a_query_that_was_not_forwarded_again(journal, reader):
 
     entries = reader.tail()
     assert [(entry.client, entry.outbound) for entry in entries] == [
-        ("192.168.100.6", "proxy"),
-        ("192.168.100.5", "proxy"),
+        ("192.168.100.6", "xray"),
+        ("192.168.100.5", "xray"),
     ]
 
 
@@ -291,7 +292,7 @@ def test_an_a_and_an_aaaa_of_one_name_take_their_own_answers(journal, reader):
     entries = reader.tail()
     assert [(entry.client, entry.outbound) for entry in entries] == [
         ("192.168.100.6", "cached"),
-        ("192.168.100.5", "proxy"),
+        ("192.168.100.5", "xray"),
     ]
 
 
@@ -311,7 +312,7 @@ def test_a_query_read_before_its_answer_pairs_on_the_next_read(journal, reader):
 
     arrived = reader.follow()
     assert [(entry.domain, entry.outbound) for entry in arrived] == [
-        ("late.example", "proxy")
+        ("late.example", "xray")
     ]
 
 

@@ -10,14 +10,16 @@ import "./dns_log_list.css";
  * The socket hook already caps its buffer, so the list renders everything it
  * holds — a few hundred rows of plain grid cells is cheaper than a virtualised
  * scroller and keeps the markup selectable. What each row is really for is the
- * outbound tag: it shows at a glance whether the split routing sent a name
- * direct or through an exit.
+ * outbound tag: who answered the query. `cached` and `config` are dnsmasq's
+ * own answers, `direct` is the direct resolver asked straight, and `xray` is
+ * xray's DNS inbound, which chooses between the direct and the remote
+ * resolver itself and tells dnsmasq nothing about which one it picked.
  *
  * Every row is its own grid on fixed outer tracks, so the clock and the tag
  * line up down the list whatever the tag says.
  */
 
-/** Tags answered without an exit. Anything else is carried by one. */
+/** Tags whose answer is known not to have crossed an exit. */
 const DIRECT_TAGS = new Set([
   "direct",
   "cached",
@@ -68,11 +70,8 @@ export function DnsLogList({ entries }: DnsLogListProps) {
 }
 
 function outboundClassName(outbound: string | null): string {
-  if (outbound === null) {
-    return "dns_log_outbound";
-  }
-  if (DIRECT_TAGS.has(outbound.toLowerCase())) {
+  if (outbound !== null && DIRECT_TAGS.has(outbound.toLowerCase())) {
     return "dns_log_outbound dns_log_outbound--direct";
   }
-  return "dns_log_outbound dns_log_outbound--proxy";
+  return "dns_log_outbound";
 }

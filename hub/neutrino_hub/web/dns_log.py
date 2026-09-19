@@ -5,8 +5,9 @@ record and ``journalctl --after-cursor`` is what makes following incremental.
 A lookup is a query line and the line that answered it: a `forwarded` to a
 resolver, a `cached` hit, a `config` answer dnsmasq gave from its own
 configuration, or a `reply` carrying what the resolver said. The answer names
-where the name was resolved, which tells a lookup that went through the proxy
-from one that did not.
+who dnsmasq handed the query to. A forward to xray's DNS inbound is the far
+end of what this log can see: xray splits the lookup between the direct and
+the remote resolver itself, and which one it chose is not written here.
 """
 
 import ipaddress
@@ -23,11 +24,14 @@ from neutrino_hub.web.constants import (
     WEB_DNS_OUTBOUND_CACHED,
     WEB_DNS_OUTBOUND_CONFIG,
     WEB_DNS_OUTBOUND_DIRECT,
-    WEB_DNS_OUTBOUND_PROXY,
+    WEB_DNS_OUTBOUND_XRAY,
 )
 from neutrino_hub.web.models import DnsLogEntry
 
 DNSMASQ_UNIT = SYSTEM_CORE_UNITS["dnsmasq"]
+# Logging to stderr, dnsmasq puts its own name and pid in front of every line,
+# `dnsmasq[271460]: ` for a lookup and `dnsmasq-dhcp[271460]: ` for a lease.
+MESSAGE_PREFIX = re.compile(r"^dnsmasq(?:-dhcp)?\[\d+\]: ")
 QUERY_LINE = re.compile(
     r"query\[(?P<type>[A-Z0-9]+)\]\s+(?P<domain>\S+)\s+from\s+(?P<client>\S+)"
 )
@@ -265,23 +269,23 @@ class DnsLogReader:
         return settled
 
     def _forwarded_outbound(self, server: str) -> str:
-        """Tell a forward to the proxy's resolver from any other.
+        """Tell a forward to xray's DNS inbound from one to any other resolver.
 
         Args:
             server: The resolver dnsmasq named, as ``address`` or
                 ``address#port``.
 
         Returns:
-            ``proxy`` for xray's DNS inbound, which is the one resolver the
+            ``xray`` for xray's DNS inbound, which is the one resolver the
             router configures on loopback, ``direct`` for every other.
         """
         address, _, port = server.partition("#")
         # Older dnsmasq builds log the resolver without its port.
-        is_proxy_resolver = address == XRAY_DNS_LISTEN and port in (
+        is_xray_resolver = address == XRAY_DNS_LISTEN and port in (
             "",
             str(XRAY_DNS_PORT),
         )
-        return WEB_DNS_OUTBOUND_PROXY if is_proxy_resolver else WEB_DNS_OUTBOUND_DIRECT
+        return WEB_DNS_OUTBOUND_XRAY if is_xray_resolver else WEB_DNS_OUTBOUND_DIRECT
 
     def _remember_forward(self, domain: str, outbound: str) -> None:
         """Keep where a name last went, for a `reply` line that names no server."""
@@ -313,5 +317,6 @@ class DnsLogReader:
                 and str(record.get("__REALTIME_TIMESTAMP", "")).isdigit()
             )
             if is_readable:
+                record["MESSAGE"] = MESSAGE_PREFIX.sub("", record["MESSAGE"], count=1)
                 records.append(record)
         return records
