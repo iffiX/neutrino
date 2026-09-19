@@ -10,6 +10,7 @@ restart and its unit's journal.
 import httpx
 from fastapi import APIRouter, Depends, Query
 
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
@@ -67,7 +68,7 @@ def device_view(
             for state in details.get("containers") or []
             if isinstance(state, dict)
         ],
-        is_installed=context.state == "installed",
+        is_installed=context.state in CHANNEL_MODULE_PRESENT_STATES,
         is_active=bool(details.get("is_active")),
         version=str(details.get("version", "") or ""),
     )

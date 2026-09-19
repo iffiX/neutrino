@@ -62,6 +62,16 @@ def test_the_view_reports_config_beside_reality(box):
     )
 
 
+def test_a_running_gitea_reads_as_installed(box):
+    client, runtime = box
+    runtime.report(DEVICE, "gitea", "running", is_running=True, admins=[])
+
+    payload = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    assert payload["is_installed"] is True
+    assert payload["state"] == "running"
+
+
 def test_a_device_that_never_reported_reads_as_not_installed(box):
     client, _ = box
 

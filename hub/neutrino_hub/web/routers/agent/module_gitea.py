@@ -8,6 +8,7 @@ administrator.
 
 from fastapi import APIRouter, Depends
 
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     GiteaAdminCreate,
@@ -49,7 +50,7 @@ def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> GiteaDev
         listen_port=int(config.get("listen_port", DEFAULT_PORT) or DEFAULT_PORT),
         root_url=str(config.get("root_url", "") or ""),
         is_registration_enabled=bool(config.get("is_registration_enabled", False)),
-        is_installed=context.state == "installed",
+        is_installed=context.state in CHANNEL_MODULE_PRESENT_STATES,
         is_active=bool(details.get("is_running")),
         version=str(details.get("version", "") or ""),
         has_admin=bool(admins),

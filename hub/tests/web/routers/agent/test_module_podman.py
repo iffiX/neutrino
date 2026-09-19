@@ -113,6 +113,16 @@ def test_import_declares_the_containers_the_machine_runs(box):
     assert [c["name"] for c in response.json()["containers"]] == ["web", "adhoc"]
 
 
+def test_a_running_engine_reads_as_installed(box):
+    client, runtime = box
+    runtime.report(DEVICE, "podman", "running", is_active=True, containers=[])
+
+    payload = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    assert payload["is_installed"] is True
+    assert payload["state"] == "running"
+
+
 def test_the_view_separates_declared_from_ad_hoc(box):
     client, _ = box
 
