@@ -10,7 +10,6 @@ import { SocksPortsPanel } from "../components/socks_ports_panel";
 import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { apiPost, describeError } from "../api_client";
-import { computeActiveExits, primaryExitTag } from "../active_exits";
 import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
 import type { ProxyTone } from "../proxy_status";
@@ -78,7 +77,7 @@ export function ProxyPage() {
   // The LAN scope only means something on a box that forwards a network, and
   // which boxes do is the network mode's answer.
   const network = useApiResource<NetworkView>("/hub/network");
-  const { frames, latestFrame } = useLiveStats();
+  const { latestFrame } = useLiveStats();
 
   const [draft, setDraft] = useState<ProxyView | null>(null);
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
@@ -201,10 +200,7 @@ export function ProxyPage() {
   // are one answer rather than two. An on/off badge here used to mean "is a
   // node enabled", which a server could show as `on` beside a strip saying
   // `direct` — both true, about different questions.
-  const proxy = describeProxy(
-    latestFrame,
-    primaryExitTag(computeActiveExits(frames)),
-  );
+  const proxy = describeProxy(latestFrame);
 
   return (
     <div className="page">

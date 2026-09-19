@@ -9,17 +9,14 @@ import { apiPost, describeError } from "../api_client";
 import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
-import { nodeIdFromTag } from "../node_tag";
 import { useDraftSeeding } from "../use_draft_seeding";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_CONFIG, HUB_EVENT_NODES } from "../use_hub_events";
 import { useConfirm } from "../use_confirm";
-import { useLiveStats } from "../use_live_stats";
 import type {
   BalancerSettings,
-  BalancerStrategy,
   ApplyResult,
-  NodeTestResult,
+  NodeTestRequest,
   NodeView,
   NodesResponse,
 } from "../api_types";
@@ -27,7 +24,7 @@ import type {
 import "./nodes_panel.css";
 
 /**
- * The exit nodes and how traffic is balanced between them.
+ * The exit nodes, and how the hub measures them.
  *
  * Enabling and renaming are drafts until the apply bar is used. That is not
  * ceremony: applying rewrites the xray config and restarts the proxy, which
@@ -38,11 +35,10 @@ import "./nodes_panel.css";
  * A node that does not exist yet has no draft state to describe, and one that
  * has been deleted has none left; carrying either through the diff would mean
  * inventing a way to say it.
+ *
+ * Testing is neither. It writes nothing and stages nothing: it asks the hub
+ * to measure now and replaces the list with the readings that come back.
  */
-
-// Probes, not frames: a frame repeats the standing probe every second, and
-// the glyph is a line through the last measurements taken.
-const PROBE_HISTORY_LENGTH = 20;
 
 // What moves this list: a node dying, coming back or moving traffic, which
 // the hub's own probe and stats cycle says; and any write to the node file.
@@ -51,11 +47,39 @@ const NODES_INVALIDATE_ON = [
   { type: HUB_EVENT_CONFIG },
 ];
 
-const STRATEGY_LABEL_KEYS: Record<BalancerStrategy, string> = {
-  leastPing: "ui.proxy.strategy_least_ping",
-  roundRobin: "ui.proxy.strategy_round_robin",
-  random: "ui.proxy.strategy_random",
+/** Every word this panel says. */
+const TEXT_KEYS = {
+  title: "ui.proxy.nodes_title",
+  hint: "ui.proxy.nodes_hint",
+  probeUrlLabel: "ui.proxy.probe_url_label",
+  probeUrlHint: "ui.proxy.probe_url_hint",
+  referenceUrlLabel: "ui.proxy.reference_url_label",
+  referenceUrlHint: "ui.proxy.reference_url_hint",
+  probeIntervalLabel: "ui.proxy.probe_interval_label",
+  probeIntervalHint: "ui.proxy.probe_interval_hint",
+  nodeAdd: "ui.proxy.node_add",
+  nodeAddCancel: "ui.proxy.node_add_cancel",
+  nodeAddSubmit: "ui.proxy.node_add_submit",
+  nodeAdding: "ui.proxy.node_adding",
+  shareLinkLabel: "ui.proxy.share_link_label",
+  shareLinkHint: "ui.proxy.share_link_hint",
+  testAll: "ui.proxy.node_test_all",
+  testingAll: "ui.proxy.node_testing_all",
+  removeTitle: "ui.proxy.node_remove_title",
+  removeBody: "ui.proxy.node_remove_body",
+  removeConfirm: "ui.proxy.node_remove_confirm",
+  summaryEnabled: "ui.proxy.summary_enabled",
+  summaryAlive: "ui.proxy.summary_alive",
+  summaryTotal: "ui.proxy.summary_total",
+  summaryMoved: "ui.proxy.summary_moved",
+  empty: "ui.proxy.nodes_empty",
+  emptyHint: "ui.proxy.nodes_empty_hint",
+  applyLabel: "ui.proxy.apply_nodes",
+  applyHint: "ui.proxy.apply_nodes_hint",
+  applyWarning: "ui.proxy.warning_restart",
 };
+
+const SKELETON_HEIGHT = 230;
 
 interface NodesPanelProps {
   /**
@@ -73,18 +97,11 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   const resource = useApiResource<NodesResponse>("/hub/proxy/node", {
     invalidateOn: NODES_INVALIDATE_ON,
   });
-  const { latestFrame } = useLiveStats();
 
   const [draftNodes, setDraftNodes] = useState<NodeView[]>([]);
   const [draftBalancer, setDraftBalancer] = useState<BalancerSettings | null>(
     null,
   );
-  const [probeHistory, setProbeHistory] = useState<Record<string, number[]>>(
-    {},
-  );
-  // The stamp of the last probe each series took, so a frame carrying the
-  // same probe again adds nothing.
-  const probedAtRef = useRef<Record<string, string>>({});
   const [testingIds, setTestingIds] = useState<string[]>([]);
   const [isApplying, setIsApplying] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -106,9 +123,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
   // got.
   const isListWrittenRef = useRef(false);
 
-  // A tick brings the list, the traffic and what is alive, and it lands in the
-  // draft while there is nothing staged in it. A toggle waiting for Apply is
-  // the user's: what the gateway says meanwhile does not take it back.
+  // A tick brings the list, the traffic and the measurements, and it lands in
+  // the draft while there is nothing staged in it. A toggle waiting for Apply
+  // is the user's: what the gateway says meanwhile does not take it back.
   useEffect(() => {
     if (resource.data === null) {
       return;
@@ -122,37 +139,6 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     setDraftNodes(resource.data.nodes);
     setDraftBalancer(resource.data.balancer);
   }, [resource.data, isReseedable]);
-
-  useEffect(() => {
-    if (latestFrame === null) {
-      return;
-    }
-    const fresh: { nodeId: string; delayMs: number }[] = [];
-    for (const probe of latestFrame.nodes) {
-      // Probes arrive tagged `node_<id>`; the cards look themselves up by
-      // bare id, so the series has to be keyed the way it is read.
-      const nodeId = nodeIdFromTag(probe.tag);
-      if (nodeId === null || probe.delay_ms === null) {
-        continue;
-      }
-      if (probedAtRef.current[nodeId] === probe.probed_at) {
-        continue;
-      }
-      probedAtRef.current[nodeId] = probe.probed_at;
-      fresh.push({ nodeId, delayMs: probe.delay_ms });
-    }
-    if (fresh.length === 0) {
-      return;
-    }
-    setProbeHistory((previous) => {
-      const next: Record<string, number[]> = { ...previous };
-      for (const { nodeId, delayMs } of fresh) {
-        const series = next[nodeId] ?? [];
-        next[nodeId] = [...series, delayMs].slice(-PROBE_HISTORY_LENGTH);
-      }
-      return next;
-    });
-  }, [latestFrame]);
 
   const applied = resource.data;
   const diff =
@@ -174,10 +160,19 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     );
   };
 
-  const handleStrategyChange = (strategy: BalancerStrategy) => {
+  const handleProbeUrlChange = (probeUrl: string) => {
     setApplyMessage(null);
     setDraftBalancer((balancer) =>
-      balancer === null ? balancer : { ...balancer, strategy },
+      balancer === null ? balancer : { ...balancer, probe_url: probeUrl },
+    );
+  };
+
+  const handleReferenceUrlChange = (referenceUrl: string) => {
+    setApplyMessage(null);
+    setDraftBalancer((balancer) =>
+      balancer === null
+        ? balancer
+        : { ...balancer, reference_url: referenceUrl },
     );
   };
 
@@ -186,19 +181,23 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return;
     }
+    setApplyMessage(null);
     setDraftBalancer((balancer) =>
       balancer === null ? balancer : { ...balancer, probe_interval_s: parsed },
     );
   };
 
+  // A measurement is not an edit, so it goes nowhere near the draft: the hub
+  // measures, answers with the whole list, and that answer replaces what is
+  // applied. The draft picks it up the way any other tick lands in it.
   const handleTestNode = async (nodeId: string) => {
     setActionError(null);
     setTestingIds((ids) => [...ids, nodeId]);
+    const request: NodeTestRequest = { node_id: nodeId };
     try {
-      const result = await apiPost<NodeTestResult>("/hub/proxy/node/test", {
-        node_id: nodeId,
-      });
-      applyTestResult(nodeId, result, setDraftNodes, setProbeHistory);
+      resource.setData(
+        await apiPost<NodesResponse>("/hub/proxy/node/test", request),
+      );
     } catch (cause: unknown) {
       setActionError(describeError(cause));
     } finally {
@@ -206,22 +205,12 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     }
   };
 
+  // No body means every node, in one request rather than one per card.
   const handleTestAll = async () => {
     setActionError(null);
-    const ids = draftNodes.map((node) => node.id);
-    setTestingIds(ids);
+    setTestingIds(draftNodes.map((node) => node.id));
     try {
-      const results = await Promise.all(
-        ids.map(async (nodeId) => ({
-          nodeId,
-          result: await apiPost<NodeTestResult>("/hub/proxy/node/test", {
-            node_id: nodeId,
-          }),
-        })),
-      );
-      for (const { nodeId, result } of results) {
-        applyTestResult(nodeId, result, setDraftNodes, setProbeHistory);
-      }
+      resource.setData(await apiPost<NodesResponse>("/hub/proxy/node/test"));
     } catch (cause: unknown) {
       setActionError(describeError(cause));
     } finally {
@@ -252,9 +241,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
 
   const handleRemoveNode = (node: NodeView) =>
     confirm.ask({
-      title: t("ui.proxy.node_remove_title", { name: node.name }),
-      body: t("ui.proxy.node_remove_body"),
-      confirmLabel: t("ui.proxy.node_remove_confirm"),
+      title: t(TEXT_KEYS.removeTitle, { name: node.name }),
+      body: t(TEXT_KEYS.removeBody),
+      confirmLabel: t(TEXT_KEYS.removeConfirm),
       onConfirm: () => void removeNode(node),
     });
 
@@ -337,6 +326,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     (total, node) => total + node.uplink_bytes + node.downlink_bytes,
     0,
   );
+  const isTesting = testingIds.length > 0;
 
   return (
     // The panel owns the draft, so it draws its own frame: a parent cannot
@@ -346,9 +336,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       className={`settings_group ${isUnapplied ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>{t("ui.proxy.nodes_title")}</h2>
+        <h2>{t(TEXT_KEYS.title)}</h2>
       </div>
-      <p className="field_hint">{t("ui.proxy.nodes_hint")}</p>
+      <p className="field_hint">{t(TEXT_KEYS.hint)}</p>
 
       {actionError !== null && (
         <div className="notice notice--error">
@@ -359,27 +349,33 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
 
       <div className="nodes_toolbar">
         <div className="nodes_toolbar_group">
-          <label className="field nodes_toolbar_field">
-            <span className="field_label">{t("ui.proxy.strategy_label")}</span>
-            <select
-              className="select"
-              value={draftBalancer?.strategy ?? "leastPing"}
+          <label className="field nodes_toolbar_field nodes_toolbar_field--url">
+            <span className="field_label">{t(TEXT_KEYS.probeUrlLabel)}</span>
+            <input
+              className="input"
+              value={draftBalancer?.probe_url ?? ""}
               disabled={draftBalancer === null}
-              onChange={(event) =>
-                handleStrategyChange(event.target.value as BalancerStrategy)
-              }
-            >
-              {Object.entries(STRATEGY_LABEL_KEYS).map(([strategy, key]) => (
-                <option key={strategy} value={strategy}>
-                  {t(key)}
-                </option>
-              ))}
-            </select>
+              onChange={(event) => handleProbeUrlChange(event.target.value)}
+            />
+            <span className="field_hint">{t(TEXT_KEYS.probeUrlHint)}</span>
+          </label>
+
+          <label className="field nodes_toolbar_field nodes_toolbar_field--url">
+            <span className="field_label">
+              {t(TEXT_KEYS.referenceUrlLabel)}
+            </span>
+            <input
+              className="input"
+              value={draftBalancer?.reference_url ?? ""}
+              disabled={draftBalancer === null}
+              onChange={(event) => handleReferenceUrlChange(event.target.value)}
+            />
+            <span className="field_hint">{t(TEXT_KEYS.referenceUrlHint)}</span>
           </label>
 
           <label className="field nodes_toolbar_field">
             <span className="field_label">
-              {t("ui.proxy.probe_interval_label")}
+              {t(TEXT_KEYS.probeIntervalLabel)}
             </span>
             <input
               className="input"
@@ -390,9 +386,12 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
                 handleProbeIntervalChange(event.target.value)
               }
             />
+            <span className="field_hint">{t(TEXT_KEYS.probeIntervalHint)}</span>
           </label>
         </div>
 
+        {/* Panel-scope actions: adding a node and measuring every one of them
+            belong to the list, not to any row in it. */}
         <div className="nodes_toolbar_actions">
           <button
             type="button"
@@ -400,18 +399,16 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
             onClick={() => setIsAddOpen((open) => !open)}
           >
             <Icon name="plus" size={14} />
-            {t("ui.proxy.node_add")}
+            {t(TEXT_KEYS.nodeAdd)}
           </button>
           <button
             type="button"
             className="button"
             onClick={() => void handleTestAll()}
-            disabled={testingIds.length > 0 || draftNodes.length === 0}
+            disabled={isTesting || draftNodes.length === 0}
           >
             <Icon name="bolt" size={14} />
-            {testingIds.length > 0
-              ? t("ui.proxy.node_testing_all")
-              : t("ui.proxy.node_test_all")}
+            {isTesting ? t(TEXT_KEYS.testingAll) : t(TEXT_KEYS.testAll)}
           </button>
         </div>
       </div>
@@ -422,9 +419,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
           onSubmit={(event) => void handleAddNode(event)}
         >
           <label className="field">
-            <span className="field_label">
-              {t("ui.proxy.share_link_label")}
-            </span>
+            <span className="field_label">{t(TEXT_KEYS.shareLinkLabel)}</span>
             <input
               className="input"
               value={shareLink}
@@ -432,7 +427,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               autoFocus
               onChange={(event) => setShareLink(event.target.value)}
             />
-            <span className="field_hint">{t("ui.proxy.share_link_hint")}</span>
+            <span className="field_hint">{t(TEXT_KEYS.shareLinkHint)}</span>
           </label>
           <div className="button_row">
             <button
@@ -443,7 +438,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
                 setShareLink("");
               }}
             >
-              {t("ui.proxy.node_add_cancel")}
+              {t(TEXT_KEYS.nodeAddCancel)}
             </button>
             <button
               type="submit"
@@ -451,38 +446,31 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               disabled={isAdding || shareLink.trim().length === 0}
             >
               <Icon name="plus" size={14} />
-              {isAdding
-                ? t("ui.proxy.node_adding")
-                : t("ui.proxy.node_add_submit")}
+              {isAdding ? t(TEXT_KEYS.nodeAdding) : t(TEXT_KEYS.nodeAddSubmit)}
             </button>
           </div>
         </form>
       )}
 
       <div className="nodes_summary">
-        <span>{t("ui.proxy.summary_enabled", { count: enabledCount })}</span>
-        <span>{t("ui.proxy.summary_alive", { count: aliveCount })}</span>
-        <span>{t("ui.proxy.summary_total", { count: draftNodes.length })}</span>
+        <span>{t(TEXT_KEYS.summaryEnabled, { count: enabledCount })}</span>
+        <span>{t(TEXT_KEYS.summaryAlive, { count: aliveCount })}</span>
+        <span>{t(TEXT_KEYS.summaryTotal, { count: draftNodes.length })}</span>
         <span>
-          {t("ui.proxy.summary_moved", { bytes: formatBytes(totalTraffic) })}
-        </span>
-        <span>
-          {t("ui.proxy.summary_probe", {
-            url: draftBalancer?.probe_url ?? "—",
-          })}
+          {t(TEXT_KEYS.summaryMoved, { bytes: formatBytes(totalTraffic) })}
         </span>
       </div>
 
       {resource.isLoading && draftNodes.length === 0 ? (
         <div className="nodes_grid">
-          <div className="skeleton" style={{ height: 230 }} />
-          <div className="skeleton" style={{ height: 230 }} />
-          <div className="skeleton" style={{ height: 230 }} />
+          <div className="skeleton" style={{ height: SKELETON_HEIGHT }} />
+          <div className="skeleton" style={{ height: SKELETON_HEIGHT }} />
+          <div className="skeleton" style={{ height: SKELETON_HEIGHT }} />
         </div>
       ) : draftNodes.length === 0 ? (
         <div className="placeholder">
-          <span>{t("ui.proxy.nodes_empty")}</span>
-          <span className="faint">{t("ui.proxy.nodes_empty_hint")}</span>
+          <span>{t(TEXT_KEYS.empty)}</span>
+          <span className="faint">{t(TEXT_KEYS.emptyHint)}</span>
         </div>
       ) : (
         <div className="nodes_grid">
@@ -490,7 +478,6 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
             <NodeCard
               key={node.id}
               node={node}
-              probeHistory={probeHistory[node.id] ?? []}
               isDirty={applied !== null && isNodeChanged(applied.nodes, node)}
               isTesting={testingIds.includes(node.id)}
               onToggle={(isEnabled) => handleToggleNode(node.id, isEnabled)}
@@ -504,13 +491,11 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
       <ApplyBar
         isDirty={isUnapplied}
         isBusy={isApplying}
-        label={t("ui.proxy.apply_nodes")}
+        label={t(TEXT_KEYS.applyLabel)}
         hint={
-          isSavedNotApplied
-            ? t("ui.proxy.apply_nodes_hint")
-            : (diff?.summary ?? "")
+          isSavedNotApplied ? t(TEXT_KEYS.applyHint) : (diff?.summary ?? "")
         }
-        warning={t("ui.proxy.warning_restart")}
+        warning={t(TEXT_KEYS.applyWarning)}
         notice={applyMessage}
         onReset={handleDiscard}
         onApply={() => void handleApply()}
@@ -523,41 +508,14 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
 /**
  * What this panel stages, and nothing else.
  *
- * Which nodes are on, what they are called and how the balancer picks. What a
- * node is doing — alive, its latency, what it has moved — is the gateway's
- * answer and lands in the draft on its own, so counting it here would read a
- * probe coming back as somebody's edit.
+ * Which nodes are on, what they are called and how the hub measures them.
+ * What a node is doing — alive, its two latencies, what it has moved — is the
+ * gateway's answer and lands in the draft on its own, so counting it here
+ * would read a measurement coming back as somebody's edit.
  */
 function stagedPayload(nodes: NodeView[], balancer: BalancerSettings): string {
   return JSON.stringify([
     nodes.map((node) => [node.id, node.name, node.is_enabled]),
     balancer,
   ]);
-}
-
-function applyTestResult(
-  nodeId: string,
-  result: NodeTestResult,
-  setDraftNodes: (updater: (nodes: NodeView[]) => NodeView[]) => void,
-  setProbeHistory: (
-    updater: (history: Record<string, number[]>) => Record<string, number[]>,
-  ) => void,
-) {
-  setDraftNodes((nodes) =>
-    nodes.map((node) =>
-      node.id === nodeId
-        ? { ...node, is_alive: result.is_alive, delay_ms: result.delay_ms }
-        : node,
-    ),
-  );
-  if (result.delay_ms === null) {
-    return;
-  }
-  const delayMs = result.delay_ms;
-  setProbeHistory((history) => ({
-    ...history,
-    [nodeId]: [...(history[nodeId] ?? []), delayMs].slice(
-      -PROBE_HISTORY_LENGTH,
-    ),
-  }));
 }

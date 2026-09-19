@@ -94,7 +94,7 @@ rather than inventing a friendlier word nobody else uses.
 
 **No em dash inside a sentence.** `The saved login is gone; enter it again`,
 never `The saved login is gone — enter it again`. As a plain separator
-between two values it is fine — `leastPing — lowest latency wins`, a `—`
+between two values it is fine — `5 GHz — faster, shorter range`, a `—`
 placeholder for a missing reading — the ban is on splicing prose with it.
 
 **States, not mechanics; progress, not sentences.** A surface says where a

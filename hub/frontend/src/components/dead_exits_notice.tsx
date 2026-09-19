@@ -31,7 +31,10 @@ export function DeadExitsNotice({
   }
   const isScoped =
     latestFrame.proxy_scope !== "off" && latestFrame.proxy_scope !== "unused";
-  const probes = latestFrame.nodes;
+  // Every node is measured, switched off included, so the switched-off ones
+  // have to come out first: a box whose one enabled node is fine is not a box
+  // with no exit.
+  const probes = latestFrame.nodes.filter((probe) => probe.is_enabled);
   const isEveryExitDead =
     probes.length > 0 && probes.every((probe) => !probe.is_alive);
   if (!isScoped || !isEveryExitDead) {

@@ -24,7 +24,7 @@ export interface NodeDraftDiff {
  * Args:
  *   applied: The nodes and balancer as last loaded from the API.
  *   draftNodes: The nodes as the user has them on screen.
- *   draftBalancer: The balancer settings as the user has them on screen.
+ *   draftBalancer: The measurement settings as the user has them on screen.
  *
  * Returns:
  *   The per-node changes, whether the balancer moved, and a one-line summary.
@@ -52,8 +52,8 @@ export function diffNodeDraft(
   }
 
   const isBalancerChanged =
-    appliedBalancer.strategy !== draftBalancer.strategy ||
     appliedBalancer.probe_url !== draftBalancer.probe_url ||
+    appliedBalancer.reference_url !== draftBalancer.reference_url ||
     appliedBalancer.probe_interval_s !== draftBalancer.probe_interval_s;
 
   const parts: string[] = [];
@@ -63,13 +63,11 @@ export function diffNodeDraft(
   if (disabledIds.length > 0) {
     parts.push(t("ui.proxy.draft_disabled", { count: disabledIds.length }));
   }
-  if (appliedBalancer.strategy !== draftBalancer.strategy) {
-    parts.push(
-      t("ui.proxy.draft_strategy", { strategy: draftBalancer.strategy }),
-    );
-  }
   if (appliedBalancer.probe_url !== draftBalancer.probe_url) {
     parts.push(t("ui.proxy.draft_probe_url"));
+  }
+  if (appliedBalancer.reference_url !== draftBalancer.reference_url) {
+    parts.push(t("ui.proxy.draft_reference_url"));
   }
   if (appliedBalancer.probe_interval_s !== draftBalancer.probe_interval_s) {
     parts.push(

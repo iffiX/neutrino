@@ -72,18 +72,13 @@ export function computeActiveExits(
       uplinkBytes,
       downlinkBytes,
       totalBytes,
-      delayMs: probe?.delay_ms ?? null,
-      // No probe is not proof of health. The frame carries probes for the
-      // enabled nodes only, while the traffic counters carry every tag xray
-      // still knows, so an exit without one is one nobody measured.
+      delayMs: probe?.connect_ms ?? null,
+      // No measurement is not proof of health. The traffic counters carry
+      // every tag xray still knows, including one whose node has since been
+      // removed, so an exit without one is one nobody measured.
       is_alive: probe?.is_alive ?? false,
     });
   }
 
   return exits.sort((left, right) => right.totalBytes - left.totalBytes);
-}
-
-/** The busiest exit tag, or null when nothing is moving through the proxy. */
-export function primaryExitTag(exits: ActiveExit[]): string | null {
-  return exits[0]?.tag ?? null;
 }

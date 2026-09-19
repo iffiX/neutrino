@@ -18,12 +18,8 @@ import type { StatsFrame } from "./api_types";
  * `direct` there would claim traffic is bypassing a proxy every pointed
  * application is using.
  *
- * The exit half keeps its old care. Under leastPing there is one exit and it
- * can be named — but only once one has actually carried bytes, because these
- * nodes sit within a few milliseconds of each other and naming the fastest
- * would cycle through names while nothing was happening. Under roundRobin and
- * random there deliberately is no single exit, so those say how traffic is
- * spread and over how many.
+ * The exit half is one name: the hub pins one exit, and the frame carries its
+ * tag for the chip to read.
  */
 
 export type ProxyTone = "direct" | "proxy" | "offline";
@@ -38,8 +34,6 @@ export interface ProxyStatus {
   tone: ProxyTone;
 }
 
-const SINGLE_EXIT_STRATEGY = "leastPing";
-
 const SCOPE_KEYS: Record<string, string> = {
   ports: "state.ports",
   lan: "state.lan",
@@ -53,16 +47,11 @@ const SCOPE_JOINER = "+";
  *
  * Args:
  *   frame: The newest stats frame, or null before the first arrives.
- *   activeExit: The tag actually moving bytes, when one is, as measured
- *     across the retained frame window.
  *
  * Returns:
  *   The two halves, a label joining them, and the tone to show it in.
  */
-export function describeProxy(
-  frame: StatsFrame | null,
-  activeExit: string | null,
-): ProxyStatus {
+export function describeProxy(frame: StatsFrame | null): ProxyStatus {
   if (frame === null) {
     return { scope: "—", exit: "", label: "—", tone: "offline" };
   }
@@ -81,7 +70,8 @@ export function describeProxy(
       return key === undefined ? part : t(key);
     })
     .join(SCOPE_JOINER);
-  if (frame.enabled_node_count === 0) {
+  // Nothing to pin, or nothing pinned yet: either way no traffic has an exit.
+  if (frame.enabled_node_count === 0 || frame.exit_tag === "") {
     const noExit = t("state.no_exit");
     return {
       scope,
@@ -90,17 +80,6 @@ export function describeProxy(
       tone: "offline",
     };
   }
-  const exit = describeExit(frame, activeExit);
+  const exit = nodeIdFromTag(frame.exit_tag) ?? frame.exit_tag;
   return { scope, exit, label: `${scope} → ${exit}`, tone: "proxy" };
-}
-
-/** The exit half: one nameable node, or how traffic is spread. */
-function describeExit(frame: StatsFrame, activeExit: string | null): string {
-  if (frame.balancer_strategy !== SINGLE_EXIT_STRATEGY) {
-    return `${frame.balancer_strategy} ×${frame.enabled_node_count}`;
-  }
-  if (activeExit === null) {
-    return SINGLE_EXIT_STRATEGY;
-  }
-  return nodeIdFromTag(activeExit) ?? activeExit;
 }

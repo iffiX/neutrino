@@ -14,12 +14,17 @@ On the **Proxy** page you choose which devices and destinations go out to the in
 
 1. Select **Add node**.
 1. Paste the **Share link** as the provider gives it, `ss://` or `vless://`, and select **Add**.
-1. Pick a **Balancer strategy**: `leastPing` for the lowest latency, `random` per connection, or `roundRobin` through the nodes.
 1. Select **Apply nodes**.
 
-![The exit nodes with latency and a balancer strategy](/guide/en/proxy_nodes.webp)
+![The exit nodes with their two measurements](/guide/en/proxy_nodes.webp)
 
-**Test** probes one node and **Test all** probes every node. A node's card reads **unreachable**, **no answer yet** or **not probed**. **Probe interval (s)** sets how often the proxy probes the nodes on its own. Removing a node deletes its share link with it.
+The hub measures every node and picks the fastest one as the exit. The card marked **current exit** is the one carrying traffic.
+
+Each card shows two numbers. **connect** is a connection to the node's own port. **request** is a whole request through the node to the probe address. Under them the card states when the hub last measured the node, its score, and the share of measurements it answered.
+
+A node's switch states whether the hub can pick it. The hub measures a node either way, so you can read what a node is worth before you switch it on.
+
+**Test** measures one node now and **Test all** measures every node. **Probe URL** is the address the hub fetches through each node. **Reference URL** is the address the hub fetches directly, which separates a node that is down from an uplink that is down, so it must answer without the proxy. **Probe interval (s)** sets how often the hub measures. Removing a node deletes its share link with it.
 
 ## SOCKS ports
 
@@ -41,9 +46,9 @@ With **GeoIP split routing** on, domains and IPs matching the direct lists go st
 | **Direct domains** | `geosite:cn`, `domain:example.com`, `keyword:baidu` |
 | **Direct IPs**     | `geoip:cn`, `geoip:private`, `10.0.0.0/8`           |
 
-**DNS** has two resolvers. The **Direct resolver** answers the names on the direct lists, and every name while the LAN switch is off. The **Remote resolver** answers every other name, and the query reaches it through the exit node.
+**DNS** has two resolvers. The **Direct resolver** answers the names on the direct lists and the exit nodes' own names. It also answers every name while the LAN switch is off. The **Remote resolver** answers every other name, and the query reaches it through the exit node.
 
-**Let traffic out directly when no exit node answers** is off by default. While it is off and every enabled node is unreachable, traffic sent to the proxy fails. The LAN's names fail with it, because they are resolved at the exit. With it on, that traffic goes out through the WAN under the box's own address, and the direct resolver answers the names. **Apply route** rewrites the routing rules.
+**Let traffic out directly when no exit node answers** is off by default. While it is off and every enabled node is unreachable, traffic sent to the proxy fails. The names on the direct lists keep resolving, and every other name fails with the traffic, because the exit resolves it. With it on, that traffic goes out through the WAN under the box's own address, and the direct resolver answers the names. **Apply route** rewrites the routing rules.
 
 ![The route section with the direct lists](/guide/en/proxy_routing.webp)
 

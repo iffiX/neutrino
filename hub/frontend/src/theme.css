@@ -354,6 +354,20 @@ textarea {
   color: var(--color-text-muted);
 }
 
+/* A per-row Remove is borderless like every repeated row action and red like
+   every button that removes something. The ghost rule comes after the danger
+   one, so without this it takes the red away with the border. */
+.button--ghost.button--danger {
+  border-color: transparent;
+  color: var(--color-error);
+}
+
+.button--ghost.button--danger:hover:not(:disabled) {
+  background: var(--color-error-wash);
+  border-color: transparent;
+  color: var(--color-error);
+}
+
 .button--small {
   padding: 4px 10px;
   font-size: 12px;

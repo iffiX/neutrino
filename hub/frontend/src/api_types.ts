@@ -11,8 +11,6 @@
 
 export type NodeProtocol = "shadowsocks" | "vless";
 
-export type BalancerStrategy = "leastPing" | "roundRobin" | "random";
-
 /** What the whole machine is set up as. */
 export type NetworkModeKey = "server" | "side_gateway" | "router";
 
@@ -60,17 +58,32 @@ export interface NodeView {
   address: string;
   protocol: NodeProtocol;
   port: number;
+  /** Whether the node may be chosen as the exit. Every node is measured. */
   is_enabled: boolean;
   has_reality: boolean;
+  /** Whether the node has a measurement and the latest one did not fail. */
   is_alive: boolean;
-  delay_ms: number | null;
+  /** Whether this is the exit the hub has pinned. */
+  is_selected: boolean;
+  /** The TCP connect to the node's own port. */
+  connect_ms: number | null;
+  /** A full request through the node to the probe URL. */
+  request_ms: number | null;
+  /** When the last measurement was taken, empty for a node never measured. */
+  probed_at: string;
+  /** The share of measurements that answered, 0 to 1. */
+  success_rate: number;
+  /** What the exit is ranked by, null until there is something to rank. */
+  score_ms: number | null;
   uplink_bytes: number;
   downlink_bytes: number;
 }
 
 export interface BalancerSettings {
-  strategy: BalancerStrategy;
+  /** Fetched through each node, which is what request_ms times. */
   probe_url: string;
+  /** Fetched directly, which is what tells a dead node from a dead uplink. */
+  reference_url: string;
   probe_interval_s: number;
 }
 
@@ -85,10 +98,9 @@ export interface NodeUpdateRequest {
   name?: string;
 }
 
-export interface NodeTestResult {
-  tag: string;
-  is_alive: boolean;
-  delay_ms: number | null;
+/** Which nodes to measure now. An absent id means every node. */
+export interface NodeTestRequest {
+  node_id?: string;
 }
 
 /** A share link to add as a node. */
@@ -126,8 +138,12 @@ export interface OutboundTraffic {
 export interface NodeProbe {
   tag: string;
   is_alive: boolean;
-  delay_ms: number | null;
+  is_enabled: boolean;
+  is_selected: boolean;
+  connect_ms: number | null;
+  request_ms: number | null;
   probed_at: string;
+  success_rate: number;
 }
 
 /**
@@ -165,8 +181,16 @@ export interface StatsFrame {
   agent_device_count: number;
   /** Devices the kernel currently has in its neighbour table on the LANs. */
   lan_device_count: number;
-  /** How the balancer spreads traffic: leastPing has one exit, the others do not. */
-  balancer_strategy: BalancerStrategy;
+  /** The outbound tag of the pinned exit, empty when none is pinned. */
+  exit_tag: string;
+  /** When that exit was pinned, empty when none is. */
+  exit_since: string;
+  /** Whether the reference URL answered without the proxy. */
+  is_wan_reachable: boolean;
+  /** Whether xray's own API answered. */
+  is_xray_reachable: boolean;
+  /** Whether the running xray matches what config/ says. */
+  is_in_sync: boolean;
   enabled_node_count: number;
 }
 

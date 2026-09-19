@@ -8,7 +8,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--color-border);
@@ -16,15 +16,22 @@
   background: var(--color-bg);
 }
 
+/* Each field carries a hint under it, so they line up by their labels. */
 .nodes_toolbar_group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
-  align-items: flex-end;
+  align-items: flex-start;
 }
 
 .nodes_toolbar_field {
+  max-width: 100%;
   min-width: 170px;
+}
+
+.nodes_toolbar_field--url {
+  flex: 1 1 260px;
+  min-width: 260px;
 }
 
 /* The panel's own actions, not the page's: this box sits inside a card. */

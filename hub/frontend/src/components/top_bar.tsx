@@ -2,7 +2,6 @@ import { useLocation } from "react-router-dom";
 
 import { StatusDot } from "./status_dot";
 import type { StatusTone } from "./status_dot";
-import { computeActiveExits, primaryExitTag } from "../active_exits";
 import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
@@ -60,7 +59,7 @@ export function TopBar() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const location = useLocation();
-  const { frames, latestFrame, status } = useLiveStats();
+  const { latestFrame, status } = useLiveStats();
   // The socket takes a moment to deliver its first frame. Reading the mode
   // once over HTTP as well means the strip names it immediately rather than
   // starting on a default that is wrong for most machines.
@@ -72,8 +71,7 @@ export function TopBar() {
       ? location.pathname === "/"
       : location.pathname.startsWith(item.path),
   );
-  const activeExit = primaryExitTag(computeActiveExits(frames));
-  const proxy = describeProxy(latestFrame, activeExit);
+  const proxy = describeProxy(latestFrame);
   const mode = latestFrame?.network_mode ?? network.data?.mode ?? null;
   const agentCount = latestFrame?.agent_device_count ?? null;
 

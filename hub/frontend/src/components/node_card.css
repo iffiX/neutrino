@@ -86,47 +86,71 @@
   margin-top: var(--space-1);
 }
 
+/* The two measurements side by side, and what they add up to underneath. */
 .node_card_metrics {
   display: grid;
-  gap: var(--space-3);
-  grid-template-columns: 1fr auto;
-  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
   padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-elevated);
 }
 
-.node_card_latency {
+.node_card_metric {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
-.node_card_latency_value {
+.node_card_metric_value {
   font-family: var(--font-mono);
   font-size: 18px;
   font-weight: 600;
   line-height: 1.1;
 }
 
-.node_card_latency_value--ok {
+.node_card_metric_value--ok {
   color: var(--color-ok);
 }
 
-.node_card_latency_value--warn {
+.node_card_metric_value--warn {
   color: var(--color-warn);
 }
 
-.node_card_latency_value--error {
+.node_card_metric_value--error {
   color: var(--color-error);
 }
 
-.node_card_latency_label {
+/* Nothing measured yet, which is not a failure and so is not red. */
+.node_card_metric_value--idle {
+  color: var(--color-text-faint);
+}
+
+.node_card_metric_label {
   color: var(--color-text-faint);
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.node_card_probe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  grid-column: 1 / -1;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.node_card_probe_value--unreachable {
+  color: var(--color-error);
 }
 
 .node_card_traffic {
