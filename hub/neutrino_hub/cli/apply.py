@@ -34,12 +34,11 @@ from neutrino_hub.modules.router.controller import RouterStateController, failur
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
-from neutrino_hub.modules.router.routes import lookup_xray_uid
+from neutrino_hub.modules.router.routes import install_dnsmasq, lookup_xray_uid
 from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_GENERATED_DIR
-from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
@@ -54,7 +53,7 @@ from neutrino_hub.web.constants import (
     WEB_IDENTITY_FILE,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
-from neutrino_hub.utils.subprocess_run import command_failure_text, run
+from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH
@@ -62,7 +61,6 @@ from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
-DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
 COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi", "easytier")
 
 
@@ -140,7 +138,7 @@ def main() -> int:
         )
 
     try:
-        _write(artifacts)
+        _write(artifacts, is_apply_skipped=args.skip_apply)
         if not args.skip_apply:
             units = SystemdUnitInstaller().install()
             if units:
@@ -227,13 +225,21 @@ def _print_artifacts(artifacts: dict) -> None:
         )
 
 
-def _write(artifacts: dict) -> None:
+def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:
+    """Write what has to be on disk before anything is restarted.
+
+    Args:
+        artifacts: The rendered artifacts, by component.
+        is_apply_skipped: Whether this run restarts nothing. dnsmasq's file is
+            written here only then, because the apply installs it through
+            `install_dnsmasq`, which writes and restarts in one step.
+    """
     if "xray" in artifacts:
         # Validates before writing, and must happen even with --skip-apply:
         # the xray unit points at this file, so systemd cannot start the
         # service until it exists.
         XrayConfigApplier().write(artifacts["xray"])
-    if "dnsmasq" in artifacts:
+    if "dnsmasq" in artifacts and is_apply_skipped:
         write_generated(ROUTER_DNSMASQ_PATH, artifacts["dnsmasq"])
 
 
@@ -252,7 +258,11 @@ def _apply(artifacts: dict) -> None:
                 print(result.describe())
         router_failure = failure_text(results)
     if "dnsmasq" in artifacts:
-        run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+        print(
+            "dnsmasq restarted"
+            if install_dnsmasq(artifacts["dnsmasq"])
+            else "dnsmasq unchanged"
+        )
     if "cliproxyapi" in artifacts:
         # The applier renders again with the key the belt above put in place,
         # writes the YAML with the served fingerprint, and restarts — the same

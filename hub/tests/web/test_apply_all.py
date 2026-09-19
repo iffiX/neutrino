@@ -39,7 +39,6 @@ CONFIG = {
     },
     "xray/nodes.json": {"nodes": []},
 }
-DNSMASQ_RESTART = ["systemctl", "restart", runtime_module.DNSMASQ_SERVICE_NAME]
 
 
 class _RefusingApplier:
@@ -69,6 +68,9 @@ def applied(monkeypatch):
     """
     written = []
     results: list = [RouterStepResult(name="ruleset", state=ROUTER_STEP_APPLIED)]
+    # What the real `install_dnsmasq` compares against: the text on disk. The
+    # first install moves it, and installing the same text again does not.
+    on_disk: dict = {"config": None}
 
     class Controller:
         def __init__(self, **keywords):
@@ -78,20 +80,17 @@ def applied(monkeypatch):
             written.append(("reconciled", only))
             return list(results)
 
+    def install_dnsmasq(config):
+        written.append(("installed dnsmasq", config))
+        is_moved = on_disk["config"] != config
+        on_disk["config"] = config
+        return is_moved
+
     monkeypatch.setattr(runtime_module, "read_config", lambda name: CONFIG[name])
     monkeypatch.setattr(runtime_module, "write_config", lambda name, data: None)
     monkeypatch.setattr(runtime_module, "XrayConfigApplier", _RefusingApplier)
     monkeypatch.setattr(runtime_module, "RouterStateController", Controller)
-    monkeypatch.setattr(
-        runtime_module,
-        "write_generated",
-        lambda path, text: written.append(("wrote", str(path))),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "run",
-        lambda command, **kwargs: written.append(("ran", command)),
-    )
+    monkeypatch.setattr(runtime_module, "install_dnsmasq", install_dnsmasq)
     panel = object.__new__(PanelRuntime)
     panel.is_config_dirty = True
     panel.settings = {}
@@ -113,7 +112,7 @@ def test_a_refused_xray_config_does_not_take_dns_with_it(applied):
     with pytest.raises(RuntimeError):
         panel._apply_all_blocking()
 
-    assert ("ran", DNSMASQ_RESTART) in written
+    assert [step for step, _ in written].count("installed dnsmasq") == 1
 
 
 def test_the_apply_still_reports_that_xray_refused(applied):
@@ -154,7 +153,7 @@ def test_a_failed_routing_step_reaches_the_page_by_name(applied, monkeypatch):
         panel._apply_all_blocking()
 
     assert "interface enp1s0" in str(failure.value)
-    assert ("ran", DNSMASQ_RESTART) in written
+    assert [step for step, _ in written].count("installed dnsmasq") == 1
 
 
 def test_a_step_waiting_on_a_lease_is_not_a_failure(applied, monkeypatch):
@@ -207,9 +206,35 @@ def test_the_interfaces_are_applied_before_dnsmasq_binds_them(applied, monkeypat
 
     panel._apply_network_blocking("enp1s0")
 
-    assert written.index(("reconciled", "enp1s0")) < written.index(
-        ("ran", DNSMASQ_RESTART)
-    )
+    steps = [step for step, _ in written]
+    assert steps.index("reconciled") < steps.index("installed dnsmasq")
+
+
+def test_dnsmasq_is_restarted_only_when_its_configuration_moved(applied, monkeypatch):
+    """A restart empties a thousand cached names, and an apply that changed
+    nothing about DNS has no reason to."""
+    panel, _, _ = applied
+    _with_devices(panel, monkeypatch, _Sessions([]))
+
+    first = panel._apply_network_blocking(None)
+    second = panel._apply_network_blocking(None)
+
+    assert "dnsmasq restarted" in first
+    assert "dnsmasq restarted" not in second
+
+
+def test_both_apply_paths_install_the_same_configuration(applied, monkeypatch):
+    """They used to read different routing, so each overwrote the other's file
+    and both restarted dnsmasq."""
+    panel, written, _ = applied
+    _with_devices(panel, monkeypatch, _Sessions([]))
+
+    panel._apply_network_blocking(None)
+    with pytest.raises(RuntimeError):
+        panel._apply_all_blocking()
+
+    installed = [config for step, config in written if step == "installed dnsmasq"]
+    assert installed[0] == installed[1]
 
 
 def test_applying_the_network_hands_every_online_device_its_state(applied, monkeypatch):

@@ -25,6 +25,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_INTERFACE_DOWN,
     ROUTER_CODE_LEASE_PENDING,
     ROUTER_CONNECTIONS_FILE,
+    ROUTER_DNSMASQ_PATH,
     ROUTER_STEP_PENDING,
     ROUTER_STEP_UNCHANGED,
     ROUTER_TRIGGER_APPLY,
@@ -59,12 +60,15 @@ from neutrino_hub.modules.router.uplink_plan import (
 from neutrino_hub.modules.router.wifi import RouterWifiAccessPoint
 from neutrino_hub.modules.router.steps import RouterStepResult, run_step
 from neutrino_hub.system.constants import (
+    SYSTEM_CORE_UNITS,
     SYSTEM_UNIT_STATE_ACTIVATING,
     SYSTEM_UNIT_STATE_ACTIVE,
 )
-from neutrino_hub.system.systemd_ctl import is_unit_startable
+from neutrino_hub.system.systemd_ctl import is_unit_startable, unit_state
 
 XRAY_SERVICE_USER = "xray"
+
+DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
 
 # Properties NetworkManager can only adopt by tearing the connection down and
 # building it again. Everything else — metrics, never-default, autoconnect — it
@@ -124,6 +128,35 @@ def remove_vlan_device(name: str) -> list[str]:
     if not links.remove_vlan(name):
         return []
     return [f"{name} removed"]
+
+
+def install_dnsmasq(config: str) -> bool:
+    """Write the configuration and restart dnsmasq only when it moved.
+
+    A restart empties the cache, and a cold lookup through the proxy costs ten
+    times what a cached one does. The unit's state is read as well as the
+    file's text: a box whose dnsmasq died has the right file on disk already,
+    and without that reading no apply would ever bring it back.
+
+    Args:
+        config: The rendered dnsmasq configuration.
+
+    Returns:
+        True when dnsmasq was restarted.
+
+    Raises:
+        OSError: If the file cannot be written.
+        subprocess.CalledProcessError: If systemd refuses the restart.
+    """
+    is_current = (
+        ROUTER_DNSMASQ_PATH.is_file()
+        and ROUTER_DNSMASQ_PATH.read_text(encoding="utf-8") == config
+    )
+    if is_current and unit_state(DNSMASQ_SERVICE_NAME) == SYSTEM_UNIT_STATE_ACTIVE:
+        return False
+    write_generated(ROUTER_DNSMASQ_PATH, config)
+    run(["systemctl", "restart", DNSMASQ_SERVICE_NAME])
+    return True
 
 
 def _write_dhcp_config(device: str, metric: int) -> bool:

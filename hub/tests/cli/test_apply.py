@@ -33,3 +33,47 @@ def test_apply_removes_a_device_directory_no_stored_device_names(tmp_path, monke
     assert (tmp_path / "devices" / kept).is_dir()
     assert (tmp_path / "devices" / "packages").is_dir()
     assert not (tmp_path / "devices" / "aa-bb-cc-dd-ee-ff").exists()
+
+
+# --- dnsmasq: one install, and one restart only when it moved ---
+
+
+def test_an_apply_installs_dnsmasq_through_the_one_shared_function(monkeypatch):
+    """The panel and the command line write and restart dnsmasq the same way,
+    so neither can overwrite the other's file and restart over it."""
+    installed = []
+    monkeypatch.setattr(
+        apply, "install_dnsmasq", lambda config: installed.append(config) or True
+    )
+
+    apply._apply({"dnsmasq": "interface=enp1s0\n"})
+
+    assert installed == ["interface=enp1s0\n"]
+
+
+def test_a_run_that_restarts_nothing_still_leaves_the_file_the_unit_names(
+    monkeypatch,
+):
+    """`--skip-apply` writes the generated files. The dnsmasq unit points at
+    this one, so it has to be there even when nothing is restarted."""
+    written = []
+    monkeypatch.setattr(
+        apply, "write_generated", lambda path, text: written.append((str(path), text))
+    )
+
+    apply._write({"dnsmasq": "interface=enp1s0\n"}, is_apply_skipped=True)
+
+    assert written == [(str(apply.ROUTER_DNSMASQ_PATH), "interface=enp1s0\n")]
+
+
+def test_an_apply_does_not_write_the_file_before_installing_it(monkeypatch):
+    """A file written first would match whatever `install_dnsmasq` compares
+    against, and dnsmasq would never be restarted on a real change."""
+    written = []
+    monkeypatch.setattr(
+        apply, "write_generated", lambda path, text: written.append(str(path))
+    )
+
+    apply._write({"dnsmasq": "interface=enp1s0\n"}, is_apply_skipped=False)
+
+    assert written == []
