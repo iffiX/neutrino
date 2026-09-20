@@ -914,15 +914,23 @@ function mountBusyWord(state) {
   return MOUNT_BUSY_STATES.indexOf(state) >= 0 ? t('ui.mount_' + state) : '';
 }
 
+// The codes a record can only leave with a new login: mounting it again as
+// it stands would be refused again, so Mount opens the form instead.
+const LOGIN_CODES = ['share_login_rejected', 'credentials_missing'];
+
 // The one button position beside Config: Mount morphs through the
-// transients and into Unmount, never a second button anywhere.
+// transients and into Unmount, never a second button anywhere. An open
+// form always wins: what it holds is sent as a fresh mount, whether or not
+// a record already stands, and the hub-side record and its saved login are
+// replaced by it.
 function mountButton(entry, record, staged, noteKey) {
   const button = document.createElement('button');
   const key = serviceKey(entry);
-  if (record === undefined) {
+  const isBusy = record !== undefined && (fileAsked[record.record_id] ||
+    mountBusyWord(record.state));
+  if (!isBusy && staged && staged.is_open) {
     button.textContent = t('ui.mount');
-    button.disabled = !entry.is_healthy || !staged || !staged.is_open ||
-      !staged.path;
+    button.disabled = !entry.is_healthy || !staged.path;
     button.onclick = async () => {
       const sent = {
         action: 'mount', hub_id: entry.hub_id, id: entry.id,
@@ -936,12 +944,29 @@ function mountButton(entry, record, staged, noteKey) {
     };
     return button;
   }
+  if (record === undefined) {
+    button.textContent = t('ui.mount');
+    button.disabled = true;
+    return button;
+  }
   const askedStep = fileAsked[record.record_id];
   const busyWord = askedStep ? t('ui.unmounting')
     : mountBusyWord(record.state);
   if (busyWord) {
     button.textContent = busyWord;
     button.disabled = true;
+    return button;
+  }
+  if (LOGIN_CODES.indexOf(record.code) >= 0) {
+    // Nothing to retry with: the press opens the form, the login prefilled.
+    button.textContent = t('ui.mount');
+    button.onclick = () => {
+      fileStaged[key] = {
+        is_open: true, username: record.username || '', password: '',
+        path: record.path,
+      };
+      redraw();
+    };
     return button;
   }
   if (record.state === 'detached' || record.code) {
