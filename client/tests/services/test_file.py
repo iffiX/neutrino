@@ -202,6 +202,60 @@ def test_a_declined_authorization_is_typed_and_not_retried(service):
     assert len(platform.attach_calls) == 1
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "share_login_rejected",
+        "share_access_denied",
+        "share_not_found",
+        "share_session_conflict",
+    ],
+)
+def test_a_share_refusal_the_person_must_act_on_is_not_retried(service, code):
+    """Mounting again with the same login or the same share name would be
+    refused again; the record waits, with the refusal on its row."""
+    subject, platform, _store, tmp_path = service
+    platform.attach_error = ShareAttachError(code)
+
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+    subject.reconcile()
+    subject.reconcile()
+
+    row = subject.rows()[0]
+    assert row["state"] == "failed" and row["code"] == code
+    assert len(platform.attach_calls) == 1
+
+
+def test_an_unreachable_host_is_tried_again_on_the_timer(service):
+    subject, platform, _store, tmp_path = service
+    platform.attach_error = ShareAttachError("share_unreachable")
+
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+    subject.reconcile()
+
+    assert subject.rows()[0]["code"] == "share_unreachable"
+    assert len(platform.attach_calls) == 2
+
+
+def test_a_new_password_for_the_same_share_replaces_the_saved_login(service):
+    """The second attach for one share is the person correcting the login:
+    the old credentials file goes, the new one is what the mount reads."""
+    subject, platform, _store, tmp_path = service
+    location = str(tmp_path / "nas")
+    platform.attach_error = ShareAttachError("share_login_rejected")
+    assert attach(subject, path=location, password="wrong") == {}
+    first = platform.attach_calls[0]["credentials_path"]
+    assert "password=wrong" in open(first, encoding="utf-8").read()
+
+    platform.attach_error = None
+    assert attach(subject, path=location, password="right") == {}
+
+    assert subject.rows()[0]["is_attached"] is True
+    assert subject.rows()[0]["code"] == ""
+    assert "password=right" in open(first, encoding="utf-8").read()
+    assert len(subject.rows()) == 1
+
+
 def test_a_failing_mount_is_a_typed_failed_row(service):
     subject, platform, _store, tmp_path = service
     platform.attach_error = ShareAttachError("mount_failed", "cifs refused")

@@ -50,3 +50,5 @@ nclient service file unmount <ref> --hub home
 ## Linux 上的 polkit 助手
 
 Linux 上挂载 CIFS 需要 root，客户端通过 `pkexec` 调用包里自带的挂载助手，polkit 弹一次授权。拒绝授权时客户端返回 `mount_not_authorized`；机器上缺 cifs-utils 时返回 `mount_tooling_missing`。这是客户端唯一的提权点，其余时候它都以你的普通账户运行。
+
+共享拒绝挂载时，三个平台的说法一样。`share_login_rejected` 是用户名或密码不对：这一行会写明，按**挂载**会打开配置并预填用户名，你新填的登录信息会替换保存的那份。`share_access_denied` 是登录对了但这个账号不能用这个共享；`share_not_found` 是主机上没有这个共享名；`share_unreachable` 是主机没应答，网络恢复后客户端会自己再试。前三种都等你改了再说。Windows 上还有 `share_session_conflict`：Windows 已经用另一个账号连着这台服务器，要先断开那个连接。

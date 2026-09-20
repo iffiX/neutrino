@@ -121,7 +121,22 @@ CLIENT_MOUNT_HELPER_EXIT_CODES = {
     5: "credentials_missing",
     6: "mount_failed",
     7: "unmount_failed",
+    8: "share_login_rejected",
+    9: "share_access_denied",
+    10: "share_not_found",
+    11: "share_unreachable",
 }
+# The share refusals a person has to act on; a record with one of these
+# waits for its login or its share to be changed rather than being mounted
+# again on the timer. An unreachable host is not among them: the network
+# comes back on its own.
+CLIENT_MOUNT_SETTLED_CODES = (
+    "mount_not_authorized",
+    "share_login_rejected",
+    "share_access_denied",
+    "share_not_found",
+    "share_session_conflict",
+)
 CLIENT_PKEXEC_REFUSAL_EXIT_CODES = (126, 127)
 
 # How often a record this run attached and lost is mounted again.

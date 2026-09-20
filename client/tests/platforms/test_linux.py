@@ -169,6 +169,10 @@ def test_a_declined_authorization_is_typed(monkeypatch, tmp_path, exit_code):
         (4, "mountpoint_not_empty"),
         (5, "credentials_missing"),
         (6, "mount_failed"),
+        (8, "share_login_rejected"),
+        (9, "share_access_denied"),
+        (10, "share_not_found"),
+        (11, "share_unreachable"),
         (99, "mount_failed"),
     ],
 )

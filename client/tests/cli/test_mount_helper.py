@@ -73,6 +73,10 @@ def test_the_exit_codes_are_the_constants_table():
         helper.EXIT_CREDENTIALS_MISSING: "credentials_missing",
         helper.EXIT_MOUNT_FAILED: "mount_failed",
         helper.EXIT_UNMOUNT_FAILED: "unmount_failed",
+        helper.EXIT_SHARE_LOGIN_REJECTED: "share_login_rejected",
+        helper.EXIT_SHARE_ACCESS_DENIED: "share_access_denied",
+        helper.EXIT_SHARE_NOT_FOUND: "share_not_found",
+        helper.EXIT_SHARE_UNREACHABLE: "share_unreachable",
     }
 
 
@@ -251,18 +255,82 @@ def test_a_share_that_is_not_a_unc_path_is_usage(caller, ready):
     assert status == helper.EXIT_USAGE
 
 
-def test_a_refusing_mount_is_mount_failed(caller, ready, capsys):
+def mount_refused(recorder, ready):
     location, credentials = ready
-    recorder = CommandRecorder([completed(returncode=32, stderr="mount error(13)")])
-
-    status = helper.run(
+    return helper.run(
         mount_argv(location, credentials),
         {"PKEXEC_UID": str(os.getuid())},
         run_command=recorder,
     )
 
-    assert status == helper.EXIT_MOUNT_FAILED
-    assert "mount error(13)" in capsys.readouterr().err
+
+def test_a_mount_the_tool_refuses_without_an_errno_is_mount_failed(
+    caller, ready, capsys
+):
+    recorder = CommandRecorder([completed(returncode=32, stderr="bad option")])
+
+    assert mount_refused(recorder, ready) == helper.EXIT_MOUNT_FAILED
+    assert "bad option" in capsys.readouterr().err
+
+
+def test_a_rejected_login_is_told_by_the_kernels_session_setup_line(caller, ready):
+    """EACCES is a wrong password and a share this account may not use
+    alike; the kernel's line for a session setup the server rejected is
+    what tells the first from the second."""
+    recorder = CommandRecorder(
+        [
+            completed(returncode=32, stderr="mount error(13): Permission denied"),
+            completed(stdout="CIFS: VFS: \\\\hub Send error in SessSetup = -13\n"),
+        ]
+    )
+
+    assert mount_refused(recorder, ready) == helper.EXIT_SHARE_LOGIN_REJECTED
+    assert recorder.commands[1][:4] == ["journalctl", "-k", "-o", "cat"]
+
+
+def test_eacces_without_that_line_is_a_share_this_account_may_not_use(caller, ready):
+    recorder = CommandRecorder(
+        [
+            completed(returncode=32, stderr="mount error(13): Permission denied"),
+            completed(stdout="CIFS: VFS: cifs_mount failed w/return code = -13\n"),
+        ]
+    )
+
+    assert mount_refused(recorder, ready) == helper.EXIT_SHARE_ACCESS_DENIED
+
+
+def test_eacces_with_no_kernel_log_to_read_is_access_denied(caller, ready):
+    recorder = CommandRecorder(
+        [
+            completed(returncode=32, stderr="mount error(13): Permission denied"),
+            completed(returncode=1, stderr="No journal files were found."),
+        ]
+    )
+
+    assert mount_refused(recorder, ready) == helper.EXIT_SHARE_ACCESS_DENIED
+
+
+@pytest.mark.parametrize(
+    ("errno_value", "exit_status"),
+    [
+        (6, helper.EXIT_SHARE_NOT_FOUND),
+        (2, helper.EXIT_SHARE_UNREACHABLE),
+        (110, helper.EXIT_SHARE_UNREACHABLE),
+        (111, helper.EXIT_SHARE_UNREACHABLE),
+        (113, helper.EXIT_SHARE_UNREACHABLE),
+        (22, helper.EXIT_MOUNT_FAILED),
+    ],
+)
+def test_the_other_errnos_name_the_share_or_the_host(
+    caller, ready, errno_value, exit_status
+):
+    recorder = CommandRecorder(
+        [completed(returncode=32, stderr=f"mount error({errno_value}): x")]
+    )
+
+    assert mount_refused(recorder, ready) == exit_status
+    # Only EACCES needs the kernel's word.
+    assert len(recorder.commands) == 1
 
 
 def test_unmount_touches_only_a_cifs_mount_under_the_home(

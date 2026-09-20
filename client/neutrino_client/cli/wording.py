@@ -72,6 +72,20 @@ CLIENT_CODE_WORDS = {
     ),
     "no_endpoint": "the hub has not granted this person a key yet",
     "mountpoint_not_empty": "that folder is not empty",
+    "share_login_rejected": (
+        "the share rejected the username or password; open Config and enter "
+        "them again"
+    ),
+    "share_access_denied": (
+        "the share refused this login: the password is wrong, or this "
+        "account may not use the share"
+    ),
+    "share_not_found": "the host has no share by this name",
+    "share_unreachable": "the host cannot be reached; mounting is tried again shortly",
+    "share_session_conflict": (
+        "Windows already holds a connection to this server under another "
+        "login; disconnect it first"
+    ),
     "mountpoint_in_use": "another share is already set to mount at {path}",
     "credentials_missing": (
         "the saved login is gone; enter it again: nclient service file config"

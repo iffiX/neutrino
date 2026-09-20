@@ -237,6 +237,39 @@ def test_a_refused_mount_carries_the_tools_words(monkeypatch, tmp_path):
     assert caught.value.detail.endswith("server rejected the connection")
 
 
+@pytest.mark.parametrize(
+    ("said", "code"),
+    [
+        (
+            "server rejected the connection: Authentication error",
+            "share_login_rejected",
+        ),
+        ("mount_smbfs: /mnt: Permission denied", "share_access_denied"),
+        (
+            "server rejected the connection: No such file or directory",
+            "share_not_found",
+        ),
+        ("could not connect to hub: Operation timed out", "share_unreachable"),
+        ("mount_smbfs: could not connect: Connection refused", "share_unreachable"),
+        ("mount_smbfs: could not connect: No route to host", "share_unreachable"),
+    ],
+)
+def test_the_tools_words_name_the_share_refusal(monkeypatch, tmp_path, said, code):
+    """The same refusals every platform words; mount_smbfs tells them by
+    its own phrases, and a wrong password reads as one before the person."""
+    credentials = tmp_path / "r1.credentials"
+    credentials.write_text("username=media\npassword=x\n")  # scan: allow
+    terminal = TerminalRecorder(code=77, output=f"Password for hub:\r\n{said}")
+    monkeypatch.setattr(darwin_module, "run_on_pty", terminal)
+
+    with pytest.raises(ShareAttachError) as caught:
+        DarwinPlatform().attach_share(
+            share_url="//hub/media", location="/mnt", credentials_path=str(credentials)
+        )
+    assert caught.value.code == code
+    assert caught.value.detail.endswith(said)
+
+
 def test_a_tool_that_cannot_start_is_a_failed_mount(monkeypatch, tmp_path):
     credentials = tmp_path / "r1.credentials"
     credentials.write_text("username=media\npassword=x\n")  # scan: allow

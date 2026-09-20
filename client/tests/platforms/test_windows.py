@@ -201,16 +201,36 @@ def test_attach_maps_in_this_process_with_the_login_off_every_argv(
     assert ("notify_drive", "Z:\\", windows_module.SHCNE_DRIVEADD) in win32.calls
 
 
-def test_a_refused_connection_is_a_typed_mount_failure(platform, monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("win32_code", "code"),
+    [
+        (1326, "share_login_rejected"),
+        (86, "share_login_rejected"),
+        (5, "share_access_denied"),
+        (67, "share_not_found"),
+        (53, "share_unreachable"),
+        (1203, "share_unreachable"),
+        (1222, "share_unreachable"),
+        (1219, "share_session_conflict"),
+        (1200, "mount_failed"),
+    ],
+)
+def test_a_refused_connection_is_the_share_refusal_its_code_names(
+    platform, tmp_path, win32_code, code
+):
+    """Every platform words a wrong password, a share this account may not
+    use, a share the host lacks and a host out of reach alike; Windows tells
+    them by the Win32 code, and anything else keeps the Win32 message."""
     credentials = tmp_path / "r1.credentials"
     credentials.write_text("username=u\npassword=p\n")
-    platform._win32().connection_code = 67
+    platform._win32().connection_code = win32_code
 
     with pytest.raises(ShareAttachError) as caught:
         platform.attach_share(
             share_url="//hub/media", location="Z:", credentials_path=str(credentials)
         )
-    assert caught.value.code == "mount_failed"
+    assert caught.value.code == code
+    assert caught.value.detail
 
 
 def test_attach_refusals_are_typed(platform, monkeypatch, tmp_path):

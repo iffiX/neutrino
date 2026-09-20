@@ -51,6 +51,21 @@ def _pipe_safe_name(account: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", account)
 
 
+# What WNetAddConnection2 answers a share with, as the typed refusals every
+# platform words alike. Anything outside the table is ``mount_failed`` with
+# the Win32 message.
+SHARE_REFUSALS = {
+    win32.ERROR_LOGON_FAILURE: "share_login_rejected",
+    win32.ERROR_INVALID_PASSWORD: "share_login_rejected",
+    win32.ERROR_ACCESS_DENIED: "share_access_denied",
+    win32.ERROR_BAD_NET_NAME: "share_not_found",
+    win32.ERROR_BAD_NETPATH: "share_unreachable",
+    win32.ERROR_NO_NET_OR_BAD_PATH: "share_unreachable",
+    win32.ERROR_NO_NETWORK: "share_unreachable",
+    win32.ERROR_SESSION_CREDENTIAL_CONFLICT: "share_session_conflict",
+}
+
+
 class WindowsPlatform(ClientPlatform):
     """Windows behind the platform contract."""
 
@@ -190,8 +205,10 @@ class WindowsPlatform(ClientPlatform):
             credentials_path: The credentials file the login is read from.
 
         Raises:
-            ShareAttachError: ``credentials_missing`` without the file,
-                ``mount_failed`` with the tool's own words otherwise.
+            ShareAttachError: ``credentials_missing`` without the file; the
+                share refusal the Win32 code names, ``share_login_rejected``
+                for a wrong username or password among them; ``mount_failed``
+                with the Win32 message for any other code.
         """
         host, share = share_parts(share_url)
         if not host or not share:
@@ -206,7 +223,9 @@ class WindowsPlatform(ClientPlatform):
             password=password,
         )
         if code != win32.NO_ERROR:
-            raise ShareAttachError("mount_failed", detail=win32.win_error(code))
+            raise ShareAttachError(
+                SHARE_REFUSALS.get(code, "mount_failed"), detail=win32.win_error(code)
+            )
         self._announce_drive(location, SHCNE_DRIVEADD)
 
     def detach_share(self, *, location: str) -> None:

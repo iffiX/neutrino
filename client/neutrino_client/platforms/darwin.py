@@ -51,6 +51,18 @@ SMB_UNMOUNT_TOOL = "umount"
 SMB_MOUNT_TIMEOUT_S = 120
 # What mount_smbfs prints before it reads the password.
 SMB_PASSWORD_PROMPT = "Password"
+# What mount_smbfs prints for each way a share refuses, in the order they
+# are told apart; the first phrase found names the refusal. Anything else
+# is ``mount_failed`` with the tool's own words.
+SMB_REFUSALS = (
+    ("Authentication error", "share_login_rejected"),
+    ("Permission denied", "share_access_denied"),
+    ("No such file or directory", "share_not_found"),
+    ("Operation timed out", "share_unreachable"),
+    ("Connection refused", "share_unreachable"),
+    ("No route to host", "share_unreachable"),
+    ("could not connect", "share_unreachable"),
+)
 MOUNT_TABLE_TOOL = "mount"
 MOUNT_TABLE_TIMEOUT_S = 10
 # How ``mount`` prints one line: ``//alice@hub/media on /Users/alice/nas
@@ -64,6 +76,15 @@ LANGUAGE_ENTRY = re.compile(r'"([^"]+)"')
 
 OPEN_TOOL = "open"
 OPEN_TIMEOUT_S = 10
+
+
+def _smb_refusal(output: str) -> str:
+    """The typed refusal mount_smbfs's words name, ``mount_failed`` for none."""
+    lowered = output.lower()
+    for phrase, code in SMB_REFUSALS:
+        if phrase.lower() in lowered:
+            return code
+    return "mount_failed"
 
 
 class DarwinPlatform(ClientPlatform):
@@ -131,8 +152,10 @@ class DarwinPlatform(ClientPlatform):
             credentials_path: The credentials file.
 
         Raises:
-            ShareAttachError: ``credentials_missing`` without the file,
-                ``mount_failed`` with the tool's own words otherwise.
+            ShareAttachError: ``credentials_missing`` without the file; the
+                share refusal the tool's words name, ``share_login_rejected``
+                for a wrong username or password among them; ``mount_failed``
+                with the tool's own words for anything else.
         """
         host, share = share_parts(share_url)
         if not host or not share:
@@ -151,7 +174,7 @@ class DarwinPlatform(ClientPlatform):
         except OSError as error:
             raise ShareAttachError("mount_failed", detail=str(error)[:200])
         if code != 0:
-            raise ShareAttachError("mount_failed", detail=output.strip()[-200:])
+            raise ShareAttachError(_smb_refusal(output), detail=output.strip()[-200:])
 
     def detach_share(self, *, location: str) -> None:
         """Unmount the share at a location with ``umount``.

@@ -18,7 +18,9 @@ Exit statuses are the typed codes in ``constants.CLIENT_MOUNT_HELPER_EXIT_CODES`
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
+import re
 import subprocess
 import sys
 
@@ -35,9 +37,32 @@ EXIT_MOUNTPOINT_NOT_EMPTY = 4
 EXIT_CREDENTIALS_MISSING = 5
 EXIT_MOUNT_FAILED = 6
 EXIT_UNMOUNT_FAILED = 7
+EXIT_SHARE_LOGIN_REJECTED = 8
+EXIT_SHARE_ACCESS_DENIED = 9
+EXIT_SHARE_NOT_FOUND = 10
+EXIT_SHARE_UNREACHABLE = 11
 
 CIFS_TYPE = "cifs"
 MOUNT_TIMEOUT_S = 90
+# What ``mount.cifs`` prints for a failure: ``mount error(13): Permission
+# denied``. The number is the errno the kernel answered with.
+MOUNT_ERROR_PATTERN = re.compile(r"mount error\((\d+)\)")
+# The errnos the kernel answers a share mount with, and what each means.
+# EACCES is both a rejected login and a share this account may not use; the
+# kernel log tells them apart.
+ERRNO_ACCESS = 13
+ERRNO_EXITS = {
+    6: EXIT_SHARE_NOT_FOUND,  # ENXIO: no share by that name
+    2: EXIT_SHARE_UNREACHABLE,  # ENOENT: the host did not answer
+    110: EXIT_SHARE_UNREACHABLE,  # ETIMEDOUT
+    111: EXIT_SHARE_UNREACHABLE,  # ECONNREFUSED
+    113: EXIT_SHARE_UNREACHABLE,  # EHOSTUNREACH
+}
+# The kernel's line for a session setup the server rejected, which is what
+# a wrong username or password comes back as.
+KERNEL_LOGIN_REJECTED_MARK = "Send error in SessSetup"
+KERNEL_LOG_COMMAND = ["journalctl", "-k", "-o", "cat", "--no-pager", "--since"]
+KERNEL_LOG_TIMEOUT_S = 10
 PROC_MOUNTS_PATH = "/proc/mounts"
 PROC_MOUNTS_ESCAPES = (
     ("\\", "\\134"),
@@ -164,7 +189,52 @@ def _mount(caller, arguments, run_command) -> int:
         return EXIT_CREDENTIALS_MISSING
     options = f"credentials={credentials},uid={caller.pw_uid},gid={caller.pw_gid}"
     command = ["mount", "-t", CIFS_TYPE, share, location, "-o", options]
-    return _run(command, run_command, failure=EXIT_MOUNT_FAILED)
+    started_at = datetime.datetime.now()
+    status, text = _run(command, run_command, failure=EXIT_MOUNT_FAILED)
+    if status == EXIT_MOUNT_FAILED:
+        return _judge_mount_failure(text, started_at, run_command)
+    return status
+
+
+def _judge_mount_failure(text: str, started_at, run_command) -> int:
+    """The typed exit for a mount the kernel refused.
+
+    Args:
+        text: What mount.cifs printed.
+        started_at: When the mount was started, so only this mount's
+            kernel lines are read.
+        run_command: The ``subprocess.run`` to read the kernel log with.
+
+    Returns:
+        A share exit code when the errno names one, ``EXIT_MOUNT_FAILED``
+        otherwise.
+    """
+    match = MOUNT_ERROR_PATTERN.search(text)
+    if match is None:
+        return EXIT_MOUNT_FAILED
+    errno_value = int(match.group(1))
+    if errno_value != ERRNO_ACCESS:
+        return ERRNO_EXITS.get(errno_value, EXIT_MOUNT_FAILED)
+    if KERNEL_LOGIN_REJECTED_MARK in _kernel_log_since(started_at, run_command):
+        return EXIT_SHARE_LOGIN_REJECTED
+    return EXIT_SHARE_ACCESS_DENIED
+
+
+def _kernel_log_since(started_at, run_command) -> str:
+    """The kernel's lines since a moment, empty when they cannot be read."""
+    since = started_at.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        result = run_command(
+            KERNEL_LOG_COMMAND + [since],
+            capture_output=True,
+            text=True,
+            timeout=KERNEL_LOG_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout or ""
 
 
 def _unmount(caller, arguments, run_command) -> int:
@@ -176,7 +246,8 @@ def _unmount(caller, arguments, run_command) -> int:
     real = os.path.realpath(location)
     if not is_under(caller.pw_dir, real) or not is_cifs_mounted(real):
         return EXIT_MOUNTPOINT_INVALID
-    return _run(["umount", real], run_command, failure=EXIT_UNMOUNT_FAILED)
+    status, _ = _run(["umount", real], run_command, failure=EXIT_UNMOUNT_FAILED)
+    return status
 
 
 def _judge_location(caller, location: str) -> "str | None":
@@ -231,18 +302,25 @@ def _judge_credentials(caller, path: str) -> "str | None":
     return real
 
 
-def _run(command: list, run_command, *, failure: int) -> int:
+def _run(command: list, run_command, *, failure: int) -> tuple:
+    """Run one tool, passing its words on.
+
+    Returns:
+        ``(status, text)``: ``EXIT_OK`` and empty text, or the failure status
+        and what the tool printed, which also goes to stderr.
+    """
     try:
         result = run_command(
             command, capture_output=True, text=True, timeout=MOUNT_TIMEOUT_S
         )
     except (OSError, subprocess.SubprocessError) as error:
         sys.stderr.write(f"{error}\n")
-        return failure
+        return failure, str(error)
     if result.returncode != 0:
-        sys.stderr.write((result.stderr or result.stdout or "").strip()[-400:] + "\n")
-        return failure
-    return EXIT_OK
+        text = (result.stderr or result.stdout or "").strip()[-400:]
+        sys.stderr.write(text + "\n")
+        return failure, text
+    return EXIT_OK, ""
 
 
 if __name__ == "__main__":

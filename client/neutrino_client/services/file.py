@@ -10,9 +10,11 @@ the path this person typed, nothing more: what is attached is this run's
 own. The reconcile remounts what this run attached and lost, which is what
 brings a share back after the network dropped; a record from an earlier run
 waits for the person to ask. A record whose credentials file is gone reports
-``credentials_missing`` and waits for the password to be entered again. A
-record that names no hub was written by an older build and is dropped at
-start, after whatever it left mounted is unmounted by path.
+``credentials_missing`` and waits for the password to be entered again, and
+one the share refused for its login, its access or its name waits the same
+way: mounting it again would only be refused again. A record that names no
+hub was written by an older build and is dropped at start, after whatever it
+left mounted is unmounted by path.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -23,7 +25,10 @@ import hashlib
 import os
 import threading
 
-from neutrino_client.constants import CLIENT_MOUNT_RECHECK_INTERVAL_S
+from neutrino_client.constants import (
+    CLIENT_MOUNT_RECHECK_INTERVAL_S,
+    CLIENT_MOUNT_SETTLED_CODES,
+)
 from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
 from neutrino_client.services.base import ServiceTypeHandler, find_entry
 
@@ -425,9 +430,11 @@ class FileServiceHandler(ServiceTypeHandler):
         except ShareAttachError as error:
             self._problems[record_id] = _share_refusal(error)
             self._stages.pop(record_id, None)
-            # A declined authorization is not retried on the timer: the
-            # record waits for the person to ask again.
-            if error.code == "mount_not_authorized":
+            # A refusal the person has to act on, a wrong password first
+            # among them, is not retried on the timer: the record waits for
+            # the login or the share to be changed. A host out of reach is
+            # retried, since the network comes back on its own.
+            if error.code in CLIENT_MOUNT_SETTLED_CODES:
                 self._attached.discard(record_id)
             return
         except PlatformUnsupportedError:
