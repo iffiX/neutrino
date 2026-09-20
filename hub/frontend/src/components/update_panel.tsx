@@ -229,9 +229,7 @@ function ScanResult({ scan }: ScanResultProps) {
   }
   if (!scan.is_newer) {
     return (
-      <span className="field_hint">
-        {t("ui.settings.update_on_newest", { version: latest.version })}
-      </span>
+      <span className="field_hint">{t("ui.settings.update_on_newest")}</span>
     );
   }
   return (

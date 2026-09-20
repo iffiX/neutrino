@@ -69,7 +69,7 @@
   "ui.settings.update_major": "{version} 是新的大版本。大版本会改变配置的形状，要按升级指南手动完成，这个面板不安装它。",
   "ui.settings.update_none_published": "还没有发布过任何版本。",
   "ui.settings.update_notes": "发行说明",
-  "ui.settings.update_on_newest": "这个 hub 已经是最新版本 {version}。",
+  "ui.settings.update_on_newest": "这个 hub 已经是最新版本。",
   "ui.settings.update_output": "安装日志",
   "ui.settings.update_preparing": "正在下载并校验安装包…",
   "ui.settings.update_reason.disk_space_short": "磁盘空间不够",

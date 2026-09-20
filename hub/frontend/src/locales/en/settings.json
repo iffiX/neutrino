@@ -69,7 +69,7 @@
   "ui.settings.update_major": "{version} is a new major version. A major changes the shape of the configuration, so the upgrade guide carries the box across by hand; this panel does not install it.",
   "ui.settings.update_none_published": "No release has been published yet.",
   "ui.settings.update_notes": "Release notes",
-  "ui.settings.update_on_newest": "This hub is on the newest release, {version}.",
+  "ui.settings.update_on_newest": "This hub is on the newest version.",
   "ui.settings.update_output": "Install log",
   "ui.settings.update_preparing": "Downloading and checking the package…",
   "ui.settings.update_reason.disk_space_short": "the disk was short of room",
