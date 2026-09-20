@@ -134,6 +134,12 @@ phase "the same version, installed over itself"
 NEUTRINO_PACKAGE="$PACKAGE" python3 -m pytest "$HERE/test_reinstall.py" -q
 ran $?
 
+# The same package again, this time through the unit the panel hands an
+# update to: it installs, gates, and rolls back when the gate cannot pass.
+phase "the hub updating itself"
+NEUTRINO_PACKAGE="$PACKAGE" python3 -m pytest "$HERE/test_panel_update.py" -q
+ran $?
+
 phase "reset"
 nhub reset all > /tmp/reset.log 2>&1
 ran $?
@@ -151,7 +157,8 @@ ran $?
 phase "the panel, every page"
 python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
     --ignore="$HERE/test_reset_hands_back.py" \
-    --ignore="$HERE/test_reinstall.py" --ignore="$HERE/test_mode_matrix.py" \
+    --ignore="$HERE/test_reinstall.py" --ignore="$HERE/test_panel_update.py" \
+    --ignore="$HERE/test_mode_matrix.py" \
     --ignore="$HERE/test_install_a_module.py" \
     --ignore="$HERE/test_device_lifecycle.py" \
     --ignore="$HERE/test_agent_channel.py"

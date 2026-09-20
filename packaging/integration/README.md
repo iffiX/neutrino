@@ -17,6 +17,7 @@ reconfigures a box's network, installs packages, or both.
 | `test_install_footprint.py` | That a server or side_gateway install left the machine addressing itself. |
 | `test_mode_matrix.py` | Every mode, every ordered switch between them, the one-arm and multi-uplink shapes, and the proxy's behaviour in each — the contract network.md states. |
 | `test_reinstall.py` | That installing the same version over a working box keeps every configuration file and restarts what runs the new code. |
+| `test_panel_update.py` | That the update unit the panel hands a package to installs it, holds its gate, records the result, and puts the previous package back when the gate cannot pass. |
 | `test_agent_channel.py` | The channel end to end: the link's role and fingerprint, the join over pinned TLS, and a tampered link refused on the device. |
 | `test_device_lifecycle.py` | Every transition of the binding: scan, name, install, self-update, the two protocol refusals, the hub forgetting, the link back, and leaving. |
 | `test_reset_hands_back.py` | That `nhub reset all` gave the network back. |
