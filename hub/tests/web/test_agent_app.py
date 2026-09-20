@@ -44,12 +44,32 @@ class StubRuntime:
         return None
 
 
+class StubGatewayApplier:
+    """The gateway applier as the panel's start reaches for it."""
+
+    is_installed = True
+    applied = 0
+
+    def apply(self) -> str:
+        StubGatewayApplier.applied += 1
+        return "applied"
+
+
+class StubGatewayConfig:
+    def __init__(self, hub_key):
+        self.hub_key = hub_key
+
+
 @pytest.fixture
 def factories(monkeypatch):
     monkeypatch.setattr(app_module, "PanelRuntime", StubRuntime)
     monkeypatch.setattr(app_module, "PanelUsageCollector", StubUsageCollector)
     monkeypatch.setattr(app_module, "_shared_runtime", None)
     monkeypatch.setattr(app_module, "_usage_collector", None)
+    # No gateway on the box the tests run on, whatever the box has.
+    StubGatewayApplier.is_installed = False
+    StubGatewayApplier.applied = 0
+    monkeypatch.setattr(app_module, "CliproxyApiConfigApplier", StubGatewayApplier)
     return app_module
 
 
@@ -95,3 +115,36 @@ def test_both_apps_share_one_runtime(factories):
     agent = factories.create_agent_app()
 
     assert panel.state.runtime is agent.state.runtime
+
+
+@pytest.fixture
+def gateway(factories):
+    StubGatewayApplier.is_installed = True
+    return factories
+
+
+def test_the_panel_mints_the_hubs_gateway_key_at_start_when_the_box_has_none(
+    gateway, monkeypatch
+):
+    monkeypatch.setattr(gateway, "load_config", lambda: StubGatewayConfig(None))
+
+    gateway.create_app()
+
+    assert StubGatewayApplier.applied == 1
+
+
+def test_a_box_holding_the_hubs_key_applies_nothing_at_start(gateway, monkeypatch):
+    monkeypatch.setattr(gateway, "load_config", lambda: StubGatewayConfig(object()))
+
+    gateway.create_app()
+
+    assert StubGatewayApplier.applied == 0
+
+
+def test_a_box_without_the_gateway_applies_nothing_at_start(gateway, monkeypatch):
+    StubGatewayApplier.is_installed = False
+    monkeypatch.setattr(gateway, "load_config", lambda: StubGatewayConfig(None))
+
+    gateway.create_app()
+
+    assert StubGatewayApplier.applied == 0

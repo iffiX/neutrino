@@ -364,20 +364,15 @@ class PublishedServiceCache:
     def _ai_state(self, is_active: bool) -> tuple[int, list[str], bool]:
         """The gateway's port, served models and health.
 
-        With no client key to probe with, the unit's own state is the health
-        and the model list stays empty.
+        With no key to probe with, which is a box that has never applied the
+        gateway, the unit's own state is the health and the model list stays
+        empty.
 
         Returns:
             ``(port, models, is_healthy)``.
         """
         config = load_cliproxyapi_config()
-        key = None
-        for stored in config.client_keys:
-            try:
-                key = stored.open_key()
-                break
-            except ValueError:
-                continue
+        key = config.probe_key()
         if key is None or not is_active:
             return config.listen_port, [], is_active
         is_answered, models = self._served_models.served(

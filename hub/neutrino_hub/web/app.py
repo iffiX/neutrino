@@ -10,12 +10,16 @@ The frontend is a single-page app: any panel path that is not an API route, a
 websocket, or a real file falls through to ``index.html``.
 """
 
+import logging
+import subprocess
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 
 from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.web import ws
 from neutrino_hub.web.constants import WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
@@ -75,6 +79,7 @@ API_ROUTERS = (
     module_zfs.router,
 )
 
+LOGGER = logging.getLogger(__name__)
 _shared_runtime = None
 _usage_collector = None
 
@@ -89,6 +94,7 @@ def create_app() -> FastAPI:
     app.state.runtime = _runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.add_middleware(OriginGuardMiddleware)
+    _settle_gateway_key()
     _start_samplers()
 
     for router in API_ROUTERS:
@@ -139,6 +145,24 @@ def _runtime() -> PanelRuntime:
     if _shared_runtime is None:
         _shared_runtime = PanelRuntime()
     return _shared_runtime
+
+
+def _settle_gateway_key() -> None:
+    """The hub's own gateway key, made true when the panel starts.
+
+    Setup and every apply mint it, so a box set up on this hub always has
+    one. A box set up before the hub held a key of its own has a gateway
+    running on an empty key list, which asks nobody for a key; it converges
+    here, once, and the gateway restarts on the list with the hub's key in
+    it.
+    """
+    applier = CliproxyApiConfigApplier()
+    if not applier.is_installed or load_config().hub_key is not None:
+        return
+    try:
+        LOGGER.info("gateway: %s", applier.apply())
+    except (VaultLockedError, ValueError, OSError, subprocess.SubprocessError) as error:
+        LOGGER.warning("gateway key not minted: %s", error)
 
 
 def _start_samplers() -> None:

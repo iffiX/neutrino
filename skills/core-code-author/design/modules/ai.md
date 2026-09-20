@@ -65,7 +65,7 @@ mapping is whatever the switch wrote).
 | Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal |
 | Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code), status, revocation — immediate, never staged |
-| Access | Client keys for machines no agent manages, plus the endpoint line; managed devices are keyed automatically over the agent channel |
+| Access | Client keys for machines no agent manages, plus the endpoint line; managed devices are keyed automatically over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
 | Gateway port | `listen_port`, staged behind its own apply |
 
 ## How a client points its tools at the gateway

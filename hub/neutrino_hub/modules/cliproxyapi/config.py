@@ -114,10 +114,15 @@ class CliproxyApiConfig:
         client_keys: The keys devices authenticate with. A stored record
             without a seal is dropped on load, and whatever held it is issued
             a fresh key.
+        hub_key: The hub's own key, which it probes the gateway with. Minted
+            on the first apply and never handed out; it is what keeps the
+            gateway's key list from being empty, since an empty list is a
+            gateway that asks nobody for a key.
     """
 
     listen_port: int = CLIPROXYAPI_DEFAULT_PORT
     client_keys: list[CliproxyApiClientKey] = field(default_factory=list)
+    hub_key: "CliproxyApiClientKey | None" = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "CliproxyApiConfig":
@@ -128,13 +133,35 @@ class CliproxyApiConfig:
                 for entry in data.get("client_keys", [])
                 if _has_seal(entry)
             ],
+            hub_key=(
+                CliproxyApiClientKey.from_dict(data["hub_key"])
+                if _has_seal(data.get("hub_key"))
+                else None
+            ),
         )
 
     def to_dict(self) -> dict:
         return {
             "listen_port": self.listen_port,
             "client_keys": [key.to_dict() for key in self.client_keys],
+            "hub_key": self.hub_key.to_dict() if self.hub_key is not None else None,
         }
+
+    def probe_key(self) -> "str | None":
+        """The key material the hub probes the gateway with.
+
+        Returns:
+            The hub's own key once one is minted, else the first client key
+            that opens, else None.
+        """
+        for stored in [self.hub_key, *self.client_keys]:
+            if stored is None:
+                continue
+            try:
+                return stored.open_key()
+            except ValueError:
+                continue
+        return None
 
     def validate(self) -> None:
         """Check the configuration holds together.

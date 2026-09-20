@@ -28,7 +28,7 @@ key ever reaches git history.
 | `config/web/identity.json` | `identity.example.json` | no — the hub's own id and name, generated at setup |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
 | `config/ai/providers.json` | `providers.example.json` | no — keys live in the vault |
-| `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes — the AI gateway's client keys, sealed |
+| `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes — the AI gateway's client keys and the hub's own key, sealed |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
 | `config/devices/packages/*` | — | no (build artifacts, just large) |
 

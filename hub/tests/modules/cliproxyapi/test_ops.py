@@ -73,10 +73,41 @@ def test_the_client_key_is_unsealed_into_the_rendered_file(box):
 
     CliproxyApiConfigApplier().apply()
 
-    material = ops.load_config().client_keys[0].open_key()
-    assert _rendered(box)["api-keys"] == [material]
+    stored_config = ops.load_config()
+    material = stored_config.client_keys[0].open_key()
+    assert _rendered(box)["api-keys"] == [material, stored_config.hub_key.open_key()]
     stored = (box / "cliproxyapi" / "cliproxyapi.json").read_text(encoding="utf-8")
     assert material not in stored
+
+
+def test_the_first_apply_mints_the_hubs_own_key_and_later_ones_keep_it(box):
+    """The gateway's key list is never empty once applied: with no key at
+    all the gateway asks nobody for one, and the hub has nothing to probe
+    with."""
+    assert ops.load_config().hub_key is None
+
+    CliproxyApiConfigApplier().apply()
+    minted = ops.load_config().hub_key
+    CliproxyApiConfigApplier().apply()
+
+    assert minted is not None
+    assert minted.name == "hub"
+    assert ops.load_config().hub_key.id == minted.id
+    assert _rendered(box)["api-keys"] == [minted.open_key()]
+    stored = (box / "cliproxyapi" / "cliproxyapi.json").read_text(encoding="utf-8")
+    assert minted.open_key() not in stored
+
+
+def test_the_probe_key_is_the_hubs_own_before_any_clients(box):
+    config = ops.load_config()
+    assert config.probe_key() is None
+
+    config.client_keys.append(CliproxyApiClientKey.generated("laptop"))
+    assert config.probe_key() == config.client_keys[0].open_key()
+
+    CliproxyApiConfigApplier().apply()
+    applied = ops.load_config()
+    assert applied.probe_key() == applied.hub_key.open_key()
 
 
 def test_a_provider_with_no_sealed_key_renders_nothing(box):

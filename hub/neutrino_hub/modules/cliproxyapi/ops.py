@@ -18,11 +18,15 @@ from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import read_config, write_config, write_generated
 from neutrino_hub.utils.subprocess_run import run
 
-from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
+from neutrino_hub.modules.cliproxyapi.config import (
+    CliproxyApiClientKey,
+    CliproxyApiConfig,
+)
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_AUTH_RELATIVE,
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_GENERATED_NAME,
+    CLIPROXYAPI_HUB_KEY_NAME,
     CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE,
     CLIPROXYAPI_SERVED_MODELS_TTL_S,
     CLIPROXYAPI_UNIT,
@@ -142,6 +146,7 @@ class CliproxyApiConfigApplier:
             ValueError: If the stored settings do not validate, or a provider's
                 or a client's sealed key does not open.
         """
+        self._ensure_hub_key()
         rendered, enabled = self._render()
         ensure_auth_dir()
         write_generated(
@@ -152,6 +157,19 @@ class CliproxyApiConfigApplier:
             return "rendered; the service is not installed yet"
         run(["systemctl", "restart", CLIPROXYAPI_UNIT])
         return f"applied with {enabled} provider(s) and restarted"
+
+    @staticmethod
+    def _ensure_hub_key() -> None:
+        """Mint the hub's own gateway key when the stored state holds none.
+
+        Raises:
+            VaultLockedError: If there is no data key to seal it under.
+        """
+        config = load_config()
+        if config.hub_key is not None:
+            return
+        config.hub_key = CliproxyApiClientKey.generated(CLIPROXYAPI_HUB_KEY_NAME)
+        save_config(config)
 
     def refresh_unit(self, unit_text: str) -> bool:
         """Install or update the systemd unit, telling whether it changed.
@@ -207,7 +225,7 @@ class CliproxyApiConfigApplier:
             served model names.
         """
         if client_key is None:
-            return False, "no client key to probe with", []
+            return False, "no key to probe with; apply the gateway once", []
         try:
             response = httpx.get(
                 f"http://127.0.0.1:{port}/v1/models",
@@ -271,7 +289,11 @@ class CliproxyApiConfigApplier:
             config=config,
             providers=providers,
             api_keys=api_keys,
-            client_keys=[key.open_key() for key in config.client_keys],
+            client_keys=[
+                key.open_key()
+                for key in [*config.client_keys, config.hub_key]
+                if key is not None
+            ],
             management_key=management_key,
         ).render()
         return rendered, sum(1 for key in api_keys.values() if key)

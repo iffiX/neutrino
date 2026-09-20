@@ -472,8 +472,7 @@ def _status() -> CliproxyApiStatusView:
     served_models: list[str] = []
     if service.is_active:
         is_reachable, probe_message, served_models = applier.probe(
-            port=config.listen_port,
-            client_key=next((view.key for view in keys if view.key), None),
+            port=config.listen_port, client_key=config.probe_key()
         )
     providers = AiProviderRegistry().list_records()
     today = CliproxyApiUsageStore().today_counters()

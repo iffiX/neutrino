@@ -1,6 +1,7 @@
 {
   "_comment": "The AI gateway's own settings, managed from the AI page. Providers live in config/credentials/ai_providers.json; this holds only the listen port and the client keys devices authenticate with. Rendered into CLIProxyAPI's YAML by the panel — never edit the generated file.",
-  "_comment_fields": "Each client key: id (panel-assigned), name (the device or person it is for), key_sealed (the key itself, sealed under the vault's data key, so this file carries no key material), created_at. The list ships empty; the panel fills it, and a record without a seal is dropped on load.",
+  "_comment_fields": "Each client key: id (panel-assigned), name (the device or person it is for), key_sealed (the key itself, sealed under the vault's data key, so this file carries no key material), created_at. The list ships empty; the panel fills it, and a record without a seal is dropped on load. hub_key is the hub's own key in the same shape, minted on the first apply and never handed out: the hub probes the gateway with it, and it keeps the gateway's key list from being empty.",
   "listen_port": 8317,
-  "client_keys": []
+  "client_keys": [],
+  "hub_key": null
 }
