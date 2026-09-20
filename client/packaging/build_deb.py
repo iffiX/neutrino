@@ -46,25 +46,19 @@ from neutrino_client.constants import (  # noqa: E402
 CLIENT_ROOT = payload.CLIENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
-# What the window itself cannot open without: the C stack its bindings load,
-# and the authorization a mount goes through. Either WebKit2 ABI serves the
-# window, so either one's library satisfies the package.
+# Everything a feature of the client runs on: the C stack the window's
+# bindings load, the authorization and the tool a mount goes through, the
+# tray indicator, and what the RustDesk viewer the package carries loads
+# (upstream's own list, with the alternatives Debian's t64 transition split
+# names over). All of it is depended on, so a package that installed is a
+# client whose every feature works; `apt install ./<file>.deb` brings the
+# list in, and `dpkg -i` stops and names what is missing.
 RUNTIME_DEPENDENCIES = (
     "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
     "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
     "libgirepository-1.0-1",
     "libgtk-3-0t64 | libgtk-3-0",
     "polkitd | policykit-1",
-)
-
-# What one feature needs and the rest of the client does not: the tray
-# indicator, a share mount, and what the RustDesk viewer the package carries
-# loads (upstream's own list, with the alternatives Debian's t64 transition
-# split names over). Recommended rather than depended on: `apt` installs
-# them, `dpkg -i` still configures the package without them, and a feature
-# whose tooling is missing says so on its own row rather than keeping the
-# whole client from installing.
-RUNTIME_RECOMMENDATIONS = (
     "gir1.2-ayatanaappindicator3-0.1",
     "cifs-utils",
     "libxcb-randr0",
@@ -89,7 +83,6 @@ Section: net
 Priority: optional
 Architecture: {architecture}
 Depends: {depends}
-Recommends: {recommends}
 Maintainer: {maintainer}
 Description: Neutrino client
  A person's window onto the services a Neutrino Hub publishes for them:
@@ -209,7 +202,6 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         version=version,
         architecture=architecture,
         depends=", ".join(RUNTIME_DEPENDENCIES),
-        recommends=", ".join(RUNTIME_RECOMMENDATIONS),
         maintainer=maintainer,
     )
     payload.write(tree / "DEBIAN/control", control)

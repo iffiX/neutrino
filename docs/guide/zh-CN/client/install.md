@@ -51,7 +51,13 @@ sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 
 :::
 
-Linux 上的包声明了对 WebKitGTK、托盘指示器、cifs-utils 和 polkitd 的依赖，包管理器一并装上。窗口从应用菜单的 Neutrino Client 打开，或者运行 `nclient gui`。
+`apt` 和 `dnf` 会把依赖和包一起装上。
+
+::: warning
+不要用 `dpkg -i` 或 `rpm -i` 安装：它们不装任何依赖。如果已经装了，运行 `sudo apt -f install`（Debian 系）或 `sudo dnf install <它列出的包>`（Fedora 系）完成安装。
+:::
+
+Linux 上的包声明了对 WebKitGTK、托盘指示器、cifs-utils、polkitd 以及自带桌面查看器所需库的依赖。窗口从应用菜单的 Neutrino Client 打开，或者运行 `nclient gui`。
 
 Windows 上也能双击 msi。安装程序显示一个把 `nclient` 命令加进 PATH 的选项；不加也能从开始菜单打开窗口。机器上没有 WebView2 运行时的话，安装程序顺带装上。卸载程序显示一个保留这个人配置的选项。
 

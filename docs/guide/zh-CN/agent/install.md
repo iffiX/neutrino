@@ -66,6 +66,12 @@ sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm
 
 :::
 
+`apt` 和 `dnf` 会把依赖和包一起装上。
+
+::: warning
+不要用 `dpkg -i` 或 `rpm -i` 安装：它们不装任何依赖。如果已经装了，运行 `sudo apt -f install`（Debian 系）或 `sudo dnf install <它列出的包>`（Fedora 系）完成安装。
+:::
+
 ARM64 机器换成 `_arm64.deb` 或 `.aarch64.rpm`。包自带解释器和 RustDesk 主机，它的 GTK 和 X 依赖是给 RustDesk 主机用的。装完之后用 `sudo nagent join` 接入，命令见上文。
 
 ## hub 自己的被控端

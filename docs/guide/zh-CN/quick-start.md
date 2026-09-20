@@ -23,6 +23,8 @@ title: 快速上手
    sudo apt install ./neutrino-hub_0.3.0_amd64.deb
    ```
 
+   `apt` 会一并装上依赖；`dpkg -i` 不会，用它装了的话运行 `sudo apt -f install` 完成安装。下面的被控端和客户端同理。
+
 1. 启动向导。
 
    ```bash

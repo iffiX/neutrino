@@ -50,13 +50,13 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 # Either WebKit2 ABI serves the window, and the family splits them over two
 # packages: Fedora 41 and up carry webkit2gtk4.1 alone, RHEL 9 webkit2gtk3
 # alone, which is the 4.0 ABI. A rich dependency takes either.
+# Everything a feature of the client runs on is required, so a package that
+# installed is a client whose every feature works.
 RUNTIME_REQUIRES = (
     "(webkit2gtk4.1 or webkit2gtk3)",
     "gobject-introspection",
     "gtk3",
     "polkit",
-)
-RUNTIME_RECOMMENDS = (
     "libayatana-appindicator-gtk3",
     "cifs-utils",
     "libxcb",
@@ -79,7 +79,6 @@ License:        MIT
 URL:            https://github.com/iffiX/neutrino
 BuildArch:      {architecture}
 {requires}
-{recommends}
 Packager:       {packager}
 
 # The payload is prebuilt and compiled, so none of rpmbuild's opinions about
@@ -193,9 +192,6 @@ def main() -> int:
                 version=version,
                 architecture=architecture,
                 requires="\n".join(f"Requires:       {n}" for n in RUNTIME_REQUIRES),
-                recommends="\n".join(
-                    f"Recommends:     {n}" for n in RUNTIME_RECOMMENDS
-                ),
                 packager=arguments.packager,
                 staged=staged,
                 prefix=payload.INSTALL_PREFIX,

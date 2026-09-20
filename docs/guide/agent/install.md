@@ -54,6 +54,12 @@ sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm
 
 :::
 
+`apt` and `dnf` install the dependencies with the package.
+
+::: warning
+Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies. If you already did, run `sudo apt -f install` (Debian family) or `sudo dnf install <the packages it named>` (Fedora family) to finish the install.
+:::
+
 On ARM64 the file is `neutrino-agent_0.3.0_arm64.deb` or `neutrino-agent-0.3.0-1.aarch64.rpm`. The package includes its own interpreter and the RustDesk host; the desktop libraries it depends on are for that host. The service starts on install and binds to a hub with `sudo nagent join '<link>'`; `--yes` replaces an existing binding.
 
 ## The hub's own agent

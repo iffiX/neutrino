@@ -57,6 +57,9 @@
 
 ## 安装
 
+> [!WARNING]
+> 不要用 `dpkg -i` 或 `rpm -i` 安装：它们不装任何依赖。如果已经装了，运行 `sudo apt -f install`（Debian 系）或 `sudo dnf install <它列出的包>`（Fedora 系）完成安装。
+
 <details>
 <summary><b>中枢</b> · Debian、Ubuntu、Raspberry Pi OS</summary>
 

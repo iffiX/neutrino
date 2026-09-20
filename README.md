@@ -61,6 +61,9 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 
 ## Install
 
+> [!WARNING]
+> Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies. If you already did, run `sudo apt -f install` (Debian family) or `sudo dnf install <the packages it named>` (Fedora family) to finish the install.
+
 <details><summary><b>Hub · Debian, Ubuntu, Raspberry Pi OS</b></summary>
 
 ```bash

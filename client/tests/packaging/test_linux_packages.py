@@ -80,7 +80,6 @@ def spec():
         version="9.9.9",
         architecture="x86_64",
         requires="",
-        recommends="",
         packager="somebody",
         staged="/staged",
         prefix=payload.INSTALL_PREFIX,
@@ -169,25 +168,22 @@ def test_the_deb_carries_the_licences_of_everything_in_it(deb):
     ]
 
 
-def test_the_deb_names_the_c_stack_and_no_python(deb):
-    """The window's stack is depended on; what one feature needs is only
-    recommended, so `dpkg -i` still configures the package and a missing
-    tool shows on its own row."""
+def test_the_deb_depends_on_every_features_stack_and_no_python(deb):
+    """Everything a feature runs on is a dependency, the mount tool and the
+    tray indicator included, so a package that installed is a client whose
+    every feature works; nothing is merely recommended."""
     control = (deb / "DEBIAN/control").read_text()
     depends = next(line for line in control.splitlines() if line.startswith("Depends:"))
-    recommends = next(
-        line for line in control.splitlines() if line.startswith("Recommends:")
-    )
 
     assert "Architecture: amd64" in control
     assert "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0" in depends
     assert "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37" in depends
     assert "polkitd | policykit-1" in depends
     assert "libgtk-3-0t64 | libgtk-3-0" in depends
-    assert "gir1.2-ayatanaappindicator3-0.1" in recommends
-    assert "cifs-utils" in recommends
-    assert "gstreamer1.0-pipewire" in recommends
-    assert "cifs-utils" not in depends
+    assert "gir1.2-ayatanaappindicator3-0.1" in depends
+    assert "cifs-utils" in depends
+    assert "gstreamer1.0-pipewire" in depends
+    assert "Recommends:" not in control
     assert "python3" not in control.split("Description:")[0]
 
 
@@ -262,24 +258,11 @@ def test_the_rpm_names_the_rhel_family_libraries(rpm):
     package, RHEL 9 the 4.0 one."""
     assert "(webkit2gtk4.1 or webkit2gtk3)" in build_rpm.RUNTIME_REQUIRES
     assert "polkit" in build_rpm.RUNTIME_REQUIRES
-    assert "libayatana-appindicator-gtk3" in build_rpm.RUNTIME_RECOMMENDS
-    assert "cifs-utils" in build_rpm.RUNTIME_RECOMMENDS
-    assert "pipewire-gstreamer" in build_rpm.RUNTIME_RECOMMENDS
+    assert "libayatana-appindicator-gtk3" in build_rpm.RUNTIME_REQUIRES
+    assert "cifs-utils" in build_rpm.RUNTIME_REQUIRES
+    assert "pipewire-gstreamer" in build_rpm.RUNTIME_REQUIRES
     assert not [name for name in build_rpm.RUNTIME_REQUIRES if "python" in name]
-    assert "Recommends:" in build_rpm.SPEC.format(
-        name="n",
-        version="1",
-        architecture="x86_64",
-        requires="",
-        recommends="Recommends:     cifs-utils",
-        packager="p",
-        staged="/s",
-        prefix="/opt/neutrino_client",
-        helper_dir="/usr/libexec/neutrino_client",
-        desktop="d",
-        action="a",
-        stop="",
-    )
+    assert "Recommends:" not in build_rpm.SPEC
 
 
 def test_the_rpm_asks_every_resident_to_quit_before_it_takes_their_files(spec):

@@ -51,7 +51,13 @@ sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 
 :::
 
-On Linux the package is compiled and depends on WebKitGTK, the appindicator library, `cifs-utils` and polkit, which the package manager installs with it.
+`apt` and `dnf` install the dependencies with the package.
+
+::: warning
+Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies. If you already did, run `sudo apt -f install` (Debian family) or `sudo dnf install <the packages it named>` (Fedora family) to finish the install.
+:::
+
+On Linux the package is compiled and depends on WebKitGTK, the appindicator library, `cifs-utils`, polkit and the libraries the bundled desktop viewer loads.
 
 On Windows, double-clicking the `.msi` runs the same installer. It has two checkboxes. **Add the Neutrino Client to PATH** makes `nclient` available in a terminal, and **Keep my configuration** applies on removal. When WebView2 is absent the installer runs Microsoft's bootstrapper for it. The client sits in the taskbar corner.
 

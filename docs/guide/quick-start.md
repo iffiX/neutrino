@@ -23,6 +23,8 @@ On `home-hub`, install the package:
 sudo apt install ./neutrino-hub_0.3.0_amd64.deb
 ```
 
+`apt` installs the dependencies with it; `dpkg -i` does not, and `sudo apt -f install` finishes an install begun that way. The same holds for the agent and the client below.
+
 Then run the setup wizard:
 
 1. Run `sudo nhub setup`. The terminal prints an address with a one-time token. On a box that has a browser, the wizard opens in it.

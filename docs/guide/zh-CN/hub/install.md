@@ -34,6 +34,12 @@ sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
 
 :::
 
+`apt` 和 `dnf` 会把依赖和包一起装上。
+
+::: warning
+不要用 `dpkg -i` 或 `rpm -i` 安装：它们不装任何依赖。如果已经装了，运行 `sudo apt -f install`（Debian 系）或 `sudo dnf install <它列出的包>`（Fedora 系）完成安装。
+:::
+
 ARM64 机器换成 `_arm64.deb` 或 `.aarch64.rpm`。第一条 `epel-release` 只有 RHEL 系需要，因为 fail2ban、arp-scan 和 vnstat 来自 EPEL；Fedora 跳过这一条命令。包自带 Python，在 `/opt/neutrino/python` 下，与发行版的 Python 无关。
 
 ## 运行初始化

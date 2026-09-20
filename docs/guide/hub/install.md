@@ -39,6 +39,12 @@ sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
 
 :::
 
+`apt` and `dnf` install the dependencies with the package.
+
+::: warning
+Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies. If you already did, run `sudo apt -f install` (Debian family) or `sudo dnf install <the packages it named>` (Fedora family) to finish the install.
+:::
+
 On ARM64 the file is `neutrino-hub_0.3.0_arm64.deb` or `neutrino-hub-0.3.0-1.aarch64.rpm`. The package includes its own Python under `/opt/neutrino/python`. On the RHEL family, fail2ban, arp-scan and vnstat come from EPEL.
 
 ## Start the setup wizard
