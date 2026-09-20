@@ -10,6 +10,7 @@ that a refused restore is one that changed nothing. About answers one
 version per carried component.
 """
 
+import asyncio
 import hashlib
 import io
 import json
@@ -758,3 +759,419 @@ def test_a_truncated_archive_writes_nothing(client):
     assert response.status_code == 400
     assert response.json()["detail"] == {"code": "backup_unrecognized", "params": {}}
     assert list(config_dir.rglob("*")) == []
+
+
+# --- updating the hub itself ---
+
+
+class _UpdateTasks:
+    """The registry, remembering what it was asked to start."""
+
+    def __init__(self):
+        self.started = []
+        self.running_stream = None
+
+    def start(self, *, label, source):
+        self.started.append((label, source))
+        return SimpleNamespace(id="update-task", label=label)
+
+    def running(self, label: str):
+        return self.running_stream
+
+
+class _UpdateRuntime:
+    def __init__(self):
+        self.settings = {"listen_port": 8090}
+        self.tasks = _UpdateTasks()
+
+
+class _Release:
+    def __init__(self, version: str, *, size: int = 100):
+        self.version = version
+        self.tag = f"v{version}"
+        self.published_at = "2026-10-01T12:00:00Z"
+        self.notes = "notes"
+        self.page_url = f"https://example.invalid/{version}"
+        self.asset_name = f"neutrino-hub_{version}_amd64.deb"
+        self.asset_url = f"https://example.invalid/{self.asset_name}"
+        self.asset_size = size
+        self.checksums_url = "https://example.invalid/SHA256SUMS"
+
+
+class _Checker:
+    def __init__(self, latest=None, *, failure=None):
+        self.latest_release = latest
+        self.failure = failure
+
+    def latest(self):
+        if self.failure is not None:
+            raise self.failure
+        return self.latest_release
+
+
+class _Installer:
+    """An installer whose releases, unit and disk are the test's."""
+
+    def __init__(self, state, *, latest=None, failure=None):
+        self.checker = _Checker(latest, failure=failure)
+        self.state = state
+        self.is_active = False
+        self.rollback_available = True
+        self.rollback_present = False
+        self.prepared = []
+        self.launched = []
+        self.prepare_failure = None
+
+    def is_unit_active(self):
+        return self.is_active
+
+    def is_rollback_available(self, current):
+        return self.rollback_available
+
+    def is_rollback_present(self, current):
+        return self.rollback_present
+
+    def prepare(self, found, *, current, port, on_progress):
+        on_progress("downloading")
+        on_progress("100%")
+        if self.prepare_failure is not None:
+            raise self.prepare_failure
+        self.prepared.append((found.version, current, port))
+        return SimpleNamespace(to_version=found.version)
+
+    def launch(self, plan):
+        self.launched.append(plan)
+
+
+@pytest.fixture
+def update_box(monkeypatch, tmp_path):
+    """The update routes over a stub installer and a real state file."""
+    from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
+
+    state = HubUpdateStateFile(path=tmp_path / "state.json")
+    installer = _Installer(state)
+    monkeypatch.setattr(settings_router, "_update_installer", lambda: installer)
+    monkeypatch.setattr(settings_router, "is_packaged", lambda: True)
+    monkeypatch.setattr(settings_router, "HUB_VERSION", "0.3.0")
+    monkeypatch.setattr(
+        settings_router,
+        "free_bytes",
+        lambda size, *, is_rollback_fetched: (size * 4, 10_000),
+    )
+    monkeypatch.setattr(
+        settings_router, "check_space", lambda size, *, is_rollback_fetched: None
+    )
+    runtime = _UpdateRuntime()
+    app = FastAPI()
+    app.include_router(settings_router.router)
+    app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[get_runtime] = lambda: runtime
+    with TestClient(app) as opened:
+        yield opened, installer, runtime
+
+
+def _record(stage: str, **overrides):
+    from neutrino_hub.modules.hub_update.state import HubUpdateRecord
+
+    values = {
+        "stage": stage,
+        "from_version": "0.3.0",
+        "to_version": "0.3.1",
+        "started_at": "2026-09-20T15:00:00Z",
+    }
+    values.update(overrides)
+    return HubUpdateRecord(**values)
+
+
+def test_a_hub_that_never_updated_reads_its_version_and_no_record(update_box):
+    opened, _, _ = update_box
+
+    response = opened.get("/api/hub/setting/release")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "current": "0.3.0",
+        "is_packaged": True,
+        "update": None,
+        "task_id": None,
+    }
+
+
+def test_the_last_updates_record_is_read_as_written(update_box):
+    opened, installer, _ = update_box
+    installer.state.save(_record("installed", finished_at="f", output="done"))
+
+    body = opened.get("/api/hub/setting/release").json()
+
+    assert body["update"] == {
+        "stage": "installed",
+        "from_version": "0.3.0",
+        "to_version": "0.3.1",
+        "started_at": "2026-09-20T15:00:00Z",
+        "finished_at": "f",
+        "reason": "",
+        "output": "done",
+    }
+
+
+def test_an_install_whose_unit_is_gone_reads_as_interrupted(update_box):
+    opened, installer, _ = update_box
+    installer.state.save(_record("installing"))
+    installer.is_active = False
+
+    body = opened.get("/api/hub/setting/release").json()
+
+    assert body["update"]["stage"] == "failed"
+    assert body["update"]["reason"] == "update_interrupted"
+    assert installer.state.load().stage == "failed"
+
+
+def test_an_install_whose_unit_runs_reads_as_installing(update_box):
+    opened, installer, _ = update_box
+    installer.state.save(_record("installing"))
+    installer.is_active = True
+
+    body = opened.get("/api/hub/setting/release").json()
+
+    assert body["update"]["stage"] == "installing"
+
+
+def test_a_staging_under_way_names_its_task(update_box):
+    opened, installer, runtime = update_box
+    installer.state.save(_record("preparing"))
+    runtime.tasks.running_stream = SimpleNamespace(id="update-task")
+
+    body = opened.get("/api/hub/setting/release").json()
+
+    assert body["update"]["stage"] == "preparing"
+    assert body["task_id"] == "update-task"
+
+
+def test_a_checkout_says_so(update_box, monkeypatch):
+    opened, _, _ = update_box
+    monkeypatch.setattr(settings_router, "is_packaged", lambda: False)
+
+    assert opened.get("/api/hub/setting/release").json()["is_packaged"] is False
+    scan = opened.post("/api/hub/setting/release/scan")
+    assert scan.status_code == 409
+    assert scan.json()["detail"]["code"] == "hub_not_packaged"
+    install = opened.post("/api/hub/setting/release/install", json={"version": "0.3.1"})
+    assert install.status_code == 409
+    assert install.json()["detail"]["code"] == "hub_not_packaged"
+
+
+def test_a_scan_reads_the_newest_release_and_how_it_stands(update_box):
+    opened, installer, _ = update_box
+    installer.checker.latest_release = _Release("0.3.1", size=100)
+
+    body = opened.post("/api/hub/setting/release/scan").json()
+
+    assert body == {
+        "current": "0.3.0",
+        "latest": {
+            "version": "0.3.1",
+            "published_at": "2026-10-01T12:00:00Z",
+            "notes": "notes",
+            "page_url": "https://example.invalid/0.3.1",
+            "size_bytes": 100,
+        },
+        "is_newer": True,
+        "is_major": False,
+        "is_rollback_available": True,
+        "needed_bytes": 400,
+        "free_bytes": 10_000,
+        "is_space_enough": True,
+    }
+
+
+def test_a_scan_with_nothing_published_says_so(update_box):
+    opened, _, _ = update_box
+
+    body = opened.post("/api/hub/setting/release/scan").json()
+
+    assert body["latest"] is None
+    assert body["is_newer"] is False
+
+
+def test_a_scan_singles_out_a_new_major_and_a_missing_rollback(update_box):
+    opened, installer, _ = update_box
+    installer.checker.latest_release = _Release("1.0.0")
+    installer.rollback_available = False
+
+    body = opened.post("/api/hub/setting/release/scan").json()
+
+    assert body["is_newer"] is True
+    assert body["is_major"] is True
+    assert body["is_rollback_available"] is False
+
+
+def test_a_scan_says_when_the_disk_is_short(update_box, monkeypatch):
+    opened, installer, _ = update_box
+    installer.checker.latest_release = _Release("0.3.1", size=100)
+    monkeypatch.setattr(
+        settings_router, "free_bytes", lambda size, *, is_rollback_fetched: (400, 399)
+    )
+
+    body = opened.post("/api/hub/setting/release/scan").json()
+
+    assert body["is_space_enough"] is False
+    assert body["needed_bytes"] == 400
+    assert body["free_bytes"] == 399
+
+
+def test_a_scan_that_cannot_reach_the_releases_is_a_bad_gateway(update_box):
+    opened, installer, _ = update_box
+    installer.checker.failure = OSError("no route")
+
+    response = opened.post("/api/hub/setting/release/scan")
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "release_unreachable"
+
+
+def test_an_install_stages_the_confirmed_release_as_a_task(update_box):
+    opened, installer, runtime = update_box
+    installer.checker.latest_release = _Release("0.3.1")
+
+    response = opened.post(
+        "/api/hub/setting/release/install", json={"version": "0.3.1"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"task_id": "update-task"}
+    assert [label for label, _ in runtime.tasks.started] == ["hub_update"]
+    record = installer.state.load()
+    assert record.stage == "preparing"
+    assert record.from_version == "0.3.0"
+    assert record.to_version == "0.3.1"
+    for _, source in runtime.tasks.started:
+        asyncio.run(source.aclose())
+
+
+@pytest.mark.parametrize(
+    ("latest", "requested", "code"),
+    [
+        (None, "0.3.1", "release_not_latest"),
+        (_Release("0.3.2"), "0.3.1", "release_not_latest"),
+        (_Release("0.3.0"), "0.3.0", "release_not_newer"),
+        (_Release("1.0.0"), "1.0.0", "release_major"),
+    ],
+)
+def test_an_install_refuses_what_is_not_the_newest_newer_minor(
+    update_box, latest, requested, code
+):
+    opened, installer, runtime = update_box
+    installer.checker.latest_release = latest
+
+    response = opened.post(
+        "/api/hub/setting/release/install", json={"version": requested}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == code
+    assert runtime.tasks.started == []
+    assert installer.state.load() is None
+
+
+def test_an_install_refuses_while_one_is_under_way(update_box):
+    opened, installer, runtime = update_box
+    installer.checker.latest_release = _Release("0.3.1")
+    runtime.tasks.running_stream = SimpleNamespace(id="update-task")
+
+    response = opened.post(
+        "/api/hub/setting/release/install", json={"version": "0.3.1"}
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "update_in_progress"
+
+    runtime.tasks.running_stream = None
+    installer.is_active = True
+    response = opened.post(
+        "/api/hub/setting/release/install", json={"version": "0.3.1"}
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "update_in_progress"
+
+
+def test_an_install_refuses_when_the_disk_is_short(update_box, monkeypatch):
+    from neutrino_hub.exceptions import HubUpdateError
+
+    opened, installer, runtime = update_box
+    installer.checker.latest_release = _Release("0.3.1")
+
+    def short(size, *, is_rollback_fetched):
+        raise HubUpdateError(
+            "disk_space_short", path="/var/lib", needed_bytes=400, free_bytes=1
+        )
+
+    monkeypatch.setattr(settings_router, "check_space", short)
+
+    response = opened.post(
+        "/api/hub/setting/release/install", json={"version": "0.3.1"}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "disk_space_short",
+        "params": {"path": "/var/lib", "needed_bytes": 400, "free_bytes": 1},
+    }
+    assert runtime.tasks.started == []
+
+
+def test_an_install_that_cannot_reach_the_releases_is_a_bad_gateway(update_box):
+    opened, installer, _ = update_box
+    installer.checker.failure = OSError("no route")
+
+    response = opened.post(
+        "/api/hub/setting/release/install", json={"version": "0.3.1"}
+    )
+
+    assert response.status_code == 502
+
+
+async def _drained(source) -> list:
+    lines = []
+    async for line in source:
+        lines.append(line)
+    return lines
+
+
+def test_the_staging_task_relays_progress_and_hands_over(update_box, monkeypatch):
+    opened, installer, _ = update_box
+    found = _Release("0.3.1")
+
+    lines = asyncio.run(
+        _drained(settings_router._update_source(installer, found, port=8090))
+    )
+
+    assert lines == [
+        "staging neutrino-hub_0.3.1_amd64.deb of v0.3.1\n",
+        "downloading\n",
+        "100%\n",
+        "handing the install to systemd; the panel restarts now\n",
+    ]
+    assert installer.prepared == [("0.3.1", "0.3.0", 8090)]
+    assert [plan.to_version for plan in installer.launched] == ["0.3.1"]
+
+
+def test_a_staging_that_fails_records_why_and_ends_the_task_failed(update_box):
+    from neutrino_hub.exceptions import HubUpdateError
+
+    opened, installer, _ = update_box
+    installer.state.save(_record("preparing"))
+    installer.prepare_failure = HubUpdateError(
+        "package_sha256_mismatch", name="neutrino-hub_0.3.1_amd64.deb"
+    )
+    found = _Release("0.3.1")
+
+    with pytest.raises(HubUpdateError):
+        asyncio.run(
+            _drained(settings_router._update_source(installer, found, port=8090))
+        )
+
+    record = installer.state.load()
+    assert record.stage == "failed"
+    assert record.reason == "package_sha256_mismatch"
+    assert record.started_at == "2026-09-20T15:00:00Z"
+    assert record.finished_at.endswith("Z")
+    assert installer.launched == []

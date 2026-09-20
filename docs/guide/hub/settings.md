@@ -4,7 +4,7 @@ title: Settings
 
 # Settings
 
-The **Settings** page holds the password, the language, the theme, backup and restore, the versions, the upgrade order and the reset commands. This page takes them in that order.
+The **Settings** page holds the password, the language, the theme, backup and restore, the versions, updating the hub itself, the upgrade order and the reset commands. This page takes them in that order.
 
 ## Password, language and theme
 
@@ -42,11 +42,19 @@ After a restore, each AI subscription account signs in again, and the agents rec
 
 ![The About section](/guide/en/settings_about.webp)
 
+## Update
+
+**Update** installs a newer release of the hub on the box it runs on. Press **Check for updates**; the panel reads the newest release from GitHub and shows its version, date, size, notes, and how much disk room the install needs. When the release is newer, **Install** opens a confirmation. The package is downloaded and checked against the release's checksums, then systemd installs it outside the panel. The panel restarts, the page returns to the sign-in, and after you sign in the **Update** section says which version is running.
+
+For three minutes after the install, a health gate watches the panel and the router services. When they do not come up, the previous version's package is installed again and the section says so, with the reason and the install log. That package is fetched from the previous version's release the first time; a box installed from a build that has no release has none to fall back on, and the confirmation says so before you install.
+
+A new major version is not installed from here, because a major can change the shape of `config/`; the section says the upgrade guide applies. `sudo nhub update` does the same from a terminal and asks before it installs; `--yes` skips the question, and `--package` installs a package file you brought yourself.
+
 ## Upgrade
 
 The three packages share one version number. Install the new packages in this order:
 
-1. On the hub box, install the new hub package with the same command as the first install.
+1. On the hub box, press **Install** in the **Update** section, or install the new hub package with the same command as the first install.
 1. For each managed machine, select **Reinstall agent** in its drawer, or send it a fresh link.
 1. On each computer, install the new client package.
 

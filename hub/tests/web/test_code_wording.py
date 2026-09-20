@@ -25,6 +25,7 @@ CODED_CALLS = frozenset(
     {
         "AgentArtifactFetchError",
         "AiAccountRefusedError",
+        "HubUpdateError",
         "KeyMaterialError",
         "PasswordRefusedError",
         "ServiceFieldInvalidError",
@@ -32,6 +33,7 @@ CODED_CALLS = frozenset(
         "_bad_gateway",
         "_bad_request",
         "_coded_bad_request",
+        "_conflict",
         "_refusal",
     }
 )

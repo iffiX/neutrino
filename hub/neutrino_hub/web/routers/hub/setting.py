@@ -8,6 +8,8 @@ import asyncio
 import sys
 import tarfile
 import time
+from dataclasses import asdict
+from datetime import datetime, timezone
 
 import psutil
 from fastapi import (
@@ -21,7 +23,31 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 
-from neutrino_hub.exceptions import PasswordRefusedError, VaultPassphraseError
+from neutrino_hub.exceptions import (
+    HubUpdateError,
+    PasswordRefusedError,
+    VaultPassphraseError,
+)
+from neutrino_hub.modules.hub_update.constants import (
+    HUB_UPDATE_RELATION_CURRENT,
+    HUB_UPDATE_RELATION_MAJOR,
+    HUB_UPDATE_STAGE_FAILED,
+    HUB_UPDATE_STAGE_PREPARING,
+    HUB_UPDATE_STAGES_IN_UNIT,
+    HUB_UPDATE_TASK_LABEL,
+)
+from neutrino_hub.modules.hub_update.installer import (
+    HubUpdateInstaller,
+    check_space,
+    free_bytes,
+)
+from neutrino_hub.modules.hub_update.release import (
+    HubRelease,
+    HubReleaseChecker,
+    relation,
+)
+from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStateFile
+from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.modules.credentials.vault import (
     unwrap_data_key,
     write_state_key,
@@ -53,9 +79,15 @@ from neutrino_hub.web.identity import hub_name, set_hub_name
 from neutrino_hub.web.models import (
     AboutView,
     AcknowledgementView,
+    HubReleaseLatestView,
+    HubReleaseScanView,
+    HubReleaseView,
+    HubUpdateRecordView,
+    HubUpdateRequest,
     PanelSettings,
     PasswordChange,
     PasswordChangeResult,
+    TaskStarted,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub import HUB_VERSION
@@ -102,6 +134,16 @@ SETTINGS_ERROR_LANGUAGE_UNKNOWN = "language_unknown"
 SETTINGS_ERROR_THEME_UNKNOWN = "theme_unknown"
 # The 422 the page words when it is asked to name the hub nothing.
 SETTINGS_ERROR_HUB_NAME_REQUIRED = "hub_name_required"
+# The 409s and the 502 the update panel words.
+UPDATE_ERROR_NOT_PACKAGED = "hub_not_packaged"
+UPDATE_ERROR_IN_PROGRESS = "update_in_progress"
+UPDATE_ERROR_UNREACHABLE = "release_unreachable"
+UPDATE_ERROR_NOT_LATEST = "release_not_latest"
+UPDATE_ERROR_NOT_NEWER = "release_not_newer"
+UPDATE_ERROR_MAJOR = "release_major"
+# How long the staging task waits for a progress line before it looks again
+# at whether the staging is done.
+UPDATE_PROGRESS_WAIT_S = 0.5
 
 
 @router.get("", response_model=PanelSettings)
@@ -664,6 +706,251 @@ def about() -> AboutView:
         kernel=platform.release(),
         uptime_s=int(time.time() - psutil.boot_time()),
         acknowledgements=_acknowledgements(),
+    )
+
+
+@router.get("/release", response_model=HubReleaseView)
+def read_release(runtime: PanelRuntime = Depends(get_runtime)) -> HubReleaseView:
+    """The hub's own version and where its last update stands.
+
+    Args:
+        runtime: The shared runtime, for the staging task if one runs.
+
+    Returns:
+        The version, whether this hub can update itself, the last update's
+        record with a run that died marked as such, and the staging task.
+    """
+    installer = _update_installer()
+    running = runtime.tasks.running(HUB_UPDATE_TASK_LABEL)
+    record = installer.state.load()
+    is_in_unit = record is not None and record.stage in HUB_UPDATE_STAGES_IN_UNIT
+    record = installer.state.settle(
+        is_unit_active=installer.is_unit_active() if is_in_unit else False,
+        is_task_running=running is not None,
+    )
+    return HubReleaseView(
+        current=HUB_VERSION,
+        is_packaged=is_packaged(),
+        update=None if record is None else HubUpdateRecordView(**asdict(record)),
+        task_id=None if running is None else running.id,
+    )
+
+
+@router.post("/release/scan", response_model=HubReleaseScanView)
+async def scan_release() -> HubReleaseScanView:
+    """Read the newest release and how it stands to this hub.
+
+    Returns:
+        The newest release, or none published; whether it is newer, a new
+        major, and whether a rollback package can be had; the room the
+        update needs and has.
+
+    Raises:
+        HTTPException: 409 ``hub_not_packaged`` from a checkout, 502
+            ``release_unreachable`` when GitHub does not answer with a
+            release.
+    """
+    if not is_packaged():
+        raise _conflict(UPDATE_ERROR_NOT_PACKAGED)
+    installer = _update_installer()
+    try:
+        found = await asyncio.to_thread(installer.checker.latest)
+        is_rollback_available = found is not None and await asyncio.to_thread(
+            installer.is_rollback_available, HUB_VERSION
+        )
+    except (OSError, ValueError) as error:
+        raise _unreachable() from error
+    if found is None:
+        return HubReleaseScanView(current=HUB_VERSION)
+    standing = relation(HUB_VERSION, found.version)
+    needed, free = free_bytes(
+        found.asset_size,
+        is_rollback_fetched=not installer.is_rollback_present(HUB_VERSION),
+    )
+    return HubReleaseScanView(
+        current=HUB_VERSION,
+        latest=HubReleaseLatestView(
+            version=found.version,
+            published_at=found.published_at,
+            notes=found.notes,
+            page_url=found.page_url,
+            size_bytes=found.asset_size,
+        ),
+        is_newer=standing != HUB_UPDATE_RELATION_CURRENT,
+        is_major=standing == HUB_UPDATE_RELATION_MAJOR,
+        is_rollback_available=is_rollback_available,
+        needed_bytes=needed,
+        free_bytes=free,
+        is_space_enough=free >= needed,
+    )
+
+
+@router.post("/release/install", response_model=TaskStarted)
+async def install_release(
+    request: HubUpdateRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> TaskStarted:
+    """Stage the newest release and hand its install to systemd.
+
+    Args:
+        request: The version the person confirmed.
+        runtime: The shared runtime, whose task streams the staging.
+
+    Returns:
+        The job whose output ``/ws/hub/task`` streams; it ends as the panel
+        restarts under the new package.
+
+    Raises:
+        HTTPException: 409 ``hub_not_packaged``, ``update_in_progress``,
+            ``release_not_latest`` when the newest release is not the one
+            confirmed, ``release_not_newer``, ``release_major``, or
+            ``disk_space_short``; 502 ``release_unreachable``.
+    """
+    if not is_packaged():
+        raise _conflict(UPDATE_ERROR_NOT_PACKAGED)
+    installer = _update_installer()
+    if runtime.tasks.running(HUB_UPDATE_TASK_LABEL) is not None:
+        raise _conflict(UPDATE_ERROR_IN_PROGRESS)
+    if installer.is_unit_active():
+        raise _conflict(UPDATE_ERROR_IN_PROGRESS)
+    try:
+        found = await asyncio.to_thread(installer.checker.latest)
+    except (OSError, ValueError) as error:
+        raise _unreachable() from error
+    if found is None or found.version != request.version:
+        raise _conflict(
+            UPDATE_ERROR_NOT_LATEST, version="" if found is None else found.version
+        )
+    standing = relation(HUB_VERSION, found.version)
+    if standing == HUB_UPDATE_RELATION_CURRENT:
+        raise _conflict(UPDATE_ERROR_NOT_NEWER, version=found.version)
+    if standing == HUB_UPDATE_RELATION_MAJOR:
+        raise _conflict(UPDATE_ERROR_MAJOR, version=found.version)
+    try:
+        check_space(
+            found.asset_size,
+            is_rollback_fetched=not installer.is_rollback_present(HUB_VERSION),
+        )
+    except HubUpdateError as error:
+        raise _conflict(error.code, **error.params) from error
+    installer.state.save(
+        HubUpdateRecord(
+            stage=HUB_UPDATE_STAGE_PREPARING,
+            from_version=HUB_VERSION,
+            to_version=found.version,
+            started_at=_stamp_now(),
+        )
+    )
+    stream = runtime.tasks.start(
+        label=HUB_UPDATE_TASK_LABEL,
+        source=_update_source(installer, found, port=_listen_port(runtime)),
+    )
+    return TaskStarted(task_id=stream.id)
+
+
+async def _update_source(
+    installer: HubUpdateInstaller, found: HubRelease, *, port: int
+):
+    """Stage the release in a thread, relaying its progress, then hand over.
+
+    Args:
+        installer: What stages and launches.
+        found: The release to install.
+        port: The panel's port, for the unit's gate.
+
+    Yields:
+        Progress lines for the task stream.
+
+    Raises:
+        HubUpdateError: When the staging or the launch fails; the record
+            says why.
+    """
+    loop = asyncio.get_running_loop()
+    lines: asyncio.Queue = asyncio.Queue()
+
+    def say(line: str) -> None:
+        loop.call_soon_threadsafe(lines.put_nowait, line)
+
+    yield f"staging {found.asset_name} of {found.tag}\n"
+    staging = asyncio.ensure_future(
+        asyncio.to_thread(
+            installer.prepare, found, current=HUB_VERSION, port=port, on_progress=say
+        )
+    )
+    while not staging.done():
+        try:
+            line = await asyncio.wait_for(lines.get(), timeout=UPDATE_PROGRESS_WAIT_S)
+        except asyncio.TimeoutError:
+            continue
+        yield f"{line}\n"
+    while not lines.empty():
+        yield f"{lines.get_nowait()}\n"
+    try:
+        plan = staging.result()
+    except HubUpdateError as error:
+        _record_failure(installer.state, found, error)
+        raise
+    yield "handing the install to systemd; the panel restarts now\n"
+    await asyncio.to_thread(installer.launch, plan)
+
+
+def _record_failure(
+    state: HubUpdateStateFile, found: HubRelease, error: HubUpdateError
+) -> None:
+    """Write why the staging stopped, keeping when it started."""
+    record = state.load()
+    started_at = record.started_at if record is not None else _stamp_now()
+    state.save(
+        HubUpdateRecord(
+            stage=HUB_UPDATE_STAGE_FAILED,
+            from_version=HUB_VERSION,
+            to_version=found.version,
+            started_at=started_at,
+            finished_at=_stamp_now(),
+            reason=error.code,
+            output=str(error.params.get("detail", "")),
+        )
+    )
+
+
+def _update_installer() -> HubUpdateInstaller:
+    """The installer the routes use; a test replaces this.
+
+    Returns:
+        An installer over the real releases and the real state file.
+    """
+    return HubUpdateInstaller(checker=HubReleaseChecker(), state=HubUpdateStateFile())
+
+
+def _listen_port(runtime: PanelRuntime) -> int:
+    """The port the panel answers on, for the unit's gate."""
+    return int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
+
+
+def _stamp_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _conflict(code: str, **params) -> HTTPException:
+    """One 409 the panel turns into a sentence of its own.
+
+    Args:
+        code: The name the panel switches on.
+        params: The values that sentence names.
+
+    Returns:
+        The exception to raise.
+    """
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": code, "params": params},
+    )
+
+
+def _unreachable() -> HTTPException:
+    """The 502 for a GitHub that did not answer with a release."""
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail={"code": UPDATE_ERROR_UNREACHABLE, "params": {}},
     )
 
 

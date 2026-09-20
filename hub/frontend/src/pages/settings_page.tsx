@@ -5,6 +5,7 @@ import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { Spinner } from "../components/spinner";
+import { UpdatePanel } from "../components/update_panel";
 import {
   ApiError,
   apiPost,
@@ -348,6 +349,8 @@ export function SettingsPage() {
             </div>
           )}
         </section>
+
+        <UpdatePanel />
 
         <HubNamePanel />
 

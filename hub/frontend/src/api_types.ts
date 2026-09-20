@@ -1174,6 +1174,54 @@ export interface AboutInfo {
   acknowledgements: Acknowledgement[];
 }
 
+export type HubUpdateStage =
+  | "preparing"
+  | "installing"
+  | "installed"
+  | "rolling_back"
+  | "rolled_back"
+  | "failed";
+
+export interface HubUpdateRecord {
+  stage: HubUpdateStage;
+  from_version: string;
+  to_version: string;
+  started_at: string;
+  finished_at: string;
+  reason: string;
+  output: string;
+}
+
+export interface HubReleaseView {
+  current: string;
+  is_packaged: boolean;
+  update: HubUpdateRecord | null;
+  task_id: string | null;
+}
+
+export interface HubReleaseLatest {
+  version: string;
+  published_at: string;
+  notes: string;
+  page_url: string;
+  size_bytes: number;
+}
+
+export interface HubReleaseScanView {
+  current: string;
+  latest: HubReleaseLatest | null;
+  is_newer: boolean;
+  is_major: boolean;
+  is_rollback_available: boolean;
+  needed_bytes: number;
+  free_bytes: number;
+  is_space_enough: boolean;
+}
+
+export interface HubUpdateRequest {
+  version: string;
+}
+
 // --- Samba ---
 
 export interface SambaShare {

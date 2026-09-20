@@ -1,0 +1,82 @@
+.update {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.update_current {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.update_current_key {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.update_actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.update_found {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.update_found_line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+/* The release's own text, as published: kept as written, bounded in height. */
+.update_notes {
+  max-height: 240px;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.update_record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.update_output summary {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.update_log {
+  max-height: 240px;
+  margin-top: var(--space-2);
+}
+
+.update_modal_fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: 0 var(--space-5) var(--space-4);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}

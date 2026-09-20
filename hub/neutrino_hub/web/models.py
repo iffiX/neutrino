@@ -1341,6 +1341,72 @@ class AboutView(BaseModel):
     acknowledgements: list[AcknowledgementView] = Field(default_factory=list)
 
 
+class HubUpdateRecordView(BaseModel):
+    """Where the last update of the hub itself stands, as its record says.
+
+    ``reason`` is why the target version was given up on, the first failure
+    whatever the rollback did after it; ``stage`` says what came of that.
+    """
+
+    stage: str
+    from_version: str
+    to_version: str
+    started_at: str
+    finished_at: str = ""
+    reason: str = ""
+    output: str = ""
+
+
+class HubReleaseView(BaseModel):
+    """The hub's own version, and the last update of it, for the Settings tab.
+
+    ``task_id`` names the staging task while one runs, so a page that opens
+    mid-update can follow it.
+    """
+
+    current: str
+    is_packaged: bool
+    update: HubUpdateRecordView | None = None
+    task_id: str | None = None
+
+
+class HubReleaseLatestView(BaseModel):
+    """The newest release published, and the package in it for this box."""
+
+    version: str
+    published_at: str
+    notes: str
+    page_url: str
+    size_bytes: int
+
+
+class HubReleaseScanView(BaseModel):
+    """What a check of the releases found.
+
+    ``latest`` is None when nothing has been published. ``is_major`` names a
+    release this panel will not install: a new major is a ``config/`` shape
+    the box has to be carried across by hand. ``needed_bytes`` is what the
+    update takes on the root with the least room, ``free_bytes`` what that
+    root has.
+    """
+
+    current: str
+    latest: HubReleaseLatestView | None = None
+    is_newer: bool = False
+    is_major: bool = False
+    is_rollback_available: bool = False
+    needed_bytes: int = 0
+    free_bytes: int = 0
+    is_space_enough: bool = True
+
+
+class HubUpdateRequest(BaseModel):
+    """Install one release, named so a release published in between is not
+    installed unseen."""
+
+    version: str
+
+
 class DeviceEnrollmentRequest(BaseModel):
     """Ask the gateway for a link a machine can join with."""
 

@@ -216,7 +216,8 @@ The HTTP status names the class of the refusal:
 | 400 | a body that does not validate | |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown` |
-| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch` |
+| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest` |
+| 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_unreachable` |
 
 Every surface words a code itself: the hub's catalogs are
 `hub/frontend/src/locales/<language>/codes.json` under `code.<code>`, the
@@ -246,7 +247,7 @@ TLS port.
 | `/api/hub/client` | Enrolled client sessions and the links that enrol them |
 | `/api/hub/service` | The published service list and manual declarations |
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
-| `/api/hub/setting` | The panel's own: its port, password, hub name, backup, restore, version |
+| `/api/hub/setting` | The panel's own: its port, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
 | `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, each importing what the machine already has and setting what it is to have |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
@@ -424,6 +425,9 @@ the page's whole view.
 | `POST /api/hub/setting/backup` | | an archive of `config/` |
 | `POST /api/hub/setting/restore` | the archive | |
 | `GET /api/hub/setting/about` | | versions and the credited components |
+| `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, the record of its last update, and the staging task while one runs |
+| `POST /api/hub/setting/release/scan` | | reads the newest release from GitHub; returns `HubReleaseScanView`: the release or none published, whether it is newer or a new major, whether a rollback package can be had, and the room the update needs and has; 409 `hub_not_packaged` from a checkout |
+| `POST /api/hub/setting/release/install` | `{version}`, the release confirmed | stages the package and hands the install to the `neutrino_hub_update` unit; returns `TaskStarted`, output on `/ws/hub/task`; 409 `release_not_latest` when the newest release is no longer the one named, `release_not_newer`, `release_major`, `disk_space_short`, `update_in_progress` |
 
 ### The agent group
 
