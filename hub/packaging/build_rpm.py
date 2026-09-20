@@ -24,6 +24,7 @@ from venv_tree import (
     dependencies,
     recommendations,
     PYTHON_DIR,
+    asset_name,
     build_environment,
     panel_unit,
     require_built_frontend,
@@ -179,7 +180,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
         payload = root / "payload"
-        build_environment(payload, package_version, arguments.architecture)
+        build_environment(
+            payload,
+            package_version,
+            arguments.architecture,
+            asset=asset_name("rpm", "{version}", arguments.architecture),
+        )
         write(
             payload / "usr/bin/nhub",
             WRAPPER.format(python=PYTHON_DIR),
@@ -234,7 +240,7 @@ def _build(
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip()[-2000:])
 
-    name = f"{PACKAGE_NAME}-{package_version}-1.{architecture}.rpm"
+    name = asset_name("rpm", package_version, architecture)
     built = topdir / "RPMS" / architecture / name
     if not built.is_file():
         raise SystemExit(f"rpmbuild wrote no {name}")

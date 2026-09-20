@@ -34,6 +34,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# What the hub's packaging has decided about the machines it builds for is
+# read from there rather than repeated here.
+sys.path.insert(0, str(REPO_ROOT / "hub" / "packaging"))
+from constants import PACKAGING_ARCHITECTURE_NAMES  # noqa: E402
+
 # The source of everything the packages carry, pinned to the archive at the
 # tag the binaries were built from: RustDesk (AGPL-3.0) in the agent and the
 # client, EasyTier (LGPL-3.0), NetBird (BSD-3), xray (MPL-2.0) and
@@ -223,12 +228,6 @@ AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
 # And what it reads to find agent packages already built, for every machine.
 AGENT_PACKAGES_DIR_ENV = "NEUTRINO_AGENT_PACKAGES_DIR"
 
-# The name each family gives the same machine.
-ARCHITECTURE_NAMES = {
-    "amd64": {"debian": "amd64", "rhel": "x86_64", "arch": "x86_64"},
-    "arm64": {"debian": "arm64", "rhel": "aarch64", "arch": "aarch64"},
-}
-
 
 def main() -> int:
     """Build the packages.
@@ -384,7 +383,7 @@ def _build_in_container(
         SystemExit: If the architecture is not one the packages are published
             for, no container tool is available, or the build fails.
     """
-    names = ARCHITECTURE_NAMES.get(architecture, {})
+    names = PACKAGING_ARCHITECTURE_NAMES.get(architecture, {})
     platform = BUILD_PLATFORMS.get(architecture)
     if platform is None:
         raise SystemExit(

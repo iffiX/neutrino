@@ -68,6 +68,9 @@ def box(tmp_path, monkeypatch):
     (state / "session.secret").write_text("aa" * 32)
     (state / "vault.key").write_text("bb" * 32)
     (state / "xray_node_health.json").write_text("{}")
+    (state / "hub_update").mkdir()
+    (state / "hub_update/neutrino-hub_0.3.0_amd64.deb").write_bytes(b"deb")
+    (state / "hub_update/state.json").write_text("{}")
     (state / "cliproxyapi/auth").mkdir(parents=True)
     (state / "cliproxyapi/auth/claude-somebody.json").write_text("{}")
 
@@ -111,6 +114,14 @@ def test_reset_all_forgets_what_this_box_read_about_its_nodes(box):
     reset._reset_all()
 
     assert not (box.parent / "state" / "xray_node_health.json").exists()
+
+
+def test_reset_all_forgets_the_packages_the_hub_downloaded_for_itself(box):
+    """The packages and the record of the last update are this box's own;
+    the next owner's hub fetches what it needs."""
+    reset._reset_all()
+
+    assert not (box.parent / "state" / "hub_update").exists()
 
 
 def test_reset_all_clears_what_the_hub_wrote_to_var_log(box):

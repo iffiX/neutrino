@@ -438,3 +438,51 @@ def test_a_tree_at_the_floor_is_a_package_the_build_lets_through(tmp_path, monke
     tree = _elf_tree(tmp_path / "tree", ("2.2.5", "2.17", "2.34"))
 
     venv_tree.require_glibc_floor(tree)
+
+
+def test_each_format_names_its_file_the_way_the_release_carries_it():
+    """The file a build writes is the name the hub asks a release for, so
+    the three formats spell it from one table."""
+    assert (
+        venv_tree.asset_name("deb", "0.3.1", "amd64") == "neutrino-hub_0.3.1_amd64.deb"
+    )
+    assert (
+        venv_tree.asset_name("rpm", "0.3.1", "aarch64")
+        == "neutrino-hub-0.3.1-1.aarch64.rpm"
+    )
+    assert (
+        venv_tree.asset_name("pkg", "0.3.1", "x86_64")
+        == "neutrino-hub-0.3.1-1-x86_64.pkg.tar.zst"
+    )
+
+
+def test_the_stamp_carries_the_version_and_the_file_name_with_the_version_open():
+    """What the build writes into the tree is what the running hub reads:
+    its version, and the name of its own kind of package for any version."""
+    stamp = venv_tree.version_stamp(
+        "0.3.1", venv_tree.asset_name("deb", "{version}", "amd64")
+    )
+    namespace = {}
+    exec(stamp, namespace)  # noqa: S102 - the stamp is the module under test
+    assert namespace["HUB_VERSION"] == "0.3.1"
+    assert namespace["HUB_PACKAGE_ASSET"] == "neutrino-hub_{version}_amd64.deb"
+    assert namespace["HUB_PACKAGE_ASSET"].format(version="0.4.0") == (
+        venv_tree.asset_name("deb", "0.4.0", "amd64")
+    )
+
+
+def test_the_release_build_reads_the_architecture_table_the_packaging_owns():
+    """One table names the machine for every family; the release build
+    reads it rather than keeping a copy that could drift."""
+    import importlib.util
+    from pathlib import Path
+
+    import constants
+
+    script = Path(venv_tree.HUB_ROOT).parent / "packaging" / "build_release.py"
+    spec = importlib.util.spec_from_file_location("build_release", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.PACKAGING_ARCHITECTURE_NAMES is constants.PACKAGING_ARCHITECTURE_NAMES
+    assert set(constants.PACKAGING_ARCHITECTURE_NAMES) == {"amd64", "arm64"}
+    assert set(constants.PACKAGING_ASSET_PATTERNS) == {"deb", "rpm", "pkg"}

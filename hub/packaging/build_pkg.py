@@ -25,6 +25,7 @@ from venv_tree import (
     dependencies,
     recommendations,
     PYTHON_DIR,
+    asset_name,
     build_environment,
     panel_unit,
     require_built_frontend,
@@ -165,7 +166,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
         payload = root / "payload"
-        build_environment(payload, package_version, arguments.architecture)
+        build_environment(
+            payload,
+            package_version,
+            arguments.architecture,
+            asset=asset_name("pkg", "{version}", arguments.architecture),
+        )
         write(
             payload / "usr/bin/nhub",
             WRAPPER.format(python=PYTHON_DIR),
@@ -188,25 +194,33 @@ def main() -> int:
                 ),
             ),
         )
-        target = _build(root, output_dir, builder)
+        target = _build(
+            root,
+            output_dir,
+            builder,
+            name=asset_name("pkg", package_version, arguments.architecture),
+        )
 
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
     return 0
 
 
-def _build(root: Path, output_dir: Path, builder: str) -> Path:
+def _build(root: Path, output_dir: Path, builder: str, *, name: str) -> Path:
     """Run makepkg and move the result where it was asked for.
 
     Args:
         root: The directory holding the PKGBUILD.
         output_dir: Where the package should land.
         builder: The account makepkg runs as.
+        name: The file makepkg is expected to write: the name a release
+            carries and the hub asks for, so a build whose ``PKGEXT``
+            differs is refused rather than published under another name.
 
     Returns:
         The path written.
 
     Raises:
-        SystemExit: If makepkg refuses, or writes nothing.
+        SystemExit: If makepkg refuses, or writes nothing under that name.
     """
     command = ["makepkg", "--nodeps", "--noconfirm", "--clean"]
     if os.geteuid() == 0:
@@ -219,11 +233,14 @@ def _build(root: Path, output_dir: Path, builder: str) -> Path:
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip()[-2000:])
 
-    built = sorted(root.glob(f"{PACKAGE_NAME}-*.pkg.tar.*"))
-    if not built:
-        raise SystemExit("makepkg wrote no package")
-    target = output_dir / built[0].name
-    shutil.copyfile(built[0], target)
+    built = root / name
+    if not built.is_file():
+        written = ", ".join(path.name for path in sorted(root.glob("*.pkg.tar.*")))
+        raise SystemExit(
+            f"makepkg wrote no {name}" + (f" (found {written})" if written else "")
+        )
+    target = output_dir / name
+    shutil.copyfile(built, target)
     return target
 
 

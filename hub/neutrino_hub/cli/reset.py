@@ -71,9 +71,11 @@ RESET_STATE_PATHS = (
 # download and nothing else. The AI gateway's directory is the opposite kind:
 # the accounts somebody signed in with live there as refresh tokens, and a
 # box handed on with them is a box that keeps signing in as the last owner.
-# `agent_cache` is in neither list: what the hub's own package laid there is
-# the package manager's to remove.
-RESET_STATE_DIRS = ("agent_module_cache", "cliproxyapi")
+# `hub_update` holds the packages the hub downloaded to update itself and the
+# record of the last update, both this box's own. `agent_cache` is in neither
+# list: what the hub's own package laid there is the package manager's to
+# remove.
+RESET_STATE_DIRS = ("agent_module_cache", "cliproxyapi", "hub_update")
 # Where every device's desired state lives, one directory per device. A
 # reset forgets them with the tokens: they describe machines the next owner
 # has not enrolled.

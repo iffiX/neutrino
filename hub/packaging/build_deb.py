@@ -34,6 +34,7 @@ from venv_tree import (
     dependency_choices,
     recommendations,
     PYTHON_DIR,
+    asset_name,
     build_environment,
     panel_unit,
     require_built_frontend,
@@ -175,12 +176,14 @@ def main() -> int:
         tree = (
             Path(workdir) / f"{PACKAGE_NAME}_{package_version}_{arguments.architecture}"
         )
-        build_environment(tree, package_version, arguments.architecture)
-        _lay_out(tree, package_version, arguments.architecture, arguments.maintainer)
-        target = (
-            output_dir
-            / f"{PACKAGE_NAME}_{package_version}_{arguments.architecture}.deb"
+        build_environment(
+            tree,
+            package_version,
+            arguments.architecture,
+            asset=asset_name("deb", "{version}", arguments.architecture),
         )
+        _lay_out(tree, package_version, arguments.architecture, arguments.maintainer)
+        target = output_dir / asset_name("deb", package_version, arguments.architecture)
         _build(tree, target)
 
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")

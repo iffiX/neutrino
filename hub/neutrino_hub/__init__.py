@@ -24,8 +24,10 @@ def _checkout_version() -> str:
 
 
 try:  # Written into the tree when a package is built.
-    from neutrino_hub._version import HUB_VERSION
+    from neutrino_hub._version import HUB_PACKAGE_ASSET, HUB_VERSION
 except ImportError:
+    # Only a package has a release file name; a checkout updates with git.
+    HUB_PACKAGE_ASSET = ""
     try:
         HUB_VERSION = version("neutrino-hub")
     except PackageNotFoundError:

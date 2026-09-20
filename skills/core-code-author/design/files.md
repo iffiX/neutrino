@@ -41,6 +41,7 @@ one to dpkg, one to the hub.
 | `apt remove` | deleted | **kept** | kept |
 | `apt purge` | deleted | **deleted** | deleted |
 | `nhub reset all` | kept (still installed) | replaced from the examples; the vault key and the agent TLS identity go with it | cleared of everything the hub wrote |
+| update from the panel or `nhub update` | replaced whole by the package manager, from a file under `/var/lib/neutrino/hub_update/` | untouched, byte for byte | kept; the record of the update lands in `hub_update/state.json` |
 
 `remove` keeps the decisions because that is dpkg's own convention — a
 package can come back and find its configuration waiting. `purge` is the
@@ -100,6 +101,10 @@ testable. Details of the files themselves:
     xray_node_health.json
                         each exit node's recent measurements and the exit the
                         hub last pinned. Losing it costs one probe round
+    hub_update/         the hub's own package at the version running and at
+                        the one being installed, the script the install unit
+                        runs, its log, and state.json, the record of the last
+                        update
 ```
 
 State, not configuration: everything here is either derived from
@@ -120,6 +125,14 @@ to what the manifest pins; one that does not is a stale fetch and is fetched
 again. This is why `nhub reset all` clears
 `agent_module_cache/` and leaves `agent_cache/` alone: one is a cache the hub
 filled, the other is largely what dpkg put there.
+
+`hub_update/` is where the hub updates itself from. The panel, or `nhub
+update`, downloads the newest release's package into it beside the running
+version's own package, writes `update.sh`, and starts it as the transient
+unit `neutrino_hub_update`; the unit installs, holds a health gate, and
+installs the previous package when the gate fails, writing each turn into
+`state.json`. Two packages stay: the one running and the one before it.
+`nhub reset all` clears the directory with the other caches.
 
 `stood_down.json` is a note of what the hub did, not a copy of what anybody
 else had: router mode stops the manager that was running and writes down

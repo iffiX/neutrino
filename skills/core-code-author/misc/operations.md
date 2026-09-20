@@ -136,7 +136,32 @@ setting is usually called "Wake on LAN" or "Power on by PCIe" in the BIOS.
 | Proxy | `journalctl -u neutrino_hub_xray` |
 | DNS queries | `journalctl -u neutrino_hub_dnsmasq` (also the panel's Dashboard) |
 | Control panel | `journalctl -u neutrino_hub_web` |
+| An update of the hub itself | `journalctl -u neutrino_hub_update`, and `/var/lib/neutrino/hub_update/update.log` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
+
+## Updating the hub from the panel
+
+Settings has an Update panel; `sudo nhub update` does the same from a
+terminal, and `sudo nhub update --package <file>` installs a package file
+somebody brought. Either way the panel process only stages: it downloads the
+package into `/var/lib/neutrino/hub_update/`, checks it against the release's
+`SHA256SUMS`, keeps the running version's own package beside it, and starts
+the transient unit `neutrino_hub_update` with `update.sh` from that directory.
+The unit runs the package manager, then holds a gate of up to 180 seconds:
+`neutrino_hub_web` and whichever of `neutrino_hub_router` and
+`neutrino_hub_dnsmasq` were running must be active, `GET /api/hub/display` on
+the panel's port must answer 200, and `nhub --version` must print the target.
+A gate that fails installs the previous package and holds the gate again.
+
+`state.json` in that directory records where it stands: `installing`,
+`installed`, `rolling_back`, `rolled_back` or `failed`, with `reason` naming
+the first failure and `output` the tail of `update.log`. The panel reads it
+back once it is up again. A box left on neither version, which only a
+rollback that failed too can leave, is put back by hand:
+
+```bash
+sudo apt-get install -y --reinstall --allow-downgrades /var/lib/neutrino/hub_update/neutrino-hub_<version>_amd64.deb
+```
 
 ## Trying a change on an installed box
 

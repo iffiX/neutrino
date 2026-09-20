@@ -109,6 +109,21 @@ class AgentArtifactFetchError(RuntimeError):
         self.params = params
 
 
+class HubUpdateError(RuntimeError):
+    """Raised when the hub's own update cannot be staged or handed over.
+
+    Attributes:
+        code: The typed reason, one of the ``HUB_UPDATE_REASON_*`` words,
+            which the state file records and the panel words.
+        params: What the wording names.
+    """
+
+    def __init__(self, code: str, **params):
+        super().__init__(code)
+        self.code = code
+        self.params = params
+
+
 class AiAccountRefusedError(RuntimeError):
     """Raised when the AI gateway will not carry out an account action.
 

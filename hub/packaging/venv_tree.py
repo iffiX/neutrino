@@ -32,7 +32,7 @@ import zipfile
 import urllib.request
 from pathlib import Path
 
-from constants import PACKAGING_GLIBC_FLOOR
+from constants import PACKAGING_ASSET_PATTERNS, PACKAGING_GLIBC_FLOOR
 
 HUB_ROOT = Path(__file__).resolve().parent.parent
 AGENT_ROOT = HUB_ROOT.parent / "agent"
@@ -331,7 +331,46 @@ exec {python}/bin/python3 -m neutrino_hub.cli.entry "$@"
 """
 
 
-def build_environment(tree: Path, version: str, machine: str) -> None:
+def asset_name(kind: str, version: str, machine: str) -> str:
+    """The file a build of this kind writes, which is what a release carries.
+
+    Args:
+        kind: ``deb``, ``rpm`` or ``pkg``.
+        version: The version being packaged, or ``{version}`` to leave it
+            open for the hub to fill when it asks a release for a later one.
+        machine: The architecture as that format spells it.
+
+    Returns:
+        The file name.
+    """
+    return PACKAGING_ASSET_PATTERNS[kind].format(
+        name=PACKAGE_NAME, version=version, architecture=machine
+    )
+
+
+def version_stamp(version: str, asset: str) -> str:
+    """The module the build writes into the tree, for the hub to read at run.
+
+    No packaging format installs a .dist-info for the hub itself, so the
+    version is stamped where importlib.metadata cannot answer, and the
+    package's own release file name beside it, with the version left open.
+
+    Args:
+        version: The version being packaged.
+        asset: The file name this build writes, with ``{version}`` in place
+            of the version.
+
+    Returns:
+        The text of ``neutrino_hub/_version.py``.
+    """
+    return (
+        '"""Written by the packaging build. Do not edit."""\n\n'
+        f'HUB_VERSION = "{version}"\n'
+        f'HUB_PACKAGE_ASSET = "{asset}"\n'
+    )
+
+
+def build_environment(tree: Path, version: str, machine: str, *, asset: str) -> None:
     """Stage the interpreter the package carries and install the hub into it.
 
     Args:
@@ -339,6 +378,8 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
         version: The version being packaged, stamped into the tree.
         machine: The architecture, named however the packaging format names
             it; :data:`MACHINE_NAMES` maps it to the interpreter's own name.
+        asset: The file name this build writes, with ``{version}`` left
+            open, stamped beside the version.
 
     Raises:
         SystemExit: If the interpreter cannot be fetched or the hub cannot be
@@ -347,14 +388,8 @@ def build_environment(tree: Path, version: str, machine: str) -> None:
     staged_python = tree / str(PYTHON_DIR).lstrip("/")
     _fetch_interpreter(staged_python, machine)
 
-    # No packaging format installs a .dist-info for the hub itself, so the
-    # version is stamped where importlib.metadata cannot answer.
     stamp = HUB_ROOT / "neutrino_hub" / "_version.py"
-    stamp.write_text(
-        '"""Written by the packaging build. Do not edit."""\n\n'
-        f'HUB_VERSION = "{version}"\n',
-        encoding="utf-8",
-    )
+    stamp.write_text(version_stamp(version, asset), encoding="utf-8")
     stage_icons()
     try:
         run(

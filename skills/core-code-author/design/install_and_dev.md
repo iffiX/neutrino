@@ -67,6 +67,14 @@ A provisioner that would do more than install — build a kernel module, add a
 third-party repository, replace a system service — returns that as a consent
 code and its parameters, and the panel asks before it proceeds.
 
+The one package the panel installs for itself is its own. Settings has an
+Update panel, and `nhub update` is the same from a terminal: the newest
+release's package is downloaded and checked, and the install is handed to a
+transient unit, `neutrino_hub_update`, because the package's maintainer script
+restarts the panel that would otherwise be running it. The unit holds a
+health gate and installs the previous version's package when the new one
+does not answer. [files.md](files.md) names what the directory keeps.
+
 ## Development runs from a checkout, against a root of its own
 
 ```bash
