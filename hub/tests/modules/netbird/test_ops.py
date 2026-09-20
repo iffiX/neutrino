@@ -1,6 +1,9 @@
 """The daemon's status, reshaped, with netbird replaced by canned output."""
 
 import json
+import subprocess
+
+import pytest
 
 from neutrino_hub.modules.netbird import ops
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
@@ -90,18 +93,127 @@ def test_a_missing_daemon_reads_as_not_installed(monkeypatch):
     assert NetbirdStatusReader().survey().is_installed is False
 
 
-def test_join_goes_down_first_so_reenrollment_works(monkeypatch):
+def enroller_over(monkeypatch, tmp_path, status, refusals=()):
+    """The enroller over a daemon, its profile under tmp_path; returns the
+    commands run. ``status`` is one payload, or a list answered in order
+    with the last repeating. Each entry of ``refusals`` makes one ``up``
+    raise, in order."""
     commands = []
-    monkeypatch.setattr(ops, "run", lambda cmd, **k: commands.append(cmd))
+    refusing = list(refusals)
+    statuses = list(status) if isinstance(status, list) else [status]
+    (tmp_path / "active_profile.json").write_text('{"name": "default"}')
+    (tmp_path / "default.json").write_text("{}")
+    monkeypatch.setattr(
+        ops, "NETBIRD_ACTIVE_PROFILE_PATH", tmp_path / "active_profile.json"
+    )
+    monkeypatch.setattr(ops, "NETBIRD_STATE_DIR", tmp_path)
+
+    def run(cmd, **keywords):
+        commands.append(cmd)
+        if cmd[1:2] == ["status"]:
+            answered = statuses.pop(0) if len(statuses) > 1 else statuses[0]
+            return FakeResult(json.dumps(answered))
+        if cmd[1:2] == ["up"] and refusing:
+            raise refusing.pop(0)
+        return FakeResult("")
+
+    monkeypatch.setattr(ops, "run", run)
+    return commands
+
+
+def driven(commands):
+    """The commands that drive the daemon, the status reads left out."""
+    return [cmd for cmd in commands if cmd[1:2] != ["status"]]
+
+
+RESET = [
+    [NETBIRD, "deregister"],
+    ["systemctl", "restart", "neutrino_hub_netbird.service"],
+]
+
+
+def test_a_connected_peer_joins_again_as_itself(monkeypatch, tmp_path):
+    """A peer the plane still takes keeps its identity, and with it the
+    routes the console holds for it."""
+    commands = enroller_over(monkeypatch, tmp_path, CONNECTED)
 
     ops.NetbirdEnroller().join(setup_key="KEY-1")
     ops.NetbirdEnroller().join(
         setup_key="KEY-2", management_url="https://mgmt.example.com"
     )
 
-    assert commands[0] == [NETBIRD, "down"]
-    assert commands[1] == [NETBIRD, "up", "--setup-key", "KEY-1"]
-    assert commands[3][-2:] == ["--management-url", "https://mgmt.example.com"]
+    assert driven(commands)[0] == [NETBIRD, "down"]
+    assert driven(commands)[1] == [NETBIRD, "up", "--setup-key", "KEY-1"]
+    assert driven(commands)[3][-2:] == ["--management-url", "https://mgmt.example.com"]
+    assert [NETBIRD, "deregister"] not in driven(commands)
+    assert (tmp_path / "default.json").exists()
+
+
+@pytest.mark.parametrize("word", ["NeedsLogin", "LoginFailed", "SessionExpired"])
+def test_a_profile_without_a_login_is_reset_before_the_key_is_used(
+    monkeypatch, tmp_path, word
+):
+    """The daemon registers a new peer only from a fresh profile: a login
+    the plane refuses, or an SSO session that ran out, would make every
+    setup key fail with the old identity's refusal. The plane is asked to
+    drop the peer, the profile goes from disk either way, and the restarted
+    daemon writes a new one."""
+    commands = enroller_over(
+        monkeypatch, tmp_path, dict(NEEDS_LOGIN, daemonStatus=word)
+    )
+
+    ops.NetbirdEnroller().join(setup_key="KEY-1")
+
+    assert driven(commands) == [
+        [NETBIRD, "down"],
+        *RESET,
+        [NETBIRD, "up", "--setup-key", "KEY-1"],
+    ]
+    assert not (tmp_path / "default.json").exists()
+    assert not (tmp_path / "active_profile.json").exists()
+
+
+def test_an_idle_identity_the_plane_refuses_is_reset_and_the_key_used_again(
+    monkeypatch, tmp_path
+):
+    """A survey cannot tell an idle identity's standing; the refusal can."""
+    refused = subprocess.CalledProcessError(
+        1, [NETBIRD, "up"], stderr="PermissionDenied"
+    )
+    commands = enroller_over(
+        monkeypatch,
+        tmp_path,
+        [dict(NEEDS_LOGIN, daemonStatus="Idle"), NEEDS_LOGIN],
+        refusals=[refused],
+    )
+
+    ops.NetbirdEnroller().join(setup_key="KEY-1")
+
+    assert driven(commands) == [
+        [NETBIRD, "down"],
+        [NETBIRD, "up", "--setup-key", "KEY-1"],
+        *RESET,
+        [NETBIRD, "up", "--setup-key", "KEY-1"],
+    ]
+
+
+def test_a_key_the_plane_refuses_twice_is_refused_to_the_caller(monkeypatch, tmp_path):
+    refused = subprocess.CalledProcessError(1, [NETBIRD, "up"], stderr="bad key")
+    commands = enroller_over(
+        monkeypatch, tmp_path, NEEDS_LOGIN, refusals=[refused, refused]
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        ops.NetbirdEnroller().join(setup_key="KEY-1")
+
+    assert driven(commands).count([NETBIRD, "up", "--setup-key", "KEY-1"]) == 1
+
+
+@pytest.mark.parametrize("word", ["LoginFailed", "SessionExpired"])
+def test_a_refused_or_expired_login_reads_as_not_enrolled(monkeypatch, word):
+    state = survey_with(monkeypatch, dict(NEEDS_LOGIN, daemonStatus=word))
+
+    assert state.is_enrolled is False
 
 
 # --- The inbound gate -------------------------------------------------------

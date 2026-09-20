@@ -51,3 +51,14 @@ NETBIRD_BLOCK_INBOUND_KEY = "BlockInbound"
 # `netbird up` re-establishes the session, so it is given the same room as an
 # enrollment rather than a command's usual seconds.
 NETBIRD_INBOUND_TIMEOUT_S = 60
+# The daemon's words for a profile that holds no login the plane takes: one
+# that never enrolled, one the plane refused, and one whose SSO session ran
+# out. A join with a setup key starts from a deregistered profile in each,
+# since the daemon registers a new peer only from a profile without one.
+NETBIRD_STATUSES_WITHOUT_LOGIN = ("NeedsLogin", "LoginFailed", "SessionExpired")
+# `netbird deregister` asks the plane to delete the peer; it fails, and
+# deletes nothing, when the plane does not answer. A restart of the daemon
+# with no profile on disk writes a fresh one with a new key.
+NETBIRD_DEREGISTER_TIMEOUT_S = 60
+NETBIRD_RESTART_SETTLE_S = 10
+NETBIRD_STATE_FILE_NAME = "state.json"

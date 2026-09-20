@@ -11,6 +11,8 @@ shell has ``netbird down``.
 """
 
 import json
+import subprocess
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +23,12 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_BLOCK_INBOUND_KEY,
     NETBIRD_INBOUND_TIMEOUT_S,
     NETBIRD_LEGACY_CONFIG_PATH,
+    NETBIRD_DEREGISTER_TIMEOUT_S,
+    NETBIRD_RESTART_SETTLE_S,
     NETBIRD_STATE_DIR,
+    NETBIRD_STATE_FILE_NAME,
+    NETBIRD_STATUSES_WITHOUT_LOGIN,
+    NETBIRD_UNIT,
 )
 from neutrino_hub.utils.subprocess_run import run
 
@@ -134,7 +141,8 @@ class NetbirdStatusReader:
             is_installed=True,
             version=status.get("daemonVersion", ""),
             daemon_status=status.get("daemonStatus", ""),
-            is_enrolled=status.get("daemonStatus", "") != "NeedsLogin",
+            is_enrolled=status.get("daemonStatus", "")
+            not in NETBIRD_STATUSES_WITHOUT_LOGIN,
             is_management_connected=bool(management.get("connected")),
             management_url=management.get("url", ""),
             netbird_ip=status.get("netbirdIp", ""),
@@ -243,16 +251,24 @@ class NetbirdInboundGate:
         return "overlay closed" if is_blocked else "overlay opened"
 
     def _state_paths(self) -> list:
-        paths = []
-        try:
-            active = json.loads(NETBIRD_ACTIVE_PROFILE_PATH.read_text())
-            name = str(active.get("name", "") or "")
-        except (OSError, ValueError):
-            name = ""
-        if name and Path(name).name == name:
-            paths.append(NETBIRD_STATE_DIR / f"{name}.json")
-        paths.append(NETBIRD_LEGACY_CONFIG_PATH)
-        return paths
+        return profile_paths() + [NETBIRD_LEGACY_CONFIG_PATH]
+
+
+def profile_paths() -> list:
+    """The file the daemon's active profile lives in, when one is named.
+
+    Returns:
+        The profile's path under the state directory, as a one-item list, or
+        an empty list when no active profile is named.
+    """
+    try:
+        active = json.loads(NETBIRD_ACTIVE_PROFILE_PATH.read_text())
+        name = str(active.get("name", "") or "")
+    except (OSError, ValueError):
+        return []
+    if name and Path(name).name == name:
+        return [NETBIRD_STATE_DIR / f"{name}.json"]
+    return []
 
 
 class NetbirdEnroller:
@@ -262,8 +278,15 @@ class NetbirdEnroller:
         """Enroll with a setup key.
 
         The key is used and forgotten: it enrolls once, NetBird keeps the
-        machine identity under ``/etc/netbird``, and nothing of the key
+        machine identity under ``/var/lib/netbird``, and nothing of the key
         belongs in ``config/`` or anywhere else.
+
+        A setup key registers a peer, and the daemon registers a new one
+        only from a profile that holds no identity: a profile whose login
+        the plane refuses, or whose SSO session ran out, is deregistered
+        first, which deletes it locally whatever the plane answers. A peer
+        the plane still takes keeps its identity and the routes the console
+        holds for it, and the key re-registers that same peer.
 
         Args:
             setup_key: The key from the management console.
@@ -274,10 +297,52 @@ class NetbirdEnroller:
             subprocess.CalledProcessError: If the daemon or the management
                 plane refuses.
         """
+        state = NetbirdStatusReader().survey()
         # Down first so a re-enrollment with a new key or plane succeeds;
         # harmless when not enrolled.
         run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
+        is_reset = False
+        if state.is_installed and state.daemon_status in NETBIRD_STATUSES_WITHOUT_LOGIN:
+            self._reset_identity()
+            is_reset = True
         command = [str(NETBIRD_BINARY_PATH), "up", "--setup-key", setup_key]
         if management_url:
             command += ["--management-url", management_url]
-        run(command, timeout_s=JOIN_TIMEOUT_S)
+        try:
+            run(command, timeout_s=JOIN_TIMEOUT_S)
+        except subprocess.CalledProcessError:
+            # An identity the daemon held as idle and the plane then refused:
+            # the refusal has just told what a survey could not, so the
+            # profile is reset now and the key used once more.
+            after = NetbirdStatusReader().survey()
+            if is_reset or after.daemon_status not in NETBIRD_STATUSES_WITHOUT_LOGIN:
+                raise
+            self._reset_identity()
+            run(command, timeout_s=JOIN_TIMEOUT_S)
+
+    def _reset_identity(self) -> None:
+        """Take the daemon back to a profile with no peer in it.
+
+        The plane is asked to delete the peer while it answers; the profile
+        is deleted from disk either way, and the daemon restarted, which is
+        the one way it writes a fresh profile with a new key.
+
+        Raises:
+            subprocess.CalledProcessError: If the daemon does not come back.
+        """
+        run(
+            [str(NETBIRD_BINARY_PATH), "deregister"],
+            is_checked=False,
+            timeout_s=NETBIRD_DEREGISTER_TIMEOUT_S,
+        )
+        for path in profile_paths() + [
+            NETBIRD_ACTIVE_PROFILE_PATH,
+            NETBIRD_STATE_DIR / NETBIRD_STATE_FILE_NAME,
+        ]:
+            path.unlink(missing_ok=True)
+        run(["systemctl", "restart", NETBIRD_UNIT])
+        deadline = time.monotonic() + NETBIRD_RESTART_SETTLE_S
+        while time.monotonic() < deadline:
+            if NetbirdStatusReader().survey().is_installed:
+                return
+            time.sleep(0.5)
