@@ -649,10 +649,17 @@ def _install_local_agent(password: str, reporter) -> None:
     if not family or not cache.serves(family=family, architecture=architecture):
         reporter.failed("this hub carries no agent for this machine")
         return
+    # The package depends on the libraries its remote desktop host draws
+    # with, which a headless board installs for the first time here.
+    reporter.note(
+        "installing neutrino-agent and the libraries its remote desktop host "
+        "needs; a small board takes minutes"
+    )
     try:
         package_manager.current().install(
             (str(cache.package(family=family, architecture=architecture)),)
         )
+        reporter.note("installed; joining this hub")
         link, note = _enrollment_link(password)
         if not link:
             reporter.failed(note)

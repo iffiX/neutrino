@@ -19,6 +19,7 @@ class FakeReporter:
     def __init__(self):
         self.started: list = []
         self.done_notes: list = []
+        self.notes: list = []
         self.failures: list = []
 
     def start(self, description: str, code: str = "", params: dict | None = None):
@@ -29,6 +30,9 @@ class FakeReporter:
 
     def failed(self, note: str = ""):
         self.failures.append(note)
+
+    def note(self, text: str):
+        self.notes.append(text)
 
 
 class FakeCache:
@@ -85,6 +89,13 @@ def test_the_agent_comes_from_the_hubs_own_cache_and_joins_this_hub(box):
     assert commands == [["nagent", "join", "neutrino://x", "--yes"]]
     assert reporter.done_notes == ["installed and joined"]
     assert reporter.started[0][1] == setup.SETUP_STEP_LOCAL_AGENT
+    # The install pulls the desktop libraries the remote desktop host draws
+    # with, minutes on a small board, so the step says what it is doing.
+    assert reporter.notes == [
+        "installing neutrino-agent and the libraries its remote desktop host "
+        "needs; a small board takes minutes",
+        "installed; joining this hub",
+    ]
 
 
 def test_a_machine_this_hub_has_no_agent_for_is_said_and_the_run_goes_on(
