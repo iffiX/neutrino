@@ -28,6 +28,10 @@ COMMANDS = {
     "apply": ("neutrino_hub.cli.apply", "Render every config and make it true"),
     "unlock": ("neutrino_hub.cli.unlock", "Clear the login lockout and SSH bans"),
     "reset": ("neutrino_hub.cli.reset", "Return part of the box to a fresh state"),
+    "update": (
+        "neutrino_hub.cli.update",
+        "Install the newest release of the hub, or a package file",
+    ),
     "vault": ("neutrino_hub.cli.vault", "Maintain the credential vault"),
     "scan-secrets": (
         "neutrino_hub.cli.scan_secrets",
