@@ -26,7 +26,7 @@ The key has the form `AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE`, and the panel's fie
 1. Under **Join a network**, paste the setup key, leave the management URL empty for netbird.io, and select **Join**.
    ![The join form with the setup key](/guide/en/overlay_netbird_join.webp)
 
-The button reads **Joining…**, then the badge turns **connected**, and **This gateway on the overlay** shows an **Overlay address**, a **Name** and the **Management** plane.
+The button reads **Joining…** and the badge **joining** while the plane answers, the badge then turns **connected**, and **This gateway on the overlay** shows an **Overlay address**, a **Name** and the **Management** plane. A badge of **connecting** is the daemon on its way back after a restart. A box whose earlier login the plane no longer takes, such as one enrolled through single sign-on whose session ran out, reads **not joined** with a note that the login has expired: join again with a new setup key, and the hub registers a fresh peer; the old one stays in the console until you delete it there.
 
 ## Export the LAN routes
 

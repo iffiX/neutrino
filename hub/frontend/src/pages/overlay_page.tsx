@@ -94,6 +94,59 @@ export function OverlayPage() {
   );
 }
 
+/** The daemon's own words for where it stands, as `netbird status` says them. */
+const DAEMON_CONNECTED = "Connected";
+const DAEMON_CONNECTING = "Connecting";
+const DAEMON_LOGIN_FAILED = "LoginFailed";
+const DAEMON_SESSION_EXPIRED = "SessionExpired";
+
+/**
+ * The badge beside the name, from the daemon's word and whether a join is
+ * in flight. A join in flight and a daemon still connecting both read as
+ * work under way, and only a login the plane could not be reached for
+ * reads as unreachable; the two used to share one red badge, and a join
+ * that was going well wore it for its first seconds.
+ */
+function daemonBadge(view: NetbirdView, isJoining: boolean) {
+  if (isJoining) {
+    return {
+      tone: "badge--warn",
+      key: "ui.overlay.badge_joining",
+      isPulsing: true,
+    };
+  }
+  if (view.daemon_status === DAEMON_LOGIN_FAILED) {
+    return {
+      tone: "badge--error",
+      key: "ui.overlay.badge_unreachable",
+      isPulsing: false,
+    };
+  }
+  if (!view.is_enrolled) {
+    return {
+      tone: "badge--warn",
+      key: "ui.overlay.badge_not_joined",
+      isPulsing: false,
+    };
+  }
+  switch (view.daemon_status) {
+    case DAEMON_CONNECTED:
+      return {
+        tone: "badge--ok",
+        key: "ui.overlay.badge_connected",
+        isPulsing: false,
+      };
+    case DAEMON_CONNECTING:
+      return {
+        tone: "badge--warn",
+        key: "ui.overlay.badge_connecting",
+        isPulsing: true,
+      };
+    default:
+      return { tone: "", key: "ui.overlay.badge_idle", isPulsing: false };
+  }
+}
+
 /**
  * NetBird: enrollment, LAN route guidance, and live peers.
  */
@@ -102,6 +155,10 @@ function NetbirdSection() {
   useLanguage();
   const resource = useApiResource<NetbirdView>("/hub/overlay/netbird");
   const devices = useApiResource<DevicesResponse>("/hub/device");
+  // While a join is in flight the page stays on the join form whatever the
+  // polled status says: the daemon passes through Connecting on its way,
+  // and a form that unmounts under a pending press loses its answer.
+  const [isJoining, setIsJoining] = useState(false);
 
   // Peers connect and drop on their own schedule.
   const reload = resource.reload;
@@ -129,20 +186,9 @@ function NetbirdSection() {
       <div className="overlay_product_header">
         <div className="page_title_row">
           <h2>{NETBIRD_PRODUCT_NAME}</h2>
-          {view.is_installed &&
-            (!view.is_enrolled ? (
-              <span className="badge badge--warn">
-                {t("ui.overlay.badge_not_joined")}
-              </span>
-            ) : view.is_management_connected ? (
-              <span className="badge badge--ok">
-                {t("ui.overlay.badge_connected")}
-              </span>
-            ) : (
-              <span className="badge badge--error">
-                {t("ui.overlay.badge_unreachable")}
-              </span>
-            ))}
+          {view.is_installed && (
+            <DaemonBadge view={view} isJoining={isJoining} />
+          )}
           {view.version !== "" && (
             <span className="badge">v{view.version}</span>
           )}
@@ -167,12 +213,18 @@ function NetbirdSection() {
         </div>
       )}
 
-      {view.is_enrolled && !view.is_management_connected && (
+      {!isJoining && view.daemon_status === DAEMON_LOGIN_FAILED && (
         <div className="notice notice--error">
           <Icon name="alert" size={15} />
           <div className="notice_body">
             {t("ui.overlay.management_unreachable")}
           </div>
+        </div>
+      )}
+      {!isJoining && view.daemon_status === DAEMON_SESSION_EXPIRED && (
+        <div className="notice notice--warn">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">{t("ui.overlay.session_expired")}</div>
         </div>
       )}
 
@@ -192,16 +244,18 @@ function NetbirdSection() {
         </section>
       )}
 
-      {view.is_enrolled ? (
+      {view.is_enrolled && !isJoining ? (
         <IdentitySection
           view={view}
           isReady={view.is_installed && view.is_active}
           onJoined={resource.reload}
+          onJoining={setIsJoining}
         />
       ) : (
         <JoinSection
           isReady={view.is_installed && view.is_active}
           onJoined={resource.reload}
+          onJoining={setIsJoining}
         />
       )}
 
@@ -211,13 +265,34 @@ function NetbirdSection() {
   );
 }
 
+interface DaemonBadgeProps {
+  view: NetbirdView;
+  isJoining: boolean;
+}
+
+function DaemonBadge({ view, isJoining }: DaemonBadgeProps) {
+  const badge = daemonBadge(view, isJoining);
+  return (
+    <span className={`badge ${badge.tone}`.trim()}>
+      {badge.isPulsing && <StatusDot tone="warn" isPulsing />}
+      {t(badge.key)}
+    </span>
+  );
+}
+
 interface IdentitySectionProps {
   view: NetbirdView;
   isReady: boolean;
   onJoined: () => void;
+  onJoining: (isJoining: boolean) => void;
 }
 
-function IdentitySection({ view, isReady, onJoined }: IdentitySectionProps) {
+function IdentitySection({
+  view,
+  isReady,
+  onJoined,
+  onJoining,
+}: IdentitySectionProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [isReconfiguring, setIsReconfiguring] = useState(false);
@@ -262,6 +337,7 @@ function IdentitySection({ view, isReady, onJoined }: IdentitySectionProps) {
             setIsReconfiguring(false);
             onJoined();
           }}
+          onJoining={onJoining}
         />
       )}
     </section>
@@ -271,9 +347,10 @@ function IdentitySection({ view, isReady, onJoined }: IdentitySectionProps) {
 interface JoinSectionProps {
   isReady: boolean;
   onJoined: () => void;
+  onJoining: (isJoining: boolean) => void;
 }
 
-function JoinSection({ isReady, onJoined }: JoinSectionProps) {
+function JoinSection({ isReady, onJoined, onJoining }: JoinSectionProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   return (
@@ -293,6 +370,7 @@ function JoinSection({ isReady, onJoined }: JoinSectionProps) {
         isReady={isReady}
         submitLabel={t("ui.overlay.join")}
         onJoined={onJoined}
+        onJoining={onJoining}
       />
     </section>
   );
@@ -303,9 +381,17 @@ interface JoinFormProps {
   submitLabel: string;
   warning?: string;
   onJoined: () => void;
+  /** Told when the join request is sent and when it has been answered. */
+  onJoining: (isJoining: boolean) => void;
 }
 
-function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
+function JoinForm({
+  isReady,
+  submitLabel,
+  warning,
+  onJoined,
+  onJoining,
+}: JoinFormProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [setupKey, setSetupKey] = useState("");
@@ -315,6 +401,7 @@ function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
 
   const join = async () => {
     setIsBusy(true);
+    onJoining(true);
     setError(null);
     try {
       await apiPost("/hub/overlay/netbird/join", {
@@ -327,6 +414,7 @@ function JoinForm({ isReady, submitLabel, warning, onJoined }: JoinFormProps) {
       setError(describeError(cause));
     } finally {
       setIsBusy(false);
+      onJoining(false);
     }
   };
 
