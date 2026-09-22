@@ -29,10 +29,17 @@ from neutrino_hub.modules.cliproxyapi.usage_store import (
     zero_counters,
 )
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
-from neutrino_hub.exceptions import AiAccountRefusedError, VaultLockedError
+from neutrino_hub.exceptions import (
+    AgentOfflineError,
+    AiAccountRefusedError,
+    StreamRefusedError,
+    VaultLockedError,
+)
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
+from neutrino_hub.web import channel_state
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -204,7 +211,8 @@ def delete_key(
     """Revoke a client key; whatever used it stops working now.
 
     A key a client program holds is minted again and handed to it, so
-    revoking one here rotates it.
+    revoking one here rotates it: the client holding it is pushed its state
+    at once, and its tools ask for the next key on that push.
 
     Args:
         request: The key to revoke.
@@ -228,7 +236,19 @@ def delete_key(
         config.client_keys = remaining
         save_config(config)
     _apply_quietly()
+    _push_key_holder(runtime, key_id)
     return _status()
+
+
+def _push_key_holder(runtime: PanelRuntime, key_id: str) -> None:
+    """Push its state to the client that held the key; one offline waits."""
+    for client in ClientRegistry().all():
+        if client.ai_key_id != key_id:
+            continue
+        try:
+            channel_state.push_state(runtime, CHANNEL_ROLE_CLIENT, client.id)
+        except (AgentOfflineError, StreamRefusedError):
+            return
 
 
 @router.post("/gateway/set", response_model=CliproxyApiStatusView)

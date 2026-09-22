@@ -14,13 +14,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.exceptions import AgentOfflineError, VaultLockedError
 from neutrino_hub.modules.cliproxyapi import accounts as accounts_module
 from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi import usage_store as usage_store_module
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.modules.cliproxyapi.usage_store import CliproxyApiUsageStore
-from neutrino_hub.modules.clients.registry import Client
+from neutrino_hub.modules.clients.ai_keys import ensure_client_key
+from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
@@ -105,6 +106,58 @@ def test_a_revoked_key_leaves_nothing_behind(keys_client, tmp_path):
 
     assert revoked.status_code == 200
     assert revoked.json()["client_keys"] == []
+    assert _stored(tmp_path)["client_keys"] == []
+
+
+def holder_of_a_minted_key() -> tuple:
+    """A client with its gateway key minted; the client's id and the key's."""
+    registry = ClientRegistry()
+    client_id = registry.create("laptop")
+    ensure_client_key(registry, registry.get(client_id))
+    return client_id, ClientRegistry().get(client_id).ai_key_id
+
+
+def test_revoking_a_clients_key_pushes_that_client_its_state(keys_client, monkeypatch):
+    """The tools on that machine move to the next key on the push, and a
+    key nobody holds tells no socket."""
+    client_id, key_id = holder_of_a_minted_key()
+    unheld = keys_client.post(
+        "/api/hub/ai/gateway/key/add", json={"name": "spare"}
+    ).json()["client_keys"]
+    unheld_id = [key["id"] for key in unheld if key["id"] != key_id][0]
+    pushed: list = []
+    monkeypatch.setattr(
+        cliproxyapi_router.channel_state,
+        "push_state",
+        lambda runtime, role, key: pushed.append((role, key)),
+    )
+
+    revoked = keys_client.post(
+        "/api/hub/ai/gateway/key/remove", json={"key_id": key_id}
+    )
+    spare = keys_client.post(
+        "/api/hub/ai/gateway/key/remove", json={"key_id": unheld_id}
+    )
+
+    assert revoked.status_code == 200 and spare.status_code == 200
+    assert pushed == [(CHANNEL_ROLE_CLIENT, client_id)]
+
+
+def test_revoking_the_key_of_a_client_that_is_away_still_revokes(
+    keys_client, monkeypatch, tmp_path
+):
+    _, key_id = holder_of_a_minted_key()
+
+    def away(runtime, role, key):
+        raise AgentOfflineError(key)
+
+    monkeypatch.setattr(cliproxyapi_router.channel_state, "push_state", away)
+
+    revoked = keys_client.post(
+        "/api/hub/ai/gateway/key/remove", json={"key_id": key_id}
+    )
+
+    assert revoked.status_code == 200
     assert _stored(tmp_path)["client_keys"] == []
 
 
