@@ -188,7 +188,8 @@ that exist:
   later ([protocol.md](protocol.md), "Admission and the binding").
 - **The device lets go by leaving** — `nagent leave` or the package's
   own removal — which tells the hub first; the hub drops
-  the token and keeps the name and credentials the owner typed.
+  the token and keeps the row with everything the owner typed, the module
+  configuration included, until the Devices page's remove deletes it.
 - A device that joins a different hub cannot tell the first one, which keeps
   a managed-and-quiet row until somebody forgets it there.
 
@@ -256,9 +257,10 @@ retries every minute spends the night doing it. Trying again is a change to
 the state, from a person's press or a new configuration, never from a timer.
 
 Software somebody installs or removes by hand is observed and shown, never
-fought. A hand-installed module reports `installed`, and the first
-**Configure** imports what the machine already has into the hub's
-configuration. The hub keeps no record of a failure beyond the machine's own
+fought. A hand-installed module reports `installed`; at a machine's first
+report on a socket the hub imports what the machine already has into its
+own configuration, and **Configure** does the same for a module whose import
+was empty then. The hub keeps no record of a failure beyond the machine's own
 report. A hub restart loses nothing, because `want` is in `config/`
 ([kill_on_sight.md](../kill_on_sight.md), "Unasked survival machinery").
 
