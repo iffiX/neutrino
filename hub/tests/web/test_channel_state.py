@@ -89,6 +89,14 @@ def config_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def hub_urls(monkeypatch) -> list:
+    """The addresses the hub answers the channel on; a test may move them."""
+    urls = ["https://192.168.100.1:8443"]
+    monkeypatch.setattr(channel_state, "channel_urls", lambda runtime: list(urls))
+    return urls
+
+
 def test_an_agents_state_is_the_composed_document_under_its_hash():
     runtime = FakeRuntime()
 
@@ -185,6 +193,22 @@ def test_the_hash_moves_with_the_list_and_with_the_switch(config_dir):
 
     assert first == again
     assert moved != first
+
+
+def test_a_clients_state_names_every_address_the_hub_answers_on(config_dir, hub_urls):
+    """The set rides inside the hashed body, so a client whose copy is
+    stale reports a hash the hub answers with the state."""
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    runtime.client_scope[client_id] = LAN
+    first = channel_state.client_state(runtime, client_id)
+
+    hub_urls.append("https://100.64.0.1:8443")
+    moved = channel_state.client_state(runtime, client_id)
+
+    assert first["urls"] == ["https://192.168.100.1:8443"]
+    assert moved["urls"] == ["https://192.168.100.1:8443", "https://100.64.0.1:8443"]
+    assert moved["hash"] != first["hash"]
 
 
 def test_a_push_from_the_panel_hands_one_agent_its_state():

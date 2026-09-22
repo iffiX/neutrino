@@ -57,6 +57,8 @@ from neutrino_hub.utils.json_file import (
 from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.web import channel_state
+from neutrino_hub.web.address_sampler import PanelAddressSampler
+from neutrino_hub.web.channel_addresses import channel_urls
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
@@ -188,6 +190,9 @@ class PanelRuntime:
         # it is sampled. The application starts it; a CLI run builds a runtime
         # and never wants the thread.
         self.link_sampler = PanelLinkSampler(runtime=self)
+        # The channel's own address set moves the same way, and every peer
+        # holds a copy; sampled, and pushed to both roles when it moved.
+        self.address_sampler = PanelAddressSampler(runtime=self)
         # What the nodes panel last drew, so a cycle reading the same numbers
         # tells nobody. One place, since a collector lives per open socket.
         self._node_readings: dict = {}
@@ -436,6 +441,7 @@ class PanelRuntime:
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
+            urls=channel_urls(self),
         )
         return state_hash, desired
 
@@ -599,6 +605,7 @@ class PanelRuntime:
         if is_dnsmasq_restarted:
             changes.append("dnsmasq restarted")
         changes += self._push_desired_states()
+        channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
         router_failure = failure_text(results)
         if router_failure:
             raise RuntimeError(router_failure)

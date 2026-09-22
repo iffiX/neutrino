@@ -30,6 +30,7 @@ from neutrino_hub.modules.devices.registry import (
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.host_scope import link_scope
+from neutrino_hub.web import channel_addresses
 from neutrino_hub.web.constants import WEB_EVENT_DEVICE_REPORT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.events import PanelEventBus
@@ -500,9 +501,6 @@ def gateway(monkeypatch, sleeping):
         lan_entry("enp1s0", address="192.168.100.1"),
         overlays=[{"provider": "easytier", "is_exposed": True}],
     )
-    monkeypatch.setattr(
-        devices_router, "device_addresses", lambda: {"easytier": "10.126.126.2/24"}
-    )
     del sleeping
     return WakeRuntime(network)
 
@@ -553,7 +551,6 @@ def test_one_domain_refusing_does_not_stop_the_others(monkeypatch, sleeping):
         lan_entry("enp1s0", address="192.168.100.1"),
         lan_entry("wlp3s0", address="192.168.101.1"),
     )
-    monkeypatch.setattr(devices_router, "device_addresses", lambda: {})
 
     def send(mac, *, broadcast_address):
         if broadcast_address.startswith("192.168.100."):
@@ -571,7 +568,6 @@ def test_one_domain_refusing_does_not_stop_the_others(monkeypatch, sleeping):
 
 def test_every_domain_refusing_is_the_failure_it_says(monkeypatch, sleeping):
     network = network_config(lan_entry("enp1s0", address="192.168.100.1"))
-    monkeypatch.setattr(devices_router, "device_addresses", lambda: {})
 
     def send(mac, *, broadcast_address):
         raise OSError(126, "Required key not available")
@@ -849,9 +845,11 @@ def hub_carries_a_package(tmp_path, monkeypatch):
     packages.mkdir(parents=True, exist_ok=True)
     (packages / "neutrino-agent_0.1.0_amd64.deb").write_bytes(b"deb")
     monkeypatch.setattr(
-        devices_router, "_agent_urls", lambda runtime: ["https://192.168.100.1:8443"]
+        channel_addresses,
+        "channel_urls",
+        lambda runtime: ["https://192.168.100.1:8443"],
     )
-    monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: "ab" * 32)
+    monkeypatch.setattr(channel_addresses, "certificate_fingerprint", lambda: "ab" * 32)
 
 
 def install(client, device_id: str, **fields):
@@ -1264,7 +1262,9 @@ def test_nothing_reported_in_time_is_typed(monkeypatch):
 @pytest.fixture
 def box_api(monkeypatch):
     client, runtime = device_box(monkeypatch, devices_router)
-    monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)
+    monkeypatch.setattr(
+        channel_addresses, "certificate_fingerprint", lambda: FINGERPRINT
+    )
     with client:
         yield client, runtime
 
@@ -1382,7 +1382,7 @@ def test_a_link_that_cannot_be_built_generates_no_ticket(box_api, monkeypatch):
     """The ticket is a join secret. One nobody was ever shown is one lying
     around until the panel restarts."""
     client, runtime = box_api
-    monkeypatch.setattr(devices_router, "_agent_urls", lambda runtime: [])
+    monkeypatch.setattr(channel_addresses, "channel_urls", lambda runtime: [])
 
     response = client.post(ENROLLMENT_PATH, json={"name": "laptop"})
 
@@ -1395,7 +1395,7 @@ def test_a_link_generated_for_a_device_binds_to_that_device(box_api, monkeypatch
     joins as the device already on the page."""
     client, runtime = box_api
     monkeypatch.setattr(
-        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
+        channel_addresses, "channel_urls", lambda runtime: ["http://192.168.8.1:8080"]
     )
 
     response = client.post(
@@ -1414,7 +1414,7 @@ def test_a_link_generated_for_a_scan_row_stores_it_and_binds_to_the_new_row(
 ):
     client, runtime = box_api
     monkeypatch.setattr(
-        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
+        channel_addresses, "channel_urls", lambda runtime: ["http://192.168.8.1:8080"]
     )
 
     response = client.post(
@@ -1430,7 +1430,7 @@ def test_a_link_generated_for_a_scan_row_stores_it_and_binds_to_the_new_row(
 def test_a_link_for_an_unknown_device_is_refused_typed(box_api, monkeypatch):
     client, runtime = box_api
     monkeypatch.setattr(
-        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
+        channel_addresses, "channel_urls", lambda runtime: ["http://192.168.8.1:8080"]
     )
 
     response = client.post(ENROLLMENT_PATH, json={"name": "", "device_id": "nonsense"})
@@ -1445,8 +1445,8 @@ def test_the_link_is_one_shell_safe_token(box_api, monkeypatch):
     and the payload decodes to every address plus the ticket."""
     client, runtime = box_api
     monkeypatch.setattr(
-        devices_router,
-        "_agent_urls",
+        channel_addresses,
+        "channel_urls",
         lambda runtime: ["http://192.168.8.1:8080", "http://10.0.0.1:8080"],
     )
 
@@ -1467,7 +1467,7 @@ def test_the_link_is_one_shell_safe_token(box_api, monkeypatch):
 def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(box_api, monkeypatch):
     client, runtime = box_api
     monkeypatch.setattr(
-        devices_router, "_agent_urls", lambda runtime: ["http://192.168.8.1:8080"]
+        channel_addresses, "channel_urls", lambda runtime: ["http://192.168.8.1:8080"]
     )
     runtime.enrollments["stale"] = {"expires_at": 0.0}
 

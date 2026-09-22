@@ -269,8 +269,12 @@ page; the client rejects a device link and the agent a client one. The
 base64url alphabet holds no character a shell splits or a URL escapes, so the
 link pastes anywhere unquoted.
 
-The agent tries each URL in turn. For every `https` URL it builds a TLS
-connection with chain and hostname verification off. **It checks the peer
+The agent tries each URL in turn, at enrolment and on every reconnect: the
+name `hub.neutrino.internal` where the network resolves it, then the address
+that last answered, then the rest of the set, `AGENT_ROTATE_DELAY_S` apart
+([protocol.md](protocol.md), "The address a caller is given"). For every
+`https` URL it builds a TLS connection with chain and hostname verification
+off. **It checks the peer
 certificate's SHA-256 digest against `fp` immediately after the handshake,
 before any request bytes leave the machine.** An `https` URL with no
 fingerprint to pin is not connected to at all, and the TLS floor is 1.2, set
@@ -295,7 +299,9 @@ minutes.
 The reply is `{id, token}`, the token `secrets.token_urlsafe(24)` (192 bits).
 The agent stores `{gateway_url, id, token, fingerprint, machine_id}` in its
 binding file, root-owned mode 0600, and a file missing any field is an
-unbound agent. `nagent leave` posts `{id, token}` to `/api/channel/leave` and
+unbound agent. Beside them it stores `gateway_urls`, the link's set at first
+and the `urls` of the last state afterwards; a file with none holds
+`[gateway_url]`. `nagent leave` posts `{id, token}` to `/api/channel/leave` and
 deletes the file; the hub keeps the device's row and its
 `config/devices/<id>/`, which only the Devices page's remove deletes.
 

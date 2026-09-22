@@ -35,16 +35,14 @@ from neutrino_hub.modules.devices.ssh_ops import (
     login_password,
 )
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
-from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.web.agent_tls import certificate_fingerprint
+from neutrino_hub.web.channel_addresses import enrollment_link_parts
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.constants import (
     WEB_REINSTALL_POLL_S,
     WEB_REINSTALL_REPORT_TIMEOUT_S,
     WEB_REINSTALL_RETURN_TIMEOUT_S,
-    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_EVENT_DEVICES,
     WEB_EVENT_DEVICE_REPORT,
     WEB_TASK_LABEL_AGENT_INSTALL,
@@ -490,37 +488,6 @@ def _generate_enrollment_link(
     return enrollment_link(urls, token, fingerprint), token
 
 
-def enrollment_link_parts(runtime: PanelRuntime) -> tuple[list, str]:
-    """What every enrollment link carries besides its ticket.
-
-    Args:
-        runtime: The shared runtime.
-
-    Returns:
-        The agent channel's URLs and the certificate fingerprint.
-
-    Raises:
-        HTTPException: 400 when no served network has an address, so there is
-            nothing for a machine to reach the panel at; 409 with
-            ``{"code": "agent_tls_missing"}`` when the channel has no
-            certificate to pin.
-    """
-    urls = _agent_urls(runtime)
-    if not urls:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "no_reachable_address", "params": {}},
-        )
-    try:
-        fingerprint = certificate_fingerprint()
-    except (OSError, ValueError) as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "agent_tls_missing", "params": {}},
-        ) from error
-    return urls, fingerprint
-
-
 def enrollment_link(
     urls: list, token: str, fingerprint: str, *, role: str = CHANNEL_ROLE_AGENT
 ) -> str:
@@ -666,43 +633,6 @@ def _require_device(registry: DeviceRegistry, device_id: str) -> ManagedDevice:
             detail={"code": "device_unknown", "params": {"device_id": device_id}},
         )
     return device
-
-
-def _agent_urls(runtime: PanelRuntime) -> list:
-    """Every address a machine could be told to reach the agent channel on.
-
-    The set is the firewall's: every exposed interface, whatever its role,
-    and every exposed overlay. A served network contributes its configured
-    address, everything else the address the live link holds. All of them,
-    not one: only one is on the joining machine's network, and neither the
-    hub nor the person pasting the link knows which.
-
-    Args:
-        runtime: The shared runtime, for the network configuration and the
-            port.
-
-    Returns:
-        Base ``https`` URLs, in configuration order, one per address.
-    """
-    port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-    network = runtime.network()
-    configured = {
-        interface.device_name: interface.lan.address
-        for interface in network.lan_interfaces
-        if interface.lan.address
-    }
-    live = None
-    urls = []
-    for name in network.exposed_interfaces:
-        address = configured.get(name, "")
-        if not address:
-            if live is None:
-                live = device_addresses()
-            address = live.get(name, "").split("/")[0]
-        url = f"https://{address}:{port}"
-        if address and url not in urls:
-            urls.append(url)
-    return urls
 
 
 @router.post("/process/kill")

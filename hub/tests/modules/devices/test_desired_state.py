@@ -144,7 +144,7 @@ def test_compose_is_every_named_module_with_its_want_and_recipes_and_the_desktop
         DEVICE, PLATFORM, address="192.168.100.7", allowed_subnets=["192.168.100.0/24"]
     )
 
-    assert set(desired) == {"modules", "desktop"}
+    assert set(desired) == {"modules", "desktop", "urls"}
     assert set(desired["modules"]) == {"samba", "gitea"}
     samba = desired["modules"]["samba"]
     assert set(samba) == {"want", "config", "install", "uninstall"}
@@ -182,6 +182,22 @@ def test_compose_is_the_same_twice_and_moves_with_a_write(config):
 
     assert first[1] == again[1]
     assert changed[1] != first[1]
+
+
+def test_compose_names_the_hubs_addresses_under_the_hash(config):
+    """The agent keeps the set it is handed and reconnects by it, so a set
+    that moved is a state that moved."""
+    store = DesiredStateStore()
+    urls = ["https://192.168.100.1:8443", "https://100.64.0.1:8443"]
+
+    desired, digest = store.compose(DEVICE, PLATFORM, urls=urls)
+    moved = store.compose(DEVICE, PLATFORM, urls=urls[:1])
+
+    assert desired["urls"] == urls
+    assert set(desired) == {"modules", "desktop", "urls"}
+    assert digest == state_hash(desired)
+    assert moved[0]["urls"] == urls[:1]
+    assert moved[1] != digest
 
 
 def test_gitea_secrets_are_generated_once_and_kept(config):

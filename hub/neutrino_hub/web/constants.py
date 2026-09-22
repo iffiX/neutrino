@@ -221,6 +221,9 @@ WEB_EVENT_QUEUE_LIMIT = 256
 WEB_EVENT_COALESCE_WINDOW_S = 0.1
 # How often the panel's live interface readings are sampled.
 WEB_LINK_SAMPLE_INTERVAL_S = 5.0
+# How often the channel's address set is sampled, so a peer holds the set
+# after an uplink's lease or an overlay moved it.
+WEB_ADDRESS_SAMPLE_INTERVAL_S = 30.0
 
 # The labels the device tasks run under, so a page reopened part-way through
 # finds them again: the SSH install of the agent, and a module's install or

@@ -14,6 +14,7 @@ import subprocess
 import pytest
 
 from neutrino_hub.exceptions import StreamRefusedError
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
     ROUTER_CODE_LEASE_PENDING,
@@ -91,6 +92,11 @@ def applied(monkeypatch):
     monkeypatch.setattr(runtime_module, "XrayConfigApplier", _RefusingApplier)
     monkeypatch.setattr(runtime_module, "RouterStateController", Controller)
     monkeypatch.setattr(runtime_module, "install_dnsmasq", install_dnsmasq)
+    monkeypatch.setattr(
+        runtime_module.channel_state,
+        "push_states",
+        lambda runtime, role: written.append(("pushed states", role)),
+    )
     panel = object.__new__(PanelRuntime)
     panel.is_config_dirty = True
     panel.settings = {}
@@ -253,6 +259,19 @@ def test_applying_the_network_hands_every_online_device_its_state(applied, monke
     ]
     assert sessions.pushed[0][1] == "h-aa:bb:cc:dd:ee:ff"
     assert "desired state pushed to 2 devices" in summary
+
+
+def test_applying_the_network_hands_every_client_its_state(applied, monkeypatch):
+    """The address set a client holds derives from the network too, and the
+    push after the devices' is how a change reaches it."""
+    panel, written, _ = applied
+    _with_devices(panel, monkeypatch, _Sessions([]))
+
+    panel._apply_network_blocking(None)
+
+    steps = [step for step, _ in written]
+    assert ("pushed states", CHANNEL_ROLE_CLIENT) in written
+    assert steps.index("installed dnsmasq") < steps.index("pushed states")
 
 
 def test_a_box_with_no_device_online_applies_its_network_all_the_same(

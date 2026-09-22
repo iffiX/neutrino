@@ -280,6 +280,13 @@
           },
           "title": "Modules",
           "type": "object"
+        },
+        "urls": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Urls",
+          "type": "array"
         }
       },
       "required": [
@@ -420,6 +427,13 @@
             "$ref": "#/$defs/ChannelServiceEntry"
           },
           "title": "Services",
+          "type": "array"
+        },
+        "urls": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Urls",
           "type": "array"
         }
       },

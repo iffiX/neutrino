@@ -216,6 +216,7 @@ def _start_samplers() -> None:
         )
         _usage_collector.start()
     runtime.link_sampler.start()
+    runtime.address_sampler.start()
     runtime.exit_controller.start()
 
 

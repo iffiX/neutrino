@@ -1594,6 +1594,8 @@ class ChannelAgentState(BaseModel):
     hash: str
     modules: dict[str, ChannelModuleState] = Field(default_factory=dict)
     desktop: ChannelDesktopState = Field(default_factory=ChannelDesktopState)
+    # Every address the hub answers the channel on.
+    urls: list[str] = Field(default_factory=list)
 
 
 class ChannelMachine(BaseModel):
@@ -1687,6 +1689,8 @@ class ChannelClientState(BaseModel):
     hash: str
     is_disabled: bool = False
     services: list[ChannelServiceEntry] = Field(default_factory=list)
+    # Every address the hub answers the channel on.
+    urls: list[str] = Field(default_factory=list)
 
 
 class ChannelClientMachine(BaseModel):

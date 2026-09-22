@@ -31,13 +31,13 @@ from neutrino_hub.web.models import (
     ClientUpdate,
     ClientView,
 )
+from neutrino_hub.web.channel_addresses import enrollment_link_parts
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.hub.device import (
     ENROLLMENT_TOKEN_BYTES,
     ENROLLMENT_TTL_S,
     clear_enrollments,
     enrollment_link,
-    enrollment_link_parts,
 )
 
 router = APIRouter(

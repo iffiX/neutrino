@@ -274,6 +274,7 @@ class DesiredStateStore:
         *,
         address: str = "",
         allowed_subnets: "list | tuple" = (),
+        urls: "list | tuple" = (),
     ) -> tuple:
         """One device's whole desired state and its hash.
 
@@ -286,9 +287,11 @@ class DesiredStateStore:
             platform: The tuple the agent reported.
             address: Where the device is, for the URLs it derives.
             allowed_subnets: The networks its shares answer.
+            urls: Every address the hub answers the channel on.
 
         Returns:
-            ``(desired, hash)``, the document being ``{modules, desktop}``.
+            ``(desired, hash)``, the document being
+            ``{modules, desktop, urls}``.
         """
         resolved = resolved_modules(platform)
         modules = {}
@@ -309,6 +312,7 @@ class DesiredStateStore:
         desired = {
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
+            "urls": [str(url) for url in urls],
         }
         return desired, state_hash(desired)
 

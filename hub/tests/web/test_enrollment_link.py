@@ -14,7 +14,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.netbird.ops import NetbirdState
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
+from neutrino_hub.web import channel_addresses
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import device as devices_router
@@ -57,9 +59,18 @@ def urls_of(runtime) -> list:
     return decoded(answer.json()["link"])["urls"]
 
 
+class NamelessOverlay:
+    """A NetBird daemon that reports no name of its own."""
+
+    def survey(self):
+        return NetbirdState(is_installed=True, fqdn="")
+
+
 @pytest.fixture
 def fingerprinted(monkeypatch):
-    monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)
+    monkeypatch.setattr(
+        channel_addresses, "certificate_fingerprint", lambda: FINGERPRINT
+    )
 
 
 @pytest.fixture
@@ -71,7 +82,8 @@ def live_addresses(monkeypatch):
         "enp3s0": "192.168.100.7/24",
         "wt0": "100.88.178.129/16",
     }
-    monkeypatch.setattr(devices_router, "device_addresses", lambda: addresses)
+    monkeypatch.setattr(channel_addresses, "device_addresses", lambda: addresses)
+    monkeypatch.setattr(channel_addresses, "NetbirdStatusReader", NamelessOverlay)
     return addresses
 
 
@@ -201,7 +213,7 @@ def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch, live_addre
     def missing():
         raise FileNotFoundError("no certificate")
 
-    monkeypatch.setattr(devices_router, "certificate_fingerprint", missing)
+    monkeypatch.setattr(channel_addresses, "certificate_fingerprint", missing)
     runtime = FakeRuntime(
         network_config(lan_entry("enp1s0", address="192.168.8.1"), overlays=[])
     )

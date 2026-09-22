@@ -3,11 +3,12 @@
 An agent's state is what its device is to host, composed from
 ``config/devices/<id>/``; a client's state is the published service list
 resolved for the scope its socket arrived from, and whether it is switched
-off. Each carries the hash the peer's reports name back; a client's is
-computed on the resolved list, so the same list hashes differently for two
-scopes. One push goes down on a connection's first report whose hash
-differs; after that a push happens only when the hub's own copy changes,
-through the functions here.
+off. Both name every address the hub answers the channel on. Each carries
+the hash the peer's reports name back; a client's is computed on the
+resolved list, so the same list hashes differently for two scopes. An agent
+is pushed its state on a connection's first report whose hash differs, a
+client on any report whose hash differs; after that a push happens when the
+hub's own copy changes, through the functions here.
 """
 
 import hashlib
@@ -21,6 +22,7 @@ from neutrino_hub.modules.services.host_scope import (
     link_scope,
     scope_of,
 )
+from neutrino_hub.web.channel_addresses import channel_urls
 
 
 def agent_state(runtime, device_id: str) -> dict:
@@ -46,7 +48,7 @@ def client_state(runtime, client_id: str) -> dict:
             handed an empty list.
 
     Returns:
-        ``{hash, is_disabled, services}``.
+        ``{hash, is_disabled, services, urls}``.
     """
     client = ClientRegistry().get(client_id)
     is_disabled = client is None or client.is_disabled
@@ -54,7 +56,11 @@ def client_state(runtime, client_id: str) -> dict:
     if not is_disabled:
         scope = runtime.client_scope.get(client_id) or link_scope("")
         services = catalog_entries(runtime.published_services.entries_for(scope))
-    body = {"is_disabled": is_disabled, "services": services}
+    body = {
+        "is_disabled": is_disabled,
+        "services": services,
+        "urls": channel_urls(runtime),
+    }
     serialized = json.dumps(body, sort_keys=True).encode("utf-8")
     return {"hash": hashlib.sha256(serialized).hexdigest()[:16], **body}
 

@@ -30,7 +30,7 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
-from neutrino_hub.web import channel_serve, identity
+from neutrino_hub.web import channel_serve, channel_state, identity
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.routers import channel as channel_router
 from neutrino_hub.web.task_stream import TaskStreamRegistry
@@ -152,6 +152,7 @@ class FakeRuntime:
         self.state_requests = 0
         self.desired = ("h1", {"modules": {}, "desktop": {"seat_password": ""}})
         self.pushed: list = []
+        self.urls = ["https://192.168.100.1:8443"]
 
     def host_scopes(self):
         return []
@@ -174,6 +175,7 @@ def api(monkeypatch, tmp_path):
         "load_module_manifests",
         lambda: {"samba": {"name": "samba", "platforms": {}}},
     )
+    monkeypatch.setattr(channel_state, "channel_urls", lambda given: list(given.urls))
     app = FastAPI()
     app.include_router(channel_router.router)
     runtime = FakeRuntime(tmp_path)
@@ -866,6 +868,33 @@ def test_a_clients_first_report_is_handed_the_published_list(api):
     finally:
         socket.__exit__(None, None, None)
     assert wait_until(lambda: not runtime.client_sessions.is_online(client_id))
+
+
+def test_a_later_client_report_whose_hash_differs_is_answered_with_the_state(api):
+    """A push a client missed heals on its next report: the hub compares
+    every report's hash, not only the first's."""
+    client, runtime = api
+    client_id, token = bound_client()
+    socket = welcomed(client, client_id, token, role="client")
+    try:
+        socket.send_json(client_report())
+        first = socket.receive_json()
+        assert first["urls"] == ["https://192.168.100.1:8443"]
+
+        runtime.urls = ["https://192.168.100.1:8443", "https://100.64.0.1:8443"]
+        socket.send_json(client_report(first["hash"]))
+
+        again = socket.receive_json()
+        assert again["type"] == "state"
+        assert again["urls"] == runtime.urls
+        assert again["hash"] != first["hash"]
+        session = runtime.client_sessions.get(client_id)
+        assert session.offered_hash == again["hash"]
+        socket.send_json(client_report(again["hash"]))
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        assert socket.receive_json()["code"] == "kind_unknown"
+    finally:
+        socket.__exit__(None, None, None)
 
 
 def test_a_disabled_client_keeps_its_socket_and_is_handed_an_empty_list(api):

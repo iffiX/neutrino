@@ -358,7 +358,7 @@ class _ClientFrames:
         self._client = client
 
     async def take_report(self, report: dict) -> None:
-        """Record one report and offer the state once."""
+        """Record one report and hand the state down when the hashes differ."""
         runtime = self._runtime
         session = self._session
         session.record_report(report)
@@ -376,10 +376,9 @@ class _ClientFrames:
             version="",
         )
         session.note_report_recorded()
-        if session.offered_hash is None:
-            document = await asyncio.to_thread(
-                channel_state.client_state, runtime, self._client.id
-            )
-            if document["hash"] != session.state_hash:
-                await session.push_state(document)
-            session.offered_hash = document["hash"]
+        document = await asyncio.to_thread(
+            channel_state.client_state, runtime, self._client.id
+        )
+        if document["hash"] != session.state_hash:
+            await session.push_state(document)
+        session.offered_hash = document["hash"]

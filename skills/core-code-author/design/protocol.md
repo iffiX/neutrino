@@ -573,10 +573,12 @@ two words on every surface:
 | the client's command line | `nclient join <link>` | `nclient leave [--hub <name>]` |
 | the client window | **Join a hub** | **Leave** |
 
-The agent's binding file is `{gateway_url, id, token, fingerprint, machine_id}`,
-root-owned, mode 0600, and a file missing any field is an unbound agent. The
-client keeps one binding per hub it joined, with the hub's `id` and `name`
-from `welcome`.
+The agent's binding file is `{gateway_url, id, token, fingerprint, machine_id}`
+with `gateway_urls`, the set the last state named, beside them; it is
+root-owned, mode 0600, a file missing any of the five is an unbound agent,
+and one with no `gateway_urls` holds the set `[gateway_url]`. The client keeps
+one binding per hub it joined, in the same shape, with the hub's `id` and
+`name` from `welcome`.
 
 ### The handshake
 
@@ -640,12 +642,14 @@ the three packages, named here so that changing one is a change to this table.
 | a stream waiting on credit | | `AGENT_WS_CREDIT_TIMEOUT_S` 60 | |
 | a stream waiting for its close | | | `CLIENT_STREAM_TIMEOUT_S` 15 |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
+| address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | `CLIENT_ROTATE_DELAY_S` 1 |
 
 Every number is seconds except the two rows in bytes. The hub's ping interval
 is inside both silence windows, so a socket with nothing to say is kept open
 by the pings alone, and a peer that reaches its window closes and reconnects.
 A refused `hello` is retried at the backoff's maximum, the minute named under
-the binding.
+the binding. A round through the whole address set with no answer backs off
+as one address failing does.
 
 An agent reports six times as often as a client because its `machine` section
 carries the metrics the Dashboard draws live; a client's carries its hostname
@@ -661,12 +665,19 @@ and platform, which change between releases.
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params}]` | |
 | `is_disabled` | | | bool | |
+| `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
 error, the state error, or a failed `reinstall`. The AI gateway is a `services`
 entry whose `type` is `ai`, and a client gets its key through the `service`
 stream.
+
+`urls` is every address the hub answers the channel on: the link's set, plus
+the overlay's own name where its daemon reports one. Both states carry it
+under their hash, and the hub pushes the state when the set changes: after a
+network apply, and when the address sampler reads a different set, which it
+does every `WEB_ADDRESS_SAMPLE_INTERVAL_S` seconds.
 
 ### The modules section, one entry per module
 
@@ -860,7 +871,7 @@ first that fails gives the close its code:
 
 | Concern | Rule |
 | --- | --- |
-| When `state` is pushed | One push on a connection's first `report` whose `state_hash` differs; after that only when the hub's own hash changes. An agent whose apply failed keeps reporting the old hash; the hub shows that and pushes nothing, and the agent retries only when the state's hash changes. |
+| When `state` is pushed | To an agent, one push on a connection's first `report` whose `state_hash` differs, and after that only when the hub's own hash changes; to a client, on any report whose `state_hash` differs, and when the hub's own hash changes. An agent whose apply failed keeps reporting the old hash; the hub shows that and pushes nothing, and the agent retries only when the state's hash changes. |
 | `nagent sync` | Sends one `report` now, from which the hub compares hashes. |
 | The `package` stream | The agent opens it and grants credit as it writes to disk. The sha256 in the close's `params` is checked after the close, and only a matching file goes to `systemd-run`. A socket that drops mid-transfer deletes the temporary file and locks no update target; only a failed install locks it. |
 | The two hashes | The fingerprint of the published service list is computed on the unresolved list and drives the push; the `state.hash` a client receives is computed on the list resolved for its scope. |
@@ -978,6 +989,18 @@ nothing:
 
 A client behind NAT gets the link address, which can be unreachable from
 there. That is the documented outcome, with no mechanism behind it.
+
+The hub's own address, for a peer, is a set and a name. `hub.neutrino.internal`
+is the hub's name on every served network: dnsmasq answers it with the hub's
+address on the network the query came in on, so the name resolves to the
+hub of the network the peer stands on, whatever that address is today. A
+binding holds the `urls` of the last state it took as `gateway_urls`, with
+`gateway_url` the last address that answered. A round tries the name where
+it resolves, then `gateway_url`, then the rest of `gateway_urls`, and the
+first that answers with the pinned fingerprint is written back as
+`gateway_url`. A fingerprint that does not match on the name is another
+network's hub and is skipped; one that does not match on a stored address is
+recorded as `last_error`, and the round goes on to the next address.
 
 `nhub apply` deletes every directory under `config/devices/` whose name is not
 a stored id.

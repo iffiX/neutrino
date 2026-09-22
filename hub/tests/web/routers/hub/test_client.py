@@ -16,10 +16,9 @@ from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
-from neutrino_hub.web import channel_state
+from neutrino_hub.web import channel_addresses, channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import client as clients_router
-from neutrino_hub.web.routers.hub import device as devices_router
 from tests.conftest import unlock_vault
 
 FINGERPRINT = "SHA256:" + "ab" * 32
@@ -66,9 +65,13 @@ def api(monkeypatch, tmp_path):
         CliproxyApiConfigApplier, "is_installed", property(lambda self: False)
     )
     monkeypatch.setattr(
-        devices_router, "_agent_urls", lambda runtime: ["https://192.168.100.1:8443"]
+        channel_addresses,
+        "channel_urls",
+        lambda runtime: ["https://192.168.100.1:8443"],
     )
-    monkeypatch.setattr(devices_router, "certificate_fingerprint", lambda: FINGERPRINT)
+    monkeypatch.setattr(
+        channel_addresses, "certificate_fingerprint", lambda: FINGERPRINT
+    )
     runtime = FakeRuntime()
     monkeypatch.setattr(
         channel_state,
