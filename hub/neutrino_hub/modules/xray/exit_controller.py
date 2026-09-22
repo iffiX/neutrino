@@ -138,6 +138,10 @@ class XrayExitController:
         # What the last sync check found, so a mismatch is said once rather
         # than every round.
         self._sync_mismatch: "tuple[tuple[str, ...], tuple[str, ...]]" = ((), ())
+        # The last refusal each xray call met, so a failure that repeats every
+        # round is written to the journal once, and its clearing once.
+        self._api_failure: "str | None" = None
+        self._pin_failure: "str | None" = None
 
     @property
     def status(self) -> XrayExitStatus:
@@ -226,7 +230,9 @@ class XrayExitController:
             store names none or xray never answered.
         """
         tag = self._store.exit_tag
-        if not tag:
+        if not tag or not self._expected_tags():
+            # No node outbound in the render means no balancer in xray, and
+            # nothing to pin an exit into.
             return False
         for attempt in range(XRAY_EXIT_REASSERT_TRIES):
             try:
@@ -402,7 +408,11 @@ class XrayExitController:
         choice = self._choice(
             node_list=node_list, resident=resident, health=health, now=now
         )
-        if self._pin(choice, resident=resident):
+        if not resident:
+            # xray carries no node outbound, so it carries no balancer either:
+            # there is no exit to hold and no router to ask.
+            self._store.set_exit("", now=now)
+        elif self._pin(choice, resident=resident):
             self._store.set_exit(choice, now=now)
         else:
             status.is_xray_reachable = False
@@ -498,9 +508,33 @@ class XrayExitController:
                 LOGGER.info("xray holds no override; pinning %s again", choice)
             self._api.set_override(choice)
         except ConnectionError as error:
-            LOGGER.warning("xray did not take the exit: %s", error)
+            self._say_once("_pin_failure", "xray did not take the exit: %s", error)
             return False
+        self._say_cleared("_pin_failure", "xray takes the exit again")
         return True
+
+    def _say_once(self, slot: str, text: str, error: Exception) -> None:
+        """Write a failure to the journal the first time it is met, not every round.
+
+        Args:
+            slot: The attribute holding the last failure of this kind.
+            text: The line, with one ``%s`` for the error.
+            error: What was met.
+        """
+        if getattr(self, slot) != str(error):
+            LOGGER.warning(text, error)
+            setattr(self, slot, str(error))
+
+    def _say_cleared(self, slot: str, text: str) -> None:
+        """Write that a failure of one kind is over, once.
+
+        Args:
+            slot: The attribute holding the last failure of this kind.
+            text: The line.
+        """
+        if getattr(self, slot) is not None:
+            LOGGER.info(text)
+            setattr(self, slot, None)
 
     def _residency(self, status: XrayExitStatus) -> set[str]:
         """Which node outbounds xray carries and the render names.
@@ -515,9 +549,10 @@ class XrayExitController:
         try:
             live = set(self._api.inbound_tags()) | set(self._api.outbound_tags())
         except ConnectionError as error:
-            LOGGER.warning("xray did not answer its API: %s", error)
+            self._say_once("_api_failure", "xray did not answer its API: %s", error)
             status.is_xray_reachable = False
             return set()
+        self._say_cleared("_api_failure", "xray answers its API again")
         carried = {tag for tag in live if tag.startswith(XRAY_NODE_TAG_PREFIX)}
         status.missing_tags = sorted(expected - carried)
         status.extra_tags = sorted(carried - expected)

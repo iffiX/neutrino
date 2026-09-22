@@ -602,6 +602,74 @@ def test_an_api_that_never_comes_up_stops_after_its_tries(tmp_path, monkeypatch)
     assert len(slept) == XRAY_EXIT_REASSERT_TRIES - 1
 
 
+# --- a box with no node: nothing to pin, and nothing said every round ---
+
+
+class _CountingApi(_StubApi):
+    """The stub, counting how often the router is asked about its balancer."""
+
+    def __init__(self, **keywords):
+        super().__init__(**keywords)
+        self.balancer_calls = 0
+
+    def override_target(self) -> str:
+        self.balancer_calls += 1
+        return super().override_target()
+
+
+def test_a_render_with_no_node_asks_the_router_nothing(tmp_path, caplog):
+    """No node outbound means no balancer in xray: asking it for the exit
+    every round fails every round, and a box without nodes would write that
+    to its journal once a minute for as long as it runs."""
+    api = _CountingApi(outbounds=(XRAY_DIRECT_TAG,))
+    box = _Box(
+        tmp_path,
+        probe=_StubProbe({}),
+        api=api,
+        nodes=XrayNodeList.from_dict({"nodes": []}),
+        rendered={"outbounds": [{"tag": XRAY_DIRECT_TAG}]},
+    )
+    box.store.set_exit("node_a", now=NOW)
+
+    with caplog.at_level("WARNING"):
+        status = box.controller.refresh()
+        assert box.controller.reassert() is False
+
+    assert api.balancer_calls == 0
+    assert api.set_calls == []
+    assert status.is_xray_reachable is True
+    assert status.exit_tag == ""
+    assert caplog.records == []
+
+
+def test_a_refusal_that_repeats_is_written_once(tmp_path, caplog):
+    """The journal on a small board fills with a line per round otherwise."""
+    api = _StubApi(is_reachable=False)
+    box = _Box(
+        tmp_path,
+        probe=_StubProbe(
+            {"node_a": [measured("node_a", 40)], "node_b": [measured("node_b", 60)]}
+        ),
+        api=api,
+    )
+
+    with caplog.at_level("INFO"):
+        box.controller.refresh()
+        box.controller.refresh()
+        box.controller.refresh()
+        api.is_reachable = True
+        box.controller.refresh()
+        box.controller.refresh()
+
+    warnings = [one for one in caplog.records if one.levelname == "WARNING"]
+    assert [one.getMessage() for one in warnings] == [
+        "xray did not answer its API: xray api bi exited 1: connection refused"
+    ]
+    assert [one.getMessage() for one in caplog.records if one.levelname == "INFO"] == [
+        "xray answers its API again"
+    ]
+
+
 def test_reselect_pins_from_what_is_stored_without_measuring(tmp_path):
     """Switching a node off is not a reason to open a connection through
     every other one."""
