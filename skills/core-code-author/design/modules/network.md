@@ -121,6 +121,24 @@ no "SSH from the WAN" switch: a per-port list on the one interface facing the
 internet is a list that gets half right, and the honest control is the whole
 interface with what it costs written beside it.
 
+`is_exposed` renders the input chain only: what it decides is which wires
+reach a connection to this box's own services. The forward chain is rendered
+from the roles, and its `iifname "wt0" accept` carries no `oifname`, so a
+packet arriving from the overlay is forwarded anywhere this box routes, a
+closed uplink's network included, and postrouting masquerades it on the way
+out. Which peers reach which network is the overlay's management plane
+(NetBird's routing peer and its network resources): NetBird filters again in
+its own table and inserts its own `iifname "wt0" accept` at the top of this
+table's input and forward chains. So closing an uplink closes that wire to
+this box's own services, and from the overlay the box still answers on that
+wire's address, its own address on it included. Read off a running box:
+
+```text
+chain input   { policy drop; ... iifname { "wt0", "enp1s0", "wlp3s0" } accept ... }
+chain forward { policy drop; ... iifname "wt0" accept ... }
+chain postrouting { oifname "enp2s0" masquerade }
+```
+
 An overlay is one more row in that same list, and starts open: joining one is
 joining your own network, which is the whole reason somebody set it up. It
 answers the same single question and gets no matrix of its own, because a
@@ -187,7 +205,10 @@ dnsmasq is the DHCP server and the resolver of every served network, and
 nothing else on the box answers either. It gets one `dhcp-range` per LAN
 whose DHCP is on, and every request is tagged with the interface it arrived
 on, so the gateway and resolver options a device receives are that
-interface's own address.
+interface's own address. It also answers `hub.neutrino.internal` with this
+box's address on the network the query arrived from, one `interface-name`
+per LAN under `localise-queries`, so a device on any served network reaches
+the hub by that name whatever the address becomes.
 
 A fixed address is one entry of `static_leases` at the top level of
 `network.json`: a MAC, an address and an optional name, rendered as one

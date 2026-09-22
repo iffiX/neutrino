@@ -6,6 +6,7 @@ config dnsmasq refused to start on, which took DHCP and DNS off the wired LAN
 because of a mistake in the Wi-Fi half.
 """
 
+from neutrino_hub.modules.router.constants import ROUTER_HUB_NAME
 from neutrino_hub.modules.router.dnsmasq_renderer import (
     NO_LAN_PLACEHOLDER_INTERFACE,
     RouterDnsmasqRenderer,
@@ -197,6 +198,33 @@ def test_without_the_fallback_xray_is_the_only_upstream():
 
     assert servers == ["server=127.0.0.1#15353"]
     assert "strict-order" not in rendered
+
+
+# --- The hub by name --------------------------------------------------------
+
+
+def test_every_served_network_resolves_the_hub_by_name(tmp_path):
+    """One `interface-name` per LAN and `localise-queries` once: a query on
+    the Wi-Fi is answered with the Wi-Fi address, never the wired one."""
+    config = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        lan_entry("wlp3s0", address="192.168.101.1"),
+    )
+
+    directives = without_comments(config)
+    assert f"interface-name={ROUTER_HUB_NAME},enp1s0" in directives
+    assert f"interface-name={ROUTER_HUB_NAME},wlp3s0" in directives
+    assert directives.count("localise-queries") == 1
+    validate_dnsmasq(config, tmp_path)
+
+
+def test_a_box_serving_nothing_has_no_name_to_answer(tmp_path):
+    config = render(wan_entry("enp2s0"))
+
+    directives = without_comments(config)
+    assert "interface-name" not in directives
+    assert "localise-queries" not in directives
+    validate_dnsmasq(config, tmp_path)
 
 
 # --- Fixed addresses --------------------------------------------------------

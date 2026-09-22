@@ -206,6 +206,11 @@ def router_hostapd_address_path(interface: str):
 
 ROUTER_DNSMASQ_PATH = UTILS_GENERATED_DIR / "dnsmasq_neutrino.conf"
 
+# The name this box answers to on every served network, resolving to its
+# address on the network the query arrived from. `.internal` is the top-level
+# domain reserved for private networks.
+ROUTER_HUB_NAME = "hub.neutrino.internal"
+
 # --- the networks this box knows how to join ---
 # What `wpa_supplicant` calls each way of authenticating. Only these three are
 # stored: an enterprise network needs a certificate and an identity, which is

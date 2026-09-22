@@ -59,7 +59,7 @@ A side gateway adds one field, **Upstream gateway**, which holds the address of 
 
 On each served network, the box gives its DHCP clients its own address as their gateway and their resolver. The **DHCP** panel of a LAN interface has the switch **Allocate address on this network**, a **Range start** and **Range end**, and a **Lease time**. The lease time is in dnsmasq form, `12h` for example. The pool runs from host `.100` to `.200` unless you change it, and the box's own address must lie outside it.
 
-With the switch on, the box assigns addresses on the network. The box serves DNS on the network whether or not the switch is on. In server mode the box serves no network, so it runs neither DHCP nor DNS.
+With the switch on, the box assigns addresses on the network. The box serves DNS on the network whether or not the switch is on, and on every served network the name `hub.neutrino.internal` resolves to the box's address on that network. In server mode the box serves no network, so it runs neither DHCP nor DNS.
 
 **Fixed addresses**, under the interface card, binds a MAC address to one address in a network that assigns addresses. Select **Add address**, type the MAC (or pick a discovered device from the list), the address and an optional name, then select **Apply fixed addresses**. A device that holds a dynamic lease moves to its fixed address at its next renewal, and the name resolves on every served network.
 
@@ -80,7 +80,7 @@ A LAN radio has an **Access point** panel with a **Network name**, a **Passphras
 
 ![The Exposure section](/guide/en/network_exposure.webp)
 
-An exposed uplink accepts connections from the internet on every port the box listens on. The panel shows a warning before it applies such an exposure. The panel's own port is under **Panel port**:
+An exposed uplink accepts connections from the internet on every port the box listens on. The panel shows a warning before it applies such an exposure. Removing an uplink from the list stops the box answering on that wire; what the overlay forwards through the box into that wire's network is unchanged. The panel's own port is under **Panel port**:
 
 1. Under **Panel port**, type the new **Port**.
 1. Select **Apply panel port**. The panel restarts on the new port and the browser follows it; when the new address is unreachable from where you are, the page reads **No answer at** that address.

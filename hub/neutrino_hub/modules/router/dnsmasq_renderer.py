@@ -7,6 +7,7 @@ plaintext query ever leaves a WAN interface.
 
 from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
 
+from neutrino_hub.modules.router.constants import ROUTER_HUB_NAME
 from neutrino_hub.modules.router.interfaces import (
     RouterInterface,
     RouterNetworkConfig,
@@ -47,6 +48,7 @@ class RouterDnsmasqRenderer:
             takes part.
         """
         lines = self._render_listeners()
+        lines += self._render_hub_name()
         lines += self._render_dhcp()
         lines += self._render_upstream()
         lines += [
@@ -97,6 +99,26 @@ class RouterDnsmasqRenderer:
         ]
         for interface in self._lans:
             lines.append(f"interface={interface.device_name}")
+        lines.append("")
+        return lines
+
+    def _render_hub_name(self) -> list[str]:
+        """This box by name on every served network that has an address.
+
+        ``interface-name`` answers with the interface's own address, and
+        ``localise-queries`` picks, of the addresses that name has, the one
+        on the network the query arrived from.
+        """
+        served = [interface for interface in self._lans if interface.lan.address]
+        if not served:
+            return []
+        lines = [
+            f"# {ROUTER_HUB_NAME} is this box, at its address on the network the",
+            "# query came in on.",
+            "localise-queries",
+        ]
+        for interface in served:
+            lines.append(f"interface-name={ROUTER_HUB_NAME},{interface.device_name}")
         lines.append("")
         return lines
 

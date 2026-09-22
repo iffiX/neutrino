@@ -239,9 +239,9 @@ class RouterNftRenderer:
             overlays = _interface_set(self._exposed_overlays)
             lines += [
                 "",
-                "        # An overlay reaches the served networks and back: it is",
-                "        # one trust domain with them, which is what joining one",
-                "        # is for.",
+                "        # An overlay reaches anything this box routes, the closed",
+                "        # uplink's network included; which peers may is the",
+                "        # overlay's own rule set's decision.",
                 f"        iifname {overlays} accept",
             ]
             if self._lans:
