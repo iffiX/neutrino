@@ -150,7 +150,7 @@ it has none:
 | Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
 | Channel frames | `hello`/`welcome`; `open`/`close`; `state`/`report` | `refused`, `credit` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `file`, `command`, `package`, `log`, `service`, `desktop` |
-| CLI | `nagent join`/`leave`, `nclient join`/`leave`, `nagent rdp start`/`stop`, `nclient service ... mount`/`unmount`, port forwarding `start`/`stop` | `status`, `sync`, `run`, `gui`, `quit` |
+| CLI | `nagent join`/`leave`, `nclient join`/`leave`, `nagent rdp start`/`stop`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
 
 ### The page, its members and its writes
 
@@ -243,7 +243,7 @@ TLS port.
 | `/api/hub/overlay` | Which overlay engine the box runs, and under it `netbird` (the network it joins) and `easytier` (the network it defines: peers, networks, secret) |
 | `/api/hub/proxy` | Routing policy, and under it `node` (the exit nodes), `balancer`, and `geodata` (the databases the split runs on: which release is installed, and updating them to the latest) |
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `gateway` (the gateway itself: keys, accounts, usage, journal) |
-| `/api/hub/device` | Every machine on record on the LAN: the list, a scan, names, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its Modules page shows |
+| `/api/hub/device` | Every machine on record on the LAN: the list, a scan, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its Modules page shows |
 | `/api/hub/client` | Enrolled client sessions and the links that enrol them |
 | `/api/hub/service` | The published service list and manual declarations |
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
@@ -370,7 +370,7 @@ the page's whole view.
 | `POST /api/hub/device/scan` | | scans the LAN; the list |
 | `GET /api/hub/device/online` | | the devices with a socket open |
 | `POST /api/hub/device/enrollment/create` | `{device_id?, name?}` | a link for that row, or for a new one |
-| `POST /api/hub/device/set` | `{device_id, name, shown_module}` | the name, and which module tabs its Modules page shows |
+| `POST /api/hub/device/set` | `{device_id, name, icon, ssh, shown_module}`, each optional | the name, the icon, the stored SSH credential the hub reaches it with, and which module tabs its Modules page shows |
 | `POST /api/hub/device/remove` | `{device_id}` | forgets the device; its socket is closed with `binding_unknown` |
 | `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC; `wol_no_mac` when none is stored |
 | `POST /api/hub/device/agent/install` | `{device_id, ...}` | installs the agent over SSH; `TaskStarted` |
@@ -453,7 +453,9 @@ the page's whole view.
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's units' journal on the device; empty for a module that runs as no unit |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman` and `zfs` alike; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
+| `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
 | `POST /api/agent/module/samba/share/set` | `{device_id, shares}` | |
 | `POST /api/agent/module/samba/user/set` | `{device_id, users}` | |
@@ -794,7 +796,7 @@ is added without a change to the protocol; a kind is added by a row here.
 
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
-| hub, to an agent | `shell` | `{cols, rows}`, or `{module: podman, container}` for a container's shell; terminal bytes both ways |
+| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell; terminal bytes both ways |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
@@ -809,7 +811,7 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 | `module` | Verbs |
 | --- | --- |
 | `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto the last three |
-| `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin/password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
+| `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin` and `password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
 
 Two verbs every module answers: `validate`, as `command {module: <name>,
 verb: validate, config}`, checks a configuration before it is saved; and
@@ -862,7 +864,8 @@ is what a successful `join` leaves on both sides.
 
 ### The numbers
 
-Each package's `constants.py` has `PROTOCOL`, the integer this build speaks,
+The agent's and the client's `constants.py`, and the hub's
+`modules/channel/constants.py`, have `PROTOCOL`, the integer this build speaks,
 which is 1 in every 0.3.0 package. The agent and the client send theirs in
 `hello`, and the hub sends its own in `welcome`. The hub alone also has
 `PROTOCOL_MIN`, the oldest number it still accepts. An agent or a client
