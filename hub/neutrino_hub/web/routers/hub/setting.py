@@ -204,7 +204,7 @@ def update_settings(
         )
     if request.language not in WEB_LANGUAGES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "code": SETTINGS_ERROR_LANGUAGE_UNKNOWN,
                 "params": {"language": request.language},
@@ -212,7 +212,7 @@ def update_settings(
         )
     if request.theme not in WEB_THEMES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "code": SETTINGS_ERROR_THEME_UNKNOWN,
                 "params": {"theme": request.theme},
@@ -221,7 +221,7 @@ def update_settings(
     is_renaming = "hub_name" in request.model_fields_set
     if is_renaming and not request.hub_name.strip():
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": SETTINGS_ERROR_HUB_NAME_REQUIRED, "params": {}},
         )
     settings = read_config(PANEL_SETTINGS_FILE)

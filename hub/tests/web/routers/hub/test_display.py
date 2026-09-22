@@ -111,7 +111,7 @@ def test_a_language_this_panel_does_not_ship_is_refused(client):
 
     response = opened.post(SET_PATH, json={"listen_port": 8080, "language": "fr"})
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert response.json()["detail"]["code"] == "language_unknown"
     assert stored["language"] == "en"
 
@@ -121,7 +121,7 @@ def test_a_theme_this_panel_does_not_have_is_refused(client):
 
     response = opened.post(SET_PATH, json={"listen_port": 8080, "theme": "neon"})
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert response.json()["detail"]["code"] == "theme_unknown"
     assert stored["theme"] == "dark"
 

@@ -345,7 +345,7 @@ def test_an_unknown_kind_is_refused(accounts_client):
     answer = accounts_client.post(
         "/api/hub/ai/gateway/account_login/start", json={"kind": "gemini"}
     )
-    assert answer.status_code == 422
+    assert answer.status_code == 400
     detail = answer.json()["detail"]
     assert detail["code"] == "unsupported_kind"
     assert detail["params"]["kind"] == "gemini"
@@ -724,9 +724,9 @@ def test_the_key_filter_narrows_and_an_unknown_key_is_a_404(usage_client):
     }
 
 
-def test_an_unknown_range_is_a_coded_422(usage_client):
+def test_an_unknown_range_is_a_coded_400(usage_client):
     answer = usage_client.get("/api/hub/ai/gateway/usage?range=fortnight")
-    assert answer.status_code == 422
+    assert answer.status_code == 400
     assert answer.json()["detail"] == {
         "code": "invalid_range",
         "params": {"range": "fortnight"},

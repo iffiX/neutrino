@@ -14,6 +14,7 @@ import logging
 import subprocess
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
@@ -21,7 +22,7 @@ from starlette.requests import Request
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.web import ws
-from neutrino_hub.web.constants import WEB_FRONTEND_DIST_DIR
+from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.usage_collector import PanelUsageCollector
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Neutrino Hub", docs_url=None, redoc_url=None)
     app.state.runtime = _runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
+    app.add_exception_handler(RequestValidationError, _body_invalid)
     app.add_middleware(OriginGuardMiddleware)
     _settle_gateway_key()
     _start_samplers()
@@ -114,6 +116,7 @@ def create_agent_app() -> FastAPI:
     app = FastAPI(title="Neutrino Hub Agent Channel", docs_url=None, redoc_url=None)
     app.state.runtime = _runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
+    app.add_exception_handler(RequestValidationError, _body_invalid)
     app.include_router(channel.router)
     return app
 
@@ -132,6 +135,37 @@ def _vault_locked(request: Request, error: VaultLockedError) -> JSONResponse:
     return JSONResponse(
         status_code=400,
         content={"detail": {"code": VaultLockedError.code, "params": {}}},
+    )
+
+
+def _body_invalid(request: Request, error: RequestValidationError) -> JSONResponse:
+    """Answer a body, query or path that does not validate, in the one shape.
+
+    FastAPI's own answer is a 422 carrying a list; every refusal here is
+    ``{code, params}``, and a body that does not validate is the 400 class.
+
+    Args:
+        request: The request whose input did not validate.
+        error: What did not validate, field by field.
+
+    Returns:
+        A 400 carrying ``body_invalid`` and the fields named.
+    """
+    del request
+    fields = []
+    for problem in error.errors():
+        location = problem.get("loc", ())
+        field = ".".join(str(part) for part in location if part not in ("body",))
+        if field and field not in fields:
+            fields.append(field)
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": {
+                "code": WEB_CODE_BODY_INVALID,
+                "params": {"fields": ", ".join(fields)},
+            }
+        },
     )
 
 

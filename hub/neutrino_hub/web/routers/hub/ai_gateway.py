@@ -72,7 +72,7 @@ router = APIRouter(
 ACCOUNT_ERROR_STATUS = {
     "unknown_account": status.HTTP_404_NOT_FOUND,
     "login_expired": status.HTTP_404_NOT_FOUND,
-    "unsupported_kind": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "unsupported_kind": status.HTTP_400_BAD_REQUEST,
 }
 
 
@@ -111,12 +111,12 @@ def usage(
         does. A gateway that cannot be asked contributes no account rows.
 
     Raises:
-        HTTPException: 422 with ``invalid_range`` for an unknown range, 404
+        HTTPException: 400 with ``invalid_range`` for an unknown range, 404
             with ``unknown_key`` for a key neither stored nor ever seen.
     """
     if range_name not in USAGE_RANGE_BUCKETS:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_range", "params": {"range": range_name}},
         )
     store = CliproxyApiUsageStore()

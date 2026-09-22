@@ -94,7 +94,6 @@ def list_host_shares(host: str) -> ServiceShareListView:
 @router.post(
     "/declaration/add",
     response_model=ServiceListView,
-    status_code=status.HTTP_201_CREATED,
 )
 def add_declared_service(
     request: Request,

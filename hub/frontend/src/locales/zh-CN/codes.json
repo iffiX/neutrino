@@ -18,6 +18,7 @@
   "code.backup_unrecognized": "这个文件不是 微子·中枢 的备份。",
   "code.backup_wrong_extension": "这不是本面板导出的备份文件。",
   "code.binding_unknown": "中枢没有这个绑定；用新链接重新加入。",
+  "code.body_invalid": "请求内容不合法：{fields}。",
   "code.client_disabled": "这个客户端已停用。",
   "code.client_name_required": "客户端需要填名称。",
   "code.client_unknown": "这台机器上没有这个客户端。",

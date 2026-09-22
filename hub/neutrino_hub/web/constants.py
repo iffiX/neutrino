@@ -67,6 +67,9 @@ WEB_PATH_VERBS = frozenset(
         "scrub",
     }
 )
+# The one code for input that does not validate, whichever route it reached:
+# the 400 class of protocol.md, in the shape every refusal has.
+WEB_CODE_BODY_INVALID = "body_invalid"
 # The session secret is state, not configuration: it is generated on the box and
 # a restore deliberately does not carry one in, so every session dies with it.
 WEB_SESSION_SECRET_PATH = UTILS_STATE_ROOT / "session.secret"

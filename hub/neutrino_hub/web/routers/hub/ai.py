@@ -64,7 +64,7 @@ def reorder_providers(request: AiProviderOrderUpdate) -> AiProviderListView:
     stored_ids = [record.id for record in registry.list_records()]
     if sorted(request.provider_ids) != sorted(stored_ids):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "code": "provider_order_mismatch",
                 "params": {

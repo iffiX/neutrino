@@ -161,7 +161,7 @@ def test_an_order_that_is_not_a_permutation_is_refused(client):
     refused = client.post(
         "/api/hub/ai/provider/order/set", json={"provider_ids": ["absent"]}
     )
-    assert refused.status_code == 422
+    assert refused.status_code == 400
     assert refused.json()["detail"] == {
         "code": "provider_order_mismatch",
         "params": {"missing": [stored["id"]], "unknown": ["absent"], "duplicate": []},
@@ -171,7 +171,7 @@ def test_an_order_that_is_not_a_permutation_is_refused(client):
         "/api/hub/ai/provider/order/set",
         json={"provider_ids": [stored["id"], stored["id"]]},
     )
-    assert doubled.status_code == 422
+    assert doubled.status_code == 400
     assert doubled.json()["detail"]["params"]["duplicate"] == [stored["id"]]
 
     listed = client.get("/api/hub/ai").json()["providers"]

@@ -127,7 +127,7 @@ def declare(client, **fields) -> list[dict]:
         "description": "the forge box",
     }
     response = client.post("/api/hub/service/declaration/add", json={**body, **fields})
-    assert response.status_code == 201, response.text
+    assert response.status_code == 200, response.text
     return response.json()["services"]
 
 

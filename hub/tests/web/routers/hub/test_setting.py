@@ -278,7 +278,7 @@ def test_a_blank_name_is_refused(name_client):
         "/api/hub/setting/set", json={"listen_port": 8080, "hub_name": "  "}
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert response.json()["detail"]["code"] == "hub_name_required"
     assert identity_file(config_dir)["name"] == "gateway"
 

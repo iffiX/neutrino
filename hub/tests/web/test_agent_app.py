@@ -110,6 +110,22 @@ def test_the_panel_app_serves_no_channel_route(factories):
     assert "/api/hub/client" in paths
 
 
+def test_a_body_that_does_not_validate_is_refused_in_the_one_shape(factories):
+    """FastAPI's own answer is a 422 carrying a list; a client written from
+    protocol.md reads every refusal as ``{code, params}`` under a status of
+    the 400 class, and this is where that promise is kept."""
+    from fastapi.testclient import TestClient
+
+    app = factories.create_agent_app()
+    with TestClient(app) as client:
+        answer = client.post("/api/channel/join", json={"ticket": 7})
+
+    assert answer.status_code == 400
+    detail = answer.json()["detail"]
+    assert detail["code"] == "body_invalid"
+    assert detail["params"]["fields"] == "ticket, role"
+
+
 def test_both_apps_share_one_runtime(factories):
     panel = factories.create_app()
     agent = factories.create_agent_app()

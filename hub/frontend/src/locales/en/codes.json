@@ -18,6 +18,7 @@
   "code.backup_unrecognized": "This file is not a Neutrino Hub backup.",
   "code.backup_wrong_extension": "That is not a backup file this panel writes.",
   "code.binding_unknown": "This hub has no such binding; join it again with a new link.",
+  "code.body_invalid": "The request did not validate: {fields}.",
   "code.client_disabled": "That client is turned off.",
   "code.client_name_required": "A client needs a name.",
   "code.client_unknown": "That client is not on this box.",
