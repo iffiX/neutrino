@@ -259,11 +259,12 @@ def test_a_report_saying_nothing_new_asks_for_no_refetch(box, device):
     )
 
     agent.send_json(vitals(cpu_percent=91.0))
+    metrics = frames_until(panel, WEB_EVENT_METRICS)
     write_config("router/network.json", {"interfaces": []})
-    frames = frames_until(panel, WEB_EVENT_CONFIG)
+    config = frames_until(panel, WEB_EVENT_CONFIG)
     closed(agent, panel)
 
-    assert [frame["type"] for frame in frames] == [
+    assert [frame["type"] for frame in metrics + config] == [
         WEB_EVENT_METRICS,
         WEB_EVENT_CONFIG,
     ]

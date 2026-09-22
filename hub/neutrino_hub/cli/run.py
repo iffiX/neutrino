@@ -367,6 +367,7 @@ def _serve_panel(arguments) -> int:
             port=port,
             reload=True,
             log_level="info",
+            access_log=False,
         )
         return 0
     panel_server = uvicorn.Server(
@@ -376,6 +377,7 @@ def _serve_panel(arguments) -> int:
             host=arguments.host,
             port=port,
             log_level="info",
+            access_log=False,
             # A browser's open websockets otherwise hold a graceful shutdown
             # until systemd's own timeout; a stop is allowed seconds, not it.
             timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
@@ -392,6 +394,7 @@ def _serve_panel(arguments) -> int:
                     host=arguments.host,
                     port=_configured_agent_port(),
                     log_level="info",
+                    access_log=False,
                     ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
                     ssl_keyfile=str(agent_key_path),
                     timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
