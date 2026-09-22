@@ -141,6 +141,7 @@ class ClientResident:
                     ),
                     log=log,
                     on_change=self.notify,
+                    entries_of=self.service_entries,
                 ),
                 RdpViewerHandler(
                     platform=self.platform,

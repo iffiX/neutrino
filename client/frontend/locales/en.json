@@ -89,7 +89,7 @@
   "ui.forwarding_to": "127.0.0.1:{port}",
   "ui.gateway_default": "gateway default",
   "ui.gemini_model": "Model",
-  "ui.hub_exit": "Exit",
+  "ui.hub_exit": "Target",
   "ui.hub_is_exit": "the AI tools point at this hub",
   "ui.hub_services": "Published by {name}",
   "ui.hub_software": "runs {software}",

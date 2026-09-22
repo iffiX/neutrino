@@ -8,7 +8,7 @@ The window, titled **Neutrino client**, has a **Hubs** section and a **Services*
 
 ## The Hubs section
 
-Each row holds one hub: its name, the state it is in, its address and the package the hub runs. Each row has the **Exit** radio and **Leave**. A row reading **Replaced by another client** has **Reconnect** as well, and every button acts on that hub and no other. The **Join a hub** row under them stays whether or not any hub is joined, and takes a link from any hub's **Clients** page.
+Each row holds one hub: its name, the state it is in, its address and the package the hub runs. Each row has the **Target** radio and **Leave**. A row reading **Replaced by another client** has **Reconnect** as well, and every button acts on that hub and no other. The **Join a hub** row under them stays whether or not any hub is joined, and takes a link from any hub's **Clients** page.
 
 ![The window with a hub joined](/guide/en/client_connected.webp)
 
@@ -25,11 +25,11 @@ The client keeps every address a hub listens on, and a state from that hub updat
 
 ![The window with no hub joined](/guide/en/client_disconnected.webp)
 
-## The exit hub
+## The target hub
 
-One hub of those joined is the exit, and your AI tools point at that hub's gateway. The **Exit** radio on a row makes that hub the exit. Its row then reads **the AI tools point at this hub**, and every other hub's AI panel names the hub they point at instead.
+One hub of those joined is the target, and your AI tools point at that hub's gateway. The **Target** radio on a row makes that hub the target. Its row then reads **the AI tools point at this hub**, and every other hub's AI panel names the hub they point at instead.
 
-The first hub joined is the exit until another is chosen. Leaving the exit hub moves the exit to the next hub joined. Only a row reading **Connected** takes the radio, and a hub whose channel is down is rejected with `no_exit_hub`. The [AI page](./ai.md) covers what the tools are pointed at.
+The first hub joined is the target until another is chosen. Leaving the target hub moves the target to the next hub joined. Only a row reading **Connected** takes the radio, and a hub whose channel is down is rejected with `no_exit_hub`. The [AI page](./ai.md) covers what the tools are pointed at.
 
 ## The Services section
 

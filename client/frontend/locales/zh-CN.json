@@ -89,7 +89,7 @@
   "ui.forwarding_to": "127.0.0.1:{port}",
   "ui.gateway_default": "网关默认",
   "ui.gemini_model": "模型",
-  "ui.hub_exit": "出口",
+  "ui.hub_exit": "目标",
   "ui.hub_is_exit": "AI 工具指向此 hub",
   "ui.hub_services": "由 {name} 发布",
   "ui.hub_software": "运行 {software}",

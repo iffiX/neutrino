@@ -9,7 +9,10 @@ A record in the store is the hub and entry a share came from, the login and
 the path this person typed, nothing more: what is attached is this run's
 own. The reconcile remounts what this run attached and lost, which is what
 brings a share back after the network dropped; a record from an earlier run
-waits for the person to ask. A record whose credentials file is gone reports
+waits for the person to ask. A mount takes the host and share its entry
+names now, and a record whose entry moved is written back; an entry that is
+absent, its hub being away, leaves the record as it is. A record whose
+credentials file is gone reports
 ``credentials_missing`` and waits for the password to be entered again, and
 one the share refused for its login, its access or its name waits the same
 way: mounting it again would only be refused again. A record that names no
@@ -64,13 +67,25 @@ def _nobody() -> None:
     """Nobody listening for changes."""
 
 
+def _no_entries() -> list:
+    """No hub publishing anything."""
+    return []
+
+
 class FileServiceHandler(ServiceTypeHandler):
     """Mounts, unmounts, reports and remounts this person's shares."""
 
     service_type = "file"
 
     def __init__(
-        self, *, platform, store, credentials_dir: str, log=print, on_change=None
+        self,
+        *,
+        platform,
+        store,
+        credentials_dir: str,
+        log=print,
+        on_change=None,
+        entries_of=None,
     ):
         """
         Args:
@@ -80,12 +95,16 @@ class FileServiceHandler(ServiceTypeHandler):
             log: Callable used for progress messages.
             on_change: Called after every change a record's row would show;
                 None for nobody listening.
+            entries_of: Callable ``() -> list`` giving the merged service
+                list, each entry stamped with ``hub_id``, as the hubs
+                publish it now; None gives no entry.
         """
         self._platform = platform
         self._store = store
         self._credentials_dir = credentials_dir
         self._log = log
         self._on_change = on_change if on_change is not None else _nobody
+        self._entries_of = entries_of if entries_of is not None else _no_entries
         self._lock = threading.Lock()
         self._problems: dict = {}
         # Live step per record: queued, mounting.
@@ -419,6 +438,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._problems[record_id] = refusal
             self._stages.pop(record_id, None)
             return
+        record = self._follow_entry(record_id, record)
         self._stages[record_id] = "mounting"
         self._on_change()
         try:
@@ -443,6 +463,31 @@ class FileServiceHandler(ServiceTypeHandler):
         self._problems.pop(record_id, None)
         self._stages.pop(record_id, None)
         self._log(f"mounted {_share_url(record)} at {location}")
+
+    def _follow_entry(self, record_id: str, record: dict) -> dict:
+        """The record with the host and share its entry names now.
+
+        A record whose entry moved is written back to the store; one whose
+        entry is absent, its hub being away, stands as it is.
+        """
+        entry = find_entry(
+            self._entries_of(),
+            self.service_type,
+            str(record.get("hub_id", "")),
+            str(record.get("entry_id", "")),
+        )
+        if entry is None:
+            return record
+        payload = entry.get("payload") or {}
+        host = str(payload.get("host", "") or "")
+        share = str(payload.get("share", "") or "")
+        if not host or (host, share) == (record.get("host"), record.get("share")):
+            return record
+        moved = dict(record, host=host, share=share)
+        with self._lock:
+            self._store.set_mount(record_id, moved)
+        self._log(f"share moved to {host}: {_share_url(moved)} at {moved.get('path')}")
+        return moved
 
     def _detach_records(self, records: list) -> int:
         """Detach ``(record_id, record)`` pairs and forget their standing; under the lock."""

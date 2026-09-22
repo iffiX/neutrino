@@ -7,7 +7,8 @@ run's own, so a record of an earlier run waits to be asked for. A declined
 authorization is typed and not retried on the timer. One hub's records are
 let go of without touching another's, two hubs cannot share one mount
 point, and a record an older build wrote without a hub is unmounted by path
-and dropped at start.
+and dropped at start. A mount follows the host its entry names now, and a
+record whose entry moved is written back; an absent entry leaves it alone.
 """
 
 import json
@@ -184,6 +185,71 @@ def test_the_reconcile_remounts_what_this_run_attached(service):
 
     assert len(platform.attach_calls) == 2
     assert subject.rows()[0]["is_attached"] is True
+
+
+def following_entries(tmp_path, entries: list):
+    """A handler whose hubs publish what the list holds now."""
+    platform = FakeClientPlatform()
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+    lines: list = []
+    subject = FileServiceHandler(
+        platform=platform,
+        store=store,
+        credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        log=lines.append,
+        entries_of=lambda: list(entries),
+    )
+    return subject, platform, store, lines
+
+
+def test_a_mount_follows_the_host_its_entry_names_now(tmp_path):
+    """The hub moved its share to another address: the remount takes the
+    entry's host and the record is written back with it."""
+    entries: list = []
+    subject, platform, store, lines = following_entries(tmp_path, entries)
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+    assert platform.attach_calls[0]["share_url"] == "//hub/media"
+    record_id = mount_record_id("h1", "share_media", location)
+
+    platform.attached.discard(location)
+    entries.append(entry_for(dict(PAYLOAD, host="nas2")))
+    subject.reconcile()
+
+    assert platform.attach_calls[1]["share_url"] == "//nas2/media"
+    assert store.mounts()[record_id]["host"] == "nas2"
+    assert store.mounts()[record_id]["share"] == "media"
+    assert subject.rows()[0]["host"] == "nas2"
+    assert f"share moved to nas2: //nas2/media at {location}" in lines
+
+
+def test_a_mount_whose_entry_is_absent_keeps_the_records_host(tmp_path):
+    """The hub is away: its entries are gone, and the record stands."""
+    entries: list = []
+    subject, platform, store, lines = following_entries(tmp_path, entries)
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+    record_id = mount_record_id("h1", "share_media", location)
+
+    platform.attached.discard(location)
+    subject.reconcile()
+
+    assert platform.attach_calls[1]["share_url"] == "//hub/media"
+    assert store.mounts()[record_id]["host"] == "hub"
+    assert not any(line.startswith("share moved") for line in lines)
+
+
+def test_an_entry_naming_the_same_host_writes_nothing_back(tmp_path):
+    entries = [entry_for(PAYLOAD)]
+    subject, platform, _store, lines = following_entries(tmp_path, entries)
+    location = str(tmp_path / "nas")
+    assert attach(subject, path=location) == {}
+
+    platform.attached.discard(location)
+    subject.reconcile()
+
+    assert platform.attach_calls[1]["share_url"] == "//hub/media"
+    assert not any(line.startswith("share moved") for line in lines)
 
 
 def test_a_declined_authorization_is_typed_and_not_retried(service):

@@ -327,7 +327,8 @@ def test_the_exit_radio_is_checked_on_the_exit_and_live_on_connected_hubs():
     assert "t('ui.hub_exit')" in body
     assert "t('ui.hub_is_exit')" in body
     assert "radio.disabled = true;" not in PAGE_JS
-    assert EN_WORDS["ui.hub_exit"] == "Exit"
+    assert EN_WORDS["ui.hub_exit"] == "Target"
+    assert CATALOGS["zh-CN"]["ui.hub_exit"] == "目标"
     assert EN_WORDS["ui.hub_is_exit"] == "the AI tools point at this hub"
     assert EN_WORDS["code.no_exit_hub"]
 
