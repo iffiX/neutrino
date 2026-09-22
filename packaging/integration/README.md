@@ -12,7 +12,7 @@ reconfigures a box's network, installs packages, or both.
 | `test_panel_api_proxy.py` | The exit-node list, the SOCKS listeners, the direct lists and the resolvers. |
 | `test_declared_services.py` | What the Services page is drawn from, and every action it refuses. |
 | `test_panel_api_modules.py` | The Modules page for a device with no agent: the catalog, the states, and every refusal. |
-| `test_install_a_module.py` | That a module actually installs on a managed machine through the panel — the one check here that runs a package manager. |
+| `test_install_a_module.py` | That a module actually installs on a managed machine through the panel — the one check here that runs a package manager; on the same machine, a saved configuration read back as written, its unit's journal, and the refusal a write with no body gets. |
 | `test_panel_api_devices.py` | The device register: naming a scan row, renaming by id, forgetting, and fifty at once. |
 | `test_install_footprint.py` | That a server or side_gateway install left the machine addressing itself. |
 | `test_mode_matrix.py` | Every mode, every ordered switch between them, the one-arm and multi-uplink shapes, and the proxy's behaviour in each — the contract network.md states. |

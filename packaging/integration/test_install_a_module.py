@@ -14,6 +14,11 @@ install, through the panel, on a machine with a package manager.
 install is the machine's own package manager reaching its own archive, which
 is the shape every other platform-tier module has.
 
+The same managed machine answers the checks that need an agent on the socket:
+a configuration saved through the panel is checked on the machine and read
+back as written, and the unit's journal comes back up the channel. Beside
+them sits the one refusal shape a write with no body gets.
+
 It needs the same second machine the lifecycle walk does: a client VM on the
 served wire answering SSH with the ``id_lab`` key beside this file.
 """
@@ -25,6 +30,15 @@ import test_mode_matrix as matrix
 
 MODULE = "samba"
 MODULE_LAN = "192.168.95.1"
+# One share, every field spelled, so the read-back is compared whole.
+SHARE = {
+    "name": "integration",
+    "path": "/srv/integration",
+    "comment": "saved through the panel",
+    "is_read_only": True,
+    "valid_users": [],
+}
+JOURNAL_LINES = 50
 
 CLIENT_TIMEOUT_S = 180
 INSTALL_TIMEOUT_S = 600
@@ -184,6 +198,21 @@ def test_the_machine_says_why_when_it_can(installed):
     assert installed["code"] == "", installed
 
 
+def test_a_saved_share_list_reads_back_as_it_was_written(panel, managed, installed):
+    """The save is checked by the machine's own `testparm`, stored under the
+    device and pushed; the page then reads the same shares back, whole."""
+    status, answer = panel.call(
+        "POST",
+        "/agent/module/samba/share/set",
+        {"device_id": managed, "shares": [SHARE]},
+    )
+    assert status == 200, answer
+    assert answer["shares"] == [SHARE], answer
+
+    view = panel.read(f"/agent/module/samba?device_id={managed}")
+    assert view["shares"] == [SHARE], view
+
+
 def test_starting_it_makes_the_machine_run_it(panel, managed, installed):
     status, answer = panel.call(
         "POST", "/agent/module/start", {"device_id": managed, "module": MODULE}
@@ -192,6 +221,21 @@ def test_starting_it_makes_the_machine_run_it(panel, managed, installed):
 
     row = wait_state(panel, managed, "running", ("running",))
     assert row["is_active"] is True, row
+
+
+def test_the_modules_journal_comes_back_from_the_machine(panel, managed, installed):
+    """The unit has started by now, so its journal has lines: the route runs
+    `journalctl` on the device over the channel and returns the tail."""
+    path = (
+        f"/agent/module/journal?device_id={managed}"
+        f"&module={MODULE}&lines={JOURNAL_LINES}"
+    )
+
+    view = panel.read(path)
+
+    lines = view["text"].splitlines()
+    assert lines, view
+    assert len(lines) <= JOURNAL_LINES
 
 
 def test_stopping_it_leaves_it_installed(panel, managed, installed):
@@ -213,3 +257,13 @@ def test_the_page_offers_to_uninstall_what_is_installed(panel, managed, installe
     assert status == 200, answer
 
     assert wait_state(panel, managed, "absent", ("absent",))["state"] == "absent"
+
+
+def test_a_write_with_no_body_is_refused_in_the_one_shape(panel):
+    """Sent with no body at all where the route wants an object. The answer
+    is the panel's `{code, params}` with `body_invalid`, never FastAPI's own
+    422 list."""
+    status, answer = panel.call("POST", "/hub/proxy/node/test")
+
+    assert status == 400, answer
+    assert answer["detail"]["code"] == "body_invalid", answer
