@@ -30,7 +30,7 @@ The `+` at the end of the row opens **Shown modules**. A check there adds a tab 
 | **unsupported**                  | runs an agent that has no code for this module                    |
 | **never reported**               | has said nothing about this module                                |
 
-Software somebody installed by hand reads as **installed**, and nothing on the machine changes until **Configure**.
+A file share or a container engine already serving something when the machine joins becomes the hub's configuration at that moment, and its tab reads **running** or **stopped**. Software installed by hand with nothing to take over reads as **installed**, and nothing on the machine changes until **Configure**.
 
 ## Install, start and stop
 

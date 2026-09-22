@@ -113,6 +113,9 @@ DEVICE_GITEA_SECRETS_FILE = "gitea_secrets.json"  # scan: allow
 # The files a device directory may hold that are not a module's own.
 DEVICE_DIR_FILES = (DEVICE_MODULES_FILE, DEVICE_RDP_FILE, DEVICE_GITEA_SECRETS_FILE)
 
+# The module whose configuration is the hub's own secrets and nothing the
+# machine can be read for.
+DEVICE_GITEA_MODULE = "gitea"
 # The remote desktop host every agent package carries, as the module report
 # names it, and the two states its row can take.
 DEVICE_RDP_MODULE = "rustdesk"

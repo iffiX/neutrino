@@ -402,6 +402,233 @@ def test_a_socket_ending_takes_the_device_offline_and_withdraws_its_share(api):
     assert wait_until(lambda: runtime.device_shares.live() == [])
 
 
+# --- the first report on a socket makes the hub's record match the machine ---
+
+
+SAMBA_DETAILS = {
+    "shares": [
+        {"name": "media", "path": "/srv/media", "params": {"valid users": "alice"}}
+    ],
+    "users": [{"name": "alice", "is_present": True, "has_password": True}],
+}
+SAMBA_IMPORTED = {
+    "shares": [
+        {
+            "name": "media",
+            "path": "/srv/media",
+            "comment": "",
+            "is_read_only": False,
+            "valid_users": ["alice"],
+        }
+    ],
+    "users": ["alice"],
+}
+SAMBA_HELD = {"shares": [], "users": ["bob"]}
+
+
+def samba(state: str, is_active: bool = True) -> dict:
+    return {"state": state, "is_active": is_active, "details": SAMBA_DETAILS}
+
+
+def adopting(api) -> tuple:
+    """A device over the real per-device store, its socket past the welcome."""
+    client, runtime = api
+    runtime.desired_states = DesiredStateStore()
+    device_id, token = bound_device()
+    return client, runtime, device_id, token
+
+
+def reported(runtime, device_id: str, serial: int) -> None:
+    assert wait_until(
+        lambda: runtime.agent_sessions.get(device_id).report_serial == serial
+    )
+
+
+@pytest.mark.parametrize(
+    "is_active, want", [(True, "running"), (False, "stopped")], ids=["up", "down"]
+)
+def test_a_hand_installed_module_serving_something_is_adopted_as_it_stands(
+    api, is_active, want
+):
+    """S2: a machine joins with shares already served; they become the hub's
+    configuration at once and the module is wanted as its unit is."""
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(modules={"samba": samba("installed", is_active)}))
+        socket.receive_json()
+        reported(runtime, device_id, 1)
+
+        assert store.want_of(device_id, "samba") == want
+        assert store.modules(device_id)["samba"]["is_settled"] is False
+        assert store.read(device_id, "samba") == SAMBA_IMPORTED
+        assert runtime.pushed == [device_id]
+        assert runtime.published_services.refreshes == 2
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_module_whose_configuration_the_hub_kept_is_wanted_as_it_reports(api):
+    """S4: the hub still holds the module's file and no want; the want is
+    the machine's word and the file is left as the hub has it."""
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    store.write(device_id, "samba", SAMBA_HELD)
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(modules={"samba": samba("stopped")}))
+        socket.receive_json()
+        reported(runtime, device_id, 1)
+
+        assert store.want_of(device_id, "samba") == "stopped"
+        assert store.read(device_id, "samba") == SAMBA_HELD
+        assert runtime.pushed == [device_id]
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_configured_module_the_hub_lost_is_imported_and_a_gitea_is_not(api):
+    """S5: the machine carries the hub's mark and the hub holds nothing. The
+    share is taken back from the machine; Gitea, whose configuration is the
+    hub's own secrets, stays as it reports until Configure."""
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(
+            report(
+                modules={
+                    "samba": samba("running"),
+                    "gitea": {
+                        "state": "running",
+                        "is_active": True,
+                        "details": {"url": "http://192.168.100.7:3000"},
+                    },
+                }
+            )
+        )
+        socket.receive_json()
+        reported(runtime, device_id, 1)
+
+        assert store.want_of(device_id, "samba") == "running"
+        assert store.read(device_id, "samba") == SAMBA_IMPORTED
+        assert store.want_of(device_id, "gitea") == ""
+        assert store.read(device_id, "gitea") == {}
+        assert not store.has_gitea_secrets(device_id)
+        assert runtime.pushed == [device_id]
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_gitea_whose_secrets_the_hub_holds_is_wanted_as_it_reports(api):
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    store.gitea_secrets(device_id)
+    store.write(device_id, "gitea", {"listen_port": 3000})
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(
+            report(modules={"gitea": {"state": "running", "is_active": True}})
+        )
+        socket.receive_json()
+        reported(runtime, device_id, 1)
+
+        assert store.want_of(device_id, "gitea") == "running"
+        assert runtime.pushed == [device_id]
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_module_the_hub_wants_is_left_as_the_hub_has_it(api):
+    """S6: a reconnect with no leave. The hub's copy is the truth, whatever
+    the machine reports."""
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    store.set_want(device_id, "samba", "running")
+    store.write(device_id, "samba", SAMBA_HELD)
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(modules={"samba": samba("installed")}))
+        socket.receive_json()
+        reported(runtime, device_id, 1)
+
+        assert store.want_of(device_id, "samba") == "running"
+        assert store.read(device_id, "samba") == SAMBA_HELD
+        assert runtime.pushed == []
+        assert runtime.published_services.refreshes == 1
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_module_in_transit_or_failed_is_left_alone(api):
+    """S9: nothing is read off a module mid-step; the next socket's first
+    report looks again."""
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(
+            report(
+                modules={
+                    "samba": samba("installing"),
+                    "podman": {
+                        "state": "failed",
+                        "code": "install_failed",
+                        "details": {"containers": [{"name": "web", "image": "x"}]},
+                    },
+                }
+            )
+        )
+        socket.receive_json()
+        reported(runtime, device_id, 1)
+
+        assert store.modules(device_id) == {}
+        assert store.read(device_id, "samba") == {}
+        assert store.read(device_id, "podman") == {}
+        assert runtime.pushed == []
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_module_wanted_installed_alone_is_left_installed(api):
+    """S12: Install was pressed and Configure never was; the want stands."""
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    store.set_want(device_id, "samba", "installed")
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(modules={"samba": samba("installed")}))
+        socket.receive_json()
+        reported(runtime, device_id, 1)
+
+        assert store.want_of(device_id, "samba") == "installed"
+        assert store.read(device_id, "samba") == {}
+        assert runtime.pushed == []
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_only_a_sockets_first_report_adopts(api):
+    """S14: what is installed by hand while the socket is open is shown and
+    not taken."""
+    client, runtime, device_id, token = adopting(api)
+    store = runtime.desired_states
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(modules={"samba": {"state": "absent"}}))
+        socket.receive_json()
+        socket.send_json(report(modules={"samba": samba("installed")}))
+        reported(runtime, device_id, 2)
+
+        assert runtime.device_modules[device_id]["samba"]["state"] == "installed"
+        assert store.modules(device_id) == {}
+        assert store.read(device_id, "samba") == {}
+        assert runtime.pushed == []
+    finally:
+        socket.__exit__(None, None, None)
+
+
 # --- streams the agent opens ---
 
 

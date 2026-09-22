@@ -109,8 +109,10 @@ code and is not repeated while the state's hash is unchanged; trying again is
 a person's word, never a timer's.
 
 Software somebody installs or removes by hand is displayed, never fought. A
-hand-installed Samba reports `installed`, and its shares and users become the
-hub's configuration the first time a person presses **Configure**. A failure
+hand-installed Samba reports `installed`; its shares and users become the
+hub's configuration at the machine's first report on a socket, and the
+first **Configure** imports them when that report found none
+([protocol.md](protocol.md), "The modules section"). A failure
 exists only in the report, and a hub restart loses nothing, because `want` is
 in `config/`. Machinery whose only purpose is surviving a restart is removed
 on sight ([../kill_on_sight.md](../kill_on_sight.md), "Unasked survival
@@ -294,7 +296,8 @@ The reply is `{id, token}`, the token `secrets.token_urlsafe(24)` (192 bits).
 The agent stores `{gateway_url, id, token, fingerprint, machine_id}` in its
 binding file, root-owned mode 0600, and a file missing any field is an
 unbound agent. `nagent leave` posts `{id, token}` to `/api/channel/leave` and
-deletes the file.
+deletes the file; the hub keeps the device's row and its
+`config/devices/<id>/`, which only the Devices page's remove deletes.
 
 ## Every later connection
 

@@ -322,11 +322,17 @@ class _AgentFrames:
         runtime = self._runtime
         session = self._session
         key = self._device.id
+        is_first = not session.report
         is_panel_change = _is_panel_change(session.report, report)
         is_module_change = session.report.get("modules") != report.get("modules")
         session.record_report(report)
         await asyncio.to_thread(
-            record_report, runtime, self._device, report, peer_host=session.address
+            record_report,
+            runtime,
+            self._device,
+            report,
+            peer_host=session.address,
+            is_first=is_first,
         )
         session.note_report_recorded()
         if is_module_change:

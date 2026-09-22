@@ -11,6 +11,7 @@ binding standing.
 """
 
 import time
+from functools import partial
 
 import pytest
 from fastapi import FastAPI
@@ -25,11 +26,13 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import identity
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.events import PanelEventBus
+from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers import channel as channel_router
 from tests.conftest import StubDesiredStates, StubPublishedServices
 
@@ -368,6 +371,24 @@ def test_an_agent_leaving_loses_its_token_and_keeps_its_row(api):
     row = DeviceRegistry().get(binding["id"])
     assert row is not None and not row.is_managed
     assert runtime.forgotten == [("agent", binding["id"])]
+
+
+def test_an_agent_leaving_keeps_its_module_configuration(api, tmp_path, monkeypatch):
+    """The panel's remove is what deletes ``config/devices/<id>/``; a leave
+    drops the socket and the memory and leaves the files."""
+    client, runtime = api
+    binding = joined_device(client, runtime)
+    monkeypatch.setattr(
+        runtime, "forget_device", partial(PanelRuntime.forget_device, runtime)
+    )
+    DesiredStateStore().set_want(binding["id"], "samba", "running")
+
+    answer = client.post("/api/channel/leave", json=binding)
+
+    assert answer.status_code == 200
+    assert not DeviceRegistry().get(binding["id"]).is_managed
+    assert (tmp_path / "devices" / binding["id"] / "modules.json").is_file()
+    assert DesiredStateStore().want_of(binding["id"], "samba") == "running"
 
 
 def test_a_client_leaving_takes_its_row(api):

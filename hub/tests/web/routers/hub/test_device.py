@@ -1284,6 +1284,24 @@ def test_forgetting_a_device_drops_what_was_queued_for_it(box_api, monkeypatch):
     assert runtime.device_modules == {}
 
 
+def test_forgetting_a_device_deletes_its_module_configuration(
+    box_api, monkeypatch, tmp_path
+):
+    """A leave keeps ``config/devices/<id>/``; this is the one press that
+    deletes it."""
+    client, runtime = box_api
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(BoxRegistry, "forget", lambda self, mac: None, raising=False)
+    runtime.desired_states.set_want(DEVICE, "samba", "running")
+    assert (tmp_path / "devices" / DEVICE / "modules.json").is_file()
+
+    removed = client.post(f"{DEVICE_PATH}/remove", json={"device_id": DEVICE})
+
+    assert removed.status_code == 200
+    assert not (tmp_path / "devices" / DEVICE).exists()
+
+
 @pytest.mark.parametrize("device_id", ["hello", "scan:nonsense", "", "12345"])
 def test_an_id_no_device_has_is_refused(box_api, device_id):
     client, _ = box_api

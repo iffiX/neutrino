@@ -5,24 +5,41 @@ every few seconds. Both land in the runtime's memory alone, which is what
 the panel reads: a machine's presence is true only while this hub runs.
 
 A report is read by its sections: ``machine``, ``network``, ``modules``,
-``desktop`` and ``error``. It writes three things. The seat password: a
+``desktop`` and ``error``. It writes four things. The seat password: a
 machine reporting the remote desktop host present is given one, sealed
 under the vault's data key, the first time it says so. The MAC its socket
-runs on, noted on the device's row when it is new. And ``modules.json``: a
+runs on, noted on the device's row when it is new. ``modules.json``: a
 module the hub wanted ``absent`` that the machine now reports absent is
 settled there, so the hub's state stops naming software it took off while
-the module's row goes on saying what the person asked for.
+the module's row goes on saying what the person asked for. And, at the
+first report on a socket, the hub's record of each module it holds no
+``want`` for: what the machine hosts becomes the hub's configuration and
+its want, and the hub's copy is the one truth from then on.
 """
+
+import logging
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_PRESENT_STATES,
     CHANNEL_MODULE_STATE_ABSENT,
+    CHANNEL_MODULE_STATE_INSTALLED,
+    CHANNEL_MODULE_STATE_RUNNING,
+    CHANNEL_MODULE_STATE_STOPPED,
 )
-from neutrino_hub.modules.devices.constants import DEVICE_RDP_MODULE
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_GITEA_MODULE,
+    DEVICE_RDP_MODULE,
+)
+from neutrino_hub.modules.devices.module_import import (
+    MODULE_IMPORTS,
+    import_module_config,
+)
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
 from neutrino_hub.modules.services.host_scope import scope_of
+
+LOGGER = logging.getLogger(__name__)
 
 
 def record_hello(
@@ -48,7 +65,9 @@ def record_hello(
     )
 
 
-def record_report(runtime, device, report: dict, *, peer_host: str = "") -> None:
+def record_report(
+    runtime, device, report: dict, *, peer_host: str = "", is_first: bool = False
+) -> None:
     """Take one report: what is true of the machine right now.
 
     Args:
@@ -57,6 +76,9 @@ def record_report(runtime, device, report: dict, *, peer_host: str = "") -> None
         report: The report message.
         peer_host: Where the socket comes from, the address recorded when
             the report's link names none.
+        is_first: Whether this is the socket's first report, at which the
+            hub's record of each module it holds no want for is made to
+            match the machine.
     """
     key = device.id
     _record_machine(runtime, key, report.get("machine"))
@@ -65,9 +87,12 @@ def record_report(runtime, device, report: dict, *, peer_host: str = "") -> None
     modules = dict(modules) if isinstance(modules, dict) else {}
     runtime.device_modules[key] = modules
     is_settled = _settle_absent(runtime, key, modules)
+    is_adopted = is_first and _adopt_modules(runtime, key, modules)
     is_seated = _ensure_seat_password(runtime, key, modules)
-    if is_settled or is_seated:
+    if is_settled or is_adopted or is_seated:
         _push_state(runtime, key)
+    if is_adopted:
+        runtime.published_services.schedule_refresh()
     record_desktop_share(
         runtime,
         device,
@@ -192,6 +217,66 @@ def _settle_absent(runtime, key: str, modules: dict) -> bool:
         if runtime.desired_states.settle_want(key, name):
             is_changed = True
     return is_changed
+
+
+def _adopt_modules(runtime, key: str, modules: dict) -> bool:
+    """Make the hub's record of each module it holds no want for match the machine.
+
+    A module with an import and no ``want`` is taken over from what the
+    machine reports: one the hub's mark says is configured (``stopped`` or
+    ``running``) is wanted as it reports, its configuration imported when
+    the hub holds none; one installed by hand is imported, and wanted
+    ``running`` or ``stopped`` by whether its unit is active. An import
+    that finds nothing leaves the module as it is, and Gitea is taken over
+    only while the hub still holds the secrets its instance signs with.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        modules: The module states the report carries.
+
+    Returns:
+        True when a want or a configuration was written, so the state is
+        pushed again and the published list recomposed.
+    """
+    store = runtime.desired_states
+    is_changed = False
+    for name, status in modules.items():
+        if name not in MODULE_IMPORTS or not isinstance(status, dict):
+            continue
+        state = str(status.get("state", ""))
+        if state not in CHANNEL_MODULE_PRESENT_STATES:
+            continue
+        if store.want_of(key, name):
+            continue
+        if name == DEVICE_GITEA_MODULE and not store.has_gitea_secrets(key):
+            continue
+        if state == CHANNEL_MODULE_STATE_INSTALLED:
+            if not _import(store, key, name, status):
+                continue
+            want = (
+                CHANNEL_MODULE_STATE_RUNNING
+                if status.get("is_active")
+                else CHANNEL_MODULE_STATE_STOPPED
+            )
+        else:
+            if not store.read(key, name) and not _import(store, key, name, status):
+                continue
+            want = state
+        store.set_want(key, name, want)
+        LOGGER.info("device %s: %s reported %s, adopted as %s", key, name, state, want)
+        is_changed = True
+    return is_changed
+
+
+def _import(store, key: str, name: str, status: dict) -> bool:
+    """Write what one module's report amounts to; False when it amounts to nothing."""
+    details = status.get("details")
+    config = import_module_config(name, details if isinstance(details, dict) else {})
+    if not config:
+        return False
+    store.write(key, name, config)
+    return True
 
 
 def _push_state(runtime, key: str) -> None:

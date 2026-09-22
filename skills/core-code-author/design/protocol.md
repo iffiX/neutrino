@@ -500,7 +500,7 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}` |
-| `POST /api/channel/leave` | `{id, token}` | removes the binding: a device's row keeps its place, a client's row is deleted |
+| `POST /api/channel/leave` | `{id, token}` | removes the binding: a device's row and its `config/devices/<id>/` stay, a client's row is deleted |
 | `WS /api/channel/socket` | | the channel |
 
 ### The router files
@@ -542,7 +542,7 @@ the link pastes anywhere unquoted.
 | Endpoint | Body | Returns |
 | --- | --- | --- |
 | `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`; admission by `protocol` runs first and a rejected protocol spends no ticket, then the ticket is spent |
-| `POST /api/channel/leave` | `{id, token}` | the binding removed: a device's row stays and drops its token, a client's row is deleted with its gateway key |
+| `POST /api/channel/leave` | `{id, token}` | the binding removed: a device's row stays with its `config/devices/<id>/` and drops its token, a client's row is deleted with its gateway key |
 | `WS /api/channel/socket` | | everything after |
 
 `machine_id` and `platform` are what the body says about the machine itself,
@@ -731,12 +731,22 @@ recipe names, and disables or masks none.
 Package operations on one machine run one at a time, serialized on the agent,
 because one package manager holds the machine-wide lock.
 
-Taking over a machine is automatic import. The first time **Configure** is
-pressed for a module whose hub-side configuration is empty, the panel calls
-`POST /api/agent/module/<name>/import {device_id}` for a module that has an
-import (`samba`, `gitea`, `podman`; `zfs` has none). The hub turns the
-`details` of the machine's latest report into its own configuration, and the
-panel then opens the configuration section.
+Taking over a machine happens at its first report on a socket, for each
+module that has an import (`samba`, `gitea`, `podman`; `zfs` has none) and no
+`want` in `modules.json`. A module reporting `stopped` or `running` gets that
+state as its `want`, and its configuration is imported from the report's
+`details` when the hub holds no file for it. A module reporting `installed`
+is imported, and gets `running` or `stopped` as its `want` by `is_active`,
+when the import finds something. An import that finds nothing leaves the
+module as it reports, and Gitea is taken over only while the hub holds
+`gitea_secrets.json` for the device. The state is pushed and the published
+list recomposed in the same step; a later report on the same socket takes
+nothing over.
+
+**Configure** keeps its import for a module whose import was empty at the
+first report: the panel calls `POST /api/agent/module/<name>/import
+{device_id}` when the hub-side configuration is empty, and then opens the
+configuration section.
 
 The first configuration pushed down therefore equals what the machine already
 has. From then on the hub's copy is the only truth, and every render writes
@@ -895,7 +905,10 @@ the hub keeps afterwards follows from the role:
 | `client` | deleted from the client list | the token and the client's gateway key, revoked in the same step |
 
 A device row is kept past the binding because the row is the hub's record of
-the machine; a client row is not, because the client is the binding.
+the machine; a client row is not, because the client is the binding. Only
+`POST /api/hub/device/remove` deletes a device's row and its
+`config/devices/<id>/`, so a machine that leaves and joins again is wanted as
+it was.
 
 ### What a refusal does to the binding
 

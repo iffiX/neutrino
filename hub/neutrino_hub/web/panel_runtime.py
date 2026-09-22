@@ -470,8 +470,10 @@ class PanelRuntime:
     def forget_device(self, device_id: str) -> None:
         """Drop everything held in memory about one device.
 
-        Called when the device is forgotten. Its socket, if one is open, is
-        refused with ``binding_unknown``: the binding it spoke for is gone.
+        Called when the device leaves or is forgotten. Its socket, if one is
+        open, is refused with ``binding_unknown``: the binding it spoke for
+        is gone. ``config/devices/<id>/`` stays; the Devices page's remove
+        is what deletes it.
 
         Args:
             device_id: The device.
@@ -487,7 +489,6 @@ class PanelRuntime:
         self.device_scope.pop(key, None)
         self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
-        self.desired_states.forget(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
 
     def forget_client(self, client_id: str) -> None:

@@ -291,7 +291,8 @@ def forget(
 
     The SSH key it referenced is left in the registry: keys outlive the
     devices that use them, and the Credentials page is where they are
-    removed. What is held in memory goes with the record.
+    removed. What is held in memory and ``config/devices/<id>/`` go with
+    the record.
 
     Args:
         request: The device.
@@ -303,6 +304,7 @@ def forget(
     device_id = request.device_id
     DeviceRegistry().forget(device_id)
     runtime.forget_device(device_id)
+    runtime.desired_states.forget(device_id)
     runtime.events.publish(WEB_EVENT_DEVICES)
     return {}
 

@@ -9,6 +9,7 @@ administrator.
 from fastapi import APIRouter, Depends
 
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_PRESENT_STATES
+from neutrino_hub.modules.devices.module_import import gitea_import_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     GiteaAdminCreate,
@@ -59,25 +60,11 @@ def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> GiteaDev
     )
 
 
-def import_config(details: dict) -> dict:
-    """Nothing: the hub manages only the instance it installs itself.
-
-    Args:
-        details: What the agent last reported; a hand-installed Gitea
-            says it runs and on which port, and stays its owner's.
-
-    Returns:
-        An empty configuration, so the block's defaults stand.
-    """
-    del details
-    return {}
-
-
 router: APIRouter = module_router(
     MODULE,
     view_model=GiteaDeviceView,
     build_view=device_view,
-    import_config=import_config,
+    import_config=gitea_import_config,
 )
 
 

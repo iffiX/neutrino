@@ -201,6 +201,21 @@ class DesiredStateStore:
                 write_config(self._path(key, DEVICE_GITEA_SECRETS_FILE), held)
         return {name: str(held[name]) for name in DEVICE_GITEA_SECRET_NAMES}
 
+    def has_gitea_secrets(self, key: str) -> bool:
+        """Whether one device's Gitea secrets are stored, making none.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            True when the secrets file names every secret.
+        """
+        try:
+            held = read_config(self._path(key, DEVICE_GITEA_SECRETS_FILE))
+        except (FileNotFoundError, ValueError):
+            return False
+        return all(held.get(name) for name in DEVICE_GITEA_SECRET_NAMES)
+
     def seat_password(self, key: str) -> str:
         """The seat password ``rdp.json`` seals, opened for the machine.
 

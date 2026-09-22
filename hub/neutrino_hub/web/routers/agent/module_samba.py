@@ -8,6 +8,7 @@ credential store on the device and nowhere else.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.devices.module_import import samba_import_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     SambaDeviceView,
@@ -31,11 +32,6 @@ from neutrino_hub.web.routers.agent.module import (
 
 MODULE = "samba"
 COMMAND_SET_PASSWORD = "set_password"
-# The ``testparm -s`` parameters a share's fields are read from.
-PARAM_COMMENT = "comment"
-PARAM_READ_ONLY = "read only"
-PARAM_VALID_USERS = "valid users"
-PARAM_YES_VALUES = ("yes", "true", "1")
 
 
 def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> SambaDeviceView:
@@ -72,53 +68,11 @@ def device_view(runtime: PanelRuntime, context: DeviceModuleContext) -> SambaDev
     )
 
 
-def import_config(details: dict) -> dict:
-    """The configuration the machine's own Samba amounts to.
-
-    Args:
-        details: What the agent last reported: ``shares`` as ``testparm``
-            prints them, each ``{name, path, params}``, and ``users`` as
-            ``pdbedit`` lists them, each ``{name, is_present,
-            has_password}``.
-
-    Returns:
-        ``{"shares", "users"}`` in the hub's shape. A share without a path
-        exports nothing and is left out; a share's ``valid users`` keeps
-        only names the user list carries.
-    """
-    users = [
-        str(user.get("name", ""))
-        for user in details.get("users") or []
-        if isinstance(user, dict) and user.get("name")
-    ]
-    shares = []
-    for share in details.get("shares") or []:
-        if not isinstance(share, dict) or not share.get("path"):
-            continue
-        params = share.get("params") if isinstance(share.get("params"), dict) else {}
-        valid_users = [
-            name
-            for name in str(params.get(PARAM_VALID_USERS, "")).replace(",", " ").split()
-            if name in users
-        ]
-        shares.append(
-            {
-                "name": str(share.get("name", "")),
-                "path": str(share.get("path", "")),
-                "comment": str(params.get(PARAM_COMMENT, "")),
-                "is_read_only": str(params.get(PARAM_READ_ONLY, "")).lower()
-                in PARAM_YES_VALUES,
-                "valid_users": valid_users,
-            }
-        )
-    return {"shares": shares, "users": users}
-
-
 router: APIRouter = module_router(
     MODULE,
     view_model=SambaDeviceView,
     build_view=device_view,
-    import_config=import_config,
+    import_config=samba_import_config,
 )
 
 
