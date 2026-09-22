@@ -150,6 +150,36 @@ def test_status_falls_back_to_the_binding_file_and_connects_once(
     assert "The hub answered this machine's hello" in out
 
 
+def test_status_never_greets_the_hub_past_a_running_service(
+    tmp_path, config_path, monkeypatch, capsys
+):
+    """The hub keeps one socket per binding: a hello from this command would
+    replace the service's, and the service then stops until somebody starts
+    it again. A service that runs but is slow to answer is left alone."""
+    bind(config_path, url=GATEWAY_URL)
+    serve_nothing(monkeypatch, tmp_path, unit_state="running")
+    probes = []
+
+    class ProbingAgent:
+        def __init__(self, *, log):
+            del log
+
+        def probe(self) -> None:
+            probes.append("probe")
+
+        def last_error(self):
+            return None
+
+    monkeypatch.setattr(status_cli, "Agent", ProbingAgent)
+
+    assert status_cli.main() == 1
+
+    out = capsys.readouterr().out
+    assert probes == []
+    assert "service    running" in out
+    assert "heartbeat  unknown. The service holds the binding" in out
+
+
 def test_status_says_a_privileged_caller_has_joined_nothing(
     tmp_path, monkeypatch, capsys
 ):
@@ -232,7 +262,7 @@ def test_status_words_every_heartbeat_refusal(
     error, sentence, tmp_path, config_path, monkeypatch, capsys
 ):
     bind(config_path, url=GATEWAY_URL)
-    serve_nothing(monkeypatch, tmp_path, unit_state="running")
+    serve_nothing(monkeypatch, tmp_path, unit_state="inactive")
 
     class RefusedAgent:
         def __init__(self, *, log):
@@ -265,7 +295,7 @@ def test_status_advises_the_next_step_after_a_refusal(
     tmp_path, config_path, monkeypatch, capsys, code, advice
 ):
     bind(config_path)
-    serve_nothing(monkeypatch, tmp_path, unit_state="running")
+    serve_nothing(monkeypatch, tmp_path, unit_state="inactive")
 
     class StuckAgent:
         def __init__(self, *, log):

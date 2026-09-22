@@ -22,6 +22,9 @@ from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.detect import detect_platform
 
 STATUS_UNBOUND = "this machine has joined no gateway"
+# How long the running service gets to answer on its control socket; a
+# small board under load takes more than a second.
+STATUS_CONTROL_TIMEOUT_S = 5
 
 # What the channel's own failures say on this surface; every other code is
 # worded by the shared table. The advice lines name the next step.
@@ -75,11 +78,19 @@ def main() -> int:
     _print_binding(binding)
     current = service_state()
     if current == "running":
+        # A hello from here would take the binding from the service: the hub
+        # keeps one socket per binding and replaces the one it holds. A
+        # service that runs and did not answer on its socket is asked again,
+        # never gone around.
         print(f"service    {current}")
-    else:
-        hint = _start_hint()
-        tail = f"; start it: {hint}" if hint else ""
-        print(f"service    {current}. The machine reports only while it runs{tail}")
+        print(
+            "heartbeat  unknown. The service holds the binding but did not "
+            "answer on its control socket; ask again in a moment"
+        )
+        return 1
+    hint = _start_hint()
+    tail = f"; start it: {hint}" if hint else ""
+    print(f"service    {current}. The machine reports only while it runs{tail}")
 
     agent = Agent(log=_discard)
     started_at = time.monotonic()
@@ -179,7 +190,10 @@ def _local_state() -> "dict | None":
         return None
     try:
         status, state = client.request(
-            socket_path=socket_path, method="GET", path="/api/state", timeout_s=2
+            socket_path=socket_path,
+            method="GET",
+            path="/api/state",
+            timeout_s=STATUS_CONTROL_TIMEOUT_S,
         )
     except (OSError, ValueError):
         return None
