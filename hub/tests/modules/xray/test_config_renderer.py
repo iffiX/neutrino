@@ -609,7 +609,7 @@ def test_an_exit_named_by_hostname_is_resolved_at_the_direct_resolver():
     assert config["dns"]["servers"][0] == {
         "address": "223.5.5.5",
         "port": 53,
-        "domains": ["full:exit.example.net", "full:www.gstatic.com"],
+        "domains": ["full:exit.example.net"],
         "skipFallback": True,
     }
 
@@ -632,10 +632,22 @@ def test_the_resolvers_own_queries_reach_the_direct_resolver_directly():
     assert rules.index(balancer_rule) == len(rules) - 1
 
 
-def test_an_exit_at_a_literal_address_leaves_only_the_probe_host():
-    config = render_with_exit("203.0.113.10")
+def test_the_probe_host_is_pinned_at_no_resolver():
+    """The probe leaves through the node it measures, and that node
+    resolves the probe's host; a pin here would send the name to the
+    direct resolver from every device."""
+    by_name = render_with_exit("exit.example.net")
+    by_address = render_with_exit("203.0.113.10")
 
-    assert config["dns"]["servers"][0]["domains"] == ["full:www.gstatic.com"]
+    for config in (by_name, by_address):
+        pinned = [
+            domain
+            for server in config["dns"]["servers"]
+            if isinstance(server, dict)
+            for domain in server.get("domains", [])
+        ]
+        assert "full:www.gstatic.com" not in pinned
+    assert "223.5.5.5" not in str(by_address["dns"]["servers"][0])
 
 
 def test_the_resolvers_other_queries_follow_the_balancer():
@@ -672,7 +684,7 @@ def test_with_every_scope_off_an_exits_name_still_resolves_where_it_answers():
     assert config["dns"]["servers"][0] == {
         "address": "223.5.5.5",
         "port": 53,
-        "domains": ["full:exit.example.net", "full:www.gstatic.com"],
+        "domains": ["full:exit.example.net"],
         "skipFallback": True,
     }
     assert rule_named(config, "rule_dns_direct") == {

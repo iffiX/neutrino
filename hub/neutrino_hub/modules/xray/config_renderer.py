@@ -5,7 +5,6 @@ object xray consumes. Validating and restarting is :mod:`neutrino_hub.modules.xr
 """
 
 import ipaddress
-import urllib.parse
 
 from neutrino_hub.modules.xray.constants import (
     XRAY_ACCESS_LOG,
@@ -177,15 +176,14 @@ class XrayConfigRenderer:
                     "skipFallback": True,
                 },
             )
-        own_names = self._exit_hostnames + self._probe_hostnames
+        own_names = self._exit_hostnames
         if own_names and self._resident_nodes:
-            # The proxy's own names resolve at the direct resolver: an exit's
-            # address, and the host the hub fetches through each exit to
-            # measure it. It is the resolver that answers those names
-            # correctly without the proxy, and a lookup sent through an exit
-            # waits on the exit it is asking about. Both hold while a node is
-            # rendered, whatever the scopes say, because the probe dials that
-            # node by the address this pin resolves.
+            # An exit's name resolves at the direct resolver: it is the
+            # resolver that answers that name correctly without the proxy,
+            # and a lookup sent through an exit waits on the exit it is
+            # asking about. This holds while a node is rendered, whatever the
+            # scopes say, because the probe dials that node by the address
+            # this pin resolves.
             servers.insert(
                 0,
                 {
@@ -209,14 +207,6 @@ class XrayConfigRenderer:
             if not _is_ip_address(node.address) and node.address not in names:
                 names.append(node.address)
         return names
-
-    @property
-    def _probe_hostnames(self) -> list[str]:
-        """The probe target's host, when it is a name of its own."""
-        host = urllib.parse.urlsplit(self._node_list.probe_url).hostname or ""
-        if not host or _is_ip_address(host) or host in self._exit_hostnames:
-            return []
-        return [host]
 
     def _render_inbounds(self) -> list[dict]:
         inbounds = [
