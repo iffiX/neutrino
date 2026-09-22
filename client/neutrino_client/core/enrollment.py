@@ -9,8 +9,15 @@ is not ``client`` was made for a device agent and is refused.
 
 The bindings live in ``client.json`` in the person's own configuration
 directory, mode 0600, one per hub joined:
-``{"bindings": [{id, name, hub_id, hub_name, gateway_url, fingerprint,
-token}], "exit_hub_id"}``. A file without ``bindings`` reads as none.
+``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
+fingerprint, token}], "exit_hub_id"}``. A file without ``bindings`` reads as
+none. ``gateway_urls`` is every address the hub answers on, from the link
+and then from each ``state`` frame; ``gateway_url`` is the one that last
+answered. A binding written by 0.3.0 has no list and reads as one with none.
+
+A connection round is the addresses in ``candidate_urls`` order: the address
+``hub.neutrino.internal`` resolves to on the network this machine stands on,
+then the one that last answered, then the rest of the list.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -20,13 +27,16 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import ipaddress
 import json
 import os
 import socket
+import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_CONFIG_FILE_NAME,
+    CLIENT_HUB_NAME,
     CLIENT_JOIN_PATH,
     CLIENT_LEAVE_PATH,
     CLIENT_ROLE,
@@ -47,16 +57,19 @@ from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.store import ClientServiceStore
 
 LINK_PREFIX = "neutrino://enroll/"
-# What one binding keeps, every field a string.
+# What one binding keeps: every field a string but the list of every address
+# the hub answers on.
 BINDING_KEYS = (
     "id",
     "name",
     "hub_id",
     "hub_name",
     "gateway_url",
+    "gateway_urls",
     "fingerprint",
     "token",
 )
+BINDING_URLS_KEY = "gateway_urls"
 
 
 def parse_link(link: str) -> "tuple[list, str, str]":
@@ -266,13 +279,146 @@ def note_hub(binding_id: str, hub_id: str, hub_name: str) -> None:
     Raises:
         OSError: When the file cannot be written.
     """
-    config = load_config()
-    for binding in config["bindings"]:
-        if binding["id"] == binding_id:
-            binding["hub_id"] = str(hub_id)
-            binding["hub_name"] = str(hub_name)
-            save_config(config)
-            return
+    _note(binding_id, hub_id=str(hub_id), hub_name=str(hub_name))
+
+
+def note_url(binding_id: str, gateway_url: str) -> None:
+    """Record the address that last answered, on one binding.
+
+    Args:
+        binding_id: The binding the socket was opened for.
+        gateway_url: The address it connected through.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    _note(binding_id, gateway_url=str(gateway_url))
+
+
+def note_urls(binding_id: str, gateway_urls: list) -> None:
+    """Record every address the hub's state names, on one binding.
+
+    Args:
+        binding_id: The binding the state arrived on.
+        gateway_urls: The addresses, in the hub's order.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    _note(binding_id, gateway_urls=clean_urls(gateway_urls))
+
+
+def clean_urls(value) -> list:
+    """A list of addresses as a binding keeps them.
+
+    Args:
+        value: What a link, a state or the file carried.
+
+    Returns:
+        Each non-blank entry as a string without its trailing slash, in
+        order, each once; empty when ``value`` is not a list.
+    """
+    kept: list = []
+    for url in value if isinstance(value, list) else []:
+        text = str(url).strip().rstrip("/")
+        if text and text not in kept:
+            kept.append(text)
+    return kept
+
+
+def stored_urls(binding: dict) -> list:
+    """Every address a binding holds, in the hub's order.
+
+    Args:
+        binding: The binding.
+
+    Returns:
+        ``gateway_urls``, with ``gateway_url`` appended when it is not among
+        them.
+    """
+    urls = list(binding.get(BINDING_URLS_KEY) or [])
+    last = str(binding.get("gateway_url", "") or "")
+    if last and last not in urls:
+        urls.append(last)
+    return urls
+
+
+def candidate_urls(binding: dict, name_url: str = "") -> list:
+    """The addresses one connection round connects to, in order.
+
+    Args:
+        binding: The binding.
+        name_url: What :func:`hub_name_url` returned, or empty.
+
+    Returns:
+        The name's address, the one that last answered, then the rest of
+        the stored list, each once.
+    """
+    return clean_urls([name_url, binding.get("gateway_url", ""), *stored_urls(binding)])
+
+
+def resolve_hub_address() -> str:
+    """The IPv4 address the hub's name resolves to on this network.
+
+    Returns:
+        The address, or empty when the name does not resolve.
+    """
+    try:
+        found = socket.getaddrinfo(
+            CLIENT_HUB_NAME, None, socket.AF_INET, socket.SOCK_STREAM
+        )
+    except OSError:
+        return ""
+    return str(found[0][4][0]) if found else ""
+
+
+def hub_name_url(gateway_url: str) -> str:
+    """The hub's address by its name, on the scheme and port of a stored one.
+
+    Args:
+        gateway_url: A stored address, for its scheme and port.
+
+    Returns:
+        ``<scheme>://<address>:<port>``, or empty when the name does not
+        resolve.
+    """
+    address = resolve_hub_address()
+    if not address:
+        return ""
+    parts = urllib.parse.urlsplit(gateway_url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    return f"{parts.scheme}://{address}:{port}"
+
+
+def default_source_address(urls: list) -> str:
+    """This machine's own address on the route to the hub.
+
+    Read off a UDP socket connected to the first address naming an IPv4
+    literal; no packet is sent.
+
+    Args:
+        urls: The hub's addresses, in the order to look for a literal.
+
+    Returns:
+        The address, or empty when no address names a literal or no route
+        reaches it.
+    """
+    for url in urls:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname or ""
+        try:
+            ipaddress.IPv4Address(host)
+        except ValueError:
+            continue
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect((host, parts.port or 443))
+            return str(probe.getsockname()[0])
+        except OSError:
+            return ""
+        finally:
+            probe.close()
+    return ""
 
 
 def exit_hub_id() -> str:
@@ -366,6 +512,7 @@ def enroll(link: str) -> dict:
             "id": reply.get("id", ""),
             "name": payload["name"],
             "gateway_url": gateway_url,
+            "gateway_urls": gateway_urls,
             "fingerprint": fingerprint,
             "token": reply.get("token", ""),
         }
@@ -396,8 +543,24 @@ def leave(binding: dict) -> None:
 
 
 def _binding(raw: dict) -> dict:
-    """One binding with every kept field, each a string."""
-    return {key: str(raw.get(key, "") or "") for key in BINDING_KEYS}
+    """One binding with every kept field, each a string but the list."""
+    binding = {
+        key: str(raw.get(key, "") or "")
+        for key in BINDING_KEYS
+        if key != BINDING_URLS_KEY
+    }
+    binding[BINDING_URLS_KEY] = clean_urls(raw.get(BINDING_URLS_KEY))
+    return binding
+
+
+def _note(binding_id: str, **fields) -> None:
+    """Write fields onto one binding; an id nobody holds changes nothing."""
+    config = load_config()
+    for binding in config["bindings"]:
+        if binding["id"] == binding_id:
+            binding.update(fields)
+            save_config(config)
+            return
 
 
 def _is_complete(binding: dict) -> bool:

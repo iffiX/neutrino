@@ -17,3 +17,5 @@ title: nagent 命令
 | `rdp stop`    | 无                                                                                      | 停止共享；机器本来就没在共享时打印 `this machine's desktop is not shared` 并返回 0 |
 
 顶层参数：`--version` 打印包版本并退出；`-h` 在每一级打印帮助。`rdp` 不带动作时打印 `rdp` 的帮助并返回 2。
+
+`status` 打印的地址是被控端最近一次连上的那一个，hub 的其他地址也在绑定里。

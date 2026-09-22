@@ -45,4 +45,4 @@ hub        office  https://10.8.0.1:8443       reconnecting: the hub cannot be r
 resident   running
 ```
 
-One line per hub joined, in the order joined: its name, its address, the state of its channel, and the last code that channel returned. `exit` marks the hub this person's AI tools point at. The last line is the client itself, `running` or `not running`. The exit status is 0 while every hub reads `connected` and the client runs, and 1 otherwise.
+One line per hub joined, in the order joined: its name, its address, the state of its channel, and the last code that channel returned. The address is the one the channel last connected through, out of every address the hub listens on. `exit` marks the hub this person's AI tools point at. The last line is the client itself, `running` or `not running`. The exit status is 0 while every hub reads `connected` and the client runs, and 1 otherwise.

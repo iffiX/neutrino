@@ -5,7 +5,10 @@ to. It runs whether or not the machine belongs to a hub yet: an agent that
 has never enrolled still answers locally, waiting for a link.
 
 While bound, the agent keeps one socket open to the hub and reconnects when
-it drops. The hub decides everything about modules: its state says what
+it drops, through the first of the hub's addresses that answers, the hub's
+name on the network this machine stands on first. A network change under
+the machine starts a round at once. The hub decides everything about
+modules: its state says what
 each is to be, and this machine observes, installs, configures and reports
 until it matches, the bytes coming down and the output going up on streams
 this side opens. The desktop share is the other way round: decided only on
@@ -22,6 +25,7 @@ from __future__ import annotations
 import operator
 import os
 import threading
+import time
 import urllib.parse
 
 from neutrino_agent import AGENT_VERSION
@@ -36,6 +40,7 @@ from neutrino_agent.constants import (
     AGENT_HUB_SOFTWARE_PREFIX,
     AGENT_PACKAGE_DIR,
     AGENT_ROLE,
+    AGENT_ROTATE_DELAY_S,
     AGENT_SOFTWARE_PREFIX,
     AGENT_STATE_NAME,
     AGENT_WS_PATH,
@@ -163,8 +168,13 @@ class Agent:
         self._last_error: "dict | None" = None
         self._operator = None
         self._session: "AgentSession | None" = None
+        # The address the live socket was opened through.
+        self._session_url = ""
         self._binding: dict = {}
         self._binding_stamp = 0
+        # This machine's own address on the route to the hub as last seen;
+        # None before the first look.
+        self._source_address: "str | None" = None
         # Set by a 4010 close: another socket holds this binding, and this
         # one reconnects only once a person acts.
         self._is_replaced = False
@@ -322,7 +332,7 @@ class Agent:
             # when the wait begins.
             self._news.clear()
             delay = self.run_once()
-            self._news.wait(timeout=delay)
+            self._wait_out(delay)
 
     def run_once(self) -> int:
         """One connection's lifetime, or one idle poll while unbound.
@@ -333,11 +343,10 @@ class Agent:
             short idle poll while the machine belongs to no hub.
         """
         self._adopt_external_binding()
-        session = self._open_session()
-        if session is None:
+        if not self._is_bound_and_wanted():
             return IDLE_POLL_INTERVAL_S
         try:
-            session.connect()
+            session = self._connect_round()
         except (GatewayRefusedDetail, GatewayUntrusted) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
@@ -364,11 +373,10 @@ class Agent:
         answered.
         """
         self._adopt_external_binding()
-        session = self._open_session()
-        if session is None:
+        if not self._is_bound_and_wanted():
             return
         try:
-            session.connect()
+            session = self._connect_round()
         except (GatewayUnreachable, GatewayUntrusted) as error:
             with self._lock:
                 self._last_error = channel_error(error)
@@ -377,14 +385,74 @@ class Agent:
             self._last_error = None
         session.close()
 
-    def _open_session(self) -> "AgentSession | None":
-        """A session for the current binding, or None while unbound or replaced."""
+    def _is_bound_and_wanted(self) -> bool:
+        """Whether a socket is to be opened: bound, and not replaced."""
+        with self._lock:
+            return bool(self._binding) and not self._is_replaced
+
+    def _connect_round(self) -> AgentSession:
+        """Connect through the first of the hub's addresses that answers.
+
+        The name's address is first, then the one that last answered, then
+        the rest the binding holds. An address the name resolves to that is
+        not a stored one and fails the fingerprint check is not this hub and
+        is skipped; a stored address failing it is logged and the round goes
+        on. The address that answers is written onto the binding.
+
+        Returns:
+            The connected session, its welcome taken.
+
+        Raises:
+            GatewayRefusedDetail: When the hub answered ``refused``, with
+                its code and params, or closed 4000 without one.
+            GatewayUntrusted: When a stored address presented another
+                certificate and no address answered.
+            GatewayUnreachable: When no address answered.
+        """
+        with self._lock:
+            binding = dict(self._binding)
+        name_url = enrollment.hub_name_url(binding["gateway_url"])
+        stored = enrollment.stored_urls(binding)
+        untrusted: "Exception | None" = None
+        failure: "Exception | None" = None
+        for index, url in enumerate(enrollment.candidate_urls(binding, name_url)):
+            if index:
+                time.sleep(AGENT_ROTATE_DELAY_S)
+            session = self._open_session(url)
+            try:
+                session.connect()
+            except GatewayRefusedDetail:
+                raise
+            except GatewayUntrusted as error:
+                if url == name_url and url not in stored:
+                    self._log(f"{url} answers to the hub's name and is not this hub")
+                else:
+                    self._log(f"{url} presented a certificate that is not the hub's")
+                    untrusted = error
+            except GatewayUnreachable as error:
+                failure = error
+            else:
+                self._note_url(url)
+                with self._lock:
+                    self._session_url = url
+                return session
+        if untrusted is not None:
+            raise untrusted
+        raise failure if failure is not None else GatewayUnreachable("no address")
+
+    def _open_session(self, gateway_url: str = "") -> "AgentSession | None":
+        """A session for the current binding, or None while unbound or replaced.
+
+        Args:
+            gateway_url: The address to open the socket at; empty takes the
+                one the binding names as last answered.
+        """
         with self._lock:
             binding = dict(self._binding)
             is_replaced = self._is_replaced
         if not binding or is_replaced:
             return None
-        parts = urllib.parse.urlsplit(binding["gateway_url"])
+        parts = urllib.parse.urlsplit(gateway_url or binding["gateway_url"])
         client = WebSocketClient(
             host=parts.hostname or "",
             port=parts.port or 443,
@@ -399,9 +467,116 @@ class Agent:
             news=self._news,
             log=self._log,
             interval_s=AGENT_REPORT_INTERVAL_S,
-            on_tick=self._adopt_external_binding,
-            on_state=self._desired.take,
+            on_tick=self._tick,
+            on_state=self._take_state,
         )
+
+    def _take_state(self, document: dict) -> None:
+        """Keep the addresses a state names, then hand it to the applier.
+
+        Args:
+            document: The state, ``{hash, urls, modules, desktop}``.
+        """
+        urls = document.get("urls")
+        if isinstance(urls, list):
+            self._note_urls(urls)
+        self._desired.take(document)
+
+    def _note_url(self, gateway_url: str) -> None:
+        """Write the address that answered onto the binding, when it changed."""
+        with self._lock:
+            if self._binding.get("gateway_url") == gateway_url:
+                return
+            try:
+                enrollment.note_url(gateway_url)
+            except OSError as error:
+                self._log(f"could not record the hub's address: {error}")
+                return
+            self._binding["gateway_url"] = gateway_url
+            self._binding_stamp = enrollment.config_stamp()
+        self._log(f"the hub answered at {gateway_url}")
+
+    def _note_urls(self, urls: list) -> None:
+        """Write the hub's address list onto the binding, when it changed."""
+        cleaned = enrollment.clean_urls(urls)
+        with self._lock:
+            if not self._binding or self._binding.get("gateway_urls") == cleaned:
+                return
+            try:
+                enrollment.note_urls(cleaned)
+            except OSError as error:
+                self._log(f"could not record the hub's addresses: {error}")
+                return
+            self._binding["gateway_urls"] = cleaned
+            self._binding_stamp = enrollment.config_stamp()
+        self._log(f"the hub answers at {', '.join(cleaned)}")
+
+    def _tick(self) -> None:
+        """Between reports: adopt a binding written on disk, look at the network."""
+        self._adopt_external_binding()
+        if self._watch_network():
+            self._follow_name()
+
+    def _watch_network(self) -> bool:
+        """Look at the route to the hub.
+
+        Returns:
+            True when this machine's address on it changed since the last
+            look; the first look and an unbound machine are no change.
+        """
+        with self._lock:
+            binding = dict(self._binding)
+            held = self._source_address
+        if not binding:
+            return False
+        current = enrollment.default_source_address(enrollment.stored_urls(binding))
+        with self._lock:
+            self._source_address = current
+        if held is None or current == held:
+            return False
+        self._log(f"this machine's address toward the hub is now {current or 'none'}")
+        return True
+
+    def _follow_name(self) -> None:
+        """Move a live socket to the address the hub's name resolves to.
+
+        Only when that is a stored address other than the one in use: the
+        socket is closed here and the next round opens it there.
+        """
+        with self._lock:
+            session = self._session
+            binding = dict(self._binding)
+            in_use = self._session_url
+        if session is None or not session.is_open:
+            return
+        name_url = enrollment.hub_name_url(binding["gateway_url"])
+        if not name_url or name_url == in_use:
+            return
+        if name_url not in enrollment.stored_urls(binding):
+            return
+        self._log(f"moving to {name_url}")
+        session.close()
+
+    def _wait_out(self, delay: float) -> None:
+        """Wait for the next turn: the delay, news, or a network change.
+
+        The route to the hub is looked at every report interval; a changed
+        address ends the wait and puts the backoff back to its floor.
+
+        Args:
+            delay: How long the turn asked to wait.
+        """
+        deadline = time.monotonic() + delay
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            if self._news.wait(timeout=min(remaining, AGENT_REPORT_INTERVAL_S)):
+                return
+            if self._watch_network():
+                with self._lock:
+                    self._backoff_s = AGENT_BACKOFF_MIN_S
+                return
 
     def _hello_payload(self, binding: dict) -> dict:
         """The identity card the hello carries.

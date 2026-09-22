@@ -19,6 +19,8 @@ Each row holds one hub: its name, the state it is in, its address and the packag
 | **Switched off by the hub**    | that hub's **Clients** page has this client switched off, and its panels are inert             |
 | **Replaced by another client** | a second client took this binding, and the channel stays closed until you select **Reconnect** |
 
+The client keeps every address a hub listens on, and a state from that hub updates the list. While the channel is down, the client connects to each address in turn, the name `hub.neutrino.internal` first on a network the hub serves.
+
 **Leave** tells that hub, removes its row and its group, and undoes everything it published on this computer: its mounts, its forwards and its viewers. Every other hub is untouched. From a terminal, `nclient join '<link>'` joins a hub and `nclient leave --hub <name>` leaves one, where the name is the one in its row.
 
 ![The window with no hub joined](/guide/en/client_disconnected.webp)

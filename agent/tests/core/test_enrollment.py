@@ -2,10 +2,14 @@
 
 The link rides base64url so it holds no character a shell splits or a URL
 escapes; a link made for a client is refused here. The join posts the seven
-fields and stores the five-field binding; a file missing any field is an
-unbound agent, so a 0.2.x file expires by itself. Leaving posts the binding
-back and deletes the file whether or not the hub answered. The one HTTP
-call each way is answered by the test; nothing here reaches a network.
+fields and stores the binding with every address the link carried; a file
+missing any field but the address list is an unbound agent, so a 0.2.x
+file expires by itself and a 0.3.0 file reads as a binding with no list.
+The candidates of a connection round, the hub's name in a stored address's
+scheme and port, and the two notes a running agent writes onto the file
+are pinned here too. Leaving posts the binding back and deletes the file
+whether or not the hub answered. The one HTTP call each way is answered by
+the test; nothing here reaches a network.
 """
 
 import json
@@ -17,7 +21,11 @@ import pytest
 import neutrino_agent.core.enrollment as enrollment
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import AGENT_ROLE, AGENT_SOFTWARE_PREFIX, PROTOCOL
-from neutrino_agent.core.enrollment import parse_link
+from neutrino_agent.core.enrollment import (
+    default_source_address,
+    parse_link,
+    resolve_hub_address,
+)
 from neutrino_agent.exceptions import (
     EnrollmentError,
     GatewayRefusedDetail,
@@ -245,6 +253,7 @@ def test_a_join_posts_the_body_and_stores_the_binding(config_path, monkeypatch):
     assert payload["ticket"] == "ticket"
     assert stored == {
         "gateway_url": GATEWAY_URL,
+        "gateway_urls": [GATEWAY_URL],
         "id": "3f9c",
         "token": "secret",
         "fingerprint": FINGERPRINT,
@@ -356,11 +365,12 @@ def test_a_reply_naming_no_binding_is_refused(monkeypatch, reply):
 
 
 def test_a_complete_file_is_a_binding(config_path):
-    bind(config_path, url=GATEWAY_URL, fingerprint=FINGERPRINT)
+    bind(config_path, url=GATEWAY_URL, fingerprint=FINGERPRINT, urls=[GATEWAY_URL])
 
     assert enrollment.is_bound()
     assert enrollment.load_binding() == {
         "gateway_url": GATEWAY_URL,
+        "gateway_urls": [GATEWAY_URL],
         "id": BINDING_ID,
         "token": BINDING_TOKEN,
         "fingerprint": FINGERPRINT,
@@ -368,7 +378,22 @@ def test_a_complete_file_is_a_binding(config_path):
     }
 
 
-@pytest.mark.parametrize("missing", sorted(enrollment.BINDING_KEYS))
+def test_a_file_without_the_address_list_is_a_binding_with_none(config_path):
+    """A 0.3.0 file names the one address that answered its join."""
+    bind(config_path, url=GATEWAY_URL)
+
+    binding = enrollment.load_binding()
+
+    assert binding["gateway_url"] == GATEWAY_URL
+    assert binding["gateway_urls"] == []
+    assert enrollment.stored_urls(binding) == [GATEWAY_URL]
+    assert enrollment.candidate_urls(binding) == [GATEWAY_URL]
+
+
+@pytest.mark.parametrize(
+    "missing",
+    sorted(key for key in enrollment.BINDING_KEYS if key != "gateway_urls"),
+)
 def test_a_file_missing_any_field_is_unbound(config_path, missing):
     bind(config_path)
     held = json.loads(config_path.read_text())
@@ -424,6 +449,112 @@ def test_an_unreadable_file_is_unbound(config_path, text):
 def test_no_file_is_unbound_and_stamps_zero():
     assert enrollment.load_binding() == {}
     assert enrollment.config_stamp() == 0
+
+
+# --- the addresses, and the round's order ---
+
+LAN_URL = "https://192.0.2.1:8443"
+OVERLAY_URL = "https://100.64.0.1:8443"
+NAME_URL = "https://192.0.2.9:8443"
+
+
+def test_the_list_is_kept_clean_and_in_the_hubs_order():
+    assert enrollment.clean_urls([LAN_URL + "/", " ", OVERLAY_URL, LAN_URL, 7, ""]) == [
+        LAN_URL,
+        OVERLAY_URL,
+        "7",
+    ]
+    assert enrollment.clean_urls("not a list") == []
+    assert enrollment.clean_urls(None) == []
+
+
+def test_a_round_is_the_name_then_the_last_answer_then_the_rest():
+    binding = {"gateway_url": OVERLAY_URL, "gateway_urls": [LAN_URL, OVERLAY_URL]}
+
+    assert enrollment.candidate_urls(binding, NAME_URL) == [
+        NAME_URL,
+        OVERLAY_URL,
+        LAN_URL,
+    ]
+    assert enrollment.candidate_urls(binding) == [OVERLAY_URL, LAN_URL]
+    assert enrollment.candidate_urls(binding, LAN_URL) == [LAN_URL, OVERLAY_URL]
+    assert enrollment.stored_urls(binding) == [LAN_URL, OVERLAY_URL]
+
+
+def test_the_name_takes_the_stored_addresss_scheme_and_port(monkeypatch):
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "192.0.2.9")
+
+    assert enrollment.hub_name_url(LAN_URL) == NAME_URL
+    assert enrollment.hub_name_url("http://192.0.2.1:9") == "http://192.0.2.9:9"
+    assert enrollment.hub_name_url("https://hub.lan") == "https://192.0.2.9:443"
+
+
+def test_a_name_that_does_not_resolve_is_no_candidate(monkeypatch):
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
+
+    assert enrollment.hub_name_url(LAN_URL) == ""
+
+
+def test_the_name_is_looked_up_as_ipv4_only(monkeypatch):
+    asked = []
+
+    def getaddrinfo(host, port, family=0, kind=0, *rest):
+        asked.append((host, family, kind))
+        return [(family, kind, 6, "", ("192.0.2.9", 0))]
+
+    monkeypatch.setattr(enrollment.socket, "getaddrinfo", getaddrinfo)
+
+    assert resolve_hub_address() == "192.0.2.9"
+    assert asked == [
+        (
+            "hub.neutrino.internal",
+            enrollment.socket.AF_INET,
+            enrollment.socket.SOCK_STREAM,
+        )
+    ]
+
+
+def test_a_lookup_that_fails_resolves_to_nothing(monkeypatch):
+    def getaddrinfo(*args):
+        raise enrollment.socket.gaierror("no such name")
+
+    monkeypatch.setattr(enrollment.socket, "getaddrinfo", getaddrinfo)
+
+    assert resolve_hub_address() == ""
+
+
+def test_the_route_to_the_hub_is_read_off_the_first_literal():
+    """A loopback address is routed on every machine; a name is skipped."""
+    assert default_source_address(["https://hub.lan:8443", "http://127.0.0.1:9"]) == (
+        "127.0.0.1"
+    )
+    assert default_source_address(["https://hub.lan:8443"]) == ""
+    assert default_source_address([]) == ""
+
+
+def test_the_notes_write_onto_a_stored_binding(config_path):
+    bind(config_path, url=LAN_URL)
+
+    enrollment.note_urls([LAN_URL, OVERLAY_URL + "/", OVERLAY_URL])
+    enrollment.note_url(OVERLAY_URL)
+
+    binding = enrollment.load_binding()
+    assert binding["gateway_url"] == OVERLAY_URL
+    assert binding["gateway_urls"] == [LAN_URL, OVERLAY_URL]
+    assert stat.S_IMODE(os.stat(config_path).st_mode) == 0o600
+
+
+def test_a_note_on_no_binding_writes_nothing(config_path):
+    enrollment.note_url(OVERLAY_URL)
+    assert not config_path.exists()
+
+    config_path.write_text(json.dumps({"device_id": "old", "gateway_url": "x"}))
+    enrollment.note_urls([LAN_URL])
+
+    assert json.loads(config_path.read_text()) == {
+        "device_id": "old",
+        "gateway_url": "x",
+    }
 
 
 # --- leaving ---

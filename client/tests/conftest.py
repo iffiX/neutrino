@@ -19,6 +19,7 @@ import threading
 import pytest
 
 import neutrino_client.core.enrollment as enrollment
+import neutrino_client.core.session as session_module
 from neutrino_client.platforms.base import ClientPlatform
 from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
@@ -162,6 +163,15 @@ def _isolated_person_paths(tmp_path, monkeypatch):
     (tmp_path / "home").mkdir()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_network(monkeypatch):
+    """The hub's name resolves to nothing and no route is looked at, unless a
+    test says otherwise; a round waits nothing between addresses."""
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
+    monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
+    monkeypatch.setattr(session_module, "CLIENT_ROTATE_DELAY_S", 0)
+
+
 @pytest.fixture
 def config_path(tmp_path):
     """The binding file the autouse redirect already points the client at."""
@@ -195,6 +205,7 @@ BINDING = {
     "hub_id": "h1",
     "hub_name": "home",
     "gateway_url": "http://127.0.0.1:9",
+    "gateway_urls": [],
     "fingerprint": "",
     "token": "tok",
 }
@@ -204,6 +215,7 @@ OFFICE_BINDING = {
     "hub_id": "h2",
     "hub_name": "office",
     "gateway_url": "https://office.lan:8443",
+    "gateway_urls": [],
     "fingerprint": "",
     "token": "tok2",
 }

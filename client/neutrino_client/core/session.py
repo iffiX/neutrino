@@ -1,9 +1,12 @@
 """One hub's session: a binding, its socket, and the reconnect that holds it.
 
 A session belongs to one binding and speaks to one hub. It holds the socket
-open and reconnects when it drops; the hub pushes its ``state``, the
-services it publishes and whether this client is switched off, and the
-session answers each state and every interval with a ``report``. What a
+open and reconnects when it drops, through the first of the hub's addresses
+that answers, the hub's name on the network this machine stands on first; a
+network change under the machine starts a round at once. The hub pushes its
+``state``, the addresses it answers on, the services it publishes and
+whether this client is switched off, and the session answers each state and
+every interval with a ``report``. What a
 service handler needs from the hub comes down a ``service`` stream the
 session opens on request. The resident owns the handlers and the store; the
 session tells it what changed through its callbacks and never touches them.
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
@@ -36,6 +40,7 @@ from neutrino_client.constants import (
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
+    CLIENT_ROTATE_DELAY_S,
     CLIENT_SOFTWARE_PREFIX,
     CLIENT_STREAM_CODE_KIND_UNKNOWN,
     CLIENT_STREAM_KIND_SERVICE,
@@ -168,6 +173,11 @@ class ClientHubSession:
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
         self._client: "WebSocketClient | None" = None
+        # The address the live socket was opened through.
+        self._connected_url = ""
+        # This machine's own address on the route to the hub as last seen;
+        # None before the first look.
+        self._source_address: "str | None" = None
         self._streams: "ClientStreamRegistry | None" = None
         self._is_welcomed = False
         self._backoff_s = CLIENT_BACKOFF_MIN_S
@@ -312,7 +322,7 @@ class ClientHubSession:
             # stop included, is still standing when the wait begins.
             self._news.clear()
             delay = self.run_once()
-            self._news.wait(timeout=delay)
+            self._wait_out(delay)
 
     def run_once(self) -> int:
         """One connection's lifetime, or one idle turn.
@@ -324,11 +334,12 @@ class ClientHubSession:
             wait while another socket holds the binding or the hub has
             forgotten it.
         """
-        client = self._open_client()
-        if client is None:
+        with self._lock:
+            is_idle = self._is_replaced or self._is_unbound
+        if is_idle:
             return CLIENT_IDLE_POLL_INTERVAL_S
         try:
-            self._connect(client)
+            client = self._connect_round()
         except (GatewayRefused, GatewayUntrusted) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
@@ -340,19 +351,73 @@ class ClientHubSession:
             return self._on_rejected(failure)
         return self._on_unreachable(failure)
 
-    def _open_client(self) -> "WebSocketClient | None":
-        """A socket for the binding, or None while replaced or unbound."""
+    def _connect_round(self):
+        """Connect through the first of the hub's addresses that answers.
+
+        The name's address is first, then the one that last answered, then
+        the rest the binding holds. An address the name resolves to that is
+        not a stored one and fails the fingerprint check is not this hub and
+        is skipped; a stored address failing it is logged and the round goes
+        on. The address that answers is written onto the binding.
+
+        Returns:
+            The connected socket, its welcome taken and its first report
+            sent.
+
+        Raises:
+            GatewayUntrusted: When a stored address presented another
+                certificate and no address answered.
+            GatewayRefused: When the hub refused the hello, by a frame or by
+                its close; the protocol refusals are their own kind.
+            GatewayUnreachable: When no address answered, or a stop ended
+                the round.
+        """
         with self._lock:
             binding = dict(self._binding)
-            is_idle = self._is_replaced or self._is_unbound
-        if is_idle:
-            return None
-        parts = urllib.parse.urlsplit(binding["gateway_url"])
+        name_url = enrollment.hub_name_url(binding["gateway_url"])
+        stored = enrollment.stored_urls(binding)
+        untrusted: "Exception | None" = None
+        failure: "Exception | None" = None
+        for index, url in enumerate(enrollment.candidate_urls(binding, name_url)):
+            if index and self._stop.wait(timeout=CLIENT_ROTATE_DELAY_S):
+                break
+            client = self._open_client(url)
+            try:
+                self._connect(client)
+            except GatewayUntrusted as error:
+                if url == name_url and url not in stored:
+                    self._log(f"{url} answers to the hub's name and is not this hub")
+                else:
+                    self._log(f"{url} presented a certificate that is not the hub's")
+                    untrusted = error
+            except GatewayUnreachable as error:
+                failure = error
+            else:
+                with self._lock:
+                    self._connected_url = url
+                self._note_url(url)
+                return client
+        if untrusted is not None:
+            raise untrusted
+        raise failure if failure is not None else GatewayUnreachable("no address")
+
+    def _open_client(self, gateway_url: str) -> WebSocketClient:
+        """A socket for the binding at one of the hub's addresses.
+
+        Args:
+            gateway_url: The address to open the socket at.
+
+        Returns:
+            The unconnected socket.
+        """
+        with self._lock:
+            fingerprint = self._binding.get("fingerprint", "")
+        parts = urllib.parse.urlsplit(gateway_url)
         return WebSocketClient(
             host=parts.hostname or "",
             port=parts.port or 443,
             path=CLIENT_CHANNEL_WS_PATH,
-            fingerprint=binding["fingerprint"],
+            fingerprint=fingerprint,
             timeout_s=CLIENT_CONNECT_TIMEOUT_S,
         )
 
@@ -426,7 +491,7 @@ class ClientHubSession:
                     failure = close_error(closed.code, closed.reason)
                 break
             except GatewayUnreachable as error:
-                if not self._stop.is_set():
+                if self._is_held(client):
                     failure = error
                 break
             try:
@@ -435,7 +500,7 @@ class ClientHubSession:
                 failure = refused
                 break
             except GatewayUnreachable as error:
-                if not self._stop.is_set():
+                if self._is_held(client):
                     failure = error
                 break
             except Exception as error:  # noqa: BLE001 - reported, never fatal
@@ -490,6 +555,104 @@ class ClientHubSession:
             raise GatewayUnreachable("the hub's welcome names another role")
         return message
 
+    def _is_held(self, client) -> bool:
+        """Whether a socket is still this session's: one closed from here is not."""
+        with self._lock:
+            return self._client is client
+
+    def _note_url(self, gateway_url: str) -> None:
+        """Write the address that answered onto the binding, when it changed."""
+        with self._lock:
+            previous = self._binding.get("gateway_url", "")
+            if previous == gateway_url:
+                return
+            self._binding["gateway_url"] = gateway_url
+            binding_id = self._binding.get("id", "")
+        self._log(f"the hub answered at {gateway_url}")
+        try:
+            enrollment.note_url(binding_id, gateway_url)
+        except OSError as error:
+            self._log(f"could not record the hub's address: {error}")
+            with self._lock:
+                self._binding["gateway_url"] = previous
+
+    def _note_urls(self, urls: list) -> None:
+        """Write the hub's address list onto the binding, when it changed."""
+        cleaned = enrollment.clean_urls(urls)
+        with self._lock:
+            previous = list(self._binding.get("gateway_urls") or [])
+            if previous == cleaned:
+                return
+            self._binding["gateway_urls"] = cleaned
+            binding_id = self._binding.get("id", "")
+        self._log(f"the hub answers at {', '.join(cleaned)}")
+        try:
+            enrollment.note_urls(binding_id, cleaned)
+        except OSError as error:
+            self._log(f"could not record the hub's addresses: {error}")
+            with self._lock:
+                self._binding["gateway_urls"] = previous
+
+    def _watch_network(self) -> bool:
+        """Look at the route to the hub.
+
+        Returns:
+            True when this machine's address on it changed since the last
+            look; the first look is no change.
+        """
+        with self._lock:
+            binding = dict(self._binding)
+            held = self._source_address
+        current = enrollment.default_source_address(enrollment.stored_urls(binding))
+        with self._lock:
+            self._source_address = current
+        if held is None or current == held:
+            return False
+        self._log(f"this machine's address toward the hub is now {current or 'none'}")
+        return True
+
+    def _follow_name(self, client) -> None:
+        """Move the live socket to the address the hub's name resolves to.
+
+        Only when that is a stored address other than the one in use: the
+        socket is closed here and the next round opens it there at once.
+
+        Args:
+            client: The connected socket.
+        """
+        with self._lock:
+            binding = dict(self._binding)
+            in_use = self._connected_url
+        name_url = enrollment.hub_name_url(binding["gateway_url"])
+        if not name_url or name_url == in_use:
+            return
+        if name_url not in enrollment.stored_urls(binding):
+            return
+        self._log(f"moving to {name_url}")
+        self._end_socket(client)
+        self._news.set()
+
+    def _wait_out(self, delay: float) -> None:
+        """Wait for the next turn: the delay, news, or a network change.
+
+        The route to the hub is looked at every idle poll; a changed
+        address ends the wait and puts the backoff back to its floor.
+
+        Args:
+            delay: How long the turn asked to wait.
+        """
+        deadline = time.monotonic() + delay
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            if self._news.wait(timeout=min(remaining, CLIENT_IDLE_POLL_INTERVAL_S)):
+                return
+            if self._watch_network():
+                with self._lock:
+                    self._backoff_s = CLIENT_BACKOFF_MIN_S
+                return
+
     def _note_hub(self, welcome: dict) -> None:
         """Write the hub's id and name from its welcome onto the binding."""
         hub_id = str(welcome.get("id", "") or "")
@@ -536,12 +699,14 @@ class ClientHubSession:
         )
 
     def _report_on_interval(self, client, ended: threading.Event) -> None:
-        """Report every interval until the socket ends."""
+        """Report every interval until the socket ends, and look at the network."""
         while not ended.wait(timeout=CLIENT_REPORT_INTERVAL_S):
             try:
                 self._report(client)
             except GatewayUnreachable:
                 return
+            if self._watch_network():
+                self._follow_name(client)
 
     def _dispatch(self, client, kind: str, payload) -> None:
         """Take one frame's worth of news.
@@ -590,6 +755,9 @@ class ClientHubSession:
         services = message.get("services", [])
         if not isinstance(services, list):
             raise TypeError("state services is not a list")
+        urls = message.get("urls")
+        if isinstance(urls, list):
+            self._note_urls(urls)
         is_disabled = bool(message.get("is_disabled"))
         with self._lock:
             self._services_list = [

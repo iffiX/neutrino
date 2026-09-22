@@ -9,7 +9,11 @@ after every state and on the interval, a service stream correlated to its
 close, the one refusal that hands the binding back and the ones the binding
 survives, at the door and on a live socket alike, a replaced socket waiting
 for a person, the backoff after a broken wire, and a stop that closes the
-socket.
+socket. The connection round over every address the hub answers on is
+pinned too: the name first, the one that answered written back, a whole
+round failing being what backs off, the state's ``urls`` kept on disk, a
+network change starting a round at once and moving a live socket to the
+name's address.
 """
 
 import json
@@ -22,12 +26,13 @@ import neutrino_client.core.session as session_module
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
+    CLIENT_BACKOFF_MIN_S,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_ROLE,
     CLIENT_SOFTWARE_PREFIX,
     PROTOCOL,
 )
-from neutrino_client.core import protocol
+from neutrino_client.core import enrollment, protocol
 from neutrino_client.core.session import ClientHubSession
 from neutrino_client.exceptions import (
     GatewayProtocolRefused,
@@ -842,6 +847,405 @@ def test_a_close_4000_without_a_frame_is_hub_refused_and_keeps_the_binding(
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error() == {"code": "hub_refused", "params": {}}
     assert listener.events == []
+
+
+# --- the addresses the hub answers on ---
+
+
+LAN_URL = "https://192.0.2.1:8443"
+WAN_URL = "https://198.51.100.1:8443"
+OVERLAY_URL = "https://100.64.0.1:8443"
+NAME_ADDRESS = "192.0.2.1"
+STATE_WITH_URLS = dict(STATE, urls=[LAN_URL, OVERLAY_URL])
+DOWN = GatewayUnreachable("down")
+
+
+class AddressScript:
+    """One scripted socket per address dialled, told apart by host.
+
+    Attributes:
+        hosts: The host of every socket opened, in order.
+        made: Every socket handed out, in order.
+    """
+
+    def __init__(self, by_host: dict, default=DOWN):
+        """
+        Args:
+            by_host: Host to what its socket does: a list of frames, or an
+                exception ``connect`` raises.
+            default: What a host the script does not name does.
+        """
+        self._by_host = by_host
+        self._default = default
+        self.hosts = []
+        self.made = []
+
+    def __call__(self, **kwargs) -> ScriptedSocket:
+        host = kwargs.get("host", "")
+        script = self._by_host.get(host, self._default)
+        if isinstance(script, Exception):
+            made = ScriptedSocket([], connect_error=script)
+        else:
+            made = ScriptedSocket(script)
+        self.hosts.append(host)
+        self.made.append(made)
+        return made
+
+
+def addresses_of(monkeypatch, by_host: dict, default=DOWN) -> AddressScript:
+    script = AddressScript(by_host, default)
+    monkeypatch.setattr(session_module, "WebSocketClient", script)
+    return script
+
+
+def stored_binding(config_path) -> dict:
+    (binding,) = json.loads(config_path.read_text())["bindings"]
+    return binding
+
+
+@pytest.fixture
+def bound_everywhere(config_path):
+    """A session whose binding holds three addresses, the LAN one last answered."""
+    bind(
+        config_path,
+        bindings=[
+            dict(
+                BINDING,
+                gateway_url=LAN_URL,
+                gateway_urls=[LAN_URL, WAN_URL, OVERLAY_URL],
+            )
+        ],
+    )
+    listener = Listener()
+    lines = []
+    session = ClientHubSession(
+        binding=stored_binding(config_path),
+        hostname="box",
+        platform_tuple=PLATFORM,
+        log=lines.append,
+        on_change=listener.on_change,
+    )
+    return session, lines
+
+
+def test_the_next_address_is_tried_when_one_stops_answering(
+    bound_everywhere, monkeypatch, config_path
+):
+    """Two addresses fail, the third answers: it is written back as the one
+    that answered, and the next round opens there first."""
+    session, lines = bound_everywhere
+    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
+
+    delay = session.run_once()
+
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
+    assert delay == CLIENT_BACKOFF_MIN_S
+    assert session.gateway_url() == OVERLAY_URL
+    assert stored_binding(config_path)["gateway_url"] == OVERLAY_URL
+    assert stored_binding(config_path)["gateway_urls"] == [
+        LAN_URL,
+        WAN_URL,
+        OVERLAY_URL,
+    ]
+    assert f"the hub answered at {OVERLAY_URL}" in lines
+
+    session.run_once()
+
+    assert script.hosts[3] == "100.64.0.1"
+
+
+def test_a_whole_round_failing_is_what_backs_off(bound_everywhere, monkeypatch):
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {})
+
+    delays = [session.run_once() for _ in range(3)]
+
+    assert delays == [5, 10, 20]
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"] * 3
+    assert session.last_error()["code"] == "hub_unreachable"
+    assert session.gateway_url() == LAN_URL
+
+
+def test_the_round_waits_the_rotate_delay_between_addresses(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    addresses_of(monkeypatch, {})
+    monkeypatch.setattr(session_module, "CLIENT_ROTATE_DELAY_S", 0.1)
+    started = time.monotonic()
+
+    session.run_once()
+
+    assert 0.2 <= time.monotonic() - started < 5
+
+
+def test_a_stop_ends_the_round(bound_everywhere, monkeypatch):
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {})
+    monkeypatch.setattr(session_module, "CLIENT_ROTATE_DELAY_S", 5)
+    session._stop.set()
+    started = time.monotonic()
+
+    session.run_once()
+
+    assert script.hosts == ["192.0.2.1"]
+    assert time.monotonic() - started < 5
+
+
+def test_the_states_urls_are_written_to_disk(bound, monkeypatch, config_path):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, STATE_WITH_URLS)
+
+    assert stored_binding(config_path)["gateway_urls"] == [LAN_URL, OVERLAY_URL]
+    assert stored_binding(config_path)["gateway_url"] == "https://hub.lan:8443"
+    assert session.binding()["gateway_urls"] == [LAN_URL, OVERLAY_URL]
+    assert [entry["id"] for entry in session.service_entries()] == [
+        entry["id"] for entry in HUB_SERVICES
+    ]
+
+
+def test_a_state_naming_the_same_urls_writes_nothing(bound, monkeypatch, config_path):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    take(session, made, STATE_WITH_URLS)
+    before = config_path.stat().st_mtime_ns
+
+    take(session, made, STATE_WITH_URLS)
+
+    assert config_path.stat().st_mtime_ns == before
+
+
+def test_a_state_without_urls_keeps_the_list(
+    bound_everywhere, monkeypatch, config_path
+):
+    session, _lines = bound_everywhere
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, STATE)
+
+    assert stored_binding(config_path)["gateway_urls"] == [
+        LAN_URL,
+        WAN_URL,
+        OVERLAY_URL,
+    ]
+
+
+def test_an_old_binding_without_the_list_still_connects(bound, monkeypatch):
+    session, _listener = bound
+    script = addresses_of(monkeypatch, {"hub.lan": [WELCOME]})
+
+    session.run_once()
+
+    assert script.hosts == ["hub.lan"]
+    assert session.gateway_url() == "https://hub.lan:8443"
+
+
+def test_the_name_is_tried_first_and_written_back(
+    bound_everywhere, monkeypatch, config_path
+):
+    session, _lines = bound_everywhere
+    session._binding["gateway_url"] = OVERLAY_URL
+    script = addresses_of(monkeypatch, {NAME_ADDRESS: [WELCOME]})
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: NAME_ADDRESS)
+
+    session.run_once()
+
+    assert script.hosts == [NAME_ADDRESS]
+    assert stored_binding(config_path)["gateway_url"] == LAN_URL
+
+
+def test_the_names_fingerprint_mismatch_is_skipped_without_alarm(
+    bound_everywhere, monkeypatch
+):
+    """A foreign network resolving the name to its own portal is not this
+    hub: the round goes on to the stored addresses and records no error."""
+    session, lines = bound_everywhere
+    script = addresses_of(
+        monkeypatch, {"10.9.9.9": GatewayUntrusted("wrong pin"), "192.0.2.1": [WELCOME]}
+    )
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "10.9.9.9")
+
+    client = session._connect_round()
+
+    assert script.hosts == ["10.9.9.9", "192.0.2.1"]
+    assert client is script.made[1]
+    assert session.last_error() is None
+    assert session.connection_state() == "connected"
+    assert (
+        "https://10.9.9.9:8443 answers to the hub's name and is not this hub" in lines
+    )
+
+
+def test_a_stored_address_off_the_pin_is_logged_and_the_round_goes_on(
+    bound_everywhere, monkeypatch
+):
+    session, lines = bound_everywhere
+    script = addresses_of(
+        monkeypatch,
+        {"192.0.2.1": GatewayUntrusted("wrong pin"), "198.51.100.1": [WELCOME]},
+    )
+
+    client = session._connect_round()
+
+    assert script.hosts == ["192.0.2.1", "198.51.100.1"]
+    assert client is script.made[1]
+    assert session.last_error() is None
+    assert f"{LAN_URL} presented a certificate that is not the hub's" in lines
+    assert session.gateway_url() == WAN_URL
+
+
+def test_a_stored_address_off_the_pin_alarms_when_no_address_answers(
+    bound_everywhere, monkeypatch, config_path
+):
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {"192.0.2.1": GatewayUntrusted("wrong pin")})
+
+    delay = session.run_once()
+
+    assert script.hosts == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
+    assert delay == CLIENT_BACKOFF_MAX_S
+    assert session.last_error() == {"code": "hub_untrusted", "params": {}}
+    assert len(json.loads(config_path.read_text())["bindings"]) == 1
+
+
+def test_a_refusal_ends_the_round(bound_everywhere, monkeypatch):
+    session, _lines = bound_everywhere
+    script = addresses_of(
+        monkeypatch,
+        {"192.0.2.1": [{"type": "refused", "code": "ticket_spent", "params": {}}]},
+    )
+
+    delay = session.run_once()
+
+    assert script.hosts == ["192.0.2.1"]
+    assert delay == CLIENT_BACKOFF_MAX_S
+    assert session.last_error()["code"] == "ticket_spent"
+
+
+def sources(monkeypatch, *addresses) -> list:
+    """The route probe answering each address in turn, the last one after."""
+    pending = list(addresses)
+    asked: list = []
+
+    def probe(urls):
+        asked.append(list(urls))
+        return pending.pop(0) if len(pending) > 1 else pending[0]
+
+    monkeypatch.setattr(enrollment, "default_source_address", probe)
+    return asked
+
+
+def test_a_changed_source_address_ends_the_wait_and_resets_the_backoff(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    session._backoff_s = CLIENT_BACKOFF_MAX_S
+    asked = sources(monkeypatch, "10.0.0.5", "192.0.2.20")
+    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
+    started = time.monotonic()
+
+    session._wait_out(CLIENT_BACKOFF_MAX_S)
+
+    assert time.monotonic() - started < 5
+    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
+    assert session._source_address == "192.0.2.20"
+    # The route is looked at toward the hub's own order of addresses.
+    assert asked[0] == [LAN_URL, WAN_URL, OVERLAY_URL]
+
+
+def test_the_first_look_and_an_unchanged_address_wait_the_delay_out(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    sources(monkeypatch, "10.0.0.5")
+    monkeypatch.setattr(session_module, "CLIENT_IDLE_POLL_INTERVAL_S", 0.01)
+    started = time.monotonic()
+
+    session._wait_out(0.1)
+
+    assert 0.1 <= time.monotonic() - started < 5
+    assert session._source_address == "10.0.0.5"
+
+
+def test_news_ends_the_wait_before_the_network_is_looked_at(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    asked = sources(monkeypatch, "10.0.0.5")
+    session.reconnect_soon()
+
+    session._wait_out(CLIENT_BACKOFF_MAX_S)
+
+    assert asked == []
+
+
+def test_a_live_socket_follows_the_name_to_a_stored_address(
+    bound_everywhere, monkeypatch
+):
+    """Connected over the overlay, the machine comes home: the name resolves
+    to the LAN address the binding holds, and the socket is moved there."""
+    session, lines = bound_everywhere
+    session._binding["gateway_url"] = OVERLAY_URL
+    hold = threading.Event()
+    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME, hold]})
+    monkeypatch.setattr(session_module, "CLIENT_REPORT_INTERVAL_S", 0.02)
+    current = ["10.0.0.5"]
+    monkeypatch.setattr(enrollment, "default_source_address", lambda urls: current[0])
+    session._news.clear()
+    client = session._connect_round()
+    served = threading.Thread(target=session._serve, args=(client,))
+
+    served.start()
+    deadline = time.monotonic() + 5
+    while session._source_address is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: NAME_ADDRESS)
+    current[0] = "192.0.2.20"
+    while f"moving to {LAN_URL}" not in lines and time.monotonic() < deadline:
+        time.sleep(0.01)
+    hold.set()
+    served.join(timeout=5)
+
+    assert not served.is_alive()
+    assert script.made[0].is_closed is True
+    assert f"moving to {LAN_URL}" in lines
+    assert session._news.is_set()
+    assert session.last_error() is None
+    assert session.connection_state() == "reconnecting"
+
+
+@pytest.mark.parametrize("resolved", ["", "10.9.9.9", "100.64.0.1"])
+def test_a_live_socket_stays_when_the_name_is_elsewhere(
+    bound_everywhere, monkeypatch, resolved
+):
+    """No name, a name off the stored list, or the address in use: nothing
+    moves."""
+    session, _lines = bound_everywhere
+    session._binding["gateway_url"] = OVERLAY_URL
+    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
+    client = session._connect_round()
+    sources(monkeypatch, "10.0.0.5", "192.0.2.20")
+    session._watch_network()
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: resolved)
+
+    assert session._watch_network() is True
+    session._follow_name(client)
+
+    assert script.made[0].is_closed is False
+    assert session.connection_state() == "connected"
+
+
+def test_a_socket_closed_from_here_is_no_failure(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    session._end_socket(made)
+    failure = session._serve(made)
+
+    assert failure is None
+    assert session.last_error() is None
 
 
 # --- the loop and the way out ---

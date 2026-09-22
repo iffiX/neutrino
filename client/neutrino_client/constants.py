@@ -44,6 +44,12 @@ CLIENT_IDLE_POLL_INTERVAL_S = 2
 CLIENT_REQUEST_TIMEOUT_S = 10
 CLIENT_BACKOFF_MIN_S = 5
 CLIENT_BACKOFF_MAX_S = 60
+# How long a connection round waits between an address that did not answer
+# and the next one. A whole round failing is what backs off.
+CLIENT_ROTATE_DELAY_S = 1
+# The name every network a hub serves resolves to that hub's address on it.
+# It is the first address a round connects to.
+CLIENT_HUB_NAME = "hub.neutrino.internal"
 
 # How long the open socket may stay silent before it counts as dead.
 CLIENT_WS_SILENCE_TIMEOUT_S = 45

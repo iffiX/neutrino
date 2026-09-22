@@ -21,4 +21,6 @@ Every `nagent` subcommand runs as root on a managed machine. Run without root, a
 | `--version` | `nagent`    | Prints the package version and exits. |
 | `-h`        | every level | Prints that level's help and exits.   |
 
+The address `status` prints is the one the agent last connected through, out of every address the hub listens on.
+
 `nagent` with no subcommand, and `nagent rdp` with no action, print their help and exit with status 2.

@@ -5,15 +5,20 @@ of the report, with ``error`` the most recent of its three sources; what
 each refusal does to the binding, at the door and on a live socket alike,
 with only ``binding_unknown`` deleting it and a replaced socket waiting for
 a person; the binding file
-shared with the CLI; the self-update a welcome's ``software`` triggers and
-its once-per-target latch; ``sync`` sending a report now and what ``probe``
-does; and the wake flag cleared before a turn rather than after it.
-Nothing here talks to a network.
+shared with the CLI; the connection round over every address the hub
+answers on, the name first, the one that answered written back and a whole
+round failing being what backs off; the state's ``urls`` kept on disk; a
+network change under the machine starting a round at once and moving a
+live socket to the name's address; the self-update a welcome's
+``software`` triggers and its once-per-target latch; ``sync`` sending a
+report now and what ``probe`` does; and the wake flag cleared before a
+turn rather than after it. Nothing here talks to a network.
 """
 
 import json
 import os
 import threading
+import time
 
 import pytest
 
@@ -24,6 +29,7 @@ from neutrino_agent.constants import (
     AGENT_BACKOFF_MAX_S,
     AGENT_BACKOFF_MIN_S,
     AGENT_REINSTALL_RESULT_NAME,
+    AGENT_REPORT_INTERVAL_S,
     AGENT_ROLE,
     AGENT_SOFTWARE_PREFIX,
     AGENT_WS_PATH,
@@ -767,6 +773,333 @@ def test_an_adopted_binding_starts_clean(config_path, monkeypatch):
 
     assert agent.last_error() is None
     assert agent._backoff_s == AGENT_BACKOFF_MIN_S
+
+
+# --- the addresses the hub answers on ---
+
+
+LAN_URL = "http://192.0.2.1:9"
+WAN_URL = "http://198.51.100.1:9"
+OVERLAY_URL = "http://100.64.0.1:9"
+NAME_ADDRESS = "192.0.2.1"
+STATE_WITH_URLS = {
+    "type": "state",
+    "hash": "h1",
+    "urls": [LAN_URL, OVERLAY_URL],
+    "modules": {},
+}
+
+
+def hosts_tried(script) -> list:
+    return [built["host"] for built in script.built]
+
+
+def stored() -> dict:
+    return enrollment_module.load_binding()
+
+
+def test_the_next_address_is_tried_when_one_stops_answering(config_path, monkeypatch):
+    """Two addresses fail, the third answers: it is written back as the one
+    that answered, and the next round opens there first."""
+    agent, script = scripted_agent(
+        config_path,
+        monkeypatch,
+        [HUNG_UP, HUNG_UP, welcomed_then_dropped(), welcomed_then_dropped()],
+    )
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, WAN_URL, OVERLAY_URL])
+
+    delay = agent.run_once()
+
+    assert hosts_tried(script) == ["192.0.2.1", "198.51.100.1", "100.64.0.1"]
+    assert delay == AGENT_BACKOFF_MIN_S
+    assert stored()["gateway_url"] == OVERLAY_URL
+    assert stored()["gateway_urls"] == [LAN_URL, WAN_URL, OVERLAY_URL]
+    assert script.clients[2].frames("report")[0]["error"] is None
+
+    agent.run_once()
+
+    assert hosts_tried(script)[3] == "100.64.0.1"
+    assert agent._operator is not None
+
+
+def test_a_whole_round_failing_is_what_backs_off(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [])
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, OVERLAY_URL])
+
+    delays = [agent.run_once() for _ in range(3)]
+
+    assert delays == [
+        AGENT_BACKOFF_MIN_S,
+        AGENT_BACKOFF_MIN_S * 2,
+        AGENT_BACKOFF_MIN_S * 4,
+    ]
+    assert hosts_tried(script) == ["192.0.2.1", "100.64.0.1"] * 3
+    assert agent.last_error()["code"] == "hub_unreachable"
+    assert stored()["gateway_url"] == LAN_URL
+
+
+def test_the_round_waits_the_rotate_delay_between_addresses(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [])
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, OVERLAY_URL])
+    monkeypatch.setattr(loop_module, "AGENT_ROTATE_DELAY_S", 0.2)
+    started = time.monotonic()
+
+    agent.run_once()
+
+    assert 0.2 <= time.monotonic() - started < 5
+
+
+def test_the_states_urls_are_written_to_disk_and_adopt_nothing(
+    config_path, monkeypatch
+):
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [[WELCOME, STATE_WITH_URLS, DROP_AFTER_REPORT]]
+    )
+    made = agent._operator
+
+    agent.run_once()
+
+    assert stored()["gateway_urls"] == [LAN_URL, OVERLAY_URL]
+    assert stored()["gateway_url"] == "http://127.0.0.1:9"
+    assert agent._binding["gateway_urls"] == [LAN_URL, OVERLAY_URL]
+    agent._adopt_external_binding()
+    assert agent._operator is made
+
+
+def test_a_state_naming_the_same_urls_writes_nothing(config_path, monkeypatch):
+    agent, _ = scripted_agent(
+        config_path, monkeypatch, [[WELCOME, STATE_WITH_URLS, DROP_AFTER_REPORT]]
+    )
+    bind(config_path, urls=[LAN_URL, OVERLAY_URL])
+    agent._adopt_external_binding()
+    before = config_path.stat().st_mtime_ns
+
+    agent.run_once()
+
+    assert config_path.stat().st_mtime_ns == before
+
+
+def test_a_state_without_urls_keeps_the_list(config_path, monkeypatch):
+    agent, _ = scripted_agent(
+        config_path,
+        monkeypatch,
+        [[WELCOME, {"type": "state", "hash": "h1", "modules": {}}, DROP_AFTER_REPORT]],
+    )
+    bind(config_path, urls=[LAN_URL])
+
+    agent.run_once()
+
+    assert stored()["gateway_urls"] == [LAN_URL]
+
+
+def test_an_old_binding_without_the_list_still_connects(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
+
+    agent.run_once()
+
+    assert hosts_tried(script) == ["127.0.0.1"]
+    assert script.clients[0].frames("report")
+    assert stored()["gateway_url"] == "http://127.0.0.1:9"
+
+
+def test_the_name_is_tried_first_and_written_back(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
+    bind(config_path, url=OVERLAY_URL, urls=[LAN_URL, OVERLAY_URL])
+    monkeypatch.setattr(enrollment_module, "resolve_hub_address", lambda: NAME_ADDRESS)
+
+    agent.run_once()
+
+    assert hosts_tried(script) == [NAME_ADDRESS]
+    assert script.built[0]["port"] == 9
+    assert stored()["gateway_url"] == LAN_URL
+
+
+def test_the_names_fingerprint_mismatch_is_skipped_without_alarm(
+    config_path, monkeypatch
+):
+    """A foreign network resolving the name to its own portal is not this
+    hub: the round goes on to the stored addresses and records no error."""
+    agent, script = scripted_agent(
+        config_path,
+        monkeypatch,
+        [GatewayUntrusted("wrong pin"), welcomed_then_dropped()],
+    )
+    lines: list = []
+    agent._log = lines.append
+    monkeypatch.setattr(enrollment_module, "resolve_hub_address", lambda: "10.9.9.9")
+
+    delay = agent.run_once()
+
+    assert hosts_tried(script) == ["10.9.9.9", "127.0.0.1"]
+    assert delay == AGENT_BACKOFF_MIN_S
+    # The drop after the report is the only error recorded: no alarm.
+    assert agent.last_error() == {
+        "code": "hub_unreachable",
+        "params": {"detail": "hung up"},
+    }
+    assert "http://10.9.9.9:9 answers to the hub's name and is not this hub" in lines
+
+
+def test_a_stored_address_off_the_pin_is_logged_and_the_round_goes_on(
+    config_path, monkeypatch
+):
+    agent, script = scripted_agent(
+        config_path,
+        monkeypatch,
+        [GatewayUntrusted("wrong pin"), welcomed_then_dropped()],
+    )
+    lines: list = []
+    agent._log = lines.append
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, OVERLAY_URL])
+
+    delay = agent.run_once()
+
+    assert hosts_tried(script) == ["192.0.2.1", "100.64.0.1"]
+    assert delay == AGENT_BACKOFF_MIN_S
+    assert agent.last_error()["code"] == "hub_unreachable"
+    assert f"{LAN_URL} presented a certificate that is not the hub's" in lines
+    assert stored()["gateway_url"] == OVERLAY_URL
+
+
+def test_a_stored_address_off_the_pin_alarms_when_no_address_answers(
+    config_path, monkeypatch
+):
+    agent, script = scripted_agent(
+        config_path, monkeypatch, [GatewayUntrusted("wrong pin"), HUNG_UP]
+    )
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, OVERLAY_URL])
+
+    delay = agent.run_once()
+
+    assert hosts_tried(script) == ["192.0.2.1", "100.64.0.1"]
+    assert delay == AGENT_BACKOFF_MAX_S
+    assert agent.last_error() == {"code": "hub_untrusted", "params": {}}
+    assert enrollment_module.is_bound()
+
+
+def test_a_refusal_ends_the_round(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [refused("ticket_spent")])
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, OVERLAY_URL])
+
+    delay = agent.run_once()
+
+    assert hosts_tried(script) == ["192.0.2.1"]
+    assert delay == AGENT_BACKOFF_MAX_S
+    assert agent.last_error()["code"] == "ticket_spent"
+
+
+def test_probe_walks_the_round_too(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [HUNG_UP, [WELCOME]])
+    bind(config_path, url=LAN_URL, urls=[LAN_URL, OVERLAY_URL])
+
+    agent.probe()
+
+    assert hosts_tried(script) == ["192.0.2.1", "100.64.0.1"]
+    assert agent.last_error() is None
+    assert script.clients[1].is_closed
+
+
+def sources(monkeypatch, *addresses) -> list:
+    """The route probe answering each address in turn, the last one after."""
+    pending = list(addresses)
+    asked: list = []
+
+    def probe(urls):
+        asked.append(list(urls))
+        return pending.pop(0) if len(pending) > 1 else pending[0]
+
+    monkeypatch.setattr(enrollment_module, "default_source_address", probe)
+    return asked
+
+
+def test_a_changed_source_address_ends_the_wait_and_resets_the_backoff(
+    config_path, monkeypatch
+):
+    agent, _ = scripted_agent(config_path, monkeypatch, [])
+    bind(config_path, url=OVERLAY_URL, urls=[LAN_URL, OVERLAY_URL])
+    agent._adopt_external_binding()
+    agent._backoff_s = AGENT_BACKOFF_MAX_S
+    asked = sources(monkeypatch, "10.0.0.5", "192.0.2.20")
+    monkeypatch.setattr(loop_module, "AGENT_REPORT_INTERVAL_S", 0.01)
+    # The engine's first observation sets the wake flag from its own thread;
+    # a flag of the test's own keeps that out of the wait.
+    agent._news = threading.Event()
+    started = time.monotonic()
+
+    agent._wait_out(AGENT_BACKOFF_MAX_S)
+
+    assert time.monotonic() - started < 5
+    assert agent._backoff_s == AGENT_BACKOFF_MIN_S
+    assert agent._source_address == "192.0.2.20"
+    # The route is looked at toward the hub's own order of addresses.
+    assert asked[0] == [LAN_URL, OVERLAY_URL]
+
+
+def test_the_first_look_and_an_unchanged_address_wait_the_delay_out(
+    config_path, monkeypatch
+):
+    agent, _ = scripted_agent(config_path, monkeypatch, [])
+    sources(monkeypatch, "10.0.0.5")
+    monkeypatch.setattr(loop_module, "AGENT_REPORT_INTERVAL_S", 0.01)
+    agent._news = threading.Event()
+    started = time.monotonic()
+
+    agent._wait_out(0.1)
+
+    assert 0.1 <= time.monotonic() - started < 5
+    assert agent._source_address == "10.0.0.5"
+
+
+def test_news_ends_the_wait_before_the_network_is_looked_at(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch, [])
+    asked = sources(monkeypatch, "10.0.0.5")
+    agent.report_soon()
+
+    agent._wait_out(AGENT_BACKOFF_MAX_S)
+
+    assert asked == []
+
+
+def test_a_live_socket_follows_the_name_to_a_stored_address(config_path, monkeypatch):
+    """Connected over the overlay, the machine comes home: the name resolves
+    to the LAN address the binding holds, and the socket is moved there."""
+    agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    lines: list = []
+    agent._log = lines.append
+    bind(config_path, url=OVERLAY_URL, urls=[LAN_URL, OVERLAY_URL])
+    agent._adopt_external_binding()
+    session = agent._connect_round()
+    agent._session = session
+    sources(monkeypatch, "10.0.0.5", "192.0.2.20")
+    agent._tick()
+    monkeypatch.setattr(enrollment_module, "resolve_hub_address", lambda: NAME_ADDRESS)
+
+    agent._tick()
+
+    assert script.clients[0].is_closed
+    assert session.serve() is None
+    assert f"moving to {LAN_URL}" in lines
+    assert agent._news.is_set()
+
+
+@pytest.mark.parametrize("resolved", ["", "10.9.9.9", "100.64.0.1"])
+def test_a_live_socket_stays_when_the_name_is_elsewhere(
+    config_path, monkeypatch, resolved
+):
+    """No name, a name off the stored list, or the address in use: nothing
+    moves."""
+    agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    bind(config_path, url=OVERLAY_URL, urls=[LAN_URL, OVERLAY_URL])
+    agent._adopt_external_binding()
+    agent._session = agent._connect_round()
+    sources(monkeypatch, "10.0.0.5", "192.0.2.20")
+    agent._tick()
+    monkeypatch.setattr(enrollment_module, "resolve_hub_address", lambda: resolved)
+
+    agent._tick()
+
+    assert not script.clients[0].is_closed
+    agent._session.close()
 
 
 # --- the welcome's software ---

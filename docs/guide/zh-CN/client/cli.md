@@ -39,4 +39,4 @@ hub        office  https://10.8.0.1:8443       reconnecting: the hub cannot be r
 resident   running
 ```
 
-加入的每个 hub 一行，顺序就是加入的顺序：名字、地址、通道的状态，以及这条通道最后返回的码。`exit` 标出 AI 工具指向的那个 hub。最后一行是客户端自己，`running` 或 `not running`。每个 hub 都是 `connected` 且客户端在运行时退出码是 0，否则是 1。
+加入的每个 hub 一行，顺序就是加入的顺序：名字、地址、通道的状态，以及这条通道最后返回的码。地址是通道最近一次连上的那一个，hub 的其他地址客户端也记着。`exit` 标出 AI 工具指向的那个 hub。最后一行是客户端自己，`running` 或 `not running`。每个 hub 都是 `connected` 且客户端在运行时退出码是 0，否则是 1。

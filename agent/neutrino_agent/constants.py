@@ -96,6 +96,12 @@ AGENT_REQUEST_TIMEOUT_S = 10
 # still reconnecting promptly once it returns.
 AGENT_BACKOFF_MIN_S = 5
 AGENT_BACKOFF_MAX_S = 60
+# How long a connection round waits between an address that did not answer
+# and the next one. A whole round failing is what backs off.
+AGENT_ROTATE_DELAY_S = 1
+# The name every network the hub serves resolves to the hub's address on that
+# network. It is the first address a round connects to.
+AGENT_HUB_NAME = "hub.neutrino.internal"
 
 AGENT_COMMAND_TIMEOUT_S = 900
 AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024

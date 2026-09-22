@@ -11,8 +11,15 @@ hub: the SHA-256 fingerprint of the agent port's TLS certificate, checked on
 every connection before anything is sent. A link whose role is not ``agent``
 was made for a client and is refused.
 
-The binding file is ``{gateway_url, id, token, fingerprint, machine_id}``,
-root-owned, mode 0600. A file missing any field is an unbound agent.
+The binding file is ``{gateway_url, gateway_urls, id, token, fingerprint,
+machine_id}``, root-owned, mode 0600. ``gateway_urls`` is every address the
+hub answers on, from the link and then from each ``state`` frame;
+``gateway_url`` is the one that last answered. A file missing any other
+field is an unbound agent.
+
+A connection round is the addresses in ``candidate_urls`` order: the address
+``hub.neutrino.internal`` resolves to on the network this machine stands on,
+then the one that last answered, then the rest of the list.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -22,13 +29,16 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import ipaddress
 import json
 import os
 import socket
+import urllib.parse
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_CONFIG_PATH,
+    AGENT_HUB_NAME,
     AGENT_ROLE,
     AGENT_SOFTWARE_PREFIX,
     PROTOCOL,
@@ -44,8 +54,17 @@ from neutrino_agent.exceptions import (
 from neutrino_agent.platforms.detect import detect_platform, platform_tuple
 
 LINK_PREFIX = "neutrino://enroll/"
-# What the binding file holds, every field a string.
-BINDING_KEYS = ("gateway_url", "id", "token", "fingerprint", "machine_id")
+# What the binding file holds: every field a string but the list of every
+# address the hub answers on, which a file written by 0.3.0 does not have.
+BINDING_KEYS = (
+    "gateway_url",
+    "gateway_urls",
+    "id",
+    "token",
+    "fingerprint",
+    "machine_id",
+)
+BINDING_URLS_KEY = "gateway_urls"
 
 
 def parse_link(link: str) -> "tuple[list, str, str, str]":
@@ -114,14 +133,21 @@ def load_binding() -> dict:
     """The binding, complete or nothing.
 
     Returns:
-        ``{gateway_url, id, token, fingerprint, machine_id}``, or an empty
-        object when the file is absent, misses any field, or names no hub,
-        id or token. The fingerprint and the machine id may be empty.
+        ``{gateway_url, gateway_urls, id, token, fingerprint, machine_id}``,
+        or an empty object when the file is absent, misses any field but
+        ``gateway_urls``, or names no hub, id or token. The fingerprint and
+        the machine id may be empty; ``gateway_urls`` is empty when the file
+        has none.
     """
     config = load_config()
-    if not isinstance(config, dict) or any(key not in config for key in BINDING_KEYS):
+    if not _is_stored(config):
         return {}
-    binding = {key: str(config.get(key, "") or "") for key in BINDING_KEYS}
+    binding = {
+        key: str(config.get(key, "") or "")
+        for key in BINDING_KEYS
+        if key != BINDING_URLS_KEY
+    }
+    binding[BINDING_URLS_KEY] = clean_urls(config.get(BINDING_URLS_KEY))
     if not (binding["gateway_url"] and binding["id"] and binding["token"]):
         return {}
     return binding
@@ -150,6 +176,143 @@ def remove_binding() -> None:
         os.unlink(AGENT_CONFIG_PATH)
     except FileNotFoundError:
         pass
+
+
+def note_url(gateway_url: str) -> None:
+    """Record the address that last answered, on the binding file.
+
+    Args:
+        gateway_url: The address the socket connected through.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    _note(gateway_url=str(gateway_url))
+
+
+def note_urls(gateway_urls: list) -> None:
+    """Record every address the hub's state names, on the binding file.
+
+    Args:
+        gateway_urls: The addresses, in the hub's order.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    _note(gateway_urls=clean_urls(gateway_urls))
+
+
+def clean_urls(value) -> list:
+    """A list of addresses as the binding keeps them.
+
+    Args:
+        value: What a link, a state or the file carried.
+
+    Returns:
+        Each non-blank entry as a string without its trailing slash, in
+        order, each once; empty when ``value`` is not a list.
+    """
+    kept: list = []
+    for url in value if isinstance(value, list) else []:
+        text = str(url).strip().rstrip("/")
+        if text and text not in kept:
+            kept.append(text)
+    return kept
+
+
+def stored_urls(binding: dict) -> list:
+    """Every address the binding holds, in the hub's order.
+
+    Args:
+        binding: The binding.
+
+    Returns:
+        ``gateway_urls``, with ``gateway_url`` appended when it is not among
+        them.
+    """
+    urls = list(binding.get(BINDING_URLS_KEY) or [])
+    last = str(binding.get("gateway_url", "") or "")
+    if last and last not in urls:
+        urls.append(last)
+    return urls
+
+
+def candidate_urls(binding: dict, name_url: str = "") -> list:
+    """The addresses one connection round connects to, in order.
+
+    Args:
+        binding: The binding.
+        name_url: What :func:`hub_name_url` returned, or empty.
+
+    Returns:
+        The name's address, the one that last answered, then the rest of
+        the stored list, each once.
+    """
+    return clean_urls([name_url, binding.get("gateway_url", ""), *stored_urls(binding)])
+
+
+def resolve_hub_address() -> str:
+    """The IPv4 address the hub's name resolves to on this network.
+
+    Returns:
+        The address, or empty when the name does not resolve.
+    """
+    try:
+        found = socket.getaddrinfo(
+            AGENT_HUB_NAME, None, socket.AF_INET, socket.SOCK_STREAM
+        )
+    except OSError:
+        return ""
+    return str(found[0][4][0]) if found else ""
+
+
+def hub_name_url(gateway_url: str) -> str:
+    """The hub's address by its name, on the scheme and port of a stored one.
+
+    Args:
+        gateway_url: A stored address, for its scheme and port.
+
+    Returns:
+        ``<scheme>://<address>:<port>``, or empty when the name does not
+        resolve.
+    """
+    address = resolve_hub_address()
+    if not address:
+        return ""
+    parts = urllib.parse.urlsplit(gateway_url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    return f"{parts.scheme}://{address}:{port}"
+
+
+def default_source_address(urls: list) -> str:
+    """This machine's own address on the route to the hub.
+
+    Read off a UDP socket connected to the first address naming an IPv4
+    literal; no packet is sent.
+
+    Args:
+        urls: The hub's addresses, in the order to look for a literal.
+
+    Returns:
+        The address, or empty when no address names a literal or no route
+        reaches it.
+    """
+    for url in urls:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname or ""
+        try:
+            ipaddress.IPv4Address(host)
+        except ValueError:
+            continue
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect((host, parts.port or 443))
+            return str(probe.getsockname()[0])
+        except OSError:
+            return ""
+        finally:
+            probe.close()
+    return ""
 
 
 def is_bound() -> bool:
@@ -249,6 +412,7 @@ def enroll(link: str, *, platform=None) -> dict:
 
     binding = {
         "gateway_url": gateway_url,
+        "gateway_urls": clean_urls(gateway_urls),
         "id": str(reply.get("id", "") or ""),
         "token": str(reply.get("token", "") or ""),
         "fingerprint": fingerprint,
@@ -287,3 +451,19 @@ def unbind() -> dict:
             outcome = {"code": "hub_unreachable", "params": {"detail": str(error)}}
     remove_binding()
     return outcome
+
+
+def _is_stored(config) -> bool:
+    """Whether a file holds every field a binding needs."""
+    return isinstance(config, dict) and all(
+        key in config for key in BINDING_KEYS if key != BINDING_URLS_KEY
+    )
+
+
+def _note(**fields) -> None:
+    """Write fields onto a stored binding; a file that is no binding is left."""
+    config = load_config()
+    if not _is_stored(config):
+        return
+    config.update(fields)
+    save_config(config)

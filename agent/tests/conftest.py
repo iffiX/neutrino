@@ -32,6 +32,15 @@ def _isolated_machine_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(loop_module, "AGENT_PACKAGE_DIR", str(tmp_path / "packages"))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_network(monkeypatch):
+    """The hub's name resolves to nothing and no route is looked at, unless a
+    test says otherwise; a round waits nothing between addresses."""
+    monkeypatch.setattr(enrollment, "resolve_hub_address", lambda: "")
+    monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
+    monkeypatch.setattr(loop_module, "AGENT_ROTATE_DELAY_S", 0)
+
+
 @pytest.fixture
 def config_path(tmp_path):
     """The binding file the autouse redirect already points the agent at."""
@@ -62,19 +71,26 @@ BINDING_TOKEN = "tok"
 MACHINE_ID = "machine-1"
 
 
-def bind(path, url="http://127.0.0.1:9", fingerprint="") -> None:
-    """Write a complete binding file, the way a join leaves it."""
-    path.write_text(
-        json.dumps(
-            {
-                "gateway_url": url,
-                "id": BINDING_ID,
-                "token": BINDING_TOKEN,
-                "fingerprint": fingerprint,
-                "machine_id": MACHINE_ID,
-            }
-        )
-    )
+def bind(path, url="http://127.0.0.1:9", fingerprint="", urls=None) -> None:
+    """Write a complete binding file, the way a join leaves it.
+
+    Args:
+        path: The binding file.
+        url: The address that last answered.
+        fingerprint: The pinned fingerprint.
+        urls: Every address the hub answers on; None writes a file of the
+            0.3.0 shape, without the list.
+    """
+    binding = {
+        "gateway_url": url,
+        "id": BINDING_ID,
+        "token": BINDING_TOKEN,
+        "fingerprint": fingerprint,
+        "machine_id": MACHINE_ID,
+    }
+    if urls is not None:
+        binding["gateway_urls"] = list(urls)
+    path.write_text(json.dumps(binding))
 
 
 class FakeControlPlatform(AgentPlatform):

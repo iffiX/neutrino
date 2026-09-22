@@ -61,8 +61,9 @@ SHUTDOWN_STEPS = (
 # How long a burst of changes is left to settle before the watchers hear.
 ANNOUNCE_SETTLE_S = 0.05
 # The fields of a binding that make it another hub, or another join: a
-# session outlives a change to any other field.
-BINDING_IDENTITY_KEYS = ("id", "gateway_url", "fingerprint", "token")
+# session outlives a change to any other field, the addresses included,
+# which the session itself writes.
+BINDING_IDENTITY_KEYS = ("id", "fingerprint", "token")
 
 
 def end_process(status: int = 0) -> None:

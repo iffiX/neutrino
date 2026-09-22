@@ -16,6 +16,8 @@ The machine needs all of the following:
 
 The agent is headless. It runs as a service and opens one connection to the hub, over which the panel drives it. There is one link per hub at a time, and a new link replaces the previous one.
 
+The binding holds every address the hub listens on, from the link and then from the hub itself. When the connection drops, the agent connects to each in turn, the name `hub.neutrino.internal` first on a network the hub serves.
+
 ## Enroll with a link
 
 1. In the panel, open **Devices**.
