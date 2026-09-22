@@ -350,7 +350,9 @@ export function ModulesPage() {
         module: activeRow.title,
         device: selectedDevice.name,
       }),
-      body: t("ui.modules.uninstall_body"),
+      body: activeRow.is_data_kept
+        ? t("ui.modules.uninstall_body")
+        : t("ui.modules.uninstall_body_data"),
       confirmLabel: t("ui.modules.uninstall"),
       onConfirm: () => void act("uninstall"),
     });

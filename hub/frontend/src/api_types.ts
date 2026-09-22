@@ -1015,6 +1015,7 @@ export interface DeviceModuleView {
   installer: string;
   is_supported: boolean;
   is_native: boolean;
+  is_data_kept: boolean;
   source: string;
   license: string;
   corresponding_source: string;

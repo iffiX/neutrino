@@ -170,6 +170,7 @@ def list_modules(
                 # agent will say what it cannot do once it beats.
                 is_supported=(any(key in platforms for key in keys) if keys else True),
                 is_native=(entry == {}),
+                is_data_kept=_is_data_kept(entry),
                 source=manifest.get("source", ""),
                 license=manifest.get("license", ""),
                 corresponding_source=manifest.get("corresponding_source", ""),
@@ -184,6 +185,22 @@ def list_modules(
         is_agent_managed=device.is_managed,
         is_agent_online=runtime.agent_sessions.is_online(key),
     )
+
+
+def _is_data_kept(entry) -> bool:
+    """Whether the branch's uninstall leaves the module's data.
+
+    Args:
+        entry: The platform branch, or None for a platform the manifest
+            does not cover.
+
+    Returns:
+        What the branch says; True where it says nothing.
+    """
+    removal = entry.get("uninstall") if isinstance(entry, dict) else None
+    if not isinstance(removal, dict):
+        return True
+    return bool(removal.get("is_data_kept", True))
 
 
 @router.post("/install", response_model=DeviceModuleListView)

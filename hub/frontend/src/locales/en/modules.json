@@ -229,6 +229,7 @@
   "ui.modules.task_running": "running",
   "ui.modules.uninstall": "Uninstall",
   "ui.modules.uninstall_body": "The package is removed and the configuration the hub wrote is deleted. Pools, share directories, repositories and container volumes stay.",
+  "ui.modules.uninstall_body_data": "The package is removed, the configuration the hub wrote is deleted, and so is the module's own data.",
   "ui.modules.uninstall_title": "Uninstall {module} from {device}",
   "ui.password.class_digit": "a digit",
   "ui.password.class_lowercase": "a lowercase letter",

@@ -213,6 +213,45 @@ def test_a_native_module_offers_nothing_where_the_platform_carries_it(api, monke
     assert package["is_native"] is False
 
 
+def test_whether_an_uninstall_keeps_the_data_reaches_the_row(api, monkeypatch):
+    """The confirmation says which, so the row carries the branch's word."""
+    client, runtime = api
+    monkeypatch.setattr(
+        device_modules,
+        "load_module_manifests",
+        lambda: {
+            "sample": {
+                "title": "Sample",
+                "kind": "system_package",
+                "platforms": {
+                    "linux-debian": {
+                        "packages": ["sample"],
+                        "verify": "sample --version",
+                        "uninstall": {
+                            "packages": ["sample"],
+                            "post_uninstall": [],
+                            "is_data_kept": False,
+                        },
+                    },
+                    "linux-rhel": {"packages": ["sample"], "verify": "sample -v"},
+                },
+            }
+        },
+    )
+
+    runtime.device_platform[DEVICE] = {
+        "os": "linux",
+        "family": "debian",
+        "arch": "amd64",
+    }
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+    assert row["is_data_kept"] is False
+
+    runtime.device_platform[DEVICE] = {"os": "linux", "family": "rhel", "arch": "amd64"}
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+    assert row["is_data_kept"] is True
+
+
 def test_the_installer_tier_reaches_the_row(api):
     client, _ = api
 

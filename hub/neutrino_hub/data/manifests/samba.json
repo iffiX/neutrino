@@ -8,13 +8,31 @@
   "description": "Serves shares over SMB from this machine",
   "platforms": {
     "linux-debian": {
-      "packages": ["samba"]
+      "packages": ["samba"],
+      "verify": "smbd -V",
+      "uninstall": {
+        "packages": ["samba"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     },
     "linux-rhel": {
-      "packages": ["samba", "samba-client"]
+      "packages": ["samba", "samba-client"],
+      "verify": "smbd -V",
+      "uninstall": {
+        "packages": ["samba", "samba-client"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     },
     "linux-arch": {
-      "packages": ["samba"]
+      "packages": ["samba"],
+      "verify": "smbd -V",
+      "uninstall": {
+        "packages": ["samba"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     }
   }
 }

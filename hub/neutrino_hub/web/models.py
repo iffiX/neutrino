@@ -1702,6 +1702,9 @@ class DeviceModuleView(BaseModel):
     is_supported: bool = True
     # The platform carries this natively: worded built in, no button.
     is_native: bool = False
+    # Whether an uninstall leaves the module's data: pools, share
+    # directories, repositories, volumes. The confirmation says which.
+    is_data_kept: bool = True
     # Where the software comes from, in the words the row is attributed to:
     # a repository, a vendor, or the machine's own packages.
     source: str = ""

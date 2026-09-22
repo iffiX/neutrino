@@ -149,6 +149,14 @@ class ModuleRunner:
         Run on uninstall, only for a module the hub configured.
         """
 
+    def remove_data(self) -> None:
+        """Delete the module's own data: what an uninstall otherwise leaves.
+
+        Run on uninstall only when the recipe's ``is_data_kept`` is false.
+        A runner with nothing to delete, or whose data is never the hub's to
+        delete, leaves this as it is.
+        """
+
     def is_active(self) -> bool:
         """Whether the unit this module runs as is active.
 

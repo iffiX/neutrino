@@ -14,13 +14,25 @@
       "url": "https://dl.gitea.com/gitea/1.27.3/gitea-1.27.3-linux-amd64",
       "sha256": "4da93c2c10b6980c359bcb86d5573ebfd7770e2e151756534edee24c8c12d971", "_sha256_scan": "scan: allow",
       "package_kind": "binary",
-      "packages": ["git"]
+      "packages": ["git"],
+      "verify": "/usr/local/bin/gitea --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     },
     "linux-arm64": {
       "url": "https://dl.gitea.com/gitea/1.27.3/gitea-1.27.3-linux-arm64",
       "sha256": "04c086d36dba793546e331484a9da34571763efdfa77dc526cc98e0f10917e7b", "_sha256_scan": "scan: allow",
       "package_kind": "binary",
-      "packages": ["git"]
+      "packages": ["git"],
+      "verify": "/usr/local/bin/gitea --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     }
   }
 }

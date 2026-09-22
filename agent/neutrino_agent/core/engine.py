@@ -451,6 +451,9 @@ class ModuleEngine(ReconcileWorker):
             output = installers.run_shell(str(step))
             if output.strip():
                 self._collect(output.strip())
+        if not bool(removal.get("is_data_kept", True)):
+            self._collect(f"{name}: removing its data")
+            runner.remove_data()
         self.clear_configured(name)
         if self._verify(runner, recipe, runner.observe(resolved)):
             return {"code": "uninstall_unconfirmed", "params": {}}
@@ -564,7 +567,12 @@ class ModuleEngine(ReconcileWorker):
 
     @staticmethod
     def _verify(runner, recipe: dict, observed: dict) -> bool:
-        """Whether the software is there: the recipe's word, else the runner's."""
+        """Whether the software is there.
+
+        A module the hub named comes with ``install.verify``, and its exit
+        is the answer. A module only observed, one the state never mentions,
+        has no recipe, and the runner's own check answers for it.
+        """
         command = str(recipe.get("verify", "") or "")
         if command:
             return verify_passes(command)

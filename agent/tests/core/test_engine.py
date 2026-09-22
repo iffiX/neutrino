@@ -318,6 +318,40 @@ def test_the_uninstall_recipe_names_its_own_packages_and_steps(tmp_path, monkeyp
     assert "cleaned" in lines
 
 
+@pytest.mark.parametrize("is_data_kept", [True, False])
+def test_the_data_goes_only_when_the_recipe_says_so(
+    tmp_path, monkeypatch, is_data_kept
+):
+    """``is_data_kept`` is the hub's word; the runner's ``remove_data`` is
+    the hook it reaches, and nothing reaches it otherwise."""
+    monkeypatch.setattr(
+        engine_module.installers, "run_shell", lambda command, **kwargs: ""
+    )
+    platform = SystemPackagePlatform()
+    engine = bare_engine(platform=platform, tmp_path=tmp_path)
+    engine._wanted = {
+        "samba_mount": {
+            "want": "absent",
+            "config": {},
+            "install": {"kind": "system_package", "packages": ["cifs-utils"]},
+            "uninstall": {
+                "packages": ["cifs-utils"],
+                "post_uninstall": [],
+                "is_data_kept": is_data_kept,
+            },
+        }
+    }
+    engine._system.verify = lambda resolved: False
+    removed: list = []
+    engine._system.remove_data = lambda: removed.append("data")
+    lines: list = []
+
+    assert engine.uninstall("samba_mount", on_line=lines.append) == {}
+
+    assert removed == ([] if is_data_kept else ["data"])
+    assert ("samba_mount: removing its data" in lines) is not is_data_kept
+
+
 def test_a_second_package_operation_waits_for_the_first(tmp_path):
     platform = SystemPackagePlatform(delay_s=0.3)
     engine = bare_engine(platform=platform, tmp_path=tmp_path)

@@ -8,13 +8,31 @@
   "description": "Runs declared containers as systemd units",
   "platforms": {
     "linux-debian": {
-      "packages": ["podman", "podman-docker"]
+      "packages": ["podman", "podman-docker"],
+      "verify": "podman --version",
+      "uninstall": {
+        "packages": ["podman", "podman-docker"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     },
     "linux-rhel": {
-      "packages": ["podman", "podman-docker"]
+      "packages": ["podman", "podman-docker"],
+      "verify": "podman --version",
+      "uninstall": {
+        "packages": ["podman", "podman-docker"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     },
     "linux-arch": {
-      "packages": ["podman", "podman-docker"]
+      "packages": ["podman", "podman-docker"],
+      "verify": "podman --version",
+      "uninstall": {
+        "packages": ["podman", "podman-docker"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     }
   }
 }

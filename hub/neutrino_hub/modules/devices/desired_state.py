@@ -359,19 +359,15 @@ def _recipes(resolved: dict) -> dict:
         resolved: The module as :func:`resolved_modules` answers it.
 
     Returns:
-        ``{"install", "uninstall"}``; both empty where the manifest offers
-        the platform nothing.
+        ``{"install", "uninstall"}``, the branch's own blocks; both empty
+        where the manifest offers the platform nothing.
     """
     entry = resolved.get("entry")
     if not isinstance(entry, dict):
         return {"install": {}, "uninstall": {}}
     install = {name: value for name, value in entry.items() if name != "uninstall"}
     install["kind"] = str(resolved.get("kind", "") or "")
-    uninstall = entry.get("uninstall")
-    return {
-        "install": install,
-        "uninstall": dict(uninstall) if isinstance(uninstall, dict) else {},
-    }
+    return {"install": install, "uninstall": dict(entry.get("uninstall") or {})}
 
 
 def _generate_seat_password() -> str:

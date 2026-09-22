@@ -229,6 +229,7 @@
   "ui.modules.task_running": "运行中",
   "ui.modules.uninstall": "卸载",
   "ui.modules.uninstall_body": "软件包会被移除，中枢写下的配置会被删除。存储池、共享目录、仓库和容器卷都会保留。",
+  "ui.modules.uninstall_body_data": "卸掉软件包，删掉 hub 写入的配置，模块自己的数据也一并删除。",
   "ui.modules.uninstall_title": "从 {device} 卸载 {module}",
   "ui.password.class_digit": "数字",
   "ui.password.class_lowercase": "小写字母",

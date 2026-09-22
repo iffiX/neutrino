@@ -676,16 +676,17 @@ stream.
 ```
 
 `install` and `uninstall` come from `data/manifests/<module>.json`, one branch
-per platform, each with an `uninstall` block. The hub resolves the branch for
-the machine's platform and sends it with the state; the agent has no manifest
-logic of its own.
+per platform, each with a `verify` command and, for a module the hub installs,
+an `uninstall` block; the loader refuses a manifest that lacks either. The hub
+resolves the branch for the machine's platform and sends it with the state;
+the agent has no manifest logic of its own.
 
 The agent observes each module it has a runner for and reports a state derived
 from the same facts, whoever installed the software:
 
 | Fact | Read from |
 | --- | --- |
-| installed | `install.verify` succeeds |
+| installed | `install.verify` succeeds; for a module the state does not name, which comes with no recipe, the runner's own check |
 | active | the unit is active |
 | configured | the root-only mark `/var/lib/neutrino_agent/configured/<module>` exists; written on the first successful apply of the hub's configuration, deleted on uninstall |
 
@@ -711,7 +712,7 @@ writes it directly:
 | **Install** | `installed` | installs the package only; writes no configuration, starts nothing |
 | **Configure** or **Start** | `running` | ensures the package, applies the configuration, starts the unit |
 | **Stop** | `stopped` | ensures the package, applies the configuration, stops the unit |
-| **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark; the confirmation says so and that pools, share directories, repositories and container volumes stay, because `is_data_kept` is never false |
+| **Uninstall** | `absent` | uninstalls by `uninstall`, deletes the configuration the hub wrote and the configured mark, and calls the runner's `remove_data` when `is_data_kept` is false; the confirmation says which from `is_data_kept`, and every shipped manifest keeps the data: pools, share directories, repositories and container volumes stay |
 
 Once the machine reports a module wanted `absent` as `absent`, that want is
 settled (`is_settled` in `modules.json`): the row keeps `absent`, the state

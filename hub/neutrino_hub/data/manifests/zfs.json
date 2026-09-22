@@ -14,14 +14,26 @@
         "apt-get update",
         "modinfo -n zfs >/dev/null 2>&1 || apt-get install -y \"linux-headers-$(uname -r)\" zfs-dkms"
       ],
-      "packages": ["zfsutils-linux", "zfs-zed", "smartmontools"]
+      "packages": ["zfsutils-linux", "zfs-zed", "smartmontools"],
+      "verify": "zpool --version",
+      "uninstall": {
+        "packages": ["zfsutils-linux", "zfs-zed", "smartmontools"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     },
     "linux-rhel": {
       "pre_install": [
         "rpm -q zfs-release >/dev/null 2>&1 || dnf -y install https://zfsonlinux.org/epel/zfs-release-2-3.el9.noarch.rpm",
         "modinfo -n zfs >/dev/null 2>&1 || dnf -y install \"kernel-devel-$(uname -r)\" zfs-dkms"
       ],
-      "packages": ["zfs", "smartmontools"]
+      "packages": ["zfs", "smartmontools"],
+      "verify": "zpool --version",
+      "uninstall": {
+        "packages": ["zfs", "smartmontools"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     },
     "linux-arch": {
       "pre_install": [
@@ -30,7 +42,13 @@
         "pacman -Sy --noconfirm",
         "modinfo -n zfs >/dev/null 2>&1 || pacman -S --noconfirm zfs-linux"
       ],
-      "packages": ["zfs-utils", "smartmontools"]
+      "packages": ["zfs-utils", "smartmontools"],
+      "verify": "zpool --version",
+      "uninstall": {
+        "packages": ["zfs-utils", "smartmontools"],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     }
   }
 }

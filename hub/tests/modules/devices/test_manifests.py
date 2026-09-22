@@ -186,6 +186,85 @@ def test_the_loader_refuses_a_manifest_without_a_real_tier(
     assert "installer" in str(refusal.value)
 
 
+def test_every_branch_the_hub_installs_from_says_how_to_verify_and_uninstall():
+    """What the agent is sent for a module: the command whose exit says the
+    software is there, and the block an uninstall runs by."""
+    for name, manifest in load_module_manifests().items():
+        for key, entry in manifest["platforms"].items():
+            if entry == {}:
+                continue
+            assert entry["verify"], (name, key)
+            if manifest["installer"] == "user":
+                continue
+            removal = entry["uninstall"]
+            assert isinstance(removal["packages"], list), (name, key)
+            assert isinstance(removal["post_uninstall"], list), (name, key)
+            assert isinstance(removal["is_data_kept"], bool), (name, key)
+
+
+def test_the_loader_refuses_a_branch_without_a_verify_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "platform",
+            "source": "system",
+            "platforms": {"linux-debian": {"packages": ["sample"]}},
+        },
+    )
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "verify" in str(refusal.value)
+
+
+def test_the_loader_refuses_a_hub_installed_branch_without_an_uninstall_block(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "platform",
+            "source": "system",
+            "platforms": {
+                "linux-debian": {
+                    "packages": ["sample"],
+                    "verify": "sample --version",
+                    "uninstall": {"packages": ["sample"]},
+                }
+            },
+        },
+    )
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "uninstall" in str(refusal.value)
+
+
+def test_a_user_tier_branch_needs_only_its_verify(tmp_path, monkeypatch):
+    """Nobody but the person installs or removes these; the hub only looks."""
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "user",
+            "source": "vendor",
+            "platforms": {"linux": {"verify": "which sample"}, "windows": {}},
+        },
+    )
+
+    assert "sample" in load_module_manifests()
+
+
 def test_user_tier_manifests_carry_nothing_to_download():
     for name, manifest in load_module_manifests().items():
         if manifest["installer"] != "user":
