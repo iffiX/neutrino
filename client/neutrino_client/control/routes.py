@@ -89,6 +89,9 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _leave(resident, payload)
         if route == "/api/session/start":
             return _start_session(resident, payload)
+        if route == "/api/refresh":
+            resident.refresh()
+            return 200, state_payload(resident)
         if route == "/api/exit/set":
             return _set_exit(resident, payload)
         if route.startswith(SERVICES_PREFIX):

@@ -453,6 +453,55 @@ def test_another_status_is_unreachable(tls_stub):
         client_for(port, fingerprint).connect()
 
 
+def test_abort_ends_a_connect_stuck_in_the_handshake():
+    """A port that accepts and says nothing holds the handshake until the
+    timeout; an abort from another thread ends it at once."""
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    client = WebSocketClient(
+        host="127.0.0.1",
+        port=server.getsockname()[1],
+        path=CLIENT_CHANNEL_WS_PATH,
+        fingerprint="ab" * 32,
+        timeout_s=10,
+        silence_timeout_s=5,
+    )
+    outcome = {}
+
+    def run() -> None:
+        try:
+            client.connect()
+        except GatewayUnreachable as error:
+            outcome["error"] = error
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while client._pending is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    started = time.monotonic()
+    client.abort()
+    thread.join(timeout=5)
+    server.close()
+
+    assert not thread.is_alive()
+    assert time.monotonic() - started < 3
+    assert isinstance(outcome.get("error"), GatewayUnreachable)
+    assert client.is_open is False
+
+
+def test_an_abort_before_the_socket_exists_fails_the_connect_at_once():
+    client = client_for(1, "ab" * 32)
+
+    client.abort()
+    started = time.monotonic()
+    with pytest.raises(GatewayUnreachable):
+        client.connect()
+
+    assert time.monotonic() - started < 3
+
+
 def test_a_dead_port_is_unreachable():
     probe = socket.socket()
     probe.bind(("127.0.0.1", 0))

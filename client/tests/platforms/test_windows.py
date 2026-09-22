@@ -383,7 +383,11 @@ def test_every_letter_taken_offers_nothing(platform, monkeypatch):
     assert platform.suggest_mount_location() == ""
 
 
-def test_a_question_is_answered_on_a_pseudo_console(platform):
+def test_a_question_is_answered_on_a_pseudo_console_with_a_carriage_return(
+    platform,
+):
+    """Enter on a Windows console is a carriage return; a newline is a key
+    the console never takes as one."""
     code, output = platform.run_answering(
         ["cc-switch.exe", "provider", "delete", "x"],
         prompt="(y/N)",
@@ -396,5 +400,5 @@ def test_a_question_is_answered_on_a_pseudo_console(platform):
         "run_on_console",
         ["cc-switch.exe", "provider", "delete", "x"],
         "(y/N)",
-        "y\n",
+        "y\r",
     ) in platform._win32().calls

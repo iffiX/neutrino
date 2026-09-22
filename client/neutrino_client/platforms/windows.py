@@ -278,8 +278,9 @@ class WindowsPlatform(ClientPlatform):
         Raises:
             PlatformUnsupportedError: When no pseudo console can be made.
         """
+        # Enter on a Windows console is a carriage return.
         return self._win32().run_on_console(
-            argv, prompt=prompt, answer=answer, timeout_s=timeout_s
+            argv, prompt=prompt, answer=answer.replace("\n", "\r"), timeout_s=timeout_s
         )
 
     def _announce_drive(self, location: str, event: int) -> None:

@@ -122,6 +122,7 @@
   "ui.rdp_open": "查看器已打开",
   "ui.reconnect": "重新连接",
   "ui.reconnecting": "正在重新连接 hub",
+  "ui.refresh": "刷新",
   "ui.save": "保存",
   "ui.section_hubs": "Hub",
   "ui.section_services": "服务",

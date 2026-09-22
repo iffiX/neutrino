@@ -244,6 +244,10 @@ class WebSocketClient:
         self._io_lock = threading.RLock()
         self._fragments: list = []
         self._fragment_opcode = 0
+        # The socket a connect in progress is opening, and whether an abort
+        # ended it.
+        self._pending: "socket.socket | None" = None
+        self._is_aborted = False
 
     @property
     def is_open(self) -> bool:
@@ -258,17 +262,26 @@ class WebSocketClient:
             GatewayRefused: On a 401 or 403.
             GatewayProtocolRefused: On a 409 naming a protocol number the
                 hub does not speak.
-            GatewayUnreachable: On any network error, another status, or a
-                handshake that does not check out.
+            GatewayUnreachable: On any network error, another status, a
+                handshake that does not check out, or an abort.
         """
         try:
             sock = pinned_socket(
-                self._host, self._port, self._fingerprint, timeout=self._timeout_s
+                self._host,
+                self._port,
+                self._fingerprint,
+                timeout=self._timeout_s,
+                on_socket=self._hold_pending,
             )
         except GatewayUntrusted:
             raise
         except OSError as error:
             raise GatewayUnreachable(f"cannot reach hub: {error}") from error
+        finally:
+            self._pending = None
+        if self._is_aborted:
+            sock.close()
+            raise GatewayUnreachable("the connect was aborted")
         key = base64.b64encode(os.urandom(16)).decode("ascii")
         request = (
             f"GET {self._path} HTTP/1.1\r\n"
@@ -358,6 +371,27 @@ class WebSocketClient:
             reason: The reason text.
         """
         self._shutdown(code, reason)
+
+    def abort(self) -> None:
+        """End a connect in progress from another thread.
+
+        The socket being opened is shut, so ``connect`` fails at once and
+        closes it; a socket already open is dropped.
+        """
+        self._is_aborted = True
+        pending = self._pending
+        if pending is not None:
+            try:
+                pending.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        self._drop()
+
+    def _hold_pending(self, sock) -> None:
+        """Keep the socket a connect is opening, where an abort reaches it."""
+        self._pending = sock
+        if self._is_aborted:
+            raise OSError("the connect was aborted")
 
     def _send(self, opcode: int, payload: bytes) -> None:
         sock = self._sock

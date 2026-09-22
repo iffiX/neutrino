@@ -86,6 +86,14 @@ let serviceNotes = {};
 let aiStaged = {};
 // Records whose unmount is in flight, so the button greys at once.
 const fileAsked = {};
+// Hubs whose Leave is in flight, by hub key: the button greys and spins
+// until the state push that drops the row.
+const leaveAsked = {};
+// Whether a refresh is in flight: the section buttons spin until the next
+// pushed state or REFRESH_SPIN_MS, whichever comes first.
+let isRefreshing = false;
+let refreshTimer = null;
+const REFRESH_SPIN_MS = 3000;
 // The staged file configs, one per service key: {is_open, username,
 // password, path}. The password lives only here and in the one request
 // that sends it.
@@ -160,13 +168,15 @@ function canRedraw() {
   return true;
 }
 
+// Draws a state that is news; says whether it drew.
 function present(state) {
   const serialized = JSON.stringify(state);
-  if (serialized === lastSerialized) return;
-  if (!canRedraw()) { pendingState = state; return; }
+  if (serialized === lastSerialized) return false;
+  if (!canRedraw()) { pendingState = state; return false; }
   lastSerialized = serialized;
   pendingState = null;
   draw(state);
+  return true;
 }
 
 // A redraw the person caused: it always happens, whatever is open.
@@ -175,11 +185,32 @@ function redraw() {
 }
 
 // The resident pushes every change of state here; nothing polls for it.
+// A push ends a refresh in flight, and the buttons stop spinning even when
+// the state is the one already drawn.
 window.neutrinoState = (state) => {
   if (!state) return;
   if (state.code) { renderHint(wordCode(state.code, state.params)); return; }
-  present(state);
+  const wasRefreshing = isRefreshing;
+  settleRefresh();
+  if (!present(state) && wasRefreshing) redraw();
 };
+
+// The refresh in flight is over: the timer is dropped and the flag cleared.
+function settleRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = null;
+  isRefreshing = false;
+}
+
+// A press on a section's refresh button: every hub is asked again, and the
+// buttons spin until the next pushed state or the timer.
+function askRefresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  redraw();
+  refreshTimer = setTimeout(() => { settleRefresh(); redraw(); }, REFRESH_SPIN_MS);
+  api('/api/refresh', {});
+}
 
 async function firstFrame() {
   const state = await api('/api/state');
@@ -236,9 +267,26 @@ function section(title, panels) {
   const heading = document.createElement('h2');
   heading.className = 'sect_title';
   heading.textContent = title;
+  heading.appendChild(refreshButton());
   box.appendChild(heading);
   for (const panel of panels) box.appendChild(panel);
   return box;
+}
+
+// The small ghost button beside a section title.
+function refreshButton() {
+  const button = document.createElement('button');
+  button.className = 'ghost refresh';
+  button.title = t('ui.refresh');
+  button.setAttribute('aria-label', t('ui.refresh'));
+  if (isRefreshing) {
+    button.innerHTML = '<span class="spin"></span>';
+    button.disabled = true;
+  } else {
+    button.textContent = '↻';
+  }
+  button.onclick = askRefresh;
+  return button;
 }
 
 // --- the Hubs section: one row per hub, and the row that joins another ---
@@ -305,10 +353,27 @@ function hubRow(hub) {
   }
   const leave = document.createElement('button');
   leave.className = 'danger';
-  leave.textContent = t('ui.disconnect');
-  leave.onclick = () => send('/api/leave', { hub_id: hubKey(hub) });
+  if (leaveAsked[hubKey(hub)]) {
+    leave.innerHTML = '<span class="spin"></span>' + t('ui.disconnect');
+    leave.disabled = true;
+  } else {
+    leave.textContent = t('ui.disconnect');
+  }
+  leave.onclick = () => askLeave(hub);
   row.appendChild(leave);
   return row;
+}
+
+// Leave greys and spins at once; the row goes with the state that answers,
+// and a refused leave puts the button back.
+function askLeave(hub) {
+  const key = hubKey(hub);
+  leaveAsked[key] = true;
+  redraw();
+  send('/api/leave', { hub_id: key }).then((reply) => {
+    delete leaveAsked[key];
+    if (reply && reply.code) redraw();
+  });
 }
 
 // The row that is always there: paste a link, join one more hub.

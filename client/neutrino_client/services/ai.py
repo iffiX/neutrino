@@ -247,17 +247,18 @@ class AiServiceHandler(ServiceTypeHandler):
         self._on_change()
 
     def restore(self) -> None:
-        """Put the tools back the way activation found them."""
+        """Put the tools back the way activation found them.
+
+        Raises:
+            ToolSwitchError: If cc-switch refuses to put a tool back; the
+                tools then still point at the hub.
+        """
         with self._lock:
             granted = dict(self._granted)
         if not granted:
             return
         self._log("ai service: pointing the tools away from the hub")
-        try:
-            self._switcher.deactivate(base_url=granted.get("base_url", ""))
-        except Exception as error:  # noqa: BLE001 - reported, not raised
-            self._log(f"ai service: could not restore the tools: {error}")
-            return
+        self._switcher.deactivate(base_url=granted.get("base_url", ""))
         with self._lock:
             self._granted = {}
             self._status = self._steady(is_active=False)
@@ -267,6 +268,9 @@ class AiServiceHandler(ServiceTypeHandler):
 
         Returns:
             Zero: the tools are one thing, put back or already back.
+
+        Raises:
+            ToolSwitchError: If cc-switch refuses to put a tool back.
         """
         self.restore()
         return 0
@@ -283,6 +287,9 @@ class AiServiceHandler(ServiceTypeHandler):
 
         Returns:
             Zero: the tools are one thing, put back or already back.
+
+        Raises:
+            ToolSwitchError: If cc-switch refuses to put a tool back.
         """
         with self._lock:
             is_pointed_there = self._granted.get("hub_id") == hub_id

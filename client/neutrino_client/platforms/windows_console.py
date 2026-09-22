@@ -9,7 +9,9 @@ console where the answer can meet it.
 The reader stops as soon as the child has exited and its last bytes are
 drained: the output pipe itself does not end until the console is closed,
 which is after the run returns, so waiting for the pipe's end would wait the
-whole timeout every time.
+whole timeout every time. A prompt that has not shown within
+``CLIENT_PROMPT_TIMEOUT_S`` ends the reading, and a child still there
+``CLIENT_PROMPT_EXIT_TIMEOUT_S`` after the reading ended is terminated.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -21,6 +23,10 @@ import subprocess
 import threading
 import time
 
+from neutrino_client.constants import (
+    CLIENT_PROMPT_EXIT_TIMEOUT_S,
+    CLIENT_PROMPT_TIMEOUT_S,
+)
 from neutrino_client.platforms import win32
 from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.base import answer_on_prompt
@@ -124,17 +130,18 @@ class WindowsConsoleApi:
             )
 
         try:
+            started = time.monotonic()
             output = answer_on_prompt(
                 read,
                 write,
                 prompt=prompt,
                 answer=answer,
-                deadline=time.monotonic() + timeout_s,
+                deadline=started + timeout_s,
+                prompt_deadline=started + min(timeout_s, CLIENT_PROMPT_TIMEOUT_S),
             )
-            if kernel32.WaitForSingleObject(process.hProcess, int(timeout_s * 1000)):
-                kernel32.TerminateProcess(process.hProcess, 1)
-            code = ctypes.c_ulong(0)
-            kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(code))
+            code = exit_code_after(
+                kernel32, process.hProcess, CLIENT_PROMPT_EXIT_TIMEOUT_S
+            )
         finally:
             kernel32.ClosePseudoConsole(console)
             kernel32.DeleteProcThreadAttributeList(attributes)
@@ -145,7 +152,26 @@ class WindowsConsoleApi:
                 process.hProcess,
             ):
                 kernel32.CloseHandle(handle)
-        return int(code.value), output.decode("utf-8", "replace")
+        return code, output.decode("utf-8", "replace")
+
+
+def exit_code_after(kernel32, process_handle, wait_s: float) -> int:
+    """A child's exit code, the child terminated when it has not exited in time.
+
+    Args:
+        kernel32: The bound kernel32.
+        process_handle: The child's process handle.
+        wait_s: How long its exit is waited for.
+
+    Returns:
+        The exit code; 1 for a child terminated here.
+    """
+    waited = kernel32.WaitForSingleObject(process_handle, int(wait_s * 1000))
+    if waited != win32.WAIT_OBJECT_0:
+        kernel32.TerminateProcess(process_handle, 1)
+    code = ctypes.c_ulong(0)
+    kernel32.GetExitCodeProcess(process_handle, ctypes.byref(code))
+    return int(code.value)
 
 
 def _pipe(kernel32) -> "tuple":

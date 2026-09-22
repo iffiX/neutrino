@@ -29,7 +29,12 @@ from neutrino_client.exceptions import (
 
 
 def pinned_socket(
-    host: str, port: int, fingerprint: str, *, timeout: float = CLIENT_REQUEST_TIMEOUT_S
+    host: str,
+    port: int,
+    fingerprint: str,
+    *,
+    timeout: float = CLIENT_REQUEST_TIMEOUT_S,
+    on_socket=None,
 ) -> ssl.SSLSocket:
     """A TLS connection that trusts one certificate and nothing else.
 
@@ -38,6 +43,9 @@ def pinned_socket(
         port: The port to connect to.
         fingerprint: SHA-256 hex the peer certificate must digest to.
         timeout: Socket timeout in seconds.
+        on_socket: Called with the TCP socket before it connects and with
+            the TLS socket before its handshake, so another thread can end
+            the connect; None for nobody. What it raises ends the attempt.
 
     Returns:
         The connected socket, handshake done and the peer checked.
@@ -50,11 +58,20 @@ def pinned_socket(
     wanted = fingerprint.strip().lower()
     if not wanted:
         raise GatewayUntrusted(f"no certificate fingerprint is pinned for {host}")
-    raw = socket.create_connection((host, port), timeout=timeout)
+    raw = _connect_tcp(host, port, timeout, on_socket)
     try:
-        wrapped = _pinned_context().wrap_socket(raw, server_hostname=host)
+        wrapped = _pinned_context().wrap_socket(
+            raw, server_hostname=host, do_handshake_on_connect=False
+        )
     except OSError:
         raw.close()
+        raise
+    try:
+        if on_socket is not None:
+            on_socket(wrapped)
+        wrapped.do_handshake()
+    except OSError:
+        wrapped.close()
         raise
     certificate = wrapped.getpeercert(binary_form=True) or b""
     if hashlib.sha256(certificate).hexdigest() != wanted:
@@ -102,6 +119,41 @@ def refusal_error(code: str, params: dict) -> "Exception | None":
     if code:
         return GatewayRefusedDetail(code=code, params=dict(params))
     return None
+
+
+def _connect_tcp(host: str, port: int, timeout: float, on_socket) -> socket.socket:
+    """A TCP connection to the first of the host's addresses that answers.
+
+    Args:
+        host: The hub's address.
+        port: The port to connect to.
+        timeout: Socket timeout in seconds.
+        on_socket: Called with each socket before it connects; None for
+            nobody.
+
+    Returns:
+        The connected socket.
+
+    Raises:
+        OSError: When the host resolves to no address or none answers.
+    """
+    failure: "OSError | None" = None
+    for family, kind, proto, _name, address in socket.getaddrinfo(
+        host, port, 0, socket.SOCK_STREAM
+    ):
+        sock = socket.socket(family, kind, proto)
+        try:
+            if on_socket is not None:
+                on_socket(sock)
+            sock.settimeout(timeout)
+            sock.connect(address)
+            return sock
+        except OSError as error:
+            sock.close()
+            failure = error
+    if failure is not None:
+        raise failure
+    raise OSError(f"{host} resolves to no address")
 
 
 def _number(value) -> int:

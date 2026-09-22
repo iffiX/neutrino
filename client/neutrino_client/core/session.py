@@ -65,8 +65,9 @@ CONNECTION_CONNECTED = "connected"
 CONNECTION_RECONNECTING = "reconnecting"
 CONNECTION_REPLACED = "replaced"
 
-# How long a stop waits for the loop thread to come back.
-STOP_JOIN_TIMEOUT_S = 5
+# How long a stop waits for the loop thread to come back, its connect in
+# progress aborted.
+STOP_JOIN_TIMEOUT_S = 1
 
 
 def channel_error(error: Exception) -> dict:
@@ -173,6 +174,8 @@ class ClientHubSession:
         self._stop = threading.Event()
         self._thread: "threading.Thread | None" = None
         self._client: "WebSocketClient | None" = None
+        # The socket a connect in progress is opening, for a stop to abort.
+        self._connecting: "WebSocketClient | None" = None
         # The address the live socket was opened through.
         self._connected_url = ""
         # This machine's own address on the route to the hub as last seen;
@@ -267,6 +270,25 @@ class ClientHubSession:
         self._news.set()
         self._on_change()
 
+    def refresh(self) -> None:
+        """Ask the hub again now: a report on a live socket, else a round at once.
+
+        A socket that is down has its backoff put back to the floor and its
+        wait ended.
+        """
+        with self._lock:
+            client = self._client if self._is_welcomed else None
+            if client is None:
+                self._backoff_s = CLIENT_BACKOFF_MIN_S
+        if client is None:
+            self._news.set()
+            return
+        try:
+            self._report(client)
+        except GatewayUnreachable:
+            # The reader sees the socket's end.
+            pass
+
     def open_service(
         self, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
     ) -> dict:
@@ -307,9 +329,13 @@ class ClientHubSession:
         self._thread = thread
 
     def stop(self) -> None:
-        """Close the socket and end the loop. Idempotent."""
+        """Close the socket and end the loop, a connect in progress aborted. Idempotent."""
         self._stop.set()
         self._news.set()
+        with self._lock:
+            connecting = self._connecting
+        if connecting is not None:
+            connecting.abort()
         self._drop_socket()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
@@ -382,6 +408,8 @@ class ClientHubSession:
             if index and self._stop.wait(timeout=CLIENT_ROTATE_DELAY_S):
                 break
             client = self._open_client(url)
+            with self._lock:
+                self._connecting = client
             try:
                 self._connect(client)
             except GatewayUntrusted as error:
@@ -397,6 +425,9 @@ class ClientHubSession:
                     self._connected_url = url
                 self._note_url(url)
                 return client
+            finally:
+                with self._lock:
+                    self._connecting = None
         if untrusted is not None:
             raise untrusted
         raise failure if failure is not None else GatewayUnreachable("no address")

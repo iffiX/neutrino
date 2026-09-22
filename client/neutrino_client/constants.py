@@ -152,6 +152,12 @@ CLIENT_MOUNT_RECHECK_INTERVAL_S = 60
 # its share of what is left is given up and the next one runs.
 CLIENT_SHUTDOWN_DEADLINE_S = 10
 
+# How long a console tool's prompt may take to show before its run stops
+# reading, and how long its exit is waited for after that before it is
+# terminated.
+CLIENT_PROMPT_TIMEOUT_S = 10
+CLIENT_PROMPT_EXIT_TIMEOUT_S = 5
+
 # The resident's own log, beside its state; one file, kept to a size, the
 # previous one beside it. A window process has no terminal to speak to.
 CLIENT_LOG_FILE_NAME = "client.log"

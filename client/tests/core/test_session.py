@@ -109,6 +109,30 @@ class ScriptedSocket:
         self.is_closed = True
         self.is_open = False
 
+    def abort(self) -> None:
+        self.is_closed = True
+        self.is_open = False
+
+
+class BlockingSocket(ScriptedSocket):
+    """A socket whose connect blocks until it is aborted.
+
+    Attributes:
+        is_aborted: Set by ``abort``; the connect then fails.
+    """
+
+    def __init__(self):
+        super().__init__([])
+        self.is_aborted = threading.Event()
+
+    def connect(self) -> None:
+        self.is_aborted.wait(timeout=5)
+        raise GatewayUnreachable("the connect was aborted")
+
+    def abort(self) -> None:
+        self.is_aborted.set()
+        self.is_closed = True
+
 
 class SocketScript:
     """A fresh scripted socket for every connection, all from one script.
@@ -1269,6 +1293,48 @@ def test_stop_closes_the_socket_and_ends_the_loop(bound, monkeypatch):
     assert script.made[0].is_closed is True
     assert session.connection_state() == "reconnecting"
     assert not session._thread.is_alive()
+
+
+def test_stop_aborts_a_connect_in_progress_and_returns_within_a_second(
+    bound, monkeypatch
+):
+    session, _listener = bound
+    made = BlockingSocket()
+    monkeypatch.setattr(session_module, "WebSocketClient", lambda **kwargs: made)
+
+    session.start()
+    deadline = time.monotonic() + 5
+    while session._connecting is not made and time.monotonic() < deadline:
+        time.sleep(0.01)
+    started = time.monotonic()
+    session.stop()
+    elapsed = time.monotonic() - started
+    session._thread.join(timeout=5)
+
+    assert elapsed < 1
+    assert made.is_aborted.is_set()
+    assert not session._thread.is_alive()
+    assert session._connecting is None
+
+
+def test_refresh_reports_on_a_live_socket(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    session.refresh()
+
+    assert [frame["type"] for frame in made.sent] == ["hello", "report", "report"]
+
+
+def test_refresh_wakes_a_session_that_is_down_with_its_backoff_reset(bound):
+    session, _listener = bound
+    session._backoff_s = CLIENT_BACKOFF_MAX_S
+    session._news.clear()
+
+    session.refresh()
+
+    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
+    assert session._news.is_set()
 
 
 def test_a_stop_before_the_thread_is_published_joins_nothing_and_still_ends_it(

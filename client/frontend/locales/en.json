@@ -122,6 +122,7 @@
   "ui.rdp_open": "viewer open",
   "ui.reconnect": "Reconnect",
   "ui.reconnecting": "Reconnecting to the hub",
+  "ui.refresh": "Refresh",
   "ui.save": "Save",
   "ui.section_hubs": "Hubs",
   "ui.section_services": "Services",

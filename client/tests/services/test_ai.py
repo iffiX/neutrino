@@ -472,6 +472,20 @@ def test_restore_puts_the_tools_back_and_keeps_the_choice(subject):
     assert handler.state()["ai"]["is_active"] is False
 
 
+def test_a_restore_that_fails_raises_and_keeps_the_grant(subject):
+    handler, _store, fake, _hub = subject
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+    fake.deactivate_error = ToolSwitchError("cc-switch kept the hub's provider")
+
+    with pytest.raises(ToolSwitchError):
+        handler.release()
+
+    assert handler.state()["ai"]["is_active"] is True
+    fake.deactivate_error = None
+    assert handler.release() == 0
+    assert handler.state()["ai"]["is_active"] is False
+
+
 def test_restore_after_shutdown_reactivates_on_the_next_refresh(subject):
     handler, _store, fake, _hub = subject
     handler.act(entries=[ENTRY], body={"is_enabled": True})

@@ -400,6 +400,7 @@ class FakeResident:
         self.is_bound = True
         self.hubs_value = [dict(HUB_ROW), dict(OFFICE_ROW)]
         self.reconnects = []
+        self.refreshes = 0
         self.exits = []
         self.states = {
             "forwards": {"h1/svc_tcp": {"local_port": 5432, "is_active": True}},
@@ -497,6 +498,9 @@ class FakeResident:
         hub = self._hub(hub_id)
         self.reconnects.append(hub_id)
         hub["connection_state"] = "reconnecting"
+
+    def refresh(self) -> None:
+        self.refreshes += 1
 
     def set_exit(self, hub_id: str) -> dict:
         rows = self.hubs_value if self.is_bound else []

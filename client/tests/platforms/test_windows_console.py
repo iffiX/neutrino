@@ -6,8 +6,13 @@ whole timeout every time. These exercise the read callable's logic through
 a fake kernel32, so no Windows is needed.
 """
 
+import inspect
 import time
 
+from neutrino_client.constants import (
+    CLIENT_PROMPT_EXIT_TIMEOUT_S,
+    CLIENT_PROMPT_TIMEOUT_S,
+)
 from neutrino_client.platforms import windows_console
 
 
@@ -74,3 +79,55 @@ def test_a_running_child_with_nothing_yet_waits_out_the_slice():
 def test_the_module_names_its_console_size():
     assert windows_console.CONSOLE_COLUMNS == 120
     assert windows_console.CONSOLE_ROWS == 40
+
+
+class FakeProcessKernel:
+    """The three calls the exit wait makes on kernel32."""
+
+    def __init__(self, *, is_exited):
+        self.is_exited = is_exited
+        self.terminated = []
+        self.waits = []
+
+    def WaitForSingleObject(self, handle, timeout):
+        self.waits.append(timeout)
+        return 0 if self.is_exited else 258
+
+    def TerminateProcess(self, handle, code):
+        self.terminated.append((handle, code))
+        self.is_exited = True
+
+    def GetExitCodeProcess(self, handle, out):
+        out._obj.value = 1 if self.terminated else 7
+        return True
+
+
+def test_a_child_that_exits_in_time_is_not_terminated():
+    kernel = FakeProcessKernel(is_exited=True)
+
+    assert windows_console.exit_code_after(kernel, 42, 5) == 7
+    assert kernel.terminated == []
+    assert kernel.waits == [5000]
+
+
+def test_a_child_that_lingers_past_the_wait_is_terminated():
+    kernel = FakeProcessKernel(is_exited=False)
+
+    assert windows_console.exit_code_after(kernel, 42, 5) == 1
+    assert kernel.terminated == [(42, 1)]
+
+
+def test_the_run_reads_the_prompt_for_ten_seconds_and_waits_five_for_the_exit():
+    """The run itself needs a Windows; its source is held to the two
+    constants that bound the worst case to about fifteen seconds."""
+    source = inspect.getsource(windows_console.WindowsConsoleApi.run)
+
+    assert (CLIENT_PROMPT_TIMEOUT_S, CLIENT_PROMPT_EXIT_TIMEOUT_S) == (10, 5)
+    assert "prompt_deadline=started + min(timeout_s, CLIENT_PROMPT_TIMEOUT_S)" in (
+        source
+    )
+    assert "exit_code_after(" in source
+    assert "CLIENT_PROMPT_EXIT_TIMEOUT_S" in source
+    assert "WaitForSingleObject(process.hProcess, int(timeout_s * 1000))" not in (
+        source
+    )

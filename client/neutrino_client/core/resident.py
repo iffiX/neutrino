@@ -357,8 +357,8 @@ class ClientResident:
     def disconnect(self, hub_id: str = "") -> None:
         """Leave one hub and let go of everything it published.
 
-        The hub is told first; one that cannot be reached does not hold the
-        person there.
+        The binding goes first and the hub is told after, from a thread of
+        its own; one that cannot be reached does not hold the person there.
 
         Args:
             hub_id: The hub to leave, by its id or by its binding's id;
@@ -370,14 +370,27 @@ class ClientResident:
         """
         session = self._session_for(hub_id)
         binding = session.binding()
-        try:
-            enrollment.leave(binding)
-        except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
-            self._log(f"could not tell the hub we are leaving: {error}")
         enrollment.remove_binding(binding["id"])
         self._forget_session(session)
         self._follow_exit()
+        threading.Thread(
+            target=self._tell_hub_left,
+            args=(binding,),
+            name="client_leave",
+            daemon=True,
+        ).start()
         self._log("left the hub")
+
+    def refresh(self) -> None:
+        """Ask every hub again now.
+
+        A connected hub is sent a report; a hub whose socket is down has its
+        backoff put back to the floor and a round started at once.
+        """
+        with self._lock:
+            sessions = list(self._sessions.values())
+        for session in sessions:
+            session.refresh()
 
     def set_exit(self, hub_id: str) -> dict:
         """Choose the hub whose AI gateway the tools point at, and point them.
@@ -470,12 +483,21 @@ class ClientResident:
     # --- the loop ---
 
     def start(self) -> None:
-        """Clear what an unclean exit left, then run the handlers and the sessions.
+        """Run the resident's own thread, and return at once.
 
+        That thread clears what an unclean exit left, starts the handlers
+        and the sessions in that order, then watches the binding file.
         Nothing this person had on is turned on again: the client opens with
         every service off, and the leftovers of a run that did not shut down
         are undone before any hub's first state arrives.
         """
+        thread = threading.Thread(target=self.run_forever, daemon=True)
+        thread.start()
+        self._thread = thread
+
+    def run_forever(self) -> None:
+        """Clear the leftovers, start everything, then watch the binding file."""
+        self._log(f"neutrino_client {CLIENT_VERSION} starting on {self.hostname()}")
         self._clear_leftovers()
         for handler in self._services.values():
             handler.start()
@@ -484,13 +506,6 @@ class ClientResident:
             sessions = list(self._sessions.values())
         for session in sessions:
             session.start()
-        thread = threading.Thread(target=self.run_forever, daemon=True)
-        thread.start()
-        self._thread = thread
-
-    def run_forever(self) -> None:
-        """Watch the binding file until the resident stops."""
-        self._log(f"neutrino_client {CLIENT_VERSION} starting on {self.hostname()}")
         while not self._stop.is_set():
             # Cleared before the turn, so news that lands during it, the
             # stop included, is still standing when the wait begins.
@@ -672,6 +687,13 @@ class ClientResident:
             self._follow_exit()
         if missing:
             self.notify()
+
+    def _tell_hub_left(self, binding: dict) -> None:
+        """Post the leave to the hub; one that cannot be told is logged."""
+        try:
+            enrollment.leave(binding)
+        except (GatewayRefused, GatewayUnreachable, GatewayUntrusted) as error:
+            self._log(f"could not tell the hub we are leaving: {error}")
 
     def _follow_exit(self) -> None:
         """Pin the stored choice on the hub the exit moved to, when it moved."""

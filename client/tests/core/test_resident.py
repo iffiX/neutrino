@@ -379,6 +379,7 @@ def test_leaving_one_hub_stops_only_its_session_and_releases_only_its_hub(
 
     resident.disconnect("h2")
 
+    wait_until(lambda: posted)
     assert posted == [("/api/channel/leave", {"id": "c2", "token": "tok2"})]
     assert list(sessions_of(resident)) == ["c1"]
     assert resident._sessions["c1"] is home
@@ -404,6 +405,53 @@ def test_leaving_lets_go_when_the_hub_refuses_the_leave(two_hubs_up, monkeypatch
 
     assert list(sessions_of(resident)) == ["c2"]
     assert [binding["id"] for binding in enrollment.bindings()] == ["c2"]
+
+
+def test_leaving_drops_the_binding_first_and_tells_the_hub_from_its_own_thread(
+    two_hubs_up, monkeypatch
+):
+    """The row is gone before the hub hears; a hub that takes its time
+    holds nobody up."""
+    resident, _scripts = two_hubs_up
+    released_handlers(resident)
+    posted = []
+    hold = threading.Event()
+
+    def post(self, path, payload):
+        posted.append([binding["id"] for binding in enrollment.bindings()])
+        hold.wait(timeout=5)
+        return {}
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post, raising=True)
+    started = time.monotonic()
+
+    resident.disconnect("h2")
+    elapsed = time.monotonic() - started
+    wait_until(lambda: posted)
+    hold.set()
+
+    assert elapsed < 1
+    assert posted == [["c1"]]
+    assert list(sessions_of(resident)) == ["c1"]
+
+
+def test_a_refresh_reports_on_a_live_socket_and_wakes_a_session_that_is_down(
+    two_hubs_up,
+):
+    resident, scripts = two_hubs_up
+    home = scripts.sockets_of("hub.lan")[0]
+    office = resident._sessions["c2"]
+    office._end_socket(scripts.sockets_of("office.lan")[0])
+    office._backoff_s = 60
+    office._news.clear()
+    reports_before = len([frame for frame in home.sent if frame["type"] == "report"])
+
+    resident.refresh()
+
+    reports_after = len([frame for frame in home.sent if frame["type"] == "report"])
+    assert reports_after == reports_before + 1
+    assert office._backoff_s == 5
+    assert office._news.is_set()
 
 
 def test_a_hub_nobody_joined_cannot_be_left_or_reconnected(two_hubs_up):
@@ -873,6 +921,37 @@ def test_the_start_turns_nothing_on(config_path, tmp_path):
     assert states["ai"]["is_enabled"] is False
     assert states["ai"]["is_active"] is False
     assert [row["state"] for row in states["mounts"]] == ["detached"]
+
+
+def test_the_start_returns_before_the_leftovers_are_cleared(config_path):
+    """The window opens first: the clearing, which can run a console tool,
+    happens on the resident's own thread, the handlers after it."""
+    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    released_handlers(resident)
+    entered = threading.Event()
+    hold = threading.Event()
+
+    def clear() -> None:
+        entered.set()
+        hold.wait(timeout=5)
+
+    resident._services["ai"].clear_leftovers = clear
+    started = time.monotonic()
+
+    resident.start()
+    elapsed = time.monotonic() - started
+    assert entered.wait(timeout=5)
+    is_file_untouched = resident._services["file"].cleared == 0
+    is_ai_unstarted = resident._services["ai"].starts == 0
+    hold.set()
+    wait_until(
+        lambda: resident._services["file"].cleared == 1
+        and resident._services["ai"].starts == 1
+    )
+    resident.shutdown()
+
+    assert elapsed < 1
+    assert is_file_untouched and is_ai_unstarted
 
 
 def test_the_start_clears_what_an_unclean_exit_left(config_path):

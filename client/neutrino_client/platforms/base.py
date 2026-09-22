@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 import time
 import webbrowser
@@ -28,7 +29,11 @@ except ImportError:  # Windows has no pseudo-terminal of this kind.
     pty = None
     select = None
 
-from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE
+from neutrino_client.constants import (
+    CLIENT_DEFAULT_LANGUAGE,
+    CLIENT_PROMPT_EXIT_TIMEOUT_S,
+    CLIENT_PROMPT_TIMEOUT_S,
+)
 from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
     PlatformUnsupportedError,
@@ -38,6 +43,8 @@ from neutrino_client.words import language_for_tag
 # A console tool started from the windowless resident would open a console
 # of its own; the flag is Windows' and zero anywhere else.
 CREATE_NO_WINDOW = 0x08000000
+# How often a child's exit is looked for while it is waited on.
+EXIT_POLL_S = 0.05
 
 
 def run_quietly(
@@ -422,22 +429,53 @@ def run_on_pty(argv: list, *, prompt: str, answer: str, timeout_s: float) -> tup
     def write(data: bytes) -> None:
         os.write(fd, data)
 
+    started = time.monotonic()
     try:
         output = answer_on_prompt(
             read,
             write,
             prompt=prompt,
             answer=answer,
-            deadline=time.monotonic() + timeout_s,
+            deadline=started + timeout_s,
+            prompt_deadline=started + min(timeout_s, CLIENT_PROMPT_TIMEOUT_S),
         )
     finally:
         os.close(fd)
-    _, status = os.waitpid(pid, 0)
-    return os.waitstatus_to_exitcode(status), output.decode("utf-8", "replace")
+    status = exit_status_after(pid, CLIENT_PROMPT_EXIT_TIMEOUT_S)
+    return status, output.decode("utf-8", "replace")
+
+
+def exit_status_after(pid: int, wait_s: float) -> int:
+    """A child's exit status, the child killed when it has not exited in time.
+
+    Args:
+        pid: The child.
+        wait_s: How long its exit is waited for.
+
+    Returns:
+        The exit status as ``os.waitstatus_to_exitcode`` gives it; a child
+        killed here answers the negative of ``SIGKILL``.
+    """
+    deadline = time.monotonic() + wait_s
+    while True:
+        finished, status = os.waitpid(pid, os.WNOHANG)
+        if finished == pid:
+            return os.waitstatus_to_exitcode(status)
+        if time.monotonic() >= deadline:
+            os.kill(pid, signal.SIGKILL)
+            _, status = os.waitpid(pid, 0)
+            return os.waitstatus_to_exitcode(status)
+        time.sleep(EXIT_POLL_S)
 
 
 def answer_on_prompt(
-    read, write, *, prompt: str, answer: str, deadline: float
+    read,
+    write,
+    *,
+    prompt: str,
+    answer: str,
+    deadline: float,
+    prompt_deadline: "float | None" = None,
 ) -> bytes:
     """Read a terminal until it ends, answering the prompt once it shows.
 
@@ -448,6 +486,9 @@ def answer_on_prompt(
         prompt: The text the answer follows.
         answer: What to send once the prompt has shown.
         deadline: A ``time.monotonic()`` value past which reading stops.
+        prompt_deadline: A ``time.monotonic()`` value past which reading
+            stops while the prompt has not shown; None reads to the
+            deadline.
 
     Returns:
         Everything the terminal printed.
@@ -456,6 +497,12 @@ def answer_on_prompt(
     marker = prompt.encode("utf-8")
     is_answered = False
     while time.monotonic() < deadline:
+        if (
+            not is_answered
+            and prompt_deadline is not None
+            and time.monotonic() >= prompt_deadline
+        ):
+            break
         chunk = read(0.5)
         if chunk is None:
             continue

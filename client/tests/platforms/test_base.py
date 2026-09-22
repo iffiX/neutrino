@@ -7,6 +7,7 @@ in this process, with no step-down anywhere.
 
 import inspect
 import subprocess
+import sys
 import time
 
 import pytest
@@ -241,6 +242,74 @@ def test_a_silent_terminal_is_left_at_the_deadline():
 
     assert output == b""
     assert time.monotonic() - started < 2
+
+
+def test_a_prompt_that_never_shows_stops_the_read_at_the_prompt_deadline():
+    def chatter(wait_s):
+        time.sleep(0.01)
+        return b"still loading\n"
+
+    started = time.monotonic()
+    output = base.answer_on_prompt(
+        chatter,
+        lambda data: None,
+        prompt="(y/N)",
+        answer="y\n",
+        deadline=started + 30,
+        prompt_deadline=started + 0.2,
+    )
+
+    assert 0.2 <= time.monotonic() - started < 5
+    assert b"still loading" in output
+
+
+def test_a_prompt_that_shows_in_time_is_answered_and_read_to_the_end():
+    terminal = Terminal([b"(y/N) ", b"done"])
+    started = time.monotonic()
+
+    output = base.answer_on_prompt(
+        terminal.read,
+        terminal.write,
+        prompt="(y/N)",
+        answer="y\n",
+        deadline=started + 5,
+        prompt_deadline=started + 5,
+    )
+
+    assert terminal.typed == b"y\n"
+    assert output.endswith(b"done")
+
+
+def test_a_pty_child_that_lingers_is_killed_after_the_exit_wait(monkeypatch):
+    monkeypatch.setattr(base_module, "CLIENT_PROMPT_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(base_module, "CLIENT_PROMPT_EXIT_TIMEOUT_S", 0.2)
+    started = time.monotonic()
+
+    code, _output = base.run_on_pty(
+        [
+            sys.executable,
+            "-c",
+            "import signal, time; signal.signal(signal.SIGHUP, signal.SIG_IGN); "
+            "time.sleep(30)",
+        ],
+        prompt="(y/N)",
+        answer="y\n",
+        timeout_s=30,
+    )
+
+    assert time.monotonic() - started < 10
+    assert code == -9
+
+
+def test_a_pty_child_that_exits_on_its_own_keeps_its_status():
+    code, _output = base.run_on_pty(
+        [sys.executable, "-c", "raise SystemExit(3)"],
+        prompt="(y/N)",
+        answer="y\n",
+        timeout_s=30,
+    )
+
+    assert code == 3
 
 
 def test_the_contract_itself_has_no_terminal():

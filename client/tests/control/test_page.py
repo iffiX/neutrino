@@ -275,10 +275,41 @@ def test_one_row_per_hub_names_it_its_standing_and_its_software():
     assert "hub.connection_state === 'reconnecting'" in body
     assert "hub.is_disabled ? t('ui.disabled')" in body
     assert "wordError(hub.last_error)" in body
-    assert "leave.onclick = () => send('/api/leave', { hub_id: hubKey(hub) });" in (
+    assert "leave.onclick = () => askLeave(hub);" in body
+    assert EN_WORDS["ui.disconnect"] == "Leave"
+
+
+def test_leave_greys_and_spins_until_the_state_that_drops_the_row():
+    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+    asking = PAGE_JS.split("function askLeave(hub)")[1].split("\n}")[0]
+
+    assert "if (leaveAsked[hubKey(hub)]) {" in body
+    assert "leave.innerHTML = '<span class=\"spin\"></span>' + t('ui.disconnect');" in (
         body
     )
-    assert EN_WORDS["ui.disconnect"] == "Leave"
+    assert "leave.disabled = true;" in body
+    assert "leaveAsked[key] = true;" in asking
+    assert "send('/api/leave', { hub_id: key })" in asking
+    assert "delete leaveAsked[key];" in asking
+
+
+def test_each_section_title_carries_a_refresh_button_that_spins_until_a_push():
+    heading = PAGE_JS.split("function section(title, panels)")[1].split("\n}")[0]
+    button = PAGE_JS.split("function refreshButton()")[1].split("\n}")[0]
+    asking = PAGE_JS.split("function askRefresh()")[1].split("\n}")[0]
+    push = PAGE_JS.split("window.neutrinoState = (state) => {")[1].split("\n};")[0]
+
+    assert "heading.appendChild(refreshButton());" in heading
+    assert "button.className = 'ghost refresh';" in button
+    assert "button.title = t('ui.refresh');" in button
+    assert "button.textContent = '↻';" in button
+    assert "button.innerHTML = '<span class=\"spin\"></span>';" in button
+    assert "api('/api/refresh', {});" in asking
+    assert "REFRESH_SPIN_MS = 3000;" in PAGE_JS
+    assert "settleRefresh();" in push
+    assert "button.refresh" in PAGE_CSS
+    assert EN_WORDS["ui.refresh"] == "Refresh"
+    assert CATALOGS["zh-CN"]["ui.refresh"] == "刷新"
     assert "hub_version" not in PAGE_JS
     assert "ui.hub_version" not in EN_WORDS
 
@@ -583,14 +614,14 @@ def test_every_mount_busy_state_has_a_spinner_word():
 
 
 def test_the_redraw_guards_are_all_present():
-    assert "if (serialized === lastSerialized) return;" in PAGE_JS
+    assert "if (serialized === lastSerialized) return false;" in PAGE_JS
     assert "getSelection" in PAGE_JS
     assert "activeElement" in PAGE_JS
     assert "openDialogs > 0" in PAGE_JS
 
 
 def test_a_deferred_payload_is_replayed_when_the_guard_lifts():
-    assert "pendingState = state; return;" in PAGE_JS
+    assert "pendingState = state; return false;" in PAGE_JS
     assert "if (pendingState !== null && canRedraw())" in PAGE_JS
 
 

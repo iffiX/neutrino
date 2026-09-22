@@ -19,9 +19,9 @@ title: 窗口
 | **已被 hub 关闭**（Switched off by the hub）           | 这个 hub 的客户端页把它关了，这一组面板的按钮不可用            |
 | **已被另一个客户端取代**（Replaced by another client） | 另一个客户端接上了这条绑定，点 **重新连接**（Reconnect）才再连 |
 
-客户端记着每个 hub 的全部地址，hub 推来的状态会更新这份地址表。通道断了之后，客户端逐个地址重连；在 hub 服务的网段上时，先按名字 `hub.neutrino.internal` 找到它。
+客户端记着每个 hub 的全部地址，hub 推来的状态会更新这份地址表。通道断了之后，客户端逐个地址重连；在 hub 服务的网段上时，先按名字 `hub.neutrino.internal` 找到它。两段标题旁的 **↻** 按钮让连着的 hub 立刻收到一份报告，断开的 hub 立刻重连一轮。
 
-点 **离开**（Leave）：客户端先告诉这个 hub，再撤掉它这一行和这一组，并撤销它在这台电脑上的挂载、转发和查看器。其余的 hub 照旧。终端里 `nclient join '<link>'` 加入一个 hub，`nclient leave --hub <name>` 离开一个，`<name>` 就是行里的那个名字。
+点 **离开**（Leave）：客户端立刻撤掉它这一行和这一组，撤销它在这台电脑上的挂载、转发和查看器，然后再通知这个 hub。其余的 hub 照旧。终端里 `nclient join '<link>'` 加入一个 hub，`nclient leave --hub <name>` 离开一个，`<name>` 就是行里的那个名字。
 
 ![尚未加入](/guide/zh/client_disconnected.webp)
 

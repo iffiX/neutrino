@@ -239,6 +239,16 @@ def test_making_a_folder_wants_an_absolute_path(tmp_path):
     assert status == 200
 
 
+def test_refresh_reaches_the_resident_and_answers_the_state():
+    resident = FakeResident()
+
+    status, state = routes.dispatch("POST", "/api/refresh", {}, resident)
+
+    assert status == 200
+    assert resident.refreshes == 1
+    assert [hub["hub_id"] for hub in state["hubs"]] == ["h1", "h2"]
+
+
 def test_show_reaches_the_resident():
     resident = FakeResident()
 
