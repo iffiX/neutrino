@@ -7,8 +7,17 @@ else, and every link carries the certificate fingerprint the peer pins.
 """
 
 import asyncio
+import contextlib
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import ValidationError
 
 from neutrino_hub import HUB_VERSION
@@ -17,9 +26,11 @@ from neutrino_hub.modules.channel.bindings import resolve_token, spend_ticket
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CLOSE_REFUSED,
     CHANNEL_CODE_BINDING_UNKNOWN,
+    CHANNEL_CODE_HELLO_INVALID,
     CHANNEL_CODE_ROLE_MISMATCH,
     CHANNEL_CODE_TICKET_SPENT,
     CHANNEL_FRAME_HELLO,
+    CHANNEL_FRAME_REFUSED,
     CHANNEL_HELLO_TIMEOUT_S,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
@@ -148,7 +159,21 @@ async def socket(websocket: WebSocket) -> None:
     await websocket.accept()
     hello = await _read_hello(websocket)
     if hello is None:
-        await websocket.close(code=CHANNEL_CLOSE_REFUSED, reason=CHANNEL_FRAME_HELLO)
+        # A rejected hello gets a refused frame and then the close, like
+        # every other; the socket may already be gone, and then only the
+        # close is left to try.
+        with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+            await websocket.send_json(
+                {
+                    "type": CHANNEL_FRAME_REFUSED,
+                    "code": CHANNEL_CODE_HELLO_INVALID,
+                    "params": {},
+                }
+            )
+        with contextlib.suppress(RuntimeError):
+            await websocket.close(
+                code=CHANNEL_CLOSE_REFUSED, reason=CHANNEL_CODE_HELLO_INVALID
+            )
         return
     session = ChannelSession(
         key=hello.id,

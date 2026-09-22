@@ -50,6 +50,7 @@
   "code.gateway_unreachable": "网关没有应答，无法向它询问。",
   "code.geodata_unreachable": "读不到数据库的发行版本，无从比对。",
   "code.health_gate_failed": "新版本没有在限定时间内应答。",
+  "code.hello_invalid": "第一帧不是这个 hub 能读的 hello。",
   "code.hub_name_required": "hub 需要一个名称。",
   "code.hub_not_packaged": "这个 hub 从检出运行，请用 git 更新。",
   "code.hub_refused": "中枢拒绝了这台机器。",

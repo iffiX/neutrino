@@ -49,6 +49,7 @@ CLI_CODE_WORDS = {
         "so update the hub first"
     ),
     "channel_refused": "the hub turned this machine's hello away without a reason",
+    "hello_invalid": "the hub could not read this agent's hello; update the agent",
     "binding_unknown": "the hub no longer knows this machine",
     "replaced": "another socket holds this machine's binding; this one stopped",
     "ticket_spent": (

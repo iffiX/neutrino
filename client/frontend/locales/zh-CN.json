@@ -16,6 +16,7 @@
   "code.gui_webkitgtk_missing": "窗口需要 WebKitGTK，请安装：sudo apt install {packages}",
   "code.gui_webview2_missing": "窗口需要 {runtime}，请安装后再试",
   "code.gui_wkwebview_missing": "窗口需要 pyobjc，请安装：pip install {packages}",
+  "code.hello_invalid": "hub 读不懂这个客户端的 hello，请更新客户端",
   "code.hub_refused": "hub 拒绝了此客户端的令牌",
   "code.hub_reply_unreadable": "客户端读不懂 hub 的应答",
   "code.hub_unreachable": "连接不上 hub",

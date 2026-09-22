@@ -50,6 +50,7 @@
   "code.gateway_unreachable": "The gateway is not answering, so it cannot be asked.",
   "code.geodata_unreachable": "The database releases could not be read, so there is nothing to compare against.",
   "code.health_gate_failed": "The new version did not answer within the time allowed.",
+  "code.hello_invalid": "The first frame was not a hello this hub reads.",
   "code.hub_name_required": "The hub needs a name.",
   "code.hub_not_packaged": "This hub runs from a checkout; update it with git.",
   "code.hub_refused": "The hub turned the machine away.",

@@ -589,8 +589,10 @@ The first frame each way is an identity card, and both cards have one shape.
 | `software` | `neutrino_agent/0.3.0`, `neutrino_client/0.3.0` | `neutrino_hub/0.3.0` |
 | `token` | the binding token | absent |
 
-A rejected `hello` gets `refused {code, params}` and close 4000. The handshake
-has no state hash; the first `report` has it.
+A rejected `hello` gets `refused {code, params}` and close 4000: `hello_invalid`
+when the first frame is late, not text, not a `hello`, or one the hub cannot
+read, and otherwise the admission codes below. The handshake has no state
+hash; the first `report` has it.
 
 ### The frames
 

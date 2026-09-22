@@ -55,6 +55,7 @@ CLIENT_CODE_WORDS = {
         "this hub no longer knows this client; join it again with a new link"
     ),
     "role_mismatch": "the hub says this binding is not a client's",
+    "hello_invalid": "the hub could not read this client's hello; update the client",
     "unknown_hub": "this client has not joined that hub",
     "ambiguous_hub": (
         "this person has joined several hubs; name one with --hub: {hubs}"

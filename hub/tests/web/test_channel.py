@@ -400,19 +400,35 @@ def test_a_leave_with_the_wrong_token_or_id_is_binding_unknown(api):
 # --- the hello gate ---
 
 
-def test_a_late_hello_closes_the_socket_with_the_refused_code(api):
+def test_a_late_hello_is_refused_then_closed_4000(api):
+    """A rejected hello is a refused frame and then the close, like every
+    other refusal; a peer written from the protocol page reads it so."""
     client, _ = api
 
     with client.websocket_connect("/api/channel/socket") as socket:
-        assert closed_with(socket) == (CHANNEL_CLOSE_REFUSED, "hello")
+        assert refused_with(socket) == {
+            "type": "refused",
+            "code": "hello_invalid",
+            "params": {},
+        }
 
 
-def test_a_first_frame_that_is_no_hello_closes_the_socket(api):
+def test_a_first_frame_that_is_no_hello_is_refused_then_closed_4000(api):
     client, _ = api
 
     with client.websocket_connect("/api/channel/socket") as socket:
         socket.send_json({"type": "report"})
-        assert closed_with(socket) == (CHANNEL_CLOSE_REFUSED, "hello")
+        refused = socket.receive_json()
+        assert refused["code"] == "hello_invalid"
+        assert closed_with(socket) == (CHANNEL_CLOSE_REFUSED, "hello_invalid")
+
+
+def test_a_hello_the_hub_cannot_read_is_refused_then_closed_4000(api):
+    client, _ = api
+
+    with client.websocket_connect("/api/channel/socket") as socket:
+        socket.send_json({"type": "hello", "protocol": "one"})
+        assert refused_with(socket)["code"] == "hello_invalid"
 
 
 @pytest.mark.parametrize(

@@ -87,6 +87,8 @@ CHANNEL_CODE_REPLACED = "replaced"
 CHANNEL_CODE_BINDING_UNKNOWN = "binding_unknown"
 CHANNEL_CODE_TICKET_SPENT = "ticket_spent"
 CHANNEL_CODE_ROLE_MISMATCH = "role_mismatch"
+# A first frame that is late, not text, not a hello, or not one this hub reads.
+CHANNEL_CODE_HELLO_INVALID = "hello_invalid"
 # What a request gets when the machine it went to never answered it: the
 # stream ran out of time, or the loop did. It is a display code, worded by
 # the panel as the word for a machine that has not reported.
