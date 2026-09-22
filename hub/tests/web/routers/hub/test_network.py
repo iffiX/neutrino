@@ -1018,3 +1018,125 @@ def test_a_side_gateway_joins_a_network_even_with_no_route_out(box, monkeypatch)
     assert response.status_code == 200
     joined = [entry for entry in runtime.network().interfaces if entry.is_lan]
     assert len(joined) == 1
+
+
+# --- fixed addresses ---
+
+
+def _lease(
+    mac: str = "aa:bb:cc:dd:ee:ff", address: str = "192.168.100.50", name: str = ""
+) -> dict:
+    return {"mac_address": mac, "address": address, "name": name}
+
+
+def _lease_options(*leases: dict) -> dict:
+    return {
+        "uplink_policy": "failover",
+        "is_inter_lan_allowed": True,
+        "static_leases": list(leases),
+    }
+
+
+@pytest.mark.parametrize(
+    "leases, code",
+    [
+        ([_lease(mac="hello")], "static_lease_mac_invalid"),
+        ([_lease(address="192.168.100")], "static_lease_address_invalid"),
+        ([_lease(address="192.168.100.255")], "static_lease_address_invalid"),
+        ([_lease(address="192.168.100.0")], "static_lease_address_invalid"),
+        ([_lease(address="10.0.0.5")], "static_lease_outside"),
+        ([_lease(address="192.168.100.1")], "static_lease_holds_gateway"),
+        (
+            [_lease(), _lease(mac="AA-BB-CC-DD-EE-FF", address="192.168.100.51")],
+            "static_lease_duplicate",
+        ),
+        ([_lease(), _lease(mac="aa:bb:cc:dd:ee:fe")], "static_lease_duplicate"),
+        ([_lease(name="bad name")], "static_lease_name_invalid"),
+        ([_lease(name="a,dhcp-range=1")], "static_lease_name_invalid"),
+    ],
+)
+def test_a_fixed_address_dnsmasq_could_not_give_is_refused(box, leases, code):
+    """Each is a `dhcp-host` line dnsmasq would load and never honour, or
+    one that hands a device the gateway's own address. The MAC is compared
+    in the kernel's spelling, so a dashed uppercase one is the same MAC."""
+    client, runtime, _ = box
+
+    response = client.post("/api/hub/network/set", json=_lease_options(*leases))
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == code
+    assert runtime.applied == []
+
+
+def test_a_network_that_hands_out_no_leases_takes_no_fixed_address(box):
+    """DNS-only on a network is no lease to give a MAC, whatever its subnet."""
+    client, runtime, _ = box
+    config = runtime.network()
+    config.interface("enp1s0").lan.is_dhcp_enabled = False
+    runtime.write_network(config)
+
+    response = client.post("/api/hub/network/set", json=_lease_options(_lease()))
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "static_lease_outside"
+
+
+def test_fixed_addresses_are_stored_whole_and_reapply_everything(box):
+    """The MAC lands as the kernel spells it, an address inside the dynamic
+    range is kept for that MAC, and the write re-renders dnsmasq through
+    the same whole-box apply the routing switches take."""
+    client, runtime, _ = box
+
+    response = client.post(
+        "/api/hub/network/set",
+        json=_lease_options(
+            _lease(mac="AA-BB-CC-DD-EE-FF", address="192.168.100.150", name="argon")
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["static_leases"] == [
+        {
+            "mac_address": "aa:bb:cc:dd:ee:ff",
+            "address": "192.168.100.150",
+            "name": "argon",
+        }
+    ]
+    stored = runtime.network().static_leases
+    assert [(lease.mac_address, lease.address, lease.name) for lease in stored] == [
+        ("aa:bb:cc:dd:ee:ff", "192.168.100.150", "argon")
+    ]
+    assert runtime.applied == [None]
+
+
+def test_a_write_that_says_nothing_about_fixed_addresses_leaves_them_alone(box):
+    client, runtime, _ = box
+    assert (
+        client.post("/api/hub/network/set", json=_lease_options(_lease())).status_code
+        == 200
+    )
+
+    response = client.post(
+        "/api/hub/network/set",
+        json={"uplink_policy": "balance", "is_inter_lan_allowed": True},
+    )
+
+    assert response.status_code == 200
+    assert [lease.address for lease in runtime.network().static_leases] == [
+        "192.168.100.50"
+    ]
+
+
+def test_a_write_that_says_nothing_about_interfaces_leaves_the_exposure_alone(box):
+    """A panel writing the list it owns must not close every interface by
+    leaving the other list out."""
+    client, runtime, _ = box
+    assert runtime.network().exposed_device_names == ["enp1s0"]
+
+    response = client.post(
+        "/api/hub/network/set",
+        json={"uplink_policy": "failover", "is_inter_lan_allowed": True},
+    )
+
+    assert response.status_code == 200
+    assert runtime.network().exposed_device_names == ["enp1s0"]

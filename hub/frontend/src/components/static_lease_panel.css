@@ -1,0 +1,40 @@
+/* --- The devices that always get one address --- */
+
+.static_lease_rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.static_lease_row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+/* The column names, in the same grid so each sits over its inputs. */
+.static_lease_row--head {
+  padding-top: 0;
+  padding-bottom: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Under the whole row, so the inputs keep their columns. */
+.static_lease_row_error {
+  grid-column: 1 / -1;
+}
+
+.static_lease_add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}

@@ -15,6 +15,7 @@ import subprocess
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.router.constants import (
+    ROUTER_HOSTNAME_PATTERN,
     ROUTER_INTENTS,
     ROUTER_LEASE_TIME_PATTERN,
     ROUTER_MAC_PATTERN,
@@ -38,6 +39,7 @@ from neutrino_hub.modules.router.constants import (
 from neutrino_hub.modules.router.interfaces import (
     RouterInterface,
     RouterNetworkConfig,
+    RouterStaticLease,
     RouterVlanSettings,
 )
 from neutrino_hub.modules.router.connections import RouterConnection
@@ -80,6 +82,7 @@ from neutrino_hub.web.models import (
     NetworkView,
     OverlayView,
     PlannedUplinkView,
+    StaticLeaseSettings,
     UpstreamLineView,
     WifiJoinRequest,
     WifiNetworkRequest,
@@ -116,6 +119,9 @@ async def update_options(
 ) -> NetworkView:
     """Change the settings that belong to no single interface.
 
+    A list left out of the body keeps what the box holds; one that is present
+    replaces it whole.
+
     Args:
         options: The new options.
         runtime: The shared runtime.
@@ -124,19 +130,25 @@ async def update_options(
         The Network tab payload.
 
     Raises:
-        HTTPException: 400 for an unknown policy or an interface this machine
-            does not have, 502 when the firewall reload fails.
+        HTTPException: 400 for an unknown policy, an interface this machine
+            does not have or a fixed address that is refused, 502 when the
+            firewall reload fails.
     """
     if options.uplink_policy not in ROUTER_POLICIES:
         raise _bad_request("uplink_policy_unknown", policy=options.uplink_policy)
     network = runtime.network()
     network.uplink_policy = options.uplink_policy
     network.is_inter_lan_allowed = options.is_inter_lan_allowed
-    _set_exposure(network, options.exposed_interfaces, runtime=runtime)
+    if options.exposed_interfaces is not None:
+        _set_exposure(network, options.exposed_interfaces, runtime=runtime)
     if options.exposed_overlays is not None:
         wanted = set(options.exposed_overlays)
         for overlay in network.overlays:
             overlay.is_exposed = overlay.provider in wanted
+    if options.static_leases is not None:
+        network.static_leases = _validate_static_leases(
+            options.static_leases, network=network
+        )
     runtime.write_network(network)
     await _apply(runtime, only=None)
     return _build_view(runtime)
@@ -309,6 +321,90 @@ def _set_exposure(
     for interface in network.interfaces:
         if interface.name not in wanted:
             interface.is_exposed = False
+
+
+def _validate_static_leases(
+    leases: list[StaticLeaseSettings], *, network: RouterNetworkConfig
+) -> list[RouterStaticLease]:
+    """Check every fixed address against the networks that hand out leases.
+
+    Args:
+        leases: What was submitted.
+        network: The stored configuration, for the served networks.
+
+    Returns:
+        The leases ready to store, each MAC lowercase and colon-separated.
+
+    Raises:
+        HTTPException: 400 naming the first lease that is refused: a MAC that
+            is not one, an address that is not one or is a network's own or
+            broadcast address, an address outside every leasing network or
+            equal to its gateway, a MAC or address listed twice, or a name
+            that is not a hostname label.
+    """
+    leasing = _leasing_networks(network)
+    checked: list[RouterStaticLease] = []
+    macs: set[str] = set()
+    addresses: set[str] = set()
+    for lease in leases:
+        mac = lease.mac_address.strip().lower().replace("-", ":")
+        if not re.match(ROUTER_MAC_PATTERN, mac):
+            raise _bad_request(
+                "static_lease_mac_invalid", mac_address=lease.mac_address
+            )
+        try:
+            address = ipaddress.IPv4Address(lease.address.strip())
+        except ValueError as error:
+            raise _bad_request(
+                "static_lease_address_invalid", address=lease.address
+            ) from error
+        text = str(address)
+        holder = next(
+            ((subnet, gateway) for subnet, gateway in leasing if address in subnet),
+            None,
+        )
+        if holder is None:
+            raise _bad_request("static_lease_outside", address=text)
+        subnet, gateway = holder
+        if address in (subnet.network_address, subnet.broadcast_address):
+            raise _bad_request("static_lease_address_invalid", address=text)
+        if address == gateway:
+            raise _bad_request("static_lease_holds_gateway", address=text)
+        if mac in macs:
+            raise _bad_request("static_lease_duplicate", value=mac)
+        if text in addresses:
+            raise _bad_request("static_lease_duplicate", value=text)
+        name = lease.name.strip()
+        if name and not re.match(ROUTER_HOSTNAME_PATTERN, name):
+            raise _bad_request("static_lease_name_invalid", name=lease.name)
+        macs.add(mac)
+        addresses.add(text)
+        checked.append(RouterStaticLease(mac_address=mac, address=text, name=name))
+    return checked
+
+
+def _leasing_networks(network: RouterNetworkConfig) -> list[tuple]:
+    """The served networks dnsmasq hands out leases on, with their gateways.
+
+    Args:
+        network: The stored configuration.
+
+    Returns:
+        ``(subnet, gateway)`` pairs, one per LAN whose DHCP is on and has a
+        range; a LAN whose address does not parse is left out.
+    """
+    found = []
+    for interface in network.lan_interfaces:
+        lan = interface.lan
+        if not lan.is_dhcp_enabled or not lan.dhcp_range_start or not lan.address:
+            continue
+        try:
+            subnet = ipaddress.ip_network(lan.cidr, strict=False)
+            gateway = ipaddress.ip_address(lan.address)
+        except ValueError:
+            continue
+        found.append((subnet, gateway))
+    return found
 
 
 @router.post("/interface/set", response_model=NetworkView)
@@ -845,6 +941,10 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
         modes=_mode_views(),
         interfaces=views,
         overlays=_overlay_views(network, runtime=runtime),
+        static_leases=[
+            StaticLeaseSettings.model_validate(lease.to_dict())
+            for lease in network.static_leases
+        ],
         uplink_policy=network.uplink_policy,
         is_inter_lan_allowed=network.is_inter_lan_allowed,
         is_addressing_owned=network.is_addressing_owned,

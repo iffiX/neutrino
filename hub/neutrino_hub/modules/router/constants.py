@@ -80,6 +80,11 @@ ROUTER_PREFIX_LEN_MAX = 32
 # value is already in `config/`, where it fails every apply from then on.
 ROUTER_MAC_PATTERN = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
 
+# One hostname label, as a fixed address may name its device. Written into a
+# comma-separated `dhcp-host=` line, so a comma or a newline in it would be a
+# second directive.
+ROUTER_HOSTNAME_PATTERN = r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+
 # How long a lease lasts, in dnsmasq's own spelling. Written verbatim into
 # `dhcp-range=`, so anything else is a generated file dnsmasq refuses to load
 # — and a newline in it is a directive somebody else chose.

@@ -7,7 +7,11 @@ plaintext query ever leaves a WAN interface.
 
 from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
 
-from neutrino_hub.modules.router.interfaces import RouterInterface, RouterNetworkConfig
+from neutrino_hub.modules.router.interfaces import (
+    RouterInterface,
+    RouterNetworkConfig,
+    RouterStaticLease,
+)
 
 # Named when the box serves no network at all. dnsmasq with no interface named
 # listens on every one of them, which here would mean answering DNS on the
@@ -30,6 +34,7 @@ class RouterDnsmasqRenderer:
                 queries go.
         """
         self._lans = network.lan_interfaces
+        self._static_leases = network.static_leases
         self._routing = routing or {}
 
     def render(self) -> str:
@@ -161,6 +166,10 @@ class RouterDnsmasqRenderer:
         ]
         for interface in pools:
             lines += self._render_pool(interface)
+        if self._static_leases:
+            lines.append("# Fixed addresses, one per MAC. A name resolves in DNS too.")
+            for lease in self._static_leases:
+                lines.append(self._render_static_lease(lease))
         lines += ["dhcp-authoritative", ""]
         return lines
 
@@ -173,3 +182,9 @@ class RouterDnsmasqRenderer:
             f"dhcp-option=tag:{device},option:router,{lan.address}",
             f"dhcp-option=tag:{device},option:dns-server,{lan.address}",
         ]
+
+    def _render_static_lease(self, lease: RouterStaticLease) -> str:
+        fields = [lease.mac_address, lease.address]
+        if lease.name:
+            fields.append(lease.name)
+        return "dhcp-host=" + ",".join(fields)

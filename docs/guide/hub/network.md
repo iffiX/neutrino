@@ -10,6 +10,7 @@ The **Network** page sets the box's shape, the role of each interface and the ne
 | ------------------ | ------------------------------------------------------------- |
 | **Mode**           | the box's shape                                               |
 | **Topology**       | the role and address of each interface, in the routing shapes |
+| **Fixed addresses** | the devices that always get one address                       |
 | **Known networks** | the networks a WAN radio joins                                |
 | **Exposure**       | the networks the box accepts connections on                   |
 | **Panel port**     | the port the panel listens on                                 |
@@ -59,6 +60,8 @@ A side gateway adds one field, **Upstream gateway**, which holds the address of 
 On each served network, the box gives its DHCP clients its own address as their gateway and their resolver. The **DHCP** panel of a LAN interface has the switch **Allocate address on this network**, a **Range start** and **Range end**, and a **Lease time**. The lease time is in dnsmasq form, `12h` for example. The pool runs from host `.100` to `.200` unless you change it, and the box's own address must lie outside it.
 
 With the switch on, the box assigns addresses on the network. The box serves DNS on the network whether or not the switch is on. In server mode the box serves no network, so it runs neither DHCP nor DNS.
+
+**Fixed addresses**, under the interface card, binds a MAC address to one address in a network that assigns addresses. Select **Add address**, type the MAC (or pick a discovered device from the list), the address and an optional name, then select **Apply fixed addresses**. A device that holds a dynamic lease moves to its fixed address at its next renewal, and the name resolves on every served network.
 
 ## Wireless
 

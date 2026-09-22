@@ -314,3 +314,39 @@ def test_a_server_answers_on_its_exposed_ports_alone():
     )
 
     assert network.exposed_interfaces == ["enp1s0"]
+
+
+# --- Fixed addresses --------------------------------------------------------
+
+
+def test_a_file_with_no_static_leases_reads_none():
+    config = RouterNetworkConfig.from_dict({"interfaces": []})
+
+    assert config.static_leases == []
+    assert config.to_dict()["static_leases"] == []
+
+
+def test_a_fixed_address_survives_a_round_trip_and_a_blank_one_is_dropped():
+    config = RouterNetworkConfig.from_dict(
+        {
+            "interfaces": [],
+            "static_leases": [
+                {
+                    "mac_address": "aa:bb:cc:dd:ee:ff",
+                    "address": "192.168.100.50",
+                    "name": "argon",
+                },
+                {"mac_address": "aa:bb:cc:dd:ee:fe", "address": "192.168.100.51"},
+                {"mac_address": "", "address": "192.168.100.52"},
+            ],
+        }
+    )
+
+    again = RouterNetworkConfig.from_dict(config.to_dict())
+
+    assert [
+        (lease.mac_address, lease.address, lease.name) for lease in again.static_leases
+    ] == [
+        ("aa:bb:cc:dd:ee:ff", "192.168.100.50", "argon"),
+        ("aa:bb:cc:dd:ee:fe", "192.168.100.51", ""),
+    ]

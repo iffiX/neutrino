@@ -361,12 +361,21 @@ export interface NetworkMode {
   is_addressing_owned: boolean;
 }
 
+/** One device that always gets the same address from a served network. */
+export interface StaticLeaseSettings {
+  mac_address: string;
+  address: string;
+  /** Optional; dnsmasq resolves it as well. */
+  name: string;
+}
+
 export interface NetworkView {
   /** What this whole machine is; the page below the Mode panel follows it. */
   mode: NetworkModeKey;
   modes: NetworkMode[];
   interfaces: InterfaceView[];
   overlays: OverlayView[];
+  static_leases: StaticLeaseSettings[];
   uplink_policy: UplinkPolicy;
   is_inter_lan_allowed: boolean;
   /**
@@ -381,13 +390,19 @@ export interface NetworkView {
   warnings: string[];
 }
 
+/**
+ * The page's own settings. Each list is absent or whole: absent leaves what
+ * the box holds as it is, so a panel sends only the list it owns.
+ */
 export interface NetworkOptions {
   uplink_policy: UplinkPolicy;
   is_inter_lan_allowed: boolean;
   /** The interfaces that answer, by name. Everything else is closed. */
-  exposed_interfaces: string[];
+  exposed_interfaces?: string[];
   /** The overlays that answer, by provider. Everything else is closed. */
-  exposed_overlays: string[];
+  exposed_overlays?: string[];
+  /** The devices that always get one address, whole. */
+  static_leases?: StaticLeaseSettings[];
 }
 
 /** The mode to become. Nothing else: what each port is for is its own. */

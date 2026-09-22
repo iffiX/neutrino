@@ -495,6 +495,51 @@ class RouterOverlay:
 
 
 @dataclass
+class RouterStaticLease:
+    """One device that always gets the same address from a served network.
+
+    Attributes:
+        mac_address: The device's hardware address, lowercase and
+            colon-separated.
+        address: The IPv4 address it is given, inside a network that hands
+            out leases.
+        name: An optional hostname label, which dnsmasq also resolves.
+    """
+
+    mac_address: str
+    address: str
+    name: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RouterStaticLease":
+        """Parse one fixed-address entry.
+
+        Args:
+            data: An entry of the ``static_leases`` list.
+
+        Returns:
+            The parsed entry.
+        """
+        return cls(
+            mac_address=str(data.get("mac_address", "")),
+            address=str(data.get("address", "")),
+            name=str(data.get("name", "") or ""),
+        )
+
+    def to_dict(self) -> dict:
+        """Serialize back to the config shape.
+
+        Returns:
+            A plain object ready for ``config/router/network.json``.
+        """
+        return {
+            "mac_address": self.mac_address,
+            "address": self.address,
+            "name": self.name,
+        }
+
+
+@dataclass
 class RouterNetworkConfig:
     """The whole of ``config/router/network.json``.
 
@@ -512,6 +557,9 @@ class RouterNetworkConfig:
             ``interfaces`` rather than an entry in it: switching modes
             rebuilds that list, and an overlay in there would be dropped by a
             change that has nothing to do with it.
+        static_leases: The devices that always get one address. At the top
+            level rather than under an interface: ``dhcp-host`` is global in
+            dnsmasq, and the address itself says which network it is in.
         is_inter_lan_allowed: Whether devices on one served network can reach
             devices on another. One switch for all of them rather than a
             per-pair matrix: the whole point of turning it off is "my VLANs
@@ -522,6 +570,7 @@ class RouterNetworkConfig:
     mode: str = ROUTER_MODE_ROUTER
     interfaces: list[RouterInterface] = field(default_factory=list)
     overlays: list[RouterOverlay] = field(default_factory=list)
+    static_leases: list[RouterStaticLease] = field(default_factory=list)
     uplink_policy: str = ROUTER_POLICY_FAILOVER
     is_inter_lan_allowed: bool = True
 
@@ -851,6 +900,11 @@ class RouterNetworkConfig:
                 for entry in overlays
                 if entry.get("provider") in ROUTER_OVERLAY_KEYS
             ],
+            static_leases=[
+                RouterStaticLease.from_dict(entry)
+                for entry in data.get("static_leases") or []
+                if entry.get("mac_address") and entry.get("address")
+            ],
             uplink_policy=(
                 policy if policy in ROUTER_POLICIES else ROUTER_POLICY_FAILOVER
             ),
@@ -867,6 +921,7 @@ class RouterNetworkConfig:
             "mode": self.mode,
             "interfaces": [interface.to_dict() for interface in self.interfaces],
             "overlays": [overlay.to_dict() for overlay in self.overlays],
+            "static_leases": [lease.to_dict() for lease in self.static_leases],
             "uplink_policy": self.uplink_policy,
             "is_inter_lan_allowed": self.is_inter_lan_allowed,
         }
@@ -891,6 +946,7 @@ __all__ = [
     "RouterInterface",
     "RouterLanSettings",
     "RouterNetworkConfig",
+    "RouterStaticLease",
     "RouterVlanSettings",
     "RouterWanSettings",
     "RouterWifiSettings",

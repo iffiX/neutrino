@@ -20,9 +20,9 @@ from tests.conftest import (
 )
 
 
-def render(*entries, routing: dict | None = None) -> str:
+def render(*entries, routing: dict | None = None, **rest) -> str:
     return RouterDnsmasqRenderer(
-        network=network_config(*entries), routing=routing
+        network=network_config(*entries, **rest), routing=routing
     ).render()
 
 
@@ -197,3 +197,44 @@ def test_without_the_fallback_xray_is_the_only_upstream():
 
     assert servers == ["server=127.0.0.1#15353"]
     assert "strict-order" not in rendered
+
+
+# --- Fixed addresses --------------------------------------------------------
+
+
+def test_a_fixed_address_is_one_dhcp_host_line_after_the_pools(tmp_path):
+    """With a name, dnsmasq resolves the name as well; without, only the lease."""
+    config = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        static_leases=[
+            {
+                "mac_address": "aa:bb:cc:dd:ee:ff",
+                "address": "192.168.100.50",
+                "name": "argon",
+            },
+            {"mac_address": "aa:bb:cc:dd:ee:fe", "address": "192.168.100.51"},
+        ],
+    )
+
+    directives = without_comments(config)
+    assert "dhcp-host=aa:bb:cc:dd:ee:ff,192.168.100.50,argon" in directives
+    assert "dhcp-host=aa:bb:cc:dd:ee:fe,192.168.100.51" in directives
+    assert (
+        directives.index("dhcp-range=")
+        < directives.index("dhcp-host=")
+        < directives.index("dhcp-authoritative")
+    )
+    validate_dnsmasq(config, tmp_path)
+
+
+def test_a_fixed_address_needs_a_pool_to_be_rendered(tmp_path):
+    """No LAN hands out leases, so there is nothing to give the MAC."""
+    config = render(
+        lan_entry("enp1s0", address="192.168.100.1", is_dhcp_enabled=False),
+        static_leases=[
+            {"mac_address": "aa:bb:cc:dd:ee:ff", "address": "192.168.100.50"}
+        ],
+    )
+
+    assert "dhcp-host" not in without_comments(config)
+    validate_dnsmasq(config, tmp_path)

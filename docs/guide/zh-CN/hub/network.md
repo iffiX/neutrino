@@ -9,6 +9,7 @@ title: 网络
 - **模式**（Mode）
 - **拓扑**（Topology）
 - 接口列表
+- **静态地址分配**（Fixed addresses）
 - **上游网关**（Upstream gateway）
 - **路由行为**（Routing behavior）
 - **已知网络**（Known networks）
@@ -52,6 +53,8 @@ title: 网络
 - **在这个网络上分配地址**（Allocate address on this network）决定这个网络是否发放租约。
 - **起始地址**（Range start）和 **结束地址**（Range end）圈出地址池，网关自己的地址在池外。默认池是 `.100` 到 `.200`，低位留给固定地址的主机。
 - **租约时长**（Lease time）用 dnsmasq 的写法，例如 `12h`、`30m`、`1d`。
+
+**静态地址分配**（Fixed addresses）面板在接口卡片下方，把一个 MAC 绑定到一个固定地址，这个地址要在某个分配地址的网络里。点 **添加**（Add address），填 MAC（也可以从已发现的设备里选一个）、地址和可选的名字，再点 **应用静态地址分配**（Apply fixed addresses）。已经拿到动态地址的设备，下次续租时换到固定地址；填了名字的设备，在每个服务的网络上都能按名字解析。
 
 不论 DHCP 开不开，hub 都在这个网络上应答 DNS。**总览**（Dashboard）页的 **DNS 查询**（DNS queries）列出最近的解析。
 

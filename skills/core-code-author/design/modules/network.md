@@ -181,6 +181,24 @@ the console to set up.
 machine was already doing before the hub arrived, and a VPS that answers on
 nothing after an install is a VPS nobody can reach.
 
+## What dnsmasq gives a served network
+
+dnsmasq is the DHCP server and the resolver of every served network, and
+nothing else on the box answers either. It gets one `dhcp-range` per LAN
+whose DHCP is on, and every request is tagged with the interface it arrived
+on, so the gateway and resolver options a device receives are that
+interface's own address.
+
+A fixed address is one entry of `static_leases` at the top level of
+`network.json`: a MAC, an address and an optional name, rendered as one
+`dhcp-host` line after the pools. The address lies in a network that gives
+out leases and is neither that network's own address, its broadcast address
+nor the gateway's. It can sit inside the dynamic range, which dnsmasq then
+keeps for that MAC, and a device holding a dynamic lease moves to its fixed
+address at its next renewal. The name, when present, resolves on every
+served network. The list is kept at the top level because `dhcp-host` is
+global in dnsmasq and the address itself says which network it is in.
+
 ## What the proxy may divert
 
 The proxy is one xray process, and the mode decides which traffic can reach

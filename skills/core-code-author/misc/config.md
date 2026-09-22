@@ -140,6 +140,10 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   entry named `<trunk>.<id>` with a `vlan: {parent, id}` block and a role of
   its own; the trunk's untagged traffic is the `<trunk>.main` entry
   (`id: null`), created with the split and configured like any other interface.
+  Top-level `static_leases` lists the devices that always get one address,
+  each `{mac_address, address, name}`: the address lies in a network that
+  assigns addresses, and `name` is optional and resolves on the served
+  networks.
   Global switches: `uplink_policy` (`failover`/`balance`) and
   `is_inter_lan_allowed` (off fences the served networks from each other; every
   network still reaches the internet and the overlay).

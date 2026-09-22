@@ -299,7 +299,7 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/network` | | `NetworkView` |
-| `POST /api/hub/network/set` | the page's own settings | `NetworkView` |
+| `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, exposed_interfaces, exposed_overlays, static_leases}`; absent lists leave the exposure as it is | `NetworkView` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
 | `POST /api/hub/network/interface/set` | `{name, ...}` | one interface's role and settings; `NetworkView` |
 | `POST /api/hub/network/interface/remove` | `{name}` | `NetworkView` |

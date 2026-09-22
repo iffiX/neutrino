@@ -360,6 +360,17 @@ class OverlayView(BaseModel):
     device_count: int = 0
 
 
+class StaticLeaseSettings(BaseModel):
+    """One device that always gets the same address from a served network.
+
+    ``name`` is optional; when present dnsmasq resolves it as well.
+    """
+
+    mac_address: str
+    address: str
+    name: str = ""
+
+
 class NetworkView(BaseModel):
     """The Network tab payload."""
 
@@ -367,6 +378,7 @@ class NetworkView(BaseModel):
     modes: list[NetworkModeView] = Field(default_factory=list)
     interfaces: list[InterfaceView]
     overlays: list[OverlayView] = Field(default_factory=list)
+    static_leases: list[StaticLeaseSettings] = Field(default_factory=list)
     uplink_policy: str = "failover"
     is_inter_lan_allowed: bool = True
     is_addressing_owned: bool = True
@@ -376,19 +388,23 @@ class NetworkView(BaseModel):
 
 
 class NetworkOptions(BaseModel):
-    """The Network tab's settings that belong to no single interface."""
+    """The Network tab's settings that belong to no single interface.
+
+    Each list is absent or whole. Absent leaves what the box holds as it is;
+    present replaces it, so a panel writes only the list it owns.
+    """
 
     uplink_policy: str = "failover"
     is_inter_lan_allowed: bool = True
     # Which interfaces answer, by name. A set rather than a flag per request,
     # because the panel shows every interface at once and applying it is one
     # decision about the whole box.
-    exposed_interfaces: list[str] = Field(default_factory=list)
+    exposed_interfaces: list[str] | None = None
     # And which overlays, by provider. The same question about the same box,
-    # so it is answered in the same write. Absent leaves them as they are
-    # rather than closing every one: a caller that has never heard of
-    # overlays must not be able to cut the way back into this box.
+    # so it is answered in the same write.
     exposed_overlays: list[str] | None = None
+    # The devices that always get one address, whole.
+    static_leases: list[StaticLeaseSettings] | None = None
 
 
 class InterfaceRequest(BaseModel):

@@ -11,6 +11,7 @@ import { PanelPortPanel } from "../components/panel_port_panel";
 import { PasswordInput } from "../components/password_input";
 import { SavedNetworksPanel } from "../components/saved_networks_panel";
 import { SignalBars } from "../components/signal_bars";
+import { StaticLeasePanel } from "../components/static_lease_panel";
 import { StatusDot } from "../components/status_dot";
 import { TabStrip } from "../components/tab_strip";
 import type { StripTab } from "../components/tab_strip";
@@ -635,6 +636,14 @@ export function NetworkPage() {
 
           {network.data !== null && (
             <section className="network_globals">
+              {/* Only where there is a network to give an address on. */}
+              {interfaces.some((entry) => entry.settings.role === "lan") && (
+                <StaticLeasePanel
+                  network={network.data}
+                  devices={deviceList.data?.devices ?? []}
+                  onApplied={network.setData}
+                />
+              )}
               {/* Only where there is a radio to use them. On a box with none
                   this is a list nothing would ever read. */}
               {interfaces.some((entry) => entry.link.kind === "wifi") && (
