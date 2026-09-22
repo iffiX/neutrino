@@ -96,6 +96,7 @@ def create_enrollment(
     return ClientEnrollmentView(
         link=enrollment_link(urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT),
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
+        expires_in_s=ENROLLMENT_TTL_S,
     )
 
 

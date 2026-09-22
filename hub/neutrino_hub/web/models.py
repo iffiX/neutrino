@@ -1448,10 +1448,16 @@ class ClientEnrollmentRequest(BaseModel):
 
 
 class ClientEnrollmentView(BaseModel):
-    """The link to paste into the client program."""
+    """The link to paste into the client program.
+
+    ``expires_in_s`` is how long the link works, counted by the hub; a page
+    that counted from ``expires_at`` against its own clock read a machine's
+    clock error as the link's life.
+    """
 
     link: str
     expires_at: str
+    expires_in_s: int
 
 
 class ClientRequest(BaseModel):

@@ -222,7 +222,7 @@ export function ClientsPage() {
       {enrollment !== null && (
         <DeviceEnrollmentNotice
           link={enrollment.view.link}
-          expiresInS={secondsUntil(enrollment.view.expires_at)}
+          expiresInS={enrollment.view.expires_in_s}
           title={t("ui.clients.enrollment_title", { name: enrollment.name })}
           hint={t("ui.clients.enrollment_hint")}
           onDismiss={() => setEnrollment(null)}
@@ -339,12 +339,4 @@ function presenceOf(client: ClientView): ClientPresence {
     return "never";
   }
   return "offline";
-}
-
-function secondsUntil(isoTimestamp: string): number {
-  const parsed = Date.parse(isoTimestamp);
-  if (Number.isNaN(parsed)) {
-    return 0;
-  }
-  return (parsed - Date.now()) / 1000;
 }

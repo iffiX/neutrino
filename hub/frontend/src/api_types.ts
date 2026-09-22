@@ -888,6 +888,7 @@ export interface ClientListView {
 export interface ClientEnrollmentView {
   link: string;
   expires_at: string;
+  expires_in_s: number;
 }
 
 export interface DeviceFileEntry {
