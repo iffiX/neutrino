@@ -163,16 +163,19 @@ rollback that failed too can leave, is put back by hand:
 sudo apt-get install -y --reinstall --allow-downgrades /var/lib/neutrino/hub_update/neutrino-hub_<version>_amd64.deb
 ```
 
-A board that resets during the unpack, with nothing in the journal, has a
-hardware watchdog: Armbian arms one through systemd (`RuntimeWatchdogSec=30s`
-in `/etc/systemd/system.conf.d/10-watchdog.conf`), and a package unpacking on
-a slow card can hold PID 1 past it. Measured on an S905X box with an SD card
-writing at 10 MB/s, 2026-09-23: the unit reset the board twice at
-`Preparing to unpack`, and `apt-get` by hand did not, because the update had
-just written the package to the card and the unpack wrote the next one on top
-of that queue. The unit now links a brought file instead of copying it, runs
-`sync` before the install, and runs the package manager under
-`ionice -c 2 -n 7 nice -n 10`.
+A board that resets during the unpack, with nothing in the journal, is
+being reset by hardware, not by a crash: Armbian arms the SoC's watchdog
+through systemd (`RuntimeWatchdogSec=30s` in
+`/etc/systemd/system.conf.d/10-watchdog.conf`), and a power supply or a card
+can also give out under sustained load. Measured on an S905X box with an SD
+card writing at 10 MB/s, 2026-09-23: the unit reset the board three times
+during the unpack, `apt-get` by hand over SSH installed the same package
+twice without a reset, and the third unit run already linked the brought
+file, ran `sync` first and ran the package manager under
+`ionice -c 2 -n 7 nice -n 10`. The unit keeps that pacing, since it costs
+nothing, but what sets the two paths apart is not settled. On such a board
+install by hand, and move the system off the card
+(`armbian-install` onto the eMMC) before relying on the unit.
 
 ## Trying a change on an installed box
 
