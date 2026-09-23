@@ -195,6 +195,20 @@ which was considered and rejected: NetBird's own rules are what make this box
 usable as a routing peer, which is the thing the NetBird page sends people to
 the console to set up.
 
+A routing peer's daemon also marks packets. Measured on NetBird 0.78.1 on
+2026-09-23: `netbird-mangle-prerouting`, at the mangle priority, sets
+`meta mark 0x1bd22` on every new connection whose source is a network the
+peer routes, whatever its destination, so that it can masquerade what
+leaves through the overlay. The proxy's diversion chain sits at the same
+hook and sets mark 1 on the packets it hands to xray, and the policy route
+that delivers them locally looks for that mark. Two chains at one priority
+run in the order they were registered, which changes whenever either side
+reloads its table; with the daemon's chain last, every diverted SYN from the
+served Wi-Fi network lost its mark and was dropped, and the network read as
+having no internet while the panel on the same box answered. The diversion
+chain is therefore rendered at `mangle + 1`: it runs after the daemon's
+whatever the order of reloads, and the mark it sets is the one that stands.
+
 `server` and `side_gateway` start with every interface open. That is what the
 machine was already doing before the hub arrived, and a VPS that answers on
 nothing after an install is a VPS nobody can reach.

@@ -111,7 +111,12 @@ class RouterNftRenderer:
         target = f"{XRAY_TPROXY_LISTEN}:{XRAY_TPROXY_PORT}"
         lines = [
             "    chain prerouting {",
-            "        type filter hook prerouting priority mangle; policy accept;",
+            "        # One step after mangle: an overlay daemon marks every new",
+            "        # connection from a network it routes at mangle itself, and two",
+            "        # chains at one priority run in the order they were registered,",
+            "        # which either reload changes. Running later keeps the mark the",
+            "        # policy route looks for on the diverted packet.",
+            "        type filter hook prerouting priority mangle + 1; policy accept;",
             "",
             "        # Packets of an established transparent session: mark for local",
             "        # delivery and let the existing socket pick them up.",
