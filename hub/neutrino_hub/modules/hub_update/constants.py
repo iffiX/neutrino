@@ -35,6 +35,16 @@ HUB_UPDATE_UNPACK_MULTIPLE = 3
 # The transient unit the install runs in, away from the panel it restarts.
 HUB_UPDATE_UNIT = "neutrino_hub_update"
 HUB_UPDATE_LAUNCH_TIMEOUT_S = 30
+# The unit's memory ceiling. It bounds the page cache the unpack fills, so a
+# box short of memory keeps every other process's pages, PID 1's among them,
+# instead of reading them back from behind the unpack's writes. The ceiling
+# must clear what the package manager itself holds: dpkg-deb decodes xz with
+# one thread here, since each further thread costs it a block of memory.
+HUB_UPDATE_UNIT_MEMORY_HIGH = "384M"
+HUB_UPDATE_UNIT_ENVIRONMENT = (
+    "DEBIAN_FRONTEND=noninteractive",
+    "DPKG_DEB_THREADS_MAX=1",
+)
 # What the gate holds for: the panel, and whichever of these was running when
 # the install was staged.
 HUB_UPDATE_PANEL_UNIT = "neutrino_hub_web"

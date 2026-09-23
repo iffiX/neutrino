@@ -165,17 +165,29 @@ sudo apt-get install -y --reinstall --allow-downgrades /var/lib/neutrino/hub_upd
 
 A board that resets during the unpack, with nothing in the journal, is
 being reset by hardware, not by a crash: Armbian arms the SoC's watchdog
-through systemd (`RuntimeWatchdogSec=30s` in
-`/etc/systemd/system.conf.d/10-watchdog.conf`), and a power supply or a card
-can also give out under sustained load. Measured on an S905X box with an SD
-card writing at 10 MB/s, 2026-09-23: the unit reset the board three times
-during the unpack, `apt-get` by hand over SSH installed the same package
-twice without a reset, and the third unit run already linked the brought
-file, ran `sync` first and ran the package manager under
-`ionice -c 2 -n 7 nice -n 10`. The unit keeps that pacing, since it costs
-nothing, but what sets the two paths apart is not settled. On such a board
-install by hand, and move the system off the card
-(`armbian-install` onto the eMMC) before relying on the unit.
+through systemd (`RuntimeWatchdogSec=` in
+`/etc/systemd/system.conf.d/10-watchdog.conf`), and PID 1 alone feeds it.
+The unpack takes the box's memory. dpkg-deb decodes xz with one thread per
+processor and each thread holds a block of the archive, so four threads
+take over 200 MB, and the page cache the unpack fills takes the rest. A box
+with under 1 GB and no swap then drops the pages every other process runs
+on, PID 1's among them; the page faults PID 1 takes on its way to feed the
+watchdog wait behind the card's write queue, and a few in a row cost more
+than 30 seconds. Measured on an S905X box with 787 MB and an SD card
+writing at 10 MB/s, 2026-09-23: the same package reset the board four times
+out of four under the unit and once out of four by hand over SSH, and a
+loop that runs every half second went 26 seconds without running during a
+hand install. The unit therefore runs with `MemoryHigh=384M`, which keeps
+its page cache inside its own cgroup, and `DPKG_DEB_THREADS_MAX=1`, which
+holds dpkg-deb under 100 MB; with both, six unit installs on that board
+took 285 to 337 seconds each and the loop never waited more than 21
+seconds, in most runs under 10. `--force-unsafe-io` was measured too and
+left out: under the bound it saved no time, and it kept the card's writes
+for the moment the panel restarts, which is the heaviest moment of the
+install. The package manager runs under `ionice -c 2 -n 7 nice -n 10`. A
+watchdog of 60 seconds gives such a board room for that restart; by hand on
+such a board, put `DPKG_DEB_THREADS_MAX=1` in front of the `apt-get` line
+above.
 
 ## Trying a change on an installed box
 

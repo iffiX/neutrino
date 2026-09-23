@@ -55,6 +55,8 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_STAGE_ROLLING_BACK,
     HUB_UPDATE_STATE_NAME,
     HUB_UPDATE_UNIT,
+    HUB_UPDATE_UNIT_ENVIRONMENT,
+    HUB_UPDATE_UNIT_MEMORY_HIGH,
     HUB_UPDATE_UNPACK_MULTIPLE,
 )
 from neutrino_hub.modules.hub_update.release import (
@@ -639,7 +641,8 @@ class HubUpdateInstaller:
                     "--unit",
                     HUB_UPDATE_UNIT,
                     "--collect",
-                    "--setenv=DEBIAN_FRONTEND=noninteractive",
+                    f"--property=MemoryHigh={HUB_UPDATE_UNIT_MEMORY_HIGH}",
+                    *(f"--setenv={pair}" for pair in HUB_UPDATE_UNIT_ENVIRONMENT),
                     "/bin/sh",
                     str(script),
                 ],
