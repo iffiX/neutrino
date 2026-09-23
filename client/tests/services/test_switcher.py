@@ -463,7 +463,24 @@ def test_a_delete_that_did_not_take_is_an_error(monkeypatch):
 
     with pytest.raises(switcher.ToolSwitchError) as caught:
         switcher._drop_provider("codex", "default")
-    assert "kept" in str(caught.value)
+    assert str(caught.value).endswith("kept the hub's provider: it printed nothing")
+
+
+def test_a_delete_that_did_not_take_carries_what_the_console_said(monkeypatch):
+    cli = Cli()
+    cli.providers["codex"].add("neutrino")
+    monkeypatch.setattr(switcher, "_run", cli)
+    switcher._PLATFORM.on_answer = None
+    switcher._PLATFORM.answer_output = (
+        "\x1b[?25l\x1b[31mError: Cannot delete the current active provider.\x1b[0m\r\n"
+    )
+
+    with pytest.raises(switcher.ToolSwitchError) as caught:
+        switcher._drop_provider("codex", "default")
+    assert str(caught.value) == (
+        "cc-switch kept the hub's provider: "
+        "Error: Cannot delete the current active provider."
+    )
 
 
 def test_a_platform_without_a_terminal_is_a_typed_error(monkeypatch):

@@ -285,6 +285,7 @@ class FakeClientPlatform(ClientPlatform):
         self.answered = []
         self.on_answer = None
         self.answer_error = None
+        self.answer_output = ""
         self.language = "en"
 
     def system_language(self) -> str:
@@ -356,7 +357,7 @@ class FakeClientPlatform(ClientPlatform):
         self.answered.append((list(argv), prompt, answer))
         if self.on_answer is not None:
             self.on_answer(list(argv))
-        return 0, ""
+        return 0, self.answer_output
 
 
 class FakeProcess:

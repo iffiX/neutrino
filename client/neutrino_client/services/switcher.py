@@ -41,7 +41,7 @@ import tempfile
 from neutrino_client import bundled
 from neutrino_client.constants import CLIENT_ORIGINAL_DIR_NAME
 from neutrino_client.exceptions import PlatformUnsupportedError, ToolSwitchError
-from neutrino_client.platforms.base import run_quietly
+from neutrino_client.platforms.base import plain_text, run_quietly
 
 SWITCHER_PROVIDER_ID = "neutrino"
 SWITCHER_PROVIDER_NAME = "Neutrino Hub"
@@ -93,6 +93,9 @@ OFFICIAL_PROVIDER_IDS = {
 # What cc-switch asks before deleting a provider, and the answer. It takes
 # no flag in the prompt's place, so the question is answered on a terminal.
 DELETE_PROMPT = "(y/N)"
+# How much of a console's output an error about a delete that did not take
+# carries: the refusal cc-switch printed, or the prompt as it was drawn.
+CONSOLE_WORDS_LIMIT = 200
 DELETE_ANSWER = "y\n"
 
 # What cc-switch draws its provider table with.
@@ -409,17 +412,22 @@ def _drop_provider(app: str, previous: str) -> str:
         returned_to = previous or OFFICIAL_PROVIDER_IDS.get(app, "")
         if returned_to:
             _run(["use", returned_to], app, is_checked=False)
-    _delete_provider(app)
+    printed = _delete_provider(app)
     if _has_provider(app):
-        raise ToolSwitchError("cc-switch kept the hub's provider")
+        raise ToolSwitchError(
+            f"cc-switch kept the hub's provider: {_console_words(printed)}"
+        )
     return returned_to
 
 
-def _delete_provider(app: str) -> None:
+def _delete_provider(app: str) -> str:
     """Answer cc-switch's question and have it delete the hub's provider.
 
     Args:
         app: Which tool's providers to act on.
+
+    Returns:
+        Everything the console printed, escape sequences included.
 
     Raises:
         ToolSwitchError: If no terminal can be made for the question.
@@ -429,7 +437,7 @@ def _delete_provider(app: str) -> None:
         raise ToolSwitchError("the cc-switch command line is not installed")
     argv = [binary, "--app", app, "provider", "delete", SWITCHER_PROVIDER_ID]
     try:
-        _platform().run_answering(
+        _, printed = _platform().run_answering(
             argv,
             prompt=DELETE_PROMPT,
             answer=DELETE_ANSWER,
@@ -437,6 +445,23 @@ def _delete_provider(app: str) -> None:
         )
     except (PlatformUnsupportedError, OSError) as error:
         raise ToolSwitchError(f"could not answer cc-switch: {error}")
+    return str(printed or "")
+
+
+def _console_words(printed: str) -> str:
+    """The end of what a console printed, as words.
+
+    Args:
+        printed: The console's output, escape sequences included.
+
+    Returns:
+        The last :data:`CONSOLE_WORDS_LIMIT` characters of the text with the
+        sequences taken out and the whitespace collapsed, or a note that
+        nothing was printed.
+    """
+    text = plain_text(printed.encode("utf-8", "replace")).decode("utf-8", "replace")
+    words = " ".join(text.split())
+    return words[-CONSOLE_WORDS_LIMIT:] if words else "it printed nothing"
 
 
 def _has_provider(app: str) -> bool:
