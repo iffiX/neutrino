@@ -6,6 +6,7 @@ whole timeout every time. These exercise the read callable's logic through
 a fake kernel32, so no Windows is needed.
 """
 
+import ctypes
 import inspect
 import time
 
@@ -13,7 +14,7 @@ from neutrino_client.constants import (
     CLIENT_PROMPT_EXIT_TIMEOUT_S,
     CLIENT_PROMPT_TIMEOUT_S,
 )
-from neutrino_client.platforms import windows_console
+from neutrino_client.platforms import win32, windows_console
 
 
 class FakeKernel:
@@ -131,3 +132,35 @@ def test_the_run_reads_the_prompt_for_ten_seconds_and_waits_five_for_the_exit():
     assert "WaitForSingleObject(process.hProcess, int(timeout_s * 1000))" not in (
         source
     )
+
+
+class FakeStartKernel:
+    """The calls a child's start makes on kernel32, its std handles kept."""
+
+    def __init__(self):
+        self.std = {
+            name: 1000 + index for index, name in enumerate(win32.STD_HANDLE_NAMES)
+        }
+        self.at_create = None
+
+    def GetStdHandle(self, name):
+        return self.std[name]
+
+    def SetStdHandle(self, name, handle):
+        self.std[name] = handle
+
+    def CreateProcessW(self, *arguments):
+        self.at_create = dict(self.std)
+        return True
+
+
+def test_the_child_is_made_with_the_parents_std_handles_set_aside():
+    """A windowed resident's handles are open on NUL, and a child handed
+    copies of them writes there rather than on the pseudo console."""
+    kernel = FakeStartKernel()
+    before = dict(kernel.std)
+
+    windows_console._start(kernel, ["tool", "--ask"], ctypes.create_string_buffer(8), 7)
+
+    assert kernel.at_create == {name: None for name in win32.STD_HANDLE_NAMES}
+    assert kernel.std == before

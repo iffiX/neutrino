@@ -1,10 +1,13 @@
 """Running a console tool on a pseudo console, and answering its one prompt.
 
 A tool that asks a yes-or-no question on its terminal and takes no flag in
-its place is given a pseudo console here, and the answer. The child attaches
-to the console only when this process hands down no standard handles of its
-own; the resident is ``pythonw`` and has none, so the question lands on the
-console where the answer can meet it.
+its place is given a pseudo console here, and the answer. A parent's open
+standard handles are handed to the child in the console's place, and a
+windowed program's are open on NUL, so they are set aside while the child
+is made: the question then lands on the console where the answer can meet
+it. Measured on Windows 11 with the compiled resident, 2026-09-23: with the
+handles left in place the console received nothing and the tool's question
+went to NUL.
 
 The reader stops as soon as the child has exited and its last bytes are
 drained: the output pipe itself does not end until the console is closed,
@@ -246,19 +249,32 @@ def _start(kernel32, argv: list, attributes, console):
     startup.StartupInfo.cb = ctypes.sizeof(win32.StartupInfoEx)
     startup.lpAttributeList = ctypes.cast(attributes, ctypes.c_void_p)
     process = win32.ProcessInformation()
-    if not kernel32.CreateProcessW(
-        None,
-        subprocess.list2cmdline(argv),
-        None,
-        None,
-        False,
-        win32.EXTENDED_STARTUPINFO_PRESENT,
-        None,
-        None,
-        ctypes.byref(startup),
-        ctypes.byref(process),
-    ):
-        error = ctypes.get_last_error()
+    # A parent whose standard handles are open hands the child copies of
+    # them, and the child then reads and writes there rather than on the
+    # pseudo console; a windowed program's are open on NUL. They are set
+    # aside while the child is made and put back after, so the console's
+    # own handles are the ones the child is born with.
+    held = [kernel32.GetStdHandle(name) for name in win32.STD_HANDLE_NAMES]
+    for name in win32.STD_HANDLE_NAMES:
+        kernel32.SetStdHandle(name, None)
+    try:
+        is_started = kernel32.CreateProcessW(
+            None,
+            subprocess.list2cmdline(argv),
+            None,
+            None,
+            False,
+            win32.EXTENDED_STARTUPINFO_PRESENT,
+            None,
+            None,
+            ctypes.byref(startup),
+            ctypes.byref(process),
+        )
+        error = 0 if is_started else ctypes.get_last_error()
+    finally:
+        for name, handle in zip(win32.STD_HANDLE_NAMES, held):
+            kernel32.SetStdHandle(name, handle)
+    if not is_started:
         kernel32.ClosePseudoConsole(console)
         raise ctypes.WinError(error)
     return process

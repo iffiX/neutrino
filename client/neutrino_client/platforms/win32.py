@@ -62,6 +62,8 @@ ERROR_LOGON_FAILURE = 1326
 # Pseudo consoles. The attribute names the console for the process about
 # to start.
 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
+# The three standard handles, as GetStdHandle and SetStdHandle name them.
+STD_HANDLE_NAMES = (0xFFFFFFF6, 0xFFFFFFF5, 0xFFFFFFF4)
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 WAIT_OBJECT_0 = 0
 INFINITE = 0xFFFFFFFF
@@ -403,6 +405,9 @@ class Win32Libraries:
             ctypes.c_void_p,
         ]
         self.kernel32.DeleteProcThreadAttributeList.argtypes = [ctypes.c_void_p]
+        self.kernel32.GetStdHandle.restype = ctypes.c_void_p
+        self.kernel32.GetStdHandle.argtypes = [ctypes.c_ulong]
+        self.kernel32.SetStdHandle.argtypes = [ctypes.c_ulong, ctypes.c_void_p]
         self.kernel32.CreateProcessW.argtypes = [
             ctypes.c_wchar_p,
             ctypes.c_wchar_p,
