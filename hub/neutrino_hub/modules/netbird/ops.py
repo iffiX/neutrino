@@ -21,6 +21,8 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_ACTIVE_PROFILE_PATH,
     NETBIRD_BINARY_PATH,
     NETBIRD_BLOCK_INBOUND_KEY,
+    NETBIRD_DISABLE_DNS_FLAG,
+    NETBIRD_DISABLE_DNS_KEY,
     NETBIRD_INBOUND_TIMEOUT_S,
     NETBIRD_LEGACY_CONFIG_PATH,
     NETBIRD_DEREGISTER_TIMEOUT_S,
@@ -194,6 +196,11 @@ class NetbirdInboundGate:
     for its own interface at the top of whatever input chain it finds, this
     hub's included. A rule we render and it overrides is a switch that reads
     as closed and is open, so closing the overlay tells NetBird as well.
+
+    The same pass keeps the daemon's DNS management off: a daemon still
+    managing DNS holds the box's resolver behind a forwarder whose upstream
+    it read once, and a served network changing address leaves the box
+    resolving nothing.
     """
 
     def state(self) -> bool | None:
@@ -212,6 +219,22 @@ class NetbirdInboundGate:
                 return bool(stored[NETBIRD_BLOCK_INBOUND_KEY])
         return None
 
+    def is_dns_off(self) -> bool:
+        """Whether the daemon was told to leave the box's resolver alone.
+
+        Returns:
+            True when the stored profile says so; False when it says
+            otherwise or nothing on this box says either way.
+        """
+        for path in self._state_paths():
+            try:
+                stored = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if NETBIRD_DISABLE_DNS_KEY in stored:
+                return bool(stored[NETBIRD_DISABLE_DNS_KEY])
+        return False
+
     def converge(self, *, is_blocked: bool) -> str:
         """Make the daemon agree, and only then.
 
@@ -228,13 +251,15 @@ class NetbirdInboundGate:
         Returns:
             A note for the apply summary, empty when nothing had to change.
             Setting it re-establishes the session, so a state that already
-            agrees is left alone: a network apply must not cost the overlay a
-            reconnection every time somebody saves an unrelated interface.
+            agrees, DNS management off included, is left alone: a network
+            apply must not cost the overlay a reconnection every time
+            somebody saves an unrelated interface.
 
         Raises:
             subprocess.CalledProcessError: If the daemon refuses to come back up.
         """
-        if self.state() == is_blocked:
+        is_inbound_settled = self.state() == is_blocked
+        if is_inbound_settled and self.is_dns_off():
             return ""
         status = NetbirdStatusReader().survey()
         if not status.is_installed or not status.is_enrolled:
@@ -245,10 +270,13 @@ class NetbirdInboundGate:
                 str(NETBIRD_BINARY_PATH),
                 "up",
                 f"--block-inbound={'true' if is_blocked else 'false'}",
+                NETBIRD_DISABLE_DNS_FLAG,
             ],
             timeout_s=NETBIRD_INBOUND_TIMEOUT_S,
         )
-        return "overlay closed" if is_blocked else "overlay opened"
+        if not is_inbound_settled:
+            return "overlay closed" if is_blocked else "overlay opened"
+        return "overlay DNS management turned off"
 
     def _state_paths(self) -> list:
         return profile_paths() + [NETBIRD_LEGACY_CONFIG_PATH]
@@ -305,7 +333,13 @@ class NetbirdEnroller:
         if state.is_installed and state.daemon_status in NETBIRD_STATUSES_WITHOUT_LOGIN:
             self._reset_identity()
             is_reset = True
-        command = [str(NETBIRD_BINARY_PATH), "up", "--setup-key", setup_key]
+        command = [
+            str(NETBIRD_BINARY_PATH),
+            "up",
+            "--setup-key",
+            setup_key,
+            NETBIRD_DISABLE_DNS_FLAG,
+        ]
         if management_url:
             command += ["--management-url", management_url]
         try:

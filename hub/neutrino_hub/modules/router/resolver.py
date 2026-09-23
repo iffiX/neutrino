@@ -15,11 +15,11 @@ stopped in router mode and the stub it answered on is gone.
 Only in router mode. A machine the hub does not address keeps whatever it was
 resolving with, like everything else about it.
 
-An overlay client can hold the file itself: NetBird puts its own resolver in
+NetBird's DNS management is kept off on a hub, so the file is the hub's own.
+A daemon that wrote the file before it was told puts its own resolver in
 front, keeps what it found in a file beside the original, and forwards every
-other name to the servers named there. On such a machine that file is the one
-written, so the box still resolves at its dnsmasq behind the overlay's
-resolver, and the overlay's own names keep answering.
+other name to the servers named there; on such a machine that copy is the one
+written, until the next network apply turns the management off.
 
 Not pure: writes a file outside the hub's own roots.
 """

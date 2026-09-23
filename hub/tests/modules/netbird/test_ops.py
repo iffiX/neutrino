@@ -143,7 +143,13 @@ def test_a_connected_peer_joins_again_as_itself(monkeypatch, tmp_path):
     )
 
     assert driven(commands)[0] == [NETBIRD, "down"]
-    assert driven(commands)[1] == [NETBIRD, "up", "--setup-key", "KEY-1"]
+    assert driven(commands)[1] == [
+        NETBIRD,
+        "up",
+        "--setup-key",
+        "KEY-1",
+        "--disable-dns",
+    ]
     assert driven(commands)[3][-2:] == ["--management-url", "https://mgmt.example.com"]
     assert [NETBIRD, "deregister"] not in driven(commands)
     assert (tmp_path / "default.json").exists()
@@ -167,7 +173,7 @@ def test_a_profile_without_a_login_is_reset_before_the_key_is_used(
     assert driven(commands) == [
         [NETBIRD, "down"],
         *RESET,
-        [NETBIRD, "up", "--setup-key", "KEY-1"],
+        [NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"],
     ]
     assert not (tmp_path / "default.json").exists()
     assert not (tmp_path / "active_profile.json").exists()
@@ -191,9 +197,9 @@ def test_an_idle_identity_the_plane_refuses_is_reset_and_the_key_used_again(
 
     assert driven(commands) == [
         [NETBIRD, "down"],
-        [NETBIRD, "up", "--setup-key", "KEY-1"],
+        [NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"],
         *RESET,
-        [NETBIRD, "up", "--setup-key", "KEY-1"],
+        [NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"],
     ]
 
 
@@ -206,7 +212,10 @@ def test_a_key_the_plane_refuses_twice_is_refused_to_the_caller(monkeypatch, tmp
     with pytest.raises(subprocess.CalledProcessError):
         ops.NetbirdEnroller().join(setup_key="KEY-1")
 
-    assert driven(commands).count([NETBIRD, "up", "--setup-key", "KEY-1"]) == 1
+    assert (
+        driven(commands).count([NETBIRD, "up", "--setup-key", "KEY-1", "--disable-dns"])
+        == 1
+    )
 
 
 @pytest.mark.parametrize("word", ["LoginFailed", "SessionExpired"])
@@ -261,10 +270,28 @@ def test_a_machine_that_never_enrolled_says_nothing_either_way(monkeypatch, tmp_
 def test_a_state_that_already_agrees_costs_no_reconnection(monkeypatch, tmp_path):
     """A network apply runs on every interface save. Setting this each time
     would drop the overlay every time."""
-    gate, ran = gate_over(monkeypatch, tmp_path, stored={"BlockInbound": False})
+    gate, ran = gate_over(
+        monkeypatch, tmp_path, stored={"BlockInbound": False, "DisableDNS": True}
+    )
 
     assert gate.converge(is_blocked=False) == ""
     assert ran == []
+
+
+def test_a_daemon_still_managing_dns_is_told_to_stop(monkeypatch, tmp_path):
+    """The box resolves at its own dnsmasq, whatever the served network's
+    address becomes; a daemon holding the resolver reads its upstream once."""
+    gate, ran = gate_over(
+        monkeypatch, tmp_path, stored={"BlockInbound": False, "DisableDNS": False}
+    )
+
+    note = gate.converge(is_blocked=False)
+
+    assert ran == [
+        [NETBIRD, "down"],
+        [NETBIRD, "up", "--block-inbound=false", "--disable-dns"],
+    ]
+    assert note == "overlay DNS management turned off"
 
 
 def test_closing_takes_the_session_down_first_and_states_the_value(
@@ -278,7 +305,7 @@ def test_closing_takes_the_session_down_first_and_states_the_value(
 
     assert ran == [
         [NETBIRD, "down"],
-        [NETBIRD, "up", "--block-inbound=true"],
+        [NETBIRD, "up", "--block-inbound=true", "--disable-dns"],
     ]
     assert note == "overlay closed"
 
@@ -289,7 +316,7 @@ def test_opening_states_the_value_too_because_the_flag_is_sticky(monkeypatch, tm
 
     note = gate.converge(is_blocked=False)
 
-    assert ran[-1] == [NETBIRD, "up", "--block-inbound=false"]
+    assert ran[-1] == [NETBIRD, "up", "--block-inbound=false", "--disable-dns"]
     assert note == "overlay opened"
 
 

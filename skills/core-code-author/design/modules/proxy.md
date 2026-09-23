@@ -137,10 +137,16 @@ The direct resolver's query is one packet per name: xray asks for A records
 only, and a NAT router in front of the uplink was measured dropping the
 second of two queries sent at once on a fresh UDP flow.
 
-NetBird puts its own resolver in front of `/etc/resolv.conf` and forwards
-every name outside its domain to the servers in the copy it kept of the
-original file. On such a box the hub writes its resolver into that copy, so
-the box resolves at dnsmasq behind NetBird's resolver.
+The hub runs its overlay for addresses only. NetBird's DNS management is
+off on the hub, `--disable-dns` on every `netbird up`, and EasyTier's is
+never turned on, so the box's own resolver stays its dnsmasq whatever the
+served network's address becomes, and the overlay's own names are not
+resolved on the hub. An overlay's DNS is a member's tool: a client that
+roams names the hub as its exit and takes the overlay's DNS to reach the
+networks behind the hub, and the hub takes no DNS from the overlay. Measured
+on NetBird 0.78.1: its forwarder reads the upstream from the copy it keeps
+of the original file once, at start, so a hub whose served network changed
+address resolved nothing until the daemon restarted.
 
 ## Consequences
 

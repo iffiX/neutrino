@@ -47,6 +47,13 @@ NETBIRD_STATE_DIR = Path("/var/lib/netbird")
 NETBIRD_ACTIVE_PROFILE_PATH = NETBIRD_STATE_DIR / "active_profile.json"
 NETBIRD_LEGACY_CONFIG_PATH = Path("/etc/netbird/config.json")
 NETBIRD_BLOCK_INBOUND_KEY = "BlockInbound"
+# The daemon's DNS management stays off on the hub: the box resolves at its
+# own dnsmasq, and an overlay's DNS is a member's tool for roaming through the
+# hub as its exit, never the hub's. Stored in the profile like BlockInbound,
+# and stated on every `netbird up`, since a flag left off keeps its stored
+# value.
+NETBIRD_DISABLE_DNS_KEY = "DisableDNS"
+NETBIRD_DISABLE_DNS_FLAG = "--disable-dns"
 
 # `netbird up` re-establishes the session, so it is given the same room as an
 # enrollment rather than a command's usual seconds.
