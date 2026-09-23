@@ -85,6 +85,14 @@ HUB_UPDATE_REASON_INSTALL_FAILED = "package_install_failed"
 HUB_UPDATE_REASON_GATE_FAILED = "health_gate_failed"
 HUB_UPDATE_REASON_INTERRUPTED = "update_interrupted"
 
+# Why GitHub gave no release, one code each so the panel can say which. The
+# last is a GitHub that answered with something that is not a release.
+HUB_UPDATE_ERROR_RELEASE_DNS = "release_dns_failed"
+HUB_UPDATE_ERROR_RELEASE_TIMEOUT = "release_timed_out"
+HUB_UPDATE_ERROR_RELEASE_REFUSED = "release_refused"
+HUB_UPDATE_ERROR_RELEASE_HTTP = "release_http_error"
+HUB_UPDATE_ERROR_RELEASE_UNREACHABLE = "release_unreachable"
+
 # How the newest release stands to the version running.
 HUB_UPDATE_RELATION_CURRENT = "current"
 HUB_UPDATE_RELATION_NEWER = "newer"

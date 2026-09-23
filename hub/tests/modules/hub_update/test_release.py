@@ -1,6 +1,7 @@
 """What the hub reads off its own releases, answered from recorded replies."""
 
 import json
+import socket
 import urllib.error
 
 import pytest
@@ -258,3 +259,28 @@ def test_the_network_read_sends_a_user_agent(monkeypatch):
 
     assert seen["headers"]["User-agent"] == "neutrino-hub"
     assert seen["timeout"] == 600
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (
+            urllib.error.URLError(socket.gaierror(-2, "Name or service not known")),
+            ("release_dns_failed", {}),
+        ),
+        (urllib.error.URLError(TimeoutError("timed out")), ("release_timed_out", {})),
+        (TimeoutError("timed out"), ("release_timed_out", {})),
+        (
+            urllib.error.URLError(ConnectionRefusedError(111, "refused")),
+            ("release_refused", {}),
+        ),
+        (OSError("no route to host"), ("release_refused", {})),
+        (
+            urllib.error.HTTPError("https://api", 403, "rate limited", {}, None),
+            ("release_http_error", {"status": 403}),
+        ),
+        (ValueError("not a release"), ("release_unreachable", {})),
+    ],
+)
+def test_why_github_gave_no_release_is_named(error, expected):
+    assert release_module.unreachable_reason(error) == expected

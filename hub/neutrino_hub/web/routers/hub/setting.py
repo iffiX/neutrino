@@ -45,6 +45,7 @@ from neutrino_hub.modules.hub_update.release import (
     HubRelease,
     HubReleaseChecker,
     relation,
+    unreachable_reason,
 )
 from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStateFile
 from neutrino_hub.system.installation import is_packaged
@@ -137,7 +138,6 @@ SETTINGS_ERROR_HUB_NAME_REQUIRED = "hub_name_required"
 # The 409s and the 502 the update panel words.
 UPDATE_ERROR_NOT_PACKAGED = "hub_not_packaged"
 UPDATE_ERROR_IN_PROGRESS = "update_in_progress"
-UPDATE_ERROR_UNREACHABLE = "release_unreachable"
 UPDATE_ERROR_NOT_LATEST = "release_not_latest"
 UPDATE_ERROR_NOT_NEWER = "release_not_newer"
 UPDATE_ERROR_MAJOR = "release_major"
@@ -746,9 +746,10 @@ async def scan_release() -> HubReleaseScanView:
         update needs and has.
 
     Raises:
-        HTTPException: 409 ``hub_not_packaged`` from a checkout, 502
-            ``release_unreachable`` when GitHub does not answer with a
-            release.
+        HTTPException: 409 ``hub_not_packaged`` from a checkout; 502 naming
+            why GitHub gave no release: ``release_dns_failed``,
+            ``release_timed_out``, ``release_refused``, ``release_http_error``
+            or ``release_unreachable``.
     """
     if not is_packaged():
         raise _conflict(UPDATE_ERROR_NOT_PACKAGED)
@@ -759,7 +760,7 @@ async def scan_release() -> HubReleaseScanView:
             installer.is_rollback_available, HUB_VERSION
         )
     except (OSError, ValueError) as error:
-        raise _unreachable() from error
+        raise _unreachable(error) from error
     if found is None:
         return HubReleaseScanView(current=HUB_VERSION)
     standing = relation(HUB_VERSION, found.version)
@@ -803,7 +804,8 @@ async def install_release(
         HTTPException: 409 ``hub_not_packaged``, ``update_in_progress``,
             ``release_not_latest`` when the newest release is not the one
             confirmed, ``release_not_newer``, ``release_major``, or
-            ``disk_space_short``; 502 ``release_unreachable``.
+            ``disk_space_short``; 502 naming why GitHub gave no release, as
+            a scan does.
     """
     if not is_packaged():
         raise _conflict(UPDATE_ERROR_NOT_PACKAGED)
@@ -815,7 +817,7 @@ async def install_release(
     try:
         found = await asyncio.to_thread(installer.checker.latest)
     except (OSError, ValueError) as error:
-        raise _unreachable() from error
+        raise _unreachable(error) from error
     if found is None or found.version != request.version:
         raise _conflict(
             UPDATE_ERROR_NOT_LATEST, version="" if found is None else found.version
@@ -946,11 +948,12 @@ def _conflict(code: str, **params) -> HTTPException:
     )
 
 
-def _unreachable() -> HTTPException:
-    """The 502 for a GitHub that did not answer with a release."""
+def _unreachable(error: Exception) -> HTTPException:
+    """The 502 for a GitHub that gave no release, naming why."""
+    code, params = unreachable_reason(error)
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail={"code": UPDATE_ERROR_UNREACHABLE, "params": {}},
+        detail={"code": code, "params": params},
     )
 
 

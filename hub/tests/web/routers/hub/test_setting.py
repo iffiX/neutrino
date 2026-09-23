@@ -14,9 +14,12 @@ import asyncio
 import hashlib
 import io
 import json
+import socket
 import stat
 import sys
 import tarfile
+import urllib.error
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -1026,7 +1029,32 @@ def test_a_scan_that_cannot_reach_the_releases_is_a_bad_gateway(update_box):
     response = opened.post("/api/hub/setting/release/scan")
 
     assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "release_unreachable"
+    assert response.json()["detail"]["code"] == "release_refused"
+
+
+def test_a_scan_says_when_it_is_the_name_that_did_not_resolve(update_box):
+    opened, installer, _ = update_box
+    installer.checker.failure = urllib.error.URLError(
+        socket.gaierror(-2, "Name or service not known")
+    )
+
+    response = opened.post("/api/hub/setting/release/scan")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == {"code": "release_dns_failed", "params": {}}
+
+
+def test_every_reason_github_gave_no_release_is_worded():
+    from neutrino_hub.modules.hub_update import constants as update_constants
+
+    worded = json.loads(
+        (
+            Path(__file__).resolve().parents[4] / "frontend/src/locales/en/codes.json"
+        ).read_text(encoding="utf-8")
+    )
+    for name in dir(update_constants):
+        if name.startswith("HUB_UPDATE_ERROR_RELEASE_"):
+            assert f"code.{getattr(update_constants, name)}" in worded
 
 
 def test_an_install_stages_the_confirmed_release_as_a_task(update_box):

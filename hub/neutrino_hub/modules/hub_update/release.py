@@ -9,6 +9,7 @@ one fetch, which a test replaces.
 
 import json
 import re
+import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -17,6 +18,11 @@ from typing import Callable
 from neutrino_hub import HUB_PACKAGE_ASSET
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_CHECKSUMS_NAME,
+    HUB_UPDATE_ERROR_RELEASE_DNS,
+    HUB_UPDATE_ERROR_RELEASE_HTTP,
+    HUB_UPDATE_ERROR_RELEASE_REFUSED,
+    HUB_UPDATE_ERROR_RELEASE_TIMEOUT,
+    HUB_UPDATE_ERROR_RELEASE_UNREACHABLE,
     HUB_UPDATE_FETCH_TIMEOUT_S,
     HUB_UPDATE_HEADERS,
     HUB_UPDATE_LATEST_URL,
@@ -256,6 +262,31 @@ class HubReleaseChecker:
             asset_size=int(package.get("size") or 0),
             checksums_url=str(checksums.get("browser_download_url") or ""),
         )
+
+
+def unreachable_reason(error: Exception) -> tuple:
+    """The code and its parameters for a GitHub that gave no release.
+
+    Args:
+        error: What reading the release raised: the ``OSError`` kinds
+            ``urllib`` raises, or the ``ValueError`` of a reply that is not
+            a release.
+
+    Returns:
+        ``(code, params)``: an HTTP refusal names its status, a name that
+        did not resolve, a connection that timed out, one that was refused
+        or found no route, and a reply that was not a release.
+    """
+    if isinstance(error, urllib.error.HTTPError):
+        return HUB_UPDATE_ERROR_RELEASE_HTTP, {"status": error.code}
+    cause = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(cause, socket.gaierror):
+        return HUB_UPDATE_ERROR_RELEASE_DNS, {}
+    if isinstance(cause, TimeoutError) or "timed out" in str(cause):
+        return HUB_UPDATE_ERROR_RELEASE_TIMEOUT, {}
+    if isinstance(error, OSError):
+        return HUB_UPDATE_ERROR_RELEASE_REFUSED, {}
+    return HUB_UPDATE_ERROR_RELEASE_UNREACHABLE, {}
 
 
 def _read(url: str) -> bytes:

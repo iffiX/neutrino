@@ -32,6 +32,7 @@ from neutrino_hub.modules.hub_update.release import (
     HubRelease,
     HubReleaseChecker,
     relation,
+    unreachable_reason,
 )
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
 from neutrino_hub.system.installation import is_packaged
@@ -103,7 +104,11 @@ def update(*, is_confirmed: bool, package: "Path | None") -> int:
         print(f"error: {_worded(error)}", file=sys.stderr)
         return STATUS_FAILED
     except (OSError, ValueError) as error:
-        print(f"error: {error}", file=sys.stderr)
+        code, params = unreachable_reason(error)
+        print(
+            f"error: {_worded(HubUpdateError(code, **params))}: {error}",
+            file=sys.stderr,
+        )
         return STATUS_FAILED
     if plan is None:
         return status
