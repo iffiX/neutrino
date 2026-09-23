@@ -80,21 +80,24 @@ DIGEST_CHUNK_BYTES = 1024 * 1024
 # What each family runs to install a package file, and to put the previous
 # one back. `--reinstall` makes a same-version file go through its maintainer
 # scripts, `--allow-downgrades` lets the rollback take the same line, and the
-# lock timeout waits out an unattended upgrade holding dpkg.
+# lock timeout waits out an unattended upgrade holding dpkg. `$PACE` is the
+# script's own: it puts the package manager below every other process for
+# the disk and the processor, because a package unpacking on a slow card
+# has held PID 1 past its hardware watchdog.
 INSTALL_COMMANDS = {
     "debian": (
-        "apt-get install -y --reinstall --allow-downgrades "
+        "$PACE apt-get install -y --reinstall --allow-downgrades "
         "-o DPkg::Lock::Timeout=@LOCK@ @PATH@",
-        "apt-get install -y --reinstall --allow-downgrades "
+        "$PACE apt-get install -y --reinstall --allow-downgrades "
         "-o DPkg::Lock::Timeout=@LOCK@ @PATH@",
     ),
     "rhel": (
-        "dnf reinstall -y @PATH@ || dnf install -y @PATH@",
-        "rpm -Uvh --oldpackage @PATH@",
+        "$PACE dnf reinstall -y @PATH@ || $PACE dnf install -y @PATH@",
+        "$PACE rpm -Uvh --oldpackage @PATH@",
     ),
     "arch": (
-        "pacman -U --noconfirm @PATH@",
-        "pacman -U --noconfirm @PATH@",
+        "$PACE pacman -U --noconfirm @PATH@",
+        "$PACE pacman -U --noconfirm @PATH@",
     ),
 }
 
@@ -114,6 +117,8 @@ UNITS=@UNITS@
 STARTED=@STARTED@
 GATE_TIMEOUT=@GATE_TIMEOUT@
 POLL=@POLL@
+PACE='nice -n 10'
+command -v ionice >/dev/null 2>&1 && PACE="ionice -c 2 -n 7 $PACE"
 
 write_state() {
     finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -149,6 +154,7 @@ gate() {
 }
 
 : > "$LOG"
+sync
 if ( @INSTALL@ ) >> "$LOG" 2>&1; then
     if gate "$TO"; then
         write_state @STAGE_INSTALLED@ ''
@@ -575,8 +581,15 @@ class HubUpdateInstaller:
         )
         self._prune(keep={package.name, rollback_name})
         if package.resolve() != target.resolve():
+            # Linked where the file is on the same filesystem: a copy is
+            # another whole package written to the card just before the
+            # unpack writes the next one.
             try:
-                shutil.copyfile(package, target)
+                target.unlink(missing_ok=True)
+                try:
+                    os.link(package, target)
+                except OSError:
+                    shutil.copyfile(package, target)
                 os.chmod(target, HUB_UPDATE_PACKAGE_MODE)
             except OSError as error:
                 target.unlink(missing_ok=True)

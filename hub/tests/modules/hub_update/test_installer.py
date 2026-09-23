@@ -168,7 +168,7 @@ def test_debian_installs_and_rolls_back_with_one_apt_line():
     install, rollback = install_commands("debian", Path("/x/a b.deb"))
 
     assert install == (
-        "apt-get install -y --reinstall --allow-downgrades "
+        "$PACE apt-get install -y --reinstall --allow-downgrades "
         "-o DPkg::Lock::Timeout=300 '/x/a b.deb'"
     )
     assert rollback == install
@@ -177,14 +177,16 @@ def test_debian_installs_and_rolls_back_with_one_apt_line():
 def test_rhel_reinstalls_forward_and_puts_the_old_package_back_with_rpm():
     install, rollback = install_commands("rhel", Path("/x/a.rpm"))
 
-    assert install == "dnf reinstall -y /x/a.rpm || dnf install -y /x/a.rpm"
-    assert rollback == "rpm -Uvh --oldpackage /x/a.rpm"
+    assert install == (
+        "$PACE dnf reinstall -y /x/a.rpm || $PACE dnf install -y /x/a.rpm"
+    )
+    assert rollback == "$PACE rpm -Uvh --oldpackage /x/a.rpm"
 
 
 def test_arch_takes_the_file_both_ways():
     assert install_commands("arch", Path("/x/a.pkg.tar.zst")) == (
-        "pacman -U --noconfirm /x/a.pkg.tar.zst",
-        "pacman -U --noconfirm /x/a.pkg.tar.zst",
+        "$PACE pacman -U --noconfirm /x/a.pkg.tar.zst",
+        "$PACE pacman -U --noconfirm /x/a.pkg.tar.zst",
     )
 
 
@@ -411,7 +413,9 @@ def test_rollback_availability_is_the_file_or_a_release(tmp_path, roots):
 # --- a file somebody brought ---
 
 
-def test_a_package_file_is_copied_in_and_its_version_read_off_its_name(tmp_path, roots):
+def test_a_package_file_is_linked_in_and_its_version_read_off_its_name(tmp_path, roots):
+    """On one filesystem the staged file is the brought one, not a second
+    copy written to the card just before the unpack writes the next."""
     brought = tmp_path / "neutrino-hub_0.3.1_amd64.deb"
     brought.write_bytes(b"brought")
     installer = make_installer(tmp_path, checker=Checker())
@@ -424,8 +428,29 @@ def test_a_package_file_is_copied_in_and_its_version_read_off_its_name(tmp_path,
     assert plan.to_version == "0.3.1"
     assert plan.package == roots[0] / "hub_update" / brought.name
     assert plan.package.read_bytes() == b"brought"
+    assert plan.package.stat().st_ino == brought.stat().st_ino
     assert plan.rollback is None
     assert lines[0] == "neutrino-hub_0.3.1_amd64.deb is in place"
+
+
+def test_a_package_file_on_another_filesystem_is_copied_in(
+    tmp_path, roots, monkeypatch
+):
+    brought = tmp_path / "neutrino-hub_0.3.1_amd64.deb"
+    brought.write_bytes(b"brought")
+    installer = make_installer(tmp_path, checker=Checker())
+
+    def refuse_link(source, target):
+        raise OSError(18, "Invalid cross-device link")
+
+    monkeypatch.setattr(
+        "neutrino_hub.modules.hub_update.installer.os.link", refuse_link
+    )
+
+    plan = installer.plan_for_file(brought, current="0.3.0", port=8080)
+
+    assert plan.package.read_bytes() == b"brought"
+    assert plan.package.stat().st_ino != brought.stat().st_ino
 
 
 def test_the_same_version_brought_again_has_no_rollback_and_asks_no_release(
