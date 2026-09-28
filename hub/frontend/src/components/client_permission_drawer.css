@@ -1,0 +1,47 @@
+/* --- One kind: its switch, the device filter beside it, and the list --- */
+
+.client_permission_kind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.client_permission_row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.client_permission_row > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The chosen names can be long; the button keeps one line and the list
+   below shows every name. */
+.client_permission_filter {
+  max-width: 45%;
+}
+
+.client_permission_filter_text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client_permission_devices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.client_permission_device {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: 13px;
+}

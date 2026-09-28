@@ -895,14 +895,31 @@ export interface ClientView {
   is_disabled: boolean;
   /** The kinds this client is allowed; null while it follows the default. */
   permission: string[] | null;
+  /** With a permission of its own, the device ids each kind is narrowed to. */
+  permission_devices: Record<string, string[]>;
 }
 
 export interface ClientListView {
   clients: ClientView[];
   /** The kinds a client with no set of its own is allowed. */
   default_permission: string[];
+  /** The device ids each kind of the default is narrowed to. */
+  default_permission_devices: Record<string, string[]>;
   /** Every kind, in the order the switches are drawn. */
   permission_kinds: string[];
+}
+
+export interface ClientDefaultPermissionRequest {
+  kinds: string[];
+  /** Device ids by kind; a kind not named allows every device. */
+  devices: Record<string, string[]> | null;
+}
+
+export interface ClientPermissionRequest {
+  client_id: string;
+  kinds: string[] | null;
+  /** Device ids by kind; a kind not named allows every device. */
+  devices: Record<string, string[]> | null;
 }
 
 /** The link a named client joins with, and when it lapses. */

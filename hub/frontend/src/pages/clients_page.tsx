@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 
 import { ClientPermissionDrawer } from "../components/client_permission_drawer";
+import type {
+  PermissionDeviceChoice,
+  PermissionDevices,
+} from "../components/client_permission_drawer";
 import { DeviceEnrollmentNotice } from "../components/device_enrollment_notice";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
 import type { StatusTone } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
+import { isDeviceManaged, toDeviceLabel } from "../device_level";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -16,6 +21,8 @@ import type {
   ClientEnrollmentView,
   ClientListView,
   ClientView,
+  DeviceView,
+  DevicesResponse,
 } from "../api_types";
 
 import "./clients_page.css";
@@ -30,6 +37,7 @@ import "./clients_page.css";
  */
 
 const CLIENTS_PATH = "/hub/client";
+const DEVICES_PATH = "/hub/device";
 const INVALIDATE_ON = [{ type: HUB_EVENT_CLIENTS }];
 
 type ClientPresence = "online" | "offline" | "never";
@@ -58,6 +66,7 @@ export function ClientsPage() {
   const resource = useApiResource<ClientListView>(CLIENTS_PATH, {
     invalidateOn: INVALIDATE_ON,
   });
+  const devicesResource = useApiResource<DevicesResponse>(DEVICES_PATH);
   const confirm = useConfirm();
 
   const [clients, setClients] = useState<ClientView[]>([]);
@@ -132,16 +141,20 @@ export function ClientsPage() {
     }
   };
 
-  const applyPermission = async (kinds: string[] | null) => {
+  const applyPermission = async (
+    kinds: string[] | null,
+    devices: PermissionDevices | null,
+  ) => {
     const next =
       permissionOf === DEFAULT_PERMISSION
         ? await apiPost<ClientListView>(
             `${CLIENTS_PATH}/default_permission/set`,
-            { kinds },
+            { kinds: kinds ?? [], devices },
           )
         : await apiPost<ClientListView>(`${CLIENTS_PATH}/permission/set`, {
             client_id: permissionOf,
             kinds,
+            devices,
           });
     resource.setData(next);
     setPermissionOf(null);
@@ -155,6 +168,9 @@ export function ClientsPage() {
       onConfirm: () => void handleDelete(client),
     });
 
+  const managedDevices = (devicesResource.data?.devices ?? [])
+    .filter(isDeviceManaged)
+    .map(toDeviceChoice);
   const onlineCount = clients.filter((client) => client.is_online).length;
   const permissionClient =
     clients.find((client) => client.id === permissionOf) ?? null;
@@ -315,7 +331,10 @@ export function ClientsPage() {
           applyHint={t("ui.clients.default_permission_apply_hint")}
           kinds={resource.data.permission_kinds}
           defaultKinds={resource.data.default_permission}
+          defaultDevices={resource.data.default_permission_devices}
           applied={resource.data.default_permission}
+          appliedDevices={resource.data.default_permission_devices}
+          devices={managedDevices}
           canFollowDefault={false}
           onApply={applyPermission}
           onClose={() => setPermissionOf(null)}
@@ -329,7 +348,10 @@ export function ClientsPage() {
           applyHint={t("ui.clients.permission_apply_hint")}
           kinds={resource.data.permission_kinds}
           defaultKinds={resource.data.default_permission}
+          defaultDevices={resource.data.default_permission_devices}
           applied={permissionClient.permission}
+          appliedDevices={permissionClient.permission_devices}
+          devices={managedDevices}
           canFollowDefault
           onApply={applyPermission}
           onClose={() => setPermissionOf(null)}
@@ -418,6 +440,11 @@ function ClientRow({
       </td>
     </tr>
   );
+}
+
+/** One managed device as the permission filter names it. */
+function toDeviceChoice(device: DeviceView): PermissionDeviceChoice {
+  return { id: device.id, name: toDeviceLabel(device) };
 }
 
 function presenceOf(client: ClientView): ClientPresence {

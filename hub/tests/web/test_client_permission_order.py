@@ -43,4 +43,4 @@ def test_the_display_order_names_every_kind_the_hub_has():
 def test_every_switch_is_drawn_in_the_display_order():
     source = DRAWER_PATH.read_text(encoding="utf-8")
 
-    assert "{displayed(kinds).map((kind) => (" in source
+    assert "{displayed(kinds).map((kind) =>" in source
