@@ -1698,6 +1698,9 @@ class ChannelServiceEntry(BaseModel):
     description: str = ""
     description_code: str = ""
     description_params: dict = Field(default_factory=dict)
+    # What the hub calls the machine providing it; empty when no machine it
+    # knows does.
+    device_name: str = ""
 
 
 class ChannelOverlay(BaseModel):

@@ -410,6 +410,11 @@
               "title": "Description Params",
               "type": "object"
             },
+            "device_name": {
+              "default": "",
+              "title": "Device Name",
+              "type": "string"
+            },
             "id": {
               "title": "Id",
               "type": "string"
@@ -1060,6 +1065,11 @@
           "additionalProperties": true,
           "title": "Description Params",
           "type": "object"
+        },
+        "device_name": {
+          "default": "",
+          "title": "Device Name",
+          "type": "string"
         },
         "id": {
           "title": "Id",

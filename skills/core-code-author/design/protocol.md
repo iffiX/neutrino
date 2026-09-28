@@ -681,7 +681,7 @@ and platform, which change between releases.
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
-| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params}]` | |
+| `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `overlay` | | | `{provider, ...}` or null: what the client joins the hub's overlay with | |
@@ -851,6 +851,13 @@ its own language:
 
 A declared record whose person wrote a line of their own gets that line and an
 empty `description_code`, because those are already their words.
+
+`device_name` is what the hub calls the machine that provides the entry: the
+device's name for an entry a device hosts, the hub's own hostname for one of
+the hub's modules, the device at that address for a declared record, and
+empty when no machine the hub knows is there. It is an added field and keeps
+`PROTOCOL` at 2; a hub that predates it sends none, and the client shows the
+entry's address in its place.
 
 ### The kinds
 

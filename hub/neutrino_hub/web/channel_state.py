@@ -4,8 +4,9 @@ An agent's state is what its device is to host, composed from
 ``config/devices/<id>/``; a client's state is the published service list
 resolved for the scope its socket arrived from, whether it is switched
 off, the overlay's join material and the machines it may open a shell on,
-each as far as its permission allows. Both name every address the hub answers the channel on. Each carries
-the hash the peer's reports name back; a client's is computed on the
+each as far as its permission allows; every entry names the machine that
+provides it. Both name every address the hub answers the channel on. Each
+carries the hash the peer's reports name back; a client's is computed on the
 resolved list, so the same list hashes differently for two scopes. An agent
 is pushed its state on a connection's first report whose hash differs, a
 client on any report whose hash differs; after that a push happens when the
@@ -14,6 +15,8 @@ hub's own copy changes, through the functions here.
 
 import hashlib
 import json
+import socket
+from urllib.parse import urlsplit
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.clients.constants import (
@@ -27,6 +30,7 @@ from neutrino_hub.modules.clients.permissions import (
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
+from neutrino_hub.modules.services.constants import SERVICES_SOURCE_DECLARED
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
     link_scope,
@@ -74,7 +78,8 @@ def client_state(runtime, client_id: str) -> dict:
         kinds = permitted_kinds(registry, client)
         scope = runtime.client_scope.get(client_id) or link_scope("")
         services = permitted_entries(
-            catalog_entries(runtime.published_services.entries_for(scope)), kinds
+            _named_entries(runtime, runtime.published_services.entries_for(scope)),
+            kinds,
         )
         if CLIENT_PERMISSION_OVERLAY in kinds:
             overlay = channel_overlay.overlay_material(runtime)
@@ -152,15 +157,60 @@ def _terminals(runtime) -> list:
     return [
         {
             "device_id": device.id,
-            "name": device.name
-            or runtime.device_hostname.get(device.id, "")
-            or device.ipv4_address
-            or device.id,
+            "name": _device_name(runtime, device),
             "is_online": runtime.agent_sessions.is_online(device.id),
         }
         for device in DeviceRegistry().all_stored()
         if device.is_managed
     ]
+
+
+def _named_entries(runtime, entries: list) -> list:
+    """The catalog entries, each with ``device_name``: the machine providing it.
+
+    An entry a device hosts names that device; one of the hub's own modules
+    names the hub's machine; a declared record at a device's address names
+    that device, and any other names nobody.
+    """
+    names = {}
+    for device in DeviceRegistry().all_stored():
+        names[device.id] = _device_name(runtime, device)
+    by_address = {
+        address: names[device_id]
+        for device_id, address in runtime.device_address.items()
+        if address and device_id in names
+    }
+    hub_machine = socket.gethostname()
+    named = []
+    for entry, catalog in zip(entries, catalog_entries(entries)):
+        device_id = entry.get("device_id") or ""
+        if device_id:
+            device_name = names.get(device_id, "")
+        elif entry.get("source") == SERVICES_SOURCE_DECLARED:
+            device_name = by_address.get(_entry_host(entry), "")
+        else:
+            device_name = hub_machine
+        named.append({**catalog, "device_name": device_name})
+    return named
+
+
+def _entry_host(entry: dict) -> str:
+    """The host an entry's payload names, wherever its type keeps it."""
+    payload = entry.get("payload") or {}
+    for key in ("url", "endpoint"):
+        if payload.get(key):
+            return urlsplit(str(payload[key])).hostname or ""
+    return str(payload.get("host", "") or "")
+
+
+def _device_name(runtime, device) -> str:
+    """What the hub calls one device: its name, its hostname, its address."""
+    return (
+        device.name
+        or runtime.device_hostname.get(device.id, "")
+        or device.ipv4_address
+        or device.id
+    )
 
 
 def _compose(runtime, role: str, key: str) -> dict:

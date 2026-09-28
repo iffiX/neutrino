@@ -77,6 +77,7 @@ class FakeRuntime:
             {"modules": {"samba": {"want": "running"}}, "desktop": {}},
         )
         self.device_hostname: dict = {}
+        self.device_address: dict = {}
         self.overlay = None
 
     def host_scopes(self):
@@ -315,6 +316,46 @@ def test_the_terminals_list_every_managed_machine_while_terminal_is_allowed(
         {"device_id": offline.id, "name": "muon", "is_online": False},
     ]
     assert refused["terminals"] == []
+
+
+def test_every_entry_names_the_machine_that_provides_it(config_dir, monkeypatch):
+    monkeypatch.setattr(channel_state.socket, "gethostname", lambda: "neutrino")
+    runtime = FakeRuntime()
+    devices = DeviceRegistry()
+    argon = devices.create("argon")
+    muon = devices.create(None)
+    runtime.device_hostname[muon.id] = "muon"
+    runtime.device_address[argon.id] = "192.168.100.7"
+    runtime.published_services.entries = [
+        dict(ENTRY, id="web_gitea_argon", device_id=argon.id),
+        dict(ENTRY, id="web_gitea_muon", device_id=muon.id),
+        dict(ENTRY, id="ai_gateway", type="ai", payload={"endpoint": "http://x/v1"}),
+        dict(
+            ENTRY,
+            id="declared_on_argon",
+            source="declared",
+            payload={"url": "http://192.168.100.7:8080/"},
+        ),
+        dict(
+            ENTRY,
+            id="declared_elsewhere",
+            type="port",
+            source="declared",
+            payload={"host": "203.0.113.9", "port": 22},
+        ),
+    ]
+    client_id = ClientRegistry().create("alice")
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert {entry["id"]: entry["device_name"] for entry in state["services"]} == {
+        "web_gitea_argon": "argon",
+        "web_gitea_muon": "muon",
+        "ai_gateway": "neutrino",
+        "declared_on_argon": "argon",
+        "declared_elsewhere": "",
+    }
+    assert all("device_id" not in entry for entry in state["services"])
 
 
 def test_a_push_from_the_panel_hands_one_agent_its_state():
