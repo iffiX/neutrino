@@ -65,6 +65,19 @@ const INSTANCE_FACTS: {
   { field: "hostname", labelKey: "ui.overlay.name_label" },
 ];
 
+/**
+ * Where a console-mode engine stands: not running, running with no network
+ * from the console yet, or running the console's networks.
+ */
+type ConsoleState = "stopped" | "waiting" | "joined";
+
+function consoleStateOf(view: EasyTierView): ConsoleState {
+  if (!view.is_active) {
+    return "stopped";
+  }
+  return view.instances.length > 0 ? "joined" : "waiting";
+}
+
 /** The port the engine's own peers knock on, as the panel renders it. */
 const EASYTIER_PEER_PORT = 11010;
 
@@ -102,6 +115,7 @@ export function EasyTierSection() {
     ? view.has_config_server
     : view.network_name !== "" && view.is_secret_set;
   const instance = view.instances.length > 0 ? view.instances[0] : null;
+  const consoleState = consoleStateOf(view);
 
   return (
     <>
@@ -111,6 +125,14 @@ export function EasyTierSection() {
           {!isJoined ? (
             <span className="badge badge--warn">
               {t("ui.overlay.badge_not_joined")}
+            </span>
+          ) : isConsole && consoleState === "stopped" ? (
+            <span className="badge badge--error">
+              {t("ui.overlay.badge_not_running")}
+            </span>
+          ) : isConsole && consoleState === "waiting" ? (
+            <span className="badge badge--warn">
+              {t("ui.overlay.console_waiting")}
             </span>
           ) : view.node !== null && view.node.is_connected ? (
             <span className="badge badge--ok">
@@ -163,7 +185,7 @@ export function EasyTierSection() {
       {isConsole ? (
         <>
           <ConsolePanel view={view} onApplied={resource.setData} />
-          <InstancesPanel view={view} />
+          <InstancesPanel view={view} state={consoleState} />
         </>
       ) : (
         <>
@@ -457,8 +479,13 @@ function ConfigServerRow({ hasConfigServer, onApplied }: ConfigServerRowProps) {
   );
 }
 
+interface InstancesPanelProps {
+  view: EasyTierView;
+  state: ConsoleState;
+}
+
 /** What the engine runs on the console's word; read-only. */
-function InstancesPanel({ view }: { view: EasyTierView }) {
+function InstancesPanel({ view, state }: InstancesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   return (
@@ -467,15 +494,25 @@ function InstancesPanel({ view }: { view: EasyTierView }) {
         <h2>{t("ui.overlay.instances_title")}</h2>
       </div>
       <p className="field_hint">{t("ui.overlay.instances_hint")}</p>
-      {view.instances.map((instance) => (
-        <InstanceCard
-          key={`${instance.instance_name}-${instance.network_name}`}
-          instance={instance}
-        />
-      ))}
-      {view.instances.length === 0 && (
-        <p className="field_hint">{t("ui.overlay.instances_empty")}</p>
+      {state === "stopped" && (
+        <p className="field_hint">{t("ui.overlay.console_not_running")}</p>
       )}
+      {state === "waiting" && (
+        <div className="notice notice--warn">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">
+            <strong>{t("ui.overlay.console_waiting")}</strong>
+            <div>{t("ui.overlay.console_waiting_hint")}</div>
+          </div>
+        </div>
+      )}
+      {state === "joined" &&
+        view.instances.map((instance) => (
+          <InstanceCard
+            key={`${instance.instance_name}-${instance.network_name}`}
+            instance={instance}
+          />
+        ))}
     </section>
   );
 }

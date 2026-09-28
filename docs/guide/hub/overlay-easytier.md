@@ -19,6 +19,8 @@ The **Mode** panel under the topology picks where the network comes from. **Easy
 1. Under **EasyTier console**, select **Replace** beside **Console address**, paste the address and select **Save**. The engine restarts on the console's network.
 1. When the console network runs in secure mode, turn on **Secure mode** and select **Apply secure mode**.
 
+The badge beside the title reads **not running** while the engine is stopped, and **Waiting for the console** while it runs with no network from the console yet: the box is registered with the console, and attaching it to a network there ends the wait.
+
 **Networks from the console** shows, for each network the engine runs, its name, this box's address and name, and its subnet routes. A field the console keeps from this box reads **Not provided by the console**. To reach this box's LANs from the overlay, add each one in the console as a subnet route of this device.
 
 **Forget** beside the address removes it and stops the engine. Clients allowed on the overlay receive the console address, so they join the same console network.
