@@ -286,8 +286,8 @@ class EasyTierConfigApplier:
             network_path.unlink(missing_ok=True)
         else:
             rendered = render_config(config, secret=config.secret(), hostname=hostname)
-            # Both files carry key material, so they are root-only like every
-            # other rendered file that does.
+            # The network file carries the secret, so it is root-only like
+            # every other rendered file that does.
             write_generated(network_path, rendered, mode=0o600)
             arguments = render_arguments(
                 config, config_server="", config_path=str(network_path)
@@ -299,7 +299,7 @@ class EasyTierConfigApplier:
             write_generated(
                 dropin_path,
                 render_dropin(arguments, core_path=str(EASYTIER_CORE_PATH)),
-                mode=0o600,
+                mode=0o644,
             )
             run(["systemctl", "daemon-reload"])
         run(["systemctl", "restart", EASYTIER_UNIT])

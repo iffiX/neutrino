@@ -280,7 +280,7 @@ def test_console_mode_runs_the_engine_on_the_console_and_leaves_no_network_file(
         f'ExecStart="{core}" "--config-server" "{CONSOLE}" "--secure-mode=true" '
         '"--rpc-portal" "127.0.0.1:15888"'
     )
-    assert oct(dropin.stat().st_mode & 0o777) == "0o600"
+    assert oct(dropin.stat().st_mode & 0o777) == "0o644"
     assert list(generated.iterdir()) == []
     assert commands[-2:] == [
         ["systemctl", "daemon-reload"],

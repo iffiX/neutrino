@@ -27,8 +27,9 @@ EASYTIER_CLI_PATH = UTILS_STATIC_ROOT / "bin" / EASYTIER_CLI_NAME
 
 EASYTIER_UNIT = OVERLAY_EASYTIER_UNIT
 EASYTIER_GENERATED_NAME = "easytier.toml"
-# The engine's start line, a drop-in over the hub's unit. It names the console
-# address with its token, so it is root-only.
+# The engine's start line, a drop-in over the hub's unit. systemd shows a
+# unit's start line to every local user, so its mode is the ordinary one;
+# misc/config.md.
 EASYTIER_DROPIN_DIR_NAME = f"{EASYTIER_UNIT}.d"
 EASYTIER_DROPIN_NAME = "arguments.conf"
 # The start arguments file of the 0.4.0 development builds; apply deletes it.

@@ -37,6 +37,13 @@ key ever reaches git history.
 `.gitignore` ignores the real names and `config/devices/packages/` wholesale,
 while keeping every `*.example.json` tracked.
 
+The EasyTier engine's start line is a systemd drop-in,
+`/etc/systemd/system/neutrino_hub_easytier.service.d/arguments.conf`, mode
+0644. In console mode it names the console address with its token. systemd
+shows every unit's start line to any local user over D-Bus, as `ps` shows any
+process's arguments, so a local account on the hub can read that token; a
+stricter mode on the file hides nothing.
+
 ## Credentials
 
 The secrets the gateway uses on your behalf are managed in the panel's
