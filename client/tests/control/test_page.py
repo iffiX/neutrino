@@ -51,14 +51,13 @@ DETAIL_FALLBACK_CODES = {
 
 MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
 
-# The five service groups in the order the page draws them: the catalog key
-# stem, the type on the wire, the heading, the builder, and the line the
-# group carries while nothing is published.
+# The five kinds in the order their tabs stand: the catalog key stem, the
+# type on the wire, the heading, the builder, and the line a hub publishing
+# none of the kind carries.
 SERVICE_PANELS = (
     ("web", "web", "Web", "drawWebPanel", "no web service is published"),
-    ("ports", "port", "Ports", "drawPortsPanel", "no port is published"),
-    ("ai", "ai", "AI", "drawAiPanel", "no AI service is published"),
     ("files", "file", "Files", "drawFilesPanel", "no share is published"),
+    ("ports", "port", "Ports", "drawPortsPanel", "no port is published"),
     (
         "desktops",
         "rdp",
@@ -66,9 +65,9 @@ SERVICE_PANELS = (
         "drawDesktopsPanel",
         "no remote desktop is shared right now",
     ),
+    ("ai", "ai", "AI", "drawAiPanel", "no AI service is published"),
 )
 
-# What can carry a state token anywhere in the client.
 STATE_PATTERNS = (
     re.compile(r'"state":\s*"([a-z_]+)"'),
     re.compile(r'\bstate = "([a-z_]+)"'),
@@ -235,12 +234,24 @@ def test_the_one_refusal_that_unbinds_and_the_pin_mismatch_are_worded():
 # --- the two sections and the five panels ---
 
 
-def test_the_two_sections_are_titled_and_nothing_of_modules_is_left():
+def test_a_top_bar_of_tabs_replaces_the_sections_and_nothing_of_modules_is_left():
+    assert '<div class="top">' in PAGE_HTML
+    assert '<nav id="tabs"></nav>' in PAGE_HTML
+    assert 'id="refresh"' in PAGE_HTML and 'id="settings"' in PAGE_HTML
+    assert '<div id="content"></div>' in PAGE_HTML
+    assert (
+        "const TABS = ['hubs', 'web', 'file', 'port', 'rdp', 'ai', 'terminals'];"
+        in (PAGE_JS)
+    )
     assert EN_WORDS["ui.section_hubs"] == "Hubs"
-    assert EN_WORDS["ui.section_services"] == "Services"
-    assert "section_status" not in PAGE_JS
-    assert "section_modules" not in PAGE_JS
+    assert EN_WORDS["ui.panel_terminals"] == "Terminals"
     for gone in (
+        "function section(",
+        "function drawServices(",
+        "function hubGroup(",
+        "ui.section_services",
+        "section_status",
+        "section_modules",
         "drawModules",
         "drawOperation",
         "missingModules",
@@ -255,16 +266,43 @@ def test_the_two_sections_are_titled_and_nothing_of_modules_is_left():
         "Modules",
     ):
         assert gone not in PAGE_JS, gone
+    assert "ui.section_services" not in EN_WORDS
 
 
-def test_the_sections_render_hubs_then_services():
-    assert (
-        "section(t('ui.section_hubs')"
-        in PAGE_JS.split("section(t('ui.section_services')")[0]
+def test_the_open_tab_draws_the_hubs_a_kind_or_the_terminals():
+    body = PAGE_JS.split("function draw(state)")[1].split("\n}")[0]
+
+    assert "let openTab = 'hubs';" in PAGE_JS
+    assert "content.appendChild(drawHubs(state));" in body
+    assert "content.appendChild(drawTerminals(state));" in body
+    assert "kindTab(state, KINDS.filter((kind) => kind[0] === openTab)[0])" in body
+    tabs = PAGE_JS.split("function drawTabs()")[1].split("\n}")[0]
+    assert "button.className = tab === openTab ? 'tab on' : 'tab';" in tabs
+    assert "button.onclick = () => { openTab = tab; redraw(); };" in tabs
+
+
+def test_a_tab_is_a_ghost_button_outlined_in_the_accent_when_open():
+    assert "button.tab {" in PAGE_CSS
+    tab_on = PAGE_CSS.split("button.tab.on {")[1].split("}")[0]
+    assert "border-color: var(--color-accent)" in tab_on
+    assert "box-shadow" not in tab_on
+
+
+def test_the_window_is_one_top_bar_over_a_scrolling_tab():
+    wrap = PAGE_CSS.split(".wrap {")[1].split("}")[0]
+    content = PAGE_CSS.split("#content {")[1].split("}")[0]
+    body = PAGE_CSS.split("body {")[1].split("}")[0]
+
+    assert "grid-template-rows: auto 1fr" in wrap
+    assert "overflow-y: auto" in content
+    assert "padding: 0" in body
+    assert "repeat(auto-fill, minmax(460px, 1fr))" in PAGE_CSS
+    from neutrino_client.constants import (
+        CLIENT_GUI_WINDOW_HEIGHT,
+        CLIENT_GUI_WINDOW_WIDTH,
     )
 
-
-# --- the Hubs section ---
+    assert (CLIENT_GUI_WINDOW_WIDTH, CLIENT_GUI_WINDOW_HEIGHT) == (1080, 640)
 
 
 def test_one_row_per_hub_names_it_its_standing_and_its_software():
@@ -294,14 +332,13 @@ def test_leave_greys_and_spins_until_the_state_that_drops_the_row():
     assert "delete leaveAsked[key];" in asking
 
 
-def test_each_section_title_carries_a_refresh_button_that_spins_until_a_push():
-    heading = PAGE_JS.split("function section(title, panels)")[1].split("\n}")[0]
-    button = PAGE_JS.split("function refreshButton()")[1].split("\n}")[0]
+def test_the_top_bar_carries_a_refresh_button_that_spins_until_a_push():
+    button = PAGE_JS.split("function drawRefresh()")[1].split("\n}")[0]
     asking = PAGE_JS.split("function askRefresh()")[1].split("\n}")[0]
     push = PAGE_JS.split("window.neutrinoState = (state) => {")[1].split("\n};")[0]
 
-    assert "heading.appendChild(refreshButton());" in heading
-    assert "button.className = 'ghost refresh';" in button
+    assert 'class="ghost refresh" id="refresh"' in PAGE_HTML
+    assert "drawRefresh();" in PAGE_JS.split("function draw(state)")[1]
     assert "button.title = t('ui.refresh');" in button
     assert "button.textContent = '↻';" in button
     assert "button.innerHTML = '<span class=\"spin\"></span>';" in button
@@ -358,16 +395,18 @@ def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
 # --- the services, grouped by hub ---
 
 
-def test_the_services_are_grouped_by_hub_then_by_kind():
-    body = PAGE_JS.split("function drawServices(state)")[1].split("\n}")[0]
-    group = PAGE_JS.split("function hubGroup(state, hub)")[1].split("\n}")[0]
+def test_a_kinds_tab_draws_one_block_per_hub_side_by_side():
+    body = PAGE_JS.split("function kindTab(state, kind)")[1].split("\n}")[0]
+    block = PAGE_JS.split("function hubBlock(hub)")[1].split("\n}")[0]
 
-    assert "for (const hub of hubs) groups.push(hubGroup(state, hub));" in body
-    assert "t('ui.hub_services', { name: hub.hub_name || hub.gateway_url })" in group
-    assert "entriesOf(state, hub, type)" in group
+    assert "grid.className = 'kind_grid';" in body
+    assert "for (const hub of hubs) {" in body
+    assert "entriesOf(state, hub, type)" in body
+    assert "hub.connection_state !== 'connected'" in body
+    assert "block.appendChild(downCard(hub));" in body
+    assert "heading.className = 'hub_title';" in block
+    assert "heading.textContent = hub.hub_name || hub.gateway_url;" in block
     assert "entry.hub_id === hub.hub_id && entry.type === type" in PAGE_JS
-    assert "hub.connection_state !== 'connected'" in group
-    assert EN_WORDS["ui.hub_services"] == "Published by {name}"
 
 
 def test_every_action_names_the_entrys_hub():
@@ -423,31 +462,140 @@ def test_leaving_a_text_field_lets_a_held_state_draw():
     assert PAGE_JS.count("onblur = settle;") == 3
 
 
-def test_one_panel_per_service_type():
+def test_one_tab_per_service_type():
     for stem, kind, heading, builder, empty in SERVICE_PANELS:
         assert EN_WORDS[f"ui.panel_{stem}"] == heading
         assert EN_WORDS[f"ui.empty_{stem}"] == empty
-        assert (
-            f"['{kind}', t('ui.panel_{stem}'), {builder}, t('ui.empty_{stem}')]"
-            in PAGE_JS
+        assert f"['{kind}', 'ui.panel_{stem}', {builder}, 'ui.empty_{stem}']" in (
+            PAGE_JS
         )
 
 
-def test_the_panels_draw_in_their_fixed_order():
-    kinds = PAGE_JS.split("const kinds = [")[1].split("  ];")[0]
-    drawn = re.findall(r"\['([a-z]+)', t\('ui\.panel_", kinds)
+def test_the_kinds_stand_in_their_fixed_order():
+    kinds = PAGE_JS.split("const KINDS = [")[1].split("];")[0]
+    drawn = re.findall(r"\['([a-z]+)', 'ui\.panel_", kinds)
 
     assert drawn == [kind for _, kind, _, _, _ in SERVICE_PANELS]
+    assert drawn == ["web", "file", "port", "rdp", "ai"]
 
 
-def test_a_group_with_no_entry_draws_its_heading_and_its_empty_line():
-    body = PAGE_JS.split("function hubGroup")[1].split("\n}")[0]
+def test_a_hub_with_no_entry_of_a_kind_draws_its_empty_line():
+    body = PAGE_JS.split("function kindTab(state, kind)")[1].split("\n}")[0]
 
     assert "entries.length === 0" in body
-    assert "emptyPanel(title, empty)" in body
+    assert "emptyPanel(t(titleKey), t(emptyKey))" in body
     assert "continue" not in body
     assert "function emptyPanel(title, line)" in PAGE_JS
     assert "services_empty" not in PAGE_JS
+
+
+def test_the_terminals_tab_lists_each_hubs_machines():
+    body = PAGE_JS.split("function drawTerminals(state)")[1].split("\n}")[0]
+
+    assert "machine.hub_id === hub.hub_id" in body
+    assert "t('ui.empty_terminals')" in body
+    assert EN_WORDS["ui.empty_terminals"]
+
+
+# --- the virtual network chip and the colour tiers ---
+
+
+def test_a_hub_row_carries_the_virtual_network_chip_between_body_and_target():
+    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+    chip = PAGE_JS.split("function overlayChip(hub)")[1].split("\n}")[0]
+    asking = PAGE_JS.split("function askOverlay(hub, isOn)")[1].split("\n}")[0]
+
+    assert body.index("row.appendChild(body);") < body.index("overlayChip(hub)")
+    assert body.index("overlayChip(hub)") < body.index("t('ui.hub_exit')")
+    assert "if (!overlay) return null;" in chip
+    assert "chip.className = isOn ? 'chip on' : 'chip';" in chip
+    assert "chip.disabled = isMoving || isWorking || isHeld(hub);" in chip
+    assert "marker(isMoving ? 'spin' : overlayTone(overlay))" in chip
+    assert "connection_state" not in chip
+    assert "isOn ? '/api/overlay/leave' : '/api/overlay/join'" in asking
+    assert "{ hub_id: key }" in asking
+    assert "wordCode(overlay.code, overlay.params)" in body
+    assert EN_WORDS["ui.overlay"] == "Virtual network"
+    assert CATALOGS["zh-CN"]["ui.overlay"] == "虚拟网"
+
+
+def test_every_overlay_state_has_a_word():
+    from neutrino_client.core.overlay import OVERLAY_STATES
+
+    listed = PAGE_JS.split("const OVERLAY_STATES = [")[1].split("];")[0]
+    assert re.findall(r"'([a-z]+)'", listed) == list(OVERLAY_STATES)
+    for state in OVERLAY_STATES:
+        assert EN_WORDS[f"ui.overlay_{state}"]
+        assert CATALOGS["zh-CN"][f"ui.overlay_{state}"]
+    for state in ("on", "joining", "leaving"):
+        assert EN_WORDS[f"state.{state}"]
+
+
+def code_tones() -> dict:
+    """The page's code-to-colour table."""
+    listed = PAGE_JS.split("const CODE_TONES = {")[1].split("};")[0]
+    return dict(re.findall(r"([a-z_]+): '([a-z]+)'", listed))
+
+
+# The codes a hub row or a chip can carry, and the colour each must be.
+AMBER_CODES = {
+    "hub_unreachable",
+    "client_disabled",
+    "overlay_other_network",
+    "overlay_not_authorized",
+}
+RED_CODES = {
+    "hub_untrusted",
+    "binding_unknown",
+    "protocol_too_old",
+    "protocol_too_new",
+    "hub_refused",
+    "hub_reply_unreadable",
+    "bundle_missing",
+    "overlay_daemon_down",
+    "overlay_join_failed",
+}
+
+
+def test_every_code_a_row_or_a_chip_carries_has_its_colour():
+    tones = code_tones()
+    overlay_codes = {
+        code for code in catalog_keys("code.") if code.startswith("overlay_")
+    }
+    hub_codes = {
+        "hello_invalid",
+        "role_mismatch",
+        "hub_unreachable",
+        "hub_untrusted",
+        "hub_refused",
+        "hub_reply_unreadable",
+        "binding_unknown",
+        "client_disabled",
+        "protocol_too_old",
+        "protocol_too_new",
+    }
+
+    assert (overlay_codes | hub_codes | AMBER_CODES | RED_CODES) <= set(tones)
+    for code in AMBER_CODES:
+        assert tones[code] == "wait", code
+    for code in RED_CODES:
+        assert tones[code] == "bad", code
+    assert set(tones.values()) <= {"wait", "bad"}
+
+
+def test_the_hub_row_colours_by_the_fixed_tiers():
+    tone = PAGE_JS.split("function hubTone(hub)")[1].split("\n}")[0]
+
+    assert (
+        "if (hub.connection_state === 'connected' && !hub.is_disabled) return 'ok';"
+        in (tone)
+    )
+    assert "if (code) return codeTone(code);" in tone
+    assert "return hub.hub_software ? 'spin' : 'off';" in tone
+    assert "row.innerHTML = marker(tone);" in PAGE_JS
+    for token in ("--color-signal-ok", "--color-signal-warn", "--color-signal-error"):
+        assert token in PAGE_CSS
+    assert ".spin.warn { border-top-color: var(--color-signal-warn); }" in PAGE_CSS
 
 
 def test_the_ai_panel_is_one_toggle_config_and_apply():

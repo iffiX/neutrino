@@ -101,8 +101,8 @@ CLIENT_DESKTOP_NAME = "neutrino_client"
 CLIENT_GUI_WINDOW_TITLE_KEY = "ui.window.title"
 CLIENT_TRAY_OPEN_LABEL_KEY = "ui.tray.open"
 CLIENT_TRAY_QUIT_LABEL_KEY = "ui.tray.quit"
-CLIENT_GUI_WINDOW_WIDTH = 760
-CLIENT_GUI_WINDOW_HEIGHT = 900
+CLIENT_GUI_WINDOW_WIDTH = 1080
+CLIENT_GUI_WINDOW_HEIGHT = 640
 # The WebKit2 ABIs the Linux window opens on, newest first: each API version
 # with the library carrying it. 4.1 is the libsoup3 ABI and 4.0 the libsoup2
 # one; a distribution carries one, the other, or both.

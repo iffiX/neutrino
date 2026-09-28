@@ -89,7 +89,10 @@ const fileAsked = {};
 // Hubs whose Leave is in flight, by hub key: the button greys and spins
 // until the state push that drops the row.
 const leaveAsked = {};
-// Whether a refresh is in flight: the section buttons spin until the next
+// A refused join or leave of a hub's virtual network, by hub key, worded
+// under its row until the next press.
+const overlayNotes = {};
+// Whether a refresh is in flight: the refresh button spins until the next
 // pushed state or REFRESH_SPIN_MS, whichever comes first.
 let isRefreshing = false;
 let refreshTimer = null;
@@ -185,7 +188,7 @@ function redraw() {
 }
 
 // The resident pushes every change of state here; nothing polls for it.
-// A push ends a refresh in flight, and the buttons stop spinning even when
+// A push ends a refresh in flight, and the button stops spinning even when
 // the state is the one already drawn.
 window.neutrinoState = (state) => {
   if (!state) return;
@@ -202,8 +205,8 @@ function settleRefresh() {
   isRefreshing = false;
 }
 
-// A press on a section's refresh button: every hub is asked again, and the
-// buttons spin until the next pushed state or the timer.
+// A press on the refresh button: every hub is asked again, and the button
+// spins until the next pushed state or the timer.
 function askRefresh() {
   if (isRefreshing) return;
   isRefreshing = true;
@@ -237,7 +240,65 @@ async function serviceAction(type, body, noteKey) {
   return true;
 }
 
-// --- the two sections ---
+// --- the top bar and its tabs ---
+
+// The tabs along the top, in order: the hubs, each kind of service, then
+// the terminals. The one open is kept across redraws.
+const TABS = ['hubs', 'web', 'file', 'port', 'rdp', 'ai', 'terminals'];
+let openTab = 'hubs';
+
+// Every kind of service in the order its tab stands: the type on the wire,
+// its title's key, the function that draws one hub's entries, and the key
+// of the line a hub publishing none carries.
+const KINDS = [
+  ['web', 'ui.panel_web', drawWebPanel, 'ui.empty_web'],
+  ['file', 'ui.panel_files', drawFilesPanel, 'ui.empty_files'],
+  ['port', 'ui.panel_ports', drawPortsPanel, 'ui.empty_ports'],
+  ['rdp', 'ui.panel_desktops', drawDesktopsPanel, 'ui.empty_desktops'],
+  ['ai', 'ui.panel_ai', drawAiPanel, 'ui.empty_ai'],
+];
+
+// What each code a hub row or a virtual network chip carries means for its
+// colour: amber is unreachable with nothing broken, red needs a person to
+// change something. A code outside the table reads as amber.
+const CODE_TONES = {
+  hub_unreachable: 'wait',
+  client_disabled: 'wait',
+  overlay_other_network: 'wait',
+  overlay_not_authorized: 'wait',
+  overlay_missing: 'wait',
+  busy: 'wait',
+  hub_untrusted: 'bad',
+  binding_unknown: 'bad',
+  protocol_too_old: 'bad',
+  protocol_too_new: 'bad',
+  hub_refused: 'bad',
+  hub_reply_unreadable: 'bad',
+  hello_invalid: 'bad',
+  role_mismatch: 'bad',
+  bundle_missing: 'bad',
+  overlay_daemon_down: 'bad',
+  overlay_join_failed: 'bad',
+  overlay_leave_failed: 'bad',
+  overlay_network_invalid: 'bad',
+  overlay_peer_invalid: 'bad',
+  overlay_secret_missing: 'bad',
+  overlay_restart_failed: 'bad',
+  unsupported_platform: 'bad',
+  crashed: 'bad',
+};
+// The words a virtual network's state takes, as the resident names them.
+const OVERLAY_STATES = ['off', 'joining', 'on', 'leaving', 'failed'];
+
+function codeTone(code) {
+  return CODE_TONES[code] || 'wait';
+}
+
+// A status mark: a dot in its tone, or an amber spinner for a step in flight.
+function marker(tone) {
+  return tone === 'spin' ? '<span class="spin warn"></span>'
+    : '<span class="dot ' + tone + '"></span>';
+}
 
 function draw(state) {
   lastState = state;
@@ -248,35 +309,47 @@ function draw(state) {
   const settings = document.getElementById('settings');
   settings.textContent = t('ui.settings');
   settings.onclick = openSettingsDialog;
+  drawRefresh();
   document.getElementById('ident').textContent =
     state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
     ' · client ' + state.version;
+  drawTabs();
 
   const content = document.getElementById('content');
   content.innerHTML = '';
-  content.style.display = 'flex';
-  content.style.flexDirection = 'column';
-  content.style.gap = '24px';
-  content.appendChild(section(t('ui.section_hubs'), [drawHubs(state)]));
-  content.appendChild(section(t('ui.section_services'), drawServices(state)));
+  if (openTab === 'hubs') {
+    content.appendChild(drawHubs(state));
+  } else if (openTab === 'terminals') {
+    content.appendChild(drawTerminals(state));
+  } else {
+    content.appendChild(kindTab(state, KINDS.filter((kind) => kind[0] === openTab)[0]));
+  }
 }
 
-function section(title, panels) {
-  const box = document.createElement('div');
-  box.className = 'sect';
-  const heading = document.createElement('h2');
-  heading.className = 'sect_title';
-  heading.textContent = title;
-  heading.appendChild(refreshButton());
-  box.appendChild(heading);
-  for (const panel of panels) box.appendChild(panel);
-  return box;
+// One ghost button per tab; the open one is outlined in the accent.
+function drawTabs() {
+  const nav = document.getElementById('tabs');
+  nav.innerHTML = '';
+  for (const tab of TABS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = tab === openTab ? 'tab on' : 'tab';
+    button.textContent = tabTitle(tab);
+    button.onclick = () => { openTab = tab; redraw(); };
+    nav.appendChild(button);
+  }
 }
 
-// The small ghost button beside a section title.
-function refreshButton() {
-  const button = document.createElement('button');
-  button.className = 'ghost refresh';
+function tabTitle(tab) {
+  if (tab === 'hubs') return t('ui.section_hubs');
+  if (tab === 'terminals') return t('ui.panel_terminals');
+  return t(KINDS.filter((kind) => kind[0] === tab)[0][1]);
+}
+
+// The refresh button in the top bar: every hub is asked again, and it spins
+// until the next pushed state or the timer.
+function drawRefresh() {
+  const button = document.getElementById('refresh');
   button.title = t('ui.refresh');
   button.setAttribute('aria-label', t('ui.refresh'));
   if (isRefreshing) {
@@ -284,27 +357,136 @@ function refreshButton() {
     button.disabled = true;
   } else {
     button.textContent = '↻';
+    button.disabled = false;
   }
   button.onclick = askRefresh;
-  return button;
 }
 
-// --- the Hubs section: one row per hub, and the row that joins another ---
+// --- one kind's tab: every hub's entries of that kind, side by side ---
+
+function kindTab(state, kind) {
+  const [type, titleKey, build, emptyKey] = kind;
+  const grid = document.createElement('div');
+  grid.className = 'kind_grid';
+  const hubs = state.hubs || [];
+  if (hubs.length === 0) {
+    grid.appendChild(waitCard());
+    return grid;
+  }
+  for (const hub of hubs) {
+    const block = hubBlock(hub);
+    if (hub.connection_state !== 'connected') {
+      block.appendChild(downCard(hub));
+    } else {
+      const entries = entriesOf(state, hub, type);
+      block.appendChild(entries.length === 0
+        ? emptyPanel(t(titleKey), t(emptyKey))
+        : build(state, hub, entries, t(titleKey)));
+    }
+    grid.appendChild(block);
+  }
+  return grid;
+}
+
+// One hub's column in a tab: its name, then what it carries.
+function hubBlock(hub) {
+  const block = document.createElement('div');
+  block.className = 'hub_block';
+  const heading = document.createElement('h3');
+  heading.className = 'hub_title';
+  heading.textContent = hub.hub_name || hub.gateway_url;
+  block.appendChild(heading);
+  return block;
+}
+
+// A hub whose socket is down publishes nothing; its column says why.
+function downCard(hub) {
+  const down = document.createElement('div');
+  down.className = 'card';
+  down.innerHTML = '<span class="muted">' + (hub.connection_state === 'replaced'
+    ? t('state.replaced') : t('ui.reconnecting')) + '</span>';
+  return down;
+}
+
+function waitCard() {
+  const wait = document.createElement('div');
+  wait.className = 'card';
+  wait.innerHTML = '<span class="muted">' + t('ui.services_wait_join') + '</span>';
+  return wait;
+}
+
+// --- the terminals tab: every machine each hub offers a terminal on ---
+
+function drawTerminals(state) {
+  const grid = document.createElement('div');
+  grid.className = 'kind_grid';
+  const hubs = state.hubs || [];
+  if (hubs.length === 0) {
+    grid.appendChild(waitCard());
+    return grid;
+  }
+  for (const hub of hubs) {
+    const block = hubBlock(hub);
+    const machines = (state.terminals || []).filter(
+      (machine) => machine.hub_id === hub.hub_id);
+    if (hub.connection_state !== 'connected') {
+      block.appendChild(downCard(hub));
+    } else if (machines.length === 0) {
+      block.appendChild(emptyPanel(t('ui.panel_terminals'), t('ui.empty_terminals')));
+    } else {
+      block.appendChild(terminalsCard(hub, machines));
+    }
+    grid.appendChild(block);
+  }
+  return grid;
+}
+
+function terminalsCard(hub, machines) {
+  const card = panelCard(t('ui.panel_terminals'), false);
+  for (const machine of machines) {
+    const row = document.createElement('div');
+    row.className = machine.is_online ? 'feat' : 'feat greyed';
+    row.innerHTML = marker(machine.is_online ? 'ok' : 'off');
+    const body = document.createElement('div');
+    body.className = 'body';
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = machine.name;
+    body.appendChild(title);
+    row.appendChild(body);
+    card.appendChild(row);
+  }
+  return card;
+}
+
+// --- the Hubs tab: one row per hub, and the row that joins another ---
 
 function drawHubs(state) {
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'card hubs_card';
   const hubs = state.hubs || [];
   for (const hub of hubs) card.appendChild(hubRow(hub));
   if (hubs.length === 0) {
     const none = document.createElement('div');
     none.className = 'feat';
-    none.innerHTML = '<span class="dot off"></span><div class="body"><div>' +
+    none.innerHTML = marker('off') + '<div class="body"><div>' +
       t('ui.no_hubs') + '</div></div>';
     card.appendChild(none);
   }
   card.appendChild(joinRow(state));
   return card;
+}
+
+// Where one hub stands, as a colour: green connected; an amber spinner
+// while reconnecting to a hub that answered before; amber unreachable with
+// nothing broken; red for a refusal a person has to act on; grey for a hub
+// not reached yet.
+function hubTone(hub) {
+  if (hub.connection_state === 'connected' && !hub.is_disabled) return 'ok';
+  if (hub.is_disabled || hub.connection_state === 'replaced') return 'wait';
+  const code = hub.last_error ? hub.last_error.code : '';
+  if (code) return codeTone(code);
+  return hub.hub_software ? 'spin' : 'off';
 }
 
 // Bound is not the same as reached: the socket may be down, or another
@@ -315,11 +497,11 @@ function hubRow(hub) {
   row.className = 'feat';
   const isReplaced = hub.connection_state === 'replaced';
   const isReaching = hub.connection_state === 'reconnecting';
-  const tone = isReplaced || hub.is_disabled ? 'off'
-    : isReaching ? 'wait' : 'ok';
+  const tone = hubTone(hub);
   const word = isReplaced ? t('state.replaced')
     : hub.is_disabled ? t('ui.disabled')
-    : isReaching ? t('ui.reconnecting') : t('ui.connected');
+    : isReaching ? (tone === 'off' ? t('ui.not_reached') : t('ui.reconnecting'))
+    : t('ui.connected');
   const software = hub.hub_software
     ? ' · ' + t('ui.hub_software', { software: hub.hub_software }) : '';
   const body = document.createElement('div');
@@ -330,8 +512,13 @@ function hubRow(hub) {
     (hub.is_exit ? '<div class="note muted">' + t('ui.hub_is_exit') + '</div>' : '');
   const lastError = wordError(hub.last_error);
   if (lastError) body.appendChild(errorLine(lastError));
-  row.innerHTML = '<span class="dot ' + tone + '"></span>';
+  const overlay = hub.overlay || {};
+  if (overlay.code) body.appendChild(errorLine(wordCode(overlay.code, overlay.params)));
+  if (overlayNotes[hubKey(hub)]) body.appendChild(errorLine(overlayNotes[hubKey(hub)]));
+  row.innerHTML = marker(tone);
   row.appendChild(body);
+  const chip = overlayChip(hub);
+  if (chip) row.appendChild(chip);
   // One radio per hub: the AI tools point at the checked one, and only a
   // connected hub can be chosen.
   const exit = document.createElement('label');
@@ -362,6 +549,52 @@ function hubRow(hub) {
   leave.onclick = () => askLeave(hub);
   row.appendChild(leave);
   return row;
+}
+
+// The virtual network's chip on a hub row: its state and address, pressed
+// to join or leave. It stands whatever the socket's state, since the
+// virtual network is what can bring a hub back.
+function overlayChip(hub) {
+  const overlay = hub.overlay;
+  if (!overlay) return null;
+  const isOn = overlay.state === 'on';
+  const isMoving = overlay.state === 'joining' || overlay.state === 'leaving';
+  const isWorking = (overlay.work || {}).state === 'working';
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = isOn ? 'chip on' : 'chip';
+  chip.disabled = isMoving || isWorking || isHeld(hub);
+  chip.innerHTML = marker(isMoving ? 'spin' : overlayTone(overlay));
+  chip.appendChild(document.createTextNode(overlayWords(overlay)));
+  chip.onclick = () => askOverlay(hub, isOn);
+  return chip;
+}
+
+function overlayTone(overlay) {
+  if (overlay.state === 'on') return 'ok';
+  if (overlay.code) return codeTone(overlay.code);
+  return 'off';
+}
+
+function overlayWords(overlay) {
+  const state = OVERLAY_STATES.indexOf(overlay.state) >= 0 ? overlay.state : 'off';
+  const parts = [t('ui.overlay'), t('ui.overlay_' + state)];
+  if (overlay.address) parts.push(overlay.address);
+  return parts.join(' · ');
+}
+
+// A press on the chip: leave when on, join otherwise; a refusal is worded
+// under the row until the next press.
+function askOverlay(hub, isOn) {
+  const key = hubKey(hub);
+  delete overlayNotes[key];
+  send(isOn ? '/api/overlay/leave' : '/api/overlay/join', { hub_id: key })
+    .then((reply) => {
+      if (reply && reply.code) {
+        overlayNotes[key] = wordCode(reply.code, reply.params);
+        redraw();
+      }
+    });
 }
 
 // Leave greys and spins at once; the row goes with the state that answers,
@@ -470,53 +703,6 @@ function errorLine(text) {
 function entriesOf(state, hub, type) {
   return (state.services || []).filter(
     (entry) => entry.hub_id === hub.hub_id && entry.type === type);
-}
-
-// The Services section: one group per hub, the five kinds inside each.
-function drawServices(state) {
-  const hubs = state.hubs || [];
-  if (hubs.length === 0) {
-    const wait = document.createElement('div');
-    wait.className = 'card';
-    wait.innerHTML = '<span class="muted">' + t('ui.services_wait_join') +
-      '</span>';
-    return [wait];
-  }
-  const groups = [];
-  for (const hub of hubs) groups.push(hubGroup(state, hub));
-  return groups;
-}
-
-function hubGroup(state, hub) {
-  const group = document.createElement('div');
-  group.className = 'sect';
-  const heading = document.createElement('h3');
-  heading.className = 'hub_title';
-  heading.textContent = t('ui.hub_services', { name: hub.hub_name || hub.gateway_url });
-  group.appendChild(heading);
-  if (hub.connection_state !== 'connected') {
-    const down = document.createElement('div');
-    down.className = 'card';
-    down.innerHTML = '<span class="muted">' + (hub.connection_state === 'replaced'
-      ? t('state.replaced') : t('ui.reconnecting')) + '</span>';
-    group.appendChild(down);
-    return group;
-  }
-  // Every kind draws, in this order, whether or not it carries entries.
-  const kinds = [
-    ['web', t('ui.panel_web'), drawWebPanel, t('ui.empty_web')],
-    ['port', t('ui.panel_ports'), drawPortsPanel, t('ui.empty_ports')],
-    ['ai', t('ui.panel_ai'), drawAiPanel, t('ui.empty_ai')],
-    ['file', t('ui.panel_files'), drawFilesPanel, t('ui.empty_files')],
-    ['rdp', t('ui.panel_desktops'), drawDesktopsPanel, t('ui.empty_desktops')],
-  ];
-  for (const [type, title, build, empty] of kinds) {
-    const entries = entriesOf(state, hub, type);
-    group.appendChild(entries.length === 0
-      ? emptyPanel(title, empty)
-      : build(state, hub, entries, title));
-  }
-  return group;
 }
 
 function emptyPanel(title, line) {

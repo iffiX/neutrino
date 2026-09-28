@@ -138,6 +138,9 @@ CLIENT_STATE_WORDS = {
     "failed": "failed",
     "unknown": "waiting for the client",
     "replaced": "another client took this connection",
+    "on": "on",
+    "joining": "joining",
+    "leaving": "leaving",
 }
 
 # The ai lane's step while it runs, shown in place of the row's standing.

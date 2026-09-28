@@ -35,20 +35,31 @@
   --color-scheme: light;
 }
 html { color-scheme: var(--color-scheme); }
-body { margin: 0; padding: 32px 20px; background: var(--color-bg);
+body { margin: 0; padding: 0; background: var(--color-bg);
        color: var(--color-text);
        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-.wrap { max-width: 680px; margin: 0 auto; display: flex;
-        flex-direction: column; gap: 24px; }
-h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
-.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.sect { display: flex; flex-direction: column; gap: 12px; }
-.sect_title { margin: 0; font-size: 16px; font-weight: 600;
-              display: flex; align-items: center; gap: 10px; }
+/* The whole window: the top bar, then the open tab, which scrolls. */
+.wrap { height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+h1 { margin: 0; font-size: 16px; letter-spacing: .02em; }
+.top { display: flex; align-items: center; gap: 20px; padding: 12px 20px;
+       border-bottom: 1px solid var(--color-border);
+       background: var(--color-surface); }
+.brand { flex: none; }
+#tabs { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+.actions { flex: none; display: flex; gap: 8px; align-items: center; }
+button.tab { padding: 6px 12px; border: 1px solid transparent; background: none;
+             color: var(--color-text-muted); }
+button.tab.on { border-color: var(--color-accent); color: var(--color-accent); }
 button.refresh { display: inline-flex; align-items: center; justify-content: center;
-                 min-width: 28px; padding: 2px 8px; border-radius: 6px;
+                 min-width: 28px; padding: 6px 10px;
                  font-size: 14px; line-height: 1.4; }
-.hub_title { margin: 4px 0 0; font-size: 12px; font-weight: 600;
+#content { min-height: 0; overflow-y: auto; padding: 20px; }
+/* One column per hub, two of them side by side where the window allows. */
+.kind_grid { display: grid; gap: 20px; align-items: start;
+             grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); }
+.hub_block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hubs_card { max-width: 980px; }
+.hub_title { margin: 0; font-size: 12px; font-weight: 600;
              color: var(--color-text-muted); letter-spacing: .04em; }
 .sub { color: var(--color-text-muted); font-size: 12px;
        font-family: ui-monospace, monospace; }
@@ -63,6 +74,7 @@ button.refresh { display: inline-flex; align-items: center; justify-content: cen
         border: 2px solid var(--color-border);
         border-top-color: var(--color-accent);
         animation: spin 0.9s linear infinite; }
+.spin.warn { border-top-color: var(--color-signal-warn); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .ok { background: var(--color-signal-ok);
       box-shadow: 0 0 10px -1px var(--color-signal-ok); }
@@ -105,6 +117,7 @@ button:disabled { opacity: .4; cursor: not-allowed;
         cursor: pointer; }
 .chip.on { border-color: color-mix(in srgb, var(--color-ok) 60%, transparent);
            color: var(--color-ok); }
+.chip:disabled { opacity: .6; cursor: default; }
 .chip input[type="radio"] { flex: none; width: auto; margin: 0; padding: 0;
                             accent-color: var(--color-ok); }
 .err { color: var(--color-error); font-size: 12px; }

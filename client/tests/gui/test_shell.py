@@ -856,7 +856,7 @@ def test_the_macos_window_is_a_regular_app_with_the_page_in_a_web_view(monkeypat
     assert app.icon.path == "/icons/x.png"
     assert app.runs == 1
     assert window.title == "Neutrino client"
-    assert window.rect == (0, 0, 760, 900)
+    assert window.rect == (0, 0, 1080, 640)
     assert window.mask == 15
     assert window.is_released_when_closed is False
     assert window.content is view
