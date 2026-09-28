@@ -40,6 +40,27 @@ def test_an_empty_overlays_block_is_a_decision_and_is_kept():
     assert config.overlays == []
 
 
+def test_an_overlay_rides_on_the_devices_found_at_run_time_when_given():
+    config = RouterNetworkConfig.from_dict(
+        {"interfaces": [], "overlays": [{"provider": "easytier"}]}
+    )
+
+    found = config.with_overlay_devices({"easytier": ["tun0"]})
+
+    assert config.exposed_overlay_device_names == ["easytier"]
+    assert found.overlay_device_names == ["tun0"]
+    assert found.exposed_interfaces == ["tun0"]
+    assert config.with_overlay_devices({"easytier": []}).exposed_interfaces == []
+
+
+def test_the_devices_found_at_run_time_are_never_written_to_the_file():
+    config = RouterNetworkConfig.from_dict(
+        {"interfaces": [], "overlays": [{"provider": "easytier"}]}
+    ).with_overlay_devices({"easytier": ["tun0"]})
+
+    assert "tun0" not in repr(config.to_dict())
+
+
 def test_an_overlay_nobody_supports_is_dropped_rather_than_carried():
     config = RouterNetworkConfig.from_dict(
         {"interfaces": [], "overlays": [{"provider": "tinc"}]}

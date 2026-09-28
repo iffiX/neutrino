@@ -39,6 +39,7 @@ class RouterNftRenderer:
         network: RouterNetworkConfig,
         routing: dict,
         xray_uid: int,
+        overlay_devices: dict | None = None,
     ):
         """
         Args:
@@ -48,7 +49,12 @@ class RouterNftRenderer:
             xray_uid: Numeric uid the xray service runs as. Traffic from this
                 uid is never diverted, which is what stops the proxy from
                 looping into itself.
+            overlay_devices: Provider to the kernel devices its overlay rides
+                on, found at run time; a provider left out rides on its
+                engine's own device. None keeps what ``network`` carries.
         """
+        if overlay_devices is not None:
+            network = network.with_overlay_devices(overlay_devices)
         # Device names, not entry names: the untagged main of a split port is
         # config-side only, and the firewall must match the port itself.
         self._wans = network.wan_device_names

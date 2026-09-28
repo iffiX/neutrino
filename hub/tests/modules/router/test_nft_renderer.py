@@ -167,6 +167,80 @@ def test_no_overlay_is_named_in_the_renderer_itself():
 
     assert "wt0" not in source
     assert "51820" not in source
+    assert '"easytier"' not in source
+    assert "tun0" not in source
+
+
+def render_console(*entries, devices, routing=None) -> str:
+    """The ruleset for a box on EasyTier in console mode, its devices found."""
+    return RouterNftRenderer(
+        network=network_config(*entries, overlays=[{"provider": "easytier"}]),
+        routing={**ROUTING_DIRECT, **(routing or {})},
+        xray_uid=999,
+        overlay_devices={"easytier": devices},
+    ).render()
+
+
+def test_a_console_overlay_answers_on_the_device_found_in_place_of_easytier():
+    ruleset = render_console(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        devices=["tun0"],
+    )
+
+    assert 'iifname { "enp1s0", "tun0" } accept' in ruleset
+    assert '"easytier"' not in ruleset
+
+
+def test_a_console_overlay_is_forwarded_to_and_from_on_the_device_found():
+    ruleset = render_console(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        devices=["tun0"],
+    )
+
+    assert '        iifname { "tun0" } accept' in ruleset
+    assert 'iifname { "enp1s0" } oifname { "tun0" } accept' in ruleset
+
+
+def test_the_overlay_scope_diverts_the_console_device_found():
+    ruleset = render_console(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        devices=["tun0", "tun1"],
+        routing={"is_proxy_enabled": True, "is_overlay_proxy_enabled": True},
+    )
+
+    assert 'iifname != { "enp1s0", "tun0", "tun1" } return' in ruleset
+
+
+def test_a_console_overlay_with_no_device_found_is_named_nowhere():
+    """Its peers still knock on the peer port; nothing else names it."""
+    ruleset = render_console(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        devices=[],
+        routing={"is_overlay_proxy_enabled": True},
+    )
+
+    assert "easytier" not in ruleset
+    assert "tun0" not in ruleset
+    assert 'iifname { "enp1s0" } accept' in ruleset
+    assert "udp dport { 11010 } accept" in ruleset
+
+
+def test_a_manual_overlay_keeps_the_device_its_engine_names():
+    ruleset = RouterNftRenderer(
+        network=network_config(
+            lan_entry("enp1s0", address="192.168.100.1"),
+            overlays=[{"provider": "easytier"}],
+        ),
+        routing=ROUTING_DIRECT,
+        xray_uid=999,
+        overlay_devices={},
+    ).render()
+
+    assert 'iifname { "enp1s0", "easytier" } accept' in ruleset
 
 
 def test_the_local_proxy_chain_cannot_loop_back_into_itself():

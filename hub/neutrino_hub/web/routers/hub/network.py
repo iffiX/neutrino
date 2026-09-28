@@ -49,6 +49,7 @@ from neutrino_hub.modules.router.link_status import (
     LINK_KIND_WIFI,
     LinkStatus,
     RouterLinkStatus,
+    admin_up_interfaces,
     device_addresses,
 )
 from neutrino_hub.modules.router.modes import (
@@ -870,17 +871,25 @@ def _overlay_views(
     """The overlay rows for the Exposure panel.
 
     Args:
-        network: The parsed configuration.
+        network: The parsed configuration, carrying the overlay devices the
+            loaded ruleset names.
         runtime: The shared runtime, for the devices on the channel.
 
     Returns:
-        One row per configured overlay, in configuration order.
+        One row per configured overlay, in configuration order, its address
+        the first of its devices that is up and holds one.
     """
     addresses = device_addresses()
+    admin_up = admin_up_interfaces()
     reaching = _reaching_addresses(runtime)
     views = []
     for overlay in network.overlays:
-        cidr = addresses.get(overlay.device_name, "")
+        running = [
+            name
+            for name in network.devices_of(overlay)
+            if name in admin_up and addresses.get(name)
+        ]
+        cidr = addresses[running[0]] if running else ""
         views.append(
             OverlayView(
                 provider=overlay.provider,

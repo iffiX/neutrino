@@ -24,8 +24,9 @@ class OverlayEngine:
     Attributes:
         key: What the configuration stores.
         title: The product's own name, which is the same in every language.
-        device_name: The kernel interface it brings up, which the firewall
-            rules name.
+        device_name: The kernel interface the hub names for it, which the
+            firewall rules name. EasyTier in console mode picks its own, and
+            that one is found at run time by the address it holds.
         peer_port: The UDP port its own peers knock on.
         unit: The systemd unit the hub drives it under.
         is_integrated: Whether this hub can actually run it yet. An engine

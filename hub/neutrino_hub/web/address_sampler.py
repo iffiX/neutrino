@@ -4,7 +4,10 @@ An uplink's lease renewed to another address, an overlay joined or left, a
 name the overlay's daemon starts reporting: none of them is a write anybody
 makes, so nothing else would tell the agents and the clients. This reads
 :func:`channel_urls` every half minute and, when the set is not the one it
-read last, pushes the state to every live binding of both roles.
+read last, pushes the state to every live binding of both roles. Before
+each read it asks the runtime to apply the routing state again when an
+overlay's device moved, so the firewall follows an EasyTier console bringing
+its network up.
 """
 
 import logging
@@ -57,6 +60,7 @@ class PanelAddressSampler:
         Returns:
             True when this sample differed from the one before it.
         """
+        self._runtime.follow_overlay_devices()
         urls = channel_urls(self._runtime)
         if self._urls is None:
             self._urls = urls

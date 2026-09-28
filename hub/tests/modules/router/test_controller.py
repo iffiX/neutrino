@@ -223,7 +223,9 @@ def test_the_ruleset_is_recorded_only_after_the_kernel_takes_it(box, monkeypatch
     _, kernel = box
     order = []
     monkeypatch.setattr(
-        controller, "write_generated", lambda path, text: order.append("wrote")
+        controller,
+        "write_generated",
+        lambda path, text: path == controller.ROUTER_NFT_PATH and order.append("wrote"),
     )
     original = kernel.__call__
 
@@ -302,3 +304,24 @@ def test_a_second_writer_waits_for_the_first(tmp_path):
 
     with router_lock(path=path, timeout_s=0):
         pass
+
+
+def test_the_overlay_devices_found_are_rendered_and_recorded(box, monkeypatch):
+    """EasyTier in console mode names its own device; the pass finds it and
+    records which devices the loaded ruleset names."""
+    files, _ = box
+    files["router/network.json"]["overlays"] = [{"provider": "easytier"}]
+    monkeypatch.setattr(
+        controller, "overlay_devices", lambda network: {"easytier": ["tun0"]}
+    )
+
+    pass_of().reconcile()
+
+    loaded = controller.ROUTER_NFT_PATH.read_text()
+    assert '"tun0"' in loaded
+    assert '"easytier"' not in loaded
+    assert controller.rendered_overlay_devices() == {"easytier": ["tun0"]}
+
+
+def test_nothing_recorded_reads_as_no_devices_found(box):
+    assert controller.rendered_overlay_devices() == {}

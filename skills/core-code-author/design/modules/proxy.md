@@ -19,6 +19,10 @@ the panel writes all of them off.
 | the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray | `output` marks the packet, it hairpins through `lo`, TPROXY takes it |
 | SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port |
 
+The overlay interface of EasyTier in console mode is the one holding the
+console network's address, found at run time;
+[network.md](network.md) says how.
+
 Off, a forwarded scope is forwarded and masqueraded like any router's. The
 firewall's `input` chain accepts what TPROXY diverted from any served
 network, exposed or not: the mark is set on the way in and on nothing else.

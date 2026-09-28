@@ -11,12 +11,14 @@ Not pure: drives the appliers in :mod:`neutrino_hub.modules.router.routes`.
 
 import contextlib
 import fcntl
+import json
 import os
 import subprocess
 import time
 from pathlib import Path
 
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
+from neutrino_hub.modules.overlay.ops import overlay_devices
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
     ROUTER_CODE_POLICY_ROUTE_MISSING,
@@ -26,6 +28,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_NETWORK_FILE,
     ROUTER_NFT_DIVERT_MARKER,
     ROUTER_NFT_PATH,
+    ROUTER_OVERLAY_DEVICES_PATH,
     ROUTER_OVERLAY_NETBIRD,
     ROUTER_ROUTING_FILE,
     ROUTER_STEP_FAILED,
@@ -145,10 +148,12 @@ class RouterStateController:
         routing = read_config(ROUTER_ROUTING_FILE)
         if only is not None and network.interface(only) is None:
             raise ValueError(f"{only!r} is not a configured interface")
+        devices = overlay_devices(network)
         ruleset = RouterNftRenderer(
             network=network,
             routing=routing,
             xray_uid=lookup_xray_uid(),
+            overlay_devices=devices,
         ).render()
         is_diverting = ROUTER_NFT_DIVERT_MARKER in ruleset
         rules = RouterRulesetApplier()
@@ -166,9 +171,10 @@ class RouterStateController:
             rules.ensure_policy_route if is_diverting else rules.remove_policy_route,
         )
         results.append(policy)
-        results.append(
-            _load_ruleset(rules, ruleset, is_diverting=is_diverting, policy=policy)
-        )
+        loaded = _load_ruleset(rules, ruleset, is_diverting=is_diverting, policy=policy)
+        results.append(loaded)
+        if not loaded.is_failed:
+            write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
         if self._on_base_ready is not None:
             self._on_base_ready()
 
@@ -217,6 +223,27 @@ def is_forwarding(network: RouterNetworkConfig) -> bool:
         sysctls; a box with no roles is somebody's machine and keeps its own.
     """
     return bool(network.lan_interfaces or network.wan_interfaces)
+
+
+def rendered_overlay_devices() -> dict:
+    """The overlay devices found at run time that the loaded ruleset names.
+
+    Returns:
+        Provider to device names, as
+        :func:`neutrino_hub.modules.overlay.ops.overlay_devices` found them
+        for the last ruleset loaded; empty when none was recorded.
+    """
+    try:
+        stored = json.loads(ROUTER_OVERLAY_DEVICES_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        str(provider): [str(name) for name in names]
+        for provider, names in stored.items()
+        if isinstance(names, list)
+    }
 
 
 def failure_text(results: list[RouterStepResult]) -> str:

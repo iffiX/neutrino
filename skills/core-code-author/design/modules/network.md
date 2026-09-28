@@ -163,6 +163,17 @@ The firewall names no overlay of its own. A device name or a peer port
 written into `nft_renderer.py` is the next overlay's rules being written by
 hand, and a test reads the module's source to keep it that way.
 
+EasyTier in console mode is the one provider whose device the hub does not
+name: the engine brings up its own, `tun0` on Neutrino. The overlay's
+interface is then the one holding the address the engine reports for the
+console's network, found at run time by `overlay/ops.py` and handed to the
+renderer in place of `easytier`, for the input chain, the forward chain and
+the overlay scope alike. Each routing pass records which devices the loaded
+ruleset names; every half minute the panel compares the devices found with
+that record and runs the pass again when they differ. With no network from
+the console yet, the rules name no device for it. The found name is run-time
+state and never reaches `config/`.
+
 ### An overlay's daemon is a second firewall, and it wins
 
 Rendering the rules does not close an overlay. Measured on a running NetBird

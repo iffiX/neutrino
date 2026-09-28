@@ -31,6 +31,7 @@ from neutrino_hub.modules.easytier.renderer import (
     render_config,
     render_dropin,
 )
+from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR, is_dev_root_set
 from neutrino_hub.utils.json_file import read_config, write_generated
@@ -106,6 +107,40 @@ def apply_stored(*, hostname: str) -> str:
     """
     with EASYTIER_APPLY_LOCK:
         return EasyTierConfigApplier().apply(read_stored(), hostname=hostname)
+
+
+def console_device_names() -> list:
+    """The interfaces the engine's console networks ride on right now.
+
+    In console mode the engine names its own interface, so it is found by the
+    address the engine reports for each network.
+
+    Returns:
+        Every interface holding one of those addresses, empty when the engine
+        is not running or runs no network yet.
+    """
+    wanted = EasyTierStatusReader().addresses()
+    if not wanted:
+        return []
+    return devices_holding(device_addresses(), wanted)
+
+
+def devices_holding(held: dict, wanted: list) -> list:
+    """The devices holding any of the wanted addresses.
+
+    Args:
+        held: Device name to address with its prefix, as
+            :func:`neutrino_hub.modules.router.link_status.device_addresses`
+            reads them.
+        wanted: Addresses, with or without a prefix.
+
+    Returns:
+        The device names, sorted; the prefixes are not compared.
+    """
+    hosts = {str(address).split("/")[0] for address in wanted if address}
+    return sorted(
+        name for name, address in held.items() if str(address).split("/")[0] in hosts
+    )
 
 
 @dataclass
@@ -207,6 +242,22 @@ class EasyTierStatusReader:
             ]
             instances.append(instance)
         return instances
+
+    def addresses(self) -> list:
+        """This box's address on every network the engine runs.
+
+        Returns:
+            Each address in CIDR form, empty when the engine is not running,
+            runs none, or has not been given one yet.
+        """
+        found = []
+        for _, info in _by_instance(self._read("node", "info")):
+            if not isinstance(info, dict):
+                continue
+            address = str(info.get("ipv4_addr", "") or "")
+            if address:
+                found.append(address)
+        return found
 
     def _read(self, *command: str):
         """One JSON answer of the engine's command line tool.

@@ -16,6 +16,7 @@ from neutrino_hub.modules.overlay.constants import (
     OVERLAY_NETBIRD,
     OVERLAY_NONE,
 )
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.provisioning import ProvisionResult
 from neutrino_hub.utils.json_file import write_config
 from tests.conftest import unlock_vault
@@ -144,3 +145,38 @@ def test_switching_away_from_easytier_and_back_restarts_the_stored_console(
     ]
     dropin = tmp_path / "systemd" / "neutrino_hub_easytier.service.d"
     assert '"--config-server" "etk_example"' in (dropin / "arguments.conf").read_text()
+
+
+# --- the devices an overlay rides on ----------------------------------------
+
+
+def network_on(provider: str) -> RouterNetworkConfig:
+    return RouterNetworkConfig.from_dict({"overlays": [{"provider": provider}]})
+
+
+def test_an_easytier_console_rides_on_the_devices_found_by_address(monkeypatch):
+    monkeypatch.setattr(ops, "read_easytier", lambda: EasyTierConfig(mode="console"))
+    monkeypatch.setattr(ops, "console_device_names", lambda: ["tun0"])
+
+    assert ops.overlay_devices(network_on(OVERLAY_EASYTIER)) == {
+        OVERLAY_EASYTIER: ["tun0"]
+    }
+
+
+def test_an_easytier_console_with_no_network_yet_rides_on_nothing(monkeypatch):
+    monkeypatch.setattr(ops, "read_easytier", lambda: EasyTierConfig(mode="console"))
+    monkeypatch.setattr(ops, "console_device_names", lambda: [])
+
+    assert ops.overlay_devices(network_on(OVERLAY_EASYTIER)) == {OVERLAY_EASYTIER: []}
+
+
+@pytest.mark.parametrize("provider", [OVERLAY_EASYTIER, OVERLAY_NETBIRD])
+def test_an_engine_that_names_its_device_is_not_looked_up(monkeypatch, provider):
+    monkeypatch.setattr(ops, "read_easytier", lambda: EasyTierConfig(mode="manual"))
+
+    def refuse():
+        raise AssertionError("the engine was asked anyway")
+
+    monkeypatch.setattr(ops, "console_device_names", refuse)
+
+    assert ops.overlay_devices(network_on(provider)) == {}

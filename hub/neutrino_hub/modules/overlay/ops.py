@@ -10,6 +10,8 @@ import socket
 from typing import Callable
 
 from neutrino_hub.modules.easytier.ops import apply_stored as apply_easytier
+from neutrino_hub.modules.easytier.ops import console_device_names
+from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 from neutrino_hub.modules.overlay.constants import (
@@ -18,6 +20,7 @@ from neutrino_hub.modules.overlay.constants import (
     OVERLAY_NONE,
     OVERLAY_PROVIDERS,
 )
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.provisioning import say
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.utils.subprocess_run import run
@@ -29,6 +32,33 @@ OVERLAY_PROVISIONERS = {
     "netbird": NetbirdProvisioner,
     "easytier": EasyTierProvisioner,
 }
+
+
+def overlay_devices(network: RouterNetworkConfig) -> dict:
+    """The devices each overlay rides on, where they are found at run time.
+
+    EasyTier in console mode is the one such overlay: its engine names its own
+    interface, so the interface is the one holding the address the engine
+    reports.
+
+    Args:
+        network: The parsed router configuration.
+
+    Returns:
+        Provider to device names, possibly none, for each overlay found this
+        way; an overlay left out rides on its engine's own device.
+    """
+    devices = {}
+    for overlay in network.overlays:
+        if overlay.provider != OVERLAY_EASYTIER:
+            continue
+        try:
+            is_console_mode = read_easytier().is_console_mode
+        except ValueError:
+            is_console_mode = False
+        if is_console_mode:
+            devices[overlay.provider] = console_device_names()
+    return devices
 
 
 class OverlaySwitcher:

@@ -148,10 +148,15 @@ def _no_test_reaches_the_machine(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _router_lock_in_a_test_directory(tmp_path, monkeypatch):
-    """Point the routing-state lock where a test may create it."""
+    """Point the routing-state lock and its record where a test may create them."""
     from neutrino_hub.modules.router import controller
 
     monkeypatch.setattr(controller, "ROUTER_LOCK_PATH", tmp_path / "router.lock")
+    monkeypatch.setattr(
+        controller,
+        "ROUTER_OVERLAY_DEVICES_PATH",
+        tmp_path / "router_overlay_devices.json",
+    )
 
 
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig

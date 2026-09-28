@@ -9,6 +9,7 @@ by itself.
 import asyncio
 import ipaddress
 import json
+import logging
 import re
 import subprocess
 import threading
@@ -21,10 +22,12 @@ from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.router.controller import (
     RouterStateController,
     failure_text,
+    rendered_overlay_devices,
 )
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.overlay.ops import overlay_devices
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
@@ -83,6 +86,8 @@ from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
 from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 
 from neutrino_hub.modules.router.constants import ROUTER_NFT_PATH
+
+LOGGER = logging.getLogger(__name__)
 
 
 class PanelRuntime:
@@ -205,9 +210,37 @@ class PanelRuntime:
 
         Returns:
             Parsed ``config/router/network.json``, with the pre-roles shape
-            migrated on the way through.
+            migrated on the way through, carrying the overlay devices the
+            loaded ruleset was rendered for.
         """
-        return RouterNetworkConfig.from_dict(read_config("router/network.json"))
+        return RouterNetworkConfig.from_dict(
+            read_config("router/network.json")
+        ).with_overlay_devices(rendered_overlay_devices())
+
+    def follow_overlay_devices(self) -> bool:
+        """Apply the routing state again when an overlay's device moved.
+
+        Returns:
+            True when the devices found now differ from the ones the loaded
+            ruleset names and a pass ran; False on a box not set up.
+        """
+        try:
+            network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+        except (FileNotFoundError, ValueError):
+            return False
+        found = overlay_devices(network)
+        if found == rendered_overlay_devices():
+            return False
+        LOGGER.info("overlay devices moved: %s", found)
+        try:
+            results = self._router_controller().reconcile()
+        except (TimeoutError, ValueError, OSError, RuntimeError) as error:
+            LOGGER.warning("overlay devices not applied: %s", error)
+            return True
+        failure = failure_text(results)
+        if failure:
+            LOGGER.warning("overlay devices not applied: %s", failure)
+        return True
 
     def write_network(self, network: RouterNetworkConfig) -> None:
         """Store the router configuration.

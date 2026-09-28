@@ -1,14 +1,18 @@
-"""What the runtime does when an agent's channel opens or ends.
+"""What the runtime does when an agent's channel opens or ends, and when an
+overlay's device moves.
 
 The devices page is told, the published list is recomposed, and every
 client is handed its state, whose terminals list each machine's presence,
 so a client's dots follow the machines at once rather than at its next
-report.
+report. An overlay device found at run time that the loaded ruleset does not
+name yet runs one pass of the routing state, and nothing else does.
 """
 
+import json
 import threading
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.router import controller
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.constants import WEB_EVENT_DEVICES
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -49,3 +53,50 @@ def test_an_agent_coming_or_going_pushes_every_client_its_state(monkeypatch):
     assert pushed == [(panel, CHANNEL_ROLE_CLIENT, "client_state_push")]
     assert panel.events.published == [WEB_EVENT_DEVICES]
     assert panel.published_services.refreshes == 1
+
+
+class CountingController:
+    def __init__(self):
+        self.passes = 0
+
+    def reconcile(self, *, only=None):
+        self.passes += 1
+        return []
+
+
+def following(monkeypatch, found: dict, recorded: "dict | None") -> tuple:
+    """A runtime on EasyTier whose devices are found as given."""
+    if recorded is not None:
+        controller.ROUTER_OVERLAY_DEVICES_PATH.write_text(json.dumps(recorded))
+    monkeypatch.setattr(
+        runtime_module,
+        "read_config",
+        lambda name: {"overlays": [{"provider": "easytier"}]},
+    )
+    monkeypatch.setattr(runtime_module, "overlay_devices", lambda network: found)
+    passes = CountingController()
+    panel = object.__new__(PanelRuntime)
+    panel._router_controller = lambda: passes
+    return panel, passes
+
+
+def test_a_new_overlay_device_runs_one_pass(monkeypatch):
+    panel, passes = following(monkeypatch, {"easytier": ["tun0"]}, {"easytier": []})
+
+    assert panel.follow_overlay_devices() is True
+    assert passes.passes == 1
+
+
+def test_the_device_the_ruleset_already_names_runs_nothing(monkeypatch):
+    panel, passes = following(
+        monkeypatch, {"easytier": ["tun0"]}, {"easytier": ["tun0"]}
+    )
+
+    assert panel.follow_overlay_devices() is False
+    assert passes.passes == 0
+
+
+def test_the_network_carries_the_devices_the_ruleset_names(monkeypatch):
+    panel, _ = following(monkeypatch, {}, {"easytier": ["tun0"]})
+
+    assert panel.network().exposed_overlay_device_names == ["tun0"]

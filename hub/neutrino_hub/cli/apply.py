@@ -35,6 +35,7 @@ from neutrino_hub.modules.easytier.renderer import render_dropin
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.modules.overlay.config import provider_of
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
+from neutrino_hub.modules.overlay.ops import overlay_devices
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
@@ -186,6 +187,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             network=network,
             routing=routing,
             xray_uid=lookup_xray_uid(),
+            overlay_devices=overlay_devices(network),
         ).render()
     if "dnsmasq" in selected:
         artifacts["dnsmasq"] = RouterDnsmasqRenderer(

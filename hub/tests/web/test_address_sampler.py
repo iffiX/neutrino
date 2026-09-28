@@ -17,6 +17,11 @@ class StubRuntime:
 
     def __init__(self):
         self.urls = ["https://192.168.100.1:8443"]
+        self.calls: list = []
+
+    def follow_overlay_devices(self) -> bool:
+        self.calls.append("follow")
+        return False
 
 
 def sampler(monkeypatch) -> tuple:
@@ -56,3 +61,18 @@ def test_a_set_that_moved_pushes_both_roles_once(monkeypatch):
     assert pushed == [CHANNEL_ROLE_CLIENT, CHANNEL_ROLE_AGENT]
     assert watcher.sample_once() is False
     assert pushed == [CHANNEL_ROLE_CLIENT, CHANNEL_ROLE_AGENT]
+
+
+def test_each_sample_follows_the_overlay_devices_before_reading(monkeypatch):
+    """A console bringing its network up moves the firewall first, so the set
+    read after it names the overlay's address."""
+    watcher, runtime, _ = sampler(monkeypatch)
+    monkeypatch.setattr(
+        sampler_module,
+        "channel_urls",
+        lambda given: given.calls.append("urls") or list(given.urls),
+    )
+
+    watcher.sample_once()
+
+    assert runtime.calls == ["follow", "urls"]

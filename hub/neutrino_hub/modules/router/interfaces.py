@@ -13,6 +13,7 @@ Pure: this module parses and shapes configuration. Making a role real —
 NetworkManager, routes, the firewall — is :mod:`neutrino_hub.modules.router.routes`.
 """
 
+import dataclasses
 import ipaddress
 from dataclasses import dataclass, field
 
@@ -565,6 +566,10 @@ class RouterNetworkConfig:
             per-pair matrix: the whole point of turning it off is "my VLANs
             are fences", and that intent has no per-pair version worth the
             complexity.
+        overlay_devices: Provider to the kernel devices its overlay rides on
+            right now, for a provider whose device is found at run time
+            rather than named by its engine. Never read from or written to
+            the file.
     """
 
     mode: str = ROUTER_MODE_ROUTER
@@ -573,6 +578,38 @@ class RouterNetworkConfig:
     static_leases: list[RouterStaticLease] = field(default_factory=list)
     uplink_policy: str = ROUTER_POLICY_FAILOVER
     is_inter_lan_allowed: bool = True
+    overlay_devices: dict = field(default_factory=dict)
+
+    def with_overlay_devices(self, devices: dict) -> "RouterNetworkConfig":
+        """The same configuration with the overlays' devices found at run time.
+
+        Args:
+            devices: Provider to the kernel devices its overlay rides on. A
+                provider left out rides on its engine's own device.
+
+        Returns:
+            A copy carrying the devices.
+        """
+        return dataclasses.replace(
+            self,
+            overlay_devices={
+                provider: list(names) for provider, names in devices.items()
+            },
+        )
+
+    def devices_of(self, overlay: "RouterOverlay") -> list[str]:
+        """The kernel devices one overlay rides on.
+
+        Args:
+            overlay: One of :attr:`overlays`.
+
+        Returns:
+            The devices found at run time when there are any on record for
+            its provider, which may be none, else its engine's own device.
+        """
+        if overlay.provider in self.overlay_devices:
+            return list(self.overlay_devices[overlay.provider])
+        return [overlay.device_name]
 
     @property
     def is_addressing_owned(self) -> bool:
@@ -603,13 +640,18 @@ class RouterNetworkConfig:
     @property
     def overlay_device_names(self) -> list[str]:
         """The kernel devices the configured overlays ride on."""
-        return _unique(overlay.device_name for overlay in self.overlays)
+        return _unique(
+            name for overlay in self.overlays for name in self.devices_of(overlay)
+        )
 
     @property
     def exposed_overlay_device_names(self) -> list[str]:
         """The overlay devices this box answers on and forwards to."""
         return _unique(
-            overlay.device_name for overlay in self.overlays if overlay.is_exposed
+            name
+            for overlay in self.overlays
+            if overlay.is_exposed
+            for name in self.devices_of(overlay)
         )
 
     @property

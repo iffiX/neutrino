@@ -214,6 +214,70 @@ def test_output_that_is_not_a_table_reads_as_no_peers(monkeypatch, tmp_path):
     assert EasyTierStatusReader().peers() == []
 
 
+# --- the console network's interface ----------------------------------------
+
+
+def test_one_address_finds_the_one_interface_holding_it():
+    held = {"enp1s0": "192.168.1.5/24", "tun0": "10.144.0.2/16"}
+
+    assert ops.devices_holding(held, ["10.144.0.2/16"]) == ["tun0"]
+
+
+def test_several_addresses_find_every_interface_holding_one():
+    held = {
+        "enp1s0": "192.168.1.5/24",
+        "tun1": "10.145.0.7/16",
+        "tun0": "10.144.0.2/16",
+    }
+
+    assert ops.devices_holding(held, ["10.144.0.2/16", "10.145.0.7"]) == [
+        "tun0",
+        "tun1",
+    ]
+
+
+def test_an_address_nobody_holds_finds_nothing():
+    held = {"enp1s0": "192.168.1.5/24", "easytier": "10.0.0.9/24"}
+
+    assert ops.devices_holding(held, ["10.144.0.2/16"]) == []
+    assert ops.devices_holding(held, []) == []
+
+
+def test_the_engine_reports_this_box_address_on_each_network(monkeypatch, tmp_path):
+    node = [
+        {"instance_id": "a", "instance_name": "one", "result": NODE_INFO},
+        {"instance_id": "b", "instance_name": "two", "result": {"ipv4_addr": ""}},
+    ]
+    answering(monkeypatch, tmp_path, node, [])
+
+    assert EasyTierStatusReader().addresses() == ["10.144.99.1/24"]
+
+
+def test_the_console_interface_is_the_one_holding_the_reported_address(
+    monkeypatch, tmp_path
+):
+    answering(monkeypatch, tmp_path, NODE_INFO, PEERS)
+    monkeypatch.setattr(
+        ops,
+        "device_addresses",
+        lambda: {"enp1s0": "192.168.1.5/24", "tun0": "10.144.99.1/24"},
+    )
+
+    assert ops.console_device_names() == ["tun0"]
+
+
+def test_an_engine_with_no_network_names_no_interface(monkeypatch, tmp_path):
+    installed(monkeypatch, tmp_path)
+    monkeypatch.setattr(ops, "run", lambda command, **kwargs: FakeResult("", False))
+
+    def refuse():
+        raise AssertionError("the interfaces were read anyway")
+
+    monkeypatch.setattr(ops, "device_addresses", refuse)
+
+    assert ops.console_device_names() == []
+
+
 # --- applying ---------------------------------------------------------------
 
 CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_example"  # scan: allow

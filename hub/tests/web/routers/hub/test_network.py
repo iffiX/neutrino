@@ -37,9 +37,12 @@ class FakeRuntime:
         self._connections = RouterConnectionSet()
         self.applied: list[str | None] = []
         self.device_address: dict[str, str] = {}
+        self.overlay_devices: dict = {}
 
     def network(self) -> RouterNetworkConfig:
-        return RouterNetworkConfig.from_dict(self._config.to_dict())
+        return RouterNetworkConfig.from_dict(
+            self._config.to_dict()
+        ).with_overlay_devices(self.overlay_devices)
 
     def write_network(self, config: RouterNetworkConfig) -> None:
         self._config = config
@@ -89,6 +92,7 @@ def box(monkeypatch):
     # stops every unit: the machine here is a dictionary, and a test that
     # wants to see the hand-back swaps this for a recorder of its own.
     monkeypatch.setattr(network_router, "hand_back", lambda network: [])
+    monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
 
     app = FastAPI()
     app.include_router(network_router.router)
@@ -406,6 +410,7 @@ def guest_box(monkeypatch):
         network_router, "RouterLinkStatus", lambda: runtime.link_status()
     )
     monkeypatch.setattr(network_router, "hand_back", lambda network: [])
+    monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
 
     app = FastAPI()
     app.include_router(network_router.router)
@@ -494,6 +499,57 @@ def test_an_overlay_that_is_not_up_is_listed_with_no_address(box, monkeypatch):
     nowhere while the daemon is restarting."""
     client, _, _ = box
     monkeypatch.setattr(network_router, "device_addresses", dict)
+
+    (overlay,) = client.get("/api/hub/network").json()["overlays"]
+
+    assert overlay["address"] == ""
+
+
+def console_easytier(runtime, devices: list) -> None:
+    """The box on EasyTier in console mode, its device found as given."""
+    runtime._config = RouterNetworkConfig.from_dict(
+        {**runtime._config.to_dict(), "overlays": [{"provider": "easytier"}]}
+    )
+    runtime.overlay_devices = {"easytier": devices}
+
+
+def test_a_console_overlay_reads_its_state_from_the_device_found(box, monkeypatch):
+    """The engine names its own device in console mode; the row follows the
+    one the loaded ruleset names, and an entry with no stored value is open."""
+    client, runtime, _ = box
+    console_easytier(runtime, ["tun0"])
+    monkeypatch.setattr(
+        network_router, "device_addresses", lambda: {"tun0": "10.144.0.2/16"}
+    )
+    monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"tun0"})
+
+    (overlay,) = client.get("/api/hub/network").json()["overlays"]
+
+    assert overlay["address"] == "10.144.0.2"
+    assert overlay["is_exposed"] is True
+
+
+def test_a_console_overlay_whose_device_is_down_is_not_up(box, monkeypatch):
+    client, runtime, _ = box
+    console_easytier(runtime, ["tun0"])
+    monkeypatch.setattr(
+        network_router, "device_addresses", lambda: {"tun0": "10.144.0.2/16"}
+    )
+    monkeypatch.setattr(network_router, "admin_up_interfaces", set)
+
+    (overlay,) = client.get("/api/hub/network").json()["overlays"]
+
+    assert overlay["address"] == ""
+
+
+def test_a_console_overlay_with_no_device_found_is_not_up(box, monkeypatch):
+    """An interface called easytier is not the console network's."""
+    client, runtime, _ = box
+    console_easytier(runtime, [])
+    monkeypatch.setattr(
+        network_router, "device_addresses", lambda: {"easytier": "10.144.0.2/16"}
+    )
+    monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"easytier"})
 
     (overlay,) = client.get("/api/hub/network").json()["overlays"]
 

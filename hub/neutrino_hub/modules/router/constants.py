@@ -145,6 +145,9 @@ ROUTER_ROUTE_TABLE = 100
 ROUTER_ROUTE_RULE_PRIORITY = 100
 
 ROUTER_NFT_PATH = UTILS_GENERATED_DIR / "router.nft"
+# The overlay devices found at run time that the last loaded ruleset names,
+# by provider.
+ROUTER_OVERLAY_DEVICES_PATH = UTILS_GENERATED_DIR / "router_overlay_devices.json"
 # What a ruleset says when it diverts into the proxy.
 ROUTER_NFT_DIVERT_MARKER = "tproxy ip to"
 

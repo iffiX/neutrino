@@ -44,6 +44,21 @@ def test_choosing_an_overlay_writes_one_row():
     assert [overlay.provider for overlay in network.overlays] == [OVERLAY_NETBIRD]
 
 
+def test_a_newly_chosen_overlay_is_open():
+    network = config([])
+
+    set_provider(network, OVERLAY_EASYTIER)
+
+    assert network.overlays[0].is_exposed is True
+
+
+def test_an_entry_with_no_stored_exposure_is_open():
+    network = config([{"provider": OVERLAY_EASYTIER}])
+
+    assert network.overlays[0].is_exposed is True
+    assert network.exposed_overlay_device_names == ["easytier"]
+
+
 def test_choosing_none_takes_the_row_away():
     network = config([{"provider": OVERLAY_NETBIRD}])
 
