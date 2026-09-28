@@ -8,9 +8,9 @@ title: 虚拟网
 
 ## 加入之前
 
-- 装好客户端包。包会把 NetBird 和 EasyTier 的守护进程登记成系统服务。
+- 装好客户端包。包会登记两个系统服务：NetBird 守护进程，和客户端自带的 EasyTier 守护进程。
 - 这台电脑上已经装有 NetBird 客户端时不会动它：Windows 上两个守护进程各用各的管道并行运行；macOS 上客户端直接用已装的那个，自带的不启动；Linux 上这个包不能和它同时安装。
-- hub 运行 NetBird 或 EasyTier；用 NetBird 时，hub 的 **虚拟网**（Overlay）页上存有 setup key。
+- hub 运行 NetBird 或 EasyTier。用 NetBird 时，hub 的 **虚拟网**（Overlay）页上存有 setup key；EasyTier 可以是手动碰头点，也可以由 EasyTier 控制台账号管理。
 - hub 的客户端页允许这个客户端使用虚拟网。
 
 缺了任何一条，hub 那一行就没有 **虚拟网**（Virtual network）按钮。
@@ -19,9 +19,12 @@ title: 虚拟网
 
 1. 打开 **Hub** 标签。
 1. 点 hub 那一行的 **虚拟网** 按钮。
-1. 如果弹出系统授权框，确认它。
 
-Linux 和 macOS 上加入 EasyTier 会弹授权框，因为它的配置要以 root 写入；NetBird 和 Windows 上的 EasyTier 不弹。再点一次按钮就离开。
+三个平台上点一下即可加入。EasyTier 守护进程以 root 运行（Windows 上是 SYSTEM），网络配置由它自己写入。再点一次按钮就离开。
+
+## EasyTier 控制台的网络
+
+hub 的 EasyTier 由控制台管理时，客户端拿到的是控制台地址。加入后，本机的 EasyTier 连上这个控制台，网络、地址和本机名字都由控制台下发。一台电脑同一时间只接一个控制台，手动网络可以有多个，两者可以并存。
 
 ## 按钮上的字
 
@@ -34,18 +37,18 @@ Linux 和 macOS 上加入 EasyTier 会弹授权框，因为它的配置要以 ro
 | **已加入**               | 本机在这个网络里                    |
 | **失败**                 | 上一步失败，错误码写在 hub 名字下面 |
 
-| 错误码                   | 含义                                           |
-| ------------------------ | ---------------------------------------------- |
-| `overlay_other_network`  | 本机的 NetBird 在另一个网络里，先离开那个      |
-| `overlay_not_authorized` | 你取消了系统授权框                             |
-| `overlay_daemon_down`    | NetBird 守护进程没有运行，重装客户端           |
-| `bundle_missing`         | 这份安装里没有 NetBird 或 EasyTier，重装客户端 |
-| `overlay_join_failed`    | NetBird 拒绝了这次加入，码后面是它自己的原话   |
+| 错误码                    | 含义                                                                  |
+| ------------------------- | --------------------------------------------------------------------- |
+| `overlay_other_network`   | NetBird 在另一个网络里，或 EasyTier 接着别的 hub 的控制台，先离开那个 |
+| `overlay_daemon_down`     | NetBird 或 EasyTier 守护进程没有运行，重装客户端                      |
+| `bundle_missing`          | 这份安装里没有 NetBird 或 EasyTier，重装客户端                        |
+| `overlay_join_failed`     | NetBird 拒绝了这次加入，码后面是它自己的原话                          |
+| `overlay_console_invalid` | hub 给的 EasyTier 控制台地址 EasyTier 不接受                          |
 
 ## 两个 hub 同一个网络
 
-两个 hub 用同一个 NetBird 管理服务器，或同一个 EasyTier 网络名时，共用一份成员关系，两行显示同一个状态。离开其中一个 hub，网络还在；离开最后一个，才退出网络。
+两个 hub 用同一个 NetBird 管理服务器、同一个 EasyTier 网络名，或同一个 EasyTier 控制台时，共用一份成员关系，两行显示同一个状态。离开其中一个 hub，网络还在；离开最后一个，才退出网络。
 
 ## 客户端退出之后
 
-客户端退出后，守护进程仍让本机留在网络里。重启后 NetBird 自动回到网络，Linux 和 macOS 上的 EasyTier 也一样；Windows 上的 EasyTier 要等客户端运行起来才回去。要退出网络，点按钮或离开那个 hub。
+客户端退出后，守护进程仍让本机留在网络里。重启后，三个平台上的 NetBird 和 EasyTier 都自己回到网络，不用等客户端运行。要退出网络，点按钮或离开那个 hub。
