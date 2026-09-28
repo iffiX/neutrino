@@ -1419,10 +1419,29 @@ export interface EasyTierSuggestedNetwork {
   interface: string;
 }
 
+/** One network the engine runs, as it reports it; read-only. */
+export interface EasyTierInstance {
+  instance_name: string;
+  network_name: string;
+  address: string;
+  hostname: string;
+  subnet_routes: string[];
+  /** Which of network_name, address and hostname came back empty. */
+  withheld: string[];
+}
+
+/** Where the network comes from. */
+export type EasyTierMode = "manual" | "console";
+
 export interface EasyTierView {
   is_installed: boolean;
   is_active: boolean;
   version: string;
+  mode: EasyTierMode;
+  has_config_server: boolean;
+  is_secure_mode: boolean;
+  /** What the engine reports it runs; filled in console mode. */
+  instances: EasyTierInstance[];
   network_name: string;
   is_secret_set: boolean;
   /** This box's address on the overlay; empty means the engine assigns one. */
@@ -1444,6 +1463,19 @@ export interface EasyTierNetworkRequest {
   network_secret: string;
   address: string;
   hostname: string;
+}
+
+export interface EasyTierModeRequest {
+  mode: EasyTierMode;
+}
+
+export interface EasyTierConfigServerRequest {
+  /** Empty forgets the stored console address. */
+  config_server: string;
+}
+
+export interface EasyTierSecureModeRequest {
+  is_secure_mode: boolean;
 }
 
 export interface EasyTierPeersRequest {
