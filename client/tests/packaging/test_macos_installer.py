@@ -207,7 +207,11 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     staged = build_pkg._lay_out(tmp_path, "9.9.9", "arm64")
 
     app = tmp_path / "root" / "Applications" / "Neutrino Client.app"
-    assert staged == {"root": tmp_path / "root", "app": app}
+    assert staged == {
+        "root": tmp_path / "root",
+        "app": app,
+        "scripts": tmp_path / "scripts",
+    }
     contents = app / "Contents"
     assert (contents / "MacOS" / "nclient").is_file()
     assert (
@@ -216,7 +220,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     assert (contents / "Resources" / "bin" / "cc-switch").is_file()
     assert sorted(
         path.name for path in (contents / "Resources" / "licenses").iterdir()
-    ) == ["cc_switch.txt", "rustdesk.txt"]
+    ) == ["cc_switch.txt", "easytier.txt", "netbird.txt", "rustdesk.txt"]
     assert order == ["venv", "compile", "binaries", ("sign", app)]
     link = tmp_path / "root" / "usr" / "local" / "bin" / "nclient"
     assert link.is_symlink()
@@ -224,6 +228,13 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         "/Applications/Neutrino Client.app/Contents/MacOS/nclient"
     )
     assert not list((tmp_path / "root").glob("**/LaunchAgents"))
+    daemons = sorted(
+        path.name for path in (tmp_path / "root/Library/LaunchDaemons").iterdir()
+    )
+    assert daemons == [
+        "com.neutrino.client.easytier.plist",
+        "com.neutrino.client.netbird.plist",
+    ]
 
 
 def test_the_bundle_is_signed_ad_hoc_and_deep(monkeypatch, tmp_path):
@@ -295,13 +306,57 @@ def test_a_mac_without_the_tools_is_told_what_to_install(monkeypatch, tmp_path):
     assert "xcode-select --install" in str(refused.value)
 
 
-def test_the_installer_registers_no_login_item_and_no_service():
+def test_the_installer_registers_no_login_item_and_the_client_no_service():
     """The client runs when the person opens it, not with the session."""
     source = Path(build_pkg.__file__).read_text(encoding="utf-8")
 
     assert "LaunchAgents" not in source
-    assert "LaunchDaemons" not in source
     assert "gui --hidden" not in source
+
+
+def daemon(tmp_path, label) -> dict:
+    """One LaunchDaemon the build writes, read back."""
+    import plistlib
+
+    build_pkg.write_daemons(tmp_path)
+    path = tmp_path / "Library" / "LaunchDaemons" / f"{label}.plist"
+    return plistlib.loads(path.read_bytes())
+
+
+def test_netbird_is_a_launch_daemon_kept_running(tmp_path):
+    job = daemon(tmp_path, "com.neutrino.client.netbird")
+
+    assert job["ProgramArguments"][:3] == [
+        "/Applications/Neutrino Client.app/Contents/Resources/netbird/netbird",
+        "service",
+        "run",
+    ]
+    assert "/Library/Application Support/Neutrino Client/netbird/config.json" in (
+        job["ProgramArguments"]
+    )
+    assert job["RunAtLoad"] is True and job["KeepAlive"] is True
+
+
+def test_easytier_runs_only_while_a_networks_file_is_there(tmp_path):
+    job = daemon(tmp_path, "com.neutrino.client.easytier")
+    shell, flag, command = job["ProgramArguments"]
+
+    assert (shell, flag) == ("/bin/sh", "-c")
+    assert command.startswith(
+        "ls '/Library/Application Support/Neutrino Client/easytier'/*.toml"
+    )
+    assert "|| exit 0; exec " in command
+    assert command.endswith("--rpc-portal 127.0.0.1:15889")
+    assert job["KeepAlive"] == {"SuccessfulExit": False}
+
+
+def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path):
+    assert 'launchctl bootout "system/$label"' in build_pkg.PREINSTALL
+    assert "chmod 700" in build_pkg.POSTINSTALL
+    assert "chown root:wheel" in build_pkg.POSTINSTALL
+    assert "launchctl bootstrap system" in build_pkg.POSTINSTALL
+    for script in (build_pkg.PREINSTALL, build_pkg.POSTINSTALL):
+        assert script.startswith("#!/bin/sh\n") and script.endswith("exit 0\n")
 
 
 def test_the_build_pins_what_the_other_platforms_pin():
@@ -338,6 +393,8 @@ def test_the_licences_travel_inside_the_bundle(tmp_path):
 
     assert sorted(path.name for path in (tmp_path / "licenses").iterdir()) == [
         "cc_switch.txt",
+        "easytier.txt",
+        "netbird.txt",
         "rustdesk.txt",
     ]
 

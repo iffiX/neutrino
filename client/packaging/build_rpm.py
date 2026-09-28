@@ -3,14 +3,15 @@
     python3 client/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
 The same payload the .deb carries: the client compiled under
-/opt/neutrino_client with the window's bindings inside it, the root helper
-compiled beside the path polkit pins, and the two binaries the client
+/opt/neutrino_client with the window's bindings inside it, the two root helpers
+compiled beside the paths polkit pins, and the binaries the client
 drives. That fixes the package to one architecture and one glibc, so it is
 built in a container of the machine it is for.
 
 The same maintainer scripts too: every resident is asked to quit before its
-files are taken, and erasing the package keeps each person's own
-configuration.
+files are taken, erasing the package keeps each person's own configuration,
+and the two overlay daemons' units are registered on install and stopped
+on erase.
 
 Needs `rpmbuild`, from the `rpm` package on Debian family and `rpm-build` on
 RHEL family, a C compiler and patchelf for Nuitka, and `dpkg` for the viewer
@@ -79,6 +80,7 @@ License:        MIT
 URL:            https://github.com/iffiX/neutrino
 BuildArch:      {architecture}
 {requires}
+Conflicts:      netbird
 Packager:       {packager}
 
 # The payload is prebuilt and compiled, so none of rpmbuild's opinions about
@@ -115,6 +117,8 @@ cp -a {staged}/. %{{buildroot}}/
 /usr/share/applications/{desktop}.desktop
 /usr/share/icons/hicolor/*/apps/{desktop}.png
 /usr/share/polkit-1/actions/{action}.policy
+/usr/share/polkit-1/actions/{overlay_action}.policy
+{units}
 /usr/share/doc/{name}
 
 %pre
@@ -128,6 +132,7 @@ if [ -d /usr/share/icons/hicolor ]; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+{overlay_start}
 if [ "$1" = 1 ]; then
     echo ""
     echo "  Neutrino client installed. Open it and join a hub:"
@@ -140,11 +145,14 @@ fi
 {stop}
 if [ "$1" = 0 ]; then
     stop_residents
-fi
+{overlay_stop}fi
 
 %postun
 if [ "$1" = 0 ]; then
     rm -rf {prefix}
+fi
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
 fi
 """
 
@@ -199,6 +207,7 @@ def main() -> int:
                 desktop=CLIENT_DESKTOP_NAME,
                 action=CLIENT_MOUNT_POLKIT_ACTION,
                 stop=payload.STOP_RESIDENTS,
+                **overlay_spec_values(),
             ),
             encoding="utf-8",
         )
@@ -206,6 +215,25 @@ def main() -> int:
 
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
     return 0
+
+
+def overlay_spec_values() -> dict:
+    """What the spec says of the two overlay daemons.
+
+    Returns:
+        ``{overlay_action, units, overlay_start, overlay_stop}``, the
+        values the spec's holes of those names take.
+    """
+    return {
+        "overlay_action": payload.OVERLAY_POLKIT_ACTION,
+        "units": "\n".join(
+            f"/{payload.SYSTEMD_UNIT_DIR}/{unit}" for unit in payload.OVERLAY_UNITS
+        ),
+        "overlay_start": payload.OVERLAY_UNITS_START,
+        "overlay_stop": "".join(
+            f"    {line}\n" for line in payload.OVERLAY_UNITS_STOP.splitlines() if line
+        ),
+    }
 
 
 def _lay_out(staged: Path, version: str, architecture: str) -> None:
@@ -219,6 +247,7 @@ def _lay_out(staged: Path, version: str, architecture: str) -> None:
     compiled = payload.compile_linux(staged.parent / "build", architecture, version)
     payload.lay_out_compiled(staged, compiled, Path(CLIENT_MOUNT_HELPER_PATH))
     bundled.stage_linux_binaries(staged, architecture)
+    payload.stage_linux_overlay(staged)
     payload.stage_licenses(staged)
     payload.require_glibc_floor(staged)
     _lay_out_desktop(staged)

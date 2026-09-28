@@ -3,13 +3,17 @@
     python3 client/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
 The package carries the client compiled under /opt/neutrino_client, the
-window's bindings inside it, the root helper compiled beside the path polkit
-pins, and the two binaries the client drives, so it names no Python at all.
+window's bindings inside it, the two root helpers compiled beside the paths
+polkit pins, and the binaries the client drives, so it names no Python at
+all.
 That fixes it to one architecture and one glibc: build it in a container of
 the machine it is for, the way the hub's package is built.
 
 The client is a person's application, not a service: the package installs a
-launcher, no autostart entry, and registers no unit.
+launcher and no autostart entry. The two overlay daemons it carries are
+services: the package registers NetBird's and EasyTier's units, and a
+purge takes their configuration under /etc/neutrino_client. It conflicts
+with the netbird package, which holds the same state and socket.
 
 The client's services last only as long as it runs, so the maintainer scripts
 ask every resident to quit before they take its files; removing the package
@@ -83,6 +87,7 @@ Section: net
 Priority: optional
 Architecture: {architecture}
 Depends: {depends}
+Conflicts: netbird
 Maintainer: {maintainer}
 Description: Neutrino client
  A person's window onto the services a Neutrino Hub publishes for them:
@@ -101,7 +106,7 @@ if [ -d /usr/share/icons/hicolor ]; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
-
+{overlay_start}
 echo ""
 echo "  Neutrino client installed. Open it and join a hub:"
 echo ""
@@ -118,6 +123,8 @@ case "$1" in
         stop_residents
         ;;
 esac
+if [ "$1" = remove ]; then
+{overlay_stop}fi
 """
 
 POSTRM = """#!/bin/sh
@@ -131,6 +138,10 @@ if [ "$1" = remove ] || [ "$1" = purge ]; then
 fi
 if [ "$1" = purge ]; then
     wipe_personal_state
+    rm -rf {etc}
+fi
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
 fi
 """
 
@@ -184,6 +195,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
     compiled = payload.compile_linux(tree.parent / "build", architecture, version)
     payload.lay_out_compiled(tree, compiled, Path(CLIENT_MOUNT_HELPER_PATH))
     bundled.stage_linux_binaries(tree, architecture)
+    payload.stage_linux_overlay(tree)
     payload.stage_licenses(tree)
     payload.require_glibc_floor(tree)
     _lay_out_desktop(tree)
@@ -205,15 +217,26 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         maintainer=maintainer,
     )
     payload.write(tree / "DEBIAN/control", control)
-    payload.write(tree / "DEBIAN/postinst", POSTINST, is_executable=True)
+    payload.write(
+        tree / "DEBIAN/postinst",
+        POSTINST.format(overlay_start=payload.OVERLAY_UNITS_START),
+        is_executable=True,
+    )
     payload.write(
         tree / "DEBIAN/prerm",
-        PRERM.format(stop=payload.STOP_RESIDENTS),
+        PRERM.format(
+            stop=payload.STOP_RESIDENTS,
+            overlay_stop=_indented(payload.OVERLAY_UNITS_STOP),
+        ),
         is_executable=True,
     )
     payload.write(
         tree / "DEBIAN/postrm",
-        POSTRM.format(prefix=payload.INSTALL_PREFIX, wipe=payload.WIPE_PERSONAL_STATE),
+        POSTRM.format(
+            prefix=payload.INSTALL_PREFIX,
+            wipe=payload.WIPE_PERSONAL_STATE,
+            etc=payload.OVERLAY_ETC_DIR,
+        ),
         is_executable=True,
     )
 
@@ -258,6 +281,11 @@ def _build(tree: Path, target: Path) -> None:
     )
     if result.returncode != 0:
         raise SystemExit((result.stderr or result.stdout).strip())
+
+
+def _indented(script: str) -> str:
+    """A shell fragment indented one level, for the inside of an ``if``."""
+    return "".join(f"    {line}\n" if line else "\n" for line in script.splitlines())
 
 
 def _host_architecture() -> str:

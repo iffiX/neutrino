@@ -12,8 +12,10 @@ Mac.
 
 The client is a person's application, not a service and not a login item:
 it runs when the person opens it. The installer puts the bundle under
-``/Applications`` and links ``nclient`` into ``/usr/local/bin``; nothing is
-started at install and nothing is registered to start at login.
+``/Applications`` and links ``nclient`` into ``/usr/local/bin``. The two
+overlay daemons it carries are LaunchDaemons: NetBird's is kept running,
+and EasyTier's starts only while a joined network's file is in its
+directory, which a shell guard checks before the daemon is run.
 
 The bundle is signed ad hoc. Apple Silicon refuses native code with no
 signature at all, and an ad hoc one is what a build with no developer
@@ -27,7 +29,9 @@ compiles, signs, writes a package tree, runs pkgbuild and productbuild.
 """
 
 import argparse
+import os
 import platform
+import shlex
 import shutil
 import sys
 import tempfile
@@ -41,6 +45,18 @@ import icons  # noqa: E402
 import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 import pkg_build  # noqa: E402
+
+# The labels, the directories and the portal are the client's own, named here
+# so the installer and the runtime cannot drift.
+from neutrino_client.constants import (  # noqa: E402
+    CLIENT_BUNDLED_PATHS_DARWIN,
+    CLIENT_EASYTIER_CONFIG_DIR_DARWIN,
+    CLIENT_EASYTIER_LAUNCHD_LABEL,
+    CLIENT_EASYTIER_RPC_PORTAL,
+    CLIENT_LAUNCHD_DAEMONS_DIR,
+    CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
+    CLIENT_NETBIRD_LAUNCHD_LABEL,
+)
 
 CLIENT_ROOT = payload.CLIENT_ROOT
 REPO_ROOT = payload.REPO_ROOT
@@ -64,6 +80,33 @@ PACKAGE_IDENTIFIER = "com.neutrino.client"
 # command through.
 INSTALL_APPLICATIONS_DIR = Path("/Applications")
 INSTALL_LINK_PATH = Path("/usr/local/bin") / CLIENT_BINARY_NAME
+
+# What the install runs around the files: both daemons unloaded and NetBird
+# taken off its network before, their directories made and both loaded
+# after.
+PREINSTALL = f"""#!/bin/sh
+for label in {CLIENT_NETBIRD_LAUNCHD_LABEL} {CLIENT_EASYTIER_LAUNCHD_LABEL}; do
+    launchctl bootout "system/$label" >/dev/null 2>&1 || true
+done
+exit 0
+"""
+POSTINSTALL = f"""#!/bin/sh
+for directory in "{os.path.dirname(CLIENT_NETBIRD_CONFIG_PATH_DARWIN)}" \\
+        "{CLIENT_EASYTIER_CONFIG_DIR_DARWIN}"; do
+    mkdir -p "$directory"
+    chown root:wheel "$directory"
+    chmod 700 "$directory"
+done
+for label in {CLIENT_NETBIRD_LAUNCHD_LABEL} {CLIENT_EASYTIER_LAUNCHD_LABEL}; do
+    launchctl bootstrap system "{CLIENT_LAUNCHD_DAEMONS_DIR}/$label.plist" \\
+        >/dev/null 2>&1 || true
+done
+exit 0
+"""
+
+# Where each daemon's output goes.
+NETBIRD_LOG_PATH = "/Library/Logs/neutrino_client_netbird.log"
+EASYTIER_LOG_PATH = "/Library/Logs/neutrino_client_easytier.log"
 
 # What each name for the machine maps to: the wheel's own, and the platform
 # the package is named for. Apple Silicon only.
@@ -143,7 +186,11 @@ def main() -> int:
             print(f"staged {staged['root']}")
             return 0
         pkg_build.build(
-            staged["root"], target, identifier=PACKAGE_IDENTIFIER, version=version
+            staged["root"],
+            target,
+            identifier=PACKAGE_IDENTIFIER,
+            version=version,
+            scripts_dir=staged["scripts"],
         )
 
     if not target.is_file():
@@ -184,8 +231,8 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
         machine: ``arm64``.
 
     Returns:
-        ``{"root", "app"}``: the package root standing in for the
-        filesystem, and the signed bundle under it.
+        ``{"root", "app", "scripts"}``: the package root standing in for the
+        filesystem, the signed bundle under it, and the install scripts.
 
     Raises:
         SystemExit: When this is not a Mac of the pinned Python and
@@ -224,7 +271,73 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
         / "Contents/MacOS"
         / CLIENT_BINARY_NAME
     )
-    return {"root": package_root, "app": app}
+    write_daemons(package_root)
+    scripts = pkg_build.write_scripts(
+        root / "scripts", preinstall=PREINSTALL, postinstall=POSTINSTALL
+    )
+    return {"root": package_root, "app": app, "scripts": scripts}
+
+
+def installed_resource(name: str) -> str:
+    """Where one carried binary is once the bundle is installed.
+
+    Args:
+        name: The binary's name in ``CLIENT_BUNDLED_PATHS_DARWIN``.
+
+    Returns:
+        Its absolute path.
+    """
+    return str(
+        INSTALL_APPLICATIONS_DIR
+        / APP_BUNDLE_NAME
+        / "Contents"
+        / CLIENT_BUNDLED_PATHS_DARWIN[name]
+    )
+
+
+def easytier_command() -> str:
+    """The shell that runs EasyTier only while a network's file is there.
+
+    Returns:
+        ``/bin/sh -c`` text that exits 0 on an empty directory and
+        otherwise runs the daemon in its place.
+    """
+    directory = shlex.quote(CLIENT_EASYTIER_CONFIG_DIR_DARWIN)
+    core = shlex.quote(installed_resource("easytier-core"))
+    return (
+        f"ls {directory}/*.toml >/dev/null 2>&1 || exit 0; "
+        f"exec {core} --config-dir {directory} "
+        f"--rpc-portal {CLIENT_EASYTIER_RPC_PORTAL}"
+    )
+
+
+def write_daemons(package_root: Path) -> None:
+    """Write both daemons' LaunchDaemons into the package root.
+
+    Args:
+        package_root: The directory standing in for the filesystem root.
+    """
+    pkg_build.write_launchd_plist(
+        package_root,
+        label=CLIENT_NETBIRD_LAUNCHD_LABEL,
+        program_arguments=[
+            installed_resource("netbird"),
+            "service",
+            "run",
+            "--config",
+            CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
+            "--log-file",
+            "console",
+        ],
+        log_path=NETBIRD_LOG_PATH,
+    )
+    pkg_build.write_launchd_plist(
+        package_root,
+        label=CLIENT_EASYTIER_LAUNCHD_LABEL,
+        program_arguments=["/bin/sh", "-c", easytier_command()],
+        log_path=EASYTIER_LOG_PATH,
+        extra={"KeepAlive": {"SuccessfulExit": False}},
+    )
 
 
 def _check_build_machine(machine: str) -> None:

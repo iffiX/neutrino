@@ -1,4 +1,4 @@
-"""The pins of the two binaries the client carries, and how they are unpacked.
+"""The pins of the binaries the client carries, and how they are unpacked.
 
 Nothing here reaches the network: the download is replaced by an archive
 built in ``tmp_path``, so what is asserted is the pin table's completeness,
@@ -30,12 +30,24 @@ def _tarball(name: str) -> bytes:
     return buffer.getvalue()
 
 
-def _zip(name: str) -> bytes:
-    """A zip holding one executable file."""
+def _zip(*names: str) -> bytes:
+    """A zip holding files by their paths inside it."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr(name, "bin")
+        for name in names:
+            archive.writestr(name, "bin")
     return buffer.getvalue()
+
+
+def _easytier_zip(url: str) -> bytes:
+    """An EasyTier release: one directory holding the daemon, the CLI and more."""
+    top = url.rsplit("/", 1)[-1].split("-v")[0]
+    suffix = ".exe" if "windows" in url else ""
+    names = [f"{top}/easytier-core{suffix}", f"{top}/easytier-cli{suffix}"]
+    names.append(f"{top}/easytier-web{suffix}")
+    if "windows" in url:
+        names += [f"{top}/Packet.dll", f"{top}/wintun.dll", f"{top}/WinDivert64.sys"]
+    return _zip(*names)
 
 
 @pytest.fixture
@@ -49,6 +61,10 @@ def downloads(monkeypatch):
 
     def fetch(url, digest, what=""):
         asked.append(url)
+        if "netbird" in url:
+            return _tarball("netbird.exe" if "windows" in url else "netbird")
+        if "easytier" in url:
+            return _easytier_zip(url)
         if url.endswith(".zip"):
             return _zip(bundled.CC_SWITCH_WINDOWS_BINARY_NAME)
         if url.endswith(".tar.gz"):
@@ -196,6 +212,16 @@ def test_the_linux_staging_puts_both_where_the_runtime_looks(
     assert switcher.stat().st_mode & 0o111
     assert (prefix / "rustdesk" / "rustdesk").is_file()
     assert (prefix / "rustdesk" / "lib" / "librustdesk.so").is_file()
+    for relative in (
+        "netbird/netbird",
+        "easytier/easytier-core",
+        "easytier/easytier-cli",
+    ):
+        assert (prefix / relative).stat().st_mode & 0o111, relative
+    assert sorted(path.name for path in (prefix / "easytier").iterdir()) == [
+        "easytier-cli",
+        "easytier-core",
+    ]
 
 
 def test_the_linux_staging_checks_the_viewer_finds_its_own_libraries(
@@ -231,6 +257,11 @@ def test_the_windows_staging_puts_both_under_bin(tmp_path, downloads):
 
     assert (tmp_path / "bin" / "cc-switch.exe").is_file()
     assert (tmp_path / "bin" / "rustdesk.exe").read_bytes() == b"MZ"
+    assert (tmp_path / "bin" / "netbird.exe").is_file()
+    for name in ("easytier-core.exe", "easytier-cli.exe", "wintun.dll"):
+        assert (tmp_path / "bin" / name).is_file(), name
+    for name in ("Packet.dll", "WinDivert64.sys", "easytier-web.exe"):
+        assert not (tmp_path / "bin" / name).exists(), name
 
 
 def test_the_macos_staging_puts_both_under_the_bundles_resources(
@@ -246,9 +277,14 @@ def test_the_macos_staging_puts_both_under_the_bundles_resources(
     app = contents / "Resources" / "rustdesk" / "RustDesk.app"
     assert (app / "Contents" / "MacOS" / "RustDesk").is_file()
     assert (app / "Contents" / "Info.plist").is_file()
+    assert (contents / "Resources" / "netbird" / "netbird").is_file()
+    assert (contents / "Resources" / "easytier" / "easytier-core").is_file()
+    assert (contents / "Resources" / "easytier" / "easytier-cli").is_file()
     assert [url.rsplit("/", 1)[-1] for url in downloads] == [
         "cc-switch-cli-v5.10.4-darwin-arm64.tar.gz",
         "rustdesk-1.4.9-aarch64.dmg",
+        "netbird_0.78.1_darwin_arm64.tar.gz",
+        "easytier-macos-aarch64-v2.6.4.zip",
     ]
 
 
@@ -319,3 +355,61 @@ def test_the_install_paths_are_the_ones_the_runtime_resolver_reads():
         f"{bundled.DARWIN_RESOURCES_DIR}/{bundled.RUSTDESK_INSTALL_DIR}/"
         f"{rustdesk_assets.RUSTDESK_APP_NAME}/{rustdesk_assets.RUSTDESK_APP_BINARY}"
     )
+
+
+# --- NetBird and EasyTier ---
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        ("linux", "x86_64"),
+        ("linux", "aarch64"),
+        ("windows", "x86_64"),
+        ("darwin", "aarch64"),
+    ],
+)
+def test_every_platform_has_both_overlay_daemons_pinned(key):
+    for assets in (bundled.NETBIRD_ASSETS, bundled.EASYTIER_ASSETS):
+        asset, digest = assets[key]
+        assert asset
+        assert len(digest) == 64
+        assert digest == digest.lower()
+
+
+def test_the_overlay_urls_name_the_versions_the_pins_are_for():
+    netbird = bundled.NETBIRD_URL.format(
+        version=bundled.NETBIRD_VERSION,
+        asset=bundled.NETBIRD_ASSETS[("windows", "x86_64")][0],
+    )
+    easytier = bundled.EASYTIER_URL.format(
+        version=bundled.EASYTIER_VERSION,
+        asset=bundled.EASYTIER_ASSETS[("darwin", "aarch64")][0],
+    )
+
+    assert netbird.endswith("v0.78.1/netbird_0.78.1_windows_amd64.tar.gz")
+    assert easytier.endswith("v2.6.4/easytier-macos-aarch64-v2.6.4.zip")
+
+
+def test_an_easytier_release_without_its_daemon_is_refused(tmp_path, monkeypatch):
+    def fetch(url, digest, what):
+        return _zip("easytier-linux-x86_64/easytier-cli")
+
+    monkeypatch.setattr(bundled.payload, "fetch", fetch)
+
+    with pytest.raises(SystemExit) as refused:
+        bundled._stage_easytier(tmp_path / "easytier", "linux", "x86_64")
+
+    assert "easytier-core" in str(refused.value)
+
+
+def test_a_netbird_tarball_without_its_binary_is_refused(tmp_path, monkeypatch):
+    def fetch(url, digest, what):
+        return _tarball("README.md")
+
+    monkeypatch.setattr(bundled.payload, "fetch", fetch)
+
+    with pytest.raises(SystemExit) as refused:
+        bundled._stage_netbird(tmp_path / "netbird", "linux", "x86_64")
+
+    assert "carries no netbird" in str(refused.value)

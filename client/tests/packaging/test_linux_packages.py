@@ -3,9 +3,10 @@
 Compiling the client and fetching a viewer need a build container; what they
 produce is stood in for here, so what is asserted is the shape around them —
 where the compiled client and the helper go, what the desktop gets, the
-policy that gates the helper, that no unit is registered at all, what the
-maintainer scripts do to a running resident and to a person's own
-configuration, and what the package still asks the machine for.
+policy that gates each helper, the two overlay daemons' units and what the
+maintainer scripts do with them, what the scripts do to a running resident
+and to a person's own configuration, and what the package still asks the
+machine for.
 """
 
 import os
@@ -16,7 +17,18 @@ import build_deb
 import build_rpm
 import payload
 
-from neutrino_client.constants import CLIENT_CONTROL_SOCKET_NAME
+from neutrino_client.constants import (
+    CLIENT_BUNDLED_PATHS_LINUX,
+    CLIENT_CONTROL_SOCKET_NAME,
+    CLIENT_EASYTIER_CONFIG_DIR_LINUX,
+    CLIENT_EASYTIER_RPC_PORTAL,
+    CLIENT_EASYTIER_SERVICE_LINUX,
+    CLIENT_INSTALL_PREFIX_LINUX,
+    CLIENT_NETBIRD_CONFIG_PATH_LINUX,
+    CLIENT_NETBIRD_SERVICE_LINUX,
+    CLIENT_OVERLAY_HELPER_PATH,
+    CLIENT_OVERLAY_POLKIT_ACTION,
+)
 from neutrino_client.platforms.linux import CONFIG_DIR_NAME
 
 
@@ -40,10 +52,19 @@ def carried(monkeypatch, tmp_path):
         helper.mkdir(parents=True, exist_ok=True)
         (helper / "mount_helper").write_text("")
         (helper / "libpython3.13.so.1.0").write_text("")
+        overlay_helper = tmp_path / "compiled" / "overlay_helper.dist"
+        overlay_helper.mkdir(parents=True, exist_ok=True)
+        (overlay_helper / "overlay_helper").write_text("")
+        (overlay_helper / "libpython3.13.so.1.0").write_text("")
         package = payload.stage_client_tree(
             tmp_path / "compiled" / "tree", package_version
         )
-        return {"client": client, "helper": helper, "package": package}
+        return {
+            "client": client,
+            "helper": helper,
+            "overlay_helper": overlay_helper,
+            "package": package,
+        }
 
     def stage_binaries(tree, architecture):
         prefix = tree / str(payload.INSTALL_PREFIX).lstrip("/")
@@ -87,6 +108,7 @@ def spec():
         desktop="neutrino_client",
         action="com.neutrino.client.mount",
         stop=payload.STOP_RESIDENTS,
+        **build_rpm.overlay_spec_values(),
     )
 
 
@@ -117,12 +139,75 @@ def test_the_deb_compiles_for_the_machine_and_version_it_is_for(deb, carried):
     ]
 
 
-def test_the_deb_registers_no_unit_at_all(deb):
-    """The client is a person's application, not a service."""
+def test_the_deb_registers_the_two_daemons_and_no_unit_of_the_clients(deb):
+    """The client is a person's application; NetBird and EasyTier are services."""
+    units = sorted(path.name for path in (deb / "usr/lib/systemd/system").iterdir())
+
+    assert units == sorted(
+        [CLIENT_NETBIRD_SERVICE_LINUX, CLIENT_EASYTIER_SERVICE_LINUX]
+    )
     assert not (deb / "lib/systemd/system").exists()
-    assert not (deb / "usr/lib/systemd/system").exists()
-    for script in ("postinst", "prerm", "postrm"):
-        assert "systemctl" not in (deb / "DEBIAN" / script).read_text()
+
+
+def test_the_units_run_the_carried_daemons_where_the_runtime_looks(deb):
+    unit_dir = deb / "usr/lib/systemd/system"
+    netbird = (unit_dir / CLIENT_NETBIRD_SERVICE_LINUX).read_text()
+    easytier = (unit_dir / CLIENT_EASYTIER_SERVICE_LINUX).read_text()
+    prefix = CLIENT_INSTALL_PREFIX_LINUX
+
+    assert (
+        f"ExecStart={prefix}/{CLIENT_BUNDLED_PATHS_LINUX['netbird']} service run "
+        f"--config {CLIENT_NETBIRD_CONFIG_PATH_LINUX}"
+    ) in netbird
+    assert (
+        f"ExecStart={prefix}/{CLIENT_BUNDLED_PATHS_LINUX['easytier-core']} "
+        f"--config-dir {CLIENT_EASYTIER_CONFIG_DIR_LINUX} "
+        f"--rpc-portal {CLIENT_EASYTIER_RPC_PORTAL}\n"
+    ) in easytier
+
+
+def test_easytier_starts_only_while_a_networks_file_is_there(deb):
+    easytier = (
+        deb / "usr/lib/systemd/system" / CLIENT_EASYTIER_SERVICE_LINUX
+    ).read_text()
+
+    assert (
+        f"ConditionDirectoryNotEmpty={CLIENT_EASYTIER_CONFIG_DIR_LINUX}\n" in easytier
+    )
+
+
+def test_the_deb_enables_the_daemons_and_stops_them_on_remove(deb):
+    postinst = (deb / "DEBIAN/postinst").read_text()
+    prerm = (deb / "DEBIAN/prerm").read_text()
+    on_remove = prerm.split('if [ "$1" = remove ]; then')[1]
+
+    assert "systemctl daemon-reload" in postinst
+    assert f"systemctl enable {CLIENT_NETBIRD_SERVICE_LINUX} " in postinst
+    assert 'systemctl restart "$unit"' in postinst
+    assert "[ -d /run/systemd/system ]" in postinst
+    assert "/opt/neutrino_client/netbird/netbird down" in on_remove
+    assert "systemctl disable --now" in on_remove
+
+
+def test_a_purge_takes_the_daemons_configuration(deb):
+    postrm = (deb / "DEBIAN/postrm").read_text()
+    on_purge = postrm.split('if [ "$1" = purge ]; then')[1]
+
+    assert "rm -rf /etc/neutrino_client" in on_purge
+
+
+def test_the_deb_conflicts_with_the_netbird_package(deb):
+    assert "Conflicts: netbird\n" in (deb / "DEBIAN/control").read_text()
+
+
+def test_the_overlay_helper_sits_at_its_pinned_path_with_its_own_action(deb):
+    policy = (
+        deb / f"usr/share/polkit-1/actions/{CLIENT_OVERLAY_POLKIT_ACTION}.policy"
+    ).read_text()
+
+    assert (deb / CLIENT_OVERLAY_HELPER_PATH.lstrip("/")).is_file()
+    assert f'<action id="{CLIENT_OVERLAY_POLKIT_ACTION}">' in policy
+    assert f">{CLIENT_OVERLAY_HELPER_PATH}</annotate>" in policy
 
 
 def test_the_deb_lays_down_the_launcher_and_no_autostart(deb):
@@ -163,7 +248,9 @@ def test_the_deb_carries_the_licences_of_everything_in_it(deb):
 
     assert sorted(path.name for path in carried.iterdir()) == [
         "cc_switch.txt",
+        "easytier.txt",
         "gobject_introspection.txt",
+        "netbird.txt",
         "rustdesk.txt",
     ]
 
@@ -248,9 +335,18 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(rpm):
     assert not (rpm / "etc/xdg/autostart/neutrino_client.desktop").exists()
 
 
-def test_the_rpm_registers_no_unit_either(rpm):
-    assert not (rpm / "usr/lib/systemd/system").exists()
-    assert "systemctl" not in build_rpm.SPEC
+def test_the_rpm_registers_the_two_daemons_too(rpm, spec):
+    files = spec.split("%files")[1].split("%pre")[0]
+    after_install = spec.split("%post\n")[1].split("%preun\n")[0]
+    before_erase = spec.split("%preun\n")[1].split("%postun\n")[0]
+
+    assert (rpm / "usr/lib/systemd/system" / CLIENT_EASYTIER_SERVICE_LINUX).is_file()
+    assert f"/usr/lib/systemd/system/{CLIENT_NETBIRD_SERVICE_LINUX}" in files
+    assert f"/usr/lib/systemd/system/{CLIENT_EASYTIER_SERVICE_LINUX}" in files
+    assert f"{CLIENT_OVERLAY_POLKIT_ACTION}.policy" in files
+    assert "systemctl enable" in after_install
+    assert "    systemctl disable --now" in before_erase
+    assert "Conflicts:      netbird" in spec
 
 
 def test_the_rpm_names_the_rhel_family_libraries(rpm):

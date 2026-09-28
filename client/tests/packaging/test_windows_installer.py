@@ -2,8 +2,9 @@
 
 wix is not run here — it needs Windows and the .NET tool — and neither is
 the compiler, so what is asserted is the document the build writes and the
-command the compile is given: a product identity of its own, no
-service, no autostart Run entry, the shortcut, the quit that comes before
+command the compile is given: a product identity of its own, the two
+overlay daemons as services and none of the client's own, no autostart Run
+entry, the shortcut, the quit that comes before
 anything ends a resident and opens no window doing it, the two questions and
 what they answer to unasked, and the bootstrapper chained only where the
 runtime's key is absent. The payload's own laying out is checked with the
@@ -53,10 +54,97 @@ def test_the_installer_has_a_product_identity_of_its_own(source):
     assert 'Version="9.9.9"' in source
 
 
-def test_the_installer_registers_no_service(source):
-    """The client is a person's application, not a service."""
-    assert "ServiceInstall" not in source
-    assert "ServiceControl" not in source
+def services(source) -> dict:
+    """Every ServiceInstall in the document, by the name the SCM knows."""
+    root = xml.etree.ElementTree.fromstring(source)
+    return {
+        element.get("Name"): element for element in root.iter(f"{WXS}ServiceInstall")
+    }
+
+
+def controls(source) -> dict:
+    """Every ServiceControl in the document, by the service it controls."""
+    root = xml.etree.ElementTree.fromstring(source)
+    return {
+        element.get("Name"): element for element in root.iter(f"{WXS}ServiceControl")
+    }
+
+
+def test_the_installer_registers_the_two_daemons_and_no_service_of_the_clients(
+    source,
+):
+    assert set(services(source)) == {"NeutrinoClientNetbird", "NeutrinoClientEasytier"}
+    for element in services(source).values():
+        assert element.get("Account") == "LocalSystem"
+    assert "nclient" not in " ".join(
+        element.get("Arguments", "") for element in services(source).values()
+    )
+
+
+def test_netbird_starts_with_windows_and_easytier_only_on_a_join(source):
+    netbird = services(source)["NeutrinoClientNetbird"]
+    easytier = services(source)["NeutrinoClientEasytier"]
+
+    assert netbird.get("Start") == "auto"
+    assert controls(source)["NeutrinoClientNetbird"].get("Start") == "install"
+    assert easytier.get("Start") == "demand"
+    assert controls(source)["NeutrinoClientEasytier"].get("Start") is None
+    assert controls(source)["NeutrinoClientEasytier"].get("Remove") == "uninstall"
+
+
+def test_the_daemons_run_on_programdata_and_the_one_portal(source):
+    netbird = services(source)["NeutrinoClientNetbird"].get("Arguments")
+    easytier = services(source)["NeutrinoClientEasytier"].get("Arguments")
+
+    assert netbird == (
+        'service run --config "[CommonAppDataFolder]Neutrino Client\\netbird\\config.json"'
+    )
+    assert easytier == (
+        '--config-dir "[CommonAppDataFolder]Neutrino Client\\easytier" '
+        "--rpc-portal 127.0.0.1:15889"
+    )
+
+
+def test_users_may_start_and_stop_easytier_and_write_its_networks(source):
+    root = xml.etree.ElementTree.fromstring(source)
+    easytier = services(source)["NeutrinoClientEasytier"]
+    (granted,) = easytier.iter(f"{UTIL}PermissionEx")
+    folder = [
+        component
+        for component in root.iter(f"{WXS}Component")
+        if component.get("Directory") == "EASYTIERDATAFOLDER"
+    ][0]
+    (written,) = folder.iter(f"{UTIL}PermissionEx")
+
+    assert granted.get("User") == "Users"
+    for right in ("ServiceStart", "ServiceStop", "ServiceQueryStatus"):
+        assert granted.get(right) == "yes"
+    assert written.get("User") == "Users"
+    assert written.get("GenericWrite") == "yes"
+
+
+def test_the_daemon_binaries_are_service_components_and_not_files_of_the_glob(
+    source,
+):
+    root = xml.etree.ElementTree.fromstring(source)
+    excluded = [element.get("Files") for element in root.iter(f"{WXS}Exclude")]
+    components = {
+        component.get("Id"): component for component in root.iter(f"{WXS}Component")
+    }
+
+    assert [name.rsplit("bin", 1)[-1][1:] for name in excluded] == [
+        "netbird.exe",
+        "easytier-core.exe",
+    ]
+    for component_id in ("NetbirdService", "EasytierService"):
+        assert components[component_id].get("Subdirectory") == "bin"
+    main = [
+        feature for feature in root.iter(f"{WXS}Feature") if feature.get("Id") == "Main"
+    ][0]
+    assert {ref.get("Id") for ref in main.iter(f"{WXS}ComponentGroupRef")} == {
+        "Payload",
+        "Daemons",
+    }
 
 
 def test_the_source_is_well_formed_and_the_publisher_survives_its_brackets(source):
@@ -405,8 +493,12 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
     carried = tmp_path / "licenses"
     assert sorted(path.name for path in carried.iterdir()) == [
         "cc_switch.txt",
+        "easytier.txt",
+        "netbird.txt",
         "rustdesk.txt",
+        "wintun.txt",
     ]
+    assert "Prebuilt Binaries License" in (carried / "wintun.txt").read_text()
 
 
 def test_the_payload_carries_no_wrapper_script_and_no_interpreter_of_its_own():

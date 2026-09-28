@@ -1,0 +1,12 @@
+[Unit]
+Description=NetBird daemon of the Neutrino client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/neutrino_client/netbird/netbird service run --config /etc/neutrino_client/netbird/config.json --log-file console
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
