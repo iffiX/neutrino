@@ -25,9 +25,9 @@ The table shows each client's **Name**, **Hostname**, **Platform**, **Status**, 
 
 ## Permissions and agent filters
 
-**Default permissions** at the top of the page sets what every client without permissions of its own may use; **Permissions** on a row sets one client's own, or turns **Follow the default** back on. Each kind has a switch: web pages, ports, the AI gateway, shares, remote desktops, terminals and the virtual network.
+**Default permissions** at the top of the page sets what every client without permissions of its own may use; **Permissions** on a row sets one client's own, or turns **Follow the default** back on. Each kind has a switch: web pages, ports, the AI gateway, files, remote desktops, terminals and the virtual network.
 
-Beside every switch but **Virtual network**, a filter reads **All agents** until you narrow it. Select it and tick the managed devices whose entries that kind may reach; a client then sees only the web pages, shares or terminals those devices provide. The hub's own services belong to the hub's own device, and a declared service belongs to the device at its address. Select **Apply permissions** to push the new list to the clients.
+Beside every switch but **Virtual network**, a filter reads **All agents** until you narrow it. Select it and tick the managed devices whose entries that kind may reach; a client then sees only the web pages, files or terminals those devices provide. The hub's own services belong to the hub's own device, and a declared service belongs to the device at its address. Select **Apply permissions** to push the new list to the clients.
 
 Deleting a device on the **Devices** page takes it out of every filter. A kind whose filter named only that device is switched off.
 

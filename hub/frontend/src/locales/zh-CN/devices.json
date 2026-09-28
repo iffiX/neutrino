@@ -80,7 +80,7 @@
   "ui.clients.header_status": "状态",
   "ui.clients.header_version": "版本",
   "ui.clients.kind_ai": "AI 网关",
-  "ui.clients.kind_file": "共享",
+  "ui.clients.kind_file": "文件",
   "ui.clients.kind_overlay": "虚拟网",
   "ui.clients.kind_port": "端口",
   "ui.clients.kind_rdp": "远程桌面",
