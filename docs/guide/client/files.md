@@ -4,17 +4,17 @@ title: Files
 
 # Files
 
-The **Files** panel in a hub's group mounts a share that hub publishes, under your home directory or on a drive letter on Windows. The same panel unmounts it.
+The **Files** panel mounts a share a hub offers, under your home directory or on a drive letter on Windows. The same panel unmounts it.
 
 ## Where the entries come from
 
-An entry in a **Files** panel is an SMB share the hub of its group published, from one of these sources:
+The panel lists each hub's SMB shares, hub by hub. An entry comes from one of these sources:
 
 - the Samba module on a managed machine
 - a dataset shared from the ZFS page
 - a share on another server, declared by hand on the hub's **Services** page
 
-The line under the entry says which. Each hub publishes into its own group, and two hubs that publish the same server's share show it twice, once in each group.
+The line under the address names the hub, the machine and the module, such as **from Neutrino:Argon:Samba**, and a share declared by hand shows its own name as the module. Two hubs that offer the same server's share show it twice, once under each hub. A panel with no entry reads **no share is offered**.
 
 ## Config
 

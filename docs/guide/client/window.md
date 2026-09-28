@@ -8,7 +8,7 @@ The window, titled **Neutrino client**, has a sidebar on the left and shows one 
 
 ## The sidebar and the head
 
-The sidebar lists **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, and its foot names this computer, its platform and the client's version. The head over the page holds the page's name, the **↻** button and **Settings**. The **↻** button sends every connected hub a report and starts a connection round on every hub whose channel is down. **Settings** opens the client's own settings.
+The sidebar lists **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, each with its icon, and **Settings** under a rule below them. Its foot names this computer, its platform and the client's version. The head over the page holds the page's name and, at the top right, the **↻** button. **↻** sends every connected hub a report and starts a connection round on every hub whose channel is down.
 
 ## The Hubs page
 
@@ -28,9 +28,9 @@ A row whose hub publishes a virtual network has a **Virtual network** button wit
 
 ## A service page
 
-**Web**, **Ports**, **AI**, **Files** and **Remote desktops** each show one panel with every hub's entries of that kind, hub by hub in the order the hubs were joined. Under its address, each entry names the hub and the machine it comes from, such as **from Neutrino:Argon**. A hub older than 0.4.0 names no machine, and the entry shows the machine's address in its place.
+**Web**, **Ports**, **AI**, **Files** and **Remote desktops** each show one panel with every hub's entries of that kind, hub by hub in the order the hubs were joined. Under its address, each entry has one line naming the hub, the machine and the module it comes from, such as **from Neutrino:Argon:Gitea**. A hub older than 0.4.0 names no machine, and the line shows the machine's address in its place.
 
-An entry the hub cannot reach right now is greyed and reads **not reachable now**. A hub that is not connected takes one greyed row with its state. A panel with no entry at all reads a line such as **no port is published**.
+An entry the hub cannot reach right now is greyed and reads **not reachable now**. A hub that is not connected takes one greyed row with its state. A panel with no entry at all reads a line such as **no port is offered**.
 
 ## The AI page
 
@@ -38,12 +38,12 @@ Each hub's gateway is one entry with a **The AI tools use this gateway** switch,
 
 ## The Terminals page
 
-The strip on top lists every machine the connected hubs offer a terminal on, each with a dot that is green while the machine is online. **New terminal** opens a shell on the picked machine in a tab under the strip, as [Terminals](./terminals.md) describes.
+The strip on top lists every machine the connected hubs offer a terminal on, each with a dot that is green while the machine is online. **New terminal** opens a shell on the picked machine in a tab under the strip, as [Terminals](./terminals.md) describes. With no terminal open, a dashed frame under the strip reads **No terminal open** and holds its own **New terminal** button.
 
 ## Settings
 
-1. Select **Settings** in the head.
-1. In the **Client settings** dialog, pick the **Language** and the **Theme**.
+1. Select **Settings** at the bottom of the sidebar's entries.
+1. On the **Client settings** panel, pick the **Language** and the **Theme**.
 1. Select **Save**.
 
 The language and theme are the client's own; the panel's are set on the hub.
