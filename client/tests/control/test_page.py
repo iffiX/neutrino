@@ -1,11 +1,11 @@
 """The page's contract, checked on the frontend files it ships.
 
 The page is plain HTML, CSS and JavaScript under ``client/frontend/``, so
-what can be checked here is the contract's visible surface: the two
-sections in order, one hub row per hub and the join row always there, the
-services grouped by hub and then the five panels in their fixed order with
-the line each carries while nothing is published, the staging keyed by hub
-and by service key, the redraw guards, the bridge adapter with no direct
+what can be checked here is the contract's visible surface: the sidebar in
+its order, one hub row per hub and the join row always there, one panel per
+kind listing every hub's entries in hub order with the line each carries
+while nothing is published, every entry's provider line, the one AI switch,
+the staging keyed by service key, the redraw guards, the bridge adapter with no direct
 network reach, and the word catalogs asserted complete: the two languages
 carry the same keys, every key the page asks for is in them, and every
 ``{code}`` and every state token the client can emit is enumerated from the
@@ -51,21 +51,32 @@ DETAIL_FALLBACK_CODES = {
 
 MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
 
-# The five kinds in the order their tabs stand: the catalog key stem, the
-# type on the wire, the heading, the builder, and the line a hub publishing
-# none of the kind carries.
+# The five kinds in the order the sidebar lists them: the catalog key stem,
+# the type on the wire, the heading, the function drawing one entry, and the
+# line the panel carries while no hub publishes the kind.
 SERVICE_PANELS = (
-    ("web", "web", "Web", "drawWebPanel", "no web service is published"),
-    ("files", "file", "Files", "drawFilesPanel", "no share is published"),
-    ("ports", "port", "Ports", "drawPortsPanel", "no port is published"),
+    ("web", "web", "Web", "drawWebEntry", "no web service is published"),
+    ("ports", "port", "Ports", "drawPortEntry", "no port is published"),
+    ("ai", "ai", "AI", "drawAiEntry", "no AI service is published"),
+    ("files", "file", "Files", "drawFileEntry", "no share is published"),
     (
         "desktops",
         "rdp",
         "Remote desktops",
-        "drawDesktopsPanel",
+        "drawDesktopEntry",
         "no remote desktop is shared right now",
     ),
-    ("ai", "ai", "AI", "drawAiPanel", "no AI service is published"),
+)
+
+# The sidebar's entries, top to bottom, by their title's key.
+SIDEBAR_KEYS = (
+    "ui.section_hubs",
+    "ui.panel_web",
+    "ui.panel_ports",
+    "ui.panel_ai",
+    "ui.panel_files",
+    "ui.panel_terminals",
+    "ui.panel_desktops",
 )
 
 STATE_PATTERNS = (
@@ -234,17 +245,37 @@ def test_the_one_refusal_that_unbinds_and_the_pin_mismatch_are_worded():
 # --- the two sections and the five panels ---
 
 
-def test_a_top_bar_of_tabs_replaces_the_sections_and_nothing_of_modules_is_left():
-    assert '<div class="top">' in PAGE_HTML
-    assert '<nav id="tabs"></nav>' in PAGE_HTML
-    assert 'id="refresh"' in PAGE_HTML and 'id="settings"' in PAGE_HTML
+def test_a_sidebar_lists_the_hubs_and_every_kind_and_nothing_of_modules_is_left():
+    side = PAGE_HTML.split('<aside class="side">')[1].split("</aside>")[0]
+    head = PAGE_HTML.split('<div class="head">')[1].split('<div id="content">')[0]
+
+    assert '<nav id="tabs"></nav>' in side
+    assert "<h1>" in side
+    assert 'id="refresh"' in head and 'id="settings"' in head
+    assert head.index('id="page_title"') < head.index('id="refresh"')
     assert '<div id="content"></div>' in PAGE_HTML
     assert (
-        "const TABS = ['hubs', 'web', 'file', 'port', 'rdp', 'ai', 'terminals'];"
+        "const TABS = ['hubs', 'web', 'port', 'ai', 'file', 'terminals', 'rdp'];"
         in (PAGE_JS)
     )
-    assert EN_WORDS["ui.section_hubs"] == "Hubs"
-    assert EN_WORDS["ui.panel_terminals"] == "Terminals"
+    assert [EN_WORDS[key] for key in SIDEBAR_KEYS] == [
+        "Hubs",
+        "Web",
+        "Ports",
+        "AI",
+        "Files",
+        "Terminals",
+        "Remote desktops",
+    ]
+    assert [CATALOGS["zh-CN"][key] for key in SIDEBAR_KEYS] == [
+        "中枢",
+        "网页",
+        "端口",
+        "AI",
+        "文件",
+        "终端",
+        "远程桌面",
+    ]
     for gone in (
         "function section(",
         "function drawServices(",
@@ -276,27 +307,35 @@ def test_the_open_tab_draws_the_hubs_a_kind_or_the_terminals():
     assert "content.appendChild(drawHubs(state));" in body
     assert "content.appendChild(drawTerminals(state));" in body
     assert "kindTab(state, KINDS.filter((kind) => kind[0] === openTab)[0])" in body
+    assert "document.getElementById('page_title').textContent = tabTitle(openTab);" in (
+        body
+    )
     tabs = PAGE_JS.split("function drawTabs()")[1].split("\n}")[0]
     assert "button.className = tab === openTab ? 'tab on' : 'tab';" in tabs
     assert "button.onclick = () => { openTab = tab; redraw(); };" in tabs
 
 
-def test_a_tab_is_a_ghost_button_outlined_in_the_accent_when_open():
+def test_the_open_sidebar_entry_is_washed_in_the_accent_without_a_glow():
     assert "button.tab {" in PAGE_CSS
     tab_on = PAGE_CSS.split("button.tab.on {")[1].split("}")[0]
-    assert "border-color: var(--color-accent)" in tab_on
-    assert "box-shadow" not in tab_on
+    bar = PAGE_CSS.split("button.tab.on::before {")[1].split("}")[0]
+    assert "color: var(--color-accent)" in tab_on
+    assert "var(--color-accent)" in bar
+    assert "box-shadow" not in tab_on and "box-shadow" not in bar
 
 
-def test_the_window_is_one_top_bar_over_a_scrolling_tab():
+def test_the_window_is_a_sidebar_beside_a_content_that_fills_the_width():
     wrap = PAGE_CSS.split(".wrap {")[1].split("}")[0]
+    main = PAGE_CSS.split(".main {")[1].split("}")[0]
     content = PAGE_CSS.split("#content {")[1].split("}")[0]
     body = PAGE_CSS.split("body {")[1].split("}")[0]
 
-    assert "grid-template-rows: auto 1fr" in wrap
+    assert "grid-template-columns: 196px 1fr" in wrap
+    assert "grid-template-rows: auto 1fr" in main
     assert "overflow-y: auto" in content
     assert "padding: 0" in body
-    assert "repeat(auto-fill, minmax(460px, 1fr))" in PAGE_CSS
+    assert "max-width" not in PAGE_CSS.split(".modal {")[0]
+    assert "kind_grid" not in PAGE_CSS and "kind_grid" not in PAGE_JS
     from neutrino_client.constants import (
         CLIENT_GUI_WINDOW_HEIGHT,
         CLIENT_GUI_WINDOW_WIDTH,
@@ -309,7 +348,8 @@ def test_one_row_per_hub_names_it_its_standing_and_its_software():
     body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
 
     assert "for (const hub of hubs) card.appendChild(hubRow(hub));" in PAGE_JS
-    assert "hub.hub_name || hub.gateway_url" in body
+    assert "hubName(hub)" in body
+    assert "return hub.hub_name || hub.gateway_url;" in PAGE_JS
     assert "t('ui.hub_software', { software: hub.hub_software })" in body
     assert "hub.connection_state === 'reconnecting'" in body
     assert "hub.is_disabled ? t('ui.disabled')" in body
@@ -352,23 +392,36 @@ def test_the_top_bar_carries_a_refresh_button_that_spins_until_a_push():
     assert "ui.hub_version" not in EN_WORDS
 
 
-def test_the_exit_radio_is_checked_on_the_exit_and_live_on_connected_hubs():
+def test_a_hub_row_carries_no_target_radio_and_names_the_hub_the_tools_use():
     body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
 
-    assert "radio.type = 'radio';" in body
-    assert "radio.name = 'exit_hub';" in body
-    assert "radio.checked = !!hub.is_exit;" in body
-    assert "radio.disabled = hub.connection_state !== 'connected';" in body
-    assert (
-        "radio.onchange = () => send('/api/exit/set', { hub_id: hubKey(hub) });" in body
-    )
-    assert "t('ui.hub_exit')" in body
+    assert "radio" not in PAGE_JS
+    assert "ui.hub_exit" not in EN_WORDS
     assert "t('ui.hub_is_exit')" in body
-    assert "radio.disabled = true;" not in PAGE_JS
-    assert EN_WORDS["ui.hub_exit"] == "Target"
-    assert CATALOGS["zh-CN"]["ui.hub_exit"] == "目标"
     assert EN_WORDS["ui.hub_is_exit"] == "the AI tools point at this hub"
+
+
+def test_the_ai_panel_switches_one_gateway_on_and_every_other_off():
+    entry = PAGE_JS.split("function drawAiEntry(card, state, hub, entry)")[1].split(
+        "\n}"
+    )[0]
+    asking = PAGE_JS.split("async function askAiUse(hub, entry, isOn, noteKey)")[
+        1
+    ].split("\n}")[0]
+
+    assert "const isInUse = isExit && !!ai.is_enabled;" in entry
+    assert "toggle.className = isInUse ? 'chip on' : 'chip';" in entry
+    assert "toggle.onclick = () => askAiUse(hub, entry, !isInUse, noteKey);" in entry
+    assert "t('ui.ai_use')" in entry
+    assert "if (isOn && !hub.is_exit) {" in asking
+    assert "send('/api/exit/set', { hub_id: hubKey(hub) })" in asking
+    assert "if (isEnabled) return;" in asking
+    assert "is_enabled: isOn," in asking
+    assert EN_WORDS["ui.ai_use"] == "The AI tools use this gateway"
+    assert CATALOGS["zh-CN"]["ui.ai_use"] == "AI 工具使用此网关"
     assert EN_WORDS["code.no_exit_hub"]
+    for gone in ("ui.apply", "ui.ai_enabled", "ui.ai_exit_is", "ui.ai_off"):
+        assert gone not in EN_WORDS, gone
 
 
 def test_the_join_row_is_always_there_and_words_a_refused_link():
@@ -392,21 +445,44 @@ def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
     )
 
 
-# --- the services, grouped by hub ---
+# --- one panel per kind, in hub order ---
 
 
-def test_a_kinds_tab_draws_one_block_per_hub_side_by_side():
+def test_a_kind_is_one_panel_listing_every_hubs_entries_in_hub_order():
     body = PAGE_JS.split("function kindTab(state, kind)")[1].split("\n}")[0]
-    block = PAGE_JS.split("function hubBlock(hub)")[1].split("\n}")[0]
 
-    assert "grid.className = 'kind_grid';" in body
+    assert "const card = panelCard(t(titleKey), false);" in body
+    assert body.count("panelCard(") == 1
     assert "for (const hub of hubs) {" in body
-    assert "entriesOf(state, hub, type)" in body
+    assert "for (const entry of entriesOf(state, hub, type)) {" in body
+    assert "build(card, state, hub, entry);" in body
     assert "hub.connection_state !== 'connected'" in body
-    assert "block.appendChild(downCard(hub));" in body
-    assert "heading.className = 'hub_title';" in block
-    assert "heading.textContent = hub.hub_name || hub.gateway_url;" in block
+    assert "card.appendChild(downRow(hub));" in body
+    assert "hubBlock" not in PAGE_JS and "hub_title" not in PAGE_JS
     assert "entry.hub_id === hub.hub_id && entry.type === type" in PAGE_JS
+
+
+def test_every_entry_names_its_hub_and_machine_with_the_address_behind():
+    row = PAGE_JS.split("function entryRow(hub, entry, payloadText, extraNote)")[
+        1
+    ].split("\n}")[0]
+    provider = PAGE_JS.split("function providerLine(hub, entry)")[1].split("\n}")[0]
+    host = PAGE_JS.split("function entryHost(entry)")[1].split("\n}")[0]
+
+    assert "providerLine(hub, entry)" in row
+    assert "t('ui.provided_by', {" in provider
+    assert "hub: hubName(hub), device: entry.device_name || entryHost(entry)," in (
+        provider
+    )
+    assert "payload.url || payload.endpoint" in host
+    assert "return payload.host || '';" in host
+    for _, _, _, builder, _ in SERVICE_PANELS:
+        body = PAGE_JS.split(f"function {builder}(card, state, hub, entry)")[1].split(
+            "\n}"
+        )[0]
+        assert "entryRow(" in body and "hub, entry," in body, builder
+    assert EN_WORDS["ui.provided_by"] == "from {hub}:{device}"
+    assert CATALOGS["zh-CN"]["ui.provided_by"] == "由 {hub}:{device} 提供"
 
 
 def test_every_action_names_the_entrys_hub():
@@ -417,15 +493,15 @@ def test_every_action_names_the_entrys_hub():
         "action: 'mount', hub_id: entry.hub_id, id: entry.id,",
         "{ action: 'mount', hub_id: entry.hub_id, record_id: record.record_id }",
         "{ action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id }",
-        "hub_id: entry.hub_id,\n      is_enabled: staged.is_enabled,",
+        "hub_id: entry.hub_id,\n    is_enabled: isOn,",
     ):
         assert sent in PAGE_JS, sent
 
 
-def test_the_staging_is_keyed_by_hub_and_by_service_key():
-    assert "let aiStaged = {};" in PAGE_JS
-    assert "function ensureAiStaged(state, key)" in PAGE_JS
-    assert "delete aiStaged[key];" in PAGE_JS
+def test_the_staging_is_keyed_by_service_key_and_the_tools_stage_is_one():
+    assert "let aiStaged = null;" in PAGE_JS
+    assert "function ensureAiStaged(state)" in PAGE_JS
+    assert "aiStaged = null;" in PAGE_JS
     assert "const staged = fileStaged[key];" in PAGE_JS
     assert "(state.forwards || {})[serviceKey(entry)]" in PAGE_JS
     assert "(state.viewers || {})[serviceKey(entry)]" in PAGE_JS
@@ -434,27 +510,15 @@ def test_the_staging_is_keyed_by_hub_and_by_service_key():
     assert "serviceNotes.ai" not in PAGE_JS
 
 
-def test_the_ai_panel_of_a_hub_that_is_not_the_exit_is_inert():
-    body = PAGE_JS.split("function drawAiPanel(state, hub, entries, title)")[1].split(
+def test_a_saved_config_is_sent_at_once_only_for_the_gateway_in_use():
+    body = PAGE_JS.split("function drawAiEntry(card, state, hub, entry)")[1].split(
         "\n}"
     )[0]
+    dialog = PAGE_JS.split("function openConfigDialog(staged, models, onSave)")[1]
 
-    assert "const isExit = !!hub.is_exit;" in body
-    assert "config.disabled = !isExit ||" in body
-    assert "apply.disabled = !isExit ||" in body
-    assert "toggle.disabled = !isExit ||" in body
-
-
-def test_every_ai_panel_names_the_hub_the_tools_point_at():
-    body = PAGE_JS.split("function drawAiPanel(state, hub, entries, title)")[1].split(
-        "\n}"
-    )[0]
-
-    assert "function exitHubName(state)" in PAGE_JS
-    assert "const exitNote = isExit ? t('ui.hub_is_exit')" in body
-    assert ": exitName ? t('ui.ai_exit_is', { name: exitName }) : '';" in body
-    assert "entryRow(entry, payload.endpoint || '', exitNote)" in body
-    assert EN_WORDS["ui.ai_exit_is"] == "the AI tools point at {name}"
+    assert "() => { if (isInUse) askAiUse(hub, entry, true, noteKey); });" in body
+    assert "onSave();" in dialog.split("save.onclick")[1].split("};")[0]
+    assert "entryRow(hub, entry, payload.endpoint || '', note)" in body
 
 
 def test_leaving_a_text_field_lets_a_held_state_draw():
@@ -476,37 +540,28 @@ def test_the_kinds_stand_in_their_fixed_order():
     drawn = re.findall(r"\['([a-z]+)', 'ui\.panel_", kinds)
 
     assert drawn == [kind for _, kind, _, _, _ in SERVICE_PANELS]
-    assert drawn == ["web", "file", "port", "rdp", "ai"]
+    assert drawn == ["web", "port", "ai", "file", "rdp"]
 
 
-def test_a_hub_with_no_entry_of_a_kind_draws_its_empty_line():
+def test_a_panel_with_no_entry_of_its_kind_draws_its_empty_line_once():
     body = PAGE_JS.split("function kindTab(state, kind)")[1].split("\n}")[0]
 
-    assert "entries.length === 0" in body
-    assert "emptyPanel(t(titleKey), t(emptyKey))" in body
-    assert "continue" not in body
-    assert "function emptyPanel(title, line)" in PAGE_JS
+    assert "if (count === 0) card.appendChild(emptyRow(t(emptyKey)));" in body
+    assert "function emptyRow(line)" in PAGE_JS
+    assert "emptyPanel" not in PAGE_JS
     assert "services_empty" not in PAGE_JS
-
-
-def test_the_terminals_tab_lists_each_hubs_machines():
-    body = PAGE_JS.split("function drawTerminals(state)")[1].split("\n}")[0]
-
-    assert "machine.hub_id === hub.hub_id" in body
-    assert "t('ui.empty_terminals')" in body
-    assert EN_WORDS["ui.empty_terminals"]
 
 
 # --- the virtual network chip and the colour tiers ---
 
 
-def test_a_hub_row_carries_the_virtual_network_chip_between_body_and_target():
+def test_a_hub_row_carries_the_virtual_network_chip_between_body_and_leave():
     body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
     chip = PAGE_JS.split("function overlayChip(hub)")[1].split("\n}")[0]
     asking = PAGE_JS.split("function askOverlay(hub, isOn)")[1].split("\n}")[0]
 
     assert body.index("row.appendChild(body);") < body.index("overlayChip(hub)")
-    assert body.index("overlayChip(hub)") < body.index("t('ui.hub_exit')")
+    assert body.index("overlayChip(hub)") < body.index("row.appendChild(leave);")
     assert "if (!overlay) return null;" in chip
     assert "chip.className = isOn ? 'chip on' : 'chip';" in chip
     assert "chip.disabled = isMoving || isWorking || isHeld(hub);" in chip
@@ -598,11 +653,8 @@ def test_the_hub_row_colours_by_the_fixed_tiers():
     assert ".spin.warn { border-top-color: var(--color-signal-warn); }" in PAGE_CSS
 
 
-def test_the_ai_panel_is_one_toggle_config_and_apply():
-    assert EN_WORDS["ui.ai_enabled"] == "Enabled"
-    assert "staged.is_enabled = !isOn" in PAGE_JS
-    assert "is_enabled: staged.is_enabled" in PAGE_JS
-    assert "tool_configs: staged.tool_configs" in PAGE_JS
+def test_the_ai_switch_sends_the_toggle_and_the_tool_configs_together():
+    assert "tool_configs: ensureAiStaged(lastState).tool_configs," in PAGE_JS
     assert "targets" not in PAGE_JS
 
 
@@ -619,7 +671,7 @@ def test_the_ai_knobs_mirror_the_clients_own():
 
 
 def test_the_desktops_panel_only_connects():
-    body = PAGE_JS.split("function drawDesktopsPanel")[1].split("\n}")[0]
+    body = PAGE_JS.split("function drawDesktopEntry")[1].split("\n}")[0]
     assert "{ action: 'connect', hub_id: entry.hub_id, id: entry.id }" in body
     assert "password" not in body
     assert "share" not in body
@@ -823,8 +875,14 @@ def test_the_lanes_standing_greys_and_spins():
     assert EN_WORDS["code.busy"]
 
 
-def test_a_failed_switch_leaves_apply_live_for_the_same_ask_again():
-    assert "!(isDirty || work.code)" in PAGE_JS
+def test_a_failed_switch_leaves_the_switch_live_for_the_same_ask_again():
+    body = PAGE_JS.split("function drawAiEntry(card, state, hub, entry)")[1].split(
+        "\n}"
+    )[0]
+    assert "toggle.disabled = !entry.is_healthy || isHeld(hub) || isWorking;" in body
+    assert "if (isExit && work.code) notes.push(wordCode(work.code, work.params));" in (
+        body
+    )
 
 
 def test_a_sent_mount_password_is_cleared_from_the_stage():
@@ -870,8 +928,20 @@ def test_an_entrys_origin_is_worded_from_its_code_with_the_sentence_as_fallback(
         assert code in catalog_keys("ui.description.")
 
 
+def test_the_terminals_panel_lists_every_hubs_machines_in_hub_order():
+    body = PAGE_JS.split("function drawTerminals(state)")[1].split("\n}")[0]
+
+    assert "machine.hub_id === hub.hub_id" in body
+    assert "if (count === 0) card.appendChild(emptyRow(t('ui.empty_terminals')));" in (
+        body
+    )
+    assert EN_WORDS["ui.empty_terminals"]
+
+
 def test_each_offered_machine_has_an_open_terminal_button():
-    card = PAGE_JS.split("function terminalsCard(hub, machines)")[1].split("\n}")[0]
+    card = PAGE_JS.split("function terminalRows(card, hub, machines)")[1].split("\n}")[
+        0
+    ]
     asking = PAGE_JS.split("function askTerminal(hub, machine, noteKey)")[1].split(
         "\n}"
     )[0]

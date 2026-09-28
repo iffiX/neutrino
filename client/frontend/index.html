@@ -8,18 +8,23 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="top">
+  <aside class="side">
     <div class="brand">
       <h1>Neutrino client</h1>
-      <div class="sub" id="ident"></div>
     </div>
     <nav id="tabs"></nav>
-    <div class="actions">
-      <button type="button" class="ghost refresh" id="refresh"></button>
-      <button type="button" class="ghost" id="settings"></button>
+    <div class="sub ident" id="ident"></div>
+  </aside>
+  <main class="main">
+    <div class="head">
+      <h2 id="page_title"></h2>
+      <div class="actions">
+        <button type="button" class="ghost refresh" id="refresh"></button>
+        <button type="button" class="ghost" id="settings"></button>
+      </div>
     </div>
-  </div>
-  <div id="content"></div>
+    <div id="content"></div>
+  </main>
 </div>
 <script id="words" type="application/json">{}</script>
 <script src="app.js"></script>

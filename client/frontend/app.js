@@ -80,10 +80,9 @@ let lastSerialized = '';
 let pendingState = null;
 // Notes a refusal left on one entry, by type and service key.
 let serviceNotes = {};
-// The staged AI apply per hub, by hub key: the toggle and what each tool
-// points with. Committed only by Apply; a missing key rebuilds from the
-// next server state.
-let aiStaged = {};
+// What each AI tool points with, as the Config dialog left it; sent with
+// the next switch, and null rebuilds it from the next server state.
+let aiStaged = null;
 // Records whose unmount is in flight, so the button greys at once.
 const fileAsked = {};
 // Hubs whose Leave is in flight, by hub key: the button greys and spins
@@ -240,22 +239,22 @@ async function serviceAction(type, body, noteKey) {
   return true;
 }
 
-// --- the top bar and its tabs ---
+// --- the sidebar and its entries ---
 
-// The tabs along the top, in order: the hubs, each kind of service, then
-// the terminals. The one open is kept across redraws.
-const TABS = ['hubs', 'web', 'file', 'port', 'rdp', 'ai', 'terminals'];
+// The sidebar's entries, in order: the hubs, then each kind of service with
+// the terminals among them. The one open is kept across redraws.
+const TABS = ['hubs', 'web', 'port', 'ai', 'file', 'terminals', 'rdp'];
 let openTab = 'hubs';
 
-// Every kind of service in the order its tab stands: the type on the wire,
-// its title's key, the function that draws one hub's entries, and the key
-// of the line a hub publishing none carries.
+// Every kind of service in the order the sidebar lists it: the type on the
+// wire, its title's key, the function that draws one entry into the kind's
+// panel, and the key of the line the panel carries while nothing is there.
 const KINDS = [
-  ['web', 'ui.panel_web', drawWebPanel, 'ui.empty_web'],
-  ['file', 'ui.panel_files', drawFilesPanel, 'ui.empty_files'],
-  ['port', 'ui.panel_ports', drawPortsPanel, 'ui.empty_ports'],
-  ['rdp', 'ui.panel_desktops', drawDesktopsPanel, 'ui.empty_desktops'],
-  ['ai', 'ui.panel_ai', drawAiPanel, 'ui.empty_ai'],
+  ['web', 'ui.panel_web', drawWebEntry, 'ui.empty_web'],
+  ['port', 'ui.panel_ports', drawPortEntry, 'ui.empty_ports'],
+  ['ai', 'ui.panel_ai', drawAiEntry, 'ui.empty_ai'],
+  ['file', 'ui.panel_files', drawFileEntry, 'ui.empty_files'],
+  ['rdp', 'ui.panel_desktops', drawDesktopEntry, 'ui.empty_desktops'],
 ];
 
 // What each code a hub row or a virtual network chip carries means for its
@@ -314,6 +313,8 @@ function draw(state) {
     state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
     ' · client ' + state.version;
   drawTabs();
+  document.getElementById('page_title').textContent = tabTitle(openTab);
+  dropStaleFileStages(state);
 
   const content = document.getElementById('content');
   content.innerHTML = '';
@@ -326,7 +327,7 @@ function draw(state) {
   }
 }
 
-// One ghost button per tab; the open one is outlined in the accent.
+// One entry per tab down the sidebar; the open one is washed in the accent.
 function drawTabs() {
   const nav = document.getElementById('tabs');
   nav.innerHTML = '';
@@ -362,50 +363,43 @@ function drawRefresh() {
   button.onclick = askRefresh;
 }
 
-// --- one kind's tab: every hub's entries of that kind, side by side ---
+// --- one kind's panel: every hub's entries of that kind, in hub order ---
 
 function kindTab(state, kind) {
   const [type, titleKey, build, emptyKey] = kind;
-  const grid = document.createElement('div');
-  grid.className = 'kind_grid';
   const hubs = state.hubs || [];
-  if (hubs.length === 0) {
-    grid.appendChild(waitCard());
-    return grid;
-  }
+  if (hubs.length === 0) return waitCard();
+  const card = panelCard(t(titleKey), false);
+  let count = 0;
   for (const hub of hubs) {
-    const block = hubBlock(hub);
     if (hub.connection_state !== 'connected') {
-      block.appendChild(downCard(hub));
+      card.appendChild(downRow(hub));
     } else {
-      const entries = entriesOf(state, hub, type);
-      block.appendChild(entries.length === 0
-        ? emptyPanel(t(titleKey), t(emptyKey))
-        : build(state, hub, entries, t(titleKey)));
+      for (const entry of entriesOf(state, hub, type)) {
+        build(card, state, hub, entry);
+        count += 1;
+      }
     }
-    grid.appendChild(block);
   }
-  return grid;
+  if (count === 0) card.appendChild(emptyRow(t(emptyKey)));
+  const work = state.rdp_work || {};
+  if (type === 'rdp' && work.code) card.appendChild(errorLine(wordCode(work.code, work.params)));
+  return card;
 }
 
-// One hub's column in a tab: its name, then what it carries.
-function hubBlock(hub) {
-  const block = document.createElement('div');
-  block.className = 'hub_block';
-  const heading = document.createElement('h3');
-  heading.className = 'hub_title';
-  heading.textContent = hub.hub_name || hub.gateway_url;
-  block.appendChild(heading);
-  return block;
+// A hub whose socket is down publishes nothing; its row in a panel says why.
+function downRow(hub) {
+  const row = document.createElement('div');
+  row.className = 'feat greyed';
+  row.innerHTML = marker('off') + '<div class="body"><div class="title">' +
+    hubName(hub) + '</div><div class="note">' +
+    (hub.connection_state === 'replaced' ? t('state.replaced') : t('ui.reconnecting')) +
+    '</div></div>';
+  return row;
 }
 
-// A hub whose socket is down publishes nothing; its column says why.
-function downCard(hub) {
-  const down = document.createElement('div');
-  down.className = 'card';
-  down.innerHTML = '<span class="muted">' + (hub.connection_state === 'replaced'
-    ? t('state.replaced') : t('ui.reconnecting')) + '</span>';
-  return down;
+function hubName(hub) {
+  return hub.hub_name || hub.gateway_url;
 }
 
 function waitCard() {
@@ -418,31 +412,25 @@ function waitCard() {
 // --- the terminals tab: every machine each hub offers a terminal on ---
 
 function drawTerminals(state) {
-  const grid = document.createElement('div');
-  grid.className = 'kind_grid';
   const hubs = state.hubs || [];
-  if (hubs.length === 0) {
-    grid.appendChild(waitCard());
-    return grid;
-  }
+  if (hubs.length === 0) return waitCard();
+  const card = panelCard(t('ui.panel_terminals'), false);
+  let count = 0;
   for (const hub of hubs) {
-    const block = hubBlock(hub);
     const machines = (state.terminals || []).filter(
       (machine) => machine.hub_id === hub.hub_id);
     if (hub.connection_state !== 'connected') {
-      block.appendChild(downCard(hub));
-    } else if (machines.length === 0) {
-      block.appendChild(emptyPanel(t('ui.panel_terminals'), t('ui.empty_terminals')));
+      card.appendChild(downRow(hub));
     } else {
-      block.appendChild(terminalsCard(hub, machines));
+      terminalRows(card, hub, machines);
+      count += machines.length;
     }
-    grid.appendChild(block);
   }
-  return grid;
+  if (count === 0) card.appendChild(emptyRow(t('ui.empty_terminals')));
+  return card;
 }
 
-function terminalsCard(hub, machines) {
-  const card = panelCard(t('ui.panel_terminals'), false);
+function terminalRows(card, hub, machines) {
   for (const machine of machines) {
     const row = document.createElement('div');
     row.className = machine.is_online ? 'feat' : 'feat greyed';
@@ -453,6 +441,10 @@ function terminalsCard(hub, machines) {
     title.className = 'title';
     title.textContent = machine.name;
     body.appendChild(title);
+    const provider = document.createElement('div');
+    provider.className = 'note muted';
+    provider.textContent = t('ui.provided_by', { hub: hubName(hub), device: machine.name });
+    body.appendChild(provider);
     const noteKey = 'terminal_' + hub.hub_id + '/' + machine.device_id;
     if (serviceNotes[noteKey]) body.appendChild(errorLine(serviceNotes[noteKey]));
     row.appendChild(body);
@@ -463,7 +455,6 @@ function terminalsCard(hub, machines) {
     row.appendChild(open);
     card.appendChild(row);
   }
-  return card;
 }
 
 // A press on Open terminal: the system's own terminal opens running
@@ -484,7 +475,7 @@ function askTerminal(hub, machine, noteKey) {
 
 function drawHubs(state) {
   const card = document.createElement('div');
-  card.className = 'card hubs_card';
+  card.className = 'card';
   const hubs = state.hubs || [];
   for (const hub of hubs) card.appendChild(hubRow(hub));
   if (hubs.length === 0) {
@@ -527,7 +518,7 @@ function hubRow(hub) {
     ? ' · ' + t('ui.hub_software', { software: hub.hub_software }) : '';
   const body = document.createElement('div');
   body.className = 'body';
-  body.innerHTML = '<div class="title">' + (hub.hub_name || hub.gateway_url) +
+  body.innerHTML = '<div class="title">' + hubName(hub) +
     '</div><div class="note">' + word + '</div>' +
     '<div class="sub">' + hub.gateway_url + software + '</div>' +
     (hub.is_exit ? '<div class="note muted">' + t('ui.hub_is_exit') + '</div>' : '');
@@ -540,19 +531,6 @@ function hubRow(hub) {
   row.appendChild(body);
   const chip = overlayChip(hub);
   if (chip) row.appendChild(chip);
-  // One radio per hub: the AI tools point at the checked one, and only a
-  // connected hub can be chosen.
-  const exit = document.createElement('label');
-  exit.className = 'chip' + (hub.is_exit ? ' on' : '');
-  const radio = document.createElement('input');
-  radio.type = 'radio';
-  radio.name = 'exit_hub';
-  radio.checked = !!hub.is_exit;
-  radio.disabled = hub.connection_state !== 'connected';
-  radio.onchange = () => send('/api/exit/set', { hub_id: hubKey(hub) });
-  exit.appendChild(radio);
-  exit.appendChild(document.createTextNode(t('ui.hub_exit')));
-  row.appendChild(exit);
   if (isReplaced) {
     const reconnect = document.createElement('button');
     reconnect.textContent = t('ui.reconnect');
@@ -726,14 +704,13 @@ function entriesOf(state, hub, type) {
     (entry) => entry.hub_id === hub.hub_id && entry.type === type);
 }
 
-function emptyPanel(title, line) {
-  const card = panelCard(title, false);
+// The line a panel carries while no hub has anything of its kind.
+function emptyRow(line) {
   const row = document.createElement('div');
   row.className = 'feat';
   row.innerHTML = '<div class="body"><div class="note muted">' + line +
     '</div></div>';
-  card.appendChild(row);
-  return card;
+  return row;
 }
 
 function panelCard(title, isDirty) {
@@ -746,7 +723,7 @@ function panelCard(title, isDirty) {
   return card;
 }
 
-function entryRow(entry, payloadText, extraNote) {
+function entryRow(hub, entry, payloadText, extraNote) {
   const row = document.createElement('div');
   row.className = entry.is_healthy ? 'feat' : 'feat greyed';
   const note = (entry.is_healthy ? '' : t('ui.unhealthy')) +
@@ -755,18 +732,41 @@ function entryRow(entry, payloadText, extraNote) {
     '"></span>' +
     '<div class="body"><div class="title">' + entry.title + '</div>' +
     '<div class="note">' + payloadText + (note ? ' — ' + note : '') + '</div>' +
+    '<div class="note muted">' + providerLine(hub, entry) + '</div>' +
     (describeEntry(entry)
       ? '<div class="note muted">' + describeEntry(entry) + '</div>' : '') +
     '</div>';
   return row;
 }
 
-// Where an entry comes from, in this page's own words; an older hub sends
-// only the English sentence, which stands as it is.
+// Which hub and which of its machines an entry comes from; a hub that names
+// no machine leaves the address the entry points at.
+function providerLine(hub, entry) {
+  return t('ui.provided_by', {
+    hub: hubName(hub), device: entry.device_name || entryHost(entry),
+  });
+}
+
+// The host an entry's payload points at, wherever its type keeps it.
+function entryHost(entry) {
+  const payload = entry.payload || {};
+  const url = payload.url || payload.endpoint;
+  if (url) {
+    const match = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]+\]|[^/:?#]+)/i.exec(url);
+    return match ? match[1] : url;
+  }
+  return payload.host || '';
+}
+
+// Where an entry comes from, in this page's own words, naming the machine
+// as the hub calls it; an older hub sends only the English sentence, which
+// stands as it is.
 function describeEntry(entry) {
   const code = entry.description_code;
   if (code && hasWord('ui.description.' + code)) {
-    return t('ui.description.' + code, entry.description_params || {});
+    const params = Object.assign({}, entry.description_params || {});
+    if (entry.device_name && params.host) params.host = entry.device_name;
+    return t('ui.description.' + code, params);
   }
   return entry.description || '';
 }
@@ -776,170 +776,135 @@ function isHeld(hub) {
   return !!hub.is_disabled;
 }
 
-function drawWebPanel(state, hub, entries, title) {
-  const card = panelCard(title, false);
-  for (const entry of entries) {
-    const payload = entry.payload || {};
-    const noteKey = 'web_' + serviceKey(entry);
-    const row = entryRow(entry, payload.url || '', serviceNotes[noteKey] || '');
-    const open = document.createElement('button');
-    open.textContent = t('ui.open');
-    open.disabled = !entry.is_healthy || isHeld(hub);
-    open.onclick = () => serviceAction('web',
-      { hub_id: entry.hub_id, id: entry.id }, noteKey);
-    row.appendChild(open);
-    card.appendChild(row);
-  }
-  return card;
+function drawWebEntry(card, state, hub, entry) {
+  const payload = entry.payload || {};
+  const noteKey = 'web_' + serviceKey(entry);
+  const row = entryRow(hub, entry, payload.url || '', serviceNotes[noteKey] || '');
+  const open = document.createElement('button');
+  open.textContent = t('ui.open');
+  open.disabled = !entry.is_healthy || isHeld(hub);
+  open.onclick = () => serviceAction('web',
+    { hub_id: entry.hub_id, id: entry.id }, noteKey);
+  row.appendChild(open);
+  card.appendChild(row);
 }
 
-function drawPortsPanel(state, hub, entries, title) {
-  const card = panelCard(title, false);
-  for (const entry of entries) {
-    const payload = entry.payload || {};
-    const forward = (state.forwards || {})[serviceKey(entry)] || {};
-    const isOn = !!forward.is_active;
-    const noteKey = 'port_' + serviceKey(entry);
-    const local = isOn
-      ? ' → ' + t('ui.forwarding_to', { port: forward.local_port }) : '';
-    const note = serviceNotes[noteKey] || '';
-    const row = entryRow(
-      entry, (payload.host || '') + ':' + (payload.port || '') + local, note);
-    const button = document.createElement('button');
-    button.className = isOn ? 'danger' : '';
-    button.textContent = isOn ? t('ui.port_disconnect') : t('ui.port_connect');
-    button.disabled = (!entry.is_healthy && !isOn) || isHeld(hub);
-    button.onclick = () => serviceAction('port',
-      { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn }, noteKey);
-    row.appendChild(button);
-    card.appendChild(row);
-  }
-  return card;
+function drawPortEntry(card, state, hub, entry) {
+  const payload = entry.payload || {};
+  const forward = (state.forwards || {})[serviceKey(entry)] || {};
+  const isOn = !!forward.is_active;
+  const noteKey = 'port_' + serviceKey(entry);
+  const local = isOn
+    ? ' → ' + t('ui.forwarding_to', { port: forward.local_port }) : '';
+  const note = serviceNotes[noteKey] || '';
+  const row = entryRow(
+    hub, entry, (payload.host || '') + ':' + (payload.port || '') + local, note);
+  const button = document.createElement('button');
+  button.className = isOn ? 'danger' : '';
+  button.textContent = isOn ? t('ui.port_disconnect') : t('ui.port_connect');
+  button.disabled = (!entry.is_healthy && !isOn) || isHeld(hub);
+  button.onclick = () => serviceAction('port',
+    { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn }, noteKey);
+  row.appendChild(button);
+  card.appendChild(row);
 }
 
 // --- the remote desktops panel: connect there ---
 
-function drawDesktopsPanel(state, hub, entries, title) {
-  const card = panelCard(title, false);
+function drawDesktopEntry(card, state, hub, entry) {
   const work = state.rdp_work || {};
   const isWorking = work.state === 'working';
-  for (const entry of entries) {
-    const payload = entry.payload || {};
-    const noteKey = 'rdp_' + serviceKey(entry);
-    const viewer = (state.viewers || {})[serviceKey(entry)] || {};
-    const open = viewer.is_running ? ' — ' + t('ui.rdp_open') : '';
-    const isThisOne = work.step === 'connecting:' + serviceKey(entry);
-    const row = entryRow(
-      entry, (payload.host || '') + ':' + (payload.port || '') + open,
-      serviceNotes[noteKey] || '');
-    const connect = document.createElement('button');
-    if (isWorking && isThisOne) {
-      connect.innerHTML = '<span class="spin"></span>' + t('ui.rdp_connecting');
-    } else {
-      connect.textContent = t('ui.rdp_connect');
-    }
-    connect.disabled = isWorking || !entry.is_healthy || isHeld(hub);
-    connect.onclick = () => serviceAction('rdp',
-      { action: 'connect', hub_id: entry.hub_id, id: entry.id }, noteKey);
-    row.appendChild(connect);
-    card.appendChild(row);
+  const payload = entry.payload || {};
+  const noteKey = 'rdp_' + serviceKey(entry);
+  const viewer = (state.viewers || {})[serviceKey(entry)] || {};
+  const open = viewer.is_running ? ' — ' + t('ui.rdp_open') : '';
+  const isThisOne = work.step === 'connecting:' + serviceKey(entry);
+  const row = entryRow(
+    hub, entry, (payload.host || '') + ':' + (payload.port || '') + open,
+    serviceNotes[noteKey] || '');
+  const connect = document.createElement('button');
+  if (isWorking && isThisOne) {
+    connect.innerHTML = '<span class="spin"></span>' + t('ui.rdp_connecting');
+  } else {
+    connect.textContent = t('ui.rdp_connect');
   }
-  if (work.code) card.appendChild(errorLine(wordCode(work.code, work.params)));
-  return card;
+  connect.disabled = isWorking || !entry.is_healthy || isHeld(hub);
+  connect.onclick = () => serviceAction('rdp',
+    { action: 'connect', hub_id: entry.hub_id, id: entry.id }, noteKey);
+  row.appendChild(connect);
+  card.appendChild(row);
 }
 
-// --- the AI panel: one toggle + Config + Apply, staged per hub ---
+// --- the AI panel: one gateway per hub, one of them the tools' ---
 
-function ensureAiStaged(state, key) {
-  if (aiStaged[key]) return;
-  aiStaged[key] = {
-    is_enabled: !!(state.ai || {}).is_enabled,
+// What each tool points with, staged by the Config dialog and sent with
+// the next switch; rebuilt from the server state once a switch lands.
+function ensureAiStaged(state) {
+  if (aiStaged) return aiStaged;
+  aiStaged = {
     tool_configs: JSON.parse(JSON.stringify(state.ai_tool_configs || {})),
   };
+  return aiStaged;
 }
 
-function isAiDirty(state, key) {
-  if (aiStaged[key].is_enabled !== !!(state.ai || {}).is_enabled) return true;
-  return JSON.stringify(aiStaged[key].tool_configs) !==
-    JSON.stringify(state.ai_tool_configs || {});
-}
-
-// The hub the AI tools point at, as the page names it.
-function exitHubName(state) {
-  const exit = (state.hubs || []).filter((hub) => hub.is_exit)[0];
-  return exit ? (exit.hub_name || exit.gateway_url) : '';
-}
-
-// The tools point at one hub, the exit; the other hubs' panels name it and
-// stay inert until their own hub is chosen.
-function drawAiPanel(state, hub, entries, title) {
-  const key = hubKey(hub);
-  ensureAiStaged(state, key);
-  const staged = aiStaged[key];
-  const entry = entries[0];
-  const isExit = !!hub.is_exit;
-  const isDirty = isExit && isAiDirty(state, key);
-  const card = panelCard(title, isDirty);
-  const payload = entry.payload || {};
-  const row = (state.ai || {});
-  const work = row.work || {};
+// A gateway is in use while its hub is the exit and the tools are pointed;
+// switching one on points the tools at it and leaves every other off.
+function drawAiEntry(card, state, hub, entry) {
+  const staged = ensureAiStaged(state);
+  const ai = state.ai || {};
+  const work = ai.work || {};
   const isWorking = work.state === 'working';
+  const isExit = !!hub.is_exit;
+  const isInUse = isExit && !!ai.is_enabled;
+  const payload = entry.payload || {};
   const noteKey = 'ai_' + serviceKey(entry);
-  const exitName = exitHubName(state);
-  const exitNote = isExit ? t('ui.hub_is_exit')
-    : exitName ? t('ui.ai_exit_is', { name: exitName }) : '';
-  const head = entryRow(entry, payload.endpoint || '', exitNote);
+  const note = isExit && isWorking ? t('ui.ai_switching')
+    : isInUse && ai.is_active ? t('ui.ai_on') : '';
+  const row = entryRow(hub, entry, payload.endpoint || '', note);
   const config = document.createElement('button');
   config.className = 'ghost';
   config.textContent = t('ui.config');
-  config.disabled = !isExit || !entry.is_healthy || isHeld(hub) || isWorking;
-  config.onclick = () => openConfigDialog(staged, payload.models || []);
-  const apply = document.createElement('button');
-  if (isExit && isWorking) {
-    apply.innerHTML = '<span class="spin"></span>' + t('ui.ai_switching');
-  } else {
-    apply.textContent = t('ui.apply');
-  }
-  // A failed switch leaves Apply live: pressing it asks for the same again.
-  apply.disabled = !isExit || isWorking || !(isDirty || work.code) ||
-    !entry.is_healthy || isHeld(hub);
-  apply.onclick = () => {
-    serviceAction('ai', {
-      hub_id: entry.hub_id,
-      is_enabled: staged.is_enabled,
-      tool_configs: staged.tool_configs,
-    }, noteKey).then((ok) => { if (ok) { delete aiStaged[key]; redraw(); } });
-  };
-  head.appendChild(config);
-  head.appendChild(apply);
-  card.appendChild(head);
-
+  config.disabled = !entry.is_healthy || isHeld(hub) || isWorking;
+  config.onclick = () => openConfigDialog(staged, payload.models || [],
+    () => { if (isInUse) askAiUse(hub, entry, true, noteKey); });
+  row.appendChild(config);
   const toggle = document.createElement('button');
-  const isOn = isExit && !!staged.is_enabled;
-  toggle.className = isOn ? 'chip on' : 'chip';
-  toggle.disabled = !isExit || !entry.is_healthy || isHeld(hub) || isWorking;
-  toggle.innerHTML = '<span class="dot ' + (isExit && row.is_active ? 'ok' : 'off') +
-    '"></span>' + t('ui.ai_enabled');
-  toggle.onclick = () => {
-    staged.is_enabled = !isOn;
-    redraw();
-  };
-  const line = document.createElement('div');
-  line.className = 'row';
-  line.style.padding = '10px 0 4px';
-  line.appendChild(toggle);
-  const where = document.createElement('span');
-  where.className = 'note muted';
-  where.textContent = !isExit ? '' : row.is_active ? t('ui.ai_on') : t('ui.ai_off');
-  line.appendChild(where);
-  card.appendChild(line);
+  toggle.type = 'button';
+  toggle.className = isInUse ? 'chip on' : 'chip';
+  toggle.disabled = !entry.is_healthy || isHeld(hub) || isWorking;
+  toggle.innerHTML = isExit && isWorking ? marker('spin')
+    : marker(isInUse && ai.is_active ? 'ok' : 'off');
+  toggle.appendChild(document.createTextNode(t('ui.ai_use')));
+  toggle.onclick = () => askAiUse(hub, entry, !isInUse, noteKey);
+  row.appendChild(toggle);
+  card.appendChild(row);
 
   const notes = [];
-  if (isExit && row.code) notes.push(wordCode(row.code, row.params));
+  if (isExit && ai.code) notes.push(wordCode(ai.code, ai.params));
   if (isExit && work.code) notes.push(wordCode(work.code, work.params));
-  if (serviceNotes[noteKey]) notes.push(serviceNotes[noteKey]);
   for (const text of notes) card.appendChild(errorLine(text));
-  return card;
+}
+
+// Switching a gateway on makes its hub the exit first, then points the
+// tools; switching the one in use off puts the tools back.
+async function askAiUse(hub, entry, isOn, noteKey) {
+  const isEnabled = !!(lastState && (lastState.ai || {}).is_enabled);
+  if (isOn && !hub.is_exit) {
+    const reply = await send('/api/exit/set', { hub_id: hubKey(hub) });
+    if (!reply || reply.code) {
+      serviceNotes[noteKey] = reply ? wordCode(reply.code, reply.params) : '';
+      redraw();
+      return;
+    }
+    delete serviceNotes[noteKey];
+    if (isEnabled) return;
+  }
+  const isSent = await serviceAction('ai', {
+    hub_id: entry.hub_id,
+    is_enabled: isOn,
+    tool_configs: ensureAiStaged(lastState).tool_configs,
+  }, noteKey);
+  if (isSent) { aiStaged = null; redraw(); }
 }
 
 // Which picker is open, by the id the caller gave it. Kept outside the
@@ -1020,7 +985,9 @@ function modelSelect(id, models, chosen, onPick) {
   return picker(id, options, value, onPick, false);
 }
 
-function openConfigDialog(staged, models) {
+// Save keeps what each tool points with, and hands on to onSave, which
+// sends it at once when the gateway is in use.
+function openConfigDialog(staged, models, onSave) {
   const draft = JSON.parse(JSON.stringify(staged.tool_configs || {}));
   for (const tool of ['claude', 'codex', 'gemini']) {
     if (!draft[tool]) draft[tool] = {};
@@ -1086,6 +1053,7 @@ function openConfigDialog(staged, models) {
     staged.tool_configs = draft;
     closeDialog(overlay);
     redraw();
+    onSave();
   };
   const cancel = document.createElement('button');
   cancel.className = 'ghost';
@@ -1127,58 +1095,55 @@ function mountDefaultPath(payload, state) {
   return (state.home || '') + '/nas/' + (payload.share || '');
 }
 
-function drawFilesPanel(state, hub, entries, title) {
-  // A form staged for an entry no hub carries any more is gone.
+// A form staged for an entry no hub carries any more is gone.
+function dropStaleFileStages(state) {
   const present = new Set((state.services || []).map(serviceKey));
   for (const key of Object.keys(fileStaged)) {
     if (!present.has(key)) delete fileStaged[key];
   }
-  const isDirty = entries.some((entry) => {
-    const staged = fileStaged[serviceKey(entry)];
-    return staged && staged.is_open;
-  });
-  const card = panelCard(title, isDirty);
-  for (const entry of entries) {
-    const key = serviceKey(entry);
-    const payload = entry.payload || {};
-    const records = (state.mounts || []).filter(
-      (record) => record.hub_id === entry.hub_id && record.entry_id === entry.id);
-    const noteKey = 'file_' + key;
-    const note = serviceNotes[noteKey] || '';
-    const row = entryRow(
-      entry, '//' + (payload.host || '') + '/' + (payload.share || ''), note);
+}
 
-    const staged = fileStaged[key];
-    const config = document.createElement('button');
-    config.className = 'ghost';
-    config.textContent = t('ui.config');
-    config.disabled = isHeld(hub);
-    config.onclick = () => {
-      if (staged && staged.is_open) {
-        delete fileStaged[key];
-      } else {
-        const kept = records[0];
-        fileStaged[key] = {
-          is_open: true, username: kept ? (kept.username || '') : '',
-          password: '',
-          path: kept ? kept.path : mountDefaultPath(payload, state),
-        };
-      }
-      redraw();
-    };
-    row.appendChild(config);
+// The panel is marked dirty while any entry's form is open.
+function drawFileEntry(card, state, hub, entry) {
+  const key = serviceKey(entry);
+  const payload = entry.payload || {};
+  const records = (state.mounts || []).filter(
+    (record) => record.hub_id === entry.hub_id && record.entry_id === entry.id);
+  const noteKey = 'file_' + key;
+  const note = serviceNotes[noteKey] || '';
+  const row = entryRow(
+    hub, entry, '//' + (payload.host || '') + '/' + (payload.share || ''), note);
 
-    const mount = mountButton(entry, records[0], staged, noteKey);
-    if (isHeld(hub)) mount.disabled = true;
-    row.appendChild(mount);
-    card.appendChild(row);
+  const staged = fileStaged[key];
+  if (staged && staged.is_open) card.classList.add('dirty');
+  const config = document.createElement('button');
+  config.className = 'ghost';
+  config.textContent = t('ui.config');
+  config.disabled = isHeld(hub);
+  config.onclick = () => {
+    if (staged && staged.is_open) {
+      delete fileStaged[key];
+    } else {
+      const kept = records[0];
+      fileStaged[key] = {
+        is_open: true, username: kept ? (kept.username || '') : '',
+        password: '',
+        path: kept ? kept.path : mountDefaultPath(payload, state),
+      };
+    }
+    redraw();
+  };
+  row.appendChild(config);
 
-    for (const record of records)
-      card.appendChild(drawMountRecord(record, state, noteKey));
-    if (staged && staged.is_open)
-      card.appendChild(drawFileForm(staged, state));
-  }
-  return card;
+  const mount = mountButton(entry, records[0], staged, noteKey);
+  if (isHeld(hub)) mount.disabled = true;
+  row.appendChild(mount);
+  card.appendChild(row);
+
+  for (const record of records)
+    card.appendChild(drawMountRecord(record, state, noteKey));
+  if (staged && staged.is_open)
+    card.appendChild(drawFileForm(staged, state));
 }
 
 // A record on its way says which step it is on; anywhere else, nothing.
