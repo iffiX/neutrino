@@ -4,15 +4,15 @@ title: 终端
 
 # 终端
 
-客户端的终端是 hub 管理的某台机器上的 shell，在本机自己的终端程序里打开。客户端的权限里有终端时，hub 为每台受管机器提供一个。
+客户端的终端是 hub 管理的某台机器上的 shell，显示在客户端窗口的一个标签页里。客户端的权限里有终端时，hub 为每台受管机器提供一个。
 
 ## 从窗口打开
 
-1. 打开 **终端**（Terminals）标签。
-1. 在所属 hub 下面找到那台机器。
-1. 点 **打开终端**（Open terminal）。
+1. 点侧栏的 **终端**（Terminals）。
+1. 在上方一排里选中那台机器。下面一行写着它所属的 hub 和机器名。
+1. 点 **新终端**（New terminal）。
 
-Linux 上打开找到的第一个终端程序，先找 `x-terminal-emulator`；Windows 上是 Windows Terminal，没装时用控制台窗口；macOS 上是“终端”应用。
+下方多一个标签页，里面是那台机器的 shell，在里面敲的键直接发到那台机器。调整窗口大小，shell 跟着变。点标签上的 **×** 结束那个 shell；shell 自己退出时，标签页也随之关闭。hub 拒绝时标签页留着，里面写着错误码。
 
 ## 从命令行打开
 
@@ -24,10 +24,9 @@ nclient terminal lepton --hub home
 
 ## hub 拒绝时
 
-| 错误码                 | 含义                                   |
-| ---------------------- | -------------------------------------- |
-| `permission_denied`    | hub 的客户端页不允许这个客户端打开终端 |
-| `agent_offline`        | 那台机器现在没有连到 hub               |
-| `unknown_terminal`     | hub 没有提供那台机器的终端             |
-| `terminal_app_missing` | 本机找不到终端程序                     |
-| `kind_unknown`         | hub 的版本早于 0.4.0，先升级 hub       |
+| 错误码              | 含义                                   |
+| ------------------- | -------------------------------------- |
+| `permission_denied` | hub 的客户端页不允许这个客户端打开终端 |
+| `agent_offline`     | 那台机器现在没有连到 hub               |
+| `unknown_terminal`  | hub 没有提供那台机器的终端             |
+| `kind_unknown`      | hub 的版本早于 0.4.0，先升级 hub       |

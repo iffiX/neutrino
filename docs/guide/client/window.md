@@ -4,13 +4,13 @@ title: The window
 
 # The window
 
-The window, titled **Neutrino client**, has a bar of tabs along its top and shows one tab at a time. This page names every tab and what each row in it does.
+The window, titled **Neutrino client**, has a sidebar on the left and shows one page at a time on the right. This page names every page and what each row on it does.
 
-## The top bar
+## The sidebar and the head
 
-The bar names this computer, its platform and the client's version. Its tabs are **Hubs**, **Web**, **Files**, **Ports**, **Remote desktops**, **AI** and **Terminals**. The **↻** button sends every connected hub a report and starts a connection round on every hub whose channel is down. **Settings** opens the client's own settings.
+The sidebar lists **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, and its foot names this computer, its platform and the client's version. The head over the page holds the page's name, the **↻** button and **Settings**. The **↻** button sends every connected hub a report and starts a connection round on every hub whose channel is down. **Settings** opens the client's own settings.
 
-## The Hubs tab
+## The Hubs page
 
 Each row holds one hub: its name, its state, its address and the package the hub runs. The dot before the name is coloured by the hub's state.
 
@@ -22,25 +22,27 @@ Each row holds one hub: its name, its state, its address and the package the hub
 | red            | a person has to change something, such as `hub_untrusted` or `binding_unknown`                |
 | grey           | the hub has not been reached yet                                                              |
 
-A row whose hub publishes a virtual network has a **Virtual network** button with its state and this computer's address on it. Selecting it joins or leaves that network, as [Virtual networks](./overlay.md) describes. Each row also has the **Target** radio and **Leave**, and a row reading **Replaced by another client** has **Reconnect**. The **Join a hub** row under them takes a link from any hub's **Clients** page.
+A row whose hub publishes a virtual network has a **Virtual network** button with its state and this computer's address on it. Selecting it joins or leaves that network, as [Virtual networks](./overlay.md) describes. Each row also has **Leave**, and a row reading **Replaced by another client** has **Reconnect**. The **Join a hub** row under them takes a link from any hub's **Clients** page.
 
 **Leave** removes that hub's row at once and undoes what it published on this computer: its mounts, forwards, viewers and a virtual network no other hub names.
 
-## The target hub
+## A service page
 
-One hub of those joined is the target, and your AI tools point at its gateway. The **Target** radio makes that hub the target. Only a connected hub takes the radio; one whose channel is down is rejected with `no_exit_hub`. The [AI page](./ai.md) covers what the tools are pointed at.
+**Web**, **Ports**, **AI**, **Files** and **Remote desktops** each show one panel with every hub's entries of that kind, hub by hub in the order the hubs were joined. Under its address, each entry names the hub and the machine it comes from, such as **from Neutrino:Argon**. A hub older than 0.4.0 names no machine, and the entry shows the machine's address in its place.
 
-## A service tab
+An entry the hub cannot reach right now is greyed and reads **not reachable now**. A hub that is not connected takes one greyed row with its state. A panel with no entry at all reads a line such as **no port is published**.
 
-**Web**, **Files**, **Ports**, **Remote desktops** and **AI** each show one column per hub, two side by side where the window is wide enough. A column lists that hub's entries of the kind, or a line such as **no port is published**. An entry the hub cannot reach right now is greyed and reads **not reachable now**. A hub that is not connected shows its state in place of its entries.
+## The AI page
 
-## The Terminals tab
+Each hub's gateway is one entry with a **The AI tools use this gateway** switch, and one switch at most is on. Switching an entry on makes its hub the target and points the tools at its gateway; the other switch goes off. Switching the one in use off puts the tools back as they were. Only a connected hub takes the switch, and a hub whose channel is down is rejected with `no_exit_hub`. **Config** picks the models, as [AI](./ai.md) describes.
 
-Each hub's column lists the machines it offers a terminal on. **Open terminal** opens this computer's own terminal program with a shell on that machine, as [Terminals](./terminals.md) describes. The button is grey while the machine is offline.
+## The Terminals page
+
+The strip on top lists every machine the connected hubs offer a terminal on, each with a dot that is green while the machine is online. **New terminal** opens a shell on the picked machine in a tab under the strip, as [Terminals](./terminals.md) describes.
 
 ## Settings
 
-1. Select **Settings** in the top bar.
+1. Select **Settings** in the head.
 1. In the **Client settings** dialog, pick the **Language** and the **Theme**.
 1. Select **Save**.
 
