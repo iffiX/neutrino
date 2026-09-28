@@ -538,7 +538,8 @@ def test_a_lone_console_instance_is_read_from_its_configuration(tmp_path):
     assert subject.hub_row("h1")["state"] == "on"
 
 
-def test_a_console_with_no_instance_yet_is_off(tmp_path):
+def test_a_console_whose_core_runs_no_instance_yet_is_waiting(tmp_path):
+    """The console holds the machine and has attached it to no network."""
     subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
     subject.join("h1")
     platform.answer(
@@ -547,6 +548,49 @@ def test_a_console_with_no_instance_yet_is_off(tmp_path):
 
     subject.probe()
 
+    row = subject.hub_row("h1")
+    assert (row["state"], row["code"], row["address"]) == ("waiting", "", "")
+    assert subject.release() == 1
+
+
+def test_a_waiting_console_turns_on_once_an_instance_appears(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    subject.join("h1")
+    assert subject.hub_row("h1")["state"] == "waiting"
+
+    platform.answer("easytier-cli", "node", stdout=console_nodes())
+    platform.answer("easytier-cli", "peer", stdout=console_peers())
+    subject.probe()
+
+    assert subject.hub_row("h1")["state"] == "on"
+
+
+def test_a_console_whose_core_is_not_running_is_off(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    subject.join("h1")
+    platform.socket.supervisor.is_running = False
+
+    subject.probe()
+
+    assert subject.hub_row("h1")["state"] == "off"
+
+
+def test_a_console_that_is_not_configured_is_off(tmp_path):
+    subject, _platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+
+    subject.probe()
+
+    assert subject.hub_row("h1")["state"] == "off"
+
+
+def test_leaving_a_waiting_console_drops_it(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    subject.join("h1")
+    assert subject.hub_row("h1")["state"] == "waiting"
+
+    assert subject.leave("h1") == {}
+
+    assert platform.socket.daemon.console() is None
     assert subject.hub_row("h1")["state"] == "off"
 
 
@@ -660,7 +704,9 @@ def test_no_secret_reaches_a_row(tmp_path):
     assert "etk_token1" not in rows
 
 
-@pytest.mark.parametrize("state", ["off", "joining", "on", "leaving", "failed"])
+@pytest.mark.parametrize(
+    "state", ["off", "joining", "waiting", "on", "leaving", "failed"]
+)
 def test_every_state_word_is_in_the_table(state):
     assert state in OVERLAY_STATES
-    assert len(OVERLAY_STATES) == 5
+    assert len(OVERLAY_STATES) == 6

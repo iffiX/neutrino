@@ -30,12 +30,13 @@ A hub whose EasyTier runs from an EasyTier console hands the client the console'
 
 The button reads **Virtual network**, the state, and this computer's address once the network assigns one.
 
-| State                      | Meaning                                                   |
-| -------------------------- | --------------------------------------------------------- |
-| **off**                    | this computer is not on the network                       |
-| **joining…**, **leaving…** | a step is running; the button is grey                     |
-| **on**                     | this computer is on the network                           |
-| **failed**                 | the last step failed; the code shows under the hub's name |
+| State                       | Meaning                                                                                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **off**                     | this computer is not on the network                                                                                                                  |
+| **joining…**, **leaving…**  | a step is running; the button is grey                                                                                                                |
+| **Waiting for the console** | this computer is registered with the hub's EasyTier console, which has not attached it to a network yet; attach it there. Pressing the button leaves |
+| **on**                      | this computer is on the network                                                                                                                      |
+| **failed**                  | the last step failed; the code shows under the hub's name                                                                                            |
 
 | Code                      | Meaning                                                                                      |
 | ------------------------- | -------------------------------------------------------------------------------------------- |

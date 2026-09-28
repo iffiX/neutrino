@@ -126,6 +126,8 @@
   "ui.overlay_leaving": "leaving…",
   "ui.overlay_off": "off",
   "ui.overlay_on": "on",
+  "ui.overlay_waiting": "Waiting for the console",
+  "ui.overlay_waiting_hint": "This machine is registered with the console. Attach it to a network there.",
   "ui.panel_ai": "AI",
   "ui.panel_desktops": "Remote desktops",
   "ui.panel_files": "Files",

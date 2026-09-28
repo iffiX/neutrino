@@ -126,6 +126,8 @@
   "ui.overlay_leaving": "离开中…",
   "ui.overlay_off": "未加入",
   "ui.overlay_on": "已加入",
+  "ui.overlay_waiting": "等待控制台挂载",
+  "ui.overlay_waiting_hint": "本机已登记到控制台，请在控制台里把它挂载到一个网络。",
   "ui.panel_ai": "AI",
   "ui.panel_desktops": "远程桌面",
   "ui.panel_files": "文件",

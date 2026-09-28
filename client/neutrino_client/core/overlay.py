@@ -42,16 +42,21 @@ from neutrino_client.services.worker import IF_BUSY_KEEP_ONE, ServiceWorker
 # The words a membership's state takes, in the order a join walks them.
 OVERLAY_STATE_OFF = "off"
 OVERLAY_STATE_JOINING = "joining"
+# An EasyTier console holds this machine, and has attached it to no network.
+OVERLAY_STATE_WAITING = "waiting"
 OVERLAY_STATE_ON = "on"
 OVERLAY_STATE_LEAVING = "leaving"
 OVERLAY_STATE_FAILED = "failed"
 OVERLAY_STATES = (
     OVERLAY_STATE_OFF,
     OVERLAY_STATE_JOINING,
+    OVERLAY_STATE_WAITING,
     OVERLAY_STATE_ON,
     OVERLAY_STATE_LEAVING,
     OVERLAY_STATE_FAILED,
 )
+# The states in which this machine holds the network, and a press leaves it.
+OVERLAY_HELD_STATES = (OVERLAY_STATE_WAITING, OVERLAY_STATE_ON)
 # The management server a NetBird setup key names when the hub names none.
 NETBIRD_DEFAULT_MANAGEMENT_URL = "https://api.netbird.io:443"
 # What ``netbird status`` answers when no daemon is listening.
@@ -161,8 +166,8 @@ def _off_record(
 ) -> dict:
     """One network's record, off unless told otherwise.
 
-    ``is_sticky`` marks a step's failure, which a probe replaces only with
-    an ``on``.
+    ``is_sticky`` marks a step's failure, which a probe replaces only with a
+    held network, ``on`` or ``waiting``.
     """
     return {
         "state": state,
@@ -344,8 +349,10 @@ class OverlayEasytierDriver:
             material: The hub's overlay object.
 
         Returns:
-            ``{"is_on", "is_other_network", "address", "is_hub_seen"}``; a
-            core that is not running runs no network, which reads as off.
+            ``{"is_on", "is_waiting", "is_other_network", "address",
+            "is_hub_seen"}``; a core that is not running runs no network,
+            which reads as off, and a console's core that runs no instance
+            is waiting.
 
         Raises:
             OverlayControlError: ``bundle_missing``, or
@@ -433,7 +440,9 @@ class OverlayEasytierDriver:
         manual = set(status.get("networks") or [])
         names = [name for name in self._instances() if name not in manual]
         if not names:
-            return _easytier_off()
+            waiting = _easytier_off()
+            waiting["is_waiting"] = True
+            return waiting
         peers = self._peers(names[0])
         if peers is None:
             return _easytier_off()
@@ -509,6 +518,7 @@ class OverlayEasytierDriver:
 def _easytier_off() -> dict:
     return {
         "is_on": False,
+        "is_waiting": False,
         "is_other_network": False,
         "address": "",
         "is_hub_seen": False,
@@ -531,6 +541,7 @@ def _easytier_on(peers: list, hub_address: str) -> dict:
         is_hub_seen = bool(others)
     return {
         "is_on": True,
+        "is_waiting": False,
         "is_other_network": False,
         "address": _address(local[0].get("ipv4")) if local else "",
         "is_hub_seen": is_hub_seen,
@@ -691,7 +702,7 @@ class OverlayMemberships:
                 if other_id != hub_id
             )
             record = self._records.get(key) or _off_record()
-            is_on = record["state"] in (OVERLAY_STATE_ON, OVERLAY_STATE_JOINING)
+            is_on = record["state"] in OVERLAY_HELD_STATES + (OVERLAY_STATE_JOINING,)
         if is_shared or not is_on:
             return 0
         self._log(f"leaving {overlay_network(material)}, which no hub joined names")
@@ -712,7 +723,7 @@ class OverlayMemberships:
             return sum(
                 1
                 for record in self._records.values()
-                if record["state"] == OVERLAY_STATE_ON
+                if record["state"] in OVERLAY_HELD_STATES
             )
 
     def refresh(self) -> None:
@@ -754,7 +765,7 @@ class OverlayMemberships:
                 if (
                     previous is not None
                     and previous["is_sticky"]
-                    and record["state"] != OVERLAY_STATE_ON
+                    and record["state"] not in OVERLAY_HELD_STATES
                 ):
                     continue
                 if previous != record:
@@ -836,6 +847,8 @@ class OverlayMemberships:
                 address=status["address"],
                 is_hub_seen=status["is_hub_seen"],
             )
+        if status.get("is_waiting"):
+            return _off_record(state=OVERLAY_STATE_WAITING)
         if status["is_other_network"]:
             return _off_record(
                 code="overlay_other_network",

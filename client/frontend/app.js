@@ -291,7 +291,9 @@ const CODE_TONES = {
   crashed: 'bad',
 };
 // The words a virtual network's state takes, as the resident names them.
-const OVERLAY_STATES = ['off', 'joining', 'on', 'leaving', 'failed'];
+const OVERLAY_STATES = ['off', 'joining', 'waiting', 'on', 'leaving', 'failed'];
+// The states in which a press on the chip leaves the network.
+const OVERLAY_HELD_STATES = ['waiting', 'on'];
 
 function codeTone(code) {
   return CODE_TONES[code] || 'wait';
@@ -869,6 +871,7 @@ function hubRow(hub) {
   if (lastError) body.appendChild(errorLine(lastError));
   const overlay = hub.overlay || {};
   if (overlay.code) body.appendChild(errorLine(wordCode(overlay.code, overlay.params)));
+  if (overlay.state === 'waiting') body.appendChild(noteLine(t('ui.overlay_waiting_hint')));
   if (overlayNotes[hubKey(hub)]) body.appendChild(errorLine(overlayNotes[hubKey(hub)]));
   row.innerHTML = marker(tone);
   row.appendChild(body);
@@ -900,6 +903,7 @@ function overlayChip(hub) {
   const overlay = hub.overlay;
   if (!overlay) return null;
   const isOn = overlay.state === 'on';
+  const isHeldNetwork = OVERLAY_HELD_STATES.indexOf(overlay.state) >= 0;
   const isMoving = overlay.state === 'joining' || overlay.state === 'leaving';
   const isWorking = (overlay.work || {}).state === 'working';
   const chip = document.createElement('button');
@@ -908,12 +912,13 @@ function overlayChip(hub) {
   chip.disabled = isMoving || isWorking || isHeld(hub);
   chip.innerHTML = marker(isMoving ? 'spin' : overlayTone(overlay));
   chip.appendChild(document.createTextNode(overlayWords(overlay)));
-  chip.onclick = () => askOverlay(hub, isOn);
+  chip.onclick = () => askOverlay(hub, isHeldNetwork);
   return chip;
 }
 
 function overlayTone(overlay) {
   if (overlay.state === 'on') return 'ok';
+  if (overlay.state === 'waiting') return 'wait';
   if (overlay.code) return codeTone(overlay.code);
   return 'off';
 }
@@ -925,12 +930,12 @@ function overlayWords(overlay) {
   return parts.join(' · ');
 }
 
-// A press on the chip: leave when on, join otherwise; a refusal is worded
-// under the row until the next press.
-function askOverlay(hub, isOn) {
+// A press on the chip: leave when the network is held, join otherwise; a
+// refusal is worded under the row until the next press.
+function askOverlay(hub, isHeldNetwork) {
   const key = hubKey(hub);
   delete overlayNotes[key];
-  send(isOn ? '/api/overlay/leave' : '/api/overlay/join', { hub_id: key })
+  send(isHeldNetwork ? '/api/overlay/leave' : '/api/overlay/join', { hub_id: key })
     .then((reply) => {
       if (reply && reply.code) {
         overlayNotes[key] = wordCode(reply.code, reply.params);
@@ -1034,6 +1039,13 @@ function drawSettings() {
   actions.appendChild(cancel);
   card.appendChild(actions);
   return card;
+}
+
+function noteLine(text) {
+  const note = document.createElement('div');
+  note.className = 'note muted';
+  note.textContent = text;
+  return note;
 }
 
 function errorLine(text) {

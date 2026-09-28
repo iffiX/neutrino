@@ -605,7 +605,7 @@ def test_a_panel_with_no_entry_of_its_kind_draws_its_empty_line_once():
 def test_a_hub_row_carries_the_virtual_network_chip_between_body_and_leave():
     body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
     chip = PAGE_JS.split("function overlayChip(hub)")[1].split("\n}")[0]
-    asking = PAGE_JS.split("function askOverlay(hub, isOn)")[1].split("\n}")[0]
+    asking = PAGE_JS.split("function askOverlay(hub, isHeldNetwork)")[1].split("\n}")[0]
 
     assert body.index("row.appendChild(body);") < body.index("overlayChip(hub)")
     assert body.index("overlayChip(hub)") < body.index("row.appendChild(leave);")
@@ -614,11 +614,28 @@ def test_a_hub_row_carries_the_virtual_network_chip_between_body_and_leave():
     assert "chip.disabled = isMoving || isWorking || isHeld(hub);" in chip
     assert "marker(isMoving ? 'spin' : overlayTone(overlay))" in chip
     assert "connection_state" not in chip
-    assert "isOn ? '/api/overlay/leave' : '/api/overlay/join'" in asking
+    assert "isHeldNetwork ? '/api/overlay/leave' : '/api/overlay/join'" in asking
+    assert "chip.onclick = () => askOverlay(hub, isHeldNetwork);" in chip
+    assert "const OVERLAY_HELD_STATES = ['waiting', 'on'];" in PAGE_JS
     assert "{ hub_id: key }" in asking
     assert "wordCode(overlay.code, overlay.params)" in body
     assert EN_WORDS["ui.overlay"] == "Virtual network"
     assert CATALOGS["zh-CN"]["ui.overlay"] == "虚拟网"
+
+
+def test_a_console_waiting_to_be_attached_is_amber_with_a_hint():
+    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+    tone = PAGE_JS.split("function overlayTone(overlay)")[1].split("\n}")[0]
+
+    assert "if (overlay.state === 'waiting') return 'wait';" in tone
+    assert (
+        "if (overlay.state === 'waiting') "
+        "body.appendChild(noteLine(t('ui.overlay_waiting_hint')));"
+    ) in body
+    assert EN_WORDS["ui.overlay_waiting"] == "Waiting for the console"
+    assert CATALOGS["zh-CN"]["ui.overlay_waiting"] == "等待控制台挂载"
+    assert EN_WORDS["ui.overlay_waiting_hint"]
+    assert CATALOGS["zh-CN"]["ui.overlay_waiting_hint"]
 
 
 def test_every_overlay_state_has_a_word():
