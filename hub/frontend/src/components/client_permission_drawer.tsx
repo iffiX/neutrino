@@ -14,11 +14,22 @@ import "./device_drawer.css";
  * one apply bar. A client's drawer adds a switch that follows the default.
  */
 
+/** The order the switches stand in; a kind not named here comes last. */
+const KIND_DISPLAY_ORDER = [
+  "overlay",
+  "web",
+  "port",
+  "ai",
+  "file",
+  "terminal",
+  "rdp",
+];
+
 interface ClientPermissionDrawerProps {
   title: string;
   hint?: string;
   applyHint: string;
-  /** Every kind, in the order the switches are drawn. */
+  /** Every kind the hub knows. */
   kinds: string[];
   /** The kinds the default allows. */
   defaultKinds: string[];
@@ -122,7 +133,7 @@ export function ClientPermissionDrawer({
             />
           )}
           <div className="device_drawer_section">
-            {kinds.map((kind) => (
+            {displayed(kinds).map((kind) => (
               <ToggleSwitch
                 key={kind}
                 isOn={shown.includes(kind)}
@@ -150,4 +161,12 @@ export function ClientPermissionDrawer({
 
 function ordered(kinds: string[], chosen: string[]): string[] {
   return kinds.filter((kind) => chosen.includes(kind));
+}
+
+function displayed(kinds: string[]): string[] {
+  const rank = (kind: string) => {
+    const index = KIND_DISPLAY_ORDER.indexOf(kind);
+    return index < 0 ? KIND_DISPLAY_ORDER.length : index;
+  };
+  return [...kinds].sort((left, right) => rank(left) - rank(right));
 }
