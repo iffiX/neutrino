@@ -2165,13 +2165,21 @@ class NetbirdView(BaseModel):
     # The LAN networks this gateway serves, for the routes guidance: the
     # subnet route on the management plane should name exactly these.
     lan_subnets: list[str] = Field(default_factory=list)
+    # Whether a setup key is kept for the clients admitted to the overlay.
+    has_setup_key: bool = False
 
 
 class NetbirdJoinRequest(BaseModel):
-    """A one-time enrollment; the key is used and never stored."""
+    """An enrollment; the key is kept sealed once the join succeeds."""
 
     setup_key: str = Field(min_length=8, max_length=128)
     management_url: str = ""
+
+
+class NetbirdSetupKeyRequest(BaseModel):
+    """A setup key to keep in place of the kept one; empty forgets it."""
+
+    setup_key: str = Field(default="", max_length=128)
 
 
 # --- ZFS --------------------------------------------------------------------

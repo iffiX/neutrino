@@ -14,6 +14,7 @@ import { apiPost, describeError } from "../api_client";
 import { formatDuration } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CONFIG } from "../use_hub_events";
 import type {
   DevicesResponse,
@@ -327,6 +328,7 @@ function IdentitySection({
           <span className="netbird_fact_value">{view.management_url}</span>
         </div>
       </div>
+      <SetupKeyRow hasSetupKey={view.has_setup_key} onChanged={onJoined} />
       <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
       {isReconfiguring && (
         <JoinForm
@@ -341,6 +343,117 @@ function IdentitySection({
         />
       )}
     </section>
+  );
+}
+
+interface SetupKeyRowProps {
+  hasSetupKey: boolean;
+  onChanged: () => void;
+}
+
+/** Whether a setup key is kept for clients, with Replace and Forget. */
+function SetupKeyRow({ hasSetupKey, onChanged }: SetupKeyRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const confirm = useConfirm();
+  const [isReplacing, setIsReplacing] = useState(false);
+  const [setupKey, setSetupKey] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const store = async (value: string) => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      await apiPost("/hub/overlay/netbird/setup_key/set", {
+        setup_key: value,
+      });
+      setSetupKey("");
+      setIsReplacing(false);
+      onChanged();
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const askForget = () => {
+    confirm.ask({
+      title: t("ui.overlay.setup_key_forget_title"),
+      body: t("ui.overlay.setup_key_forget_body"),
+      confirmLabel: t("ui.overlay.setup_key_forget"),
+      onConfirm: () => void store(""),
+    });
+  };
+
+  return (
+    <>
+      <div className="netbird_fact netbird_setup_key">
+        <span className="field_label">{t("ui.overlay.setup_key_label")}</span>
+        <span className="netbird_fact_value">
+          {hasSetupKey
+            ? t("ui.overlay.setup_key_kept")
+            : t("ui.overlay.setup_key_missing")}
+        </span>
+        {isReplacing ? (
+          <>
+            <PasswordInput
+              value={setupKey}
+              onChange={setSetupKey}
+              placeholder={t("ui.overlay.setup_key_placeholder")}
+            />
+            <button
+              type="button"
+              className="button button--small button--primary"
+              disabled={isBusy || setupKey.trim() === ""}
+              onClick={() => void store(setupKey.trim())}
+            >
+              {t("ui.overlay.setup_key_save")}
+            </button>
+            <button
+              type="button"
+              className="button button--small"
+              disabled={isBusy}
+              onClick={() => {
+                setSetupKey("");
+                setIsReplacing(false);
+              }}
+            >
+              {t("ui.overlay.setup_key_cancel")}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="button button--small"
+              disabled={isBusy}
+              onClick={() => setIsReplacing(true)}
+            >
+              {t("ui.overlay.setup_key_replace")}
+            </button>
+            {hasSetupKey && (
+              <button
+                type="button"
+                className="button button--small button--danger"
+                disabled={isBusy}
+                onClick={askForget}
+              >
+                {t("ui.overlay.setup_key_forget")}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      {error !== null && (
+        <div className="notice notice--error">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">{error}</div>
+        </div>
+      )}
+      {confirm.modal}
+    </>
   );
 }
 
@@ -363,6 +476,7 @@ function JoinSection({ isReady, onJoined, onJoining }: JoinSectionProps) {
         <li>{t("ui.overlay.join_step_peer")}</li>
         <li>{t("ui.overlay.join_step_key")}</li>
       </ol>
+      <p className="field_hint">{t("ui.overlay.setup_key_hint")}</p>
       {!isReady && (
         <p className="field_hint">{t("ui.overlay.service_first")}</p>
       )}

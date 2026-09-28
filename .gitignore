@@ -11,6 +11,7 @@ config/devices/devices.json
 config/clients/clients.json
 config/ai/providers.json
 config/credentials/vault.json
+config/netbird/netbird.json
 config/cliproxyapi/cliproxyapi.json
 config/cliproxyapi/management_key.sealed
 config/services/declared.json

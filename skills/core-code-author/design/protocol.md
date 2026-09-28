@@ -315,7 +315,8 @@ the page's whole view.
 | `GET /api/hub/overlay` | | the engine and its state |
 | `POST /api/hub/overlay/set` | `{engine, ...}` | which engine the box runs |
 | `GET /api/hub/overlay/netbird` | | the NetBird network the box joins |
-| `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it |
+| `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it, and keeps the key sealed in `config/netbird/netbird.json` once the join succeeds |
+| `POST /api/hub/overlay/netbird/setup_key/set` | `{setup_key}`, empty to forget | replaces or forgets the kept key without joining; pushes every client's state |
 | `GET /api/hub/overlay/easytier` | | the EasyTier network the box defines |
 | `POST /api/hub/overlay/easytier/set` | its settings | |
 | `POST /api/hub/overlay/easytier/peer/set` | the peer list | |

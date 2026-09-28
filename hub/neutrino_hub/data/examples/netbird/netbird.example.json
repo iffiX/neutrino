@@ -1,0 +1,7 @@
+{
+  "_comment": "The NetBird setup key this box joined with, written by the Overlay page and handed to every client allowed onto the overlay. The key is reusable, so it is never here in the clear: it is sealed under the vault's data key in 'setup_key_sealed'. Empty means no key is kept.",
+  "setup_key_sealed": {},
+
+  "_comment_management_url": "The management plane the key belongs to. Empty means NetBird's own.",
+  "management_url": ""
+}

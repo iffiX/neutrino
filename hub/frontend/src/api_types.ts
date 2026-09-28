@@ -1377,6 +1377,8 @@ export interface NetbirdView {
   peers: NetbirdPeer[];
   /** The LAN networks whose routes belong on the management plane. */
   lan_subnets: string[];
+  /** Whether a setup key is kept for the clients admitted to the overlay. */
+  has_setup_key: boolean;
 }
 
 /** One node on the EasyTier network, as this box sees it. */

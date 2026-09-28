@@ -73,3 +73,9 @@ NETBIRD_STATUSES_WITHOUT_LOGIN = ("NeedsLogin", "LoginFailed", "SessionExpired")
 NETBIRD_DEREGISTER_TIMEOUT_S = 60
 NETBIRD_RESTART_SETTLE_S = 10
 NETBIRD_STATE_FILE_NAME = "state.json"
+
+# Where the panel keeps the setup key the box joined with, and the management
+# plane it belongs to. The key is reusable and every client admitted to the
+# overlay joins with it, so it is sealed under the vault's data key.
+NETBIRD_CONFIG_NAME = "netbird/netbird.json"
+NETBIRD_SETUP_KEY_AAD = b"netbird:setup_key"
