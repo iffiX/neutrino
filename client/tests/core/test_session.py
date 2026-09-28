@@ -30,6 +30,7 @@ from neutrino_client.constants import (
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_ROLE,
     CLIENT_SOFTWARE_PREFIX,
+    CLIENT_STREAM_CREDIT_BYTES,
     PROTOCOL,
 )
 from neutrino_client.core import enrollment, protocol
@@ -91,6 +92,11 @@ class ScriptedSocket:
         if self.is_closed:
             raise GatewayUnreachable("the socket is closed")
         self.sent.append(json.loads(text))
+
+    def send_bytes(self, data: bytes) -> None:
+        if self.is_closed:
+            raise GatewayUnreachable("the socket is closed")
+        self.sent.append(protocol.decode_binary(data))
 
     def recv(self):
         while self._frames and isinstance(self._frames[0], threading.Event):
@@ -669,7 +675,7 @@ def test_a_close_for_nobody_is_dropped(bound, monkeypatch):
     assert session.last_error() is None
 
 
-def test_credit_and_bytes_from_the_hub_are_dropped(monkeypatch, config_path):
+def test_credit_and_bytes_for_no_open_stream_are_dropped(monkeypatch, config_path):
     lines = []
     session = session_for(log=lines.append)
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
@@ -683,6 +689,106 @@ def test_credit_and_bytes_from_the_hub_are_dropped(monkeypatch, config_path):
         "dropping 5 bytes the hub sent on stream 1",
     ]
     assert all(frame["type"] != "credit" for frame in made.sent)
+
+
+def test_a_shell_opens_odd_with_its_size_and_grants_the_window(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    stream = session.open_shell("dev_lepton", 120, 40)
+
+    assert stream.stream_id == 1
+    assert made.sent[-2] == {
+        "type": "open",
+        "stream": 1,
+        "kind": "shell",
+        "device_id": "dev_lepton",
+        "cols": 120,
+        "rows": 40,
+    }
+    assert made.sent[-1] == {
+        "type": "credit",
+        "stream": 1,
+        "bytes": CLIENT_STREAM_CREDIT_BYTES,
+    }
+
+
+def test_the_hubs_bytes_on_a_shell_reach_its_reader(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    stream = session.open_shell("dev_lepton", 80, 24)
+
+    take(session, made, protocol.encode_binary(1, b"$ "))
+
+    assert stream.read(timeout_s=1) == b"$ "
+
+
+def test_a_shell_sends_only_after_the_hubs_credit(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    stream = session.open_shell("dev_lepton", 80, 24)
+    sent = threading.Thread(target=stream.send, args=(b"ls\n",))
+
+    sent.start()
+    time.sleep(0.05)
+    assert all(not isinstance(frame, tuple) for frame in made.sent)
+    take(session, made, {"type": "credit", "stream": 1, "bytes": 1024})
+    sent.join(timeout=5)
+
+    assert made.sent[-1] == (1, b"ls\n")
+
+
+def test_a_resize_opens_a_command_naming_the_shell(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    stream = session.open_shell("dev_lepton", 80, 24)
+    outcome = {}
+
+    def resize() -> None:
+        outcome["params"] = session.resize_shell(stream.stream_id, 100, 30)
+
+    asking = threading.Thread(target=resize)
+    asking.start()
+    while made.sent[-1].get("kind") != "command":
+        time.sleep(0.01)
+    take(session, made, {"type": "close", "stream": 3, "params": {}})
+    asking.join(timeout=5)
+
+    assert made.sent[-1] == {
+        "type": "open",
+        "stream": 3,
+        "kind": "command",
+        "module": "agent",
+        "verb": "resize",
+        "shell": 1,
+        "cols": 100,
+        "rows": 30,
+    }
+    assert outcome == {"params": {}}
+
+
+def test_a_socket_that_ends_wakes_a_shell_reader_empty(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    stream = session.open_shell("dev_lepton", 80, 24)
+    outcome = {}
+
+    def read() -> None:
+        outcome["data"] = stream.read(timeout_s=5)
+
+    reader = threading.Thread(target=read)
+    reader.start()
+    session._end_socket(made)
+    reader.join(timeout=5)
+
+    assert outcome == {"data": b""}
+
+
+def test_a_shell_with_no_socket_is_unreachable(bound):
+    session, _listener = bound
+
+    with pytest.raises(GatewayUnreachable):
+        session.open_shell("dev_lepton", 80, 24)
 
 
 def test_a_stream_the_hub_opens_is_closed_kind_unknown(bound, monkeypatch):

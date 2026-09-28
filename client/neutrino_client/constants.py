@@ -34,10 +34,16 @@ CLIENT_JOIN_PATH = "/api/channel/join"
 CLIENT_LEAVE_PATH = "/api/channel/leave"
 CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
 
-# The one stream kind a client opens, and the code it closes a stream the
-# hub opened with.
+# The stream kinds a client opens, and the code it closes a stream the hub
+# opened with. A ``shell`` carries terminal bytes both ways; a ``command``
+# resizes one.
 CLIENT_STREAM_KIND_SERVICE = "service"
+CLIENT_STREAM_KIND_SHELL = "shell"
+CLIENT_STREAM_KIND_COMMAND = "command"
 CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
+# The module and verb a resize names on a ``command`` stream.
+CLIENT_SHELL_RESIZE_MODULE = "agent"
+CLIENT_SHELL_RESIZE_VERB = "resize"
 
 # How often an unbound resident looks at its configuration again.
 CLIENT_IDLE_POLL_INTERVAL_S = 2
@@ -60,6 +66,14 @@ CLIENT_CONNECT_TIMEOUT_S = 10
 CLIENT_REPORT_INTERVAL_S = 30
 # How long a stream this side opened waits for the hub's close.
 CLIENT_STREAM_TIMEOUT_S = 15
+# A byte stream's credit window: what this side grants the hub when it opens
+# one, and grants again as it consumes. Half the window consumed sends the
+# next grant.
+CLIENT_STREAM_CREDIT_BYTES = 1024 * 1024
+# The most one binary frame carries.
+CLIENT_WS_CHUNK_BYTES = 64 * 1024
+# How long a send waits for the hub's credit before it gives up.
+CLIENT_WS_CREDIT_TIMEOUT_S = 60
 
 # What the hub's close codes mean: a refused hello, and a second socket for
 # the same binding replacing this one.

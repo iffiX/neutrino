@@ -8,7 +8,8 @@ network change under the machine starts a round at once. The hub pushes its
 whether this client is switched off, and the session answers each state and
 every interval with a ``report``. What a
 service handler needs from the hub comes down a ``service`` stream the
-session opens on request. The resident owns the handlers and the store; the
+session opens on request, and a terminal on a managed machine comes down a
+``shell`` stream carrying bytes both ways. The resident owns the handlers and the store; the
 session tells it what changed through its callbacks and never touches them.
 
 A ``refused`` frame ends the socket whenever it arrives, and says the same
@@ -41,16 +42,20 @@ from neutrino_client.constants import (
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
     CLIENT_ROTATE_DELAY_S,
+    CLIENT_SHELL_RESIZE_MODULE,
+    CLIENT_SHELL_RESIZE_VERB,
     CLIENT_SOFTWARE_PREFIX,
     CLIENT_STREAM_CODE_KIND_UNKNOWN,
+    CLIENT_STREAM_KIND_COMMAND,
     CLIENT_STREAM_KIND_SERVICE,
+    CLIENT_STREAM_KIND_SHELL,
     CLIENT_STREAM_TIMEOUT_S,
     CLIENT_WS_CLOSE_REPLACED,
     PROTOCOL,
 )
 from neutrino_client.core import enrollment, protocol
 from neutrino_client.core.channel import refusal_error
-from neutrino_client.core.streams import ClientStreamRegistry
+from neutrino_client.core.streams import ClientStream, ClientStreamRegistry
 from neutrino_client.core.ws_client import WebSocketClient, close_error
 from neutrino_client.exceptions import (
     GatewayRefused,
@@ -306,11 +311,66 @@ class ClientHubSession:
             GatewayUnreachable: When there is no socket, the socket ends, or
                 the close does not arrive in time.
         """
-        with self._lock:
-            streams = self._streams
-            if streams is None or not self._is_welcomed:
-                raise GatewayUnreachable("this hub is not connected")
-        stream = streams.open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
+        stream = self._live_streams().open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
+        return stream.wait_close(timeout_s)
+
+    def open_shell(self, device_id: str, cols: int, rows: int) -> ClientStream:
+        """Open a ``shell`` stream to one managed machine, credit granted.
+
+        The hub's refusal arrives as the stream's close: a read comes back
+        empty and ``wait_close`` raises it.
+
+        Args:
+            device_id: The machine, as the state's ``terminals`` names it.
+            cols: The terminal's width in columns.
+            rows: The terminal's height in rows.
+
+        Returns:
+            The open stream, to read, send on and close.
+
+        Raises:
+            GatewayUnreachable: When there is no socket, or it is gone.
+        """
+        return self._live_streams().open(
+            CLIENT_STREAM_KIND_SHELL,
+            {"device_id": device_id, "cols": int(cols), "rows": int(rows)},
+            has_bytes=True,
+        )
+
+    def resize_shell(
+        self,
+        stream_id: int,
+        cols: int,
+        rows: int,
+        timeout_s: float = CLIENT_STREAM_TIMEOUT_S,
+    ) -> dict:
+        """Tell the hub a shell's terminal changed size, and take the close.
+
+        Args:
+            stream_id: The shell stream's id.
+            cols: The new width in columns.
+            rows: The new height in rows.
+            timeout_s: How long to wait for the close.
+
+        Returns:
+            The close's ``params``.
+
+        Raises:
+            GatewayRefusedDetail: When the hub refused, ``shell_unknown``
+                among the codes.
+            GatewayUnreachable: When there is no socket, it ends, or the
+                close does not arrive in time.
+        """
+        stream = self._live_streams().open(
+            CLIENT_STREAM_KIND_COMMAND,
+            {
+                "module": CLIENT_SHELL_RESIZE_MODULE,
+                "verb": CLIENT_SHELL_RESIZE_VERB,
+                "shell": int(stream_id),
+                "cols": int(cols),
+                "rows": int(rows),
+            },
+        )
         return stream.wait_close(timeout_s)
 
     # --- the loop ---
@@ -479,7 +539,9 @@ class ClientHubSession:
         with self._lock:
             self._client = client
             self._streams = ClientStreamRegistry(
-                send_text=client.send_text, log=self._log
+                send_text=client.send_text,
+                send_bytes=client.send_bytes,
+                log=self._log,
             )
             self._is_welcomed = True
             self._hub_software = str(welcome.get("software", "") or "")
@@ -544,6 +606,18 @@ class ClientHubSession:
         ended.set()
         self._end_socket(client)
         return failure
+
+    def _live_streams(self) -> ClientStreamRegistry:
+        """The stream registry of the live socket.
+
+        Raises:
+            GatewayUnreachable: When the hub is not connected.
+        """
+        with self._lock:
+            streams = self._streams
+            if streams is None or not self._is_welcomed:
+                raise GatewayUnreachable("this hub is not connected")
+        return streams
 
     def _hello(self) -> dict:
         """This client's identity card, the first frame on the socket."""
@@ -757,7 +831,12 @@ class ClientHubSession:
         """
         if kind == "binary":
             stream_id, data = protocol.decode_binary(payload)
-            self._log(f"dropping {len(data)} bytes the hub sent on stream {stream_id}")
+            with self._lock:
+                streams = self._streams
+            if streams is None:
+                self._log(f"dropping {len(data)} bytes the hub sent on {stream_id}")
+            else:
+                streams.take_bytes(stream_id, data)
             return
         message = _decode(payload)
         if message is None:
@@ -772,7 +851,10 @@ class ClientHubSession:
             if streams is not None:
                 streams.take_close(message)
         elif message_type == protocol.FRAME_CREDIT:
-            self._log(f"dropping credit on stream {message.get('stream')}")
+            with self._lock:
+                streams = self._streams
+            if streams is not None:
+                streams.take_credit(message)
         elif message_type == protocol.FRAME_OPEN:
             self._refuse_open(client, message)
         elif message_type == protocol.FRAME_REFUSED:
