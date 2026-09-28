@@ -497,19 +497,6 @@ class ClientPlatform:
         """
         raise PlatformUnsupportedError("no terminal on this platform")
 
-    def open_terminal(self, argv: list) -> None:
-        """Open the system's own terminal running one command.
-
-        Args:
-            argv: The command the terminal runs.
-
-        Raises:
-            FileNotFoundError: When no terminal program is on this machine.
-            PlatformUnsupportedError: Where the platform has none to open.
-            OSError: When the terminal cannot be started.
-        """
-        raise PlatformUnsupportedError("no terminal on this platform")
-
     def start_on_screen(self, argv: list) -> "subprocess.Popen":
         """Start a windowed program on this person's screen.
 

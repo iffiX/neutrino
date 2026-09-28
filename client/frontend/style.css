@@ -15,6 +15,7 @@
   --color-signal-error: var(--color-error);
   --color-overlay: rgb(5 8 12 / 72%);
   --color-shadow: rgb(0 0 0 / 90%);
+  --color-terminal-selection: rgba(34, 211, 238, 0.25);
   --color-scheme: dark;
 }
 [data-theme="light"] {
@@ -32,6 +33,7 @@
   --color-signal-error: #ef4444;
   --color-overlay: rgb(15 23 42 / 45%);
   --color-shadow: rgb(15 23 42 / 22%);
+  --color-terminal-selection: rgba(12, 106, 132, 0.25);
   --color-scheme: light;
 }
 html { color-scheme: var(--color-scheme); }
@@ -130,6 +132,43 @@ button:disabled { opacity: .4; cursor: not-allowed;
            color: var(--color-ok); }
 .chip:disabled { opacity: .6; cursor: default; }
 .err { color: var(--color-error); font-size: 12px; }
+
+/* The terminals page, after the hub panel's: it fills the content's height,
+   the machine strip on top and the panel of open shells under it. Each pane
+   takes its height from the panel, never from its own content, so the fit
+   addon never measures the terminal back into itself. */
+.term_page { display: flex; flex-direction: column; gap: 14px; height: 100%;
+             min-height: 0; }
+.term_pick { display: flex; flex-direction: column; gap: 8px; padding: 14px 18px; }
+.term_pick_line { display: flex; gap: 12px; align-items: center;
+                  justify-content: space-between; }
+.term_chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.term_empty { flex: 1; display: flex; flex-direction: column; gap: 6px;
+              align-items: center; justify-content: center; }
+.term_panel { flex: 1; min-height: 0; display: flex; flex-direction: column;
+              overflow: hidden; border: 1px solid var(--color-border);
+              border-radius: 12px; background: var(--color-surface); }
+.term_head { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px;
+             border-bottom: 1px solid var(--color-border); }
+.term_tab { display: inline-flex; align-items: center; border: 1px solid transparent;
+            border-radius: 6px; }
+.term_tab.on { border-color: var(--color-border); background: var(--color-bg); }
+button.term_tab_label { display: inline-flex; gap: 8px; align-items: center;
+                        padding: 5px 4px 5px 10px; border: none; background: none;
+                        color: var(--color-text-muted);
+                        font-family: ui-monospace, monospace; font-size: 13px; }
+.term_tab.on button.term_tab_label { color: var(--color-accent); }
+button.term_tab_close { padding: 5px 8px 5px 4px; border: none; background: none;
+                        color: var(--color-text-muted); font-size: 14px; }
+button.term_tab_close:hover { color: var(--color-error); }
+.term_surface { flex: 1; min-height: 0; display: flex; flex-direction: column;
+                padding: 10px; background: var(--color-bg); }
+.term_pane { flex: 1; min-height: 0; overflow: hidden; }
+.term_pane.hidden { display: none; }
+.term_pane .xterm { padding: 8px; }
+.term_status { padding: 6px 14px; border-top: 1px solid var(--color-border);
+               color: var(--color-text-muted); font-family: ui-monospace, monospace;
+               font-size: 11px; }
 .muted { color: var(--color-text-muted); }
 .form { display: flex; flex-direction: column; gap: 8px;
         padding: 10px 0 4px 20px; }

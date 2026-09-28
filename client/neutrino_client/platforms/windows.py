@@ -19,7 +19,6 @@ import ctypes
 import getpass
 import os
 import re
-import shutil
 import subprocess
 
 from neutrino_client.constants import (
@@ -57,10 +56,6 @@ from neutrino_client.words import language_for_tag
 WINDOWS_CONFIG_DIR_NAME = "Neutrino Client"
 WINDOWS_MOUNT_TIMEOUT_S = 60
 WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
-# Windows Terminal, opened on a command when it is installed; the console
-# host through ``start`` otherwise.
-WINDOWS_TERMINAL = "wt"
-WINDOWS_START = ["cmd", "/c", "start", ""]
 
 # A share that File Explorer never hears about stands there as a disconnected
 # drive while every other program reaches it; the shell is told after a
@@ -317,21 +312,6 @@ class WindowsPlatform(ClientPlatform):
     def raw_terminal(self) -> WindowsRawConsole:
         """This process's console in raw VT mode."""
         return WindowsRawConsole()
-
-    def open_terminal(self, argv: list) -> None:
-        """Open Windows Terminal on one command, or a console through ``start``.
-
-        Args:
-            argv: The command the terminal runs.
-
-        Raises:
-            OSError: When neither can be started.
-        """
-        terminal = shutil.which(WINDOWS_TERMINAL)
-        if terminal:
-            self.start_on_screen([terminal] + list(argv))
-            return
-        self.start_on_screen(WINDOWS_START + list(argv))
 
     def easytier_dir(self) -> str:
         """``%PROGRAMDATA%\\Neutrino Client\\easytier``, where the service reads networks."""

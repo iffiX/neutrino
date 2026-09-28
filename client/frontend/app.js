@@ -188,9 +188,11 @@ function redraw() {
 
 // The resident pushes every change of state here; nothing polls for it.
 // A push ends a refresh in flight, and the button stops spinning even when
-// the state is the one already drawn.
+// the state is the one already drawn. A shell's output comes the same way,
+// as a piece naming its terminal.
 window.neutrinoState = (state) => {
   if (!state) return;
+  if (state.terminal) { takeShellPiece(state.terminal); return; }
   if (state.code) { renderHint(wordCode(state.code, state.params)); return; }
   const wasRefreshing = isRefreshing;
   settleRefresh();
@@ -409,66 +411,339 @@ function waitCard() {
   return wait;
 }
 
-// --- the terminals tab: every machine each hub offers a terminal on ---
+// --- the terminals page: a strip of machines, one tab per open shell ---
+
+// Every shell open in this window, in the order opened: {key, terminal_id,
+// hub_id, name, term, fit, pane, state, note, isRefused, typed, isSending}.
+// The panes live in one surface that outlives every redraw, so a redraw
+// moves them rather than rebuilding them and the shells keep running.
+const shellTabs = [];
+let activeShell = '';
+let shellCounter = 0;
+// The machine the strip has picked, by hub and device.
+let shellPick = null;
+// The surface the panes live in, made once.
+let shellSurface = null;
+// Whether the next fit also puts the keyboard on the active shell.
+let shouldFocusShell = false;
+// The palette the shells were last drawn in.
+let shellThemeKey = '';
+// Output that arrived for a terminal before its open answered, by its id.
+const earlyOutput = {};
+// Lines a shell keeps above its window.
+const TERMINAL_SCROLLBACK_LINES = 5000;
+const TERMINAL_FONT = 'ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace';
 
 function drawTerminals(state) {
   const hubs = state.hubs || [];
   if (hubs.length === 0) return waitCard();
-  const card = panelCard(t('ui.panel_terminals'), false);
+  const themeKey = document.documentElement.dataset.theme;
+  if (themeKey !== shellThemeKey) {
+    shellThemeKey = themeKey;
+    for (const tab of shellTabs) tab.term.options.theme = terminalTheme();
+  }
+  const page = document.createElement('div');
+  page.className = 'term_page';
+  page.appendChild(machineStrip(state));
+  page.appendChild(shellPanel());
+  window.requestAnimationFrame(fitActiveShell);
+  return page;
+}
+
+// Every machine a connected hub offers a terminal on, one chip each with its
+// presence dot, and the button that opens a new shell on the picked one.
+function machineStrip(state) {
+  const card = document.createElement('div');
+  card.className = 'card term_pick';
+  const chips = document.createElement('div');
+  chips.className = 'term_chips';
+  let picked = null;
   let count = 0;
-  for (const hub of hubs) {
+  for (const hub of state.hubs || []) {
+    if (hub.connection_state !== 'connected') continue;
     const machines = (state.terminals || []).filter(
       (machine) => machine.hub_id === hub.hub_id);
-    if (hub.connection_state !== 'connected') {
-      card.appendChild(downRow(hub));
-    } else {
-      terminalRows(card, hub, machines);
-      count += machines.length;
+    for (const machine of machines) {
+      count += 1;
+      const isPicked = !!shellPick && shellPick.hub_id === hub.hub_id &&
+        shellPick.device_id === machine.device_id;
+      if (isPicked) picked = { hub: hub, machine: machine };
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = isPicked ? 'chip on' : 'chip';
+      chip.title = t('ui.provided_by', { hub: hubName(hub), device: machine.name });
+      chip.disabled = isHeld(hub);
+      chip.innerHTML = marker(machine.is_online ? 'ok' : 'off');
+      chip.appendChild(document.createTextNode(machine.name));
+      chip.onclick = () => {
+        shellPick = { hub_id: hub.hub_id, device_id: machine.device_id };
+        redraw();
+      };
+      chips.appendChild(chip);
     }
   }
-  if (count === 0) card.appendChild(emptyRow(t('ui.empty_terminals')));
+  if (count === 0) {
+    card.appendChild(emptyRow(t('ui.empty_terminals')));
+    return card;
+  }
+  const line = document.createElement('div');
+  line.className = 'term_pick_line';
+  line.appendChild(chips);
+  const open = document.createElement('button');
+  open.textContent = t('ui.terminal_new');
+  open.disabled = !picked || !picked.machine.is_online || isHeld(picked.hub);
+  open.onclick = () => openShell(picked.hub, picked.machine);
+  line.appendChild(open);
+  card.appendChild(line);
+  const provider = document.createElement('div');
+  provider.className = 'note muted';
+  provider.textContent = picked
+    ? t('ui.provided_by', { hub: hubName(picked.hub), device: picked.machine.name })
+    : t('ui.terminal_pick_hint');
+  card.appendChild(provider);
   return card;
 }
 
-function terminalRows(card, hub, machines) {
-  for (const machine of machines) {
-    const row = document.createElement('div');
-    row.className = machine.is_online ? 'feat' : 'feat greyed';
-    row.innerHTML = marker(machine.is_online ? 'ok' : 'off');
-    const body = document.createElement('div');
-    body.className = 'body';
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = machine.name;
-    body.appendChild(title);
-    const provider = document.createElement('div');
-    provider.className = 'note muted';
-    provider.textContent = t('ui.provided_by', { hub: hubName(hub), device: machine.name });
-    body.appendChild(provider);
-    const noteKey = 'terminal_' + hub.hub_id + '/' + machine.device_id;
-    if (serviceNotes[noteKey]) body.appendChild(errorLine(serviceNotes[noteKey]));
-    row.appendChild(body);
-    const open = document.createElement('button');
-    open.textContent = t('ui.terminal_open');
-    open.disabled = !machine.is_online || isHeld(hub);
-    open.onclick = () => askTerminal(hub, machine, noteKey);
-    row.appendChild(open);
-    card.appendChild(row);
+// The open shells: their tabs in a head, the active one's pane, and a line
+// saying where the keys go.
+function shellPanel() {
+  if (shellTabs.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'card term_empty';
+    empty.innerHTML = '<div>' + t('ui.terminal_none') + '</div>' +
+      '<div class="note muted">' + t('ui.terminal_pick_hint') + '</div>';
+    return empty;
+  }
+  const panel = document.createElement('section');
+  panel.className = 'term_panel';
+  const head = document.createElement('div');
+  head.className = 'term_head';
+  for (const tab of shellTabs) head.appendChild(shellTabButton(tab));
+  panel.appendChild(head);
+  panel.appendChild(shellSurfaceElement());
+  const active = activeTab();
+  const status = document.createElement('div');
+  status.className = 'term_status';
+  status.textContent = active && active.state === 'closed'
+    ? (active.note || t('ui.terminal_ended')) : t('ui.terminal_keys');
+  panel.appendChild(status);
+  return panel;
+}
+
+function shellTabButton(tab) {
+  const wrap = document.createElement('div');
+  wrap.className = tab.key === activeShell ? 'term_tab on' : 'term_tab';
+  const label = document.createElement('button');
+  label.type = 'button';
+  label.className = 'term_tab_label';
+  label.innerHTML = marker(shellTone(tab));
+  label.appendChild(document.createTextNode(tab.name));
+  label.onclick = () => { activeShell = tab.key; shouldFocusShell = true; redraw(); };
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'term_tab_close';
+  close.textContent = '×';
+  close.title = t('ui.terminal_close', { name: tab.name });
+  close.setAttribute('aria-label', close.title);
+  close.onclick = () => closeShell(tab);
+  wrap.appendChild(label);
+  wrap.appendChild(close);
+  return wrap;
+}
+
+// A shell's dot: an amber spinner while it opens, green while open, red for
+// a refusal, grey once it ended.
+function shellTone(tab) {
+  if (tab.state === 'connecting') return 'spin';
+  if (tab.state === 'open') return 'ok';
+  return tab.isRefused ? 'bad' : 'off';
+}
+
+function activeTab() {
+  return shellTabs.filter((tab) => tab.key === activeShell)[0] || null;
+}
+
+// The surface every pane lives in; only the active pane shows.
+function shellSurfaceElement() {
+  if (!shellSurface) {
+    shellSurface = document.createElement('div');
+    shellSurface.className = 'term_surface';
+    // A state held back while a shell had the keyboard draws once it lets go.
+    shellSurface.addEventListener('focusout', () => setTimeout(settle, 0));
+    new ResizeObserver(fitActiveShell).observe(shellSurface);
+  }
+  for (const tab of shellTabs) {
+    tab.pane.className = tab.key === activeShell ? 'term_pane' : 'term_pane hidden';
+  }
+  return shellSurface;
+}
+
+// A new shell on one machine: its tab and pane at once, the shell once the
+// resident has opened it at the pane's size.
+function openShell(hub, machine) {
+  shellCounter += 1;
+  const pane = document.createElement('div');
+  pane.className = 'term_pane';
+  shellSurfaceElement().appendChild(pane);
+  const term = new Terminal({
+    fontFamily: TERMINAL_FONT,
+    fontSize: 13,
+    lineHeight: 1.2,
+    cursorBlink: true,
+    theme: terminalTheme(),
+    scrollback: TERMINAL_SCROLLBACK_LINES,
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  const tab = {
+    key: 'shell' + shellCounter, terminal_id: '', hub_id: hub.hub_id,
+    name: machine.name, term: term, fit: fit, pane: pane, state: 'connecting',
+    note: '', isRefused: false, typed: '', isSending: false,
+  };
+  shellTabs.push(tab);
+  activeShell = tab.key;
+  shouldFocusShell = true;
+  redraw();
+  term.open(pane);
+  fitShell(tab);
+  term.onData((data) => sendShellKeys(tab, data));
+  term.onResize((size) => {
+    if (tab.state !== 'open') return;
+    api('/api/terminal/resize',
+      { terminal_id: tab.terminal_id, cols: size.cols, rows: size.rows });
+  });
+  api('/api/terminal/open', {
+    hub_id: hub.hub_id, device_id: machine.device_id,
+    cols: term.cols, rows: term.rows,
+  }).then((reply) => {
+    if (!reply || reply.code || !reply.terminal_id) {
+      endShell(tab, reply && reply.code ? wordCode(reply.code, reply.params) : '', true);
+      return;
+    }
+    tab.terminal_id = reply.terminal_id;
+    tab.state = 'open';
+    const early = earlyOutput[reply.terminal_id] || [];
+    delete earlyOutput[reply.terminal_id];
+    for (const piece of early) takeShellPiece(piece);
+    redraw();
+  });
+}
+
+// One piece the resident pushed: output for a shell, or how it ended.
+function takeShellPiece(piece) {
+  const tab = shellTabs.filter((each) => each.terminal_id === piece.id)[0];
+  if (!tab) {
+    if (shellTabs.some((each) => each.state === 'connecting')) {
+      (earlyOutput[piece.id] = earlyOutput[piece.id] || []).push(piece);
+    }
+    return;
+  }
+  if (piece.data !== undefined) {
+    tab.term.write(base64Bytes(piece.data));
+    return;
+  }
+  const end = piece.end || {};
+  if (!end.code) { dropShell(tab); return; }
+  endShell(tab, wordCode(end.code, end.params), true);
+}
+
+// A shell that ended or was refused keeps its tab, saying why.
+function endShell(tab, note, isRefused) {
+  tab.state = 'closed';
+  tab.note = note;
+  tab.isRefused = isRefused;
+  if (note) tab.term.write('\r\n' + note + '\r\n');
+  redraw();
+}
+
+// Keys go in the order typed: one request at a time, whatever was typed
+// meanwhile riding the next.
+function sendShellKeys(tab, data) {
+  if (tab.state !== 'open') return;
+  tab.typed += data;
+  if (!tab.isSending) flushShellKeys(tab);
+}
+
+function flushShellKeys(tab) {
+  if (!tab.typed || tab.state !== 'open') { tab.isSending = false; return; }
+  const text = tab.typed;
+  tab.typed = '';
+  tab.isSending = true;
+  api('/api/terminal/input', { terminal_id: tab.terminal_id, data: textBase64(text) })
+    .then(() => flushShellKeys(tab));
+}
+
+// Closing a tab ends its shell.
+function closeShell(tab) {
+  if (tab.state === 'open') api('/api/terminal/close', { terminal_id: tab.terminal_id });
+  dropShell(tab);
+}
+
+// A tab goes; the one that took its place, else the one before it, shows.
+function dropShell(tab) {
+  const index = shellTabs.indexOf(tab);
+  if (index < 0) return;
+  shellTabs.splice(index, 1);
+  tab.state = 'closed';
+  tab.term.dispose();
+  tab.pane.remove();
+  if (activeShell === tab.key) {
+    const next = shellTabs[index] || shellTabs[index - 1];
+    activeShell = next ? next.key : '';
+  }
+  redraw();
+}
+
+// A pane fits its surface only when the answer changed: fitting redraws the
+// terminal, and the observer that noticed would bring it straight back.
+function fitShell(tab) {
+  if (!tab || tab.pane.className !== 'term_pane' || tab.pane.clientWidth === 0) return;
+  const proposed = tab.fit.proposeDimensions();
+  if (!proposed || (proposed.cols === tab.term.cols && proposed.rows === tab.term.rows)) return;
+  tab.fit.fit();
+}
+
+function fitActiveShell() {
+  const tab = activeTab();
+  if (!tab) return;
+  fitShell(tab);
+  if (shouldFocusShell) {
+    shouldFocusShell = false;
+    tab.term.focus();
   }
 }
 
-// A press on Open terminal: the system's own terminal opens running
-// nclient terminal on that machine; a refusal is worded under its row.
-function askTerminal(hub, machine, noteKey) {
-  send('/api/terminal/launch', { hub_id: hub.hub_id, device_id: machine.device_id })
-    .then((reply) => {
-      if (reply && reply.code) {
-        serviceNotes[noteKey] = wordCode(reply.code, reply.params);
-      } else {
-        delete serviceNotes[noteKey];
-      }
-      redraw();
-    });
+// The palette the shells draw in, read from the page's own tokens.
+function terminalTheme() {
+  const style = window.getComputedStyle(document.documentElement);
+  const token = (name) => style.getPropertyValue(name).trim();
+  return {
+    background: token('--color-bg'),
+    foreground: token('--color-text'),
+    cursor: token('--color-accent'),
+    cursorAccent: token('--color-bg'),
+    selectionBackground: token('--color-terminal-selection'),
+    red: token('--color-error'),
+    green: token('--color-ok'),
+    yellow: token('--color-warn'),
+    blue: token('--color-accent'),
+    cyan: token('--color-accent'),
+  };
+}
+
+function textBase64(text) {
+  let binary = '';
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64Bytes(encoded) {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 // --- the Hubs tab: one row per hub, and the row that joins another ---

@@ -95,6 +95,18 @@ def test_the_staged_tree_carries_both_word_catalogs(tmp_path):
     assert '"ui.tray.open"' in (locales / "en.json").read_text(encoding="utf-8")
 
 
+def test_the_staged_tree_carries_the_vendored_terminal(tmp_path):
+    """The page inlines xterm.js from here, or the Terminals page cannot draw."""
+    staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
+
+    vendor = staged / "data" / "gui" / "vendor"
+    assert sorted(path.name for path in vendor.iterdir()) == [
+        "addon-fit.js",
+        "xterm.css",
+        "xterm.js",
+    ]
+
+
 def test_the_staged_tree_carries_an_icon_windows_can_load(tmp_path):
     """A .png is not an icon to Win32; without the .ico the tray goes grey."""
     staged = payload.stage_client_tree(tmp_path, "9.9.9")
@@ -301,6 +313,7 @@ def test_the_licences_the_package_owes_are_staged(tmp_path):
         "gobject_introspection.txt",
         "netbird.txt",
         "rustdesk.txt",
+        "xterm.txt",
     ]
     assert "MIT License" in (carried / "cc_switch.txt").read_text()
     assert "AFFERO" in (carried / "rustdesk.txt").read_text()

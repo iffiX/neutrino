@@ -220,7 +220,13 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     assert (contents / "Resources" / "bin" / "cc-switch").is_file()
     assert sorted(
         path.name for path in (contents / "Resources" / "licenses").iterdir()
-    ) == ["cc_switch.txt", "easytier.txt", "netbird.txt", "rustdesk.txt"]
+    ) == [
+        "cc_switch.txt",
+        "easytier.txt",
+        "netbird.txt",
+        "rustdesk.txt",
+        "xterm.txt",
+    ]
     assert order == ["venv", "compile", "binaries", ("sign", app)]
     link = tmp_path / "root" / "usr" / "local" / "bin" / "nclient"
     assert link.is_symlink()
@@ -398,6 +404,7 @@ def test_the_licences_travel_inside_the_bundle(tmp_path):
         "easytier.txt",
         "netbird.txt",
         "rustdesk.txt",
+        "xterm.txt",
     ]
 
 

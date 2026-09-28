@@ -147,7 +147,13 @@ LINUX_GUI_BUILD_HEADERS = (
 
 # The licences of what the client packages carry, by the file name they have
 # in the repository's own ``licenses/``.
-CARRIED_LICENSES = ("cc_switch.txt", "rustdesk.txt", "netbird.txt", "easytier.txt")
+CARRIED_LICENSES = (
+    "cc_switch.txt",
+    "rustdesk.txt",
+    "netbird.txt",
+    "easytier.txt",
+    "xterm.txt",
+)
 # The Windows installer also carries EasyTier's wintun.dll, under WireGuard's
 # prebuilt binaries licence.
 WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + ("wintun.txt",)

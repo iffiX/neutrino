@@ -498,6 +498,7 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
         "netbird.txt",
         "rustdesk.txt",
         "wintun.txt",
+        "xterm.txt",
     ]
     assert "Prebuilt Binaries License" in (carried / "wintun.txt").read_text()
 

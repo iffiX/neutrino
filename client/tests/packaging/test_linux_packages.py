@@ -252,6 +252,7 @@ def test_the_deb_carries_the_licences_of_everything_in_it(deb):
         "gobject_introspection.txt",
         "netbird.txt",
         "rustdesk.txt",
+        "xterm.txt",
     ]
 
 

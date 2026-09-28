@@ -1,18 +1,17 @@
 """A hub's shell carried to a terminal: two pumps, one each way.
 
 Pinned here: typed bytes reach the stream and the typing side's end closes
-it; the hub's bytes reach the output and the hub's close ends the output
-pump; a write that fails closes the stream from here; the outcome names the
-exit code, the hub's refusal, or a socket that ended first; and the command
-a system terminal runs is the client itself.
+it; the hub's bytes reach the output, what already arrived in one piece, and
+the hub's close ends the output pump; a write that fails closes the stream
+from here; the window's keys go one send at a time and its close ends the
+shell; the outcome names the exit code, the hub's refusal, or a socket that
+ended first.
 """
 
-import sys
 import threading
 
-from neutrino_client.core import terminal as terminal_module
 from neutrino_client.core.streams import ClientStreamRegistry
-from neutrino_client.core.terminal import TerminalBridge, client_command
+from neutrino_client.core.terminal import TerminalBridge
 from neutrino_client.core.protocol import decode_binary
 from tests.conftest import discard
 
@@ -73,7 +72,7 @@ def test_the_hubs_bytes_reach_the_output_until_the_hub_closes():
 
     bridge.pump_out(shown.append)
 
-    assert shown == [b"$ ", b"bye"]
+    assert shown == [b"$ bye"]
     assert bridge.outcome() == {"exit_code": 3}
 
 
@@ -158,8 +157,29 @@ def test_reading_grants_the_hub_more_as_the_output_is_written():
     assert len(grants) == 1
 
 
-def test_a_checkout_runs_the_client_as_a_module(monkeypatch):
-    assert client_command() == [sys.executable, "-m", "neutrino_client.cli.entry"]
-    monkeypatch.setitem(terminal_module.__dict__, "__compiled__", True)
+def test_output_past_one_batch_is_written_in_more_than_one_piece():
+    registry, stream, _wire = shell()
+    bridge = TerminalBridge(stream=stream)
+    shown = []
+    for _ in range(3):
+        registry.take_bytes(1, b"x" * 40000)
+    registry.take_close({"type": "close", "stream": 1, "params": {}})
 
-    assert client_command() == [sys.executable]
+    bridge.pump_out(shown.append)
+
+    assert [len(piece) for piece in shown] == [80000, 40000]
+
+
+def test_the_windows_keys_reach_the_hub_and_its_close_ends_the_shell():
+    registry, stream, wire = shell()
+    registry.take_credit({"type": "credit", "stream": 1, "bytes": 100})
+    bridge = TerminalBridge(stream=stream)
+
+    assert bridge.send(b"ls\r") is True
+    bridge.close()
+    bridge.close()
+
+    assert wire.binary == [(1, b"ls\r")]
+    assert [frame["type"] for frame in wire.text].count("close") == 1
+    assert bridge.send(b"more") is False
+    assert bridge.outcome() == {"exit_code": None}

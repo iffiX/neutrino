@@ -55,15 +55,6 @@ PROC_MOUNTS_ESCAPES = (
     ("\n", "\\012"),
 )
 CONFIG_DIR_NAME = "neutrino_client"
-# The terminal programs tried in turn, each with the flag after which the
-# command it runs follows.
-LINUX_TERMINALS = (
-    ("x-terminal-emulator", "-e"),
-    ("gnome-terminal", "--"),
-    ("konsole", "-e"),
-    ("xfce4-terminal", "-x"),
-    ("xterm", "-e"),
-)
 
 
 class LinuxPlatform(ClientPlatform):
@@ -205,23 +196,6 @@ class LinuxPlatform(ClientPlatform):
     def raw_terminal(self) -> PosixRawTerminal:
         """Standard input in raw mode."""
         return PosixRawTerminal()
-
-    def open_terminal(self, argv: list) -> None:
-        """Open the first terminal program this machine has, running one command.
-
-        Args:
-            argv: The command the terminal runs.
-
-        Raises:
-            FileNotFoundError: When none of ``LINUX_TERMINALS`` is here.
-            OSError: When the terminal cannot be started.
-        """
-        for program, flag in LINUX_TERMINALS:
-            path = shutil.which(program)
-            if path:
-                self.start_on_screen([path, flag] + list(argv))
-                return
-        raise FileNotFoundError("no terminal program on this machine")
 
     def easytier_join(
         self, *, network_name: str, secret_path: str, peer: str, hostname: str

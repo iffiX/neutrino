@@ -1330,22 +1330,47 @@ def test_the_result_is_asked_once_after_the_shell_ended(two_hubs_up):
     assert resident.terminal_result(terminal_id)["code"] == "unknown_terminal"
 
 
-def test_launch_opens_the_system_terminal_on_nclient_terminal(two_hubs_up):
+def test_the_windows_terminal_pushes_its_output_then_its_end(two_hubs_up):
     resident, _scripts = two_hubs_up
     offered(resident)
+    pieces = []
+    resident.on_terminal_output = pieces.append
 
-    assert resident.launch_terminal("h1", "d1") == {}
+    terminal_id = resident.open_window_terminal("h1", "d1", 80, 24)["terminal_id"]
+    session = resident._sessions["c1"]
+    session._streams.take_bytes(1, b"$ ")
+    session._streams.take_close(
+        {"type": "close", "stream": 1, "params": {"exit_code": 0}}
+    )
 
-    (argv,) = resident.platform.terminals_opened
-    assert argv[-4:] == ["terminal", "d1", "--hub", "h1"]
+    wait_until(lambda: len(pieces) == 2)
+    assert pieces == [
+        {"id": terminal_id, "data": b"$ "},
+        {"id": terminal_id, "end": {"exit_code": 0}},
+    ]
+    assert not resident.has_terminal(terminal_id)
 
 
-def test_launch_without_a_terminal_program_is_typed(two_hubs_up):
-    resident, _scripts = two_hubs_up
+def test_the_windows_keys_and_close_reach_the_shell(two_hubs_up):
+    resident, scripts = two_hubs_up
     offered(resident)
-    resident.platform.terminal_error = FileNotFoundError("none")
+    terminal_id = resident.open_window_terminal("h1", "d1", 80, 24)["terminal_id"]
+    session = resident._sessions["c1"]
+    session._streams.take_credit({"type": "credit", "stream": 1, "bytes": 64})
 
-    assert resident.launch_terminal("h1", "d1") == {
-        "code": "terminal_app_missing",
-        "params": {},
-    }
+    assert resident.terminal_input(terminal_id, b"ls\r") == {}
+    assert resident.close_terminal(terminal_id) == {}
+
+    (made,) = scripts.sockets_of("hub.lan")
+    assert [frame for frame in made.sent if isinstance(frame, tuple)] == [(1, b"ls\r")]
+    assert {"type": "close", "stream": 1, "code": "", "params": {}} in made.sent
+    assert resident.terminal_input(terminal_id, b"x")["code"] == "unknown_terminal"
+    assert resident.close_terminal(terminal_id)["code"] == "unknown_terminal"
+
+
+def test_a_machine_the_hub_does_not_offer_opens_no_window_terminal(two_hubs_up):
+    resident, _scripts = two_hubs_up
+
+    assert resident.open_window_terminal("h1", "d9", 80, 24)["code"] == (
+        "unknown_terminal"
+    )

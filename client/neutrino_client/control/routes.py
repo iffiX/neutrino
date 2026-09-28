@@ -12,6 +12,8 @@ Every refusal is ``{"code", "params"}``; each surface does its own wording.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import base64
+import binascii
 import threading
 import time
 import urllib.parse
@@ -120,13 +122,15 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             if outcome.get("code") == "unknown_terminal":
                 return refusal_status("unknown_terminal"), outcome
             return 200, outcome
-        if route == "/api/terminal/launch":
-            return _answer(
-                resident,
-                resident.launch_terminal(
-                    _hub_id(payload), str(payload.get("device_id", "") or "")
-                ),
-            )
+        if route == "/api/terminal/open":
+            return _open_window_terminal(resident, payload)
+        if route == "/api/terminal/input":
+            return _terminal_input(resident, payload)
+        if route == "/api/terminal/close":
+            outcome = resident.close_terminal(_terminal_id(payload))
+            if outcome.get("code"):
+                return refusal_status(outcome["code"]), outcome
+            return 200, {}
         if route == "/api/overlay/join":
             return _answer(resident, resident.join_overlay(_hub_id(payload)))
         if route == "/api/overlay/leave":
@@ -280,6 +284,32 @@ def _terminal_output(resident, body: dict):
         outcome = {"code": "unknown_terminal", "params": {}}
         return refusal_status(outcome["code"]), outcome
     return 101, {"terminal_id": terminal_id}
+
+
+def _open_window_terminal(resident, body: dict):
+    """Open a shell for the window's terminal: its id, or the refusal."""
+    outcome = resident.open_window_terminal(
+        _hub_id(body),
+        str(body.get("device_id", "") or ""),
+        _size(body, "cols"),
+        _size(body, "rows"),
+    )
+    if "code" in outcome:
+        return refusal_status(str(outcome["code"])), outcome
+    return 200, outcome
+
+
+def _terminal_input(resident, body: dict):
+    """Hand keys the window's terminal sent as base64 to its shell."""
+    try:
+        data = base64.b64decode(str(body.get("data", "") or ""), validate=True)
+    except binascii.Error:
+        outcome = {"code": "unknown_request", "params": {}}
+        return refusal_status(outcome["code"]), outcome
+    outcome = resident.terminal_input(_terminal_id(body), data)
+    if outcome.get("code"):
+        return refusal_status(str(outcome["code"])), outcome
+    return 200, {}
 
 
 def _answer(resident, outcome: dict):

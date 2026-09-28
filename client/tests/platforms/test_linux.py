@@ -367,36 +367,3 @@ def test_the_overlay_helpers_exit_status_is_typed(monkeypatch, exit_code, code):
         LinuxPlatform().easytier_leave(network_name="home")
 
     assert caught.value.code == code
-
-
-# --- the system terminal ---
-
-
-def test_the_first_terminal_program_found_is_opened_on_the_command(monkeypatch):
-    found = {"gnome-terminal": "/usr/bin/gnome-terminal", "xterm": "/usr/bin/xterm"}
-    monkeypatch.setattr(linux_module.shutil, "which", found.get)
-    started = []
-    monkeypatch.setattr(
-        LinuxPlatform, "start_on_screen", lambda self, argv: started.append(argv)
-    )
-
-    LinuxPlatform().open_terminal(["nclient", "terminal", "d1"])
-
-    assert started == [["/usr/bin/gnome-terminal", "--", "nclient", "terminal", "d1"]]
-
-
-def test_the_order_tried_is_the_debian_alternative_first():
-    assert [program for program, _flag in linux_module.LINUX_TERMINALS] == [
-        "x-terminal-emulator",
-        "gnome-terminal",
-        "konsole",
-        "xfce4-terminal",
-        "xterm",
-    ]
-
-
-def test_no_terminal_program_is_file_not_found(monkeypatch):
-    monkeypatch.setattr(linux_module.shutil, "which", lambda program: None)
-
-    with pytest.raises(FileNotFoundError):
-        LinuxPlatform().open_terminal(["nclient"])

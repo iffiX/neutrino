@@ -40,7 +40,7 @@ def open_shell_window(
         on_quit: Called when the person picks Quit, before the loop ends.
         on_show_ready: Called with a callable that brings the window up.
         on_push_ready: Called with a callable that hands the page one state
-            payload to redraw from.
+            payload to redraw from, or one piece of a terminal it shows.
 
     Raises:
         GuiShellUnavailableError: When the platform has no shell, or its

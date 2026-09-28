@@ -25,6 +25,7 @@ neutrino_client = [
     "data/polkit/*",
     "data/gui/*",
     "data/gui/locales/*",
+    "data/gui/vendor/*",
 ]
 
 [tool.black]

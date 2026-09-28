@@ -33,7 +33,6 @@ CLIENT_CODE_WORDS = {
     "root_refused": "nclient runs as a person, never as root",
     "bundle_missing": "this install carries no {binary}; reinstall the client",
     "unknown_terminal": "the hub offers no terminal on {device_id}",
-    "terminal_app_missing": "no terminal program was found on this machine",
     "permission_denied": "the hub does not allow this client to use {kind}",
     "agent_offline": "that machine is not connected to the hub right now",
     "shell_unknown": "the hub no longer has that terminal open",

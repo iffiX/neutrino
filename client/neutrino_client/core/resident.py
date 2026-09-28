@@ -39,13 +39,12 @@ from neutrino_client.constants import (
 from neutrino_client.core import enrollment
 from neutrino_client.core.overlay import OverlayMemberships
 from neutrino_client.core.session import CONNECTION_CONNECTED, ClientHubSession
-from neutrino_client.core.terminal import TerminalBridge, client_command
+from neutrino_client.core.terminal import TerminalBridge
 from neutrino_client.exceptions import (
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
-    PlatformUnsupportedError,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
@@ -186,6 +185,10 @@ class ClientResident:
         self._is_started = False
         self._is_shut_down = False
         self.on_show = None
+        # Takes each piece of a window terminal, ``{"id", "data"}`` with the
+        # output's bytes or ``{"id", "end"}`` with how the shell ended; None
+        # while no window shows one.
+        self.on_terminal_output = None
         self._reconcile_bindings(enrollment.config_stamp())
 
     # --- what the local page reads ---
@@ -593,37 +596,69 @@ class ClientResident:
                 self._terminals.pop(terminal_id, None)
         return opened[1].outcome()
 
-    def launch_terminal(self, hub_id: str, device_id: str) -> dict:
-        """Open the system's own terminal running ``nclient terminal`` on a machine.
+    def open_window_terminal(
+        self, hub_id: str, device_id: str, cols: int, rows: int
+    ) -> dict:
+        """Open a shell for the window's own terminal, its output pushed there.
+
+        The output goes to ``on_terminal_output`` as it arrives, and once
+        the shell ends the terminal is forgotten and its end is pushed the
+        same way.
 
         Args:
             hub_id: The hub, by its id or by its binding's id.
             device_id: The machine, as the hub's ``terminals`` names it.
+            cols: The terminal's width in columns.
+            rows: The terminal's height in rows.
 
         Returns:
-            Empty on success; ``unknown_hub``, ``unknown_terminal``,
-            ``terminal_app_missing`` or ``unsupported_platform``.
+            ``{"terminal_id"}``; ``unknown_hub``, ``unknown_terminal`` or
+            ``hub_unreachable`` otherwise.
         """
-        session = self._find_session(hub_id)
-        if session is None:
-            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        known = {entry["device_id"] for entry in session.terminal_entries()}
-        if device_id not in known:
-            return {"code": "unknown_terminal", "params": {"device_id": device_id}}
-        argv = client_command() + [
-            "terminal",
-            device_id,
-            "--hub",
-            session.hub_id() or session.binding_id,
-        ]
-        try:
-            self.platform.open_terminal(argv)
-        except FileNotFoundError:
-            return {"code": "terminal_app_missing", "params": {}}
-        except PlatformUnsupportedError as error:
-            return {"code": error.code, "params": {}}
-        except OSError as error:
-            return {"code": "terminal_app_missing", "params": {"detail": str(error)}}
+        outcome = self.open_terminal(hub_id, device_id, cols, rows)
+        terminal_id = outcome.get("terminal_id")
+        if terminal_id:
+            threading.Thread(
+                target=self._push_terminal,
+                args=(terminal_id,),
+                name="client_terminal_output",
+                daemon=True,
+            ).start()
+        return outcome
+
+    def terminal_input(self, terminal_id: str, data: bytes) -> dict:
+        """Send keys typed on the window's terminal to its shell.
+
+        Args:
+            terminal_id: The terminal.
+            data: The bytes typed.
+
+        Returns:
+            Empty when they went; ``unknown_terminal`` for a terminal that is
+            not open, ``shell_unknown`` for one whose shell has ended.
+        """
+        opened = self._terminal(terminal_id)
+        if opened is None:
+            return {"code": "unknown_terminal", "params": {}}
+        if not opened[1].send(data):
+            return {"code": "shell_unknown", "params": {"shell": terminal_id}}
+        return {}
+
+    def close_terminal(self, terminal_id: str) -> dict:
+        """End the shell of one of the window's terminals and forget it.
+
+        Args:
+            terminal_id: The terminal.
+
+        Returns:
+            Empty; ``unknown_terminal`` for a terminal that is not open.
+        """
+        with self._lock:
+            opened = self._terminals.pop(terminal_id, None)
+        if opened is None:
+            return {"code": "unknown_terminal", "params": {}}
+        opened[1].close()
+        self._log("a terminal was closed from the window")
         return {}
 
     def request_show(self) -> None:
@@ -763,6 +798,31 @@ class ClientResident:
         """One terminal's session and bridge, None for an id nobody opened."""
         with self._lock:
             return self._terminals.get(terminal_id)
+
+    def _push_terminal(self, terminal_id: str) -> None:
+        """Push one window terminal's output until its shell ends, then its end."""
+        opened = self._terminal(terminal_id)
+        if opened is None:
+            return
+        bridge = opened[1]
+
+        def write(data: bytes) -> None:
+            self._hand_terminal({"id": terminal_id, "data": data})
+
+        bridge.pump_out(write)
+        with self._lock:
+            self._terminals.pop(terminal_id, None)
+        self._hand_terminal({"id": terminal_id, "end": bridge.outcome()})
+
+    def _hand_terminal(self, chunk: dict) -> None:
+        """Give one piece of a window terminal to whoever shows it."""
+        listener = self.on_terminal_output
+        if listener is None:
+            return
+        try:
+            listener(chunk)
+        except Exception as error:  # noqa: BLE001 - a window's own failure
+            self._log(f"the window did not take terminal output: {error}")
 
     def _find_session(self, needle: str) -> "ClientHubSession | None":
         """The session of one hub, by hub id or binding id; None for nobody."""

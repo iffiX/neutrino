@@ -307,8 +307,6 @@ class FakeClientPlatform(ClientPlatform):
         self.answer_error = None
         self.answer_output = ""
         self.language = "en"
-        self.terminals_opened = []
-        self.terminal_error = None
 
     def system_language(self) -> str:
         return self.language
@@ -372,11 +370,6 @@ class FakeClientPlatform(ClientPlatform):
         process = FakeProcess(list(argv))
         self.started.append(process)
         return process
-
-    def open_terminal(self, argv: list) -> None:
-        if self.terminal_error is not None:
-            raise self.terminal_error
-        self.terminals_opened.append(list(argv))
 
     def run_answering(self, argv: list, *, prompt, answer, timeout_s) -> tuple:
         if self.answer_error is not None:
@@ -549,8 +542,20 @@ class FakeResident:
         self.terminal_calls.append(("result", terminal_id))
         return {"exit_code": 0}
 
-    def launch_terminal(self, hub_id: str, device_id: str) -> dict:
-        self.terminal_calls.append(("launch", hub_id, device_id))
+    def open_window_terminal(self, hub_id: str, device_id: str, cols: int, rows: int):
+        self.terminal_calls.append(("window", hub_id, device_id, cols, rows))
+        return dict(self.terminal_reply)
+
+    def terminal_input(self, terminal_id: str, data: bytes) -> dict:
+        if not self.has_terminal(terminal_id):
+            return {"code": "unknown_terminal", "params": {}}
+        self.typed.append(data)
+        return {}
+
+    def close_terminal(self, terminal_id: str) -> dict:
+        self.terminal_calls.append(("close", terminal_id))
+        if not self.has_terminal(terminal_id):
+            return {"code": "unknown_terminal", "params": {}}
         return {}
 
     def list_directories(self, path: str) -> list:

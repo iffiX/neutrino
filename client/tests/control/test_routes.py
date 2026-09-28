@@ -1,5 +1,6 @@
 """The route table, driven directly: one table for both transports."""
 
+import base64
 import json
 import time
 
@@ -435,7 +436,7 @@ def test_the_output_of_an_open_terminal_answers_101_and_another_404():
     )
 
 
-def test_a_resize_and_a_launch_reach_the_resident():
+def test_a_resize_reaches_the_resident_and_nothing_launches_a_terminal():
     resident = FakeResident()
 
     resize = routes.dispatch(
@@ -451,11 +452,65 @@ def test_a_resize_and_a_launch_reach_the_resident():
         resident,
     )
 
-    assert resize[0] == 200 and launch[0] == 200
-    assert resident.terminal_calls == [
-        ("resize", "t1", 100, 30),
-        ("launch", "h1", "d_lepton"),
-    ]
+    assert resize[0] == 200
+    assert launch == (404, {"code": "unknown_request", "params": {}})
+    assert resident.terminal_calls == [("resize", "t1", 100, 30)]
+
+
+def test_the_windows_terminal_opens_with_its_size_and_answers_its_id():
+    resident = FakeResident()
+
+    opened = routes.dispatch(
+        "POST",
+        "/api/terminal/open",
+        {"hub_id": "h1", "device_id": "d_lepton", "cols": 132, "rows": 43},
+        resident,
+    )
+
+    assert opened == (200, {"terminal_id": "t1"})
+    assert resident.terminal_calls == [("window", "h1", "d_lepton", 132, 43)]
+    resident.terminal_reply = {"code": "unknown_terminal", "params": {}}
+    assert (
+        routes.dispatch(
+            "POST", "/api/terminal/open", {"hub_id": "h1", "device_id": "x"}, resident
+        )[0]
+        == 404
+    )
+
+
+def test_the_windows_keys_arrive_as_base64_and_reach_the_shell_as_bytes():
+    resident = FakeResident()
+    typed = base64.b64encode("ls é\r".encode()).decode()
+
+    sent = routes.dispatch(
+        "POST", "/api/terminal/input", {"terminal_id": "t1", "data": typed}, resident
+    )
+    garbled = routes.dispatch(
+        "POST", "/api/terminal/input", {"terminal_id": "t1", "data": "@@"}, resident
+    )
+    unknown = routes.dispatch(
+        "POST", "/api/terminal/input", {"terminal_id": "t9", "data": typed}, resident
+    )
+
+    assert sent == (200, {})
+    assert resident.typed == ["ls é\r".encode()]
+    assert garbled == (404, {"code": "unknown_request", "params": {}})
+    assert unknown[0] == 404
+
+
+def test_closing_the_windows_terminal_reaches_the_resident():
+    resident = FakeResident()
+
+    assert routes.dispatch(
+        "POST", "/api/terminal/close", {"terminal_id": "t1"}, resident
+    ) == (200, {})
+    assert (
+        routes.dispatch("POST", "/api/terminal/close", {"terminal_id": "t9"}, resident)[
+            0
+        ]
+        == 404
+    )
+    assert resident.terminal_calls == [("close", "t1"), ("close", "t9")]
 
 
 def test_the_result_names_how_the_shell_ended():

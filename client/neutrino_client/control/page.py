@@ -2,11 +2,10 @@
 
 The page is plain HTML, CSS and JavaScript under ``client/frontend/``, copied
 into ``neutrino_client/data/gui/`` by the packaging builds; a checkout with
-no built copy reads the source directory directly. The page renders two
-sections, Status and Services, and its requests ride the in-process channel
-over a message bridge. The document carries both word catalogs inlined, the
-way the stylesheet and the script are, so the page words itself without
-asking for anything.
+no built copy reads the source directory directly. The page's requests ride
+the in-process channel over a message bridge. The document carries both word
+catalogs inlined, the way the stylesheets and the scripts are, xterm.js from
+``vendor/`` among them, so the page loads nothing on its own.
 
 The page redraws only when the state payload actually changed, and never
 while the person holds a text selection, a focused form field, or an open
@@ -27,6 +26,10 @@ GUI_STYLE_TAG = '<link rel="stylesheet" href="style.css">'
 GUI_SCRIPT_TAG = '<script src="app.js"></script>'
 GUI_WORDS_OPENING = '<script id="words" type="application/json">'
 GUI_WORDS_TAG = GUI_WORDS_OPENING + "{}</script>"
+# The terminal's library, its fit addon and its stylesheet, as the page
+# names them under ``vendor/``.
+GUI_VENDOR_STYLES = ("vendor/xterm.css",)
+GUI_VENDOR_SCRIPTS = ("vendor/xterm.js", "vendor/addon-fit.js")
 
 
 def gui_dir() -> pathlib.Path:
@@ -61,15 +64,28 @@ def control_page_html() -> str:
     """The whole page as one document, for a shell's ``load_html``.
 
     Returns:
-        ``index.html`` with the stylesheet, the word catalogs and the script
-        inlined.
+        ``index.html`` with the stylesheets, the word catalogs and the
+        scripts inlined, the terminal's library among them.
 
     Raises:
-        FileNotFoundError: When the word catalogs are not on this machine.
+        FileNotFoundError: When the word catalogs or a vendored file are not
+            on this machine.
         ValueError: When ``index.html`` lacks the tags the assets replace.
     """
     document = gui_asset("index.html")
-    for tag, opening, content, closing in (
+    vendored = [
+        (
+            f'<link rel="stylesheet" href="{name}">',
+            "<style>",
+            gui_asset(name),
+            "</style>",
+        )
+        for name in GUI_VENDOR_STYLES
+    ] + [
+        (f'<script src="{name}"></script>', "<script>", gui_asset(name), "</script>")
+        for name in GUI_VENDOR_SCRIPTS
+    ]
+    for tag, opening, content, closing in vendored + [
         (GUI_STYLE_TAG, "<style>", gui_asset("style.css"), "</style>"),
         (
             GUI_WORDS_TAG,
@@ -78,7 +94,7 @@ def control_page_html() -> str:
             "</script>",
         ),
         (GUI_SCRIPT_TAG, "<script>", gui_asset("app.js"), "</script>"),
-    ):
+    ]:
         if tag not in document:
             raise ValueError(f"index.html does not carry {tag}")
         document = document.replace(tag, f"{opening}\n{content}{closing}")

@@ -496,22 +496,3 @@ def test_a_leave_removes_the_file_and_boots_the_job_out_when_none_is_left(
     script = recorder.commands[0][2]
     assert "rm -f" in script and "home.toml" in script
     assert "launchctl bootout system/com.neutrino.client.easytier" in script
-
-
-# --- the system terminal ---
-
-
-def test_terminal_opens_a_command_file_that_runs_the_client(monkeypatch, tmp_path):
-    recorder = CommandRecorder()
-    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
-
-    DarwinPlatform().open_terminal(
-        ["/Applications/N.app/nclient", "terminal", "my box"]
-    )
-
-    path = tmp_path / "config" / "terminal.command"
-    assert recorder.commands == [["open", "-a", "Terminal", str(path)]]
-    assert path.read_text() == (
-        "#!/bin/sh\nexec /Applications/N.app/nclient terminal 'my box'\n"
-    )
-    assert path.stat().st_mode & 0o777 == 0o700

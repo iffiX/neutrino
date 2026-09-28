@@ -928,29 +928,112 @@ def test_an_entrys_origin_is_worded_from_its_code_with_the_sentence_as_fallback(
         assert code in catalog_keys("ui.description.")
 
 
-def test_the_terminals_panel_lists_every_hubs_machines_in_hub_order():
-    body = PAGE_JS.split("function drawTerminals(state)")[1].split("\n}")[0]
-
-    assert "machine.hub_id === hub.hub_id" in body
-    assert "if (count === 0) card.appendChild(emptyRow(t('ui.empty_terminals')));" in (
-        body
-    )
-    assert EN_WORDS["ui.empty_terminals"]
+# --- the terminals page ---
 
 
-def test_each_offered_machine_has_an_open_terminal_button():
-    card = PAGE_JS.split("function terminalRows(card, hub, machines)")[1].split("\n}")[
-        0
-    ]
-    asking = PAGE_JS.split("function askTerminal(hub, machine, noteKey)")[1].split(
-        "\n}"
-    )[0]
+def function_body(signature: str) -> str:
+    """One top-level function's body, up to its closing brace."""
+    return PAGE_JS.split(signature)[1].split("\n}")[0]
 
-    assert "open.textContent = t('ui.terminal_open');" in card
-    assert "open.disabled = !machine.is_online || isHeld(hub);" in card
+
+def test_the_terminals_page_is_a_machine_strip_over_a_panel_of_shells():
+    body = function_body("function drawTerminals(state)")
+    strip = function_body("function machineStrip(state)")
+
+    assert "page.appendChild(machineStrip(state));" in body
+    assert "page.appendChild(shellPanel());" in body
+    assert body.index("machineStrip(state)") < body.index("shellPanel()")
+    assert "machine.hub_id === hub.hub_id" in strip
+    assert "chip.innerHTML = marker(machine.is_online ? 'ok' : 'off');" in strip
+    assert "open.textContent = t('ui.terminal_new');" in strip
     assert (
-        "send('/api/terminal/launch', { hub_id: hub.hub_id, device_id: "
-        "machine.device_id })" in asking
+        "open.disabled = !picked || !picked.machine.is_online || isHeld(picked.hub);"
+        in strip
     )
-    assert EN_WORDS["ui.terminal_open"] == "Open terminal"
-    assert CATALOGS["zh-CN"]["ui.terminal_open"] == "打开终端"
+    assert "card.appendChild(emptyRow(t('ui.empty_terminals')));" in strip
+    assert (EN_WORDS["ui.terminal_new"], CATALOGS["zh-CN"]["ui.terminal_new"]) == (
+        "New terminal",
+        "新终端",
+    )
+
+
+def test_each_open_shell_is_a_tab_that_closes_its_shell():
+    panel = function_body("function shellPanel()")
+    tab = function_body("function shellTabButton(tab)")
+    closing = function_body("function closeShell(tab)")
+    tone = function_body("function shellTone(tab)")
+
+    assert "for (const tab of shellTabs) head.appendChild(shellTabButton(tab));" in (
+        panel
+    )
+    assert "panel.appendChild(shellSurfaceElement());" in panel
+    assert "wrap.className = tab.key === activeShell ? 'term_tab on' : 'term_tab';" in (
+        tab
+    )
+    assert "close.onclick = () => closeShell(tab);" in tab
+    assert "api('/api/terminal/close', { terminal_id: tab.terminal_id });" in closing
+    assert "if (tab.state === 'connecting') return 'spin';" in tone
+    assert "return tab.isRefused ? 'bad' : 'off';" in tone
+    assert EN_WORDS["ui.terminal_close"] == "Close {name}"
+
+
+def test_a_shell_is_xterm_fitted_to_its_pane_and_opened_at_that_size():
+    body = function_body("function openShell(hub, machine)")
+    fit = function_body("function fitShell(tab)")
+
+    assert "const term = new Terminal({" in body
+    assert "const fit = new FitAddon.FitAddon();" in body
+    assert body.index("term.open(pane);") < body.index("api('/api/terminal/open'")
+    assert "cols: term.cols, rows: term.rows," in body
+    assert "term.onData((data) => sendShellKeys(tab, data));" in body
+    assert "api('/api/terminal/resize'," in body
+    assert "proposed.cols === tab.term.cols && proposed.rows === tab.term.rows" in fit
+    assert "new ResizeObserver(fitActiveShell).observe(shellSurface);" in PAGE_JS
+
+
+def test_keys_go_one_request_at_a_time_and_output_comes_as_pushed_pieces():
+    flush = function_body("function flushShellKeys(tab)")
+    push = PAGE_JS.split("window.neutrinoState = (state) => {")[1].split("\n};")[0]
+    piece = function_body("function takeShellPiece(piece)")
+
+    assert "api('/api/terminal/input', { terminal_id: tab.terminal_id, data: " in flush
+    assert ".then(() => flushShellKeys(tab));" in flush
+    assert "if (state.terminal) { takeShellPiece(state.terminal); return; }" in push
+    assert push.index("state.terminal") < push.index("present(state)")
+    assert "tab.term.write(base64Bytes(piece.data));" in piece
+    assert "earlyOutput[piece.id]" in piece
+
+
+def test_the_shells_panes_outlive_a_redraw():
+    surface = function_body("function shellSurfaceElement()")
+
+    assert "if (!shellSurface) {" in surface
+    assert "addEventListener('focusout'" in surface
+    assert "const shellTabs = [];" in PAGE_JS
+
+
+def test_nothing_launches_a_system_terminal_any_more():
+    assert "/api/terminal/launch" not in PAGE_JS
+    assert "ui.terminal_open" not in EN_WORDS
+    assert "code.terminal_app_missing" not in EN_WORDS
+    assert "askTerminal" not in PAGE_JS
+
+
+def test_xterm_and_its_fit_addon_are_vendored_and_inlined():
+    assert '<link rel="stylesheet" href="vendor/xterm.css">' in PAGE_HTML
+    assert PAGE_HTML.index('src="vendor/xterm.js"') < PAGE_HTML.index(
+        'src="vendor/addon-fit.js"'
+    )
+    assert PAGE_HTML.index('src="vendor/addon-fit.js"') < PAGE_HTML.index(
+        'src="app.js"'
+    )
+    assert page.gui_asset("vendor/xterm.js").startswith("/* @xterm/xterm 5.5.0")
+    assert page.gui_asset("vendor/addon-fit.js").startswith(
+        "/* @xterm/addon-fit 0.10.0"
+    )
+
+    document = page.control_page_html()
+
+    assert "<script src=" not in document
+    assert "sourceMappingURL" not in document
+    assert ".xterm-viewport" in document

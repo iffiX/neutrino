@@ -15,6 +15,7 @@ shutdown and then end the process.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import base64
 import datetime
 import os
 import signal
@@ -193,7 +194,16 @@ def _open(os_name: str, resident, *, is_hidden: bool) -> int:
         def push_state() -> None:
             push(routes.state_payload(resident))
 
+        def push_terminal(chunk: dict) -> None:
+            piece = {"id": chunk["id"]}
+            if "data" in chunk:
+                piece["data"] = base64.b64encode(chunk["data"]).decode("ascii")
+            else:
+                piece["end"] = chunk["end"]
+            push({"terminal": piece})
+
         resident.subscribe(push_state)
+        resident.on_terminal_output = push_terminal
 
     language = resident.language()
     try:
