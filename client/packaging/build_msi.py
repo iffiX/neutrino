@@ -250,6 +250,13 @@ NETBIRD_SERVICE_ARGUMENTS = (
     ' --log-file "[CommonAppDataFolder]Neutrino Client\\netbird\\client.log"'
 )
 EASYTIER_DAEMON_ARGUMENTS = f"{CLIENT_EASYTIER_DAEMON_VERB} --service"
+# What the service control manager does when the EasyTier daemon ends without
+# being stopped: start it again, as the agent's service does.
+EASYTIER_DAEMON_RECOVERY = (
+    '<util:ServiceConfig FirstFailureActionType="restart" '
+    'SecondFailureActionType="restart" ThirdFailureActionType="restart" '
+    'RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />'
+)
 
 # The package's body, inside the Package element wix_build writes around it.
 # @NAME@ rather than str.format: the source is XML with braces of its own in
@@ -646,6 +653,7 @@ def daemons_source(payload_dir: Path) -> str:
         display_name="Neutrino Client EasyTier",
         description="The daemon that runs EasyTier for the Neutrino client",
         arguments=EASYTIER_DAEMON_ARGUMENTS,
+        permissions=(EASYTIER_DAEMON_RECOVERY,),
     )
     folder = wix_build.element(
         "Component",

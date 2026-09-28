@@ -111,12 +111,24 @@ def test_the_easytier_service_is_the_client_run_as_its_daemon(source):
     assert "--config-dir" not in source
 
 
+def test_the_easytier_daemon_is_restarted_after_every_failure(source):
+    """As Linux's Restart=always and macOS's KeepAlive keep it up."""
+    (recovery,) = services(source)["NeutrinoClientEasytier"].iter(
+        f"{UTIL}ServiceConfig"
+    )
+
+    for failure in ("First", "Second", "Third"):
+        assert recovery.get(f"{failure}FailureActionType") == "restart"
+    assert recovery.get("RestartServiceDelayInSeconds") == "10"
+
+
 def test_users_are_granted_nothing_on_easytier(source):
     """The daemon's pipe is how a person reaches EasyTier; no service right,
     no writable folder."""
     root = xml.etree.ElementTree.fromstring(source)
 
-    assert not list(services(source)["NeutrinoClientEasytier"].iter())[1:]
+    children = list(services(source)["NeutrinoClientEasytier"].iter())[1:]
+    assert [child.tag for child in children] == [f"{UTIL}ServiceConfig"]
     assert "EASYTIERDATAFOLDER" not in source
     for granted in root.iter(f"{UTIL}PermissionEx"):
         assert granted.get("User") != "Users"

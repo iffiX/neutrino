@@ -4,9 +4,10 @@ A recording supervisor stands in for the core. Pinned here: every refusal
 the daemon answers and with which code, what a join writes and with which
 mode, that the state directory alone is what a restart reads back, the
 core's argument vector and environment for each kind of state (never a
-core with nothing configured, a console only in the environment, a manual
-network only through its directory), that an unchanged join restarts
-nothing, and that no answer carries a secret or a console's address.
+core with nothing configured, a console as ``--config-server``, a manual
+network only through its directory, no inherited ``ET_`` variable), that an
+unchanged join restarts nothing, and that no answer carries a secret or a
+console's address.
 """
 
 import json
@@ -227,16 +228,25 @@ def test_manual_networks_run_the_core_on_their_directory(tmp_path, monkeypatch):
     assert env["PATH"] == "/usr/bin"
 
 
-def test_a_console_reaches_the_core_in_its_environment_alone(tmp_path):
+def test_a_console_reaches_the_core_as_its_arguments(tmp_path, monkeypatch):
+    monkeypatch.setenv("ET_CONFIG_SERVER", "tcp://stray.example:1/etk_stray")
+    monkeypatch.setenv("ET_SECURE_MODE", "false")
     daemon, _supervisor = make_daemon(tmp_path)
     daemon.handle(console_request())
 
     argv, env = daemon.core_command()
 
-    assert "--config-dir" not in argv
-    assert all("etk_abc123" not in part for part in argv)
-    assert env["ET_CONFIG_SERVER"] == CONSOLE
-    assert env["ET_SECURE_MODE"] == "true"
+    assert argv == [
+        CORE,
+        "--rpc-portal",
+        CLIENT_EASYTIER_RPC_PORTAL,
+        "--console-log-level",
+        "warn",
+        "--config-server",
+        CONSOLE,
+        "--secure-mode=true",
+    ]
+    assert not [key for key in env if key.startswith("ET_")]
 
 
 def test_a_console_and_a_network_run_one_core_with_both(tmp_path):
@@ -246,9 +256,14 @@ def test_a_console_and_a_network_run_one_core_with_both(tmp_path):
 
     argv, env = daemon.core_command()
 
-    assert "--config-dir" in argv
-    assert env["ET_CONFIG_SERVER"] == CONSOLE
-    assert "ET_SECURE_MODE" not in env
+    assert argv[-4:] == [
+        "--config-dir",
+        str(tmp_path / "state" / "networks"),
+        "--config-server",
+        CONSOLE,
+    ]
+    assert "--secure-mode=true" not in argv
+    assert not [key for key in env if key.startswith("ET_")]
 
 
 # --- persistence ---

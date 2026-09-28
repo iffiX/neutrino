@@ -3,8 +3,9 @@
 The daemon holds two kinds of membership in one root-owned directory: a
 manual network is one file under ``networks/``, which the core reads through
 ``--config-dir``; the console is ``console.json``, whose address the core
-takes as ``ET_CONFIG_SERVER`` in its environment, so the account's token is
-on no argument vector. What is in the directory is the whole state: a start
+takes as ``--config-server``, with ``--secure-mode=true`` when it is set.
+The core's environment carries none of its own ``ET_`` variables, so only
+its arguments configure it. What is in the directory is the whole state: a start
 reads it back and runs the core to match, and a request changes it and
 restarts the core.
 
@@ -51,11 +52,9 @@ VERB_JOIN_CONSOLE = "join_console"
 VERB_LEAVE = "leave"
 VERB_LEAVE_CONSOLE = "leave_console"
 VERB_STATUS = "status"
-# The environment the core takes a console from; any other of its own
-# variables the daemon inherited is dropped, so none configures the core.
+# The core's own environment variables; every one the daemon inherited is
+# dropped, so only its arguments configure the core.
 CORE_ENV_PREFIX = "ET_"
-CORE_ENV_CONFIG_SERVER = "ET_CONFIG_SERVER"
-CORE_ENV_SECURE_MODE = "ET_SECURE_MODE"
 # What the core prints: warnings and worse.
 CORE_LOG_LEVEL = "warn"
 # The most a network's secret may be.
@@ -181,15 +180,15 @@ class EasytierDaemon:
         ]
         if networks:
             argv += ["--config-dir", self._networks_dir]
+        if console is not None:
+            argv += ["--config-server", console["config_server"]]
+            if console["is_secure_mode"]:
+                argv.append("--secure-mode=true")
         env = {
             key: value
             for key, value in os.environ.items()
             if not key.upper().startswith(CORE_ENV_PREFIX)
         }
-        if console is not None:
-            env[CORE_ENV_CONFIG_SERVER] = console["config_server"]
-            if console["is_secure_mode"]:
-                env[CORE_ENV_SECURE_MODE] = "true"
         return argv, env
 
     def status(self) -> dict:

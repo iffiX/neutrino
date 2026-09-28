@@ -130,8 +130,11 @@ def test_what_was_joined_comes_back_at_start_with_no_client(tmp_path, cores):
     daemon_cli.stop_daemon(parts, discard)
 
     assert len(cores) == 2
-    assert cores[1].env["ET_CONFIG_SERVER"].endswith("/etk_a")
-    assert cores[1].env["ET_SECURE_MODE"] == "true"
+    assert cores[1].argv[-3:] == [
+        "--config-server",
+        "tcp://et-web.console.easytier.net:22020/etk_a",
+        "--secure-mode=true",
+    ]
 
 
 def test_a_second_daemon_on_a_live_socket_is_refused(tmp_path, cores):
