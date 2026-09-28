@@ -83,6 +83,8 @@ CHANNEL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
 CHANNEL_CODE_PROTOCOL_TOO_NEW = "protocol_too_new"
 CHANNEL_CODE_KIND_UNKNOWN = "kind_unknown"
 CHANNEL_CODE_VERB_UNKNOWN = "verb_unknown"
+# A client's resize names a shell stream it has no bridge open on.
+CHANNEL_CODE_SHELL_UNKNOWN = "shell_unknown"
 CHANNEL_CODE_REPLACED = "replaced"
 CHANNEL_CODE_BINDING_UNKNOWN = "binding_unknown"
 CHANNEL_CODE_TICKET_SPENT = "ticket_spent"

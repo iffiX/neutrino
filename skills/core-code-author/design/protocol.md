@@ -655,8 +655,8 @@ the three packages, named here so that changing one is a change to this table.
 | keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 20 | | |
 | silence before the socket is dead | | `AGENT_WS_SILENCE_TIMEOUT_S` 45 | `CLIENT_WS_SILENCE_TIMEOUT_S` 45 |
 | reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
-| a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | grants none |
-| one binary frame | `CHANNEL_CHUNK_BYTES` 64 KiB | `AGENT_WS_CHUNK_BYTES` 64 KiB | sends none |
+| a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | `CLIENT_STREAM_CREDIT_BYTES` 1 MiB, on a `shell` stream only |
+| one binary frame | `CHANNEL_CHUNK_BYTES` 64 KiB | `AGENT_WS_CHUNK_BYTES` 64 KiB | `CLIENT_WS_CHUNK_BYTES`, on a `shell` stream only |
 | a stream waiting on credit | | `AGENT_WS_CREDIT_TIMEOUT_S` 60 | |
 | a stream waiting for its close | | | `CLIENT_STREAM_TIMEOUT_S` 15 |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
@@ -865,6 +865,8 @@ is added without a change to the protocol; a kind is added by a row here.
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` |
 | client, to the hub | `service` | `{id}`: one published entry. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
+| client, to the hub | `shell` | `{device_id, cols, rows}`: a shell on a managed machine, which the hub opens as the agent's own `shell` and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` or `agent_offline {device}` before any agent stream opens |
+| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open, `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | hub, to an agent | `desktop` | reserved and unimplemented: no arguments, the agent connects to the machine's RustDesk direct port 21118 and relays bytes both ways for `/ws/agent/desktop`; the name says the purpose, the mechanism is the port |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.

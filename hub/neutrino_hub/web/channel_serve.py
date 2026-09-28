@@ -5,7 +5,8 @@ down; a client's carries its reports up and the published list down. Both
 loops read the same frames: a ``report`` is recorded, an ``open`` hands a
 peer-opened stream to its kind's handler, a ``close`` or a ``credit`` goes
 to the stream it names, and bytes go to theirs. The kinds a peer may open
-are ``package`` and ``log`` from an agent and ``service`` from a client.
+are ``package`` and ``log`` from an agent, and ``service``, ``shell`` and
+``command`` from a client.
 """
 
 import asyncio
@@ -21,9 +22,11 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
     CHANNEL_FRAME_OPEN,
     CHANNEL_FRAME_REPORT,
+    CHANNEL_STREAM_COMMAND,
     CHANNEL_STREAM_LOG,
     CHANNEL_STREAM_PACKAGE,
     CHANNEL_STREAM_SERVICE,
+    CHANNEL_STREAM_SHELL,
 )
 from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.registry import ClientRegistry
@@ -36,6 +39,7 @@ from neutrino_hub.modules.devices.agent_reports import (
 )
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.web import channel_state
+from neutrino_hub.web.channel_shell import serve_command_stream, serve_shell_stream
 from neutrino_hub.web.constants import (
     WEB_EVENT_CLIENTS,
     WEB_EVENT_DEVICE_REPORT,
@@ -102,6 +106,12 @@ async def serve_client(
     sessions = runtime.client_sessions
     sessions.stream_handlers.setdefault(
         CHANNEL_STREAM_SERVICE, functools.partial(serve_service_stream, runtime)
+    )
+    sessions.stream_handlers.setdefault(
+        CHANNEL_STREAM_SHELL, functools.partial(serve_shell_stream, runtime)
+    )
+    sessions.stream_handlers.setdefault(
+        CHANNEL_STREAM_COMMAND, functools.partial(serve_command_stream, runtime)
     )
     await sessions.attach(session)
     try:

@@ -22,11 +22,8 @@ from starlette.websockets import WebSocketState
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_SHELL_CONTAINER_MODULE,
-    CHANNEL_STREAM_COMMAND,
     CHANNEL_STREAM_SHELL,
-    CHANNEL_VERB_RESIZE,
 )
 from neutrino_hub.web.constants import (
     WEB_EVENT_HELLO,
@@ -35,6 +32,13 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.dns_log import DnsLogReader
 from neutrino_hub.web.events import event_frame
+from neutrino_hub.web.shell_bridge import (
+    DEFAULT_COLUMNS,
+    DEFAULT_ROWS,
+    resize_shell,
+    settle_shell,
+    shell_output,
+)
 from neutrino_hub.web.stats_collector import PanelStatsCollector
 
 router = APIRouter()
@@ -42,8 +46,6 @@ router = APIRouter()
 POLICY_VIOLATION_CODE = 1008
 INTERNAL_ERROR_CODE = 1011
 DNS_LOG_POLL_INTERVAL_S = 1.0
-DEFAULT_COLUMNS = 80
-DEFAULT_ROWS = 24
 
 
 @router.websocket("/ws/hub/dashboard/stat")
@@ -199,25 +201,14 @@ async def _serve_agent_stream(websocket: WebSocket, device_id: str, args: dict) 
 
     reader = asyncio.create_task(_read_input(websocket, stream, sessions, device_id))
     pump = asyncio.create_task(_pump_stream(websocket, stream))
-    # Whichever ends first decides the teardown: the reader ending means
-    # the browser closed the terminal, the pump ending means the shell
-    # exited, the agent refused it, or the agent went away.
-    done, _ = await asyncio.wait({reader, pump}, return_when=asyncio.FIRST_COMPLETED)
-    info = stream.close_info or {}
-    refusal = str(info.get("code", "") or "") if pump in done else ""
-    if pump in done and not refusal:
+    info = await settle_shell(stream, reader, pump)
+    refusal = str(info.get("code", "") or "") if info is not None else ""
+    if info is not None and not refusal:
         params = info.get("params") or {}
         with contextlib.suppress(RuntimeError):
             await websocket.send_json(
                 {"type": "exit", "code": int(params.get("exit_code", 1) or 0)}
             )
-    with contextlib.suppress(AgentOfflineError):
-        await stream.close()
-    for task in (reader, pump):
-        task.cancel()
-    for task in (reader, pump):
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
     with contextlib.suppress(RuntimeError):
         if refusal:
             await websocket.close(code=INTERNAL_ERROR_CODE, reason=refusal)
@@ -228,15 +219,10 @@ async def _serve_agent_stream(websocket: WebSocket, device_id: str, args: dict) 
 async def _pump_stream(websocket: WebSocket, stream) -> None:
     """Forward the shell's output until the stream closes or the socket goes."""
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    while True:
-        item = await stream.recv()
-        if item is None:
-            return
-        if item[0] != "data":
-            continue
+    async for data in shell_output(stream):
         if websocket.client_state is not WebSocketState.CONNECTED:
             return
-        text = decoder.decode(item[1])
+        text = decoder.decode(data)
         if text:
             with contextlib.suppress(RuntimeError):
                 await websocket.send_json({"type": "output", "data": text})
@@ -261,7 +247,7 @@ async def _read_input(websocket: WebSocket, stream, sessions, device_id: str) ->
             if kind == "input":
                 await stream.send_bytes(str(message.get("data", "")).encode("utf-8"))
             elif kind == "resize":
-                await _resize_shell(
+                await resize_shell(
                     sessions,
                     device_id,
                     stream.id,
@@ -272,32 +258,6 @@ async def _read_input(websocket: WebSocket, stream, sessions, device_id: str) ->
         return
     except AgentOfflineError:
         return
-
-
-async def _resize_shell(sessions, device_id: str, shell_id: int, cols: int, rows: int):
-    """Tell the agent a shell's new size, on a command stream it closes itself.
-
-    Args:
-        sessions: The agents' sessions.
-        device_id: The device.
-        shell_id: The shell stream's id.
-        cols: Columns.
-        rows: Rows.
-
-    Raises:
-        AgentOfflineError: When the device has no channel.
-    """
-    await sessions.open_stream(
-        device_id,
-        CHANNEL_STREAM_COMMAND,
-        {
-            "module": CHANNEL_COMMAND_MODULE_AGENT,
-            "verb": CHANNEL_VERB_RESIZE,
-            "shell": shell_id,
-            "cols": cols,
-            "rows": rows,
-        },
-    )
 
 
 async def _accept(websocket: WebSocket) -> bool:

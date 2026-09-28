@@ -921,6 +921,37 @@ def test_a_disabled_client_keeps_its_socket_and_is_handed_an_empty_list(api):
         socket.__exit__(None, None, None)
 
 
+def test_a_client_opens_shell_and_command_streams_beside_its_service_ones(api):
+    client, runtime = api
+    client_id, token = bound_client()
+    socket = welcomed(client, client_id, token, role="client")
+    try:
+        socket.send_json(
+            {"type": "open", "stream": 1, "kind": "shell", "device_id": "gone"}
+        )
+        assert socket.receive_json()["type"] == "credit"
+        assert socket.receive_json() == {
+            "type": "close",
+            "stream": 1,
+            "code": "agent_offline",
+            "params": {"device": "gone"},
+        }
+        socket.send_json(
+            {
+                "type": "open",
+                "stream": 3,
+                "kind": "command",
+                "module": "agent",
+                "verb": "resize",
+                "shell": 1,
+            }
+        )
+        assert socket.receive_json()["type"] == "credit"
+        assert socket.receive_json()["code"] == "shell_unknown"
+    finally:
+        socket.__exit__(None, None, None)
+
+
 def test_a_service_stream_closes_with_the_desktops_material(api):
     client, runtime = api
     runtime.published_services.entries = [RDP_ENTRY]

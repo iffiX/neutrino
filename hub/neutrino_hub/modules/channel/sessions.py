@@ -209,6 +209,8 @@ class ChannelSession:
             None before the first report was judged.
         stream_handlers: Stream kind to the coroutine function serving a
             stream the peer opens, called with ``(session, stream)``.
+        shells: A client's open ``shell`` streams by id, each the
+            ``(device_id, agent_stream_id)`` it is bridged to.
         loop: The loop the socket is served on.
     """
 
@@ -234,6 +236,7 @@ class ChannelSession:
         self.state_hash = ""
         self.offered_hash: "str | None" = None
         self.stream_handlers: dict = {}
+        self.shells: dict = {}
         self.loop = loop
         self.opened_at = time.monotonic()
         self._reported = asyncio.Event()
