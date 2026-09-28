@@ -1,9 +1,10 @@
 """Where the binaries the client carries are installed.
 
-The packages put cc-switch and the RustDesk viewer beside the client: under
-``/opt/neutrino_client`` on Linux, next to the package on Windows, under
-the app bundle's ``Contents/Resources`` on macOS. A checkout carries
-neither, and asking for one there is a typed refusal.
+The packages put cc-switch, the RustDesk viewer and the NetBird and
+EasyTier CLIs beside the client: under ``/opt/neutrino_client`` on Linux,
+next to the package on Windows, under the app bundle's
+``Contents/Resources`` on macOS. A checkout carries none of them, and
+asking for one there is a typed refusal.
 """
 
 import os
@@ -36,7 +37,8 @@ def bundled_path(binary: str) -> str:
     """One carried binary's absolute path.
 
     Args:
-        binary: ``cc-switch`` or ``rustdesk``.
+        binary: ``cc-switch``, ``rustdesk``, ``netbird``, ``easytier-core``
+            or ``easytier-cli``.
 
     Returns:
         The path when the binary is on the machine, empty otherwise.

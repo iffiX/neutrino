@@ -14,7 +14,7 @@ import subprocess
 import pytest
 
 import neutrino_client.platforms.darwin as darwin_module
-from neutrino_client.exceptions import ShareAttachError
+from neutrino_client.exceptions import OverlayControlError, ShareAttachError
 from neutrino_client.platforms.darwin import DarwinPlatform
 from tests.conftest import completed
 
@@ -427,3 +427,72 @@ def test_a_windowed_program_starts_with_no_handles_of_this_process(monkeypatch):
     process = DarwinPlatform().start_on_screen([sys.executable, "-c", "pass"])
 
     assert process.wait(timeout=20) == 0
+
+
+# --- EasyTier behind the administrator prompt ---
+
+
+def darwin_join(tmp_path):
+    secret = tmp_path / "home.secret"
+    secret.write_text("s3cret")  # scan: allow
+    DarwinPlatform().easytier_join(
+        network_name="home",
+        secret_path=str(secret),
+        peer="tcp://203.0.113.7:11010",
+        hostname="mac",
+    )
+
+
+def test_a_join_installs_the_file_as_root_and_kicks_the_job(monkeypatch, tmp_path):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    darwin_join(tmp_path)
+
+    (command,) = recorder.commands
+    assert command[:2] == ["osascript", "-e"]
+    script = command[2]
+    assert script.endswith("with administrator privileges")
+    assert "install -m 0600 -o root -g wheel" in script
+    assert "/Library/Application Support/Neutrino Client/easytier/home.toml" in script
+    assert "launchctl kickstart -k system/com.neutrino.client.easytier" in script
+    assert "s3cret" not in script  # scan: allow
+    staged = tmp_path / "config" / "overlay" / "home.toml"
+    assert not staged.exists()
+
+
+def test_a_cancelled_prompt_is_not_authorized(monkeypatch, tmp_path):
+    recorder = CommandRecorder(
+        [completed(returncode=1, stderr="execution error: User canceled. (-128)")]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    with pytest.raises(OverlayControlError) as caught:
+        darwin_join(tmp_path)
+
+    assert caught.value.code == "overlay_not_authorized"
+    assert not (tmp_path / "config" / "overlay" / "home.toml").exists()
+
+
+def test_another_failure_carries_the_scripts_words(monkeypatch, tmp_path):
+    recorder = CommandRecorder([completed(returncode=1, stderr="no such job")])
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    with pytest.raises(OverlayControlError) as caught:
+        darwin_join(tmp_path)
+
+    assert caught.value.code == "overlay_restart_failed"
+    assert caught.value.params == {"detail": "no such job"}
+
+
+def test_a_leave_removes_the_file_and_boots_the_job_out_when_none_is_left(
+    monkeypatch,
+):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    DarwinPlatform().easytier_leave(network_name="home")
+
+    script = recorder.commands[0][2]
+    assert "rm -f" in script and "home.toml" in script
+    assert "launchctl bootout system/com.neutrino.client.easytier" in script

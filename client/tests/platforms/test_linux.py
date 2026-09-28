@@ -13,9 +13,13 @@ import struct
 import pytest
 
 import neutrino_client.platforms.linux as linux_module
-from neutrino_client.constants import CLIENT_MOUNT_HELPER_PATH
+from neutrino_client.constants import (
+    CLIENT_MOUNT_HELPER_PATH,
+    CLIENT_OVERLAY_HELPER_PATH,
+)
 from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
+    OverlayControlError,
     ShareAttachError,
 )
 from neutrino_client.platforms.linux import LinuxPlatform
@@ -292,3 +296,74 @@ def test_without_a_pty_module_the_terminal_is_a_typed_refusal(monkeypatch):
 
     with pytest.raises(PlatformUnsupportedError):
         LinuxPlatform().run_answering(["x"], prompt="?", answer="y", timeout_s=1)
+
+
+# --- EasyTier through the overlay helper ---
+
+
+def test_an_easytier_join_rides_pkexec_with_the_secret_file_not_the_secret(
+    monkeypatch, tmp_path
+):
+    secret = tmp_path / "home.secret"
+    secret.write_text("s3cret")  # scan: allow
+    recorder = CommandRecorder()
+    monkeypatch.setattr(linux_module.subprocess, "run", recorder)
+
+    LinuxPlatform().easytier_join(
+        network_name="home",
+        secret_path=str(secret),
+        peer="tcp://203.0.113.7:11010",
+        hostname="box",
+    )
+
+    assert recorder.commands == [
+        [
+            "pkexec",
+            CLIENT_OVERLAY_HELPER_PATH,
+            "easytier",
+            "up",
+            "--network",
+            "home",
+            "--secret-file",
+            str(secret),
+            "--peer",
+            "tcp://203.0.113.7:11010",
+            "--hostname",
+            "box",
+        ]
+    ]
+    assert "s3cret" not in " ".join(recorder.commands[0])  # scan: allow
+
+
+def test_an_easytier_leave_rides_pkexec(monkeypatch):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(linux_module.subprocess, "run", recorder)
+
+    LinuxPlatform().easytier_leave(network_name="home")
+
+    assert recorder.commands == [
+        ["pkexec", CLIENT_OVERLAY_HELPER_PATH, "easytier", "down", "--network", "home"]
+    ]
+
+
+@pytest.mark.parametrize(
+    "exit_code, code",
+    [
+        (126, "overlay_not_authorized"),
+        (127, "overlay_not_authorized"),
+        (2, "overlay_not_authorized"),
+        (3, "overlay_network_invalid"),
+        (4, "overlay_peer_invalid"),
+        (5, "overlay_secret_missing"),
+        (6, "overlay_restart_failed"),
+        (99, "overlay_restart_failed"),
+    ],
+)
+def test_the_overlay_helpers_exit_status_is_typed(monkeypatch, exit_code, code):
+    recorder = CommandRecorder([completed(returncode=exit_code, stderr="words")])
+    monkeypatch.setattr(linux_module.subprocess, "run", recorder)
+
+    with pytest.raises(OverlayControlError) as caught:
+        LinuxPlatform().easytier_leave(network_name="home")
+
+    assert caught.value.code == code

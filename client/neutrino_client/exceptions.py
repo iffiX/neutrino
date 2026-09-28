@@ -180,3 +180,23 @@ class GuiShellUnavailableError(RuntimeError):
 
 class ToolSwitchError(RuntimeError):
     """Raised when cc-switch refuses, or a configuration cannot be kept."""
+
+
+class OverlayControlError(OSError):
+    """Raised when a virtual network cannot be joined, left or read.
+
+    Attributes:
+        code: The typed reason, one of the ``overlay_*`` codes or
+            ``bundle_missing``.
+        params: What its wording names.
+    """
+
+    def __init__(self, code: str, params: "dict | None" = None):
+        """
+        Args:
+            code: The typed reason.
+            params: Its parameters.
+        """
+        super().__init__(code)
+        self.code = code
+        self.params = dict(params or {})

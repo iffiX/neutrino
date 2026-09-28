@@ -59,6 +59,20 @@ ERROR_SESSION_CREDENTIAL_CONFLICT = 1219
 ERROR_NO_NETWORK = 1222
 ERROR_LOGON_FAILURE = 1326
 
+# The service controller: the rights one service is opened with, the one
+# control sent, and the states QueryServiceStatus answers with.
+SC_MANAGER_CONNECT = 0x0001
+SERVICE_QUERY_STATUS = 0x0004
+SERVICE_START = 0x0010
+SERVICE_STOP = 0x0020
+SERVICE_CONTROL_STOP = 0x00000001
+SERVICE_STOPPED = 0x00000001
+SERVICE_START_PENDING = 0x00000002
+SERVICE_STOP_PENDING = 0x00000003
+SERVICE_RUNNING = 0x00000004
+ERROR_SERVICE_ALREADY_RUNNING = 1056
+ERROR_SERVICE_NOT_ACTIVE = 1062
+
 # Pseudo consoles. The attribute names the console for the process about
 # to start.
 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
@@ -323,6 +337,20 @@ class SecurityAttributes(ctypes.Structure):
     ]
 
 
+class ServiceStatus(ctypes.Structure):
+    """The SERVICE_STATUS QueryServiceStatus and ControlService fill."""
+
+    _fields_ = [
+        ("dwServiceType", ctypes.c_ulong),
+        ("dwCurrentState", ctypes.c_ulong),
+        ("dwControlsAccepted", ctypes.c_ulong),
+        ("dwWin32ExitCode", ctypes.c_ulong),
+        ("dwServiceSpecificExitCode", ctypes.c_ulong),
+        ("dwCheckPoint", ctypes.c_ulong),
+        ("dwWaitHint", ctypes.c_ulong),
+    ]
+
+
 class Win32Libraries:
     """Every DLL the client calls, with its prototypes set once.
 
@@ -473,6 +501,30 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.c_void_p,
         ]
+        self.advapi32.OpenSCManagerW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_ulong,
+        ]
+        self.advapi32.OpenSCManagerW.restype = ctypes.c_void_p
+        self.advapi32.OpenServiceW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_ulong,
+        ]
+        self.advapi32.OpenServiceW.restype = ctypes.c_void_p
+        self.advapi32.ControlService.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_void_p,
+        ]
+        self.advapi32.StartServiceW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_void_p,
+        ]
+        self.advapi32.QueryServiceStatus.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self.advapi32.CloseServiceHandle.argtypes = [ctypes.c_void_p]
 
     def _describe_mpr(self) -> None:
         """Prototype the mpr calls."""

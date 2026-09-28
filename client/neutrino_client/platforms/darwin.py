@@ -6,7 +6,9 @@ under their own home with no root: ``mount_smbfs`` attaches it and
 share is named as ``//user@host/share`` and the password is typed at the
 tool's own prompt on a pseudo-terminal of its own. The control channel is a
 Unix socket under the person's Caches directory, whose peer identity comes
-from the kernel's ``LOCAL_PEERCRED``.
+from the kernel's ``LOCAL_PEERCRED``. An EasyTier network's file is put in
+place by root through an administrator prompt, the one step here that asks
+for one, which also starts or stops the EasyTier launchd job.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import struct
 import subprocess
@@ -25,10 +28,20 @@ try:
 except ImportError:  # Windows has no account database module.
     pwd = None
 
-from neutrino_client.constants import CLIENT_CONTROL_SOCKET_NAME
-from neutrino_client.exceptions import ShareAttachError
+from neutrino_client.constants import (
+    CLIENT_CONTROL_SOCKET_NAME,
+    CLIENT_EASYTIER_CONFIG_DIR_DARWIN,
+    CLIENT_EASYTIER_CONFIG_SUFFIX,
+    CLIENT_EASYTIER_LAUNCHD_LABEL,
+    CLIENT_LAUNCHD_DAEMONS_DIR,
+    CLIENT_OVERLAY_DIR_NAME,
+)
+from neutrino_client.core import files
+from neutrino_client.core.easytier_config import is_network_name
+from neutrino_client.exceptions import OverlayControlError, ShareAttachError
 from neutrino_client.platforms.base import (
     ClientPlatform,
+    easytier_file_text,
     read_share_credentials,
     run_on_pty,
     run_quietly,
@@ -77,6 +90,12 @@ LANGUAGE_ENTRY = re.compile(r'"([^"]+)"')
 OPEN_TOOL = "open"
 OPEN_TIMEOUT_S = 10
 
+# The administrator prompt: a shell script run as root through AppleScript.
+# A person cancelling it is error -128, which osascript prints.
+OSASCRIPT_TOOL = "osascript"
+OSASCRIPT_TIMEOUT_S = 300
+OSASCRIPT_CANCELED_MARKS = ("User canceled", "(-128)")
+
 
 def _smb_refusal(output: str) -> str:
     """The typed refusal mount_smbfs's words name, ``mount_failed`` for none."""
@@ -85,6 +104,19 @@ def _smb_refusal(output: str) -> str:
         if phrase.lower() in lowered:
             return code
     return "mount_failed"
+
+
+def _easytier_start_script() -> str:
+    """The shell that loads the EasyTier job when it is not loaded, and restarts it."""
+    plist = shlex.quote(
+        os.path.join(
+            CLIENT_LAUNCHD_DAEMONS_DIR, CLIENT_EASYTIER_LAUNCHD_LABEL + ".plist"
+        )
+    )
+    return (
+        f"(launchctl bootstrap system {plist} 2>/dev/null; "
+        f"launchctl kickstart -k system/{CLIENT_EASYTIER_LAUNCHD_LABEL})"
+    )
 
 
 class DarwinPlatform(ClientPlatform):
@@ -226,6 +258,109 @@ class DarwinPlatform(ClientPlatform):
             run_quietly([OPEN_TOOL, url], timeout_s=OPEN_TIMEOUT_S)
         except (OSError, subprocess.SubprocessError):
             super().open_url(url)
+
+    def easytier_join(
+        self, *, network_name: str, secret_path: str, peer: str, hostname: str
+    ) -> None:
+        """Render one network's file, and have root put it in place and start the job.
+
+        The file is rendered under the person's own configuration directory,
+        0600, and removed once root has installed its copy.
+
+        Args:
+            network_name: The network, also the file's name.
+            secret_path: A file of this person's holding the secret.
+            peer: The hub's peer URI.
+            hostname: What this machine is called on the network.
+
+        Raises:
+            OverlayControlError: The value refused, ``overlay_not_authorized``
+                when the person cancelled the prompt,
+                ``overlay_restart_failed`` with the script's words.
+        """
+        text = easytier_file_text(
+            network_name=network_name,
+            secret_path=secret_path,
+            peer=peer,
+            hostname=hostname,
+        )
+        staged = os.path.join(
+            self.config_dir(),
+            CLIENT_OVERLAY_DIR_NAME,
+            network_name + CLIENT_EASYTIER_CONFIG_SUFFIX,
+        )
+        files.write_text(staged, text, mode=0o600)
+        target = os.path.join(
+            CLIENT_EASYTIER_CONFIG_DIR_DARWIN,
+            network_name + CLIENT_EASYTIER_CONFIG_SUFFIX,
+        )
+        script = (
+            f"mkdir -p {shlex.quote(CLIENT_EASYTIER_CONFIG_DIR_DARWIN)}"
+            f" && chmod 700 {shlex.quote(CLIENT_EASYTIER_CONFIG_DIR_DARWIN)}"
+            f" && install -m 0600 -o root -g wheel {shlex.quote(staged)}"
+            f" {shlex.quote(target)}"
+            f" && {_easytier_start_script()}"
+        )
+        try:
+            self._run_as_administrator(script)
+        finally:
+            files.remove_file(staged)
+
+    def easytier_leave(self, *, network_name: str) -> None:
+        """Have root remove one network's file, and restart or stop the job.
+
+        Args:
+            network_name: The network.
+
+        Raises:
+            OverlayControlError: ``overlay_network_invalid`` for a name no
+                file may carry, ``overlay_not_authorized`` when the person
+                cancelled the prompt, ``overlay_restart_failed`` otherwise.
+        """
+        if not is_network_name(network_name):
+            raise OverlayControlError("overlay_network_invalid")
+        directory = shlex.quote(CLIENT_EASYTIER_CONFIG_DIR_DARWIN)
+        target = shlex.quote(
+            os.path.join(
+                CLIENT_EASYTIER_CONFIG_DIR_DARWIN,
+                network_name + CLIENT_EASYTIER_CONFIG_SUFFIX,
+            )
+        )
+        script = (
+            f"rm -f {target}; "
+            f"if ls {directory}/*{CLIENT_EASYTIER_CONFIG_SUFFIX} >/dev/null 2>&1; "
+            f"then {_easytier_start_script()}; "
+            f"else launchctl bootout system/{CLIENT_EASYTIER_LAUNCHD_LABEL}"
+            " 2>/dev/null; true; fi"
+        )
+        self._run_as_administrator(script)
+
+    def _run_as_administrator(self, script: str) -> None:
+        """Run one shell script as root behind the system's administrator prompt.
+
+        Raises:
+            OverlayControlError: ``overlay_not_authorized`` when the person
+                cancelled, ``overlay_restart_failed`` with the words
+                otherwise.
+        """
+        quoted = script.replace("\\", "\\\\").replace('"', '\\"')
+        command = [
+            OSASCRIPT_TOOL,
+            "-e",
+            f'do shell script "{quoted}" with administrator privileges',
+        ]
+        try:
+            result = run_quietly(command, timeout_s=OSASCRIPT_TIMEOUT_S)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise OverlayControlError(
+                "overlay_restart_failed", {"detail": str(error)[:200]}
+            )
+        if result.returncode == 0:
+            return
+        words = (result.stderr or result.stdout or "").strip()
+        if any(mark in words for mark in OSASCRIPT_CANCELED_MARKS):
+            raise OverlayControlError("overlay_not_authorized")
+        raise OverlayControlError("overlay_restart_failed", {"detail": words[-200:]})
 
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float

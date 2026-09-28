@@ -6,7 +6,9 @@ made it, and one made anywhere else is reachable by name yet drawn as
 disconnected in File Explorer. The login travels in a structure, on no
 argument vector. The control channel is a named pipe of the person's own,
 whose peer identity comes from pipe impersonation and must be the same
-account.
+account. An EasyTier network is a file under ProgramData that the installer
+lets Users write, and the EasyTier service is one the installer lets Users
+start and stop; it runs only while a network's file is there.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -23,21 +25,34 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_NAME_PREFIX,
     CLIENT_CONTROL_PIPE_PREFIX,
     CLIENT_DEFAULT_LANGUAGE,
+    CLIENT_EASYTIER_CONFIG_NAME_WINDOWS,
+    CLIENT_EASYTIER_CONFIG_SUFFIX,
+    CLIENT_EASYTIER_SERVICE_WINDOWS,
+    CLIENT_OVERLAY_DATA_DIR_WINDOWS,
 )
+from neutrino_client.core import files
+from neutrino_client.core.easytier_config import is_network_name
 from neutrino_client.platforms import win32
-from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
+from neutrino_client.exceptions import (
+    OverlayControlError,
+    PlatformUnsupportedError,
+    ShareAttachError,
+)
 from neutrino_client.platforms.base import (
     ClientPlatform,
+    easytier_file_text,
     read_share_credentials,
     run_quietly,
     share_parts,
 )
 from neutrino_client.platforms.windows_console import WindowsConsoleApi
 from neutrino_client.platforms.windows_identity import WindowsIdentityApi
+from neutrino_client.platforms.windows_service import WindowsServiceApi
 from neutrino_client.words import language_for_tag
 
 WINDOWS_CONFIG_DIR_NAME = "Neutrino Client"
 WINDOWS_MOUNT_TIMEOUT_S = 60
+WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
 
 # A share that File Explorer never hears about stands there as a disconnected
 # drive while every other program reaches it; the shell is told after a
@@ -66,19 +81,27 @@ SHARE_REFUSALS = {
 }
 
 
+# What the service controller answers this account with, as the typed
+# refusals; anything else is ``overlay_restart_failed`` with Windows' words.
+SERVICE_REFUSALS = {win32.ERROR_ACCESS_DENIED: "overlay_not_authorized"}
+
+
 class WindowsPlatform(ClientPlatform):
     """Windows behind the platform contract."""
 
     os_name = "windows"
     mount_location_shape = "drive_letter"
 
-    def __init__(self, *, win32=None):
+    def __init__(self, *, win32=None, services=None):
         """
         Args:
             win32: The Win32 seam for pipe identity; None builds the real one
                 on first use.
+            services: The service controller seam; None builds the real one
+                on first use.
         """
         self._win32_api = win32
+        self._service_api = services
 
     def config_dir(self) -> str:
         """``%APPDATA%\\Neutrino Client``."""
@@ -282,6 +305,131 @@ class WindowsPlatform(ClientPlatform):
         return self._win32().run_on_console(
             argv, prompt=prompt, answer=answer.replace("\n", "\r"), timeout_s=timeout_s
         )
+
+    def easytier_dir(self) -> str:
+        """``%PROGRAMDATA%\\Neutrino Client\\easytier``, where the service reads networks."""
+        root = os.environ.get("PROGRAMDATA", "") or WINDOWS_PROGRAM_DATA_DEFAULT
+        return os.path.join(
+            root, CLIENT_OVERLAY_DATA_DIR_WINDOWS, CLIENT_EASYTIER_CONFIG_NAME_WINDOWS
+        )
+
+    def easytier_join(
+        self, *, network_name: str, secret_path: str, peer: str, hostname: str
+    ) -> None:
+        """Write one network's file under ProgramData, then stop and start the service.
+
+        Args:
+            network_name: The network, also the file's name.
+            secret_path: A file of this person's holding the secret.
+            peer: The hub's peer URI.
+            hostname: What this machine is called on the network.
+
+        Raises:
+            OverlayControlError: The value refused, ``overlay_not_authorized``
+                when this account may not write the file or drive the
+                service, ``overlay_restart_failed`` with Windows' words.
+        """
+        text = easytier_file_text(
+            network_name=network_name,
+            secret_path=secret_path,
+            peer=peer,
+            hostname=hostname,
+        )
+        path = self._easytier_file(network_name)
+        try:
+            files.write_text(path, text)
+        except PermissionError as error:
+            raise OverlayControlError(
+                "overlay_not_authorized", {"detail": str(error)[:200]}
+            )
+        except OSError as error:
+            raise OverlayControlError(
+                "overlay_restart_failed", {"detail": str(error)[:200]}
+            )
+        self._drive_easytier(("stop", "start"))
+
+    def easytier_leave(self, *, network_name: str) -> None:
+        """Remove one network's file; restart the service, or stop it when none is left.
+
+        Args:
+            network_name: The network.
+
+        Raises:
+            OverlayControlError: ``overlay_network_invalid`` for a name no
+                file may carry, ``overlay_not_authorized`` or
+                ``overlay_restart_failed`` as for a join.
+        """
+        if not is_network_name(network_name):
+            raise OverlayControlError("overlay_network_invalid")
+        try:
+            files.remove_file(self._easytier_file(network_name))
+        except OSError as error:
+            raise OverlayControlError(
+                "overlay_not_authorized", {"detail": str(error)[:200]}
+            )
+        if self._easytier_files():
+            self._drive_easytier(("stop", "start"))
+        else:
+            self._drive_easytier(("stop",))
+
+    def easytier_resume(self) -> None:
+        """Start the service when networks are in place and it is stopped.
+
+        The service starts on demand only, so after a reboot it waits for
+        this.
+
+        Raises:
+            OverlayControlError: When the service could not be started.
+        """
+        if not self._easytier_files():
+            return
+        try:
+            state = self._services().state(CLIENT_EASYTIER_SERVICE_WINDOWS)
+        except OSError as error:
+            raise OverlayControlError(
+                "overlay_restart_failed", {"detail": str(error)[:200]}
+            )
+        if state == win32.SERVICE_STOPPED:
+            self._drive_easytier(("start",))
+
+    def _easytier_file(self, network_name: str) -> str:
+        """Where one network's file lives."""
+        return os.path.join(
+            self.easytier_dir(), network_name + CLIENT_EASYTIER_CONFIG_SUFFIX
+        )
+
+    def _easytier_files(self) -> list:
+        """The network files in place, by name."""
+        try:
+            names = os.listdir(self.easytier_dir())
+        except OSError:
+            return []
+        return sorted(
+            name for name in names if name.endswith(CLIENT_EASYTIER_CONFIG_SUFFIX)
+        )
+
+    def _drive_easytier(self, steps: tuple) -> None:
+        """Run ``stop`` and ``start`` on the EasyTier service, in order.
+
+        Raises:
+            OverlayControlError: ``overlay_not_authorized`` on access denied,
+                ``overlay_restart_failed`` otherwise.
+        """
+        services = self._services()
+        for step in steps:
+            try:
+                getattr(services, step)(CLIENT_EASYTIER_SERVICE_WINDOWS)
+            except OSError as error:
+                code = SERVICE_REFUSALS.get(
+                    getattr(error, "winerror", None), "overlay_restart_failed"
+                )
+                raise OverlayControlError(code, {"detail": str(error)[:200]})
+
+    def _services(self):
+        """The service controller seam, built on first use."""
+        if self._service_api is None:
+            self._service_api = WindowsServiceApi()
+        return self._service_api
 
     def _announce_drive(self, location: str, event: int) -> None:
         """Tell the shell a drive letter came or went.

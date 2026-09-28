@@ -116,16 +116,25 @@ CLIENT_INSTALL_PREFIX_LINUX = "/opt/neutrino_client"
 CLIENT_BUNDLED_PATHS_LINUX = {
     "cc-switch": "bin/cc-switch",
     "rustdesk": "rustdesk/rustdesk",
+    "netbird": "netbird/netbird",
+    "easytier-core": "easytier/easytier-core",
+    "easytier-cli": "easytier/easytier-cli",
 }
 CLIENT_BUNDLED_PATHS_WINDOWS = {
     "cc-switch": "bin\\cc-switch.exe",
     "rustdesk": "bin\\rustdesk.exe",
+    "netbird": "bin\\netbird.exe",
+    "easytier-core": "bin\\easytier-core.exe",
+    "easytier-cli": "bin\\easytier-cli.exe",
 }
 # Under the app bundle's Contents directory, beside the MacOS directory the
 # compiled package runs from.
 CLIENT_BUNDLED_PATHS_DARWIN = {
     "cc-switch": "Resources/bin/cc-switch",
     "rustdesk": "Resources/rustdesk/RustDesk.app/Contents/MacOS/RustDesk",
+    "netbird": "Resources/netbird/netbird",
+    "easytier-core": "Resources/easytier/easytier-core",
+    "easytier-cli": "Resources/easytier/easytier-cli",
 }
 
 # The root helper a mount goes through on Linux, and the polkit action that
@@ -176,3 +185,55 @@ CLIENT_PROMPT_EXIT_TIMEOUT_S = 5
 # previous one beside it. A window process has no terminal to speak to.
 CLIENT_LOG_FILE_NAME = "client.log"
 CLIENT_LOG_KEEP_BYTES = 1024 * 1024
+
+# The two overlay daemons the packages carry and register as system
+# services. The person runs their CLIs; only EasyTier's configuration needs
+# root, which the root helper, the service controller or an administrator
+# prompt gives it.
+CLIENT_OVERLAY_PROVIDERS = ("netbird", "easytier")
+CLIENT_NETBIRD_CONFIG_PATH_LINUX = "/etc/neutrino_client/netbird/config.json"
+CLIENT_EASYTIER_CONFIG_DIR_LINUX = "/etc/neutrino_client/easytier"
+CLIENT_NETBIRD_SERVICE_LINUX = "neutrino_client_netbird.service"
+CLIENT_EASYTIER_SERVICE_LINUX = "neutrino_client_easytier.service"
+# Under %PROGRAMDATA%, which the installer lets Users write for EasyTier.
+CLIENT_OVERLAY_DATA_DIR_WINDOWS = "Neutrino Client"
+CLIENT_NETBIRD_CONFIG_NAME_WINDOWS = "netbird\\config.json"
+CLIENT_EASYTIER_CONFIG_NAME_WINDOWS = "easytier"
+CLIENT_NETBIRD_SERVICE_WINDOWS = "NeutrinoClientNetbird"
+CLIENT_EASYTIER_SERVICE_WINDOWS = "NeutrinoClientEasytier"
+CLIENT_NETBIRD_CONFIG_PATH_DARWIN = (
+    "/Library/Application Support/Neutrino Client/netbird/config.json"
+)
+CLIENT_EASYTIER_CONFIG_DIR_DARWIN = (
+    "/Library/Application Support/Neutrino Client/easytier"
+)
+CLIENT_NETBIRD_LAUNCHD_LABEL = "com.neutrino.client.netbird"
+CLIENT_EASYTIER_LAUNCHD_LABEL = "com.neutrino.client.easytier"
+CLIENT_LAUNCHD_DAEMONS_DIR = "/Library/LaunchDaemons"
+# The one RPC portal the EasyTier daemon listens on, for every network it
+# runs: a command-line flag of the service, never a line of a network's
+# file. 15888 is the hub's own.
+CLIENT_EASYTIER_RPC_PORTAL = "127.0.0.1:15889"
+# The file suffix of one EasyTier network's configuration.
+CLIENT_EASYTIER_CONFIG_SUFFIX = ".toml"
+# Where a network's secret and rendered file wait, under the person's own
+# configuration directory, before the root step takes them.
+CLIENT_OVERLAY_DIR_NAME = "overlay"
+
+# The root helper EasyTier's configuration goes through on Linux, and the
+# polkit action that gates it.
+CLIENT_OVERLAY_HELPER_PATH = "/usr/libexec/neutrino_client/overlay_helper"
+CLIENT_OVERLAY_POLKIT_ACTION = "com.neutrino.client.overlay"
+# What each overlay helper exit status means; pkexec's own 126 and 127 mean
+# the person declined or was not allowed.
+CLIENT_OVERLAY_HELPER_EXIT_CODES = {
+    2: "overlay_not_authorized",
+    3: "overlay_network_invalid",
+    4: "overlay_peer_invalid",
+    5: "overlay_secret_missing",
+    6: "overlay_restart_failed",
+}
+# How long one run of an overlay CLI may take: joining waits for the
+# management server; a status is local.
+CLIENT_OVERLAY_JOIN_TIMEOUT_S = 60
+CLIENT_OVERLAY_STATUS_TIMEOUT_S = 10

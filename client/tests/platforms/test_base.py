@@ -14,6 +14,7 @@ import pytest
 
 import neutrino_client.platforms.base as base_module
 from neutrino_client.exceptions import (
+    OverlayControlError,
     ControlSocketUnavailableError,
     PlatformUnsupportedError,
 )
@@ -338,3 +339,46 @@ def test_a_prompt_drawn_with_colours_and_cursor_moves_is_still_found():
 def test_a_title_sequence_without_its_bell_swallows_nothing_past_the_next_escape():
     drawn = b"\x1b]0;cc-switch\x1b[?25lAre you sure? (y/N) \x1b[?25h\x07"
     assert b"(y/N)" in base.plain_text(drawn)
+
+
+# --- the overlay seam ---
+
+
+def test_an_overlay_cli_the_install_does_not_carry_is_bundle_missing(monkeypatch):
+    monkeypatch.setattr(base_module.bundled, "bundled_path", lambda binary: "")
+
+    with pytest.raises(OverlayControlError) as caught:
+        ClientPlatform().run_overlay("netbird", ["status"], timeout_s=1)
+
+    assert caught.value.code == "bundle_missing"
+    assert caught.value.params == {"binary": "netbird"}
+
+
+def test_an_overlay_cli_runs_as_this_person_with_its_arguments(monkeypatch):
+    monkeypatch.setattr(
+        base_module.bundled, "bundled_path", lambda binary: "/opt/x/" + binary
+    )
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append(list(command))
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(base_module.subprocess, "run", run)
+
+    result = ClientPlatform().run_overlay("easytier-cli", ["node"], timeout_s=1)
+
+    assert seen == [["/opt/x/easytier-cli", "node"]]
+    assert result.stdout == "{}"
+
+
+def test_the_base_platform_refuses_easytier_and_resumes_nothing():
+    platform = ClientPlatform()
+
+    with pytest.raises(PlatformUnsupportedError):
+        platform.easytier_join(
+            network_name="n", secret_path="/s", peer="tcp://h:1", hostname="h"
+        )
+    with pytest.raises(PlatformUnsupportedError):
+        platform.easytier_leave(network_name="n")
+    assert platform.easytier_resume() is None

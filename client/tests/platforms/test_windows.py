@@ -5,10 +5,17 @@ share is mapped in this very session with the login on standard input and
 never on an argument vector. Every Win32 call rides the seam.
 """
 
+import os
+
 import pytest
 
 import neutrino_client.platforms.windows as windows_module
-from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
+from neutrino_client.exceptions import (
+    OverlayControlError,
+    PlatformUnsupportedError,
+    ShareAttachError,
+)
+from neutrino_client.platforms import win32
 from neutrino_client.platforms.windows import (
     WindowsPlatform,
 )
@@ -402,3 +409,131 @@ def test_a_question_is_answered_on_a_pseudo_console_with_a_carriage_return(
         "(y/N)",
         "y\r",
     ) in platform._win32().calls
+
+
+# --- EasyTier under ProgramData and its service ---
+
+
+class FakeServices:
+    """The service controller, in memory: a state and every call in order."""
+
+    def __init__(self, state=win32.SERVICE_STOPPED, error=None):
+        self.current = state
+        self.calls = []
+        self.error = error
+
+    def state(self, name):
+        self.calls.append(("state", name))
+        return self.current
+
+    def start(self, name):
+        self.calls.append(("start", name))
+        if self.error is not None:
+            raise self.error
+        self.current = win32.SERVICE_RUNNING
+
+    def stop(self, name):
+        self.calls.append(("stop", name))
+        if self.error is not None:
+            raise self.error
+        self.current = win32.SERVICE_STOPPED
+
+
+@pytest.fixture
+def overlay_platform(monkeypatch, tmp_path):
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "ProgramData"))
+    services = FakeServices()
+    subject = WindowsPlatform(win32=FakeWin32(), services=services)
+    secret = tmp_path / "home.secret"
+    secret.write_text("s3cret")  # scan: allow
+    return subject, services, str(secret)
+
+
+def join(subject, secret, name="home"):
+    subject.easytier_join(
+        network_name=name,
+        secret_path=secret,
+        peer="tcp://203.0.113.7:11010",
+        hostname="BOX",
+    )
+
+
+def test_a_join_writes_under_programdata_then_stops_and_starts(
+    overlay_platform, tmp_path
+):
+    subject, services, secret = overlay_platform
+
+    join(subject, secret)
+
+    assert subject.easytier_dir() == os.path.join(
+        str(tmp_path / "ProgramData"), "Neutrino Client", "easytier"
+    )
+    written = os.path.join(subject.easytier_dir(), "home.toml")
+    with open(written) as stream:
+        assert 'network_secret = "s3cret"' in stream.read()  # scan: allow
+    assert services.calls == [
+        ("stop", "NeutrinoClientEasytier"),
+        ("start", "NeutrinoClientEasytier"),
+    ]
+
+
+def test_the_last_leave_only_stops_the_service(overlay_platform):
+    subject, services, secret = overlay_platform
+    join(subject, secret)
+    services.calls.clear()
+
+    subject.easytier_leave(network_name="home")
+
+    assert services.calls == [("stop", "NeutrinoClientEasytier")]
+    assert not os.listdir(subject.easytier_dir())
+
+
+def test_a_leave_with_a_network_left_restarts_the_service(overlay_platform):
+    subject, services, secret = overlay_platform
+    join(subject, secret)
+    join(subject, secret, name="office")
+    services.calls.clear()
+
+    subject.easytier_leave(network_name="home")
+
+    assert [call for call, _name in services.calls] == ["stop", "start"]
+
+
+def test_resume_starts_a_stopped_service_only_with_a_network_in_place(
+    overlay_platform,
+):
+    subject, services, secret = overlay_platform
+    subject.easytier_resume()
+    assert services.calls == []
+
+    join(subject, secret)
+    services.current = win32.SERVICE_STOPPED
+    services.calls.clear()
+    subject.easytier_resume()
+    assert services.calls[-1] == ("start", "NeutrinoClientEasytier")
+
+    services.calls.clear()
+    subject.easytier_resume()
+    assert services.calls == [("state", "NeutrinoClientEasytier")]
+
+
+def test_a_denied_service_is_not_authorized(overlay_platform):
+    subject, services, secret = overlay_platform
+    denied = OSError(13, "Access is denied")
+    denied.winerror = win32.ERROR_ACCESS_DENIED
+    services.error = denied
+
+    with pytest.raises(OverlayControlError) as caught:
+        join(subject, secret)
+
+    assert caught.value.code == "overlay_not_authorized"
+
+
+def test_a_missing_secret_is_refused_before_anything_is_written(overlay_platform):
+    subject, services, _secret = overlay_platform
+
+    with pytest.raises(OverlayControlError) as caught:
+        join(subject, "/nowhere/secret")
+
+    assert caught.value.code == "overlay_secret_missing"
+    assert services.calls == []
