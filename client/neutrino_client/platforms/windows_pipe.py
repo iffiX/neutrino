@@ -4,7 +4,8 @@ On Windows the control socket is a named pipe of the person's own. This
 module shapes a pipe handle like an accepted socket, so the request handler
 serves it unchanged, and the platform reads the peer's identity from pipe
 impersonation through the connection's ``pipe_handle``. The pipe's security
-descriptor names the current user's SID alone. Every Win32 call rides one
+descriptor names the current user's SID alone, unless the server is given
+its own, as the EasyTier daemon's pipe is. Every Win32 call rides one
 seam class, so nothing here needs Windows to import or to test.
 """
 
@@ -57,18 +58,23 @@ def open_pipe_connection(pipe_name: str, *, api=None) -> "PipeConnection":
 class Win32PipeApi:
     """The Win32 named-pipe calls, one seam the tests replace whole."""
 
-    def __init__(self):
+    def __init__(self, *, sddl: str = ""):
         """
+        Args:
+            sddl: The security descriptor every instance is created with;
+                empty admits the current user alone.
+
         Raises:
             OSError: When the libraries cannot be loaded.
         """
         libraries = win32.libraries()
         self._kernel32 = libraries.kernel32
         self._advapi32 = libraries.advapi32
+        self._sddl = sddl
         self._security = None
 
     def create_instance(self, pipe_name: str, *, is_first: bool = False) -> int:
-        """Create one server instance of the pipe, open to this user alone.
+        """Create one server instance of the pipe, open to whom its descriptor admits.
 
         Args:
             pipe_name: The pipe name.
@@ -222,7 +228,7 @@ class Win32PipeApi:
             self._kernel32.CloseHandle(token)
 
     def _security_attributes(self):
-        """Security attributes whose descriptor lets this user alone connect.
+        """Security attributes whose descriptor admits whom the pipe is for.
 
         Built once and kept: the descriptor must outlive every instance
         created with it.
@@ -231,7 +237,7 @@ class Win32PipeApi:
             return self._security
         convert = self._advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
         descriptor = ctypes.c_void_p()
-        sddl = pipe_security_sddl(self.current_user_sid())
+        sddl = self._sddl or pipe_security_sddl(self.current_user_sid())
         if not convert(sddl, win32.SDDL_REVISION_1, ctypes.byref(descriptor), None):
             raise ctypes.WinError(ctypes.get_last_error())
         attributes = win32.SecurityAttributes()

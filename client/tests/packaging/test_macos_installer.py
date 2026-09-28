@@ -345,17 +345,17 @@ def test_netbird_runs_unless_another_daemon_holds_the_socket(tmp_path):
     assert job["KeepAlive"] == {"SuccessfulExit": False}
 
 
-def test_easytier_runs_only_while_a_networks_file_is_there(tmp_path):
+def test_the_easytier_job_is_the_clients_own_daemon_kept_running(tmp_path):
+    """The daemon decides when the core runs; launchd only keeps it up."""
     job = daemon(tmp_path, "com.neutrino.client.easytier")
-    shell, flag, command = job["ProgramArguments"]
 
-    assert (shell, flag) == ("/bin/sh", "-c")
-    assert command.startswith(
-        "ls '/Library/Application Support/Neutrino Client/easytier'/*.toml"
-    )
-    assert "|| exit 0; exec " in command
-    assert command.endswith("--rpc-portal 127.0.0.1:15889")
-    assert job["KeepAlive"] == {"SuccessfulExit": False}
+    assert job["ProgramArguments"] == [
+        "/Applications/Neutrino Client.app/Contents/MacOS/nclient",
+        "easytier-daemon",
+    ]
+    assert job["RunAtLoad"] is True
+    assert job["KeepAlive"] is True
+    assert "easytier-core" not in " ".join(job["ProgramArguments"])
 
 
 def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path):
@@ -363,6 +363,10 @@ def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path)
     assert "chmod 700" in build_pkg.POSTINSTALL
     assert "chown root:wheel" in build_pkg.POSTINSTALL
     assert "launchctl bootstrap system" in build_pkg.POSTINSTALL
+    assert (
+        '"/Library/Application Support/Neutrino Client/easytier"'
+        in build_pkg.POSTINSTALL
+    )
     for script in (build_pkg.PREINSTALL, build_pkg.POSTINSTALL):
         assert script.startswith("#!/bin/sh\n") and script.endswith("exit 0\n")
 

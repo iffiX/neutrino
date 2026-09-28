@@ -14,10 +14,11 @@ build machine's Python is pinned to a minor here and checked.
 
 The client is a person's application, not a service and not an autostart: it
 runs when the person opens it. The two overlay daemons it carries are
-services: NetBird's starts with Windows, and EasyTier's starts only when the
-client joins a network, since started on an empty directory it runs a
-default network of its own; Users may start and stop it and write its
-networks' folder. Beside EasyTier's daemon and CLI rides wintun.dll alone. The installer puts a Start menu shortcut down
+services that start with Windows: NetBird's, and the client's own EasyTier
+daemon, ``nclient.exe easytier-daemon --service`` as SYSTEM, which runs
+EasyTier's core as its child only while a network or a console is
+configured. Beside EasyTier's core and CLI ride wintun.dll and the stub
+packet.dll. The installer puts a Start menu shortcut down
 and asks two questions: whether the command belongs on PATH, and, when it is
 taking the client away again, whether the person's own configuration goes
 with it. Answered by nobody, the first is yes and the second is no, so a
@@ -66,7 +67,7 @@ import wix_build  # noqa: E402
 # The service names and the portal are the client's own, named here so the
 # installer and the runtime cannot drift.
 from neutrino_client.constants import (  # noqa: E402
-    CLIENT_EASYTIER_RPC_PORTAL,
+    CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_SERVICE_WINDOWS,
     CLIENT_NETBIRD_SERVICE_WINDOWS,
 )
@@ -232,23 +233,15 @@ REMOVE_CONFIG_COMMAND = (
     '"[SystemFolder]cmd.exe" /c ' f'rd /s /q "[AppDataFolder]{CLIENT_CONFIG_DIR_NAME}"'
 )
 
-# The two overlay daemons' binaries under the payload's bin, and how each
-# service runs. NetBird's state and EasyTier's networks live under
-# ProgramData; EasyTier's RPC portal is the one the client asks.
+# NetBird's binary under the payload's bin and how its service runs, its
+# state under ProgramData; the EasyTier daemon is the console program run
+# with its verb, and makes its own state directory under ProgramData.
 NETBIRD_EXE = "netbird.exe"
-EASYTIER_EXE = "easytier-core.exe"
 NETBIRD_SERVICE_ARGUMENTS = (
     'service run --config "[CommonAppDataFolder]Neutrino Client\\netbird\\config.json"'
     ' --log-file "[CommonAppDataFolder]Neutrino Client\\netbird\\client.log"'
 )
-EASYTIER_SERVICE_ARGUMENTS = (
-    '--config-dir "[CommonAppDataFolder]Neutrino Client\\easytier" '
-    f"--rpc-portal {CLIENT_EASYTIER_RPC_PORTAL}"
-)
-# What Users may do: start, stop and ask EasyTier's service, and write the
-# folder its networks are read from.
-EASYTIER_SERVICE_RIGHTS = ("ServiceStart", "ServiceStop", "ServiceQueryStatus")
-EASYTIER_FOLDER_RIGHTS = ("GenericRead", "GenericWrite", "GenericExecute", "Delete")
+EASYTIER_DAEMON_ARGUMENTS = f"{CLIENT_EASYTIER_DAEMON_VERB} --service"
 
 # The package's body, inside the Package element wix_build writes around it.
 # @NAME@ rather than str.format: the source is XML with braces of its own in
@@ -320,16 +313,15 @@ WIX_BODY = r"""
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="CLIENTDATAFOLDER" Name="Neutrino Client">
         <Directory Id="NETBIRDDATAFOLDER" Name="netbird" />
-        <Directory Id="EASYTIERDATAFOLDER" Name="easytier" />
       </Directory>
     </StandardDirectory>
 
     <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
-      <!-- The two daemons are the service components below, not files of
-           the glob. -->
+      <!-- The two daemons' binaries are the service components below, not
+           files of the glob. -->
       <Files Include="@PAYLOAD@\**">
         <Exclude Files="@NETBIRD_EXE@" />
-        <Exclude Files="@EASYTIER_EXE@" />
+        <Exclude Files="@CLIENT_EXE@" />
       </Files>
       <Component Id="WebView2Bootstrapper" Guid="*">
         <File Id="WebView2BootstrapperExe"
@@ -580,10 +572,11 @@ def main() -> int:
 
 
 def daemons_source(payload_dir: Path) -> str:
-    """The two overlay daemons as services, and the folders their state is in.
+    """The two overlay daemons as services, and the folder NetBird's state is in.
 
     Args:
-        payload_dir: The staged payload, whose ``bin`` holds both binaries.
+        payload_dir: The staged payload: ``bin`` holds NetBird, and the
+            console client, which is the EasyTier daemon, is at its top.
 
     Returns:
         The ``Daemons`` component group.
@@ -627,78 +620,36 @@ def daemons_source(payload_dir: Path) -> str:
             ),
         ),
     )
-    easytier = wix_build.element(
+    easytier = wix_build.service_component(
+        component_id="EasytierDaemon",
+        source=payload_dir / CLIENT_BINARY_NAME,
+        service_name=CLIENT_EASYTIER_SERVICE_WINDOWS,
+        display_name="Neutrino Client EasyTier",
+        description="The daemon that runs EasyTier for the Neutrino client",
+        arguments=EASYTIER_DAEMON_ARGUMENTS,
+    )
+    folder = wix_build.element(
         "Component",
-        {"Id": "EasytierService", "Guid": "*", "Subdirectory": "bin"},
+        {"Id": "NetbirdDataFolder", "Guid": "*", "Directory": "NETBIRDDATAFOLDER"},
         (
+            wix_build.element("CreateFolder", {}),
             wix_build.element(
-                "File",
+                "RegistryValue",
                 {
-                    "Id": "EasytierServiceFile",
-                    "Source": str(payload_dir / "bin" / EASYTIER_EXE),
+                    "Root": "HKLM",
+                    "Key": "Software\\Neutrino\\Client",
+                    "Name": "NetbirdDataFolder",
+                    "Type": "integer",
+                    "Value": "1",
                     "KeyPath": "yes",
-                },
-            ),
-            wix_build.element(
-                "ServiceInstall",
-                {
-                    "Id": "EasytierServiceInstall",
-                    "Name": CLIENT_EASYTIER_SERVICE_WINDOWS,
-                    "DisplayName": "Neutrino Client EasyTier",
-                    "Description": "The EasyTier daemon the Neutrino client joins with",
-                    "Type": "ownProcess",
-                    "Start": "demand",
-                    "ErrorControl": "normal",
-                    "Account": "LocalSystem",
-                    "Arguments": EASYTIER_SERVICE_ARGUMENTS,
-                },
-                (wix_build.permission_ex("Users", EASYTIER_SERVICE_RIGHTS),),
-            ),
-            wix_build.element(
-                "ServiceControl",
-                {
-                    "Id": "EasytierServiceControl",
-                    "Name": CLIENT_EASYTIER_SERVICE_WINDOWS,
-                    "Stop": "both",
-                    "Remove": "uninstall",
-                    "Wait": "yes",
                 },
             ),
         ),
     )
-    folders = []
-    for component_id, directory_id, rights in (
-        ("NetbirdDataFolder", "NETBIRDDATAFOLDER", ()),
-        ("EasytierDataFolder", "EASYTIERDATAFOLDER", EASYTIER_FOLDER_RIGHTS),
-    ):
-        folders.append(
-            wix_build.element(
-                "Component",
-                {"Id": component_id, "Guid": "*", "Directory": directory_id},
-                (
-                    wix_build.element(
-                        "CreateFolder",
-                        {},
-                        ((wix_build.permission_ex("Users", rights),) if rights else ()),
-                    ),
-                    wix_build.element(
-                        "RegistryValue",
-                        {
-                            "Root": "HKLM",
-                            "Key": "Software\\Neutrino\\Client",
-                            "Name": component_id,
-                            "Type": "integer",
-                            "Value": "1",
-                            "KeyPath": "yes",
-                        },
-                    ),
-                ),
-            )
-        )
     return wix_build.element(
         "ComponentGroup",
         {"Id": "Daemons", "Directory": "INSTALLFOLDER"},
-        (netbird, easytier, *folders),
+        (netbird, easytier, folder),
     )
 
 
@@ -733,7 +684,7 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
             "CONFIG_GOES": CONFIG_GOES_CONDITION,
             "PATH_DECLINED": PATH_DECLINED_CONDITION,
             "NETBIRD_EXE": Path(staged["payload"]) / "bin" / NETBIRD_EXE,
-            "EASYTIER_EXE": Path(staged["payload"]) / "bin" / EASYTIER_EXE,
+            "CLIENT_EXE": Path(staged["payload"]) / CLIENT_BINARY_NAME,
         },
     ).replace("@DAEMONS@", daemons_source(Path(staged["payload"])))
     return wix_build.package_source(

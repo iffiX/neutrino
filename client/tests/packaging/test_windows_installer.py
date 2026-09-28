@@ -3,7 +3,7 @@
 wix is not run here — it needs Windows and the .NET tool — and neither is
 the compiler, so what is asserted is the document the build writes and the
 command the compile is given: a product identity of its own, the two
-overlay daemons as services and none of the client's own, no autostart Run
+overlay daemons as services, the EasyTier one the client run as its daemon, no autostart Run
 entry, the shortcut, the quit that comes before
 anything ends a resident and opens no window doing it, the two questions and
 what they answer to unasked, and the bootstrapper chained only where the
@@ -70,58 +70,55 @@ def controls(source) -> dict:
     }
 
 
-def test_the_installer_registers_the_two_daemons_and_no_service_of_the_clients(
-    source,
-):
+def test_the_installer_registers_the_two_daemons_and_no_other_service(source):
     assert set(services(source)) == {"NeutrinoClientNetbird", "NeutrinoClientEasytier"}
     for element in services(source).values():
         assert element.get("Account") == "LocalSystem"
-    assert "nclient" not in " ".join(
+    assert "gui" not in " ".join(
         element.get("Arguments", "") for element in services(source).values()
     )
 
 
-def test_netbird_starts_with_windows_and_easytier_only_on_a_join(source):
-    netbird = services(source)["NeutrinoClientNetbird"]
-    easytier = services(source)["NeutrinoClientEasytier"]
-
-    assert netbird.get("Start") == "auto"
-    assert controls(source)["NeutrinoClientNetbird"].get("Start") == "install"
-    assert easytier.get("Start") == "demand"
-    assert controls(source)["NeutrinoClientEasytier"].get("Start") is None
-    assert controls(source)["NeutrinoClientEasytier"].get("Remove") == "uninstall"
+def test_both_daemons_start_with_windows_and_go_with_the_client(source):
+    for name in ("NeutrinoClientNetbird", "NeutrinoClientEasytier"):
+        assert services(source)[name].get("Start") == "auto"
+        assert controls(source)[name].get("Start") == "install"
+        assert controls(source)[name].get("Stop") == "both"
+        assert controls(source)[name].get("Remove") == "uninstall"
 
 
-def test_the_daemons_run_on_programdata_and_the_one_portal(source):
+def test_the_easytier_service_is_the_client_run_as_its_daemon(source):
+    """The core is the daemon's child, never a service of its own."""
+    root = xml.etree.ElementTree.fromstring(source)
     netbird = services(source)["NeutrinoClientNetbird"].get("Arguments")
     easytier = services(source)["NeutrinoClientEasytier"].get("Arguments")
+    components = {
+        component.get("Id"): component for component in root.iter(f"{WXS}Component")
+    }
+    (daemon_file,) = components["EasytierDaemon"].iter(f"{WXS}File")
 
     assert netbird == (
         'service run --config "[CommonAppDataFolder]Neutrino Client\\netbird\\config.json"'
         ' --log-file "[CommonAppDataFolder]Neutrino Client\\netbird\\client.log"'
     )
-    assert easytier == (
-        '--config-dir "[CommonAppDataFolder]Neutrino Client\\easytier" '
-        "--rpc-portal 127.0.0.1:15889"
+    assert easytier == "easytier-daemon --service"
+    assert (
+        daemon_file.get("Source").replace("\\", "/") == "C:/build/payload/nclient.exe"
     )
+    assert components["EasytierDaemon"].get("Subdirectory") is None
+    assert "easytier-core" not in source.split("<Files")[0]
+    assert "--config-dir" not in source
 
 
-def test_users_may_start_and_stop_easytier_and_write_its_networks(source):
+def test_users_are_granted_nothing_on_easytier(source):
+    """The daemon's pipe is how a person reaches EasyTier; no service right,
+    no writable folder."""
     root = xml.etree.ElementTree.fromstring(source)
-    easytier = services(source)["NeutrinoClientEasytier"]
-    (granted,) = easytier.iter(f"{UTIL}PermissionEx")
-    folder = [
-        component
-        for component in root.iter(f"{WXS}Component")
-        if component.get("Directory") == "EASYTIERDATAFOLDER"
-    ][0]
-    (written,) = folder.iter(f"{UTIL}PermissionEx")
 
-    assert granted.get("User") == "Users"
-    for right in ("ServiceStart", "ServiceStop", "ServiceQueryStatus"):
-        assert granted.get(right) == "yes"
-    assert written.get("User") == "Users"
-    assert written.get("GenericWrite") == "yes"
+    assert not list(services(source)["NeutrinoClientEasytier"].iter())[1:]
+    assert "EASYTIERDATAFOLDER" not in source
+    for granted in root.iter(f"{UTIL}PermissionEx"):
+        assert granted.get("User") != "Users"
 
 
 def test_the_daemon_binaries_are_service_components_and_not_files_of_the_glob(
@@ -133,12 +130,11 @@ def test_the_daemon_binaries_are_service_components_and_not_files_of_the_glob(
         component.get("Id"): component for component in root.iter(f"{WXS}Component")
     }
 
-    assert [name.rsplit("bin", 1)[-1][1:] for name in excluded] == [
-        "netbird.exe",
-        "easytier-core.exe",
+    assert [name.replace("\\", "/") for name in excluded] == [
+        "C:/build/payload/bin/netbird.exe",
+        "C:/build/payload/nclient.exe",
     ]
-    for component_id in ("NetbirdService", "EasytierService"):
-        assert components[component_id].get("Subdirectory") == "bin"
+    assert components["NetbirdService"].get("Subdirectory") == "bin"
     main = [
         feature for feature in root.iter(f"{WXS}Feature") if feature.get("Id") == "Main"
     ][0]

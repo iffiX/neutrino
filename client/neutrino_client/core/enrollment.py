@@ -76,15 +76,19 @@ BINDING_KEYS = (
 )
 BINDING_URLS_KEY = "gateway_urls"
 BINDING_OVERLAY_KEY = "overlay"
-# The fields each overlay provider's object carries, every one a string and
-# every one required.
+# The string fields each overlay object carries, by provider and, for
+# EasyTier, by mode. An EasyTier object that names no mode is a manual one,
+# as a hub before the console mode sends it.
 OVERLAY_FIELDS = {
-    "netbird": ("setup_key", "management_url", "fqdn"),
-    "easytier": ("network_name", "network_secret", "peer"),
+    ("netbird", ""): ("setup_key", "management_url", "fqdn"),
+    ("easytier", "manual"): ("network_name", "network_secret", "peer", "hub_address"),
+    ("easytier", "console"): ("config_server", "hub_address"),
 }
+OVERLAY_DEFAULT_MODES = {"netbird": "", "easytier": "manual"}
 # The fields that may be empty: a NetBird management URL left empty is
-# NetBird's own cloud, and a hub whose daemon reports no name has no fqdn.
-OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn")
+# NetBird's own cloud, a hub whose daemon reports no name has no fqdn, and a
+# hub that does not know its own virtual address names none.
+OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn", "hub_address")
 
 
 def parse_link(link: str) -> "tuple[list, str, str, dict | None]":
@@ -346,17 +350,25 @@ def clean_overlay(value) -> "dict | None":
 
     Returns:
         ``{"provider", ...}`` with exactly the provider's own fields, each a
-        stripped string, the EasyTier peer without its trailing slash; None
-        for anything else, an unknown provider or a missing required field
-        among them.
+        stripped string, the EasyTier peer without its trailing slash; an
+        EasyTier object also carries its ``mode``, and a console one its
+        ``is_secure_mode``. None for anything else, an unknown provider or
+        mode, or a missing required field among them.
     """
     if not isinstance(value, dict):
         return None
     provider = str(value.get("provider", "") or "")
-    fields = OVERLAY_FIELDS.get(provider)
+    if provider not in OVERLAY_DEFAULT_MODES:
+        return None
+    mode = str(value.get("mode", "") or "") or OVERLAY_DEFAULT_MODES[provider]
+    fields = OVERLAY_FIELDS.get((provider, mode))
     if fields is None:
         return None
     cleaned = {"provider": provider}
+    if mode:
+        cleaned["mode"] = mode
+    if mode == "console":
+        cleaned["is_secure_mode"] = value.get("is_secure_mode") is True
     for field in fields:
         text = str(value.get(field, "") or "").strip()
         if field == "peer":

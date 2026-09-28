@@ -20,6 +20,10 @@ NETWORK_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 HOSTNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 # The schemes a peer the client connects to may use.
 PEER_SCHEMES = ("tcp", "udp", "ws", "wss", "quic")
+# The schemes an EasyTier console's address may use, and what its path, the
+# account's token, may be.
+CONSOLE_SCHEMES = ("tcp", "udp", "ws", "wss")
+CONSOLE_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~-]{1,256}$")
 
 
 def is_network_name(name: str) -> bool:
@@ -71,6 +75,37 @@ def is_peer_uri(uri: str) -> bool:
         and port is not None
         and 0 < port < 65536
         and parts.path in ("", "/")
+        and not parts.query
+        and not parts.fragment
+        and parts.username is None
+    )
+
+
+def is_console_address(address: str) -> bool:
+    """Whether an EasyTier console's address is one the core may be pointed at.
+
+    Args:
+        address: The address, as
+            ``tcp://et-web.console.easytier.net:22020/<token>``.
+
+    Returns:
+        True for a known scheme, a host, a port in 1..65535 and a one-part
+        path, with no query, login or whitespace.
+    """
+    text = address or ""
+    if any(character.isspace() or character in "\"'\\" for character in text):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return False
+    return (
+        parts.scheme in CONSOLE_SCHEMES
+        and bool(parts.hostname)
+        and port is not None
+        and 0 < port < 65536
+        and bool(CONSOLE_PATH_PATTERN.match(parts.path))
         and not parts.query
         and not parts.fragment
         and parts.username is None

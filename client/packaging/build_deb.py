@@ -3,7 +3,7 @@
     python3 client/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
 The package carries the client compiled under /opt/neutrino_client, the
-window's bindings inside it, the two root helpers compiled beside the paths
+window's bindings inside it, the mount helper compiled beside the path
 polkit pins, and the binaries the client drives, so it names no Python at
 all.
 That fixes it to one architecture and one glibc: build it in a container of
@@ -11,8 +11,9 @@ the machine it is for, the way the hub's package is built.
 
 The client is a person's application, not a service: the package installs a
 launcher and no autostart entry. The two overlay daemons it carries are
-services: the package registers NetBird's and EasyTier's units, and a
-purge takes their configuration under /etc/neutrino_client. It conflicts
+services: the package registers NetBird's unit and the unit of the client's
+own EasyTier daemon, ``nclient easytier-daemon``, and a purge takes their
+state under /etc/neutrino_client. It conflicts
 with the netbird package, which holds the same state and socket.
 
 The client's services last only as long as it runs, so the maintainer scripts

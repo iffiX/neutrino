@@ -13,9 +13,9 @@ Mac.
 The client is a person's application, not a service and not a login item:
 it runs when the person opens it. The installer puts the bundle under
 ``/Applications`` and links ``nclient`` into ``/usr/local/bin``. The two
-overlay daemons it carries are LaunchDaemons: NetBird's is kept running,
-and EasyTier's starts only while a joined network's file is in its
-directory, which a shell guard checks before the daemon is run.
+overlay daemons it carries are LaunchDaemons, both kept running: NetBird's,
+and the client's own EasyTier daemon, ``nclient easytier-daemon``, which
+runs EasyTier's core only while a network or a console is configured.
 
 The bundle is signed ad hoc. Apple Silicon refuses native code with no
 signature at all, and an ad hoc one is what a build with no developer
@@ -50,9 +50,9 @@ import pkg_build  # noqa: E402
 # so the installer and the runtime cannot drift.
 from neutrino_client.constants import (  # noqa: E402
     CLIENT_BUNDLED_PATHS_DARWIN,
-    CLIENT_EASYTIER_CONFIG_DIR_DARWIN,
+    CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_LAUNCHD_LABEL,
-    CLIENT_EASYTIER_RPC_PORTAL,
+    CLIENT_EASYTIER_STATE_DIR_DARWIN,
     CLIENT_LAUNCHD_DAEMONS_DIR,
     CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
     CLIENT_NETBIRD_LAUNCHD_LABEL,
@@ -92,7 +92,7 @@ exit 0
 """
 POSTINSTALL = f"""#!/bin/sh
 for directory in "{os.path.dirname(CLIENT_NETBIRD_CONFIG_PATH_DARWIN)}" \\
-        "{CLIENT_EASYTIER_CONFIG_DIR_DARWIN}"; do
+        "{CLIENT_EASYTIER_STATE_DIR_DARWIN}"; do
     mkdir -p "$directory"
     chown root:wheel "$directory"
     chmod 700 "$directory"
@@ -313,20 +313,21 @@ def netbird_command() -> str:
     )
 
 
-def easytier_command() -> str:
-    """The shell that runs EasyTier only while a network's file is there.
+def easytier_daemon_arguments() -> list:
+    """The client's EasyTier daemon, as its LaunchDaemon runs it.
 
     Returns:
-        ``/bin/sh -c`` text that exits 0 on an empty directory and
-        otherwise runs the daemon in its place.
+        The installed client and the daemon's verb.
     """
-    directory = shlex.quote(CLIENT_EASYTIER_CONFIG_DIR_DARWIN)
-    core = shlex.quote(installed_resource("easytier-core"))
-    return (
-        f"ls {directory}/*.toml >/dev/null 2>&1 || exit 0; "
-        f"exec {core} --config-dir {directory} "
-        f"--rpc-portal {CLIENT_EASYTIER_RPC_PORTAL}"
-    )
+    return [
+        str(
+            INSTALL_APPLICATIONS_DIR
+            / APP_BUNDLE_NAME
+            / "Contents/MacOS"
+            / CLIENT_BINARY_NAME
+        ),
+        CLIENT_EASYTIER_DAEMON_VERB,
+    ]
 
 
 def write_daemons(package_root: Path) -> None:
@@ -345,9 +346,8 @@ def write_daemons(package_root: Path) -> None:
     pkg_build.write_launchd_plist(
         package_root,
         label=CLIENT_EASYTIER_LAUNCHD_LABEL,
-        program_arguments=["/bin/sh", "-c", easytier_command()],
+        program_arguments=easytier_daemon_arguments(),
         log_path=EASYTIER_LOG_PATH,
-        extra={"KeepAlive": {"SuccessfulExit": False}},
     )
 
 

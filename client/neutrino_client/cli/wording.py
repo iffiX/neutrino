@@ -46,6 +46,8 @@ CLIENT_CODE_WORDS = {
     "overlay_peer_invalid": "the hub named an address this client cannot connect to",
     "overlay_secret_missing": "the virtual network's secret did not arrive; try again",
     "overlay_restart_failed": "the virtual network service could not be restarted",
+    "overlay_console_invalid": "the hub named an EasyTier console this client cannot use",
+    "overlay_request_invalid": "the virtual network service did not understand the request; update the client",
     "overlay_missing": "this hub publishes no virtual network",
     "mount_not_authorized": "mounting was not authorized on this machine",
     "mount_tooling_missing": "the mount tooling is missing on this machine",

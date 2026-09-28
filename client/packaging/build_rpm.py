@@ -3,15 +3,15 @@
     python3 client/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
 The same payload the .deb carries: the client compiled under
-/opt/neutrino_client with the window's bindings inside it, the two root helpers
-compiled beside the paths polkit pins, and the binaries the client
+/opt/neutrino_client with the window's bindings inside it, the mount helper
+compiled beside the path polkit pins, and the binaries the client
 drives. That fixes the package to one architecture and one glibc, so it is
 built in a container of the machine it is for.
 
 The same maintainer scripts too: every resident is asked to quit before its
 files are taken, erasing the package keeps each person's own configuration,
-and the two overlay daemons' units are registered on install and stopped
-on erase.
+and the two overlay daemons' units, NetBird's and the client's own EasyTier
+daemon, are registered on install and stopped on erase.
 
 Needs `rpmbuild`, from the `rpm` package on Debian family and `rpm-build` on
 RHEL family, a C compiler and patchelf for Nuitka, and `dpkg` for the viewer
@@ -117,7 +117,6 @@ cp -a {staged}/. %{{buildroot}}/
 /usr/share/applications/{desktop}.desktop
 /usr/share/icons/hicolor/*/apps/{desktop}.png
 /usr/share/polkit-1/actions/{action}.policy
-/usr/share/polkit-1/actions/{overlay_action}.policy
 {units}
 /usr/share/doc/{name}
 
@@ -221,11 +220,10 @@ def overlay_spec_values() -> dict:
     """What the spec says of the two overlay daemons.
 
     Returns:
-        ``{overlay_action, units, overlay_start, overlay_stop}``, the
+        ``{units, overlay_start, overlay_stop}``, the
         values the spec's holes of those names take.
     """
     return {
-        "overlay_action": payload.OVERLAY_POLKIT_ACTION,
         "units": "\n".join(
             f"/{payload.SYSTEMD_UNIT_DIR}/{unit}" for unit in payload.OVERLAY_UNITS
         ),

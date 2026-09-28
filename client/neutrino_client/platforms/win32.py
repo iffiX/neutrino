@@ -59,19 +59,29 @@ ERROR_SESSION_CREDENTIAL_CONFLICT = 1219
 ERROR_NO_NETWORK = 1222
 ERROR_LOGON_FAILURE = 1326
 
-# The service controller: the rights one service is opened with, the one
-# control sent, and the states QueryServiceStatus answers with.
-SC_MANAGER_CONNECT = 0x0001
-SERVICE_QUERY_STATUS = 0x0004
-SERVICE_START = 0x0010
-SERVICE_STOP = 0x0020
-SERVICE_CONTROL_STOP = 0x00000001
+# Running as a service: the one kind the EasyTier daemon is, the states it
+# reports, the controls it accepts and answers.
+DWORD = ctypes.c_ulong
+SERVICE_WIN32_OWN_PROCESS = 0x00000010
 SERVICE_STOPPED = 0x00000001
 SERVICE_START_PENDING = 0x00000002
 SERVICE_STOP_PENDING = 0x00000003
 SERVICE_RUNNING = 0x00000004
-ERROR_SERVICE_ALREADY_RUNNING = 1056
-ERROR_SERVICE_NOT_ACTIVE = 1062
+SERVICE_CONTROL_STOP = 0x00000001
+SERVICE_ACCEPT_STOP = 0x00000001
+SERVICE_ACCEPT_SHUTDOWN = 0x00000004
+SERVICE_CONTROL_INTERROGATE = 0x00000004
+SERVICE_CONTROL_SHUTDOWN = 0x00000005
+ERROR_CALL_NOT_IMPLEMENTED = 120
+
+# Job objects: the core dies with the daemon's last handle on its job.
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+
+# A file's access list, set whole and cut off from its parent's.
+SE_FILE_OBJECT = 1
+DACL_SECURITY_INFORMATION = 0x00000004
+PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
 
 # Pseudo consoles. The attribute names the console for the process about
 # to start.
@@ -160,6 +170,45 @@ def window_procedure_type():
         ctypes.c_size_t,
         ctypes.c_ssize_t,
     )
+
+
+def last_error() -> OSError:
+    """The calling thread's last Win32 error, as the OSError it is.
+
+    Returns:
+        The error; off Windows, a plain OSError naming the number.
+    """
+    code = ctypes.get_last_error() if hasattr(ctypes, "get_last_error") else 0
+    maker = getattr(ctypes, "WinError", None)
+    if maker is None:
+        return OSError(code, f"error {code}")
+    return maker(code)
+
+
+def service_main_type():
+    """The LPSERVICE_MAIN_FUNCTIONW signature a service's main is wrapped in.
+
+    Returns:
+        The ctypes function type: stdcall, taking the argument count and
+        the argument vector.
+
+    Raises:
+        AttributeError: Off Windows, where ctypes has no stdcall convention.
+    """
+    return ctypes.WINFUNCTYPE(None, DWORD, ctypes.c_void_p)
+
+
+def service_handler_type():
+    """The LPHANDLER_FUNCTION_EX signature a control handler is wrapped in.
+
+    Returns:
+        The ctypes function type: stdcall, taking the control, the event
+        type, the event data and the context, answering a DWORD.
+
+    Raises:
+        AttributeError: Off Windows, where ctypes has no stdcall convention.
+    """
+    return ctypes.WINFUNCTYPE(DWORD, DWORD, DWORD, ctypes.c_void_p, ctypes.c_void_p)
 
 
 _LIBRARIES = None
@@ -348,7 +397,7 @@ class SecurityAttributes(ctypes.Structure):
 
 
 class ServiceStatus(ctypes.Structure):
-    """The SERVICE_STATUS QueryServiceStatus and ControlService fill."""
+    """The SERVICE_STATUS a service reports itself with."""
 
     _fields_ = [
         ("dwServiceType", ctypes.c_ulong),
@@ -358,6 +407,54 @@ class ServiceStatus(ctypes.Structure):
         ("dwServiceSpecificExitCode", ctypes.c_ulong),
         ("dwCheckPoint", ctypes.c_ulong),
         ("dwWaitHint", ctypes.c_ulong),
+    ]
+
+
+class ServiceTableEntry(ctypes.Structure):
+    """One row of the table StartServiceCtrlDispatcherW is handed."""
+
+    _fields_ = [("lpServiceName", ctypes.c_wchar_p), ("lpServiceProc", ctypes.c_void_p)]
+
+
+class JobObjectBasicLimitInformation(ctypes.Structure):
+    """JOBOBJECT_BASIC_LIMIT_INFORMATION."""
+
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_int64),
+        ("PerJobUserTimeLimit", ctypes.c_int64),
+        ("LimitFlags", DWORD),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", DWORD),
+        ("Affinity", ctypes.c_size_t),
+        ("PriorityClass", DWORD),
+        ("SchedulingClass", DWORD),
+    ]
+
+
+class IoCounters(ctypes.Structure):
+    """IO_COUNTERS."""
+
+    _fields_ = [
+        ("ReadOperationCount", ctypes.c_uint64),
+        ("WriteOperationCount", ctypes.c_uint64),
+        ("OtherOperationCount", ctypes.c_uint64),
+        ("ReadTransferCount", ctypes.c_uint64),
+        ("WriteTransferCount", ctypes.c_uint64),
+        ("OtherTransferCount", ctypes.c_uint64),
+    ]
+
+
+class JobObjectExtendedLimitInformation(ctypes.Structure):
+    """JOBOBJECT_EXTENDED_LIMIT_INFORMATION, which carries the kill-on-close flag."""
+
+    _fields_ = [
+        ("BasicLimitInformation", JobObjectBasicLimitInformation),
+        ("IoInfo", IoCounters),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
     ]
 
 
@@ -427,6 +524,18 @@ class Win32Libraries:
             ctypes.POINTER(ctypes.c_ulong),
         ]
         self.kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+        self.kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+        self.kernel32.SetInformationJobObject.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            DWORD,
+        ]
+        self.kernel32.AssignProcessToJobObject.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
         self.kernel32.InitializeProcThreadAttributeList.argtypes = [
             ctypes.c_void_p,
             ctypes.c_ulong,
@@ -520,30 +629,33 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.c_void_p,
         ]
-        self.advapi32.OpenSCManagerW.argtypes = [
+        self.advapi32.StartServiceCtrlDispatcherW.argtypes = [ctypes.c_void_p]
+        self.advapi32.RegisterServiceCtrlHandlerExW.restype = ctypes.c_void_p
+        self.advapi32.RegisterServiceCtrlHandlerExW.argtypes = [
             ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self.advapi32.SetServiceStatus.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ServiceStatus),
+        ]
+        self.advapi32.GetSecurityDescriptorDacl.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_int),
+        ]
+        self.advapi32.SetNamedSecurityInfoW.restype = DWORD
+        self.advapi32.SetNamedSecurityInfoW.argtypes = [
             ctypes.c_wchar_p,
-            ctypes.c_ulong,
-        ]
-        self.advapi32.OpenSCManagerW.restype = ctypes.c_void_p
-        self.advapi32.OpenServiceW.argtypes = [
+            ctypes.c_int,
+            DWORD,
             ctypes.c_void_p,
-            ctypes.c_wchar_p,
-            ctypes.c_ulong,
-        ]
-        self.advapi32.OpenServiceW.restype = ctypes.c_void_p
-        self.advapi32.ControlService.argtypes = [
             ctypes.c_void_p,
-            ctypes.c_ulong,
+            ctypes.c_void_p,
             ctypes.c_void_p,
         ]
-        self.advapi32.StartServiceW.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.c_void_p,
-        ]
-        self.advapi32.QueryServiceStatus.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.advapi32.CloseServiceHandle.argtypes = [ctypes.c_void_p]
 
     def _describe_mpr(self) -> None:
         """Prototype the mpr calls."""

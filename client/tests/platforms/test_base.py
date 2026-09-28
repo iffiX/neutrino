@@ -372,13 +372,20 @@ def test_an_overlay_cli_runs_as_this_person_with_its_arguments(monkeypatch):
     assert result.stdout == "{}"
 
 
-def test_the_base_platform_refuses_easytier_and_resumes_nothing():
+def test_the_base_platform_has_no_easytier_daemon_and_binds_nothing(tmp_path):
     platform = ClientPlatform()
 
     with pytest.raises(PlatformUnsupportedError):
-        platform.easytier_join(
-            network_name="n", secret_path="/s", peer="tcp://h:1", hostname="h"
-        )
+        platform.easytier_daemon_address()
     with pytest.raises(PlatformUnsupportedError):
-        platform.easytier_leave(network_name="n")
-    assert platform.easytier_resume() is None
+        platform.easytier_state_dir()
+    assert platform.bind_child_process(object()) is None
+
+
+def test_the_state_directory_is_made_for_its_owner_alone(tmp_path):
+    state = tmp_path / "a" / "easytier"
+
+    ClientPlatform().secure_easytier_state_dir(str(state))
+
+    assert state.is_dir()
+    assert state.stat().st_mode & 0o777 == 0o700

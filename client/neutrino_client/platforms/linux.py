@@ -1,11 +1,10 @@
 """The Linux platform, complete.
 
-The client runs as the person, so a CIFS mount and an EasyTier network's
-file are the two privileged steps: each goes through its own root helper
-under ``pkexec``, which polkit gates on the person being at the console.
-The mount helper mounts under the person's home with their uid and gid; the
-overlay helper writes the network's file and restarts the daemon. Nothing
-else here needs root.
+The client runs as the person, so a CIFS mount is the one privileged step:
+it goes through the root helper under ``pkexec``, which polkit gates on the
+person being at the console, and mounts under the person's home with their
+uid and gid. An EasyTier network is asked of the EasyTier daemon over its
+socket, which needs no root of the person. Nothing else here needs root.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -25,15 +24,14 @@ except ImportError:  # Windows has no account database module.
 
 from neutrino_client.constants import (
     CLIENT_CONTROL_SOCKET_NAME,
+    CLIENT_EASYTIER_SOCKET_PATH_LINUX,
+    CLIENT_EASYTIER_STATE_DIR_LINUX,
     CLIENT_MOUNT_HELPER_EXIT_CODES,
     CLIENT_MOUNT_HELPER_PATH,
-    CLIENT_OVERLAY_HELPER_EXIT_CODES,
-    CLIENT_OVERLAY_HELPER_PATH,
     CLIENT_PKEXEC_REFUSAL_EXIT_CODES,
 )
 from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
-    OverlayControlError,
     PlatformUnsupportedError,
     ShareAttachError,
 )
@@ -45,7 +43,6 @@ CIFS_HELPER = "mount.cifs"
 # directory, and the helper that runs it as root finds it either way.
 CIFS_HELPER_PATH = "/sbin:/usr/sbin:/bin:/usr/bin"
 CIFS_MOUNT_TIMEOUT_S = 120
-OVERLAY_HELPER_TIMEOUT_S = 120
 PROC_MOUNTS_PATH = "/proc/mounts"
 # How /proc/mounts spells the characters a mount point may not carry plainly.
 PROC_MOUNTS_ESCAPES = (
@@ -197,52 +194,13 @@ class LinuxPlatform(ClientPlatform):
         """Standard input in raw mode."""
         return PosixRawTerminal()
 
-    def easytier_join(
-        self, *, network_name: str, secret_path: str, peer: str, hostname: str
-    ) -> None:
-        """Hand one network to the overlay helper under ``pkexec``.
+    def easytier_daemon_address(self) -> str:
+        """``/run/neutrino_client_easytier.sock``."""
+        return CLIENT_EASYTIER_SOCKET_PATH_LINUX
 
-        The secret stays in its file; only the file's path is on the
-        argument vector.
-
-        Args:
-            network_name: The network, also the file's name.
-            secret_path: A 0600 file of this person's holding the secret.
-            peer: The hub's peer URI.
-            hostname: What this machine is called on the network.
-
-        Raises:
-            OverlayControlError: ``overlay_not_authorized`` when the person
-                declined, the helper's own code otherwise,
-                ``overlay_restart_failed`` with the tool's words for anything
-                else.
-        """
-        self._run_overlay_helper(
-            [
-                "easytier",
-                "up",
-                "--network",
-                network_name,
-                "--secret-file",
-                secret_path,
-                "--peer",
-                peer,
-                "--hostname",
-                hostname,
-            ]
-        )
-
-    def easytier_leave(self, *, network_name: str) -> None:
-        """Have the overlay helper take one network's file away.
-
-        Args:
-            network_name: The network.
-
-        Raises:
-            OverlayControlError: ``overlay_not_authorized`` when the person
-                declined, the helper's own code otherwise.
-        """
-        self._run_overlay_helper(["easytier", "down", "--network", network_name])
+    def easytier_state_dir(self) -> str:
+        """``/etc/neutrino_client/easytier``."""
+        return CLIENT_EASYTIER_STATE_DIR_LINUX
 
     def _run_mount_helper(self, arguments: list, *, failure_code: str) -> None:
         """Run the mount helper and judge its exit status.
@@ -260,24 +218,6 @@ class LinuxPlatform(ClientPlatform):
         )
         if outcome is not None:
             raise ShareAttachError(outcome[0], detail=outcome[1])
-
-    def _run_overlay_helper(self, arguments: list) -> None:
-        """Run the overlay helper and judge its exit status.
-
-        Raises:
-            OverlayControlError: Typed from the exit status.
-        """
-        outcome = run_root_helper(
-            CLIENT_OVERLAY_HELPER_PATH,
-            arguments,
-            exit_codes=CLIENT_OVERLAY_HELPER_EXIT_CODES,
-            refusal_code="overlay_not_authorized",
-            failure_code="overlay_restart_failed",
-            timeout_s=OVERLAY_HELPER_TIMEOUT_S,
-        )
-        if outcome is not None:
-            code, detail = outcome
-            raise OverlayControlError(code, {"detail": detail} if detail else {})
 
 
 def run_root_helper(

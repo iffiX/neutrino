@@ -139,7 +139,7 @@ def test_no_bytecode_of_the_build_machines_own_is_carried(tmp_path):
     assert list(staged.rglob("*.pyc")) == []
 
 
-def test_the_compile_is_three_standalone_programs_against_the_pinned_interpreter(
+def test_the_compile_is_two_standalone_programs_against_the_pinned_interpreter(
     tmp_path, monkeypatch
 ):
     """The client with the window's bindings inside it, and the helper on
@@ -183,7 +183,8 @@ def test_the_compile_is_three_standalone_programs_against_the_pinned_interpreter
         "pip",
         [str(python), "-m", "pip", "install", "--quiet", "nuitka==4.2.1"],
     )
-    client, helper, overlay_helper = commands[1], commands[2], commands[3]
+    assert len(commands) == 3
+    client, helper = commands[1], commands[2]
     assert client[1][:4] == [str(python), "-m", "nuitka", "--standalone"]
     assert "--include-package=neutrino_client" in client[1]
     assert "--include-module=gi" in client[1]
@@ -191,9 +192,7 @@ def test_the_compile_is_three_standalone_programs_against_the_pinned_interpreter
     assert client[2]["PYTHONPATH"] == str(tmp_path / "build" / "tree")
     assert "--include-package=neutrino_client" not in helper[1]
     assert helper[1][-1].endswith("neutrino_client/cli/mount_helper.py")
-    assert "--include-package=neutrino_client" not in overlay_helper[1]
-    assert overlay_helper[1][-1].endswith("neutrino_client/cli/overlay_helper.py")
-    assert (compiled["overlay_helper"] / "overlay_helper").is_file()
+    assert set(compiled) == {"client", "helper", "package"}
     assert (compiled["client"] / "nclient").is_file()
     assert (compiled["client"] / "libgirepository-1.0.so.1").is_file()
     assert (compiled["helper"] / "mount_helper").is_file()

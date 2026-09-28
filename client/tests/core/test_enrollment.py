@@ -581,9 +581,18 @@ NETBIRD = {
 }
 EASYTIER = {
     "provider": "easytier",
+    "mode": "manual",
     "network_name": "home",
     "network_secret": "s3cret",  # scan: allow
     "peer": "tcp://203.0.113.7:11010",
+    "hub_address": "10.144.144.1",
+}
+CONSOLE = {
+    "provider": "easytier",
+    "mode": "console",
+    "is_secure_mode": True,
+    "config_server": "tcp://et-web.console.easytier.net:22020/etk_x",  # scan: allow
+    "hub_address": "",
 }
 
 
@@ -593,7 +602,7 @@ def test_a_link_without_an_overlay_carries_none():
     assert overlay is None
 
 
-@pytest.mark.parametrize("material", [NETBIRD, EASYTIER])
+@pytest.mark.parametrize("material", [NETBIRD, EASYTIER, CONSOLE])
 def test_a_link_carries_the_overlay_object(material):
     *_, overlay = parse_link(
         link_for({"urls": ["http://g"], "token": "t", "overlay": material})
@@ -608,6 +617,21 @@ def test_an_overlay_keeps_only_its_providers_fields():
     assert enrollment.clean_overlay(raw) == EASYTIER
 
 
+def test_an_easytier_object_with_no_mode_reads_as_a_manual_one():
+    """A hub from before the console mode names neither mode nor address."""
+    raw = {key: value for key, value in EASYTIER.items() if key != "mode"}
+    del raw["hub_address"]
+
+    assert enrollment.clean_overlay(raw) == dict(EASYTIER, hub_address="")
+
+
+def test_a_console_object_keeps_its_address_and_its_secure_mode_as_a_bool():
+    raw = dict(CONSOLE, is_secure_mode="yes", network_secret="z", peer="p")
+
+    assert enrollment.clean_overlay(raw) == dict(CONSOLE, is_secure_mode=False)
+    assert enrollment.clean_overlay(CONSOLE) == CONSOLE
+
+
 @pytest.mark.parametrize(
     "raw",
     [
@@ -617,6 +641,8 @@ def test_an_overlay_keeps_only_its_providers_fields():
         dict(NETBIRD, setup_key=""),
         dict(EASYTIER, network_secret=""),
         dict(EASYTIER, peer=""),
+        dict(EASYTIER, mode="cloud"),
+        dict(CONSOLE, config_server=""),
     ],
 )
 def test_an_unreadable_overlay_reads_as_none(raw):

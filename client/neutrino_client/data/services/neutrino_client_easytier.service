@@ -2,12 +2,10 @@
 Description=EasyTier daemon of the Neutrino client
 After=network-online.target
 Wants=network-online.target
-# Started on an empty directory, EasyTier runs a default network on every address.
-ConditionDirectoryNotEmpty=/etc/neutrino_client/easytier
 
 [Service]
-ExecStart=/opt/neutrino_client/easytier/easytier-core --config-dir /etc/neutrino_client/easytier --rpc-portal 127.0.0.1:15889
-Restart=on-failure
+ExecStart=/opt/neutrino_client/nclient easytier-daemon
+Restart=always
 RestartSec=5
 
 [Install]

@@ -2,13 +2,16 @@
 
 A virtual network is not a service a hub publishes: it is a way to reach the
 hub, so it lives beside the sessions rather than among the handlers. Each
-hub's state names how to join its network, NetBird's setup key or EasyTier's
-name, secret and peer. One :class:`OverlayMemberships` holds one membership
-per network, keyed by NetBird's management URL or EasyTier's network name,
-so two hubs on the same network read one state. The daemons the packages
-register as services hold the membership itself; this side joins, leaves
-and asks, one step at a time per provider, and leaves nothing behind on
-exit because nothing here is what keeps a network up.
+hub's state names how to join its network: NetBird's setup key, or for
+EasyTier either a manual network's name, secret and peer or an EasyTier
+console's address. One :class:`OverlayMemberships` holds one membership per
+network, keyed by NetBird's management URL, EasyTier's network name or the
+console's address, so two hubs on the same network read one state. The
+daemons the packages register as services hold the membership itself; this
+side joins, leaves and asks, one step at a time per provider, and leaves
+nothing behind on exit because nothing here is what keeps a network up.
+EasyTier is asked of the client's own EasyTier daemon over its local socket,
+the secret and the console's address in the request's body.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -20,19 +23,18 @@ from __future__ import annotations
 
 import functools
 import json
-import os
 import subprocess
 import threading
 import urllib.parse
 
 from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
-    CLIENT_OVERLAY_DIR_NAME,
     CLIENT_OVERLAY_JOIN_TIMEOUT_S,
     CLIENT_OVERLAY_POLL_INTERVAL_S,
     CLIENT_OVERLAY_STATUS_TIMEOUT_S,
 )
-from neutrino_client.core import files
+from neutrino_client.control.easytier_socket import ask_easytier_daemon
+from neutrino_client.core.easytier_daemon import console_digest
 from neutrino_client.core.easytier_config import safe_hostname
 from neutrino_client.exceptions import OverlayControlError, PlatformUnsupportedError
 from neutrino_client.services.worker import IF_BUSY_KEEP_ONE, ServiceWorker
@@ -62,6 +64,25 @@ NETBIRD_DAEMON_DOWN_MARKS = (
 # exit status 0, and for a portal nothing listens on.
 EASYTIER_NO_INSTANCE_MARK = "No instance matches the selector"
 EASYTIER_PEER_LOCAL_COST = "Local"
+# The two ways an EasyTier network is joined; an object that names neither
+# is a manual one.
+EASYTIER_MODE_MANUAL = "manual"
+EASYTIER_MODE_CONSOLE = "console"
+
+
+def is_console_material(material: dict) -> bool:
+    """Whether an overlay object names an EasyTier console.
+
+    Args:
+        material: The hub's overlay object.
+
+    Returns:
+        True for ``{"provider": "easytier", "mode": "console"}``.
+    """
+    return (
+        material.get("provider") == "easytier"
+        and material.get("mode") == EASYTIER_MODE_CONSOLE
+    )
 
 
 def netbird_management_key(url: str) -> str:
@@ -91,10 +112,13 @@ def overlay_key(material: dict) -> str:
         material: The hub's overlay object.
 
     Returns:
-        ``netbird:<management>`` or ``easytier:<network name>``.
+        ``netbird:<management>``, ``easytier:<network name>`` or
+        ``easytier_console:<address>``.
     """
     if material["provider"] == "netbird":
         return "netbird:" + netbird_management_key(material.get("management_url", ""))
+    if is_console_material(material):
+        return "easytier_console:" + material.get("config_server", "")
     return "easytier:" + material.get("network_name", "")
 
 
@@ -106,11 +130,19 @@ def overlay_network(material: dict) -> str:
 
     Returns:
         The management server's host for NetBird, the network's name for
-        EasyTier.
+        a manual EasyTier network, the console's host for an EasyTier
+        console.
     """
     if material["provider"] == "netbird":
         key = netbird_management_key(material.get("management_url", ""))
         return urllib.parse.urlsplit(key).hostname or ""
+    if is_console_material(material):
+        try:
+            return (
+                urllib.parse.urlsplit(material.get("config_server", "")).hostname or ""
+            )
+        except ValueError:
+            return ""
     return material.get("network_name", "")
 
 
@@ -290,17 +322,20 @@ class OverlayNetbirdDriver:
 
 
 class OverlayEasytierDriver:
-    """EasyTier's CLI and the platform's root step for its network files."""
+    """The client's EasyTier daemon, asked over its socket, and EasyTier's CLI."""
 
     provider = "easytier"
 
-    def __init__(self, *, platform):
+    def __init__(self, *, platform, ask=None):
         """
         Args:
-            platform: The machine's platform, which runs the carried CLI and
-                puts a network's file in place as root.
+            platform: The machine's platform, which names the daemon's
+                socket and runs the carried CLI.
+            ask: ``ask(address, request)`` returns the daemon's answer;
+                None asks over the real socket.
         """
         self._platform = platform
+        self._ask = ask if ask is not None else ask_easytier_daemon
 
     def status(self, material: dict) -> dict:
         """Where this machine stands on the network the object names.
@@ -310,94 +345,217 @@ class OverlayEasytierDriver:
 
         Returns:
             ``{"is_on", "is_other_network", "address", "is_hub_seen"}``; a
-            daemon that is not running runs no network, which reads as off.
+            core that is not running runs no network, which reads as off.
+
+        Raises:
+            OverlayControlError: ``bundle_missing``, or
+                ``overlay_daemon_down`` when the daemon does not answer.
+        """
+        status = self._request({"verb": "status"})
+        _raise_refusal(status)
+        if is_console_material(material):
+            return self._console_status(material, status)
+        if material["network_name"] not in (status.get("networks") or []):
+            return _easytier_off()
+        peers = self._peers(material["network_name"])
+        if peers is None:
+            return _easytier_off()
+        return _easytier_on(peers, material.get("hub_address", ""))
+
+    def join(self, material: dict, hostname: str) -> None:
+        """Have the daemon join the network the object names.
+
+        Args:
+            material: The hub's overlay object.
+            hostname: What this machine is called on a manual network.
+
+        Raises:
+            OverlayControlError: The daemon's refusal, ``overlay_other_network``
+                while it holds another console, or ``overlay_daemon_down``.
+            PlatformUnsupportedError: Where the client carries no EasyTier.
+        """
+        if is_console_material(material):
+            request = {
+                "verb": "join_console",
+                "config_server": material["config_server"],
+                "is_secure_mode": bool(material.get("is_secure_mode")),
+            }
+        else:
+            request = {
+                "verb": "join",
+                "network_name": material["network_name"],
+                "network_secret": material["network_secret"],
+                "peer": material["peer"],
+                "hostname": safe_hostname(hostname),
+            }
+        answer = self._request(request)
+        if answer.get("code") == "overlay_other_network":
+            raise OverlayControlError(
+                "overlay_other_network", {"network": overlay_network(material)}
+            )
+        _raise_refusal(answer)
+
+    def leave(self, material: dict) -> None:
+        """Have the daemon leave the network the object names.
+
+        A console is left only while it is the one the daemon holds.
+
+        Args:
+            material: The hub's overlay object.
+
+        Raises:
+            OverlayControlError: The daemon's refusal, or
+                ``overlay_daemon_down``.
+            PlatformUnsupportedError: Where the client carries no EasyTier.
+        """
+        if is_console_material(material):
+            console = self._request({"verb": "status"}).get("console")
+            digest = console.get("digest") if isinstance(console, dict) else None
+            if digest != console_digest(material["config_server"]):
+                return
+            request = {"verb": "leave_console"}
+        else:
+            request = {"verb": "leave", "network_name": material["network_name"]}
+        _raise_refusal(self._request(request))
+
+    def _console_status(self, material: dict, status: dict) -> dict:
+        """Where this machine stands on the console the object names."""
+        console = status.get("console")
+        digest = console.get("digest") if isinstance(console, dict) else None
+        if digest is None:
+            return _easytier_off()
+        if digest != console_digest(material["config_server"]):
+            off = _easytier_off()
+            off["is_other_network"] = True
+            return off
+        if not status.get("is_running"):
+            return _easytier_off()
+        manual = set(status.get("networks") or [])
+        names = [name for name in self._instances() if name not in manual]
+        if not names:
+            return _easytier_off()
+        peers = self._peers(names[0])
+        if peers is None:
+            return _easytier_off()
+        return _easytier_on(peers, material.get("hub_address", ""))
+
+    def _instances(self) -> list:
+        """The names of the instances the core runs; empty when it answers none."""
+        result = self._cli(["node"])
+        if result is None:
+            return []
+        try:
+            nodes = json.loads(result.stdout or "")
+        except ValueError:
+            return []
+        if isinstance(nodes, dict):
+            nodes = [{"instance_name": _instance_name(nodes.get("config"))}]
+        if not isinstance(nodes, list):
+            return []
+        return [
+            str(node.get("instance_name") or "")
+            for node in nodes
+            if isinstance(node, dict) and node.get("instance_name")
+        ]
+
+    def _peers(self, instance: str) -> "list | None":
+        """One instance's peers, None when the core runs no such instance."""
+        result = self._cli(["-n", instance, "peer"])
+        if result is None or EASYTIER_NO_INSTANCE_MARK in _detail(result):
+            return None
+        try:
+            peers = json.loads(result.stdout or "")
+        except ValueError:
+            return None
+        if not isinstance(peers, list):
+            return None
+        return [peer for peer in peers if isinstance(peer, dict)]
+
+    def _cli(self, args: list):
+        """Run the carried CLI against the daemon's core; None when it failed.
 
         Raises:
             OverlayControlError: ``bundle_missing``.
         """
-        off = {
-            "is_on": False,
-            "is_other_network": False,
-            "address": "",
-            "is_hub_seen": False,
-        }
         try:
             result = self._platform.run_overlay(
                 "easytier-cli",
-                [
-                    "-p",
-                    CLIENT_EASYTIER_RPC_PORTAL,
-                    "-n",
-                    material["network_name"],
-                    "-o",
-                    "json",
-                    "peer",
-                ],
+                ["-p", CLIENT_EASYTIER_RPC_PORTAL, "-o", "json"] + list(args),
                 CLIENT_OVERLAY_STATUS_TIMEOUT_S,
             )
         except OverlayControlError:
             raise
         except (OSError, subprocess.SubprocessError):
-            return off
-        if result.returncode != 0 or EASYTIER_NO_INSTANCE_MARK in _detail(result):
-            return off
-        try:
-            peers = json.loads(result.stdout or "")
-        except ValueError:
-            return off
-        if not isinstance(peers, list):
-            return off
-        rows = [peer for peer in peers if isinstance(peer, dict)]
-        local = [row for row in rows if row.get("cost") == EASYTIER_PEER_LOCAL_COST]
-        return {
-            "is_on": True,
-            "is_other_network": False,
-            "address": _address(local[0].get("ipv4")) if local else "",
-            "is_hub_seen": len(rows) > len(local),
-        }
+            return None
+        return result if result.returncode == 0 else None
 
-    def join(self, material: dict, hostname: str) -> None:
-        """Hand the network to the platform's root step, its secret in a 0600 file.
-
-        The file lives under the person's own configuration directory for
-        the length of the step.
-
-        Args:
-            material: The hub's overlay object.
-            hostname: What this machine is called on the network.
+    def _request(self, request: dict) -> dict:
+        """One request to the daemon.
 
         Raises:
-            OverlayControlError: The platform's refusal, or ``overlay_*``
-                for a value the step refused.
+            OverlayControlError: ``overlay_daemon_down`` when it does not
+                answer.
             PlatformUnsupportedError: Where the client carries no EasyTier.
         """
-        secret_path = os.path.join(
-            self._platform.config_dir(),
-            CLIENT_OVERLAY_DIR_NAME,
-            material["network_name"] + ".secret",
-        )
-        files.write_text(secret_path, material["network_secret"], mode=0o600)
+        address = self._platform.easytier_daemon_address()
         try:
-            self._platform.easytier_join(
-                network_name=material["network_name"],
-                secret_path=secret_path,
-                peer=material["peer"],
-                hostname=safe_hostname(hostname),
+            return self._ask(address, request)
+        except (OSError, ValueError) as error:
+            raise OverlayControlError(
+                "overlay_daemon_down", {"detail": str(error)[:200]}
             )
-        finally:
-            files.remove_file(secret_path)
 
-    def leave(self, material: dict) -> None:
-        """Have the platform's root step take the network away.
 
-        Args:
-            material: The hub's overlay object.
+def _easytier_off() -> dict:
+    return {
+        "is_on": False,
+        "is_other_network": False,
+        "address": "",
+        "is_hub_seen": False,
+    }
 
-        Raises:
-            OverlayControlError: The platform's refusal.
-            PlatformUnsupportedError: Where the client carries no EasyTier.
-        """
-        self._platform.easytier_leave(network_name=material["network_name"])
+
+def _easytier_on(peers: list, hub_address: str) -> dict:
+    """An instance that runs, read from its peers.
+
+    The hub is seen when a peer holds the hub's address; a hub that names
+    none is seen when any other peer is.
+    """
+    local = [row for row in peers if row.get("cost") == EASYTIER_PEER_LOCAL_COST]
+    others = [row for row in peers if row.get("cost") != EASYTIER_PEER_LOCAL_COST]
+    if hub_address:
+        is_hub_seen = any(
+            _address(row.get("ipv4")) == _address(hub_address) for row in others
+        )
+    else:
+        is_hub_seen = bool(others)
+    return {
+        "is_on": True,
+        "is_other_network": False,
+        "address": _address(local[0].get("ipv4")) if local else "",
+        "is_hub_seen": is_hub_seen,
+    }
+
+
+def _instance_name(config) -> str:
+    """The ``instance_name`` a lone instance's configuration text names."""
+    for line in str(config or "").splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "instance_name":
+            return value.strip().strip('"')
+    return ""
+
+
+def _raise_refusal(answer: dict) -> None:
+    """Raise the daemon's refusal, when its answer is one.
+
+    Raises:
+        OverlayControlError: The refusal's code and params.
+    """
+    code = answer.get("code")
+    if isinstance(code, str) and code:
+        params = answer.get("params")
+        raise OverlayControlError(code, params if isinstance(params, dict) else {})
 
 
 class OverlayMemberships:
@@ -623,25 +781,10 @@ class OverlayMemberships:
             self._news.clear()
             try:
                 self.refresh_bindings()
-                self._resume()
                 self.probe()
             except Exception as error:  # noqa: BLE001 - the poll must survive
                 self._log(f"overlay: could not look at the networks: {error}")
             self._news.wait(timeout=CLIENT_OVERLAY_POLL_INTERVAL_S)
-
-    def _resume(self) -> None:
-        """Have the platform start EasyTier where networks wait for it."""
-        with self._lock:
-            has_easytier = any(
-                material["provider"] == "easytier"
-                for material in self._materials.values()
-            )
-        if not has_easytier:
-            return
-        try:
-            self._platform.easytier_resume()
-        except OverlayControlError as error:
-            self._log(f"overlay: could not start EasyTier: {error.code}")
 
     def _submit(self, hub_id: str, step: str) -> dict:
         self.refresh_bindings()

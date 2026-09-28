@@ -285,6 +285,8 @@ const CODE_TONES = {
   overlay_peer_invalid: 'bad',
   overlay_secret_missing: 'bad',
   overlay_restart_failed: 'bad',
+  overlay_console_invalid: 'bad',
+  overlay_request_invalid: 'bad',
   unsupported_platform: 'bad',
   crashed: 'bad',
 };

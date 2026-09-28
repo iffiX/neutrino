@@ -4,10 +4,12 @@ The contract names intents, not mechanisms: where this person's configuration
 lives; which language this machine is set up in; where the control socket is
 and who its peer is; judge a proposed mount location; attach, detach and
 query a share at a location; open a link; start a windowed program; run
-the carried overlay CLIs and put an EasyTier network in place as root; put
-this process's terminal in raw mode, and open the system's own terminal. A
-new platform is a new class, and nothing above this seam changes. The client runs as the person, so every file operation is
-the standard library's own on the person's home.
+the carried overlay CLIs and say where the EasyTier daemon answers and keeps
+its state; put this process's terminal in raw mode, and open the system's
+own terminal. A new platform is a new class, and nothing above this seam
+changes. The client runs as the person, so every file operation is the
+standard library's own on the person's home; the EasyTier daemon alone runs
+as root, and makes and narrows its own directory through this seam.
 
 Invoking a capability a platform does not have raises
 :class:`PlatformUnsupportedError`, whose ``code`` every surface reports.
@@ -36,12 +38,6 @@ from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_PROMPT_EXIT_TIMEOUT_S,
     CLIENT_PROMPT_TIMEOUT_S,
-)
-from neutrino_client.core.easytier_config import (
-    is_network_name,
-    is_peer_uri,
-    render_easytier_config,
-    safe_hostname,
 )
 from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
@@ -93,43 +89,6 @@ def run_quietly(
         errors="replace",
         timeout=timeout_s,
         creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0,
-    )
-
-
-def easytier_file_text(
-    *, network_name: str, secret_path: str, peer: str, hostname: str
-) -> str:
-    """One EasyTier network's file, its values judged and its secret read.
-
-    Args:
-        network_name: The network, also the file's name.
-        secret_path: The file holding the secret.
-        peer: The hub's peer URI.
-        hostname: What this machine is called on the network.
-
-    Returns:
-        The file's text.
-
-    Raises:
-        OverlayControlError: ``overlay_network_invalid``,
-            ``overlay_peer_invalid`` or ``overlay_secret_missing``.
-    """
-    if not is_network_name(network_name):
-        raise OverlayControlError("overlay_network_invalid")
-    if not is_peer_uri(peer):
-        raise OverlayControlError("overlay_peer_invalid")
-    try:
-        with open(secret_path, "r", encoding="utf-8") as stream:
-            secret = stream.read().strip()
-    except (OSError, UnicodeDecodeError):
-        secret = ""
-    if not secret:
-        raise OverlayControlError("overlay_secret_missing")
-    return render_easytier_config(
-        network_name=network_name,
-        network_secret=secret,
-        peer=peer,
-        hostname=safe_hostname(hostname),
     )
 
 
@@ -443,45 +402,50 @@ class ClientPlatform:
             raise OverlayControlError("bundle_missing", {"binary": binary})
         return run_quietly([path] + list(args), timeout_s=timeout_s, encoding="utf-8")
 
-    def easytier_join(
-        self, *, network_name: str, secret_path: str, peer: str, hostname: str
-    ) -> None:
-        """Put one EasyTier network's file where the daemon reads it, and restart it.
+    def easytier_daemon_address(self) -> str:
+        """Where the EasyTier daemon answers on this machine.
 
-        Args:
-            network_name: The network, also the file's name.
-            secret_path: A 0600 file of this person's holding the secret.
-            peer: The hub's peer URI.
-            hostname: What this machine is called on the network.
+        Returns:
+            Its socket path or pipe name.
 
         Raises:
             PlatformUnsupportedError: Where the client carries no EasyTier.
-            OverlayControlError: When the person declined, a value was
-                refused, or the daemon could not be restarted.
         """
         raise PlatformUnsupportedError("no EasyTier here")
 
-    def easytier_leave(self, *, network_name: str) -> None:
-        """Take one EasyTier network's file away; stop the daemon when none is left.
+    def easytier_state_dir(self) -> str:
+        """The directory the EasyTier daemon keeps what it joins in.
 
-        Args:
-            network_name: The network.
+        Returns:
+            The absolute path.
 
         Raises:
             PlatformUnsupportedError: Where the client carries no EasyTier.
-            OverlayControlError: When the person declined, or the daemon
-                could not be restarted or stopped.
         """
         raise PlatformUnsupportedError("no EasyTier here")
 
-    def easytier_resume(self) -> None:
-        """Start the EasyTier daemon when networks are in place and it is stopped.
+    def secure_easytier_state_dir(self, path: str) -> None:
+        """Make the daemon's state directory, readable by its owner alone.
 
-        Nothing here: a platform whose service manager starts it at boot
-        needs no second start.
+        Args:
+            path: The directory.
 
         Raises:
-            OverlayControlError: When the daemon could not be started.
+            OSError: When it cannot be made or narrowed.
+        """
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        os.chmod(path, 0o700)
+
+    def bind_child_process(self, process) -> None:
+        """Tie a child the daemon started to the daemon's own life.
+
+        Nothing here: the service manager ends a daemon's children with it.
+
+        Args:
+            process: The started process.
+
+        Raises:
+            OSError: When it cannot be tied.
         """
 
     def raw_terminal(self):

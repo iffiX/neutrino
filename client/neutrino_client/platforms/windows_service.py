@@ -1,9 +1,16 @@
-"""One Windows service, stopped, started and asked about as this person.
+"""Running as a Windows service: the dispatcher, the handler, the states.
 
-The installer grants Users the right to start, stop and query the one
-service the client drives, so none of this needs an administrator. Every
-Win32 call rides one seam class, so nothing here needs Windows to import or
-to test.
+The service control manager starts ``nclient.exe easytier-daemon --service``
+and waits for the process to call ``StartServiceCtrlDispatcherW``; a process
+that has not within 30 seconds is failed with error 1053. The dispatcher
+calls the service's main on a thread of its own, which registers the control
+handler, reports ``START_PENDING`` and then ``RUNNING``, and runs the
+daemon. A stop or a shutdown reports ``STOP_PENDING``, runs the stop
+callback, reports ``STOPPED`` and ends the process. A daemon that ends by
+itself ends the process without reporting ``STOPPED``, which the manager
+reads as a crash and answers with the service's recovery actions.
+
+Not pure: talks to the service control manager and ends the process.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -11,112 +18,116 @@ to test.
 from __future__ import annotations
 
 import ctypes
-import time
+import os
+import threading
 
 from neutrino_client.platforms import win32
 
-# How long a stop is waited for before the start is tried anyway.
-SERVICE_STOP_WAIT_S = 30
-SERVICE_POLL_S = 0.25
+# How long the service control manager is told a start or a stop may take
+# before it reports the service hung.
+SERVICE_WAIT_HINT_MS = 30_000
 
 
-class WindowsServiceApi:
-    """The Win32 service controller calls, one seam tests replace whole."""
+class ServiceControlDispatcher:
+    """One service in this process, as the service control manager sees it."""
 
-    def __init__(self):
+    def __init__(self, name: str, on_start, on_stop, *, advapi32=None, exit=None):
         """
-        Raises:
-            OSError: When the libraries cannot be loaded.
-        """
-        self._advapi32 = win32.libraries().advapi32
-
-    def state(self, name: str) -> int:
-        """One service's current state.
-
         Args:
-            name: The service's name.
+            name: The service name the manager knows.
+            on_start: Called with no arguments once the service is running;
+                it runs the daemon and returns only if the daemon ended.
+            on_stop: Called with no arguments when the manager stops the
+                service or the machine shuts down.
+            advapi32: The bound advapi32; None binds the real one.
+            exit: Ends the process with a status; None is ``os._exit``.
+        """
+        self._name = name
+        self._on_start = on_start
+        self._on_stop = on_stop
+        self._advapi32 = advapi32
+        self._exit = exit if exit is not None else os._exit
+        self._status_handle = None
+        self._is_stop_asked = threading.Event()
+        self._is_stopped = threading.Event()
+        # The callbacks the manager holds pointers to, kept alive here.
+        self._callbacks: list = []
 
-        Returns:
-            One of the ``win32.SERVICE_*`` states.
+    def run(self) -> None:
+        """Hand this thread to the service control manager until the service ends.
 
         Raises:
-            OSError: When the service cannot be opened or asked.
+            OSError: When the process was not started by the service control
+                manager (error 1063), or the dispatcher could not start.
         """
-        handle = self._open(name, win32.SERVICE_QUERY_STATUS)
+        advapi32 = self._bound_advapi32()
+        main = win32.service_main_type()(self._service_main)
+        self._callbacks.append(main)
+        table = (win32.ServiceTableEntry * 2)()
+        table[0].lpServiceName = self._name
+        table[0].lpServiceProc = ctypes.cast(main, ctypes.c_void_p)
+        if not advapi32.StartServiceCtrlDispatcherW(table):
+            raise win32.last_error()
+
+    def _bound_advapi32(self):
+        """advapi32, bound on first use."""
+        if self._advapi32 is None:
+            self._advapi32 = win32.libraries().advapi32
+        return self._advapi32
+
+    def _service_main(self, argument_count, arguments) -> None:
+        """The service's main: register, report, run the daemon, wait for stop."""
+        handler = win32.service_handler_type()(self._handle_control)
+        self._callbacks.append(handler)
+        self._status_handle = self._advapi32.RegisterServiceCtrlHandlerExW(
+            self._name, ctypes.cast(handler, ctypes.c_void_p), None
+        )
+        if not self._status_handle:
+            return
+        self._report(win32.SERVICE_START_PENDING, wait_hint_ms=SERVICE_WAIT_HINT_MS)
+        worker = threading.Thread(
+            target=self._run_daemon, name="easytier_service", daemon=True
+        )
+        worker.start()
+        self._report(win32.SERVICE_RUNNING)
+        self._is_stopped.wait()
+
+    def _run_daemon(self) -> None:
+        """Run the daemon; one that ends by itself ends the process as a crash."""
         try:
-            return self._query(handle)
+            self._on_start()
         finally:
-            self._advapi32.CloseServiceHandle(handle)
+            if not self._is_stop_asked.is_set():
+                self._exit(1)
 
-    def start(self, name: str) -> None:
-        """Start one service; one already running is left running.
+    def _handle_control(self, control, event_type, event_data, context) -> int:
+        """Answer one control from the service control manager."""
+        if control in (win32.SERVICE_CONTROL_STOP, win32.SERVICE_CONTROL_SHUTDOWN):
+            if self._is_stop_asked.is_set():
+                return win32.NO_ERROR
+            self._is_stop_asked.set()
+            self._report(win32.SERVICE_STOP_PENDING, wait_hint_ms=SERVICE_WAIT_HINT_MS)
+            try:
+                self._on_stop()
+            finally:
+                self._report(win32.SERVICE_STOPPED)
+                self._is_stopped.set()
+                self._exit(0)
+            return win32.NO_ERROR
+        if control == win32.SERVICE_CONTROL_INTERROGATE:
+            return win32.NO_ERROR
+        return win32.ERROR_CALL_NOT_IMPLEMENTED
 
-        Args:
-            name: The service's name.
-
-        Raises:
-            OSError: When the service cannot be opened or started.
-        """
-        handle = self._open(name, win32.SERVICE_START)
-        try:
-            if not self._advapi32.StartServiceW(handle, 0, None):
-                code = ctypes.get_last_error()
-                if code != win32.ERROR_SERVICE_ALREADY_RUNNING:
-                    raise ctypes.WinError(code)
-        finally:
-            self._advapi32.CloseServiceHandle(handle)
-
-    def stop(self, name: str) -> None:
-        """Stop one service and wait for it to stop; one not running is left.
-
-        Args:
-            name: The service's name.
-
-        Raises:
-            OSError: When the service cannot be opened or stopped.
-            TimeoutError: When it has not stopped in ``SERVICE_STOP_WAIT_S``.
-        """
-        handle = self._open(name, win32.SERVICE_STOP | win32.SERVICE_QUERY_STATUS)
-        try:
-            status = win32.ServiceStatus()
-            if not self._advapi32.ControlService(
-                handle, win32.SERVICE_CONTROL_STOP, ctypes.byref(status)
-            ):
-                code = ctypes.get_last_error()
-                if code != win32.ERROR_SERVICE_NOT_ACTIVE:
-                    raise ctypes.WinError(code)
-            deadline = time.monotonic() + SERVICE_STOP_WAIT_S
-            while self._query(handle) != win32.SERVICE_STOPPED:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(f"{name} did not stop")
-                time.sleep(SERVICE_POLL_S)
-        finally:
-            self._advapi32.CloseServiceHandle(handle)
-
-    def _open(self, name: str, access: int) -> int:
-        """One service's handle with the rights asked for.
-
-        Raises:
-            OSError: When the controller or the service refuses.
-        """
-        manager = self._advapi32.OpenSCManagerW(None, None, win32.SC_MANAGER_CONNECT)
-        if not manager:
-            raise ctypes.WinError(ctypes.get_last_error())
-        try:
-            handle = self._advapi32.OpenServiceW(manager, name, access)
-            if not handle:
-                raise ctypes.WinError(ctypes.get_last_error())
-            return handle
-        finally:
-            self._advapi32.CloseServiceHandle(manager)
-
-    def _query(self, handle: int) -> int:
-        """The state an open service is in.
-
-        Raises:
-            OSError: When the controller will not say.
-        """
+    def _report(self, state: int, *, wait_hint_ms: int = 0) -> None:
+        """Tell the manager where the service stands."""
         status = win32.ServiceStatus()
-        if not self._advapi32.QueryServiceStatus(handle, ctypes.byref(status)):
-            raise ctypes.WinError(ctypes.get_last_error())
-        return int(status.dwCurrentState)
+        status.dwServiceType = win32.SERVICE_WIN32_OWN_PROCESS
+        status.dwCurrentState = state
+        status.dwControlsAccepted = (
+            win32.SERVICE_ACCEPT_STOP | win32.SERVICE_ACCEPT_SHUTDOWN
+            if state == win32.SERVICE_RUNNING
+            else 0
+        )
+        status.dwWin32ExitCode = win32.NO_ERROR
+        status.dwWaitHint = wait_hint_ms
+        self._advapi32.SetServiceStatus(self._status_handle, ctypes.byref(status))

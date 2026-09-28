@@ -187,55 +187,68 @@ CLIENT_LOG_FILE_NAME = "client.log"
 CLIENT_LOG_KEEP_BYTES = 1024 * 1024
 
 # The two overlay daemons the packages carry and register as system
-# services. The person runs their CLIs; only EasyTier's configuration needs
-# root, which the root helper, the service controller or an administrator
-# prompt gives it.
+# services: NetBird's own, whose CLI the person runs, and the client's
+# EasyTier daemon, which runs EasyTier's core and which the person asks over
+# its socket. Neither asks the person for an administrator.
 CLIENT_OVERLAY_PROVIDERS = ("netbird", "easytier")
 CLIENT_NETBIRD_CONFIG_PATH_LINUX = "/etc/neutrino_client/netbird/config.json"
-CLIENT_EASYTIER_CONFIG_DIR_LINUX = "/etc/neutrino_client/easytier"
 CLIENT_NETBIRD_SERVICE_LINUX = "neutrino_client_netbird.service"
 CLIENT_EASYTIER_SERVICE_LINUX = "neutrino_client_easytier.service"
-# Under %PROGRAMDATA%, which the installer lets Users write for EasyTier.
+# Under %PROGRAMDATA%.
 CLIENT_OVERLAY_DATA_DIR_WINDOWS = "Neutrino Client"
 CLIENT_NETBIRD_CONFIG_NAME_WINDOWS = "netbird\\config.json"
-CLIENT_EASYTIER_CONFIG_NAME_WINDOWS = "easytier"
 CLIENT_NETBIRD_SERVICE_WINDOWS = "NeutrinoClientNetbird"
 CLIENT_EASYTIER_SERVICE_WINDOWS = "NeutrinoClientEasytier"
 CLIENT_NETBIRD_CONFIG_PATH_DARWIN = (
     "/Library/Application Support/Neutrino Client/netbird/config.json"
 )
-CLIENT_EASYTIER_CONFIG_DIR_DARWIN = (
-    "/Library/Application Support/Neutrino Client/easytier"
-)
 CLIENT_NETBIRD_LAUNCHD_LABEL = "com.neutrino.client.netbird"
 CLIENT_EASYTIER_LAUNCHD_LABEL = "com.neutrino.client.easytier"
 CLIENT_LAUNCHD_DAEMONS_DIR = "/Library/LaunchDaemons"
-# The one RPC portal the EasyTier daemon listens on, for every network it
-# runs: a command-line flag of the service, never a line of a network's
-# file. 15888 is the hub's own.
+# The one RPC portal the EasyTier core listens on, for every network it
+# runs: a command-line flag of the core, never a line of a network's file.
+# 15888 is the hub's own.
 CLIENT_EASYTIER_RPC_PORTAL = "127.0.0.1:15889"
 # The file suffix of one EasyTier network's configuration.
 CLIENT_EASYTIER_CONFIG_SUFFIX = ".toml"
-# Where a network's secret and rendered file wait, under the person's own
-# configuration directory, before the root step takes them.
-CLIENT_OVERLAY_DIR_NAME = "overlay"
-
-# The root helper EasyTier's configuration goes through on Linux, and the
-# polkit action that gates it.
-CLIENT_OVERLAY_HELPER_PATH = "/usr/libexec/neutrino_client/overlay_helper"
-CLIENT_OVERLAY_POLKIT_ACTION = "com.neutrino.client.overlay"
-# What each overlay helper exit status means; pkexec's own 126 and 127 mean
-# the person declined or was not allowed.
-CLIENT_OVERLAY_HELPER_EXIT_CODES = {
-    2: "overlay_not_authorized",
-    3: "overlay_network_invalid",
-    4: "overlay_peer_invalid",
-    5: "overlay_secret_missing",
-    6: "overlay_restart_failed",
-}
 # How long one run of an overlay CLI may take: joining waits for the
 # management server; a status is local.
 CLIENT_OVERLAY_JOIN_TIMEOUT_S = 60
 CLIENT_OVERLAY_STATUS_TIMEOUT_S = 10
 # How often each network's daemon is asked where this machine stands.
 CLIENT_OVERLAY_POLL_INTERVAL_S = 15
+
+# The EasyTier daemon: a long-running process of this package, root on Linux
+# and macOS and SYSTEM on Windows, the only thing that runs easytier-core. It
+# answers one JSON request per connection on a local socket every account on
+# the machine may open, the way NetBird's daemon does.
+CLIENT_EASYTIER_DAEMON_VERB = "easytier-daemon"
+CLIENT_EASYTIER_SOCKET_PATH_LINUX = "/run/neutrino_client_easytier.sock"
+CLIENT_EASYTIER_SOCKET_PATH_DARWIN = "/var/run/neutrino_client_easytier.sock"
+CLIENT_EASYTIER_PIPE_WINDOWS = "\\\\.\\pipe\\neutrino_client_easytier"
+# Its state, one directory only root reads: the manual networks' files the
+# core loads, and the console it is pointed at. On Windows it is under
+# %PROGRAMDATA%\Neutrino Client.
+CLIENT_EASYTIER_STATE_DIR_LINUX = "/etc/neutrino_client/easytier"
+CLIENT_EASYTIER_STATE_DIR_DARWIN = (
+    "/Library/Application Support/Neutrino Client/easytier"
+)
+CLIENT_EASYTIER_STATE_NAME_WINDOWS = "easytier"
+CLIENT_EASYTIER_NETWORKS_DIR_NAME = "networks"
+CLIENT_EASYTIER_CONSOLE_FILE_NAME = "console.json"
+# The core's output and, as a Windows service, the daemon's own, beside the
+# state; one file each, kept to a size, the previous one beside it.
+CLIENT_EASYTIER_CORE_LOG_NAME = "core.log"
+CLIENT_EASYTIER_DAEMON_LOG_NAME = "daemon.log"
+CLIENT_EASYTIER_LOG_KEEP_BYTES = 1024 * 1024
+# The most one request may carry, and how long the client waits for its
+# answer.
+CLIENT_EASYTIER_REQUEST_LIMIT_BYTES = 64 * 1024
+CLIENT_EASYTIER_REQUEST_TIMEOUT_S = 10
+# A core that ends by itself is started again after a wait that doubles from
+# the least to the most; one that ran this long first waits the least again.
+CLIENT_EASYTIER_RESTART_MIN_S = 1
+CLIENT_EASYTIER_RESTART_MAX_S = 60
+CLIENT_EASYTIER_STABLE_S = 60
+# How long a stopped core is given to end before it is killed.
+CLIENT_EASYTIER_STOP_TIMEOUT_S = 10

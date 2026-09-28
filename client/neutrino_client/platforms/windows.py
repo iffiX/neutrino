@@ -6,9 +6,10 @@ made it, and one made anywhere else is reachable by name yet drawn as
 disconnected in File Explorer. The login travels in a structure, on no
 argument vector. The control channel is a named pipe of the person's own,
 whose peer identity comes from pipe impersonation and must be the same
-account. An EasyTier network is a file under ProgramData that the installer
-lets Users write, and the EasyTier service is one the installer lets Users
-start and stop; it runs only while a network's file is there.
+account. An EasyTier network is asked of the EasyTier daemon, a service
+running as SYSTEM, over its named pipe; the daemon keeps its state under
+ProgramData in a directory only SYSTEM and the administrators may open, and
+ties the core it starts to its own life with a job object.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -25,22 +26,17 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_NAME_PREFIX,
     CLIENT_CONTROL_PIPE_PREFIX,
     CLIENT_DEFAULT_LANGUAGE,
-    CLIENT_EASYTIER_CONFIG_NAME_WINDOWS,
-    CLIENT_EASYTIER_CONFIG_SUFFIX,
-    CLIENT_EASYTIER_SERVICE_WINDOWS,
+    CLIENT_EASYTIER_PIPE_WINDOWS,
+    CLIENT_EASYTIER_STATE_NAME_WINDOWS,
     CLIENT_OVERLAY_DATA_DIR_WINDOWS,
 )
-from neutrino_client.core import files
-from neutrino_client.core.easytier_config import is_network_name
 from neutrino_client.platforms import win32
 from neutrino_client.exceptions import (
-    OverlayControlError,
     PlatformUnsupportedError,
     ShareAttachError,
 )
 from neutrino_client.platforms.base import (
     ClientPlatform,
-    easytier_file_text,
     read_share_credentials,
     run_quietly,
     share_parts,
@@ -50,7 +46,6 @@ from neutrino_client.platforms.windows_console import (
     WindowsRawConsole,
 )
 from neutrino_client.platforms.windows_identity import WindowsIdentityApi
-from neutrino_client.platforms.windows_service import WindowsServiceApi
 from neutrino_client.words import language_for_tag
 
 WINDOWS_CONFIG_DIR_NAME = "Neutrino Client"
@@ -84,9 +79,9 @@ SHARE_REFUSALS = {
 }
 
 
-# What the service controller answers this account with, as the typed
-# refusals; anything else is ``overlay_restart_failed`` with Windows' words.
-SERVICE_REFUSALS = {win32.ERROR_ACCESS_DENIED: "overlay_not_authorized"}
+# The EasyTier daemon's state directory: SYSTEM and the administrators alone,
+# every file in it the same, nothing taken from ProgramData above it.
+EASYTIER_STATE_SDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
 
 class WindowsPlatform(ClientPlatform):
@@ -95,16 +90,13 @@ class WindowsPlatform(ClientPlatform):
     os_name = "windows"
     mount_location_shape = "drive_letter"
 
-    def __init__(self, *, win32=None, services=None):
+    def __init__(self, *, win32=None):
         """
         Args:
-            win32: The Win32 seam for pipe identity; None builds the real one
-                on first use.
-            services: The service controller seam; None builds the real one
-                on first use.
+            win32: The Win32 seam; None builds the real one on first use.
         """
         self._win32_api = win32
-        self._service_api = services
+        self._job: "int | None" = None
 
     def config_dir(self) -> str:
         """``%APPDATA%\\Neutrino Client``."""
@@ -313,130 +305,42 @@ class WindowsPlatform(ClientPlatform):
         """This process's console in raw VT mode."""
         return WindowsRawConsole()
 
-    def easytier_dir(self) -> str:
-        """``%PROGRAMDATA%\\Neutrino Client\\easytier``, where the service reads networks."""
+    def easytier_daemon_address(self) -> str:
+        """The pipe named ``neutrino_client_easytier``."""
+        return CLIENT_EASYTIER_PIPE_WINDOWS
+
+    def easytier_state_dir(self) -> str:
+        """``easytier`` under ``Neutrino Client`` in ProgramData."""
         root = os.environ.get("PROGRAMDATA", "") or WINDOWS_PROGRAM_DATA_DEFAULT
         return os.path.join(
-            root, CLIENT_OVERLAY_DATA_DIR_WINDOWS, CLIENT_EASYTIER_CONFIG_NAME_WINDOWS
+            root, CLIENT_OVERLAY_DATA_DIR_WINDOWS, CLIENT_EASYTIER_STATE_NAME_WINDOWS
         )
 
-    def easytier_join(
-        self, *, network_name: str, secret_path: str, peer: str, hostname: str
-    ) -> None:
-        """Write one network's file under ProgramData, then stop and start the service.
+    def secure_easytier_state_dir(self, path: str) -> None:
+        """Make the state directory, SYSTEM's and the administrators' alone.
 
         Args:
-            network_name: The network, also the file's name.
-            secret_path: A file of this person's holding the secret.
-            peer: The hub's peer URI.
-            hostname: What this machine is called on the network.
+            path: The directory.
 
         Raises:
-            OverlayControlError: The value refused, ``overlay_not_authorized``
-                when this account may not write the file or drive the
-                service, ``overlay_restart_failed`` with Windows' words.
+            OSError: When it cannot be made or its access list set.
         """
-        text = easytier_file_text(
-            network_name=network_name,
-            secret_path=secret_path,
-            peer=peer,
-            hostname=hostname,
-        )
-        path = self._easytier_file(network_name)
-        try:
-            files.write_text(path, text)
-        except PermissionError as error:
-            raise OverlayControlError(
-                "overlay_not_authorized", {"detail": str(error)[:200]}
-            )
-        except OSError as error:
-            raise OverlayControlError(
-                "overlay_restart_failed", {"detail": str(error)[:200]}
-            )
-        self._drive_easytier(("stop", "start"))
+        os.makedirs(path, exist_ok=True)
+        self._win32().protect_directory(path, EASYTIER_STATE_SDDL)
 
-    def easytier_leave(self, *, network_name: str) -> None:
-        """Remove one network's file; restart the service, or stop it when none is left.
+    def bind_child_process(self, process) -> None:
+        """Put a child in a job that ends it when the daemon ends.
 
         Args:
-            network_name: The network.
+            process: The started ``subprocess.Popen``.
 
         Raises:
-            OverlayControlError: ``overlay_network_invalid`` for a name no
-                file may carry, ``overlay_not_authorized`` or
-                ``overlay_restart_failed`` as for a join.
+            OSError: When the job cannot be made or the child put in it.
         """
-        if not is_network_name(network_name):
-            raise OverlayControlError("overlay_network_invalid")
-        try:
-            files.remove_file(self._easytier_file(network_name))
-        except OSError as error:
-            raise OverlayControlError(
-                "overlay_not_authorized", {"detail": str(error)[:200]}
-            )
-        if self._easytier_files():
-            self._drive_easytier(("stop", "start"))
-        else:
-            self._drive_easytier(("stop",))
-
-    def easytier_resume(self) -> None:
-        """Start the service when networks are in place and it is stopped.
-
-        The service starts on demand only, so after a reboot it waits for
-        this.
-
-        Raises:
-            OverlayControlError: When the service could not be started.
-        """
-        if not self._easytier_files():
-            return
-        try:
-            state = self._services().state(CLIENT_EASYTIER_SERVICE_WINDOWS)
-        except OSError as error:
-            raise OverlayControlError(
-                "overlay_restart_failed", {"detail": str(error)[:200]}
-            )
-        if state == win32.SERVICE_STOPPED:
-            self._drive_easytier(("start",))
-
-    def _easytier_file(self, network_name: str) -> str:
-        """Where one network's file lives."""
-        return os.path.join(
-            self.easytier_dir(), network_name + CLIENT_EASYTIER_CONFIG_SUFFIX
-        )
-
-    def _easytier_files(self) -> list:
-        """The network files in place, by name."""
-        try:
-            names = os.listdir(self.easytier_dir())
-        except OSError:
-            return []
-        return sorted(
-            name for name in names if name.endswith(CLIENT_EASYTIER_CONFIG_SUFFIX)
-        )
-
-    def _drive_easytier(self, steps: tuple) -> None:
-        """Run ``stop`` and ``start`` on the EasyTier service, in order.
-
-        Raises:
-            OverlayControlError: ``overlay_not_authorized`` on access denied,
-                ``overlay_restart_failed`` otherwise.
-        """
-        services = self._services()
-        for step in steps:
-            try:
-                getattr(services, step)(CLIENT_EASYTIER_SERVICE_WINDOWS)
-            except OSError as error:
-                code = SERVICE_REFUSALS.get(
-                    getattr(error, "winerror", None), "overlay_restart_failed"
-                )
-                raise OverlayControlError(code, {"detail": str(error)[:200]})
-
-    def _services(self):
-        """The service controller seam, built on first use."""
-        if self._service_api is None:
-            self._service_api = WindowsServiceApi()
-        return self._service_api
+        api = self._win32()
+        if self._job is None:
+            self._job = api.create_kill_on_close_job()
+        api.assign_to_job(self._job, int(process._handle))
 
     def _announce_drive(self, location: str, event: int) -> None:
         """Tell the shell a drive letter came or went.
@@ -472,6 +376,90 @@ class _WindowsApi:
     def __init__(self):
         self._identity = WindowsIdentityApi()
         self._console = WindowsConsoleApi()
+
+    def protect_directory(self, path: str, sddl: str) -> None:
+        """Set a directory's access list whole, cut off from its parent's.
+
+        Args:
+            path: The directory.
+            sddl: The descriptor whose access list it takes.
+
+        Raises:
+            OSError: When the descriptor or the directory refuses.
+        """
+        libraries = win32.libraries()
+        advapi32 = libraries.advapi32
+        descriptor = ctypes.c_void_p()
+        if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl, win32.SDDL_REVISION_1, ctypes.byref(descriptor), None
+        ):
+            raise win32.last_error()
+        try:
+            is_present = ctypes.c_int()
+            dacl = ctypes.c_void_p()
+            is_defaulted = ctypes.c_int()
+            if not advapi32.GetSecurityDescriptorDacl(
+                descriptor,
+                ctypes.byref(is_present),
+                ctypes.byref(dacl),
+                ctypes.byref(is_defaulted),
+            ):
+                raise win32.last_error()
+            status = advapi32.SetNamedSecurityInfoW(
+                path,
+                win32.SE_FILE_OBJECT,
+                win32.DACL_SECURITY_INFORMATION
+                | win32.PROTECTED_DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                dacl,
+                None,
+            )
+            if status != win32.NO_ERROR:
+                raise ctypes.WinError(status)
+        finally:
+            libraries.kernel32.LocalFree(descriptor)
+
+    def create_kill_on_close_job(self) -> int:
+        """A job whose processes end when its last handle closes.
+
+        Returns:
+            The job's handle, held for the life of this process.
+
+        Raises:
+            OSError: When the job cannot be made or limited.
+        """
+        kernel32 = win32.libraries().kernel32
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            raise win32.last_error()
+        limits = win32.JobObjectExtendedLimitInformation()
+        limits.BasicLimitInformation.LimitFlags = (
+            win32.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        )
+        if not kernel32.SetInformationJobObject(
+            job,
+            win32.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+            ctypes.byref(limits),
+            ctypes.sizeof(limits),
+        ):
+            error = win32.last_error()
+            kernel32.CloseHandle(job)
+            raise error
+        return job
+
+    def assign_to_job(self, job: int, process_handle: int) -> None:
+        """Put one process in a job.
+
+        Args:
+            job: The job's handle.
+            process_handle: The process's handle.
+
+        Raises:
+            OSError: When Windows refuses.
+        """
+        if not win32.libraries().kernel32.AssignProcessToJobObject(job, process_handle):
+            raise win32.last_error()
 
     def add_connection(
         self, *, local: str, remote: str, username: str, password: str

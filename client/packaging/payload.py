@@ -50,19 +50,18 @@ GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 # all three.
 INSTALL_PREFIX = Path("/opt/neutrino_client")
 
-# What the compiled client and the two root helpers are called. The helpers'
-# directory holds the paths polkit pins, so each binary sits at its path and
+# What the compiled client and the root helper are called. The helper's
+# directory holds the path polkit pins, so the binary sits at its path and
 # its libraries beside it rather than behind a link pkexec would resolve.
 CLIENT_BINARY_NAME = "nclient"
 MOUNT_HELPER_BINARY_NAME = "mount_helper"
-OVERLAY_HELPER_BINARY_NAME = "overlay_helper"
 
 # The two overlay daemons' units, where systemd reads a package's own, and
-# the directory their configuration lives under.
+# the directory their state lives under. The EasyTier one runs the client's
+# own EasyTier daemon, ``nclient easytier-daemon``.
 OVERLAY_UNITS = ("neutrino_client_netbird.service", "neutrino_client_easytier.service")
 SYSTEMD_UNIT_DIR = "usr/lib/systemd/system"
 OVERLAY_ETC_DIR = "/etc/neutrino_client"
-OVERLAY_POLKIT_ACTION = "com.neutrino.client.overlay"
 NETBIRD_INSTALLED_BINARY = "/opt/neutrino_client/netbird/netbird"
 
 # The interpreter the Linux client is compiled against, pinned by hash. The
@@ -185,8 +184,7 @@ stop_residents() {
 """
 
 # What both formats run once the files are in place: the two daemons
-# enabled and restarted. EasyTier's unit starts only while a joined
-# network's file is there, which its own condition checks.
+# enabled and restarted.
 OVERLAY_UNITS_START = f"""if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
     systemctl enable {" ".join(OVERLAY_UNITS)} >/dev/null 2>&1 || true
@@ -473,7 +471,7 @@ def stage_licenses(tree: Path) -> None:
 
 
 def stage_linux_overlay(tree: Path) -> None:
-    """Put the two daemons' units and the overlay helper's polkit action in a tree.
+    """Put the two daemons' units in a tree.
 
     Args:
         tree: The staging directory standing in for the filesystem root.
@@ -484,14 +482,6 @@ def stage_linux_overlay(tree: Path) -> None:
             tree / SYSTEMD_UNIT_DIR / unit,
             (units / unit).read_text(encoding="utf-8"),
         )
-    write(
-        tree / f"usr/share/polkit-1/actions/{OVERLAY_POLKIT_ACTION}.policy",
-        (
-            CLIENT_ROOT
-            / "neutrino_client/data/polkit"
-            / f"{OVERLAY_POLKIT_ACTION}.policy"
-        ).read_text(encoding="utf-8"),
-    )
 
 
 def require_glibc_floor(tree: Path) -> None:
@@ -550,13 +540,14 @@ def _glibc_needed(path: Path) -> tuple:
 
 
 def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
-    """Compile the client and the two root helpers for a Linux package.
+    """Compile the client and the root helper for a Linux package.
 
     The pinned interpreter is unpacked into the build directory, the window's
     bindings are built into it, the compiler is installed beside them, and
-    three standalone programs come out: the client with the bindings inside
-    it and the introspection library beside them, and the mount helper and
-    the overlay helper, which are standard library alone and small.
+    two standalone programs come out: the client with the bindings inside it
+    and the introspection library beside them, and the mount helper, which
+    is standard library alone and small. The EasyTier daemon is the client
+    itself, run as ``nclient easytier-daemon``.
 
     Args:
         build: The directory to work under.
@@ -564,10 +555,9 @@ def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
         package_version: The version stamped into the client tree.
 
     Returns:
-        ``{"client": dir, "helper": dir, "overlay_helper": dir, "package":
-        dir}``: the three standalone directories, each holding its binary
-        and what it loads, and the staged package whose ``data`` the client
-        reads at runtime.
+        ``{"client": dir, "helper": dir, "package": dir}``: the two
+        standalone directories, each holding its binary and what it loads,
+        and the staged package whose ``data`` the client reads at runtime.
 
     Raises:
         SystemExit: When a download is not what was pinned, the container
@@ -603,20 +593,7 @@ def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
         source_root=tree,
         is_output_captured=True,
     )
-    overlay_helper = nuitka_build.compile_standalone(
-        python,
-        package / "cli" / "overlay_helper.py",
-        build / "overlay_helper",
-        OVERLAY_HELPER_BINARY_NAME,
-        source_root=tree,
-        is_output_captured=True,
-    )
-    return {
-        "client": client,
-        "helper": helper,
-        "overlay_helper": overlay_helper,
-        "package": package,
-    }
+    return {"client": client, "helper": helper, "package": package}
 
 
 def lay_out_compiled(tree: Path, compiled: dict, helper_path: Path) -> None:
@@ -626,8 +603,7 @@ def lay_out_compiled(tree: Path, compiled: dict, helper_path: Path) -> None:
         tree: The package tree being staged.
         compiled: What :func:`compile_linux` returned.
         helper_path: The absolute path polkit pins the mount helper at; its
-            directory takes each helper's whole standalone directory, the
-            two built from one interpreter.
+            directory takes the helper's whole standalone directory.
     """
     prefix = tree / str(INSTALL_PREFIX).lstrip("/")
     shutil.copytree(compiled["client"], prefix, dirs_exist_ok=True)
@@ -638,8 +614,6 @@ def lay_out_compiled(tree: Path, compiled: dict, helper_path: Path) -> None:
     )
     helper_dir = tree / str(helper_path.parent).lstrip("/")
     shutil.copytree(compiled["helper"], helper_dir, dirs_exist_ok=True)
-    if "overlay_helper" in compiled:
-        shutil.copytree(compiled["overlay_helper"], helper_dir, dirs_exist_ok=True)
     launcher = tree / "usr/bin" / CLIENT_BINARY_NAME
     launcher.parent.mkdir(parents=True, exist_ok=True)
     launcher.symlink_to(INSTALL_PREFIX / CLIENT_BINARY_NAME)

@@ -3,25 +3,31 @@
 The CLIs run on a scripted platform. Pinned here: NetBird's join carries
 the setup key, the management URL and ``--disable-dns``, and refuses without
 running while the daemon is on another network; two hubs on one management
-URL read one membership; EasyTier's join hands the root step a secret file
-that is gone afterwards, and its status asks the one portal by the
-network's name; a leave on release happens only when no other hub names the
-network; a lane that works answers busy; a step's failure stays until the
-network is on; every state word is in the table.
+URL read one membership; EasyTier is asked of the client's EasyTier daemon,
+here the real daemon behind a fake socket, with the secret and the console's
+address in the request's body and never on a CLI's argument vector; a
+manual network's status asks the one portal by the network's name, and a
+console's is the instance the daemon's own networks do not name; a leave on
+release happens only when no other hub names the network; a lane that works
+answers busy; a step's failure stays until the network is on; every state
+word is in the table.
 """
 
 import json
-import os
 import subprocess
 
 import pytest
 
 from neutrino_client.constants import CLIENT_EASYTIER_RPC_PORTAL
+from neutrino_client.core.easytier_daemon import EasytierDaemon
 from neutrino_client.core.overlay import (
     OVERLAY_STATES,
+    OverlayEasytierDriver,
     OverlayMemberships,
+    OverlayNetbirdDriver,
     netbird_management_key,
     overlay_key,
+    overlay_network,
 )
 from neutrino_client.exceptions import OverlayControlError
 from tests.conftest import discard
@@ -35,9 +41,19 @@ NETBIRD = {
 }
 EASYTIER = {
     "provider": "easytier",
+    "mode": "manual",
     "network_name": "home",
     "network_secret": "s3cret",  # scan: allow
     "peer": "tcp://203.0.113.7:11010",
+    "hub_address": "",
+}
+CONSOLE_ADDRESS = "tcp://et-web.console.easytier.net:22020/etk_token1"  # scan: allow
+CONSOLE = {
+    "provider": "easytier",
+    "mode": "console",
+    "config_server": CONSOLE_ADDRESS,
+    "is_secure_mode": True,
+    "hub_address": "10.126.126.1",
 }
 
 
@@ -57,22 +73,18 @@ class ScriptedPlatform:
     Attributes:
         runs: ``(binary, args)`` for every CLI run, in order.
         answers: ``{(binary, first arg or last arg): CompletedProcess}``.
-        joins: The keyword arguments of every EasyTier join.
-        secrets: What the secret file held at each join, and its mode.
     """
 
     def __init__(self, tmp_path):
         self._config_dir = str(tmp_path / "config")
         self.runs = []
         self.answers = {}
-        self.joins = []
-        self.leaves = []
-        self.secrets = []
-        self.join_error = None
-        self.resumes = 0
 
     def config_dir(self) -> str:
         return self._config_dir
+
+    def easytier_daemon_address(self) -> str:
+        return "/run/fake_easytier.sock"
 
     def answer(self, binary, verb, stdout="", returncode=0, stderr=""):
         self.answers[(binary, verb)] = subprocess.CompletedProcess(
@@ -89,19 +101,49 @@ class ScriptedPlatform:
             return subprocess.CompletedProcess([binary], 0, stdout="", stderr="")
         return answer
 
-    def easytier_join(self, **kwargs):
-        path = kwargs["secret_path"]
-        with open(path) as stream:
-            self.secrets.append((stream.read(), os.stat(path).st_mode & 0o777))
-        self.joins.append(dict(kwargs))
-        if self.join_error is not None:
-            raise self.join_error
 
-    def easytier_leave(self, **kwargs):
-        self.leaves.append(dict(kwargs))
+class RunningSupervisor:
+    """A core that runs whenever the daemon has something to run."""
 
-    def easytier_resume(self):
-        self.resumes += 1
+    def __init__(self):
+        self.applies = 0
+        self.is_running = False
+
+    def apply(self):
+        self.applies += 1
+        self.is_running = True
+
+
+class FakeSocket:
+    """The daemon's socket: each request crosses as JSON to a real daemon.
+
+    Attributes:
+        requests: Every request as it crossed, decoded.
+        error: Raised instead of answering, for a daemon that is down.
+    """
+
+    def __init__(self, tmp_path):
+        self.supervisor = RunningSupervisor()
+        self.daemon = EasytierDaemon(
+            state_dir=str(tmp_path / "easytier_state"),
+            core_path="/opt/easytier-core",
+            supervisor=self.supervisor,
+            log=discard,
+        )
+        self.requests = []
+        self.addresses = []
+        self.error = None
+        self.refusal = None
+
+    def __call__(self, address, request):
+        self.addresses.append(address)
+        if self.error is not None:
+            raise self.error
+        crossed = json.loads(json.dumps(request))
+        self.requests.append(crossed)
+        if self.refusal is not None and crossed["verb"] != "status":
+            return dict(self.refusal)
+        return json.loads(json.dumps(self.daemon.handle(crossed)))
 
 
 def run_inline(target) -> None:
@@ -120,6 +162,7 @@ class Bindings:
 
 def memberships(tmp_path, rows, start_thread=run_inline):
     platform = ScriptedPlatform(tmp_path)
+    platform.socket = FakeSocket(tmp_path)
     bindings = Bindings(rows)
     subject = OverlayMemberships(
         platform=platform,
@@ -127,6 +170,10 @@ def memberships(tmp_path, rows, start_thread=run_inline):
         hostname="Alice's box",
         log=discard,
         start_thread=start_thread,
+        drivers={
+            "netbird": OverlayNetbirdDriver(platform=platform),
+            "easytier": OverlayEasytierDriver(platform=platform, ask=platform.socket),
+        },
     )
     return subject, platform, bindings
 
@@ -252,21 +299,43 @@ def easytier_peers():
     )
 
 
-def test_an_easytier_join_hands_a_0600_secret_file_that_is_gone_afterwards(tmp_path):
+def joined(platform, *names):
+    """The daemon holds these manual networks."""
+    for name in names:
+        platform.socket.daemon.handle(
+            {
+                "verb": "join",
+                "network_name": name,
+                "network_secret": "x",  # scan: allow
+                "peer": "tcp://203.0.113.7:11010",
+                "hostname": "box",
+            }
+        )
+
+
+def test_an_easytier_join_hands_the_daemon_the_secret_in_the_body(tmp_path):
     subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
 
     assert subject.join("h1") == {}
 
-    (join,) = platform.joins
-    assert join["network_name"] == "home"
-    assert join["peer"] == "tcp://203.0.113.7:11010"
-    assert join["hostname"] == "Alice-s-box"
-    assert platform.secrets == [("s3cret", 0o600)]  # scan: allow
-    assert not os.path.exists(join["secret_path"])
+    joins = [r for r in platform.socket.requests if r["verb"] == "join"]
+    assert joins == [
+        {
+            "verb": "join",
+            "network_name": "home",
+            "network_secret": "s3cret",  # scan: allow
+            "peer": "tcp://203.0.113.7:11010",
+            "hostname": "Alice-s-box",
+        }
+    ]
+    assert platform.socket.addresses[0] == "/run/fake_easytier.sock"
+    assert platform.socket.daemon.networks() == ["home"]
+    assert all("s3cret" not in " ".join(args) for _b, args in platform.runs)
 
 
 def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
     subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
 
     subject.probe()
@@ -274,7 +343,7 @@ def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
     assert platform.runs == [
         (
             "easytier-cli",
-            ["-p", CLIENT_EASYTIER_RPC_PORTAL, "-n", "home", "-o", "json", "peer"],
+            ["-p", CLIENT_EASYTIER_RPC_PORTAL, "-o", "json", "-n", "home", "peer"],
         )
     ]
     row = subject.hub_row("h1")
@@ -285,8 +354,35 @@ def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
     )
 
 
-def test_an_instance_the_daemon_does_not_run_is_off(tmp_path):
+def test_a_network_the_daemon_does_not_hold_is_off_without_asking_the_core(
+    tmp_path,
+):
     subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+
+    subject.probe()
+
+    assert subject.hub_row("h1")["state"] == "off"
+    assert platform.runs == []
+
+
+def test_the_hub_is_seen_only_at_its_own_address_when_it_names_one(tmp_path):
+    named = dict(EASYTIER, hub_address="10.144.144.9")
+    subject, platform, _bindings = memberships(tmp_path, [("h1", named)])
+    joined(platform, "home")
+    platform.answer("easytier-cli", "peer", stdout=easytier_peers())
+
+    subject.probe()
+    assert subject.hub_row("h1")["is_hub_seen"] is False
+
+    bindings_row = dict(EASYTIER, hub_address="10.144.144.1")
+    subject._bindings_of = Bindings([("h1", bindings_row)])
+    subject.probe()
+    assert subject.hub_row("h1")["is_hub_seen"] is True
+
+
+def test_an_instance_the_core_does_not_run_is_off(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    joined(platform, "home")
     platform.answer(
         "easytier-cli",
         "peer",
@@ -300,6 +396,7 @@ def test_an_instance_the_daemon_does_not_run_is_off(tmp_path):
 
 def test_a_portal_nobody_listens_on_is_off(tmp_path):
     subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    joined(platform, "home")
     platform.answer(
         "easytier-cli", "peer", returncode=1, stderr="failed to connect to server"
     )
@@ -309,18 +406,181 @@ def test_a_portal_nobody_listens_on_is_off(tmp_path):
     assert subject.hub_row("h1")["state"] == "off"
 
 
+def test_a_daemon_that_does_not_answer_is_daemon_down_for_easytier(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    platform.socket.error = ConnectionRefusedError(111, "Connection refused")
+
+    subject.probe()
+    assert subject.hub_row("h1")["code"] == "overlay_daemon_down"
+
+    assert subject.join("h1") == {}
+    assert subject.hub_row("h1")["state"] == "failed"
+    assert subject.hub_row("h1")["code"] == "overlay_daemon_down"
+
+
+def test_a_daemons_refusal_is_the_rows_code(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    platform.socket.refusal = {"code": "overlay_peer_invalid", "params": {}}
+
+    subject.join("h1")
+
+    assert subject.hub_row("h1")["code"] == "overlay_peer_invalid"
+
+
 def test_a_step_failure_stays_until_the_network_is_on(tmp_path):
     subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
-    platform.join_error = OverlayControlError("overlay_not_authorized")
+    platform.socket.refusal = {"code": "overlay_restart_failed", "params": {}}
 
     subject.join("h1")
     subject.probe()
-    assert subject.hub_row("h1")["code"] == "overlay_not_authorized"
+    assert subject.hub_row("h1")["code"] == "overlay_restart_failed"
 
+    platform.socket.refusal = None
+    joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
     subject.probe()
     assert subject.hub_row("h1")["state"] == "on"
     assert subject.hub_row("h1")["code"] == ""
+
+
+def test_an_easytier_leave_asks_the_daemon_to_drop_the_network(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    joined(platform, "home")
+
+    assert subject.leave("h1") == {}
+
+    assert {"verb": "leave", "network_name": "home"} in platform.socket.requests
+    assert platform.socket.daemon.networks() == []
+
+
+# --- EasyTier consoles ---
+
+
+def console_nodes():
+    """Two instances: the manual ``home`` and the console's own."""
+    return json.dumps(
+        [
+            {"instance_name": "home", "result": {"ipv4_addr": "10.144.144.5/24"}},
+            {"instance_name": "office", "result": {"ipv4_addr": "10.126.126.4/24"}},
+        ]
+    )
+
+
+def console_peers():
+    return json.dumps(
+        [
+            {"cost": "Local", "ipv4": "10.126.126.4/24", "hostname": "box"},
+            {"cost": "p2p", "ipv4": "10.126.126.1", "hostname": "hub"},
+        ]
+    )
+
+
+def test_a_console_is_keyed_by_its_address_and_named_by_its_host():
+    assert overlay_key(CONSOLE) == "easytier_console:" + CONSOLE_ADDRESS
+    assert overlay_network(CONSOLE) == "et-web.console.easytier.net"
+    assert overlay_key(EASYTIER) == "easytier:home"
+
+
+def test_a_console_join_hands_the_daemon_the_address_in_the_body(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+
+    assert subject.join("h1") == {}
+
+    joins = [r for r in platform.socket.requests if r["verb"] == "join_console"]
+    assert joins == [
+        {
+            "verb": "join_console",
+            "config_server": CONSOLE_ADDRESS,
+            "is_secure_mode": True,
+        }
+    ]
+    assert platform.socket.daemon.console() == {
+        "config_server": CONSOLE_ADDRESS,
+        "is_secure_mode": True,
+    }
+    assert all("etk_token1" not in " ".join(args) for _b, args in platform.runs)
+
+
+def test_a_console_is_on_at_the_instance_no_manual_network_names(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    joined(platform, "home")
+    subject.join("h1")
+    platform.answer("easytier-cli", "node", stdout=console_nodes())
+    platform.answer("easytier-cli", "peer", stdout=console_peers())
+
+    subject.probe()
+
+    row = subject.hub_row("h1")
+    assert (row["state"], row["address"], row["is_hub_seen"]) == (
+        "on",
+        "10.126.126.4",
+        True,
+    )
+    assert (
+        "easytier-cli",
+        ["-p", CLIENT_EASYTIER_RPC_PORTAL, "-o", "json", "-n", "office", "peer"],
+    ) in platform.runs
+    assert row["network"] == "et-web.console.easytier.net"
+
+
+def test_a_lone_console_instance_is_read_from_its_configuration(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    subject.join("h1")
+    platform.answer(
+        "easytier-cli",
+        "node",
+        stdout=json.dumps({"config": 'instance_name = "office"\n'}),
+    )
+    platform.answer("easytier-cli", "peer", stdout=console_peers())
+
+    subject.probe()
+
+    assert subject.hub_row("h1")["state"] == "on"
+
+
+def test_a_console_with_no_instance_yet_is_off(tmp_path):
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    subject.join("h1")
+    platform.answer(
+        "easytier-cli", "node", returncode=1, stderr="no running instances found"
+    )
+
+    subject.probe()
+
+    assert subject.hub_row("h1")["state"] == "off"
+
+
+def test_another_console_held_by_the_daemon_is_another_network(tmp_path):
+    other = dict(CONSOLE, config_server="tcp://console.example:22020/etk_other")
+    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    platform.socket.daemon.handle(
+        {"verb": "join_console", "config_server": other["config_server"]}
+    )
+
+    subject.probe()
+    assert subject.hub_row("h1")["code"] == "overlay_other_network"
+
+    subject.join("h1")
+    row = subject.hub_row("h1")
+    assert (row["state"], row["code"]) == ("failed", "overlay_other_network")
+    assert row["params"] == {"network": "et-web.console.easytier.net"}
+
+
+def test_a_console_leave_drops_only_the_console_this_hub_names(tmp_path):
+    other = dict(CONSOLE, config_server="tcp://console.example:22020/etk_other")
+    subject, platform, bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    platform.socket.daemon.handle(
+        {"verb": "join_console", "config_server": other["config_server"]}
+    )
+
+    subject.leave("h1")
+    assert platform.socket.daemon.console() is not None
+    assert all(r["verb"] != "leave_console" for r in platform.socket.requests)
+
+    platform.socket.daemon.handle({"verb": "leave_console"})
+    subject.join("h1")
+    subject.leave("h1")
+    assert platform.socket.daemon.console() is None
 
 
 # --- the memberships ---
@@ -349,20 +609,25 @@ def test_a_working_lane_answers_busy(tmp_path):
     assert subject.hub_row("h1")["work"]["state"] == "idle"
 
 
+def leaves(platform):
+    return [r for r in platform.socket.requests if r["verb"] == "leave"]
+
+
 def test_release_leaves_only_a_network_no_other_hub_names(tmp_path):
     subject, platform, bindings = memberships(
         tmp_path, [("h1", EASYTIER), ("h2", EASYTIER)]
     )
+    joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
     subject.probe()
 
     bindings.rows = [("h2", EASYTIER)]
     assert subject.release_hub("h1") == 0
-    assert platform.leaves == []
+    assert leaves(platform) == []
 
     bindings.rows = []
     assert subject.release_hub("h2") == 1
-    assert platform.leaves == [{"network_name": "home"}]
+    assert leaves(platform) == [{"verb": "leave", "network_name": "home"}]
 
 
 def test_release_leaves_nothing_that_is_off(tmp_path):
@@ -371,38 +636,28 @@ def test_release_leaves_nothing_that_is_off(tmp_path):
     bindings.rows = []
 
     assert subject.release_hub("h1") == 0
-    assert platform.leaves == []
+    assert leaves(platform) == []
 
 
 def test_a_shutdown_keeps_every_network_and_counts_them(tmp_path):
     subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
     subject.probe()
 
     assert subject.release() == 1
-    assert platform.leaves == []
-
-
-def test_the_poll_asks_easytier_to_resume_only_where_it_has_a_network(tmp_path):
-    subject, platform, bindings = memberships(tmp_path, [("h1", NETBIRD)])
-    subject.refresh_bindings()
-    subject._resume()
-    assert platform.resumes == 0
-
-    bindings.rows = [("h1", EASYTIER)]
-    subject.refresh_bindings()
-    subject._resume()
-    assert platform.resumes == 1
+    assert leaves(platform) == []
 
 
 def test_no_secret_reaches_a_row(tmp_path):
     subject, _platform, _bindings = memberships(
-        tmp_path, [("h1", EASYTIER), ("h2", NETBIRD)]
+        tmp_path, [("h1", EASYTIER), ("h2", NETBIRD), ("h3", CONSOLE)]
     )
 
-    rows = json.dumps([subject.hub_row("h1"), subject.hub_row("h2")])
+    rows = json.dumps([subject.hub_row(hub) for hub in ("h1", "h2", "h3")])
 
     assert "s3cret" not in rows and KEY not in rows  # scan: allow
+    assert "etk_token1" not in rows
 
 
 @pytest.mark.parametrize("state", ["off", "joining", "on", "leaving", "failed"])
