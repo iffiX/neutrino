@@ -4,8 +4,10 @@
   --color-bg: #070809;
   --color-surface: #0e1013;
   --color-border: #1c2026;
+  --color-border-strong: #2a3038;
   --color-text: #e6edf3;
   --color-text-muted: #8b96a5;
+  --color-text-faint: #5b6675;
   --color-accent: #22d3ee;
   --color-ok: #34d399;
   --color-warn: #fbbf24;
@@ -22,8 +24,10 @@
   --color-bg: #e8ebf0;
   --color-surface: #f6f7f9;
   --color-border: #cdd4dc;
+  --color-border-strong: #b4bfcb;
   --color-text: #0f172a;
   --color-text-muted: #5b6675;
+  --color-text-faint: #7b8794;
   --color-accent: #0c6a84;
   --color-ok: #046a4d;
   --color-warn: #a34a07;
@@ -41,7 +45,7 @@ body { margin: 0; padding: 0; background: var(--color-bg);
        color: var(--color-text);
        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
 /* The whole window, after the hub panel: a sidebar of entries on the left,
-   the open one on the right under a head that holds refresh and settings. */
+   the open one on the right under a head that holds refresh. */
 .wrap { height: 100vh; display: grid; grid-template-columns: 196px 1fr; }
 h1 { margin: 0; font-size: 14px; letter-spacing: .02em; white-space: nowrap; }
 h2 { margin: 0; font-size: 16px; font-weight: 600; }
@@ -54,11 +58,15 @@ h2 { margin: 0; font-size: 16px; font-weight: 600; }
         padding: 14px 10px; }
 .ident { padding: 12px 18px; border-top: 1px solid var(--color-border);
          overflow-wrap: anywhere; }
-/* One entry per kind; the open one is washed in the accent and marked by a
-   bar along its left edge. */
-button.tab { position: relative; padding: 9px 12px; border: none; border-radius: 6px;
+/* One entry per kind, its glyph before its name; the open one is washed in
+   the accent and marked by a bar along its left edge. A rule sets the
+   settings entry apart below the kinds. */
+button.tab { position: relative; display: flex; gap: 12px; align-items: center;
+             padding: 9px 12px; border: none; border-radius: 6px;
              background: none; color: var(--color-text-muted); text-align: left;
-             font-weight: 500; }
+             font-size: 13px; font-weight: 500; white-space: nowrap; }
+.icon { flex: none; }
+.tab_rule { margin: 14px 0; border-top: 1px solid var(--color-border); }
 button.tab:hover { color: var(--color-text); }
 button.tab.on { color: var(--color-accent);
                 background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
@@ -143,8 +151,14 @@ button:disabled { opacity: .4; cursor: not-allowed;
 .term_pick_line { display: flex; gap: 12px; align-items: center;
                   justify-content: space-between; }
 .term_chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
-.term_empty { flex: 1; display: flex; flex-direction: column; gap: 6px;
-              align-items: center; justify-content: center; }
+/* With no shell open, a dashed frame takes the room the panel would, as the
+   hub's placeholder does. */
+.term_empty { flex: 1; display: flex; flex-direction: column; gap: 8px;
+              align-items: center; justify-content: center; padding: 48px 16px;
+              border: 1px dashed var(--color-border-strong); border-radius: 14px;
+              color: var(--color-text-muted); text-align: center; }
+.faint { color: var(--color-text-faint); }
+button.with_icon { display: inline-flex; gap: 8px; align-items: center; }
 .term_panel { flex: 1; min-height: 0; display: flex; flex-direction: column;
               overflow: hidden; border: 1px solid var(--color-border);
               border-radius: 12px; background: var(--color-surface); }
@@ -182,7 +196,9 @@ button.term_tab_close:hover { color: var(--color-error); }
            z-index: 10; }
 .modal { width: min(500px, calc(100vw - 40px)); max-height: 76vh;
          overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-.modal label { color: var(--color-text-muted); font-size: 12px; }
+.modal label, .settings label { color: var(--color-text-muted); font-size: 12px; }
+.settings { display: flex; flex-direction: column; gap: 10px; }
+.settings .picker { flex: none; max-width: 360px; }
 .modal select { width: 100%; }
 .dirlist { overflow-y: auto; border: 1px solid var(--color-border);
            border-radius: 8px; min-height: 120px; max-height: 40vh; }

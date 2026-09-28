@@ -307,9 +307,6 @@ function draw(state) {
   setTheme(state.theme);
   document.title = t('ui.window.title');
   document.querySelector('h1').textContent = t('ui.window.title');
-  const settings = document.getElementById('settings');
-  settings.textContent = t('ui.settings');
-  settings.onclick = openSettingsDialog;
   drawRefresh();
   document.getElementById('ident').textContent =
     state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
@@ -324,29 +321,75 @@ function draw(state) {
     content.appendChild(drawHubs(state));
   } else if (openTab === 'terminals') {
     content.appendChild(drawTerminals(state));
+  } else if (openTab === 'settings') {
+    content.appendChild(drawSettings());
   } else {
     content.appendChild(kindTab(state, KINDS.filter((kind) => kind[0] === openTab)[0]));
   }
 }
 
-// One entry per tab down the sidebar; the open one is washed in the accent.
+// One entry per tab down the sidebar, then a rule and the settings entry;
+// the open one is washed in the accent.
 function drawTabs() {
   const nav = document.getElementById('tabs');
   nav.innerHTML = '';
-  for (const tab of TABS) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = tab === openTab ? 'tab on' : 'tab';
-    button.textContent = tabTitle(tab);
-    button.onclick = () => { openTab = tab; redraw(); };
-    nav.appendChild(button);
-  }
+  for (const tab of TABS) nav.appendChild(tabButton(tab));
+  const rule = document.createElement('div');
+  rule.className = 'tab_rule';
+  nav.appendChild(rule);
+  nav.appendChild(tabButton('settings'));
+}
+
+function tabButton(tab) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = tab === openTab ? 'tab on' : 'tab';
+  button.innerHTML = icon(TAB_ICONS[tab], 17);
+  const label = document.createElement('span');
+  label.textContent = tabTitle(tab);
+  button.appendChild(label);
+  button.onclick = () => { openTab = tab; redraw(); };
+  return button;
 }
 
 function tabTitle(tab) {
   if (tab === 'hubs') return t('ui.section_hubs');
   if (tab === 'terminals') return t('ui.panel_terminals');
+  if (tab === 'settings') return t('ui.settings');
   return t(KINDS.filter((kind) => kind[0] === tab)[0][1]);
+}
+
+// The sidebar's glyph for each entry, drawn from the hub panel's icon set.
+const TAB_ICONS = {
+  hubs: 'server', web: 'globe', port: 'plug', ai: 'sparkles', file: 'folder',
+  terminals: 'terminal', rdp: 'desktop', settings: 'settings',
+};
+
+// The hub panel's glyphs, each a 24x24 stroke drawing in currentColor, with
+// the plug drawn for the ports in the same hand.
+const ICON_SHAPES = {
+  server: '<rect x="3" y="3" width="18" height="7" rx="2"/>' +
+    '<rect x="3" y="14" width="18" height="7" rx="2"/>' +
+    '<path d="M7 6.5h.01M7 17.5h.01"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
+    '<path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z"/>',
+  plug: '<path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/>' +
+    '<path d="M12 17v4"/>',
+  sparkles: '<path d="m10 4 1.7 4.3L16 10l-4.3 1.7L10 16l-1.7-4.3L4 10l4.3-1.7z"/>' +
+    '<path d="m18 13 .9 2.1 2.1.9-2.1.9L18 19l-.9-2.1-2.1-.9 2.1-.9z"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  terminal: '<path d="m4 17 6-5-6-5"/><path d="M12 19h8"/>',
+  desktop: '<rect x="3" y="4" width="18" height="12" rx="2"/>' +
+    '<path d="M9 20h6"/><path d="M12 16v4"/>',
+  settings: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/>' +
+    '<path d="M1 14h6M9 8h6M17 16h6"/>',
+};
+
+function icon(name, size) {
+  return '<svg class="icon" width="' + size + '" height="' + size +
+    '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"' +
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' +
+    ' focusable="false">' + ICON_SHAPES[name] + '</svg>';
 }
 
 // The refresh button in the top bar: every hub is asked again, and it spins
@@ -445,7 +488,7 @@ function drawTerminals(state) {
   const page = document.createElement('div');
   page.className = 'term_page';
   page.appendChild(machineStrip(state));
-  page.appendChild(shellPanel());
+  page.appendChild(shellPanel(state));
   window.requestAnimationFrame(fitActiveShell);
   return page;
 }
@@ -457,7 +500,7 @@ function machineStrip(state) {
   card.className = 'card term_pick';
   const chips = document.createElement('div');
   chips.className = 'term_chips';
-  let picked = null;
+  const picked = pickedMachine(state);
   let count = 0;
   for (const hub of state.hubs || []) {
     if (hub.connection_state !== 'connected') continue;
@@ -465,13 +508,11 @@ function machineStrip(state) {
       (machine) => machine.hub_id === hub.hub_id);
     for (const machine of machines) {
       count += 1;
-      const isPicked = !!shellPick && shellPick.hub_id === hub.hub_id &&
-        shellPick.device_id === machine.device_id;
-      if (isPicked) picked = { hub: hub, machine: machine };
+      const isPicked = !!picked && picked.machine === machine;
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = isPicked ? 'chip on' : 'chip';
-      chip.title = t('ui.provided_by', { hub: hubName(hub), device: machine.name });
+      chip.title = t('ui.machine_provided_by', { hub: hubName(hub), device: machine.name });
       chip.disabled = isHeld(hub);
       chip.innerHTML = marker(machine.is_online ? 'ok' : 'off');
       chip.appendChild(document.createTextNode(machine.name));
@@ -489,29 +530,54 @@ function machineStrip(state) {
   const line = document.createElement('div');
   line.className = 'term_pick_line';
   line.appendChild(chips);
-  const open = document.createElement('button');
-  open.textContent = t('ui.terminal_new');
-  open.disabled = !picked || !picked.machine.is_online || isHeld(picked.hub);
-  open.onclick = () => openShell(picked.hub, picked.machine);
-  line.appendChild(open);
+  line.appendChild(newShellButton(picked));
   card.appendChild(line);
-  const provider = document.createElement('div');
-  provider.className = 'note muted';
-  provider.textContent = picked
-    ? t('ui.provided_by', { hub: hubName(picked.hub), device: picked.machine.name })
-    : t('ui.terminal_pick_hint');
-  card.appendChild(provider);
+  if (picked) {
+    const provider = document.createElement('div');
+    provider.className = 'note muted';
+    provider.textContent = t('ui.machine_provided_by',
+      { hub: hubName(picked.hub), device: picked.machine.name });
+    card.appendChild(provider);
+  }
   return card;
 }
 
+// The machine the strip has picked, while a connected hub still offers it.
+function pickedMachine(state) {
+  if (!shellPick) return null;
+  for (const hub of state.hubs || []) {
+    if (hub.connection_state !== 'connected' || hub.hub_id !== shellPick.hub_id) continue;
+    const machine = (state.terminals || []).filter((each) =>
+      each.hub_id === hub.hub_id && each.device_id === shellPick.device_id)[0];
+    if (machine) return { hub: hub, machine: machine };
+  }
+  return null;
+}
+
+// The button that opens a new shell on the picked machine.
+function newShellButton(picked) {
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.textContent = t('ui.terminal_new');
+  open.disabled = !picked || !picked.machine.is_online || isHeld(picked.hub);
+  open.onclick = () => openShell(picked.hub, picked.machine);
+  return open;
+}
+
 // The open shells: their tabs in a head, the active one's pane, and a line
-// saying where the keys go.
-function shellPanel() {
+// saying where the keys go. With none open, a dashed frame says so and
+// offers the button that opens one.
+function shellPanel(state) {
   if (shellTabs.length === 0) {
     const empty = document.createElement('div');
-    empty.className = 'card term_empty';
-    empty.innerHTML = '<div>' + t('ui.terminal_none') + '</div>' +
-      '<div class="note muted">' + t('ui.terminal_pick_hint') + '</div>';
+    empty.className = 'term_empty';
+    empty.innerHTML = '<span>' + t('ui.terminal_none') + '</span>' +
+      '<span class="faint">' + t('ui.terminal_pick_hint') + '</span>';
+    const open = newShellButton(pickedMachine(state));
+    open.className = 'with_icon';
+    open.innerHTML = icon('terminal', 14);
+    open.appendChild(document.createTextNode(t('ui.terminal_new')));
+    empty.appendChild(open);
     return empty;
   }
   const panel = document.createElement('section');
@@ -911,39 +977,44 @@ function joinRow(state) {
   return wrap;
 }
 
-// The settings dialog: what this window keeps for itself, the language and
-// the palette. Nothing is sent until Save.
-function openSettingsDialog() {
-  const draft = { language: language, theme: theme };
-  const overlay = document.createElement('div');
-  overlay.className = 'overlay';
-  const modal = document.createElement('div');
-  modal.className = 'card modal';
-  const heading = document.createElement('div');
-  heading.className = 'panel_title';
-  heading.textContent = t('ui.settings_title');
-  modal.appendChild(heading);
+// What the settings page holds before Save: {language, theme}, or null while
+// it holds what the window already uses.
+let settingsDraft = null;
+
+// The settings page: what this window keeps for itself, the language and
+// the palette. Nothing is sent until Save, and the frame is lit while the
+// page holds a change.
+function drawSettings() {
+  const draft = settingsDraft || { language: language, theme: theme };
+  const isDirty = draft.language !== language || draft.theme !== theme;
+  const card = panelCard(t('ui.settings_title'), isDirty);
+  card.classList.add('settings');
+  function stage(key, value) {
+    settingsDraft = Object.assign({}, draft, { [key]: value });
+    redraw();
+  }
   const languageLabel = document.createElement('label');
   languageLabel.textContent = t('ui.language');
-  modal.appendChild(languageLabel);
+  card.appendChild(languageLabel);
   const languageOptions = LANGUAGES.map(
     (code) => ({ value: code, label: t('ui.language_name.' + code) }));
-  modal.appendChild(picker('language', languageOptions, draft.language,
-    (value) => { draft.language = value; }, false));
+  card.appendChild(picker('language', languageOptions, draft.language,
+    (value) => stage('language', value), false));
   const themeLabel = document.createElement('label');
   themeLabel.textContent = t('ui.theme');
-  modal.appendChild(themeLabel);
+  card.appendChild(themeLabel);
   const themeOptions = THEMES.map(
     (code) => ({ value: code, label: t('ui.theme_name.' + code) }));
-  modal.appendChild(picker('theme', themeOptions, draft.theme,
-    (value) => { draft.theme = value; }, false));
+  card.appendChild(picker('theme', themeOptions, draft.theme,
+    (value) => stage('theme', value), false));
   const actions = document.createElement('div');
   actions.className = 'row';
   actions.style.marginTop = '8px';
   const save = document.createElement('button');
   save.textContent = t('ui.save');
+  save.disabled = !isDirty;
   save.onclick = () => {
-    closeDialog(overlay);
+    settingsDraft = null;
     if (draft.language !== language) {
       send('/api/language', { language: draft.language });
     }
@@ -955,15 +1026,12 @@ function openSettingsDialog() {
   const cancel = document.createElement('button');
   cancel.className = 'ghost';
   cancel.textContent = t('ui.cancel');
-  cancel.onclick = () => { closeDialog(overlay); redraw(); };
+  cancel.disabled = !isDirty;
+  cancel.onclick = () => { settingsDraft = null; redraw(); };
   actions.appendChild(save);
   actions.appendChild(cancel);
-  modal.appendChild(actions);
-  overlay.appendChild(modal);
-  overlay.onclick = (event) => {
-    if (event.target === overlay) { closeDialog(overlay); redraw(); }
-  };
-  openDialog(overlay);
+  card.appendChild(actions);
+  return card;
 }
 
 function errorLine(text) {
@@ -1008,18 +1076,36 @@ function entryRow(hub, entry, payloadText, extraNote) {
     '<div class="body"><div class="title">' + entry.title + '</div>' +
     '<div class="note">' + payloadText + (note ? ' — ' + note : '') + '</div>' +
     '<div class="note muted">' + providerLine(hub, entry) + '</div>' +
-    (describeEntry(entry)
-      ? '<div class="note muted">' + describeEntry(entry) + '</div>' : '') +
     '</div>';
   return row;
 }
 
-// Which hub and which of its machines an entry comes from; a hub that names
-// no machine leaves the address the entry points at.
+// Which hub, which of its machines and which module an entry comes from; a
+// hub that names no machine leaves the address the entry points at.
 function providerLine(hub, entry) {
   return t('ui.provided_by', {
     hub: hubName(hub), device: entry.device_name || entryHost(entry),
+    module: entryModule(entry),
   });
+}
+
+// The module names an origin code stands for; the AI gateway is worded in
+// the page's language.
+const ENTRY_MODULES = {
+  gitea_module: 'Gitea', samba_module: 'Samba', device_share: 'RustDesk',
+};
+
+// The module an entry comes from, by its origin code: a container by its
+// image, without the registry or the path in front; a hand-declared record,
+// and an entry from a hub that sends no code, by its own title.
+function entryModule(entry) {
+  const code = entry.description_code;
+  if (code === 'ai_gateway') return t('ui.module_ai_gateway');
+  if (code === 'container') {
+    const image = (entry.description_params || {}).image || '';
+    return image.split('/').pop() || entry.title;
+  }
+  return ENTRY_MODULES[code] || entry.title;
 }
 
 // The host an entry's payload points at, wherever its type keeps it.
@@ -1031,19 +1117,6 @@ function entryHost(entry) {
     return match ? match[1] : url;
   }
   return payload.host || '';
-}
-
-// Where an entry comes from, in this page's own words, naming the machine
-// as the hub calls it; an older hub sends only the English sentence, which
-// stands as it is.
-function describeEntry(entry) {
-  const code = entry.description_code;
-  if (code && hasWord('ui.description.' + code)) {
-    const params = Object.assign({}, entry.description_params || {});
-    if (entry.device_name && params.host) params.host = entry.device_name;
-    return t('ui.description.' + code, params);
-  }
-  return entry.description || '';
 }
 
 // Every button of a hub greys while that hub has this client switched off.

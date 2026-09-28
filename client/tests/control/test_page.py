@@ -2,9 +2,10 @@
 
 The page is plain HTML, CSS and JavaScript under ``client/frontend/``, so
 what can be checked here is the contract's visible surface: the sidebar in
-its order, one hub row per hub and the join row always there, one panel per
-kind listing every hub's entries in hub order with the line each carries
-while nothing is published, every entry's provider line, the one AI switch,
+its order with a glyph on every entry and the settings entry below a rule,
+one hub row per hub and the join row always there, one panel per kind
+listing every hub's entries in hub order with the line each carries while
+nothing is offered, every entry's one provider line, the one AI switch,
 the staging keyed by service key, the redraw guards, the bridge adapter with no direct
 network reach, and the word catalogs asserted complete: the two languages
 carry the same keys, every key the page asks for is in them, and every
@@ -55,10 +56,10 @@ MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
 # the type on the wire, the heading, the function drawing one entry, and the
 # line the panel carries while no hub publishes the kind.
 SERVICE_PANELS = (
-    ("web", "web", "Web", "drawWebEntry", "no web service is published"),
-    ("ports", "port", "Ports", "drawPortEntry", "no port is published"),
-    ("ai", "ai", "AI", "drawAiEntry", "no AI service is published"),
-    ("files", "file", "Files", "drawFileEntry", "no share is published"),
+    ("web", "web", "Web", "drawWebEntry", "no web service is offered"),
+    ("ports", "port", "Ports", "drawPortEntry", "no port is offered"),
+    ("ai", "ai", "AI", "drawAiEntry", "no AI service is offered"),
+    ("files", "file", "Files", "drawFileEntry", "no share is offered"),
     (
         "desktops",
         "rdp",
@@ -251,7 +252,8 @@ def test_a_sidebar_lists_the_hubs_and_every_kind_and_nothing_of_modules_is_left(
 
     assert '<nav id="tabs"></nav>' in side
     assert "<h1>" in side
-    assert 'id="refresh"' in head and 'id="settings"' in head
+    assert 'id="refresh"' in head
+    assert 'id="settings"' not in PAGE_HTML
     assert head.index('id="page_title"') < head.index('id="refresh"')
     assert '<div id="content"></div>' in PAGE_HTML
     assert (
@@ -310,9 +312,51 @@ def test_the_open_tab_draws_the_hubs_a_kind_or_the_terminals():
     assert "document.getElementById('page_title').textContent = tabTitle(openTab);" in (
         body
     )
+    assert "content.appendChild(drawSettings());" in body
+    tab = PAGE_JS.split("function tabButton(tab)")[1].split("\n}")[0]
+    assert "button.className = tab === openTab ? 'tab on' : 'tab';" in tab
+    assert "button.onclick = () => { openTab = tab; redraw(); };" in tab
+
+
+def test_every_sidebar_entry_carries_its_glyph_before_its_name():
+    tab = PAGE_JS.split("function tabButton(tab)")[1].split("\n}")[0]
+    glyphs = PAGE_JS.split("const TAB_ICONS = {")[1].split("};")[0]
+    shapes = PAGE_JS.split("const ICON_SHAPES = {")[1].split("};")[0]
+    drawing = PAGE_JS.split("function icon(name, size)")[1].split("\n}")[0]
+
+    assert tab.index("icon(TAB_ICONS[tab], 17)") < tab.index("tabTitle(tab)")
+    assert dict(re.findall(r"([a-z]+): '([a-z]+)'", glyphs)) == {
+        "hubs": "server",
+        "web": "globe",
+        "port": "plug",
+        "ai": "sparkles",
+        "file": "folder",
+        "terminals": "terminal",
+        "rdp": "desktop",
+        "settings": "settings",
+    }
+    for name in ("server", "globe", "plug", "sparkles", "folder", "terminal"):
+        assert f"  {name}: '<" in shapes, name
+    assert "  desktop: '<" in shapes and "  settings: '<" in shapes
+    assert 'stroke="currentColor" stroke-width="1.6"' in drawing
+    assert 'viewBox="0 0 24 24"' in drawing
+    assert "button.tab { position: relative; display: flex; gap: 12px;" in PAGE_CSS
+
+
+def test_the_settings_entry_stands_below_a_rule_after_the_kinds():
     tabs = PAGE_JS.split("function drawTabs()")[1].split("\n}")[0]
-    assert "button.className = tab === openTab ? 'tab on' : 'tab';" in tabs
-    assert "button.onclick = () => { openTab = tab; redraw(); };" in tabs
+
+    assert "for (const tab of TABS) nav.appendChild(tabButton(tab));" in tabs
+    assert tabs.index("rule.className = 'tab_rule';") < tabs.index(
+        "nav.appendChild(tabButton('settings'));"
+    )
+    assert "if (tab === 'settings') return t('ui.settings');" in PAGE_JS
+    rule = PAGE_CSS.split(".tab_rule {")[1].split("}")[0]
+    assert "border-top: 1px solid var(--color-border)" in rule
+    assert (EN_WORDS["ui.settings"], CATALOGS["zh-CN"]["ui.settings"]) == (
+        "Settings",
+        "设置",
+    )
 
 
 def test_the_open_sidebar_entry_is_washed_in_the_accent_without_a_glow():
@@ -470,10 +514,13 @@ def test_every_entry_names_its_hub_and_machine_with_the_address_behind():
     host = PAGE_JS.split("function entryHost(entry)")[1].split("\n}")[0]
 
     assert "providerLine(hub, entry)" in row
+    assert row.count('class="note muted"') == 1
+    assert "describeEntry" not in PAGE_JS
     assert "t('ui.provided_by', {" in provider
     assert "hub: hubName(hub), device: entry.device_name || entryHost(entry)," in (
         provider
     )
+    assert "module: entryModule(entry)," in provider
     assert "payload.url || payload.endpoint" in host
     assert "return payload.host || '';" in host
     for _, _, _, builder, _ in SERVICE_PANELS:
@@ -481,8 +528,8 @@ def test_every_entry_names_its_hub_and_machine_with_the_address_behind():
             "\n}"
         )[0]
         assert "entryRow(" in body and "hub, entry," in body, builder
-    assert EN_WORDS["ui.provided_by"] == "from {hub}:{device}"
-    assert CATALOGS["zh-CN"]["ui.provided_by"] == "由 {hub}:{device} 提供"
+    assert EN_WORDS["ui.provided_by"] == "from {hub}:{device}:{module}"
+    assert CATALOGS["zh-CN"]["ui.provided_by"] == "由 {hub}:{device}:{module} 提供"
 
 
 def test_every_action_names_the_entrys_hub():
@@ -677,15 +724,17 @@ def test_the_desktops_panel_only_connects():
     assert "share" not in body
 
 
-# --- the language and the theme on the settings dialog ---
+# --- the language and the theme on the settings page ---
 
 
-def test_the_header_button_opens_the_settings_dialog_with_the_language():
-    body = PAGE_JS.split("function openSettingsDialog()")[1].split("\n}")[0]
+def test_the_settings_page_carries_the_language_and_sends_it_on_save():
+    body = PAGE_JS.split("function drawSettings()")[1].split("\n}")[0]
 
-    assert 'id="settings"' in PAGE_HTML
-    assert "settings.onclick = openSettingsDialog;" in PAGE_JS
-    assert "t('ui.settings_title')" in body
+    assert "openSettingsDialog" not in PAGE_JS
+    assert "const card = panelCard(t('ui.settings_title'), isDirty);" in body
+    assert "save.disabled = !isDirty;" in body
+    assert "cancel.onclick = () => { settingsDraft = null; redraw(); };" in body
+    assert "openDialog(" not in body
     assert "picker('language', languageOptions, draft.language" in body
     assert "send('/api/language', { language: draft.language })" in body
     assert "t('ui.save')" in body and "t('ui.cancel')" in body
@@ -703,7 +752,7 @@ def test_the_page_words_itself_in_the_language_the_state_names():
 
 
 def test_the_settings_dialog_carries_the_theme_after_the_language():
-    body = PAGE_JS.split("function openSettingsDialog()")[1].split("\n}")[0]
+    body = PAGE_JS.split("function drawSettings()")[1].split("\n}")[0]
 
     assert body.index("picker('language'") < body.index("picker('theme'")
     assert "picker('theme', themeOptions, draft.theme" in body
@@ -912,20 +961,35 @@ def test_windows_is_given_the_icon_it_can_actually_load(tmp_path, monkeypatch):
     assert page.window_icon_path().endswith("neutrino_client.png")
 
 
-def test_an_entrys_origin_is_worded_from_its_code_with_the_sentence_as_fallback():
-    """The hub sends a description code; an older hub sends only English."""
-    assert "function describeEntry(entry)" in PAGE_JS
-    assert "hasWord('ui.description.' + code)" in PAGE_JS
-    assert "return entry.description || '';" in PAGE_JS
-    for code in (
-        "ai_gateway",
-        "container",
-        "declared",
-        "device_share",
-        "gitea_module",
-        "samba_module",
-    ):
-        assert code in catalog_keys("ui.description.")
+def test_an_entrys_module_is_named_from_its_origin_code_and_its_title_behind():
+    """The hub sends an origin code; a declared record and an older hub name
+    the entry by its own title."""
+    body = PAGE_JS.split("function entryModule(entry)")[1].split("\n}")[0]
+    modules = PAGE_JS.split("const ENTRY_MODULES = {")[1].split("};")[0]
+
+    assert dict(re.findall(r"([a-z_]+): '([A-Za-z]+)'", modules)) == {
+        "gitea_module": "Gitea",
+        "samba_module": "Samba",
+        "device_share": "RustDesk",
+    }
+    assert "if (code === 'ai_gateway') return t('ui.module_ai_gateway');" in body
+    assert "(entry.description_params || {}).image" in body
+    assert "return ENTRY_MODULES[code] || entry.title;" in body
+    assert (
+        EN_WORDS["ui.module_ai_gateway"],
+        CATALOGS["zh-CN"]["ui.module_ai_gateway"],
+    ) == (
+        "AI gateway",
+        "AI 网关",
+    )
+    assert catalog_keys("ui.description.") == set()
+
+
+def test_no_entry_line_says_published():
+    for language in CLIENT_LANGUAGES:
+        for key, word in CATALOGS[language].items():
+            if key.startswith("ui."):
+                assert "publish" not in word and "发布" not in word, key
 
 
 # --- the terminals page ---
@@ -940,25 +1004,51 @@ def test_the_terminals_page_is_a_machine_strip_over_a_panel_of_shells():
     body = function_body("function drawTerminals(state)")
     strip = function_body("function machineStrip(state)")
 
+    button = function_body("function newShellButton(picked)")
+
     assert "page.appendChild(machineStrip(state));" in body
-    assert "page.appendChild(shellPanel());" in body
-    assert body.index("machineStrip(state)") < body.index("shellPanel()")
+    assert "page.appendChild(shellPanel(state));" in body
+    assert body.index("machineStrip(state)") < body.index("shellPanel(state)")
     assert "machine.hub_id === hub.hub_id" in strip
     assert "chip.innerHTML = marker(machine.is_online ? 'ok' : 'off');" in strip
-    assert "open.textContent = t('ui.terminal_new');" in strip
+    assert "line.appendChild(newShellButton(picked));" in strip
+    assert "open.textContent = t('ui.terminal_new');" in button
     assert (
         "open.disabled = !picked || !picked.machine.is_online || isHeld(picked.hub);"
-        in strip
+        in button
     )
+    assert "open.onclick = () => openShell(picked.hub, picked.machine);" in button
     assert "card.appendChild(emptyRow(t('ui.empty_terminals')));" in strip
+    assert "t('ui.machine_provided_by'," in strip
     assert (EN_WORDS["ui.terminal_new"], CATALOGS["zh-CN"]["ui.terminal_new"]) == (
         "New terminal",
         "新终端",
     )
 
 
+def test_with_no_shell_open_a_dashed_frame_offers_a_new_terminal():
+    panel = function_body("function shellPanel(state)")
+    empty = panel.split("if (shellTabs.length === 0) {")[1].split("\n  }")[0]
+    frame = PAGE_CSS.split(".term_empty {")[1].split("}")[0]
+
+    assert "empty.className = 'term_empty';" in empty
+    assert "t('ui.terminal_none')" in empty and "t('ui.terminal_pick_hint')" in empty
+    assert "const open = newShellButton(pickedMachine(state));" in empty
+    assert "icon('terminal', 14)" in empty
+    assert "empty.appendChild(open);" in empty
+    assert "flex: 1;" in frame
+    assert "border: 1px dashed var(--color-border-strong);" in frame
+    for theme in ("dark", "light"):
+        block = PAGE_CSS.split(f'[data-theme="{theme}"] {{')[1].split("}")[0]
+        assert "--color-border-strong:" in block and "--color-text-faint:" in block
+    assert (EN_WORDS["ui.terminal_none"], CATALOGS["zh-CN"]["ui.terminal_none"]) == (
+        "No terminal open",
+        "没有打开的终端",
+    )
+
+
 def test_each_open_shell_is_a_tab_that_closes_its_shell():
-    panel = function_body("function shellPanel()")
+    panel = function_body("function shellPanel(state)")
     tab = function_body("function shellTabButton(tab)")
     closing = function_body("function closeShell(tab)")
     tone = function_body("function shellTone(tab)")
