@@ -40,10 +40,9 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_STOPPED,
     AGENT_MODULE_STATE_UNINSTALLING,
     AGENT_MODULE_STATE_UNSUPPORTED,
-    AGENT_RUSTDESK_BINARY_PATH,
 )
 from neutrino_agent.exceptions import PlatformUnsupportedError
-from neutrino_agent.modules import installers
+from neutrino_agent.modules import installers, rustdesk
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
@@ -171,31 +170,37 @@ class ModuleEngine(ReconcileWorker):
         self._in_transit: set = set()
         self._apply_results: dict = {}
         self._details_at = 0.0
-        self._package = PackageModuleRunner(
-            platform=platform, log=self._collect, publish=self._publish
-        )
-        self._system = SystemPackageModuleRunner(
-            platform=platform, log=self._collect, publish=self._publish
-        )
+        # A platform that installs no package has no runner at all: every
+        # module the state names reads as unsupported there.
+        self._package = None
+        self._system = None
         # The modules this agent applies the hub's configuration to, by
         # name; each also answers its own verbs.
-        self._module_runners = {
-            runner.name: runner
-            for runner in (
-                SambaModuleRunner(
-                    platform=platform, log=self._collect, publish=self._publish
-                ),
-                GiteaModuleRunner(
-                    platform=platform, log=self._collect, publish=self._publish
-                ),
-                PodmanModuleRunner(
-                    platform=platform, log=self._collect, publish=self._publish
-                ),
-                ZfsModuleRunner(
-                    platform=platform, log=self._collect, publish=self._publish
-                ),
+        self._module_runners = {}
+        if "packages" in platform.capabilities:
+            self._package = PackageModuleRunner(
+                platform=platform, log=self._collect, publish=self._publish
             )
-        }
+            self._system = SystemPackageModuleRunner(
+                platform=platform, log=self._collect, publish=self._publish
+            )
+            self._module_runners = {
+                runner.name: runner
+                for runner in (
+                    SambaModuleRunner(
+                        platform=platform, log=self._collect, publish=self._publish
+                    ),
+                    GiteaModuleRunner(
+                        platform=platform, log=self._collect, publish=self._publish
+                    ),
+                    PodmanModuleRunner(
+                        platform=platform, log=self._collect, publish=self._publish
+                    ),
+                    ZfsModuleRunner(
+                        platform=platform, log=self._collect, publish=self._publish
+                    ),
+                )
+            }
         super().__init__(log=log, on_change=on_change)
         # The built-in rows are known from the start, so their first
         # refresh is not news that wakes a report.
@@ -529,7 +534,7 @@ class ModuleEngine(ReconcileWorker):
             ``{"state", "is_active", "code", "params", "details"}``.
         """
         if name in BUILTIN_MODULES:
-            is_present = os.path.isfile(AGENT_RUSTDESK_BINARY_PATH)
+            is_present = bool(rustdesk.binary_path())
             return _typed(
                 AGENT_MODULE_STATE_INSTALLED
                 if is_present
@@ -586,7 +591,8 @@ class ModuleEngine(ReconcileWorker):
             name: The module name.
 
         Returns:
-            The runner, or None for a module this agent has no runner for.
+            The runner, or None for a module this agent has no runner for,
+            which is every module on a platform that installs no package.
         """
         runner = self._module_runners.get(name)
         if runner is not None and (not kind or runner.kind == kind):

@@ -774,17 +774,62 @@ def test_uninstalling_software_the_hub_never_configured_leaves_its_files(tmp_pat
     assert (runner.stops, runner.removals) == (0, 0)
 
 
-def test_the_built_in_rustdesk_row_follows_the_agents_own_binary(monkeypatch, tmp_path):
+def test_the_built_in_rustdesk_row_follows_the_platforms_binary(monkeypatch, tmp_path):
     engine = bare_engine()
     engine._wanted = {}
-    binary = tmp_path / "rustdesk"
-    monkeypatch.setattr(
-        "neutrino_agent.core.engine.AGENT_RUSTDESK_BINARY_PATH", str(binary)
-    )
+    found = [""]
+    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: found[0])
 
     engine._refresh(is_forced=True)
     assert engine.report()["rustdesk"]["state"] == "absent"
 
-    binary.write_text("")
+    found[0] = str(tmp_path / "rustdesk")
     engine._refresh(is_forced=True)
     assert engine.report()["rustdesk"]["state"] == "installed"
+
+
+class NoPackagesPlatform(AgentPlatform):
+    """A platform that installs nothing, the way Windows and macOS are."""
+
+    os_name = "windows"
+    capabilities = frozenset({"metrics", "power"})
+
+
+def test_a_platform_without_packages_reports_only_the_built_in_row(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
+    engine = ModuleEngine(
+        platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+
+    engine._refresh(is_forced=True)
+
+    assert engine.module_runners == {}
+    assert set(engine.report()) == {"rustdesk"}
+
+
+def test_a_module_the_state_names_there_is_unsupported_never_failed(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
+    engine = ModuleEngine(
+        platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+    samba = {"kind": "system_package", "package": "samba", "verify": "true"}
+    engine.take_state(
+        {
+            "samba": {"want": "running", "config": {}, "install": samba},
+            "fakedesk": dict(WANTED["fakedesk"]),
+        }
+    )
+
+    engine._refresh(is_forced=True)
+    report = engine.report()
+
+    assert report["samba"]["state"] == "unsupported"
+    assert report["fakedesk"]["state"] == "unsupported"
+    assert engine.install("samba", receive=None) == {
+        "code": "unknown_kind",
+        "params": {"kind": "system_package"},
+    }

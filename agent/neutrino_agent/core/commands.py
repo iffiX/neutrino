@@ -221,6 +221,9 @@ class DeviceOperator:
 
     def _kill_process(self, args: dict) -> CommandOutcome:
         """End one process: a term, then a kill once its grace has run."""
+        # On Windows os.kill terminates whatever it is given, a probe too.
+        if os.name == "nt":
+            return _refused("unsupported_platform")
         try:
             pid = int(args.get("pid", 0))
         except (TypeError, ValueError):

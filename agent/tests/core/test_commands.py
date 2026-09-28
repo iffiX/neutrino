@@ -247,6 +247,17 @@ def test_kill_refuses_pid_one_and_itself():
         assert outcome.code == "kill_failed"
 
 
+def test_kill_on_windows_is_refused_before_anything_is_signalled(monkeypatch):
+    signalled = []
+    monkeypatch.setattr(commands.os, "name", "nt")
+    monkeypatch.setattr(commands.os, "kill", lambda *args: signalled.append(args))
+
+    outcome = device_operator().run("agent", "kill", {"pid": 4242})
+
+    assert (outcome.exit_code, outcome.code) == (1, "unsupported_platform")
+    assert signalled == []
+
+
 def test_remote_desktop_read_closes_with_its_result():
     reader = FakeRemoteDesktop()
 
