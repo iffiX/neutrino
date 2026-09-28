@@ -468,13 +468,27 @@ def test_the_same_version_brought_again_has_no_rollback_and_asks_no_release(
     assert checker.asked == []
 
 
-def test_a_file_that_is_not_this_boxs_package_is_refused(tmp_path, roots):
-    brought = tmp_path / "neutrino-agent_0.3.1_amd64.deb"
+def test_a_file_under_another_name_is_refused_with_its_own_code(tmp_path, roots):
+    brought = tmp_path / "hub.deb"
     brought.write_bytes(b"x")
     installer = make_installer(tmp_path, checker=Checker())
 
-    with pytest.raises(ValueError):
+    with pytest.raises(HubUpdateError) as refused:
         installer.plan_for_file(brought, current="0.3.0", port=8080)
+
+    assert refused.value.code == "package_name_mismatch"
+    assert refused.value.params == {"name": "hub.deb", "expected": ASSET}
+
+
+def test_no_file_at_the_path_is_refused_with_its_own_code(tmp_path, roots):
+    missing = tmp_path / "neutrino-hub_0.3.1_amd64.deb"
+    installer = make_installer(tmp_path, checker=Checker())
+
+    with pytest.raises(HubUpdateError) as refused:
+        installer.plan_for_file(missing, current="0.3.0", port=8080)
+
+    assert refused.value.code == "package_missing"
+    assert refused.value.params == {"path": str(missing)}
 
 
 # --- handing over ---

@@ -17,6 +17,7 @@ from pathlib import Path
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.exceptions import HubUpdateError
 from neutrino_hub.modules.hub_update.constants import (
+    HUB_UPDATE_REASON_PACKAGE_MISSING,
     HUB_UPDATE_RELATION_CURRENT,
     HUB_UPDATE_RELATION_MAJOR,
     HUB_UPDATE_STAGE_INSTALLED,
@@ -176,11 +177,11 @@ def _plan_from_file(
         The exit status and the plan; no plan means the person declined.
 
     Raises:
-        HubUpdateError: When the staging fails.
-        ValueError: When the file is not this box's package.
+        HubUpdateError: ``package_missing`` when no file is at that path, or
+            when the staging fails.
     """
     if not package.is_file():
-        raise ValueError(f"{package} is not a file")
+        raise HubUpdateError(HUB_UPDATE_REASON_PACKAGE_MISSING, path=str(package))
     if not is_confirmed and not _asked(f"install {package.name} over {HUB_VERSION}?"):
         return STATUS_FAILED, None
     plan = installer.plan_for_file(

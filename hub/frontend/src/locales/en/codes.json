@@ -122,6 +122,8 @@
   "code.package_digest_mismatch": "The package reached the machine as something other than what the hub sent.",
   "code.package_fetch_failed": "The package could not be downloaded whole: {detail}",
   "code.package_install_failed": "The package manager refused the package.",
+  "code.package_missing": "There is no package file at {path}.",
+  "code.package_name_mismatch": "{name} is not named {expected}.",
   "code.package_sha256_mismatch": "{name} arrived as something other than what the release published.",
   "code.password_missing_classes": "A password needs {classes}.",
   "code.password_too_short": "A password is at least {min_length} characters.",

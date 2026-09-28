@@ -258,11 +258,39 @@ def test_a_package_file_is_asked_about_by_name_and_staged(box, tmp_path, capsys)
     assert "is in place" in capsys.readouterr().out
 
 
-def test_a_package_file_that_is_not_there_is_an_error(box, tmp_path, capsys):
+def test_a_package_file_that_is_not_there_is_refused_with_its_code(
+    box, tmp_path, capsys
+):
     installer, _, _ = box
+    missing = tmp_path / "x.deb"
 
-    assert update_module.update(is_confirmed=True, package=tmp_path / "x.deb") == 1
-    assert "is not a file" in capsys.readouterr().err
+    assert update_module.update(is_confirmed=True, package=missing) == 1
+    err = capsys.readouterr().err
+    assert f"package_missing (path={missing})" in err
+    assert "release" not in err
+    assert installer.launched == []
+
+
+def test_a_package_file_under_another_name_is_refused_with_its_code(
+    box, tmp_path, capsys
+):
+    installer, _, _ = box
+    brought = tmp_path / "hub.deb"
+    brought.write_bytes(b"deb")
+
+    def refusing(package, *, current, port, on_progress):
+        raise HubUpdateError(
+            "package_name_mismatch",
+            name=package.name,
+            expected="neutrino-hub_{version}_amd64.deb",
+        )
+
+    installer.plan_for_file = refusing
+
+    assert update_module.update(is_confirmed=True, package=brought) == 1
+    err = capsys.readouterr().err
+    assert "package_name_mismatch (name=hub.deb" in err
+    assert "release_unreachable" not in err
     assert installer.launched == []
 
 

@@ -122,6 +122,8 @@
   "code.package_digest_mismatch": "安装包到达机器时与中枢发出的不一致。",
   "code.package_fetch_failed": "安装包没有完整下载：{detail}",
   "code.package_install_failed": "包管理器拒绝了这个安装包。",
+  "code.package_missing": "{path} 处没有安装包文件。",
+  "code.package_name_mismatch": "{name} 的文件名不是 {expected}。",
   "code.package_sha256_mismatch": "{name} 取回的内容与发行版本公布的不一致。",
   "code.password_missing_classes": "密码需要包含 {classes}。",
   "code.password_too_short": "密码至少 {min_length} 个字符。",

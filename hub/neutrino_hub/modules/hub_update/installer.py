@@ -43,6 +43,8 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_REASON_INSTALL_FAILED,
     HUB_UPDATE_REASON_LAUNCH_FAILED,
     HUB_UPDATE_REASON_PACKAGE_FETCH_FAILED,
+    HUB_UPDATE_REASON_PACKAGE_MISSING,
+    HUB_UPDATE_REASON_PACKAGE_NAME_MISMATCH,
     HUB_UPDATE_REASON_PACKAGE_SHA256_MISMATCH,
     HUB_UPDATE_REASON_ROLLBACK_FETCH_FAILED,
     HUB_UPDATE_REASON_SPACE_SHORT,
@@ -560,12 +562,23 @@ class HubUpdateInstaller:
             The plan the unit is handed.
 
         Raises:
-            ValueError: If the file is not this box's package at any version.
-            HubUpdateError: ``disk_space_short``, ``package_fetch_failed`` when
-                the file cannot be read, or ``rollback_fetch_failed``.
+            HubUpdateError: ``package_missing`` when no file is at that path,
+                ``package_name_mismatch`` when its name is not this box's
+                package at any version, ``disk_space_short``,
+                ``package_fetch_failed`` when the file cannot be read, or
+                ``rollback_fetch_failed``.
         """
         say = on_progress or (lambda line: None)
-        version = version_of_asset(package.name, asset=self._asset)
+        if not package.is_file():
+            raise HubUpdateError(HUB_UPDATE_REASON_PACKAGE_MISSING, path=str(package))
+        try:
+            version = version_of_asset(package.name, asset=self._asset)
+        except ValueError as error:
+            raise HubUpdateError(
+                HUB_UPDATE_REASON_PACKAGE_NAME_MISMATCH,
+                name=package.name,
+                expected=self._asset,
+            ) from error
         directory = self._ready_directory()
         rollback_name = asset_name(current, asset=self._asset)
         target = directory / package.name
