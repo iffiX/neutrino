@@ -21,12 +21,22 @@ front, keeps what it found in a file beside the original, and forwards every
 other name to the servers named there; on such a machine that copy is the one
 written, until the next network apply turns the management off.
 
+The file found before the first write is kept under the state root and put
+back on hand-back.
+
 Not pure: writes a file outside the hub's own roots.
 """
 
 import os
+import shutil
 from pathlib import Path
 
+from neutrino_hub.modules.router.constants import (
+    ROUTER_RESOLVER_ORIGINAL_PATH,
+    ROUTER_RESOLVER_TO_FALLBACK,
+    ROUTER_RESOLVER_TO_ORIGINAL,
+    ROUTER_RESOLVER_TO_RESOLVED,
+)
 from neutrino_hub.utils.subprocess_run import run
 
 # --- config ---
@@ -58,33 +68,90 @@ def point_at(address: str) -> bool:
     target = _target()
     if _current(target) == wanted:
         return False
+    _keep_original(target)
     _replace(target, wanted)
     return True
 
 
-def hand_back() -> bool:
+def hand_back(*, fallback_address: str = "") -> str:
     """Give name resolution back to whatever the machine had.
 
-    A symlink to `systemd-resolved`'s stub when that is installed, which is
-    what every distribution using it ships. Otherwise the file is left as it
-    is: something else on this machine writes it, and guessing at servers
-    would be worse than leaving what is there.
+    In order: a symlink to `systemd-resolved`'s stub when that unit is
+    enabled; the file kept before the first write; a file naming the
+    fallback address.
+
+    Args:
+        fallback_address: The direct resolver, written when neither of the
+            first two applies; empty leaves the file as it is.
 
     Returns:
-        True when the file was changed.
+        :data:`ROUTER_RESOLVER_TO_RESOLVED`,
+        :data:`ROUTER_RESOLVER_TO_ORIGINAL` or
+        :data:`ROUTER_RESOLVER_TO_FALLBACK` for what was written, or an
+        empty string when the file is not ours or nothing was written.
+
+    Raises:
+        OSError: If the file cannot be written.
     """
     target = _target()
     if not _is_written_here(target):
-        return False
+        return ""
     is_resolved = run(
         ["systemctl", "is-enabled", "--quiet", RESOLVER_RESOLVED_UNIT],
         is_checked=False,
     ).is_success
-    if not is_resolved:
-        return False
-    target.unlink(missing_ok=True)
-    target.symlink_to(RESOLVER_RESOLVED_STUB)
-    return True
+    original = ROUTER_RESOLVER_ORIGINAL_PATH
+    if is_resolved:
+        target.unlink(missing_ok=True)
+        target.symlink_to(RESOLVER_RESOLVED_STUB)
+        original.unlink(missing_ok=True)
+        return ROUTER_RESOLVER_TO_RESOLVED
+    if original.is_symlink() or original.exists():
+        _restore(original, target)
+        return ROUTER_RESOLVER_TO_ORIGINAL
+    if fallback_address:
+        _replace(target, f"{RESOLVER_HEADER}nameserver {fallback_address}\n")
+        return ROUTER_RESOLVER_TO_FALLBACK
+    return ""
+
+
+def _keep_original(target: Path) -> None:
+    """Copy the file about to be replaced, the first time only.
+
+    A symlink is kept as a symlink to the same place.
+
+    Args:
+        target: The file about to be written.
+    """
+    original = ROUTER_RESOLVER_ORIGINAL_PATH
+    if original.is_symlink() or original.exists():
+        return
+    if _is_written_here(target):
+        return
+    if not (target.is_symlink() or target.exists()):
+        return
+    original.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_symlink():
+        os.symlink(os.readlink(target), original)
+    else:
+        shutil.copy2(target, original)
+
+
+def _restore(original: Path, target: Path) -> None:
+    """Put the kept file back in place and delete the copy.
+
+    Args:
+        original: The copy under the state root.
+        target: The file it was taken from.
+    """
+    temporary = target.with_suffix(".neutrino")
+    temporary.unlink(missing_ok=True)
+    if original.is_symlink():
+        os.symlink(os.readlink(original), temporary)
+    else:
+        shutil.copy2(original, temporary)
+    os.replace(temporary, target)
+    original.unlink()
 
 
 def _target() -> Path:

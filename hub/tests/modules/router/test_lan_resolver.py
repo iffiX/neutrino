@@ -16,6 +16,9 @@ from neutrino_hub.modules.router import resolver, routes
 from neutrino_hub.modules.router.constants import (
     ROUTER_MODE_ROUTER,
     ROUTER_MODE_SERVER,
+    ROUTER_RESOLVER_TO_FALLBACK,
+    ROUTER_RESOLVER_TO_ORIGINAL,
+    ROUTER_RESOLVER_TO_RESOLVED,
     ROUTER_ROLE_LAN,
 )
 from neutrino_hub.modules.router.interfaces import (
@@ -23,6 +26,31 @@ from neutrino_hub.modules.router.interfaces import (
     RouterLanSettings,
     RouterNetworkConfig,
 )
+
+
+@pytest.fixture(autouse=True)
+def kept_original(tmp_path, monkeypatch):
+    """Where the file found before the first write is kept."""
+    path = tmp_path / "state" / "resolv.conf.original"
+    monkeypatch.setattr(resolver, "ROUTER_RESOLVER_ORIGINAL_PATH", path)
+    return path
+
+
+class _Ran:
+    def __init__(self, *, is_success: bool):
+        self.is_success = is_success
+
+
+@pytest.fixture
+def is_resolved_enabled(monkeypatch):
+    """Whether `systemctl is-enabled systemd-resolved` succeeds; False first."""
+    state = {"is_enabled": False}
+    monkeypatch.setattr(
+        resolver,
+        "run",
+        lambda command, **keywords: _Ran(is_success=state["is_enabled"]),
+    )
+    return state
 
 
 @pytest.fixture
@@ -156,3 +184,120 @@ def test_a_file_netbird_holds_is_left_and_its_original_written(
     assert resolv_conf.read_text() == netbird_text
     assert original.read_text().endswith("nameserver 192.168.100.1\n")
     assert resolver.point_at("192.168.100.1") is False
+
+
+# --- the file found before the first write ------------------------------------
+
+
+def test_the_first_write_keeps_the_file_it_replaces(resolv_conf, kept_original):
+    resolv_conf.write_text("nameserver 192.0.2.53\n")
+
+    resolver.point_at("192.168.8.1")
+
+    assert kept_original.read_text() == "nameserver 192.0.2.53\n"
+
+
+def test_a_symlink_is_kept_as_the_same_symlink(resolv_conf, kept_original, tmp_path):
+    stub = tmp_path / "stub-resolv.conf"
+    stub.write_text("nameserver 127.0.0.53\n")
+    resolv_conf.symlink_to(stub)
+
+    resolver.point_at("192.168.8.1")
+
+    assert kept_original.is_symlink()
+    assert kept_original.readlink() == stub
+
+
+def test_a_second_write_leaves_the_kept_file_alone(resolv_conf, kept_original):
+    resolv_conf.write_text("nameserver 192.0.2.53\n")
+    resolver.point_at("192.168.8.1")
+
+    resolver.point_at("10.9.0.1")
+
+    assert kept_original.read_text() == "nameserver 192.0.2.53\n"
+
+
+def test_without_resolved_the_kept_file_is_put_back_and_deleted(
+    resolv_conf, kept_original, is_resolved_enabled
+):
+    resolv_conf.write_text("nameserver 192.0.2.53\n")
+    resolver.point_at("192.168.8.1")
+
+    handed = resolver.hand_back(fallback_address="223.5.5.5")
+
+    assert handed == ROUTER_RESOLVER_TO_ORIGINAL
+    assert resolv_conf.read_text() == "nameserver 192.0.2.53\n"
+    assert not kept_original.exists()
+
+
+def test_a_kept_symlink_comes_back_as_the_same_symlink(
+    resolv_conf, kept_original, is_resolved_enabled, tmp_path
+):
+    stub = tmp_path / "stub-resolv.conf"
+    stub.write_text("nameserver 127.0.0.53\n")
+    resolv_conf.symlink_to(stub)
+    resolver.point_at("192.168.8.1")
+
+    assert resolver.hand_back() == ROUTER_RESOLVER_TO_ORIGINAL
+
+    assert resolv_conf.is_symlink()
+    assert resolv_conf.readlink() == stub
+    assert not kept_original.is_symlink()
+
+
+def test_with_no_kept_file_and_no_resolved_the_fallback_is_written(
+    resolv_conf, kept_original, is_resolved_enabled
+):
+    resolver.point_at("192.168.8.1")
+    assert not kept_original.exists()
+
+    handed = resolver.hand_back(fallback_address="223.5.5.5")
+
+    assert handed == ROUTER_RESOLVER_TO_FALLBACK
+    assert "nameserver 223.5.5.5" in resolv_conf.read_text()
+    assert "192.168.8.1" not in resolv_conf.read_text()
+
+
+def test_with_nothing_to_put_back_and_no_fallback_the_file_stays(
+    resolv_conf, is_resolved_enabled
+):
+    resolver.point_at("192.168.8.1")
+
+    assert resolver.hand_back() == ""
+    assert "nameserver 192.168.8.1" in resolv_conf.read_text()
+
+
+def test_resolved_comes_before_the_kept_file(
+    resolv_conf, kept_original, is_resolved_enabled
+):
+    resolv_conf.write_text("nameserver 192.0.2.53\n")
+    resolver.point_at("192.168.8.1")
+    is_resolved_enabled["is_enabled"] = True
+
+    handed = resolver.hand_back(fallback_address="223.5.5.5")
+
+    assert handed == ROUTER_RESOLVER_TO_RESOLVED
+    assert resolv_conf.readlink() == resolver.RESOLVER_RESOLVED_STUB
+    assert not kept_original.exists()
+
+
+def test_handing_back_passes_the_direct_resolver_as_the_fallback(monkeypatch):
+    handed = {}
+
+    def hand_back(**keywords):
+        handed.update(keywords)
+        return ROUTER_RESOLVER_TO_FALLBACK
+
+    monkeypatch.setattr(routes.RouterRulesetApplier, "flush", lambda self: None)
+    monkeypatch.setattr(routes.stack, "stand_up", list)
+    monkeypatch.setattr(routes.resolver, "hand_back", hand_back)
+    monkeypatch.setattr(
+        routes,
+        "read_config",
+        lambda name: {"direct_dns": {"address": "223.5.5.5", "port": 53}},
+    )
+
+    changes = routes.hand_back(RouterNetworkConfig(mode=ROUTER_MODE_ROUTER))
+
+    assert handed == {"fallback_address": "223.5.5.5"}
+    assert changes[-1] == "name resolution points at the direct resolver 223.5.5.5"

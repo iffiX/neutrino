@@ -345,6 +345,10 @@ def test_tearing_one_interface_down_is_not_a_takeover(monkeypatch):
     assert "stand_down" not in calls
 
 
+def _handed_nothing(**keywords) -> str:
+    return ""
+
+
 def test_handing_back_takes_the_firewall_with_it(monkeypatch):
     """The table is the hub's own and is loaded in every mode. Left behind on
     a machine that has been handed back, its forward chain goes on dropping —
@@ -356,7 +360,7 @@ def test_handing_back_takes_the_firewall_with_it(monkeypatch):
         routes.RouterRulesetApplier, "flush", lambda self: flushed.append(True)
     )
     monkeypatch.setattr(routes.stack, "stand_up", list)
-    monkeypatch.setattr(routes.resolver, "hand_back", lambda: False)
+    monkeypatch.setattr(routes.resolver, "hand_back", _handed_nothing)
 
     routes.hand_back(_one_lan(mode=ROUTER_MODE_ROUTER))
 
@@ -372,7 +376,7 @@ def test_a_machine_that_addressed_itself_still_loses_the_firewall(monkeypatch):
         routes.RouterRulesetApplier, "flush", lambda self: flushed.append(True)
     )
     monkeypatch.setattr(routes.stack, "stand_up", list)
-    monkeypatch.setattr(routes.resolver, "hand_back", lambda: False)
+    monkeypatch.setattr(routes.resolver, "hand_back", _handed_nothing)
 
     routes.hand_back(_one_lan(mode=ROUTER_MODE_SERVER))
 

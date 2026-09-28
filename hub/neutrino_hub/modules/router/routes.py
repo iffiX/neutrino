@@ -26,6 +26,10 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_LEASE_PENDING,
     ROUTER_CONNECTIONS_FILE,
     ROUTER_DNSMASQ_PATH,
+    ROUTER_RESOLVER_TO_FALLBACK,
+    ROUTER_RESOLVER_TO_ORIGINAL,
+    ROUTER_RESOLVER_TO_RESOLVED,
+    ROUTER_ROUTING_FILE,
     ROUTER_STEP_PENDING,
     ROUTER_STEP_UNCHANGED,
     ROUTER_TRIGGER_APPLY,
@@ -234,9 +238,24 @@ def hand_back(network: RouterNetworkConfig) -> list[str]:
     # whether it is enabled. Asked in the other order it is never handed back
     # at all, and the box goes on resolving at a dnsmasq nobody is running.
     changes += stack.stand_up()
-    if resolver.hand_back():
-        changes.append("name resolution is the machine's own again")
+    direct = _direct_resolver_address()
+    handed = resolver.hand_back(fallback_address=direct)
+    if handed == ROUTER_RESOLVER_TO_RESOLVED:
+        changes.append("name resolution is systemd-resolved's again")
+    elif handed == ROUTER_RESOLVER_TO_ORIGINAL:
+        changes.append("the machine's own resolver file is back")
+    elif handed == ROUTER_RESOLVER_TO_FALLBACK:
+        changes.append(f"name resolution points at the direct resolver {direct}")
     return changes
+
+
+def _direct_resolver_address() -> str:
+    """The direct resolver the routing configuration names, empty if none."""
+    try:
+        routing = read_config(ROUTER_ROUTING_FILE)
+    except (FileNotFoundError, ValueError):
+        return ""
+    return str((routing.get("direct_dns") or {}).get("address", ""))
 
 
 def build_uplink_plan(

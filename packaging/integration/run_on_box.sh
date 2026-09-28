@@ -185,6 +185,14 @@ phase "installing a module on a managed machine"
 python3 -m pytest "$HERE/test_install_a_module.py" -q
 ran $?
 
+# The walks above leave the box a router whose resolver file is the hub's.
+# A reset after them has to give the machine a resolver that answers.
+phase "reset, after the box has been a router"
+nhub reset all > /tmp/reset2.log 2>&1
+ran $?
+python3 -m pytest "$HERE/test_reset_hands_back.py" -q -k still_resolves
+ran $?
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
     echo "every phase passed"

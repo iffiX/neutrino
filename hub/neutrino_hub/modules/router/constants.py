@@ -212,6 +212,14 @@ ROUTER_DNS_CACHE_SIZE = 5000
 ROUTER_DNS_MIN_CACHE_TTL_S = 300
 ROUTER_DNS_NEG_TTL_S = 300
 
+# The machine's own resolver file as it was before the hub first replaced it,
+# put back on hand-back.
+ROUTER_RESOLVER_ORIGINAL_PATH = UTILS_STATE_ROOT / "resolv.conf.original"
+# What handing name resolution back did.
+ROUTER_RESOLVER_TO_RESOLVED = "resolved"
+ROUTER_RESOLVER_TO_ORIGINAL = "original"
+ROUTER_RESOLVER_TO_FALLBACK = "fallback"
+
 # The name this box answers to on every served network, resolving to its
 # address on the network the query arrived from. `.internal` is the top-level
 # domain reserved for private networks.

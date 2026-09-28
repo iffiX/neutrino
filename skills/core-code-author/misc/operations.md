@@ -128,6 +128,15 @@ Most distributions reset this on reboot, so persist it with a NetworkManager
 setting or a systemd unit on the target. Firmware must also allow it — the
 setting is usually called "Wake on LAN" or "Power on by PCIe" in the BIOS.
 
+## Name resolution after a reset
+
+In router mode the hub writes `/etc/resolv.conf`, and before the first write
+it copies the file it found to `/var/lib/neutrino/resolv.conf.original`.
+`nhub reset all` links the file to the stub of `systemd-resolved` when that
+unit is enabled, puts the copy back when there is one, and otherwise writes
+the `direct_dns` address from `config/xray/routing.json`. The reset prints
+which of the three it did.
+
 ## Logs
 
 | What | Where |

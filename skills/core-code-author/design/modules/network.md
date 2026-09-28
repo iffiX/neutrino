@@ -381,6 +381,16 @@ Nothing has to be restored, because nothing was taken away: the managers that
 were stood down are started again from a note of which ones they were, and no
 file of theirs was ever read or written.
 
+The resolver file is the one file put back. Router mode replaces
+`/etc/resolv.conf`, and the first write copies what was there to
+`resolv.conf.original` under the state root, a symlink as the same symlink.
+Handing back links the file to the stub of `systemd-resolved` when that unit
+is enabled. Otherwise it puts the copy back and deletes it, and with no copy
+it writes the `direct_dns` address from `config/xray/routing.json`, so the
+machine still has a resolver that answers. A box that entered router mode
+under 0.3.1 has no copy: its reset writes the direct resolver, and the file it
+had before is lost.
+
 An uplink's address does change once that manager is running again, and it is
 the manager that changes it: it asks for a lease under its own client identity
 and is given back the one it had, which is the address the machine held before
