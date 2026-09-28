@@ -4,17 +4,31 @@ title: "Overlay: EasyTier"
 
 # Overlay: EasyTier
 
-An EasyTier network is a name and a secret the hub generates. This page brings a second machine onto it, through a rendezvous node when both are behind NAT. EasyTier is one of the two overlay engines; the box runs one overlay at a time, and [NetBird](./overlay-netbird.md) is the other.
+This page puts the hub on an EasyTier network, either one that EasyTier's official console manages or one the hub generates and reaches through bootstrap peers. EasyTier is one of the two overlay engines; the box runs one overlay at a time, and [NetBird](./overlay-netbird.md) is the other.
 
 ## What EasyTier is
 
-EasyTier is peer to peer, with no management plane of its own. A network is a name and a secret: every machine configured with both is on it, and the secret is also the key its traffic is encrypted under. A machine starting up reaches one that is already on the network. When both machines are behind NAT, they meet at a rendezvous node: a machine with a public address that relays for the network. The peers speak on port 11010, TCP and UDP.
+EasyTier is peer to peer. A network is a name and a secret: every machine configured with both is on it, and the secret is also the key its traffic is encrypted under. A machine starting up reaches one that is already on the network. When both machines are behind NAT, they meet at a rendezvous node: a machine with a public address that relays for the network. The peers speak on port 11010, TCP and UDP.
+
+The **Mode** panel under the topology picks where the network comes from. **EasyTier console** takes it from EasyTier's official console, which sets the name, the secret, this box's address, its bootstrap peers and its subnet routes. **Manual bootstrap peers** keeps all of these on the hub, and the sections below for generating a network apply to that mode.
+
+## Console mode
+
+1. In the EasyTier console, copy the address a device joins with, of the form `tcp://et-web.console.easytier.net:22020/<token>`. The token admits devices to your account.
+1. On the **Overlay** page, under **Mode**, pick **EasyTier console** and select **Apply mode**.
+1. Under **EasyTier console**, select **Replace** beside **Console address**, paste the address and select **Save**. The engine restarts on the console's network.
+1. When the console network runs in secure mode, turn on **Secure mode** and select **Apply secure mode**.
+
+**Networks from the console** shows, for each network the engine runs, its name, this box's address and name, and its subnet routes. A field the console keeps from this box reads **Not provided by the console**. To reach this box's LANs from the overlay, add each one in the console as a subnet route of this device.
+
+**Forget** beside the address removes it and stops the engine. Clients allowed on the overlay receive the console address, so they join the same console network.
 
 ## Choose EasyTier and generate a network
 
 1. In the panel, open **Overlay**.
 1. Under **Engine**, pick **EasyTier** and select **Apply engine**. The hub installs the engine on the box when it is absent.
    ![The engine chooser](/guide/en/overlay_chooser.webp)
+1. Under **Mode**, keep **Manual bootstrap peers**.
 1. Under **This gateway on the network**, select **Generate**. **Network name** fills with a generated name, and **Network secret** fills with a masked secret. **This box's address** fills with an address such as `10.0.0.1/24`.
 1. Select **Apply network**. The engine restarts on this network, and the badge reads **connected** or **no peers yet**.
 
@@ -59,4 +73,4 @@ easytier-core --private-mode true --network-name <name> --network-secret <secret
 
 ## Where the secret is
 
-The secret is sealed under the vault's data key, in `config/`. The page shows the secret masked, and **Copy with the secret** is the one action that reads it out. Of the engine's own reads, the hub calls only the peer table; the `node` read prints the secret in the clear. A backup of `config/` holds it as ciphertext, opened by the vault passphrase.
+The secret and the console address are sealed under the vault's data key, in `config/`. The page shows the secret masked, and **Copy with the secret** is the one action that reads it out. The page shows the console address only as **Saved** or **Not saved**. A backup of `config/` holds both as ciphertext, opened by the vault passphrase.
