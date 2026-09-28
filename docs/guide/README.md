@@ -89,13 +89,16 @@ Nothing copied into `public/` is committed: `.gitignore` holds
 
 ## GitHub Pages
 
-`.github/workflows/docs.yml` builds on every pull request and on pushes to
-`main` that touch `docs/guide/**`, `images/guide/**`, `images/web/**` or the
-workflow itself.
+`.github/workflows/docs.yml` builds and checks every pull request that
+touches `docs/guide/**`, `images/guide/**`, `images/icons/**`, `images/web/**`
+or the workflow itself. It publishes on a pushed `v*` tag, so the site shows
+the guide of the newest release.
 
 The three Pages steps (`configure-pages`, `upload-pages-artifact` and the
-`deploy` job) are gated on the repository variable `DOCS_PAGES_ENABLED`. Until
-it is set, `main` still builds and checks, and nothing is published.
+`deploy` job) run only on a `v*` tag and only when the repository variable
+`DOCS_PAGES_ENABLED` is `true`. A run on any other ref builds and checks and
+publishes nothing. The `github-pages` environment needs a deployment rule for
+`v*` tags in `Settings → Environments`.
 
 The site is published at `https://neutrino.beyond-infinity.top/`: a DNS CNAME
 from that name to `iffix.github.io`, and `public/CNAME` carrying the name so
@@ -107,7 +110,7 @@ To switch publishing on:
    `Custom domain`: `neutrino.beyond-infinity.top` with `Enforce HTTPS`.
 2. `Settings → Secrets and variables → Actions → Variables`: add
    `DOCS_PAGES_ENABLED` with the value `true`.
-3. Re-run the `docs` workflow on `main`.
+3. Run the `docs` workflow on the newest `v*` tag, or push a new one.
 
 The workflow reads the real base path from `configure-pages`, so a repository
 subpath and a custom domain both build correctly. The deploy job requests

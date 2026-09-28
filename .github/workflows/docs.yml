@@ -9,13 +9,7 @@ on:
       - "images/web/**"
       - ".github/workflows/docs.yml"
   push:
-    branches: [main]
-    paths:
-      - "docs/guide/**"
-      - "images/guide/**"
-      - "images/icons/**"
-      - "images/web/**"
-      - ".github/workflows/docs.yml"
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -44,7 +38,7 @@ jobs:
         id: pages
         if: >-
           github.event_name != 'pull_request'
-          && github.ref == 'refs/heads/main'
+          && startsWith(github.ref, 'refs/tags/v')
           && vars.DOCS_PAGES_ENABLED == 'true'
         uses: actions/configure-pages@v5
       - name: Build website
@@ -59,7 +53,7 @@ jobs:
       - name: Upload website
         if: >-
           github.event_name != 'pull_request'
-          && github.ref == 'refs/heads/main'
+          && startsWith(github.ref, 'refs/tags/v')
           && vars.DOCS_PAGES_ENABLED == 'true'
         uses: actions/upload-pages-artifact@v4
         with:
@@ -68,7 +62,7 @@ jobs:
   deploy:
     if: >-
       github.event_name != 'pull_request'
-      && github.ref == 'refs/heads/main'
+      && startsWith(github.ref, 'refs/tags/v')
       && vars.DOCS_PAGES_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-24.04
