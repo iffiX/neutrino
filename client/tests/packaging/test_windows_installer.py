@@ -98,6 +98,7 @@ def test_the_daemons_run_on_programdata_and_the_one_portal(source):
 
     assert netbird == (
         'service run --config "[CommonAppDataFolder]Neutrino Client\\netbird\\config.json"'
+        ' --log-file "[CommonAppDataFolder]Neutrino Client\\netbird\\client.log"'
     )
     assert easytier == (
         '--config-dir "[CommonAppDataFolder]Neutrino Client\\easytier" '

@@ -9,7 +9,7 @@ Joining a hub's virtual network puts this computer on the hub's NetBird or EasyT
 ## Before you join
 
 - The client package is installed, which registers the NetBird and EasyTier daemons as system services.
-- A NetBird client already installed on this computer is used as it is; the client's own NetBird daemon then stays off.
+- A NetBird client already installed on this computer is left alone: on Windows the two daemons run side by side on their own pipes, on macOS the client uses the installed daemon and its own stays off, and on Linux the package does not install next to it.
 - The hub runs NetBird or EasyTier, and for NetBird its **Overlay** page holds a saved setup key.
 - The hub's **Clients** page lets this client use the virtual network.
 

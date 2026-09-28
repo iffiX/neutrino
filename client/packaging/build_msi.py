@@ -239,6 +239,7 @@ NETBIRD_EXE = "netbird.exe"
 EASYTIER_EXE = "easytier-core.exe"
 NETBIRD_SERVICE_ARGUMENTS = (
     'service run --config "[CommonAppDataFolder]Neutrino Client\\netbird\\config.json"'
+    ' --log-file "[CommonAppDataFolder]Neutrino Client\\netbird\\client.log"'
 )
 EASYTIER_SERVICE_ARGUMENTS = (
     '--config-dir "[CommonAppDataFolder]Neutrino Client\\easytier" '

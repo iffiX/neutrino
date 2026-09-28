@@ -9,7 +9,7 @@ title: 虚拟网
 ## 加入之前
 
 - 装好客户端包。包会把 NetBird 和 EasyTier 的守护进程登记成系统服务。
-- 这台电脑上已经装有 NetBird 客户端时，就直接用它；客户端自带的 NetBird 守护进程不会运行。
+- 这台电脑上已经装有 NetBird 客户端时不会动它：Windows 上两个守护进程各用各的管道并行运行；macOS 上客户端直接用已装的那个，自带的不启动；Linux 上这个包不能和它同时安装。
 - hub 运行 NetBird 或 EasyTier；用 NetBird 时，hub 的 **虚拟网**（Overlay）页上存有 setup key。
 - hub 的客户端页允许这个客户端使用虚拟网。
 
