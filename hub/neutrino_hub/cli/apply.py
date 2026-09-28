@@ -21,10 +21,15 @@ from socket import gethostname
 
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.modules.easytier.constants import EASYTIER_GENERATED_NAME
+from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_ARGUMENTS_NAME,
+    EASYTIER_GENERATED_NAME,
+)
 from neutrino_hub.modules.easytier.ops import EasyTierConfigApplier
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
+from neutrino_hub.modules.easytier.renderer import render_arguments
 from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
+from neutrino_hub.modules.easytier.renderer import render_environment
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
@@ -190,7 +195,7 @@ def _render(selected: tuple[str, ...]) -> dict:
     if "easytier" in selected:
         overlay = read_easytier()
         if not overlay.is_configured:
-            print("easytier: no network configured, skipping")
+            print("easytier: nothing configured, skipping")
         else:
             artifacts["easytier"] = overlay
     return artifacts
@@ -226,12 +231,20 @@ def _print_artifacts(artifacts: dict) -> None:
         # The rendered file carries the network secret, which is the key the
         # whole network is encrypted under. A dry run prints what a person
         # asked to see, not that.
-        print(f"\n--- {UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME} ---")
-        print(
-            render_easytier(
-                artifacts["easytier"], secret="<network secret>", hostname=gethostname()
+        overlay = artifacts["easytier"]
+        network_path = UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME
+        if not overlay.is_console_mode:
+            print(f"\n--- {network_path} ---")
+            print(
+                render_easytier(
+                    overlay, secret="<network secret>", hostname=gethostname()
+                )
             )
+        print(f"\n--- {UTILS_GENERATED_DIR / EASYTIER_ARGUMENTS_NAME} ---")
+        arguments = render_arguments(
+            overlay, config_server="<console address>", config_path=str(network_path)
         )
+        print(render_environment(arguments), end="")
 
 
 def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:

@@ -1,12 +1,20 @@
 """What a client needs to join the hub's overlay as an ordinary peer.
 
 NetBird's material is the kept setup key, its management plane and the hub's
-name on the overlay; EasyTier's is the network's name, its secret and the
-address the hub's engine listens on. The state frame and the enrolment link
-carry the same object, ``None`` whenever there is nothing to join with.
+name on the overlay. EasyTier's follows its mode: in manual mode the network's
+name, its secret and the address the hub's engine listens on; in console mode
+the console's address and whether it runs in secure mode. Both EasyTier
+shapes name the hub's own address on the overlay. The state frame and the
+enrolment link carry the same object, ``None`` whenever there is nothing to
+join with.
 """
 
-from neutrino_hub.modules.easytier.constants import EASYTIER_PEER_PORT
+from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_MODE_CONSOLE,
+    EASYTIER_MODE_MANUAL,
+    EASYTIER_PEER_PORT,
+)
+from neutrino_hub.modules.easytier.ops import EasyTierStatusReader
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.netbird.config import read_stored as read_netbird
 from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
@@ -23,10 +31,12 @@ def overlay_material(runtime) -> "dict | None":
         runtime: The shared runtime, for the network configuration.
 
     Returns:
-        ``{provider, setup_key, management_url, fqdn}`` for NetBird,
-        ``{provider, network_name, network_secret, peer}`` for EasyTier;
-        None when no overlay runs, NetBird has no kept key, EasyTier has no
-        network or no address to dial, or the vault is locked.
+        ``{provider, setup_key, management_url, fqdn}`` for NetBird;
+        ``{provider, mode, network_name, network_secret, peer, hub_address}``
+        for EasyTier in manual mode and ``{provider, mode, config_server,
+        is_secure_mode, hub_address}`` in console mode; None when no overlay
+        runs, NetBird has no kept key, EasyTier has no network, no address to
+        dial or no console address, or the vault is locked.
     """
     network = runtime.network()
     provider = provider_of(network)
@@ -80,10 +90,23 @@ def _netbird_material() -> "dict | None":
 
 
 def _easytier_material(runtime) -> "dict | None":
-    """The network's name, its secret and the hub's engine address, or None."""
+    """What a client joins the hub's EasyTier network with in its mode, or None."""
     config = read_easytier()
     if not config.is_configured:
         return None
+    if config.is_console_mode:
+        try:
+            config_server = config.config_server()
+        except ValueError:
+            return None
+        instances = EasyTierStatusReader().instances()
+        return {
+            "provider": OVERLAY_EASYTIER,
+            "mode": EASYTIER_MODE_CONSOLE,
+            "config_server": config_server,
+            "is_secure_mode": config.is_secure_mode,
+            "hub_address": _host(instances[0].address) if instances else "",
+        }
     host = easytier_join_host(runtime)
     if not host:
         return None
@@ -93,7 +116,14 @@ def _easytier_material(runtime) -> "dict | None":
         return None
     return {
         "provider": OVERLAY_EASYTIER,
+        "mode": EASYTIER_MODE_MANUAL,
         "network_name": config.network_name,
         "network_secret": secret,
         "peer": f"tcp://{host}:{EASYTIER_PEER_PORT}",
+        "hub_address": _host(config.address),
     }
+
+
+def _host(address: str) -> str:
+    """An address without its prefix length."""
+    return address.split("/")[0]

@@ -41,6 +41,8 @@
   "code.disk_space_short": "The update needs {needed_bytes} bytes free under {path}, and {free_bytes} are.",
   "code.easytier_address_invalid": "{address} is not an address with a prefix length, like 10.0.0.1/24.",
   "code.easytier_apply_failed": "The network did not apply: {detail}",
+  "code.easytier_config_server_invalid": "This is not a console address. Paste the address with its token, like tcp://host:22020/token.",
+  "code.easytier_mode_unknown": "{mode} is not an EasyTier mode.",
   "code.easytier_name_invalid": "{name} is not a network name: letters, digits, dashes and underscores only.",
   "code.easytier_network_invalid": "{cidr} is not a network.",
   "code.easytier_peer_invalid": "{uri} is not an address this engine dials.",

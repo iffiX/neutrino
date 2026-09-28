@@ -9,7 +9,11 @@ otherwise.
 import pytest
 
 from neutrino_hub.modules.easytier.config import EasyTierConfig
-from neutrino_hub.modules.easytier.renderer import render_config
+from neutrino_hub.modules.easytier.renderer import (
+    render_arguments,
+    render_config,
+    render_environment,
+)
 
 
 def rendered(**kwargs) -> str:
@@ -77,3 +81,52 @@ def test_a_quote_cannot_end_a_value_early():
 def test_a_box_with_no_network_renders_nothing():
     with pytest.raises(ValueError):
         render_config(EasyTierConfig(), secret="", hostname="neutrino")
+
+
+CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_example"  # scan: allow
+
+
+def test_manual_mode_starts_the_engine_on_the_file_and_names_the_portal():
+    arguments = render_arguments(
+        EasyTierConfig(), config_server=CONSOLE, config_path="/x/easytier.toml"
+    )
+
+    assert arguments == ["-c", "/x/easytier.toml", "--rpc-portal", "127.0.0.1:15888"]
+
+
+def test_console_mode_starts_the_engine_on_the_console_only():
+    arguments = render_arguments(
+        EasyTierConfig(mode="console"),
+        config_server=CONSOLE,
+        config_path="/x/easytier.toml",
+    )
+
+    assert arguments == [
+        "--config-server",
+        CONSOLE,
+        "--rpc-portal",
+        "127.0.0.1:15888",
+    ]
+
+
+def test_secure_mode_is_one_more_argument():
+    arguments = render_arguments(
+        EasyTierConfig(mode="console", is_secure_mode=True),
+        config_server=CONSOLE,
+        config_path="",
+    )
+
+    assert arguments[2] == "--secure-mode=true"
+
+
+def test_console_mode_with_no_address_renders_nothing():
+    with pytest.raises(ValueError):
+        render_arguments(
+            EasyTierConfig(mode="console"), config_server="", config_path=""
+        )
+
+
+def test_the_arguments_are_one_variable_of_the_environment_file():
+    assert render_environment(["-c", "/x/easytier.toml"]) == (
+        "EASYTIER_ARGUMENTS=-c /x/easytier.toml\n"
+    )

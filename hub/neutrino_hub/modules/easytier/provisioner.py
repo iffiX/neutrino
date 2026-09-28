@@ -55,6 +55,26 @@ def download_url(architecture: str) -> str:
     )
 
 
+def refresh_unit() -> bool:
+    """Install or update the systemd unit, telling whether it changed.
+
+    Returns:
+        Whether anything was written.
+
+    Raises:
+        subprocess.CalledProcessError: If systemd refuses to reload.
+    """
+    unit_text = (UTILS_DATA_DIR / "services" / EASYTIER_UNIT).read_text(
+        encoding="utf-8"
+    )
+    unit_path = SYSTEM_SYSTEMD_DIR / EASYTIER_UNIT
+    if unit_path.is_file() and unit_path.read_text(encoding="utf-8") == unit_text:
+        return False
+    unit_path.write_text(unit_text, encoding="utf-8")
+    run(["systemctl", "daemon-reload"])
+    return True
+
+
 class EasyTierProvisioner:
     """Installs the carried EasyTier engine as a unit of the hub's own."""
 
@@ -89,7 +109,7 @@ class EasyTierProvisioner:
         # A development root runs the panel in the foreground instead of
         # installing the hub as a service; design/install_and_dev.md.
         if not is_dev_root_set():
-            if self._refresh_unit():
+            if refresh_unit():
                 say(report, "installed the systemd unit")
                 is_changed = True
             # Enabled but not started: the engine has nothing to run on until
@@ -133,25 +153,6 @@ class EasyTierProvisioner:
         (SYSTEM_SYSTEMD_DIR / EASYTIER_UNIT).unlink(missing_ok=True)
         run(["systemctl", "daemon-reload"])
         return ProvisionResult(is_changed=True, message="removed; the network is kept")
-
-    def _refresh_unit(self) -> bool:
-        """Install or update the systemd unit, telling whether it changed.
-
-        Returns:
-            Whether anything was written.
-
-        Raises:
-            subprocess.CalledProcessError: If systemd refuses to reload.
-        """
-        unit_text = (UTILS_DATA_DIR / "services" / EASYTIER_UNIT).read_text(
-            encoding="utf-8"
-        )
-        unit_path = SYSTEM_SYSTEMD_DIR / EASYTIER_UNIT
-        if unit_path.is_file() and unit_path.read_text(encoding="utf-8") == unit_text:
-            return False
-        unit_path.write_text(unit_text, encoding="utf-8")
-        run(["systemctl", "daemon-reload"])
-        return True
 
     def _download_binaries(self, architecture: str) -> None:
         """Fetch the pinned release and install the two binaries from it.

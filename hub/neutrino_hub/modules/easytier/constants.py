@@ -19,8 +19,7 @@ EASYTIER_SHA256 = {
 }
 EASYTIER_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 # Only these two of the four the archive carries: the web console and its
-# embedded twin are a management plane for other people's nodes, which is the
-# thing this overlay exists not to need.
+# embedded twin serve other machines, and this box only runs a node.
 EASYTIER_CORE_NAME = "easytier-core"
 EASYTIER_CLI_NAME = "easytier-cli"
 EASYTIER_CORE_PATH = UTILS_STATIC_ROOT / "bin" / EASYTIER_CORE_NAME
@@ -28,6 +27,17 @@ EASYTIER_CLI_PATH = UTILS_STATIC_ROOT / "bin" / EASYTIER_CLI_NAME
 
 EASYTIER_UNIT = OVERLAY_EASYTIER_UNIT
 EASYTIER_GENERATED_NAME = "easytier.toml"
+# The engine's start arguments, read by the unit as an environment file. It
+# names the console address with its token, so it is root-only.
+EASYTIER_ARGUMENTS_NAME = "easytier.env"
+EASYTIER_ARGUMENTS_VARIABLE = "EASYTIER_ARGUMENTS"
+
+# How the engine learns its network: from the files this hub renders, or from
+# EasyTier's own console, which pushes the whole network configuration.
+EASYTIER_MODE_MANUAL = "manual"
+EASYTIER_MODE_CONSOLE = "console"
+EASYTIER_MODES = (EASYTIER_MODE_MANUAL, EASYTIER_MODE_CONSOLE)
+EASYTIER_CONFIG_SERVER_SCHEMES = ("tcp", "udp", "ws", "wss")
 
 # The tunnel device the firewall rules name, and the port this box's own peers
 # knock on. Both are stated rather than left to the engine: a device it named
@@ -53,6 +63,8 @@ EASYTIER_NAME_MAX_LEN = 64
 # it joins and decrypts. It is sealed under the vault's data key where it is
 # stored, so config/easytier/easytier.json carries no key material.
 EASYTIER_SECRET_AAD = b"easytier:network_secret"
+# The console address carries an account token that admits machines to it.
+EASYTIER_CONFIG_SERVER_AAD = b"easytier:config_server"
 
 # What the engine may be told to connect to first. The three URL forms are the
 # engine's discovery addresses, which answer with peer addresses rather than
@@ -60,6 +72,8 @@ EASYTIER_SECRET_AAD = b"easytier:network_secret"
 EASYTIER_PEER_SCHEMES = ("tcp", "udp", "ws", "wss", "quic", "ring")
 EASYTIER_DISCOVERY_SCHEMES = ("http", "https", "txt", "srv")
 
-# Reading the node's own state prints the running configuration, the network
-# secret in it, so only the peer table is ever asked for.
 EASYTIER_STATUS_TIMEOUT_S = 10
+
+# The instance fields a console in secure mode may keep from this box, by the
+# name the page shows them under.
+EASYTIER_INSTANCE_FIELDS = ("network_name", "address", "hostname")

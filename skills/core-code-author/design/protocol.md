@@ -213,7 +213,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest` |
@@ -317,7 +317,10 @@ the page's whole view.
 | `GET /api/hub/overlay/netbird` | | the NetBird network the box joins |
 | `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it, and keeps the key sealed in `config/netbird/netbird.json` once the join succeeds |
 | `POST /api/hub/overlay/netbird/setup_key/set` | `{setup_key}`, empty to forget | replaces or forgets the kept key without joining; pushes every client's state |
-| `GET /api/hub/overlay/easytier` | | the EasyTier network the box defines |
+| `GET /api/hub/overlay/easytier` | | the EasyTier network the box defines, its `mode`, `has_config_server`, `is_secure_mode`, and in console mode the `instances` the engine reports, each with the fields it came back without in `withheld` |
+| `POST /api/hub/overlay/easytier/mode/set` | `{mode}`, `manual` or `console` | where the network comes from; applies it and pushes every client's state |
+| `POST /api/hub/overlay/easytier/config_server/set` | `{config_server}`, empty to forget | keeps the console address with its token sealed in `config/easytier/easytier.json`, or forgets it; applies it and pushes every client's state |
+| `POST /api/hub/overlay/easytier/secure_mode/set` | `{is_secure_mode}` | whether the engine runs the console's network in secure mode; applies it and pushes every client's state |
 | `POST /api/hub/overlay/easytier/set` | its settings | |
 | `POST /api/hub/overlay/easytier/peer/set` | the peer list | |
 | `POST /api/hub/overlay/easytier/network/set` | the network list | |
@@ -700,22 +703,30 @@ network apply, and when the address sampler reads a different set, which it
 does every `WEB_ADDRESS_SAMPLE_INTERVAL_S` seconds.
 
 `overlay` is what a client joins the hub's overlay with as an ordinary peer,
-in one of two shapes:
+in one of three shapes:
 
 ```json
 {"provider": "netbird", "setup_key": "...", "management_url": "", "fqdn": "hub.netbird.cloud"}
-{"provider": "easytier", "network_name": "...", "network_secret": "...", "peer": "tcp://203.0.113.7:11010"}
+{"provider": "easytier", "mode": "manual", "network_name": "...", "network_secret": "...", "peer": "tcp://203.0.113.7:11010", "hub_address": "10.0.0.1"}
+{"provider": "easytier", "mode": "console", "config_server": "tcp://et-web.console.easytier.net:22020/<token>", "is_secure_mode": true, "hub_address": "10.126.126.1"}
 ```
 
 The NetBird key is the reusable setup key kept sealed in
 `config/netbird/netbird.json`, `management_url` is empty for NetBird's own
-plane, and `fqdn` is the hub's name on the overlay. The EasyTier `peer` is
-`tcp://<join host>:11010`, the join host being the uplink's address first.
-`overlay` is null in six cases: the box runs no overlay, NetBird has no kept
-key, EasyTier has no network or no join host, the vault is locked, the client
-is switched off, or its permission does not allow `overlay`. The state is
-pushed to every client when the key is kept, replaced or forgotten, when the
-EasyTier network is stored, and when the provider changes.
+plane, and `fqdn` is the hub's name on the overlay. EasyTier's `mode` is the
+one the hub runs. In manual mode `peer` is `tcp://<join host>:11010`, the join
+host being the uplink's address first. In console mode `config_server` is the
+console address with its account token, kept sealed in
+`config/easytier/easytier.json`, and the console pushes the network itself.
+`hub_address` is the hub's own address on the EasyTier network, without its
+prefix length: the stored address in manual mode, the one the engine reports
+in console mode, empty when neither is known. `overlay` is null in seven
+cases: the box runs no overlay, NetBird has no kept key, EasyTier in manual
+mode has no network or no join host, EasyTier in console mode has no console
+address, the vault is locked, the client is switched off, or its permission
+does not allow `overlay`. The state is pushed to every client when the key is
+kept, replaced or forgotten, when anything EasyTier stores changes, and when
+the provider changes.
 
 `terminals` lists every managed machine, the hub's own among them, online or
 not, with `is_online` read from its socket; it is empty unless the client's

@@ -1,5 +1,14 @@
 {
-  "_comment": "The EasyTier network this box is a member of, written by the Overlay page. A network is a name and a secret: every machine carrying both is on it, and the secret is also the key the traffic is encrypted under. So the secret is never here — it is sealed under the vault's data key in 'network_secret_sealed', and a backup of config/ carries a network nobody else can join.",
+  "_comment_mode": "Where the network comes from, written by the Overlay page's Mode panel: 'manual' for the network below, 'console' for the one EasyTier's official console pushes. In console mode the console sets the network, this box's address, its meeting points and its subnet routes, and every field below 'is_secure_mode' is unused.",
+  "mode": "manual",
+
+  "_comment_config_server": "The console address with its account token, for example tcp://et-web.console.easytier.net:22020/<token>, or the token alone. The token admits machines to the account, so it is never here in the clear: it is sealed under the vault's data key. Empty until one is set.",
+  "config_server_sealed": {},
+
+  "_comment_is_secure_mode": "Whether the engine runs the console's network in secure mode.",
+  "is_secure_mode": false,
+
+  "_comment": "The EasyTier network this box is a member of in manual mode, written by the Overlay page. A network is a name and a secret: every machine carrying both is on it, and the secret is also the key the traffic is encrypted under. So the secret is never here: it is sealed under the vault's data key in 'network_secret_sealed', and a backup of config/ carries a network nobody else can join.",
   "network_name": "",
   "network_secret_sealed": {},
 

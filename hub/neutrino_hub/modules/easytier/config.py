@@ -1,8 +1,11 @@
 """What this box's EasyTier network is, and what it exports to it.
 
-A network here is two strings: a name and a secret. Every machine carrying
-both is on the same network, and the secret is also the key the traffic is
-encrypted under, so it is sealed under the vault's data key and never sits in
+The network comes from one of two places. In manual mode it is two strings, a
+name and a secret: every machine carrying both is on the same network, and
+the secret is also the key the traffic is encrypted under. In console mode
+EasyTier's own console pushes the whole network, and this box holds only the
+console's address with its account token. The secret and the address are
+sealed under the vault's data key and never sit in
 ``config/easytier/easytier.json``.
 
 Parsing and validation only. Rendering is
@@ -18,9 +21,14 @@ from urllib.parse import urlparse
 
 from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
 from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_CONFIG_SERVER_AAD,
+    EASYTIER_CONFIG_SERVER_SCHEMES,
     EASYTIER_DEFAULT_ADDRESS,
     EASYTIER_DEFAULT_PREFIX_LEN,
     EASYTIER_DISCOVERY_SCHEMES,
+    EASYTIER_MODE_CONSOLE,
+    EASYTIER_MODE_MANUAL,
+    EASYTIER_MODES,
     EASYTIER_NAME_BYTES,
     EASYTIER_NAME_MAX_LEN,
     EASYTIER_NAME_PREFIX,
@@ -33,6 +41,11 @@ from neutrino_hub.modules.easytier.constants import (
 # it is matched against the relay whitelist as a word: letters, digits, dashes
 # and underscores, so neither a space nor a wildcard can hide in one.
 EASYTIER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,%d}$" % EASYTIER_NAME_MAX_LEN)
+# A console address travels as one word of the engine's start arguments: a
+# full URL whose path is the account token, or the token alone for EasyTier's
+# own console.
+EASYTIER_CONFIG_SERVER_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_.~-]{1,128}$")
+EASYTIER_CONFIG_SERVER_HOST_PATTERN = re.compile(r"^[A-Za-z0-9.:\[\]-]{1,255}$")
 
 
 @dataclass
@@ -40,6 +53,12 @@ class EasyTierConfig:
     """This box's membership of one EasyTier network.
 
     Attributes:
+        mode: ``manual`` for the network below, ``console`` for the one
+            EasyTier's console pushes.
+        config_server_sealed: The console address with its account token,
+            sealed under the vault's data key. Empty until one is set.
+        is_secure_mode: Whether the engine runs the console's network in
+            secure mode.
         network_name: What identifies the network. Every node carrying this
             name and the same secret is on it.
         secret_sealed: The network secret, sealed under the vault's data key.
@@ -55,6 +74,9 @@ class EasyTierConfig:
         exported_networks: The CIDRs this box makes reachable to the others.
     """
 
+    mode: str = EASYTIER_MODE_MANUAL
+    config_server_sealed: dict = field(default_factory=dict)
+    is_secure_mode: bool = False
     network_name: str = ""
     secret_sealed: dict = field(default_factory=dict)
     address: str = ""
@@ -63,9 +85,56 @@ class EasyTierConfig:
     exported_networks: list = field(default_factory=list)
 
     @property
+    def is_console_mode(self) -> bool:
+        """Whether the network comes from EasyTier's console."""
+        return self.mode == EASYTIER_MODE_CONSOLE
+
+    @property
+    def has_config_server(self) -> bool:
+        """Whether a console address is stored."""
+        return bool(self.config_server_sealed)
+
+    @property
     def is_configured(self) -> bool:
-        """Whether this box has a network to join at all."""
+        """Whether this box has a network to join in its mode."""
+        if self.is_console_mode:
+            return self.has_config_server
         return bool(self.network_name and self.secret_sealed)
+
+    def config_server(self) -> str:
+        """The console address in the clear.
+
+        Returns:
+            The address, empty when none is stored.
+
+        Raises:
+            VaultLockedError: If there is no data key on this box.
+            ValueError: If what is stored does not decrypt.
+        """
+        if not self.config_server_sealed:
+            return ""
+        return unseal_bytes(
+            self.config_server_sealed, EASYTIER_CONFIG_SERVER_AAD
+        ).decode()
+
+    def set_config_server(self, address: str) -> None:
+        """Store a console address.
+
+        Args:
+            address: The console address with its token, or the token alone.
+
+        Raises:
+            ValueError: If it is not a console address.
+            VaultLockedError: If there is no data key on this box.
+        """
+        validate_config_server(address)
+        self.config_server_sealed = seal_bytes(
+            address.encode(), EASYTIER_CONFIG_SERVER_AAD
+        )
+
+    def clear_config_server(self) -> None:
+        """Forget the console address."""
+        self.config_server_sealed = {}
 
     def secret(self) -> str:
         """The network secret in the clear.
@@ -106,7 +175,14 @@ class EasyTierConfig:
             The configuration, with anything unreadable left at its default.
         """
         sealed = data.get("network_secret_sealed")
+        server_sealed = data.get("config_server_sealed")
+        mode = str(data.get("mode", "") or EASYTIER_MODE_MANUAL)
         return cls(
+            mode=mode if mode in EASYTIER_MODES else EASYTIER_MODE_MANUAL,
+            config_server_sealed=(
+                server_sealed if isinstance(server_sealed, dict) else {}
+            ),
+            is_secure_mode=bool(data.get("is_secure_mode", False)),
             network_name=str(data.get("network_name", "")),
             secret_sealed=sealed if isinstance(sealed, dict) else {},
             address=str(data.get("address", "")),
@@ -124,6 +200,9 @@ class EasyTierConfig:
             What belongs in ``config/easytier/easytier.json``.
         """
         return {
+            "mode": self.mode,
+            "config_server_sealed": self.config_server_sealed,
+            "is_secure_mode": self.is_secure_mode,
             "network_name": self.network_name,
             "network_secret_sealed": self.secret_sealed,
             "address": self.address,
@@ -245,6 +324,49 @@ def validate_peer(uri: str) -> None:
             raise ValueError(f"{uri!r} names nothing to ask")
         return
     raise ValueError(f"{uri!r} is not an address this engine dials")
+
+
+def validate_mode(mode: str) -> None:
+    """Refuse a mode this module does not have.
+
+    Args:
+        mode: What was asked for.
+
+    Raises:
+        ValueError: When it is neither ``manual`` nor ``console``.
+    """
+    if mode not in EASYTIER_MODES:
+        raise ValueError(f"{mode!r} is not an EasyTier mode")
+
+
+def validate_config_server(address: str) -> None:
+    """Refuse a console address the engine could not be started with.
+
+    Args:
+        address: What was typed: ``<scheme>://<host>:<port>/<token>``, or the
+            token alone for EasyTier's own console.
+
+    Raises:
+        ValueError: When it is neither, or carries anything that would split
+            or escape one start argument.
+    """
+    if EASYTIER_CONFIG_SERVER_TOKEN_PATTERN.match(address or ""):
+        return
+    parsed = urlparse(address or "")
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if (
+        parsed.scheme not in EASYTIER_CONFIG_SERVER_SCHEMES
+        or not EASYTIER_CONFIG_SERVER_HOST_PATTERN.match(parsed.netloc)
+        or not parsed.hostname
+        or port is None
+        or not EASYTIER_CONFIG_SERVER_TOKEN_PATTERN.match(parsed.path[1:])
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("this is not a console address")
 
 
 def validate_network(cidr: str) -> None:

@@ -351,14 +351,34 @@
         "ChannelOverlay": {
           "description": "What a client joins the hub's overlay with; only its provider's fields.",
           "properties": {
+            "config_server": {
+              "default": "",
+              "title": "Config Server",
+              "type": "string"
+            },
             "fqdn": {
               "default": "",
               "title": "Fqdn",
               "type": "string"
             },
+            "hub_address": {
+              "default": "",
+              "title": "Hub Address",
+              "type": "string"
+            },
+            "is_secure_mode": {
+              "default": false,
+              "title": "Is Secure Mode",
+              "type": "boolean"
+            },
             "management_url": {
               "default": "",
               "title": "Management Url",
+              "type": "string"
+            },
+            "mode": {
+              "default": "",
+              "title": "Mode",
               "type": "string"
             },
             "network_name": {
@@ -988,14 +1008,34 @@
     "ChannelOverlay": {
       "description": "What a client joins the hub's overlay with; only its provider's fields.",
       "properties": {
+        "config_server": {
+          "default": "",
+          "title": "Config Server",
+          "type": "string"
+        },
         "fqdn": {
           "default": "",
           "title": "Fqdn",
           "type": "string"
         },
+        "hub_address": {
+          "default": "",
+          "title": "Hub Address",
+          "type": "string"
+        },
+        "is_secure_mode": {
+          "default": false,
+          "title": "Is Secure Mode",
+          "type": "boolean"
+        },
         "management_url": {
           "default": "",
           "title": "Management Url",
+          "type": "string"
+        },
+        "mode": {
+          "default": "",
+          "title": "Mode",
           "type": "string"
         },
         "network_name": {

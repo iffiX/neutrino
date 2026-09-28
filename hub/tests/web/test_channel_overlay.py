@@ -1,15 +1,17 @@
 """The overlay's join material, read from what the box stores and runs.
 
 NetBird hands its kept setup key, its management plane and the hub's overlay
-name; EasyTier its network name, its secret and the uplink address its engine
-listens on. No overlay, no kept key, no network, no address and a locked
-vault each read as none.
+name; EasyTier in manual mode its network name, its secret and the uplink
+address its engine listens on, and in console mode the console's address and
+secure mode; both EasyTier shapes name the hub's own overlay address. No
+overlay, no kept key, no network, no address, no console address and a
+locked vault each read as none.
 """
 
 import pytest
 
 from neutrino_hub.modules.easytier.config import EasyTierConfig
-from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
+from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME, EasyTierInstance
 from neutrino_hub.modules.netbird.config import NetbirdConfig, write_stored
 from neutrino_hub.modules.netbird.ops import NetbirdState
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -18,6 +20,7 @@ from neutrino_hub.web import channel_overlay
 from tests.conftest import unlock_vault
 
 SETUP_KEY = "A1B2C3D4-0000-4000-8000-000000000000"  # scan: allow
+CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_example"  # scan: allow
 
 
 class FakeRuntime:
@@ -55,6 +58,7 @@ def box(monkeypatch, tmp_path):
     config_dir.mkdir()
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config_dir)
     monkeypatch.setattr(channel_overlay, "NetbirdStatusReader", FakeReader)
+    monkeypatch.setattr(channel_overlay, "EasyTierStatusReader", FakeInstances)
     addresses = {"enp1s0": "192.168.100.1/24", "enp2s0": "203.0.113.7/24"}
     monkeypatch.setattr(channel_overlay, "device_addresses", lambda: dict(addresses))
     return addresses
@@ -66,10 +70,34 @@ def keep_setup_key(management_url: str = "") -> None:
     write_stored(config)
 
 
-def store_network() -> None:
-    config = EasyTierConfig(network_name="neutrino-1234")
+def store_network(address: str = "") -> None:
+    config = EasyTierConfig(network_name="neutrino-1234", address=address)
     config.set_secret("a-network-secret")
     write_config(EASYTIER_CONFIG_NAME, config.to_dict())
+
+
+def store_console(address: str = CONSOLE, *, is_secure_mode: bool = True) -> None:
+    config = EasyTierConfig(mode="console", is_secure_mode=is_secure_mode)
+    if address:
+        config.set_config_server(address)
+    write_config(EASYTIER_CONFIG_NAME, config.to_dict())
+
+
+class FakeInstances:
+    """An engine running the console's network at one address."""
+
+    addresses: list = []
+
+    def instances(self) -> list:
+        return [
+            EasyTierInstance(
+                instance_name="",
+                network_name="home",
+                address=address,
+                hostname="neutrino",
+            )
+            for address in FakeInstances.addresses
+        ]
 
 
 def test_netbird_hands_its_key_its_plane_and_the_hubs_name(box):
@@ -90,16 +118,57 @@ def test_netbird_without_a_kept_key_is_none(box):
 
 
 def test_easytier_hands_its_name_its_secret_and_the_uplinks_address(box):
-    store_network()
+    store_network("10.0.0.1/24")
 
     material = channel_overlay.overlay_material(FakeRuntime("easytier"))
 
     assert material == {
         "provider": "easytier",
+        "mode": "manual",
         "network_name": "neutrino-1234",
         "network_secret": "a-network-secret",
         "peer": "tcp://203.0.113.7:11010",
+        "hub_address": "10.0.0.1",
     }
+
+
+def test_a_manual_network_with_no_address_names_no_hub_address(box):
+    store_network()
+
+    material = channel_overlay.overlay_material(FakeRuntime("easytier"))
+
+    assert material["hub_address"] == ""
+
+
+def test_the_console_hands_its_address_secure_mode_and_the_hubs_address(box):
+    store_console()
+    FakeInstances.addresses = ["10.126.126.1/24"]
+
+    material = channel_overlay.overlay_material(FakeRuntime("easytier"))
+
+    assert material == {
+        "provider": "easytier",
+        "mode": "console",
+        "config_server": CONSOLE,
+        "is_secure_mode": True,
+        "hub_address": "10.126.126.1",
+    }
+
+
+def test_the_console_before_the_engine_reports_names_no_hub_address(box):
+    store_console(is_secure_mode=False)
+    FakeInstances.addresses = []
+
+    material = channel_overlay.overlay_material(FakeRuntime("easytier"))
+
+    assert material["hub_address"] == ""
+    assert material["is_secure_mode"] is False
+
+
+def test_the_console_with_no_address_is_none(box):
+    store_console("")
+
+    assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None
 
 
 def test_easytier_without_a_network_is_none(box):
@@ -128,4 +197,13 @@ def test_a_locked_vault_is_none(box, monkeypatch, tmp_path):
     )
 
     assert channel_overlay.overlay_material(FakeRuntime("netbird")) is None
+    assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None
+
+
+def test_a_locked_vault_hides_the_console_address(box, monkeypatch, tmp_path):
+    store_console()
+    monkeypatch.setattr(
+        "neutrino_hub.utils.constants.UTILS_STATE_ROOT", tmp_path / "nowhere"
+    )
+
     assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None

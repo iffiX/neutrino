@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.easytier.ops import EasyTierPeer
+from neutrino_hub.modules.easytier.ops import EasyTierInstance, EasyTierPeer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
 from neutrino_hub.web import channel_overlay, channel_state
@@ -74,12 +74,14 @@ class FakeApplier:
     """Records what it was asked to apply instead of applying it."""
 
     applied: list = []
+    modes: list = []
     refusal: Exception | None = None
 
     def apply(self, config, *, hostname: str) -> str:
         if FakeApplier.refusal is not None:
             raise FakeApplier.refusal
         FakeApplier.applied.append((config.network_name, hostname))
+        FakeApplier.modes.append(config.mode)
         return "applied"
 
 
@@ -87,6 +89,7 @@ class FakeApplier:
 def box(monkeypatch, tmp_path):
     """A gateway with an open vault, a fake engine, and config/ under tmp."""
     FakeApplier.applied = []
+    FakeApplier.modes = []
     FakeApplier.refusal = None
     unlock_vault(monkeypatch, tmp_path)
     config_dir = tmp_path / "config"
@@ -139,6 +142,18 @@ class _Reader:
 
     def peers(self):
         return list(self._peers)
+
+    def instances(self):
+        return [
+            EasyTierInstance(
+                instance_name="",
+                network_name="home",
+                address="10.126.126.1/24",
+                hostname="",
+                subnet_routes=["192.168.100.0/24"],
+                withheld=["hostname"],
+            )
+        ]
 
 
 def a_network(client) -> dict:
@@ -383,6 +398,122 @@ def test_an_engine_that_refuses_what_was_written_is_reported(box):
 
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == "easytier_apply_failed"
+
+
+# --- the console mode -------------------------------------------------------
+
+CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_example"  # scan: allow
+
+
+def test_a_box_starts_in_manual_mode_with_no_console(box):
+    client, _ = box
+
+    payload = client.get("/api/hub/overlay/easytier").json()
+
+    assert payload["mode"] == "manual"
+    assert payload["has_config_server"] is False
+    assert payload["is_secure_mode"] is False
+    assert payload["instances"] == []
+
+
+def test_choosing_the_console_applies_it_and_pushes_every_client(box):
+    client, runtime = box
+
+    payload = client.post(
+        "/api/hub/overlay/easytier/mode/set", json={"mode": "console"}
+    ).json()
+
+    assert payload["mode"] == "console"
+    assert FakeApplier.modes == ["console"]
+    assert runtime.pushes == ["client"]
+
+
+def test_a_mode_that_is_not_one_is_refused(box):
+    client, runtime = box
+
+    response = client.post("/api/hub/overlay/easytier/mode/set", json={"mode": "x"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "easytier_mode_unknown",
+        "params": {"mode": "x"},
+    }
+    assert runtime.pushes == []
+
+
+def test_the_console_address_is_kept_sealed_and_never_shown(box):
+    client, runtime = box
+
+    payload = client.post(
+        "/api/hub/overlay/easytier/config_server/set", json={"config_server": CONSOLE}
+    ).json()
+
+    assert payload["has_config_server"] is True
+    assert "etk_example" not in str(payload)
+    assert "etk_example" not in str(client.get("/api/hub/overlay/easytier").json())
+    assert runtime.pushes == ["client"]
+
+
+def test_an_empty_console_address_forgets_the_kept_one(box):
+    client, runtime = box
+    client.post(
+        "/api/hub/overlay/easytier/config_server/set", json={"config_server": CONSOLE}
+    )
+
+    payload = client.post(
+        "/api/hub/overlay/easytier/config_server/set", json={"config_server": ""}
+    ).json()
+
+    assert payload["has_config_server"] is False
+    assert runtime.pushes == ["client", "client"]
+
+
+def test_a_console_address_that_is_not_one_is_refused_without_echoing_it(box):
+    client, _ = box
+
+    response = client.post(
+        "/api/hub/overlay/easytier/config_server/set",
+        json={"config_server": "http://example.com/etk secret"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "easytier_config_server_invalid",
+        "params": {},
+    }
+
+
+def test_secure_mode_is_stored_and_pushed(box):
+    client, runtime = box
+
+    payload = client.post(
+        "/api/hub/overlay/easytier/secure_mode/set", json={"is_secure_mode": True}
+    ).json()
+
+    assert payload["is_secure_mode"] is True
+    assert runtime.pushes == ["client"]
+
+
+def test_console_mode_shows_what_the_engine_runs(box):
+    client, _ = box
+    client.post(
+        "/api/hub/overlay/easytier/config_server/set", json={"config_server": CONSOLE}
+    )
+    client.post("/api/hub/overlay/easytier/mode/set", json={"mode": "console"})
+
+    payload = client.get("/api/hub/overlay/easytier").json()
+
+    assert payload["instances"] == [
+        {
+            "instance_name": "",
+            "network_name": "home",
+            "address": "10.126.126.1/24",
+            "hostname": "",
+            "subnet_routes": ["192.168.100.0/24"],
+            "withheld": ["hostname"],
+        }
+    ]
+    assert payload["node"]["address"] == "10.126.126.1/24"
 
 
 # --- suggesting -------------------------------------------------------------

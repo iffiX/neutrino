@@ -1,8 +1,10 @@
 """The EasyTier sections of the Overlay page.
 
-A network here is a name and a secret this hub owns, so this is where they are
-minted, stored and handed out. There is no console anywhere else to check them
-against: whoever carries both is on the network.
+The network comes from one of two modes. In manual mode it is a name and a
+secret this hub owns, so this is where they are minted, stored and handed
+out: whoever carries both is on the network. In console mode EasyTier's own
+console pushes the network, this page keeps only the console's address, and
+what the engine then runs is read back and shown.
 """
 
 import asyncio
@@ -17,6 +19,8 @@ from neutrino_hub.modules.easytier.config import (
     generated_name,
     generated_secret,
     validate_address,
+    validate_config_server,
+    validate_mode,
     validate_name,
     validate_network,
     validate_peer,
@@ -40,12 +44,16 @@ from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_overlay import easytier_join_host
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
+    EasyTierConfigServerRequest,
+    EasyTierInstanceView,
+    EasyTierModeRequest,
     EasyTierNetworkRequest,
     EasyTierNetworksRequest,
     EasyTierNodeView,
     EasyTierPeersRequest,
     EasyTierPeerView,
     EasyTierSecretView,
+    EasyTierSecureModeRequest,
     EasyTierSuggestedNetwork,
     EasyTierSuggestionView,
     EasyTierView,
@@ -68,6 +76,86 @@ def read_state(runtime: PanelRuntime = Depends(get_runtime)) -> EasyTierView:
         The EasyTier payload.
     """
     return _view(runtime, _config())
+
+
+@router.post("/easytier/mode/set", response_model=EasyTierView)
+async def update_mode(
+    request: EasyTierModeRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> EasyTierView:
+    """Choose where the network comes from: manual or EasyTier's console.
+
+    Args:
+        request: The mode.
+        runtime: The shared runtime.
+
+    Returns:
+        The state afterwards.
+
+    Raises:
+        HTTPException: 400 for a mode that is not one, 502 when the engine
+            refuses what was written.
+    """
+    try:
+        validate_mode(request.mode)
+    except ValueError as error:
+        raise _bad_request("easytier_mode_unknown", mode=request.mode) from error
+    config = _config()
+    config.mode = request.mode
+    return await _store(runtime, config)
+
+
+@router.post("/easytier/config_server/set", response_model=EasyTierView)
+async def update_config_server(
+    request: EasyTierConfigServerRequest,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> EasyTierView:
+    """Store the console address, or forget it.
+
+    Args:
+        request: The address with its token; empty forgets the stored one.
+        runtime: The shared runtime.
+
+    Returns:
+        The state afterwards.
+
+    Raises:
+        HTTPException: 400 for an address that is not one, 502 when the
+            engine refuses what was written.
+        VaultLockedError: If there is no data key to seal the address under.
+    """
+    address = request.config_server.strip()
+    config = _config()
+    if address:
+        try:
+            validate_config_server(address)
+        except ValueError as error:
+            raise _bad_request("easytier_config_server_invalid") from error
+        config.set_config_server(address)
+    else:
+        config.clear_config_server()
+    return await _store(runtime, config)
+
+
+@router.post("/easytier/secure_mode/set", response_model=EasyTierView)
+async def update_secure_mode(
+    request: EasyTierSecureModeRequest,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> EasyTierView:
+    """Choose whether the engine runs the console's network in secure mode.
+
+    Args:
+        request: Whether it does.
+        runtime: The shared runtime.
+
+    Returns:
+        The state afterwards.
+
+    Raises:
+        HTTPException: 502 when the engine refuses what was written.
+    """
+    config = _config()
+    config.is_secure_mode = request.is_secure_mode
+    return await _store(runtime, config)
 
 
 @router.post("/easytier/set", response_model=EasyTierView)
@@ -249,16 +337,32 @@ def _view(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
     Returns:
         The stored network, this machine's own networks, and the live peers.
     """
-    peers = EasyTierStatusReader().peers()
+    reader = EasyTierStatusReader()
+    peers = reader.peers()
     local = next(
         (peer for peer in peers if peer.link == EASYTIER_LINK_LOCAL),
         None,
     )
+    instances = reader.instances() if config.is_console_mode else []
     status_ = runtime.services.status("easytier")
     return EasyTierView(
         is_installed=EASYTIER_CORE_PATH.is_file(),
         is_active=status_.is_active,
         version=EASYTIER_VERSION,
+        mode=config.mode,
+        has_config_server=config.has_config_server,
+        is_secure_mode=config.is_secure_mode,
+        instances=[
+            EasyTierInstanceView(
+                instance_name=instance.instance_name,
+                network_name=instance.network_name,
+                address=instance.address,
+                hostname=instance.hostname,
+                subnet_routes=list(instance.subnet_routes),
+                withheld=list(instance.withheld),
+            )
+            for instance in instances
+        ],
         network_name=config.network_name,
         is_secret_set=bool(config.secret_sealed),
         address=config.address,
@@ -278,7 +382,11 @@ def _view(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
                     peer.is_connected and peer.link != EASYTIER_LINK_LOCAL
                     for peer in peers
                 ),
-                address=config.address,
+                address=(
+                    (instances[0].address if instances else "")
+                    if config.is_console_mode
+                    else config.address
+                ),
                 hostname=(local.hostname if local else config.hostname),
                 nat_type=(local.nat_type if local else ""),
             )

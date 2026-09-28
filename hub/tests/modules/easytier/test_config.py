@@ -14,6 +14,8 @@ from neutrino_hub.modules.easytier.config import (
     generated_name,
     generated_secret,
     validate_address,
+    validate_config_server,
+    validate_mode,
     validate_name,
     validate_network,
     validate_peer,
@@ -57,6 +59,74 @@ def test_a_stored_network_survives_a_round_trip(vault):
 def test_a_box_with_no_network_is_not_configured():
     assert not EasyTierConfig().is_configured
     assert EasyTierConfig().secret() == ""
+
+
+CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_example"  # scan: allow
+
+
+def test_the_console_address_is_sealed_with_its_mode_and_comes_back(vault):
+    config = EasyTierConfig(mode="console", is_secure_mode=True)
+    config.set_config_server(CONSOLE)
+
+    parsed = EasyTierConfig.from_dict(config.to_dict())
+
+    assert "etk_example" not in str(config.to_dict())
+    assert parsed.is_console_mode
+    assert parsed.is_secure_mode is True
+    assert parsed.config_server() == CONSOLE
+    assert parsed.is_configured
+
+
+def test_console_mode_is_configured_by_its_address_alone(vault):
+    config = EasyTierConfig(mode="console", network_name="neutrino-1234")
+    config.set_secret("a-network-secret")
+
+    assert not config.is_configured
+
+    config.set_config_server(CONSOLE)
+    config.clear_config_server()
+
+    assert not config.has_config_server
+
+
+def test_a_file_from_before_the_modes_reads_as_manual():
+    config = EasyTierConfig.from_dict({"network_name": "neutrino-1234"})
+
+    assert config.mode == "manual"
+    assert config.is_secure_mode is False
+    assert EasyTierConfig.from_dict({"mode": "other"}).mode == "manual"
+
+
+@pytest.mark.parametrize(
+    "address",
+    [CONSOLE, "udp://127.0.0.1:22020/admin", "etk_example", "wss://[::1]:443/me"],
+)
+def test_a_console_address_or_a_bare_token_is_accepted(address):
+    validate_config_server(address)
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "",
+        "http://console.example.com:22020/etk_example",
+        "tcp://console.example.com/etk_example",
+        "tcp://console.example.com:22020/",
+        "tcp://console.example.com:22020/etk example",
+        "tcp://console.example.com:22020/etk$HOME",
+        "tcp://console.example.com:22020/etk_example?x=1",
+        "two words",
+    ],
+)
+def test_anything_that_is_not_one_start_argument_is_refused(address):
+    with pytest.raises(ValueError):
+        validate_config_server(address)
+
+
+def test_a_mode_that_is_not_one_is_refused():
+    validate_mode("console")
+    with pytest.raises(ValueError):
+        validate_mode("cloud")
 
 
 def test_an_empty_secret_is_refused(vault):

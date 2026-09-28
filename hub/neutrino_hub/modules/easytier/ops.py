@@ -1,25 +1,34 @@
 """Making the stored EasyTier network true on this box, and reading it back.
 
-The engine is asked only for its peer table. Its other read, ``node``, prints
-the running configuration with the network secret in it, and a secret that
-reaches a log or a panel is a network anybody can join.
+The engine's ``node info`` prints the running configuration with the network
+secret in it. Only the network's name is taken from that text, and nothing
+else of it leaves this module: a secret that reaches a log or a panel is a
+network anybody can join.
 """
 
 import json
 import re
-from dataclasses import dataclass
+import tomllib
+from dataclasses import dataclass, field
 
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_ARGUMENTS_NAME,
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
     EASYTIER_GENERATED_NAME,
+    EASYTIER_INSTANCE_FIELDS,
     EASYTIER_RPC_PORTAL,
     EASYTIER_STATUS_TIMEOUT_S,
     EASYTIER_UNIT,
 )
-from neutrino_hub.modules.easytier.renderer import render_config
-from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
+from neutrino_hub.modules.easytier.provisioner import refresh_unit
+from neutrino_hub.modules.easytier.renderer import (
+    render_arguments,
+    render_config,
+    render_environment,
+)
+from neutrino_hub.utils.constants import UTILS_GENERATED_DIR, is_dev_root_set
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.utils.subprocess_run import run
 
@@ -27,6 +36,7 @@ from neutrino_hub.utils.subprocess_run import run
 # file, which reads as no network rather than as a failure: the file is
 # written the first time somebody applies a network on the Overlay page.
 EASYTIER_CONFIG_NAME = "easytier/easytier.json"
+
 
 # How the engine words a path to a peer: its own row, a direct tunnel, or
 # somebody forwarding for it.
@@ -101,18 +111,86 @@ class EasyTierPeer:
     is_connected: bool
 
 
+@dataclass
+class EasyTierInstance:
+    """One network the running engine is on, as it reports it.
+
+    Attributes:
+        instance_name: What the engine calls the instance.
+        network_name: The network's name, empty when withheld.
+        address: This box's address on it in CIDR form, empty when withheld
+            or not yet assigned.
+        hostname: What this box is called on it, empty when withheld.
+        subnet_routes: The networks this box makes reachable on it.
+        peers: The nodes this box sees on it, its own row first.
+        withheld: Which of network name, address and hostname came back
+            empty.
+    """
+
+    instance_name: str
+    network_name: str
+    address: str
+    hostname: str
+    subnet_routes: list = field(default_factory=list)
+    peers: list = field(default_factory=list)
+    withheld: list = field(default_factory=list)
+
+
 class EasyTierStatusReader:
-    """Reads the peer table the running engine keeps."""
+    """Reads what the running engine reports through its management portal."""
 
     def peers(self) -> list:
-        """Every node this box can see, its own row first.
+        """Every node this box can see on every network, its own rows first.
 
         Returns:
             The peers, empty when the engine is not running or answers with
             something that is not a table.
         """
+        peers = []
+        for _, rows in _by_instance(self._read("peer")):
+            peers.extend(_peers(rows))
+        peers.sort(key=lambda peer: (peer.link != EASYTIER_LINK_LOCAL, peer.hostname))
+        return peers
+
+    def instances(self) -> list:
+        """Every network the engine runs, with its peers.
+
+        Returns:
+            One :class:`EasyTierInstance` per network, empty when the engine
+            is not running or runs none.
+        """
+        peers_by_instance = dict(_by_instance(self._read("peer")))
+        instances = []
+        for name, info in _by_instance(self._read("node", "info")):
+            if not isinstance(info, dict):
+                continue
+            instance = EasyTierInstance(
+                instance_name=name,
+                network_name=_network_name(info.get("config")),
+                address=str(info.get("ipv4_addr", "") or ""),
+                hostname=str(info.get("hostname", "") or ""),
+                subnet_routes=[
+                    str(cidr) for cidr in info.get("proxy_cidrs") or [] if cidr
+                ],
+                peers=_peers(peers_by_instance.get(name)),
+            )
+            instance.withheld = [
+                key for key in EASYTIER_INSTANCE_FIELDS if not getattr(instance, key)
+            ]
+            instances.append(instance)
+        return instances
+
+    def _read(self, *command: str):
+        """One JSON answer of the engine's command line tool.
+
+        Args:
+            command: The tool's command words.
+
+        Returns:
+            The parsed answer, None when the engine is absent or silent.
+        """
         if not EASYTIER_CLI_PATH.is_file():
-            return []
+            return None
         result = run(
             [
                 str(EASYTIER_CLI_PATH),
@@ -120,29 +198,28 @@ class EasyTierStatusReader:
                 EASYTIER_RPC_PORTAL,
                 "-o",
                 "json",
-                "peer",
+                *command,
             ],
             is_checked=False,
             timeout_s=EASYTIER_STATUS_TIMEOUT_S,
         )
         if not result.is_success:
-            return []
+            return None
         try:
-            rows = json.loads(result.stdout)
+            return json.loads(result.stdout)
         except json.JSONDecodeError:
-            return []
-        if not isinstance(rows, list):
-            return []
-        peers = [_peer(row) for row in rows if isinstance(row, dict)]
-        peers.sort(key=lambda peer: (peer.link != EASYTIER_LINK_LOCAL, peer.hostname))
-        return peers
+            return None
 
 
 class EasyTierConfigApplier:
-    """Renders the configuration file and restarts the engine on it."""
+    """Renders the start arguments and the network file, and restarts the
+    engine on them."""
 
     def apply(self, config: EasyTierConfig, *, hostname: str) -> str:
         """Write what the panel stored and make the engine run on it.
+
+        A mode with nothing to run removes both files and stops the engine,
+        which the unit then cannot start.
 
         Args:
             config: What the panel stored.
@@ -153,25 +230,106 @@ class EasyTierConfigApplier:
             A one-line summary of what happened.
 
         Raises:
-            ValueError: If there is no network to render, or the stored secret
-                does not open.
+            VaultLockedError: If there is no data key to open what is stored.
+            ValueError: If the stored secret or console address does not open.
             subprocess.CalledProcessError: If the engine refuses to restart.
         """
-        rendered = render_config(config, secret=config.secret(), hostname=hostname)
-        # The file carries the network's secret, so it is root-only like every
-        # other rendered file that holds key material.
-        write_generated(
-            UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME, rendered, mode=0o600
-        )
+        network_path = UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME
+        arguments_path = UTILS_GENERATED_DIR / EASYTIER_ARGUMENTS_NAME
+        if not config.is_configured:
+            arguments_path.unlink(missing_ok=True)
+            network_path.unlink(missing_ok=True)
+            if not self.is_installed:
+                return "nothing to run"
+            run(["systemctl", "stop", EASYTIER_UNIT], is_checked=False)
+            return "stopped; there is no network to run"
+        if config.is_console_mode:
+            arguments = render_arguments(
+                config,
+                config_server=config.config_server(),
+                config_path=str(network_path),
+            )
+            network_path.unlink(missing_ok=True)
+        else:
+            rendered = render_config(config, secret=config.secret(), hostname=hostname)
+            # Both files carry key material, so they are root-only like every
+            # other rendered file that does.
+            write_generated(network_path, rendered, mode=0o600)
+            arguments = render_arguments(
+                config, config_server="", config_path=str(network_path)
+            )
+        write_generated(arguments_path, render_environment(arguments), mode=0o600)
         if not self.is_installed:
             return "rendered; the engine is not installed yet"
+        if not is_dev_root_set():
+            refresh_unit()
         run(["systemctl", "restart", EASYTIER_UNIT])
-        return f"applied network {config.network_name} and restarted"
+        return f"applied the {config.mode} network and restarted"
 
     @property
     def is_installed(self) -> bool:
         """Whether the engine is on the box."""
         return EASYTIER_CORE_PATH.is_file()
+
+
+def _by_instance(payload) -> list:
+    """An answer split by the instance it is about.
+
+    Args:
+        payload: The tool's answer: the answer itself for one instance, a
+            list of ``{instance_id, instance_name, result}`` for several.
+
+    Returns:
+        ``(instance_name, result)`` pairs; one with an empty name for a
+        single instance, none for no answer.
+    """
+    if payload is None:
+        return []
+    if (
+        isinstance(payload, list)
+        and payload
+        and all(isinstance(item, dict) and "result" in item for item in payload)
+    ):
+        return [
+            (str(item.get("instance_name", "") or ""), item["result"])
+            for item in payload
+        ]
+    return [("", payload)]
+
+
+def _peers(rows) -> list:
+    """One instance's peer table, reshaped, its own row first.
+
+    Args:
+        rows: The engine's rows, anything else reading as none.
+
+    Returns:
+        The peers.
+    """
+    if not isinstance(rows, list):
+        return []
+    peers = [_peer(row) for row in rows if isinstance(row, dict)]
+    peers.sort(key=lambda peer: (peer.link != EASYTIER_LINK_LOCAL, peer.hostname))
+    return peers
+
+
+def _network_name(config_text) -> str:
+    """The network's name in the running configuration the engine printed.
+
+    Args:
+        config_text: The printed TOML, which also carries the secret.
+
+    Returns:
+        The name, empty when there is none to read.
+    """
+    try:
+        data = tomllib.loads(str(config_text or ""))
+    except tomllib.TOMLDecodeError:
+        return ""
+    identity = data.get("network_identity")
+    if not isinstance(identity, dict):
+        return ""
+    return str(identity.get("network_name", "") or "")
 
 
 def _peer(row: dict) -> EasyTierPeer:

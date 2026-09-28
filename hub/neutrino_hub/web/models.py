@@ -1710,9 +1710,15 @@ class ChannelOverlay(BaseModel):
     setup_key: str = ""
     management_url: str = ""
     fqdn: str = ""
+    # EasyTier's: `manual` names the network, `console` the console address.
+    mode: str = ""
     network_name: str = ""
     network_secret: str = ""
     peer: str = ""
+    config_server: str = ""
+    is_secure_mode: bool = False
+    # The hub's own address on the EasyTier network, empty when unknown.
+    hub_address: str = ""
 
 
 class ChannelTerminal(BaseModel):
@@ -2093,12 +2099,30 @@ class EasyTierSuggestedNetwork(BaseModel):
     interface: str
 
 
+class EasyTierInstanceView(BaseModel):
+    """One network the engine runs, as it reports it; read-only."""
+
+    instance_name: str = ""
+    network_name: str = ""
+    address: str = ""
+    hostname: str = ""
+    subnet_routes: list[str] = Field(default_factory=list)
+    # Which of network_name, address and hostname came back empty.
+    withheld: list[str] = Field(default_factory=list)
+
+
 class EasyTierView(BaseModel):
     """The EasyTier sections of the Overlay page."""
 
     is_installed: bool
     is_active: bool
     version: str = ""
+    # `manual` or `console`.
+    mode: str = "manual"
+    has_config_server: bool = False
+    is_secure_mode: bool = False
+    # What the engine reports it runs; filled in console mode.
+    instances: list[EasyTierInstanceView] = Field(default_factory=list)
     network_name: str = ""
     is_secret_set: bool = False
     address: str = ""
@@ -2122,6 +2146,24 @@ class EasyTierNetworkRequest(BaseModel):
     network_secret: str = ""
     address: str = ""
     hostname: str = ""
+
+
+class EasyTierModeRequest(BaseModel):
+    """Where the network comes from: `manual` or `console`."""
+
+    mode: str
+
+
+class EasyTierConfigServerRequest(BaseModel):
+    """A console address with its token; empty forgets the stored one."""
+
+    config_server: str = Field(default="", max_length=512)
+
+
+class EasyTierSecureModeRequest(BaseModel):
+    """Whether the engine runs the console's network in secure mode."""
+
+    is_secure_mode: bool
 
 
 class EasyTierPeersRequest(BaseModel):

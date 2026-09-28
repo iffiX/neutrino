@@ -41,6 +41,8 @@
   "code.disk_space_short": "更新需要 {path} 下有 {needed_bytes} 字节可用，现在只有 {free_bytes}。",
   "code.easytier_address_invalid": "{address} 不是带前缀长度的地址，形如 10.0.0.1/24。",
   "code.easytier_apply_failed": "网络没能应用：{detail}",
+  "code.easytier_config_server_invalid": "这不是控制台地址。粘贴带令牌的地址，形如 tcp://host:22020/token。",
+  "code.easytier_mode_unknown": "{mode} 不是 EasyTier 的模式。",
   "code.easytier_name_invalid": "{name} 不能作网络名：只允许字母、数字、连字符和下划线。",
   "code.easytier_network_invalid": "{cidr} 不是一个网段。",
   "code.easytier_peer_invalid": "{uri} 不是这个引擎能连的地址。",

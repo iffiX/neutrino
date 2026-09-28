@@ -8,9 +8,12 @@ Wants=network-online.target
 Type=simple
 # Root: the engine opens the tunnel device and edits the routes.
 User=root
-# The engine the package carries, on the file the panel renders. That file
-# holds the network's secret, which is why it is root-only.
-ExecStart=/opt/neutrino/bin/easytier-core -c /var/lib/neutrino/generated/easytier.toml
+# The engine the package carries, on the start arguments the panel renders:
+# the network file in manual mode, the console address in console mode. Both
+# hold a secret, which is why they are root-only. With nothing rendered there
+# is no file, and the engine does not start.
+EnvironmentFile=/var/lib/neutrino/generated/easytier.env
+ExecStart=/opt/neutrino/bin/easytier-core $EASYTIER_ARGUMENTS
 Restart=always
 RestartSec=5
 # A node keeps a socket per peer and per attempt; the vendor's own guidance
