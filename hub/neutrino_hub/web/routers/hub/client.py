@@ -18,13 +18,14 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_PERMISSION_KIND_UNKNOWN,
     CLIENT_CODE_UNKNOWN,
     CLIENT_PERMISSION_KINDS,
+    CLIENT_PERMISSION_OVERLAY,
 )
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.permissions import permitted_kinds
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.services.constants import SERVICES_TYPE_AI
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
-from neutrino_hub.web import channel_state
+from neutrino_hub.web import channel_overlay, channel_state
 from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -68,7 +69,8 @@ def list_clients(runtime: PanelRuntime = Depends(get_runtime)) -> ClientListView
 def create_enrollment(
     request: ClientEnrollmentRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientEnrollmentView:
-    """Create a client and the link its program joins with.
+    """Create a client and the link its program joins with, carrying the
+    overlay's join material when the default permission allows ``overlay``.
 
     Args:
         request: The client's name.
@@ -88,7 +90,11 @@ def create_enrollment(
             detail={"code": CLIENT_CODE_NAME_REQUIRED, "params": {}},
         )
     urls, fingerprint = enrollment_link_parts(runtime)
-    client_id = ClientRegistry().create(name)
+    registry = ClientRegistry()
+    overlay = None
+    if CLIENT_PERMISSION_OVERLAY in registry.default_permission():
+        overlay = channel_overlay.overlay_material(runtime)
+    client_id = registry.create(name)
     clear_enrollments(runtime, kind=CHANNEL_ROLE_CLIENT)
     token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
     expires_at = time.time() + ENROLLMENT_TTL_S
@@ -100,7 +106,9 @@ def create_enrollment(
     }
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return ClientEnrollmentView(
-        link=enrollment_link(urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT),
+        link=enrollment_link(
+            urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT, overlay=overlay
+        ),
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
         expires_in_s=ENROLLMENT_TTL_S,
     )

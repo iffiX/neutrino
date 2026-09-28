@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.easytier.ops import EasyTierPeer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
+from neutrino_hub.web import channel_overlay, channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import overlay_easytier as easytier_router
 from tests.conftest import unlock_vault
@@ -63,6 +64,7 @@ class FakeRuntime:
     def __init__(self, network: RouterNetworkConfig):
         self._network = network
         self.services = FakeServices()
+        self.pushes: list = []
 
     def network(self) -> RouterNetworkConfig:
         return self._network
@@ -93,9 +95,19 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr(easytier_router, "EasyTierConfigApplier", FakeApplier)
     monkeypatch.setattr(easytier_router, "EasyTierStatusReader", lambda: _Reader(PEERS))
     monkeypatch.setattr(
+        channel_overlay,
+        "device_addresses",
+        lambda: {"enp1s0": "192.168.100.1/24", "enp2s0": "198.51.100.9/25"},
+    )
+    monkeypatch.setattr(
         easytier_router,
         "device_addresses",
         lambda: {"enp1s0": "192.168.100.1/24", "enp2s0": "198.51.100.9/25"},
+    )
+    monkeypatch.setattr(
+        channel_state,
+        "push_states",
+        lambda runtime, role: runtime.pushes.append(role),
     )
     runtime = FakeRuntime(
         RouterNetworkConfig.from_dict(
@@ -214,6 +226,32 @@ def test_storing_a_network_applies_it(box):
     assert payload["network_name"] == "neutrino-1234"
     assert payload["address"] == "10.0.0.1/24"
     assert FakeApplier.applied and FakeApplier.applied[0][0] == "neutrino-1234"
+
+
+def test_storing_a_network_pushes_every_clients_state_once(box):
+    client, runtime = box
+
+    a_network(client)
+
+    assert runtime.pushes == ["client"]
+
+
+def test_a_refused_network_pushes_nothing(box):
+    client, runtime = box
+    FakeApplier.refusal = OSError("engine refused")
+
+    reply = client.post(
+        "/api/hub/overlay/easytier/set",
+        json={
+            "network_name": "neutrino-1234",
+            "network_secret": "a-network-secret",
+            "address": "10.0.0.1/24",
+            "hostname": "",
+        },
+    )
+
+    assert reply.status_code == 502
+    assert runtime.pushes == []
 
 
 def test_an_empty_secret_keeps_the_one_already_stored(box):

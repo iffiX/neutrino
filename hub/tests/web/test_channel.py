@@ -23,6 +23,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     PROTOCOL,
+    PROTOCOL_MIN,
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
@@ -254,17 +255,27 @@ def test_a_rejected_protocol_spends_no_ticket(api):
     client, runtime = api
     ticket(runtime, "t1")
 
-    old = client.post("/api/channel/join", json=join_body(protocol=0))
+    old = client.post("/api/channel/join", json=join_body(protocol=PROTOCOL_MIN - 1))
     new = client.post("/api/channel/join", json=join_body(protocol=PROTOCOL + 1))
 
     assert old.status_code == new.status_code == 409
     assert old.json()["detail"]["code"] == "protocol_too_old"
     assert new.json()["detail"] == {
         "code": "protocol_too_new",
-        "params": {"peer": PROTOCOL + 1, "hub": PROTOCOL, "min": PROTOCOL},
+        "params": {"peer": PROTOCOL + 1, "hub": PROTOCOL, "min": PROTOCOL_MIN},
     }
     assert "t1" in runtime.enrollments
     assert DeviceRegistry().all_stored() == []
+
+
+def test_a_peer_speaking_the_oldest_accepted_number_joins(api):
+    client, runtime = api
+    ticket(runtime, "t1")
+
+    reply = client.post("/api/channel/join", json=join_body(protocol=PROTOCOL_MIN))
+
+    assert PROTOCOL_MIN < PROTOCOL
+    assert reply.status_code == 200
 
 
 def test_a_device_ticket_refuses_a_client_and_the_other_way_round(api):
@@ -453,7 +464,8 @@ def test_a_hello_the_hub_cannot_read_is_refused_then_closed_4000(api):
 
 
 @pytest.mark.parametrize(
-    ("protocol", "code"), [(0, "protocol_too_old"), (PROTOCOL + 1, "protocol_too_new")]
+    ("protocol", "code"),
+    [(PROTOCOL_MIN - 1, "protocol_too_old"), (PROTOCOL + 1, "protocol_too_new")],
 )
 def test_a_protocol_outside_the_range_is_refused_then_closed_4000(api, protocol, code):
     client, runtime = api
@@ -466,7 +478,7 @@ def test_a_protocol_outside_the_range_is_refused_then_closed_4000(api, protocol,
     assert refused == {
         "type": "refused",
         "code": code,
-        "params": {"peer": protocol, "hub": PROTOCOL, "min": PROTOCOL},
+        "params": {"peer": protocol, "hub": PROTOCOL, "min": PROTOCOL_MIN},
     }
     # A refusal keeps the binding: the token still resolves.
     assert DeviceRegistry().find_by_token(binding["token"]).id == binding["id"]

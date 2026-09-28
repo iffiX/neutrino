@@ -2,7 +2,7 @@
 
 # The protocol number this hub speaks, and the oldest it still accepts. One
 # number has one name in every package, so neither carries a package prefix.
-PROTOCOL = 1
+PROTOCOL = 2
 PROTOCOL_MIN = 1
 
 # Who is on the other end of a socket, and what the hub answers as.

@@ -540,8 +540,14 @@ two documents and which streams each side opens.
 A link is `neutrino://enroll/<base64url>` over one JSON object:
 
 ```json
-{"urls": ["https://192.168.100.1:8443", "..."], "token": "...", "fp": "<sha256-hex>", "role": "agent"}
+{"urls": ["https://192.168.100.1:8443", "..."], "token": "...", "fp": "<sha256-hex>", "role": "client", "overlay": {"provider": "netbird", "...": "..."}}
 ```
+
+A client link has `overlay`, the object of the same name in the client's
+`state`, taken for the default permission when the link is created: null
+when that permission does not allow `overlay` or there is nothing to join. A
+device link has no `overlay`. A peer that does not know the member ignores
+it.
 
 `urls` is every exposed address on the agent port, because one of them is on
 the joining machine's network and neither end knows which. `role` is `agent`
@@ -678,6 +684,8 @@ and platform, which change between releases.
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
+| `overlay` | | | `{provider, ...}` or null: what the client joins the hub's overlay with | |
+| `terminals` | | | `[{device_id, name, is_online}]`: the managed machines it may open a `shell` on | |
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
@@ -690,6 +698,28 @@ the overlay's own name where its daemon reports one. Both states carry it
 under their hash, and the hub pushes the state when the set changes: after a
 network apply, and when the address sampler reads a different set, which it
 does every `WEB_ADDRESS_SAMPLE_INTERVAL_S` seconds.
+
+`overlay` is what a client joins the hub's overlay with as an ordinary peer,
+in one of two shapes:
+
+```json
+{"provider": "netbird", "setup_key": "...", "management_url": "", "fqdn": "hub.netbird.cloud"}
+{"provider": "easytier", "network_name": "...", "network_secret": "...", "peer": "tcp://203.0.113.7:11010"}
+```
+
+The NetBird key is the reusable setup key kept sealed in
+`config/netbird/netbird.json`, `management_url` is empty for NetBird's own
+plane, and `fqdn` is the hub's name on the overlay. The EasyTier `peer` is
+`tcp://<join host>:11010`, the join host being the uplink's address first.
+`overlay` is null in six cases: the box runs no overlay, NetBird has no kept
+key, EasyTier has no network or no join host, the vault is locked, the client
+is switched off, or its permission does not allow `overlay`. The state is
+pushed to every client when the key is kept, replaced or forgotten, when the
+EasyTier network is stored, and when the provider changes.
+
+`terminals` lists every managed machine, the hub's own among them, online or
+not, with `is_online` read from its socket; it is empty unless the client's
+permission allows `terminal`.
 
 ### The modules section, one entry per module
 
@@ -901,7 +931,7 @@ is what a successful `join` leaves on both sides.
 
 The agent's and the client's `constants.py`, and the hub's
 `modules/channel/constants.py`, have `PROTOCOL`, the integer this build speaks,
-which is 1 in every 0.3.0 package. The agent and the client send theirs in
+which is 1 in every 0.3 package and 2 from 0.4.0. The agent and the client send theirs in
 `hello`, and the hub sends its own in `welcome`. The hub alone also has
 `PROTOCOL_MIN`, the oldest number it still accepts. An agent or a client
 speaks one number; the hub meets peers from different releases and needs a
@@ -1045,3 +1075,4 @@ more or one fewer fails. Changing a channel model fails that test until
 | `PROTOCOL` | First minor |
 | --- | --- |
 | 1 | 0.3.0 |
+| 2 | 0.4.0 |

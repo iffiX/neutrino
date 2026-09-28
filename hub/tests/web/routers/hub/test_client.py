@@ -50,6 +50,7 @@ class FakeRuntime:
         self.client_sessions = RecordingSessions()
         self.client_catalog_host = {}
         self.pushed: list = []
+        self.overlay = None
 
     def forget_client(self, client_id: str) -> None:
         self.client_catalog_host.pop(client_id, None)
@@ -73,6 +74,10 @@ def api(monkeypatch, tmp_path):
         channel_addresses, "certificate_fingerprint", lambda: FINGERPRINT
     )
     runtime = FakeRuntime()
+    monkeypatch.setattr(
+        "neutrino_hub.web.channel_overlay.overlay_material",
+        lambda given: given.overlay,
+    )
     monkeypatch.setattr(
         channel_state,
         "push_state",
@@ -379,3 +384,32 @@ def test_taking_ai_away_revokes_the_clients_gateway_key(api):
 
     assert load_config().client_keys == []
     assert ClientRegistry().get(client_id).ai_key_id is None
+
+
+NETBIRD_OVERLAY = {
+    "provider": "netbird",
+    "setup_key": "A1B2C3D4-0000-4000-8000-000000000000",  # scan: allow
+    "management_url": "",
+    "fqdn": "hub.netbird.cloud",
+}
+
+
+def test_a_client_link_carries_the_overlay_while_the_default_allows_it(api):
+    client, runtime = api
+    runtime.overlay = NETBIRD_OVERLAY
+
+    with_overlay = client.post("/api/hub/client/enrollment/create", json={"name": "a"})
+    ClientRegistry().set_default_permission(["web"])
+    without = client.post("/api/hub/client/enrollment/create", json={"name": "b"})
+
+    assert decoded_link(with_overlay.json()["link"])["overlay"] == NETBIRD_OVERLAY
+    assert decoded_link(without.json()["link"])["overlay"] is None
+
+
+def test_a_client_link_with_no_overlay_to_join_says_null(api):
+    client, _ = api
+
+    reply = client.post("/api/hub/client/enrollment/create", json={"name": "a"})
+
+    payload = decoded_link(reply.json()["link"])
+    assert "overlay" in payload and payload["overlay"] is None

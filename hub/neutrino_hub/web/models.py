@@ -1700,6 +1700,26 @@ class ChannelServiceEntry(BaseModel):
     description_params: dict = Field(default_factory=dict)
 
 
+class ChannelOverlay(BaseModel):
+    """What a client joins the hub's overlay with; only its provider's fields."""
+
+    provider: str
+    setup_key: str = ""
+    management_url: str = ""
+    fqdn: str = ""
+    network_name: str = ""
+    network_secret: str = ""
+    peer: str = ""
+
+
+class ChannelTerminal(BaseModel):
+    """One managed machine a client may open a shell on."""
+
+    device_id: str
+    name: str
+    is_online: bool = False
+
+
 class ChannelClientState(BaseModel):
     """The ``state`` frame to a client."""
 
@@ -1708,6 +1728,8 @@ class ChannelClientState(BaseModel):
     services: list[ChannelServiceEntry] = Field(default_factory=list)
     # Every address the hub answers the channel on.
     urls: list[str] = Field(default_factory=list)
+    overlay: ChannelOverlay | None = None
+    terminals: list[ChannelTerminal] = Field(default_factory=list)
 
 
 class ChannelClientMachine(BaseModel):

@@ -21,6 +21,7 @@ from neutrino_hub.modules.channel.sessions import (
     ChannelSessionRegistry,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
 from neutrino_hub.modules.services.host_scope import HostScope, link_scope
 from neutrino_hub.web import channel_state
@@ -75,6 +76,8 @@ class FakeRuntime:
             "h9",
             {"modules": {"samba": {"want": "running"}}, "desktop": {}},
         )
+        self.device_hostname: dict = {}
+        self.overlay = None
 
     def host_scopes(self):
         return [LAN, OVERLAY]
@@ -87,6 +90,16 @@ class FakeRuntime:
 def config_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def overlay(monkeypatch):
+    """The overlay's join material is whatever the runtime holds."""
+    monkeypatch.setattr(
+        channel_state.channel_overlay,
+        "overlay_material",
+        lambda runtime: runtime.overlay,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -229,6 +242,79 @@ def test_a_clients_list_holds_only_the_kinds_it_is_allowed(config_dir):
     assert [entry["id"] for entry in only_ai["services"]] == ["ai"]
     assert [entry["id"] for entry in only_web["services"]] == ["web_gitea"]
     assert len({everything["hash"], only_ai["hash"], only_web["hash"]}) == 3
+
+
+NETBIRD_OVERLAY = {
+    "provider": "netbird",
+    "setup_key": "A1B2C3D4-0000-4000-8000-000000000000",  # scan: allow
+    "management_url": "",
+    "fqdn": "hub.netbird.cloud",
+}
+
+
+def test_a_clients_state_carries_the_overlay_and_its_key_moves_the_hash(config_dir):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    runtime.overlay = NETBIRD_OVERLAY
+
+    first = channel_state.client_state(runtime, client_id)
+    runtime.overlay = dict(NETBIRD_OVERLAY, setup_key="E5F6A7B8")  # scan: allow
+    second = channel_state.client_state(runtime, client_id)
+
+    assert first["overlay"] == NETBIRD_OVERLAY
+    assert second["overlay"]["setup_key"] == "E5F6A7B8"  # scan: allow
+    assert first["hash"] != second["hash"]
+
+
+def test_a_client_without_overlay_permission_gets_null_and_keeps_its_list(
+    config_dir,
+):
+    runtime = FakeRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    runtime.overlay = NETBIRD_OVERLAY
+    registry.set_permission(client_id, ["web"])
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert state["overlay"] is None
+    assert [entry["id"] for entry in state["services"]] == ["web_gitea"]
+
+
+def test_no_overlay_to_join_is_null_with_the_list_still_there(config_dir):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert state["overlay"] is None
+    assert [entry["id"] for entry in state["services"]] == ["web_gitea"]
+
+
+def test_the_terminals_list_every_managed_machine_while_terminal_is_allowed(
+    config_dir,
+):
+    runtime = FakeRuntime()
+    devices = DeviceRegistry()
+    online = devices.create("lepton")
+    devices.issue_token(online.id)
+    offline = devices.create(None)
+    devices.issue_token(offline.id)
+    runtime.device_hostname[offline.id] = "muon"
+    devices.create("unmanaged")
+    runtime.agent_sessions.online.add(online.id.lower())
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    allowed = channel_state.client_state(runtime, client_id)
+    registry.set_permission(client_id, ["web"])
+    refused = channel_state.client_state(runtime, client_id)
+
+    assert sorted(allowed["terminals"], key=lambda entry: entry["name"]) == [
+        {"device_id": online.id, "name": "lepton", "is_online": True},
+        {"device_id": offline.id, "name": "muon", "is_online": False},
+    ]
+    assert refused["terminals"] == []
 
 
 def test_a_push_from_the_panel_hands_one_agent_its_state():

@@ -15,6 +15,7 @@ from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_ROLE_AGENT,
+    CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_COMMAND,
 )
 from neutrino_hub.modules.devices.constants import (
@@ -489,7 +490,12 @@ def _generate_enrollment_link(
 
 
 def enrollment_link(
-    urls: list, token: str, fingerprint: str, *, role: str = CHANNEL_ROLE_AGENT
+    urls: list,
+    token: str,
+    fingerprint: str,
+    *,
+    role: str = CHANNEL_ROLE_AGENT,
+    overlay: "dict | None" = None,
 ) -> str:
     """The link a ticket rides in.
 
@@ -498,11 +504,15 @@ def enrollment_link(
         token: The ticket.
         fingerprint: The certificate fingerprint the program pins.
         role: Who the link is for, ``agent`` or ``client``.
+        overlay: The overlay's join material a client link carries; a
+            client link without it carries null, a device link nothing.
 
     Returns:
         The ``neutrino://enroll/`` link.
     """
     body = {"urls": urls, "token": token, "fp": fingerprint, "role": role}
+    if role == CHANNEL_ROLE_CLIENT:
+        body["overlay"] = overlay
     # The whole payload rides base64url, whose alphabet has no character a
     # shell splits or a URL escapes — the link pastes anywhere unquoted.
     payload = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()

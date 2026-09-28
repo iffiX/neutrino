@@ -153,6 +153,7 @@ class FakeRuntime:
         self.desired = ("h1", {"modules": {}, "desktop": {"seat_password": ""}})
         self.pushed: list = []
         self.urls = ["https://192.168.100.1:8443"]
+        self.overlay = None
 
     def host_scopes(self):
         return []
@@ -176,6 +177,10 @@ def api(monkeypatch, tmp_path):
         lambda: {"samba": {"name": "samba", "platforms": {}}},
     )
     monkeypatch.setattr(channel_state, "channel_urls", lambda given: list(given.urls))
+    monkeypatch.setattr(
+        "neutrino_hub.web.channel_overlay.overlay_material",
+        lambda given: given.overlay,
+    )
     app = FastAPI()
     app.include_router(channel_router.router)
     runtime = FakeRuntime(tmp_path)

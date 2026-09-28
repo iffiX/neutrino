@@ -348,6 +348,50 @@
     },
     "ChannelClientState": {
       "$defs": {
+        "ChannelOverlay": {
+          "description": "What a client joins the hub's overlay with; only its provider's fields.",
+          "properties": {
+            "fqdn": {
+              "default": "",
+              "title": "Fqdn",
+              "type": "string"
+            },
+            "management_url": {
+              "default": "",
+              "title": "Management Url",
+              "type": "string"
+            },
+            "network_name": {
+              "default": "",
+              "title": "Network Name",
+              "type": "string"
+            },
+            "network_secret": {
+              "default": "",
+              "title": "Network Secret",
+              "type": "string"
+            },
+            "peer": {
+              "default": "",
+              "title": "Peer",
+              "type": "string"
+            },
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "setup_key": {
+              "default": "",
+              "title": "Setup Key",
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider"
+          ],
+          "title": "ChannelOverlay",
+          "type": "object"
+        },
         "ChannelServiceEntry": {
           "description": "One published service as a client is given it.",
           "properties": {
@@ -409,6 +453,30 @@
           ],
           "title": "ChannelServiceEntry",
           "type": "object"
+        },
+        "ChannelTerminal": {
+          "description": "One managed machine a client may open a shell on.",
+          "properties": {
+            "device_id": {
+              "title": "Device Id",
+              "type": "string"
+            },
+            "is_online": {
+              "default": false,
+              "title": "Is Online",
+              "type": "boolean"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "device_id",
+            "name"
+          ],
+          "title": "ChannelTerminal",
+          "type": "object"
         }
       },
       "description": "The ``state`` frame to a client.",
@@ -422,11 +490,29 @@
           "title": "Is Disabled",
           "type": "boolean"
         },
+        "overlay": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChannelOverlay"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "services": {
           "items": {
             "$ref": "#/$defs/ChannelServiceEntry"
           },
           "title": "Services",
+          "type": "array"
+        },
+        "terminals": {
+          "items": {
+            "$ref": "#/$defs/ChannelTerminal"
+          },
+          "title": "Terminals",
           "type": "array"
         },
         "urls": {
@@ -894,6 +980,50 @@
       "title": "ChannelOpen",
       "type": "object"
     },
+    "ChannelOverlay": {
+      "description": "What a client joins the hub's overlay with; only its provider's fields.",
+      "properties": {
+        "fqdn": {
+          "default": "",
+          "title": "Fqdn",
+          "type": "string"
+        },
+        "management_url": {
+          "default": "",
+          "title": "Management Url",
+          "type": "string"
+        },
+        "network_name": {
+          "default": "",
+          "title": "Network Name",
+          "type": "string"
+        },
+        "network_secret": {
+          "default": "",
+          "title": "Network Secret",
+          "type": "string"
+        },
+        "peer": {
+          "default": "",
+          "title": "Peer",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "setup_key": {
+          "default": "",
+          "title": "Setup Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "title": "ChannelOverlay",
+      "type": "object"
+    },
     "ChannelRefused": {
       "description": "Why a hello was turned away; close 4000 follows.",
       "properties": {
@@ -975,6 +1105,30 @@
       "title": "ChannelServiceEntry",
       "type": "object"
     },
+    "ChannelTerminal": {
+      "description": "One managed machine a client may open a shell on.",
+      "properties": {
+        "device_id": {
+          "title": "Device Id",
+          "type": "string"
+        },
+        "is_online": {
+          "default": false,
+          "title": "Is Online",
+          "type": "boolean"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id",
+        "name"
+      ],
+      "title": "ChannelTerminal",
+      "type": "object"
+    },
     "ChannelWelcome": {
       "description": "The hub's identity card, answered to a hello.",
       "properties": {
@@ -1010,5 +1164,5 @@
       "type": "object"
     }
   },
-  "protocol": 1
+  "protocol": 2
 }

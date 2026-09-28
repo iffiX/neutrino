@@ -2,8 +2,9 @@
 
 An agent's state is what its device is to host, composed from
 ``config/devices/<id>/``; a client's state is the published service list
-resolved for the scope its socket arrived from, and whether it is switched
-off. Both name every address the hub answers the channel on. Each carries
+resolved for the scope its socket arrived from, whether it is switched
+off, the overlay's join material and the machines it may open a shell on,
+each as far as its permission allows. Both name every address the hub answers the channel on. Each carries
 the hash the peer's reports name back; a client's is computed on the
 resolved list, so the same list hashes differently for two scopes. An agent
 is pushed its state on a connection's first report whose hash differs, a
@@ -15,17 +16,23 @@ import hashlib
 import json
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
+from neutrino_hub.modules.clients.constants import (
+    CLIENT_PERMISSION_OVERLAY,
+    CLIENT_PERMISSION_TERMINAL,
+)
 from neutrino_hub.modules.clients.permissions import (
     permitted_entries,
     permitted_kinds,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
     link_scope,
     scope_of,
 )
+from neutrino_hub.web import channel_overlay
 from neutrino_hub.web.channel_addresses import channel_urls
 
 
@@ -50,25 +57,35 @@ def client_state(runtime, client_id: str) -> dict:
         runtime: The shared runtime.
         client_id: The client; one that is switched off, or gone, is
             handed an empty list, and one that is on is handed the entries
-            its permission allows.
+            its permission allows, the overlay's join material when it is
+            allowed ``overlay``, and the managed machines when it is allowed
+            ``terminal``.
 
     Returns:
-        ``{hash, is_disabled, services, urls}``.
+        ``{hash, is_disabled, services, urls, overlay, terminals}``.
     """
     registry = ClientRegistry()
     client = registry.get(client_id)
     is_disabled = client is None or client.is_disabled
     services = []
+    overlay = None
+    terminals = []
     if not is_disabled:
+        kinds = permitted_kinds(registry, client)
         scope = runtime.client_scope.get(client_id) or link_scope("")
         services = permitted_entries(
-            catalog_entries(runtime.published_services.entries_for(scope)),
-            permitted_kinds(registry, client),
+            catalog_entries(runtime.published_services.entries_for(scope)), kinds
         )
+        if CLIENT_PERMISSION_OVERLAY in kinds:
+            overlay = channel_overlay.overlay_material(runtime)
+        if CLIENT_PERMISSION_TERMINAL in kinds:
+            terminals = _terminals(runtime)
     body = {
         "is_disabled": is_disabled,
         "services": services,
         "urls": channel_urls(runtime),
+        "overlay": overlay,
+        "terminals": terminals,
     }
     serialized = json.dumps(body, sort_keys=True).encode("utf-8")
     return {"hash": hashlib.sha256(serialized).hexdigest()[:16], **body}
@@ -128,6 +145,22 @@ def push_states(runtime, role: str) -> None:
             continue
         registry.send_json_from_thread(session.key, {"type": "state", **document})
         session.offered_hash = document["hash"]
+
+
+def _terminals(runtime) -> list:
+    """Every managed machine, online or not, by its name and its presence."""
+    return [
+        {
+            "device_id": device.id,
+            "name": device.name
+            or runtime.device_hostname.get(device.id, "")
+            or device.ipv4_address
+            or device.id,
+            "is_online": runtime.agent_sessions.is_online(device.id),
+        }
+        for device in DeviceRegistry().all_stored()
+        if device.is_managed
+    ]
 
 
 def _compose(runtime, role: str, key: str) -> dict:

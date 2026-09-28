@@ -32,10 +32,12 @@ from neutrino_hub.modules.easytier.ops import (
     EasyTierStatusReader,
     read_stored,
 )
-from neutrino_hub.modules.router.constants import ROUTER_ROLE_WAN
+from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
+from neutrino_hub.web import channel_state
+from neutrino_hub.web.channel_overlay import easytier_join_host
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     EasyTierNetworkRequest,
@@ -202,7 +204,8 @@ def read_secret() -> EasyTierSecretView:
 
 
 async def _store(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
-    """Write the configuration and make the engine run on it.
+    """Write the configuration, make the engine run on it, and push every
+    client's state.
 
     Args:
         runtime: The shared runtime.
@@ -223,6 +226,7 @@ async def _store(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
         raise _bad_gateway(
             "easytier_apply_failed", detail=command_failure_text(error)
         ) from error
+    await asyncio.to_thread(channel_state.push_states, runtime, CHANNEL_ROLE_CLIENT)
     return _view(runtime, config)
 
 
@@ -265,7 +269,7 @@ def _view(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
             EasyTierSuggestedNetwork(cidr=cidr, interface=name)
             for cidr, name in _machine_networks(runtime)
         ],
-        join_host=_join_host(runtime),
+        join_host=easytier_join_host(runtime),
         node=(
             None
             if not config.is_configured
@@ -309,32 +313,6 @@ def _machine_networks(runtime: PanelRuntime) -> list:
         ``(cidr, interface)`` pairs.
     """
     return runtime.network().local_networks(device_addresses())
-
-
-def _join_host(runtime: PanelRuntime) -> str:
-    """What another machine dials to reach this one.
-
-    Args:
-        runtime: The shared runtime.
-
-    Returns:
-        An address of this box, the uplink's first because a machine that is
-        not on the LAN is the one that needs telling. Empty when this box
-        holds no address at all.
-    """
-    addresses = device_addresses()
-    network = runtime.network()
-    overlays = set(network.overlay_device_names)
-    uplinks = [
-        interface.name
-        for interface in network.interfaces
-        if interface.role == ROUTER_ROLE_WAN
-    ]
-    for name in uplinks + sorted(addresses):
-        if name in overlays or name not in addresses:
-            continue
-        return addresses[name].split("/")[0]
-    return ""
 
 
 def _bad_request(code: str, **params) -> HTTPException:
