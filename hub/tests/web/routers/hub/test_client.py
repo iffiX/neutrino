@@ -16,6 +16,7 @@ from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web import channel_addresses, channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import client as clients_router
@@ -145,6 +146,7 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
         "last_seen": None,
         "is_disabled": False,
         "permission": None,
+        "permission_devices": {},
     }
     assert runtime.events.published == ["clients"]
 
@@ -368,6 +370,57 @@ def test_null_kinds_put_a_client_back_on_the_default(api):
     assert reply.json()["clients"][0]["permission"] is None
     assert ClientRegistry().get(alice).permission is None
     assert runtime.pushed == [alice]
+
+
+def test_a_device_filter_is_stored_and_listed_for_the_default_and_one_client(api):
+    client, runtime = api
+    alice = ClientRegistry().create("alice")
+    device = DeviceRegistry().create("argon")
+
+    default = client.post(
+        "/api/hub/client/default_permission/set",
+        json={"kinds": ["web", "terminal"], "devices": {"web": [device.id]}},
+    )
+    own = client.post(
+        "/api/hub/client/permission/set",
+        json={
+            "client_id": alice,
+            "kinds": ["terminal"],
+            "devices": {"terminal": [device.id]},
+        },
+    )
+
+    assert default.json()["default_permission_devices"] == {"web": [device.id]}
+    assert own.json()["clients"][0]["permission_devices"] == {"terminal": [device.id]}
+    assert runtime.pushed == ["client", alice]
+
+
+def test_a_filter_on_a_kind_that_takes_none_or_an_unknown_device_is_a_coded_400(
+    api,
+):
+    client, runtime = api
+    alice = ClientRegistry().create("alice")
+
+    overlay = client.post(
+        "/api/hub/client/default_permission/set",
+        json={"kinds": ["overlay"], "devices": {"overlay": []}},
+    )
+    unknown = client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": alice, "kinds": ["web"], "devices": {"web": ["gone"]}},
+    )
+
+    assert overlay.status_code == 400
+    assert overlay.json()["detail"] == {
+        "code": "permission_kind_unknown",
+        "params": {"kind": "overlay"},
+    }
+    assert unknown.status_code == 400
+    assert unknown.json()["detail"] == {
+        "code": "permission_device_unknown",
+        "params": {"device_id": "gone"},
+    }
+    assert runtime.pushed == []
 
 
 def test_taking_ai_away_revokes_the_clients_gateway_key(api):

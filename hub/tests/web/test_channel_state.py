@@ -20,6 +20,7 @@ from neutrino_hub.modules.channel.sessions import (
     ChannelSession,
     ChannelSessionRegistry,
 )
+from neutrino_hub.modules.clients import services as clients_services
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
@@ -356,6 +357,57 @@ def test_every_entry_names_the_machine_that_provides_it(config_dir, monkeypatch)
         "declared_elsewhere": "",
     }
     assert all("device_id" not in entry for entry in state["services"])
+
+
+def test_a_device_filter_keeps_only_that_devices_entries_and_terminals(
+    config_dir, monkeypatch
+):
+    monkeypatch.setattr(clients_services, "machine_id", lambda: "hub-machine")
+    runtime = FakeRuntime()
+    devices = DeviceRegistry()
+    hub = devices.create("neutrino", machine_id="hub-machine")
+    devices.issue_token(hub.id)
+    argon = devices.create("argon")
+    devices.issue_token(argon.id)
+    runtime.device_address[argon.id] = "192.168.100.7"
+    runtime.published_services.entries = [
+        dict(ENTRY, id="web_on_argon", device_id=argon.id),
+        dict(ENTRY, id="web_on_hub"),
+        dict(
+            ENTRY,
+            id="declared_on_argon",
+            source="declared",
+            payload={"url": "http://192.168.100.7:8080/"},
+        ),
+        dict(
+            ENTRY,
+            id="declared_elsewhere",
+            source="declared",
+            payload={"url": "http://203.0.113.9/"},
+        ),
+        dict(ENTRY, id="port_on_hub", type="port", payload={"host": "h"}),
+    ]
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_default_permission(
+        ["web", "port", "terminal"], {"web": [argon.id], "terminal": [hub.id]}
+    )
+    state = channel_state.client_state(runtime, client_id)
+
+    assert [entry["id"] for entry in state["services"]] == [
+        "web_on_argon",
+        "declared_on_argon",
+        "port_on_hub",
+    ]
+    assert [entry["device_id"] for entry in state["terminals"]] == [hub.id]
+
+    registry.set_default_permission(["web"], {"web": [hub.id]})
+
+    assert [
+        entry["id"]
+        for entry in channel_state.client_state(runtime, client_id)["services"]
+    ] == ["web_on_hub"]
 
 
 def test_a_push_from_the_panel_hands_one_agent_its_state():

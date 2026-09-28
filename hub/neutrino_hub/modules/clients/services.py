@@ -16,9 +16,16 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_SERVICE_UNKNOWN,
     CLIENT_RDP_SERVICE_PREFIX,
 )
-from neutrino_hub.modules.clients.permissions import permitted_kinds
+from neutrino_hub.modules.clients.permissions import (
+    entry_device_id,
+    is_device_permitted,
+    permitted_devices,
+    permitted_kinds,
+)
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.channel.constants import CHANNEL_CODE_BINDING_UNKNOWN
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.constants import (
     SERVICES_TYPE_AI,
@@ -55,6 +62,16 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         return CLIENT_CODE_SERVICE_UNKNOWN, {"service_id": entry_id}
     if entry["type"] not in permitted_kinds(registry, client):
         return CLIENT_CODE_PERMISSION_DENIED, {"kind": entry["type"]}
+    devices = permitted_devices(registry, client)
+    if devices.get(entry["type"]):
+        hub_device_id, device_ids_by_address = device_owners(runtime)
+        provider = entry_device_id(
+            _raw_entry(runtime, scope, entry_id),
+            hub_device_id=hub_device_id,
+            device_ids_by_address=device_ids_by_address,
+        )
+        if not is_device_permitted(devices, entry["type"], provider):
+            return CLIENT_CODE_PERMISSION_DENIED, {"kind": entry["type"]}
     if entry["type"] == SERVICES_TYPE_RDP:
         return _rdp_material(runtime, scope, entry_id)
     if entry["type"] == SERVICES_TYPE_AI:
@@ -70,12 +87,50 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
     return "", {}
 
 
+def device_owners(runtime) -> tuple:
+    """What :func:`entry_device_id` needs to tell which device provides an entry.
+
+    Args:
+        runtime: The shared runtime, for the addresses devices are reached at.
+
+    Returns:
+        ``(hub_device_id, device_ids_by_address)``: the stored device this
+        machine is, empty when none is; and every stored device's id by the
+        address it is reached at.
+    """
+    own_machine = machine_id()
+    stored = DeviceRegistry().all_stored()
+    hub_device_id = next(
+        (
+            device.id
+            for device in stored
+            if own_machine and device.machine_id == own_machine
+        ),
+        "",
+    )
+    stored_ids = {device.id for device in stored}
+    device_ids_by_address = {
+        address: device_id
+        for device_id, address in runtime.device_address.items()
+        if address and device_id in stored_ids
+    }
+    return hub_device_id, device_ids_by_address
+
+
 def _entry(runtime, scope: HostScope, entry_id: str) -> "dict | None":
     """The published entry one id names, resolved for the client's scope."""
     for entry in catalog_entries(runtime.published_services.entries_for(scope)):
         if entry["id"] == entry_id:
             return entry
     return None
+
+
+def _raw_entry(runtime, scope: HostScope, entry_id: str) -> dict:
+    """The composed entry one id names, with the fields that say who hosts it."""
+    for entry in runtime.published_services.entries_for(scope):
+        if entry["id"] == entry_id:
+            return entry
+    return {}
 
 
 def _rdp_material(runtime, scope: HostScope, entry_id: str) -> tuple:

@@ -1451,6 +1451,8 @@ class ClientView(BaseModel):
     is_disabled: bool = False
     # The kinds this client is allowed; None while it follows the default.
     permission: list[str] | None = None
+    # With a permission of its own, the device ids each kind is narrowed to.
+    permission_devices: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class ClientListView(BaseModel):
@@ -1458,6 +1460,8 @@ class ClientListView(BaseModel):
 
     clients: list[ClientView] = Field(default_factory=list)
     default_permission: list[str] = Field(default_factory=list)
+    # The device ids each kind of the default is narrowed to.
+    default_permission_devices: dict[str, list[str]] = Field(default_factory=dict)
     permission_kinds: list[str] = Field(default_factory=list)
 
 
@@ -1494,16 +1498,20 @@ class ClientUpdate(BaseModel):
 
 
 class ClientDefaultPermissionRequest(BaseModel):
-    """The kinds a client with no set of its own is allowed."""
+    """What a client with no permission of its own is allowed."""
 
     kinds: list[str]
+    # Device ids by kind; a kind not named allows every device.
+    devices: dict[str, list[str]] | None = None
 
 
 class ClientPermissionRequest(BaseModel):
-    """One client's own set of kinds; None puts it back on the default."""
+    """One client's own permission; ``kinds`` None puts it back on the default."""
 
     client_id: str
     kinds: list[str] | None
+    # Device ids by kind; a kind not named allows every device.
+    devices: dict[str, list[str]] | None = None
 
 
 # --- the channel ---

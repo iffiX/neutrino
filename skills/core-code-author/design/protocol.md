@@ -213,7 +213,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest` |
@@ -392,23 +392,35 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), and the list's `default_permission` and `permission_kinds` |
+| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default) and `permission_devices`, and the list's `default_permission`, `default_permission_devices` and `permission_kinds` |
 | `POST /api/hub/client/enrollment/create` | `{name}` | a client link |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
 | `POST /api/hub/client/disable` | `{client_id}` | its `state` is pushed with `is_disabled` |
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its socket is closed with `binding_unknown` |
-| `POST /api/hub/client/default_permission/set` | `{kinds}` | the kinds a client with no set of its own is allowed; every client's `state` is pushed |
-| `POST /api/hub/client/permission/set` | `{client_id, kinds}`, `kinds` null to follow the default | that client's own kinds; its `state` is pushed |
+| `POST /api/hub/client/default_permission/set` | `{kinds, devices}`, `devices` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
+| `POST /api/hub/client/permission/set` | `{client_id, kinds, devices}`, `kinds` null to follow the default, `devices` optional | that client's own permission; its `state` is pushed |
 
 A permission kind is a published service type (`web`, `port`, `ai`, `file`,
 `rdp`), `overlay` or `terminal`, `CLIENT_PERMISSION_KINDS` in
-`modules/clients/constants.py`. `config/clients/clients.json` holds
-`default_permission: {kinds}` beside `clients`, and each client a
-`permission` that is null or `{kinds}`; a file with no default allows every
-kind. A client's `services` section holds only the entries whose type it is
-allowed, and taking `ai` away revokes its gateway key. A kind outside the set
-is refused 400 `permission_kind_unknown {kind}`.
+`modules/clients/constants.py`. A permission may narrow each kind but
+`overlay` to the entries some devices provide: `devices` maps a kind to a list
+of device ids, and a kind with no list, or an empty one, allows every device.
+`config/clients/clients.json` holds `default_permission: {kinds, devices}`
+beside `clients`, and each client a `permission` that is null or `{kinds,
+devices}`, `devices` written only when it names a list; a file with no
+default allows every kind on every device. The device providing an entry is
+the device that hosts it; the hub's own modules belong to the hub's own
+device when it has one; a declared record belongs to the device at its
+address, and one at no device's address passes only a kind with no list. A
+client's `services` section holds only the entries whose type and device it
+is allowed, its `terminals` only the machines its `terminal` list allows, and
+a `shell` on a machine outside that list is refused `permission_denied {kind:
+terminal}`. Taking `ai` away revokes its gateway key. Deleting a device takes
+its id out of every list, the default's and each client's, and pushes every
+client its state. A kind outside the set, or `overlay` given a list, is
+refused 400 `permission_kind_unknown {kind}`, and a device id no stored device
+has is refused 400 `permission_device_unknown {device_id}`.
 
 #### `/api/hub/service`
 
@@ -730,8 +742,9 @@ the provider changes.
 
 `terminals` lists every managed machine, the hub's own among them, online or
 not, with `is_online` read from its socket; it is empty unless the client's
-permission allows `terminal`. The hub pushes every client its state when an
-agent's channel opens or ends.
+permission allows `terminal`, and holds only the machines its `terminal`
+device list names when it has one. The hub pushes every client its state when
+an agent's channel opens or ends, and when a device is deleted.
 
 ### The modules section, one entry per module
 
@@ -884,7 +897,7 @@ is added without a change to the protocol; a kind is added by a row here.
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` |
 | client, to the hub | `service` | `{id}`: one published entry. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
-| client, to the hub | `shell` | `{device_id, cols, rows}`: a shell on a managed machine, which the hub opens as the agent's own `shell` and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` or `agent_offline {device}` before any agent stream opens |
+| client, to the hub | `shell` | `{device_id, cols, rows}`: a shell on a managed machine, which the hub opens as the agent's own `shell` and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open, `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | hub, to an agent | `desktop` | reserved and unimplemented: no arguments, the agent connects to the machine's RustDesk direct port 21118 and relays bytes both ways for `/ws/agent/desktop`; the name says the purpose, the mechanism is the port |
 
@@ -917,7 +930,7 @@ first that fails gives the close its code:
 | `binding_unknown` | no client row has the id this socket is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
 | `service_unknown` | the id names no entry in the list resolved for this client |
-| `permission_denied` | the entry's type is not among the kinds this client is allowed |
+| `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
 | `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated |
 

@@ -18,6 +18,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_COMMAND,
 )
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_STATE_ABSENT,
@@ -38,12 +39,14 @@ from neutrino_hub.modules.devices.ssh_ops import (
 from neutrino_hub.modules.devices.wake_on_lan import send_magic_packet
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub import HUB_VERSION
+from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_addresses import enrollment_link_parts
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.constants import (
     WEB_REINSTALL_POLL_S,
     WEB_REINSTALL_REPORT_TIMEOUT_S,
     WEB_REINSTALL_RETURN_TIMEOUT_S,
+    WEB_EVENT_CLIENTS,
     WEB_EVENT_DEVICES,
     WEB_EVENT_DEVICE_REPORT,
     WEB_TASK_LABEL_AGENT_INSTALL,
@@ -290,8 +293,9 @@ def forget(
 
     The SSH key it referenced is left in the registry: keys outlive the
     devices that use them, and the Credentials page is where they are
-    removed. What is held in memory and ``config/devices/<id>/`` go with
-    the record.
+    removed. What is held in memory, ``config/devices/<id>/`` and its id in
+    every client permission's device filter go with the record, and every
+    client is pushed its state.
 
     Args:
         request: The device.
@@ -302,9 +306,12 @@ def forget(
     """
     device_id = request.device_id
     DeviceRegistry().forget(device_id)
+    ClientRegistry().forget_device(device_id)
     runtime.forget_device(device_id)
     runtime.desired_states.forget(device_id)
+    channel_state.push_states(runtime, CHANNEL_ROLE_CLIENT)
     runtime.events.publish(WEB_EVENT_DEVICES)
+    runtime.events.publish(WEB_EVENT_CLIENTS)
     return {}
 
 

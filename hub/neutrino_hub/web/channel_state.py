@@ -16,7 +16,6 @@ hub's own copy changes, through the functions here.
 import hashlib
 import json
 import socket
-from urllib.parse import urlsplit
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.clients.constants import (
@@ -24,10 +23,15 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_TERMINAL,
 )
 from neutrino_hub.modules.clients.permissions import (
+    entry_device_id,
+    entry_host,
+    is_device_permitted,
+    permitted_devices,
     permitted_entries,
     permitted_kinds,
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.clients.services import device_owners
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.constants import SERVICES_SOURCE_DECLARED
@@ -61,9 +65,9 @@ def client_state(runtime, client_id: str) -> dict:
         runtime: The shared runtime.
         client_id: The client; one that is switched off, or gone, is
             handed an empty list, and one that is on is handed the entries
-            its permission allows, the overlay's join material when it is
-            allowed ``overlay``, and the managed machines when it is allowed
-            ``terminal``.
+            its permission allows by kind and by the device providing them,
+            the overlay's join material when it is allowed ``overlay``, and
+            the managed machines its ``terminal`` permission allows.
 
     Returns:
         ``{hash, is_disabled, services, urls, overlay, terminals}``.
@@ -76,15 +80,37 @@ def client_state(runtime, client_id: str) -> dict:
     terminals = []
     if not is_disabled:
         kinds = permitted_kinds(registry, client)
+        devices = permitted_devices(registry, client)
         scope = runtime.client_scope.get(client_id) or link_scope("")
-        services = permitted_entries(
-            _named_entries(runtime, runtime.published_services.entries_for(scope)),
-            kinds,
+        hub_device_id, device_ids_by_address = (
+            device_owners(runtime) if devices else ("", {})
         )
+        allowed = [
+            entry
+            for entry in permitted_entries(
+                runtime.published_services.entries_for(scope), kinds
+            )
+            if is_device_permitted(
+                devices,
+                entry["type"],
+                entry_device_id(
+                    entry,
+                    hub_device_id=hub_device_id,
+                    device_ids_by_address=device_ids_by_address,
+                ),
+            )
+        ]
+        services = _named_entries(runtime, allowed)
         if CLIENT_PERMISSION_OVERLAY in kinds:
             overlay = channel_overlay.overlay_material(runtime)
         if CLIENT_PERMISSION_TERMINAL in kinds:
-            terminals = _terminals(runtime)
+            terminals = [
+                terminal
+                for terminal in _terminals(runtime)
+                if is_device_permitted(
+                    devices, CLIENT_PERMISSION_TERMINAL, terminal["device_id"]
+                )
+            ]
     body = {
         "is_disabled": is_disabled,
         "services": services,
@@ -187,20 +213,11 @@ def _named_entries(runtime, entries: list) -> list:
         if device_id:
             device_name = names.get(device_id, "")
         elif entry.get("source") == SERVICES_SOURCE_DECLARED:
-            device_name = by_address.get(_entry_host(entry), "")
+            device_name = by_address.get(entry_host(entry), "")
         else:
             device_name = hub_machine
         named.append({**catalog, "device_name": device_name})
     return named
-
-
-def _entry_host(entry: dict) -> str:
-    """The host an entry's payload names, wherever its type keeps it."""
-    payload = entry.get("payload") or {}
-    for key in ("url", "endpoint"):
-        if payload.get(key):
-            return urlsplit(str(payload[key])).hostname or ""
-    return str(payload.get("host", "") or "")
 
 
 def _device_name(runtime, device) -> str:

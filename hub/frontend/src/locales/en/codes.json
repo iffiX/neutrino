@@ -134,6 +134,7 @@
   "code.path_missing": "There is nothing at that path any more.",
   "code.permission_denied": "This client has no permission for {kind}.",
   "code.permission_kind_unknown": "There is no permission named {kind}.",
+  "code.permission_device_unknown": "No device with id {device_id} is known to this hub.",
   "code.policy_route_missing": "The policy route could not be set, so the firewall keeps the rules it had.",
   "code.port_already_in_use": "Port {value} is already in use on this box.",
   "code.port_out_of_range": "A port is {minimum} to {maximum}; {value} is not.",

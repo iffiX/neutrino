@@ -53,6 +53,7 @@ class FakeRuntime:
     def __init__(self, entries=(ENTRY, RDP_ENTRY, AI_ENTRY)):
         self.client_scope = {}
         self.device_interfaces = {}
+        self.device_address = {}
         self.published_services = StubPublishedServices(entries)
         self.device_shares = DeviceShareRegistry()
         self.desired_states = StubDesiredStates()
@@ -197,6 +198,27 @@ def test_an_entry_outside_the_clients_kinds_is_permission_denied(config_dir):
     assert service_material(runtime, client_id, "web_gitea") == (
         "permission_denied",
         {"kind": "web"},
+    )
+
+
+def test_an_entry_of_a_device_outside_the_filter_is_permission_denied(config_dir):
+    hosted = {**RDP_ENTRY, "device_id": "d1"}
+    runtime = FakeRuntime(entries=(hosted,))
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_permission(client_id, ["rdp"], {"rdp": ["d2"]})
+
+    assert service_material(runtime, client_id, "rdp_s1") == (
+        "permission_denied",
+        {"kind": "rdp"},
+    )
+
+    registry.set_permission(client_id, ["rdp"], {"rdp": ["d1"]})
+
+    assert service_material(runtime, client_id, "rdp_s1") == (
+        "rdp_not_shared",
+        {"service_id": "rdp_s1"},
     )
 
 

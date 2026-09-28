@@ -17,6 +17,7 @@ from neutrino_hub.modules.devices.registry import (
     normalized_mac,
 )
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
+from neutrino_hub.web import channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.task_stream import TaskStreamRegistry
@@ -61,8 +62,19 @@ class BoxRegistry:
         return device
 
 
+class BoxClients:
+    """The client registry, as far as forgetting a device reaches it."""
+
+    forgotten: list = []
+
+    def forget_device(self, device_id: str) -> bool:
+        BoxClients.forgotten.append(device_id)
+        return True
+
+
 class BoxRuntime:
     def __init__(self):
+        self.state_pushes = []
         self.events = PanelEventBus()
         self.tasks = TaskStreamRegistry()
         self.device_modules = {}
@@ -122,7 +134,14 @@ def device_box(monkeypatch, router_module):
         ``(client, runtime)``.
     """
     stored_device()
+    BoxClients.forgotten = []
     monkeypatch.setattr(router_module, "DeviceRegistry", BoxRegistry)
+    monkeypatch.setattr(router_module, "ClientRegistry", BoxClients, raising=False)
+    monkeypatch.setattr(
+        channel_state,
+        "push_states",
+        lambda runtime, role: runtime.state_pushes.append(role),
+    )
     monkeypatch.setattr(router_module, "load_module_manifests", lambda: MANIFESTS)
     app = FastAPI()
     app.include_router(router_module.router)

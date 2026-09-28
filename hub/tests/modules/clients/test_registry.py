@@ -193,3 +193,45 @@ def test_a_clients_own_set_is_written_and_cleared(config_dir):
     assert ClientRegistry().get(client_id).permission is None
     with pytest.raises(KeyError):
         registry.set_permission("nobody", [])
+
+
+def test_a_device_filter_is_stored_beside_the_kinds(config_dir):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_default_permission(["web", "rdp"], {"web": ["d1", "d1"], "rdp": []})
+    registry.set_permission(client_id, ["terminal"], {"terminal": ["d2"]})
+
+    data = json.loads((config_dir / "clients" / "clients.json").read_text())
+    assert data["default_permission"] == {
+        "kinds": ["web", "rdp"],
+        "devices": {"web": ["d1"]},
+    }
+    assert data["clients"][client_id]["permission"] == {
+        "kinds": ["terminal"],
+        "devices": {"terminal": ["d2"]},
+    }
+    assert ClientRegistry().default_permission_devices() == {"web": ["d1"]}
+    assert ClientRegistry().get(client_id).permission_devices == {"terminal": ["d2"]}
+    with pytest.raises(ValueError):
+        registry.set_permission(client_id, ["overlay"], {"overlay": ["d1"]})
+
+
+def test_forgetting_a_device_takes_it_out_of_every_filter(config_dir):
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    bob = registry.create("bob")
+    registry.set_default_permission(
+        ["web", "port"], {"web": ["d1", "d2"], "port": ["d1"]}
+    )
+    registry.set_permission(alice, ["terminal"], {"terminal": ["d1"]})
+    registry.set_permission(bob, ["web"], {"web": ["d2"]})
+
+    assert ClientRegistry().forget_device("d1") is True
+
+    registry = ClientRegistry()
+    assert registry.default_permission_devices() == {"web": ["d2"]}
+    assert registry.get(alice).permission == ["terminal"]
+    assert registry.get(alice).permission_devices == {}
+    assert registry.get(bob).permission_devices == {"web": ["d2"]}
+    assert ClientRegistry().forget_device("d1") is False

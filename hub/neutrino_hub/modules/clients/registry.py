@@ -14,11 +14,15 @@ import uuid
 from dataclasses import dataclass, field
 
 from neutrino_hub.modules.clients.constants import (
+    CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_PERMISSION_KINDS,
     CLIENT_TOKEN_BYTES,
     CLIENTS_CONFIG_PATH,
 )
-from neutrino_hub.modules.clients.permissions import permission_kinds
+from neutrino_hub.modules.clients.permissions import (
+    permission_devices,
+    permission_kinds,
+)
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK, read_config, write_config
 
 
@@ -33,6 +37,37 @@ def _stored_kinds(entry) -> "list | None":
         return None
     return permission_kinds(
         kind for kind in entry["kinds"] if kind in CLIENT_PERMISSION_KINDS
+    )
+
+
+def _stored_devices(entry) -> dict:
+    """The device filter a stored permission names, anything unreadable dropped."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("devices"), dict):
+        return {}
+    return permission_devices(
+        {
+            kind: ids
+            for kind, ids in entry["devices"].items()
+            if kind in CLIENT_PERMISSION_FILTERED_KINDS and isinstance(ids, list)
+        }
+    )
+
+
+def _permission_document(kinds: list, devices: dict) -> dict:
+    """A permission as stored: its kinds, and its filter when it has one."""
+    document = {"kinds": list(kinds)}
+    if devices:
+        document["devices"] = {kind: list(ids) for kind, ids in devices.items()}
+    return document
+
+
+def _without_device(devices: dict, device_id: str) -> dict:
+    """A device filter with one device taken out of every list."""
+    return permission_devices(
+        {
+            kind: [entry for entry in ids if entry != device_id]
+            for kind, ids in devices.items()
+        }
     )
 
 
@@ -53,6 +88,8 @@ class Client:
         is_disabled: Whether the admin has switched it off.
         ai_key_id: The gateway client key minted for it, or None.
         permission: The kinds it is allowed, or None to follow the default.
+        permission_devices: With a permission of its own, the device ids
+            each kind is narrowed to; a kind not named allows every device.
     """
 
     id: str
@@ -65,6 +102,7 @@ class Client:
     is_disabled: bool = False
     ai_key_id: "str | None" = None
     permission: "list | None" = None
+    permission_devices: dict = field(default_factory=dict)
 
     @property
     def is_enrolled(self) -> bool:
@@ -94,6 +132,7 @@ class Client:
             is_disabled=bool(data.get("is_disabled", False)),
             ai_key_id=data.get("ai_key_id") or None,
             permission=_stored_kinds(data.get("permission")),
+            permission_devices=_stored_devices(data.get("permission")),
         )
 
     def to_dict(self) -> dict:
@@ -108,7 +147,9 @@ class Client:
             "is_disabled": self.is_disabled,
             "ai_key_id": self.ai_key_id,
             "permission": (
-                None if self.permission is None else {"kinds": list(self.permission)}
+                None
+                if self.permission is None
+                else _permission_document(self.permission, self.permission_devices)
             ),
         }
 
@@ -122,6 +163,7 @@ class ClientRegistry:
 
     def __init__(self):
         self._default = None
+        self._default_devices = {}
         self._stored = self._read_stored()
 
     def all(self) -> list:
@@ -290,34 +332,83 @@ class ClientRegistry:
             return list(CLIENT_PERMISSION_KINDS)
         return list(self._default)
 
-    def set_default_permission(self, kinds) -> None:
-        """Store the kinds a client with no set of its own is allowed.
+    def default_permission_devices(self) -> dict:
+        """The device filter a client with no permission of its own is held to.
+
+        Returns:
+            Device ids by kind; empty when the default narrows nothing.
+        """
+        return {kind: list(ids) for kind, ids in self._default_devices.items()}
+
+    def set_default_permission(self, kinds, devices=None) -> None:
+        """Store what a client with no permission of its own is allowed.
 
         Args:
             kinds: The kinds.
+            devices: Device ids by kind; None or a missing kind allows every
+                device.
 
         Raises:
-            ValueError: If one of them is not a permission kind.
+            ValueError: If one of the kinds is not a permission kind, or one
+                takes no device filter.
         """
         chosen = permission_kinds(kinds)
+        filters = permission_devices(devices)
         with CONFIG_WRITE_LOCK:
             self._stored = self._read_stored()
             self._default = chosen
+            self._default_devices = filters
             self._write_stored()
 
-    def set_permission(self, client_id: str, kinds) -> None:
-        """Give one client a set of its own, or put it back on the default.
+    def set_permission(self, client_id: str, kinds, devices=None) -> None:
+        """Give one client a permission of its own, or put it back on the
+        default.
 
         Args:
             client_id: The client.
             kinds: The kinds, or None to follow the default.
+            devices: Device ids by kind; None or a missing kind allows every
+                device. Ignored when ``kinds`` is None.
 
         Raises:
             KeyError: When there is no such client.
-            ValueError: If one of the kinds is not a permission kind.
+            ValueError: If one of the kinds is not a permission kind, or one
+                takes no device filter.
         """
-        chosen = None if kinds is None else {"kinds": permission_kinds(kinds)}
+        chosen = None
+        if kinds is not None:
+            chosen = _permission_document(
+                permission_kinds(kinds), permission_devices(devices)
+            )
         self._update(client_id, {"permission": chosen})
+
+    def forget_device(self, device_id: str) -> bool:
+        """Take one device out of every filter, the default's and each client's.
+
+        Args:
+            device_id: The device that is gone.
+
+        Returns:
+            Whether any filter named it.
+        """
+        with CONFIG_WRITE_LOCK:
+            self._stored = self._read_stored()
+            is_changed = False
+            kept = _without_device(self._default_devices, device_id)
+            if kept != self._default_devices:
+                self._default_devices = kept
+                is_changed = True
+            for client_id, entry in self._stored.items():
+                client = Client.from_dict(client_id, entry)
+                if client.permission is None:
+                    continue
+                kept = _without_device(client.permission_devices, device_id)
+                if kept != client.permission_devices:
+                    entry["permission"] = _permission_document(client.permission, kept)
+                    is_changed = True
+            if is_changed:
+                self._write_stored()
+        return is_changed
 
     def forget(self, client_id: str) -> None:
         """Remove a client's record. An unknown id is ignored."""
@@ -340,13 +431,20 @@ class ClientRegistry:
             data = read_config(CLIENTS_CONFIG_PATH)
         except FileNotFoundError:
             self._default = None
+            self._default_devices = {}
             return {}
         self._default = _stored_kinds(data.get("default_permission"))
+        self._default_devices = _stored_devices(data.get("default_permission"))
         clients = data.get("clients", {})
         return dict(clients) if isinstance(clients, dict) else {}
 
     def _write_stored(self) -> None:
         document = {"clients": self._stored}
         if self._default is not None:
-            document = {"default_permission": {"kinds": self._default}, **document}
+            document = {
+                "default_permission": _permission_document(
+                    self._default, self._default_devices
+                ),
+                **document,
+            }
         write_config(CLIENTS_CONFIG_PATH, document)

@@ -119,6 +119,28 @@ def test_a_client_without_terminal_is_refused_before_any_agent_stream(config_dir
     assert runtime.agent_sessions.streams == []
 
 
+def test_a_device_outside_the_terminal_filter_is_refused_before_any_agent_stream(
+    config_dir,
+):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(client_id, ["terminal"], {"terminal": ["another"]})
+    runtime = FakeRuntime()
+
+    async def scenario():
+        stream = ScriptedChannelStream("shell", {"device_id": DEVICE}, 1)
+        await serve_shell_stream(runtime, FakeSession(client_id), stream)
+        return stream
+
+    stream = asyncio.run(scenario())
+
+    assert stream.close_info == {
+        "code": "permission_denied",
+        "params": {"kind": "terminal"},
+    }
+    assert runtime.agent_sessions.streams == []
+
+
 def test_a_disabled_or_forgotten_client_is_refused(config_dir):
     registry = ClientRegistry()
     client_id = registry.create("alice")

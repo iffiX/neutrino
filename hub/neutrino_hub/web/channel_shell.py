@@ -26,7 +26,11 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_PERMISSION_DENIED,
     CLIENT_PERMISSION_TERMINAL,
 )
-from neutrino_hub.modules.clients.permissions import permitted_kinds
+from neutrino_hub.modules.clients.permissions import (
+    is_device_permitted,
+    permitted_devices,
+    permitted_kinds,
+)
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.web.shell_bridge import (
     DEFAULT_COLUMNS,
@@ -49,7 +53,7 @@ async def serve_shell_stream(
         stream: The client's stream, closed here.
     """
     device_id = str(stream.args.get("device_id", "") or "")
-    code, params = await asyncio.to_thread(_judge, session.key)
+    code, params = await asyncio.to_thread(_judge, session.key, device_id)
     if code:
         await stream.close(code, params)
         return
@@ -110,15 +114,19 @@ async def serve_command_stream(
     await stream.close()
 
 
-def _judge(client_id: str) -> tuple:
-    """Whether a client may open a shell now, as ``(code, params)``."""
+def _judge(client_id: str, device_id: str) -> tuple:
+    """Whether a client may open a shell on one device now, as ``(code, params)``."""
     registry = ClientRegistry()
     client = registry.get(client_id)
     if client is None:
         return CHANNEL_CODE_BINDING_UNKNOWN, {}
     if client.is_disabled:
         return CLIENT_CODE_DISABLED, {}
-    if CLIENT_PERMISSION_TERMINAL not in permitted_kinds(registry, client):
+    if CLIENT_PERMISSION_TERMINAL not in permitted_kinds(
+        registry, client
+    ) or not is_device_permitted(
+        permitted_devices(registry, client), CLIENT_PERMISSION_TERMINAL, device_id
+    ):
         return CLIENT_CODE_PERMISSION_DENIED, {"kind": CLIENT_PERMISSION_TERMINAL}
     return "", {}
 

@@ -15,11 +15,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from neutrino_hub.modules.clients.ai_keys import ensure_client_key, revoke_client_key
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_NAME_REQUIRED,
+    CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN,
     CLIENT_CODE_PERMISSION_KIND_UNKNOWN,
     CLIENT_CODE_UNKNOWN,
+    CLIENT_PERMISSION_FILTERED_KINDS,
     CLIENT_PERMISSION_KINDS,
     CLIENT_PERMISSION_OVERLAY,
 )
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.permissions import permitted_kinds
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
@@ -229,11 +232,13 @@ def set_default_permission(
 
     Raises:
         HTTPException: 400 with ``permission_kind_unknown`` for a kind that
-            is not one.
+            is not one or takes no device filter, 400 with
+            ``permission_device_unknown`` for a device that is not stored.
     """
     _require_kinds(request.kinds)
+    _require_devices(request.devices)
     registry = ClientRegistry()
-    registry.set_default_permission(request.kinds)
+    registry.set_default_permission(request.kinds, request.devices)
     for client in registry.all():
         _settle_ai_key(registry, client)
     channel_state.push_states(runtime, CHANNEL_ROLE_CLIENT)
@@ -249,7 +254,8 @@ def set_permission(
     default, and push it its state.
 
     Args:
-        request: The client and its kinds; ``kinds`` null follows the default.
+        request: The client, its kinds and its device filter; ``kinds`` null
+            follows the default.
         runtime: The shared runtime.
 
     Returns:
@@ -257,14 +263,16 @@ def set_permission(
 
     Raises:
         HTTPException: 400 with ``permission_kind_unknown`` for a kind that
-            is not one, 404 with ``client_unknown`` when there is no such
-            client.
+            is not one or takes no device filter, 400 with
+            ``permission_device_unknown`` for a device that is not stored,
+            404 with ``client_unknown`` when there is no such client.
     """
     if request.kinds is not None:
         _require_kinds(request.kinds)
+        _require_devices(request.devices)
     registry = ClientRegistry()
     client = _require(registry, request.client_id)
-    registry.set_permission(client.id, request.kinds)
+    registry.set_permission(client.id, request.kinds, request.devices)
     _settle_ai_key(registry, registry.get(client.id))
     _push_one(runtime, client.id)
     runtime.events.publish(WEB_EVENT_CLIENTS)
@@ -314,6 +322,28 @@ def _require_kinds(kinds: list) -> None:
             )
 
 
+def _require_devices(devices: "dict | None") -> None:
+    stored = {device.id for device in DeviceRegistry().all_stored()}
+    for kind, device_ids in (devices or {}).items():
+        if kind not in CLIENT_PERMISSION_FILTERED_KINDS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": CLIENT_CODE_PERMISSION_KIND_UNKNOWN,
+                    "params": {"kind": kind},
+                },
+            )
+        for device_id in device_ids:
+            if device_id not in stored:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "code": CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN,
+                        "params": {"device_id": device_id},
+                    },
+                )
+
+
 def _require(registry: ClientRegistry, client_id: str) -> Client:
     client = registry.get(client_id)
     if client is None:
@@ -342,10 +372,12 @@ def _list_view(runtime: PanelRuntime) -> ClientListView:
                 last_seen=sessions.last_seen_at(client.id),
                 is_disabled=client.is_disabled,
                 permission=client.permission,
+                permission_devices=client.permission_devices,
             )
         )
     return ClientListView(
         clients=views,
         default_permission=registry.default_permission(),
+        default_permission_devices=registry.default_permission_devices(),
         permission_kinds=list(CLIENT_PERMISSION_KINDS),
     )

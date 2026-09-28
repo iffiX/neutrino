@@ -47,6 +47,7 @@ from tests.conftest import (
 from tests.web.device_api_box import (
     DEVICE,
     FINGERPRINT,
+    BoxClients,
     BoxRegistry,
     device_box,
 )
@@ -1282,6 +1283,16 @@ def test_forgetting_a_device_drops_what_was_queued_for_it(box_api, monkeypatch):
 
     assert runtime.pending == {}
     assert runtime.device_modules == {}
+
+
+def test_forgetting_a_device_takes_it_out_of_every_client_filter(box_api, monkeypatch):
+    client, runtime = box_api
+    monkeypatch.setattr(BoxRegistry, "forget", lambda self, mac: None, raising=False)
+
+    client.post(f"{DEVICE_PATH}/remove", json={"device_id": DEVICE})
+
+    assert BoxClients.forgotten == [DEVICE]
+    assert runtime.state_pushes == ["client"]
 
 
 def test_forgetting_a_device_deletes_its_module_configuration(

@@ -30,3 +30,7 @@ CLIENT_PERMISSION_KINDS = SERVICES_TYPES + (
     CLIENT_PERMISSION_OVERLAY,
     CLIENT_PERMISSION_TERMINAL,
 )
+# The kinds a permission may narrow to the entries of some devices; the
+# overlay is the hub's own and belongs to no device.
+CLIENT_PERMISSION_FILTERED_KINDS = SERVICES_TYPES + (CLIENT_PERMISSION_TERMINAL,)
+CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN = "permission_device_unknown"
