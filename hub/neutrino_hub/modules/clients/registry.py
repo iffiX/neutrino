@@ -61,14 +61,23 @@ def _permission_document(kinds: list, devices: dict) -> dict:
     return document
 
 
-def _without_device(devices: dict, device_id: str) -> dict:
-    """A device filter with one device taken out of every list."""
-    return permission_devices(
+def _without_device(kinds: list, devices: dict, device_id: str) -> tuple:
+    """A permission with one device taken out of every list.
+
+    A kind whose list named only that device is turned off, since an empty
+    list allows every device.
+
+    Returns:
+        ``(kinds, devices)``.
+    """
+    emptied = {kind for kind, ids in devices.items() if ids and set(ids) <= {device_id}}
+    kept = permission_devices(
         {
             kind: [entry for entry in ids if entry != device_id]
             for kind, ids in devices.items()
         }
     )
+    return [kind for kind in kinds if kind not in emptied], kept
 
 
 @dataclass
@@ -385,6 +394,8 @@ class ClientRegistry:
     def forget_device(self, device_id: str) -> bool:
         """Take one device out of every filter, the default's and each client's.
 
+        A kind whose list named only that device is turned off.
+
         Args:
             device_id: The device that is gone.
 
@@ -394,17 +405,22 @@ class ClientRegistry:
         with CONFIG_WRITE_LOCK:
             self._stored = self._read_stored()
             is_changed = False
-            kept = _without_device(self._default_devices, device_id)
+            kinds, kept = _without_device(
+                self.default_permission(), self._default_devices, device_id
+            )
             if kept != self._default_devices:
+                self._default = kinds
                 self._default_devices = kept
                 is_changed = True
             for client_id, entry in self._stored.items():
                 client = Client.from_dict(client_id, entry)
                 if client.permission is None:
                     continue
-                kept = _without_device(client.permission_devices, device_id)
+                kinds, kept = _without_device(
+                    client.permission, client.permission_devices, device_id
+                )
                 if kept != client.permission_devices:
-                    entry["permission"] = _permission_document(client.permission, kept)
+                    entry["permission"] = _permission_document(kinds, kept)
                     is_changed = True
             if is_changed:
                 self._write_stored()

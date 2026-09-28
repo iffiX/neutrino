@@ -230,8 +230,44 @@ def test_forgetting_a_device_takes_it_out_of_every_filter(config_dir):
     assert ClientRegistry().forget_device("d1") is True
 
     registry = ClientRegistry()
+    assert registry.default_permission() == ["web"]
     assert registry.default_permission_devices() == {"web": ["d2"]}
-    assert registry.get(alice).permission == ["terminal"]
+    assert registry.get(alice).permission == []
     assert registry.get(alice).permission_devices == {}
+    assert registry.get(bob).permission == ["web"]
     assert registry.get(bob).permission_devices == {"web": ["d2"]}
     assert ClientRegistry().forget_device("d1") is False
+
+
+def test_a_list_with_other_devices_left_only_loses_the_id(config_dir):
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    registry.set_default_permission(["web", "port"], {"web": ["d1", "d2"]})
+    registry.set_permission(alice, ["web", "rdp"], {"web": ["d1", "d3"]})
+
+    ClientRegistry().forget_device("d1")
+
+    registry = ClientRegistry()
+    assert registry.default_permission() == ["web", "port"]
+    assert registry.default_permission_devices() == {"web": ["d2"]}
+    assert registry.get(alice).permission == ["web", "rdp"]
+    assert registry.get(alice).permission_devices == {"web": ["d3"]}
+
+
+def test_a_list_the_device_emptied_turns_its_kind_off(config_dir):
+    """An empty list allows every device, so the kind goes rather than the
+    filter."""
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    bob = registry.create("bob")
+    registry.set_default_permission(["web", "terminal"], {"terminal": ["d1"]})
+    registry.set_permission(alice, ["web", "rdp"], {"web": ["d1"], "rdp": ["d2"]})
+
+    ClientRegistry().forget_device("d1")
+
+    registry = ClientRegistry()
+    assert registry.default_permission() == ["web"]
+    assert registry.default_permission_devices() == {}
+    assert registry.get(alice).permission == ["rdp"]
+    assert registry.get(alice).permission_devices == {"rdp": ["d2"]}
+    assert registry.get(bob).permission is None

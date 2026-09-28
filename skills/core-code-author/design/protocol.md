@@ -417,8 +417,9 @@ client's `services` section holds only the entries whose type and device it
 is allowed, its `terminals` only the machines its `terminal` list allows, and
 a `shell` on a machine outside that list is refused `permission_denied {kind:
 terminal}`. Taking `ai` away revokes its gateway key. Deleting a device takes
-its id out of every list, the default's and each client's, and pushes every
-client its state. A kind outside the set, or `overlay` given a list, is
+its id out of every list, the default's and each client's, turns off each kind
+whose list named only that device, and pushes every client its state. A kind
+outside the set, or `overlay` given a list, is
 refused 400 `permission_kind_unknown {kind}`, and a device id no stored device
 has is refused 400 `permission_device_unknown {device_id}`.
 
