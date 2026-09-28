@@ -294,9 +294,16 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
           $msi = (Get-ChildItem dist\*.msi)[0].FullName
-          Start-Process msiexec -Wait -ArgumentList '/i',$msi,'/quiet','/norestart'
+          $log = "$env:RUNNER_TEMP\client_install.log"
+          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i',$msi,'/quiet','/norestart','/l*v',$log
+          Write-Host "msiexec /i exited $($p.ExitCode)"
           $nclient = "$env:ProgramFiles\Neutrino Client\nclient.exe"
-          if (-not (Test-Path $nclient)) { throw "no nclient.exe under Program Files" }
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $nclient)) {
+            Select-String -Path $log -Pattern 'return value 3|Error 19|NeutrinoClientEasytier' | ForEach-Object { $_.Line } | Select-Object -Last 25
+            Get-WinEvent -LogName System -MaxEvents 200 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'Neutrino' } | Select-Object -First 6 | ForEach-Object { "event $($_.Id): $($_.Message)" }
+            Get-WinEvent -LogName Application -MaxEvents 200 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'nclient' } | Select-Object -First 4 | ForEach-Object { "app event $($_.Id): $($_.Message)" }
+            throw "the client did not install"
+          }
           $version = & $nclient --version
           if ($LASTEXITCODE -ne 0) { throw "nclient --version exited $LASTEXITCODE" }
           Write-Host "nclient $version"
@@ -317,6 +324,7 @@ jobs:
           exit 0
 
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: client_windows_x64
           path: dist/*.msi
