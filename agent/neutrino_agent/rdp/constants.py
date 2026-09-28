@@ -62,3 +62,27 @@ RDP_GREETER_ACCOUNTS = ("gdm", "gdm-greeter", "sddm", "lightdm", "greetd")
 # each surface words them itself.
 RDP_ATTENTION_NOBODY_SEATED = "rdp_nobody_seated"
 RDP_ATTENTION_SCREEN_NOT_ALLOWED = "rdp_screen_not_allowed"
+# A Mac shows a peer nothing until RustDesk holds both screen recording and
+# accessibility, granted in its settings by somebody at that Mac.
+RDP_ATTENTION_PERMISSIONS_NEEDED = "rdp_permissions_needed"
+
+# Where Windows lists its connections, and how it spells an established one.
+RDP_WINDOWS_NETSTAT_COMMAND = ("netstat", "-an", "-p", "TCP")
+RDP_WINDOWS_ESTABLISHED = "ESTABLISHED"
+# What WTS answers when no session is attached to the console, and the one
+# piece of a session this reads.
+RDP_WINDOWS_NO_CONSOLE_SESSION = 0xFFFFFFFF
+RDP_WINDOWS_WTS_USER_NAME = 5
+
+# Who owns the Mac's console: the account signed in at its screen, or root
+# at the login window.
+RDP_DARWIN_CONSOLE_OWNER_COMMAND = ("stat", "-f", "%Su", "/dev/console")
+RDP_DARWIN_LOGIN_WINDOW_OWNER = "root"
+RDP_DARWIN_NETSTAT_COMMAND = ("netstat", "-an", "-p", "tcp")
+RDP_DARWIN_ESTABLISHED = "ESTABLISHED"
+# The database macOS keeps its privacy grants in, the two services RustDesk
+# needs, and what a granted row holds.
+RDP_DARWIN_TCC_DATABASE = "/Library/Application Support/com.apple.TCC/TCC.db"
+RDP_DARWIN_TCC_SERVICES = ("kTCCServiceScreenCapture", "kTCCServiceAccessibility")
+RDP_DARWIN_TCC_ALLOWED = 2
+RDP_DARWIN_RUSTDESK_BUNDLE_ID = "com.carriez.rustdesk"

@@ -287,9 +287,11 @@ class Win32Libraries:
         self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self.advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
         self.shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+        self.wtsapi32 = ctypes.WinDLL("wtsapi32", use_last_error=True)
         self._describe_kernel32()
         self._describe_advapi32()
         self._describe_shell32()
+        self._describe_wtsapi32()
 
     def _describe_kernel32(self) -> None:
         """Prototype the kernel32 calls."""
@@ -446,3 +448,16 @@ class Win32Libraries:
         """Prototype the shell32 calls."""
         self.shell32.IsUserAnAdmin.restype = ctypes.c_int
         self.shell32.IsUserAnAdmin.argtypes = []
+
+    def _describe_wtsapi32(self) -> None:
+        """Prototype the session calls."""
+        self.kernel32.WTSGetActiveConsoleSessionId.restype = DWORD
+        self.kernel32.WTSGetActiveConsoleSessionId.argtypes = []
+        self.wtsapi32.WTSQuerySessionInformationW.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_wchar_p),
+            ctypes.POINTER(DWORD),
+        ]
+        self.wtsapi32.WTSFreeMemory.argtypes = [ctypes.c_void_p]

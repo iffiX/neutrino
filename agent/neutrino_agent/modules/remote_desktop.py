@@ -22,7 +22,7 @@ import subprocess
 
 from neutrino_agent.constants import AGENT_OUTPUT_LIMIT_BYTES
 from neutrino_agent.modules.subprocess_run import command_detail, run
-from neutrino_agent.rdp.host import graphical_accounts, session_environment
+from neutrino_agent.rdp.linux_seat import graphical_accounts, session_environment
 
 SUPPORTED_PRODUCTS = ("anydesk", "teamviewer")
 

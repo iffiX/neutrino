@@ -2,10 +2,10 @@
 
 Sharing takes the rustdesk module and a seat that agrees, the access
 password enters the declaration nowhere, and a share is declared only once
-the direct port answers.
+the direct port answers. Who is at the screen, how many peers are connected
+and what a peer would wait on come from the seat the host is given, a fake
+here; each platform's own seat is pinned in its own file.
 """
-
-import os
 
 import pytest
 
@@ -13,11 +13,36 @@ from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.modules import rustdesk
 from neutrino_agent.exceptions import InstallError
 from neutrino_agent.platforms.base import AgentPlatform
-from neutrino_agent.rdp import host as host_module
 from neutrino_agent.rdp.host import RdpShareHost
 
 INSTALLED = {"rustdesk": {"state": "installed"}}
 ABSENT = {"rustdesk": {"state": "absent"}}
+
+
+class FakeSeat:
+    """A seat saying exactly what a test wants it to."""
+
+    def __init__(self):
+        # None is a machine that cannot say who is at the screen, so the
+        # account named only has to exist; a callable is asked each time.
+        self.seated = None
+        self.is_desktop = True
+        self.connected = 0
+        self.attention = ""
+        self.attention_homes = []
+
+    def graphical_accounts(self):
+        return self.seated() if callable(self.seated) else self.seated
+
+    def has_desktop_session(self):
+        return self.is_desktop
+
+    def connected_count(self, port):
+        return self.connected
+
+    def screen_attention(self, account_home):
+        self.attention_homes.append(account_home)
+        return self.attention
 
 
 class _Platform(AgentPlatform):
@@ -37,7 +62,9 @@ def share_host(tmp_path, monkeypatch):
         store=store,
         credentials_dir=str(tmp_path / "credentials"),
         log=lambda message: None,
+        seat=FakeSeat(),
     )
+    made.seat = made._seat
     made.bind_modules(lambda: dict(INSTALLED))
 
     made.written = {}
@@ -53,10 +80,6 @@ def share_host(tmp_path, monkeypatch):
     monkeypatch.setattr(rustdesk, "read_id", lambda: "123456789")
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
     monkeypatch.setattr(RdpShareHost, "_answers", lambda self: True)
-    monkeypatch.setattr(host_module, "has_desktop_session", lambda: True)
-    # The machine cannot say who is at the screen, so the account named only
-    # has to exist; the seat tests below answer with a real seat instead.
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: None)
     return made
 
 
@@ -86,7 +109,7 @@ def test_a_machine_with_no_desktop_is_refused_before_rustdesk_is_touched(
     """RustDesk on a machine with no graphical session refuses the connection
     its own configuration goes over, and the raw errno says nothing a person
     can act on."""
-    monkeypatch.setattr(host_module, "has_desktop_session", lambda: False)
+    share_host.seat.is_desktop = False
 
     refusal = share_host.share("pat")
 
@@ -94,88 +117,6 @@ def test_a_machine_with_no_desktop_is_refused_before_rustdesk_is_touched(
     assert share_host.written == {}
     assert share_host.services == []
     assert share_host.passwords == []
-
-
-# --- what counts as a desktop to share ---
-
-
-def _loginctl_answering(monkeypatch, listed: str, types: str):
-    """A loginctl that lists those sessions and reports those types."""
-
-    def loginctl(arguments):
-        return listed if arguments[0] == "list-sessions" else types
-
-    monkeypatch.setattr(host_module, "_loginctl", loginctl)
-
-
-def test_a_graphical_session_is_a_desktop(monkeypatch):
-    monkeypatch.setattr(host_module.os, "environ", {})
-    _loginctl_answering(monkeypatch, "3 1000 pat seat0\n", "Type=wayland\n")
-
-    assert host_module.has_desktop_session() is True
-
-
-def test_only_tty_sessions_are_no_desktop(monkeypatch):
-    """The headless box: it has sessions, all of them terminals."""
-    monkeypatch.setattr(host_module.os, "environ", {})
-    _loginctl_answering(monkeypatch, "5 0 root\n7 1000 pat\n", "Type=tty\n\nType=tty\n")
-
-    assert host_module.has_desktop_session() is False
-
-
-def test_no_sessions_at_all_is_no_desktop(monkeypatch):
-    monkeypatch.setattr(host_module.os, "environ", {})
-    _loginctl_answering(monkeypatch, "\n", "")
-
-    assert host_module.has_desktop_session() is False
-
-
-def test_a_machine_that_cannot_be_asked_is_not_refused(monkeypatch):
-    """A machine without loginctl is one this cannot tell about, and a guess
-    that refuses is worse than the raw refusal it replaced."""
-    monkeypatch.setattr(host_module.os, "environ", {})
-    monkeypatch.setattr(host_module, "_loginctl", lambda arguments: None)
-
-    assert host_module.has_desktop_session() is True
-
-
-def test_a_session_this_process_can_see_is_a_desktop(monkeypatch):
-    monkeypatch.setattr(host_module.os, "environ", {"DISPLAY": ":0"})
-
-    assert host_module.has_desktop_session() is True
-
-
-def test_the_loginctl_probe_asks_for_the_session_types(monkeypatch):
-    asked = []
-
-    def run(command, **kwargs):
-        asked.append(command)
-
-        class _Result:
-            returncode = 0
-            stdout = "3 1000 pat seat0\n"
-
-        return _Result()
-
-    monkeypatch.setattr(host_module.subprocess, "run", run)
-
-    assert host_module._loginctl(["list-sessions", "--no-legend"]) == (
-        "3 1000 pat seat0\n"
-    )
-    assert asked == [["loginctl", "list-sessions", "--no-legend"]]
-
-
-def test_a_loginctl_that_exits_nonzero_answers_nothing(monkeypatch):
-    def run(command, **kwargs):
-        class _Result:
-            returncode = 1
-            stdout = "everything is fine"
-
-        return _Result()
-
-    monkeypatch.setattr(host_module.subprocess, "run", run)
-
-    assert host_module._loginctl(["list-sessions"]) is None
 
 
 # --- what sharing actually does ---
@@ -405,7 +346,7 @@ def test_a_share_names_an_account_and_the_seat_must_agree(share_host, monkeypatc
     """RustDesk spawns its screen server into the signed-in session whoever
     asked, so naming anyone else would promise a desktop the peer will not
     be shown."""
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["sam"])
+    share_host.seat.seated = ["sam"]
 
     refusal = share_host.share("pat")
 
@@ -416,7 +357,7 @@ def test_a_share_names_an_account_and_the_seat_must_agree(share_host, monkeypatc
 def test_a_share_naming_the_seated_account_goes_through_as_them(
     share_host, monkeypatch
 ):
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["sam"])
+    share_host.seat.seated = ["sam"]
 
     outcome = share_host.share("sam")
 
@@ -432,30 +373,12 @@ def test_where_the_seat_cannot_be_read_the_account_only_has_to_exist(share_host)
     assert share_host.written == {}
 
 
-def test_the_seat_owners_are_read_with_their_sessions(monkeypatch):
-    """Two sessions, one graphical: the owner of the graphical one is the
-    answer, matched to its own type and not the tty's."""
-    _loginctl_answering(
-        monkeypatch,
-        "1 1000 sam seat0 tty1\n3 1001 pat seat0 tty2\n",
-        "Type=tty\nType=x11\n",
-    )
-
-    assert host_module.graphical_accounts() == ["pat"]
-
-
-def test_a_machine_without_loginctl_cannot_say_who_is_seated(monkeypatch):
-    monkeypatch.setattr(host_module, "_loginctl", lambda arguments: None)
-
-    assert host_module.graphical_accounts() is None
-
-
 def test_naming_another_account_closes_the_share_the_last_one_had(
     share_host, monkeypatch
 ):
     """One machine shares one seat: the copy the previous account was shared
     through is closed before the new one is written."""
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["pat", "sam"])
+    share_host.seat.seated = ["pat", "sam"]
     share_host.share("pat")
     share_host.written.clear()
 
@@ -485,65 +408,15 @@ def test_sharing_the_same_account_again_closes_nothing(share_host):
 # --- how many peers are on it ---
 
 
-def _proc_tcp(tmp_path, monkeypatch, rows: str, rows6: str = ""):
-    """A connection table saying exactly what a test wants it to."""
-    table = tmp_path / "tcp"
-    table.write_text(
-        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when"
-        " retrnsmt   uid  timeout inode\n" + rows
-    )
-    table6 = tmp_path / "tcp6"
-    table6.write_text(
-        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when"
-        " retrnsmt   uid  timeout inode\n" + rows6
-    )
-    monkeypatch.setattr(host_module, "RDP_PROC_TCP_PATHS", (str(table), str(table6)))
-
-
-def test_the_peers_on_the_direct_port_are_counted_off_the_kernels_own_table(
-    tmp_path, monkeypatch
-):
-    # 527E is 21118; 01 is established, 0A is a listening socket.
-    _proc_tcp(
-        tmp_path,
-        monkeypatch,
-        "   0: 0100007F:527E 00000000:0000 0A 00000000:00000000 00:00000000 0\n"
-        "   1: C0A80102:527E C0A80105:E1F4 01 00000000:00000000 00:00000000 0\n"
-        "   2: C0A80102:527E C0A80106:E1F5 01 00000000:00000000 00:00000000 0\n"
-        "   3: C0A80102:0016 C0A80107:E1F6 01 00000000:00000000 00:00000000 0\n",
-        "   0: 00000000000000000000000000000000:527E "
-        "00000000000000000000000000000001:E1F7 01 00000000:00000000 00:00000000 0\n",
-    )
-
-    assert host_module.connected_count(21118) == 3
-    assert host_module.connected_count(22) == 1
-
-
-def test_a_machine_whose_table_cannot_be_read_counts_nobody(monkeypatch):
-    monkeypatch.setattr(host_module, "RDP_PROC_TCP_PATHS", ("/nowhere/tcp",))
-
-    assert host_module.connected_count(21118) == 0
-
-
-def test_the_declaration_says_how_many_peers_are_connected(
-    share_host, tmp_path, monkeypatch
-):
-    _proc_tcp(
-        tmp_path,
-        monkeypatch,
-        "   0: C0A80102:527E C0A80105:E1F4 01 00000000:00000000 00:00000000 0\n",
-    )
+def test_the_declaration_says_how_many_peers_are_connected(share_host):
+    share_host.seat.connected = 1
     share_host.share("pat")
 
     assert share_host.declaration()["connected_count"] == 1
 
 
-def test_a_machine_that_shares_nothing_counts_nobody(share_host, tmp_path, monkeypatch):
-    _proc_tcp(
-        tmp_path,
-        monkeypatch,
-        "   0: C0A80102:527E C0A80105:E1F4 01 00000000:00000000 00:00000000 0\n",
-    )
+def test_a_machine_that_shares_nothing_counts_nobody(share_host):
+    share_host.seat.connected = 1
 
     assert share_host.declaration()["connected_count"] == 0
 
@@ -594,115 +467,34 @@ def test_a_baseline_the_machine_cannot_take_is_logged_and_not_raised(
     assert logged == ["rdp: read-only file system"]
 
 
-# --- the seat session's own display environment ---
-
-
-class _FakePwd:
-    class _Entry:
-        pw_uid = 1000
-        pw_dir = "/home/sam"
-
-    @staticmethod
-    def getpwnam(name):
-        if name != "sam":
-            raise KeyError(name)
-        return _FakePwd._Entry()
-
-
-def _fake_proc(tmp_path, monkeypatch, *, uid=1000, environ=b""):
-    """One process of the seat user in a stand-in proc tree."""
-    proc = tmp_path / "proc"
-    (proc / "4242").mkdir(parents=True)
-    (proc / "4242" / "environ").write_bytes(environ)
-    monkeypatch.setattr(host_module, "RDP_PROC_DIR", str(proc))
-    real_stat = os.stat
-    monkeypatch.setattr(
-        host_module.os,
-        "stat",
-        lambda path, **kw: (
-            type("S", (), {"st_uid": uid})()
-            if str(path).endswith("4242")
-            else real_stat(path, **kw)
-        ),
-    )
-    monkeypatch.setattr(host_module, "pwd", _FakePwd)
-
-
-def test_the_session_environment_is_read_off_the_seats_own_processes(
-    tmp_path, monkeypatch
-):
-    _fake_proc(
-        tmp_path,
-        monkeypatch,
-        environ=b"DISPLAY=:0\0WAYLAND_DISPLAY=wayland-0\0"
-        b"XAUTHORITY=/run/user/1000/.mutter\0XDG_RUNTIME_DIR=/run/user/1000\0"
-        b"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\0HOME=/home/sam\0",
-    )
-
-    assert host_module.session_environment("sam") == {
-        "DISPLAY": ":0",
-        "WAYLAND_DISPLAY": "wayland-0",
-        "XAUTHORITY": "/run/user/1000/.mutter",
-        "XDG_RUNTIME_DIR": "/run/user/1000",
-        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
-    }
-
-
-def test_a_process_without_a_display_is_no_environment_source(tmp_path, monkeypatch):
-    _fake_proc(tmp_path, monkeypatch, environ=b"HOME=/home/sam\0TERM=xterm\0")
-
-    assert host_module.session_environment("sam") is None
-
-
-def test_an_account_the_machine_does_not_have_has_no_session(monkeypatch):
-    monkeypatch.setattr(host_module, "pwd", _FakePwd)
-
-    assert host_module.session_environment("nobody") is None
-
-
 # --- what a peer would wait on, said before it dials ---
 
 
-def test_a_wayland_seat_without_the_permission_says_so(share_host, monkeypatch):
-    """RustDesk hands the screen out through a dialog on this machine's own
-    screen. A peer that dials before somebody answers it waits in
-    "connecting" forever, so the fleet is told first."""
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["pat"])
-    monkeypatch.setattr(RdpShareHost, "_is_wayland_seat", staticmethod(lambda: True))
-    monkeypatch.setattr(
-        RdpShareHost, "_has_wayland_permission", staticmethod(lambda home: False)
-    )
+def test_a_seated_screen_answers_with_the_seats_own_attention(share_host):
+    """What a seated screen makes a peer wait on is the platform's: a Wayland
+    dialog, a Mac's privacy grants, nothing on Windows."""
+    share_host.seat.seated = ["pat"]
+    share_host.seat.attention = "rdp_permissions_needed"
 
-    assert share_host.attention("pat") == "rdp_screen_not_allowed"
+    assert share_host.attention("pat") == "rdp_permissions_needed"
+    assert share_host.seat.attention_homes == ["/home/pat"]
 
 
-def test_a_seat_that_already_granted_it_says_nothing(share_host, monkeypatch):
-    """Once per person, not once per connection: RustDesk keeps the answer."""
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["pat"])
-    monkeypatch.setattr(RdpShareHost, "_is_wayland_seat", staticmethod(lambda: True))
-    monkeypatch.setattr(
-        RdpShareHost, "_has_wayland_permission", staticmethod(lambda home: True)
-    )
-
-    assert share_host.attention("pat") == ""
-
-
-def test_an_x11_seat_needs_no_permission(share_host, monkeypatch):
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["pat"])
-    monkeypatch.setattr(RdpShareHost, "_is_wayland_seat", staticmethod(lambda: False))
+def test_a_seated_screen_the_seat_finds_ready_says_nothing(share_host):
+    share_host.seat.seated = ["pat"]
 
     assert share_host.attention("pat") == ""
 
 
 def test_nobody_at_the_screen_is_its_own_answer(share_host, monkeypatch):
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: [])
+    share_host.seat.seated = []
 
     assert share_host.attention("pat") == "rdp_nobody_seated"
 
 
 def test_a_greeters_session_holds_no_permission_it_could_keep(share_host, monkeypatch):
     """Its home is a tmpfs, so the answer could never be remembered there."""
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: ["gdm-greeter"])
+    share_host.seat.seated = ["gdm-greeter"]
 
     assert share_host.attention("gdm-greeter") == "rdp_nobody_seated"
 
@@ -710,7 +502,7 @@ def test_a_greeters_session_holds_no_permission_it_could_keep(share_host, monkey
 def test_the_declaration_carries_what_a_peer_would_wait_on(share_host, monkeypatch):
     share_host.share("pat")
     # Asked after the share, because only a sharing machine pays for it.
-    monkeypatch.setattr(host_module, "graphical_accounts", lambda: [])
+    share_host.seat.seated = []
 
     assert share_host.declaration()["attention"] == "rdp_nobody_seated"
 
@@ -723,6 +515,6 @@ def test_a_machine_that_shares_nothing_asks_the_seat_nothing(share_host, monkeyp
     def refuse():
         raise AssertionError("a machine that shares nothing must not ask")
 
-    monkeypatch.setattr(host_module, "graphical_accounts", refuse)
+    share_host.seat.seated = refuse
 
     assert share_host.declaration()["attention"] == ""

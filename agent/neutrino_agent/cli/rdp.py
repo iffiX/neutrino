@@ -16,7 +16,8 @@ import os
 import sys
 
 from neutrino_agent.cli import wording
-from neutrino_agent.rdp.host import graphical_accounts
+from neutrino_agent.platforms.detect import platform_tuple
+from neutrino_agent.rdp.seat import seat_for
 
 RDP_NOT_SHARED = "this machine's desktop is not shared"
 RDP_ID_LABEL = "RustDesk ID"
@@ -77,6 +78,15 @@ def share_line(state: dict) -> str:
     identifier = str(share.get("rustdesk_id", ""))
     tail = f"  {RDP_ID_LABEL} {identifier}" if identifier else ""
     return f"{where} — {standing}{tail}"
+
+
+def graphical_accounts() -> "list | None":
+    """The accounts at this machine's screen, as its own seat reads them.
+
+    Returns:
+        The seated accounts, None where the machine cannot say.
+    """
+    return seat_for(platform_tuple()["os"]).graphical_accounts()
 
 
 def _seat_account() -> str:

@@ -8,6 +8,7 @@ one argument vector and in no file this module writes.
 """
 
 import os
+import subprocess
 
 import pytest
 
@@ -411,3 +412,157 @@ def test_a_path_nothing_can_be_read_about_has_no_owner(monkeypatch):
     monkeypatch.setattr(rustdesk, "_stat", lambda target: None)
 
     assert rustdesk._owner_of("/root/.config/rustdesk/RustDesk2.toml") is None
+
+
+# --- each platform's binary, configuration and service ---
+
+
+def test_on_windows_the_binary_is_under_program_files(monkeypatch):
+    monkeypatch.setattr(rustdesk.sys, "platform", "win32")
+    monkeypatch.setenv("ProgramFiles", "D:\\Apps")
+
+    assert rustdesk.binary_candidates() == ("D:\\Apps\\RustDesk\\rustdesk.exe",)
+
+
+def test_on_a_mac_the_binary_is_inside_the_app(monkeypatch):
+    monkeypatch.setattr(rustdesk.sys, "platform", "darwin")
+
+    assert rustdesk.binary_candidates() == (
+        "/Applications/RustDesk.app/Contents/MacOS/RustDesk",
+    )
+
+
+def test_on_linux_the_agents_own_build_comes_first(monkeypatch):
+    monkeypatch.setattr(rustdesk.sys, "platform", "linux")
+
+    assert rustdesk.binary_candidates()[0] == (
+        "/usr/lib/neutrino_agent/rustdesk/rustdesk"
+    )
+
+
+def test_on_windows_only_the_services_own_configuration_is_written(monkeypatch):
+    monkeypatch.setattr(rustdesk.sys, "platform", "win32")
+    monkeypatch.setenv("SystemRoot", "C:\\Windows")
+
+    service = (
+        "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Roaming"
+        "\\RustDesk\\config\\RustDesk2.toml"
+    )
+    assert config_paths("C:\\Users\\pat") == [service]
+    assert config_paths("") == [service]
+
+
+def test_on_a_mac_roots_copy_and_the_seats_are_written(monkeypatch):
+    monkeypatch.setattr(rustdesk.sys, "platform", "darwin")
+
+    assert config_paths("/Users/pat") == [
+        "/var/root/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml",
+        "/Users/pat/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml",
+    ]
+
+
+class ServiceCommands:
+    """subprocess.run for the service managers, answering sc query stopped."""
+
+    def __init__(self, queries=("STATE              : 1  STOPPED",)):
+        self.commands = []
+        self.queries = list(queries)
+
+    def __call__(self, command, **kwargs):
+        self.commands.append(list(command))
+        stdout = ""
+        if command[:2] == ["sc", "query"]:
+            stdout = self.queries.pop(0) if len(self.queries) > 1 else self.queries[0]
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+
+@pytest.mark.parametrize(
+    "action, commands",
+    [
+        ("start", [["sc", "start", "RustDesk"]]),
+        ("stop", [["sc", "stop", "RustDesk"], ["sc", "query", "RustDesk"]]),
+        (
+            "restart",
+            [
+                ["sc", "stop", "RustDesk"],
+                ["sc", "query", "RustDesk"],
+                ["sc", "start", "RustDesk"],
+            ],
+        ),
+    ],
+)
+def test_on_windows_the_service_control_manager_drives_it(
+    monkeypatch, action, commands
+):
+    run = ServiceCommands()
+    monkeypatch.setattr(rustdesk.sys, "platform", "win32")
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service(action)
+
+    assert run.commands == commands
+
+
+def test_a_stop_on_windows_waits_for_the_service_to_have_stopped(monkeypatch):
+    run = ServiceCommands(
+        queries=(
+            "STATE : 3  STOP_PENDING",
+            "STATE : 3  STOP_PENDING",
+            "STATE : 1  STOPPED",
+        )
+    )
+    monkeypatch.setattr(rustdesk.sys, "platform", "win32")
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+    monkeypatch.setattr(rustdesk.time, "sleep", lambda seconds: None)
+
+    rustdesk.control_service("stop")
+
+    assert run.commands.count(["sc", "query", "RustDesk"]) == 3
+
+
+@pytest.mark.parametrize(
+    "action, commands",
+    [
+        (
+            "start",
+            [
+                [
+                    "launchctl",
+                    "bootstrap",
+                    "system",
+                    "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist",
+                ]
+            ],
+        ),
+        ("stop", [["launchctl", "bootout", "system/com.carriez.RustDesk_service"]]),
+    ],
+)
+def test_on_a_mac_launchd_drives_it(monkeypatch, action, commands):
+    run = ServiceCommands()
+    monkeypatch.setattr(rustdesk.sys, "platform", "darwin")
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service(action)
+
+    assert run.commands == commands
+
+
+def test_on_linux_systemd_drives_it(monkeypatch):
+    run = ServiceCommands()
+    monkeypatch.setattr(rustdesk.sys, "platform", "linux")
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service("restart")
+
+    assert run.commands == [["systemctl", "restart", "rustdesk"]]
+
+
+def test_a_config_rewrite_keeps_going_where_ownership_cannot_be_set(
+    monkeypatch, tmp_path
+):
+    path = tmp_path / "RustDesk2.toml"
+    path.write_text("[options]\n")
+    monkeypatch.delattr(rustdesk.os, "chown")
+
+    assert write_config(str(path), (("direct-server", "Y"),)) is True
+    assert "direct-server = 'Y'" in path.read_text()

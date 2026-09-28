@@ -94,6 +94,9 @@ CLI_CODE_WORDS = {
     "rdp_password_refused": "RustDesk refused the seat password: {detail}",  # scan: allow
     "rdp_nobody_seated": "nobody is signed in at that machine's screen",
     "rdp_screen_not_allowed": "allow screen sharing once at that machine's screen",
+    "rdp_permissions_needed": (
+        "grant RustDesk screen recording and accessibility in that Mac's settings"
+    ),
     "agent_internal": "the agent hit an unexpected error; check its log",
     "reinstall_failed": "the reinstall this agent came from ended with status {exit_code}",
     "unknown_request": "the agent does not know this request",

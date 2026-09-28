@@ -2,7 +2,11 @@
 
 The Linux agent packages carry the host at
 :data:`~neutrino_agent.constants.AGENT_RUSTDESK_BINARY_PATH`, so a machine
-that has the agent has RustDesk and nothing is fetched onto it.
+that has the agent has RustDesk and nothing is fetched onto it. The Windows
+package installs it under ``%ProgramFiles%\\RustDesk`` as the ``RustDesk``
+service, and the macOS package as ``/Applications/RustDesk.app`` with its
+launchd jobs; where the binary is, where its configuration is read, and how
+its service is driven are each platform's own, in the tables below.
 ``rdp/host.py`` decides when a machine shares its desktop; everything here
 is what RustDesk itself is and how it is driven.
 
@@ -25,13 +29,17 @@ Not pure: writes configuration and drives services.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import ntpath
 import os
+import posixpath
 import re
 import subprocess
+import sys
 import time
 
 from neutrino_agent.constants import AGENT_RUSTDESK_BINARY_PATH
 from neutrino_agent.exceptions import InstallError
+from neutrino_agent.platforms.detect import OS_NAMES
 
 RUSTDESK_TIMEOUT_S = 60
 # Long enough for a service to come up on a slow machine, short enough that
@@ -62,6 +70,34 @@ RUSTDESK_BINARY_PATHS = (
     AGENT_RUSTDESK_BINARY_PATH,
     "/usr/bin/rustdesk",
     "/usr/local/bin/rustdesk",
+)
+
+# On Windows: the binary RustDesk's own installer puts under Program Files,
+# and the configuration its service reads, as LocalService. The session has
+# no copy of its own to write.
+RUSTDESK_WINDOWS_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
+RUSTDESK_WINDOWS_BINARY_RELATIVE = ("RustDesk", "rustdesk.exe")
+RUSTDESK_WINDOWS_SYSTEM_ROOT_DEFAULT = "C:\\Windows"
+RUSTDESK_WINDOWS_CONFIG_RELATIVE = (
+    "ServiceProfiles",
+    "LocalService",
+    "AppData",
+    "Roaming",
+    "RustDesk",
+    "config",
+)
+RUSTDESK_WINDOWS_SERVICE = "RustDesk"
+RUSTDESK_WINDOWS_STOPPED_PATTERN = re.compile(r"STATE\s*:\s*1\b")
+RUSTDESK_WINDOWS_STOP_POLL_S = 0.5
+
+# On macOS: the app bundle, root's own configuration, the copy under a
+# seated account's home, and the launchd job the service runs as.
+RUSTDESK_DARWIN_BINARY_PATH = "/Applications/RustDesk.app/Contents/MacOS/RustDesk"
+RUSTDESK_DARWIN_ROOT_CONFIG = "/var/root/Library/Preferences/com.carriez.RustDesk"
+RUSTDESK_DARWIN_ACCOUNT_RELATIVE = "Library/Preferences/com.carriez.RustDesk"
+RUSTDESK_DARWIN_SERVICE_LABEL = "com.carriez.RustDesk_service"
+RUSTDESK_DARWIN_SERVICE_PLIST = (
+    "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist"
 )
 
 RUSTDESK_ACTION_START = "start"
@@ -104,13 +140,40 @@ RUSTDESK_ID_PATTERN = re.compile(r"\b(\d{6,12})\b")
 RUSTDESK_OPTION_PATTERN = re.compile(r"^\s*([A-Za-z0-9_\-]+)\s*=")
 
 
+def rustdesk_os() -> str:
+    """The operating system the tables below are read for.
+
+    Returns:
+        ``linux``, ``windows`` or ``darwin``.
+    """
+    reported = "linux" if sys.platform.startswith("linux") else sys.platform
+    return OS_NAMES.get(reported, reported)
+
+
+def binary_candidates() -> tuple:
+    """Every place RustDesk's binary may be on this platform, in order.
+
+    Returns:
+        The absolute paths.
+    """
+    os_name = rustdesk_os()
+    if os_name == "windows":
+        program_files = (
+            os.environ.get("ProgramFiles") or RUSTDESK_WINDOWS_PROGRAM_FILES_DEFAULT
+        )
+        return (ntpath.join(program_files, *RUSTDESK_WINDOWS_BINARY_RELATIVE),)
+    if os_name == "darwin":
+        return (RUSTDESK_DARWIN_BINARY_PATH,)
+    return RUSTDESK_BINARY_PATHS
+
+
 def binary_path() -> str:
     """Where RustDesk is on this machine.
 
     Returns:
         The executable's path, empty when it is not installed.
     """
-    for candidate in RUSTDESK_BINARY_PATHS:
+    for candidate in binary_candidates():
         if os.path.isfile(candidate):
             return candidate
     return ""
@@ -146,13 +209,26 @@ def config_paths(account_home: str = "") -> list:
             writes only the service's own.
 
     Returns:
-        The paths to write.
+        The paths to write. On Windows the service's alone: the session
+        reads the service's.
     """
-    paths = [os.path.join(RUSTDESK_ROOT_CONFIG, RUSTDESK_CONFIG_NAME)]
-    if account_home:
-        paths.append(
-            os.path.join(account_home, RUSTDESK_ACCOUNT_RELATIVE, RUSTDESK_CONFIG_NAME)
+    os_name = rustdesk_os()
+    if os_name == "windows":
+        system_root = (
+            os.environ.get("SystemRoot") or RUSTDESK_WINDOWS_SYSTEM_ROOT_DEFAULT
         )
+        return [
+            ntpath.join(
+                system_root, *RUSTDESK_WINDOWS_CONFIG_RELATIVE, RUSTDESK_CONFIG_NAME
+            )
+        ]
+    if os_name == "darwin":
+        root, relative = RUSTDESK_DARWIN_ROOT_CONFIG, RUSTDESK_DARWIN_ACCOUNT_RELATIVE
+    else:
+        root, relative = RUSTDESK_ROOT_CONFIG, RUSTDESK_ACCOUNT_RELATIVE
+    paths = [posixpath.join(root, RUSTDESK_CONFIG_NAME)]
+    if account_home:
+        paths.append(posixpath.join(account_home, relative, RUSTDESK_CONFIG_NAME))
     return paths
 
 
@@ -230,7 +306,7 @@ def write_config(path: str, options: tuple) -> bool:
         temporary = f"{path}.tmp"
         with open(temporary, "w", encoding="utf-8") as stream:
             stream.write(rendered)
-        if kept is not None:
+        if kept is not None and hasattr(os, "chown"):
             os.chown(temporary, kept[0], kept[1])
             os.chmod(temporary, kept[2])
         os.replace(temporary, path)
@@ -334,17 +410,53 @@ def _password_refusal(binary: str, password: str) -> str:
 
 
 def control_service(action: str) -> None:
-    """Start or stop the RustDesk service.
+    """Start, stop or restart the RustDesk service the platform's own way.
+
+    systemd on Linux, the service control manager on Windows, launchd on
+    macOS. A stop on Windows waits for the service to have stopped, since
+    it rewrites its configuration as it exits.
 
     Args:
-        action: ``start`` or ``stop``.
+        action: ``start``, ``stop`` or ``restart``.
 
     Raises:
-        InstallError: If systemd refuses.
+        InstallError: If the service manager cannot be run.
     """
-    command = ["systemctl", action, RUSTDESK_UNIT]
+    os_name = rustdesk_os()
+    if os_name == "windows":
+        if action in (RUSTDESK_ACTION_STOP, RUSTDESK_ACTION_RESTART):
+            _run_service_command(["sc", "stop", RUSTDESK_WINDOWS_SERVICE])
+            _wait_for_windows_stop()
+        if action in (RUSTDESK_ACTION_START, RUSTDESK_ACTION_RESTART):
+            _run_service_command(["sc", "start", RUSTDESK_WINDOWS_SERVICE])
+        return
+    if os_name == "darwin":
+        if action in (RUSTDESK_ACTION_STOP, RUSTDESK_ACTION_RESTART):
+            _run_service_command(
+                ["launchctl", "bootout", f"system/{RUSTDESK_DARWIN_SERVICE_LABEL}"]
+            )
+        if action in (RUSTDESK_ACTION_START, RUSTDESK_ACTION_RESTART):
+            _run_service_command(
+                ["launchctl", "bootstrap", "system", RUSTDESK_DARWIN_SERVICE_PLIST]
+            )
+        return
+    _run_service_command(["systemctl", action, RUSTDESK_UNIT])
+
+
+def _run_service_command(command: list) -> str:
+    """Run one service manager command, what it printed returned.
+
+    Args:
+        command: The argument vector.
+
+    Returns:
+        Its standard output.
+
+    Raises:
+        InstallError: If the command cannot be run.
+    """
     try:
-        subprocess.run(
+        result = subprocess.run(
             command,
             capture_output=True,
             text=True,
@@ -352,3 +464,19 @@ def control_service(action: str) -> None:
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise InstallError(f"{command[0]} could not run: {error}")
+    return result.stdout or ""
+
+
+def _wait_for_windows_stop() -> None:
+    """Wait until the service control manager reports RustDesk stopped.
+
+    Raises:
+        InstallError: If ``sc`` cannot be run.
+    """
+    deadline = time.monotonic() + RUSTDESK_SERVICE_TIMEOUT_S
+    while time.monotonic() < deadline:
+        printed = _run_service_command(["sc", "query", RUSTDESK_WINDOWS_SERVICE])
+        # No state at all is a service that is not there to wait for.
+        if "STATE" not in printed or RUSTDESK_WINDOWS_STOPPED_PATTERN.search(printed):
+            return
+        time.sleep(RUSTDESK_WINDOWS_STOP_POLL_S)

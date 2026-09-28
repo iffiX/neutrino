@@ -14,6 +14,10 @@ says so rather than passing the connection refusal on raw.
 **A share is declared only once it answers.** Configuring is not sharing:
 the share probes the direct port and says ``starting`` until it opens.
 
+Who is at the screen, how many peers are connected, and what a peer would
+wait on are each platform's own, read through the seat
+(:func:`~neutrino_agent.rdp.seat.seat_for`).
+
 Not pure: writes RustDesk's configuration, drives its service, and opens a
 local socket to see whether it answers.
 """
@@ -24,7 +28,6 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
 import time
 import uuid
 
@@ -32,141 +35,18 @@ from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
 from neutrino_agent.modules import rustdesk
 from neutrino_agent.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
-    RDP_ATTENTION_SCREEN_NOT_ALLOWED,
     RDP_ATTENTION_TTL_S,
-    RDP_GRAPHICAL_SESSION_TYPES,
     RDP_GREETER_ACCOUNTS,
     RDP_MODULE_NAME,
     RDP_PASSWORD_FILE,
     RDP_PROBE_HOST,
     RDP_PROBE_TIMEOUT_S,
     RDP_PROBE_TTL_S,
-    RDP_PROC_DIR,
-    RDP_PROC_TCP_PATHS,
-    RDP_SESSION_ENVIRONMENT_KEYS,
-    RDP_SESSION_TIMEOUT_S,
     RDP_STATE_NOT_SHARED,
     RDP_STATE_SHARING,
     RDP_STATE_STARTING,
-    RDP_TCP_ESTABLISHED,
-    RDP_WAYLAND_TOKEN_OPTION,
 )
-
-try:
-    import pwd
-except ImportError:  # Windows has no account database module.
-    pwd = None
-
-
-def session_environment(account: str) -> "dict | None":
-    """One seated account's display environment, off its own processes.
-
-    Args:
-        account: The seated account.
-
-    Returns:
-        The display variables, or None when no process of that account
-        carries a display.
-    """
-    try:
-        uid = pwd.getpwnam(account).pw_uid
-    except KeyError:
-        return None
-    try:
-        pids = sorted((p for p in os.listdir(RDP_PROC_DIR) if p.isdigit()), key=int)
-    except OSError:
-        return None
-    for pid in pids:
-        path = os.path.join(RDP_PROC_DIR, pid)
-        try:
-            if os.stat(path).st_uid != uid:
-                continue
-            with open(os.path.join(path, "environ"), "rb") as stream:
-                raw = stream.read()
-        except OSError:
-            continue
-        pairs = dict(
-            item.split("=", 1)
-            for item in raw.decode("utf-8", "replace").split("\0")
-            if "=" in item
-        )
-        if not (pairs.get("DISPLAY") or pairs.get("WAYLAND_DISPLAY")):
-            continue
-        return {key: pairs[key] for key in RDP_SESSION_ENVIRONMENT_KEYS if key in pairs}
-    return None
-
-
-def has_desktop_session() -> bool:
-    """Whether this machine has a desktop for RustDesk to share.
-
-    Returns:
-        True on a machine that cannot be asked, so only one that positively
-        has no graphical session is refused.
-    """
-    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
-        return True
-    seated = graphical_accounts()
-    return True if seated is None else bool(seated)
-
-
-def graphical_accounts() -> "list | None":
-    """The accounts signed in at this machine's screen.
-
-    ``loginctl`` lists each session with its owner, and answers the type of
-    every session it is asked about in the order it was asked.
-
-    Returns:
-        The owning accounts of the graphical sessions, or None on a box
-        without ``loginctl``, which says nothing at all.
-    """
-    listed = _loginctl(["list-sessions", "--no-legend"])
-    if listed is None:
-        return None
-    rows = [line.split() for line in listed.splitlines() if line.split()]
-    if not rows:
-        return []
-    sessions = [row[0] for row in rows]
-    owners = {row[0]: row[2] for row in rows if len(row) > 2}
-    shown = _loginctl(["show-session", "--property=Type"] + sessions)
-    if shown is None:
-        return None
-    types = [
-        line.strip()[len("Type=") :]
-        for line in shown.splitlines()
-        if line.strip().startswith("Type=")
-    ]
-    named = []
-    for session, kind in zip(sessions, types):
-        owner = owners.get(session, "")
-        if kind in RDP_GRAPHICAL_SESSION_TYPES and owner and owner not in named:
-            named.append(owner)
-    return named
-
-
-def connected_count(port: int) -> int:
-    """How many peers are connected to the direct port right now.
-
-    Args:
-        port: The local port a direct connection lands on.
-
-    Returns:
-        The number of established connections to it, zero on a machine whose
-        connection table cannot be read.
-    """
-    total = 0
-    for path in RDP_PROC_TCP_PATHS:
-        try:
-            with open(path, "r", encoding="utf-8") as stream:
-                rows = stream.read().splitlines()[1:]
-        except OSError:
-            continue
-        for row in rows:
-            fields = row.split()
-            if len(fields) < 4 or fields[3] != RDP_TCP_ESTABLISHED:
-                continue
-            if _local_port(fields[1]) == port:
-                total += 1
-    return total
+from neutrino_agent.rdp.seat import seat_for
 
 
 def closed_options() -> tuple:
@@ -181,65 +61,21 @@ def closed_options() -> tuple:
     )
 
 
-def _local_port(address: str) -> int:
-    """The port out of one ``/proc/net/tcp`` address, -1 when it has none."""
-    _, _, port = address.partition(":")
-    try:
-        return int(port, 16)
-    except ValueError:
-        return -1
-
-
-def _loginctl(arguments: list):
-    """What ``loginctl`` printed, or None when this machine cannot be asked."""
-    try:
-        result = subprocess.run(
-            ["loginctl"] + arguments,
-            capture_output=True,
-            text=True,
-            timeout=RDP_SESSION_TIMEOUT_S,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return result.stdout if result.returncode == 0 else None
-
-
-def _session_types() -> list:
-    """The types of this machine's graphical sessions.
-
-    Returns:
-        The types, empty where none is graphical or the machine cannot be
-        asked.
-    """
-    listed = _loginctl(["list-sessions", "--no-legend"])
-    if listed is None:
-        return []
-    sessions = [line.split()[0] for line in listed.splitlines() if line.split()]
-    if not sessions:
-        return []
-    shown = _loginctl(["show-session", "--property=Type"] + sessions)
-    if shown is None:
-        return []
-    return [
-        line.strip()[len("Type=") :]
-        for line in shown.splitlines()
-        if line.strip().startswith("Type=")
-        and line.strip()[len("Type=") :] in RDP_GRAPHICAL_SESSION_TYPES
-    ]
-
-
 class RdpShareHost:
     """Shares this machine's desktop, and says where the share stands."""
 
-    def __init__(self, *, platform, store, credentials_dir: str, log=print):
+    def __init__(self, *, platform, store, credentials_dir: str, log=print, seat=None):
         """
         Args:
             platform: The machine's platform, behind the contract.
             store: The :class:`MachineStateStore` holding the share record.
             credentials_dir: Where the seat password file lives.
             log: Callable used for progress messages.
+            seat: Who is at the screen and what a peer would wait on; None
+                is the platform's own.
         """
         self._platform = platform
+        self._seat = seat if seat is not None else seat_for(platform.os_name)
         self._store = store
         self._credentials_dir = credentials_dir
         self._log = log
@@ -275,7 +111,7 @@ class RdpShareHost:
         status = self._module_states().get(RDP_MODULE_NAME) or {}
         if status.get("state") != "installed":
             return {"code": "module_missing", "params": {"module": RDP_MODULE_NAME}}
-        if not has_desktop_session():
+        if not self._seat.has_desktop_session():
             return {"code": "rdp_no_desktop", "params": {}}
         refusal = self._seat_refusal(account)
         if refusal:
@@ -408,15 +244,15 @@ class RdpShareHost:
             "attention": (
                 self.attention(str(record.get("account", ""))) if is_shared else ""
             ),
-            "connected_count": connected_count(port) if is_shared else 0,
+            "connected_count": self._seat.connected_count(port) if is_shared else 0,
         }
 
     def attention(self, account: str) -> str:
         """What somebody has to do at this machine before a peer sees it.
 
         Wayland hands screen capture out through a dialog on the shared
-        machine's own screen. RustDesk remembers the answer, so this is
-        once per person; until then a peer that dials waits on a dialog it
+        machine's own screen, and a Mac through two permissions granted in
+        its settings. Until then a peer that dials waits on something it
         cannot see.
 
         Believed for :data:`RDP_ATTENTION_TTL_S`: the heartbeat asks every
@@ -441,48 +277,12 @@ class RdpShareHost:
 
     def _read_attention(self, account: str) -> str:
         """Ask the machine what a peer would wait on, without the cache."""
-        seated = graphical_accounts()
+        seated = self._seat.graphical_accounts()
         if seated is not None and not seated:
             return RDP_ATTENTION_NOBODY_SEATED
         if account and account.split("@")[0] in RDP_GREETER_ACCOUNTS:
             return RDP_ATTENTION_NOBODY_SEATED
-        if not self._is_wayland_seat():
-            return ""
-        home = self._account_home(account)
-        if self._has_wayland_permission(home):
-            return ""
-        return RDP_ATTENTION_SCREEN_NOT_ALLOWED
-
-    @staticmethod
-    def _is_wayland_seat() -> bool:
-        """Whether this machine's screen is handed out through a portal."""
-        if os.environ.get("WAYLAND_DISPLAY"):
-            return True
-        shown = _loginctl(["show-session", "--property=Type", "self"])
-        if shown is None:
-            return _session_types() == ["wayland"]
-        return "wayland" in (shown or "")
-
-    @staticmethod
-    def _has_wayland_permission(account_home: str) -> bool:
-        """Whether RustDesk already holds this machine's screen permission.
-
-        Args:
-            account_home: The home of the account the share is for.
-
-        Returns:
-            True when the option is in a configuration RustDesk reads, and
-            on a machine whose files cannot be read, which is not an
-            invitation to nag.
-        """
-        for path in rustdesk.config_paths(account_home):
-            try:
-                with open(path, "r", encoding="utf-8") as stream:
-                    if RDP_WAYLAND_TOKEN_OPTION in stream.read():
-                        return True
-            except OSError:
-                continue
-        return False
+        return self._seat.screen_attention(self._account_home(account))
 
     def _seat_refusal(self, account: str) -> dict:
         """Why one account's desktop cannot be shared, empty when it can.
@@ -500,7 +300,7 @@ class RdpShareHost:
             Empty when the account can be shared, ``{"code", "params"}``
             when it cannot.
         """
-        seated = graphical_accounts()
+        seated = self._seat.graphical_accounts()
         if seated is not None:
             if account in seated:
                 return {}
