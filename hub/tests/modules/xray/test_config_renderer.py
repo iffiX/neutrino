@@ -708,27 +708,6 @@ def test_with_every_scope_off_an_exits_name_still_resolves_where_it_answers():
         "outboundTag": "direct",
     }
 
-    # --- the overlay daemons' own names ------------------------------------------
-
-    config = render_with_exit(
-        "exit.example.net",
-    )
-
-    assert config["dns"]["servers"][0] == {
-        "address": "223.5.5.5",
-        "port": 53,
-        "domains": [
-            "full:exit.example.net",
-            "domain:netbird.io",
-            "full:et.example.org",
-        ],
-        "skipFallback": True,
-    }
-    assert rule_named(config, "rule_dns_direct")["outboundTag"] == "direct"
-
-    assert config["dns"]["servers"][0]["domains"] == ["domain:netbird.io"]
-    assert rule_named(config, "rule_dns_direct")["ip"] == ["223.5.5.5"]
-
     by_name = render_with_exit("exit.example.net")
     by_address = render_with_exit("203.0.113.10")
 

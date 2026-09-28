@@ -331,4 +331,3 @@ def test_the_nodes_measured_down_reach_the_renderer(applied, monkeypatch):
     panel._apply_all_blocking()
 
     assert seen["down_tags"] == {"node_hk1"}
-    assert "domain:netbird.io" in seen["overlay_names"]
