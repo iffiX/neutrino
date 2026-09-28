@@ -8,7 +8,9 @@ atomically and 0600 in the person's own configuration directory; a file of
 the older single-binding shape reads as no bindings, and a binding without
 the address list reads as one with none. The candidates of a connection
 round, the hub's name in a stored address's scheme and port, and the notes
-a session writes onto its binding are pinned here too.
+a session writes onto its binding are pinned here too. The link's overlay
+object is kept on the binding with only its provider's own fields, an
+unknown provider reading as none, and its secret never reaches the log.
 """
 
 import base64
@@ -41,7 +43,7 @@ SECOND = dict(
 
 
 def test_a_link_round_trips():
-    urls, token, fingerprint = parse_link(
+    urls, token, fingerprint, _ = parse_link(
         link_for(
             {
                 "urls": ["https://192.168.100.1:8443"],
@@ -56,7 +58,7 @@ def test_a_link_round_trips():
 
 
 def test_every_address_the_hub_answers_on_is_carried():
-    urls, token, _ = parse_link(
+    urls, token, _, _ = parse_link(
         link_for(
             {
                 "urls": ["http://192.168.8.1:8080", "http://10.0.0.1:8080"],
@@ -77,18 +79,20 @@ def test_the_link_needs_no_quoting():
 def test_the_bare_payload_is_accepted():
     link = link_for({"urls": ["http://gateway:8080"], "token": "t"})
     payload = link.split("/")[-1]
-    urls, token, _ = parse_link(payload)
+    urls, token, _, _ = parse_link(payload)
     assert urls == ["http://gateway:8080"]
     assert token == "t"
 
 
 def test_a_trailing_slash_is_trimmed():
-    urls, _, _ = parse_link(link_for({"urls": ["http://gateway:8080/"], "token": "t"}))
+    urls, _, _, _ = parse_link(
+        link_for({"urls": ["http://gateway:8080/"], "token": "t"})
+    )
     assert urls == ["http://gateway:8080"]
 
 
 def test_a_link_without_a_fingerprint_carries_an_empty_one():
-    _, _, fingerprint = parse_link(
+    _, _, fingerprint, _ = parse_link(
         link_for({"urls": ["http://gateway:8080"], "token": "t"})
     )
     assert fingerprint == ""
@@ -189,6 +193,7 @@ def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
         "gateway_urls": ["https://hub:8443"],
         "fingerprint": "ab" * 32,
         "token": "tok",
+        "overlay": None,
     }
     assert enrollment.bindings() == [binding]
 
@@ -375,7 +380,7 @@ def test_adding_the_same_id_replaces_in_place():
     ]
 
 
-def test_a_binding_keeps_only_its_eight_fields():
+def test_a_binding_keeps_only_its_nine_fields():
     enrollment.add_binding(dict(BINDING, password="never"))  # scan: allow
 
     assert enrollment.bindings() == [BINDING]
@@ -564,3 +569,95 @@ def test_the_stamp_moves_with_every_write(config_path):
 
     assert first != 0
     assert enrollment.config_stamp() not in (0, first)
+
+
+# --- the overlay object ---
+
+NETBIRD = {
+    "provider": "netbird",
+    "setup_key": "KEY-1",  # scan: allow
+    "management_url": "",
+    "fqdn": "hub.netbird.cloud",
+}
+EASYTIER = {
+    "provider": "easytier",
+    "network_name": "home",
+    "network_secret": "s3cret",  # scan: allow
+    "peer": "tcp://203.0.113.7:11010",
+}
+
+
+def test_a_link_without_an_overlay_carries_none():
+    *_, overlay = parse_link(link_for({"urls": ["http://g"], "token": "t"}))
+
+    assert overlay is None
+
+
+@pytest.mark.parametrize("material", [NETBIRD, EASYTIER])
+def test_a_link_carries_the_overlay_object(material):
+    *_, overlay = parse_link(
+        link_for({"urls": ["http://g"], "token": "t", "overlay": material})
+    )
+
+    assert overlay == material
+
+
+def test_an_overlay_keeps_only_its_providers_fields():
+    raw = dict(EASYTIER, peer=" tcp://203.0.113.7:11010/ ", extra="x", fqdn="y")
+
+    assert enrollment.clean_overlay(raw) == EASYTIER
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        "netbird",
+        {"provider": "zerotier", "network": "n"},
+        dict(NETBIRD, setup_key=""),
+        dict(EASYTIER, network_secret=""),
+        dict(EASYTIER, peer=""),
+    ],
+)
+def test_an_unreadable_overlay_reads_as_none(raw):
+    assert enrollment.clean_overlay(raw) is None
+
+
+def test_a_netbird_overlay_may_name_no_management_url_or_fqdn():
+    raw = dict(NETBIRD, fqdn="")
+
+    assert enrollment.clean_overlay(raw) == raw
+
+
+def test_the_join_keeps_the_links_overlay_on_the_binding(monkeypatch):
+    def post(self, path, payload):
+        return {"id": "c9", "token": "tok9"}
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
+
+    binding = enrollment.enroll(
+        link_for({"urls": ["http://g:1"], "token": "t", "overlay": EASYTIER})
+    )
+
+    assert binding["overlay"] == EASYTIER
+    assert enrollment.bindings()[0]["overlay"] == EASYTIER
+
+
+def test_note_overlay_writes_and_clears_one_bindings_object():
+    enrollment.add_binding(BINDING)
+    enrollment.add_binding(SECOND)
+
+    enrollment.note_overlay("c2", NETBIRD)
+    assert [binding["overlay"] for binding in enrollment.bindings()] == [
+        None,
+        NETBIRD,
+    ]
+    enrollment.note_overlay("c2", None)
+
+    assert enrollment.bindings()[1]["overlay"] is None
+
+
+def test_a_binding_file_with_an_overlay_is_0600(config_path):
+    enrollment.add_binding(dict(BINDING, overlay=NETBIRD))
+
+    assert config_path.stat().st_mode & 0o777 == 0o600

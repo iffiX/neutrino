@@ -17,6 +17,7 @@ name's address.
 """
 
 import json
+import os
 import threading
 import time
 
@@ -1539,3 +1540,92 @@ def _open_while(session, made, close_frame):
     if "error" in outcome:
         raise outcome["error"]
     return outcome["result"]
+
+
+# --- the overlay object and the terminals ---
+
+NETBIRD_OVERLAY = {
+    "provider": "netbird",
+    "setup_key": "KEY-1",  # scan: allow
+    "management_url": "https://nb.example",
+    "fqdn": "hub.netbird.cloud",
+}
+TERMINALS = [
+    {"device_id": "d1", "name": "lepton", "is_online": True},
+    {"device_id": "d2", "name": "", "is_online": False},
+    {"name": "no id"},
+    "junk",
+]
+
+
+def test_a_states_overlay_is_kept_on_the_binding(bound, monkeypatch, config_path):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+
+    assert session.overlay() == NETBIRD_OVERLAY
+    assert stored_binding(config_path)["overlay"] == NETBIRD_OVERLAY
+
+
+def test_the_same_overlay_a_second_time_writes_nothing(bound, monkeypatch, config_path):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+    written = config_path.read_bytes()
+    os.utime(config_path, ns=(0, 0))
+
+    take(session, made, dict(STATE, hash="h2", overlay=NETBIRD_OVERLAY))
+
+    assert config_path.stat().st_mtime_ns == 0
+    assert config_path.read_bytes() == written
+
+
+def test_a_null_overlay_clears_it_and_a_state_without_one_keeps_it(
+    bound, monkeypatch, config_path
+):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+
+    take(session, made, dict(STATE))
+    assert session.overlay() == NETBIRD_OVERLAY
+    take(session, made, dict(STATE, overlay=None))
+
+    assert session.overlay() is None
+    assert stored_binding(config_path)["overlay"] is None
+
+
+def test_the_overlay_secret_never_reaches_the_log(monkeypatch, config_path):
+    bind(config_path, url="https://hub.lan:8443")
+    lines = []
+    session = session_for(log=lines.append)
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+
+    assert lines and not any("KEY-1" in line for line in lines)
+
+
+def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, dict(STATE, terminals=TERMINALS))
+
+    assert session.terminal_entries() == [
+        {"device_id": "d1", "name": "lepton", "is_online": True},
+        {"device_id": "d2", "name": "d2", "is_online": False},
+    ]
+    session._end_socket(made)
+    assert session.terminal_entries() == []
+
+
+def test_a_state_without_terminals_holds_none(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    take(session, made, dict(STATE, terminals=TERMINALS))
+
+    take(session, made, dict(STATE))
+
+    assert session.terminal_entries() == []

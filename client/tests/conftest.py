@@ -208,6 +208,7 @@ BINDING = {
     "gateway_urls": [],
     "fingerprint": "",
     "token": "tok",
+    "overlay": None,
 }
 OFFICE_BINDING = {
     "id": "c2",
@@ -218,6 +219,7 @@ OFFICE_BINDING = {
     "gateway_urls": [],
     "fingerprint": "",
     "token": "tok2",
+    "overlay": None,
 }
 
 

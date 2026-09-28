@@ -132,6 +132,33 @@ def _nobody(*_args) -> None:
     """Nobody listening."""
 
 
+def _clean_terminals(value) -> list:
+    """The state's ``terminals`` list as the session holds it.
+
+    Args:
+        value: What the state carried.
+
+    Returns:
+        ``[{device_id, name, is_online}]``, entries without a device id
+        dropped; empty when ``value`` is not a list.
+    """
+    kept = []
+    for entry in value if isinstance(value, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        device_id = str(entry.get("device_id", "") or "")
+        if not device_id:
+            continue
+        kept.append(
+            {
+                "device_id": device_id,
+                "name": str(entry.get("name", "") or "") or device_id,
+                "is_online": bool(entry.get("is_online")),
+            }
+        )
+    return kept
+
+
 class ClientHubSession:
     """One binding's socket to its hub, reconnecting until stopped."""
 
@@ -194,6 +221,7 @@ class ClientHubSession:
         self._is_unbound = False
         self._last_error: "dict | None" = None
         self._services_list: list = []
+        self._terminals: list = []
         self._state_hash = ""
         self._hub_software = ""
         self._is_disabled = False
@@ -261,6 +289,30 @@ class ClientHubSession:
             if not self._is_welcomed:
                 return []
             return [entry for entry in self._services_list if isinstance(entry, dict)]
+
+    def overlay(self) -> "dict | None":
+        """How this machine joins the hub's virtual network, as last named.
+
+        Returns:
+            The binding's overlay object, None when the hub named none; it
+            is kept while the socket is down, since the virtual network is
+            what can bring the hub back.
+        """
+        with self._lock:
+            overlay = self._binding.get("overlay")
+            return dict(overlay) if isinstance(overlay, dict) else None
+
+    def terminal_entries(self) -> list:
+        """The machines the hub offers a terminal on, while its socket is up.
+
+        Returns:
+            ``[{device_id, name, is_online}]``; empty while the socket is
+            down.
+        """
+        with self._lock:
+            if not self._is_welcomed:
+                return []
+            return [dict(entry) for entry in self._terminals]
 
     # --- what the resident does ---
 
@@ -698,6 +750,24 @@ class ClientHubSession:
             with self._lock:
                 self._binding["gateway_urls"] = previous
 
+    def _note_overlay(self, overlay) -> None:
+        """Write the hub's overlay object onto the binding, when it changed."""
+        cleaned = enrollment.clean_overlay(overlay)
+        with self._lock:
+            previous = self._binding.get("overlay")
+            if previous == cleaned:
+                return
+            self._binding["overlay"] = cleaned
+            binding_id = self._binding.get("id", "")
+        provider = (cleaned or {}).get("provider", "")
+        self._log(f"the hub's virtual network changed: {provider or 'no provider'}")
+        try:
+            enrollment.note_overlay(binding_id, cleaned)
+        except OSError as error:
+            self._log(f"could not record the hub's virtual network: {error}")
+            with self._lock:
+                self._binding["overlay"] = previous
+
     def _watch_network(self) -> bool:
         """Look at the route to the hub.
 
@@ -871,11 +941,15 @@ class ClientHubSession:
         urls = message.get("urls")
         if isinstance(urls, list):
             self._note_urls(urls)
+        if "overlay" in message:
+            self._note_overlay(message.get("overlay"))
+        terminals = message.get("terminals", [])
         is_disabled = bool(message.get("is_disabled"))
         with self._lock:
             self._services_list = [
                 entry for entry in services if isinstance(entry, dict)
             ]
+            self._terminals = _clean_terminals(terminals)
             self._state_hash = str(message.get("hash", "") or "")
         self._take_disabled(is_disabled)
         if not is_disabled:

@@ -1,7 +1,8 @@
 """Joining a hub as one person, leaving it, and the bindings kept in between.
 
 The link is ``neutrino://enroll/<payload>`` where the payload is base64url
-over ``{"urls": [...], "token": ..., "fp": ..., "role": "client"}``. That
+over ``{"urls": [...], "token": ..., "fp": ..., "role": "client", "overlay":
+...}``. That
 alphabet holds no character a shell splits or a URL escapes. ``fp`` pins the
 hub: it is the SHA-256 fingerprint of the agent port's TLS certificate,
 checked on every connection before anything is sent. A link whose ``role``
@@ -10,10 +11,13 @@ is not ``client`` was made for a device agent and is refused.
 The bindings live in ``client.json`` in the person's own configuration
 directory, mode 0600, one per hub joined:
 ``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
-fingerprint, token}], "exit_hub_id"}``. A file without ``bindings`` reads as
-none. ``gateway_urls`` is every address the hub answers on, from the link
-and then from each ``state`` frame; ``gateway_url`` is the one that last
+fingerprint, token, overlay}], "exit_hub_id"}``. A file without ``bindings``
+reads as none. ``gateway_urls`` is every address the hub answers on, from the
+link and then from each ``state`` frame; ``gateway_url`` is the one that last
 answered. A binding written by 0.3.0 has no list and reads as one with none.
+``overlay`` is how this machine joins the hub's virtual network, from the
+link and then from each ``state``: ``null``, or one provider's own fields,
+the secret among them, which is why the file is 0600.
 
 A connection round is the addresses in ``candidate_urls`` order: the address
 ``hub.neutrino.internal`` resolves to on the network this machine stands on,
@@ -58,7 +62,7 @@ from neutrino_client.services.store import ClientServiceStore
 
 LINK_PREFIX = "neutrino://enroll/"
 # What one binding keeps: every field a string but the list of every address
-# the hub answers on.
+# the hub answers on and the overlay object.
 BINDING_KEYS = (
     "id",
     "name",
@@ -68,12 +72,23 @@ BINDING_KEYS = (
     "gateway_urls",
     "fingerprint",
     "token",
+    "overlay",
 )
 BINDING_URLS_KEY = "gateway_urls"
+BINDING_OVERLAY_KEY = "overlay"
+# The fields each overlay provider's object carries, every one a string and
+# every one required.
+OVERLAY_FIELDS = {
+    "netbird": ("setup_key", "management_url", "fqdn"),
+    "easytier": ("network_name", "network_secret", "peer"),
+}
+# The fields that may be empty: a NetBird management URL left empty is
+# NetBird's own cloud, and a hub whose daemon reports no name has no fqdn.
+OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn")
 
 
-def parse_link(link: str) -> "tuple[list, str, str]":
-    """Pull the addresses, enrollment ticket and fingerprint out of a link.
+def parse_link(link: str) -> "tuple[list, str, str, dict | None]":
+    """Pull the addresses, ticket, fingerprint and overlay out of a link.
 
     Args:
         link: What the person pasted; the bare payload without its scheme
@@ -81,8 +96,9 @@ def parse_link(link: str) -> "tuple[list, str, str]":
 
     Returns:
         The hub base URLs in the order the hub offered them, the enrollment
-        ticket, and the certificate fingerprint the hub pins, empty when the
-        link carries none.
+        ticket, the certificate fingerprint the hub pins, empty when the
+        link carries none, and the overlay object, None when the link
+        carries none or one this client cannot read.
 
     Raises:
         EnrollmentError: ``link_missing`` for an empty paste,
@@ -104,13 +120,14 @@ def parse_link(link: str) -> "tuple[list, str, str]":
         token = str(payload.get("token", ""))
         fingerprint = str(payload.get("fp", "")).strip().lower()
         role = str(payload.get("role", ""))
+        overlay = clean_overlay(payload.get("overlay"))
     except (binascii.Error, ValueError, UnicodeDecodeError, AttributeError) as error:
         raise EnrollmentError("link_unreadable") from error
     if not urls or not token:
         raise EnrollmentError("link_incomplete")
     if role != CLIENT_ROLE:
         raise EnrollmentError("link_not_for_client", {"role": role})
-    return urls, token, fingerprint
+    return urls, token, fingerprint, overlay
 
 
 def config_path() -> str:
@@ -308,6 +325,48 @@ def note_urls(binding_id: str, gateway_urls: list) -> None:
     _note(binding_id, gateway_urls=clean_urls(gateway_urls))
 
 
+def note_overlay(binding_id: str, overlay: "dict | None") -> None:
+    """Record the overlay object the hub's state names, on one binding.
+
+    Args:
+        binding_id: The binding the state arrived on.
+        overlay: The object, already cleaned, or None.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    _note(binding_id, overlay=clean_overlay(overlay))
+
+
+def clean_overlay(value) -> "dict | None":
+    """An overlay object as a binding keeps it.
+
+    Args:
+        value: What a link, a state or the file carried.
+
+    Returns:
+        ``{"provider", ...}`` with exactly the provider's own fields, each a
+        stripped string, the EasyTier peer without its trailing slash; None
+        for anything else, an unknown provider or a missing required field
+        among them.
+    """
+    if not isinstance(value, dict):
+        return None
+    provider = str(value.get("provider", "") or "")
+    fields = OVERLAY_FIELDS.get(provider)
+    if fields is None:
+        return None
+    cleaned = {"provider": provider}
+    for field in fields:
+        text = str(value.get(field, "") or "").strip()
+        if field == "peer":
+            text = text.rstrip("/")
+        if not text and field not in OVERLAY_OPTIONAL_FIELDS:
+            return None
+        cleaned[field] = text
+    return cleaned
+
+
 def clean_urls(value) -> list:
     """A list of addresses as a binding keeps them.
 
@@ -482,7 +541,7 @@ def enroll(link: str) -> dict:
             protocol, the hub refused the ticket, the reply names no id or
             token, or no address answered.
     """
-    gateway_urls, ticket, fingerprint = parse_link(link)
+    gateway_urls, ticket, fingerprint, overlay = parse_link(link)
     payload = join_payload(ticket)
     reply = None
     refusal = ""
@@ -515,6 +574,7 @@ def enroll(link: str) -> dict:
             "gateway_urls": gateway_urls,
             "fingerprint": fingerprint,
             "token": reply.get("token", ""),
+            "overlay": overlay,
         }
     )
     if not _is_complete(binding):
@@ -543,13 +603,14 @@ def leave(binding: dict) -> None:
 
 
 def _binding(raw: dict) -> dict:
-    """One binding with every kept field, each a string but the list."""
+    """One binding with every kept field, each a string but the list and the overlay."""
     binding = {
         key: str(raw.get(key, "") or "")
         for key in BINDING_KEYS
-        if key != BINDING_URLS_KEY
+        if key not in (BINDING_URLS_KEY, BINDING_OVERLAY_KEY)
     }
     binding[BINDING_URLS_KEY] = clean_urls(raw.get(BINDING_URLS_KEY))
+    binding[BINDING_OVERLAY_KEY] = clean_overlay(raw.get(BINDING_OVERLAY_KEY))
     return binding
 
 
