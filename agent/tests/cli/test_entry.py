@@ -17,6 +17,7 @@ def test_the_gate_covers_every_verb():
         "leave",
         "rdp",
         "run",
+        "service",
         "status",
         "sync",
     ]
@@ -45,6 +46,33 @@ def test_an_unprivileged_caller_is_refused_with_the_command(
     assert f"nagent {argv[1]} needs root" in err
     assert reason in err
     assert f"sudo nagent {' '.join(argv[1:])}" in err
+
+
+def test_on_windows_an_unelevated_caller_is_told_to_open_an_administrator_terminal(
+    monkeypatch, capsys
+):
+    from neutrino_agent.platforms.windows import WindowsPlatform
+
+    monkeypatch.delattr(entry.os, "geteuid")
+    monkeypatch.setattr(WindowsPlatform, "is_elevated", lambda self: False)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "join", "neutrino://enroll/x"])
+
+    assert entry.main() == 2
+
+    err = capsys.readouterr().err
+    assert "nagent join needs an administrator" in err
+    assert "terminal opened as administrator" in err
+    assert "sudo" not in err
+
+
+def test_service_run_reaches_the_service_command(monkeypatch):
+    called = []
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "service", "run"])
+    monkeypatch.setattr(entry.service, "main_run", lambda: called.append("run") or 0)
+
+    assert entry.main() == 0
+    assert called == ["run"]
 
 
 def test_the_version_answers_any_account(monkeypatch, capsys):
@@ -103,7 +131,7 @@ def test_sync_reaches_its_own_command(monkeypatch):
 
 
 def test_the_verbs_that_were_pruned_are_gone(monkeypatch, capsys):
-    for verb in ("gui", "module", "operation", "service", "connect", "disconnect"):
+    for verb in ("gui", "module", "operation", "connect", "disconnect"):
         monkeypatch.setattr(entry.sys, "argv", ["nagent", verb])
 
         with pytest.raises(SystemExit) as refused:

@@ -1,8 +1,9 @@
-"""The local control channel: one Unix socket, one handler set.
+"""The local control channel: one Unix socket or named pipe, one handler set.
 
 The agent is root and so is everyone it answers. The socket file is 0600
-under a 0700 directory, so the kernel refuses anyone else before a request
-is read and no identity has to be judged in a handler.
+under a 0700 directory, and on Windows the pipe admits SYSTEM and the
+administrators alone, so the kernel refuses anyone else before a request is
+read and no identity has to be judged in a handler.
 
 Connections persist between requests, and each is served on its own thread.
 
@@ -25,6 +26,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from neutrino_agent import AGENT_VERSION
+from neutrino_agent.constants import AGENT_CONTROL_PIPE_PREFIX
 from neutrino_agent.core import enrollment
 from neutrino_agent.core.metrics import hostname
 from neutrino_agent.exceptions import EnrollmentError, PlatformUnsupportedError
@@ -59,7 +61,7 @@ def _state(agent) -> dict:
 
 
 class ControlServer:
-    """Serves the control socket from one handler set."""
+    """Serves the control socket or pipe from one handler set."""
 
     def __init__(self, *, agent, platform, log=print, socket_path: str = ""):
         """
@@ -94,7 +96,12 @@ class ControlServer:
                 self._log("control socket not available on this platform")
                 return
         try:
-            server = _ControlSocketHttpServer(path, _ControlRequestHandler)
+            if path.startswith(AGENT_CONTROL_PIPE_PREFIX):
+                from neutrino_agent.control.windows_pipe import ControlPipeHttpServer
+
+                server = ControlPipeHttpServer(path, _ControlRequestHandler)
+            else:
+                server = _ControlSocketHttpServer(path, _ControlRequestHandler)
         except OSError as error:
             self._log(f"control socket not available: {error}")
             return

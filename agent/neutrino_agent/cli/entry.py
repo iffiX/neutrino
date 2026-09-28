@@ -6,6 +6,7 @@
     nagent sync
     nagent rdp start [--user <name>] | stop
     nagent run
+    nagent service run
 
 The shape is settled in ../../../docs/cli.md.
 """
@@ -13,10 +14,11 @@ The shape is settled in ../../../docs/cli.md.
 import argparse
 import os
 import shlex
+import subprocess
 import sys
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.cli import join, leave, rdp, run, status, sync
+from neutrino_agent.cli import join, leave, rdp, run, service, status, sync
 
 # Everything the agent does is root's to do, and the control socket it asks
 # through is root's to open. Only ``--version`` answers any account.
@@ -27,6 +29,7 @@ ROOT_COMMANDS = {
     "sync": "it asks the agent over its root-only control socket",
     "rdp": "it configures this machine's desktop share",
     "run": "the agent manages this machine",
+    "service": "the agent manages this machine",
 }
 
 
@@ -58,6 +61,13 @@ def main() -> int:
     subparsers.add_parser("status", help="what this machine is bound to")
     subparsers.add_parser("sync", help="ask the hub for this machine's state now")
     subparsers.add_parser("run", help="run the agent in the foreground")
+    service_parser = subparsers.add_parser(
+        "service", help="the agent as the Windows service"
+    )
+    service_actions = service_parser.add_subparsers(
+        dest="service_command", metavar="<action>"
+    )
+    service_actions.add_parser("run", help="what the service control manager starts")
     rdp_parser = _add_rdp_parser(subparsers)
 
     arguments = parser.parse_args()
@@ -65,9 +75,8 @@ def main() -> int:
         parser.print_help()
         return 2
     reason = ROOT_COMMANDS.get(arguments.command)
-    if reason is not None and hasattr(os, "geteuid") and os.geteuid() != 0:
-        print(f"nagent {arguments.command} needs root ({reason}):", file=sys.stderr)
-        print(f"    sudo nagent {shlex.join(sys.argv[1:])}", file=sys.stderr)
+    if reason is not None and not _is_privileged():
+        _print_privilege_refusal(arguments.command, reason)
         return 2
     if arguments.command == "join":
         return join.main(arguments.link, is_forced=arguments.yes)
@@ -79,7 +88,36 @@ def main() -> int:
         return sync.main()
     if arguments.command == "rdp":
         return _run_rdp(arguments, rdp_parser)
+    if arguments.command == "service":
+        if arguments.service_command == "run":
+            return service.main_run()
+        service_parser.print_help()
+        return 2
     return status.main()
+
+
+def _is_privileged() -> bool:
+    """Whether this process may act for the machine: root, or on Windows an
+    elevated administrator."""
+    if hasattr(os, "geteuid"):
+        return os.geteuid() == 0
+    from neutrino_agent.platforms.windows import WindowsPlatform
+
+    return WindowsPlatform().is_elevated()
+
+
+def _print_privilege_refusal(command: str, reason: str) -> None:
+    """Say who may run a command, and how to run it as them."""
+    if hasattr(os, "geteuid"):
+        print(f"nagent {command} needs root ({reason}):", file=sys.stderr)
+        print(f"    sudo nagent {shlex.join(sys.argv[1:])}", file=sys.stderr)
+        return
+    print(f"nagent {command} needs an administrator ({reason}):", file=sys.stderr)
+    print(
+        f"    nagent {subprocess.list2cmdline(sys.argv[1:])} in a terminal "
+        "opened as administrator",
+        file=sys.stderr,
+    )
 
 
 def _add_rdp_parser(subparsers):
