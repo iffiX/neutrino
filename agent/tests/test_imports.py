@@ -109,6 +109,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.streams.module_command",
     "neutrino_agent.streams.package",
     "neutrino_agent.streams.shell",
+    "neutrino_agent.streams.windows_shell",
 }
 
 

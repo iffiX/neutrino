@@ -5,7 +5,9 @@ goes up as binary frames, no faster than the hub's credit allows; a resize,
 which arrives as a command naming the stream, sets the terminal's window.
 The stream ends when the shell exits or the hub closes it, and closes with
 the shell's exit status in its params. A ``shell`` opened with ``{module:
-podman, container}`` runs inside that container instead.
+podman, container}`` runs inside that container instead. On Windows the
+shell is PowerShell on a pseudo console, served by
+:class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`.
 
 The shell runs as the agent runs, which is root. Closing the stream kills
 the shell's whole terminal session, background jobs included, so a closed
@@ -24,9 +26,11 @@ import select
 import signal
 import struct
 import subprocess
+import sys
 import threading
 
 from neutrino_agent.constants import (
+    AGENT_SHELL_COMMANDS,
     AGENT_SHELL_FALLBACKS,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
@@ -88,6 +92,19 @@ def login_shell() -> str:
     return AGENT_SHELL_FALLBACKS[-1]
 
 
+def shell_command() -> list:
+    """What a shell stream runs on this machine.
+
+    Returns:
+        The platform's own shell where it names one, else the login shell
+        run interactively.
+    """
+    named = AGENT_SHELL_COMMANDS.get(sys.platform)
+    if named is not None:
+        return list(named)
+    return [login_shell(), "-i"]
+
+
 def listed_containers() -> list:
     """The names of every container podman knows, running or not."""
     reader = PodmanStatusReader()
@@ -111,6 +128,10 @@ def open_shell_stream(channel, args: dict):
     """
     module = str(args.get("module", "") or "")
     if not module:
+        if sys.platform == "win32":
+            from neutrino_agent.streams.windows_shell import WindowsShellStream
+
+            return WindowsShellStream(channel, args)
         return ShellStream(channel, args)
     if module != CONTAINER_MODULE:
         raise StreamRefused("verb_unknown", {"module": module})
@@ -167,8 +188,8 @@ class ShellStream:
         Args:
             channel: The stream's channel.
             args: ``{"cols", "rows"}``, the terminal's first size.
-            command: What to run on the terminal. None is this account's
-                login shell.
+            command: What to run on the terminal. None is the platform's
+                shell.
         """
         self._channel = channel
         self._columns = max(1, int(args.get("cols", DEFAULT_COLUMNS) or 0))
@@ -200,7 +221,7 @@ class ShellStream:
         self._apply_size()
         try:
             self._process = subprocess.Popen(
-                self._command or [login_shell(), "-i"],
+                self._command or shell_command(),
                 stdin=slave_fd,
                 stdout=slave_fd,
                 stderr=slave_fd,

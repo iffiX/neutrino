@@ -116,6 +116,13 @@ AGENT_OUTPUT_LIMIT_BYTES = 64 * 1024
 # The shell a stream opens for the hub: this account's own where it is
 # usable, else the first of these.
 AGENT_SHELL_FALLBACKS = ("/bin/bash", "/bin/sh")
+# The shell a stream opens where the platform names its own, by
+# ``sys.platform``: zsh as a login shell on a Mac, PowerShell on a pseudo
+# console on Windows.
+AGENT_SHELL_COMMANDS = {
+    "darwin": ("/bin/zsh", "-il"),
+    "win32": ("powershell.exe", "-NoLogo"),
+}
 AGENT_SHELL_READ_BYTES = 4096
 # How long a shell's process group may take to die after the hub closes
 # the stream, per signal.

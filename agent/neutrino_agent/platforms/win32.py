@@ -53,6 +53,19 @@ NO_ERROR = 0
 ERROR_CALL_NOT_IMPLEMENTED = 120
 ERROR_FAILED_SERVICE_CONTROLLER_CONNECT = 1063
 
+# Pseudo consoles. The attribute names the console for the process about
+# to start.
+PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
+# The three standard handles, as GetStdHandle and SetStdHandle name them.
+STD_HANDLE_NAMES = (0xFFFFFFF6, 0xFFFFFFF5, 0xFFFFFFF4)
+EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+CREATE_SUSPENDED = 0x00000004
+WAIT_OBJECT_0 = 0
+
+# Job objects: every process of a shell dies with the job's last handle.
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+
 
 def last_error() -> OSError:
     """The calling thread's last Win32 error, as the OSError it is.
@@ -169,6 +182,96 @@ class ServiceTableEntry(ctypes.Structure):
     _fields_ = [("lpServiceName", ctypes.c_wchar_p), ("lpServiceProc", ctypes.c_void_p)]
 
 
+class Coord(ctypes.Structure):
+    """A console size."""
+
+    _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+
+class StartupInfo(ctypes.Structure):
+    """What a new process is started with."""
+
+    _fields_ = [
+        ("cb", DWORD),
+        ("lpReserved", ctypes.c_wchar_p),
+        ("lpDesktop", ctypes.c_wchar_p),
+        ("lpTitle", ctypes.c_wchar_p),
+        ("dwX", DWORD),
+        ("dwY", DWORD),
+        ("dwXSize", DWORD),
+        ("dwYSize", DWORD),
+        ("dwXCountChars", DWORD),
+        ("dwYCountChars", DWORD),
+        ("dwFillAttribute", DWORD),
+        ("dwFlags", DWORD),
+        ("wShowWindow", ctypes.c_ushort),
+        ("cbReserved2", ctypes.c_ushort),
+        ("lpReserved2", ctypes.c_void_p),
+        ("hStdInput", ctypes.c_void_p),
+        ("hStdOutput", ctypes.c_void_p),
+        ("hStdError", ctypes.c_void_p),
+    ]
+
+
+class StartupInfoEx(ctypes.Structure):
+    """A startup record with an attribute list, for the pseudo console."""
+
+    _fields_ = [("StartupInfo", StartupInfo), ("lpAttributeList", ctypes.c_void_p)]
+
+
+class ProcessInformation(ctypes.Structure):
+    """What a started process is known by."""
+
+    _fields_ = [
+        ("hProcess", ctypes.c_void_p),
+        ("hThread", ctypes.c_void_p),
+        ("dwProcessId", DWORD),
+        ("dwThreadId", DWORD),
+    ]
+
+
+class JobObjectBasicLimitInformation(ctypes.Structure):
+    """JOBOBJECT_BASIC_LIMIT_INFORMATION."""
+
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_int64),
+        ("PerJobUserTimeLimit", ctypes.c_int64),
+        ("LimitFlags", DWORD),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", DWORD),
+        ("Affinity", ctypes.c_size_t),
+        ("PriorityClass", DWORD),
+        ("SchedulingClass", DWORD),
+    ]
+
+
+class IoCounters(ctypes.Structure):
+    """IO_COUNTERS."""
+
+    _fields_ = [
+        ("ReadOperationCount", ctypes.c_uint64),
+        ("WriteOperationCount", ctypes.c_uint64),
+        ("OtherOperationCount", ctypes.c_uint64),
+        ("ReadTransferCount", ctypes.c_uint64),
+        ("WriteTransferCount", ctypes.c_uint64),
+        ("OtherTransferCount", ctypes.c_uint64),
+    ]
+
+
+class JobObjectExtendedLimitInformation(ctypes.Structure):
+    """JOBOBJECT_EXTENDED_LIMIT_INFORMATION, which carries the kill-on-close flag."""
+
+    _fields_ = [
+        ("BasicLimitInformation", JobObjectBasicLimitInformation),
+        ("IoInfo", IoCounters),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+
+
 class Win32Libraries:
     """Every DLL the agent calls, with its prototypes set once.
 
@@ -241,6 +344,83 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.c_void_p,
         ]
+
+        self._describe_console()
+
+    def _describe_console(self) -> None:
+        """Prototype the pseudo console, process and job calls."""
+        self.kernel32.CreatePipe.argtypes = [
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.c_void_p,
+            DWORD,
+        ]
+        self.kernel32.WaitForSingleObject.restype = DWORD
+        self.kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, DWORD]
+        self.kernel32.GetExitCodeProcess.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+        ]
+        self.kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.kernel32.ResumeThread.restype = DWORD
+        self.kernel32.ResumeThread.argtypes = [ctypes.c_void_p]
+        self.kernel32.InitializeProcThreadAttributeList.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            DWORD,
+            ctypes.POINTER(ctypes.c_size_t),
+        ]
+        self.kernel32.UpdateProcThreadAttribute.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.c_size_t,
+            ctypes.c_void_p,
+            ctypes.c_size_t,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self.kernel32.DeleteProcThreadAttributeList.argtypes = [ctypes.c_void_p]
+        self.kernel32.GetStdHandle.restype = ctypes.c_void_p
+        self.kernel32.GetStdHandle.argtypes = [DWORD]
+        self.kernel32.SetStdHandle.argtypes = [DWORD, ctypes.c_void_p]
+        self.kernel32.CreateProcessW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            DWORD,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ProcessInformation),
+        ]
+        self.kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+        self.kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+        self.kernel32.SetInformationJobObject.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            DWORD,
+        ]
+        self.kernel32.AssignProcessToJobObject.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        # The pseudo console calls are absent before Windows 10 1809; the
+        # shell stream checks for them before using them.
+        if hasattr(self.kernel32, "CreatePseudoConsole"):
+            self.kernel32.CreatePseudoConsole.restype = ctypes.c_long
+            self.kernel32.CreatePseudoConsole.argtypes = [
+                Coord,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                DWORD,
+                ctypes.POINTER(ctypes.c_void_p),
+            ]
+            self.kernel32.ResizePseudoConsole.restype = ctypes.c_long
+            self.kernel32.ResizePseudoConsole.argtypes = [ctypes.c_void_p, Coord]
+            self.kernel32.ClosePseudoConsole.argtypes = [ctypes.c_void_p]
 
     def _describe_advapi32(self) -> None:
         """Prototype the advapi32 calls."""
