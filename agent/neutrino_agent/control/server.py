@@ -117,7 +117,9 @@ class ControlServer:
 class _ControlSocketHttpServer(ThreadingHTTPServer):
     """An HTTP server bound to a Unix socket path, one thread per client."""
 
-    address_family = socket.AF_UNIX
+    # AF_UNIX is absent on Windows, where the pipe transport serves instead;
+    # the fallback only keeps this module importable there.
+    address_family = getattr(socket, "AF_UNIX", -1)
 
     def handle_error(self, request, client_address) -> None:
         """A dropped client goes to the agent's log, never to stderr."""

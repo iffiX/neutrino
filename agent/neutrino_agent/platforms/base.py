@@ -17,7 +17,11 @@ from __future__ import annotations
 
 import subprocess
 
-from neutrino_agent.constants import AGENT_DATA_DIR_POSIX, AGENT_STEP_DOWN_TIMEOUT_S
+from neutrino_agent.constants import (
+    AGENT_DATA_DIR_POSIX,
+    AGENT_STEP_DOWN_TIMEOUT_S,
+    AGENT_VAR_DIR,
+)
 from neutrino_agent.exceptions import PlatformUnsupportedError
 
 
@@ -40,6 +44,17 @@ class AgentPlatform:
             The absolute directory path.
         """
         return AGENT_DATA_DIR_POSIX
+
+    def agent_var_dir(self) -> str:
+        """Where the agent keeps its own work on this platform.
+
+        The configured marks and a package in transit both live under this
+        root.
+
+        Returns:
+            The absolute directory path.
+        """
+        return AGENT_VAR_DIR
 
     def human_accounts(self) -> list:
         """The accounts this platform judges to be people.

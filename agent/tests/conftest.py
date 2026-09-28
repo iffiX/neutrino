@@ -29,7 +29,7 @@ def _isolated_machine_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(
         engine_module, "AGENT_CONFIGURED_DIR", str(tmp_path / "configured")
     )
-    monkeypatch.setattr(loop_module, "AGENT_PACKAGE_DIR", str(tmp_path / "packages"))
+    monkeypatch.setattr(platforms_base_module, "AGENT_VAR_DIR", str(tmp_path))
 
 
 @pytest.fixture(autouse=True)

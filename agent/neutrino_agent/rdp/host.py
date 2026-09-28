@@ -23,7 +23,6 @@ local socket to see whether it answers.
 from __future__ import annotations
 
 import os
-import pwd
 import socket
 import subprocess
 import time
@@ -52,6 +51,11 @@ from neutrino_agent.rdp.constants import (
     RDP_TCP_ESTABLISHED,
     RDP_WAYLAND_TOKEN_OPTION,
 )
+
+try:
+    import pwd
+except ImportError:  # Windows has no account database module.
+    pwd = None
 
 
 def session_environment(account: str) -> "dict | None":

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import pwd
 import re
 import shutil
 import subprocess
@@ -32,6 +31,11 @@ from neutrino_agent.constants import (
 from neutrino_agent.core.metrics import GpuMetrics, HostMetrics, ProcessMetrics
 from neutrino_agent.modules import installers
 from neutrino_agent.platforms.base import AgentPlatform
+
+try:
+    import pwd
+except ImportError:  # Windows has no account database module.
+    pwd = None
 
 # Accounts below this uid are the system's, not people's.
 LINUX_HUMAN_UID_FLOOR = 1000

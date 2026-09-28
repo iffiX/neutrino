@@ -8,7 +8,11 @@ complete, so a new contract method without a capability fails here.
 import pytest
 
 import neutrino_agent.platforms.base as base_module
-from neutrino_agent.constants import AGENT_STATE_PATH
+from neutrino_agent.constants import (
+    AGENT_CONFIGURED_DIR,
+    AGENT_PACKAGE_DIR,
+    AGENT_STATE_PATH,
+)
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
@@ -39,6 +43,7 @@ CONTRACT_CALLS = {
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {
     "agent_data_dir": "",
+    "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",
 }
 
@@ -84,6 +89,14 @@ def test_the_agent_data_root_defaults_to_the_posix_directory(monkeypatch):
 
     assert AgentPlatform().agent_data_dir() == "/etc/neutrino/agent"
     assert AGENT_STATE_PATH == "/etc/neutrino/agent/state.json"
+
+
+def test_the_agent_work_root_defaults_to_the_posix_directory(monkeypatch):
+    monkeypatch.setattr(base_module, "AGENT_VAR_DIR", "/var/lib/neutrino_agent")
+
+    assert AgentPlatform().agent_var_dir() == "/var/lib/neutrino_agent"
+    assert AGENT_CONFIGURED_DIR == "/var/lib/neutrino_agent/configured"
+    assert AGENT_PACKAGE_DIR == "/var/lib/neutrino_agent/packages"
 
 
 def test_the_base_start_hint_is_empty_rather_than_another_platforms():

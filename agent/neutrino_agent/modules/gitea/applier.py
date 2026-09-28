@@ -15,7 +15,6 @@ drives the unit.
 from __future__ import annotations
 
 import os
-import pwd
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -31,6 +30,11 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_USER,
 )
 from neutrino_agent.modules.subprocess_run import run, unit_state
+
+try:
+    import pwd
+except ImportError:  # Windows has no account database module.
+    pwd = None
 
 UNIT_SOURCE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "systemd"

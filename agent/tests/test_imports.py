@@ -6,8 +6,28 @@ meant to take out coming back by accident.
 
 import importlib
 import pkgutil
+import subprocess
+import sys
+from pathlib import Path
 
 import neutrino_agent
+
+AGENT_ROOT = Path(__file__).resolve().parent.parent
+
+# The standard library modules only POSIX has, which Windows lacks.
+POSIX_ONLY_MODULES = ("pwd", "grp", "fcntl", "termios", "pty")
+
+# Every module imported in a fresh interpreter that has none of them and no
+# Unix sockets, the way Windows is.
+WINDOWS_IMPORT_PROBE = """
+import importlib, pkgutil, socket, sys
+for name in {names!r}:
+    sys.modules[name] = None
+del socket.AF_UNIX
+import neutrino_agent
+for found in pkgutil.walk_packages(neutrino_agent.__path__, "neutrino_agent."):
+    importlib.import_module(found.name)
+"""
 
 SURVIVING_MODULES = {
     "neutrino_agent.cli",
@@ -71,8 +91,10 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.zfs.runner",
     "neutrino_agent.platforms",
     "neutrino_agent.platforms.base",
+    "neutrino_agent.platforms.darwin",
     "neutrino_agent.platforms.detect",
     "neutrino_agent.platforms.linux",
+    "neutrino_agent.platforms.windows",
     "neutrino_agent.rdp",
     "neutrino_agent.rdp.constants",
     "neutrino_agent.rdp.host",
@@ -100,3 +122,17 @@ def test_every_module_imports():
 
 def test_the_tree_is_the_one_that_survived_the_prune():
     assert found_modules() == SURVIVING_MODULES
+
+
+def test_every_module_imports_without_the_posix_only_modules():
+    probe = WINDOWS_IMPORT_PROBE.format(names=POSIX_ONLY_MODULES)
+
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=AGENT_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr

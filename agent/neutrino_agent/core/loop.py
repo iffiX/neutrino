@@ -34,11 +34,12 @@ from neutrino_agent.constants import (
     AGENT_BACKOFF_MIN_S,
     AGENT_CODE_BINDING_UNKNOWN,
     AGENT_CODE_REPLACED,
+    AGENT_CONFIGURED_DIR_NAME,
     AGENT_CREDENTIALS_DIR_NAME,
     AGENT_DESIRED_STATE_NAME,
     AGENT_REPORT_INTERVAL_S,
     AGENT_HUB_SOFTWARE_PREFIX,
-    AGENT_PACKAGE_DIR,
+    AGENT_PACKAGE_DIR_NAME,
     AGENT_ROLE,
     AGENT_ROTATE_DELAY_S,
     AGENT_SOFTWARE_PREFIX,
@@ -133,8 +134,12 @@ class Agent:
         # Set whenever there is something new to report, so a report goes up
         # then rather than at the end of the interval.
         self._news = threading.Event()
+        var_dir = self._platform.agent_var_dir()
         self._engine = ModuleEngine(
-            platform=self._platform, log=log, on_change=self._news.set
+            platform=self._platform,
+            log=log,
+            on_change=self._news.set,
+            configured_dir=os.path.join(var_dir, AGENT_CONFIGURED_DIR_NAME),
         )
         # The store and the seat password live under the platform's own
         # data root, and so does the last desired state taken from the hub.
@@ -142,7 +147,7 @@ class Agent:
         self._data_dir = data_dir
         # Where a package lands, a module's or this agent's own, until its
         # digest is checked; the marks the engine keeps live beside it.
-        self._package_dir = AGENT_PACKAGE_DIR
+        self._package_dir = os.path.join(var_dir, AGENT_PACKAGE_DIR_NAME)
         self._store = MachineStateStore(path=os.path.join(data_dir, AGENT_STATE_NAME))
         self._rdp = RdpShareHost(
             platform=self._platform,
