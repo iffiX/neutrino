@@ -453,10 +453,31 @@ function terminalsCard(hub, machines) {
     title.className = 'title';
     title.textContent = machine.name;
     body.appendChild(title);
+    const noteKey = 'terminal_' + hub.hub_id + '/' + machine.device_id;
+    if (serviceNotes[noteKey]) body.appendChild(errorLine(serviceNotes[noteKey]));
     row.appendChild(body);
+    const open = document.createElement('button');
+    open.textContent = t('ui.terminal_open');
+    open.disabled = !machine.is_online || isHeld(hub);
+    open.onclick = () => askTerminal(hub, machine, noteKey);
+    row.appendChild(open);
     card.appendChild(row);
   }
   return card;
+}
+
+// A press on Open terminal: the system's own terminal opens running
+// nclient terminal on that machine; a refusal is worded under its row.
+function askTerminal(hub, machine, noteKey) {
+  send('/api/terminal/launch', { hub_id: hub.hub_id, device_id: machine.device_id })
+    .then((reply) => {
+      if (reply && reply.code) {
+        serviceNotes[noteKey] = wordCode(reply.code, reply.params);
+      } else {
+        delete serviceNotes[noteKey];
+      }
+      redraw();
+    });
 }
 
 // --- the Hubs tab: one row per hub, and the row that joins another ---

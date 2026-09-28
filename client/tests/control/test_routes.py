@@ -390,3 +390,77 @@ def test_the_state_carries_the_terminals_of_every_hub():
         ("h1", "d_lepton"),
         ("h1", "d_muon"),
     ]
+
+
+# --- the terminals ---
+
+
+def test_attach_answers_101_naming_the_terminal_and_the_resident_gets_the_size():
+    resident = FakeResident()
+
+    status, reply = routes.dispatch(
+        "POST",
+        "/api/terminal/attach",
+        {"hub_id": "h1", "device_id": "d_lepton", "cols": 120, "rows": 40},
+        resident,
+    )
+
+    assert (status, reply) == (101, {"terminal_id": "t1"})
+    assert resident.terminal_calls == [("open", "h1", "d_lepton", 120, 40)]
+
+
+def test_attaching_to_a_machine_the_hub_does_not_offer_is_404():
+    resident = FakeResident()
+    resident.terminal_reply = {"code": "unknown_terminal", "params": {}}
+
+    status, reply = routes.dispatch(
+        "POST", "/api/terminal/attach", {"hub_id": "h1", "device_id": "x"}, resident
+    )
+
+    assert status == 404
+    assert reply["code"] == "unknown_terminal"
+
+
+def test_the_output_of_an_open_terminal_answers_101_and_another_404():
+    resident = FakeResident()
+
+    assert routes.dispatch(
+        "POST", "/api/terminal/output", {"terminal_id": "t1"}, resident
+    ) == (101, {"terminal_id": "t1"})
+    assert (
+        routes.dispatch(
+            "POST", "/api/terminal/output", {"terminal_id": "t9"}, resident
+        )[0]
+        == 404
+    )
+
+
+def test_a_resize_and_a_launch_reach_the_resident():
+    resident = FakeResident()
+
+    resize = routes.dispatch(
+        "POST",
+        "/api/terminal/resize",
+        {"terminal_id": "t1", "cols": 100, "rows": "30"},
+        resident,
+    )
+    launch = routes.dispatch(
+        "POST",
+        "/api/terminal/launch",
+        {"hub_id": "h1", "device_id": "d_lepton"},
+        resident,
+    )
+
+    assert resize[0] == 200 and launch[0] == 200
+    assert resident.terminal_calls == [
+        ("resize", "t1", 100, 30),
+        ("launch", "h1", "d_lepton"),
+    ]
+
+
+def test_the_result_names_how_the_shell_ended():
+    resident = FakeResident()
+
+    assert routes.dispatch(
+        "POST", "/api/terminal/result", {"terminal_id": "t1"}, resident
+    ) == (200, {"exit_code": 0})

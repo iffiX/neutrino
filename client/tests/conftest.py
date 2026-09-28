@@ -307,6 +307,8 @@ class FakeClientPlatform(ClientPlatform):
         self.answer_error = None
         self.answer_output = ""
         self.language = "en"
+        self.terminals_opened = []
+        self.terminal_error = None
 
     def system_language(self) -> str:
         return self.language
@@ -371,6 +373,11 @@ class FakeClientPlatform(ClientPlatform):
         self.started.append(process)
         return process
 
+    def open_terminal(self, argv: list) -> None:
+        if self.terminal_error is not None:
+            raise self.terminal_error
+        self.terminals_opened.append(list(argv))
+
     def run_answering(self, argv: list, *, prompt, answer, timeout_s) -> tuple:
         if self.answer_error is not None:
             raise self.answer_error
@@ -425,6 +432,10 @@ class FakeResident:
         self.exits = []
         self.overlay_calls = []
         self.overlay_reply = {}
+        self.terminal_calls = []
+        self.terminal_reply = {"terminal_id": "t1"}
+        self.typed = []
+        self.shown = [b"$ "]
         self.states = {
             "forwards": {"h1/svc_tcp": {"local_port": 5432, "is_active": True}},
             "mounts": [
@@ -509,6 +520,38 @@ class FakeResident:
     def leave_overlay(self, hub_id: str) -> dict:
         self.overlay_calls.append(("leave", hub_id))
         return dict(self.overlay_reply)
+
+    def open_terminal(self, hub_id: str, device_id: str, cols: int, rows: int):
+        self.terminal_calls.append(("open", hub_id, device_id, cols, rows))
+        return dict(self.terminal_reply)
+
+    def attach_terminal(self, terminal_id: str, read) -> None:
+        self.terminal_calls.append(("attach", terminal_id))
+        while True:
+            data = read(4096)
+            if not data:
+                return
+            self.typed.append(data)
+
+    def terminal_output(self, terminal_id: str, write) -> None:
+        self.terminal_calls.append(("output", terminal_id))
+        for data in self.shown:
+            write(data)
+
+    def has_terminal(self, terminal_id: str) -> bool:
+        return terminal_id == self.terminal_reply.get("terminal_id")
+
+    def resize_terminal(self, terminal_id: str, cols: int, rows: int) -> dict:
+        self.terminal_calls.append(("resize", terminal_id, cols, rows))
+        return {}
+
+    def terminal_result(self, terminal_id: str) -> dict:
+        self.terminal_calls.append(("result", terminal_id))
+        return {"exit_code": 0}
+
+    def launch_terminal(self, hub_id: str, device_id: str) -> dict:
+        self.terminal_calls.append(("launch", hub_id, device_id))
+        return {}
 
     def list_directories(self, path: str) -> list:
         return self.platform.list_directories(path=path)

@@ -7,6 +7,7 @@ stolen, and a handler exception answers typed without dropping the wire.
 
 import json
 import os
+import time
 
 import pytest
 
@@ -195,3 +196,62 @@ def test_a_platform_without_a_socket_does_not_bind():
     assert server.bind() is False
     assert server.socket_path == ""
     assert lines
+
+
+# --- a terminal's two connections ---
+
+
+def test_attach_answers_101_with_the_header_and_what_is_typed_reaches_the_bridge(
+    control,
+):
+    server, resident, _platform = control
+
+    status, reply, connection = client.upgrade(
+        socket_path=server.socket_path,
+        path="/api/terminal/attach",
+        body={"hub_id": "h1", "device_id": "d_lepton", "cols": 80, "rows": 24},
+    )
+    connection.send(b"ls\n")
+    connection.close()
+    deadline = time.monotonic() + 5
+    while ("attach", "t1") not in resident.terminal_calls or not resident.typed:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+    assert (status, reply) == (101, {"terminal_id": "t1"})
+    assert resident.terminal_calls[0] == ("open", "h1", "d_lepton", 80, 24)
+    assert b"".join(resident.typed) == b"ls\n"
+
+
+def test_the_output_connection_carries_the_shells_bytes_then_ends(control):
+    server, resident, _platform = control
+    resident.shown = [b"$ ", b"bye"]
+
+    status, _reply, connection = client.upgrade(
+        socket_path=server.socket_path,
+        path="/api/terminal/output",
+        body={"terminal_id": "t1"},
+    )
+    received = b""
+    while True:
+        data = connection.read(4096)
+        if not data:
+            break
+        received += data
+    connection.close()
+
+    assert status == 101
+    assert received == b"$ bye"
+
+
+def test_a_refused_attach_is_an_ordinary_answer(control):
+    server, resident, _platform = control
+    resident.terminal_reply = {"code": "unknown_terminal", "params": {}}
+
+    status, reply, connection = client.upgrade(
+        socket_path=server.socket_path,
+        path="/api/terminal/attach",
+        body={"hub_id": "h1", "device_id": "x"},
+    )
+
+    assert (status, reply["code"], connection) == (404, "unknown_terminal", None)

@@ -68,6 +68,12 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
         (["status"], "status", ((), {})),
         (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
         (["quit"], "quit", ((), {})),
+        (["terminal", "lepton"], "terminal", (("lepton",), {"hub": ""})),
+        (
+            ["terminal", "lepton", "--hub", "home"],
+            "terminal",
+            (("lepton",), {"hub": "home"}),
+        ),
     ],
 )
 def test_each_verb_reaches_its_command(monkeypatch, argv, target, expected):

@@ -8,7 +8,7 @@ and it owns the five service handlers, the store and the choice of exit
 hub, so a service is addressed by hub and id together and a hub that goes
 away takes only its own entries with it. Beside the sessions it holds this
 machine's membership of each hub's virtual network, which a hub row joins
-and leaves.
+and leaves, and the terminals open on the machines a hub offers.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -23,6 +23,7 @@ import socket
 import sys
 import threading
 import time
+import uuid
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
@@ -38,10 +39,13 @@ from neutrino_client.constants import (
 from neutrino_client.core import enrollment
 from neutrino_client.core.overlay import OverlayMemberships
 from neutrino_client.core.session import CONNECTION_CONNECTED, ClientHubSession
+from neutrino_client.core.terminal import TerminalBridge, client_command
 from neutrino_client.exceptions import (
     GatewayRefused,
+    GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
+    PlatformUnsupportedError,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
@@ -168,6 +172,9 @@ class ClientResident:
         )
         # One session per binding, by binding id, in the order joined.
         self._sessions: dict = {}
+        # Every terminal open or ended and not yet asked about, by its id:
+        # ``(session, bridge)``.
+        self._terminals: dict = {}
         # The binding file's stamp as last read; None before the first read.
         self._binding_stamp: "int | None" = None
         self._chosen_exit_hub_id = ""
@@ -487,6 +494,138 @@ class ClientResident:
         """
         return self._overlay_step(hub_id, is_join=False)
 
+    def open_terminal(self, hub_id: str, device_id: str, cols: int, rows: int) -> dict:
+        """Open a shell on one machine a hub offers, for a terminal to attach to.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            device_id: The machine, as the hub's ``terminals`` names it.
+            cols: The terminal's width in columns.
+            rows: The terminal's height in rows.
+
+        Returns:
+            ``{"terminal_id"}``; ``unknown_hub``, ``unknown_terminal`` or
+            ``hub_unreachable`` otherwise.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        known = {entry["device_id"] for entry in session.terminal_entries()}
+        if device_id not in known:
+            return {"code": "unknown_terminal", "params": {"device_id": device_id}}
+        try:
+            stream = session.open_shell(device_id, cols, rows)
+        except GatewayUnreachable as error:
+            return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+        terminal_id = uuid.uuid4().hex
+        with self._lock:
+            self._terminals[terminal_id] = (session, TerminalBridge(stream=stream))
+        self._log(f"a terminal on {device_id} is open")
+        return {"terminal_id": terminal_id}
+
+    def attach_terminal(self, terminal_id: str, read) -> None:
+        """Carry what is typed on one terminal to its shell until either ends.
+
+        Args:
+            terminal_id: The terminal, as ``open_terminal`` named it.
+            read: ``read(size)`` returns the next bytes typed, empty at the
+                end.
+        """
+        opened = self._terminal(terminal_id)
+        if opened is not None:
+            opened[1].pump_in(read)
+
+    def terminal_output(self, terminal_id: str, write) -> None:
+        """Carry one shell's output to its terminal until the shell ends.
+
+        Args:
+            terminal_id: The terminal, as ``open_terminal`` named it.
+            write: ``write(data)`` puts bytes on the terminal.
+        """
+        opened = self._terminal(terminal_id)
+        if opened is not None:
+            opened[1].pump_out(write)
+
+    def has_terminal(self, terminal_id: str) -> bool:
+        """Whether a terminal by that id is open or waiting to be asked about."""
+        return self._terminal(terminal_id) is not None
+
+    def resize_terminal(self, terminal_id: str, cols: int, rows: int) -> dict:
+        """Tell one terminal's shell its new size.
+
+        Args:
+            terminal_id: The terminal.
+            cols: The new width in columns.
+            rows: The new height in rows.
+
+        Returns:
+            Empty on success; ``unknown_terminal``, the hub's refusal, or
+            ``hub_unreachable``.
+        """
+        opened = self._terminal(terminal_id)
+        if opened is None:
+            return {"code": "unknown_terminal", "params": {}}
+        session, bridge = opened
+        try:
+            session.resize_shell(bridge.stream_id, cols, rows)
+        except GatewayRefusedDetail as refused:
+            return {"code": refused.code, "params": dict(refused.params)}
+        except GatewayUnreachable as error:
+            return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+        return {}
+
+    def terminal_result(self, terminal_id: str) -> dict:
+        """How one ended terminal's shell ended, asked once.
+
+        Args:
+            terminal_id: The terminal.
+
+        Returns:
+            ``{"exit_code"}`` or the refusal ``{"code", "params"}``;
+            ``unknown_terminal`` for a terminal nobody opened, or one
+            already asked about.
+        """
+        with self._lock:
+            opened = self._terminals.get(terminal_id)
+            if opened is None:
+                return {"code": "unknown_terminal", "params": {}}
+            if opened[1].is_done:
+                self._terminals.pop(terminal_id, None)
+        return opened[1].outcome()
+
+    def launch_terminal(self, hub_id: str, device_id: str) -> dict:
+        """Open the system's own terminal running ``nclient terminal`` on a machine.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            device_id: The machine, as the hub's ``terminals`` names it.
+
+        Returns:
+            Empty on success; ``unknown_hub``, ``unknown_terminal``,
+            ``terminal_app_missing`` or ``unsupported_platform``.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        known = {entry["device_id"] for entry in session.terminal_entries()}
+        if device_id not in known:
+            return {"code": "unknown_terminal", "params": {"device_id": device_id}}
+        argv = client_command() + [
+            "terminal",
+            device_id,
+            "--hub",
+            session.hub_id() or session.binding_id,
+        ]
+        try:
+            self.platform.open_terminal(argv)
+        except FileNotFoundError:
+            return {"code": "terminal_app_missing", "params": {}}
+        except PlatformUnsupportedError as error:
+            return {"code": error.code, "params": {}}
+        except OSError as error:
+            return {"code": "terminal_app_missing", "params": {"detail": str(error)}}
+        return {}
+
     def request_show(self) -> None:
         """Ask the window to come to the front, when one is listening."""
         callback = self.on_show
@@ -619,6 +758,11 @@ class ClientResident:
                 if not self._is_pending_announcement:
                     self._is_announcing = False
                     return
+
+    def _terminal(self, terminal_id: str) -> "tuple | None":
+        """One terminal's session and bridge, None for an id nobody opened."""
+        with self._lock:
+            return self._terminals.get(terminal_id)
 
     def _find_session(self, needle: str) -> "ClientHubSession | None":
         """The session of one hub, by hub id or binding id; None for nobody."""

@@ -1278,3 +1278,74 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
     resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
 
     assert resident.terminal_entries() == [dict(lepton, hub_id="h1")]
+
+
+def offered(resident) -> None:
+    """The home hub offers a terminal on lepton."""
+    lepton = {"device_id": "d1", "name": "lepton", "is_online": True}
+    resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
+
+
+def test_a_terminal_opens_a_shell_stream_with_its_size(two_hubs_up):
+    resident, scripts = two_hubs_up
+    offered(resident)
+
+    outcome = resident.open_terminal("h1", "d1", 120, 40)
+
+    (made,) = scripts.sockets_of("hub.lan")
+    opened = [frame for frame in made.sent if frame.get("type") == "open"]
+    assert opened == [
+        {
+            "type": "open",
+            "stream": 1,
+            "kind": "shell",
+            "device_id": "d1",
+            "cols": 120,
+            "rows": 40,
+        }
+    ]
+    assert resident.has_terminal(outcome["terminal_id"])
+
+
+def test_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):
+    resident, _scripts = two_hubs_up
+
+    assert resident.open_terminal("h1", "d9", 80, 24) == {
+        "code": "unknown_terminal",
+        "params": {"device_id": "d9"},
+    }
+    assert resident.open_terminal("h9", "d1", 80, 24)["code"] == "unknown_hub"
+
+
+def test_the_result_is_asked_once_after_the_shell_ended(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+    terminal_id = resident.open_terminal("h1", "d1", 80, 24)["terminal_id"]
+    session = resident._sessions["c1"]
+    session._streams.take_close(
+        {"type": "close", "stream": 1, "params": {"exit_code": 0}}
+    )
+
+    assert resident.terminal_result(terminal_id) == {"exit_code": 0}
+    assert resident.terminal_result(terminal_id)["code"] == "unknown_terminal"
+
+
+def test_launch_opens_the_system_terminal_on_nclient_terminal(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+
+    assert resident.launch_terminal("h1", "d1") == {}
+
+    (argv,) = resident.platform.terminals_opened
+    assert argv[-4:] == ["terminal", "d1", "--hub", "h1"]
+
+
+def test_launch_without_a_terminal_program_is_typed(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+    resident.platform.terminal_error = FileNotFoundError("none")
+
+    assert resident.launch_terminal("h1", "d1") == {
+        "code": "terminal_app_missing",
+        "params": {},
+    }

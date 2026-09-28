@@ -8,7 +8,9 @@ shared with the window's in-process channel.
 
 A handler exception never drops the connection: the caller gets
 ``client_internal`` carrying only the exception's class name, and the
-traceback goes to the resident's own log.
+traceback goes to the resident's own log. A route that answers 101 keeps
+the connection: the handler writes the status line and the terminal's id,
+and the connection carries that terminal's bytes until it ends.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -196,6 +198,9 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             status, reply = routes.dispatch(
                 method, self.path, body, self.server.control_resident
             )
+            if status == 101:
+                self._switch(reply)
+                return
             self._send_json(reply, status=status)
         except Exception as error:  # noqa: BLE001 - answered, never a dropped wire
             self.server.control_log(traceback.format_exc())
@@ -209,6 +214,26 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
                 )
             except OSError:
                 return
+
+    def _switch(self, reply: dict) -> None:
+        """Answer 101 naming the terminal, then carry its bytes until it ends."""
+        self.send_response(101)
+        self.send_header(routes.TERMINAL_HEADER, str(reply.get("terminal_id", "")))
+        self.end_headers()
+        self.wfile.flush()
+        self.close_connection = True
+        routes.serve_upgrade(
+            self.path.partition("?")[0],
+            reply,
+            self.server.control_resident,
+            read=self.rfile.read1,
+            write=self._write_through,
+        )
+
+    def _write_through(self, data: bytes) -> None:
+        """Put bytes on the connection at once."""
+        self.wfile.write(data)
+        self.wfile.flush()
 
     def _is_same_user(self) -> bool:
         """Whether the peer is the person this resident runs as.

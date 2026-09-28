@@ -4,8 +4,9 @@ The contract names intents, not mechanisms: where this person's configuration
 lives; which language this machine is set up in; where the control socket is
 and who its peer is; judge a proposed mount location; attach, detach and
 query a share at a location; open a link; start a windowed program; run
-the carried overlay CLIs and put an EasyTier network in place as root. A new
-platform is a new class, and nothing above this seam changes. The client runs as the person, so every file operation is
+the carried overlay CLIs and put an EasyTier network in place as root; put
+this process's terminal in raw mode, and open the system's own terminal. A
+new platform is a new class, and nothing above this seam changes. The client runs as the person, so every file operation is
 the standard library's own on the person's home.
 
 Invoking a capability a platform does not have raises
@@ -482,6 +483,32 @@ class ClientPlatform:
         Raises:
             OverlayControlError: When the daemon could not be started.
         """
+
+    def raw_terminal(self):
+        """This process's terminal in raw mode, for a ``with`` block.
+
+        Returns:
+            An object with ``read()``, ``write(data)`` and
+            ``on_resize(callback)``, entered to set the mode and exited to
+            put it back.
+
+        Raises:
+            PlatformUnsupportedError: Where there is no terminal to set.
+        """
+        raise PlatformUnsupportedError("no terminal on this platform")
+
+    def open_terminal(self, argv: list) -> None:
+        """Open the system's own terminal running one command.
+
+        Args:
+            argv: The command the terminal runs.
+
+        Raises:
+            FileNotFoundError: When no terminal program is on this machine.
+            PlatformUnsupportedError: Where the platform has none to open.
+            OSError: When the terminal cannot be started.
+        """
+        raise PlatformUnsupportedError("no terminal on this platform")
 
     def start_on_screen(self, argv: list) -> "subprocess.Popen":
         """Start a windowed program on this person's screen.

@@ -21,6 +21,12 @@ from neutrino_client.core.resident import end_process
 from neutrino_client.exceptions import EnrollmentError, PlatformUnsupportedError
 
 SERVICES_PREFIX = "/api/services/"
+# The two routes that answer 101 and hand their connection to a terminal:
+# the one that carries what is typed, and the one that carries the output.
+TERMINAL_ATTACH_ROUTE = "/api/terminal/attach"
+TERMINAL_OUTPUT_ROUTE = "/api/terminal/output"
+# The header a 101 names the terminal in.
+TERMINAL_HEADER = "X-Neutrino-Terminal"
 # How long the answer is given to reach the caller before the process ends.
 QUIT_ANSWER_GRACE_S = 0.3
 
@@ -96,6 +102,31 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return 200, state_payload(resident)
         if route == "/api/exit/set":
             return _set_exit(resident, payload)
+        if route == TERMINAL_ATTACH_ROUTE:
+            return _attach_terminal(resident, payload)
+        if route == TERMINAL_OUTPUT_ROUTE:
+            return _terminal_output(resident, payload)
+        if route == "/api/terminal/resize":
+            return _answer(
+                resident,
+                resident.resize_terminal(
+                    _terminal_id(payload),
+                    _size(payload, "cols"),
+                    _size(payload, "rows"),
+                ),
+            )
+        if route == "/api/terminal/result":
+            outcome = resident.terminal_result(_terminal_id(payload))
+            if outcome.get("code") == "unknown_terminal":
+                return refusal_status("unknown_terminal"), outcome
+            return 200, outcome
+        if route == "/api/terminal/launch":
+            return _answer(
+                resident,
+                resident.launch_terminal(
+                    _hub_id(payload), str(payload.get("device_id", "") or "")
+                ),
+            )
         if route == "/api/overlay/join":
             return _answer(resident, resident.join_overlay(_hub_id(payload)))
         if route == "/api/overlay/leave":
@@ -113,6 +144,23 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
     return 404, {"code": "unknown_request", "params": {}}
 
 
+def serve_upgrade(route: str, reply: dict, resident, *, read, write) -> None:
+    """Hand a connection a 101 answered to its terminal, until the terminal ends.
+
+    Args:
+        route: The route that answered 101.
+        reply: What it answered, naming ``terminal_id``.
+        resident: The running resident.
+        read: ``read(size)`` reads the connection, empty at its end.
+        write: ``write(data)`` writes the connection.
+    """
+    terminal_id = str(reply.get("terminal_id", ""))
+    if route == TERMINAL_ATTACH_ROUTE:
+        resident.attach_terminal(terminal_id, read)
+    elif route == TERMINAL_OUTPUT_ROUTE:
+        resident.terminal_output(terminal_id, write)
+
+
 def refusal_status(code: str) -> int:
     """The HTTP status one typed refusal answers with.
 
@@ -123,7 +171,7 @@ def refusal_status(code: str) -> int:
         404 for an unknown request or hub, 403 for a refused scope, path or
         authorization, 400 otherwise.
     """
-    if code in ("unknown_request", "unknown_hub"):
+    if code in ("unknown_request", "unknown_hub", "unknown_terminal"):
         return 404
     if code in (
         "control_peer_refused",
@@ -198,6 +246,40 @@ def _set_exit(resident, body: dict):
 
 def _hub_id(body: dict) -> str:
     return str(body.get("hub_id", "") or "")
+
+
+def _terminal_id(body: dict) -> str:
+    return str(body.get("terminal_id", "") or "")
+
+
+def _size(body: dict, name: str) -> int:
+    """A terminal dimension from a body; anything unreadable reads as 0."""
+    try:
+        return max(int(body.get(name) or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _attach_terminal(resident, body: dict):
+    """Open the shell and answer 101 naming it, or the refusal."""
+    outcome = resident.open_terminal(
+        _hub_id(body),
+        str(body.get("device_id", "") or ""),
+        _size(body, "cols"),
+        _size(body, "rows"),
+    )
+    if "code" in outcome:
+        return refusal_status(str(outcome["code"])), outcome
+    return 101, outcome
+
+
+def _terminal_output(resident, body: dict):
+    """Answer 101 for a terminal that is open, 404 otherwise."""
+    terminal_id = _terminal_id(body)
+    if not resident.has_terminal(terminal_id):
+        outcome = {"code": "unknown_terminal", "params": {}}
+        return refusal_status(outcome["code"]), outcome
+    return 101, {"terminal_id": terminal_id}
 
 
 def _answer(resident, outcome: dict):

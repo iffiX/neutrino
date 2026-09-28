@@ -1,4 +1,5 @@
-"""Running a console tool on a pseudo console, and answering its one prompt.
+"""Running a console tool on a pseudo console, answering its one prompt, and
+this process's own console in raw mode.
 
 A tool that asks a yes-or-no question on its terminal and takes no flag in
 its place is given a pseudo console here, and the answer. A parent's open
@@ -22,7 +23,9 @@ whole timeout every time. A prompt that has not shown within
 from __future__ import annotations
 
 import ctypes
+import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -34,6 +37,10 @@ from neutrino_client.platforms import win32
 from neutrino_client.exceptions import PlatformUnsupportedError
 from neutrino_client.platforms.base import answer_on_prompt
 
+# How often a raw console looks at its own size.
+CONSOLE_SIZE_POLL_S = 0.5
+# How many UTF-16 units one read of a raw console takes.
+CONSOLE_READ_UNITS = 1024
 CONSOLE_COLUMNS = 120
 CONSOLE_ROWS = 40
 CONSOLE_READ_POLL_S = 0.05
@@ -278,3 +285,106 @@ def _start(kernel32, argv: list, attributes, console):
         kernel32.ClosePseudoConsole(console)
         raise ctypes.WinError(error)
     return process
+
+
+class WindowsRawConsole:
+    """This process's console in raw VT mode for the length of a ``with`` block.
+
+    Keys arrive as the VT sequences a remote shell reads; output is drawn as
+    VT; the size is looked at every ``CONSOLE_SIZE_POLL_S``, since a console
+    sends no signal for it.
+    """
+
+    def __init__(self, *, kernel32=None):
+        """
+        Args:
+            kernel32: The bound kernel32; None binds the real one on entry.
+        """
+        self._kernel32 = kernel32
+        self._input = None
+        self._output = None
+        self._saved: "tuple | None" = None
+        self._stop = threading.Event()
+
+    def __enter__(self) -> "WindowsRawConsole":
+        """Set both modes, keeping the old ones.
+
+        Raises:
+            PlatformUnsupportedError: When there is no console to set.
+        """
+        if self._kernel32 is None:
+            try:
+                self._kernel32 = win32.libraries().kernel32
+            except OSError as error:
+                raise PlatformUnsupportedError(str(error))
+        self._input = self._kernel32.GetStdHandle(win32.STD_INPUT_HANDLE)
+        self._output = self._kernel32.GetStdHandle(win32.STD_OUTPUT_HANDLE)
+        input_mode = ctypes.c_ulong(0)
+        output_mode = ctypes.c_ulong(0)
+        if not self._kernel32.GetConsoleMode(
+            self._input, ctypes.byref(input_mode)
+        ) or not self._kernel32.GetConsoleMode(self._output, ctypes.byref(output_mode)):
+            raise PlatformUnsupportedError("standard input is not a console")
+        self._saved = (input_mode.value, output_mode.value)
+        raw_input = (
+            input_mode.value
+            & ~(
+                win32.ENABLE_LINE_INPUT
+                | win32.ENABLE_ECHO_INPUT
+                | win32.ENABLE_PROCESSED_INPUT
+            )
+        ) | win32.ENABLE_VIRTUAL_TERMINAL_INPUT
+        raw_output = (
+            output_mode.value
+            | win32.ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            | win32.ENABLE_PROCESSED_OUTPUT
+        )
+        self._kernel32.SetConsoleMode(self._input, raw_input)
+        self._kernel32.SetConsoleMode(self._output, raw_output)
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        """Put both modes back and stop looking at the size."""
+        self._stop.set()
+        if self._saved is not None:
+            self._kernel32.SetConsoleMode(self._input, self._saved[0])
+            self._kernel32.SetConsoleMode(self._output, self._saved[1])
+            self._saved = None
+
+    def read(self) -> bytes:
+        """The next keys typed, as UTF-8; empty once the console is gone."""
+        buffer = ctypes.create_unicode_buffer(CONSOLE_READ_UNITS)
+        count = ctypes.c_ulong(0)
+        if not self._kernel32.ReadConsoleW(
+            self._input, buffer, CONSOLE_READ_UNITS, ctypes.byref(count), None
+        ):
+            return b""
+        return buffer[: count.value].encode("utf-8", "surrogatepass")
+
+    def write(self, data: bytes) -> None:
+        """Put bytes on the console.
+
+        Args:
+            data: VT-encoded UTF-8.
+        """
+        stream = getattr(sys.stdout, "buffer", None)
+        if stream is None:
+            return
+        stream.write(data)
+        stream.flush()
+
+    def on_resize(self, callback) -> None:
+        """Be told the console's new size whenever it changes.
+
+        Args:
+            callback: ``callback(cols, rows)``, called on a thread of its own.
+        """
+        threading.Thread(target=self._watch_size, args=(callback,), daemon=True).start()
+
+    def _watch_size(self, callback) -> None:
+        size = shutil.get_terminal_size()
+        while not self._stop.wait(CONSOLE_SIZE_POLL_S):
+            current = shutil.get_terminal_size()
+            if current != size:
+                size = current
+                callback(size.columns, size.lines)

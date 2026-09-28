@@ -47,6 +47,7 @@ from neutrino_client.platforms.base import (
     run_quietly,
     share_parts,
 )
+from neutrino_client.platforms.posix_terminal import PosixRawTerminal
 from neutrino_client.words import language_for_tag
 
 DARWIN_CONFIG_DIR = os.path.join("Library", "Application Support", "Neutrino Client")
@@ -95,6 +96,10 @@ OPEN_TIMEOUT_S = 10
 OSASCRIPT_TOOL = "osascript"
 OSASCRIPT_TIMEOUT_S = 300
 OSASCRIPT_CANCELED_MARKS = ("User canceled", "(-128)")
+
+# The file a terminal is opened on: Terminal runs a ``.command`` file.
+TERMINAL_COMMAND_FILE_NAME = "terminal.command"
+TERMINAL_APP = "Terminal"
 
 
 def _smb_refusal(output: str) -> str:
@@ -258,6 +263,30 @@ class DarwinPlatform(ClientPlatform):
             run_quietly([OPEN_TOOL, url], timeout_s=OPEN_TIMEOUT_S)
         except (OSError, subprocess.SubprocessError):
             super().open_url(url)
+
+    def raw_terminal(self) -> PosixRawTerminal:
+        """Standard input in raw mode."""
+        return PosixRawTerminal()
+
+    def open_terminal(self, argv: list) -> None:
+        """Open Terminal on a ``.command`` file that runs one command.
+
+        Args:
+            argv: The command the terminal runs.
+
+        Raises:
+            OSError: When the file cannot be written or Terminal opened.
+        """
+        path = os.path.join(self.config_dir(), TERMINAL_COMMAND_FILE_NAME)
+        files.write_text(path, "#!/bin/sh\nexec " + shlex.join(argv) + "\n", mode=0o700)
+        try:
+            result = run_quietly(
+                [OPEN_TOOL, "-a", TERMINAL_APP, path], timeout_s=OPEN_TIMEOUT_S
+            )
+        except subprocess.SubprocessError as error:
+            raise OSError(str(error)) from error
+        if result.returncode != 0:
+            raise OSError((result.stderr or result.stdout or "").strip()[-200:])
 
     def easytier_join(
         self, *, network_name: str, secret_path: str, peer: str, hostname: str

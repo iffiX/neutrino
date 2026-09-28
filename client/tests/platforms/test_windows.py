@@ -537,3 +537,30 @@ def test_a_missing_secret_is_refused_before_anything_is_written(overlay_platform
 
     assert caught.value.code == "overlay_secret_missing"
     assert services.calls == []
+
+
+# --- the system terminal ---
+
+
+def test_windows_terminal_is_opened_on_the_command_when_installed(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "which", lambda name: "C:\\wt.exe")
+    started = []
+    monkeypatch.setattr(
+        WindowsPlatform, "start_on_screen", lambda self, argv: started.append(argv)
+    )
+
+    WindowsPlatform(win32=FakeWin32()).open_terminal(["nclient.exe", "terminal", "d1"])
+
+    assert started == [["C:\\wt.exe", "nclient.exe", "terminal", "d1"]]
+
+
+def test_without_windows_terminal_a_console_is_started(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "which", lambda name: None)
+    started = []
+    monkeypatch.setattr(
+        WindowsPlatform, "start_on_screen", lambda self, argv: started.append(argv)
+    )
+
+    WindowsPlatform(win32=FakeWin32()).open_terminal(["nclient.exe", "terminal", "d1"])
+
+    assert started == [["cmd", "/c", "start", "", "nclient.exe", "terminal", "d1"]]

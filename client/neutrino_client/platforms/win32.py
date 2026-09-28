@@ -79,6 +79,16 @@ PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
 # The three standard handles, as GetStdHandle and SetStdHandle name them.
 STD_HANDLE_NAMES = (0xFFFFFFF6, 0xFFFFFFF5, 0xFFFFFFF4)
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+# Console modes a raw terminal sets and clears: keys as VT sequences in,
+# VT sequences drawn out, and no line editing, echo or Ctrl-C handling.
+STD_INPUT_HANDLE = 0xFFFFFFF6
+STD_OUTPUT_HANDLE = 0xFFFFFFF5
+ENABLE_PROCESSED_INPUT = 0x0001
+ENABLE_LINE_INPUT = 0x0002
+ENABLE_ECHO_INPUT = 0x0004
+ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+ENABLE_PROCESSED_OUTPUT = 0x0001
+ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 WAIT_OBJECT_0 = 0
 INFINITE = 0xFFFFFFFF
 
@@ -435,6 +445,15 @@ class Win32Libraries:
         self.kernel32.DeleteProcThreadAttributeList.argtypes = [ctypes.c_void_p]
         self.kernel32.GetStdHandle.restype = ctypes.c_void_p
         self.kernel32.GetStdHandle.argtypes = [ctypes.c_ulong]
+        self.kernel32.GetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self.kernel32.SetConsoleMode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self.kernel32.ReadConsoleW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
         self.kernel32.SetStdHandle.argtypes = [ctypes.c_ulong, ctypes.c_void_p]
         self.kernel32.CreateProcessW.argtypes = [
             ctypes.c_wchar_p,

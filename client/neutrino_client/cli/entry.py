@@ -10,6 +10,7 @@ do the same things from a terminal.
     nclient gui [--hidden]
     nclient quit
     nclient service list | <kind> <action> [--hub <name>]
+    nclient terminal <machine> [--hub <name>]
 
 The client runs as a person and never as root.
 """
@@ -26,6 +27,7 @@ from neutrino_client.cli import (
     quit,
     service,
     status,
+    terminal,
     wording,
 )
 from neutrino_client.services.ai import AI_REASONING_EFFORTS
@@ -63,6 +65,11 @@ def main() -> int:
         "--hidden", action="store_true", help="start without showing the window"
     )
     subparsers.add_parser("quit", help="stop the running client")
+    terminal_parser = subparsers.add_parser(
+        "terminal", help="a shell on a machine a hub offers one on"
+    )
+    terminal_parser.add_argument("machine", help="the machine, by name or id")
+    _add_hub_argument(terminal_parser)
     service_parser, service_kind_parsers = _add_service_parser(subparsers)
 
     arguments = parser.parse_args(_argv_without_launch_services())
@@ -82,6 +89,8 @@ def main() -> int:
         return gui.main(is_hidden=arguments.hidden)
     if arguments.command == "quit":
         return quit.main()
+    if arguments.command == "terminal":
+        return terminal.main(arguments.machine, hub=arguments.hub)
     if arguments.command == "service":
         return _run_service(arguments, service_parser, service_kind_parsers)
     return status.main()

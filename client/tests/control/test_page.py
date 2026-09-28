@@ -868,3 +868,19 @@ def test_an_entrys_origin_is_worded_from_its_code_with_the_sentence_as_fallback(
         "samba_module",
     ):
         assert code in catalog_keys("ui.description.")
+
+
+def test_each_offered_machine_has_an_open_terminal_button():
+    card = PAGE_JS.split("function terminalsCard(hub, machines)")[1].split("\n}")[0]
+    asking = PAGE_JS.split("function askTerminal(hub, machine, noteKey)")[1].split(
+        "\n}"
+    )[0]
+
+    assert "open.textContent = t('ui.terminal_open');" in card
+    assert "open.disabled = !machine.is_online || isHeld(hub);" in card
+    assert (
+        "send('/api/terminal/launch', { hub_id: hub.hub_id, device_id: "
+        "machine.device_id })" in asking
+    )
+    assert EN_WORDS["ui.terminal_open"] == "Open terminal"
+    assert CATALOGS["zh-CN"]["ui.terminal_open"] == "打开终端"
