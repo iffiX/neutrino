@@ -118,6 +118,7 @@ assigned resolver.
 | an exit node's own name | `direct_dns` | xray's resolver, out the uplink, under the egress mark |
 | the hub's probe host | `direct_dns` | the same |
 | the hub's connect measurement | `direct_dns` | a plain A query from the hub, under the egress mark |
+| the hub's overlay daemons: `netbird.io` and its subdomains, each EasyTier peer host | `direct_dns` | dnsmasq → xray `dns_in` → xray's resolver, out the uplink |
 | a served network's names, LAN scope on | the split below | dnsmasq → xray `dns_in` → `dns_out` → xray's resolver |
 | a served network's names, LAN scope off | `direct_dns` | dnsmasq → the uplink |
 | the hub's own names | dnsmasq | the row above that matches; with the hub scope on the query to `direct_dns` is diverted like any other |
@@ -125,7 +126,12 @@ assigned resolver.
 
 The first three are the proxy's own lookups: a lookup for an exit's address
 that goes through an exit waits on its own answer. They take no switch into
-account. Every other lookup follows the scope its traffic is in, which is
+account. The overlay daemons' names are pinned the same way, so the hub's
+NetBird and EasyTier lookups skip the exit's round trip. The renderer takes
+them as `overlay_names` from `overlay_name_matchers`: `domain:netbird.io`,
+then one `full:` matcher per EasyTier peer addressed by name. A self-hosted
+NetBird management server has a name of its own, and that name follows the
+served network's row. Every other lookup follows the scope its traffic is in, which is
 what the hub scope's description promises: with it on, the box's own names
 resolve at the exit.
 

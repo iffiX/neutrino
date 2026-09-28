@@ -25,6 +25,7 @@ from neutrino_hub.modules.easytier.constants import EASYTIER_GENERATED_NAME
 from neutrino_hub.modules.easytier.ops import EasyTierConfigApplier
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
+from neutrino_hub.modules.overlay.config import overlay_name_matchers
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
@@ -168,6 +169,7 @@ def _render(selected: tuple[str, ...]) -> dict:
         artifacts["xray"] = XrayConfigRenderer(
             node_list=node_list,
             routing=routing,
+            overlay_names=overlay_name_matchers(read_easytier()),
         ).render()
     if "router" in selected:
         artifacts["router"] = RouterNftRenderer(
