@@ -35,6 +35,7 @@ def test_state_carries_the_persons_facts_the_hubs_and_no_token():
         "is_disabled",
         "is_exit",
         "last_error",
+        "overlay",
     }
     assert [(entry["hub_id"], entry["type"]) for entry in state["services"]] == [
         ("h1", "ai"),
@@ -343,3 +344,49 @@ def test_a_shapeless_body_acts_as_an_empty_one():
 
     assert status == 200
     assert resident.service_calls == [("ai", {})]
+
+
+# --- the virtual network and the terminals ---
+
+
+@pytest.mark.parametrize(
+    "path, verb", [("/api/overlay/join", "join"), ("/api/overlay/leave", "leave")]
+)
+def test_a_network_step_reaches_the_resident_and_answers_the_state(path, verb):
+    resident = FakeResident()
+
+    status, state = routes.dispatch("POST", path, {"hub_id": "h1"}, resident)
+
+    assert status == 200
+    assert resident.overlay_calls == [(verb, "h1")]
+    assert state["hubs"][0]["overlay"]["state"] == "on"
+
+
+@pytest.mark.parametrize(
+    "code, expected",
+    [
+        ("overlay_not_authorized", 403),
+        ("overlay_missing", 400),
+        ("busy", 400),
+        ("unknown_hub", 404),
+    ],
+)
+def test_a_refused_network_step_answers_its_code(code, expected):
+    resident = FakeResident()
+    resident.overlay_reply = {"code": code, "params": {}}
+
+    status, reply = routes.dispatch(
+        "POST", "/api/overlay/join", {"hub_id": "h1"}, resident
+    )
+
+    assert status == expected
+    assert reply == {"code": code, "params": {}}
+
+
+def test_the_state_carries_the_terminals_of_every_hub():
+    _status, state = routes.dispatch("GET", "/api/state", None, FakeResident())
+
+    assert [(row["hub_id"], row["device_id"]) for row in state["terminals"]] == [
+        ("h1", "d_lepton"),
+        ("h1", "d_muon"),
+    ]

@@ -34,6 +34,7 @@ CODE_PATTERNS = (
     re.compile(r'ShareAttachError\(\s*\n?\s*"([a-z][a-z0-9_]*)"'),
     re.compile(r'EnrollmentError\(\s*\n?\s*"([a-z][a-z0-9_]*)"'),
     re.compile(r'GuiShellUnavailableError\(\s*\n?\s*"([a-z][a-z0-9_]*)"'),
+    re.compile(r'OverlayControlError\(\s*\n?\s*"([a-z][a-z0-9_]*)"'),
     re.compile(r'_failure\(\s*"([a-z][a-z0-9_]*)"'),
     re.compile(r'word_code\(\s*"([a-z][a-z0-9_]*)"'),
     re.compile(r'"([a-z][a-z0-9_]*)",\s+# exit code'),

@@ -314,6 +314,7 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
         "is_disabled": False,
         "is_exit": True,
         "last_error": None,
+        "overlay": None,
     }
     assert (office["hub_id"], office["gateway_url"], office["is_exit"]) == (
         "h2",
@@ -991,6 +992,7 @@ def test_the_shutdown_logs_one_line_a_step_in_order(config_path):
     resident.shutdown()
 
     assert lines == [
+        "networks: 0 kept",
         "ai: restored",
         "mounts: 2 detached",
         "forwards: 1 closed",
@@ -1015,7 +1017,8 @@ def test_a_step_that_hangs_is_given_up_and_the_others_still_run(
 
     assert hanging.is_holding.is_set()
     assert released == ["ai", "file", "port", "rdp"]
-    assert lines[0].startswith("ai: gave up after ")
+    assert lines[0] == "networks: 0 kept"
+    assert lines[1].startswith("ai: gave up after ")
     assert lines[-1] == "shut down"
     assert time.monotonic() - started < 5
 
@@ -1166,3 +1169,112 @@ def test_the_resident_forwards_a_sessions_changes_to_the_watchers(
     turn(two_hubs, "c1")
 
     assert heard.wait(timeout=5)
+
+
+# --- the virtual networks and the terminals ---
+
+EASYTIER_OVERLAY = {
+    "provider": "easytier",
+    "network_name": "home",
+    "network_secret": "s3cret",  # scan: allow
+    "peer": "tcp://203.0.113.7:11010",
+}
+
+
+class FakeOverlayDriver:
+    """An overlay driver that remembers every step and answers a set status."""
+
+    provider = "easytier"
+
+    def __init__(self):
+        self.steps = []
+        self.is_on = False
+
+    def status(self, material):
+        return {
+            "is_on": self.is_on,
+            "is_other_network": False,
+            "address": "10.144.144.5" if self.is_on else "",
+            "is_hub_seen": self.is_on,
+        }
+
+    def join(self, material, hostname):
+        self.steps.append(("join", material["network_name"]))
+        self.is_on = True
+
+    def leave(self, material):
+        self.steps.append(("leave", material["network_name"]))
+        self.is_on = False
+
+
+@pytest.fixture
+def overlay_resident(config_path):
+    bind(
+        config_path,
+        bindings=[dict(BINDING, gateway_url=HOME_URL, overlay=EASYTIER_OVERLAY)],
+    )
+    driver = FakeOverlayDriver()
+    resident = ClientResident(
+        log=discard,
+        platform=FakeClientPlatform(),
+        overlay_drivers={"easytier": driver, "netbird": FakeOverlayDriver()},
+    )
+    yield resident, driver
+    resident.shutdown()
+
+
+def test_a_hub_row_carries_its_networks_row_and_no_secret(overlay_resident):
+    resident, _driver = overlay_resident
+    resident._overlay.refresh_bindings()
+
+    (row,) = resident.hubs()
+
+    assert row["overlay"]["provider"] == "easytier"
+    assert row["overlay"]["network"] == "home"
+    assert row["overlay"]["state"] == "off"
+    assert "s3cret" not in json.dumps(row)  # scan: allow
+
+
+def test_join_and_leave_reach_the_hubs_network(overlay_resident):
+    resident, driver = overlay_resident
+
+    assert resident.join_overlay("h1") == {}
+    wait_until(lambda: driver.steps == [("join", "home")])
+    wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
+    assert resident.hubs()[0]["overlay"]["address"] == "10.144.144.5"
+
+    assert resident.leave_overlay("c1") == {}
+    wait_until(lambda: len(driver.steps) == 2)
+    assert driver.steps[-1] == ("leave", "home")
+
+
+def test_joining_the_network_of_a_hub_nobody_joined_is_unknown_hub(
+    overlay_resident,
+):
+    resident, _driver = overlay_resident
+
+    assert resident.join_overlay("h9") == {
+        "code": "unknown_hub",
+        "params": {"hub_id": "h9"},
+    }
+
+
+def test_leaving_a_hub_leaves_its_network_when_no_other_hub_names_it(
+    overlay_resident,
+):
+    resident, driver = overlay_resident
+    resident.join_overlay("h1")
+    wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
+
+    resident.disconnect("h1")
+
+    wait_until(lambda: len(driver.steps) == 2)
+    assert driver.steps == [("join", "home"), ("leave", "home")]
+
+
+def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    lepton = {"device_id": "d1", "name": "lepton", "is_online": True}
+    resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
+
+    assert resident.terminal_entries() == [dict(lepton, hub_id="h1")]

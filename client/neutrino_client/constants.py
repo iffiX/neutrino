@@ -237,3 +237,5 @@ CLIENT_OVERLAY_HELPER_EXIT_CODES = {
 # management server; a status is local.
 CLIENT_OVERLAY_JOIN_TIMEOUT_S = 60
 CLIENT_OVERLAY_STATUS_TIMEOUT_S = 10
+# How often each network's daemon is asked where this machine stands.
+CLIENT_OVERLAY_POLL_INTERVAL_S = 15

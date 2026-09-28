@@ -32,10 +32,11 @@ def state_payload(resident) -> dict:
         resident: The running :class:`~neutrino_client.core.resident.ClientResident`.
 
     Returns:
-        The state payload: the machine, the hubs joined as ``hubs`` and the
-        services they publish as ``services``, each stamped with its
-        ``hub_id``, then every handler's state; no token and no password is
-        in it.
+        The state payload: the machine, the hubs joined as ``hubs``, each
+        with its virtual network's row, the services they publish as
+        ``services`` and the machines they offer a terminal on as
+        ``terminals``, each stamped with its ``hub_id``, then every
+        handler's state; no token, password or network secret is in it.
     """
     state = {
         "version": CLIENT_VERSION,
@@ -51,6 +52,7 @@ def state_payload(resident) -> dict:
         "exit_hub_id": resident.exit_hub_id(),
         "hubs": resident.hubs(),
         "services": resident.service_entries(),
+        "terminals": resident.terminal_entries(),
     }
     state.update(resident.service_states())
     return state
@@ -94,6 +96,10 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return 200, state_payload(resident)
         if route == "/api/exit/set":
             return _set_exit(resident, payload)
+        if route == "/api/overlay/join":
+            return _answer(resident, resident.join_overlay(_hub_id(payload)))
+        if route == "/api/overlay/leave":
+            return _answer(resident, resident.leave_overlay(_hub_id(payload)))
         if route.startswith(SERVICES_PREFIX):
             return _service_action(resident, route[len(SERVICES_PREFIX) :], payload)
         if route == "/api/fs":
@@ -114,12 +120,17 @@ def refusal_status(code: str) -> int:
         code: The refusal code.
 
     Returns:
-        404 for an unknown request or hub, 403 for a refused scope or path,
-        400 otherwise.
+        404 for an unknown request or hub, 403 for a refused scope, path or
+        authorization, 400 otherwise.
     """
     if code in ("unknown_request", "unknown_hub"):
         return 404
-    if code in ("control_peer_refused", "fs_refused", "client_disabled"):
+    if code in (
+        "control_peer_refused",
+        "fs_refused",
+        "client_disabled",
+        "overlay_not_authorized",
+    ):
         return 403
     return 400
 
@@ -180,6 +191,17 @@ def _start_session(resident, body: dict):
 
 def _set_exit(resident, body: dict):
     outcome = resident.set_exit(str(body.get("hub_id", "")))
+    if outcome:
+        return refusal_status(str(outcome.get("code", ""))), outcome
+    return 200, state_payload(resident)
+
+
+def _hub_id(body: dict) -> str:
+    return str(body.get("hub_id", "") or "")
+
+
+def _answer(resident, outcome: dict):
+    """The whole state on success, the refusal and its status otherwise."""
     if outcome:
         return refusal_status(str(outcome.get("code", ""))), outcome
     return 200, state_payload(resident)

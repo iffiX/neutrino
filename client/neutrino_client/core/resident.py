@@ -6,7 +6,9 @@ resident still serves its page, waiting for a link. For every binding on
 disk it holds one :class:`~neutrino_client.core.session.ClientHubSession`,
 and it owns the five service handlers, the store and the choice of exit
 hub, so a service is addressed by hub and id together and a hub that goes
-away takes only its own entries with it.
+away takes only its own entries with it. Beside the sessions it holds this
+machine's membership of each hub's virtual network, which a hub row joins
+and leaves.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -34,6 +36,7 @@ from neutrino_client.constants import (
     CLIENT_STREAM_TIMEOUT_S,
 )
 from neutrino_client.core import enrollment
+from neutrino_client.core.overlay import OverlayMemberships
 from neutrino_client.core.session import CONNECTION_CONNECTED, ClientHubSession
 from neutrino_client.exceptions import (
     GatewayRefused,
@@ -51,8 +54,10 @@ from neutrino_client.services.web import WebServiceHandler
 # How long a shutdown waits for the watch thread to come back.
 SHUTDOWN_JOIN_TIMEOUT_S = 5
 # What a shutdown lets go of, in order: the handler, the name its line
-# carries, and how that line reads.
+# carries, and how that line reads. The virtual networks are kept: their
+# daemons hold them.
 SHUTDOWN_STEPS = (
+    ("overlay", "networks", "{count} kept"),
     ("ai", "ai", "restored"),
     ("file", "mounts", "{count} detached"),
     ("port", "forwards", "{count} closed"),
@@ -100,11 +105,13 @@ def is_same_join(one: dict, other: dict) -> bool:
 class ClientResident:
     """Everything the person's surfaces face, over every hub joined."""
 
-    def __init__(self, *, log=print, platform=None):
+    def __init__(self, *, log=print, platform=None, overlay_drivers=None):
         """
         Args:
             log: Callable used for progress messages.
             platform: The machine's platform; None detects it.
+            overlay_drivers: ``{provider: driver}`` for the virtual
+                networks; None drives the carried NetBird and EasyTier.
         """
         self._log = log
         self._lock = threading.Lock()
@@ -151,6 +158,14 @@ class ClientResident:
                 ),
             )
         }
+        self._overlay = OverlayMemberships(
+            platform=self.platform,
+            bindings_of=self._overlay_bindings,
+            hostname=self.hostname(),
+            log=log,
+            on_change=self.notify,
+            drivers=overlay_drivers,
+        )
         # One session per binding, by binding id, in the order joined.
         self._sessions: dict = {}
         # The binding file's stamp as last read; None before the first read.
@@ -207,7 +222,9 @@ class ClientResident:
         Returns:
             ``[{hub_id, hub_name, hub_software, binding_id, name,
             gateway_url, connection_state, is_disabled, is_exit,
-            last_error}]``; no token is in it.
+            last_error, overlay}]``; ``overlay`` is the virtual network's
+            row, None when the hub names none. No token and no secret is in
+            it.
         """
         exit_hub_id = self.exit_hub_id()
         with self._lock:
@@ -228,9 +245,26 @@ class ClientResident:
                     "is_disabled": session.is_disabled(),
                     "is_exit": bool(hub_id) and hub_id == exit_hub_id,
                     "last_error": session.last_error(),
+                    "overlay": self._overlay.hub_row(hub_id or session.binding_id),
                 }
             )
         return rows
+
+    def terminal_entries(self) -> list:
+        """The machines every connected hub offers a terminal on, merged.
+
+        Returns:
+            ``[{hub_id, device_id, name, is_online}]`` in hub order.
+        """
+        with self._lock:
+            sessions = list(self._sessions.values())
+        merged = []
+        for session in sessions:
+            hub_id = session.hub_id()
+            merged.extend(
+                dict(entry, hub_id=hub_id) for entry in session.terminal_entries()
+            )
+        return merged
 
     def service_entries(self) -> list:
         """The typed service lists of every connected hub, merged.
@@ -429,6 +463,30 @@ class ClientResident:
         """
         self._session_for(hub_id).reconnect()
 
+    def join_overlay(self, hub_id: str) -> dict:
+        """Join one hub's virtual network.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+
+        Returns:
+            Empty when the join was started; ``unknown_hub``,
+            ``overlay_missing`` or ``busy`` otherwise.
+        """
+        return self._overlay_step(hub_id, is_join=True)
+
+    def leave_overlay(self, hub_id: str) -> dict:
+        """Leave one hub's virtual network.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+
+        Returns:
+            Empty when the leave was started; ``unknown_hub``,
+            ``overlay_missing`` or ``busy`` otherwise.
+        """
+        return self._overlay_step(hub_id, is_join=False)
+
     def request_show(self) -> None:
         """Ask the window to come to the front, when one is listening."""
         callback = self.on_show
@@ -502,6 +560,7 @@ class ClientResident:
         self._clear_leftovers()
         for handler in self._services.values():
             handler.start()
+        self._overlay.start()
         with self._lock:
             self._is_started = True
             sessions = list(self._sessions.values())
@@ -521,8 +580,9 @@ class ClientResident:
         """Let go of everything and stop every loop. Idempotent.
 
         The order is the one that leaves the machine as it was found: the
-        sockets closed, the tools restored, the shares unmounted, the
-        forwards closed, the viewers closed. The four share
+        sockets closed, the virtual networks counted and kept, the tools
+        restored, the shares unmounted, the forwards closed, the viewers
+        closed. The steps share
         ``CLIENT_SHUTDOWN_DEADLINE_S``; a step past its part of what is left
         is given up and the next runs.
         """
@@ -535,6 +595,7 @@ class ClientResident:
         self._news.set()
         for session in sessions:
             session.stop()
+        self._overlay.stop()
         self._release_in_time()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
@@ -623,8 +684,28 @@ class ClientResident:
         self.notify()
 
     def _hub_services(self, session: ClientHubSession) -> None:
-        """A hub's services changed: the exit hub's grant may have."""
+        """A hub's state arrived: the exit hub's grant and its network may have changed."""
         self._services["ai"].refresh(entries=self.service_entries())
+        self._overlay.refresh()
+
+    def _overlay_bindings(self) -> list:
+        """Each hub's overlay object, by hub id, for the memberships."""
+        with self._lock:
+            sessions = list(self._sessions.values())
+        return [
+            (session.hub_id() or session.binding_id, session.overlay())
+            for session in sessions
+        ]
+
+    def _overlay_step(self, hub_id: str, *, is_join: bool) -> dict:
+        """Join or leave the network of the hub a page named."""
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        key = session.hub_id() or session.binding_id
+        if is_join:
+            return self._overlay.join(key)
+        return self._overlay.leave(key)
 
     def _hub_disabled(self, session: ClientHubSession) -> None:
         """A hub switched this client off: let go of what it published."""
@@ -688,6 +769,8 @@ class ClientResident:
             self._follow_exit()
         if missing:
             self.notify()
+        if dropped or missing:
+            self._overlay.refresh()
 
     def _tell_hub_left(self, binding: dict) -> None:
         """Post the leave to the hub; one that cannot be told is logged."""
@@ -725,9 +808,15 @@ class ClientResident:
         """Undo everything the handlers hold for one hub, in the shutdown order."""
         for service_type, _name, _word in SHUTDOWN_STEPS:
             try:
-                self._services[service_type].release_hub(hub_id)
+                self._releaser(service_type).release_hub(hub_id)
             except Exception as error:  # noqa: BLE001 - the rest must still run
                 self._log(f"{service_type}: could not release {hub_id}: {error}")
+
+    def _releaser(self, service_type: str):
+        """What one shutdown step releases: the networks, or a handler."""
+        if service_type == "overlay":
+            return self._overlay
+        return self._services[service_type]
 
     def _release_in_time(self) -> None:
         """Release every handler in order, none of them holding up the rest."""
@@ -755,6 +844,6 @@ class ClientResident:
     def _release_one(self, service_type: str, outcome: dict) -> None:
         """Run one handler's release, its count or its failure in ``outcome``."""
         try:
-            outcome["count"] = self._services[service_type].release()
+            outcome["count"] = self._releaser(service_type).release()
         except Exception as error:  # noqa: BLE001 - the rest must still run
             outcome["error"] = error

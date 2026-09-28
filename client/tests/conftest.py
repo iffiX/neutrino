@@ -238,6 +238,17 @@ def bind(path, url="http://127.0.0.1:9", fingerprint="", bindings=None) -> None:
     path.write_text(json.dumps({"bindings": list(bindings), "exit_hub_id": ""}))
 
 
+# The overlay part of a hub row: a NetBird network this machine is on.
+OVERLAY_ROW = {
+    "provider": "netbird",
+    "network": "api.netbird.io",
+    "state": "on",
+    "code": "",
+    "params": {},
+    "address": "100.64.0.7",
+    "is_hub_seen": True,
+    "work": {"state": "idle", "step": "", "code": "", "params": {}},
+}
 HUB_ROW = {
     "hub_id": "h1",
     "hub_name": "home",
@@ -249,7 +260,13 @@ HUB_ROW = {
     "is_disabled": False,
     "is_exit": True,
     "last_error": None,
+    "overlay": dict(OVERLAY_ROW),
 }
+# The machines the first hub offers a terminal on, as the resident merges them.
+TERMINALS = [
+    {"hub_id": "h1", "device_id": "d_lepton", "name": "lepton", "is_online": True},
+    {"hub_id": "h1", "device_id": "d_muon", "name": "muon", "is_online": False},
+]
 OFFICE_ROW = {
     "hub_id": "h2",
     "hub_name": "office",
@@ -261,6 +278,7 @@ OFFICE_ROW = {
     "is_disabled": False,
     "is_exit": False,
     "last_error": None,
+    "overlay": None,
 }
 
 
@@ -405,6 +423,8 @@ class FakeResident:
         self.reconnects = []
         self.refreshes = 0
         self.exits = []
+        self.overlay_calls = []
+        self.overlay_reply = {}
         self.states = {
             "forwards": {"h1/svc_tcp": {"local_port": 5432, "is_active": True}},
             "mounts": [
@@ -478,6 +498,17 @@ class FakeResident:
 
     def service_states(self) -> dict:
         return json.loads(json.dumps(self.states))
+
+    def terminal_entries(self) -> list:
+        return json.loads(json.dumps(TERMINALS)) if self.is_bound else []
+
+    def join_overlay(self, hub_id: str) -> dict:
+        self.overlay_calls.append(("join", hub_id))
+        return dict(self.overlay_reply)
+
+    def leave_overlay(self, hub_id: str) -> dict:
+        self.overlay_calls.append(("leave", hub_id))
+        return dict(self.overlay_reply)
 
     def list_directories(self, path: str) -> list:
         return self.platform.list_directories(path=path)
