@@ -11,10 +11,12 @@ from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.clients.ai_keys import client_credential
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_DISABLED,
+    CLIENT_CODE_PERMISSION_DENIED,
     CLIENT_CODE_RDP_NOT_SHARED,
     CLIENT_CODE_SERVICE_UNKNOWN,
     CLIENT_RDP_SERVICE_PREFIX,
 )
+from neutrino_hub.modules.clients.permissions import permitted_kinds
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.channel.constants import CHANNEL_CODE_BINDING_UNKNOWN
 from neutrino_hub.modules.services.collector import catalog_entries
@@ -51,6 +53,8 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
     entry = _entry(runtime, scope, entry_id)
     if entry is None:
         return CLIENT_CODE_SERVICE_UNKNOWN, {"service_id": entry_id}
+    if entry["type"] not in permitted_kinds(registry, client):
+        return CLIENT_CODE_PERMISSION_DENIED, {"kind": entry["type"]}
     if entry["type"] == SERVICES_TYPE_RDP:
         return _rdp_material(runtime, scope, entry_id)
     if entry["type"] == SERVICES_TYPE_AI:

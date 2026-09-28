@@ -15,18 +15,24 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from neutrino_hub.modules.clients.ai_keys import ensure_client_key, revoke_client_key
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_NAME_REQUIRED,
+    CLIENT_CODE_PERMISSION_KIND_UNKNOWN,
     CLIENT_CODE_UNKNOWN,
+    CLIENT_PERMISSION_KINDS,
 )
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.clients.permissions import permitted_kinds
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
+from neutrino_hub.modules.services.constants import SERVICES_TYPE_AI
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
+    ClientDefaultPermissionRequest,
     ClientEnrollmentRequest,
     ClientEnrollmentView,
     ClientListView,
+    ClientPermissionRequest,
     ClientRequest,
     ClientUpdate,
     ClientView,
@@ -198,6 +204,65 @@ def delete_client(
     return _list_view(runtime)
 
 
+@router.post("/default_permission/set", response_model=ClientListView)
+def set_default_permission(
+    request: ClientDefaultPermissionRequest,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> ClientListView:
+    """Store the kinds a client with no set of its own is allowed, and push
+    every client its state.
+
+    Args:
+        request: The kinds.
+        runtime: The shared runtime.
+
+    Returns:
+        The list, as a read answers.
+
+    Raises:
+        HTTPException: 400 with ``permission_kind_unknown`` for a kind that
+            is not one.
+    """
+    _require_kinds(request.kinds)
+    registry = ClientRegistry()
+    registry.set_default_permission(request.kinds)
+    for client in registry.all():
+        _settle_ai_key(registry, client)
+    channel_state.push_states(runtime, CHANNEL_ROLE_CLIENT)
+    runtime.events.publish(WEB_EVENT_CLIENTS)
+    return _list_view(runtime)
+
+
+@router.post("/permission/set", response_model=ClientListView)
+def set_permission(
+    request: ClientPermissionRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> ClientListView:
+    """Give one client a set of kinds of its own, or put it back on the
+    default, and push it its state.
+
+    Args:
+        request: The client and its kinds; ``kinds`` null follows the default.
+        runtime: The shared runtime.
+
+    Returns:
+        The list, as a read answers.
+
+    Raises:
+        HTTPException: 400 with ``permission_kind_unknown`` for a kind that
+            is not one, 404 with ``client_unknown`` when there is no such
+            client.
+    """
+    if request.kinds is not None:
+        _require_kinds(request.kinds)
+    registry = ClientRegistry()
+    client = _require(registry, request.client_id)
+    registry.set_permission(client.id, request.kinds)
+    _settle_ai_key(registry, registry.get(client.id))
+    _push_one(runtime, client.id)
+    runtime.events.publish(WEB_EVENT_CLIENTS)
+    return _list_view(runtime)
+
+
 def _set_disabled(
     runtime: PanelRuntime, client_id: str, is_disabled: bool
 ) -> ClientListView:
@@ -210,12 +275,35 @@ def _set_disabled(
         revoke_client_key(registry, client)
     else:
         ensure_client_key(registry, client)
-    try:
-        channel_state.push_state(runtime, CHANNEL_ROLE_CLIENT, client.id)
-    except (AgentOfflineError, StreamRefusedError):
-        pass
+    _push_one(runtime, client.id)
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return _list_view(runtime)
+
+
+def _push_one(runtime: PanelRuntime, client_id: str) -> None:
+    """Hand one client its state now; a client with no socket gets it later."""
+    try:
+        channel_state.push_state(runtime, CHANNEL_ROLE_CLIENT, client_id)
+    except (AgentOfflineError, StreamRefusedError):
+        pass
+
+
+def _settle_ai_key(registry: ClientRegistry, client: Client) -> None:
+    """Revoke the gateway key of a client no longer allowed the AI entry."""
+    if SERVICES_TYPE_AI not in permitted_kinds(registry, client):
+        revoke_client_key(registry, client)
+
+
+def _require_kinds(kinds: list) -> None:
+    for kind in kinds:
+        if kind not in CLIENT_PERMISSION_KINDS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": CLIENT_CODE_PERMISSION_KIND_UNKNOWN,
+                    "params": {"kind": kind},
+                },
+            )
 
 
 def _require(registry: ClientRegistry, client_id: str) -> Client:
@@ -230,8 +318,9 @@ def _require(registry: ClientRegistry, client_id: str) -> Client:
 
 def _list_view(runtime: PanelRuntime) -> ClientListView:
     sessions = runtime.client_sessions
+    registry = ClientRegistry()
     views = []
-    for client in ClientRegistry().all():
+    for client in registry.all():
         session = sessions.get(client.id)
         version = session.version if session is not None else client.version
         views.append(
@@ -244,6 +333,11 @@ def _list_view(runtime: PanelRuntime) -> ClientListView:
                 is_online=session is not None,
                 last_seen=sessions.last_seen_at(client.id),
                 is_disabled=client.is_disabled,
+                permission=client.permission,
             )
         )
-    return ClientListView(clients=views)
+    return ClientListView(
+        clients=views,
+        default_permission=registry.default_permission(),
+        permission_kinds=list(CLIENT_PERMISSION_KINDS),
+    )

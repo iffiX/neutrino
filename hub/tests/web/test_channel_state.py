@@ -211,6 +211,26 @@ def test_a_clients_state_names_every_address_the_hub_answers_on(config_dir, hub_
     assert moved["hash"] != first["hash"]
 
 
+def test_a_clients_list_holds_only_the_kinds_it_is_allowed(config_dir):
+    runtime = FakeRuntime()
+    ai_entry = {**ENTRY, "id": "ai", "type": "ai", "payload": {}}
+    runtime.published_services.entries = [ENTRY, ai_entry]
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    everything = channel_state.client_state(runtime, client_id)
+
+    registry.set_permission(client_id, ["ai"])
+    only_ai = channel_state.client_state(runtime, client_id)
+    registry.set_permission(client_id, None)
+    registry.set_default_permission(["web"])
+    only_web = channel_state.client_state(runtime, client_id)
+
+    assert [entry["id"] for entry in everything["services"]] == ["web_gitea", "ai"]
+    assert [entry["id"] for entry in only_ai["services"]] == ["ai"]
+    assert [entry["id"] for entry in only_web["services"]] == ["web_gitea"]
+    assert len({everything["hash"], only_ai["hash"], only_web["hash"]}) == 3
+
+
 def test_a_push_from_the_panel_hands_one_agent_its_state():
     runtime = FakeRuntime()
 

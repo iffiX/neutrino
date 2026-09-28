@@ -78,6 +78,11 @@ def api(monkeypatch, tmp_path):
         "push_state",
         lambda given, role, client_id: given.pushed.append(client_id),
     )
+    monkeypatch.setattr(
+        channel_state,
+        "push_states",
+        lambda given, role: given.pushed.append(role),
+    )
     app = FastAPI()
     app.include_router(clients_router.router)
     app.dependency_overrides[require_session] = lambda: None
@@ -98,7 +103,7 @@ def test_an_empty_hub_lists_no_clients(api):
 
     response = client.get("/api/hub/client")
 
-    assert response.status_code == 200 and response.json() == {"clients": []}
+    assert response.status_code == 200 and response.json()["clients"] == []
 
 
 def test_a_link_creates_the_row_and_carries_the_client_role(api):
@@ -134,6 +139,7 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
         "is_online": False,
         "last_seen": None,
         "is_disabled": False,
+        "permission": None,
     }
     assert runtime.events.published == ["clients"]
 
@@ -221,7 +227,7 @@ def test_deleting_takes_the_key_the_record_and_the_socket(api):
 
     response = client.post("/api/hub/client/remove", json={"client_id": client_id})
 
-    assert response.status_code == 200 and response.json() == {"clients": []}
+    assert response.status_code == 200 and response.json()["clients"] == []
     assert load_config().client_keys == []
     assert ClientRegistry().get(client_id) is None
     assert runtime.client_sessions.refused == [(client_id, "binding_unknown", {})]
@@ -275,3 +281,101 @@ def test_the_list_prefers_the_live_session_over_the_record(api):
         "linux",
         "0.2.0",
     )
+
+
+ALL_KINDS = ["web", "port", "ai", "file", "rdp", "overlay", "terminal"]
+
+
+def test_the_list_carries_the_default_and_every_kind(api):
+    client, _ = api
+    client_id = ClientRegistry().create("alice")
+
+    payload = client.get("/api/hub/client").json()
+
+    assert payload["default_permission"] == ALL_KINDS
+    assert payload["permission_kinds"] == ALL_KINDS
+    assert payload["clients"][0]["id"] == client_id
+    assert payload["clients"][0]["permission"] is None
+
+
+def test_setting_the_default_stores_it_and_pushes_every_client(api):
+    client, runtime = api
+    ClientRegistry().create("alice")
+
+    reply = client.post(
+        "/api/hub/client/default_permission/set", json={"kinds": ["web", "overlay"]}
+    )
+
+    assert reply.status_code == 200
+    assert reply.json()["default_permission"] == ["web", "overlay"]
+    assert ClientRegistry().default_permission() == ["web", "overlay"]
+    assert runtime.pushed == ["client"]
+    assert runtime.events.published == ["clients"]
+
+
+def test_an_unknown_kind_is_a_coded_400(api):
+    client, runtime = api
+    client_id = ClientRegistry().create("alice")
+
+    default = client.post(
+        "/api/hub/client/default_permission/set", json={"kinds": ["web", "ssh"]}
+    )
+    own = client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": client_id, "kinds": ["telnet"]},
+    )
+
+    for reply, kind in ((default, "ssh"), (own, "telnet")):
+        assert reply.status_code == 400
+        assert reply.json()["detail"] == {
+            "code": "permission_kind_unknown",
+            "params": {"kind": kind},
+        }
+    assert runtime.pushed == []
+
+
+def test_setting_one_clients_kinds_pushes_only_that_client(api):
+    client, runtime = api
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    registry.create("bob")
+
+    reply = client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": alice, "kinds": ["terminal", "web"]},
+    )
+
+    rows = {row["id"]: row for row in reply.json()["clients"]}
+    assert rows[alice]["permission"] == ["web", "terminal"]
+    assert runtime.pushed == [alice]
+
+
+def test_null_kinds_put_a_client_back_on_the_default(api):
+    client, runtime = api
+    registry = ClientRegistry()
+    alice = registry.create("alice")
+    registry.set_permission(alice, ["web"])
+
+    reply = client.post(
+        "/api/hub/client/permission/set", json={"client_id": alice, "kinds": None}
+    )
+
+    assert reply.json()["clients"][0]["permission"] is None
+    assert ClientRegistry().get(alice).permission is None
+    assert runtime.pushed == [alice]
+
+
+def test_taking_ai_away_revokes_the_clients_gateway_key(api):
+    client, _ = api
+    client_id = ClientRegistry().create("alice")
+    from neutrino_hub.modules.clients.ai_keys import ensure_client_key
+
+    ensure_client_key(ClientRegistry(), ClientRegistry().get(client_id))
+
+    client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": client_id, "kinds": ["web"]},
+    )
+
+    assert load_config().client_keys == []
+    assert ClientRegistry().get(client_id).ai_key_id is None

@@ -213,7 +213,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest` |
@@ -389,12 +389,23 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/client` | | every client, grouped as the page draws them |
+| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), and the list's `default_permission` and `permission_kinds` |
 | `POST /api/hub/client/enrollment/create` | `{name}` | a client link |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
 | `POST /api/hub/client/disable` | `{client_id}` | its `state` is pushed with `is_disabled` |
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its socket is closed with `binding_unknown` |
+| `POST /api/hub/client/default_permission/set` | `{kinds}` | the kinds a client with no set of its own is allowed; every client's `state` is pushed |
+| `POST /api/hub/client/permission/set` | `{client_id, kinds}`, `kinds` null to follow the default | that client's own kinds; its `state` is pushed |
+
+A permission kind is a published service type (`web`, `port`, `ai`, `file`,
+`rdp`), `overlay` or `terminal`, `CLIENT_PERMISSION_KINDS` in
+`modules/clients/constants.py`. `config/clients/clients.json` holds
+`default_permission: {kinds}` beside `clients`, and each client a
+`permission` that is null or `{kinds}`; a file with no default allows every
+kind. A client's `services` section holds only the entries whose type it is
+allowed, and taking `ai` away revokes its gateway key. A kind outside the set
+is refused 400 `permission_kind_unknown {kind}`.
 
 #### `/api/hub/service`
 
@@ -855,11 +866,13 @@ first that fails gives the close its code:
 | `binding_unknown` | no client row has the id this socket is bound to |
 | `client_disabled` | that row is switched off on the Clients page |
 | `service_unknown` | the id names no entry in the list resolved for this client |
+| `permission_denied` | the entry's type is not among the kinds this client is allowed |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
 | `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
-`service_id`; the other three send empty params. A close with no code makes
+`service_id`, `permission_denied` puts the entry's type in `params` as
+`kind`, and the other three send empty params. A close with no code makes
 `params` the material, and what the material is follows from the type:
 
 | `type` | The material |

@@ -130,6 +130,8 @@
   "code.password_wrong": "当前密码不正确。",
   "code.path_invalid": "这台机器不会打开那个路径。",
   "code.path_missing": "那个路径下已经什么都没有了。",
+  "code.permission_denied": "这个客户端没有 {kind} 的权限。",
+  "code.permission_kind_unknown": "没有名为 {kind} 的权限。",
   "code.policy_route_missing": "策略路由没能设置，防火墙保持原来的规则。",
   "code.port_already_in_use": "端口 {value} 在这台机器上已被占用。",
   "code.port_out_of_range": "端口号在 {minimum} 到 {maximum} 之间，{value} 不在其中。",

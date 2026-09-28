@@ -1449,12 +1449,16 @@ class ClientView(BaseModel):
     is_online: bool = False
     last_seen: str | None = None
     is_disabled: bool = False
+    # The kinds this client is allowed; None while it follows the default.
+    permission: list[str] | None = None
 
 
 class ClientListView(BaseModel):
-    """Every enrolled client."""
+    """Every enrolled client, the default permission, and every kind."""
 
     clients: list[ClientView] = Field(default_factory=list)
+    default_permission: list[str] = Field(default_factory=list)
+    permission_kinds: list[str] = Field(default_factory=list)
 
 
 class ClientEnrollmentRequest(BaseModel):
@@ -1487,6 +1491,19 @@ class ClientUpdate(BaseModel):
 
     client_id: str
     name: str
+
+
+class ClientDefaultPermissionRequest(BaseModel):
+    """The kinds a client with no set of its own is allowed."""
+
+    kinds: list[str]
+
+
+class ClientPermissionRequest(BaseModel):
+    """One client's own set of kinds; None puts it back on the default."""
+
+    client_id: str
+    kinds: list[str] | None
 
 
 # --- the channel ---

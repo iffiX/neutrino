@@ -1,3 +1,5 @@
+from neutrino_hub.modules.services.constants import SERVICES_TYPES
+
 # Where the enrolled clients live under config/. Real file gitignored; the
 # example beside it in data/examples documents the shape.
 CLIENTS_CONFIG_PATH = "clients/clients.json"
@@ -15,3 +17,16 @@ CLIENT_CODE_SERVICE_UNKNOWN = "service_unknown"
 CLIENT_CODE_RDP_NOT_SHARED = "rdp_not_shared"
 CLIENT_CODE_UNKNOWN = "client_unknown"
 CLIENT_CODE_NAME_REQUIRED = "client_name_required"
+CLIENT_CODE_PERMISSION_DENIED = "permission_denied"
+CLIENT_CODE_PERMISSION_KIND_UNKNOWN = "permission_kind_unknown"
+
+# What a client may be allowed, one switch per kind: each published service
+# type, joining the hub's overlay, and opening a shell on a managed machine.
+# A client follows the default set unless it has a set of its own; a file
+# with no default allows every kind.
+CLIENT_PERMISSION_OVERLAY = "overlay"
+CLIENT_PERMISSION_TERMINAL = "terminal"
+CLIENT_PERMISSION_KINDS = SERVICES_TYPES + (
+    CLIENT_PERMISSION_OVERLAY,
+    CLIENT_PERMISSION_TERMINAL,
+)

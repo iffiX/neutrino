@@ -15,6 +15,10 @@ import hashlib
 import json
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
+from neutrino_hub.modules.clients.permissions import (
+    permitted_entries,
+    permitted_kinds,
+)
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.host_scope import (
@@ -45,17 +49,22 @@ def client_state(runtime, client_id: str) -> dict:
     Args:
         runtime: The shared runtime.
         client_id: The client; one that is switched off, or gone, is
-            handed an empty list.
+            handed an empty list, and one that is on is handed the entries
+            its permission allows.
 
     Returns:
         ``{hash, is_disabled, services, urls}``.
     """
-    client = ClientRegistry().get(client_id)
+    registry = ClientRegistry()
+    client = registry.get(client_id)
     is_disabled = client is None or client.is_disabled
     services = []
     if not is_disabled:
         scope = runtime.client_scope.get(client_id) or link_scope("")
-        services = catalog_entries(runtime.published_services.entries_for(scope))
+        services = permitted_entries(
+            catalog_entries(runtime.published_services.entries_for(scope)),
+            permitted_kinds(registry, client),
+        )
     body = {
         "is_disabled": is_disabled,
         "services": services,

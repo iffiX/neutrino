@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { ClientPermissionDrawer } from "../components/client_permission_drawer";
 import { DeviceEnrollmentNotice } from "../components/device_enrollment_notice";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
@@ -45,6 +46,9 @@ const PRESENCE_KEYS: Record<ClientPresence, string> = {
   never: "state.never_connected",
 };
 
+/** The drawer's key for the default permissions, beside client ids. */
+const DEFAULT_PERMISSION = "default";
+
 /** What a column shows for a client that has not reported one. */
 const NOTHING = "—";
 
@@ -65,6 +69,8 @@ export function ClientsPage() {
     name: string;
     view: ClientEnrollmentView;
   } | null>(null);
+  // Whose permissions the drawer edits: a client's id, or the default's.
+  const [permissionOf, setPermissionOf] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -126,6 +132,21 @@ export function ClientsPage() {
     }
   };
 
+  const applyPermission = async (kinds: string[] | null) => {
+    const next =
+      permissionOf === DEFAULT_PERMISSION
+        ? await apiPost<ClientListView>(
+            `${CLIENTS_PATH}/default_permission/set`,
+            { kinds },
+          )
+        : await apiPost<ClientListView>(`${CLIENTS_PATH}/permission/set`, {
+            client_id: permissionOf,
+            kinds,
+          });
+    resource.setData(next);
+    setPermissionOf(null);
+  };
+
   const askDelete = (client: ClientView) =>
     confirm.ask({
       title: t("ui.clients.delete_title", { name: client.name }),
@@ -135,6 +156,8 @@ export function ClientsPage() {
     });
 
   const onlineCount = clients.filter((client) => client.is_online).length;
+  const permissionClient =
+    clients.find((client) => client.id === permissionOf) ?? null;
 
   if (resource.error !== null && clients.length === 0) {
     return (
@@ -160,6 +183,15 @@ export function ClientsPage() {
           </div>
         </div>
         <div className="page_actions">
+          <button
+            type="button"
+            className="button"
+            disabled={resource.data === null}
+            onClick={() => setPermissionOf(DEFAULT_PERMISSION)}
+          >
+            <Icon name="lock" size={14} />
+            {t("ui.clients.default_permission")}
+          </button>
           {!isNaming && (
             <button
               type="button"
@@ -259,12 +291,40 @@ export function ClientsPage() {
                   client={client}
                   isBusy={isBusy}
                   onToggle={() => void handleToggle(client)}
+                  onPermission={() => setPermissionOf(client.id)}
                   onDelete={() => askDelete(client)}
                 />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {resource.data !== null && permissionOf === DEFAULT_PERMISSION && (
+        <ClientPermissionDrawer
+          title={t("ui.clients.default_permission_title")}
+          hint={t("ui.clients.default_permission_hint")}
+          applyHint={t("ui.clients.default_permission_apply_hint")}
+          kinds={resource.data.permission_kinds}
+          defaultKinds={resource.data.default_permission}
+          applied={resource.data.default_permission}
+          canFollowDefault={false}
+          onApply={applyPermission}
+          onClose={() => setPermissionOf(null)}
+        />
+      )}
+      {resource.data !== null && permissionClient !== null && (
+        <ClientPermissionDrawer
+          title={t("ui.clients.permission_title", {
+            name: permissionClient.name,
+          })}
+          applyHint={t("ui.clients.permission_apply_hint")}
+          kinds={resource.data.permission_kinds}
+          defaultKinds={resource.data.default_permission}
+          applied={permissionClient.permission}
+          canFollowDefault
+          onApply={applyPermission}
+          onClose={() => setPermissionOf(null)}
+        />
       )}
       {confirm.modal}
     </div>
@@ -275,10 +335,17 @@ interface ClientRowProps {
   client: ClientView;
   isBusy: boolean;
   onToggle: () => void;
+  onPermission: () => void;
   onDelete: () => void;
 }
 
-function ClientRow({ client, isBusy, onToggle, onDelete }: ClientRowProps) {
+function ClientRow({
+  client,
+  isBusy,
+  onToggle,
+  onPermission,
+  onDelete,
+}: ClientRowProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const presence = presenceOf(client);
@@ -291,6 +358,9 @@ function ClientRow({ client, isBusy, onToggle, onDelete }: ClientRowProps) {
             <span className="badge badge--warn">
               {t("ui.clients.disabled")}
             </span>
+          )}
+          {client.permission !== null && (
+            <span className="badge">{t("ui.clients.permission_custom")}</span>
           )}
         </div>
       </td>
@@ -307,6 +377,14 @@ function ClientRow({ client, isBusy, onToggle, onDelete }: ClientRowProps) {
         {client.is_online ? t("state.online") : formatTimeAgo(client.last_seen)}
       </td>
       <td className="clients_actions">
+        <button
+          type="button"
+          className="button button--small button--ghost"
+          disabled={isBusy}
+          onClick={onPermission}
+        >
+          {t("ui.clients.permission")}
+        </button>
         <button
           type="button"
           className="button button--small button--ghost"

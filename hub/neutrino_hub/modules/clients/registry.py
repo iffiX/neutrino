@@ -14,15 +14,26 @@ import uuid
 from dataclasses import dataclass, field
 
 from neutrino_hub.modules.clients.constants import (
+    CLIENT_PERMISSION_KINDS,
     CLIENT_TOKEN_BYTES,
     CLIENTS_CONFIG_PATH,
 )
+from neutrino_hub.modules.clients.permissions import permission_kinds
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK, read_config, write_config
 
 
 def _token_digest(token: str) -> str:
     """The stored form of a client token: its SHA-256 hex."""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _stored_kinds(entry) -> "list | None":
+    """The kinds a stored permission names, unknown ones dropped; None for none."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("kinds"), list):
+        return None
+    return permission_kinds(
+        kind for kind in entry["kinds"] if kind in CLIENT_PERMISSION_KINDS
+    )
 
 
 @dataclass
@@ -41,6 +52,7 @@ class Client:
         version: The client release it last reported.
         is_disabled: Whether the admin has switched it off.
         ai_key_id: The gateway client key minted for it, or None.
+        permission: The kinds it is allowed, or None to follow the default.
     """
 
     id: str
@@ -52,6 +64,7 @@ class Client:
     version: str = ""
     is_disabled: bool = False
     ai_key_id: "str | None" = None
+    permission: "list | None" = None
 
     @property
     def is_enrolled(self) -> bool:
@@ -80,6 +93,7 @@ class Client:
             version=str(data.get("version", "") or ""),
             is_disabled=bool(data.get("is_disabled", False)),
             ai_key_id=data.get("ai_key_id") or None,
+            permission=_stored_kinds(data.get("permission")),
         )
 
     def to_dict(self) -> dict:
@@ -93,6 +107,9 @@ class Client:
             "version": self.version,
             "is_disabled": self.is_disabled,
             "ai_key_id": self.ai_key_id,
+            "permission": (
+                None if self.permission is None else {"kinds": list(self.permission)}
+            ),
         }
 
 
@@ -104,6 +121,7 @@ class ClientRegistry:
     """
 
     def __init__(self):
+        self._default = None
         self._stored = self._read_stored()
 
     def all(self) -> list:
@@ -262,6 +280,45 @@ class ClientRegistry:
         """
         self._update(client_id, {"token_sha256": None})
 
+    def default_permission(self) -> list:
+        """The kinds a client with no set of its own is allowed.
+
+        Returns:
+            The kinds; every kind when the file names no default.
+        """
+        if self._default is None:
+            return list(CLIENT_PERMISSION_KINDS)
+        return list(self._default)
+
+    def set_default_permission(self, kinds) -> None:
+        """Store the kinds a client with no set of its own is allowed.
+
+        Args:
+            kinds: The kinds.
+
+        Raises:
+            ValueError: If one of them is not a permission kind.
+        """
+        chosen = permission_kinds(kinds)
+        with CONFIG_WRITE_LOCK:
+            self._stored = self._read_stored()
+            self._default = chosen
+            self._write_stored()
+
+    def set_permission(self, client_id: str, kinds) -> None:
+        """Give one client a set of its own, or put it back on the default.
+
+        Args:
+            client_id: The client.
+            kinds: The kinds, or None to follow the default.
+
+        Raises:
+            KeyError: When there is no such client.
+            ValueError: If one of the kinds is not a permission kind.
+        """
+        chosen = None if kinds is None else {"kinds": permission_kinds(kinds)}
+        self._update(client_id, {"permission": chosen})
+
     def forget(self, client_id: str) -> None:
         """Remove a client's record. An unknown id is ignored."""
         with CONFIG_WRITE_LOCK:
@@ -282,9 +339,14 @@ class ClientRegistry:
         try:
             data = read_config(CLIENTS_CONFIG_PATH)
         except FileNotFoundError:
+            self._default = None
             return {}
+        self._default = _stored_kinds(data.get("default_permission"))
         clients = data.get("clients", {})
         return dict(clients) if isinstance(clients, dict) else {}
 
     def _write_stored(self) -> None:
-        write_config(CLIENTS_CONFIG_PATH, {"clients": self._stored})
+        document = {"clients": self._stored}
+        if self._default is not None:
+            document = {"default_permission": {"kinds": self._default}, **document}
+        write_config(CLIENTS_CONFIG_PATH, document)

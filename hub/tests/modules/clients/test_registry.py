@@ -44,6 +44,7 @@ def test_create_makes_a_row_that_has_not_joined(config_dir):
         "version",
         "is_disabled",
         "ai_key_id",
+        "permission",
     }
 
 
@@ -144,3 +145,51 @@ def test_the_switch_and_the_key_id_are_written_and_forget_removes_the_row(
     registry.forget("nobody")
 
     assert ClientRegistry().all() == []
+
+
+def test_a_file_with_no_default_allows_every_kind(config_dir):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    assert registry.default_permission() == [
+        "web",
+        "port",
+        "ai",
+        "file",
+        "rdp",
+        "overlay",
+        "terminal",
+    ]
+    assert ClientRegistry().get(client_id).permission is None
+
+
+def test_the_default_is_stored_beside_the_clients(config_dir):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_default_permission(["terminal", "web", "web"])
+    registry.rename(client_id, "alice-laptop")
+
+    data = json.loads((config_dir / "clients" / "clients.json").read_text())
+    assert data["default_permission"] == {"kinds": ["web", "terminal"]}
+    assert data["clients"][client_id]["name"] == "alice-laptop"
+    assert ClientRegistry().default_permission() == ["web", "terminal"]
+    with pytest.raises(ValueError):
+        registry.set_default_permission(["telnet"])
+
+
+def test_a_clients_own_set_is_written_and_cleared(config_dir):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+
+    registry.set_permission(client_id, ["overlay", "ai"])
+
+    assert stored(config_dir)[client_id]["permission"] == {"kinds": ["ai", "overlay"]}
+    assert ClientRegistry().get(client_id).permission == ["ai", "overlay"]
+
+    registry.set_permission(client_id, None)
+
+    assert stored(config_dir)[client_id]["permission"] is None
+    assert ClientRegistry().get(client_id).permission is None
+    with pytest.raises(KeyError):
+        registry.set_permission("nobody", [])

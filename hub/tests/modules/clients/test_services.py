@@ -186,3 +186,27 @@ def test_a_disabled_or_forgotten_client_is_handed_nothing(config_dir, credential
     assert service_material(runtime, client_id, "ai") == ("client_disabled", {})
     assert service_material(runtime, "nobody", "ai") == ("binding_unknown", {})
     assert credential == []
+
+
+def test_an_entry_outside_the_clients_kinds_is_permission_denied(config_dir):
+    runtime = FakeRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(client_id, ["ai"])
+
+    assert service_material(runtime, client_id, "web_gitea") == (
+        "permission_denied",
+        {"kind": "web"},
+    )
+
+
+def test_an_unpublished_entry_is_service_unknown_whatever_the_kinds(config_dir):
+    runtime = FakeRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_default_permission([])
+
+    assert service_material(runtime, client_id, "rdp_s9") == (
+        "service_unknown",
+        {"service_id": "rdp_s9"},
+    )

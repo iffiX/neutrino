@@ -893,10 +893,16 @@ export interface ClientView {
   is_online: boolean;
   last_seen: string | null;
   is_disabled: boolean;
+  /** The kinds this client is allowed; null while it follows the default. */
+  permission: string[] | null;
 }
 
 export interface ClientListView {
   clients: ClientView[];
+  /** The kinds a client with no set of its own is allowed. */
+  default_permission: string[];
+  /** Every kind, in the order the switches are drawn. */
+  permission_kinds: string[];
 }
 
 /** The link a named client joins with, and when it lapses. */
