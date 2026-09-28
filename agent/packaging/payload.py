@@ -549,6 +549,23 @@ def fetch(url: str, digest: str, what: str) -> bytes:
     return payload
 
 
+def run(command: list) -> None:
+    """Run a build step, failing loudly.
+
+    Args:
+        command: The argument vector.
+
+    Raises:
+        SystemExit: If the command fails.
+    """
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            f"{' '.join(command[:3])} failed:\n"
+            f"{(result.stderr or result.stdout).strip()}"
+        )
+
+
 def write(path: Path, text: str, *, is_executable: bool = False) -> None:
     """Write one file into a tree, creating its parents.
 
