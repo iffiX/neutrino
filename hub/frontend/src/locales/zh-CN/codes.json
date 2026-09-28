@@ -151,6 +151,7 @@
   "code.rdp_no_seat": "这台机器没有可共享的会话席位。",
   "code.rdp_nobody_seated": "那台机器的屏幕前没有人登录。",
   "code.rdp_not_shared": "这个桌面没有共享给你。",
+  "code.rdp_permissions_needed": "请在那台 Mac 的系统设置里给 RustDesk 打开屏幕录制和辅助功能权限。",
   "code.rdp_password_refused": "桌面不接受这个密码：{detail}",
   "code.rdp_screen_not_allowed": "请在那台机器自己的屏幕上允许一次屏幕共享。",
   "code.rdp_wrong_seat": "这台机器上登录的是别人。",

@@ -10,8 +10,8 @@ A machine joins the hub with a link pasted on it or with an SSH install from the
 
 The machine needs all of the following:
 
-- It runs Linux, x86-64 or ARM64: Debian 12 or newer, Ubuntu 22.04 or newer, Raspberry Pi OS 64-bit, Fedora 41 or newer, or the RHEL 9 family.
-- You have root on it. Every `nagent` command runs as root.
+- It runs Linux, x86-64 or ARM64: Debian 12 or newer, Ubuntu 22.04 or newer, Raspberry Pi OS 64-bit, Fedora 41 or newer, or the RHEL 9 family. It can also run Windows 10 1809 or newer on x86-64, or macOS 12.3 or newer on Apple silicon.
+- You have root on it, or an administrator's account on Windows. Every `nagent` command runs as root or as an administrator.
 - It reaches port 8443 on the hub, the channel the agent connects on.
 
 The agent is headless. It runs as a service and opens one connection to the hub, over which the panel drives it. There is one link per hub at a time, and a new link replaces the previous one.
@@ -23,8 +23,8 @@ The binding holds every address the hub listens on, from the link and then from 
 1. In the panel, open **Devices**.
 1. Select **Add by link**. The notice holds a `neutrino://enroll/` link and a **Copy** button; the link is valid for five minutes.
    ![The enrollment link notice](/guide/en/devices_enroll_link.webp)
-1. On the machine, install the package as in [Install the package by hand](#install-the-package-by-hand).
-1. On the machine, run `sudo nagent join '<link>'`, where `<link>` is the copied link. The command returns, and within seconds the machine is listed under **Managed devices**.
+1. On the machine, install the package as in [Install the package by hand](#install-the-package-by-hand), [Install on Windows](#install-on-windows) or [Install on macOS](#install-on-macos).
+1. On the machine, run `sudo nagent join '<link>'`, where `<link>` is the copied link. On Windows, run `nagent join <link>` in a terminal opened as administrator. The command returns, and within seconds the machine is listed under **Managed devices**.
 
 ![Managed devices after the enrollment](/guide/en/devices_managed.webp)
 
@@ -63,6 +63,36 @@ Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies
 :::
 
 On ARM64 the file is `neutrino-agent_0.3.0_arm64.deb` or `neutrino-agent-0.3.0-1.aarch64.rpm`. The package includes its own interpreter and the RustDesk host; the desktop libraries it depends on are for that host. The service starts on install and binds to a hub with `sudo nagent join '<link>'`; `--yes` replaces an existing binding.
+
+## Install on Windows
+
+The Windows installer is `neutrino-agent-0.3.0-windows-amd64.msi`, for Windows 10 1809 or newer on x86-64. It installs the agent as the `neutrino_agent` service, which runs as LocalSystem and starts at boot, and puts `nagent` on the system `PATH`. It also runs RustDesk's own installer, which adds the `RustDesk` service and its firewall rules.
+
+1. Download the `.msi` from the [releases page](https://github.com/iffiX/neutrino/releases) and run it, or run `msiexec /i neutrino-agent-0.3.0-windows-amd64.msi /qn` from a terminal opened as administrator.
+1. Open a new terminal as administrator, so that it reads the new `PATH`.
+1. Run `nagent join <link>` with the link from the **Devices** page.
+
+The agent keeps its binding and state under `C:\ProgramData\Neutrino\agent`, readable by SYSTEM and administrators only, and writes its log to `agent.log` there. Removing **Neutrino Agent** under **Apps** also removes RustDesk.
+
+## Install on macOS
+
+The macOS installer is `neutrino-agent-0.3.0-macos-arm64.pkg`, for macOS 12.3 or newer on Apple silicon. It installs the agent under `/Library/Application Support/Neutrino/agent` with `nagent` linked into `/usr/local/bin`, and `RustDesk.app` under `/Applications`. The `com.neutrino.agent` LaunchDaemon runs the agent as root at boot and writes its output to `/Library/Logs/neutrino_agent.log`.
+
+1. Run `sudo installer -pkg neutrino-agent-0.3.0-macos-arm64.pkg -target /`.
+1. Run `sudo nagent join '<link>'` with the link from the **Devices** page.
+1. In **System Settings** > **Privacy & Security**, turn on RustDesk under **Screen Recording** and under **Accessibility**.
+
+Until RustDesk has both permissions, a shared desktop shows a viewer nothing, and the device drawer shows the `rdp_permissions_needed` attention. The agent reads the permissions from the system's privacy database; where macOS keeps that database from root, the attention stays.
+
+## Windows and macOS machines
+
+On Windows and macOS the agent reports the machine's status and metrics, opens a terminal, and shares the desktop. The Samba, Gitea, container and ZFS modules are Linux only, and the SSH installer does not reach these machines.
+
+| Item          | Windows                                          | macOS                                              |
+| ------------- | ------------------------------------------------ | -------------------------------------------------- |
+| Terminal      | PowerShell                                       | `zsh` as a login shell                             |
+| Oldest system | Windows 10 1809, the first with a pseudo console | macOS 12.3, the oldest the RustDesk app runs on    |
+| Update        | the hub's release `.msi`, installed by `msiexec` | the hub's release `.pkg`, installed by `installer` |
 
 ## The hub's own agent
 

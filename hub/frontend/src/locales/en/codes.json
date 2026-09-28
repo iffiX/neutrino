@@ -151,6 +151,7 @@
   "code.rdp_no_seat": "That machine has no seat to share.",
   "code.rdp_nobody_seated": "Nobody is signed in at that machine's screen.",
   "code.rdp_not_shared": "That desktop is not shared with you.",
+  "code.rdp_permissions_needed": "Grant RustDesk screen recording and accessibility in that Mac's settings.",
   "code.rdp_password_refused": "The desktop refused that password: {detail}",
   "code.rdp_screen_not_allowed": "Allow screen sharing once at that machine's own screen.",
   "code.rdp_wrong_seat": "Somebody else is signed in at that machine.",

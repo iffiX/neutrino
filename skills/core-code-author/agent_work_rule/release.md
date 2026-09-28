@@ -123,10 +123,12 @@ is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
 
 ### Agent
 
-The agent runs on the Linux machines the hub manages, as root and headless:
-it draws no window and listens on nothing. Each package carries its own
-interpreter under `/opt/neutrino_agent` and the RustDesk host, and depends on
-no distribution package named `python`.
+The agent runs on the machines the hub manages, as root or LocalSystem and
+headless: it draws no window and listens on nothing. Each Linux package
+carries its own interpreter under `/opt/neutrino_agent` and the RustDesk host,
+and depends on no distribution package named `python`. The Windows and macOS
+installers include the agent compiled with Nuitka and upstream's RustDesk, and
+run the terminal and the shared desktop.
 
 | File | For |
 | --- | --- |
@@ -134,17 +136,21 @@ no distribution package named `python`.
 | `neutrino-agent_<version>_arm64.deb` | The same on ARM64 |
 | `neutrino-agent-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-agent-<version>-1.aarch64.rpm` | The same on ARM64 |
+| `neutrino-agent-<version>-windows-amd64.msi` | Windows 10 1809 or newer, x86-64 |
+| `neutrino-agent-<version>-macos-arm64.pkg` | macOS 12.3 or newer on Apple silicon |
 
-There is no Windows or macOS agent: what a person's machine runs is the
-client. 32-bit ARM is not published, because no interpreter build is.
+32-bit ARM is not published, because no interpreter build is. Windows is
+x86-64 only, because RustDesk publishes no Windows ARM64 build.
 
 ```bash
 sudo apt install ./neutrino-agent_<version>_amd64.deb
 sudo nagent join '<enrollment link from the Devices page>'
 ```
 
-Most people never download these: the hub carries them, and installs the right
-one over SSH from the Devices page.
+Most people never download the Linux packages: the hub carries them, and
+installs the right one over SSH from the Devices page. The two installers are
+downloaded and run on the machine, then `nagent join` runs in a terminal
+opened as administrator on Windows and under `sudo` on macOS.
 
 ### Client
 
@@ -213,10 +219,16 @@ packages are built on a machine of their own architecture. The Windows
 checks the whole payload without one. The macOS `.pkg` needs macOS:
 `client/packaging/build_pkg.py`.
 
+The agent's `.msi` is built on Windows by `agent/packaging/build_msi.py` and
+its `.pkg` on a Mac by `agent/packaging/build_pkg.py`, from the same shared
+Nuitka, WiX, pkg and RustDesk builders under `packaging/` the client's use.
+
 The agent packages a hub package carries are built inside the hub's own build
 container and land under `/var/lib/neutrino/agent_cache/`, with
 `agent_packages.json` beside them naming every platform this release publishes
-an agent for, the file name each is published under, and its hash. A hub
+an agent for, the file name each is published under, and its hash. The
+`.msi` and the `.pkg` are named there and left out of the hub package; a hub fetches one from
+the release the first time a machine updates itself to it. A hub
 serving devices of a second architecture fetches that platform's package once
 from the release the manifest names; `--agent-package-url-base` stamps those
 URLs, and a build given none carries the entries it seeded and refuses the
@@ -250,7 +262,10 @@ each architecture, the Windows installer, the macOS installer and the source
 archive, generates `SHA256SUMS` over all of it, and opens a draft release. The
 Windows job installs what it built, runs the client from it and uninstalls
 again; the macOS job installs its package and runs `nclient` from it; a broken
-installer fails the build rather than the person who downloads it. Fill in the
+installer fails the build rather than the person who downloads it. The
+agent's Windows job installs its `.msi`, checks that `neutrino_agent` and
+`RustDesk` run, and uninstalls again; its macOS job installs the `.pkg`,
+checks the LaunchDaemon runs, and removes it. The hub jobs wait for both. Fill in the
 changelog, check the section headings still match what shipped, and publish.
 
 Running the same workflow from the Actions tab builds the packages and attaches

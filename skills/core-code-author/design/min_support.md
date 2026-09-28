@@ -16,6 +16,8 @@ new floor is written down.
 | --- | --- | --- | --- |
 | hub `.deb`, `.rpm` | 2.34 | the cryptography and bcrypt extensions in the environment the package installs (`hub/packaging/venv_tree.py:80`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | agent `.deb`, `.rpm` | 2.27 | the RustDesk host binary (`agent/packaging/constants.py:8`) | Debian 12, Ubuntu 22.04, RHEL 9 |
+| agent `.msi` | none | the pseudo console the shell stream runs PowerShell on (`agent/neutrino_agent/streams/windows_shell.py:76`) | Windows 10 1809 |
+| agent `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build_release.py:164`) | Debian 12, Ubuntu 22.04 |
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build_release.py:174`) | RHEL 9, AlmaLinux 9 |
 | client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |

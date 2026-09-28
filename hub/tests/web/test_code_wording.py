@@ -112,3 +112,21 @@ def worded_codes() -> set:
 @pytest.mark.parametrize("code", sorted(raised_codes()))
 def test_every_code_the_hub_raises_is_worded(code):
     assert code in worded_codes()
+
+
+# What an agent's desktop declaration may carry as its attention, which the
+# device drawer words out of the same catalogs.
+AGENT_ATTENTION_CODES = (
+    "rdp_nobody_seated",
+    "rdp_screen_not_allowed",
+    "rdp_permissions_needed",
+)
+
+
+@pytest.mark.parametrize("code", AGENT_ATTENTION_CODES)
+def test_every_attention_an_agent_declares_is_worded_in_every_language(code):
+    for language in sorted(path.name for path in LOCALES_DIR.iterdir()):
+        worded = set()
+        for path in (LOCALES_DIR / language).glob("*.json"):
+            worded |= set(json.loads(path.read_text(encoding="utf-8")))
+        assert f"code.{code}" in worded, language

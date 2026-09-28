@@ -51,6 +51,7 @@ const UNREACHABLE_KEYS: Record<string, string> = {
 const ATTENTION_KEYS: Record<string, string> = {
   rdp_nobody_seated: "code.rdp_nobody_seated",
   rdp_screen_not_allowed: "code.rdp_screen_not_allowed",
+  rdp_permissions_needed: "code.rdp_permissions_needed",
 };
 
 /** One count worded, so no sentence is assembled from fragments. */

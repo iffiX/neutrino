@@ -20,14 +20,16 @@ The hub package includes its own Python under `/opt/neutrino/python` and depends
 
 ## Agent
 
-| System                                                              | Architecture | File                                 |
-| ------------------------------------------------------------------- | ------------ | ------------------------------------ |
-| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.3.0_amd64.deb`     |
-| the same                                                            | ARM64        | `neutrino-agent_0.3.0_arm64.deb`     |
-| Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.3.0-1.x86_64.rpm`  |
-| the same                                                            | ARM64        | `neutrino-agent-0.3.0-1.aarch64.rpm` |
+| System                                                              | Architecture | File                                     |
+| ------------------------------------------------------------------- | ------------ | ---------------------------------------- |
+| Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64       | `neutrino-agent_0.3.0_amd64.deb`         |
+| the same                                                            | ARM64        | `neutrino-agent_0.3.0_arm64.deb`         |
+| Fedora 41 and newer; RHEL 9 family                                  | x86-64       | `neutrino-agent-0.3.0-1.x86_64.rpm`      |
+| the same                                                            | ARM64        | `neutrino-agent-0.3.0-1.aarch64.rpm`     |
+| Windows 10 1809 and newer, Windows 11                               | x86-64       | `neutrino-agent-0.3.0-windows-amd64.msi` |
+| macOS 12.3 and newer on Apple silicon                               | ARM64        | `neutrino-agent-0.3.0-macos-arm64.pkg`   |
 
-The agent is Linux only, runs as root and has no window; its package includes its own interpreter and the RustDesk host.
+The agent has no window. On Linux it runs as root, and its package includes its own interpreter and the RustDesk host. On Windows it runs as a LocalSystem service and on macOS as a root LaunchDaemon; both installers include the compiled agent and RustDesk, and on both the agent runs the terminal and the shared desktop. Windows 10 1809 is the first with the pseudo console the terminal runs on, and the Windows build is x86-64 only, because RustDesk has no Windows ARM64 build.
 
 ## Client
 
@@ -44,10 +46,10 @@ The Linux client is compiled and opens on either WebKitGTK ABI, 4.1 or 4.0, so a
 
 ## Which package
 
-| Machine                                   | Package                                         |
-| ----------------------------------------- | ----------------------------------------------- |
-| the one always-on Linux box               | the hub, once; setup installs its agent with it |
-| every other Linux machine the hub manages | the agent                                       |
-| every computer a person sits at           | the client, on Linux, Windows or macOS          |
+| Machine                             | Package                                         |
+| ----------------------------------- | ----------------------------------------------- |
+| the one always-on Linux box         | the hub, once; setup installs its agent with it |
+| every other machine the hub manages | the agent, on Linux, Windows or macOS           |
+| every computer a person sits at     | the client, on Linux, Windows or macOS          |
 
 The three packages share one version number, and an agent or client on another version than the hub shows an upgrade action.

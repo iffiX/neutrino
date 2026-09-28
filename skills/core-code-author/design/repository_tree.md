@@ -8,8 +8,8 @@ governs the tree itself.
 
 The repository ships three distributions, and the split is the first thing to
 know about the tree: `hub/` is the appliance, `agent/` is what runs as root on
-the Linux machines the appliance manages, `client/` is what runs in a person's
-own session on Linux, Windows or macOS. They share no code. The agent is pure
+the Linux, Windows and macOS machines the appliance manages, `client/` is what
+runs in a person's own session on Linux, Windows or macOS. They share no code. The agent is pure
 standard library, because it installs on a machine somebody else administers
 and a dependency is a thing that can be missing there.
 
@@ -76,17 +76,22 @@ agent/
                      window; it listens on nothing.
     core/            The one WebSocket to the hub, enrollment, the desired
                      state store and engine, metrics, self-update.
-    control/         The root-only local socket `nagent` talks to.
-    streams/         Shell and file streams multiplexed over the channel.
+    control/         The root-only local socket `nagent` talks to, and the
+                     named pipe that stands for it on Windows.
+    streams/         Shell and file streams multiplexed over the channel;
+                     windows_shell.py runs PowerShell on a pseudo console.
     modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
                      the RustDesk host, and the installers they share.
     rdp/             Sharing this machine's desktop at the seat password the
-                     hub set.
-    platforms/       The OS layer; linux.py is the only implementation.
+                     hub set; one seat file per OS reads who is at the screen.
+    platforms/       The OS layer: linux.py, windows.py and darwin.py behind
+                     one contract, with win32.py the one Win32 binding and
+                     windows_service.py the service control manager's side.
     exceptions.py    The package's one exception table; the channel kinds
                      are the copy the client keeps too.
     data/            Ships inside the package: systemd/ its unit.
-  packaging/         Its .deb and .rpm builders and the payload both stage.
+  packaging/         Its .deb, .rpm, .msi and .pkg builders and the payload
+                     they stage.
   tests/
 ```
 

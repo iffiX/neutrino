@@ -216,19 +216,48 @@ account's own session. Everything else the agent does is root's own work.
 ## The platform layer
 
 `neutrino_agent/platforms/` holds one class per platform behind one
-contract, and `linux.py` is the only implementation: the agent is Linux
-only, and Windows and macOS are the client's platforms. The contract names
-intents, not mechanisms: enumerate human accounts, resolve an account's
-home, run a process as an account, control the agent's own service, power
-actions, read host metrics, read the machine's interfaces, install and remove
-a package of a kind.
+contract: `linux.py`, `windows.py` and `darwin.py`, and `detect_platform`
+returns the one for the running system. The contract names intents, not
+mechanisms: enumerate human accounts, resolve an account's home, run a
+process as an account, control the agent's own service, power actions, read
+host metrics, read the machine's interfaces, read the machine id, install and
+remove a package of a kind, and where the agent keeps its state and its work.
 
-Metrics come from `/proc` and `/sys` with nothing but the standard library;
-NVIDIA is the one exception, read through `nvidia-smi` where the driver
-installed it. The interfaces come from `ip -j addr`, skipping `lo`. A missing
-or all-zero MAC is recorded as `""`, and a machine with no iproute2 reports an
-empty list. A platform advertises the capabilities it has; invoking an absent
-one is refused with `{"code": "unsupported_platform"}`, never guessed at.
+A platform advertises the capabilities it has; invoking an absent one is
+refused with `{"code": "unsupported_platform"}`, never guessed at. The engine
+builds module runners only on a platform with `packages`, so on Windows and
+macOS the built-in RustDesk row is the one module a machine reports, and a
+module the state names reads `unsupported`, never `failed`. Every import
+only POSIX has is guarded, so one package imports on all three systems.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| State root | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent`, its ACL SYSTEM and the administrators alone, set by the `.msi` | `/Library/Application Support/Neutrino/agent` |
+| Work root: configured marks, packages | `/var/lib/neutrino_agent` | the state root | the state root |
+| Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
+| Control transport | Unix socket `/run/neutrino_agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino_agent/agent.sock` |
+| Metrics | `/proc`, `/sys`, `nvidia-smi` | kernel32 `GetSystemTimes`, `GlobalMemoryStatusEx`, `GetTickCount64`; the system drive | `host_statistics`, `vm_stat`, `sysctl`; `/` |
+| Interfaces | `ip -j addr` | one PowerShell call joining `Get-NetAdapter` to `Get-NetIPAddress`, read at most every 30 seconds | `ifconfig -a` |
+| Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
+| Accounts | uid 1000 and above with a login shell | refused | `dscl`, uid 501 and above, home under `/Users` |
+| Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
+| Refused | nothing | accounts, stepping down, packages, the `kill` verb | stepping down, packages |
+| Shell stream | the login shell on a pseudo-terminal | PowerShell on a pseudo console, in a job that kills it on close | `zsh -il` on a pseudo-terminal |
+| Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
+| RustDesk | `/usr/lib/neutrino_agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
+| Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer` |
+
+On Linux the metrics come from `/proc` and `/sys` with nothing but the
+standard library; NVIDIA is the one exception, read through `nvidia-smi`
+where the driver installed it. The interfaces come from `ip -j addr`,
+skipping `lo`, and on every system a missing or all-zero MAC is recorded as
+`""` and a machine that cannot list its interfaces reports an empty list.
+
+A Mac shows a peer nothing until RustDesk holds both screen recording and
+accessibility, which only somebody at that Mac grants. The seat reads the
+grants from the system's privacy database, and its attention is
+`rdp_permissions_needed` until both are there; a database root cannot read
+reports the same.
 
 ## Two ports, one process
 
