@@ -71,8 +71,6 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.task_stream import TaskStreamRegistry
-from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
-from neutrino_hub.modules.overlay.config import overlay_name_matchers
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH, XRAY_SCOPE_SWITCHES
@@ -533,7 +531,6 @@ class PanelRuntime:
         xray_config = XrayConfigRenderer(
             node_list=node_list,
             routing=routing,
-            overlay_names=overlay_name_matchers(read_easytier()),
             down_tags={
                 tag
                 for tag, health in self.exit_controller.healths().items()

@@ -19,10 +19,6 @@ NETBIRD_SHA256 = {
     "arm64": "d686745aa64bb4c597602ce95e76558f5f848d0672c88d63f96397d2507005b2",  # scan: allow
 }
 NETBIRD_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
-
-# The domain of the vendor's hosted management, signal, relay and STUN
-# servers.
-NETBIRD_CLOUD_DOMAIN = "netbird.io"
 NETBIRD_BINARY_NAME = "netbird"
 # Under the hub's own prefix, beside xray and the AI gateway, because the
 # package carries it rather than a vendor repository installing it.

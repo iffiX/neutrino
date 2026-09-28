@@ -594,7 +594,7 @@ def test_the_access_log_is_off_and_the_error_log_is_the_journal():
 # --- how an exit's own name is resolved ---------------------------------------
 
 
-def render_with_exit(address: str, overlay_names=(), **routing) -> dict:
+def render_with_exit(address: str, **routing) -> dict:
     """A render whose one node is at the given address."""
     nodes = {**NODES, "nodes": [{**NODES["nodes"][0], "address": address}]}
     node_list = XrayNodeList.from_dict(nodes)
@@ -608,9 +608,7 @@ def render_with_exit(address: str, overlay_names=(), **routing) -> dict:
         "direct_dns": {"address": "223.5.5.5", "port": 53},
         **routing,
     }
-    return XrayConfigRenderer(
-        node_list=node_list, routing=settings, overlay_names=overlay_names
-    ).render()
+    return XrayConfigRenderer(node_list=node_list, routing=settings).render()
 
 
 def test_an_exit_named_by_hostname_is_resolved_at_the_direct_resolver():
@@ -710,14 +708,10 @@ def test_with_every_scope_off_an_exits_name_still_resolves_where_it_answers():
         "outboundTag": "direct",
     }
 
+    # --- the overlay daemons' own names ------------------------------------------
 
-# --- the overlay daemons' own names ------------------------------------------
-
-
-def test_the_overlay_names_join_the_exit_names_at_the_direct_resolver():
     config = render_with_exit(
         "exit.example.net",
-        overlay_names=["domain:netbird.io", "full:et.example.org"],
     )
 
     assert config["dns"]["servers"][0] == {
@@ -732,15 +726,9 @@ def test_the_overlay_names_join_the_exit_names_at_the_direct_resolver():
     }
     assert rule_named(config, "rule_dns_direct")["outboundTag"] == "direct"
 
-
-def test_the_overlay_names_alone_render_the_pin_and_its_rule():
-    config = render_with_exit("203.0.113.10", overlay_names=["domain:netbird.io"])
-
     assert config["dns"]["servers"][0]["domains"] == ["domain:netbird.io"]
     assert rule_named(config, "rule_dns_direct")["ip"] == ["223.5.5.5"]
 
-
-def test_without_overlay_names_the_resolver_list_is_unchanged():
     by_name = render_with_exit("exit.example.net")
     by_address = render_with_exit("203.0.113.10")
 

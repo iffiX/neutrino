@@ -6,11 +6,6 @@ it — so the choice is which row is there, and the exposure switch on the
 Network page keeps editing the row it always did.
 """
 
-import ipaddress
-from urllib.parse import urlparse
-
-from neutrino_hub.modules.easytier.config import EasyTierConfig
-from neutrino_hub.modules.netbird.constants import NETBIRD_CLOUD_DOMAIN
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_ENGINES,
     OVERLAY_NONE,
@@ -63,35 +58,4 @@ def set_provider(network: RouterNetworkConfig, provider: str) -> bool:
             RouterOverlay(provider=provider, is_exposed=exposures.get(provider, True))
         ]
     )
-    return True
-
-
-def overlay_name_matchers(easytier: EasyTierConfig) -> list[str]:
-    """The names this box's overlay daemons look up, as xray domain matchers.
-
-    Args:
-        easytier: The stored EasyTier network.
-
-    Returns:
-        ``domain:`` for NetBird's hosted servers, then one ``full:`` per
-        EasyTier peer host, in configuration order. A ``ring://`` peer and a
-        peer addressed by a literal address name nothing to look up.
-    """
-    matchers = [f"domain:{NETBIRD_CLOUD_DOMAIN}"]
-    for uri in easytier.peers:
-        parsed = urlparse(uri)
-        host = parsed.hostname or ""
-        if parsed.scheme == "ring" or not host or _is_literal(host):
-            continue
-        matcher = f"full:{host}"
-        if matcher not in matchers:
-            matchers.append(matcher)
-    return matchers
-
-
-def _is_literal(host: str) -> bool:
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        return False
     return True

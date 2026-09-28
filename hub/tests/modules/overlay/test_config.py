@@ -8,12 +8,7 @@ existed still says what the firewall used to do.
 
 import pytest
 
-from neutrino_hub.modules.easytier.config import EasyTierConfig
-from neutrino_hub.modules.overlay.config import (
-    overlay_name_matchers,
-    provider_of,
-    set_provider,
-)
+from neutrino_hub.modules.overlay.config import provider_of, set_provider
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_EASYTIER,
     OVERLAY_NETBIRD,
@@ -93,25 +88,3 @@ def test_two_rows_are_reduced_to_the_one_chosen():
 def test_an_overlay_nobody_runs_is_refused():
     with pytest.raises(ValueError):
         set_provider(config([]), "tailscale")
-
-
-def test_the_overlay_names_are_netbirds_domain_and_each_named_easytier_peer():
-    easytier = EasyTierConfig(
-        peers=[
-            "tcp://et.example.org:11010",
-            "ring://relay",
-            "udp://203.0.113.7:11010",
-            "wss://et.example.org:443",
-            "txt://peers.example.com",
-        ]
-    )
-
-    assert overlay_name_matchers(easytier) == [
-        "domain:netbird.io",
-        "full:et.example.org",
-        "full:peers.example.com",
-    ]
-
-
-def test_with_no_easytier_peer_the_overlay_names_are_netbirds_domain():
-    assert overlay_name_matchers(EasyTierConfig()) == ["domain:netbird.io"]

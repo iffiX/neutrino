@@ -67,14 +67,12 @@ class XrayConfigRenderer:
         *,
         node_list: XrayNodeList,
         routing: dict,
-        overlay_names: tuple | list = (),
         down_tags: frozenset | set = frozenset(),
     ):
         """
         Args:
             node_list: Parsed ``config/xray/nodes.json``.
             routing: Parsed ``config/xray/routing.json``.
-            overlay_names: xray domain matchers for the names the overlay
                 daemons look up, resolved at the direct resolver.
             down_tags: Outbound tags whose newest measurement failed, left
                 out of the balancer's selector.
@@ -118,7 +116,6 @@ class XrayConfigRenderer:
         ]
         self._node_list = node_list
         self._routing = routing
-        self._overlay_names = list(overlay_names)
         self._down_tags = frozenset(down_tags)
 
     @property
@@ -184,20 +181,20 @@ class XrayConfigRenderer:
                     "skipFallback": True,
                 },
             )
-        pinned = self._direct_pinned_names
-        if pinned:
+        own_names = self._exit_hostnames
+        if own_names and self._resident_nodes:
             # An exit's name resolves at the direct resolver: it is the
             # resolver that answers that name correctly without the proxy,
             # and a lookup sent through an exit waits on the exit it is
             # asking about. This holds while a node is rendered, whatever the
             # scopes say, because the probe dials that node by the address
-            # this pin resolves. The overlay daemons' names resolve there too.
+            # this pin resolves.
             servers.insert(
                 0,
                 {
                     "address": direct.get("address", "223.5.5.5"),
                     "port": direct.get("port", 53),
-                    "domains": pinned,
+                    "domains": [f"full:{host}" for host in own_names],
                     "skipFallback": True,
                 },
             )
@@ -206,17 +203,6 @@ class XrayConfigRenderer:
             "servers": servers,
             "queryStrategy": XRAY_DNS_QUERY_STRATEGY,
         }
-
-    @property
-    def _direct_pinned_names(self) -> list[str]:
-        """The domain matchers that always resolve at the direct resolver."""
-        names = []
-        if self._resident_nodes:
-            names = [f"full:{host}" for host in self._exit_hostnames]
-        for matcher in self._overlay_names:
-            if matcher not in names:
-                names.append(matcher)
-        return names
 
     @property
     def _exit_hostnames(self) -> list[str]:
@@ -411,7 +397,7 @@ class XrayConfigRenderer:
                     "outboundTag": XRAY_DNS_OUTBOUND_TAG,
                 }
             )
-        if self._resident_nodes or self._direct_pinned_names:
+        if self._resident_nodes:
             # The direct resolver is reached directly, whatever the split
             # says about its address: the exits' names are looked up there,
             # and a lookup sent through an exit waits on its own answer. It
