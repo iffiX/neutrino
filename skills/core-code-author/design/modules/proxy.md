@@ -163,6 +163,7 @@ address resolved nothing until the daemon restarted.
 | the exit node goes down | the hub measures the failure twice, then overrides the balancer with the next node by score |
 | a node other than the exit goes down | the hub records the failure and drops that node from the candidates |
 | the panel process stops | the override xray holds stays in place; a restart of xray drops it and `roundRobin` takes over |
+| a node whose newest measurement failed at the last apply | the rendered balancer's selector leaves it out, unless every node failed, which keeps them all; this matters only between an xray restart and the hub's next override |
 | hub scope on | the hub's updates, package installs and overlay management traffic go through the exit; a dead exit takes them with it |
 | an exit named by a hostname that `direct_dns` cannot resolve | the node is unreachable to the probe and to xray alike, and reads so on the Proxy page |
 | the geoip split on | names in `direct_domains` and addresses in `direct_ips` leave through the uplink whatever the scope |

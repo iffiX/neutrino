@@ -534,6 +534,11 @@ class PanelRuntime:
             node_list=node_list,
             routing=routing,
             overlay_names=overlay_name_matchers(read_easytier()),
+            down_tags={
+                tag
+                for tag, health in self.exit_controller.healths().items()
+                if health.is_down
+            },
         ).render()
         dnsmasq_config = self._dnsmasq_config()
 

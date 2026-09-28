@@ -60,6 +60,18 @@ class _AcceptingApplier:
         pass
 
 
+class _Health:
+    def __init__(self, *, is_down: bool):
+        self.is_down = is_down
+
+
+class _ExitController:
+    """The exit controller's windows: one node down, one alive."""
+
+    def healths(self) -> dict:
+        return {"node_hk1": _Health(is_down=True), "node_hk2": _Health(is_down=False)}
+
+
 @pytest.fixture
 def applied(monkeypatch):
     """A runtime whose xray refuses, recording what still reached the system.
@@ -98,6 +110,7 @@ def applied(monkeypatch):
         lambda runtime, role: written.append(("pushed states", role)),
     )
     panel = object.__new__(PanelRuntime)
+    panel.exit_controller = _ExitController()
     panel.is_config_dirty = True
     panel.settings = {}
     return panel, written, results
@@ -299,3 +312,23 @@ def test_a_device_that_will_not_take_the_push_does_not_fail_the_network(
 
     assert ("reconciled", None) in written
     assert "desired state not pushed to aa:bb:cc:dd:ee:ff" in summary
+
+
+def test_the_nodes_measured_down_reach_the_renderer(applied, monkeypatch):
+    panel, _, _ = applied
+    seen = {}
+
+    class Renderer:
+        def __init__(self, **keywords):
+            seen.update(keywords)
+
+        def render(self) -> dict:
+            return {}
+
+    monkeypatch.setattr(runtime_module, "XrayConfigRenderer", Renderer)
+    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+
+    panel._apply_all_blocking()
+
+    assert seen["down_tags"] == {"node_hk1"}
+    assert "domain:netbird.io" in seen["overlay_names"]

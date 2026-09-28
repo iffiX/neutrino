@@ -68,6 +68,7 @@ class XrayConfigRenderer:
         node_list: XrayNodeList,
         routing: dict,
         overlay_names: tuple | list = (),
+        down_tags: frozenset | set = frozenset(),
     ):
         """
         Args:
@@ -75,6 +76,8 @@ class XrayConfigRenderer:
             routing: Parsed ``config/xray/routing.json``.
             overlay_names: xray domain matchers for the names the overlay
                 daemons look up, resolved at the direct resolver.
+            down_tags: Outbound tags whose newest measurement failed, left
+                out of the balancer's selector.
         """
         # Every node whose secret resolved is resident: an outbound and a
         # probe account, whatever the scopes say, so the hub can measure it on
@@ -116,6 +119,7 @@ class XrayConfigRenderer:
         self._node_list = node_list
         self._routing = routing
         self._overlay_names = list(overlay_names)
+        self._down_tags = frozenset(down_tags)
 
     @property
     def _is_anything_proxied(self) -> bool:
@@ -519,10 +523,14 @@ class XrayConfigRenderer:
         """The balancer, selecting the exact tags of the enabled nodes."""
         # Exact tags rather than the node prefix: every node is rendered now,
         # and a prefix would let the strategy cycle through switched-off ones
-        # between an xray restart and the hub's next override.
+        # between an xray restart and the hub's next override. A node measured
+        # down is left out too, unless every one is, since xray rejects an
+        # empty selector.
+        tags = [node.tag for node in self._selectable_nodes]
+        alive = [tag for tag in tags if tag not in self._down_tags]
         return {
             "tag": XRAY_BALANCER_TAG,
-            "selector": [node.tag for node in self._selectable_nodes],
+            "selector": alive or tags,
             "strategy": {"type": XRAY_BALANCER_STRATEGY},
         }
 

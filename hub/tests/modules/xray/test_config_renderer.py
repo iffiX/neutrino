@@ -91,6 +91,19 @@ def render_with_a_switched_off_node(**routing) -> dict:
     return XrayConfigRenderer(node_list=node_list, routing=settings).render()
 
 
+def render_two_enabled_nodes(down_tags) -> dict:
+    """A render of two enabled nodes, with these tags measured down."""
+    second = {**SWITCHED_OFF_NODE, "is_enabled": True}
+    nodes = {**NODES, "nodes": [NODES["nodes"][0], second]}
+    node_list = XrayNodeList.from_dict(nodes)
+    for node in node_list.nodes:
+        node.password = "secret"
+    settings = {"is_proxy_enabled": True, "socks_ports": []}
+    return XrayConfigRenderer(
+        node_list=node_list, routing=settings, down_tags=frozenset(down_tags)
+    ).render()
+
+
 def tags(config: dict, section: str) -> list[str]:
     return [entry["tag"] for entry in config[section]]
 
@@ -733,3 +746,19 @@ def test_without_overlay_names_the_resolver_list_is_unchanged():
 
     assert by_name["dns"]["servers"][0]["domains"] == ["full:exit.example.net"]
     assert by_address["dns"]["servers"] == [{"address": "1.1.1.1", "port": 53}]
+
+
+# --- nodes measured down ------------------------------------------------------
+
+
+def test_a_node_measured_down_is_left_out_of_the_selector():
+    config = render_two_enabled_nodes({"node_hk2"})
+
+    assert config["routing"]["balancers"][0]["selector"] == ["node_hk1"]
+    assert "node_hk2" in tags(config, "outbounds")
+
+
+def test_every_node_measured_down_keeps_them_all_in_the_selector():
+    config = render_two_enabled_nodes({"node_hk1", "node_hk2"})
+
+    assert config["routing"]["balancers"][0]["selector"] == ["node_hk1", "node_hk2"]

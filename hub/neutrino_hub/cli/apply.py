@@ -59,6 +59,7 @@ from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH
 from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
 from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
@@ -170,6 +171,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             node_list=node_list,
             routing=routing,
             overlay_names=overlay_name_matchers(read_easytier()),
+            down_tags=_down_tags(),
         ).render()
     if "router" in selected:
         artifacts["router"] = RouterNftRenderer(
@@ -194,6 +196,13 @@ def _render(selected: tuple[str, ...]) -> dict:
         else:
             artifacts["easytier"] = overlay
     return artifacts
+
+
+def _down_tags() -> set[str]:
+    """The outbound tags whose newest stored measurement failed."""
+    store = XrayNodeHealthStore()
+    store.load()
+    return {tag for tag, health in store.health().items() if health.is_down}
 
 
 def _forget_orphan_device_dirs() -> list:
