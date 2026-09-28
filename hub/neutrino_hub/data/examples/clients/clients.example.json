@@ -1,5 +1,16 @@
 {
-  "_comment": "The client programs enrolled with this hub, keyed by a uuid4 hex the panel assigns when a link is minted. The entry below is named with a leading underscore so it documents the shape without being read as a client. Written by the panel, never by hand: token_sha256 is the hash of the secret the program authenticates its channel with, the raw token exists only on that machine; hostname, platform and version are what the program last reported; machine_id is the id that computer generated once, so a program joining again on a new link lands on this row; ai_key_id names the gateway client key minted for it, revoked while it is disabled.",
+  "_comment": "The client programs enrolled with this hub, keyed by a uuid4 hex the panel assigns when a link is minted. The entry below is named with a leading underscore so it documents the shape without being read as a client. Written by the panel, never by hand: token_sha256 is the hash of the secret the program authenticates its channel with, the raw token exists only on that machine; hostname, platform and version are what the program last reported; machine_id is the id that computer generated once, so a program joining again on a new link lands on this row; ai_key_id names the gateway client key minted for it, revoked while it is disabled; permission is the kinds this client may use, or null to follow default_permission, which names the kinds every client without a set of its own may use (all of them when the file names none).",
+  "default_permission": {
+    "kinds": [
+      "web",
+      "port",
+      "ai",
+      "file",
+      "rdp",
+      "overlay",
+      "terminal"
+    ]
+  },
   "clients": {
     "_example_3f1c2b9a8d7e4c6f9a0b1c2d3e4f5a6b": {
       "name": "alice-laptop",
@@ -13,7 +24,8 @@
       },
       "version": "0.2.0",
       "is_disabled": false,
-      "ai_key_id": null
+      "ai_key_id": null,
+      "permission": null
     }
   }
 }
