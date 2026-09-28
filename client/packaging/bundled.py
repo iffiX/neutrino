@@ -23,7 +23,9 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
 import payload  # noqa: E402
+import rustdesk_assets  # noqa: E402
 
 # The AI tool switcher, published as one static binary per machine. The musl
 # builds are the ones that need nothing of the machine's own C library.
@@ -53,43 +55,15 @@ CC_SWITCH_ASSETS = {
 CC_SWITCH_BINARY_NAME = "cc-switch"
 CC_SWITCH_WINDOWS_BINARY_NAME = "cc-switch.exe"
 
-# The RustDesk viewer. Linux takes it out of upstream's Flutter .deb — the
-# same release publishes `-sciter` assets of the old frontend, which are
-# carried nowhere — Windows takes the portable executable as it is, and
-# macOS takes the app bundle out of the disk image.
-RUSTDESK_VERSION = "1.4.9"
-RUSTDESK_URL = (
-    "https://github.com/rustdesk/rustdesk/releases/download/"
-    "{version}/rustdesk-{version}{suffix}"
-)
-RUSTDESK_ASSETS = {
-    ("linux", "x86_64"): (
-        "-x86_64.deb",
-        "7244ba47c40e804172044bfbe659467c54ce46554c98e78c8c0406f1d612fda3",  # scan: allow
-    ),
-    ("linux", "aarch64"): (
-        "-aarch64.deb",
-        "ce62c996f14d33f3bbe3a330e953644a44bace7f05885a7953f7395d69fb49c0",  # scan: allow
-    ),
-    ("windows", "x86_64"): (
-        "-x86_64.exe",
-        "eaedeb0088e687bf46f7c46a9c6ea5493ce51f3134dfd6acbedb47b5b9136274",  # scan: allow
-    ),
-    ("darwin", "aarch64"): (
-        "-aarch64.dmg",
-        "f7935597b247d42c8f2a2ed71176a9f5868018cd9e1a33b8096418a668c8caf0",  # scan: allow
-    ),
-}
+# The RustDesk viewer, pinned in ``packaging/rustdesk_assets.py``. Linux
+# takes it out of upstream's Flutter .deb, Windows takes the portable
+# executable as it is, and macOS takes the app bundle out of the disk image.
 # Where the upstream package keeps the whole viewer: the binary, the
 # libraries it loads and the data it reads. What surrounds it there — the
 # unit, the desktop file, the polkit and pam rules — is upstream's own
 # session setup and is not carried.
 RUSTDESK_UPSTREAM_DIR = "usr/share/rustdesk"
 RUSTDESK_BINARY_NAME = "rustdesk"
-RUSTDESK_WINDOWS_BINARY_NAME = "rustdesk.exe"
-# The app bundle the disk image carries, and its binary inside.
-RUSTDESK_APP_NAME = "RustDesk.app"
-RUSTDESK_APP_BINARY = "Contents/MacOS/RustDesk"
 # Checked at build time: the binary loads the libraries beside it by itself,
 # so the client spawns the viewer with no library path set for it.
 RUSTDESK_EXPECTED_RUNPATH = "$ORIGIN/lib"
@@ -135,15 +109,7 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
     _stage_cc_switch(
         installed / "bin" / CC_SWITCH_WINDOWS_BINARY_NAME, "windows", machine
     )
-    suffix, digest = _asset(RUSTDESK_ASSETS, "windows", machine, "RustDesk viewer")
-    downloaded = payload.fetch(
-        RUSTDESK_URL.format(version=RUSTDESK_VERSION, suffix=suffix),
-        digest,
-        "the RustDesk viewer",
-    )
-    target = installed / "bin" / RUSTDESK_WINDOWS_BINARY_NAME
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(downloaded)
+    rustdesk_assets.stage_windows_exe(installed / "bin", machine=machine)
 
 
 def stage_darwin_binaries(app_contents: Path) -> None:
@@ -158,7 +124,7 @@ def stage_darwin_binaries(app_contents: Path) -> None:
     """
     resources = app_contents / DARWIN_RESOURCES_DIR
     _stage_cc_switch(resources / CC_SWITCH_INSTALL_PATH, "darwin", "aarch64")
-    _stage_rustdesk_app(resources / RUSTDESK_INSTALL_DIR, "aarch64")
+    rustdesk_assets.stage_darwin_app(resources / RUSTDESK_INSTALL_DIR)
 
 
 def _asset(assets: dict, os_name: str, machine: str, what: str) -> tuple:
@@ -231,12 +197,11 @@ def _stage_rustdesk_host(target: Path, machine: str) -> None:
             pinned, the package carries no viewer, or the viewer would not
             find its own libraries once installed.
     """
-    suffix, digest = _asset(RUSTDESK_ASSETS, "linux", machine, "RustDesk viewer")
-    url = RUSTDESK_URL.format(version=RUSTDESK_VERSION, suffix=suffix)
-    downloaded = payload.fetch(url, digest, "the RustDesk viewer")
+    url = rustdesk_assets.asset_url("linux", machine)
+    downloaded = rustdesk_assets.download("linux", machine)
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
-        package = root / f"rustdesk{suffix}"
+        package = root / url.rsplit("/", 1)[-1]
         package.write_bytes(downloaded)
         opened = root / "opened"
         opened.mkdir()
@@ -250,49 +215,6 @@ def _stage_rustdesk_host(target: Path, machine: str) -> None:
         check_runpath(binary)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(carried, target)
-
-
-def _stage_rustdesk_app(target: Path, machine: str) -> None:
-    """Copy the pinned RustDesk app bundle out of its upstream disk image.
-
-    Args:
-        target: The directory the app bundle belongs in.
-        machine: The interpreter release's name for the machine.
-
-    Raises:
-        SystemExit: When there is no pin, what arrived is not what was
-            pinned, hdiutil refuses, or the image carries no viewer.
-    """
-    suffix, digest = _asset(RUSTDESK_ASSETS, "darwin", machine, "RustDesk viewer")
-    url = RUSTDESK_URL.format(version=RUSTDESK_VERSION, suffix=suffix)
-    downloaded = payload.fetch(url, digest, "the RustDesk viewer")
-    with tempfile.TemporaryDirectory() as workdir:
-        root = Path(workdir)
-        image = root / f"rustdesk{suffix}"
-        image.write_bytes(downloaded)
-        mountpoint = root / "opened"
-        mountpoint.mkdir()
-        payload.run(
-            [
-                "hdiutil",
-                "attach",
-                "-nobrowse",
-                "-readonly",
-                "-mountpoint",
-                str(mountpoint),
-                str(image),
-            ]
-        )
-        try:
-            carried = mountpoint / RUSTDESK_APP_NAME
-            if not (carried / RUSTDESK_APP_BINARY).is_file():
-                raise SystemExit(
-                    f"{url} carries no {RUSTDESK_APP_NAME}/{RUSTDESK_APP_BINARY}"
-                )
-            target.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(carried, target / RUSTDESK_APP_NAME, symlinks=True)
-        finally:
-            payload.run(["hdiutil", "detach", str(mountpoint)])
 
 
 def check_runpath(binary: Path) -> None:

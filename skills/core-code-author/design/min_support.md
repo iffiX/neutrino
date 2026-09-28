@@ -18,7 +18,7 @@ new floor is written down.
 | agent `.deb`, `.rpm` | 2.27 | the RustDesk host binary (`agent/packaging/constants.py:8`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build_release.py:164`) | Debian 12, Ubuntu 22.04 |
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build_release.py:174`) | RHEL 9, AlmaLinux 9 |
-| client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`client/packaging/bundled.py:78`) | macOS 12.3 on Apple silicon |
+| client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
 | client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`client/packaging/build_msi.py:28`, `client/packaging/build_msi.py:69`) | Windows 10 1809 |
 
 Ubuntu 22.04 has glibc 2.35, above all four Linux floors, and the hub's `.deb`
@@ -34,7 +34,7 @@ repositories carry (`hub/neutrino_hub/system/package_manager.py:128`).
 The client's `.rpm` reaches RHEL 9 and AlmaLinux 9 because either WebKit2 ABI
 satisfies it, and RHEL 9 has 4.0 (`client/packaging/build_rpm.py:54`). The
 introspection library on RHEL 9 is older than the bindings need, so the
-package installs its own (`client/packaging/payload.py:130`).
+package installs its own (`client/packaging/payload.py:127`).
 
 ## What the hub drives
 
@@ -71,18 +71,18 @@ releases a supported family provides.
 | Component | Minimum | What needs it | Where |
 | --- | --- | --- | --- |
 | WebKitGTK | the 4.0 or the 4.1 ABI | the window itself; `ctypes.CDLL` opens the newest library the machine has and pins the bindings to that API version | `client/neutrino_client/constants.py:88`, `client/neutrino_client/gui/webkitgtk.py:196` |
-| girepository | 1.72, installed by the package | PyGObject 3.50 compiles against calls that arrived in 1.72, and RHEL 9 has 1.68 | `client/packaging/payload.py:130` |
-| libffi | 8 | the bindings compiled in `debian:12` link it | `client/packaging/payload.py:139` |
+| girepository | 1.72, installed by the package | PyGObject 3.50 compiles against calls that arrived in 1.72, and RHEL 9 has 1.68 | `client/packaging/payload.py:127` |
+| libffi | 8 | the bindings compiled in `debian:12` link it | `client/packaging/payload.py:136` |
 | AyatanaAppIndicator3 | optional | the tray; without `libayatana-appindicator3.so.1` the tray is drawn as a GTK status icon | `client/neutrino_client/gui/tray_linux.py:17`, `client/neutrino_client/gui/tray_linux.py:98` |
-| pyobjc | 12.2.2, from wheels tagged macOS 10.13 | the macOS window | `client/packaging/build_pkg.py:78` |
-| Windows Installer | 5.0 | the `.msi`, which WiX 6 writes at that version by default | `client/packaging/build_msi.py:204` |
+| pyobjc | 12.2.2, from wheels tagged macOS 10.13 | the macOS window | `client/packaging/build_pkg.py:75` |
+| Windows Installer | 5.0 | the `.msi`, which WiX 6 writes at that version by default | `packaging/wix_build.py:28` |
 
 ## Why the client's floor comes from its build container
 
 The client is the one package that compiles C where it is built. Nuitka
 generates C for `nclient` and for `mount_helper`, and the container's linker
 binds every libc call to the newest symbol version that container's glibc
-defines (`client/packaging/payload.py:550`). An older machine refuses those
+defines (`packaging/nuitka_build.py:57`). An older machine refuses those
 symbol versions whatever its distribution is called.
 
 Building the `.rpm` in `fedora:41` produced a package RHEL 9 could not load:
@@ -109,7 +109,7 @@ cp313 wheel for x86-64 and for aarch64, the highest tag among them being
 the staged tree, takes the highest `GLIBC_` version any of them names, and
 exits when it is above `PACKAGING_GLIBC_FLOOR`
 (`hub/packaging/venv_tree.py:633`, `agent/packaging/payload.py:343`,
-`client/packaging/payload.py:440`). The constant is 2.34 in all three
+`client/packaging/payload.py:437`). The constant is 2.34 in all three
 packages (`hub/packaging/constants.py:12`, `agent/packaging/constants.py:12`,
 `client/packaging/constants.py:13`). A build whose tree needs more than that
 fails at that line, before anything is published.

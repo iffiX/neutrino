@@ -188,9 +188,10 @@ CLIENT_BUILDS = {
 }
 
 CLIENT_CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/client /build/images && "
+    "{install} && mkdir -p /build/client /build/images /build/packaging && "
     "cp -r /src/client/neutrino_client /src/client/packaging "
     "/src/client/frontend /src/client/pyproject.toml /build/client/ && "
+    "cp /src/packaging/*.py /build/packaging/ && "
     "cp -r /src/images/icons /build/images/ && "
     "cp -r /src/licenses /build/licenses && cd /build && "
     "python3 client/packaging/{script} --output-dir /out "

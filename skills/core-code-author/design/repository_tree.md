@@ -120,7 +120,9 @@ client/
 ## Inside `packaging/`
 
 `build_release.py` builds every artifact of a release, including the source
-archive. `integration/` is the part that cannot run anywhere else: scripts that drive a **built package on a
+archive. `nuitka_build.py`, `wix_build.py`, `pkg_build.py` and
+`rustdesk_assets.py` are the compile, the `.msi`, the `.pkg` and the pinned
+RustDesk that every package's installer builds from. `integration/` is the part that cannot run anywhere else: scripts that drive a **built package on a
 live box**, deliberately outside `hub/tests` because pytest must stay runnable
 on a workstation with no root and no interfaces to break. `integration_aws/`
 is the same idea for the platforms the pipeline VM cannot carry: it rents a

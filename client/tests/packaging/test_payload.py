@@ -16,6 +16,7 @@ import zipfile
 
 import pytest
 
+import nuitka_build
 import payload
 
 # A readelf whose answer for a file is the version its own name spells, so a
@@ -162,7 +163,7 @@ def test_the_compile_is_two_standalone_programs_against_the_pinned_interpreter(
     monkeypatch.setattr(payload, "stage_linux_interpreter", stage_interpreter)
     monkeypatch.setattr(payload, "stage_linux_gui_bindings", lambda staged: None)
     monkeypatch.setattr(payload, "run", run)
-    monkeypatch.setattr(payload.subprocess, "run", fake_run)
+    monkeypatch.setattr(nuitka_build.subprocess, "run", fake_run)
 
     compiled = payload.compile_linux(tmp_path / "build", "amd64", "9.9.9")
 
@@ -186,7 +187,7 @@ def test_the_compile_is_two_standalone_programs_against_the_pinned_interpreter(
 
 def test_a_compile_that_writes_no_binary_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        payload.subprocess,
+        nuitka_build.subprocess,
         "run",
         lambda command, capture_output, text, env: subprocess.CompletedProcess(
             command, 0, "", ""
@@ -197,13 +198,13 @@ def test_a_compile_that_writes_no_binary_is_refused(tmp_path, monkeypatch):
     entry.write_text("")
 
     with pytest.raises(SystemExit) as refused:
-        payload._compile_standalone(
+        nuitka_build.compile_standalone(
             tmp_path / "python3",
-            tmp_path / "tree",
             entry,
             tmp_path / "out",
             "nclient",
-            (),
+            source_root=tmp_path / "tree",
+            is_output_captured=True,
         )
 
     assert "nclient" in str(refused.value)

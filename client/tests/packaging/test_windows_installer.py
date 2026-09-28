@@ -18,7 +18,9 @@ from pathlib import Path
 import pytest
 
 import build_msi
+import nuitka_build
 import payload
+import wix_build
 
 # The agent's own upgrade code, which this one must not be.
 AGENT_UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
@@ -196,8 +198,8 @@ def test_the_removal_runs_with_no_account_and_is_handed_the_path(source):
 
 
 def test_the_build_loads_the_extensions_those_elements_come_from():
-    assert build_msi.WIX_UTIL_EXTENSION.startswith("WixToolset.Util.wixext/")
-    assert build_msi.WIX_UI_EXTENSION.startswith("WixToolset.UI.wixext/")
+    assert wix_build.WIX_UTIL_EXTENSION == "WixToolset.Util.wixext/6.0.2"
+    assert wix_build.WIX_UI_EXTENSION == "WixToolset.UI.wixext/6.0.2"
     assert "wix extension add" in build_msi.__doc__
 
 
@@ -312,7 +314,7 @@ def test_a_publisher_with_an_address_stays_a_name(source):
 
 
 def test_the_package_is_named_for_the_platform_it_installs_on():
-    assert build_msi.MSI_PLATFORMS == {"amd64": "x64", "arm64": "arm64"}
+    assert wix_build.MSI_PLATFORMS == {"amd64": "x64", "arm64": "arm64"}
     assert build_msi.WINDOWS_MACHINES["x86_64"] == "amd64"
     assert payload.PACKAGE_NAME == "neutrino-client"
 
@@ -346,7 +348,7 @@ def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_
     windowed executable taken into the console program's directory."""
     commands = []
 
-    def fake_run(command, env=None):
+    def fake_run(command, env=None, **kwargs):
         commands.append((command, env))
         build = Path(command[-2].split("=", 1)[1])
         name = command[-3].split("=", 1)[1]
@@ -355,7 +357,7 @@ def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_
         (dist / name).write_bytes(b"MZ" + name.encode())
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(build_msi.subprocess, "run", fake_run)
+    monkeypatch.setattr(nuitka_build.subprocess, "run", fake_run)
     monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
     tree = tmp_path / "tree"
     (tree / "neutrino_client" / "cli").mkdir(parents=True)
@@ -375,6 +377,7 @@ def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_
             assert f"--nofollow-import-to={backend}" in command
         assert "--product-version=9.9.9" in command
         assert command[-1] == str(tree / "neutrino_client" / "cli" / "entry.py")
+    assert "--product-name=Neutrino Client" in console
     assert "--windows-console-mode=force" in console
     assert "--output-filename=nclient.exe" in console
     assert "--windows-console-mode=disable" in windowed
@@ -384,9 +387,9 @@ def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_
 
 def test_a_compile_that_writes_no_binary_is_refused(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        build_msi.subprocess,
+        nuitka_build.subprocess,
         "run",
-        lambda command, env=None: subprocess.CompletedProcess(command, 0),
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0),
     )
     monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
 

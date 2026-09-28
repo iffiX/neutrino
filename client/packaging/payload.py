@@ -23,7 +23,6 @@ Not pure: downloads interpreters and wheels, compiles, writes package trees.
 """
 
 import hashlib
-import os
 import re
 import shutil
 import subprocess
@@ -34,6 +33,8 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
+import nuitka_build  # noqa: E402
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
 
@@ -54,10 +55,6 @@ INSTALL_PREFIX = Path("/opt/neutrino_client")
 # libraries beside it rather than behind a link pkexec would resolve.
 CLIENT_BINARY_NAME = "nclient"
 MOUNT_HELPER_BINARY_NAME = "mount_helper"
-
-# The compiler, at a version that built the client on both platforms. A
-# build tool rather than something carried, so pinned by version.
-NUITKA_VERSION = "4.2.1"
 
 # The interpreter the Linux client is compiled against, pinned by hash. The
 # same build the hub's and the agent's packages carry, and the same minor the
@@ -519,79 +516,33 @@ def compile_linux(build: Path, architecture: str, package_version: str) -> dict:
     stage_linux_interpreter(python_dir, architecture)
     stage_linux_gui_bindings(python_dir)
     python = python_dir / "bin" / "python3"
-    run([str(python), "-m", "pip", "install", "--quiet", f"nuitka=={NUITKA_VERSION}"])
+    run(nuitka_build.pip_install_command(python))
 
     tree = build / "tree"
     package = stage_client_tree(tree, package_version)
-    client = _compile_standalone(
+    client = nuitka_build.compile_standalone(
         python,
-        tree,
         package / "cli" / "entry.py",
         build / "client",
         CLIENT_BINARY_NAME,
-        (
+        source_root=tree,
+        options=(
             "--include-package=neutrino_client",
             "--include-module=gi",
             "--include-module=cairo",
         ),
+        is_output_captured=True,
     )
     stage_linux_introspection_library(client)
-    helper = _compile_standalone(
+    helper = nuitka_build.compile_standalone(
         python,
-        tree,
         package / "cli" / "mount_helper.py",
         build / "helper",
         MOUNT_HELPER_BINARY_NAME,
-        (),
+        source_root=tree,
+        is_output_captured=True,
     )
     return {"client": client, "helper": helper, "package": package}
-
-
-def _compile_standalone(
-    python: Path, tree: Path, entry: Path, build: Path, name: str, includes: tuple
-) -> Path:
-    """One Nuitka standalone build.
-
-    Args:
-        python: The interpreter the program is compiled against.
-        tree: The directory the staged package is in, which the compiler
-            resolves the package from.
-        entry: The module that becomes the program.
-        build: Where the compiler works.
-        name: What the binary is called.
-        includes: What to include beyond what the entry imports itself.
-
-    Returns:
-        The standalone directory: the binary and everything it loads.
-
-    Raises:
-        SystemExit: When the compiler refuses or writes no binary.
-    """
-    command = [
-        str(python),
-        "-m",
-        "nuitka",
-        "--standalone",
-        "--assume-yes-for-downloads",
-        *includes,
-        f"--output-filename={name}",
-        f"--output-dir={build}",
-        str(entry),
-    ]
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "PYTHONPATH": str(tree)},
-    )
-    if result.returncode != 0:
-        raise SystemExit(
-            f"compiling {entry.name} failed:\n{(result.stderr or result.stdout).strip()}"
-        )
-    dist = build / f"{entry.stem}.dist"
-    if not (dist / name).is_file():
-        raise SystemExit(f"nuitka wrote no {name} under {dist}")
-    return dist
 
 
 def lay_out_compiled(tree: Path, compiled: dict, helper_path: Path) -> None:

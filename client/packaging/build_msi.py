@@ -43,21 +43,21 @@ compiles, writes a package tree, runs wix.
 """
 
 import argparse
-import os
 import platform
 import shutil
-import subprocess
 import sys
 import tempfile
 import urllib.request
-import xml.sax.saxutils
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
 import bundled  # noqa: E402
 import icons  # noqa: E402
+import nuitka_build  # noqa: E402
 import payload  # noqa: E402
+import wix_build  # noqa: E402
 
 CLIENT_ROOT = payload.CLIENT_ROOT
 REPO_ROOT = payload.REPO_ROOT
@@ -67,10 +67,6 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 # script, so it is what the installer carries. One minor, checked, so a build
 # machine with another does not quietly ship a different Python.
 BUILD_PYTHON_VERSION = (3, 13)
-
-# The compiler, at a version that built the client and its window's Python
-# side. A build tool rather than something carried, so pinned by version.
-NUITKA_VERSION = "4.2.1"
 
 # The compiled client, twice: one executable is a console program, for a
 # terminal, a script, a pipe or a shell with no console of its own, all of
@@ -92,10 +88,8 @@ NUITKA_EXCLUDED_BACKENDS = (
     "webview.platforms.qt",
 )
 
-# What each name for the machine maps to: the wheel's own, and the platform
-# an msi declares.
+# What each name for the machine maps to in the wheel's own naming.
 WINDOWS_MACHINES = {"x86_64": "amd64", "aarch64": "arm64"}
-MSI_PLATFORMS = {"amd64": "x64", "arm64": "arm64"}
 
 # The window's Python side, pinned to the file and compiled in. pywebview
 # drives the WebView2 control through pythonnet, which reaches .NET through
@@ -198,17 +192,6 @@ WEBVIEW2_REGISTRY_KEY = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIEN
 # installer never writes here; it only offers to take it away at the end.
 CLIENT_CONFIG_DIR_NAME = "Neutrino Client"
 
-# The extensions this source needs, at the version this WiX loads: Util for
-# CloseApplication and the quiet exec, UI for the dialogs the two questions
-# are asked on.
-WIX_UTIL_EXTENSION = "WixToolset.Util.wixext/6.0.2"
-WIX_UI_EXTENSION = "WixToolset.UI.wixext/6.0.2"
-
-# The library the Util extension keeps its custom actions in, one per
-# machine. The removal below is declared against it rather than carrying a
-# program of its own.
-UTIL_LIBRARY = {"amd64": "Wix4UtilCA_X64", "arm64": "Wix4UtilCA_A64"}
-
 # The identity of the product across every version it ever ships as. Fixed:
 # changing it makes an upgrade install beside the old one instead of over it.
 UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"
@@ -237,22 +220,10 @@ REMOVE_CONFIG_COMMAND = (
     '"[SystemFolder]cmd.exe" /c ' f'rd /s /q "[AppDataFolder]{CLIENT_CONFIG_DIR_NAME}"'
 )
 
+# The package's body, inside the Package element wix_build writes around it.
 # @NAME@ rather than str.format: the source is XML with braces of its own in
 # the property expressions.
-WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
-     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
-  <Package Name="Neutrino Client"
-           Manufacturer="@PUBLISHER@"
-           Version="@VERSION@"
-           UpgradeCode="@UPGRADE_CODE@"
-           Scope="perMachine"
-           Compressed="yes">
-    <MajorUpgrade AllowSameVersionUpgrades="yes"
-                  DowngradeErrorMessage="A newer Neutrino Client is already installed." />
-    <MediaTemplate EmbedCab="yes" />
-
+WIX_BODY = r"""
     <!-- The two questions, and the answers nobody being there gives: a
          silent install puts the command on PATH, and a silent removal keeps
          the person's own configuration. -->
@@ -511,8 +482,6 @@ WIX_SOURCE = r"""<?xml version="1.0" encoding="utf-8"?>
                Value="ClientRemoveDlg" Order="11"
                Condition="WixUI_InstallMode = &quot;Remove&quot;" />
     </UI>
-  </Package>
-</Wix>
 """
 
 
@@ -557,7 +526,7 @@ def main() -> int:
         if arguments.stage_only:
             print(f"staged {staged['payload']} and {source}")
             return 0
-        _build(source, target, machine)
+        wix_build.build(source, target, machine)
 
     if not target.is_file():
         raise SystemExit(f"wix wrote no {target.name}")
@@ -578,33 +547,32 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
     Returns:
         The .wxs document.
     """
-    return (
-        WIX_SOURCE.replace("@VERSION@", version)
-        # Every value lands inside a double-quoted XML attribute; a publisher
-        # with an address in angle brackets, or a command line that quotes its
-        # own path, is plain text there and must not become markup.
-        .replace("@PUBLISHER@", _attribute_text(publisher))
-        .replace("@UPGRADE_CODE@", UPGRADE_CODE)
-        .replace("@PAYLOAD@", str(staged["payload"]))
-        .replace("@BOOTSTRAPPER@", str(staged["bootstrapper"]))
-        .replace("@BOOTSTRAPPER_NAME@", WEBVIEW2_BOOTSTRAPPER_NAME)
-        .replace("@ICON@", str(staged["icon"]))
-        .replace("@WEBVIEW2_KEY@", WEBVIEW2_REGISTRY_KEY)
-        .replace("@RESIDENT_IMAGE_WINDOWED@", CLIENT_WINDOWED_BINARY_NAME)
-        .replace("@RESIDENT_IMAGE_CONSOLE@", CLIENT_BINARY_NAME)
-        .replace("@CLIENT_WINDOWED_BINARY@", CLIENT_WINDOWED_BINARY_NAME)
-        .replace("@LICENSE_RTF@", str(staged["license"]))
-        .replace("@UTIL_LIBRARY@", UTIL_LIBRARY[machine])
-        .replace("@QUIT_COMMAND@", _attribute_text(QUIT_COMMAND))
-        .replace("@REMOVE_CONFIG_COMMAND@", _attribute_text(REMOVE_CONFIG_COMMAND))
-        .replace("@CONFIG_GOES@", _attribute_text(CONFIG_GOES_CONDITION))
-        .replace("@PATH_DECLINED@", _attribute_text(PATH_DECLINED_CONDITION))
+    body = wix_build.fill(
+        WIX_BODY,
+        {
+            "PAYLOAD": staged["payload"],
+            "BOOTSTRAPPER": staged["bootstrapper"],
+            "BOOTSTRAPPER_NAME": WEBVIEW2_BOOTSTRAPPER_NAME,
+            "ICON": staged["icon"],
+            "WEBVIEW2_KEY": WEBVIEW2_REGISTRY_KEY,
+            "RESIDENT_IMAGE_WINDOWED": CLIENT_WINDOWED_BINARY_NAME,
+            "RESIDENT_IMAGE_CONSOLE": CLIENT_BINARY_NAME,
+            "CLIENT_WINDOWED_BINARY": CLIENT_WINDOWED_BINARY_NAME,
+            "LICENSE_RTF": staged["license"],
+            "UTIL_LIBRARY": wix_build.UTIL_LIBRARY[machine],
+            "QUIT_COMMAND": QUIT_COMMAND,
+            "REMOVE_CONFIG_COMMAND": REMOVE_CONFIG_COMMAND,
+            "CONFIG_GOES": CONFIG_GOES_CONDITION,
+            "PATH_DECLINED": PATH_DECLINED_CONDITION,
+        },
     )
-
-
-def _attribute_text(value: str) -> str:
-    """Text safe inside a double-quoted XML attribute."""
-    return xml.sax.saxutils.escape(value, {'"': "&quot;"})
+    return wix_build.package_source(
+        name="Neutrino Client",
+        manufacturer=publisher,
+        version=version,
+        upgrade_code=UPGRADE_CODE,
+        body=body,
+    )
 
 
 def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
@@ -654,7 +622,9 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
     bootstrapper = root / WEBVIEW2_BOOTSTRAPPER_NAME
     bootstrapper.write_bytes(_fetch_bootstrapper())
     icon = icons.write_ico(root / "neutrino_client.ico")
-    license_rtf = _write_license_rtf(root / "license.rtf")
+    license_rtf = wix_build.write_license_rtf(
+        REPO_ROOT / "LICENSE", root / "license.rtf"
+    )
     return {
         "payload": installed,
         "bootstrapper": bootstrapper,
@@ -705,9 +675,7 @@ def _make_build_environment(venv: Path, machine: str) -> Path:
     """
     payload.run([sys.executable, "-m", "venv", str(venv)])
     python = venv / "Scripts" / "python.exe"
-    payload.run(
-        [str(python), "-m", "pip", "install", "--quiet", f"nuitka=={NUITKA_VERSION}"]
-    )
+    payload.run(nuitka_build.pip_install_command(python))
     # Into the environment's own site-packages, which on Windows a venv
     # keeps under Lib; pinned files by path rather than names pip resolves.
     payload.stage_wheels(
@@ -773,66 +741,24 @@ def _compile_one(
     Raises:
         SystemExit: When the compiler refuses or writes no binary.
     """
-    entry = tree / "neutrino_client" / "cli" / "entry.py"
-    icon = icons.write_ico(build.parent / "binary.ico")
-    command = [
-        str(python),
-        "-m",
-        "nuitka",
-        "--standalone",
-        "--assume-yes-for-downloads",
-        "--include-package=neutrino_client",
-        "--include-package=webview",
-        *(f"--nofollow-import-to={name}" for name in NUITKA_EXCLUDED_BACKENDS),
-        f"--windows-console-mode={console_mode}",
-        f"--windows-icon-from-ico={icon}",
-        "--product-name=Neutrino Client",
-        f"--product-version={version}",
-        f"--file-version={version}",
-        f"--output-filename={name}",
-        f"--output-dir={build}",
-        str(entry),
-    ]
-    environment = dict(os.environ, PYTHONPATH=str(tree))
-    result = subprocess.run(command, env=environment)
-    if result.returncode != 0:
-        raise SystemExit(f"nuitka exited {result.returncode}")
-    dist = build / "entry.dist"
-    if not (dist / name).is_file():
-        raise SystemExit(f"nuitka wrote no {name} under {dist}")
-    return dist
-
-
-def _write_license_rtf(target: Path) -> Path:
-    """Write the project's licence as the rich text the first page reads.
-
-    The wizard's licence control takes RTF and nothing else, and the licence
-    in the checkout is plain text, so the one in the repository stays the
-    only copy and this is its wrapper.
-
-    Args:
-        target: Where to write it.
-
-    Returns:
-        The path written.
-
-    Raises:
-        SystemExit: When the checkout has no licence to show.
-    """
-    source = REPO_ROOT / "LICENSE"
-    if not source.is_file():
-        raise SystemExit(f"the installer shows a licence and there is none at {source}")
-    body = source.read_text(encoding="utf-8")
-    for character, escaped in (("\\", "\\\\"), ("{", "\\{"), ("}", "\\}")):
-        body = body.replace(character, escaped)
-    paragraphs = "\\par\n".join(body.splitlines())
-    target.write_text(
-        "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil\\fcharset0 Segoe UI;}}\n"
-        "\\fs18\n" + paragraphs + "\n}\n",
-        encoding="ascii",
-        errors="replace",
+    return nuitka_build.compile_standalone(
+        python,
+        tree / "neutrino_client" / "cli" / "entry.py",
+        build,
+        name,
+        source_root=tree,
+        options=(
+            "--include-package=neutrino_client",
+            "--include-package=webview",
+            *(f"--nofollow-import-to={module}" for module in NUITKA_EXCLUDED_BACKENDS),
+            *nuitka_build.windows_options(
+                product_name="Neutrino Client",
+                version=version,
+                icon=icons.write_ico(build.parent / "binary.ico"),
+                console_mode=console_mode,
+            ),
+        ),
     )
-    return target
 
 
 def _stage_licenses(installed: Path) -> None:
@@ -883,47 +809,6 @@ def _fetch_bootstrapper() -> bytes:
             "a bootstrapper is"
         )
     return content
-
-
-def _build(source: Path, target: Path, machine: str) -> None:
-    """Run wix over the generated source.
-
-    Args:
-        source: The .wxs to compile.
-        target: Where the .msi should land.
-        machine: ``amd64`` or ``arm64``, which the msi declares as its
-            platform.
-
-    Raises:
-        SystemExit: If WiX is not installed, or refuses the source.
-    """
-    wix = shutil.which("wix")
-    if wix is None:
-        raise SystemExit(
-            "WiX is needed to build the Windows installer: "
-            "dotnet tool install --global wix --version 6.0.2 && "
-            f"wix extension add -g {WIX_UTIL_EXTENSION} && "
-            f"wix extension add -g {WIX_UI_EXTENSION}"
-        )
-    result = subprocess.run(
-        [
-            wix,
-            "build",
-            "-arch",
-            MSI_PLATFORMS[machine],
-            "-ext",
-            WIX_UTIL_EXTENSION,
-            "-ext",
-            WIX_UI_EXTENSION,
-            "-out",
-            str(target),
-            str(source),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise SystemExit((result.stdout or result.stderr).strip())
 
 
 if __name__ == "__main__":

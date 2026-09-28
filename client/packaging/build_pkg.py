@@ -27,19 +27,20 @@ compiles, signs, writes a package tree, runs pkgbuild and productbuild.
 """
 
 import argparse
-import os
 import platform
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
 import bundled  # noqa: E402
 import icons  # noqa: E402
+import nuitka_build  # noqa: E402
 import payload  # noqa: E402
+import pkg_build  # noqa: E402
 
 CLIENT_ROOT = payload.CLIENT_ROOT
 REPO_ROOT = payload.REPO_ROOT
@@ -49,10 +50,6 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 # script, so it is what the bundle carries. One minor, checked, so a build
 # machine with another does not quietly ship a different Python.
 BUILD_PYTHON_VERSION = (3, 13)
-
-# The compiler, at a version that built the client and its window's Python
-# side. A build tool rather than something carried, so pinned by version.
-NUITKA_VERSION = "4.2.1"
 
 # What the compiled client is called inside the bundle, and what the bundle
 # itself is called under /Applications.
@@ -145,7 +142,9 @@ def main() -> int:
         if arguments.stage_only:
             print(f"staged {staged['root']}")
             return 0
-        _build(staged["root"], target, version)
+        pkg_build.build(
+            staged["root"], target, identifier=PACKAGE_IDENTIFIER, version=version
+        )
 
     if not target.is_file():
         raise SystemExit(f"productbuild wrote no {target.name}")
@@ -215,7 +214,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
 
     bundled.stage_darwin_binaries(contents)
     _stage_licenses(contents / "Resources" / "licenses")
-    _sign(app)
+    pkg_build.sign_ad_hoc(app)
 
     link = package_root / str(INSTALL_LINK_PATH).lstrip("/")
     link.parent.mkdir(parents=True, exist_ok=True)
@@ -273,9 +272,7 @@ def _make_build_environment(venv: Path) -> Path:
     """
     payload.run([sys.executable, "-m", "venv", str(venv)])
     python = venv / "bin" / "python3"
-    payload.run(
-        [str(python), "-m", "pip", "install", "--quiet", f"nuitka=={NUITKA_VERSION}"]
-    )
+    payload.run(nuitka_build.pip_install_command(python))
     # Into the environment's own site-packages; pinned files by path rather
     # than names pip resolves.
     major, minor = BUILD_PYTHON_VERSION
@@ -303,35 +300,20 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
     Raises:
         SystemExit: When the compiler refuses or writes no bundle.
     """
-    entry = tree / "neutrino_client" / "cli" / "entry.py"
-    icon = icons.write_icns(build.parent / "bundle.icns")
-    command = [
-        str(python),
-        "-m",
-        "nuitka",
-        "--standalone",
-        "--macos-create-app-bundle",
-        "--assume-yes-for-downloads",
-        "--include-package=neutrino_client",
-        *(f"--include-package={name}" for name in PYOBJC_PACKAGES),
-        f"--macos-app-name={APP_NAME}",
-        f"--macos-app-icon={icon}",
-        f"--macos-app-version={version}",
-        f"--output-filename={CLIENT_BINARY_NAME}",
-        f"--output-dir={build}",
-        str(entry),
-    ]
-    environment = dict(os.environ, PYTHONPATH=str(tree))
-    result = subprocess.run(command, env=environment)
-    if result.returncode != 0:
-        raise SystemExit(f"nuitka exited {result.returncode}")
-    bundles = sorted(build.glob("*.app"))
-    if len(bundles) != 1:
-        raise SystemExit(f"nuitka wrote no single app bundle under {build}")
-    binary = bundles[0] / "Contents" / "MacOS" / CLIENT_BINARY_NAME
-    if not binary.is_file():
-        raise SystemExit(f"nuitka wrote no {CLIENT_BINARY_NAME} under {bundles[0]}")
-    return bundles[0]
+    return nuitka_build.compile_app_bundle(
+        python,
+        tree / "neutrino_client" / "cli" / "entry.py",
+        build,
+        CLIENT_BINARY_NAME,
+        source_root=tree,
+        app_name=APP_NAME,
+        icon=icons.write_icns(build.parent / "bundle.icns"),
+        version=version,
+        options=(
+            "--include-package=neutrino_client",
+            *(f"--include-package={name}" for name in PYOBJC_PACKAGES),
+        ),
+    )
 
 
 def _stage_licenses(destination: Path) -> None:
@@ -351,56 +333,6 @@ def _stage_licenses(destination: Path) -> None:
                 f"the package carries {name} and there is none at {source}"
             )
         shutil.copyfile(source, destination / name)
-
-
-def _sign(app: Path) -> None:
-    """Sign the bundle ad hoc, every binary inside it included.
-
-    Args:
-        app: The bundle.
-
-    Raises:
-        SystemExit: When codesign refuses.
-    """
-    payload.run(["codesign", "--force", "--deep", "--sign", "-", str(app)])
-
-
-def _build(package_root: Path, target: Path, version: str) -> None:
-    """Run pkgbuild over the package root, then productbuild around it.
-
-    Args:
-        package_root: The directory standing in for the filesystem root.
-        target: Where the .pkg should land.
-        version: The version the package declares.
-
-    Raises:
-        SystemExit: When the tools are not installed, or refuse.
-    """
-    for tool in ("pkgbuild", "productbuild"):
-        if shutil.which(tool) is None:
-            raise SystemExit(
-                f"{tool} is needed to build the macOS installer: "
-                "xcode-select --install"
-            )
-    component = target.parent / f"{PACKAGE_IDENTIFIER}.component.pkg"
-    payload.run(
-        [
-            "pkgbuild",
-            "--root",
-            str(package_root),
-            "--identifier",
-            PACKAGE_IDENTIFIER,
-            "--version",
-            version,
-            "--install-location",
-            "/",
-            str(component),
-        ]
-    )
-    try:
-        payload.run(["productbuild", "--package", str(component), str(target)])
-    finally:
-        component.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

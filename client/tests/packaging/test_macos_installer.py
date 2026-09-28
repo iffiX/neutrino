@@ -16,7 +16,9 @@ import pytest
 
 import build_pkg
 import bundled
+import nuitka_build
 import payload
+import pkg_build
 
 
 def darwin_build_machine(monkeypatch, *, machine="arm64", version=(3, 13, 7)):
@@ -79,14 +81,14 @@ def test_the_compile_is_an_app_bundle_with_the_bindings_named(monkeypatch, tmp_p
     the bundle, the binary called nclient."""
     commands = []
 
-    def fake_run(command, env=None):
+    def fake_run(command, env=None, **kwargs):
         commands.append((command, env))
         binary = tmp_path / "build" / "entry.app" / "Contents" / "MacOS" / "nclient"
         binary.parent.mkdir(parents=True, exist_ok=True)
         binary.write_bytes(b"\xcf\xfa\xed\xfe")
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(build_pkg.subprocess, "run", fake_run)
+    monkeypatch.setattr(nuitka_build.subprocess, "run", fake_run)
     monkeypatch.setattr(build_pkg.icons, "write_icns", lambda path: path)
     tree = tmp_path / "tree"
     (tree / "neutrino_client" / "cli").mkdir(parents=True)
@@ -111,9 +113,9 @@ def test_the_compile_is_an_app_bundle_with_the_bindings_named(monkeypatch, tmp_p
 
 def test_a_compile_that_writes_no_bundle_is_refused(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        build_pkg.subprocess,
+        nuitka_build.subprocess,
         "run",
-        lambda command, env=None: subprocess.CompletedProcess(command, 0),
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0),
     )
     monkeypatch.setattr(build_pkg.icons, "write_icns", lambda path: path)
     (tmp_path / "build").mkdir()
@@ -125,11 +127,11 @@ def test_a_compile_that_writes_no_bundle_is_refused(monkeypatch, tmp_path):
 
 
 def test_a_bundle_without_the_binary_is_refused(monkeypatch, tmp_path):
-    def fake_run(command, env=None):
+    def fake_run(command, env=None, **kwargs):
         (tmp_path / "build" / "entry.app" / "Contents" / "MacOS").mkdir(parents=True)
         return subprocess.CompletedProcess(command, 0)
 
-    monkeypatch.setattr(build_pkg.subprocess, "run", fake_run)
+    monkeypatch.setattr(nuitka_build.subprocess, "run", fake_run)
     monkeypatch.setattr(build_pkg.icons, "write_icns", lambda path: path)
 
     with pytest.raises(SystemExit) as refused:
@@ -200,7 +202,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     monkeypatch.setattr(build_pkg, "_make_build_environment", make_environment)
     monkeypatch.setattr(build_pkg, "_compile", compile_app)
     monkeypatch.setattr(build_pkg.bundled, "stage_darwin_binaries", stage_binaries)
-    monkeypatch.setattr(build_pkg, "_sign", sign)
+    monkeypatch.setattr(build_pkg.pkg_build, "sign_ad_hoc", sign)
 
     staged = build_pkg._lay_out(tmp_path, "9.9.9", "arm64")
 
@@ -226,11 +228,9 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
 
 def test_the_bundle_is_signed_ad_hoc_and_deep(monkeypatch, tmp_path):
     commands = []
-    monkeypatch.setattr(
-        build_pkg.payload, "run", lambda command, cwd=None: commands.append(command)
-    )
+    monkeypatch.setattr(pkg_build, "_run", commands.append)
 
-    build_pkg._sign(tmp_path / "Neutrino Client.app")
+    pkg_build.sign_ad_hoc(tmp_path / "Neutrino Client.app")
 
     assert commands == [
         [
@@ -249,15 +249,17 @@ def test_pkgbuild_wraps_the_root_and_productbuild_wraps_the_component(
 ):
     commands = []
 
-    def run(command, cwd=None):
+    def run(command):
         commands.append(list(command))
         Path(command[-1]).write_bytes(b"xar!")
 
-    monkeypatch.setattr(build_pkg.payload, "run", run)
-    monkeypatch.setattr(build_pkg.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(pkg_build, "_run", run)
+    monkeypatch.setattr(pkg_build.shutil, "which", lambda name: f"/usr/bin/{name}")
     target = tmp_path / "neutrino-client-9.9.9-macos-arm64.pkg"
 
-    build_pkg._build(tmp_path / "root", target, "9.9.9")
+    pkg_build.build(
+        tmp_path / "root", target, identifier="com.neutrino.client", version="9.9.9"
+    )
 
     component = tmp_path / "com.neutrino.client.component.pkg"
     assert commands == [
@@ -280,10 +282,15 @@ def test_pkgbuild_wraps_the_root_and_productbuild_wraps_the_component(
 
 
 def test_a_mac_without_the_tools_is_told_what_to_install(monkeypatch, tmp_path):
-    monkeypatch.setattr(build_pkg.shutil, "which", lambda name: None)
+    monkeypatch.setattr(pkg_build.shutil, "which", lambda name: None)
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg._build(tmp_path, tmp_path / "out.pkg", "1")
+        pkg_build.build(
+            tmp_path,
+            tmp_path / "out.pkg",
+            identifier="com.neutrino.client",
+            version="1",
+        )
 
     assert "xcode-select --install" in str(refused.value)
 
@@ -299,7 +306,9 @@ def test_the_installer_registers_no_login_item_and_no_service():
 
 def test_the_build_pins_what_the_other_platforms_pin():
     assert build_pkg.BUILD_PYTHON_VERSION == (3, 13)
-    assert build_pkg.NUITKA_VERSION == payload.NUITKA_VERSION
+    assert not hasattr(build_pkg, "NUITKA_VERSION")
+    assert not hasattr(payload, "NUITKA_VERSION")
+    assert nuitka_build.NUITKA_VERSION == "4.2.1"
     assert build_pkg.CLIENT_BINARY_NAME == payload.CLIENT_BINARY_NAME
     assert build_pkg.APP_BUNDLE_NAME == "Neutrino Client.app"
     assert build_pkg.PACKAGE_IDENTIFIER == "com.neutrino.client"
