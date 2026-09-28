@@ -7,7 +7,12 @@ plaintext query ever leaves a WAN interface.
 
 from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
 
-from neutrino_hub.modules.router.constants import ROUTER_HUB_NAME
+from neutrino_hub.modules.router.constants import (
+    ROUTER_DNS_CACHE_SIZE,
+    ROUTER_DNS_MIN_CACHE_TTL_S,
+    ROUTER_DNS_NEG_TTL_S,
+    ROUTER_HUB_NAME,
+)
 from neutrino_hub.modules.router.interfaces import (
     RouterInterface,
     RouterNetworkConfig,
@@ -54,7 +59,9 @@ class RouterDnsmasqRenderer:
         lines += [
             "domain-needed",
             "bogus-priv",
-            "cache-size=1000",
+            f"cache-size={ROUTER_DNS_CACHE_SIZE}",
+            f"min-cache-ttl={ROUTER_DNS_MIN_CACHE_TTL_S}",
+            f"neg-ttl={ROUTER_DNS_NEG_TTL_S}",
             "",
             "# Query log feeds the panel's DNS tab. `-` is stderr, which the",
             "# unit hands to systemd, so the journal holds it under its own",

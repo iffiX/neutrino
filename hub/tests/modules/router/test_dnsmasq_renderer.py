@@ -6,7 +6,12 @@ config dnsmasq refused to start on, which took DHCP and DNS off the wired LAN
 because of a mistake in the Wi-Fi half.
 """
 
-from neutrino_hub.modules.router.constants import ROUTER_HUB_NAME
+from neutrino_hub.modules.router.constants import (
+    ROUTER_DNS_CACHE_SIZE,
+    ROUTER_DNS_MIN_CACHE_TTL_S,
+    ROUTER_DNS_NEG_TTL_S,
+    ROUTER_HUB_NAME,
+)
 from neutrino_hub.modules.router.dnsmasq_renderer import (
     NO_LAN_PLACEHOLDER_INTERFACE,
     RouterDnsmasqRenderer,
@@ -265,4 +270,13 @@ def test_a_fixed_address_needs_a_pool_to_be_rendered(tmp_path):
     )
 
     assert "dhcp-host" not in without_comments(config)
+    validate_dnsmasq(config, tmp_path)
+
+
+def test_the_cache_size_and_both_ttl_floors_come_from_the_constants(tmp_path):
+    config = without_comments(render(lan_entry("enp1s0", address="192.168.100.1")))
+
+    assert f"cache-size={ROUTER_DNS_CACHE_SIZE}" in config
+    assert f"min-cache-ttl={ROUTER_DNS_MIN_CACHE_TTL_S}" in config
+    assert f"neg-ttl={ROUTER_DNS_NEG_TTL_S}" in config
     validate_dnsmasq(config, tmp_path)

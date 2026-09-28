@@ -206,6 +206,12 @@ def router_hostapd_address_path(interface: str):
 
 ROUTER_DNSMASQ_PATH = UTILS_GENERATED_DIR / "dnsmasq_neutrino.conf"
 
+# The resolver cache of every served network. dnsmasq caps `min-cache-ttl` at
+# 3600 seconds.
+ROUTER_DNS_CACHE_SIZE = 5000
+ROUTER_DNS_MIN_CACHE_TTL_S = 300
+ROUTER_DNS_NEG_TTL_S = 300
+
 # The name this box answers to on every served network, resolving to its
 # address on the network the query arrived from. `.internal` is the top-level
 # domain reserved for private networks.

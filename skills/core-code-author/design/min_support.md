@@ -44,7 +44,7 @@ distribution provides.
 | Program | Minimum | What needs it | Where |
 | --- | --- | --- | --- |
 | nftables | 0.9 | `socket transparent` and `tproxy` in the proxy chains | `hub/neutrino_hub/modules/router/nft_renderer.py:118` |
-| dnsmasq | 2.55 | `bind-dynamic`, which starts on an interface that has no address yet | `hub/neutrino_hub/modules/router/dnsmasq_renderer.py:72` |
+| dnsmasq | 2.73 | `min-cache-ttl`, the floor under every cached answer's TTL | `hub/neutrino_hub/modules/router/dnsmasq_renderer.py:63` |
 | systemd | 245 | `ProtectClock=` in the panel's unit, the newest directive any unit uses | `hub/neutrino_hub/data/services/neutrino_hub_web.service:28` |
 | iproute2 | 4.13 | `ip -json` for links, addresses and routes | `hub/neutrino_hub/modules/router/link_status.py:322` |
 | vnstat | 2.0 | `vnstat --json`, whose version 2 layout the traffic history parses | `hub/neutrino_hub/system/vnstat_history.py:79` |

@@ -224,6 +224,13 @@ box's address on the network the query arrived from, one `interface-name`
 per LAN under `localise-queries`, so a device on any served network reaches
 the hub by that name whatever the address becomes.
 
+The cache holds 5000 names. An answer, positive or negative, stays in it for
+at least 300 seconds, whatever shorter TTL the upstream gave. Most names a
+served network asks for resolve at the exit through xray, and a forwarded
+query costs one exit round trip where a cached one costs under a millisecond.
+The price of the floor is that a name whose address moves is followed up to
+five minutes late.
+
 A fixed address is one entry of `static_leases` at the top level of
 `network.json`: a MAC, an address and an optional name, rendered as one
 `dhcp-host` line after the pools. The address lies in a network that gives
