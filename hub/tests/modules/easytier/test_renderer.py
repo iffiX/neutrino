@@ -12,7 +12,7 @@ from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.renderer import (
     render_arguments,
     render_config,
-    render_environment,
+    render_dropin,
 )
 
 
@@ -126,7 +126,15 @@ def test_console_mode_with_no_address_renders_nothing():
         )
 
 
-def test_the_arguments_are_one_variable_of_the_environment_file():
-    assert render_environment(["-c", "/x/easytier.toml"]) == (
-        "EASYTIER_ARGUMENTS=-c /x/easytier.toml\n"
+def test_the_drop_in_clears_the_units_start_line_and_sets_its_own():
+    text = render_dropin(["-c", "/x/easytier.toml"], core_path="/opt/e/core")
+
+    assert text == (
+        "[Service]\n" "ExecStart=\n" 'ExecStart="/opt/e/core" "-c" "/x/easytier.toml"\n'
     )
+
+
+def test_every_word_is_quoted_the_systemd_way():
+    text = render_dropin(['a b"c\\d', "50%", "$HOME"], core_path="/core")
+
+    assert text.splitlines()[-1] == ('ExecStart="/core" "a b\\"c\\\\d" "50%%" "$$HOME"')

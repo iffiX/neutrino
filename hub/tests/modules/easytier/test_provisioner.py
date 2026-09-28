@@ -177,11 +177,15 @@ def test_removing_it_keeps_the_binaries_and_the_network(tmp_path, monkeypatch):
     """The files are the package's, and the network is the panel's."""
     provisioner, ran, systemd, (core, _) = a_box(tmp_path, monkeypatch)
     (systemd / EASYTIER_UNIT).write_text(PACKAGED_UNIT, encoding="utf-8")
+    dropin = systemd / f"{EASYTIER_UNIT}.d"
+    dropin.mkdir()
+    (dropin / "arguments.conf").write_text("[Service]\n", encoding="utf-8")
 
     provisioner.deprovision()
 
     assert core.is_file()
     assert not (systemd / EASYTIER_UNIT).exists()
+    assert not dropin.exists()
     assert ["systemctl", "disable", "--now", EASYTIER_UNIT] in ran
 
 
@@ -189,3 +193,5 @@ def test_the_unit_name_is_one_name_everywhere():
     assert SYSTEM_OPTIONAL_UNITS["easytier"] == EASYTIER_UNIT
     assert MODULE_SPECS["easytier"].unit == EASYTIER_UNIT
     assert "/opt/neutrino/bin/easytier-core" in PACKAGED_UNIT
+    assert "EnvironmentFile" not in PACKAGED_UNIT
+    assert "$" not in PACKAGED_UNIT

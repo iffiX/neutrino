@@ -27,10 +27,12 @@ EASYTIER_CLI_PATH = UTILS_STATIC_ROOT / "bin" / EASYTIER_CLI_NAME
 
 EASYTIER_UNIT = OVERLAY_EASYTIER_UNIT
 EASYTIER_GENERATED_NAME = "easytier.toml"
-# The engine's start arguments, read by the unit as an environment file. It
-# names the console address with its token, so it is root-only.
-EASYTIER_ARGUMENTS_NAME = "easytier.env"
-EASYTIER_ARGUMENTS_VARIABLE = "EASYTIER_ARGUMENTS"
+# The engine's start line, a drop-in over the hub's unit. It names the console
+# address with its token, so it is root-only.
+EASYTIER_DROPIN_DIR_NAME = f"{EASYTIER_UNIT}.d"
+EASYTIER_DROPIN_NAME = "arguments.conf"
+# The start arguments file of the 0.4.0 development builds; apply deletes it.
+EASYTIER_STALE_ARGUMENTS_NAME = "easytier.env"
 
 # How the engine learns its network: from the files this hub renders, or from
 # EasyTier's own console, which pushes the whole network configuration.

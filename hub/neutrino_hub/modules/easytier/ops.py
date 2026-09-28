@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.constants import (
-    EASYTIER_ARGUMENTS_NAME,
+    EASYTIER_DROPIN_DIR_NAME,
+    EASYTIER_DROPIN_NAME,
+    EASYTIER_STALE_ARGUMENTS_NAME,
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
     EASYTIER_GENERATED_NAME,
@@ -26,8 +28,9 @@ from neutrino_hub.modules.easytier.provisioner import refresh_unit
 from neutrino_hub.modules.easytier.renderer import (
     render_arguments,
     render_config,
-    render_environment,
+    render_dropin,
 )
+from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR, is_dev_root_set
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.utils.subprocess_run import run
@@ -212,14 +215,14 @@ class EasyTierStatusReader:
 
 
 class EasyTierConfigApplier:
-    """Renders the start arguments and the network file, and restarts the
-    engine on them."""
+    """Renders the start line's drop-in and the network file, and restarts
+    the engine on them."""
 
     def apply(self, config: EasyTierConfig, *, hostname: str) -> str:
         """Write what the panel stored and make the engine run on it.
 
-        A mode with nothing to run removes both files and stops the engine,
-        which the unit then cannot start.
+        A mode with nothing to run removes the drop-in and the network file
+        and stops the engine.
 
         Args:
             config: What the panel stored.
@@ -235,10 +238,16 @@ class EasyTierConfigApplier:
             subprocess.CalledProcessError: If the engine refuses to restart.
         """
         network_path = UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME
-        arguments_path = UTILS_GENERATED_DIR / EASYTIER_ARGUMENTS_NAME
+        dropin_path = (
+            SYSTEM_SYSTEMD_DIR / EASYTIER_DROPIN_DIR_NAME / EASYTIER_DROPIN_NAME
+        )
+        (UTILS_GENERATED_DIR / EASYTIER_STALE_ARGUMENTS_NAME).unlink(missing_ok=True)
+        is_unit_owned = not is_dev_root_set()
         if not config.is_configured:
-            arguments_path.unlink(missing_ok=True)
             network_path.unlink(missing_ok=True)
+            if is_unit_owned and dropin_path.is_file():
+                dropin_path.unlink()
+                run(["systemctl", "daemon-reload"])
             if not self.is_installed:
                 return "nothing to run"
             run(["systemctl", "stop", EASYTIER_UNIT], is_checked=False)
@@ -258,11 +267,16 @@ class EasyTierConfigApplier:
             arguments = render_arguments(
                 config, config_server="", config_path=str(network_path)
             )
-        write_generated(arguments_path, render_environment(arguments), mode=0o600)
         if not self.is_installed:
             return "rendered; the engine is not installed yet"
-        if not is_dev_root_set():
+        if is_unit_owned:
             refresh_unit()
+            write_generated(
+                dropin_path,
+                render_dropin(arguments, core_path=str(EASYTIER_CORE_PATH)),
+                mode=0o600,
+            )
+            run(["systemctl", "daemon-reload"])
         run(["systemctl", "restart", EASYTIER_UNIT])
         return f"applied the {config.mode} network and restarted"
 

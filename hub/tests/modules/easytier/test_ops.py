@@ -227,17 +227,22 @@ def applier_box(monkeypatch, tmp_path):
     core.write_text("")
     commands: list = []
     monkeypatch.setattr(ops, "UTILS_GENERATED_DIR", generated)
+    monkeypatch.setattr(ops, "SYSTEM_SYSTEMD_DIR", tmp_path / "systemd")
     monkeypatch.setattr(ops, "EASYTIER_CORE_PATH", core)
     monkeypatch.setattr(ops, "is_dev_root_set", lambda: False)
     monkeypatch.setattr(ops, "refresh_unit", lambda: commands.append(["refresh"]))
     monkeypatch.setattr(
         ops, "run", lambda command, **kwargs: commands.append(list(command))
     )
-    return generated, commands
+    return generated, commands, core, tmp_path / "systemd"
+
+
+def dropin_of(systemd):
+    return systemd / "neutrino_hub_easytier.service.d" / "arguments.conf"
 
 
 def test_manual_mode_runs_the_engine_on_the_network_file(applier_box):
-    generated, commands = applier_box
+    generated, commands, core, systemd = applier_box
     config = EasyTierConfig(network_name="home")
     config.set_secret("a-network-secret")
 
@@ -245,12 +250,14 @@ def test_manual_mode_runs_the_engine_on_the_network_file(applier_box):
 
     network = generated / "easytier.toml"
     assert 'network_name = "home"' in network.read_text()
-    assert (generated / "easytier.env").read_text() == (
-        f"EASYTIER_ARGUMENTS=-c {network} --rpc-portal 127.0.0.1:15888\n"
+    assert dropin_of(systemd).read_text() == (
+        "[Service]\nExecStart=\n"
+        f'ExecStart="{core}" "-c" "{network}" "--rpc-portal" "127.0.0.1:15888"\n'
     )
     assert oct(network.stat().st_mode & 0o777) == "0o600"
     assert commands == [
         ["refresh"],
+        ["systemctl", "daemon-reload"],
         ["systemctl", "restart", "neutrino_hub_easytier.service"],
     ]
 
@@ -258,35 +265,45 @@ def test_manual_mode_runs_the_engine_on_the_network_file(applier_box):
 def test_console_mode_runs_the_engine_on_the_console_and_leaves_no_network_file(
     applier_box,
 ):
-    generated, commands = applier_box
+    generated, commands, core, systemd = applier_box
     generated.mkdir()
     (generated / "easytier.toml").write_text("stale")
+    (generated / "easytier.env").write_text("stale")
     config = EasyTierConfig(mode="console", is_secure_mode=True)
     config.set_config_server(CONSOLE)
 
     ops.EasyTierConfigApplier().apply(config, hostname="neutrino")
 
-    arguments = generated / "easytier.env"
-    assert arguments.read_text() == (
-        f"EASYTIER_ARGUMENTS=--config-server {CONSOLE} --secure-mode=true "
-        "--rpc-portal 127.0.0.1:15888\n"
+    dropin = dropin_of(systemd)
+    assert dropin.read_text().splitlines()[-1] == (
+        f'ExecStart="{core}" "--config-server" "{CONSOLE}" "--secure-mode=true" '
+        '"--rpc-portal" "127.0.0.1:15888"'
     )
-    assert oct(arguments.stat().st_mode & 0o777) == "0o600"
-    assert not (generated / "easytier.toml").exists()
-    assert commands[-1] == ["systemctl", "restart", "neutrino_hub_easytier.service"]
+    assert oct(dropin.stat().st_mode & 0o777) == "0o600"
+    assert list(generated.iterdir()) == []
+    assert commands[-2:] == [
+        ["systemctl", "daemon-reload"],
+        ["systemctl", "restart", "neutrino_hub_easytier.service"],
+    ]
 
 
 def test_a_mode_with_nothing_to_run_stops_the_engine_and_leaves_no_file(
     applier_box,
 ):
-    generated, commands = applier_box
+    generated, commands, _, systemd = applier_box
     generated.mkdir()
     (generated / "easytier.env").write_text("stale")
     (generated / "easytier.toml").write_text("stale")
+    dropin_of(systemd).parent.mkdir(parents=True)
+    dropin_of(systemd).write_text("stale")
 
     ops.EasyTierConfigApplier().apply(
         EasyTierConfig(mode="console"), hostname="neutrino"
     )
 
     assert list(generated.iterdir()) == []
-    assert commands == [["systemctl", "stop", "neutrino_hub_easytier.service"]]
+    assert not dropin_of(systemd).exists()
+    assert commands == [
+        ["systemctl", "daemon-reload"],
+        ["systemctl", "stop", "neutrino_hub_easytier.service"],
+    ]

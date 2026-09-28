@@ -22,14 +22,17 @@ from socket import gethostname
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.easytier.constants import (
-    EASYTIER_ARGUMENTS_NAME,
+    EASYTIER_CORE_PATH,
+    EASYTIER_DROPIN_DIR_NAME,
+    EASYTIER_DROPIN_NAME,
     EASYTIER_GENERATED_NAME,
 )
 from neutrino_hub.modules.easytier.ops import EasyTierConfigApplier
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.renderer import render_arguments
 from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
-from neutrino_hub.modules.easytier.renderer import render_environment
+from neutrino_hub.modules.easytier.renderer import render_dropin
+from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
@@ -240,11 +243,13 @@ def _print_artifacts(artifacts: dict) -> None:
                     overlay, secret="<network secret>", hostname=gethostname()
                 )
             )
-        print(f"\n--- {UTILS_GENERATED_DIR / EASYTIER_ARGUMENTS_NAME} ---")
+        print(
+            f"\n--- {SYSTEM_SYSTEMD_DIR / EASYTIER_DROPIN_DIR_NAME / EASYTIER_DROPIN_NAME} ---"
+        )
         arguments = render_arguments(
             overlay, config_server="<console address>", config_path=str(network_path)
         )
-        print(render_environment(arguments), end="")
+        print(render_dropin(arguments, core_path=str(EASYTIER_CORE_PATH)), end="")
 
 
 def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:

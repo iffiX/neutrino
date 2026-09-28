@@ -24,6 +24,7 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_NAME,
     EASYTIER_CORE_PATH,
+    EASYTIER_DROPIN_DIR_NAME,
     EASYTIER_DOWNLOAD_URL,
     EASYTIER_SHA256,
     EASYTIER_SUPPORTED_ARCHITECTURES,
@@ -151,6 +152,7 @@ class EasyTierProvisioner:
         say(report, "stopping easytier")
         run(["systemctl", "disable", "--now", EASYTIER_UNIT], is_checked=False)
         (SYSTEM_SYSTEMD_DIR / EASYTIER_UNIT).unlink(missing_ok=True)
+        shutil.rmtree(SYSTEM_SYSTEMD_DIR / EASYTIER_DROPIN_DIR_NAME, ignore_errors=True)
         run(["systemctl", "daemon-reload"])
         return ProvisionResult(is_changed=True, message="removed; the network is kept")
 

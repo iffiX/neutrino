@@ -5,12 +5,11 @@ Pure: strings in, strings out, no file and no process. The network file's
 shape is the engine's own: running it with flags prints the equivalent file,
 which is where this came from. The start arguments name that file in manual
 mode, and the console address in console mode, where the console pushes the
-network and no file is rendered.
+network and no file is rendered; they reach the engine as a unit drop-in.
 """
 
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.constants import (
-    EASYTIER_ARGUMENTS_VARIABLE,
     EASYTIER_DEVICE_NAME,
     EASYTIER_PEER_PORT,
     EASYTIER_RPC_PORTAL,
@@ -92,17 +91,38 @@ def render_arguments(
     return [*arguments, *portal]
 
 
-def render_environment(arguments: list) -> str:
-    """The environment file the unit reads the start arguments from.
+def render_dropin(arguments: list, *, core_path: str) -> str:
+    """The unit drop-in that starts the engine with these arguments.
 
     Args:
-        arguments: What :func:`render_arguments` returned; each is one word
-            with no space or quote, as the validators keep them.
+        arguments: What :func:`render_arguments` returned.
+        core_path: The engine's own path.
 
     Returns:
-        The file's text.
+        The drop-in's text: an empty ``ExecStart=`` clearing the unit's own,
+        then the full start line, every word quoted for systemd.
     """
-    return f"{EASYTIER_ARGUMENTS_VARIABLE}={' '.join(arguments)}\n"
+    words = " ".join(_systemd_quoted(word) for word in [core_path, *arguments])
+    return f"[Service]\nExecStart=\nExecStart={words}\n"
+
+
+def _systemd_quoted(word: str) -> str:
+    """One command line word as systemd reads it back unchanged.
+
+    Args:
+        word: The word.
+
+    Returns:
+        The word in double quotes, with backslashes and quotes escaped and
+        the specifier and variable signs doubled.
+    """
+    escaped = (
+        word.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("%", "%%")
+        .replace("$", "$$")
+    )
+    return f'"{escaped}"'
 
 
 def _escaped(value: str) -> str:
