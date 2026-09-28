@@ -1,7 +1,8 @@
 """Every module imports where the POSIX-only modules are missing.
 
-Windows has no ``pty``, ``termios``, ``tty``, ``pwd``, ``grp`` or ``fcntl``;
-a module-level import of one of them stops the whole client on Windows
+Windows has no ``pty``, ``termios``, ``tty``, ``pwd``, ``grp`` or ``fcntl``,
+no ``socket.AF_UNIX`` and no Unix servers in ``socketserver``; a module-level
+use of one of them stops the whole client on Windows
 before anything runs. The check runs in a fresh interpreter so the blocked
 names cannot be satisfied from this process's cache.
 """
@@ -13,6 +14,14 @@ import sys
 import neutrino_client
 
 POSIX_ONLY = ("pty", "termios", "tty", "pwd", "grp", "fcntl")
+POSIX_ONLY_SOCKETSERVER = (
+    "UnixStreamServer",
+    "UnixDatagramServer",
+    "ThreadingUnixStreamServer",
+    "ThreadingUnixDatagramServer",
+    "ForkingUnixStreamServer",
+    "ForkingUnixDatagramServer",
+)
 
 
 def test_every_module_imports_without_the_posix_only_modules():
@@ -26,6 +35,12 @@ def test_every_module_imports_without_the_posix_only_modules():
     script = (
         "import sys, importlib\n"
         f"sys.modules.update({{{blocked}}})\n"
+        "import socket, socketserver\n"
+        f"for name in {POSIX_ONLY_SOCKETSERVER!r}:\n"
+        "    if hasattr(socketserver, name):\n"
+        "        delattr(socketserver, name)\n"
+        "if hasattr(socket, 'AF_UNIX'):\n"
+        "    delattr(socket, 'AF_UNIX')\n"
         f"for name in {names!r}:\n"
         "    importlib.import_module(name)\n"
         "print('imported', len(" + repr(names) + "))\n"

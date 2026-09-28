@@ -131,8 +131,22 @@ class _EasytierRequestHandler(socketserver.StreamRequestHandler):
         self.wfile.write((json.dumps(answer) + "\n").encode("utf-8"))
 
 
-class _EasytierUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
+def _unix_server(address: str, handler) -> socketserver.BaseServer:
+    """A threading Unix stream server on ``address``.
+
+    The class is made here rather than at import, since Windows has no
+    ``socketserver.UnixStreamServer`` and the module must import there.
+
+    Raises:
+        OSError: When the socket cannot be bound.
+    """
+
+    class _EasytierUnixServer(
+        socketserver.ThreadingMixIn, socketserver.UnixStreamServer
+    ):
+        daemon_threads = True
+
+    return _EasytierUnixServer(address, handler)
 
 
 class EasytierSocketServer:
@@ -185,7 +199,7 @@ class EasytierSocketServer:
                         errno.EADDRINUSE, "a daemon answers there", self._address
                     )
                 os.unlink(self._address)
-            server = _EasytierUnixServer(self._address, _EasytierRequestHandler)
+            server = _unix_server(self._address, _EasytierRequestHandler)
             os.chmod(self._address, EASYTIER_SOCKET_MODE)
         server.easytier_daemon = self._daemon
         server.easytier_log = self._log
