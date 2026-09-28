@@ -154,8 +154,9 @@ CARRIED_LICENSES = (
     "xterm.txt",
 )
 # The Windows installer also carries EasyTier's wintun.dll, under WireGuard's
-# prebuilt binaries licence.
-WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + ("wintun.txt",)
+# prebuilt binaries licence, and the stand-in packet.dll, which says what it
+# is.
+WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + ("wintun.txt", "packet_stub.txt")
 # The Linux packages also install :data:`LINUX_GUI_CARRIED_LIBRARY`, which is
 # under the LGPL and has no counterpart in the Windows and macOS packages.
 LINUX_CARRIED_LICENSES = CARRIED_LICENSES + ("gobject_introspection.txt",)

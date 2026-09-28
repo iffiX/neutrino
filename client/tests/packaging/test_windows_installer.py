@@ -12,6 +12,7 @@ downloads faked.
 """
 
 import inspect
+import re
 import subprocess
 import xml.etree.ElementTree
 from pathlib import Path
@@ -492,11 +493,114 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
         "cc_switch.txt",
         "easytier.txt",
         "netbird.txt",
+        "packet_stub.txt",
         "rustdesk.txt",
         "wintun.txt",
         "xterm.txt",
     ]
     assert "Prebuilt Binaries License" in (carried / "wintun.txt").read_text()
+    note = (carried / "packet_stub.txt").read_text()
+    assert "not Npcap's Packet.dll" in note
+    assert "client/packaging/packet_stub.c" in note
+
+
+# --- the stand-in packet.dll ---
+
+
+@pytest.mark.parametrize("given", [None, "missing", "text"])
+def test_the_build_refuses_to_package_without_the_stand_in(tmp_path, given):
+    """Refused first, before a machine check, a compile or a download."""
+    packet_dll = None
+    if given == "missing":
+        packet_dll = tmp_path / "packet.dll"
+    if given == "text":
+        packet_dll = tmp_path / "packet.dll"
+        packet_dll.write_text("not a library")
+
+    with pytest.raises(SystemExit) as refused:
+        build_msi._lay_out(tmp_path, "9.9.9", "amd64", "x64", packet_dll=packet_dll)
+
+    assert "packet" in str(refused.value).lower()
+    assert not (tmp_path / "payload").exists()
+
+
+def test_the_stand_in_lands_beside_the_core(monkeypatch, tmp_path):
+    packet_dll = tmp_path / "built" / "packet.dll"
+    packet_dll.parent.mkdir()
+    packet_dll.write_bytes(b"MZ stub")
+    compiled = tmp_path / "compiled"
+    compiled.mkdir()
+    (compiled / "nclient.exe").write_bytes(b"MZ")
+
+    def stage_windows_binaries(installed, architecture):
+        (installed / "bin").mkdir()
+        (installed / "bin" / "easytier-core.exe").write_bytes(b"MZ")
+
+    monkeypatch.setattr(build_msi, "_check_build_machine", lambda machine: None)
+    monkeypatch.setattr(
+        build_msi, "_make_build_environment", lambda venv, machine: Path("py")
+    )
+    monkeypatch.setattr(
+        build_msi, "_compile", lambda python, tree, build, version: compiled
+    )
+    monkeypatch.setattr(
+        build_msi.bundled, "stage_windows_binaries", stage_windows_binaries
+    )
+    monkeypatch.setattr(build_msi, "_fetch_bootstrapper", lambda: b"MZ")
+    monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
+    monkeypatch.setattr(
+        build_msi.wix_build, "write_license_rtf", lambda source, target: target
+    )
+
+    staged = build_msi._lay_out(
+        tmp_path / "root", "9.9.9", "amd64", "x64", packet_dll=packet_dll
+    )
+
+    carried = staged["payload"] / "bin" / "packet.dll"
+    assert carried.read_bytes() == b"MZ stub"
+    assert (staged["payload"] / "bin" / "easytier-core.exe").is_file()
+
+
+def test_the_stand_in_exports_what_the_core_imports():
+    """The eleven functions easytier-core loads from Packet.dll, each exported."""
+    source = (Path(build_msi.__file__).parent / "packet_stub.c").read_text(
+        encoding="utf-8"
+    )
+    exported = re.findall(
+        r"^__declspec\(dllexport\)[^(]*?(\w+)\(", source, flags=re.MULTILINE
+    )
+
+    assert sorted(exported) == sorted(
+        [
+            "PacketGetAdapterNames",
+            "PacketSendPacket",
+            "PacketSetBuff",
+            "PacketSetMinToCopy",
+            "PacketReceivePacket",
+            "PacketOpenAdapter",
+            "PacketCloseAdapter",
+            "PacketSetHwFilter",
+            "PacketAllocatePacket",
+            "PacketFreePacket",
+            "PacketInitPacket",
+        ]
+    )
+
+
+def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
+    workflow = (
+        Path(build_msi.__file__).resolve().parents[2]
+        / ".github"
+        / "workflows"
+        / "release.yml"
+    ).read_text(encoding="utf-8")
+    job = workflow.split("  client_windows:")[1].split("\n  client_macos:")[0]
+
+    assert "ilammy/msvc-dev-cmd" in job
+    compile_at = job.index("cl /nologo /O2 /LD client/packaging/packet_stub.c")
+    build_at = job.index("python client/packaging/build_msi.py")
+    assert compile_at < build_at
+    assert "--packet-dll build/packet_stub/packet.dll" in job
 
 
 def test_the_payload_carries_no_wrapper_script_and_no_interpreter_of_its_own():

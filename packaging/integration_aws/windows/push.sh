@@ -17,9 +17,16 @@ echo "== packing the tree"
 pack_tree
 du -h "$STATE/src.tgz" | cut -f1
 
+# The stand-in packet.dll the installer carries, built here with MinGW: the
+# box has no MSVC, which is what the release workflow builds it with.
+echo "== building packet.dll"
+x86_64-w64-mingw32-gcc -shared -O2 -o "$STATE/packet.dll" \
+    "$REPO/client/packaging/packet_stub.c"
+
 echo "== pushing to $(win_ip)"
 ssh_win 'New-Item -Force -ItemType Directory -Path C:\neutrino, C:\neutrino\src | Out-Null'
-scp "${SSH_OPTS[@]}" "$STATE/src.tgz" "$HERE"/windows/*.ps1 "$WIN_USER@$(win_ip):C:/neutrino/"
+scp "${SSH_OPTS[@]}" "$STATE/src.tgz" "$STATE/packet.dll" "$HERE"/windows/*.ps1 \
+    "$WIN_USER@$(win_ip):C:/neutrino/"
 
 if [ "$ONLY_BUILD" = 0 ]; then
     echo "== toolchain"

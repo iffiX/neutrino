@@ -271,7 +271,19 @@ jobs:
       - run: wix extension add -g WixToolset.Util.wixext/6.0.2
       - run: wix extension add -g WixToolset.UI.wixext/6.0.2
 
-      - run: python client/packaging/build_msi.py --output-dir dist --architecture x64
+      # The stand-in for Npcap's Packet.dll, which easytier-core imports and
+      # the installer carries beside it; MSVC from the image's Visual Studio.
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build the stand-in packet.dll
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/packet_stub | Out-Null
+          cl /nologo /O2 /LD client/packaging/packet_stub.c /Fe:build/packet_stub/packet.dll /Fo:build/packet_stub/
+          if ($LASTEXITCODE -ne 0) { throw "cl exited $LASTEXITCODE" }
+
+      - run: python client/packaging/build_msi.py --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
 
       # The installer is what ships, so it is run here rather than only
       # compiled: whether the compiled client answers, whether the entry
@@ -293,8 +305,15 @@ jobs:
           if ($LASTEXITCODE -ne 1) { throw "nclient status exited $LASTEXITCODE, expected 1" }
           $path = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
           if ($path -notlike '*Neutrino Client*') { throw 'the install is not on PATH' }
+          if (-not (Test-Path "$env:ProgramFiles\Neutrino Client\bin\packet.dll")) { throw 'no packet.dll beside easytier-core.exe' }
+          # The EasyTier daemon runs as a service and answers on its pipe.
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Service NeutrinoClientEasytier).Status -ne 'Running' -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
+          if ((Get-Service NeutrinoClientEasytier).Status -ne 'Running') { throw 'the EasyTier daemon is not running' }
+          if (-not (Test-Path '\\.\pipe\neutrino_client_easytier')) { throw 'the EasyTier daemon has no pipe' }
           Start-Process msiexec -Wait -ArgumentList '/x',$msi,'/quiet','/norestart'
           if (Test-Path "$env:ProgramFiles\Neutrino Client") { throw 'the prefix outlived the uninstaller' }
+          if (Get-Service NeutrinoClientEasytier -ErrorAction SilentlyContinue) { throw 'the EasyTier daemon outlived the uninstaller' }
           exit 0
 
       - uses: actions/upload-artifact@v7

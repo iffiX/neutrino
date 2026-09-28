@@ -100,8 +100,9 @@ NETBIRD_WINDOWS_BINARY_NAME = "netbird.exe"
 # EasyTier's release: one zip per machine with one directory at its top.
 # Every platform takes the daemon and its CLI out of it, and Windows the TUN
 # driver's DLL beside them. Packet.dll is Npcap's, which may not be
-# redistributed, and the WinDivert driver and the web console serve nothing
-# the client configures. The Linux pins are the hub's own.
+# redistributed; the installer carries a stand-in built from
+# ``packet_stub.c`` in its place. The WinDivert driver and the web console
+# serve nothing the client configures. The Linux pins are the hub's own.
 EASYTIER_VERSION = "2.6.4"
 EASYTIER_URL = (
     "https://github.com/EasyTier/EasyTier/releases/download/"

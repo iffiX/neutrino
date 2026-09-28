@@ -1,5 +1,6 @@
 # Runs on the Windows box. Builds the client installer from the tree pushed
-# to C:\neutrino\src, exactly as the release workflow does. x64 only: the
+# to C:\neutrino\src, exactly as the release workflow does, with the
+# stand-in packet.dll push.sh built beside it. x64 only: the
 # viewer and cc-switch upstream publish no Windows arm64 build.
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +23,6 @@ foreach ($origin in @('https://github.com/', 'https://objects.githubusercontent.
 
 Set-Location $src
 Write-Host "== building x64"
-python client\packaging\build_msi.py --output-dir $dist --architecture x64
+python client\packaging\build_msi.py --output-dir $dist --architecture x64 --packet-dll C:\neutrino\packet.dll
 if ($LASTEXITCODE -ne 0) { throw "build_msi.py failed" }
 Get-ChildItem $dist | Format-Table Name, Length

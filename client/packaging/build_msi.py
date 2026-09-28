@@ -1,6 +1,7 @@
 """Build the client's Windows installer.
 
-    python client/packaging/build_msi.py --output-dir dist/ --architecture x64
+    python client/packaging/build_msi.py --output-dir dist/ --architecture x64 \
+        --packet-dll build/packet_stub/packet.dll
 
 The installer carries the client compiled: Nuitka turns the package, the
 interpreter it runs on and the window's Python side into ``nclient.exe`` for
@@ -17,8 +18,12 @@ runs when the person opens it. The two overlay daemons it carries are
 services that start with Windows: NetBird's, and the client's own EasyTier
 daemon, ``nclient.exe easytier-daemon --service`` as SYSTEM, which runs
 EasyTier's core as its child only while a network or a console is
-configured. Beside EasyTier's core and CLI ride wintun.dll and the stub
-packet.dll. The installer puts a Start menu shortcut down
+configured. Beside EasyTier's core and CLI ride wintun.dll and a stand-in
+packet.dll: the core does not start without a Packet.dll to load, Npcap's
+may not be carried, and the stand-in, built from ``packet_stub.c`` beside
+this file with MSVC before this script runs, exports the functions the core
+imports and answers failure from each. The build refuses to package without
+it. The installer puts a Start menu shortcut down
 and asks two questions: whether the command belongs on PATH, and, when it is
 taking the client away again, whether the person's own configuration goes
 with it. Answered by nobody, the first is yes and the second is no, so a
@@ -232,6 +237,9 @@ PATH_DECLINED_CONDITION = 'ISPATHADDED <> "1"'
 REMOVE_CONFIG_COMMAND = (
     '"[SystemFolder]cmd.exe" /c ' f'rd /s /q "[AppDataFolder]{CLIENT_CONFIG_DIR_NAME}"'
 )
+
+# The stand-in for Npcap's Packet.dll, as it lands beside easytier-core.exe.
+PACKET_DLL_NAME = "packet.dll"
 
 # NetBird's binary under the payload's bin and how its service runs, its
 # state under ProgramData; the EasyTier daemon is the console program run
@@ -543,6 +551,11 @@ def main() -> int:
         action="store_true",
         help="write and check the payload, then stop before wix",
     )
+    parser.add_argument(
+        "--packet-dll",
+        default="",
+        help="the stand-in packet.dll built from packet_stub.c",
+    )
     arguments = parser.parse_args()
 
     version = payload.version()
@@ -555,7 +568,13 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
-        staged = _lay_out(root, version, machine, arguments.architecture)
+        staged = _lay_out(
+            root,
+            version,
+            machine,
+            arguments.architecture,
+            packet_dll=Path(arguments.packet_dll) if arguments.packet_dll else None,
+        )
         source = root / "neutrino_client.wxs"
         source.write_text(
             _wix_source(staged, version, arguments.publisher, machine), "utf-8"
@@ -696,7 +715,14 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
     )
 
 
-def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
+def _lay_out(
+    root: Path,
+    version: str,
+    machine: str,
+    architecture: str,
+    *,
+    packet_dll: "Path | None",
+) -> dict:
     """Write everything the installer carries.
 
     Args:
@@ -704,16 +730,18 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
         version: The version being packaged.
         machine: ``amd64`` or ``arm64``.
         architecture: The architecture as the command line named it.
+        packet_dll: The stand-in packet.dll; None refuses the build.
 
     Returns:
         The paths the installer's source names: the payload directory, the
         bootstrapper, the icon and the licence the first page shows.
 
     Raises:
-        SystemExit: When this Python is not the pinned minor, when the
-            machine asked for is not this one, or when the compile writes
-            no binary.
+        SystemExit: When there is no stand-in packet.dll, this Python is
+            not the pinned minor, the machine asked for is not this one, or
+            the compile writes no binary.
     """
+    _check_packet_dll(packet_dll)
     _check_build_machine(machine)
     installed = root / "payload"
     installed.mkdir(parents=True)
@@ -736,6 +764,7 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
     shutil.copytree(package / "data", installed / package.name / "data")
 
     bundled.stage_windows_binaries(installed, architecture)
+    shutil.copyfile(packet_dll, installed / "bin" / PACKET_DLL_NAME)
     _stage_licenses(installed)
 
     # Named files the installer's source points at directly, kept out of the
@@ -752,6 +781,27 @@ def _lay_out(root: Path, version: str, machine: str, architecture: str) -> dict:
         "icon": icon,
         "license": license_rtf,
     }
+
+
+def _check_packet_dll(packet_dll: "Path | None") -> None:
+    """Refuse a build without the stand-in packet.dll.
+
+    Args:
+        packet_dll: Its path, None when the command line named none.
+
+    Raises:
+        SystemExit: When it was not named, is not there, or is not a
+            Windows library.
+    """
+    if packet_dll is None:
+        raise SystemExit(
+            "easytier-core does not start without a packet.dll beside it; "
+            "build one from client/packaging/packet_stub.c and pass --packet-dll"
+        )
+    if not packet_dll.is_file():
+        raise SystemExit(f"there is no packet.dll at {packet_dll}")
+    if not packet_dll.read_bytes().startswith(b"MZ"):
+        raise SystemExit(f"{packet_dll} is not a Windows library")
 
 
 def _check_build_machine(machine: str) -> None:
