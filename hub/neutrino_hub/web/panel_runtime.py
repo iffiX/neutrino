@@ -11,6 +11,7 @@ import ipaddress
 import json
 import re
 import subprocess
+import threading
 
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.routes import install_dnsmasq
@@ -670,9 +671,19 @@ class PanelRuntime:
         self.is_config_dirty = True
 
     def _publish_devices(self) -> None:
-        """Say the device list moved, and recompose what devices publish."""
+        """Say an agent's channel opened or ended, and recompose what devices publish.
+
+        Every client is handed its state as well, whose ``terminals`` name
+        each machine's presence; that push runs on a thread of its own.
+        """
         self.events.publish(WEB_EVENT_DEVICES)
         self.published_services.schedule_refresh()
+        threading.Thread(
+            target=channel_state.push_states,
+            args=(self, CHANNEL_ROLE_CLIENT),
+            name="client_state_push",
+            daemon=True,
+        ).start()
 
     def _publish_clients(self) -> None:
         """Say the client list moved."""

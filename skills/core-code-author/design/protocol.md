@@ -719,7 +719,8 @@ EasyTier network is stored, and when the provider changes.
 
 `terminals` lists every managed machine, the hub's own among them, online or
 not, with `is_online` read from its socket; it is empty unless the client's
-permission allows `terminal`.
+permission allows `terminal`. The hub pushes every client its state when an
+agent's channel opens or ends.
 
 ### The modules section, one entry per module
 
