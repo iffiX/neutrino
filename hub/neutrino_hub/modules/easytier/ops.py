@@ -8,6 +8,7 @@ network anybody can join.
 
 import json
 import re
+import threading
 import tomllib
 from dataclasses import dataclass, field
 
@@ -39,6 +40,11 @@ from neutrino_hub.utils.subprocess_run import run
 # file, which reads as no network rather than as a failure: the file is
 # written the first time somebody applies a network on the Overlay page.
 EASYTIER_CONFIG_NAME = "easytier/easytier.json"
+
+# One apply at a time, each reading the file as it stands when it runs, so
+# the engine ends on the configuration stored last whatever order two
+# requests finish in.
+EASYTIER_APPLY_LOCK = threading.Lock()
 
 
 # How the engine words a path to a peer: its own row, a direct tunnel, or
@@ -81,6 +87,25 @@ def read_stored() -> EasyTierConfig:
         return EasyTierConfig.from_dict(read_config(EASYTIER_CONFIG_NAME))
     except FileNotFoundError:
         return EasyTierConfig()
+
+
+def apply_stored(*, hostname: str) -> str:
+    """Make the engine run on what is stored now.
+
+    Args:
+        hostname: What this box is called when the configuration names none.
+
+    Returns:
+        A one-line summary of what happened.
+
+    Raises:
+        VaultLockedError: If there is no data key to open what is stored.
+        ValueError: If the file is not JSON, or the stored secret or console
+            address does not open.
+        subprocess.CalledProcessError: If the engine refuses to restart.
+    """
+    with EASYTIER_APPLY_LOCK:
+        return EasyTierConfigApplier().apply(read_stored(), hostname=hostname)
 
 
 @dataclass

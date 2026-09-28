@@ -32,8 +32,8 @@ from neutrino_hub.modules.easytier.constants import (
 from neutrino_hub.modules.easytier.ops import (
     EASYTIER_CONFIG_NAME,
     EASYTIER_LINK_LOCAL,
-    EasyTierConfigApplier,
     EasyTierStatusReader,
+    apply_stored,
     read_stored,
 )
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
@@ -307,9 +307,7 @@ async def _store(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
     """
     write_config(EASYTIER_CONFIG_NAME, config.to_dict())
     try:
-        await asyncio.to_thread(
-            EasyTierConfigApplier().apply, config, hostname=socket.gethostname()
-        )
+        await asyncio.to_thread(apply_stored, hostname=socket.gethostname())
     except (subprocess.SubprocessError, OSError, ValueError) as error:
         raise _bad_gateway(
             "easytier_apply_failed", detail=command_failure_text(error)

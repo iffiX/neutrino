@@ -6,11 +6,14 @@ peer port and — where two are the same product — the same state file, and a
 box running two is a box whose address depends on which came up last.
 """
 
+import socket
 from typing import Callable
 
+from neutrino_hub.modules.easytier.ops import apply_stored as apply_easytier
 from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_EASYTIER,
     OVERLAY_ENGINES,
     OVERLAY_NONE,
     OVERLAY_PROVIDERS,
@@ -44,7 +47,11 @@ class OverlaySwitcher:
             What the engine reported, empty when there is nothing to run.
 
         Raises:
-            ValueError: For a provider that is not one of them.
+            ValueError: For a provider that is not one of them, or an EasyTier
+                network whose stored secret or console address does not
+                open.
+            VaultLockedError: If there is no data key to open the stored
+                EasyTier network.
             NotImplementedError: For an engine this hub does not run yet.
             subprocess.CalledProcessError: If installing or starting it fails.
         """
@@ -60,7 +67,12 @@ class OverlaySwitcher:
         if not engine.is_integrated or provider not in OVERLAY_PROVISIONERS:
             raise NotImplementedError(f"this hub does not run {engine.title} yet")
         say(report, f"starting {engine.title}")
-        return OVERLAY_PROVISIONERS[provider]().provision(report=report).message
+        message = OVERLAY_PROVISIONERS[provider]().provision(report=report).message
+        # Provisioning EasyTier installs and enables its unit; the network
+        # stored in config/ is what starts it.
+        if provider == OVERLAY_EASYTIER:
+            say(report, apply_easytier(hostname=socket.gethostname()))
+        return message
 
     def _stand_down(self, unit: str, *, report: Callable[[str], None] | None) -> None:
         """Stop and disable one engine's unit, if this machine has it.

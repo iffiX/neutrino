@@ -33,6 +33,8 @@ from neutrino_hub.modules.easytier.renderer import render_arguments
 from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
 from neutrino_hub.modules.easytier.renderer import render_dropin
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
+from neutrino_hub.modules.overlay.config import provider_of
+from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
@@ -197,7 +199,9 @@ def _render(selected: tuple[str, ...]) -> dict:
             artifacts["cliproxyapi"] = gateway.render_with_stored_key()
     if "easytier" in selected:
         overlay = read_easytier()
-        if not overlay.is_configured:
+        if provider_of(network) != OVERLAY_EASYTIER:
+            print("easytier: not the chosen overlay, skipping")
+        elif not overlay.is_configured:
             print("easytier: nothing configured, skipping")
         else:
             artifacts["easytier"] = overlay

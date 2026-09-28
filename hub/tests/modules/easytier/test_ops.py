@@ -15,6 +15,7 @@ import pytest
 from neutrino_hub.modules.easytier import ops
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EasyTierStatusReader
+from neutrino_hub.utils.json_file import write_config
 from tests.conftest import unlock_vault
 
 PEERS = [
@@ -307,3 +308,21 @@ def test_a_mode_with_nothing_to_run_stops_the_engine_and_leaves_no_file(
         ["systemctl", "daemon-reload"],
         ["systemctl", "stop", "neutrino_hub_easytier.service"],
     ]
+
+
+def test_apply_stored_runs_the_engine_on_the_file_as_it_stands(
+    applier_box, monkeypatch, tmp_path
+):
+    """The engine ends on what config/ holds when the apply runs, whatever a
+    request read before another one wrote."""
+    _, commands, _, _ = applier_box
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config_dir)
+    stored = EasyTierConfig(mode="console")
+    stored.set_config_server(CONSOLE)
+    write_config(ops.EASYTIER_CONFIG_NAME, stored.to_dict())
+
+    ops.apply_stored(hostname="neutrino")
+
+    assert commands[-1] == ["systemctl", "restart", "neutrino_hub_easytier.service"]

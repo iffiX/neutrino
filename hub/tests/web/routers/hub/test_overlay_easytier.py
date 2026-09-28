@@ -9,6 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.easytier import ops as easytier_ops
 from neutrino_hub.modules.easytier.ops import EasyTierInstance, EasyTierPeer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
@@ -95,7 +96,7 @@ def box(monkeypatch, tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config_dir)
-    monkeypatch.setattr(easytier_router, "EasyTierConfigApplier", FakeApplier)
+    monkeypatch.setattr(easytier_ops, "EasyTierConfigApplier", FakeApplier)
     monkeypatch.setattr(easytier_router, "EasyTierStatusReader", lambda: _Reader(PEERS))
     monkeypatch.setattr(
         channel_overlay,

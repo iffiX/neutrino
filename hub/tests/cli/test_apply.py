@@ -1,6 +1,12 @@
 """What `nhub apply` renders: the hub's own components and nothing hosted."""
 
 from neutrino_hub.cli import apply
+from neutrino_hub.modules.easytier.config import EasyTierConfig
+from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
+from neutrino_hub.modules.overlay.config import set_provider
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.utils.json_file import write_config
+from tests.conftest import unlock_vault
 
 
 def test_the_components_are_the_hubs_own():
@@ -77,3 +83,32 @@ def test_an_apply_does_not_write_the_file_before_installing_it(monkeypatch):
     apply._write({"dnsmasq": "interface=enp1s0\n"}, is_apply_skipped=False)
 
     assert written == []
+
+
+# --- easytier: only as the chosen overlay ---
+
+
+def _stored_easytier(tmp_path, monkeypatch, provider: str) -> None:
+    unlock_vault(monkeypatch, tmp_path)
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    network = RouterNetworkConfig.from_dict({})
+    set_provider(network, provider)
+    write_config("router/network.json", network.to_dict())
+    write_config("xray/routing.json", {})
+    stored = EasyTierConfig(mode="console")
+    stored.set_config_server("etk_example")  # scan: allow
+    write_config(EASYTIER_CONFIG_NAME, stored.to_dict())
+
+
+def test_an_apply_runs_easytier_when_it_is_the_chosen_overlay(tmp_path, monkeypatch):
+    _stored_easytier(tmp_path, monkeypatch, "easytier")
+
+    assert apply._render(("easytier",))["easytier"].is_console_mode
+
+
+def test_an_apply_leaves_easytier_down_behind_another_overlay(tmp_path, monkeypatch):
+    """A package upgrade runs this; a stored network must not start a second
+    overlay beside NetBird."""
+    _stored_easytier(tmp_path, monkeypatch, "netbird")
+
+    assert "easytier" not in apply._render(("easytier",))
