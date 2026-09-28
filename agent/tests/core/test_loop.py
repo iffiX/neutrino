@@ -307,7 +307,7 @@ def test_the_hello_is_the_identity_card(config_path, monkeypatch):
         "software": f"{AGENT_SOFTWARE_PREFIX}{AGENT_VERSION}",
         "token": BINDING_TOKEN,
     }
-    assert hello["protocol"] == 1
+    assert hello["protocol"] == 2
     assert hello["role"] == "agent"
     assert hello["software"].startswith("neutrino_hub/") is False
 
