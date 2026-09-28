@@ -19,11 +19,39 @@
   overflow-x: auto;
 }
 
+/* Fixed column widths, one set for the header and every row, so a badge in
+   the name cell wraps inside that cell and never moves the columns after it.
+   The name takes whatever the other columns leave. */
 .clients_table {
   width: 100%;
-  min-width: 720px;
+  min-width: 900px;
   border-collapse: collapse;
   font-size: 12px;
+  table-layout: fixed;
+}
+
+.clients_col--hostname {
+  width: 16%;
+}
+
+.clients_col--platform {
+  width: 9%;
+}
+
+.clients_col--version {
+  width: 8%;
+}
+
+.clients_col--status {
+  width: 12%;
+}
+
+.clients_col--seen {
+  width: 11%;
+}
+
+.clients_col--actions {
+  width: 280px;
 }
 
 .clients_table th {
@@ -38,8 +66,10 @@
 }
 
 .clients_table td {
+  overflow: hidden;
   padding: 10px;
   border-bottom: 1px solid var(--color-border);
+  text-overflow: ellipsis;
   vertical-align: middle;
 }
 
@@ -52,11 +82,14 @@
 }
 
 .clients_name {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .clients_actions {

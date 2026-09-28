@@ -273,6 +273,15 @@ export function ClientsPage() {
       ) : (
         <div className="card clients_table_scroll">
           <table className="clients_table">
+            <colgroup>
+              <col />
+              <col className="clients_col--hostname" />
+              <col className="clients_col--platform" />
+              <col className="clients_col--version" />
+              <col className="clients_col--status" />
+              <col className="clients_col--seen" />
+              <col className="clients_col--actions" />
+            </colgroup>
             <thead>
               <tr>
                 <th>{t("ui.clients.header_name")}</th>
@@ -376,34 +385,36 @@ function ClientRow({
       <td className="mono">
         {client.is_online ? t("state.online") : formatTimeAgo(client.last_seen)}
       </td>
-      <td className="clients_actions">
-        <button
-          type="button"
-          className="button button--small button--ghost"
-          disabled={isBusy}
-          onClick={onPermission}
-        >
-          {t("ui.clients.permission")}
-        </button>
-        <button
-          type="button"
-          className="button button--small button--ghost"
-          disabled={isBusy}
-          onClick={onToggle}
-        >
-          {client.is_disabled
-            ? t("ui.clients.enable")
-            : t("ui.clients.disable")}
-        </button>
-        <button
-          type="button"
-          className="button button--small button--ghost button--danger"
-          disabled={isBusy}
-          onClick={onDelete}
-        >
-          <Icon name="trash" size={13} />
-          {t("ui.clients.delete")}
-        </button>
+      <td>
+        <div className="clients_actions">
+          <button
+            type="button"
+            className="button button--small button--ghost"
+            disabled={isBusy}
+            onClick={onPermission}
+          >
+            {t("ui.clients.permission")}
+          </button>
+          <button
+            type="button"
+            className="button button--small button--ghost"
+            disabled={isBusy}
+            onClick={onToggle}
+          >
+            {client.is_disabled
+              ? t("ui.clients.enable")
+              : t("ui.clients.disable")}
+          </button>
+          <button
+            type="button"
+            className="button button--small button--ghost button--danger"
+            disabled={isBusy}
+            onClick={onDelete}
+          >
+            <Icon name="trash" size={13} />
+            {t("ui.clients.delete")}
+          </button>
+        </div>
       </td>
     </tr>
   );
