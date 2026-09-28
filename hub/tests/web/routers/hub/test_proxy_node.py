@@ -394,7 +394,7 @@ def test_an_added_link_seals_its_secret_and_stores_the_reference(client):
         "/api/hub/proxy/node/add", json={"link": SHARE_LINK.replace("hk1", "hk2")}
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 200
     stored = runtime.files["xray/nodes.json"]["nodes"][-1]
     assert stored["secret_id"]
     assert "password" not in stored["shadowsocks"]

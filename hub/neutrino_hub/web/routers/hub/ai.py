@@ -57,7 +57,7 @@ def reorder_providers(request: AiProviderOrderUpdate) -> AiProviderListView:
         The providers, in the order now served.
 
     Raises:
-        HTTPException: 422 with ``provider_order_mismatch`` when the ids are
+        HTTPException: 400 with ``provider_order_mismatch`` when the ids are
             not a permutation of the stored ones.
     """
     registry = AiProviderRegistry()

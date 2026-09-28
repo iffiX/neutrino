@@ -124,7 +124,7 @@ def update_balancer(
     return settings
 
 
-@router.post("/node/add", response_model=NodeView, status_code=status.HTTP_201_CREATED)
+@router.post("/node/add", response_model=NodeView)
 def add_node(
     request: NodeCreate, runtime: PanelRuntime = Depends(get_runtime)
 ) -> NodeView:

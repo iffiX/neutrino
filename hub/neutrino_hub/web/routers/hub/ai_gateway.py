@@ -355,7 +355,7 @@ def start_login(request: CliproxyApiLoginStart) -> CliproxyApiLoginView:
         The flow, carrying the URL and the handle to poll.
 
     Raises:
-        HTTPException: 422 with ``unsupported_kind`` for a flow this gateway
+        HTTPException: 400 with ``unsupported_kind`` for a flow this gateway
             does not carry, 502 with ``gateway_unreachable``.
     """
     login = _account_call(lambda client: client.start_login(request.kind))
@@ -442,7 +442,7 @@ def _account_call(action):
 
     Raises:
         HTTPException: Carrying ``{code, params}``; 404 for an account or a
-            login the gateway does not have, 422 for a flow it cannot start,
+            login the gateway does not have, 400 for a flow it cannot start,
             502 for a gateway that does not answer.
     """
     try:
