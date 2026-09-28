@@ -323,18 +323,20 @@ def daemon(tmp_path, label) -> dict:
     return plistlib.loads(path.read_bytes())
 
 
-def test_netbird_is_a_launch_daemon_kept_running(tmp_path):
+def test_netbird_runs_unless_another_daemon_holds_the_socket(tmp_path):
     job = daemon(tmp_path, "com.neutrino.client.netbird")
+    shell, flag, command = job["ProgramArguments"]
 
-    assert job["ProgramArguments"][:3] == [
-        "/Applications/Neutrino Client.app/Contents/Resources/netbird/netbird",
-        "service",
-        "run",
-    ]
-    assert "/Library/Application Support/Neutrino Client/netbird/config.json" in (
-        job["ProgramArguments"]
-    )
-    assert job["RunAtLoad"] is True and job["KeepAlive"] is True
+    assert (shell, flag) == ("/bin/sh", "-c")
+    assert command.startswith("[ -S /var/run/netbird.sock ] && exit 0; ")
+    assert (
+        "exec '/Applications/Neutrino Client.app/Contents/Resources/netbird/netbird'"
+        " service run --config"
+        " '/Library/Application Support/Neutrino Client/netbird/config.json'"
+        " --log-file console"
+    ) in command
+    assert job["RunAtLoad"] is True
+    assert job["KeepAlive"] == {"SuccessfulExit": False}
 
 
 def test_easytier_runs_only_while_a_networks_file_is_there(tmp_path):

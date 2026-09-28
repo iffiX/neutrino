@@ -621,7 +621,7 @@ def daemons_source(payload_dir: Path) -> str:
                     "Start": "install",
                     "Stop": "both",
                     "Remove": "uninstall",
-                    "Wait": "yes",
+                    "Wait": "no",
                 },
             ),
         ),

@@ -106,6 +106,9 @@ exit 0
 
 # Where each daemon's output goes.
 NETBIRD_LOG_PATH = "/Library/Logs/neutrino_client_netbird.log"
+# The socket every NetBird daemon on a Mac listens on; one already there
+# belongs to NetBird's own install, which the client then uses as it is.
+NETBIRD_SOCKET_PATH = "/var/run/netbird.sock"
 EASYTIER_LOG_PATH = "/Library/Logs/neutrino_client_easytier.log"
 
 # What each name for the machine maps to: the wheel's own, and the platform
@@ -295,6 +298,21 @@ def installed_resource(name: str) -> str:
     )
 
 
+def netbird_command() -> str:
+    """The shell that runs NetBird unless another daemon holds its socket.
+
+    Returns:
+        ``/bin/sh -c`` text that exits 0 when the socket exists and otherwise
+        runs the daemon in its place.
+    """
+    netbird = shlex.quote(installed_resource("netbird"))
+    config = shlex.quote(CLIENT_NETBIRD_CONFIG_PATH_DARWIN)
+    return (
+        f"[ -S {NETBIRD_SOCKET_PATH} ] && exit 0; "
+        f"exec {netbird} service run --config {config} --log-file console"
+    )
+
+
 def easytier_command() -> str:
     """The shell that runs EasyTier only while a network's file is there.
 
@@ -320,16 +338,9 @@ def write_daemons(package_root: Path) -> None:
     pkg_build.write_launchd_plist(
         package_root,
         label=CLIENT_NETBIRD_LAUNCHD_LABEL,
-        program_arguments=[
-            installed_resource("netbird"),
-            "service",
-            "run",
-            "--config",
-            CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
-            "--log-file",
-            "console",
-        ],
+        program_arguments=["/bin/sh", "-c", netbird_command()],
         log_path=NETBIRD_LOG_PATH,
+        extra={"KeepAlive": {"SuccessfulExit": False}},
     )
     pkg_build.write_launchd_plist(
         package_root,
