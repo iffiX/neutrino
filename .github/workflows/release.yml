@@ -130,7 +130,28 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
           $msi = (Get-ChildItem dist\*.msi)[0].FullName
-          Start-Process msiexec -Wait -ArgumentList '/i',$msi,'/quiet','/norestart'
+          $log = "$env:RUNNER_TEMP\install.log"
+          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i',$msi,'/quiet','/norestart','/l*v',$log
+          Write-Host "msiexec /i exited $($p.ExitCode)"
+          Select-String -Path $log -Pattern 'RustDesk|return value 3' | ForEach-Object { $_.Line } | Select-Object -Last 40
+          Get-ChildItem "$env:ProgramFiles\Neutrino Agent" | Select-Object Name, Length | Format-Table -AutoSize
+          Get-ChildItem "$env:ProgramFiles\RustDesk" -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table -AutoSize
+          $state = ''
+          foreach ($i in 1..24) {
+            $state = sc.exe query RustDesk | Select-String 'STATE'
+            if ("$state" -match 'RUNNING') { break }
+            Start-Sleep -Seconds 5
+          }
+          Write-Host "RustDesk after wait: $state"
+          if ("$state" -notmatch 'RUNNING') {
+            Write-Host 'Running the installer by hand for comparison'
+            $exe = (Get-ChildItem "$env:ProgramFiles\Neutrino Agent" -Filter 'rustdesk*.exe')[0].FullName
+            $q = Start-Process $exe -Wait -PassThru -ArgumentList '--silent-install'
+            Write-Host "rustdesk --silent-install by hand exited $($q.ExitCode)"
+            Start-Sleep -Seconds 20
+            Get-ChildItem "$env:ProgramFiles\RustDesk" -ErrorAction SilentlyContinue | Select-Object Name | Format-Table -AutoSize
+            Write-Host "RustDesk by hand: $(sc.exe query RustDesk | Select-String 'STATE')"
+          }
           foreach ($service in 'neutrino_agent', 'RustDesk') {
             $state = sc.exe query $service | Select-String 'STATE'
             Write-Host "$service $state"
@@ -140,7 +161,8 @@ jobs:
           $version = & $nagent --version
           if ($LASTEXITCODE -ne 0) { throw "nagent --version exited $LASTEXITCODE" }
           Write-Host "nagent $version"
-          Start-Process msiexec -Wait -ArgumentList '/x',$msi,'/quiet','/norestart'
+          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/x',$msi,'/quiet','/norestart'
+          Write-Host "msiexec /x exited $($p.ExitCode)"
           foreach ($service in 'neutrino_agent', 'RustDesk') {
             sc.exe query $service | Out-Null
             if ($LASTEXITCODE -ne 1060) { throw "$service outlived the uninstaller" }
