@@ -161,12 +161,20 @@ jobs:
           $version = & $nagent --version
           if ($LASTEXITCODE -ne 0) { throw "nagent --version exited $LASTEXITCODE" }
           Write-Host "nagent $version"
-          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/x',$msi,'/quiet','/norestart'
+          $log = "$env:RUNNER_TEMP\remove.log"
+          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/x',$msi,'/quiet','/norestart','/l*v',$log
           Write-Host "msiexec /x exited $($p.ExitCode)"
+          Select-String -Path $log -Pattern 'UninstallRustDesk|return value 3' | ForEach-Object { $_.Line } | Select-Object -Last 12
           foreach ($service in 'neutrino_agent', 'RustDesk') {
-            sc.exe query $service | Out-Null
+            foreach ($i in 1..24) {
+              sc.exe query $service | Out-Null
+              if ($LASTEXITCODE -eq 1060) { break }
+              Start-Sleep -Seconds 5
+            }
+            Write-Host "$service after removal: sc query exited $LASTEXITCODE"
             if ($LASTEXITCODE -ne 1060) { throw "$service outlived the uninstaller" }
           }
+          if (Test-Path "$env:ProgramFiles\RustDesk") { Get-ChildItem "$env:ProgramFiles\RustDesk" | Select-Object Name | Format-Table -AutoSize }
           exit 0
 
       - uses: actions/upload-artifact@v7
