@@ -4,66 +4,55 @@ title: The window
 
 # The window
 
-The window, titled **Neutrino client**, has a **Hubs** section and a **Services** section. Each hub this computer has joined holds one row in the first and one group of panels in the second. This page names every part of both.
+The window, titled **Neutrino client**, has a bar of tabs along its top and shows one tab at a time. This page names every tab and what each row in it does.
 
-## The Hubs section
+## The top bar
 
-Each row holds one hub: its name, the state it is in, its address and the package the hub runs. Each row has the **Target** radio and **Leave**. A row reading **Replaced by another client** has **Reconnect** as well, and every button acts on that hub and no other. The **Join a hub** row under them stays whether or not any hub is joined, and takes a link from any hub's **Clients** page.
+The bar names this computer, its platform and the client's version. Its tabs are **Hubs**, **Web**, **Files**, **Ports**, **Remote desktops**, **AI** and **Terminals**. The **↻** button sends every connected hub a report and starts a connection round on every hub whose channel is down. **Settings** opens the client's own settings.
 
-![The window with a hub joined](/guide/en/client_connected.webp)
+## The Hubs tab
 
-| The row reads                  | Meaning                                                                                        |
-| ------------------------------ | ---------------------------------------------------------------------------------------------- |
-| **Connected**                  | the channel to that hub is open and its services are in the **Services** section               |
-| **Reconnecting to the hub**    | the binding is kept and the channel is down; the client opens it again on its own              |
-| **Switched off by the hub**    | that hub's **Clients** page has this client switched off, and its panels are inert             |
-| **Replaced by another client** | a second client took this binding, and the channel stays closed until you select **Reconnect** |
+Each row holds one hub: its name, its state, its address and the package the hub runs. The dot before the name is coloured by the hub's state.
 
-The client keeps every address a hub listens on, and a state from that hub updates the list. While the channel is down, the client connects to each address in turn, the name `hub.neutrino.internal` first on a network the hub serves. The **↻** button beside each section title sends every connected hub a report now and starts a connection round on every hub whose channel is down.
+| The dot        | Meaning                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| green          | the channel is open                                                                           |
+| amber, turning | the client is reconnecting to a hub it reached before                                         |
+| amber          | the hub is out of reach and nothing is broken, such as `hub_unreachable` or `client_disabled` |
+| red            | a person has to change something, such as `hub_untrusted` or `binding_unknown`                |
+| grey           | the hub has not been reached yet                                                              |
 
-**Leave** removes that hub's row and its group at once and undoes everything it published on this computer: its mounts, its forwards and its viewers. The client then posts the leave to the hub, and every other hub is untouched. From a terminal, `nclient join '<link>'` joins a hub and `nclient leave --hub <name>` leaves one, where the name is the one in its row.
+A row whose hub publishes a virtual network has a **Virtual network** button with its state and this computer's address on it. Selecting it joins or leaves that network, as [Virtual networks](./overlay.md) describes. Each row also has the **Target** radio and **Leave**, and a row reading **Replaced by another client** has **Reconnect**. The **Join a hub** row under them takes a link from any hub's **Clients** page.
 
-![The window with no hub joined](/guide/en/client_disconnected.webp)
+**Leave** removes that hub's row at once and undoes what it published on this computer: its mounts, forwards, viewers and a virtual network no other hub names.
 
 ## The target hub
 
-One hub of those joined is the target, and your AI tools point at that hub's gateway. The **Target** radio on a row makes that hub the target. Its row then reads **the AI tools point at this hub**, and every other hub's AI panel names the hub they point at instead.
+One hub of those joined is the target, and your AI tools point at its gateway. The **Target** radio makes that hub the target. Only a connected hub takes the radio; one whose channel is down is rejected with `no_exit_hub`. The [AI page](./ai.md) covers what the tools are pointed at.
 
-The first hub joined is the target until another is chosen. Leaving the target hub moves the target to the next hub joined. Only a row reading **Connected** takes the radio, and a hub whose channel is down is rejected with `no_exit_hub`. The [AI page](./ai.md) covers what the tools are pointed at.
+## A service tab
 
-## The Services section
+**Web**, **Files**, **Ports**, **Remote desktops** and **AI** each show one column per hub, two side by side where the window is wide enough. A column lists that hub's entries of the kind, or a line such as **no port is published**. An entry the hub cannot reach right now is greyed and reads **not reachable now**. A hub that is not connected shows its state in place of its entries.
 
-Each hub's group opens with **Published by** and the hub's name. It draws five panels in a fixed order, whether or not each has entries: **Web**, **Ports**, **AI**, **Files** and **Remote desktops**. An empty panel reads a line such as **no port is published**. An entry the hub cannot reach right now is greyed and reads **not reachable now**. A group whose hub is not connected reads that hub's state in place of its panels.
+## The Terminals tab
 
-The line under each entry names its source:
-
-| The line reads                              | The source                                   |
-| ------------------------------------------- | -------------------------------------------- |
-| **published by the Samba module on** a host | a Samba share on that host                   |
-| **published by container** and its image    | a container's host port                      |
-| **published by the AI gateway**             | the hub's AI gateway                         |
-| **declared by hand**                        | a declaration on the hub's **Services** page |
-| **shared from** a device                    | that device's desktop                        |
+Each hub's column lists the machines it offers a terminal on. **Open terminal** opens this computer's own terminal program with a shell on that machine, as [Terminals](./terminals.md) describes. The button is grey while the machine is offline.
 
 ## Settings
 
-1. Select **Settings** at the top of the window.
-1. In the **Client settings** dialog, pick the **Language**, **English** or **中文**, and the **Theme**, **System**, **Dark** or **Light**.
+1. Select **Settings** in the top bar.
+1. In the **Client settings** dialog, pick the **Language** and the **Theme**.
 1. Select **Save**.
 
-![The client settings dialog](/guide/en/client_settings_language.webp)
-
-The window's language and theme are the client's own; the panel's are set on the hub. **System** takes the colour scheme from the desktop.
+The language and theme are the client's own; the panel's are set on the hub.
 
 ## The tray
 
-Closing the window hides it, and the client keeps running with every hub joined. **Open** in the tray icon's menu shows the window again, and **Quit** stops the client. On Windows the icon is in the taskbar corner, on Linux in the indicator area of the panel, and on macOS in the menu bar. `nclient gui --hidden` starts the client in the tray with no window, and `nclient quit` stops it from a terminal.
-
-![The tray menu on Windows](/guide/os/win_tray_flyout.webp)
+Closing the window hides it, and the client keeps running with every hub joined. **Open** in the tray icon's menu shows the window again, and **Quit** stops the client. `nclient gui --hidden` starts the client in the tray, and `nclient quit` stops it from a terminal.
 
 ## What a refusal does to the binding
 
-A refusal keeps the binding. The row keeps its place, shows the code under the hub's name, and the client opens the channel again a minute later. One code ends the binding, and the row goes with it.
+A refusal keeps the binding: the row stays, shows the code, and the client opens the channel again a minute later. One code ends the binding, and the row goes with it.
 
 | The row shows      | What the code means                                              | The binding                                    |
 | ------------------ | ---------------------------------------------------------------- | ---------------------------------------------- |
@@ -71,5 +60,3 @@ A refusal keeps the binding. The row keeps its place, shows the code under the h
 | `protocol_too_new` | this client speaks a newer protocol number than the hub speaks   | stays; upgrade that hub first                  |
 | `hub_untrusted`    | the certificate at that address is not the one the link pinned   | stays; a hub that was reset takes a fresh link |
 | `binding_unknown`  | that hub's **Clients** page no longer holds this client          | goes; a fresh link joins again                 |
-
-Either protocol code prints the numbers, this client's and the hub's, so the row names the side that is behind. Package versions take no part in it, and a client and a hub on different versions that speak one protocol number stay connected.

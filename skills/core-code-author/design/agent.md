@@ -9,7 +9,11 @@ with no Python and touches none the machine already has.
 
 Everything a person does with what the hub publishes belongs to the client,
 a separate package in that person's own session
-([architecture.md](architecture.md), "The shape of the system"). This page is
+([architecture.md](architecture.md), "The shape of the system"). The client
+also joins the hub's virtual network as an ordinary peer, through the NetBird
+and EasyTier daemons its own package registers as services. A terminal it
+opens on a managed machine is a `shell` stream the hub bridges to that
+machine's agent, the same shell the panel's terminal reaches. This page is
 the agent's own design: who commands it, how state moves, how the machine's
 root reaches it, and where the platform seam runs. The socket itself, its
 frames, sections, kinds and admission, is [protocol.md](protocol.md).
