@@ -4,10 +4,12 @@ What these pin: the session gate, a device with no channel turned away
 with ``agent_offline``, an agent's refusal closing with its code, the
 browser's input reaching the stream and a resize opening one ``command
 {agent, resize}`` stream naming the shell, the stream's bytes becoming
-output frames and its close an exit frame, and the container variant
-opening the ``shell`` kind with the module and the container's name.
+output frames and its close an exit frame, the container variant
+opening the ``shell`` kind with the module and the container's name, and
+the close of a socket the browser already left raising nothing.
 """
 
+import asyncio
 import time
 from types import SimpleNamespace
 
@@ -186,3 +188,23 @@ def test_the_container_variant_opens_a_shell_naming_the_module_and_the_container
         assert socket.receive_json() == {"type": "exit", "code": 0}
     finally:
         socket.__exit__(None, None, None)
+
+
+class GoneSocket:
+    """A socket whose close raises what starlette raises for a given code."""
+
+    def __init__(self, code: int):
+        self.code = code
+
+    async def close(self, **kwargs) -> None:
+        raise WebSocketDisconnect(self.code)
+
+
+def test_closing_a_socket_the_browser_already_left_is_quiet():
+    asyncio.run(ws._close(GoneSocket(1006)))
+    asyncio.run(ws._close(GoneSocket(1006), code=INTERNAL_ERROR_CODE, reason="x"))
+
+
+def test_closing_with_any_other_disconnect_still_raises():
+    with pytest.raises(WebSocketDisconnect):
+        asyncio.run(ws._close(GoneSocket(1000)))

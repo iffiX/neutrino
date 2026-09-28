@@ -45,6 +45,8 @@ router = APIRouter()
 
 POLICY_VIOLATION_CODE = 1008
 INTERNAL_ERROR_CODE = 1011
+# What starlette's close raises when the browser is already gone.
+ABNORMAL_CLOSURE_CODE = 1006
 DNS_LOG_POLL_INTERVAL_S = 1.0
 
 
@@ -209,11 +211,30 @@ async def _serve_agent_stream(websocket: WebSocket, device_id: str, args: dict) 
             await websocket.send_json(
                 {"type": "exit", "code": int(params.get("exit_code", 1) or 0)}
             )
-    with contextlib.suppress(RuntimeError):
-        if refusal:
-            await websocket.close(code=INTERNAL_ERROR_CODE, reason=refusal)
-        else:
-            await websocket.close()
+    if refusal:
+        await _close(websocket, code=INTERNAL_ERROR_CODE, reason=refusal)
+    else:
+        await _close(websocket)
+
+
+async def _close(websocket: WebSocket, **kwargs) -> None:
+    """Close the browser's socket; one the browser already left stays closed.
+
+    Args:
+        websocket: The browser's socket.
+        kwargs: The close code and reason, when there is one.
+
+    Raises:
+        WebSocketDisconnect: For any close code but the one of a browser
+            already gone.
+    """
+    try:
+        await websocket.close(**kwargs)
+    except RuntimeError:
+        return
+    except WebSocketDisconnect as gone:
+        if gone.code != ABNORMAL_CLOSURE_CODE:
+            raise
 
 
 async def _pump_stream(websocket: WebSocket, stream) -> None:
