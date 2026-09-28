@@ -3,6 +3,10 @@
 #
 #   run_on_box.sh <package file> [server|side_gateway|router]
 #
+# The package file keeps its release name, neutrino-hub_<version>_<arch>.deb
+# for a deb: `nhub update --package` reads the version off the name. Push it
+# to /tmp/$(basename "$PACKAGE") rather than to a shorter name.
+#
 # Run on the machine under test, as root. It records what the machine's
 # network is, installs the package, and then walks the box through the phases
 # below. The exit status is the number of phases that failed.

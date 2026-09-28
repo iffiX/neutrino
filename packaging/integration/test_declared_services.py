@@ -73,7 +73,7 @@ def _declare(panel, body: dict) -> dict:
         for entry in _declared(panel.read("/hub/service")["services"])
     }
     status, listed = panel.call("POST", "/hub/service/declaration/add", body)
-    assert status == 201, listed
+    assert status == 200, listed
     fresh = [
         entry
         for entry in _declared(listed["services"])

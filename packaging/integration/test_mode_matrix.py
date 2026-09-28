@@ -209,7 +209,7 @@ def test_the_box_arrives_a_server(panel, wiring):
 def test_a_server_proxies_its_ports_and_itself(panel):
     """The scopes that do not need a forwarded network work without one."""
     if not panel.read("/hub/proxy/node")["nodes"]:
-        assert panel.status("POST", "/hub/proxy/node/add", {"link": NODE_LINK}) == 201
+        assert panel.status("POST", "/hub/proxy/node/add", {"link": NODE_LINK}) == 200
     put_proxy(
         panel,
         is_local_proxy_enabled=True,

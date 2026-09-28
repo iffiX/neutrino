@@ -152,7 +152,9 @@ which of the three it did.
 
 Settings has an Update panel; `sudo nhub update` does the same from a
 terminal, and `sudo nhub update --package <file>` installs a package file
-somebody brought. Either way the panel process only stages: it downloads the
+somebody brought. That file keeps its release name, `neutrino-hub_<version>_<arch>.deb`
+for a deb, since the version is read off the name; any other name is rejected
+with `package_name_mismatch`, and a path with no file with `package_missing`. Either way the panel process only stages: it downloads the
 package into `/var/lib/neutrino/hub_update/`, checks it against the release's
 `SHA256SUMS`, keeps the running version's own package beside it, and starts
 the transient unit `neutrino_hub_update` with `update.sh` from that directory.

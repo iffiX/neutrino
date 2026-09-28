@@ -42,8 +42,12 @@ The whole lifecycle, from a machine with no hub on it, as root. It installs
 the distribution's pytest if the box has none:
 
 ```bash
-./run_on_box.sh /path/to/neutrino-hub_0.3.0_amd64.deb side_gateway
+./run_on_box.sh /path/to/neutrino-hub_0.4.0_amd64.deb side_gateway
 ```
+
+The package file keeps its release name, `neutrino-hub_<version>_<arch>.deb`
+for a deb, because `nhub update --package` reads the version off the name and
+rejects any other name with `package_name_mismatch`.
 
 Options, each also readable from the environment:
 
@@ -69,8 +73,8 @@ python3 vm_exec.py nmxhub 'mkdir -p /opt/integration'
 for f in *.py *.sh pytest.ini; do python3 vm_exec.py nmxhub push "$PWD/$f" "/opt/integration/$f"; done
 python3 vm_exec.py nmxhub push ~/.local/share/neutrino_vm_lab/id_lab /opt/integration/id_lab
 python3 vm_exec.py nmxhub 'chmod 600 /opt/integration/id_lab'
-python3 vm_exec.py nmxhub push neutrino-hub_0.3.0_amd64.deb /tmp/hub.deb
-python3 vm_exec.py nmxhub 'bash /opt/integration/run_mode_matrix.sh /tmp/hub.deb --client'
+python3 vm_exec.py nmxhub push neutrino-hub_0.4.0_amd64.deb /tmp/neutrino-hub_0.4.0_amd64.deb
+python3 vm_exec.py nmxhub 'bash /opt/integration/run_mode_matrix.sh /tmp/neutrino-hub_0.4.0_amd64.deb --client'
 ```
 
 `id_lab` is the key `setup_vms.sh` generated for the `lab` account on both

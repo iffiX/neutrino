@@ -49,7 +49,7 @@ def test_usage_providers_come_in_served_order(panel):
 
 def test_usage_refusals_are_coded(panel):
     status, body = panel.call("GET", "/hub/ai/gateway/usage?range=fortnight")
-    assert status == 422
+    assert status == 400
     assert body["detail"] == {
         "code": "invalid_range",
         "params": {"range": "fortnight"},
@@ -90,7 +90,7 @@ def test_the_order_roundtrip_and_its_refusal(panel):
     status, body = panel.call(
         "POST", "/hub/ai/provider/order/set", {"provider_ids": ["no-such", *original]}
     )
-    assert status == 422
+    assert status == 400
     assert body["detail"]["code"] == "provider_order_mismatch"
     assert body["detail"]["params"]["unknown"] == ["no-such"]
 

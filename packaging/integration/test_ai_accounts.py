@@ -86,7 +86,7 @@ def test_refusals_are_coded(panel):
     status, body = panel.call(
         "POST", "/hub/ai/gateway/account_login/start", {"kind": "gemini"}
     )
-    assert status == 422
+    assert status == 400
     assert body["detail"] == {
         "code": "unsupported_kind",
         "params": {"kind": "gemini"},

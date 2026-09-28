@@ -66,9 +66,9 @@ def test_a_link_that_is_not_one_is_refused(empty_list, panel, link):
 
 
 def test_a_node_is_added_once(empty_list, panel):
-    assert panel.status("POST", "/hub/proxy/node/add", {"link": SHARE_LINK}) == 201
+    assert panel.status("POST", "/hub/proxy/node/add", {"link": SHARE_LINK}) == 200
     assert panel.status("POST", "/hub/proxy/node/add", {"link": SHARE_LINK}) == 400
-    assert panel.status("POST", "/hub/proxy/node/add", {"link": SECOND_LINK}) == 201
+    assert panel.status("POST", "/hub/proxy/node/add", {"link": SECOND_LINK}) == 200
     assert len(node_ids(panel)) == 2
 
 
