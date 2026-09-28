@@ -15,7 +15,11 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.exceptions import PlatformUnsupportedError
 from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
+from neutrino_agent.platforms.windows import WindowsPlatform
+
+PLATFORM_CLASSES = (LinuxPlatform, WindowsPlatform, DarwinPlatform)
 
 # Contract method -> the capability it belongs to, and a call that reaches
 # the platform's own answer.
@@ -71,11 +75,33 @@ def test_the_base_contract_refuses_every_capability(method_name):
     assert caught.value.code == "unsupported_platform"
 
 
+@pytest.mark.parametrize("platform_class", PLATFORM_CLASSES)
 @pytest.mark.parametrize("method_name", sorted(CONTRACT_CALLS))
-def test_linux_implements_every_capability_it_advertises(method_name):
-    assert getattr(LinuxPlatform, method_name) is not getattr(
+def test_a_platform_implements_exactly_the_capabilities_it_advertises(
+    platform_class, method_name
+):
+    capability = CONTRACT_CALLS[method_name][0]
+    is_implemented = getattr(platform_class, method_name) is not getattr(
         AgentPlatform, method_name
     )
+
+    assert is_implemented == (capability in platform_class.capabilities)
+
+
+@pytest.mark.parametrize("platform_class", PLATFORM_CLASSES)
+def test_a_platform_advertises_only_capabilities_the_contract_names(platform_class):
+    named = {capability for capability, _, _ in CONTRACT_CALLS.values()}
+
+    assert platform_class.capabilities <= named
+
+
+def test_windows_and_macos_install_nothing_and_step_down_to_nobody():
+    for platform_class in (WindowsPlatform, DarwinPlatform):
+        assert "packages" not in platform_class.capabilities
+        assert "system_packages" not in platform_class.capabilities
+        assert "run_as" not in platform_class.capabilities
+    assert "accounts" not in WindowsPlatform.capabilities
+    assert "accounts" in DarwinPlatform.capabilities
 
 
 def test_the_base_platform_advertises_nothing():

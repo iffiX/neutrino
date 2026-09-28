@@ -15,6 +15,8 @@ the test; nothing here reaches a network.
 import json
 import os
 import stat
+import subprocess
+import sys
 
 import pytest
 
@@ -604,3 +606,25 @@ def test_removing_a_binding_that_is_not_there_is_no_error(config_path):
     enrollment.remove_binding()
 
     assert not config_path.exists()
+
+
+def test_the_binding_file_is_agent_json_under_the_platforms_data_root():
+    # Read in a fresh interpreter: the suite points the binding at tmp_path.
+    probe = (
+        "from neutrino_agent.core import enrollment\n"
+        "from neutrino_agent.platforms.detect import detect_platform\n"
+        "print(enrollment.AGENT_CONFIG_PATH)\n"
+        "print(detect_platform().agent_data_dir())\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    path, data_dir = result.stdout.split()
+    assert path == os.path.join(data_dir, "agent.json")
+    assert path == "/etc/neutrino/agent/agent.json"

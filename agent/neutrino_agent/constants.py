@@ -1,14 +1,21 @@
 """Fixed values of the agent.
 
-Anything an operator changes lives in ``/etc/neutrino/agent/agent.json``; this
-file holds only what is wired into the protocol.
+Anything an operator changes lives in ``agent.json`` under the agent's data
+root, ``/etc/neutrino/agent`` on Linux; this file holds only what is wired
+into the protocol.
 """
 
-# The hub and the agent share one configuration root with a directory each,
-# so a machine running both has one place to look and one place to back up.
-AGENT_CONFIG_PATH = "/etc/neutrino/agent/agent.json"
+# The binding file, under the platform's data root. On Linux the hub and the
+# agent share one configuration root with a directory each, so a machine
+# running both has one place to look and one place to back up.
+AGENT_CONFIG_NAME = "agent.json"
 
 AGENT_SERVICE_NAME = "neutrino_agent.service"
+# The agent's service as the Windows service control manager knows it, and
+# as launchd knows it on macOS, with the plist that declares it.
+AGENT_WINDOWS_SERVICE_NAME = "neutrino_agent"
+AGENT_LAUNCHD_LABEL = "com.neutrino.agent"
+AGENT_LAUNCHD_PLIST_PATH = "/Library/LaunchDaemons/com.neutrino.agent.plist"
 
 # The protocol number this build speaks. The name has no package prefix:
 # one number has one name in every package.
@@ -122,6 +129,11 @@ AGENT_STEP_DOWN_TIMEOUT_S = 120
 # The local control channel: a socket the agent serves as root. Its file is
 # 0600 under a 0700 directory, so only root reaches it.
 AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
+# The same channel on macOS, and on Windows a named pipe whose security
+# descriptor admits SYSTEM and the administrators alone.
+AGENT_CONTROL_SOCKET_PATH_DARWIN = "/var/run/neutrino_agent/agent.sock"
+AGENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
+AGENT_CONTROL_PIPE_NAME = AGENT_CONTROL_PIPE_PREFIX + "neutrino_agent"
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
 # An action the agent carries out before answering, such as sharing the
 # desktop, takes longer than a read; the CLI waits this long for one.
@@ -133,6 +145,11 @@ AGENT_CONTROL_ACTION_TIMEOUT_S = 60
 # contract's ``agent_data_dir``; these are the POSIX paths, which double as
 # the defaults where nothing wires a root in.
 AGENT_DATA_DIR_POSIX = "/etc/neutrino/agent"
+# The same root on macOS, and on Windows under %ProgramData%, whose value
+# is read at run time and whose usual value stands in when it is unset.
+AGENT_DATA_DIR_DARWIN = "/Library/Application Support/Neutrino/agent"
+AGENT_WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
+AGENT_WINDOWS_DATA_SUBDIR = ("Neutrino", "agent")
 AGENT_STATE_NAME = "state.json"
 AGENT_CREDENTIALS_DIR_NAME = "credentials"
 AGENT_STATE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_STATE_NAME

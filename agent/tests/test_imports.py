@@ -94,6 +94,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.platforms.darwin",
     "neutrino_agent.platforms.detect",
     "neutrino_agent.platforms.linux",
+    "neutrino_agent.platforms.win32",
     "neutrino_agent.platforms.windows",
     "neutrino_agent.rdp",
     "neutrino_agent.rdp.constants",

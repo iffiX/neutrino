@@ -37,7 +37,7 @@ import urllib.parse
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
-    AGENT_CONFIG_PATH,
+    AGENT_CONFIG_NAME,
     AGENT_HUB_NAME,
     AGENT_ROLE,
     AGENT_SOFTWARE_PREFIX,
@@ -52,6 +52,9 @@ from neutrino_agent.exceptions import (
     PlatformUnsupportedError,
 )
 from neutrino_agent.platforms.detect import detect_platform, platform_tuple
+
+# The binding file, under this platform's own data root.
+AGENT_CONFIG_PATH = os.path.join(detect_platform().agent_data_dir(), AGENT_CONFIG_NAME)
 
 LINK_PREFIX = "neutrino://enroll/"
 # What the binding file holds: every field a string but the list of every
