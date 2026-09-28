@@ -106,6 +106,19 @@ def test_the_deb_starts_the_desktop_host_and_stops_it_on_removal(tmp_path, carri
     assert "systemctl stop rustdesk.service" in prerm
 
 
+def test_the_deb_restarts_a_running_desktop_host_on_an_upgrade(tmp_path, carried):
+    """An upgrade or a reinstall replaces the binary the running host has
+    open; `try-restart` touches only a unit that exists and is active."""
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    postinst = (tmp_path / "DEBIAN/postinst").read_text()
+    upgrade = postinst.split('if [ "$1" = configure ] && [ -n "$2" ]; then')[1]
+    upgrade = upgrade.split("\nfi\n")[0]
+
+    assert "systemctl try-restart rustdesk.service" in upgrade
+    assert upgrade.index("neutrino_agent.service") < upgrade.index("rustdesk")
+
+
 def test_the_deb_carries_the_licence_of_what_it_ships(tmp_path, carried):
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
@@ -235,6 +248,14 @@ def test_the_rpm_owns_the_desktop_host_it_carries():
     assert "/usr/share/doc/neutrino-agent" in spec
     assert "systemctl enable --now rustdesk.service" in spec
     assert "systemctl stop rustdesk.service" in spec
+
+
+def test_the_rpm_restarts_a_running_desktop_host_on_an_upgrade():
+    spec = _spec()
+    post = spec.split("%post\n")[1].split("%preun")[0]
+    upgrade = post.split('if [ "$1" -ge 2 ]; then')[1].split("\nfi\n")[0]
+
+    assert "systemctl try-restart rustdesk.service" in upgrade
 
 
 def test_the_packages_replace_the_upstream_rustdesk_package():

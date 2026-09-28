@@ -81,6 +81,9 @@ systemctl daemon-reload || true
 # disk while the old process goes on beating.
 if [ "$1" = configure ] && [ -n "$2" ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
+    # The package has replaced the RustDesk binary under a running service,
+    # which would go on running the deleted file.
+    systemctl try-restart {rustdesk_unit} >/dev/null 2>&1 || true
 fi
 systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
 

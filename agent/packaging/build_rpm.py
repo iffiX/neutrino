@@ -95,6 +95,9 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 # here, and without the restart the old process goes on beating.
 if [ "$1" -ge 2 ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
+    # The package has replaced the RustDesk binary under a running service,
+    # which would go on running the deleted file.
+    systemctl try-restart {rustdesk_unit} >/dev/null 2>&1 || true
 fi
 # The desktop host the package carries. Its unit is named the way RustDesk's
 # own code names it, which runs `systemctl enable rustdesk` for itself.
