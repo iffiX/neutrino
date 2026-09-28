@@ -20,6 +20,7 @@ from neutrino_hub.modules.devices.agent_package import (
     package_architecture,
     package_family,
     package_name,
+    platform_family,
     platform_key,
 )
 
@@ -102,12 +103,40 @@ def test_every_name_either_family_writes_says_its_machine(name, architecture):
     [
         ("neutrino-agent_0.1.0_amd64.deb", "deb"),
         ("neutrino-agent-0.1.0-1.x86_64.rpm", "rpm"),
-        ("neutrino-agent-0.1.0.msi", ""),
+        ("neutrino-agent-0.4.0-windows-amd64.msi", "msi"),
+        ("neutrino-agent-0.4.0-macos-arm64.pkg", "pkg"),
+        ("neutrino-hub-0.4.0-1-x86_64.pkg.tar.zst", ""),
         ("SHA256SUMS", ""),
     ],
 )
 def test_the_family_is_read_from_the_suffix(name, family):
     assert package_family(name) == family
+
+
+@pytest.mark.parametrize(
+    "name, key",
+    [
+        ("neutrino-agent-0.4.0-windows-amd64.msi", "msi-amd64"),
+        ("neutrino-agent-0.4.0-macos-arm64.pkg", "pkg-arm64"),
+    ],
+)
+def test_the_windows_and_macos_installers_are_keyed_by_family_and_machine(name, key):
+    assert platform_key(package_family(name), package_architecture(name)) == key
+
+
+@pytest.mark.parametrize(
+    "platform, family",
+    [
+        ({"os": "windows", "family": "", "arch": "amd64"}, "msi"),
+        ({"os": "darwin", "family": "", "arch": "arm64"}, "pkg"),
+        ({"os": "linux", "family": "debian", "arch": "amd64"}, "deb"),
+        ({"os": "linux", "family": "rhel", "arch": "arm64"}, "rpm"),
+        ({"os": "linux", "family": "", "arch": "amd64"}, ""),
+        ({"os": "freebsd13", "family": "", "arch": "amd64"}, ""),
+    ],
+)
+def test_a_machine_installs_the_family_its_os_or_distribution_names(platform, family):
+    assert platform_family(platform) == family
 
 
 def test_an_entry_names_its_file_the_way_the_release_publishes_it():

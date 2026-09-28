@@ -155,6 +155,54 @@ def test_a_release_seeds_every_machine_it_built_and_builds_nothing(
     assert sorted(manifest) == ["deb-amd64", "deb-arm64", "rpm-amd64", "rpm-arm64"]
 
 
+def test_the_windows_and_macos_installers_enter_the_manifest_and_not_the_cache(
+    tmp_path, monkeypatch
+):
+    """The hub's package does not grow by the two installers: a machine that
+    asks for one has it fetched from the release the first time."""
+    prebuilt = tmp_path / "prebuilt"
+    prebuilt.mkdir()
+    names = (
+        DEB_NAME,
+        RPM_NAME,
+        "neutrino-agent_0.1.0_arm64.deb",
+        "neutrino-agent-0.1.0-1.aarch64.rpm",
+        "neutrino-agent-0.1.0-windows-amd64.msi",
+        "neutrino-agent-0.1.0-macos-arm64.pkg",
+    )
+    for name in names:
+        (prebuilt / name).write_bytes(name.encode())
+    monkeypatch.setenv(venv_tree.AGENT_PACKAGES_DIR_ENV, str(prebuilt))
+    monkeypatch.setenv(venv_tree.AGENT_PACKAGE_URL_BASE_ENV, RELEASE_BASE)
+    monkeypatch.setattr(
+        venv_tree, "run", lambda *a, **k: pytest.fail("the agent was built")
+    )
+    tree = tmp_path / "tree"
+    staged_python = tree / "opt/neutrino/python"
+    data = staged_python / "lib/python3.13/site-packages/neutrino_hub/data"
+    data.mkdir(parents=True)
+
+    venv_tree.stage_agent_cache(tree, staged_python, "amd64")
+
+    manifest = json.loads((data / venv_tree.AGENT_PACKAGE_MANIFEST_NAME).read_text())
+    assert sorted(manifest) == [
+        "deb-amd64",
+        "deb-arm64",
+        "msi-amd64",
+        "pkg-arm64",
+        "rpm-amd64",
+        "rpm-arm64",
+    ]
+    assert manifest["msi-amd64"]["url"] == (
+        f"{RELEASE_BASE}/neutrino-agent-0.1.0-windows-amd64.msi"
+    )
+    assert manifest["pkg-arm64"]["name"] == "neutrino-agent-0.1.0-macos-arm64.pkg"
+    cache = tree / str(venv_tree.AGENT_PACKAGE_CACHE_DIR).lstrip("/")
+    cached = sorted(path.name for path in cache.iterdir())
+    assert not [name for name in cached if name.endswith((".msi", ".pkg"))]
+    assert len(cached) == 4
+
+
 def test_a_directory_with_no_agent_package_stops_the_build(tmp_path, monkeypatch):
     empty = tmp_path / "empty"
     empty.mkdir()

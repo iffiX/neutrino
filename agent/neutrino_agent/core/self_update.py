@@ -2,11 +2,12 @@
 
 An agent whose welcome names a later ``software`` than its own takes the
 hub's package down a ``package {}`` stream it opens, checks the digest the
-close named, and installs the file. The install runs in a transient
-systemd unit: installing the package restarts ``neutrino_agent.service``,
-which kills the process that asked for the update, so the process must not
-be the one running it. The unit writes what the package manager said and
-how it exited beside the agent's state, and the agent that install put on
+close named, and installs the file. Installing the package restarts the
+agent's service, which ends the process that asked for the update, so the
+install runs outside it: in a transient systemd unit on Linux, in a
+PowerShell detached from the service on Windows, and in a job submitted to
+launchd on macOS. Each writes what the installer said and how it exited
+beside the agent's state, in one shape, and the agent that install put on
 the machine reads it there and carries it up.
 """
 
@@ -15,6 +16,7 @@ the machine reads it there and carries it up.
 from __future__ import annotations
 
 import json
+import ntpath
 import os
 import shlex
 import shutil
@@ -35,6 +37,32 @@ from neutrino_agent.streams.package import (
 )
 
 FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
+# The package kind a machine installs by its operating system alone.
+OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
+
+# How the Windows install is started: with no console, and outside any job
+# the service runs in, so stopping the service does not end it.
+WINDOWS_DETACHED_PROCESS = 0x00000008
+WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+# The PowerShell the Windows install runs in: msiexec, its verbose log, and
+# the result in the shape the reporting script writes elsewhere, UTF-8
+# without a byte order mark.
+_WINDOWS_SCRIPT = """$ErrorActionPreference = 'Continue'
+$log = {log}
+$started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+$run = Start-Process -FilePath msiexec.exe -Wait -PassThru -WindowStyle Hidden -ArgumentList {arguments}
+$code = $run.ExitCode
+$finished = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+$output = ''
+if (Test-Path -LiteralPath $log) {{
+    $output = [string](Get-Content -LiteralPath $log -Raw)
+    if ($output.Length -gt {tail}) {{ $output = $output.Substring($output.Length - {tail}) }}
+    $output = $output.Replace("`r", '')
+}}
+$result = [ordered]@{{package = {package}; kind = 'msi'; started_at = $started; finished_at = $finished; exit_code = $code; output = $output}}
+[IO.File]::WriteAllText({result}, ($result | ConvertTo-Json -Compress))
+"""
 
 # The stamp the unit writes its times with, and the pipeline that turns the
 # log's tail into one JSON string: backslashes and quotes escaped, every
@@ -56,9 +84,13 @@ def package_kind(platform: dict) -> str:
         platform: The tuple from ``platforms.detect.platform_tuple``.
 
     Returns:
-        ``deb`` or ``rpm``, or empty when the hub bakes nothing for this
-        machine's family.
+        ``msi`` on Windows, ``pkg`` on macOS, ``deb`` or ``rpm`` by the
+        distribution family, or empty when the hub bakes nothing for this
+        machine.
     """
+    by_os = OS_TO_PACKAGE_KIND.get(platform.get("os", ""), "")
+    if by_os:
+        return by_os
     return FAMILY_TO_PACKAGE_KIND.get(platform.get("family", ""), "")
 
 
@@ -66,15 +98,31 @@ def install_command(kind: str, path: str, *, data_dir: str) -> list:
     """The detached command that installs a received package. Pure.
 
     Args:
-        kind: ``deb`` or ``rpm``.
+        kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
         path: The received package file.
-        data_dir: The agent's data directory, where the unit writes the
-            install's log and its result.
+        data_dir: The agent's data directory, where the install's log and
+            its result are written.
 
     Returns:
         An argument vector that outlives the agent's own restart: a
-        ``systemd-run`` transient unit.
+        ``systemd-run`` transient unit, a PowerShell running msiexec, or a
+        ``launchctl submit`` of ``installer``.
     """
+    if kind == "msi":
+        return _windows_install_command(path, data_dir=data_dir)
+    if kind == "pkg":
+        install = f"installer -pkg {shlex.quote(path)} -target /"
+        script = _reporting_script(install, kind=kind, path=path, data_dir=data_dir)
+        return [
+            "launchctl",
+            "submit",
+            "-l",
+            AGENT_UPDATE_UNIT,
+            "--",
+            "sh",
+            "-c",
+            script,
+        ]
     if kind == "deb":
         # dpkg installs a same-version file where apt would call it already
         # newest, and the reinstall verb installs exactly that; apt then
@@ -173,18 +221,29 @@ def run_update(package_path: str, *, kind: str, data_dir: str) -> None:
         package_path: The package file :func:`receive_package` handed over.
             It outlives this process: the install restarts the service,
             and the agent that starts then clears the directory.
-        kind: ``deb`` or ``rpm``.
-        data_dir: The agent's data directory, where the unit writes what
-            the install did.
+        kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
+        data_dir: The agent's data directory, where the install writes
+            what it did.
 
     Raises:
         SelfUpdateError: When the install cannot be launched, as
             ``agent_update_launch_failed``; the file is deleted.
     """
     clear_reinstall_result(data_dir)
+    command = install_command(kind, package_path, data_dir=data_dir)
     try:
+        if kind == "msi":
+            _start_detached(command)
+            return
+        if kind == "pkg":
+            # A job an earlier update submitted keeps its label until removed.
+            subprocess.run(
+                ["launchctl", "remove", AGENT_UPDATE_UNIT],
+                capture_output=True,
+                timeout=AGENT_UPDATE_LAUNCH_TIMEOUT_S,
+            )
         subprocess.run(
-            install_command(kind, package_path, data_dir=data_dir),
+            command,
             capture_output=True,
             timeout=AGENT_UPDATE_LAUNCH_TIMEOUT_S,
             check=True,
@@ -192,6 +251,72 @@ def run_update(package_path: str, *, kind: str, data_dir: str) -> None:
     except (OSError, subprocess.SubprocessError) as error:
         os.unlink(package_path)
         raise SelfUpdateError("agent_update_launch_failed") from error
+
+
+def _start_detached(command: list) -> None:
+    """Start the Windows install with no console and outside the service's job.
+
+    A job that refuses breakaway refuses the start; the install is then
+    started with no console alone.
+
+    Args:
+        command: The argument vector.
+
+    Raises:
+        OSError: When the process cannot be started at all.
+    """
+    for flags in (
+        WINDOWS_DETACHED_PROCESS | WINDOWS_CREATE_BREAKAWAY_FROM_JOB,
+        WINDOWS_DETACHED_PROCESS,
+    ):
+        try:
+            subprocess.Popen(
+                command,
+                creationflags=flags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+            return
+        except OSError as error:
+            refusal = error
+    raise refusal
+
+
+def _windows_install_command(path: str, *, data_dir: str) -> list:
+    """The PowerShell that runs msiexec and writes its result.
+
+    Args:
+        path: The received ``.msi``.
+        data_dir: Where the log and the result are written.
+
+    Returns:
+        The argument vector.
+    """
+    log = ntpath.join(data_dir, AGENT_REINSTALL_LOG_NAME)
+    arguments = f'/i "{path}" /qn /norestart /l*v "{log}"'
+    script = _WINDOWS_SCRIPT.format(
+        log=_powershell_quote(log),
+        arguments=_powershell_quote(arguments),
+        tail=AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
+        package=_powershell_quote(ntpath.basename(path)),
+        result=_powershell_quote(ntpath.join(data_dir, AGENT_REINSTALL_RESULT_NAME)),
+    )
+    return [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ]
+
+
+def _powershell_quote(text: str) -> str:
+    """One value as a PowerShell literal string."""
+    return "'" + text.replace("'", "''") + "'"
 
 
 def _reinstall_result_path(data_dir: str) -> str:
@@ -211,7 +336,7 @@ def _reporting_script(install: str, *, kind: str, path: str, data_dir: str) -> s
 
     Args:
         install: The package manager's own command line.
-        kind: ``deb`` or ``rpm``.
+        kind: ``deb``, ``rpm`` or ``pkg``.
         path: The received package file.
         data_dir: Where the log and the result are written.
 

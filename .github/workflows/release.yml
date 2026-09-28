@@ -13,10 +13,11 @@ permissions:
 
 jobs:
   # After the agent: the hub seeds its cache with the agent packages of
-  # both machines rather than building the agent again for its own.
+  # both machines rather than building the agent again for its own, and
+  # names the Windows and macOS installers in its manifest.
   hub:
     name: hub .deb, .rpm and Arch (${{ matrix.architecture }})
-    needs: [agent]
+    needs: [agent, agent_windows, agent_macos]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -101,6 +102,92 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+  # x64 only: RustDesk publishes no Windows arm64 build to carry.
+  agent_windows:
+    name: agent installer (Windows x64)
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+
+      # The interpreter the agent is compiled against; build_msi.py refuses
+      # any other minor.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: dotnet tool install --global wix --version 6.0.2
+      - run: wix extension add -g WixToolset.Util.wixext/6.0.2
+
+      - run: python agent/packaging/build_msi.py --output-dir dist --architecture x64
+
+      # Installed and removed here: whether both services run, whether the
+      # compiled agent answers, and whether removing it takes both away.
+      - name: Install it, check its services, remove it
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $msi = (Get-ChildItem dist\*.msi)[0].FullName
+          Start-Process msiexec -Wait -ArgumentList '/i',$msi,'/quiet','/norestart'
+          foreach ($service in 'neutrino_agent', 'RustDesk') {
+            $state = sc.exe query $service | Select-String 'STATE'
+            Write-Host "$service $state"
+            if ("$state" -notmatch 'RUNNING') { throw "$service is not running" }
+          }
+          $nagent = "$env:ProgramFiles\Neutrino Agent\nagent.exe"
+          $version = & $nagent --version
+          if ($LASTEXITCODE -ne 0) { throw "nagent --version exited $LASTEXITCODE" }
+          Write-Host "nagent $version"
+          Start-Process msiexec -Wait -ArgumentList '/x',$msi,'/quiet','/norestart'
+          foreach ($service in 'neutrino_agent', 'RustDesk') {
+            sc.exe query $service | Out-Null
+            if ($LASTEXITCODE -ne 1060) { throw "$service outlived the uninstaller" }
+          }
+          exit 0
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agent_windows_amd64
+          path: dist/*.msi
+          if-no-files-found: error
+
+  # Apple silicon, which is what GitHub's macOS runners are.
+  agent_macos:
+    name: agent installer (macOS arm64)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: python3 agent/packaging/build_pkg.py --output-dir dist --architecture arm64
+
+      - name: Install it, check its job, remove it
+        run: |
+          set -e
+          sudo installer -pkg dist/*.pkg -target /
+          sudo launchctl print system/com.neutrino.agent | grep 'state = running'
+          /usr/local/bin/nagent --version
+          sudo launchctl bootout system/com.neutrino.agent
+          sudo launchctl bootout system/com.carriez.RustDesk_service || true
+          sudo rm -rf "/Library/Application Support/Neutrino/agent" \
+            /Applications/RustDesk.app /usr/local/bin/nagent \
+            /Library/LaunchDaemons/com.neutrino.agent.plist \
+            /Library/LaunchDaemons/com.carriez.RustDesk_service.plist \
+            /Library/LaunchAgents/com.carriez.RustDesk_server.plist
+          sudo pkgutil --forget com.neutrino.agent
+          if sudo launchctl print system/com.neutrino.agent; then
+            echo "the agent's job outlived its removal"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agent_macos_arm64
+          path: dist/*.pkg
           if-no-files-found: error
 
   # The client is compiled, so each package is built on a machine of its own

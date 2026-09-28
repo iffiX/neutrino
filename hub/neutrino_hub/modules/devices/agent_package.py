@@ -12,9 +12,11 @@ and the manifest pins the hash of each. Because the name says nothing about
 what is inside it, a held file is believed only while it still hashes to what
 the manifest pins; one that does not is a stale fetch and is fetched again.
 
-The hub's package seeds this directory with the builds it was made from, which
-is what keeps a Linux install and a Linux self-update offline. A platform it
-seeded none for is fetched once from the release the manifest names, checked
+The hub's package seeds this directory with the Linux builds it was made
+from, which is what keeps a Linux install and a Linux self-update offline.
+The Windows ``.msi`` and the macOS ``.pkg`` are named in the manifest and not
+seeded, so the hub's own package does not carry them. A platform it seeded
+none for is fetched once from the release the manifest names, checked
 against the hash the manifest pins, and kept. A platform with neither is
 refused by name rather than served the wrong machine's build.
 
@@ -48,9 +50,12 @@ AGENT_PACKAGE_ARCHITECTURES = {
 }
 
 # The suffix each family's files carry.
-AGENT_PACKAGE_FAMILIES = {".deb": "deb", ".rpm": "rpm"}
+AGENT_PACKAGE_FAMILIES = {".deb": "deb", ".rpm": "rpm", ".msi": "msi", ".pkg": "pkg"}
 # Which package family a machine's platform family installs.
 AGENT_PACKAGE_FAMILY_OF_PLATFORM = {"debian": "deb", "rhel": "rpm", "suse": "rpm"}
+# Which package family a machine installs by its operating system alone,
+# where the platform tuple names no distribution family.
+AGENT_PACKAGE_FAMILY_OF_OS = {"windows": "msi", "darwin": "pkg"}
 
 
 def platform_key(family: str, architecture: str) -> str:
@@ -109,7 +114,7 @@ def package_family(name: str) -> str:
         name: The file name.
 
     Returns:
-        ``deb`` or ``rpm``, or empty for anything else.
+        ``deb``, ``rpm``, ``msi`` or ``pkg``, or empty for anything else.
     """
     return AGENT_PACKAGE_FAMILIES.get(Path(name).suffix, "")
 
@@ -121,9 +126,13 @@ def platform_family(platform: dict) -> str:
         platform: ``{os, family, arch}`` as the agent reported it.
 
     Returns:
-        ``deb`` or ``rpm``, or empty when no agent package is built for
-        the family.
+        ``msi`` on Windows, ``pkg`` on macOS, else ``deb`` or ``rpm`` by the
+        distribution family, or empty when no agent package is built for
+        the machine.
     """
+    by_os = AGENT_PACKAGE_FAMILY_OF_OS.get(str(platform.get("os", "")), "")
+    if by_os:
+        return by_os
     return AGENT_PACKAGE_FAMILY_OF_PLATFORM.get(str(platform.get("family", "")), "")
 
 

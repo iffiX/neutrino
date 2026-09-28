@@ -565,3 +565,154 @@ def test_a_launch_drops_the_result_of_the_reinstall_before_it(
 
     assert not stale.exists()
     assert len(launched) == 1
+
+
+# --- Windows and macOS: msiexec detached, installer through launchd ---
+
+
+def test_windows_and_macos_name_their_own_package_kind():
+    assert self_update.package_kind({"os": "windows", "family": ""}) == "msi"
+    assert self_update.package_kind({"os": "darwin", "family": ""}) == "pkg"
+
+
+def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
+    data_dir = "C:\\ProgramData\\Neutrino\\agent"
+    package = data_dir + "\\packages\\neutrino-agent-0.4.0-windows-amd64.msi"
+
+    command = self_update.install_command("msi", package, data_dir=data_dir)
+
+    assert command[:6] == [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+    ]
+    script = command[6]
+    assert "Start-Process -FilePath msiexec.exe -Wait" in script
+    assert (
+        f'\'/i "{package}" /qn /norestart /l*v "{data_dir}\\reinstall.log"\'' in script
+    )
+    assert f"'{data_dir}\\reinstall.json'" in script
+    assert "package = 'neutrino-agent-0.4.0-windows-amd64.msi'" in script
+    assert "kind = 'msi'" in script
+    for field in ("started_at", "finished_at", "exit_code", "output"):
+        assert f"{field} = " in script
+    assert "WriteAllText" in script
+
+
+def test_a_quote_in_a_path_cannot_end_the_powershell_string():
+    command = self_update.install_command(
+        "msi", "C:\\it's\\agent.msi", data_dir="C:\\it's"
+    )
+
+    assert "'C:\\it''s\\reinstall.json'" in command[6]
+
+
+def test_the_msi_is_started_detached_and_outside_the_services_job(
+    monkeypatch, tmp_path
+):
+    started = []
+
+    class Popen:
+        def __init__(self, command, **kwargs):
+            started.append((command, kwargs["creationflags"]))
+
+    monkeypatch.setattr(self_update.subprocess, "Popen", Popen)
+    package = tmp_path / "agent.msi"
+    package.write_bytes(b"msi")
+
+    self_update.run_update(str(package), kind="msi", data_dir=str(tmp_path))
+
+    command, flags = started[0]
+    assert command[0] == "powershell.exe"
+    assert flags == 0x00000008 | 0x01000000
+    assert package.exists()
+
+
+def test_a_job_that_refuses_breakaway_still_starts_the_install_detached(
+    monkeypatch, tmp_path
+):
+    started = []
+
+    class Popen:
+        def __init__(self, command, **kwargs):
+            if kwargs["creationflags"] & 0x01000000:
+                raise PermissionError("access denied")
+            started.append(kwargs["creationflags"])
+
+    monkeypatch.setattr(self_update.subprocess, "Popen", Popen)
+    package = tmp_path / "agent.msi"
+    package.write_bytes(b"msi")
+
+    self_update.run_update(str(package), kind="msi", data_dir=str(tmp_path))
+
+    assert started == [0x00000008]
+
+
+def test_an_msi_that_cannot_be_started_is_coded_and_cleaned_up(monkeypatch, tmp_path):
+    def refuse(command, **kwargs):
+        raise FileNotFoundError("powershell.exe")
+
+    monkeypatch.setattr(self_update.subprocess, "Popen", refuse)
+    package = tmp_path / "agent.msi"
+    package.write_bytes(b"msi")
+
+    with pytest.raises(SelfUpdateError) as refused:
+        self_update.run_update(str(package), kind="msi", data_dir=str(tmp_path))
+
+    assert str(refused.value) == "agent_update_launch_failed"
+    assert not package.exists()
+
+
+def test_the_pkg_is_installed_by_a_job_submitted_to_launchd():
+    command = self_update.install_command(
+        "pkg", "/tmp/agent pkg/neutrino.pkg", data_dir="/Library/x"
+    )
+
+    assert command[:6] == [
+        "launchctl",
+        "submit",
+        "-l",
+        "neutrino_agent_update",
+        "--",
+        "sh",
+    ]
+    assert command[6] == "-c"
+    assert "installer -pkg '/tmp/agent pkg/neutrino.pkg' -target /" in command[7]
+    assert "/Library/x/reinstall.json" in command[7]
+
+
+def test_a_pkg_update_removes_the_job_the_last_one_left_then_submits(
+    monkeypatch, tmp_path
+):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(list(command[:3]))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(self_update.subprocess, "run", run)
+    package = tmp_path / "agent.pkg"
+    package.write_bytes(b"pkg")
+
+    self_update.run_update(str(package), kind="pkg", data_dir=str(tmp_path))
+
+    assert commands == [
+        ["launchctl", "remove", "neutrino_agent_update"],
+        ["launchctl", "submit", "-l"],
+    ]
+
+
+def test_the_pkg_job_writes_what_installer_said_in_the_same_shape(tmp_path, stubbed):
+    stub_manager(
+        stubbed, "installer", body='echo "installer: The upgrade was successful."'
+    )
+
+    written = json.loads(run_unit(tmp_path, kind="pkg", package="agent.pkg"))
+
+    assert written["package"] == "agent.pkg"
+    assert written["kind"] == "pkg"
+    assert written["exit_code"] == 0
+    assert written["output"] == "installer: The upgrade was successful.\n"

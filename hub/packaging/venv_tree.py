@@ -204,6 +204,10 @@ AGENT_PACKAGE_NAME = _runtime(_AGENT_PACKAGE_MODULE, "package_name")
 AGENT_PLATFORM_KEY = _runtime(_AGENT_PACKAGE_MODULE, "platform_key")
 AGENT_PACKAGE_FAMILY = _runtime(_AGENT_PACKAGE_MODULE, "package_family")
 AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
+# The families whose files the hub's package carries in its cache. The Windows
+# and macOS installers are named in the manifest alone, and a hub fetches one
+# from the release the first time a machine asks for it.
+AGENT_CACHED_FAMILIES = ("deb", "rpm")
 
 # Where a release publishes the agent packages this build seeds, so an
 # installed hub can serve a platform this build did not make. A build that is
@@ -448,7 +452,8 @@ def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
     can enroll a device of either. A build given none makes the agent for its
     own machine and seeds that alone; a hub serving the other architecture
     then fetches it from the release the manifest names, or is given it by
-    hand under ``config/devices/packages``.
+    hand under ``config/devices/packages``. The release's ``.msi`` and
+    ``.pkg`` enter the manifest and not the cache.
 
     The build container carries ``dpkg-dev``, ``rpm`` and the headers the
     agent's bindings compile against.
@@ -494,6 +499,8 @@ def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
                 )
         manifest = agent_cache_entries(sorted(built.iterdir()), _agent_url_base())
         for path in sorted(built.iterdir()):
+            if AGENT_PACKAGE_FAMILY(path.name) not in AGENT_CACHED_FAMILIES:
+                continue
             key = AGENT_PLATFORM_KEY(*_agent_platform(path.name))
             target = cache / AGENT_PACKAGE_NAME(manifest[key])
             shutil.copyfile(path, target)
