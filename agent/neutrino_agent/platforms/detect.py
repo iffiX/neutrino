@@ -10,6 +10,7 @@ particular, or just ``linux`` when anything with the right kernel works.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import os
 import platform
 import sys
 
@@ -41,10 +42,12 @@ def platform_tuple() -> dict:
     """Describe this machine.
 
     Returns:
-        ``{"os", "family", "arch"}``: the operating system (``linux`` /
-        ``windows`` / ``darwin``, else what Python names it), the
-        distribution family (``debian`` / ``rhel`` / empty), and the
-        normalized architecture.
+        ``{"os", "family", "arch", "version"}``: the operating system
+        (``linux`` / ``windows`` / ``darwin``, else what Python names it),
+        the distribution family (``debian`` / ``rhel`` / empty), the
+        normalized architecture, and the system's version: the glibc
+        version on Linux, the build number on Windows, the product version
+        on macOS, empty where it cannot be read.
     """
     reported = "linux" if sys.platform.startswith("linux") else sys.platform
     os_name = OS_NAMES.get(reported, reported)
@@ -52,6 +55,7 @@ def platform_tuple() -> dict:
         "os": os_name,
         "family": _distro_family() if os_name == "linux" else "",
         "arch": MACHINE_TO_ARCH.get(platform.machine().lower(), platform.machine()),
+        "version": _system_version(os_name),
     }
 
 
@@ -71,6 +75,31 @@ def detect_platform() -> AgentPlatform:
     if os_name == "darwin":
         return DarwinPlatform()
     return AgentPlatform()
+
+
+def _system_version(os_name: str) -> str:
+    """The version a manifest's floor is compared with, empty when unknown."""
+    if os_name == "linux":
+        return _glibc_version()
+    if os_name == "windows":
+        getter = getattr(sys, "getwindowsversion", None)
+        return str(getter().build) if getter is not None else ""
+    if os_name == "darwin":
+        return platform.mac_ver()[0]
+    return ""
+
+
+def _glibc_version() -> str:
+    """The C library's version, as glibc names itself; empty on another libc."""
+    try:
+        named = os.confstr("CS_GNU_LIBC_VERSION") or ""
+    except (AttributeError, ValueError, OSError):
+        named = ""
+    library, _, version = named.partition(" ")
+    if library == "glibc" and version:
+        return version
+    library, version = platform.libc_ver()
+    return version if library == "glibc" else ""
 
 
 def _distro_family() -> str:

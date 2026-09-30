@@ -28,6 +28,9 @@ def test_the_tuple_is_read_from_the_os_facts(monkeypatch, tmp_path):
     release = tmp_path / "os-release"
     monkeypatch.setattr(detect_module, "OS_RELEASE_PATH", str(release))
     monkeypatch.setattr(detect_module.sys, "platform", "linux")
+    monkeypatch.setattr(
+        detect_module.os, "confstr", lambda name: "glibc 2.36", raising=False
+    )
 
     release.write_text('ID=raspbian\nID_LIKE="debian"\n')
     monkeypatch.setattr(detect_module.platform, "machine", lambda: "armv7l")
@@ -35,6 +38,7 @@ def test_the_tuple_is_read_from_the_os_facts(monkeypatch, tmp_path):
         "os": "linux",
         "family": "debian",
         "arch": "armhf",
+        "version": "2.36",
     }
 
     release.write_text('ID=rocky\nID_LIKE="rhel centos fedora"\n')
@@ -43,27 +47,73 @@ def test_the_tuple_is_read_from_the_os_facts(monkeypatch, tmp_path):
         "os": "linux",
         "family": "rhel",
         "arch": "arm64",
+        "version": "2.36",
     }
 
     release.write_text("ID=alpine\n")
     assert detect_module.platform_tuple()["family"] == ""
 
 
+class WindowsVersion:
+    build = 26100
+
+
+def windows_version():
+    return WindowsVersion()
+
+
 @pytest.mark.parametrize(
-    "reported, named",
-    [("win32", "windows"), ("darwin", "darwin"), ("freebsd13", "freebsd13")],
+    "reported, named, version",
+    [
+        ("win32", "windows", "26100"),
+        ("darwin", "darwin", "15.3.1"),
+        ("freebsd13", "freebsd13", ""),
+    ],
 )
 def test_an_os_that_is_not_linux_is_named_as_the_client_names_it(
-    monkeypatch, reported, named
+    monkeypatch, reported, named, version
 ):
     monkeypatch.setattr(detect_module.platform, "machine", lambda: "AMD64")
     monkeypatch.setattr(detect_module.sys, "platform", reported)
+    monkeypatch.setattr(
+        detect_module.sys, "getwindowsversion", windows_version, raising=False
+    )
+    monkeypatch.setattr(
+        detect_module.platform, "mac_ver", lambda: ("15.3.1", ("", "", ""), "arm64")
+    )
 
     assert detect_module.platform_tuple() == {
         "os": named,
         "family": "",
         "arch": "amd64",
+        "version": version,
     }
+
+
+def test_linux_without_glibc_reports_no_version(monkeypatch, tmp_path):
+    release = tmp_path / "os-release"
+    release.write_text("ID=alpine\n")
+    monkeypatch.setattr(detect_module, "OS_RELEASE_PATH", str(release))
+    monkeypatch.setattr(detect_module.sys, "platform", "linux")
+
+    def no_confstr(name):
+        raise ValueError(name)
+
+    monkeypatch.setattr(detect_module.os, "confstr", no_confstr, raising=False)
+    monkeypatch.setattr(detect_module.platform, "libc_ver", lambda: ("musl", "1.2"))
+
+    assert detect_module.platform_tuple()["version"] == ""
+
+
+def test_linux_falls_back_to_the_libc_python_reads(monkeypatch, tmp_path):
+    release = tmp_path / "os-release"
+    release.write_text("ID=debian\n")
+    monkeypatch.setattr(detect_module, "OS_RELEASE_PATH", str(release))
+    monkeypatch.setattr(detect_module.sys, "platform", "linux")
+    monkeypatch.setattr(detect_module.os, "confstr", lambda name: "", raising=False)
+    monkeypatch.setattr(detect_module.platform, "libc_ver", lambda: ("glibc", "2.28"))
+
+    assert detect_module.platform_tuple()["version"] == "2.28"
 
 
 def test_linux_is_answered_by_its_own_class(monkeypatch, tmp_path):

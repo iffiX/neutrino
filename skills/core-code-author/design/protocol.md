@@ -618,7 +618,7 @@ and each role reads them somewhere else:
 | Field | An agent sends | A client sends |
 | --- | --- | --- |
 | `machine_id` | `/etc/machine-id`, else `/var/lib/dbus/machine-id`, else empty | a uuid4 hex generated on the first read of its state file and kept there |
-| `platform` | `{os, family, arch}`: `linux`, the distribution family `debian`, `rhel` or empty, and the architecture normalized to `amd64`, `arm64` or `armhf` | the same three keys, `os` one of `linux`, `windows` and `darwin`, and `family` empty off Linux |
+| `platform` | `{os, family, arch, version}`: `linux`, `windows` or `darwin`, the distribution family `debian`, `rhel` or empty, the architecture normalized to `amd64`, `arm64` or `armhf`, and the system's version: the glibc version on Linux (`2.36`), the build number on Windows (`26100`), the product version on macOS (`15.3.1`), empty where it cannot be read | the same first three keys, `os` one of `linux`, `windows` and `darwin`, and `family` empty off Linux |
 
 An agent's id is the operating system's, so a machine joining with a blank
 link is matched to the row it already had. A client's is one installation's,
@@ -628,6 +628,9 @@ fresh row goes, and the old row takes the link's name and keeps its key, its
 switch and everything it last reported. The hub reads `family` to pick a
 package family and `arch` to pick the package itself, and an architecture
 outside the normalized set is the machine's own word and matches no branch.
+An agent's `version` is an added field and keeps `PROTOCOL` as it is; the hub
+compares a manifest entry's floor with it, and an agent that predates it sends
+none.
 
 The join request names no network; the link a socket runs on comes from
 `getsockname()` and is in the first report. Joining and leaving have the same
