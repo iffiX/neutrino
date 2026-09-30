@@ -269,7 +269,7 @@ class PublishedServiceCache:
 
         Returns:
             One entry per device whose report names a hosted module, each
-            ``{"device_id", "host", "samba", "gitea", "podman"}``.
+            ``{"device_id", "host", "samba", "gitea", "podman", "vscode"}``.
         """
         if self._agent_sessions is None:
             return []
@@ -315,6 +315,20 @@ class PublishedServiceCache:
                 "is_healthy": bool(details.get("is_running"))
                 and self._is_answering(url),
                 "url": url,
+            }
+        if name == "vscode":
+            return {
+                "is_healthy": bool(status.get("is_active")),
+                "instances": [
+                    {"account": str(instance["account"]), "port": int(instance["port"])}
+                    for instance in self._desired_states.read(key, "vscode").get(
+                        "instances"
+                    )
+                    or []
+                    if isinstance(instance, dict)
+                    and instance.get("account")
+                    and instance.get("port")
+                ],
             }
         if name == "podman":
             return {

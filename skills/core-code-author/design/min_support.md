@@ -76,6 +76,7 @@ releases a supported family provides.
 | util-linux | any | `runuser` for stepping down to an account | `agent/neutrino_agent/platforms/linux.py:211` |
 | Windows PowerShell | 5.1, with the SmbShare, NetSecurity and LocalAccounts modules, all in Windows 10 1607 | the file share on Windows | `agent/neutrino_agent/modules/samba/windows_applier.py` |
 | `sharing`, `sysadminctl`, `pwpolicy`, `dscl`, `pfctl` | macOS 12 | the file share on macOS | `agent/neutrino_agent/modules/samba/darwin_applier.py` |
+| glibc | 2.28 | the VS Code server that Microsoft's CLI downloads for `serve-web`; below it the module reads as one the machine cannot run | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/vscode.json` |
 
 ## What the client's window loads
 

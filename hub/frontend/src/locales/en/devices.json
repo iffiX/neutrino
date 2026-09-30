@@ -346,6 +346,7 @@
   "ui.services.description_device_share": "shared from {device}",
   "ui.services.description_gitea_module": "published by the gitea module on {host}",
   "ui.services.description_samba_module": "published by the samba module on {host}",
+  "ui.services.description_vscode_module": "published by the vscode module on {host} for {account}",
   "ui.services.field_description": "Description",
   "ui.services.field_host": "Host",
   "ui.services.field_kind": "Kind",

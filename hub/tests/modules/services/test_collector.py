@@ -31,13 +31,22 @@ def collect(**overrides) -> list[dict]:
     return ServiceListCollector(**fields).render()
 
 
-def hosting(*, device_id=DEVICE, host=DEVICE_HOST, samba=None, gitea=None, podman=None):
+def hosting(
+    *,
+    device_id=DEVICE,
+    host=DEVICE_HOST,
+    samba=None,
+    gitea=None,
+    podman=None,
+    vscode=None,
+):
     return {
         "device_id": device_id,
         "host": host,
         "samba": samba,
         "gitea": gitea,
         "podman": podman,
+        "vscode": vscode,
     }
 
 
@@ -533,3 +542,35 @@ def test_the_catalog_carries_the_code_and_its_params():
 
     assert entry["description_code"] == "device_share"
     assert entry["description_params"] == {"device": "workshop"}
+
+
+def test_each_vscode_instance_is_a_web_entry_opened_only_through_localhost():
+    entries = collect(
+        device_modules=[
+            hosting(
+                vscode={
+                    "is_healthy": True,
+                    "instances": [
+                        {"account": "alice", "port": 8000},
+                        {"account": "bob", "port": 8001},
+                    ],
+                }
+            )
+        ]
+    )
+
+    assert [entry["id"] for entry in entries] == [
+        "vscode_device-one_alice",
+        "vscode_device-one_bob",
+    ]
+    entry = entries[0]
+    assert entry["type"] == "web"
+    assert entry["title"] == "VS Code (alice)"
+    assert entry["payload"] == {
+        "url": f"http://{DEVICE_HOST}:8000/",
+        "is_local_only": True,
+    }
+    assert entry["description_code"] == "vscode_module"
+    assert entry["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
+    assert entry["device_id"] == DEVICE
+    assert collect(device_modules=[hosting(vscode=None)]) == []

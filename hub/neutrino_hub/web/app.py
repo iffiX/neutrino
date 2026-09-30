@@ -33,6 +33,7 @@ from neutrino_hub.web.routers.agent import (
     module_gitea,
     module_podman,
     module_samba,
+    module_vscode,
     module_zfs,
     terminal,
 )
@@ -80,6 +81,7 @@ API_ROUTERS = (
     module_gitea.router,
     module_podman.router,
     module_zfs.router,
+    module_vscode.router,
     terminal.router,
 )
 

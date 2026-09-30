@@ -364,6 +364,7 @@ SUPPORTED_OFF_LINUX = {
     "podman": (False, False),
     "samba": (True, True),
     "teamviewer": (True, True),
+    "vscode": (True, True),
     "zfs": (False, False),
 }
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}

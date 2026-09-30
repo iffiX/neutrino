@@ -193,7 +193,7 @@ PROTOCOL_PAGE = (
 # tail's first segment.
 DOCUMENTED_ROUTE = re.compile(r"`(GET|POST) ((?:/|\.\.\./)[^`]+)`|`(\.\.\./[^`]+)`")
 # `<name>` in a documented path stands for each module that shares the route.
-MODULE_NAMES = ("samba", "gitea", "podman", "zfs")
+MODULE_NAMES = ("samba", "gitea", "podman", "zfs", "vscode")
 
 
 def documented_routes() -> set:

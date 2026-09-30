@@ -2057,6 +2057,40 @@ class GiteaDeviceView(ModuleDeviceFields, GiteaSettingsView):
     url: str = ""
 
 
+class VscodeInstance(BaseModel):
+    """One VS Code instance: the account it runs as, the port it serves, and
+    on Windows the vault login that account signs in with."""
+
+    account: str = Field(min_length=1)
+    port: int = Field(ge=1024, le=65535)
+    login_id: str = ""
+
+
+class VscodeInstanceView(VscodeInstance):
+    """One instance as configured, with what the machine says of it."""
+
+    is_running: bool = False
+    # Why it does not run, typed: ``credential_invalid`` for a Windows login
+    # that no longer signs in.
+    code: str = ""
+
+
+class VscodeDeviceView(ModuleDeviceFields):
+    """One device's VS Code: the instances and the machine's accounts."""
+
+    instances: list[VscodeInstanceView] = Field(default_factory=list)
+    # The human accounts the machine last reported, for the account field.
+    accounts: list[str] = Field(default_factory=list)
+    is_active: bool = False
+
+
+class VscodeConfigUpdate(BaseModel):
+    """The instances being saved."""
+
+    device_id: str
+    instances: list[VscodeInstance] = Field(default_factory=list)
+
+
 class GiteaConfigUpdate(BaseModel):
     """The Access group being saved."""
 

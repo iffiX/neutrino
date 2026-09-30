@@ -1377,6 +1377,36 @@ export interface GiteaSettings {
 /** Gitea on one device: its settings, and where the module stands there. */
 export interface GiteaDeviceView extends GiteaSettings, ModuleDeviceState {}
 
+/** One VS Code instance: the account it runs as, the port it serves, and on
+ * Windows the vault login that account signs in with. */
+export interface VscodeInstance {
+  account: string;
+  port: number;
+  login_id: string;
+}
+
+/** One instance as configured, with what the machine says of it. */
+export interface VscodeInstanceView extends VscodeInstance {
+  is_running: boolean;
+  /** Why it does not run, typed; empty when nothing is in the way. */
+  code: string;
+}
+
+/** VS Code on one device: its instances and the machine's accounts. */
+export interface VscodeDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  instances: VscodeInstanceView[];
+  /** The human accounts the machine last reported. */
+  accounts: string[];
+  is_active: boolean;
+}
+
+export interface VscodeConfigUpdate {
+  device_id: string;
+  instances: VscodeInstance[];
+}
+
 export interface GiteaConfigUpdate {
   device_id: string;
   listen_port: number;

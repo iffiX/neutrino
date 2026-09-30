@@ -1,0 +1,60 @@
+{
+  "_comment": "VS Code in the browser, hub-tier: the cache fetches Microsoft's standalone CLI at one pinned build and the agent runs its serve-web as a chosen account. Each url and sha256 is what update.code.visualstudio.com/api/update/<platform>/stable/latest answered for that build. The Linux builds are the static Alpine ones; the server the CLI downloads needs glibc 2.28. Microsoft's license terms cover the binaries; corresponding_source names the CLI's source at the pinned commit.",
+  "name": "vscode",
+  "title": "VS Code",
+  "kind": "vscode",
+  "installer": "hub",
+  "source": "Microsoft",
+  "version": "1.140.0",
+  "license": "Microsoft Software License Terms",
+  "corresponding_source": "https://github.com/microsoft/vscode/tree/07f806f999227108933c2e30515b26eecc1fda74/cli", "_source_scan": "scan: allow",
+  "description": "VS Code in the browser, opened from a client through localhost",
+  "platforms": {
+    "linux-amd64": {
+      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_alpine_x64_cli.tar.gz", "_url_scan": "scan: allow",
+      "sha256": "938b4f5b4690102e0b5b805af6df42fe7f91e043608ceefd5786ed01e4a6fcd1", "_sha256_scan": "scan: allow",
+      "package_kind": "tar",
+      "min_version": "2.28",
+      "verify": "/usr/local/lib/neutrino_vscode/code --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "linux-arm64": {
+      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_alpine_arm64_cli.tar.gz", "_url_scan": "scan: allow",
+      "sha256": "6205d8b4787ea0a4e7f7e7f152b456db2fef5fcfd0bff3f130150ebf2886bc86", "_sha256_scan": "scan: allow",
+      "package_kind": "tar",
+      "min_version": "2.28",
+      "verify": "/usr/local/lib/neutrino_vscode/code --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "windows-amd64": {
+      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_win32_x64_cli.zip", "_url_scan": "scan: allow",
+      "sha256": "ae2eb828dc2874a43e2ee840d036d2b415cebed29d22417042da145c4bdc6efe", "_sha256_scan": "scan: allow",
+      "package_kind": "zip",
+      "verify": "powershell -NoProfile -Command \"& (Join-Path $env:ProgramData 'Neutrino\\vscode\\code.exe') --version; exit $LASTEXITCODE\"",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "darwin-arm64": {
+      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_darwin_arm64_cli.zip", "_url_scan": "scan: allow",
+      "sha256": "352754c307ff1edb03ea01f55388e17b7e4e5bb1485aa62bcd2663b42ce5420c", "_sha256_scan": "scan: allow",
+      "package_kind": "zip",
+      "verify": "\"/Library/Application Support/Neutrino/vscode/code\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    }
+  }
+}

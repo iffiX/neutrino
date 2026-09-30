@@ -413,3 +413,28 @@ def test_schedules_arriving_while_one_runs_are_answered_by_one_more(box):
     executor.shutdown(wait=True)
 
     assert probe.calls == 2
+
+
+def test_a_devices_vscode_instances_come_from_the_hubs_configuration(box):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "vscode", "running")
+    store.write(
+        DEVICE,
+        "vscode",
+        {"instances": [{"account": "alice", "port": 8000}], "login_id": ""},
+    )
+    reported = report(vscode={})
+    reported["modules"]["vscode"]["is_active"] = True
+    sessions = StubSessions({DEVICE: reported})
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    (entry,) = entries
+    assert entry["id"] == "vscode_device-one_alice"
+    assert entry["payload"] == {
+        "url": "http://192.168.100.7:8000/",
+        "is_local_only": True,
+    }
+    assert entry["is_healthy"] is True

@@ -29,7 +29,9 @@ import secrets
 import shutil
 import string
 
+from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.credentials.vault import (
+    SecretVault,
     seal_bytes,
     unseal_bytes,
 )
@@ -43,6 +45,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_RDP_FILE,
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
+    DEVICE_VSCODE_LOGIN_KEY,
+    DEVICE_VSCODE_MODULE,
+    DEVICE_VSCODE_TOKEN_AAD,
+    DEVICE_VSCODE_TOKEN_KEY,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 from neutrino_hub.utils.json_file import (
@@ -52,6 +58,10 @@ from neutrino_hub.utils.json_file import (
 )
 
 DEVICES_DIR_NAME = "devices"
+# How many random bytes a VS Code connection token is made of.
+VSCODE_TOKEN_BYTES = 24
+# The system whose instances start as their account only with its password.
+VSCODE_PASSWORD_OS = "windows"
 
 
 def state_hash(desired: dict) -> str:
@@ -267,6 +277,51 @@ class DesiredStateStore:
         with CONFIG_WRITE_LOCK:
             self._write_seat_password(key)
 
+    def vscode_token(self, key: str, account: str) -> str:
+        """The connection token one VS Code instance answers to.
+
+        Args:
+            key: The device key.
+            account: The account the instance runs as.
+
+        Returns:
+            The token, empty when the device has no such instance, when the
+            vault is locked, or when the seal does not open under this box's
+            data key.
+        """
+        for instance in self.read(key, DEVICE_VSCODE_MODULE).get("instances") or []:
+            if isinstance(instance, dict) and instance.get("account") == account:
+                return _unsealed_text(
+                    instance.get(DEVICE_VSCODE_TOKEN_KEY), DEVICE_VSCODE_TOKEN_AAD
+                )
+        return ""
+
+    def sealed_vscode_token(self, key: str, account: str) -> dict:
+        """One instance's token seal, made the first time it is asked for.
+
+        Args:
+            key: The device key.
+            account: The account the instance runs as.
+
+        Returns:
+            The seal ``vscode.json`` holds for that account's instance, or a
+            fresh one to store with it.
+
+        Raises:
+            VaultLockedError: If there is no data key to seal a fresh one
+                under.
+        """
+        for instance in self.read(key, DEVICE_VSCODE_MODULE).get("instances") or []:
+            if not isinstance(instance, dict) or instance.get("account") != account:
+                continue
+            held = instance.get(DEVICE_VSCODE_TOKEN_KEY)
+            if isinstance(held, dict) and held:
+                return dict(held)
+        return seal_bytes(
+            secrets.token_urlsafe(VSCODE_TOKEN_BYTES).encode(),
+            DEVICE_VSCODE_TOKEN_AAD,
+        )
+
     def compose(
         self,
         key: str,
@@ -304,6 +359,8 @@ class DesiredStateStore:
             elif name == "gitea":
                 config["address"] = address
                 config["secrets"] = self.gitea_secrets(key)
+            elif name == DEVICE_VSCODE_MODULE:
+                config = _vscode_config(config, address, platform)
             modules[name] = {
                 "want": entry["want"],
                 "config": config,
@@ -387,6 +444,57 @@ def _recipes(resolved: dict) -> dict:
     install = {name: value for name, value in entry.items() if name != "uninstall"}
     install["kind"] = str(resolved.get("kind", "") or "")
     return {"install": install, "uninstall": dict(entry.get("uninstall") or {})}
+
+
+def _vscode_config(stored: dict, address: str, platform: dict) -> dict:
+    """What the agent is sent for VS Code.
+
+    Args:
+        stored: The module's file: the instances, each with its sealed token
+            and the login it runs as.
+        address: The device's address the instances listen on.
+        platform: The tuple the agent reported; only a Windows machine is
+            sent a password.
+
+    Returns:
+        ``{address, instances: [{account, port, token, password}]}``, the
+        token opened and the password taken from the instance's login.
+    """
+    is_windows = platform.get("os") == VSCODE_PASSWORD_OS
+    instances = []
+    for instance in stored.get("instances") or []:
+        if not isinstance(instance, dict):
+            continue
+        sent = {
+            "account": str(instance.get("account", "") or ""),
+            "port": instance.get("port", 0),
+            "token": _unsealed_text(
+                instance.get(DEVICE_VSCODE_TOKEN_KEY), DEVICE_VSCODE_TOKEN_AAD
+            ),
+        }
+        login_id = str(instance.get(DEVICE_VSCODE_LOGIN_KEY, "") or "")
+        if is_windows and login_id:
+            sent["password"] = _login_password(login_id)
+        instances.append(sent)
+    return {"address": address, "instances": instances}
+
+
+def _unsealed_text(sealed, aad: bytes) -> str:
+    """A sealed string opened, empty when there is none or it does not open."""
+    if not isinstance(sealed, dict) or not sealed:
+        return ""
+    try:
+        return unseal_bytes(sealed, aad).decode()
+    except ValueError:
+        return ""
+
+
+def _login_password(login_id: str) -> str:
+    """A vault login's password, empty when it is gone or the vault is locked."""
+    try:
+        return str(SecretVault().open(login_id).get("password", "") or "")
+    except (VaultLockedError, ValueError):
+        return ""
 
 
 def _generate_seat_password() -> str:

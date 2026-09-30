@@ -504,6 +504,7 @@ class FakeModuleRuntime:
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_address: dict = {}
+        self.device_accounts: dict = {}
         self.lan_addresses = list(lan_addresses)
 
     def network(self):

@@ -13,6 +13,7 @@ import { SambaPanels } from "../components/samba_panels";
 import { Spinner } from "../components/spinner";
 import { StatusDot } from "../components/status_dot";
 import { TabStrip } from "../components/tab_strip";
+import { VscodePanels } from "../components/vscode_panels";
 import { ZfsPanels } from "../components/zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
 import { stripAnsi } from "../strip_ansi";
@@ -98,6 +99,14 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isEditable={target.isEditable}
     />
   ),
+  vscode: (target) => (
+    <VscodePanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+      isWindows={target.platformOs === WINDOWS_OS}
+    />
+  ),
   zfs: (target) => (
     <ZfsPanels
       deviceId={target.deviceId}
@@ -111,6 +120,9 @@ const PAGE_MODULES = Object.keys(MODULE_PANELS);
 
 /** The one system whose file share is Samba; the others serve with their own. */
 const LINUX_OS = "linux";
+
+/** The system that starts VS Code as an account only with its login. */
+const WINDOWS_OS = "windows";
 
 /** The modules whose block imports what the machine already has. */
 const IMPORTING_MODULES = ["samba", "gitea", "podman"];

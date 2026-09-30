@@ -30,6 +30,15 @@ ENTRY = {
 }
 RDP_ENTRY = {**ENTRY, "id": "rdp_s1", "type": "rdp", "payload": {"host": "h"}}
 AI_ENTRY = {**ENTRY, "id": "ai", "type": "ai", "payload": {"endpoint": "http://x"}}
+VSCODE_ENTRY = {
+    **ENTRY,
+    "id": "vscode_dev_alice",
+    "title": "VS Code (alice)",
+    "payload": {"url": "http://192.168.100.7:8000/", "is_local_only": True},
+    "description_code": "vscode_module",
+    "description_params": {"host": "192.168.100.7", "account": "alice"},
+    "device_id": "dev",
+}
 LAN = HostScope(
     id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address="192.168.100.1"
 )
@@ -45,12 +54,18 @@ class StubPublishedServices:
 
 
 class StubDesiredStates:
+    def __init__(self):
+        self.tokens = {("dev", "alice"): "tkn-alice"}
+
     def seat_password(self, key):
         return "seat-pass" if key == "dev" else ""  # scan: allow
 
+    def vscode_token(self, key, account):
+        return self.tokens.get((key, account), "")
+
 
 class FakeRuntime:
-    def __init__(self, entries=(ENTRY, RDP_ENTRY, AI_ENTRY)):
+    def __init__(self, entries=(ENTRY, RDP_ENTRY, AI_ENTRY, VSCODE_ENTRY)):
         self.client_scope = {}
         self.device_interfaces = {}
         self.device_address = {}
@@ -231,4 +246,25 @@ def test_an_unpublished_entry_is_service_unknown_whatever_the_kinds(config_dir):
     assert service_material(runtime, client_id, "rdp_s9") == (
         "service_unknown",
         {"service_id": "rdp_s9"},
+    )
+
+
+def test_a_vscode_instances_material_is_its_own_token(config_dir):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+
+    assert service_material(runtime, client_id, "vscode_dev_alice") == (
+        "",
+        {"token": "tkn-alice"},
+    )
+
+
+def test_a_vscode_token_that_does_not_open_is_vault_locked(config_dir):
+    runtime = FakeRuntime()
+    runtime.desired_states.tokens = {}
+    client_id = ClientRegistry().create("alice")
+
+    assert service_material(runtime, client_id, "vscode_dev_alice") == (
+        "vault_locked",
+        {},
     )

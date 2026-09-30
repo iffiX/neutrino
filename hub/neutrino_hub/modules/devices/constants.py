@@ -114,12 +114,15 @@ AGENT_MODULE_PACKAGE_MAGIC = {
     ),
     "tar_binary": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
     "zip_binary": (b"PK\x03\x04",),
+    # An archive the agent unpacks one member of: VS Code's CLI.
+    "tar": (b"\x1f\x8b", b"BZh", b"\xfd7zXZ"),
+    "zip": (b"PK\x03\x04",),
     "binary": (b"\x7fELF",),
 }
 
 # The modules a device hosts from the hub's desired state, in the order the
 # agent applies them. One file per module under the device's directory.
-DEVICE_MODULE_NAMES = ("zfs", "samba", "gitea", "podman")
+DEVICE_MODULE_NAMES = ("zfs", "samba", "gitea", "podman", "vscode")
 # What ``config/devices/<id>/modules.json`` is called, and the per-module
 # files beside it. A device directory is named by the device's id.
 DEVICE_MODULES_FILE = "modules.json"
@@ -131,6 +134,14 @@ DEVICE_DIR_FILES = (DEVICE_MODULES_FILE, DEVICE_RDP_FILE, DEVICE_GITEA_SECRETS_F
 # The module whose configuration is the hub's own secrets and nothing the
 # machine can be read for.
 DEVICE_GITEA_MODULE = "gitea"
+# VS Code in the browser. Each instance in its file under the device's
+# directory holds, beside its account and port, two keys the hub keeps there:
+# its connection token sealed under the vault's data key, and the vault login
+# a Windows machine runs it as. A token's seal is bound to what it opens.
+DEVICE_VSCODE_MODULE = "vscode"
+DEVICE_VSCODE_TOKEN_KEY = "token_sealed"  # scan: allow
+DEVICE_VSCODE_LOGIN_KEY = "login_id"
+DEVICE_VSCODE_TOKEN_AAD = b"device_vscode:token"
 # The remote desktop host every agent package carries, as the module report
 # names it, and the two states its row can take.
 DEVICE_RDP_MODULE = "rustdesk"

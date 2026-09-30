@@ -498,13 +498,20 @@ def require_online(context: DeviceModuleContext) -> None:
         )
 
 
-def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: dict):
+def store_config(
+    runtime: PanelRuntime,
+    context: DeviceModuleContext,
+    config: dict,
+    stored: "dict | None" = None,
+):
     """Check a configuration on the agent, store it, and push it.
 
     Args:
         runtime: The shared runtime.
         context: The device.
-        config: The module's whole configuration.
+        config: The module's whole configuration, as the agent checks it.
+        stored: What is written to the module's file, when it holds more
+            than the agent checks; ``config`` itself when None.
 
     Raises:
         HTTPException: 409 ``agent_offline`` when the device has no socket,
@@ -538,8 +545,9 @@ def store_config(runtime: PanelRuntime, context: DeviceModuleContext, config: di
             str(verdict.get("code") or "config_invalid"),
             **params,
         )
-    runtime.desired_states.write(context.key, context.module, config)
-    context.config = dict(config)
+    written = dict(config if stored is None else stored)
+    runtime.desired_states.write(context.key, context.module, written)
+    context.config = written
     push_state(runtime, context.key)
     _recompose_published(runtime, context.module)
 

@@ -32,6 +32,29 @@ GITEA_DIGESTS = {
     "linux-arm64": "04c086d36dba793546e331484a9da34571763efdfa77dc526cc98e0f10917e7b",  # scan: allow
 }
 
+VSCODE_VERSION = "1.140.0"
+VSCODE_COMMIT = "07f806f999227108933c2e30515b26eecc1fda74"  # scan: allow
+# What update.code.visualstudio.com answered for each CLI build of that
+# commit: the platform key, Microsoft's build name, the archive, its sha256.
+VSCODE_DIGEST_ALPINE_X64 = (
+    "938b4f5b4690102e0b5b805af6df42fe7f91e043608ceefd5786ed01e4a6fcd1"  # scan: allow
+)
+VSCODE_DIGEST_ALPINE_ARM64 = (
+    "6205d8b4787ea0a4e7f7e7f152b456db2fef5fcfd0bff3f130150ebf2886bc86"  # scan: allow
+)
+VSCODE_DIGEST_WIN32_X64 = (
+    "ae2eb828dc2874a43e2ee840d036d2b415cebed29d22417042da145c4bdc6efe"  # scan: allow
+)
+VSCODE_DIGEST_DARWIN_ARM64 = (
+    "352754c307ff1edb03ea01f55388e17b7e4e5bb1485aa62bcd2663b42ce5420c"  # scan: allow
+)
+VSCODE_BUILDS = {
+    "linux-amd64": ("cli_alpine_x64", "tar.gz", VSCODE_DIGEST_ALPINE_X64),
+    "linux-arm64": ("cli_alpine_arm64", "tar.gz", VSCODE_DIGEST_ALPINE_ARM64),
+    "windows-amd64": ("cli_win32_x64", "zip", VSCODE_DIGEST_WIN32_X64),
+    "darwin-arm64": ("cli_darwin_arm64", "zip", VSCODE_DIGEST_DARWIN_ARM64),
+}
+
 DEBIAN = {"os": "linux", "family": "debian", "arch": "amd64"}
 RHEL = {"os": "linux", "family": "rhel", "arch": "amd64"}
 
@@ -52,6 +75,7 @@ def test_every_shipped_manifest_names_its_installer_tier():
         "samba": "platform",
         "zfs": "platform",
         "gitea": "hub",
+        "vscode": "hub",
         "anydesk": "user",
         "teamviewer": "user",
     }
@@ -67,6 +91,7 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
         "samba": "system",
         "zfs": "system",
         "gitea": "go-gitea/gitea",
+        "vscode": "Microsoft",
         "anydesk": "AnyDesk Software GmbH",
         "teamviewer": "TeamViewer Germany GmbH",
     }
@@ -80,6 +105,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "samba",
         "zfs",
         "gitea",
+        "vscode",
         "anydesk",
         "teamviewer",
     ]
@@ -425,3 +451,51 @@ def test_the_loader_refuses_a_branch_installer_that_is_not_a_bare_builtin(
         load_module_manifests()
 
     assert "installer" in str(refusal.value) or "builtin" in str(refusal.value)
+
+
+def test_vscode_pins_microsofts_cli_per_platform_at_one_build():
+    manifest = load_module_manifests()["vscode"]
+
+    assert manifest["version"] == VSCODE_VERSION
+    assert manifest["corresponding_source"].endswith(f"/{VSCODE_COMMIT}/cli")
+    assert set(manifest["platforms"]) == set(VSCODE_BUILDS)
+    for key, (build, archive, digest) in VSCODE_BUILDS.items():
+        entry = manifest["platforms"][key]
+        assert entry["url"] == (
+            "https://vscode.download.prss.microsoft.com/dbazure/download/stable/"
+            f"{VSCODE_COMMIT}/vscode_{build}_cli.{archive}"
+        )
+        assert entry["sha256"] == digest
+        assert entry["package_kind"] == ("tar" if archive == "tar.gz" else "zip")
+
+
+def test_vscode_needs_glibc_2_28_on_linux_and_nothing_elsewhere():
+    manifest = load_module_manifests()["vscode"]
+    old = {**DEBIAN, "version": "2.27"}
+    new = {**RHEL, "arch": "arm64", "version": "2.28"}
+    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
+
+    assert resolve_platform_entry(manifest, old) == ("", None)
+    assert resolve_platform_entry(manifest, new)[0] == "linux-arm64"
+    assert resolve_platform_entry(manifest, windows)[0] == "windows-amd64"
+
+
+@pytest.mark.parametrize(
+    "key, path",
+    [
+        ("linux-amd64", "/usr/local/lib/neutrino_vscode/code"),
+        ("windows-amd64", "Neutrino\\vscode\\code.exe"),
+        ("darwin-arm64", "/Library/Application Support/Neutrino/vscode/code"),
+    ],
+)
+def test_vscode_verifies_the_cli_where_the_agent_unpacks_it(key, path):
+    verify = load_module_manifests()["vscode"]["platforms"][key]["verify"]
+
+    assert path in verify
+    assert "--version" in verify
+
+
+def test_an_archive_package_is_recognised_by_its_compressor():
+    assert looks_like_package(b"\x1f\x8b\x08", "tar")
+    assert looks_like_package(b"PK\x03\x04", "zip")
+    assert not looks_like_package(b"<!doctype html>", "zip")

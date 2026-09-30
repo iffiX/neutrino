@@ -239,7 +239,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}` |
@@ -275,7 +275,7 @@ TLS port.
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
 | `/api/hub/setting` | The panel's own: its port, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
-| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, each importing what the machine already has and setting what it is to have |
+| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, each setting what it is to have and all but `zfs` and `vscode` importing what the machine already has |
 | `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 | `/api/channel` | Agents and clients on the agent port: `join` and `leave`, and `/api/channel/socket` for everything else |
@@ -506,6 +506,17 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `POST /api/agent/file/rename` | `{device_id, path, name}` | |
 | `POST /api/agent/file/remove` | `{device_id, path}` | |
 
+The VS Code block keeps `config/devices/<id>/vscode.json` as `{instances:
+[{account, port, login_id, token_sealed}]}`: each instance's connection
+token is generated with `secrets.token_urlsafe(24)` the first time its
+account is saved and sealed under the vault's data key, and `login_id` names
+the vault login a Windows machine starts it with. The state carries the
+module as `{address, instances: [{account, port, token, password}]}`, the
+token opened, `password` the login's own and sent only to a Windows machine,
+and no seal and no login id. Each instance a running module serves is
+published as one `web` entry, `vscode_<device id>_<account>`, titled
+`VS Code (<account>)`, at `http://<device>:<port>/` with `is_local_only`.
+
 #### `/api/agent/terminal`
 
 | Route | Parameters | Does |
@@ -526,7 +537,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's units' journal on the device; empty for a module that runs as no unit |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman` and `zfs` alike; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs` and `vscode` alike; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -538,6 +549,8 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/gitea/set` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/add` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/password/set` | `{device_id, username, password}` | |
+| `GET /api/agent/module/vscode` | `?device_id=` | `VscodeDeviceView`: the instances, each `{account, port, login_id, is_running, code}` with `is_running` and `code` as last reported, and the `accounts` the machine reported |
+| `POST /api/agent/module/vscode/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535 | replaces the instances, generating each account's connection token the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for an instance of a Windows machine with no login; the agent's own refusals as 400 |
 | `GET /api/agent/module/podman` | `?device_id=` | |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, ...}` | |
@@ -581,7 +594,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_netbird.py` and `overlay_easytier.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py` and `module_zfs.py`, `terminal.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py` and `module_vscode.py`, `terminal.py` |
 | `web/routers/` | `channel.py`, on the agent port's app |
 | `web/` | `ws.py`, both socket groups |
 
@@ -967,7 +980,7 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url}` | a device's Gitea module reports a URL, or an `http` record is declared |
+| `web` | `{url, is_local_only}`, `is_local_only` present and true only on a VS Code instance | a device's Gitea module reports a URL, a device's VS Code module runs an instance, or an `http` record is declared |
 | `port` | `{host, port}` | a device's Podman container publishes a host port, or a `generic_tcp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share}`, `protocol` being `smb` | a device's Samba module reports the share, or a `samba` record is declared |
@@ -991,6 +1004,7 @@ its own language:
 | `device_share` | `{device}` |
 | `gitea_module` | `{host}` |
 | `samba_module` | `{host}` |
+| `vscode_module` | `{host, account}` |
 
 A declared record whose person wrote a line of their own gets that line and an
 empty `description_code`, because those are already their words.
@@ -1070,7 +1084,7 @@ first that fails gives the close its code:
 | `service_unknown` | the id names no entry in the list resolved for this client |
 | `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
-| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated |
+| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
 `service_id`, `permission_denied` puts the entry's type in `params` as
@@ -1081,6 +1095,7 @@ first that fails gives the close its code:
 | --- | --- |
 | `rdp` | `{host, port, password}`: where the desktop answers, and the seat password of the machine sharing it |
 | `ai` | `{base_url, api_key, model}`: the gateway on the address this client reaches it at, this client's own key, and the first model the gateway serves |
+| `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token. The client forwards the entry's port to its own `127.0.0.1` and opens `http://127.0.0.1:<port>/?tkn=<token>` there, never the entry's address |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
 
 ### The rules the details settle

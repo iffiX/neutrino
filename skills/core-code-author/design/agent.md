@@ -303,6 +303,7 @@ module a system cannot run is left out on that system.
 | Gitea | amd64 and arm64 | no | no |
 | Containers (Podman) | yes | no | no |
 | ZFS storage | yes | no | no |
+| VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | Apple silicon |
 | Remote desktop (RustDesk, AnyDesk, TeamViewer) | yes | yes | yes |
 
 A Mac shows a peer nothing until RustDesk holds both screen recording and

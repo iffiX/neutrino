@@ -1,0 +1,27 @@
+/* VS Code on one machine: one row per instance, account then port, with
+   whether it runs and its remove at the end. */
+.vscode_instance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+
+.vscode_instance > .field {
+  flex: 1;
+  min-width: 160px;
+}
+
+.vscode_instance > .vscode_instance_port {
+  flex: 0 0 120px;
+  min-width: 0;
+}
+
+.vscode_instance > .badge {
+  margin-bottom: var(--space-2);
+}
+
+.vscode_instance_login,
+.vscode_instance_error {
+  flex: 1 0 100%;
+}
