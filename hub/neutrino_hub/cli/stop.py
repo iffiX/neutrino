@@ -9,9 +9,9 @@
     sudo nhub stop --only-supplicant --interface wlp3s0
     sudo nhub stop --only-dhcpcd --interface enp2s0
 
-The mirror of ``nhub run``, and spelled the way it is: the same ``--only-``
-flags, the same names, and ``--interface`` for the two engines that run one
-per interface. ``--only-router`` is the one name ``run`` has no use for — the
+The pair of ``nhub start``, and spelled the way ``nhub run`` is: the same
+``--only-`` flags, the same names, and ``--interface`` for the two engines
+that run one per interface. ``--only-router`` is the one name ``run`` has no use for — the
 routing state is a unit that finishes rather than a process to watch.
 
 With no ``--only`` it stops all of them, the per-interface engines included:

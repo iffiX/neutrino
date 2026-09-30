@@ -150,7 +150,7 @@ it has none:
 | Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
 | Channel frames | `hello`/`welcome`; `open`/`close`; `state`/`report` | `refused`, `credit` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `file`, `command`, `package`, `log`, `service`, `desktop` |
-| CLI | `nagent join`/`leave`, `nclient join`/`leave`, `nagent rdp start`/`stop`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
+| CLI | `nhub start`/`stop`, `nagent join`/`leave`, `nclient join`/`leave`, `nagent rdp start`/`stop`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
 
 ### The page, its members and its writes
 
