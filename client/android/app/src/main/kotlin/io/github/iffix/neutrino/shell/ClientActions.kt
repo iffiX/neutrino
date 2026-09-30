@@ -3,6 +3,8 @@ package io.github.iffix.neutrino.shell
 import android.content.Intent
 import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.files.ShareLogin
+import io.github.iffix.neutrino.files.ShareRoot
 import kotlinx.serialization.json.JsonObject
 
 /** What a person can do from a screen; the screens call these and draw what comes back. */
@@ -76,4 +78,29 @@ interface ClientActions {
      * @param provider The network's provider.
      */
     fun pickOverlay(bindingId: String, provider: String)
+
+    /**
+     * Whether a share has a login already.
+     *
+     * @param rootKey The share's root id.
+     * @return True when it has.
+     */
+    fun hasShareLogin(rootKey: String): Boolean
+
+    /**
+     * Try a share's login on its server, and keep it once it works.
+     *
+     * @param root The share.
+     * @param login The login.
+     * @param isKept Whether it is kept across runs.
+     * @return Ok once it works, or the refusal to word.
+     */
+    suspend fun giveShareLogin(root: ShareRoot, login: ShareLogin, isKept: Boolean): ChannelResult<Unit>
+
+    /**
+     * Show a share in the system's Files.
+     *
+     * @param rootKey The share's root id.
+     */
+    fun openShare(rootKey: String)
 }

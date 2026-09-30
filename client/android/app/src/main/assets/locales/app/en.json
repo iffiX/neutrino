@@ -1,5 +1,7 @@
 {
   "code": {
+    "session_taken": "another window took over this terminal",
+    "session_unknown": "that machine no longer keeps this terminal",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
@@ -22,8 +24,17 @@
     "key_hide": "Hide the key",
     "key_show": "Show the key",
     "leave_confirm": "Leave {hub}? This phone forgets its link and its key.",
+    "open_in_files": "Open in Files",
     "or": "or",
     "overlay_count": "This hub publishes {count} virtual networks",
-    "scan_hint": "Point the camera at the QR code on the hub's Clients page"
+    "password_not_saved": "Password not saved",
+    "paste": "Paste",
+    "remember": "Remember",
+    "scan_hint": "Point the camera at the QR code on the hub's Clients page",
+    "share_login_needed": "Give this share's password on the Files screen first.",
+    "terminal_detached": "Detached; it attaches again once the hub answers.",
+    "terminal_end": "End",
+    "terminal_end_confirm": "End the persistent session on {name}? Its shell exits on that machine.",
+    "terminal_persistent": "Persistent"
   }
 }

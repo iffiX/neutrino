@@ -152,6 +152,8 @@ val CLIENT_HUB_CODES: List<String> = listOf(
     "rdp_not_shared",
     "role_mismatch",
     "service_unknown",
+    "session_taken",
+    "session_unknown",
     "shell_unknown",
     "vault_locked",
     "verb_unknown",
@@ -237,3 +239,33 @@ const val OVERLAY_SERVICE_EXTRA_BINDING = "binding_id"
 
 /** The extra naming the network's provider. */
 const val OVERLAY_SERVICE_EXTRA_PROVIDER = "provider"
+
+/** The authority of the shares' documents provider. */
+const val CLIENT_FILES_AUTHORITY = "io.github.iffix.neutrino.files"
+
+/** The file the shares' kept logins are sealed in. */
+const val CLIENT_SHARE_LOGINS_FILE_NAME = "shares.sealed"
+
+/** How long connecting to a share's server and each request may take. */
+const val CLIENT_SHARE_TIMEOUT_S = 10L
+
+/** The preferences file the kept terminal sessions are listed in. */
+const val CLIENT_TERMINAL_FILE_NAME = "terminals"
+
+/** The key of the kept terminal sessions in [CLIENT_TERMINAL_FILE_NAME]. */
+const val CLIENT_TERMINAL_SESSIONS_KEY = "sessions"
+
+/** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
+const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
+
+/** The page the terminals are drawn in. */
+const val CLIENT_TERMINAL_PAGE = "file:///android_asset/terminal/index.html"
+
+/** What the extra-keys row's Ctrl key sends: nothing, it holds Ctrl for the next key. */
+const val TERMINAL_KEY_CTRL = "ctrl"
+
+/** What the extra-keys row's Paste key sends: the clipboard's text. */
+const val TERMINAL_KEY_PASTE = "paste"
+
+/** The name the terminal page reaches the app by. */
+const val CLIENT_TERMINAL_BRIDGE = "NeutrinoBridge"

@@ -48,7 +48,16 @@ class MainActivity : ComponentActivity() {
             "${application.deviceName} · android/${application.architecture} · client ${BuildConfig.VERSION_NAME}"
         val hubs by application.connections.views.collectAsStateWithLifecycle(emptyList())
         val context = LocalContext.current
-        val actions = remember(context) { ClientController(context, application.connections, application.overlays) }
+        val actions =
+            remember(context) {
+                ClientController(
+                    context,
+                    application.connections,
+                    application.overlays,
+                    application.shares,
+                    application.shareLogins,
+                )
+            }
         val overlayStatus by application.overlays.status.collectAsStateWithLifecycle()
         NeutrinoTheme(palette, words) {
             AppShell(
@@ -59,6 +68,7 @@ class MainActivity : ComponentActivity() {
                 hubs = hubs,
                 actions = actions,
                 overlayStatus = overlayStatus,
+                terminalTabs = application.terminalTabs,
             )
         }
     }

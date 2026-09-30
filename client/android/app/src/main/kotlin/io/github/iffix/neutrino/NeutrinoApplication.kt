@@ -6,15 +6,21 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.provider.Settings
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.KeystoreSecretSealer
 import io.github.iffix.neutrino.channel.ClientMachine
 import io.github.iffix.neutrino.channel.HubConnections
 import io.github.iffix.neutrino.channel.OkHttpHubTransport
+import io.github.iffix.neutrino.files.ShareLoginStore
+import io.github.iffix.neutrino.files.ShareRoot
+import io.github.iffix.neutrino.files.SmbShareClient
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.settings.ClientSettingsStore
+import io.github.iffix.neutrino.terminal.StreamOpener
+import io.github.iffix.neutrino.terminal.TerminalTabs
 import java.io.File
 import java.net.Inet4Address
 import java.net.InetAddress
@@ -23,6 +29,11 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -67,6 +78,35 @@ class NeutrinoApplication : Application() {
         }
     }
 
+    /** Every share the connected hubs publish, as roots of the system's Files. */
+    val shareRoots: StateFlow<List<ShareRoot>> by lazy {
+        connections.views.map { ShareRoot.all(it) }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+    }
+
+    /** The shares' logins. */
+    val shareLogins: ShareLoginStore by lazy {
+        ShareLoginStore(
+            File(noBackupFilesDir, CLIENT_SHARE_LOGINS_FILE_NAME),
+            KeystoreSecretSealer(CLIENT_KEYSTORE_ALIAS),
+        )
+    }
+
+    /** The SMB connections the shares are read through. */
+    val shares: SmbShareClient by lazy { SmbShareClient(CLIENT_SHARE_TIMEOUT_S) }
+
+    /** Every terminal tab. */
+    val terminalTabs: TerminalTabs by lazy {
+        TerminalTabs(
+            preferences = getSharedPreferences(CLIENT_TERMINAL_FILE_NAME, Context.MODE_PRIVATE),
+            opener = { bindingId ->
+                connections.session(bindingId)?.takeIf { it.view.value.isConnected }?.let { session ->
+                    StreamOpener { kind, args, hasBytes -> session.openStream(kind, args, hasBytes) }
+                }
+            },
+            scope = scope,
+        )
+    }
+
     /** The name this phone goes by: the one the person gave it, else its model. */
     val deviceName: String
         get() = Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
@@ -83,6 +123,11 @@ class NeutrinoApplication : Application() {
         super.onCreate()
         connections.start()
         overlays.start(scope, connections.views)
+        scope.launch {
+            shareRoots.collect {
+                contentResolver.notifyChange(DocumentsContract.buildRootsUri(CLIENT_FILES_AUTHORITY), null)
+            }
+        }
         val connectivity = getSystemService(ConnectivityManager::class.java)
         connectivity.registerDefaultNetworkCallback(NetworkWatch())
     }

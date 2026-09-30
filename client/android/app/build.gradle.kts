@@ -94,23 +94,24 @@ ktlint {
     android.set(true)
 }
 
-// The desktop client's word catalogs, copied into the app's assets at build
-// time so both clients read one set of keys.
-abstract class DesktopLocalesCopy : DefaultTask() {
-    @get:InputDirectory
-    abstract val source: DirectoryProperty
+// Files of the repository copied into the app's assets at build time, so the
+// app carries the desktop client's word catalogs and its terminal as they are.
+abstract class RepositoryAssetsCopy : DefaultTask() {
+    @get:InputFiles
+    abstract val sources: ConfigurableFileCollection
+
+    @get:Input
+    abstract val into: Property<String>
 
     @get:OutputDirectory
     abstract val output: DirectoryProperty
 
     @TaskAction
     fun copy() {
-        val target = output.get().asFile.resolve("locales/desktop")
+        val target = output.get().asFile.resolve(into.get())
         target.deleteRecursively()
         target.mkdirs()
-        source.get().asFile.listFiles { file -> file.extension == "json" }?.forEach { file ->
-            file.copyTo(target.resolve(file.name), overwrite = true)
-        }
+        sources.files.forEach { file -> file.copyTo(target.resolve(file.name), overwrite = true) }
     }
 }
 
@@ -148,14 +149,28 @@ val launcherIconRender =
     }
 
 val desktopLocalesCopy =
-    tasks.register<DesktopLocalesCopy>("desktopLocalesCopy") {
-        source.set(repositoryRoot.resolve("client/desktop/frontend/locales"))
+    tasks.register<RepositoryAssetsCopy>("desktopLocalesCopy") {
+        sources.from(repositoryRoot.resolve("client/desktop/frontend/locales/en.json"))
+        sources.from(repositoryRoot.resolve("client/desktop/frontend/locales/zh-CN.json"))
+        into.set("locales/desktop")
         output.set(layout.buildDirectory.dir("generated/desktop_locales"))
+    }
+
+val terminalVendorCopy =
+    tasks.register<RepositoryAssetsCopy>("terminalVendorCopy") {
+        sources.from(repositoryRoot.resolve("client/desktop/frontend/vendor/xterm.js"))
+        sources.from(repositoryRoot.resolve("client/desktop/frontend/vendor/xterm.css"))
+        sources.from(repositoryRoot.resolve("client/desktop/frontend/vendor/addon-fit.js"))
+        sources.from(repositoryRoot.resolve("hub/frontend/src/fonts/MesloLGSNF-Regular.ttf"))
+        sources.from(repositoryRoot.resolve("hub/frontend/src/fonts/MesloLGSNF-Bold.ttf"))
+        into.set("terminal/vendor")
+        output.set(layout.buildDirectory.dir("generated/terminal_vendor"))
     }
 
 androidComponents {
     onVariants { variant ->
-        variant.sources.assets?.addGeneratedSourceDirectory(desktopLocalesCopy, DesktopLocalesCopy::output)
+        variant.sources.assets?.addGeneratedSourceDirectory(desktopLocalesCopy, RepositoryAssetsCopy::output)
+        variant.sources.assets?.addGeneratedSourceDirectory(terminalVendorCopy, RepositoryAssetsCopy::output)
         variant.sources.res?.addGeneratedSourceDirectory(launcherIconRender, LauncherIconRender::output)
     }
 }
@@ -181,6 +196,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(files("libs/netbird.aar"))
     implementation(libs.zxing.core)
+    implementation(libs.smbj)
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)

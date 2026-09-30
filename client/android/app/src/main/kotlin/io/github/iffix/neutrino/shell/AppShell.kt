@@ -40,6 +40,7 @@ import io.github.iffix.neutrino.screen.SettingsScreen
 import io.github.iffix.neutrino.screen.TerminalScreen
 import io.github.iffix.neutrino.screen.WebScreen
 import io.github.iffix.neutrino.settings.ClientSettings
+import io.github.iffix.neutrino.terminal.TerminalTabs
 
 /**
  * Every screen under one frame: the bottom bar in portrait, the sidebar in a wide landscape
@@ -52,6 +53,7 @@ import io.github.iffix.neutrino.settings.ClientSettings
  * @param hubs Every hub joined.
  * @param actions What the screens can do.
  * @param overlayStatus What the running network's engine last said.
+ * @param terminalTabs Every terminal tab.
  */
 @Composable
 fun AppShell(
@@ -62,6 +64,7 @@ fun AppShell(
     hubs: List<HubView>,
     actions: ClientActions,
     overlayStatus: OverlayStatus?,
+    terminalTabs: TerminalTabs,
 ) {
     var consentFor by remember { mutableStateOf("") }
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -130,8 +133,16 @@ fun AppShell(
                     composable(AppScreen.AI.route) {
                         AiScreen(hubs, material = actions::serviceMaterial, onCopy = actions::copy, onJoin = join)
                     }
-                    composable(AppScreen.FILES.route) { FilesScreen(onJoin = join) }
-                    composable(AppScreen.TERMINALS.route) { TerminalScreen(onJoin = join) }
+                    composable(AppScreen.FILES.route) {
+                        FilesScreen(
+                            hubs,
+                            hasLogin = actions::hasShareLogin,
+                            onLogin = actions::giveShareLogin,
+                            onOpen = actions::openShare,
+                            onJoin = join,
+                        )
+                    }
+                    composable(AppScreen.TERMINALS.route) { TerminalScreen(hubs, terminalTabs, onJoin = join) }
                     composable(AppScreen.REMOTE_DESKTOP.route) { RemoteDesktopScreen(onJoin = join) }
                     composable(AppScreen.SETTINGS.route) {
                         SettingsScreen(
