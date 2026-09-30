@@ -179,9 +179,10 @@ the transient unit `neutrino_hub_update` with `update.sh` from that directory.
 The unit runs the package manager, then holds a gate of up to 180 seconds:
 `neutrino_hub_web` and whichever of `neutrino_hub_router` and
 `neutrino_hub_dnsmasq` were running must be active, `GET /api/hub/display` on
-the panel's port must answer 200, over HTTPS trusting
-`/etc/neutrino/hub/web/panel_tls/authority.pem` when `is_https_enabled` is
-on at that moment, and `nhub --version` must print the target.
+the panel's port must answer 200, by the scheme `is_https_enabled` names at
+that moment or else by the other one, HTTPS trusting
+`/etc/neutrino/hub/web/panel_tls/authority.pem`, and `nhub --version` must
+print the target.
 A gate that fails installs the previous package and holds the gate again.
 
 When `/proc/meminfo` gives less than 300 MB of `MemAvailable` as the unit

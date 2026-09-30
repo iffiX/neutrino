@@ -151,7 +151,7 @@ def test_a_gate_reports_every_check_that_failed(box):
 
     assert raw["stage"] == "failed"
     assert "neutrino_hub_router=failed" in raw["output"]
-    assert "http=failed" in raw["output"]
+    assert "panel=failed" in raw["output"]
     assert "version=0.3.0" in raw["output"]
 
 

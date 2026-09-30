@@ -191,11 +191,15 @@ gate() {
             systemctl is-active --quiet "$unit" \\
                 || { ok=0; report="$report $unit=$(systemctl is-active "$unit")"; }
         done
-        scheme=http
-        grep -Eq '"is_https_enabled": *true' @SETTINGS@ 2>/dev/null && scheme=https
+        first=http
+        second=https
+        grep -Eq '"is_https_enabled": *true' @SETTINGS@ 2>/dev/null \\
+            && { first=https; second=http; }
         curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null \\
-            "$scheme://127.0.0.1:$PORT$HEALTH_PATH" \\
-            || { ok=0; report="$report $scheme=failed"; }
+            "$first://127.0.0.1:$PORT$HEALTH_PATH" \\
+            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null \\
+            "$second://127.0.0.1:$PORT$HEALTH_PATH" \\
+            || { ok=0; report="$report panel=failed"; }
         seen=$(nhub --version 2>/dev/null)
         [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
         [ "$ok" = 1 ] && return 0

@@ -59,8 +59,9 @@ HUB_UPDATE_AGENT_COMMAND = "nagent"
 HUB_UPDATE_PANEL_UNIT = "neutrino_hub_web"
 HUB_UPDATE_GATE_UNITS = ("neutrino_hub_router", "neutrino_hub_dnsmasq")
 HUB_UPDATE_HEALTH_PATH = "/api/hub/display"
-# What the gate reads to reach the panel by the scheme it serves: its
-# settings, and the authority its certificate is signed by.
+# What the gate reads to reach the panel: its settings, which name the scheme
+# tried first, the other one second, and the authority an HTTPS panel's
+# certificate is signed by.
 HUB_UPDATE_PANEL_SETTINGS_PATH = UTILS_CONFIG_DIR / "web" / "settings.json"
 HUB_UPDATE_PANEL_AUTHORITY_PATH = (
     UTILS_CONFIG_DIR / "web" / "panel_tls" / "authority.pem"
