@@ -7,6 +7,7 @@ console pushes the network, this page keeps only the console's address, and
 what the engine then runs is read back and shown.
 """
 
+import ipaddress
 import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -34,6 +35,9 @@ from neutrino_hub.modules.easytier.ops import (
     EasyTierStatusReader,
     read_stored,
 )
+from neutrino_hub.modules.overlay.config import enabled_providers
+from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
+from neutrino_hub.modules.overlay.ops import overlay_subnets
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -50,6 +54,7 @@ from neutrino_hub.web.models import (
     EasyTierView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.routers.hub.overlay import subnet_overlap_refusal
 
 router = APIRouter(
     prefix="/api/hub/overlay", tags=["overlay"], dependencies=[Depends(require_session)]
@@ -86,8 +91,10 @@ async def update_settings(
 
     Raises:
         HTTPException: 400 for a mode, a console address, a name, an address,
-            a peer or a network that is not one, or a first manual network
-            with no secret; 502 when the converge step that follows fails.
+            a peer or a network that is not one, a first manual network with
+            no secret, or, while EasyTier runs, an address whose network
+            overlaps another overlay's or one this box is on; 502 when the
+            converge step that follows fails.
         VaultLockedError: If there is no data key to seal a secret or a
             console address under.
     """
@@ -124,6 +131,8 @@ async def update_settings(
             validate_network(cidr)
         except ValueError as error:
             raise _bad_request("easytier_network_invalid", cidr=cidr) from error
+    if is_manual and request.address:
+        _refuse_overlap(runtime, request.address)
     config_server = (
         None if request.config_server is None else request.config_server.strip()
     )
@@ -211,6 +220,27 @@ async def _store(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
             "easytier_apply_failed", detail=command_failure_text(error)
         ) from error
     return _view(runtime, config)
+
+
+def _refuse_overlap(runtime: PanelRuntime, address: str) -> None:
+    """Refuse a manual address whose network overlaps another, while EasyTier
+    runs.
+
+    Args:
+        runtime: The shared runtime.
+        address: This box's address on the network, with its prefix.
+
+    Raises:
+        HTTPException: 400 with ``overlay_subnet_overlap`` for the first
+            overlap.
+    """
+    network = runtime.network()
+    enabled = enabled_providers(network)
+    if OVERLAY_EASYTIER not in enabled:
+        return
+    subnets = overlay_subnets([key for key in enabled if key != OVERLAY_EASYTIER])
+    subnets[OVERLAY_EASYTIER] = [str(ipaddress.ip_interface(address).network)]
+    subnet_overlap_refusal(network, subnets)
 
 
 def _config() -> EasyTierConfig:

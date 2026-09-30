@@ -28,7 +28,11 @@ from neutrino_hub.modules.router.controller import (
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
-from neutrino_hub.modules.overlay.ops import OverlaySwitcher, overlay_devices
+from neutrino_hub.modules.overlay.ops import (
+    OverlayRouteGuard,
+    OverlaySwitcher,
+    overlay_devices,
+)
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
@@ -200,6 +204,10 @@ class PanelRuntime:
         # The channel's own address set moves the same way, and every peer
         # holds a copy; sampled, and pushed to both roles when it moved.
         self.address_sampler = PanelAddressSampler(runtime=self)
+        # The routes the running overlays installed that the hub refused, as
+        # the last check found them. Runtime only: the next check reads the
+        # kernel again.
+        self.overlay_route_conflicts: list = []
         # What the nodes panel last drew, so a cycle reading the same numbers
         # tells nobody. One place, since a collector lives per open socket.
         self._node_readings: dict = {}
@@ -244,6 +252,25 @@ class PanelRuntime:
         ) as error:
             LOGGER.warning("overlay devices not applied: %s", error)
         return True
+
+    def check_overlay_routes(self) -> list:
+        """Read the running overlays' routes and withdraw the refused ones.
+
+        Returns:
+            The refused routes, as
+            :class:`neutrino_hub.modules.overlay.route_check.OverlayRouteConflict`;
+            also kept on :attr:`overlay_route_conflicts` for the Overlay page.
+        """
+        try:
+            network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+        except (FileNotFoundError, ValueError):
+            return []
+        conflicts = OverlayRouteGuard().check(network)
+        if conflicts != self.overlay_route_conflicts:
+            for conflict in conflicts:
+                LOGGER.warning("overlay route refused: %s", conflict)
+        self.overlay_route_conflicts = conflicts
+        return conflicts
 
     def write_network(self, network: RouterNetworkConfig) -> None:
         """Store the router configuration.
@@ -455,7 +482,8 @@ class PanelRuntime:
         state is reconciled, dnsmasq and xray restart only when their text
         changed, every online device and every client is handed its state,
         and only then are the engines turned off stopped, so a peer reached
-        through one of them hears the new state first.
+        through one of them hears the new state first. Last, the routes the
+        running overlays installed are checked.
 
         Args:
             only: Apply just this interface's role.
@@ -515,6 +543,7 @@ class PanelRuntime:
             changes += self._push_desired_states()
             channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
             changes += switcher.stop(network)
+            self.check_overlay_routes()
         router_failure = failure_text(results)
         if router_failure:
             failures.append(router_failure)

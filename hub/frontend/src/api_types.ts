@@ -1365,8 +1365,19 @@ export interface OverlayKindView {
   client_count: number;
 }
 
+/** A route a running overlay installed that the hub refused. */
+export interface OverlayRouteConflictView {
+  /** overlay_default_route_refused or overlay_route_overlap. */
+  code: string;
+  /** {title, route, conflict}. */
+  params: Record<string, string>;
+  /** Whether the hub took the route away. */
+  is_withdrawn: boolean;
+}
+
 export interface OverlayChoiceView {
   kinds: OverlayKindView[];
+  route_conflicts: OverlayRouteConflictView[];
 }
 
 /** Whether one engine runs. */

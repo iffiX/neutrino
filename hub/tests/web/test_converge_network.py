@@ -162,7 +162,14 @@ def applied(monkeypatch):
     monkeypatch.setattr(runtime_module, "XrayConfigApplier", _RefusingApplier)
     monkeypatch.setattr(runtime_module, "RouterStateController", Controller)
     monkeypatch.setattr(runtime_module, "OverlaySwitcher", Switcher)
+
+    class Guard:
+        def check(self, network):
+            written.append(("routes checked", None))
+            return []
+
     monkeypatch.setattr(runtime_module, "install_dnsmasq", install_dnsmasq)
+    monkeypatch.setattr(runtime_module, "OverlayRouteGuard", Guard)
     monkeypatch.setattr(
         runtime_module.channel_state,
         "push_states",
@@ -173,6 +180,7 @@ def applied(monkeypatch):
     panel.is_config_dirty = True
     panel.settings = {}
     panel.agent_sessions = _Sessions([])
+    panel.overlay_route_conflicts = []
     monkeypatch.setattr(
         runtime_module.PanelRuntime,
         "desired_state_for",
@@ -201,6 +209,7 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
         "installed dnsmasq",
         "pushed states",
         "stopped",
+        "routes checked",
     ]
     assert "xray restarted" in summary
     assert "desired state pushed to 1 devices" in summary
@@ -288,6 +297,7 @@ def test_an_engine_that_will_not_start_stops_none_of_the_rest(applied, monkeypat
         "installed dnsmasq",
         "pushed states",
         "stopped",
+        "routes checked",
     ]
 
 

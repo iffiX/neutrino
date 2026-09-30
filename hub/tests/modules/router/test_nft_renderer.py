@@ -243,6 +243,105 @@ def test_a_manual_overlay_keeps_the_device_its_engine_names():
     assert 'iifname { "enp1s0", "easytier" } accept' in ruleset
 
 
+def render_both(*entries, routing=None, devices=None) -> str:
+    """The ruleset for a box running NetBird and EasyTier at once."""
+    return RouterNftRenderer(
+        network=network_config(
+            *entries,
+            overlays=[
+                {"provider": "netbird", "is_enabled": True},
+                {"provider": "easytier", "is_enabled": True},
+            ],
+        ),
+        routing={**ROUTING_DIRECT, **(routing or {})},
+        xray_uid=999,
+        overlay_devices=devices,
+    ).render()
+
+
+def test_two_overlays_answer_and_knock_on_both_devices_and_ports():
+    ruleset = render_both(
+        wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
+    )
+
+    assert 'iifname { "enp1s0", "wt0", "easytier" } accept' in ruleset
+    assert "udp dport { 11010, 51820 } accept" in ruleset
+    assert 'iifname { "enp1s0" } oifname { "wt0", "easytier" } accept' in ruleset
+
+
+def test_the_overlay_scope_diverts_both_overlays():
+    ruleset = render_both(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={"is_proxy_enabled": True, "is_overlay_proxy_enabled": True},
+    )
+
+    assert 'iifname != { "enp1s0", "wt0", "easytier" } return' in ruleset
+
+
+def test_nothing_is_forwarded_from_one_overlay_to_the_other():
+    """A peer of one overlay is not a peer of the other, and the box between
+    them is not a bridge. The drops sit in a chain ahead of forward, since
+    an overlay daemon puts its own accept at the top of forward."""
+    ruleset = render_both(
+        wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
+    )
+
+    fence = ruleset[ruleset.index("chain forward_overlays") :]
+    fence = fence[: fence.index("\n    }")]
+    assert "priority filter - 1; policy accept;" in fence
+    assert 'iifname { "wt0" } oifname { "easytier" } drop' in fence
+    assert 'iifname { "easytier" } oifname { "wt0" } drop' in fence
+
+
+def test_the_fence_follows_a_console_device_found():
+    ruleset = render_both(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        devices={"easytier": ["tun0"]},
+    )
+
+    assert 'iifname { "wt0" } oifname { "tun0" } drop' in ruleset
+    assert '"easytier"' not in ruleset
+
+
+def test_a_box_that_routes_nothing_still_fences_two_overlays():
+    ruleset = render_both()
+
+    assert 'iifname { "easytier" } oifname { "wt0" } drop' in ruleset
+
+
+def test_one_overlay_needs_no_fence():
+    assert "forward_overlays" not in render(
+        wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
+    )
+
+
+def test_an_overlay_turned_off_is_absent_from_the_whole_ruleset():
+    ruleset = RouterNftRenderer(
+        network=network_config(
+            lan_entry("enp1s0", address="10.0.0.1"),
+            overlays=[
+                {"provider": "netbird", "is_enabled": False},
+                {"provider": "easytier", "is_enabled": True},
+            ],
+        ),
+        routing=ROUTING_DIRECT,
+        xray_uid=999,
+    ).render()
+
+    assert "wt0" not in ruleset
+    assert "51820" not in ruleset
+    assert "forward_overlays" not in ruleset
+
+
+@pytest.mark.needs_root
+def test_two_overlays_render_a_ruleset_nft_accepts():
+    validate_nft(
+        render_both(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
+    )
+
+
 def test_the_local_proxy_chain_cannot_loop_back_into_itself():
     """xray's own egress must never be diverted into xray."""
     ruleset = render(

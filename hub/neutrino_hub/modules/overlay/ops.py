@@ -6,14 +6,21 @@ are stood down only when the caller says so, after it has handed every peer
 the material that no longer names them.
 """
 
+import dataclasses
+import ipaddress
+import json
 import socket
 import time
 from typing import Callable
 
-from neutrino_hub.modules.easytier.ops import apply_stored_if_changed
+from neutrino_hub.modules.easytier.ops import (
+    EasyTierStatusReader,
+    apply_stored_if_changed,
+)
 from neutrino_hub.modules.easytier.ops import console_device_names
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
+from neutrino_hub.modules.netbird.ops import NetbirdRouteSelector
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import (
@@ -22,6 +29,10 @@ from neutrino_hub.modules.overlay.constants import (
     OVERLAY_EASYTIER,
     OVERLAY_ENGINES,
     OVERLAY_NETBIRD,
+)
+from neutrino_hub.modules.overlay.route_check import (
+    OverlayRouteConflict,
+    find_route_conflicts,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import device_addresses
@@ -75,6 +86,30 @@ def engine_devices(provider: str) -> list:
     if provider == OVERLAY_EASYTIER and _is_easytier_console_mode():
         return console_device_names()
     return [OVERLAY_ENGINES[provider].device_name]
+
+
+def overlay_subnets(providers: list) -> dict:
+    """The networks each overlay's addresses come from.
+
+    Args:
+        providers: Keys of :data:`OVERLAY_ENGINES`.
+
+    Returns:
+        Provider to networks: the one the product fixes, EasyTier's stored
+        address's network in manual mode, and in console mode the networks
+        of the addresses the running engine reports. An overlay none of
+        these names maps to an empty list.
+    """
+    subnets = {}
+    for provider in providers:
+        engine = OVERLAY_ENGINES[provider]
+        if engine.subnet:
+            subnets[provider] = [engine.subnet]
+        elif provider == OVERLAY_EASYTIER:
+            subnets[provider] = _easytier_subnets()
+        else:
+            subnets[provider] = []
+    return subnets
 
 
 def is_unit_active(unit: str) -> bool:
@@ -225,3 +260,120 @@ def _is_easytier_console_mode() -> bool:
         return read_easytier().is_console_mode
     except ValueError:
         return False
+
+
+class OverlayRouteGuard:
+    """Reads the routes the running overlays installed and takes away the
+    ones the hub does not accept."""
+
+    def check(self, network: RouterNetworkConfig) -> list[OverlayRouteConflict]:
+        """Find the refused routes, and withdraw the ones that can be.
+
+        A default route is deleted from the kernel, and NetBird is told to
+        stop using it; a NetBird route overlapping another network is
+        deselected. EasyTier's routes come from its console or its peers and
+        are only reported.
+
+        Args:
+            network: The parsed router configuration.
+
+        Returns:
+            One conflict per refused route, ``is_withdrawn`` saying whether
+            it was taken away.
+        """
+        providers = enabled_providers(network)
+        devices = {provider: engine_devices(provider) for provider in providers}
+        routes = _kernel_routes(devices)
+        conflicts = find_route_conflicts(
+            {
+                provider: [entry[0] for entry in found]
+                for provider, found in routes.items()
+            },
+            overlay_subnets(providers),
+            [cidr for cidr, _ in network.local_networks(device_addresses())],
+        )
+        return [self._withdraw(conflict, routes) for conflict in conflicts]
+
+    def _withdraw(
+        self, conflict: OverlayRouteConflict, routes: dict
+    ) -> OverlayRouteConflict:
+        """Take one refused route away where that is possible.
+
+        Args:
+            conflict: The route.
+            routes: Provider to ``(destination, device, table)`` as the
+                kernel holds them.
+
+        Returns:
+            The conflict, ``is_withdrawn`` set when it was taken away.
+        """
+        is_withdrawn = False
+        if conflict.provider == OVERLAY_NETBIRD:
+            is_withdrawn = NetbirdRouteSelector().deselect(conflict.route)
+        if conflict.is_default:
+            for destination, device, table in routes.get(conflict.provider, []):
+                if _network_of(destination) != conflict.route:
+                    continue
+                result = run(
+                    ["ip", "route", "del", conflict.route, "dev", device]
+                    + (["table", table] if table else []),
+                    is_checked=False,
+                )
+                is_withdrawn = result.is_success or is_withdrawn
+        return dataclasses.replace(conflict, is_withdrawn=is_withdrawn)
+
+
+def _kernel_routes(devices: dict) -> dict:
+    """The IPv4 routes naming each overlay's devices, in every table.
+
+    Args:
+        devices: Provider to its device names.
+
+    Returns:
+        Provider to ``(destination, device, table)`` triples, the default
+        route written ``0.0.0.0/0``; empty when the kernel cannot be read.
+    """
+    result = run(
+        ["ip", "-4", "-json", "route", "show", "table", "all"], is_checked=False
+    )
+    if not result.is_success:
+        return {}
+    try:
+        entries = json.loads(result.stdout or "[]")
+    except ValueError:
+        return {}
+    owners = {name: provider for provider, names in devices.items() for name in names}
+    routes: dict = {provider: [] for provider in devices}
+    for entry in entries:
+        device = str(entry.get("dev", ""))
+        if device not in owners or entry.get("type", "unicast") != "unicast":
+            continue
+        destination = str(entry.get("dst", ""))
+        if destination == "default":
+            destination = "0.0.0.0/0"
+        table = str(entry.get("table", "") or "")
+        routes[owners[device]].append(
+            (destination, device, "" if table == "main" else table)
+        )
+    return routes
+
+
+def _easytier_subnets() -> list:
+    """The networks EasyTier's addresses come from in its stored mode."""
+    try:
+        config = read_easytier()
+    except ValueError:
+        return []
+    if config.is_console_mode:
+        addresses = EasyTierStatusReader().addresses()
+    else:
+        addresses = [config.address] if config.address else []
+    return [_network_of(address) for address in addresses]
+
+
+def _network_of(cidr: str) -> str:
+    """A CIDR in its normal form, or the text as given when it is not one."""
+    try:
+        return str(ipaddress.ip_network(cidr, strict=False))
+    except ValueError:
+        return cidr

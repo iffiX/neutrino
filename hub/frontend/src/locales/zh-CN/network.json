@@ -358,6 +358,8 @@
   "ui.overlay.reenroll": "重新注册",
   "ui.overlay.reenroll_warning": "重新注册会让这台网关在网络中获得新的身份。之后请在控制台里删掉旧的节点条目。",
   "ui.overlay.remove": "删除",
+  "ui.overlay.route_kept": "hub 撤不掉它，请在管理这个虚拟网的地方改掉。",
+  "ui.overlay.route_withdrawn": "hub 已把它撤掉。",
   "ui.overlay.routes_empty": "没有接口处于 LAN 角色。",
   "ui.overlay.routes_hint": "在控制台的 Networks 下，把下面每个子网作为 Resource 添加到你的网络，并为它配一条 Access Control Policy，节点才能使用这条路由。",
   "ui.overlay.routes_title": "局域网路由",

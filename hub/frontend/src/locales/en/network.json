@@ -358,6 +358,8 @@
   "ui.overlay.reenroll": "Re-enroll",
   "ui.overlay.reenroll_warning": "Re-enrolling gives this gateway a new identity on the network. Afterwards, delete the old peer entry in the console.",
   "ui.overlay.remove": "Remove",
+  "ui.overlay.route_kept": "The hub cannot take it away; change it where the overlay is managed.",
+  "ui.overlay.route_withdrawn": "The hub took it away.",
   "ui.overlay.routes_empty": "No interface has the LAN role.",
   "ui.overlay.routes_hint": "In the console under Networks, add each subnet below as a Resource of your network, and give it an Access Control Policy so peers may use the route.",
   "ui.overlay.routes_title": "LAN routes",

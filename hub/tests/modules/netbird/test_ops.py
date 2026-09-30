@@ -343,3 +343,62 @@ def test_a_box_that_has_not_joined_a_network_is_left_alone(monkeypatch, tmp_path
 
     assert gate.converge(is_blocked=True) == ""
     assert ran == []
+
+
+# --- the routes the plane hands this box ------------------------------------
+
+ROUTES_LISTING = """Available Networks:
+
+  - ID: office
+    Network: 192.168.100.0/24
+    Status: Selected
+
+  - ID: exit
+    Range: 0.0.0.0/0
+    Status: Selected
+
+  - ID: office-backup
+    Range: 192.168.100.0/24
+    Status: Selected
+"""
+
+
+def test_the_routes_for_one_destination_are_found_under_either_word():
+    assert ops.route_ids(ROUTES_LISTING, "192.168.100.0/24") == [
+        "office",
+        "office-backup",
+    ]
+
+
+def test_an_exit_route_is_found_by_the_default_destination():
+    assert ops.route_ids(ROUTES_LISTING, "0.0.0.0/0") == ["exit"]
+
+
+def test_a_destination_nothing_routes_has_no_ids():
+    assert ops.route_ids(ROUTES_LISTING, "10.0.0.0/24") == []
+
+
+def test_deselecting_names_every_route_for_the_destination(monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return FakeResult(ROUTES_LISTING)
+
+    monkeypatch.setattr(ops, "run", run)
+
+    assert ops.NetbirdRouteSelector().deselect("192.168.100.0/24")
+    assert commands[-1] == [NETBIRD, "routes", "deselect", "office,office-backup"]
+
+
+def test_a_destination_nothing_routes_is_not_deselected(monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return FakeResult(ROUTES_LISTING)
+
+    monkeypatch.setattr(ops, "run", run)
+
+    assert ops.NetbirdRouteSelector().deselect("10.0.0.0/24") is False
+    assert commands == [[NETBIRD, "routes", "list"]]

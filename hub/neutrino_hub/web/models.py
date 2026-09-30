@@ -2192,10 +2192,24 @@ class OverlayKindView(BaseModel):
     client_count: int = 0
 
 
+class OverlayRouteConflictView(BaseModel):
+    """A route a running overlay installed that the hub refused.
+
+    ``code`` is ``overlay_default_route_refused`` or ``overlay_route_overlap``,
+    and ``params`` is ``{title, route, conflict}``.
+    """
+
+    code: str
+    params: dict = Field(default_factory=dict)
+    # Whether the hub took the route away; one it cannot is only reported.
+    is_withdrawn: bool = False
+
+
 class OverlayChoiceView(BaseModel):
-    """Which overlays this box runs."""
+    """Which overlays this box runs, and the routes of theirs it refused."""
 
     kinds: list[OverlayKindView] = Field(default_factory=list)
+    route_conflicts: list[OverlayRouteConflictView] = Field(default_factory=list)
 
 
 class OverlayEngineSwitch(BaseModel):

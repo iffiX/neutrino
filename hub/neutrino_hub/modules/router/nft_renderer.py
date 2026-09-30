@@ -61,6 +61,11 @@ class RouterNftRenderer:
         self._lans = network.lan_device_names
         self._exposed = network.exposed_device_names
         self._exposed_overlays = network.exposed_overlay_device_names
+        self._overlay_groups = [
+            network.devices_of(overlay)
+            for overlay in network.enabled_overlays
+            if network.devices_of(overlay)
+        ]
         self._answering = network.exposed_interfaces
         self._overlay_ports = network.exposed_overlay_peer_ports
         self._side_lans = _side_lan_subnets(network)
@@ -96,6 +101,7 @@ class RouterNftRenderer:
             self._render_prerouting(),
             self._render_output(),
             self._render_forward(),
+            self._render_overlay_fence(),
             self._render_input(),
             self._render_postrouting(),
             "}",
@@ -268,6 +274,36 @@ class RouterNftRenderer:
             '        iifname "podman0" accept',
             '        oifname "podman0" accept',
         ]
+        lines.append("    }\n")
+        return "\n".join(lines)
+
+    def _render_overlay_fence(self) -> str:
+        """The drops between two overlays, in a chain of their own.
+
+        A chain one step ahead of ``forward``: an overlay daemon inserts an
+        accept for its own device at the top of the forward chain, and a drop
+        in an earlier chain holds whatever the later one accepts.
+
+        Returns:
+            The chain, one rule per ordered pair of running overlays; empty
+            with fewer than two.
+        """
+        if len(self._overlay_groups) < 2:
+            return ""
+        lines = [
+            "    # A peer of one overlay never reaches a peer of another",
+            "    # through this box.",
+            "    chain forward_overlays {",
+            "        type filter hook forward priority filter - 1; policy accept;",
+        ]
+        for source in self._overlay_groups:
+            for target in self._overlay_groups:
+                if source is target:
+                    continue
+                lines.append(
+                    f"        iifname {_interface_set(source)} "
+                    f"oifname {_interface_set(target)} drop"
+                )
         lines.append("    }\n")
         return "\n".join(lines)
 

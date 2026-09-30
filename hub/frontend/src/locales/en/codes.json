@@ -241,5 +241,8 @@
   "code.wifi_join_failed": "{ssid} did not let this box in: {detail}",
   "code.wifi_network_unknown": "This box does not know a network named {ssid}.",
   "code.wol_no_mac": "This device has never reported a MAC address, so there is nothing to wake.",
-  "code.write_failed": "The machine could not write that."
+  "code.write_failed": "The machine could not write that.",
+  "code.overlay_subnet_overlap": "{title}'s network {subnet} overlaps {conflict}. Change one of them first.",
+  "code.overlay_default_route_refused": "{title} installed a default route; the hub takes it away and keeps its own uplink as the way out.",
+  "code.overlay_route_overlap": "{title} routes {route}, which overlaps {conflict}."
 }

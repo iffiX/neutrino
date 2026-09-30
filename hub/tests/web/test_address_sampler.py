@@ -21,6 +21,10 @@ class StubRuntime:
         self.calls.append("follow")
         return self.is_device_moved
 
+    def check_overlay_routes(self) -> list:
+        self.calls.append("routes")
+        return []
+
     def converge_network_blocking(self, only=None) -> str:
         self.calls.append("converge")
         return "applied"
@@ -82,4 +86,15 @@ def test_each_sample_follows_the_overlay_devices_before_reading(monkeypatch):
 
     watcher.sample_once()
 
-    assert runtime.calls == ["follow", "urls"]
+    assert runtime.calls == ["follow", "routes", "urls"]
+
+
+def test_every_sample_checks_the_overlays_routes(monkeypatch):
+    """A route the console hands EasyTier arrives with no write on this box,
+    so it is read every half minute."""
+    watcher, runtime = sampler(monkeypatch)
+
+    watcher.sample_once()
+    watcher.sample_once()
+
+    assert runtime.calls.count("routes") == 2

@@ -11,9 +11,10 @@ import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.overlay.config import set_enabled
+from neutrino_hub.modules.overlay.config import enabled_providers, set_enabled
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
-from neutrino_hub.modules.overlay.ops import engine_devices
+from neutrino_hub.modules.overlay.ops import engine_devices, overlay_subnets
+from neutrino_hub.modules.overlay.route_check import find_subnet_overlap
 from neutrino_hub.modules.registry import MODULE_SPECS
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.system.machine import ANY_ARCHITECTURE, machine_architecture
@@ -23,6 +24,7 @@ from neutrino_hub.web.models import (
     OverlayChoiceRequest,
     OverlayChoiceView,
     OverlayKindView,
+    OverlayRouteConflictView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -59,12 +61,13 @@ async def update_choice(
         The state afterwards.
 
     Raises:
-        HTTPException: 400 for an engine this hub does not run yet, or that
-            has no build for this machine; 502 when the converge step that
-            follows fails.
+        HTTPException: 400 for an engine this hub does not run yet, that has
+            no build for this machine, or whose network overlaps one this box
+            is already on; 502 when the converge step that follows fails.
     """
     network = runtime.network()
     is_changed = False
+    was_enabled = set(enabled_providers(network))
     for key, switch in _switches(request).items():
         engine = OVERLAY_ENGINES[key]
         if switch.is_enabled:
@@ -75,6 +78,8 @@ async def update_choice(
         is_changed = set_enabled(network, key, is_enabled=switch.is_enabled) or (
             is_changed
         )
+    if set(enabled_providers(network)) - was_enabled:
+        _refuse_overlap(network)
     # Written before the engines are touched: what the box is a member of is
     # the stored fact, and a daemon started against a configuration that was
     # never written is a machine on an overlay nothing records.
@@ -93,6 +98,43 @@ async def update_choice(
             "overlay_switch_failed", detail=command_failure_text(error)
         ) from error
     return _view(runtime)
+
+
+def subnet_overlap_refusal(network, overlay_subnets_given: dict) -> None:
+    """Refuse a set of overlays whose networks overlap.
+
+    Args:
+        network: The router configuration as it would be stored, for the
+            networks this box is on.
+        overlay_subnets_given: Provider to the networks its addresses come
+            from.
+
+    Raises:
+        HTTPException: 400 with ``overlay_subnet_overlap {title, subnet,
+            conflict}`` for the first overlap.
+    """
+    local = [cidr for cidr, _ in network.local_networks(device_addresses())]
+    overlap = find_subnet_overlap(overlay_subnets_given, local)
+    if overlap is not None:
+        raise _bad_request(
+            "overlay_subnet_overlap",
+            title=OVERLAY_ENGINES[overlap.provider].title,
+            subnet=overlap.subnet,
+            conflict=overlap.conflict,
+        )
+
+
+def _refuse_overlap(network) -> None:
+    """Refuse the enabled set when its networks overlap.
+
+    Args:
+        network: The router configuration as it would be stored.
+
+    Raises:
+        HTTPException: 400 with ``overlay_subnet_overlap`` for the first
+            overlap.
+    """
+    subnet_overlap_refusal(network, overlay_subnets(enabled_providers(network)))
 
 
 def _switches(request: OverlayChoiceRequest) -> dict:
@@ -131,7 +173,25 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
                 ),
             )
         )
-    return OverlayChoiceView(kinds=kinds)
+    return OverlayChoiceView(
+        kinds=kinds,
+        route_conflicts=[
+            OverlayRouteConflictView(
+                code=(
+                    "overlay_default_route_refused"
+                    if conflict.is_default
+                    else "overlay_route_overlap"
+                ),
+                params={
+                    "title": OVERLAY_ENGINES[conflict.provider].title,
+                    "route": conflict.route,
+                    "conflict": conflict.conflict,
+                },
+                is_withdrawn=conflict.is_withdrawn,
+            )
+            for conflict in runtime.overlay_route_conflicts
+        ],
+    )
 
 
 def _client_count(provider: str, addresses: dict, peers: list) -> int:

@@ -241,5 +241,8 @@
   "code.wifi_join_failed": "{ssid} 没有让这台机器接入：{detail}",
   "code.wifi_network_unknown": "这台机器不认识名为 {ssid} 的网络。",
   "code.wol_no_mac": "这台设备从未上报过 MAC 地址，无法唤醒。",
-  "code.write_failed": "这台机器写不进去。"
+  "code.write_failed": "这台机器写不进去。",
+  "code.overlay_subnet_overlap": "{title} 的网段 {subnet} 和 {conflict} 重叠。先改掉其中一个。",
+  "code.overlay_default_route_refused": "{title} 装了一条默认路由；hub 把它删掉，出口仍是自己的上行。",
+  "code.overlay_route_overlap": "{title} 的路由 {route} 和 {conflict} 重叠。"
 }

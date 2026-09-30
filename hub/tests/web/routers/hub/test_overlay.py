@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
+from neutrino_hub.modules.overlay.route_check import OverlayRouteConflict
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
 from neutrino_hub.web.dependencies import get_runtime, require_session
@@ -59,6 +60,7 @@ class FakeRuntime:
         self.client_sessions = FakeSessions(["100.64.3.9", "192.168.100.20"])
         self.converged: list = []
         self.refusal: Exception | None = None
+        self.overlay_route_conflicts: list = []
 
     def network(self) -> RouterNetworkConfig:
         return RouterNetworkConfig.from_dict(self._config.to_dict())
@@ -87,6 +89,14 @@ def box(monkeypatch):
     monkeypatch.setattr(overlay_router, "_is_supported", lambda name: True)
     monkeypatch.setattr(
         overlay_router, "device_addresses", lambda: {"wt0": "100.64.0.1/16"}
+    )
+    monkeypatch.setattr(
+        overlay_router,
+        "overlay_subnets",
+        lambda providers: {
+            key: {OVERLAY_NETBIRD: ["100.64.0.0/10"], OVERLAY_EASYTIER: []}[key]
+            for key in providers
+        },
     )
     monkeypatch.setattr(
         overlay_router,
@@ -253,3 +263,120 @@ def test_turning_an_engine_off_needs_no_build_of_it(box, monkeypatch):
 
     assert response.status_code == 200
     assert runtime.converged == [[]]
+
+
+# --- Networks that must not overlap -----------------------------------------
+
+
+def test_an_engine_whose_network_overlaps_one_this_box_is_on_is_refused(
+    box, monkeypatch
+):
+    client, runtime = box
+    monkeypatch.setattr(
+        overlay_router,
+        "overlay_subnets",
+        lambda providers: {
+            key: {
+                OVERLAY_NETBIRD: ["100.64.0.0/10"],
+                OVERLAY_EASYTIER: ["10.0.0.0/24"],
+            }[key]
+            for key in providers
+        },
+    )
+    monkeypatch.setattr(
+        overlay_router,
+        "device_addresses",
+        lambda: {"wt0": "100.64.0.1/16", "enp1s0": "10.0.0.1/24"},
+    )
+
+    response = client.post(
+        "/api/hub/overlay/set", json={"easytier": {"is_enabled": True}}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "overlay_subnet_overlap",
+        "params": {
+            "title": "EasyTier",
+            "subnet": "10.0.0.0/24",
+            "conflict": "10.0.0.0/24",
+        },
+    }
+    assert runtime.converged == []
+    assert runtime.network().overlay(OVERLAY_EASYTIER) is None
+
+
+def test_two_overlays_on_one_network_are_refused(box, monkeypatch):
+    client, _ = box
+    monkeypatch.setattr(
+        overlay_router,
+        "overlay_subnets",
+        lambda providers: {
+            key: {
+                OVERLAY_NETBIRD: ["100.64.0.0/10"],
+                OVERLAY_EASYTIER: ["100.100.0.0/16"],
+            }[key]
+            for key in providers
+        },
+    )
+
+    response = client.post(
+        "/api/hub/overlay/set", json={"easytier": {"is_enabled": True}}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["params"]["conflict"] == "100.100.0.0/16"
+
+
+def test_turning_an_engine_off_is_never_refused_for_an_overlap(box, monkeypatch):
+    client, runtime = box
+    monkeypatch.setattr(
+        overlay_router,
+        "device_addresses",
+        lambda: {"enp1s0": "100.64.0.1/24"},
+    )
+
+    response = client.post(
+        "/api/hub/overlay/set", json={"netbird": {"is_enabled": False}}
+    )
+
+    assert response.status_code == 200
+
+
+# --- Routes the hub refused -------------------------------------------------
+
+
+def test_the_refused_routes_are_named_on_the_page(box):
+    client, runtime = box
+    runtime.overlay_route_conflicts = [
+        OverlayRouteConflict(
+            provider=OVERLAY_NETBIRD,
+            route="0.0.0.0/0",
+            conflict="",
+            is_withdrawn=True,
+        ),
+        OverlayRouteConflict(
+            provider=OVERLAY_EASYTIER,
+            route="192.168.100.0/24",
+            conflict="192.168.100.0/24",
+        ),
+    ]
+
+    conflicts = client.get("/api/hub/overlay").json()["route_conflicts"]
+
+    assert conflicts == [
+        {
+            "code": "overlay_default_route_refused",
+            "params": {"title": "NetBird", "route": "0.0.0.0/0", "conflict": ""},
+            "is_withdrawn": True,
+        },
+        {
+            "code": "overlay_route_overlap",
+            "params": {
+                "title": "EasyTier",
+                "route": "192.168.100.0/24",
+                "conflict": "192.168.100.0/24",
+            },
+            "is_withdrawn": False,
+        },
+    ]

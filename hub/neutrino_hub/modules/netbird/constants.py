@@ -68,6 +68,10 @@ NETBIRD_STATUSES_WITHOUT_LOGIN = ("NeedsLogin", "LoginFailed", "SessionExpired")
 # with no profile on disk writes a fresh one with a new key.
 NETBIRD_DEREGISTER_TIMEOUT_S = 60
 NETBIRD_RESTART_SETTLE_S = 10
+# `netbird routes list` names each route's destination on one of these lines,
+# the older word first.
+NETBIRD_ROUTE_RANGE_KEYS = ("Network", "Range")
+NETBIRD_ROUTES_TIMEOUT_S = 15
 NETBIRD_STATE_FILE_NAME = "state.json"
 
 # Where the panel keeps the setup key the box joined with, and the management

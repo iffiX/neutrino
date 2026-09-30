@@ -7,7 +7,7 @@ makes, so nothing else would tell the agents and the clients. This reads
 read last, runs the runtime's converge step, which pushes the state to every
 live binding of both roles. Before each read it asks the runtime to converge
 when an overlay's device moved, so the firewall follows an EasyTier console
-bringing its network up.
+bringing its network up, and checks the routes the overlays installed.
 """
 
 import logging
@@ -56,6 +56,7 @@ class PanelAddressSampler:
             True when this sample differed from the one before it.
         """
         is_converged = self._runtime.follow_overlay_devices()
+        self._runtime.check_overlay_routes()
         urls = channel_urls(self._runtime)
         if self._urls is None:
             self._urls = urls

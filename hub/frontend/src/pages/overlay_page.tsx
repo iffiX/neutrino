@@ -105,6 +105,22 @@ export function OverlayPage() {
         onApplied={resource.setData}
       />
 
+      {choice.route_conflicts.length > 0 && (
+        <div className="notice notice--error">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">
+            {choice.route_conflicts.map((conflict) => (
+              <div key={`${conflict.code}-${conflict.params.route}`}>
+                {t(`code.${conflict.code}`, conflict.params)}{" "}
+                {conflict.is_withdrawn
+                  ? t("ui.overlay.route_withdrawn")
+                  : t("ui.overlay.route_kept")}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!choice.kinds.some((kind) => kind.is_enabled) && (
         <div className="notice">
           <Icon name="blocked" size={15} />

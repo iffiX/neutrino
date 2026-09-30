@@ -6,6 +6,7 @@ this box. What the gateway owns is joining and leaving, and telling the truth
 about what the daemon is doing.
 """
 
+import ipaddress
 import json
 import subprocess
 import time
@@ -23,6 +24,8 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_LEGACY_CONFIG_PATH,
     NETBIRD_DEREGISTER_TIMEOUT_S,
     NETBIRD_RESTART_SETTLE_S,
+    NETBIRD_ROUTE_RANGE_KEYS,
+    NETBIRD_ROUTES_TIMEOUT_S,
     NETBIRD_STATE_DIR,
     NETBIRD_STATE_FILE_NAME,
     NETBIRD_STATUSES_WITHOUT_LOGIN,
@@ -388,3 +391,67 @@ class NetbirdEnroller:
             if NetbirdStatusReader().survey().is_installed:
                 return
             time.sleep(0.5)
+
+
+class NetbirdRouteSelector:
+    """Turns off, on this box only, a network route the plane hands it."""
+
+    def deselect(self, cidr: str) -> bool:
+        """Stop using every network route for one destination.
+
+        Args:
+            cidr: The route's destination.
+
+        Returns:
+            True when at least one route was deselected.
+        """
+        result = run(
+            [str(NETBIRD_BINARY_PATH), "routes", "list"],
+            is_checked=False,
+            timeout_s=NETBIRD_ROUTES_TIMEOUT_S,
+        )
+        if not result.is_success:
+            return False
+        ids = route_ids(result.stdout, cidr)
+        if not ids:
+            return False
+        result = run(
+            [str(NETBIRD_BINARY_PATH), "routes", "deselect", ",".join(ids)],
+            is_checked=False,
+            timeout_s=NETBIRD_ROUTES_TIMEOUT_S,
+        )
+        return result.is_success
+
+
+def route_ids(listing: str, cidr: str) -> list:
+    """The ids of the network routes for one destination.
+
+    Args:
+        listing: What ``netbird routes list`` printed: one block per route,
+            its ``ID:`` line first and its destination on a ``Network:`` or
+            ``Range:`` line.
+        cidr: The destination.
+
+    Returns:
+        The ids, in the order listed.
+    """
+    try:
+        wanted = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        return []
+    ids = []
+    current = ""
+    for line in listing.splitlines():
+        text = line.strip().lstrip("-").strip()
+        key, _, value = text.partition(":")
+        value = value.strip()
+        if key == "ID":
+            current = value
+        elif key in NETBIRD_ROUTE_RANGE_KEYS and current:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                continue
+            if network == wanted and current not in ids:
+                ids.append(current)
+    return ids

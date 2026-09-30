@@ -276,3 +276,117 @@ def test_an_engine_that_names_its_device_is_not_looked_up(monkeypatch, provider)
     monkeypatch.setattr(ops, "console_device_names", refuse)
 
     assert ops.overlay_devices(network_on(provider)) == {}
+
+
+# --- the routes the overlays installed --------------------------------------
+
+KERNEL_ROUTES = [
+    {"dst": "default", "dev": "wt0", "table": "7120", "type": "unicast"},
+    {"dst": "100.64.0.0/16", "dev": "wt0", "protocol": "kernel"},
+    {"dst": "192.168.100.0/24", "dev": "wt0", "table": "7120"},
+    {"dst": "192.168.100.0/24", "dev": "enp1s0", "protocol": "kernel"},
+    {"dst": "192.168.100.0/24", "dev": "tun0"},
+    {"dst": "10.20.0.0/24", "dev": "tun0"},
+    {"dst": "100.64.0.1", "dev": "wt0", "table": "local", "type": "local"},
+]
+
+
+@pytest.fixture
+def routed(monkeypatch):
+    """Both overlays running, the kernel holding the routes above."""
+    commands: list = []
+    deselected: list = []
+
+    def run(command, **kwargs):
+        commands.append(list(command))
+        result = FakeResult()
+        if command[:2] == ["ip", "-4"]:
+            import json
+
+            result.stdout = json.dumps(KERNEL_ROUTES)
+        return result
+
+    class Selector:
+        def deselect(self, cidr):
+            deselected.append(cidr)
+            return True
+
+    monkeypatch.setattr(ops, "run", run)
+    monkeypatch.setattr(ops, "NetbirdRouteSelector", Selector)
+    monkeypatch.setattr(
+        ops,
+        "engine_devices",
+        lambda provider: ["wt0"] if provider == OVERLAY_NETBIRD else ["tun0"],
+    )
+    monkeypatch.setattr(
+        ops,
+        "overlay_subnets",
+        lambda providers: {
+            OVERLAY_NETBIRD: ["100.64.0.0/10"],
+            OVERLAY_EASYTIER: ["10.126.126.0/24"],
+        },
+    )
+    monkeypatch.setattr(
+        ops,
+        "device_addresses",
+        lambda: {"enp1s0": "192.168.100.1/24", "wt0": "100.64.0.1/16"},
+    )
+    return commands, deselected
+
+
+def test_a_default_route_is_deleted_and_deselected(routed):
+    commands, deselected = routed
+
+    conflicts = ops.OverlayRouteGuard().check(
+        network_of(OVERLAY_NETBIRD, OVERLAY_EASYTIER)
+    )
+
+    default = [conflict for conflict in conflicts if conflict.is_default]
+    assert [(c.provider, c.is_withdrawn) for c in default] == [(OVERLAY_NETBIRD, True)]
+    assert [
+        "ip",
+        "route",
+        "del",
+        "0.0.0.0/0",
+        "dev",
+        "wt0",
+        "table",
+        "7120",
+    ] in commands
+    assert "0.0.0.0/0" in deselected
+
+
+def test_a_netbird_route_onto_the_lan_is_deselected(routed):
+    _, deselected = routed
+
+    conflicts = ops.OverlayRouteGuard().check(
+        network_of(OVERLAY_NETBIRD, OVERLAY_EASYTIER)
+    )
+
+    netbird = [
+        c for c in conflicts if c.provider == OVERLAY_NETBIRD and not c.is_default
+    ]
+    assert [(c.route, c.conflict, c.is_withdrawn) for c in netbird] == [
+        ("192.168.100.0/24", "192.168.100.0/24", True)
+    ]
+    assert "192.168.100.0/24" in deselected
+
+
+def test_an_easytier_route_onto_the_lan_is_only_reported(routed):
+    commands, _ = routed
+
+    conflicts = ops.OverlayRouteGuard().check(
+        network_of(OVERLAY_NETBIRD, OVERLAY_EASYTIER)
+    )
+
+    easytier = [c for c in conflicts if c.provider == OVERLAY_EASYTIER]
+    assert [(c.route, c.is_withdrawn) for c in easytier] == [
+        ("192.168.100.0/24", False)
+    ]
+    assert not any("tun0" in command and "del" in command for command in commands)
+
+
+def test_an_overlay_turned_off_is_not_read(routed):
+    conflicts = ops.OverlayRouteGuard().check(network_of(OVERLAY_EASYTIER))
+
+    assert {c.provider for c in conflicts} == {OVERLAY_EASYTIER}

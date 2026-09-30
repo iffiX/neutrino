@@ -20,6 +20,7 @@ from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
 from neutrino_hub.web import channel_overlay
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.routers.hub import overlay as overlay_router
 from neutrino_hub.web.routers.hub import overlay_easytier as easytier_router
 from tests.conftest import unlock_vault
 
@@ -356,6 +357,52 @@ def test_a_converge_that_fails_is_reported(box):
 
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == "easytier_apply_failed"
+
+
+def test_an_address_on_the_lan_is_refused_while_easytier_runs(box, monkeypatch):
+    """Two networks with one range route one of them nowhere."""
+    client, runtime = box
+    network = runtime.network()
+    runtime._network = RouterNetworkConfig.from_dict(
+        {
+            **network.to_dict(),
+            "overlays": [
+                {"provider": "netbird", "is_enabled": True},
+                {"provider": "easytier", "is_enabled": True},
+            ],
+        }
+    )
+    monkeypatch.setattr(
+        overlay_router, "device_addresses", lambda: {"enp1s0": "192.168.100.1/24"}
+    )
+
+    response = client.post(
+        "/api/hub/overlay/easytier/set", json=settings(address="192.168.100.5/24")
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "overlay_subnet_overlap",
+        "params": {
+            "title": "EasyTier",
+            "subnet": "192.168.100.0/24",
+            "conflict": "192.168.100.0/24",
+        },
+    }
+    assert runtime.converged == []
+
+
+def test_an_address_is_not_checked_while_easytier_is_off(box, monkeypatch):
+    client, runtime = box
+    monkeypatch.setattr(
+        overlay_router, "device_addresses", lambda: {"enp1s0": "192.168.100.1/24"}
+    )
+
+    response = client.post(
+        "/api/hub/overlay/easytier/set", json=settings(address="192.168.100.5/24")
+    )
+
+    assert response.status_code == 200
 
 
 # --- the console mode -------------------------------------------------------

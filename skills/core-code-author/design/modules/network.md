@@ -126,7 +126,9 @@ reach a connection to this box's own services. The forward chain is rendered
 from the roles, and its `iifname "wt0" accept` carries no `oifname`, so a
 packet arriving from the overlay is forwarded anywhere this box routes, a
 closed uplink's network included, and postrouting masquerades it on the way
-out. Which peers reach which network is the overlay's management plane
+out. The one exception is another overlay: with two running, a chain of its
+own, `forward_overlays`, drops what arrives on one overlay's devices and
+leaves by the other's ("Two overlays at once" below). Which peers reach which network is the overlay's management plane
 (NetBird's routing peer and its network resources): NetBird filters again in
 its own table and inserts its own `iifname "wt0" accept` at the top of this
 table's input and forward chains. So closing an uplink closes that wire to
@@ -229,6 +231,27 @@ whatever the order of reloads, and the mark it sets is the one that stands.
 `server` and `side_gateway` start with every interface open. That is what the
 machine was already doing before the hub arrived, and a VPS that answers on
 nothing after an install is a VPS nobody can reach.
+
+## Two overlays at once
+
+NetBird and EasyTier each bring an address range, the routes their peers
+publish and a daemon that edits the kernel, and neither knows the other or
+the LAN. EasyTier in console mode takes its routes from the console, which
+the hub does not control. What keeps the two apart is five rules:
+
+| Rule | Mechanism |
+| --- | --- |
+| No two networks overlap before an engine starts | Turning an engine on is refused with `overlay_subnet_overlap {title, subnet, conflict}` when its network overlaps the other overlay's or any network this box holds an address on, the served ones included. NetBird's network is `100.64.0.0/10`; EasyTier's is the stored address's network in manual mode and the running instances' in console mode. Saving an EasyTier address while EasyTier runs is checked the same way. |
+| A learned route that overlaps is named, and taken away where possible | After every converge step and every half minute, the hub reads the kernel's routes that name an overlay's devices, in every table. A route overlapping one of the box's networks or the other overlay's network is listed on the Overlay page in red. A NetBird route is deselected with `netbird routes deselect`; an EasyTier route is only reported. |
+| No default route | A route for `0.0.0.0/0` through an overlay's device is deleted, NetBird is told to deselect it, and the page shows `overlay_default_route_refused`. The hub's way out is its own uplink. |
+| No forwarding between overlays | `forward_overlays`, at `filter - 1`, drops every packet entering on one overlay's devices and leaving by another's. It runs ahead of `forward` because NetBird inserts its own `iifname "wt0" accept` at the top of `forward`. |
+| The resolver stays the hub's | NetBird runs with `--disable-dns` on every `netbird up`. EasyTier's magic DNS is off unless a flag turns it on: the hub's manual-mode file never does, and in console mode the console's network settings decide it, so Magic DNS stays off there. `/etc/resolv.conf` is written by the hub alone ([proxy.md](proxy.md)). |
+
+The proxy's overlay scope diverts from every running overlay's exposed
+devices. With both engines running, NetBird's own policy rules sit beside the
+hub's `fwmark` rule at priority 100 for table 100; which of them the kernel
+reads first for a packet from each overlay is measured on a running box, not
+assumed.
 
 ## The converge step
 
