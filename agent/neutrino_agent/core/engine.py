@@ -46,7 +46,10 @@ from neutrino_agent.modules import installers, rustdesk
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
-from neutrino_agent.modules.samba.runner import SambaModuleRunner
+from neutrino_agent.modules.samba.runner import (
+    SambaModuleRunner,
+    SambaNativeServerRunner,
+)
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
@@ -170,8 +173,9 @@ class ModuleEngine(ReconcileWorker):
         self._in_transit: set = set()
         self._apply_results: dict = {}
         self._details_at = 0.0
-        # A platform that installs no package has no runner at all: every
-        # module the state names reads as unsupported there.
+        # A platform that installs no package has a runner only for what
+        # the system itself carries: every other module the state names
+        # reads as unsupported there.
         self._package = None
         self._system = None
         # The modules this agent applies the hub's configuration to, by
@@ -201,6 +205,11 @@ class ModuleEngine(ReconcileWorker):
                     ),
                 )
             }
+        elif "smb_server" in platform.capabilities:
+            runner = SambaNativeServerRunner(
+                platform=platform, log=self._collect, publish=self._publish
+            )
+            self._module_runners = {runner.name: runner}
         super().__init__(log=log, on_change=on_change)
         # The built-in rows are known from the start, so their first
         # refresh is not news that wakes a report.

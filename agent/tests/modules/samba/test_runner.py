@@ -16,7 +16,11 @@ from neutrino_agent.modules import system_package as system_package_module
 from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState
-from neutrino_agent.modules.samba.runner import SambaModuleRunner
+from neutrino_agent.modules.samba.config import SambaConfig
+from neutrino_agent.modules.samba.runner import (
+    SambaModuleRunner,
+    SambaNativeServerRunner,
+)
 from neutrino_agent.modules.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -380,3 +384,202 @@ def test_observe_of_a_machine_without_samba_reads_nothing(runner, monkeypatch):
     observed = runner.observe({})
 
     assert observed == {"is_installed": False, "is_active": False, "details": {}}
+
+
+class FakeNativeApplier:
+    """The system server's applier, recording each call with its record."""
+
+    def __init__(self):
+        self.calls: list = []
+        self.status = {"is_present": True, "is_running": True, "shares": []}
+        self.reads = 0
+        self.error = None
+
+    def read_status(self, record):
+        self.reads += 1
+        return dict(self.status)
+
+    def apply(self, config, record):
+        self.calls.append(("apply", config.to_dict(), record))
+        if self.error is not None:
+            raise self.error
+        return ["created share share"]
+
+    def withdraw(self, record, *, is_removed):
+        self.calls.append(("withdraw", record, is_removed))
+
+    def set_password(self, name, password):
+        self.calls.append(("set_password", name, password))
+
+
+class NativeServerPlatform(RecordingPlatform):
+    """A system that carries its own SMB server, the way Windows does."""
+
+    os_name = "windows"
+    capabilities = frozenset({"smb_server"})
+
+    def __init__(self):
+        super().__init__()
+        self.applier = FakeNativeApplier()
+
+    def smb_server_applier(self):
+        return self.applier
+
+
+WINDOWS_CONFIG = {
+    "shares": [{"name": "share", "path": "D:\\share"}],
+    "users": ["ann"],
+    "allowed_subnets": ["192.168.100.0/24"],
+}
+
+
+class Clock:
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self):
+        return self.now
+
+
+@pytest.fixture
+def native():
+    platform = NativeServerPlatform()
+    clock = Clock()
+    held = SambaNativeServerRunner(platform=platform, log=lambda m: None, clock=clock)
+    held.applier = platform.applier
+    held.clock = clock
+    return held
+
+
+def record_of(native_runner) -> dict:
+    return native_runner._read_record()
+
+
+def test_the_native_server_installs_nothing_and_is_there_when_it_answers(native):
+    native.install({})
+    native.uninstall({})
+
+    assert native.verify({}) is True
+    native.applier.status = {"is_present": False}
+    native.clock.now += 31
+    assert native.verify({}) is False
+    assert native.applier.calls == []
+
+
+def test_an_apply_keeps_what_it_made_in_the_record(native):
+    native.apply(WINDOWS_CONFIG)
+
+    ((verb, config, record),) = native.applier.calls
+    assert verb == "apply"
+    assert config == SambaConfig.from_dict(WINDOWS_CONFIG).to_dict()
+    assert record["shares"] == {"share": "D:\\share"}
+    assert record_of(native) == {
+        "shares": {"share": "D:\\share"},
+        "accounts": ["ann"],
+        "is_served": True,
+    }
+    assert native.is_active() is True
+
+
+def test_a_failed_apply_still_lists_the_shares_it_may_have_made(native):
+    native.applier.error = OSError("New-SmbShare : Access is denied.")
+
+    with pytest.raises(ModuleApplyError) as refused:
+        native.apply(WINDOWS_CONFIG)
+
+    assert refused.value.code == "apply_failed"
+    assert "Access is denied" in refused.value.params["detail"]
+    assert record_of(native)["shares"] == {"share": "D:\\share"}
+    assert record_of(native)["accounts"] == []
+
+
+def test_a_refusal_from_the_server_keeps_its_code(native):
+    native.applier.error = ModuleApplyError("share_name_taken", {"name": "share"})
+
+    with pytest.raises(ModuleApplyError) as refused:
+        native.apply(WINDOWS_CONFIG)
+
+    assert refused.value.code == "share_name_taken"
+
+
+def test_a_path_is_checked_for_the_system_that_serves_it(native):
+    with pytest.raises(ModuleApplyError) as refused:
+        native.validate({**WINDOWS_CONFIG, "shares": [{"name": "s", "path": "/srv"}]})
+
+    assert refused.value.code == "share_path_relative"
+    assert native.applier.calls == []
+
+
+def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
+    native.apply(WINDOWS_CONFIG)
+
+    native.stop()
+
+    assert native.applier.calls[-1] == (
+        "withdraw",
+        {"shares": {"share": "D:\\share"}, "accounts": ["ann"], "is_served": True},
+        False,
+    )
+    assert record_of(native) == {"shares": {}, "accounts": ["ann"], "is_served": False}
+    assert native.is_active() is False
+
+
+def test_removing_the_configuration_is_a_removal(native):
+    native.apply(WINDOWS_CONFIG)
+
+    native.remove_configuration()
+
+    assert native.applier.calls[-1][0] == "withdraw"
+    assert native.applier.calls[-1][2] is True
+    assert record_of(native)["accounts"] == ["ann"]
+
+
+def test_a_password_is_set_only_for_an_account_the_module_made(native):
+    assert native.command("set_password", {"name": "ann", "password": "pw"})[
+        "code"
+    ] == ("user_unknown")
+
+    native.apply(WINDOWS_CONFIG)
+    outcome = native.command("set_password", {"name": "ann", "password": "pw"})
+
+    assert outcome["exit_code"] == 0
+    assert native.applier.calls[-1] == ("set_password", "ann", "pw")
+
+
+def test_the_server_is_read_once_per_half_minute_and_after_each_change(native):
+    native.observe({})
+    native.observe({})
+    assert native.applier.reads == 1
+
+    native.clock.now += 31
+    native.observe({})
+    assert native.applier.reads == 2
+
+    native.apply(WINDOWS_CONFIG)
+    native.observe({})
+    assert native.applier.reads == 3
+
+
+def test_the_details_have_the_linux_shape_and_the_fence(native):
+    native.applier.status = {
+        "is_present": True,
+        "is_running": True,
+        "shares": [{"name": "share", "path": "D:\\share", "params": {}}],
+        "users": [{"name": "ann", "is_present": True, "has_password": True}],
+        "sessions": [],
+        "fence": {"is_present": True, "is_enabled": True, "blocked": []},
+    }
+
+    details = native.observe({})["details"]
+
+    assert set(details) == {
+        "is_active",
+        "global",
+        "shares",
+        "users",
+        "sessions",
+        "disk_usage",
+        "fence",
+    }
+    assert details["global"] == {}
+    assert details["fence"]["is_present"] is True

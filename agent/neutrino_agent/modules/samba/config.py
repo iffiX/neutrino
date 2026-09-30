@@ -26,6 +26,17 @@ USER_NAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\Z")
 
 # Section names smb.conf gives a meaning of its own.
 RESERVED_SHARE_NAMES = ("global", "homes", "printers")
+# An absolute Windows path starts at a drive.
+WINDOWS_PATH_PATTERN = re.compile(r"^[A-Za-z]:\\")
+# Windows refuses a local account name longer than this.
+WINDOWS_USER_NAME_MAX = 20
+
+
+def _is_absolute(path: str, os_name: str) -> bool:
+    """Whether a share path is absolute on the system that serves it."""
+    if os_name == "windows":
+        return bool(WINDOWS_PATH_PATTERN.match(path))
+    return path.startswith("/")
 
 
 @dataclass
@@ -96,8 +107,13 @@ class SambaConfig:
             "allowed_subnets": list(self.allowed_subnets),
         }
 
-    def validate(self) -> None:
+    def validate(self, *, os_name: str = "linux") -> None:
         """Check the configuration holds together.
+
+        Args:
+            os_name: The system the shares are served from: a share path is
+                absolute from a drive on ``windows`` and from ``/`` on any
+                other, and a Windows account name is at most 20 characters.
 
         Raises:
             ModuleApplyError: Naming the first problem found.
@@ -112,7 +128,7 @@ class SambaConfig:
             if lowered in seen_shares:
                 raise ModuleApplyError("share_name_duplicate", {"name": share.name})
             seen_shares.add(lowered)
-            if not share.path.startswith("/"):
+            if not _is_absolute(share.path, os_name):
                 raise ModuleApplyError(
                     "share_path_relative", {"name": share.name, "path": share.path}
                 )
@@ -123,7 +139,8 @@ class SambaConfig:
                     )
         seen_users: set = set()
         for user in self.users:
-            if not USER_NAME_PATTERN.match(user):
+            is_too_long = os_name == "windows" and len(user) > WINDOWS_USER_NAME_MAX
+            if not USER_NAME_PATTERN.match(user) or is_too_long:
                 raise ModuleApplyError("user_name_invalid", {"user": user})
             if user in seen_users:
                 raise ModuleApplyError("user_name_duplicate", {"user": user})

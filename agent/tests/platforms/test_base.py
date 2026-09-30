@@ -43,7 +43,12 @@ CONTRACT_CALLS = {
         {"package_kind": "deb", "entry": {}},
     ),
     "uninstall_package": ("packages", ("apt-get remove -y app",), {}),
+    "smb_server_applier": ("smb_server", (), {}),
 }
+
+# Capabilities only a system that carries its own server has; Linux has
+# every other one.
+NOT_ON_LINUX = {"smb_server"}
 
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {
@@ -63,7 +68,7 @@ def test_the_capability_table_names_every_contract_method():
 
     named = {capability for capability, _, _ in CONTRACT_CALLS.values()}
     named |= {capability for capability in BASE_IMPLEMENTED.values() if capability}
-    assert named == LinuxPlatform().capabilities
+    assert named == LinuxPlatform().capabilities | NOT_ON_LINUX
 
 
 @pytest.mark.parametrize("method_name", sorted(CONTRACT_CALLS))

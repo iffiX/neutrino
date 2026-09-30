@@ -3,7 +3,8 @@
 The contract names intents, not mechanisms: enumerate human accounts;
 resolve an account's home; run a process as an account; control the agent's
 own service; power actions; read host metrics; read the network interfaces;
-read the machine id; install and remove a package of a kind. A new platform is a new class, and
+read the machine id; install and remove a package of a kind; drive the SMB
+server the system carries. A new platform is a new class, and
 nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
@@ -250,6 +251,19 @@ class AgentPlatform:
                 manager to ask.
         """
         raise PlatformUnsupportedError("cannot install system packages here")
+
+    def smb_server_applier(self):
+        """The applier that drives the SMB server the system itself carries.
+
+        Returns:
+            An applier with ``read_status``, ``apply``, ``withdraw`` and
+            ``set_password``.
+
+        Raises:
+            PlatformUnsupportedError: When the system carries no SMB server
+                the agent drives.
+        """
+        raise PlatformUnsupportedError("no system SMB server here")
 
     def remove_system_packages(self, names: list) -> str:
         """Remove packages by name with the machine's own package manager.

@@ -62,6 +62,12 @@ EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 CREATE_SUSPENDED = 0x00000004
 WAIT_OBJECT_0 = 0
 
+# The local security policy: the access a policy handle is opened with to
+# grant an account a right, and the answer a first sizing call gives.
+POLICY_CREATE_ACCOUNT = 0x00000010
+POLICY_LOOKUP_NAMES = 0x00000800
+ERROR_INSUFFICIENT_BUFFER = 122
+
 # Job objects: every process of a shell dies with the job's last handle.
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
@@ -272,6 +278,29 @@ class JobObjectExtendedLimitInformation(ctypes.Structure):
     ]
 
 
+class LsaUnicodeString(ctypes.Structure):
+    """LSA_UNICODE_STRING: a UTF-16 string by its length in bytes."""
+
+    _fields_ = [
+        ("Length", ctypes.c_ushort),
+        ("MaximumLength", ctypes.c_ushort),
+        ("Buffer", ctypes.c_void_p),
+    ]
+
+
+class LsaObjectAttributes(ctypes.Structure):
+    """LSA_OBJECT_ATTRIBUTES, all zero but its length."""
+
+    _fields_ = [
+        ("Length", DWORD),
+        ("RootDirectory", ctypes.c_void_p),
+        ("ObjectName", ctypes.c_void_p),
+        ("Attributes", DWORD),
+        ("SecurityDescriptor", ctypes.c_void_p),
+        ("SecurityQualityOfService", ctypes.c_void_p),
+    ]
+
+
 class Win32Libraries:
     """Every DLL the agent calls, with its prototypes set once.
 
@@ -443,6 +472,33 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.POINTER(ServiceStatus),
         ]
+        self.advapi32.LookupAccountNameW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+        ]
+        self.advapi32.LsaOpenPolicy.restype = DWORD
+        self.advapi32.LsaOpenPolicy.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(LsaObjectAttributes),
+            DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.LsaAddAccountRights.restype = DWORD
+        self.advapi32.LsaAddAccountRights.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(LsaUnicodeString),
+            DWORD,
+        ]
+        self.advapi32.LsaClose.restype = DWORD
+        self.advapi32.LsaClose.argtypes = [ctypes.c_void_p]
+        self.advapi32.LsaNtStatusToWinError.restype = DWORD
+        self.advapi32.LsaNtStatusToWinError.argtypes = [DWORD]
 
     def _describe_shell32(self) -> None:
         """Prototype the shell32 calls."""

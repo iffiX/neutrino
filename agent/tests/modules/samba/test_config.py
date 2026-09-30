@@ -88,3 +88,29 @@ def test_a_share_cannot_admit_a_user_that_does_not_exist():
 
     assert refused.value.code == "share_user_unknown"
     assert refused.value.params == {"name": "share", "user": "ghost"}
+
+
+@pytest.mark.parametrize("path", ["D:\\media", "c:\\Users\\Public\\share"])
+def test_a_windows_share_is_absolute_from_a_drive(path):
+    config_with(shares=[{"name": "share", "path": path}]).validate(os_name="windows")
+
+
+@pytest.mark.parametrize("path", ["/srv/share", "media", "\\\\host\\share", "D:media"])
+def test_a_windows_share_path_without_a_drive_is_refused(path):
+    config = config_with(shares=[{"name": "share", "path": path}])
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config.validate(os_name="windows")
+
+    assert refused.value.code == "share_path_relative"
+
+
+def test_a_windows_account_name_is_at_most_twenty_characters():
+    shares = [{"name": "share", "path": "D:\\share"}]
+    config_with(shares=shares, users=["a" * 20]).validate(os_name="windows")
+    config_with(users=["a" * 21]).validate(os_name="darwin")
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config_with(shares=shares, users=["a" * 21]).validate(os_name="windows")
+
+    assert refused.value.code == "user_name_invalid"

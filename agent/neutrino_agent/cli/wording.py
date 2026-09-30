@@ -115,6 +115,8 @@ CLI_CODE_WORDS = {
     "user_name_invalid": "user name {user} is not a unix name",
     "user_name_duplicate": "user {user} is listed twice",
     "user_unknown": "{user} is not a configured user",
+    "share_name_taken": "a share named {name} exists that this module did not make",
+    "user_name_taken": "an account named {user} exists that this module did not make",
     "port_invalid": "{port} is not a port",
     "port_reserved": "port {port} already belongs to the hub",
     "root_url_invalid": "the root URL must start with http:// or https://",

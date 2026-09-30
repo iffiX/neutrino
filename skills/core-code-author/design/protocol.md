@@ -877,6 +877,20 @@ the whole file back.
 | Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; the registry mirrors |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
+| Samba on Windows and macOS | only the shares the module made, in the Linux shape with `params` `comment`, `read only` and `valid users`; the accounts it made; the sessions; and `fence {is_present, is_enabled, blocked}` |
+
+On Windows and macOS an agent with the `smb_server` capability runs the
+`samba` module against the SMB server the system carries. Its branch names
+no packages: the recipe the state carries is `{kind: system_package}`, the
+agent's own check says whether the server is there, an install installs
+nothing, and the module reports `installed`, `stopped` or `running` like any
+other. The configuration is the Linux one; `validate` wants a share path
+absolute from a drive on Windows and from `/` on macOS, and an account name
+of at most 20 characters on Windows. `stopped` takes the module's shares off
+the server and keeps its accounts and its fence. An apply refuses a name the
+machine already has for something the module did not make: a share with
+`share_name_taken {name}`, an account with `user_name_taken {user}`. An
+account the module made signs in once `set_password` has set its password.
 
 Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. An install's or an uninstall's output

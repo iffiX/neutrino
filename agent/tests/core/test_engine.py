@@ -833,3 +833,47 @@ def test_a_module_the_state_names_there_is_unsupported_never_failed(
         "code": "unknown_kind",
         "params": {"kind": "system_package"},
     }
+
+
+class SmbServerApplier:
+    """A system SMB server that is there and running."""
+
+    def read_status(self, record):
+        return {"is_present": True, "is_running": True}
+
+
+class SmbServerPlatform(AgentPlatform):
+    """A platform that carries its own SMB server, the way Windows does."""
+
+    os_name = "windows"
+    capabilities = frozenset({"smb_server"})
+
+    def smb_server_applier(self):
+        return SmbServerApplier()
+
+
+def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
+    engine = ModuleEngine(
+        platform=SmbServerPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+    engine.take_state(
+        {
+            "samba": {
+                "want": "running",
+                "config": {},
+                "install": {"kind": "system_package"},
+            },
+            "fakedesk": dict(WANTED["fakedesk"]),
+        }
+    )
+
+    engine._refresh(is_forced=True)
+    report = engine.report()
+
+    assert set(engine.module_runners) == {"samba"}
+    assert report["samba"]["state"] == "installed"
+    assert report["fakedesk"]["state"] == "unsupported"
+    assert engine.install("samba", receive=None) == {}

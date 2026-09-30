@@ -275,6 +275,13 @@ def test_the_start_hint_names_the_service_control_manager():
     assert WindowsPlatform().agent_service_start_hint() == "sc start neutrino_agent"
 
 
+def test_the_file_share_drives_windows_own_smb_server():
+    from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
+
+    assert "smb_server" in WindowsPlatform.capabilities
+    assert isinstance(WindowsPlatform().smb_server_applier(), SambaWindowsApplier)
+
+
 @pytest.mark.parametrize(
     "action, command",
     [

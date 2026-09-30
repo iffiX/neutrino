@@ -64,6 +64,8 @@ MODULE_CODES = (
     "user_name_invalid",
     "user_name_duplicate",
     "user_unknown",
+    "share_name_taken",
+    "user_name_taken",
     "command_failed",
     "port_invalid",
     "port_reserved",

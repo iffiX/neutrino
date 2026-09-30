@@ -86,6 +86,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.samba.constants",
     "neutrino_agent.modules.samba.renderer",
     "neutrino_agent.modules.samba.runner",
+    "neutrino_agent.modules.samba.windows_applier",
     "neutrino_agent.modules.subprocess_run",
     "neutrino_agent.modules.system_package",
     "neutrino_agent.modules.zfs",

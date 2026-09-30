@@ -123,6 +123,13 @@ in `config/`. Machinery whose only purpose is surviving a restart is removed
 on sight ([../kill_on_sight.md](../kill_on_sight.md), "Unasked survival
 machinery").
 
+The file share on Windows and macOS is the one module that changes what the
+person set up. On Linux it owns the whole `smb.conf`; on Windows and macOS it
+owns who reaches the system's SMB server. It changes only the shares and
+accounts it made, the ones its record under the work root lists and its
+marker names, but its fence covers every share on the machine, the person's
+own included.
+
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
 wording. The agent's `error` section crosses the socket the same way, so a
@@ -231,9 +238,11 @@ remove a package of a kind, and where the agent keeps its state and its work.
 
 A platform advertises the capabilities it has; invoking an absent one is
 refused with `{"code": "unsupported_platform"}`, never guessed at. The engine
-builds module runners only on a platform with `packages`, so on Windows and
-macOS the built-in RustDesk row is the one module a machine reports, and a
-module the state names reads `unsupported`, never `failed`. Every import
+builds the package-backed runners only on a platform with `packages`. A
+platform with `smb_server` gets the file share, driving the SMB server the
+system carries, with nothing to install or uninstall; there, any other
+module the state names reads `unsupported`, never `failed`, beside the
+built-in RustDesk row. Every import
 only POSIX has is guarded, so one package imports on all three systems.
 
 | | Linux | Windows | macOS |
@@ -251,6 +260,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Shell stream | the login shell on a pseudo-terminal | PowerShell on a pseudo console, in a job that kills it on close | `zsh -il` on a pseudo-terminal |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
 | RustDesk | `/usr/lib/neutrino_agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
+| File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | none |
 | Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer` |
 
 On Linux the metrics come from `/proc` and `/sys` with nothing but the

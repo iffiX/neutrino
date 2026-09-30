@@ -3,8 +3,9 @@
 The agent runs as the ``neutrino_agent`` service under LocalSystem and keeps
 its state under ``%ProgramData%``. Metrics come from kernel32 through
 ctypes, the interfaces from one PowerShell call, the machine id from the
-registry. Windows has no account this agent steps down to and no package
-it installs, so those capabilities are not advertised.
+registry. The file share module drives Windows' own SMB server. Windows
+has no account this agent steps down to and no package it installs, so
+those capabilities are not advertised.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -28,6 +29,7 @@ from neutrino_agent.constants import (
     AGENT_WINDOWS_SERVICE_NAME,
 )
 from neutrino_agent.core.metrics import HostMetrics
+from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -115,6 +117,7 @@ class WindowsPlatform(AgentPlatform):
             "metrics",
             "network",
             "machine_id",
+            "smb_server",
         }
     )
 
@@ -260,6 +263,14 @@ class WindowsPlatform(AgentPlatform):
         except OSError:
             return ""
         return str(value or "").strip()
+
+    def smb_server_applier(self) -> SambaWindowsApplier:
+        """The applier that drives Windows' own SMB server.
+
+        Returns:
+            A :class:`SambaWindowsApplier` running PowerShell.
+        """
+        return SambaWindowsApplier()
 
     def is_elevated(self) -> bool:
         """Whether this process runs with an administrator's token.
