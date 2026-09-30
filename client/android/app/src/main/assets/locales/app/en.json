@@ -1,8 +1,6 @@
 {
   "code": {
     "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
-    "session_taken": "another window took over this terminal",
-    "session_unknown": "that machine no longer keeps this terminal",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
@@ -37,7 +35,6 @@
     "share_login_needed": "Give this share's password on the Files screen first.",
     "terminal_detached": "Detached; it attaches again once the hub answers.",
     "terminal_end": "End",
-    "terminal_end_confirm": "End the persistent session on {name}? Its shell exits on that machine.",
-    "terminal_persistent": "Persistent"
+    "terminal_end_confirm": "End the persistent session on {name}? Its shell exits on that machine."
   }
 }

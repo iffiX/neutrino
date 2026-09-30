@@ -1,8 +1,6 @@
 {
   "code": {
     "rdp_core_missing": "这个版本还没有远程桌面核心，显示不了画面。",
-    "session_taken": "另一个窗口接管了这个终端",
-    "session_unknown": "那台机器上已经没有这个会话了",
     "verb_unknown": "hub 不认识这个命令，请先更新 hub"
   },
   "ui": {
@@ -37,7 +35,6 @@
     "share_login_needed": "请先在文件页输入这个共享的密码。",
     "terminal_detached": "已断开，hub 恢复后会重新连上。",
     "terminal_end": "结束",
-    "terminal_end_confirm": "结束 {name} 上的持久会话？shell 会在那台机器上退出。",
-    "terminal_persistent": "持久"
+    "terminal_end_confirm": "结束 {name} 上的持久会话？shell 会在那台机器上退出。"
   }
 }
