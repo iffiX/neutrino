@@ -10,6 +10,7 @@ import {
 import { AuthContext } from "./auth_context";
 import type { AuthContextValue } from "./auth_context";
 import type { AuthState } from "./api_types";
+import { notePanelIdentity, probePanelIdentity } from "./panel_identity";
 
 /**
  * Owns the session and turns any 401 anywhere in the app into a logout.
@@ -39,6 +40,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let isCancelled = false;
     apiGet<AuthState>("/hub/auth/session")
       .then((state) => {
+        if (notePanelIdentity(state)) {
+          return;
+        }
         if (!isCancelled) {
           setIsAuthenticated(state.is_authenticated);
           setError(null);
@@ -63,6 +67,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = useCallback(async (password: string) => {
     const state = await apiPost<AuthState>("/hub/auth/login", { password });
     if (state.is_authenticated) {
+      // A panel restarted behind the login card serves a new bundle; the
+      // page reloads onto it rather than moving on.
+      if (await probePanelIdentity()) {
+        return state;
+      }
       setIsAuthenticated(true);
       setError(null);
     }

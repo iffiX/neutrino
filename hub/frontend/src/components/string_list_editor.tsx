@@ -70,7 +70,7 @@ export function StringListEditor({
         )}
         {values.map((value) => (
           <span key={value} className="string_list_editor_chip">
-            {value}
+            <span className="string_list_editor_value">{value}</span>
             <button
               type="button"
               className="string_list_editor_remove"

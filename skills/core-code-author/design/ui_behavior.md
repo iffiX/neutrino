@@ -286,8 +286,9 @@ nobody anything.
 | 500–700 ms | A step in flight with an end: a port move, the setup wizard |
 | socket | Where the reading is the point: stats, DNS log, a terminal |
 
-The panel identity probe is fixed at 3 s and is not a resource poll
-(`panel_identity.ts`).
+The panel identity probe polls nothing: it reads once each time the event
+socket opens, when the tab comes back to the front, when the login page loads
+and after a login (`panel_identity.ts`).
 
 ## When an effect happens
 

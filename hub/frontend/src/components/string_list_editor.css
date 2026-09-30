@@ -19,6 +19,8 @@
   display: inline-flex;
   gap: var(--space-2);
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
   padding: 3px 4px 3px 10px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
@@ -28,12 +30,18 @@
   transition: border-color var(--transition-fast);
 }
 
+.string_list_editor_value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .string_list_editor_chip:hover {
   border-color: var(--color-accent);
 }
 
 .string_list_editor_remove {
   display: grid;
+  flex: none;
   place-items: center;
   width: 18px;
   height: 18px;

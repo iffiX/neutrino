@@ -1,11 +1,9 @@
-/* One column, read top to bottom. The cap holds a card to a readable width on
-   a wide screen instead of stretching it across the window. */
+/* One column, read top to bottom, as wide as the page. */
 .settings_layout {
   display: grid;
   gap: var(--space-5);
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  max-width: 760px;
 }
 
 .settings_form {

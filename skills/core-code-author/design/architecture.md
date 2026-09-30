@@ -404,11 +404,14 @@ open. Every open page, the login page included, watches one signal: the
 unauthenticated session endpoint carries `panel_started_at`, a constant of
 the server process. A page remembers the first value it saw; a later answer
 with a different one means a restarted panel — new code, and sessions gone
-with the old process — and the page reloads itself once. An unreachable
-backend is only ever waited out, and the same identity answering again is a
-network blip: the page's own channels resume in place. Downtime and 401s are
-deliberately not signals — restarts are too brief to catch by polling, and a
-signed-out answer cannot be told from a lockout.
+with the old process — and the page reloads itself once. Nothing polls for
+it. A restart always drops the event socket, so the page reads the value
+each time that socket opens; it reads again when the tab comes back to the
+front, when the login page loads, and after a login before the page moves
+on. An unreachable backend is only ever waited out, and the same identity
+answering again is a network blip: the page's own channels resume in place.
+Downtime and 401s are deliberately not signals: a signed-out answer cannot
+be told from a lockout.
 
 ## One identifier shape
 

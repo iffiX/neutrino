@@ -30,8 +30,8 @@ export function App() {
   const [context, setContext] = useState<SetupContext | null>(null);
   const [showing, setShowing] = useState<Showing>("checking");
 
-  // Armed at the root so every screen has it, the login card included: a
-  // restarted panel reloads whatever tab is open onto the new bundle.
+  // Armed at the root so every screen has it, the login card included: a tab
+  // coming back to the front asks whether the panel restarted meanwhile.
   useEffect(() => {
     startPanelIdentityWatch();
   }, []);

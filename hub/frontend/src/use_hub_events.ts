@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { probePanelIdentity } from "./panel_identity";
 import { useReconnectingSocket } from "./use_reconnecting_socket";
 import type { SocketStatus } from "./use_reconnecting_socket";
 
@@ -86,7 +87,13 @@ export function useHubEventChannel(): SocketStatus {
       isGreeted = false;
     };
   }, []);
-  return useReconnectingSocket("/ws/hub/event", receive);
+  // A restarted panel always drops this socket, so each opening is the
+  // moment to ask whether the panel behind it is still the same one.
+  return useReconnectingSocket("/ws/hub/event", receive, onEventSocketOpen);
+}
+
+function onEventSocketOpen() {
+  void probePanelIdentity();
 }
 
 /**

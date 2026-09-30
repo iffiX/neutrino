@@ -5,54 +5,78 @@ import type { AuthState } from "./api_types";
  * Reloading the app when the panel behind it has restarted.
  *
  * A restart signs every session out and usually ships a new bundle, so a page
- * built by the old process must not keep running against the new one. Every
- * open tab probes `/api/hub/auth/session` — it answers without a session and
- * carries `panel_started_at`, a constant per server process. The first
- * successful read is remembered; a later read with a different value reloads
- * the page, which lands on login with the new bundle. A read that fails means
- * the backend is unreachable, and says nothing about identity: the probe just
- * keeps asking, and the same value answering again is a network blip the open
- * sockets recover from on their own.
+ * built by the old process must not keep running against the new one.
+ * `/api/hub/auth/session` answers without a session and carries
+ * `panel_started_at`, a constant per server process. The first value read is
+ * remembered; a later one that differs reloads the page onto the new bundle.
+ *
+ * It is read at the moments a restart can have happened unseen: each time the
+ * event socket opens, since a restart always drops it; when the tab comes
+ * back to the front; when the login page loads; and after a login, before the
+ * page moves on. A read that fails says nothing about identity.
  */
 
-const PANEL_IDENTITY_PROBE_INTERVAL_MS = 3000;
-
-let probeHandle: number | null = null;
 let knownStartedAt: string | null = null;
 let isReloading = false;
+let isWatching = false;
 
 /**
- * Start the identity probe for the life of the page.
+ * Probe once when the tab comes back to the front, for the life of the page.
  *
- * Idempotent: the first call arms one interval, later calls are no-ops. There
- * is no stop — the reset is the reload itself.
+ * Idempotent: the first call adds the listener, later calls are no-ops.
  */
 export function startPanelIdentityWatch() {
-  if (probeHandle !== null) {
+  if (isWatching) {
     return;
   }
-  probeHandle = window.setInterval(
-    () => void probePanelIdentity(),
-    PANEL_IDENTITY_PROBE_INTERVAL_MS,
-  );
+  isWatching = true;
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      void probePanelIdentity();
+    }
+  });
 }
 
-async function probePanelIdentity() {
+/**
+ * Read the panel's identity once, and reload when it changed.
+ *
+ * Returns:
+ *   True when the page is reloading onto a restarted panel.
+ */
+export async function probePanelIdentity(): Promise<boolean> {
   if (isReloading) {
-    return;
+    return true;
   }
   let state: AuthState;
   try {
     state = await apiGet<AuthState>("/hub/auth/session");
   } catch {
-    return;
+    return false;
+  }
+  return notePanelIdentity(state);
+}
+
+/**
+ * Hold a session answer read elsewhere against the identity remembered.
+ *
+ * Args:
+ *   state: An answer of `/api/hub/auth/session`.
+ *
+ * Returns:
+ *   True when the page is reloading onto a restarted panel.
+ */
+export function notePanelIdentity(state: AuthState): boolean {
+  if (isReloading) {
+    return true;
   }
   if (knownStartedAt === null) {
     knownStartedAt = state.panel_started_at;
-    return;
+    return false;
   }
   if (state.panel_started_at !== knownStartedAt) {
     isReloading = true;
     window.location.reload();
+    return true;
   }
+  return false;
 }

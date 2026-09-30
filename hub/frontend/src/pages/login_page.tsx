@@ -5,6 +5,7 @@ import { Icon } from "../components/icon";
 import { apiGet, describeError } from "../api_client";
 import { PasswordInput } from "../components/password_input";
 import { t, useLanguage } from "../i18n";
+import { notePanelIdentity } from "../panel_identity";
 import { useAuth } from "../use_auth";
 import type { AuthState } from "../api_types";
 
@@ -49,11 +50,15 @@ export function LoginPage() {
     setLockedUntil(current + seconds * 1000);
   };
 
-  // A page opened mid-lockout should show the countdown straight away.
+  // A page opened mid-lockout should show the countdown straight away. The
+  // same read is the login page's look at which panel is behind it.
   useEffect(() => {
     let isCancelled = false;
     apiGet<AuthState>("/hub/auth/session")
       .then((state) => {
+        if (notePanelIdentity(state)) {
+          return;
+        }
         if (!isCancelled && state.lockout_remaining_s > 0) {
           startLockdown(state.lockout_remaining_s);
         }
