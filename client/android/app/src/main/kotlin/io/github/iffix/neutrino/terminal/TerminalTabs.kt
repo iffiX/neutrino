@@ -28,7 +28,7 @@ import kotlinx.serialization.json.Json
  * detached on the next start.
  *
  * A shell is opened with a session id this phone makes; a kept one is attached again with
- * `is_resumed`. `persist` and `stop_session` name the machine and the session.
+ * `is_resumed`. `persist` and `stop_session` name only the session.
  *
  * @param preferences Where the kept sessions are listed.
  * @param opener The stream opener of one hub, by binding id, or null while it is not connected.
@@ -118,7 +118,7 @@ class TerminalTabs(
     fun setPersistent(sessionId: String, isPersistent: Boolean) {
         val tab = tab(sessionId) ?: return
         change(sessionId) { it.copy(isPersistent = isPersistent) }
-        command(tab, "persist", "device_id" to tab.deviceId, "session_id" to sessionId, "is_persistent" to isPersistent)
+        command(tab, "persist", "session_id" to sessionId, "is_persistent" to isPersistent)
     }
 
     /**
@@ -128,7 +128,7 @@ class TerminalTabs(
      */
     fun close(sessionId: String) {
         val tab = tab(sessionId) ?: return
-        if (tab.isPersistent) command(tab, "stop_session", "device_id" to tab.deviceId, "session_id" to sessionId)
+        if (tab.isPersistent) command(tab, "stop_session", "session_id" to sessionId)
         synchronized(streams) { streams.remove(sessionId) }?.close()
         synchronized(outputs) { outputs.remove(sessionId) }
         current.update { list -> list.filterNot { it.sessionId == sessionId } }

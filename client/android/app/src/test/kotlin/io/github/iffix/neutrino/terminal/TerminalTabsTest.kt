@@ -75,6 +75,8 @@ class TerminalTabsTest {
         val persist = opens("command").single()
         assertEquals("persist", persist["verb"]!!.jsonPrimitive.content)
         assertEquals(true, persist["is_persistent"]!!.jsonPrimitive.boolean)
+        assertEquals(id, persist["session_id"]!!.jsonPrimitive.content)
+        assertEquals(null, persist["device_id"])
         val again = TerminalTabs(preferences, { opener }, backgroundScope)
         assertEquals(listOf(id), again.tabs.value.map { it.sessionId })
         assertEquals(TerminalPhase.DETACHED, again.tabs.value.single().phase)
@@ -98,7 +100,10 @@ class TerminalTabsTest {
         tabs.sized(id, 80, 24)
         tabs.setPersistent(id, true)
         tabs.close(id)
-        assertEquals("stop_session", opens("command").last()["verb"]!!.jsonPrimitive.content)
+        val stop = opens("command").last()
+        assertEquals("stop_session", stop["verb"]!!.jsonPrimitive.content)
+        assertEquals(id, stop["session_id"]!!.jsonPrimitive.content)
+        assertEquals(null, stop["device_id"])
         assertTrue(tabs.tabs.value.isEmpty())
     }
 
