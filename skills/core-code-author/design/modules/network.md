@@ -150,7 +150,13 @@ there, the served networks stop reaching it, and its peers stop being able to
 knock.
 
 Overlays live in `overlays`, beside `interfaces` rather than in it, and are
-keyed by provider. Both halves matter. Switching modes rebuilds the interface
+keyed by provider, one row per engine with `is_enabled` and `is_exposed`. Any
+set of engines runs at once, the empty set included, and every rule below is
+rendered over the devices of the enabled rows only. A row turned off keeps
+its `is_exposed` for the day it is turned on again. A row stored without
+`is_enabled`, the 0.4.0 shape, is an enabled one, so a hub upgraded from
+0.4.0 runs the one overlay it ran and no other. Both halves of the keying
+matter. Switching modes rebuilds the interface
 list, and an overlay riding in there would be dropped by a change that has
 nothing to do with it; and the device name belongs to the provider, so a
 configuration storing `wt0` would render rules for an interface that no longer
@@ -223,6 +229,35 @@ whatever the order of reloads, and the mark it sets is the one that stands.
 `server` and `side_gateway` start with every interface open. That is what the
 machine was already doing before the hub arrived, and a VPS that answers on
 nothing after an install is a VPS nobody can reach.
+
+## The converge step
+
+Everything derived from the set of overlays, the network and the proxy is
+recomputed by one step, `PanelRuntime.converge_network`, and every writer
+calls it: an overlay switched on or off, the EasyTier settings, a NetBird
+join, leave or setup key, the Network page's writes, the Proxy page's apply,
+and the address sampler when an overlay's device or the channel's address set
+moved. It holds the router lock throughout, the lock the resident router unit
+takes, and runs seven steps in this order:
+
+| Step | What it does |
+| --- | --- |
+| 1 | The enabled engines start. An engine that was not running is given 20 seconds to hold an address before the step goes on. |
+| 2 | EasyTier is restarted only when the text it would start with, its network file and its unit drop-in, differs from the text on disk, or when it is not running. |
+| 3 | `RouterStateController.reconcile_locked()`: the firewall, the policy route, the interfaces. |
+| 4 | dnsmasq restarts only when its text changed. |
+| 5 | xray restarts only when its text changed or it is not running. |
+| 6 | Every online device is handed its state, whose share fence follows the new set. |
+| 7 | Every client is handed its state, whose join material and addresses follow the new set. |
+
+The engines turned off stop after step 7. A client reaching the hub through
+one of them is handed the state that no longer names it while its socket
+still stands; the hub does not wait for it to answer. A step that fails
+stops none of the steps after it, and the failures are raised together at
+the end.
+
+`nhub apply` runs the same steps from the command line without the two
+pushes. A peer is handed its state when it next reports to a running panel.
 
 ## What dnsmasq gives a served network
 

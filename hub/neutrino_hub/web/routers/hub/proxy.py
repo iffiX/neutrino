@@ -168,8 +168,14 @@ async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
         reason beside the button that caused it.
     """
     try:
-        message = await runtime.apply_all()
-    except (subprocess.SubprocessError, OSError, RuntimeError, ValueError) as error:
+        message = await runtime.converge_network()
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        ValueError,
+    ) as error:
         return ApplyResult(is_applied=False, message=command_failure_text(error))
     # A restarted xray holds no override. Pinning the stored exit again here
     # puts it back within a second instead of at the next round.

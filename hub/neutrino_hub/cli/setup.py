@@ -43,7 +43,7 @@ from neutrino_hub.modules.devices.agent_package import (
     AGENT_PACKAGE_FAMILY_OF_PLATFORM,
     AgentPackageCache,
 )
-from neutrino_hub.modules.overlay.config import provider_of
+from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.ops import OverlaySwitcher
 from neutrino_hub.system.machine import (
     distribution_family,
@@ -1150,27 +1150,27 @@ def _step_render_all(reporter: InstallReporter) -> str:
 
 
 def _step_overlay(reporter: InstallReporter) -> str:
-    """Run the overlay the configuration names, and stand the others down.
+    """Run the overlays the configuration enables, and stand the others down.
 
     A box being set up may be carrying an engine from a life before this one,
-    and a configuration that names no overlay is a box nobody reaches from
+    and a configuration that enables no overlay is a box nobody reaches from
     outside. Making that true is this step; what it says is the record.
 
     Args:
-        reporter: Where the engine's own progress lines go.
+        reporter: Where the engines' own progress lines go.
 
     Returns:
-        What the engine reported, or that there is no overlay.
+        The overlays enabled, or that there is none.
 
     Raises:
-        subprocess.CalledProcessError: If installing or starting it fails.
+        subprocess.CalledProcessError: If installing or starting one fails.
         NotImplementedError: For an engine this hub does not run yet.
     """
     network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
-    return (
-        OverlaySwitcher().converge(provider_of(network), report=reporter.note)
-        or "no overlay"
-    )
+    switcher = OverlaySwitcher()
+    switcher.start(network, report=reporter.note)
+    switcher.stop(network, report=reporter.note)
+    return ", ".join(enabled_providers(network)) or "no overlay"
 
 
 def _step_enable_services(reporter: InstallReporter) -> str:

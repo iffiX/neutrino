@@ -4,20 +4,15 @@ An uplink's lease renewed to another address, an overlay joined or left, a
 name the overlay's daemon starts reporting: none of them is a write anybody
 makes, so nothing else would tell the agents and the clients. This reads
 :func:`channel_urls` every half minute and, when the set is not the one it
-read last, pushes the state to every live binding of both roles. Before
-each read it asks the runtime to apply the routing state again when an
-overlay's device moved, so the firewall follows an EasyTier console bringing
-its network up.
+read last, runs the runtime's converge step, which pushes the state to every
+live binding of both roles. Before each read it asks the runtime to converge
+when an overlay's device moved, so the firewall follows an EasyTier console
+bringing its network up.
 """
 
 import logging
 import threading
 
-from neutrino_hub.modules.channel.constants import (
-    CHANNEL_ROLE_AGENT,
-    CHANNEL_ROLE_CLIENT,
-)
-from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_addresses import channel_urls
 from neutrino_hub.web.constants import WEB_ADDRESS_SAMPLE_INTERVAL_S
 
@@ -55,12 +50,12 @@ class PanelAddressSampler:
         self._is_stopped.set()
 
     def sample_once(self) -> bool:
-        """Read the address set once and push both roles when it moved.
+        """Read the address set once and converge when it moved.
 
         Returns:
             True when this sample differed from the one before it.
         """
-        self._runtime.follow_overlay_devices()
+        is_converged = self._runtime.follow_overlay_devices()
         urls = channel_urls(self._runtime)
         if self._urls is None:
             self._urls = urls
@@ -69,8 +64,8 @@ class PanelAddressSampler:
             return False
         self._urls = urls
         LOGGER.info("channel addresses moved: %s", ", ".join(urls))
-        channel_state.push_states(self._runtime, CHANNEL_ROLE_CLIENT)
-        channel_state.push_states(self._runtime, CHANNEL_ROLE_AGENT)
+        if not is_converged:
+            self._runtime.converge_network_blocking()
         return True
 
     def _loop(self) -> None:

@@ -15,7 +15,7 @@ the panel writes all of them off.
 | Scope | Switch | What reaches xray | How |
 | --- | --- | --- | --- |
 | served networks | `is_proxy_enabled` | every TCP and UDP connection forwarded from a LAN interface to a public address | `prerouting` TPROXY on the LAN interfaces |
-| overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed overlay interface | the overlay interface joins the TPROXY set |
+| overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed interface of any running overlay | every running overlay's exposed interfaces join the TPROXY set, NetBird's and EasyTier's alike when both run |
 | the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray | `output` marks the packet, it hairpins through `lo`, TPROXY takes it |
 | SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port |
 
@@ -141,7 +141,7 @@ The direct resolver's query is one packet per name: xray asks for A records
 only, and a NAT router in front of the uplink was measured dropping the
 second of two queries sent at once on a fresh UDP flow.
 
-The hub runs its overlay for addresses only. NetBird's DNS management is
+The hub runs its overlays for addresses only. NetBird's DNS management is
 off on the hub, `--disable-dns` on every `netbird up`, and EasyTier's is
 never turned on, so the box's own resolver stays its dnsmasq whatever the
 served network's address becomes, and the overlay's own names are not

@@ -109,6 +109,30 @@ def apply_stored(*, hostname: str) -> str:
         return EasyTierConfigApplier().apply(read_stored(), hostname=hostname)
 
 
+def apply_stored_if_changed(*, hostname: str) -> str:
+    """Make the engine run on what is stored, when it does not already.
+
+    Args:
+        hostname: What this box is called when the configuration names none.
+
+    Returns:
+        A one-line summary, empty when the files on disk are what the
+        stored configuration renders and the engine is running on them.
+
+    Raises:
+        VaultLockedError: If there is no data key to open what is stored.
+        ValueError: If the file is not JSON, or the stored secret or console
+            address does not open.
+        subprocess.CalledProcessError: If the engine refuses to restart.
+    """
+    with EASYTIER_APPLY_LOCK:
+        applier = EasyTierConfigApplier()
+        config = read_stored()
+        if applier.is_current(config, hostname=hostname):
+            return ""
+        return applier.apply(config, hostname=hostname)
+
+
 def console_device_names() -> list:
     """The interfaces the engine's console networks ride on right now.
 
@@ -314,9 +338,7 @@ class EasyTierConfigApplier:
             subprocess.CalledProcessError: If the engine refuses to restart.
         """
         network_path = UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME
-        dropin_path = (
-            SYSTEM_SYSTEMD_DIR / EASYTIER_DROPIN_DIR_NAME / EASYTIER_DROPIN_NAME
-        )
+        dropin_path = _dropin_path()
         (UTILS_GENERATED_DIR / EASYTIER_STALE_ARGUMENTS_NAME).unlink(missing_ok=True)
         is_unit_owned = not is_dev_root_set()
         if not config.is_configured:
@@ -356,10 +378,70 @@ class EasyTierConfigApplier:
         run(["systemctl", "restart", EASYTIER_UNIT])
         return f"applied the {config.mode} network and restarted"
 
+    def is_current(self, config: EasyTierConfig, *, hostname: str) -> bool:
+        """Whether the engine already runs what this configuration renders.
+
+        Args:
+            config: What the panel stored.
+            hostname: What this box is called when the configuration names
+                none.
+
+        Returns:
+            True when the network file and the drop-in on disk are the
+            rendered text, and the unit is active exactly when there is a
+            network to run. An engine that is not installed is current.
+
+        Raises:
+            VaultLockedError: If there is no data key to open what is stored.
+            ValueError: If the stored secret or console address does not open.
+        """
+        if not self.is_installed:
+            return True
+        network_path = UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME
+        is_active = run(
+            ["systemctl", "is-active", "--quiet", EASYTIER_UNIT], is_checked=False
+        ).is_success
+        if not config.is_configured:
+            return not network_path.exists() and not is_active
+        if config.is_console_mode:
+            network_text = None
+            arguments = render_arguments(
+                config,
+                config_server=config.config_server(),
+                config_path=str(network_path),
+            )
+        else:
+            network_text = render_config(
+                config, secret=config.secret(), hostname=hostname
+            )
+            arguments = render_arguments(
+                config, config_server="", config_path=str(network_path)
+            )
+        if _text_of(network_path) != network_text:
+            return False
+        if not is_dev_root_set():
+            dropin = render_dropin(arguments, core_path=str(EASYTIER_CORE_PATH))
+            if _text_of(_dropin_path()) != dropin:
+                return False
+        return is_active
+
     @property
     def is_installed(self) -> bool:
         """Whether the engine is on the box."""
         return EASYTIER_CORE_PATH.is_file()
+
+
+def _dropin_path():
+    """Where the unit drop-in carrying the start line is written."""
+    return SYSTEM_SYSTEMD_DIR / EASYTIER_DROPIN_DIR_NAME / EASYTIER_DROPIN_NAME
+
+
+def _text_of(path) -> "str | None":
+    """A file's text, None when it is not there or cannot be read."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def _by_instance(payload) -> list:

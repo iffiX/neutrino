@@ -156,6 +156,14 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   Global switches: `uplink_policy` (`failover`/`balance`) and
   `is_inter_lan_allowed` (off fences the served networks from each other; every
   network still reaches the internet and the overlay).
+  Top-level `overlays` holds one row per overlay engine,
+  `{provider, is_enabled, is_exposed}`, `provider` being `netbird` or
+  `easytier`; every row with `is_enabled` runs, and any set of them, none
+  included, is allowed. A row without `is_enabled`, the 0.4.0 shape where the
+  list named the one engine the box ran, reads as enabled, so an upgraded box
+  runs that engine and no other; the next write stores `is_enabled` on every
+  row. A file with no `overlays` at all reads as one enabled, exposed NetBird
+  row.
 - **`identity.json`** — the hub's own `id` (a uuid generated at setup) and
   `name` (the hostname until the Settings page changes it); the `welcome`
   frame carries both, and `nhub reset all` deletes the file.

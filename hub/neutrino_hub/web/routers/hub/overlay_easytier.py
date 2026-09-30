@@ -7,8 +7,6 @@ console pushes the network, this page keeps only the console's address, and
 what the engine then runs is read back and shown.
 """
 
-import asyncio
-import socket
 import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,33 +25,26 @@ from neutrino_hub.modules.easytier.config import (
 )
 from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CORE_PATH,
+    EASYTIER_MODE_CONSOLE,
     EASYTIER_VERSION,
 )
 from neutrino_hub.modules.easytier.ops import (
     EASYTIER_CONFIG_NAME,
     EASYTIER_LINK_LOCAL,
     EasyTierStatusReader,
-    apply_stored,
     read_stored,
 )
-from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_overlay import easytier_join_host
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
-    EasyTierConfigServerRequest,
     EasyTierInstanceView,
-    EasyTierModeRequest,
-    EasyTierNetworkRequest,
-    EasyTierNetworksRequest,
     EasyTierNodeView,
-    EasyTierPeersRequest,
     EasyTierPeerView,
     EasyTierSecretView,
-    EasyTierSecureModeRequest,
+    EasyTierSettingsRequest,
     EasyTierSuggestedNetwork,
     EasyTierSuggestionView,
     EasyTierView,
@@ -78,179 +69,81 @@ def read_state(runtime: PanelRuntime = Depends(get_runtime)) -> EasyTierView:
     return _view(runtime, _config())
 
 
-@router.post("/easytier/mode/set", response_model=EasyTierView)
-async def update_mode(
-    request: EasyTierModeRequest, runtime: PanelRuntime = Depends(get_runtime)
+@router.post("/easytier/set", response_model=EasyTierView)
+async def update_settings(
+    request: EasyTierSettingsRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> EasyTierView:
-    """Choose where the network comes from: manual or EasyTier's console.
+    """Store every EasyTier setting at once, and converge on them.
 
     Args:
-        request: The mode.
+        request: The mode, the console's address and secure mode, and the
+            manual network: its name, its secret, this box's address on it,
+            the peers dialled at start and the networks exported to it.
         runtime: The shared runtime.
 
     Returns:
         The state afterwards.
 
     Raises:
-        HTTPException: 400 for a mode that is not one, 502 when the engine
-            refuses what was written.
+        HTTPException: 400 for a mode, a console address, a name, an address,
+            a peer or a network that is not one, or a first manual network
+            with no secret; 502 when the converge step that follows fails.
+        VaultLockedError: If there is no data key to seal a secret or a
+            console address under.
     """
     try:
         validate_mode(request.mode)
     except ValueError as error:
         raise _bad_request("easytier_mode_unknown", mode=request.mode) from error
     config = _config()
-    config.mode = request.mode
-    return await _store(runtime, config)
-
-
-@router.post("/easytier/config_server/set", response_model=EasyTierView)
-async def update_config_server(
-    request: EasyTierConfigServerRequest,
-    runtime: PanelRuntime = Depends(get_runtime),
-) -> EasyTierView:
-    """Store the console address, or forget it.
-
-    Args:
-        request: The address with its token; empty forgets the stored one.
-        runtime: The shared runtime.
-
-    Returns:
-        The state afterwards.
-
-    Raises:
-        HTTPException: 400 for an address that is not one, 502 when the
-            engine refuses what was written.
-        VaultLockedError: If there is no data key to seal the address under.
-    """
-    address = request.config_server.strip()
-    config = _config()
-    if address:
+    is_manual = request.mode != EASYTIER_MODE_CONSOLE
+    if request.network_name or is_manual:
         try:
-            validate_config_server(address)
+            validate_name(request.network_name)
         except ValueError as error:
-            raise _bad_request("easytier_config_server_invalid") from error
-        config.set_config_server(address)
-    else:
-        config.clear_config_server()
-    return await _store(runtime, config)
-
-
-@router.post("/easytier/secure_mode/set", response_model=EasyTierView)
-async def update_secure_mode(
-    request: EasyTierSecureModeRequest,
-    runtime: PanelRuntime = Depends(get_runtime),
-) -> EasyTierView:
-    """Choose whether the engine runs the console's network in secure mode.
-
-    Args:
-        request: Whether it does.
-        runtime: The shared runtime.
-
-    Returns:
-        The state afterwards.
-
-    Raises:
-        HTTPException: 502 when the engine refuses what was written.
-    """
-    config = _config()
-    config.is_secure_mode = request.is_secure_mode
-    return await _store(runtime, config)
-
-
-@router.post("/easytier/set", response_model=EasyTierView)
-async def update_network(
-    request: EasyTierNetworkRequest, runtime: PanelRuntime = Depends(get_runtime)
-) -> EasyTierView:
-    """Store the network this box is a member of.
-
-    Args:
-        request: The name, the secret, and this box's address on it.
-        runtime: The shared runtime.
-
-    Returns:
-        The state afterwards.
-
-    Raises:
-        HTTPException: 400 for a name or address that is not one, or a first
-            network with no secret; 502 when the engine refuses what was
-            written.
-    """
-    config = _config()
-    try:
-        validate_name(request.network_name)
-    except ValueError as error:
-        raise _bad_request(
-            "easytier_name_invalid", name=request.network_name
-        ) from error
+            raise _bad_request(
+                "easytier_name_invalid", name=request.network_name
+            ) from error
     try:
         validate_address(request.address)
     except ValueError as error:
         raise _bad_request(
             "easytier_address_invalid", address=request.address
         ) from error
-    if not request.network_secret and not config.secret_sealed:
+    if is_manual and not request.network_secret and not config.secret_sealed:
         raise _bad_request("easytier_secret_missing")
-    config.network_name = request.network_name
-    config.address = request.address
-    config.hostname = request.hostname
-    if request.network_secret:
-        config.set_secret(request.network_secret)
-    return await _store(runtime, config)
-
-
-@router.post("/easytier/peer/set", response_model=EasyTierView)
-async def update_peers(
-    request: EasyTierPeersRequest, runtime: PanelRuntime = Depends(get_runtime)
-) -> EasyTierView:
-    """Store what this box connects to when it starts.
-
-    Args:
-        request: The addresses, in the order they are tried.
-        runtime: The shared runtime.
-
-    Returns:
-        The state afterwards.
-
-    Raises:
-        HTTPException: 400 for an address the engine would not dial, 502 when
-            the engine refuses what was written.
-    """
-    config = _config()
     peers = [entry.strip() for entry in request.peers if entry.strip()]
     for uri in peers:
         try:
             validate_peer(uri)
         except ValueError as error:
             raise _bad_request("easytier_peer_invalid", uri=uri) from error
-    config.peers = peers
-    return await _store(runtime, config)
-
-
-@router.post("/easytier/network/set", response_model=EasyTierView)
-async def update_networks(
-    request: EasyTierNetworksRequest, runtime: PanelRuntime = Depends(get_runtime)
-) -> EasyTierView:
-    """Store the networks this box makes reachable to the others.
-
-    Args:
-        request: The CIDRs.
-        runtime: The shared runtime.
-
-    Returns:
-        The state afterwards.
-
-    Raises:
-        HTTPException: 400 for a network that is not one, 502 when the engine
-            refuses what was written.
-    """
-    config = _config()
     networks = [entry.strip() for entry in request.exported_networks if entry.strip()]
     for cidr in networks:
         try:
             validate_network(cidr)
         except ValueError as error:
             raise _bad_request("easytier_network_invalid", cidr=cidr) from error
+    config_server = (
+        None if request.config_server is None else request.config_server.strip()
+    )
+    if config_server:
+        try:
+            validate_config_server(config_server)
+        except ValueError as error:
+            raise _bad_request("easytier_config_server_invalid") from error
+    config.mode = request.mode
+    if config_server:
+        config.set_config_server(config_server)
+    elif config_server is not None:
+        config.clear_config_server()
+    config.is_secure_mode = request.is_secure_mode
+    config.network_name = request.network_name
+    config.address = request.address
+    config.hostname = request.hostname
+    if request.network_secret:
+        config.set_secret(request.network_secret)
+    config.peers = peers
     config.exported_networks = networks
     return await _store(runtime, config)
 
@@ -292,8 +185,7 @@ def read_secret() -> EasyTierSecretView:
 
 
 async def _store(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
-    """Write the configuration, make the engine run on it, and push every
-    client's state.
+    """Write the configuration and converge on it.
 
     Args:
         runtime: The shared runtime.
@@ -303,16 +195,21 @@ async def _store(runtime: PanelRuntime, config: EasyTierConfig) -> EasyTierView:
         The state afterwards.
 
     Raises:
-        HTTPException: 502 when the engine refuses it.
+        HTTPException: 502 when the converge step fails.
     """
     write_config(EASYTIER_CONFIG_NAME, config.to_dict())
     try:
-        await asyncio.to_thread(apply_stored, hostname=socket.gethostname())
-    except (subprocess.SubprocessError, OSError, ValueError) as error:
+        await runtime.converge_network()
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        ValueError,
+    ) as error:
         raise _bad_gateway(
             "easytier_apply_failed", detail=command_failure_text(error)
         ) from error
-    await asyncio.to_thread(channel_state.push_states, runtime, CHANNEL_ROLE_CLIENT)
     return _view(runtime, config)
 
 

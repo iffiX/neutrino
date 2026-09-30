@@ -3,7 +3,7 @@
 from neutrino_hub.cli import apply
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
-from neutrino_hub.modules.overlay.config import set_provider
+from neutrino_hub.modules.overlay.config import set_enabled
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.utils.json_file import write_config
 from tests.conftest import unlock_vault
@@ -17,7 +17,7 @@ def test_the_components_are_the_hubs_own():
         "xray",
         "dnsmasq",
         "cliproxyapi",
-        "easytier",
+        "overlay",
     )
 
 
@@ -85,14 +85,15 @@ def test_an_apply_does_not_write_the_file_before_installing_it(monkeypatch):
     assert written == []
 
 
-# --- easytier: only as the chosen overlay ---
+# --- overlays: the enabled ones run, EasyTier rendered only when enabled ---
 
 
-def _stored_easytier(tmp_path, monkeypatch, provider: str) -> None:
+def _stored_easytier(tmp_path, monkeypatch, providers: list) -> None:
     unlock_vault(monkeypatch, tmp_path)
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
-    network = RouterNetworkConfig.from_dict({})
-    set_provider(network, provider)
+    network = RouterNetworkConfig.from_dict({"overlays": []})
+    for provider in providers:
+        set_enabled(network, provider, is_enabled=True)
     write_config("router/network.json", network.to_dict())
     write_config("xray/routing.json", {})
     stored = EasyTierConfig(mode="console")
@@ -100,15 +101,56 @@ def _stored_easytier(tmp_path, monkeypatch, provider: str) -> None:
     write_config(EASYTIER_CONFIG_NAME, stored.to_dict())
 
 
-def test_an_apply_runs_easytier_when_it_is_the_chosen_overlay(tmp_path, monkeypatch):
-    _stored_easytier(tmp_path, monkeypatch, "easytier")
+def test_an_apply_renders_easytier_when_it_is_enabled(tmp_path, monkeypatch):
+    _stored_easytier(tmp_path, monkeypatch, ["netbird", "easytier"])
 
-    assert apply._render(("easytier",))["easytier"].is_console_mode
+    assert apply._render(("overlay",))["easytier"].is_console_mode
 
 
-def test_an_apply_leaves_easytier_down_behind_another_overlay(tmp_path, monkeypatch):
-    """A package upgrade runs this; a stored network must not start a second
-    overlay beside NetBird."""
-    _stored_easytier(tmp_path, monkeypatch, "netbird")
+def test_an_apply_leaves_easytier_down_when_it_is_off(tmp_path, monkeypatch):
+    """A package upgrade runs this; a stored network must not start an
+    overlay nobody turned on."""
+    _stored_easytier(tmp_path, monkeypatch, ["netbird"])
 
-    assert "easytier" not in apply._render(("easytier",))
+    assert "easytier" not in apply._render(("overlay",))
+
+
+class _RecordingSwitcher:
+    calls: list = []
+
+    def start(self, network, *, report=None):
+        _RecordingSwitcher.calls.append("start")
+        return []
+
+    def stop(self, network, *, report=None):
+        _RecordingSwitcher.calls.append("stop")
+        return []
+
+
+def test_an_apply_starts_the_overlays_first_and_stops_them_last(monkeypatch):
+    """The command line runs the panel's converge steps in the panel's order,
+    the two pushes left out."""
+    _RecordingSwitcher.calls = []
+    monkeypatch.setattr(apply, "OverlaySwitcher", _RecordingSwitcher)
+    monkeypatch.setattr(
+        apply,
+        "install_dnsmasq",
+        lambda config: _RecordingSwitcher.calls.append("dnsmasq") or True,
+    )
+
+    class Controller:
+        def reconcile(self):
+            _RecordingSwitcher.calls.append("router")
+            return []
+
+    monkeypatch.setattr(apply, "RouterStateController", Controller)
+
+    apply._apply(
+        {
+            "overlay": RouterNetworkConfig.from_dict({}),
+            "router": "",
+            "dnsmasq": "interface=enp1s0\n",
+        }
+    )
+
+    assert _RecordingSwitcher.calls == ["start", "router", "dnsmasq", "stop"]

@@ -1,8 +1,9 @@
-"""The NetBird block's API, with the daemon, the disk and the channel replaced.
+"""The NetBird block's API, with the daemon, the disk and the converge step
+replaced.
 
-What is pinned is the kept setup key: a join that worked keeps it and pushes
-the clients once, a join that failed keeps nothing, and the key can be
-replaced or forgotten without running ``netbird up``.
+What is pinned is the kept setup key: a join that worked keeps it and
+converges once, a join that failed keeps nothing, the key can be replaced or
+forgotten without running ``netbird up``, and leaving keeps it.
 """
 
 import subprocess
@@ -37,23 +38,34 @@ class FakeServices:
 class FakeRuntime:
     """Just the parts of :class:`PanelRuntime` these routes reach for."""
 
-    def __init__(self):
+    def __init__(self, pushes: list):
         self.services = FakeServices()
+        self._pushes = pushes
 
     def network(self) -> RouterNetworkConfig:
         return RouterNetworkConfig.from_dict({"mode": "server", "interfaces": []})
+
+    async def converge_network(self, *, only=None) -> str:
+        self._pushes.append("converged")
+        return "applied"
 
 
 class FakeEnroller:
     """Records each join instead of running ``netbird up``."""
 
     joins: list = []
+    leaves: int = 0
     refusal: Exception | None = None
 
     def join(self, *, setup_key: str, management_url: str = "") -> None:
         if FakeEnroller.refusal is not None:
             raise FakeEnroller.refusal
         FakeEnroller.joins.append((setup_key, management_url))
+
+    def leave(self) -> None:
+        if FakeEnroller.refusal is not None:
+            raise FakeEnroller.refusal
+        FakeEnroller.leaves += 1
 
 
 class FakeReader:
@@ -67,6 +79,7 @@ class FakeReader:
 def box(monkeypatch, tmp_path):
     """A gateway with an open vault, a fake daemon, and config/ under tmp."""
     FakeEnroller.joins = []
+    FakeEnroller.leaves = 0
     FakeEnroller.refusal = None
     unlock_vault(monkeypatch, tmp_path)
     config_dir = tmp_path / "config"
@@ -75,12 +88,8 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr(netbird_router, "NetbirdEnroller", FakeEnroller)
     monkeypatch.setattr(netbird_router, "NetbirdStatusReader", FakeReader)
     monkeypatch.setattr(netbird_router, "device_addresses", dict)
-    pushes = []
-    monkeypatch.setattr(
-        "neutrino_hub.web.channel_state.push_states",
-        lambda runtime, role: pushes.append(role),
-    )
-    runtime = FakeRuntime()
+    pushes: list = []
+    runtime = FakeRuntime(pushes)
     app = FastAPI()
     app.include_router(netbird_router.router)
     app.dependency_overrides[require_session] = lambda: None
@@ -89,7 +98,7 @@ def box(monkeypatch, tmp_path):
         yield client, pushes
 
 
-def test_a_join_that_worked_keeps_the_key_and_pushes_once(box):
+def test_a_join_that_worked_keeps_the_key_and_converges_once(box):
     client, pushes = box
 
     reply = client.post(
@@ -102,7 +111,7 @@ def test_a_join_that_worked_keeps_the_key_and_pushes_once(box):
     stored = read_stored()
     assert stored.setup_key() == SETUP_KEY
     assert stored.management_url == "https://nb.example.org"
-    assert pushes == ["client"]
+    assert pushes == ["converged"]
 
 
 def test_a_join_that_failed_keeps_nothing(box):
@@ -133,10 +142,10 @@ def test_setting_the_key_replaces_it_without_joining(box):
     stored = read_stored()
     assert stored.setup_key() == OTHER_KEY
     assert stored.management_url == "https://nb.example.org"
-    assert pushes == ["client", "client"]
+    assert pushes == ["converged", "converged"]
 
 
-def test_an_empty_key_forgets_the_kept_one_and_pushes(box):
+def test_an_empty_key_forgets_the_kept_one_and_converges(box):
     client, pushes = box
     client.post("/api/hub/overlay/netbird/join", json={"setup_key": SETUP_KEY})
 
@@ -146,7 +155,7 @@ def test_an_empty_key_forgets_the_kept_one_and_pushes(box):
 
     assert reply.json()["has_setup_key"] is False
     assert not read_stored().has_setup_key
-    assert pushes == ["client", "client"]
+    assert pushes == ["converged", "converged"]
 
 
 def test_the_view_says_whether_a_key_is_kept(box):
@@ -158,3 +167,26 @@ def test_the_view_says_whether_a_key_is_kept(box):
 
     assert payload["has_setup_key"] is True
     assert SETUP_KEY not in str(payload)
+
+
+def test_leaving_keeps_the_key_and_converges(box):
+    client, pushes = box
+    client.post("/api/hub/overlay/netbird/join", json={"setup_key": SETUP_KEY})
+
+    reply = client.post("/api/hub/overlay/netbird/leave")
+
+    assert reply.status_code == 200
+    assert FakeEnroller.leaves == 1
+    assert read_stored().setup_key() == SETUP_KEY
+    assert pushes == ["converged", "converged"]
+
+
+def test_a_leave_the_daemon_refuses_is_reported(box):
+    client, pushes = box
+    FakeEnroller.refusal = subprocess.CalledProcessError(1, ["systemctl"])
+
+    reply = client.post("/api/hub/overlay/netbird/leave")
+
+    assert reply.status_code == 502
+    assert reply.json()["detail"]["code"] == "overlay_leave_failed"
+    assert pushes == []

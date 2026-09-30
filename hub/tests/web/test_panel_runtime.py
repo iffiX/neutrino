@@ -5,7 +5,7 @@ The devices page is told, the published list is recomposed, and every
 client is handed its state, whose terminals list each machine's presence,
 so a client's dots follow the machines at once rather than at its next
 report. An overlay device found at run time that the loaded ruleset does not
-name yet runs one pass of the routing state, and nothing else does.
+name yet runs one converge step, and nothing else does.
 """
 
 import json
@@ -55,13 +55,13 @@ def test_an_agent_coming_or_going_pushes_every_client_its_state(monkeypatch):
     assert panel.published_services.refreshes == 1
 
 
-class CountingController:
+class CountingConverge:
     def __init__(self):
         self.passes = 0
 
-    def reconcile(self, *, only=None):
+    def __call__(self, only=None) -> str:
         self.passes += 1
-        return []
+        return "applied"
 
 
 def following(monkeypatch, found: dict, recorded: "dict | None") -> tuple:
@@ -74,13 +74,13 @@ def following(monkeypatch, found: dict, recorded: "dict | None") -> tuple:
         lambda name: {"overlays": [{"provider": "easytier"}]},
     )
     monkeypatch.setattr(runtime_module, "overlay_devices", lambda network: found)
-    passes = CountingController()
+    passes = CountingConverge()
     panel = object.__new__(PanelRuntime)
-    panel._router_controller = lambda: passes
+    panel.converge_network_blocking = passes
     return panel, passes
 
 
-def test_a_new_overlay_device_runs_one_pass(monkeypatch):
+def test_a_new_overlay_device_runs_one_converge(monkeypatch):
     panel, passes = following(monkeypatch, {"easytier": ["tun0"]}, {"easytier": []})
 
     assert panel.follow_overlay_devices() is True

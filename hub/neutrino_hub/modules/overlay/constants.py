@@ -4,11 +4,9 @@ from dataclasses import dataclass
 
 from neutrino_hub.modules.netbird.constants import NETBIRD_UNIT
 
-# What a machine may be reachable through from outside the building. One at a
-# time: two overlays would each hand the box an address, a route to the served
-# networks and a peer list, and nothing on the box says which of them a name
-# resolves through.
-OVERLAY_NONE = "none"
+# What a machine may be reachable through from outside the building. Any of
+# them, all at once or none; the engine table's order is the order the panel
+# draws them and the order a client is handed their material in.
 OVERLAY_NETBIRD = "netbird"
 OVERLAY_EASYTIER = "easytier"
 
@@ -29,6 +27,8 @@ class OverlayEngine:
             that one is found at run time by the address it holds.
         peer_port: The UDP port its own peers knock on.
         unit: The systemd unit the hub drives it under.
+        subnet: The network its addresses come from when the product fixes
+            one; empty when the network is configured or found at run time.
         is_integrated: Whether this hub can actually run it yet. An engine
             that is named but not integrated is offered and refused, rather
             than hidden: the choice is what the page is about, and a missing
@@ -40,6 +40,7 @@ class OverlayEngine:
     device_name: str
     peer_port: int
     unit: str
+    subnet: str
     is_integrated: bool
 
 
@@ -50,6 +51,7 @@ OVERLAY_ENGINES = {
         device_name="wt0",
         peer_port=51820,
         unit=NETBIRD_UNIT,
+        subnet="100.64.0.0/10",
         is_integrated=True,
     ),
     OVERLAY_EASYTIER: OverlayEngine(
@@ -58,10 +60,16 @@ OVERLAY_ENGINES = {
         device_name="easytier",
         peer_port=11010,
         unit=OVERLAY_EASYTIER_UNIT,
+        subnet="",
         is_integrated=True,
     ),
 }
 
-# None first: it is the answer for a machine nobody reaches from outside, and
-# the order is the order the page draws.
-OVERLAY_PROVIDERS = (OVERLAY_NONE,) + tuple(OVERLAY_ENGINES)
+# How long an engine just started is given to hold an address before the
+# converge step goes on without it.
+OVERLAY_ADDRESS_WAIT_S = 20.0
+OVERLAY_ADDRESS_POLL_S = 0.5
+
+# A route an overlay installs for every address. The hub's way out is its own
+# uplink, so such a route is deleted wherever it appears.
+OVERLAY_DEFAULT_ROUTE = "0.0.0.0/0"

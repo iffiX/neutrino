@@ -49,6 +49,30 @@ class XrayConfigApplier:
         self.restart()
         self.confirm_running()
 
+    def apply_if_changed(self, config: dict) -> bool:
+        """Install a configuration and restart xray, when either is needed.
+
+        Args:
+            config: The rendered configuration object.
+
+        Returns:
+            True when xray was restarted; False when the file on disk is this
+            configuration and the service is running it.
+
+        Raises:
+            subprocess.CalledProcessError: If xray rejects the configuration or
+                fails to restart.
+            RuntimeError: If the service is gone again a moment later.
+        """
+        try:
+            on_disk = XRAY_CONFIG_PATH.read_text(encoding="utf-8")
+        except OSError:
+            on_disk = None
+        if on_disk == _serialized(config) and self.is_running():
+            return False
+        self.apply(config)
+        return True
+
     def write(self, config: dict) -> None:
         """Validate a configuration and install it, without restarting.
 
@@ -64,7 +88,7 @@ class XrayConfigApplier:
                 The previous config file is left in place in that case.
         """
         self.validate(config)
-        write_generated(XRAY_CONFIG_PATH, json.dumps(config, indent=2) + "\n")
+        write_generated(XRAY_CONFIG_PATH, _serialized(config))
 
     def validate(self, config: dict) -> None:
         """Check a configuration with ``xray run -test``.
@@ -190,3 +214,8 @@ class XrayConfigApplier:
         """
         result = run(["systemctl", "is-active", XRAY_SERVICE_NAME], is_checked=False)
         return result.stdout.strip() == "active"
+
+
+def _serialized(config: dict) -> str:
+    """The configuration's text as it is written to disk."""
+    return json.dumps(config, indent=2) + "\n"

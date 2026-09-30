@@ -12,7 +12,7 @@ agent too, and hosts no module itself.
 ```
 config/ ──render──▶ /var/lib/neutrino/generated/ ──apply──▶ the daemons:
   ▲                                              xray, dnsmasq, cliproxyapi,
-  │ every change is a write here                 nftables, the overlay, units
+  │ every change is a write here                 nftables, the overlays, units
   │
 web/ (FastAPI, root) ◀────── hub/frontend/ (browser, plain HTTP, password)
   ▲                    ▲
@@ -275,13 +275,13 @@ install wants to see it work.
 
 ## The network the hub assumes
 
-Every enrolled machine — on the LAN, on NetBird, on whatever overlay comes
+Every enrolled machine — on the LAN, on NetBird, on EasyTier, on whatever overlay comes
 later — is somebody's own: locally administered, deliberately joined. The hub
 is not multi-tenant and does not defend one enrolled machine from another.
 
 The wire gets no such trust. A "LAN" can be a campus network with a thousand
 strangers on it, so the panel answers only where an interface was deliberately
-exposed and on the overlay ([network.md](modules/network.md), "What answers, and
+exposed and on the running overlays ([network.md](modules/network.md), "What answers, and
 where"), behind a password, and the agent channel carries its secrets under
 pinned TLS. Trusting the machines and distrusting the wire is the whole
 model.

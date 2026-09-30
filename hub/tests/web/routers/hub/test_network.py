@@ -56,7 +56,7 @@ class FakeRuntime:
     def link_status(self) -> StubLinkStatus:
         return self._status
 
-    async def apply_network(self, *, only: str | None = None) -> str:
+    async def converge_network(self, *, only: str | None = None) -> str:
         self.applied.append(only)
         return "applied"
 

@@ -14,13 +14,13 @@ import { copyText } from "../copy_text";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraftSeeding } from "../use_draft_seeding";
-import { useConfirm } from "../use_confirm";
 import type {
   DevicesResponse,
   EasyTierInstance,
   EasyTierMode,
   EasyTierPeer,
   EasyTierSecret,
+  EasyTierSettingsRequest,
   EasyTierSuggestion,
   EasyTierView,
 } from "../api_types";
@@ -84,7 +84,12 @@ const EASYTIER_PEER_PORT = 11010;
 /** How often the peer table is read; peers connect and drop on their own. */
 const PEER_RELOAD_MS = 5000;
 
-export function EasyTierSection() {
+interface EasyTierSectionProps {
+  /** Whether the hub runs EasyTier now. */
+  isEnabled: boolean;
+}
+
+export function EasyTierSection({ isEnabled }: EasyTierSectionProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<EasyTierView>("/hub/overlay/easytier");
@@ -149,7 +154,16 @@ export function EasyTierSection() {
         </div>
       </div>
 
-      {!view.is_installed && (
+      {!isEnabled && (
+        <div className="notice">
+          <Icon name="blocked" size={15} />
+          <div className="notice_body">
+            {t("ui.overlay.engine_off", { title: EASYTIER_PRODUCT_NAME })}
+          </div>
+        </div>
+      )}
+
+      {isEnabled && !view.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.overlay.engine_absent")}</div>
@@ -180,20 +194,12 @@ export function EasyTierSection() {
         </section>
       )}
 
-      <ModePanel view={view} onApplied={resource.setData} />
+      <SettingsPanel view={view} onApplied={resource.setData} />
 
       {isConsole ? (
-        <>
-          <ConsolePanel view={view} onApplied={resource.setData} />
-          <InstancesPanel view={view} state={consoleState} />
-        </>
+        <InstancesPanel view={view} state={consoleState} />
       ) : (
-        <>
-          <NetworkPanel view={view} onApplied={resource.setData} />
-          <BootstrapPanel view={view} onApplied={resource.setData} />
-          <ExportPanel view={view} onApplied={resource.setData} />
-          {isJoined && <CommandPanel view={view} />}
-        </>
+        isJoined && <CommandPanel view={view} />
       )}
 
       <section className="settings_group">
@@ -213,39 +219,115 @@ export function EasyTierSection() {
   );
 }
 
-interface PanelProps {
+interface SettingsPanelProps {
   view: EasyTierView;
   onApplied: (view: EasyTierView) => void;
 }
 
-/** Where the network comes from: EasyTier's console or manual meeting points. */
-function ModePanel({ view, onApplied }: PanelProps) {
+/** Every EasyTier setting as the draft holds it. */
+interface EasyTierDraft {
+  mode: EasyTierMode;
+  /** A console address typed to replace the kept one; empty keeps it. */
+  configServer: string;
+  isConsoleForgotten: boolean;
+  isSecureMode: boolean;
+  networkName: string;
+  /** A secret typed to replace the kept one; empty keeps it. */
+  networkSecret: string;
+  address: string;
+  peers: string[];
+  exportedNetworks: string[];
+}
+
+function storedDraft(view: EasyTierView): EasyTierDraft {
+  return {
+    mode: view.mode,
+    configServer: "",
+    isConsoleForgotten: false,
+    isSecureMode: view.is_secure_mode,
+    networkName: view.network_name,
+    networkSecret: "",
+    address: view.address,
+    peers: view.peers,
+    exportedNetworks: view.exported_networks,
+  };
+}
+
+function draftSignature(draft: EasyTierDraft): string {
+  return JSON.stringify(draft);
+}
+
+/**
+ * Every EasyTier setting in one frame with one apply bar: where the network
+ * comes from, and in each mode what the engine is started with.
+ */
+function SettingsPanel({ view, onApplied }: SettingsPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const [chosen, setChosen] = useState<EasyTierMode>(view.mode);
+  const [draft, setDraft] = useState<EasyTierDraft>(() => storedDraft(view));
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A mode picked but not applied stays picked.
-  const isReseedable = useDraftSeeding(chosen, view.mode);
+  const stored = draftSignature(storedDraft(view));
+  const isReseedable = useDraftSeeding(draftSignature(draft), stored);
   useEffect(() => {
-    if (!isReseedable(view.mode)) {
+    if (!isReseedable(stored)) {
       return;
     }
-    setChosen(view.mode);
-  }, [view, isReseedable]);
+    setDraft(storedDraft(view));
+  }, [view, stored, isReseedable]);
 
-  const isDirty = chosen !== view.mode;
+  const isDirty = draftSignature(draft) !== stored;
+  const change = (patch: Partial<EasyTierDraft>) => {
+    setError(null);
+    setDraft({ ...draft, ...patch });
+  };
+
+  const suggest = async () => {
+    setError(null);
+    try {
+      const suggestion = await apiPost<EasyTierSuggestion>(
+        "/hub/overlay/easytier/suggestion/create",
+        {},
+      );
+      change({
+        networkName: suggestion.network_name,
+        networkSecret: suggestion.network_secret,
+        address: suggestion.address,
+      });
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    }
+  };
 
   const apply = async () => {
     setIsBusy(true);
     setError(null);
+    const request: EasyTierSettingsRequest = {
+      mode: draft.mode,
+      config_server: draft.isConsoleForgotten
+        ? ""
+        : draft.configServer.trim() === ""
+          ? null
+          : draft.configServer.trim(),
+      is_secure_mode: draft.isSecureMode,
+      network_name: draft.networkName,
+      network_secret: draft.networkSecret,
+      address: draft.address,
+      hostname: view.hostname,
+      peers: draft.peers,
+      exported_networks: draft.exportedNetworks,
+    };
     try {
       onApplied(
-        await apiPost<EasyTierView>("/hub/overlay/easytier/mode/set", {
-          mode: chosen,
-        }),
+        await apiPost<EasyTierView>("/hub/overlay/easytier/set", request),
       );
+      setDraft((current) => ({
+        ...current,
+        configServer: "",
+        isConsoleForgotten: false,
+        networkSecret: "",
+      }));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -253,24 +335,34 @@ function ModePanel({ view, onApplied }: PanelProps) {
     }
   };
 
+  const isConsole = draft.mode === MODE_CONSOLE;
+
   return (
     <section
       className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
     >
       <div className="settings_group_title">
-        <h2>{t("ui.overlay.mode_title")}</h2>
+        <h2>{t("ui.overlay.settings_title")}</h2>
+        {!isConsole && (
+          <button
+            type="button"
+            className="button"
+            onClick={() => void suggest()}
+          >
+            <Icon name="refresh" size={14} />
+            {t("ui.overlay.generate")}
+          </button>
+        )}
       </div>
+
       <div className="overlay_choices">
         {MODES.map((mode) => (
           <button
             key={mode}
             type="button"
-            className={`overlay_choice ${mode === chosen ? "overlay_choice--on" : ""}`}
-            aria-pressed={mode === chosen}
-            onClick={() => {
-              setError(null);
-              setChosen(mode);
-            }}
+            className={`overlay_choice ${mode === draft.mode ? "overlay_choice--on" : ""}`}
+            aria-pressed={mode === draft.mode}
+            onClick={() => change({ mode })}
           >
             <span className="overlay_choice_head">
               <strong>{t(MODE_LABEL_KEYS[mode])}</strong>
@@ -284,197 +376,260 @@ function ModePanel({ view, onApplied }: PanelProps) {
           </button>
         ))}
       </div>
+
+      {isConsole ? (
+        <ConsoleFields view={view} draft={draft} onChange={change} />
+      ) : (
+        <ManualFields view={view} draft={draft} onChange={change} />
+      )}
+
       <ApplyBar
         isDirty={isDirty}
         isBusy={isBusy}
-        label={t("ui.overlay.apply_mode")}
-        hint={t("ui.overlay.apply_mode_hint")}
-        warning={view.is_active ? t("ui.overlay.warning_mode") : undefined}
+        label={t("ui.overlay.apply_settings")}
+        hint={t("ui.overlay.apply_settings_hint")}
+        warning={settingsWarning(view, draft)}
         error={error}
-        onReset={() => setChosen(view.mode)}
+        onReset={() => setDraft(storedDraft(view))}
         onApply={() => void apply()}
       />
     </section>
   );
 }
 
-/** The console's address and whether the engine runs its network securely. */
-function ConsolePanel({ view, onApplied }: PanelProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const [isSecure, setIsSecure] = useState(view.is_secure_mode);
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const stored = String(view.is_secure_mode);
-  const isReseedable = useDraftSeeding(String(isSecure), stored);
-  useEffect(() => {
-    if (!isReseedable(stored)) {
-      return;
-    }
-    setIsSecure(view.is_secure_mode);
-  }, [view, stored, isReseedable]);
-
-  const isDirty = isSecure !== view.is_secure_mode;
-
-  const apply = async () => {
-    setIsBusy(true);
-    setError(null);
-    try {
-      onApplied(
-        await apiPost<EasyTierView>("/hub/overlay/easytier/secure_mode/set", {
-          is_secure_mode: isSecure,
-        }),
-      );
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  return (
-    <section
-      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
-    >
-      <div className="settings_group_title">
-        <h2>{t("ui.overlay.console_title")}</h2>
-      </div>
-      <ConfigServerRow
-        hasConfigServer={view.has_config_server}
-        onApplied={onApplied}
-      />
-      <ToggleSwitch
-        isOn={isSecure}
-        onChange={setIsSecure}
-        label={t("ui.overlay.secure_mode")}
-        description={t("ui.overlay.secure_mode_description")}
-        isDisabled={isBusy}
-      />
-      <ApplyBar
-        isDirty={isDirty}
-        isBusy={isBusy}
-        label={t("ui.overlay.apply_secure_mode")}
-        hint={t("ui.overlay.apply_secure_mode_hint")}
-        error={error}
-        onReset={() => setIsSecure(view.is_secure_mode)}
-        onApply={() => void apply()}
-      />
-    </section>
-  );
+/** What applying these settings interrupts, or nothing. */
+function settingsWarning(
+  view: EasyTierView,
+  draft: EasyTierDraft,
+): string | undefined {
+  if (view.is_secret_set && draft.networkSecret !== "") {
+    return t("ui.overlay.warning_new_secret");
+  }
+  if (view.is_active && draft.mode !== view.mode) {
+    return t("ui.overlay.warning_mode");
+  }
+  return undefined;
 }
 
-interface ConfigServerRowProps {
-  hasConfigServer: boolean;
-  onApplied: (view: EasyTierView) => void;
+interface FieldsProps {
+  view: EasyTierView;
+  draft: EasyTierDraft;
+  onChange: (patch: Partial<EasyTierDraft>) => void;
 }
 
-/** Whether a console address is kept, with Replace and Forget. */
-function ConfigServerRow({ hasConfigServer, onApplied }: ConfigServerRowProps) {
+/** The console's address, kept sealed, and whether it runs in secure mode. */
+function ConsoleFields({ view, draft, onChange }: FieldsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const confirm = useConfirm();
-  const [isReplacing, setIsReplacing] = useState(false);
-  const [address, setAddress] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const store = async (value: string) => {
-    setIsBusy(true);
-    setError(null);
-    try {
-      onApplied(
-        await apiPost<EasyTierView>("/hub/overlay/easytier/config_server/set", {
-          config_server: value,
-        }),
-      );
-      setAddress("");
-      setIsReplacing(false);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const askForget = () => {
-    confirm.ask({
-      title: t("ui.overlay.config_server_forget_title"),
-      body: t("ui.overlay.config_server_forget_body"),
-      confirmLabel: t("ui.overlay.setup_key_forget"),
-      onConfirm: () => void store(""),
-    });
-  };
-
+  const isKept = view.has_config_server && !draft.isConsoleForgotten;
   return (
     <>
+      <h3 className="easytier_subtitle">{t("ui.overlay.console_title")}</h3>
       <div className="easytier_fact easytier_config_server">
         <span className="field_label">
           {t("ui.overlay.config_server_label")}
         </span>
         <span className="easytier_fact_value">
-          {hasConfigServer
+          {isKept
             ? t("ui.overlay.setup_key_kept")
             : t("ui.overlay.setup_key_missing")}
         </span>
-        {isReplacing ? (
-          <>
-            <PasswordInput
-              value={address}
-              onChange={setAddress}
-              placeholder={t("ui.overlay.config_server_placeholder")}
-            />
-            <button
-              type="button"
-              className="button button--small button--primary"
-              disabled={isBusy || address.trim() === ""}
-              onClick={() => void store(address.trim())}
-            >
-              {t("ui.overlay.setup_key_save")}
-            </button>
-            <button
-              type="button"
-              className="button button--small"
-              disabled={isBusy}
-              onClick={() => {
-                setAddress("");
-                setIsReplacing(false);
-              }}
-            >
-              {t("ui.overlay.setup_key_cancel")}
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="button button--small"
-              disabled={isBusy}
-              onClick={() => setIsReplacing(true)}
-            >
-              {t("ui.overlay.setup_key_replace")}
-            </button>
-            {hasConfigServer && (
-              <button
-                type="button"
-                className="button button--small button--danger"
-                disabled={isBusy}
-                onClick={askForget}
-              >
-                {t("ui.overlay.setup_key_forget")}
-              </button>
-            )}
-          </>
+        <PasswordInput
+          value={draft.configServer}
+          onChange={(value) =>
+            onChange({ configServer: value, isConsoleForgotten: false })
+          }
+          placeholder={t("ui.overlay.config_server_placeholder")}
+        />
+        {isKept && (
+          <button
+            type="button"
+            className="button button--small button--danger"
+            onClick={() =>
+              onChange({ configServer: "", isConsoleForgotten: true })
+            }
+          >
+            {t("ui.overlay.setup_key_forget")}
+          </button>
         )}
       </div>
       <p className="field_hint">{t("ui.overlay.config_server_hint")}</p>
-      {error !== null && (
-        <div className="notice notice--error">
-          <Icon name="alert" size={15} />
-          <div className="notice_body">{error}</div>
-        </div>
-      )}
-      {confirm.modal}
+      <ToggleSwitch
+        isOn={draft.isSecureMode}
+        onChange={(isOn) => onChange({ isSecureMode: isOn })}
+        label={t("ui.overlay.secure_mode")}
+        description={t("ui.overlay.secure_mode_description")}
+      />
+    </>
+  );
+}
+
+/** The network, the peers dialled at start, and the networks exported. */
+function ManualFields({ view, draft, onChange }: FieldsProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const [typedPeer, setTypedPeer] = useState("");
+  const [typedNetwork, setTypedNetwork] = useState("");
+
+  const addPeer = () => {
+    const entry = typedPeer.trim();
+    if (entry === "" || draft.peers.includes(entry)) {
+      return;
+    }
+    onChange({ peers: [...draft.peers, entry] });
+    setTypedPeer("");
+  };
+  const addNetwork = () => {
+    const entry = typedNetwork.trim();
+    if (entry === "" || draft.exportedNetworks.includes(entry)) {
+      return;
+    }
+    onChange({ exportedNetworks: [...draft.exportedNetworks, entry] });
+    setTypedNetwork("");
+  };
+  const suggested = view.suggested_networks.map((entry) => entry.cidr);
+  const extra = draft.exportedNetworks.filter(
+    (cidr) => !suggested.includes(cidr),
+  );
+  const toggleNetwork = (cidr: string, isOn: boolean) => {
+    onChange({
+      exportedNetworks: isOn
+        ? [...draft.exportedNetworks, cidr]
+        : draft.exportedNetworks.filter((entry) => entry !== cidr),
+    });
+  };
+
+  return (
+    <>
+      <h3 className="easytier_subtitle">{t("ui.overlay.network_title")}</h3>
+      <p className="field_hint">{t("ui.overlay.network_hint")}</p>
+      <div className="easytier_fields">
+        <label className="field">
+          <span className="field_label">{t("ui.overlay.network_name")}</span>
+          <input
+            className="input"
+            value={draft.networkName}
+            spellCheck={false}
+            onChange={(event) => onChange({ networkName: event.target.value })}
+          />
+        </label>
+        <label className="field">
+          <span className="field_label">{t("ui.overlay.network_secret")}</span>
+          <PasswordInput
+            value={draft.networkSecret}
+            onChange={(value) => onChange({ networkSecret: value })}
+            placeholder={
+              view.is_secret_set
+                ? t("ui.overlay.secret_kept")
+                : t("ui.overlay.secret_placeholder")
+            }
+          />
+        </label>
+        <label className="field">
+          <span className="field_label">{t("ui.overlay.own_address")}</span>
+          <input
+            className="input"
+            value={draft.address}
+            spellCheck={false}
+            placeholder="10.0.0.1/24"
+            onChange={(event) => onChange({ address: event.target.value })}
+          />
+        </label>
+      </div>
+
+      <h3 className="easytier_subtitle">{t("ui.overlay.bootstrap_title")}</h3>
+      <p className="field_hint">{t("ui.overlay.bootstrap_hint")}</p>
+      <div className="easytier_rows">
+        {draft.peers.map((peer) => (
+          <div key={peer} className="easytier_row">
+            <span className="easytier_row_text">{peer}</span>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() =>
+                onChange({
+                  peers: draft.peers.filter((entry) => entry !== peer),
+                })
+              }
+            >
+              <Icon name="trash" size={14} />
+              {t("ui.overlay.remove")}
+            </button>
+          </div>
+        ))}
+        {draft.peers.length === 0 && (
+          <p className="field_hint">{t("ui.overlay.bootstrap_empty")}</p>
+        )}
+      </div>
+      <div className="easytier_add">
+        <input
+          className="input"
+          value={typedPeer}
+          spellCheck={false}
+          placeholder="tcp://198.51.100.7:11010"
+          onChange={(event) => setTypedPeer(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addPeer();
+            }
+          }}
+        />
+        <button type="button" className="button" onClick={addPeer}>
+          <Icon name="plus" size={14} />
+          {t("ui.overlay.add")}
+        </button>
+      </div>
+
+      <h3 className="easytier_subtitle">{t("ui.overlay.export_title")}</h3>
+      <p className="field_hint">{t("ui.overlay.export_hint")}</p>
+      <div className="easytier_rows">
+        {view.suggested_networks.map((entry) => (
+          <label key={entry.cidr} className="easytier_choice">
+            <input
+              type="checkbox"
+              checked={draft.exportedNetworks.includes(entry.cidr)}
+              onChange={(event) =>
+                toggleNetwork(entry.cidr, event.target.checked)
+              }
+            />
+            <span className="easytier_row_text">{entry.cidr}</span>
+            <span className="field_hint">{entry.interface}</span>
+          </label>
+        ))}
+        {extra.map((cidr) => (
+          <div key={cidr} className="easytier_row">
+            <span className="easytier_row_text">{cidr}</span>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => toggleNetwork(cidr, false)}
+            >
+              <Icon name="trash" size={14} />
+              {t("ui.overlay.remove")}
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="easytier_add">
+        <input
+          className="input"
+          value={typedNetwork}
+          spellCheck={false}
+          placeholder="10.20.0.0/24"
+          onChange={(event) => setTypedNetwork(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addNetwork();
+            }
+          }}
+        />
+        <button type="button" className="button" onClick={addNetwork}>
+          <Icon name="plus" size={14} />
+          {t("ui.overlay.add")}
+        </button>
+      </div>
     </>
   );
 }
@@ -544,358 +699,6 @@ function InstanceCard({ instance }: { instance: EasyTierInstance }) {
         </span>
       </div>
     </div>
-  );
-}
-
-/** The network itself: what identifies it, what opens it, where this box is. */
-function NetworkPanel({ view, onApplied }: PanelProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const [name, setName] = useState(view.network_name);
-  const [secret, setSecret] = useState("");
-  const [address, setAddress] = useState(view.address);
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const stored = `${view.network_name} ${view.address}`;
-  const isReseedable = useDraftSeeding(`${name} ${address}`, stored);
-  useEffect(() => {
-    if (!isReseedable(stored)) {
-      return;
-    }
-    setName(view.network_name);
-    setAddress(view.address);
-  }, [view, stored, isReseedable]);
-
-  const isDirty =
-    name !== view.network_name || address !== view.address || secret !== "";
-
-  const suggest = async () => {
-    setError(null);
-    try {
-      const suggestion = await apiPost<EasyTierSuggestion>(
-        "/hub/overlay/easytier/suggestion/create",
-        {},
-      );
-      setName(suggestion.network_name);
-      setSecret(suggestion.network_secret);
-      setAddress(suggestion.address);
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    }
-  };
-
-  const apply = async () => {
-    setIsBusy(true);
-    setError(null);
-    try {
-      onApplied(
-        await apiPost<EasyTierView>("/hub/overlay/easytier/set", {
-          network_name: name,
-          network_secret: secret,
-          address,
-          hostname: view.hostname,
-        }),
-      );
-      setSecret("");
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  return (
-    <section
-      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
-    >
-      <div className="settings_group_title">
-        <h2>{t("ui.overlay.network_title")}</h2>
-        <button type="button" className="button" onClick={() => void suggest()}>
-          <Icon name="refresh" size={14} />
-          {t("ui.overlay.generate")}
-        </button>
-      </div>
-      <p className="field_hint">{t("ui.overlay.network_hint")}</p>
-
-      <div className="easytier_fields">
-        <label className="field">
-          <span className="field_label">{t("ui.overlay.network_name")}</span>
-          <input
-            className="input"
-            value={name}
-            spellCheck={false}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span className="field_label">{t("ui.overlay.network_secret")}</span>
-          <PasswordInput
-            value={secret}
-            onChange={setSecret}
-            placeholder={
-              view.is_secret_set
-                ? t("ui.overlay.secret_kept")
-                : t("ui.overlay.secret_placeholder")
-            }
-          />
-        </label>
-        <label className="field">
-          <span className="field_label">{t("ui.overlay.own_address")}</span>
-          <input
-            className="input"
-            value={address}
-            spellCheck={false}
-            placeholder="10.0.0.1/24"
-            onChange={(event) => setAddress(event.target.value)}
-          />
-        </label>
-      </div>
-
-      <ApplyBar
-        isDirty={isDirty}
-        isBusy={isBusy}
-        label={t("ui.overlay.apply_network")}
-        hint={t("ui.overlay.apply_network_hint")}
-        warning={
-          view.is_secret_set && secret !== ""
-            ? t("ui.overlay.warning_new_secret")
-            : undefined
-        }
-        error={error}
-        onReset={() => {
-          setName(view.network_name);
-          setAddress(view.address);
-          setSecret("");
-        }}
-        onApply={() => void apply()}
-      />
-    </section>
-  );
-}
-
-/** What this box dials when it starts, since nothing is listening for it. */
-function BootstrapPanel({ view, onApplied }: PanelProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const [peers, setPeers] = useState<string[]>(view.peers);
-  const [typed, setTyped] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const stored = view.peers.join(" ");
-  const isReseedable = useDraftSeeding(peers.join(" "), stored);
-  useEffect(() => {
-    if (!isReseedable(stored)) {
-      return;
-    }
-    setPeers(view.peers);
-  }, [view, stored, isReseedable]);
-
-  const isDirty = peers.join(" ") !== stored;
-
-  const apply = async () => {
-    setIsBusy(true);
-    setError(null);
-    try {
-      onApplied(
-        await apiPost<EasyTierView>("/hub/overlay/easytier/peer/set", {
-          peers,
-        }),
-      );
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const add = () => {
-    const entry = typed.trim();
-    if (entry === "" || peers.includes(entry)) {
-      return;
-    }
-    setPeers([...peers, entry]);
-    setTyped("");
-  };
-
-  return (
-    <section
-      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
-    >
-      <div className="settings_group_title">
-        <h2>{t("ui.overlay.bootstrap_title")}</h2>
-      </div>
-      <p className="field_hint">{t("ui.overlay.bootstrap_hint")}</p>
-
-      <div className="easytier_rows">
-        {peers.map((peer) => (
-          <div key={peer} className="easytier_row">
-            <span className="easytier_row_text">{peer}</span>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={() => setPeers(peers.filter((entry) => entry !== peer))}
-            >
-              <Icon name="trash" size={14} />
-              {t("ui.overlay.remove")}
-            </button>
-          </div>
-        ))}
-        {peers.length === 0 && (
-          <p className="field_hint">{t("ui.overlay.bootstrap_empty")}</p>
-        )}
-      </div>
-
-      <div className="easytier_add">
-        <input
-          className="input"
-          value={typed}
-          spellCheck={false}
-          placeholder="tcp://198.51.100.7:11010"
-          onChange={(event) => setTyped(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              add();
-            }
-          }}
-        />
-        <button type="button" className="button" onClick={add}>
-          <Icon name="plus" size={14} />
-          {t("ui.overlay.add")}
-        </button>
-      </div>
-
-      <ApplyBar
-        isDirty={isDirty}
-        isBusy={isBusy}
-        label={t("ui.overlay.apply_bootstrap")}
-        hint={t("ui.overlay.apply_bootstrap_hint")}
-        error={error}
-        onReset={() => setPeers(view.peers)}
-        onApply={() => void apply()}
-      />
-    </section>
-  );
-}
-
-/** The networks behind this box that the others may reach through it. */
-function ExportPanel({ view, onApplied }: PanelProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const [networks, setNetworks] = useState<string[]>(view.exported_networks);
-  const [typed, setTyped] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const stored = view.exported_networks.join(" ");
-  const isReseedable = useDraftSeeding(networks.join(" "), stored);
-  useEffect(() => {
-    if (!isReseedable(stored)) {
-      return;
-    }
-    setNetworks(view.exported_networks);
-  }, [view, stored, isReseedable]);
-
-  const isDirty = networks.join(" ") !== stored;
-  const suggested = view.suggested_networks.map((entry) => entry.cidr);
-  const extra = networks.filter((cidr) => !suggested.includes(cidr));
-
-  const toggle = (cidr: string, isOn: boolean) => {
-    setNetworks(
-      isOn ? [...networks, cidr] : networks.filter((entry) => entry !== cidr),
-    );
-  };
-
-  const apply = async () => {
-    setIsBusy(true);
-    setError(null);
-    try {
-      onApplied(
-        await apiPost<EasyTierView>("/hub/overlay/easytier/network/set", {
-          exported_networks: networks,
-        }),
-      );
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  return (
-    <section
-      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
-    >
-      <div className="settings_group_title">
-        <h2>{t("ui.overlay.export_title")}</h2>
-      </div>
-      <p className="field_hint">{t("ui.overlay.export_hint")}</p>
-
-      <div className="easytier_rows">
-        {view.suggested_networks.map((entry) => (
-          <label key={entry.cidr} className="easytier_choice">
-            <input
-              type="checkbox"
-              checked={networks.includes(entry.cidr)}
-              onChange={(event) => toggle(entry.cidr, event.target.checked)}
-            />
-            <span className="easytier_row_text">{entry.cidr}</span>
-            <span className="field_hint">{entry.interface}</span>
-          </label>
-        ))}
-        {extra.map((cidr) => (
-          <div key={cidr} className="easytier_row">
-            <span className="easytier_row_text">{cidr}</span>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={() =>
-                setNetworks(networks.filter((entry) => entry !== cidr))
-              }
-            >
-              <Icon name="trash" size={14} />
-              {t("ui.overlay.remove")}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <div className="easytier_add">
-        <input
-          className="input"
-          value={typed}
-          spellCheck={false}
-          placeholder="10.20.0.0/24"
-          onChange={(event) => setTyped(event.target.value)}
-        />
-        <button
-          type="button"
-          className="button"
-          onClick={() => {
-            const entry = typed.trim();
-            if (entry !== "" && !networks.includes(entry)) {
-              setNetworks([...networks, entry]);
-              setTyped("");
-            }
-          }}
-        >
-          <Icon name="plus" size={14} />
-          {t("ui.overlay.add")}
-        </button>
-      </div>
-
-      <ApplyBar
-        isDirty={isDirty}
-        isBusy={isBusy}
-        label={t("ui.overlay.apply_export")}
-        hint={t("ui.overlay.apply_export_hint")}
-        error={error}
-        onReset={() => setNetworks(view.exported_networks)}
-        onApply={() => void apply()}
-      />
-    </section>
   );
 }
 

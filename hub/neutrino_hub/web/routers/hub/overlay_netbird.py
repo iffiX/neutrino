@@ -1,10 +1,9 @@
-"""The NetBird block of the Overlay page: joining, and the peers on it.
+"""The NetBird block of the Overlay page: joining, leaving, and the peers on it.
 
 The gateway's way back in. Joining happens here with a setup key, which is
-kept sealed for the clients the hub admits to the overlay; the subnet routes that make the LAN reachable live on the management plane,
-so the page derives the exact networks to put there and points at the
-console. There is no leave button: pressed from abroad it is a lockout, and
-a hand at a local shell has `netbird down`.
+kept sealed for the clients the hub admits to the overlay; the subnet routes
+that make the LAN reachable live on the management plane, so the page derives
+the exact networks to put there and points at the console.
 """
 
 import asyncio
@@ -13,12 +12,10 @@ import subprocess
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.exceptions import VaultLockedError
-from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.netbird.config import read_stored, write_stored
 from neutrino_hub.modules.netbird.ops import NetbirdEnroller, NetbirdStatusReader
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.web import channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     NetbirdJoinRequest,
@@ -79,7 +76,8 @@ async def join(
         The state afterwards.
 
     Raises:
-        HTTPException: 502 when the daemon or the management plane refuses.
+        HTTPException: 502 when the daemon or the management plane refuses,
+            or when the converge step that follows fails.
     """
     try:
         await asyncio.to_thread(
@@ -96,9 +94,38 @@ async def join(
             },
         ) from error
     try:
-        await _keep_setup_key(runtime, request.setup_key, request.management_url)
+        _keep_setup_key(request.setup_key, request.management_url)
     except VaultLockedError:
         pass
+    await _converge(runtime)
+    return read_status(runtime)
+
+
+@router.post("/netbird/leave", response_model=NetbirdView)
+async def leave(runtime: PanelRuntime = Depends(get_runtime)) -> NetbirdView:
+    """Take the gateway off its NetBird network; the kept setup key stays.
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        The state afterwards.
+
+    Raises:
+        HTTPException: 502 when the daemon does not come back, or when the
+            converge step that follows fails.
+    """
+    try:
+        await asyncio.to_thread(NetbirdEnroller().leave)
+    except (subprocess.SubprocessError, OSError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "overlay_leave_failed",
+                "params": {"detail": command_failure_text(error)},
+            },
+        ) from error
+    await _converge(runtime)
     return read_status(runtime)
 
 
@@ -117,20 +144,46 @@ async def set_setup_key(
 
     Raises:
         VaultLockedError: If there is no data key to seal the key under.
+        HTTPException: 502 when the converge step that follows fails.
     """
     config = read_stored()
-    await _keep_setup_key(runtime, request.setup_key, config.management_url)
+    _keep_setup_key(request.setup_key, config.management_url)
+    await _converge(runtime)
     return read_status(runtime)
 
 
-async def _keep_setup_key(
-    runtime: PanelRuntime, setup_key: str, management_url: str
-) -> None:
-    """Store the key, or forget it when empty, and push every client's state."""
+def _keep_setup_key(setup_key: str, management_url: str) -> None:
+    """Store the key, or forget it when empty."""
     config = read_stored()
     if setup_key:
         config.set_setup_key(setup_key, management_url)
     else:
         config.clear_setup_key()
     write_stored(config)
-    await asyncio.to_thread(channel_state.push_states, runtime, CHANNEL_ROLE_CLIENT)
+
+
+async def _converge(runtime: PanelRuntime) -> None:
+    """Converge on the new membership.
+
+    Args:
+        runtime: The shared runtime.
+
+    Raises:
+        HTTPException: 502 when the converge step fails.
+    """
+    try:
+        await runtime.converge_network()
+    except (
+        subprocess.SubprocessError,
+        OSError,
+        RuntimeError,
+        TimeoutError,
+        ValueError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "command_failed",
+                "params": {"detail": command_failure_text(error)},
+            },
+        ) from error

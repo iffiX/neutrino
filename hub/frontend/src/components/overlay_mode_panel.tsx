@@ -3,31 +3,34 @@ import { useEffect, useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
+import { ToggleSwitch } from "./toggle_switch";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useDraftSeeding } from "../use_draft_seeding";
-import type { OverlayChoiceView, OverlayKindView } from "../api_types";
+import type {
+  OverlayChoiceRequest,
+  OverlayChoiceView,
+  OverlayKindView,
+} from "../api_types";
 
 import "./overlay_mode_panel.css";
 
 /**
- * Which overlay this box is on.
+ * Which overlays this box runs.
  *
- * First on the page and alone in its section, because what is drawn below it
- * is the chosen engine's own screen. An engine this hub cannot run yet keeps
- * its card and says so on it, so the list is what exists rather than what
- * happens to work today.
+ * One card per engine. The switch on a card turns the engine on or off in
+ * the draft, and the apply bar makes the draft real; pressing the card
+ * itself only picks which engine's settings show below. An engine this hub
+ * cannot run yet keeps its card and says so on it.
  */
 
 const KIND_SUMMARY_KEYS: Record<string, string> = {
-  none: "ui.overlay.summary_none",
   netbird: "ui.overlay.summary_netbird",
   easytier: "ui.overlay.summary_easytier",
 };
 
 const KIND_ICONS: Record<string, IconName> = {
-  none: "blocked",
   netbird: "mesh",
   easytier: "nodes",
 };
@@ -36,29 +39,55 @@ const KIND_ICON_OTHER: IconName = "mesh";
 
 interface OverlayModePanelProps {
   choice: OverlayChoiceView;
+  selected: string;
+  onSelect: (key: string) => void;
   onApplied: (view: OverlayChoiceView) => void;
 }
 
-export function OverlayModePanel({ choice, onApplied }: OverlayModePanelProps) {
+/** Each engine's key and whether it runs, as one comparable string. */
+function enabledSignature(enabled: Record<string, boolean>): string {
+  return Object.keys(enabled)
+    .sort()
+    .map((key) => `${key}:${enabled[key] ? 1 : 0}`)
+    .join(" ");
+}
+
+function storedEnabled(choice: OverlayChoiceView): Record<string, boolean> {
+  return Object.fromEntries(
+    choice.kinds.map((kind) => [kind.key, kind.is_enabled]),
+  );
+}
+
+export function OverlayModePanel({
+  choice,
+  selected,
+  onSelect,
+  onApplied,
+}: OverlayModePanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const [chosen, setChosen] = useState<string>(choice.provider);
+  const stored = storedEnabled(choice);
+  const [enabled, setEnabled] = useState<Record<string, boolean>>(stored);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // An engine picked but not applied stays picked.
-  const isReseedable = useDraftSeeding(chosen, choice.provider);
-
+  // A switch flipped but not applied stays flipped.
+  const storedSignature = enabledSignature(stored);
+  const isReseedable = useDraftSeeding(
+    enabledSignature(enabled),
+    storedSignature,
+  );
   useEffect(() => {
-    if (!isReseedable(choice.provider)) {
+    if (!isReseedable(storedSignature)) {
       return;
     }
-    setChosen(choice.provider);
-  }, [choice, isReseedable]);
+    setEnabled(storedEnabled(choice));
+  }, [choice, storedSignature, isReseedable]);
 
-  const isDirty = chosen !== choice.provider;
-  const leaving =
-    choice.kinds.find((kind) => kind.key === choice.provider) ?? null;
+  const isDirty = enabledSignature(enabled) !== storedSignature;
+  const leaving = choice.kinds.filter(
+    (kind) => kind.is_enabled && enabled[kind.key] === false,
+  );
 
   const apply = async () => {
     if (!isDirty) {
@@ -66,12 +95,16 @@ export function OverlayModePanel({ choice, onApplied }: OverlayModePanelProps) {
     }
     setIsBusy(true);
     setError(null);
+    const request: OverlayChoiceRequest = {};
+    for (const kind of choice.kinds) {
+      if (enabled[kind.key] !== kind.is_enabled) {
+        request[kind.key as keyof OverlayChoiceRequest] = {
+          is_enabled: enabled[kind.key] === true,
+        };
+      }
+    }
     try {
-      onApplied(
-        await apiPost<OverlayChoiceView>("/hub/overlay/set", {
-          provider: chosen,
-        }),
-      );
+      onApplied(await apiPost<OverlayChoiceView>("/hub/overlay/set", request));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -92,35 +125,48 @@ export function OverlayModePanel({ choice, onApplied }: OverlayModePanelProps) {
         {choice.kinds.map((kind) => {
           const blocked = unavailableReason(kind);
           const summaryKey = KIND_SUMMARY_KEYS[kind.key];
+          const isOn = enabled[kind.key] === true;
           return (
-            <button
+            <div
               key={kind.key}
-              type="button"
-              className={`overlay_choice ${kind.key === chosen ? "overlay_choice--on" : ""}`}
-              aria-pressed={kind.key === chosen}
-              disabled={blocked !== null}
-              onClick={() => {
-                setError(null);
-                setChosen(kind.key);
-              }}
+              className={`overlay_choice ${kind.key === selected ? "overlay_choice--on" : ""}`}
             >
-              <span className="overlay_choice_head">
-                <Icon
-                  name={KIND_ICONS[kind.key] ?? KIND_ICON_OTHER}
-                  size={15}
-                />
-                <strong>{kindLabel(kind)}</strong>
-                {kind.key === choice.provider && (
-                  <span className="badge">{t("state.active")}</span>
+              <button
+                type="button"
+                className="overlay_choice_select"
+                aria-pressed={kind.key === selected}
+                onClick={() => onSelect(kind.key)}
+              >
+                <span className="overlay_choice_head">
+                  <Icon
+                    name={KIND_ICONS[kind.key] ?? KIND_ICON_OTHER}
+                    size={15}
+                  />
+                  <strong>{kind.title}</strong>
+                  {kind.is_active && (
+                    <span className="badge">{t("state.active")}</span>
+                  )}
+                </span>
+                {summaryKey !== undefined && (
+                  <span className="overlay_choice_summary">
+                    {t(summaryKey)}
+                  </span>
                 )}
-              </span>
-              {summaryKey !== undefined && (
-                <span className="overlay_choice_summary">{t(summaryKey)}</span>
-              )}
-              {blocked !== null && (
-                <span className="overlay_choice_blocked">{blocked}</span>
-              )}
-            </button>
+                {blocked !== null && (
+                  <span className="overlay_choice_blocked">{blocked}</span>
+                )}
+              </button>
+              <ToggleSwitch
+                isOn={isOn}
+                label={t("ui.overlay.engine_switch", { title: kind.title })}
+                isDisabled={isBusy || (blocked !== null && !isOn)}
+                onChange={(isNowOn) => {
+                  setError(null);
+                  setEnabled({ ...enabled, [kind.key]: isNowOn });
+                  onSelect(kind.key);
+                }}
+              />
+            </div>
           );
         })}
       </div>
@@ -132,19 +178,14 @@ export function OverlayModePanel({ choice, onApplied }: OverlayModePanelProps) {
         hint={t("ui.overlay.apply_engine_hint")}
         warning={departureWarning(leaving)}
         error={error}
-        onReset={() => setChosen(choice.provider)}
+        onReset={() => setEnabled(storedEnabled(choice))}
         onApply={() => void apply()}
       />
     </section>
   );
 }
 
-/** The product's own name, or the panel's word for the engine that is none. */
-function kindLabel(kind: OverlayKindView): string {
-  return kind.title === "" ? t("ui.overlay.kind_none") : kind.title;
-}
-
-/** Why this card cannot be picked, or null when it can. */
+/** Why this card's engine cannot be turned on, or null when it can. */
 function unavailableReason(kind: OverlayKindView): string | null {
   if (!kind.is_integrated) {
     return t("ui.overlay.not_integrated");
@@ -156,14 +197,26 @@ function unavailableReason(kind: OverlayKindView): string | null {
 }
 
 /**
- * The one thing switching engine can cost: the way into this box from
- * outside. Leaving an engine that is not running takes nothing away.
+ * What turning engines off costs: the clients connected through each, and
+ * the way into this box from outside where that engine runs now.
  */
-function departureWarning(leaving: OverlayKindView | null): string | undefined {
-  if (leaving === null || !leaving.is_active) {
+function departureWarning(leaving: OverlayKindView[]): string | undefined {
+  const lines: string[] = [];
+  for (const kind of leaving) {
+    if (kind.client_count > 0) {
+      lines.push(
+        t("ui.overlay.warning_clients", {
+          count: kind.client_count,
+          title: kind.title,
+        }),
+      );
+    }
+    if (kind.is_active) {
+      lines.push(t("ui.overlay.warning_leaving", { title: kind.title }));
+    }
+  }
+  if (lines.length === 0) {
     return undefined;
   }
-  return interruptionWarning(
-    t("ui.overlay.warning_leaving", { title: kindLabel(leaving) }),
-  );
+  return interruptionWarning(...lines);
 }

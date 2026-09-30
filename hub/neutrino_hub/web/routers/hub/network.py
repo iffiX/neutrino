@@ -876,14 +876,14 @@ def _overlay_views(
         runtime: The shared runtime, for the devices on the channel.
 
     Returns:
-        One row per configured overlay, in configuration order, its address
+        One row per running overlay, in configuration order, its address
         the first of its devices that is up and holds one.
     """
     addresses = device_addresses()
     admin_up = admin_up_interfaces()
     reaching = _reaching_addresses(runtime)
     views = []
-    for overlay in network.overlays:
+    for overlay in network.enabled_overlays:
         running = [
             name
             for name in network.devices_of(overlay)
@@ -1070,11 +1070,12 @@ def _subnet(address: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network | Non
 
 async def _apply(runtime: PanelRuntime, *, only: str | None) -> None:
     try:
-        await runtime.apply_network(only=only)
+        await runtime.converge_network(only=only)
     except (
         subprocess.SubprocessError,
         OSError,
         RuntimeError,
+        TimeoutError,
         ValueError,
     ) as error:
         raise _bad_gateway(

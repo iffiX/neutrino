@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { copyText } from "../copy_text";
 
+import { ApplyBar } from "../components/apply_bar";
 import { EasyTierSection } from "../components/easytier_panels";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
@@ -15,6 +16,7 @@ import { formatDuration } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
+import { usePageMemory } from "../use_page_memory";
 import { HUB_EVENT_CONFIG } from "../use_hub_events";
 import type {
   DevicesResponse,
@@ -26,23 +28,22 @@ import type {
 import "./overlay_page.css";
 
 /**
- * How this box is reached from outside: which overlay it is on, and that
- * overlay's own screen below the choice.
- *
- * No leave button on the NetBird half — from abroad that is a lockout; a local
- * shell has `netbird down`, and the chooser above is the deliberate way out.
+ * How this box is reached from outside: which overlays it runs, and the
+ * settings of the one picked below the switches.
  */
 
 /** The engines by the key `config/` names them. */
-const PROVIDER_NONE = "none";
 const PROVIDER_NETBIRD = "netbird";
 const PROVIDER_EASYTIER = "easytier";
 
 /** The product's own name, which is the same in every language. */
 const NETBIRD_PRODUCT_NAME = "NetBird";
 
-// What moves the choice: any write to the hub's own configuration.
+// What moves the switches: any write to the hub's own configuration.
 const OVERLAY_INVALIDATE_ON = [{ type: HUB_EVENT_CONFIG }];
+
+/** How often the switches are read; clients come and go on their own. */
+const OVERLAY_RELOAD_MS = 10000;
 
 export function OverlayPage() {
   // Redrawn when the panel's language changes.
@@ -50,6 +51,17 @@ export function OverlayPage() {
   const resource = useApiResource<OverlayChoiceView>("/hub/overlay", {
     invalidateOn: OVERLAY_INVALIDATE_ON,
   });
+  const [picked, setPicked] = usePageMemory<string>("overlay.engine", "");
+
+  const reload = resource.reload;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        reload();
+      }
+    }, OVERLAY_RELOAD_MS);
+    return () => window.clearInterval(timer);
+  }, [reload]);
 
   const choice = resource.data;
 
@@ -71,6 +83,13 @@ export function OverlayPage() {
     );
   }
 
+  const selected =
+    picked !== ""
+      ? picked
+      : (choice.kinds.find((kind) => kind.is_enabled)?.key ?? PROVIDER_NETBIRD);
+  const isEnabled = (key: string) =>
+    choice.kinds.some((kind) => kind.key === key && kind.is_enabled);
+
   return (
     <div className="page">
       <div className="page_header">
@@ -79,18 +98,27 @@ export function OverlayPage() {
         </div>
       </div>
 
-      <OverlayModePanel choice={choice} onApplied={resource.setData} />
+      <OverlayModePanel
+        choice={choice}
+        selected={selected}
+        onSelect={setPicked}
+        onApplied={resource.setData}
+      />
 
-      {choice.provider === PROVIDER_NONE && (
+      {!choice.kinds.some((kind) => kind.is_enabled) && (
         <div className="notice">
           <Icon name="blocked" size={15} />
           <div className="notice_body">{t("ui.overlay.none_body")}</div>
         </div>
       )}
 
-      {choice.provider === PROVIDER_NETBIRD && <NetbirdSection />}
+      {selected === PROVIDER_NETBIRD && (
+        <NetbirdSection isEnabled={isEnabled(PROVIDER_NETBIRD)} />
+      )}
 
-      {choice.provider === PROVIDER_EASYTIER && <EasyTierSection />}
+      {selected === PROVIDER_EASYTIER && (
+        <EasyTierSection isEnabled={isEnabled(PROVIDER_EASYTIER)} />
+      )}
     </div>
   );
 }
@@ -148,10 +176,15 @@ function daemonBadge(view: NetbirdView, isJoining: boolean) {
   }
 }
 
+interface NetbirdSectionProps {
+  /** Whether the hub runs NetBird now. */
+  isEnabled: boolean;
+}
+
 /**
- * NetBird: enrollment, LAN route guidance, and live peers.
+ * NetBird: its settings, LAN route guidance, and live peers.
  */
-function NetbirdSection() {
+function NetbirdSection({ isEnabled }: NetbirdSectionProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<NetbirdView>("/hub/overlay/netbird");
@@ -207,7 +240,16 @@ function NetbirdSection() {
         </div>
       </div>
 
-      {!view.is_installed && (
+      {!isEnabled && (
+        <div className="notice">
+          <Icon name="blocked" size={15} />
+          <div className="notice_body">
+            {t("ui.overlay.engine_off", { title: NETBIRD_PRODUCT_NAME })}
+          </div>
+        </div>
+      )}
+
+      {isEnabled && !view.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.overlay.install_first")}</div>
@@ -245,20 +287,13 @@ function NetbirdSection() {
         </section>
       )}
 
-      {view.is_enrolled && !isJoining ? (
-        <IdentitySection
-          view={view}
-          isReady={view.is_installed && view.is_active}
-          onJoined={resource.reload}
-          onJoining={setIsJoining}
-        />
-      ) : (
-        <JoinSection
-          isReady={view.is_installed && view.is_active}
-          onJoined={resource.reload}
-          onJoining={setIsJoining}
-        />
-      )}
+      <NetbirdSettingsPanel
+        view={view}
+        isJoining={isJoining}
+        onChanged={resource.setData}
+        onReload={resource.reload}
+        onJoining={setIsJoining}
+      />
 
       <RoutesSection view={view} />
       <PeersSection view={view} />
@@ -281,67 +316,155 @@ function DaemonBadge({ view, isJoining }: DaemonBadgeProps) {
   );
 }
 
-interface IdentitySectionProps {
+interface NetbirdSettingsPanelProps {
   view: NetbirdView;
-  isReady: boolean;
-  onJoined: () => void;
+  isJoining: boolean;
+  onChanged: (view: NetbirdView) => void;
+  onReload: () => void;
+  /** Told when a join is sent and when it has been answered. */
   onJoining: (isJoining: boolean) => void;
 }
 
-function IdentitySection({
+/**
+ * NetBird's settings in one frame: where this gateway stands, the key kept
+ * for clients, and the join itself, which the apply bar sends. Leaving is
+ * the one action in the title.
+ */
+function NetbirdSettingsPanel({
   view,
-  isReady,
-  onJoined,
+  isJoining,
+  onChanged,
+  onReload,
   onJoining,
-}: IdentitySectionProps) {
+}: NetbirdSettingsPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const [isReconfiguring, setIsReconfiguring] = useState(false);
+  const confirm = useConfirm();
+  const [setupKey, setSetupKey] = useState("");
+  const [managementUrl, setManagementUrl] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isEnrolled = view.is_enrolled && !isJoining;
+  const isReady = view.is_installed && view.is_active;
+  const isDirty = setupKey.trim() !== "";
+
+  const join = async () => {
+    setIsBusy(true);
+    onJoining(true);
+    setError(null);
+    try {
+      onChanged(
+        await apiPost<NetbirdView>("/hub/overlay/netbird/join", {
+          setup_key: setupKey.trim(),
+          management_url: managementUrl.trim(),
+        }),
+      );
+      setSetupKey("");
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+      onReload();
+    } finally {
+      setIsBusy(false);
+      onJoining(false);
+    }
+  };
+
+  const leave = async () => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      onChanged(await apiPost<NetbirdView>("/hub/overlay/netbird/leave", {}));
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const askLeave = () => {
+    confirm.ask({
+      title: t("ui.overlay.leave_title"),
+      body: t("ui.overlay.leave_body"),
+      confirmLabel: t("ui.overlay.leave"),
+      onConfirm: () => void leave(),
+    });
+  };
+
   return (
-    <section className="settings_group">
+    <section
+      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
+    >
       <div className="settings_group_title">
-        <h2>{t("ui.overlay.identity_title")}</h2>
-        <button
-          type="button"
-          className="button button--small netbird_reconfigure"
-          onClick={() => setIsReconfiguring((current) => !current)}
-        >
-          <Icon name="refresh" size={12} />
-          {t("ui.overlay.reenroll")}
-        </button>
+        <h2>{t("ui.overlay.settings_title")}</h2>
+        {view.is_enrolled && (
+          <button
+            type="button"
+            className="button button--small button--danger netbird_reconfigure"
+            disabled={isBusy}
+            onClick={askLeave}
+          >
+            {t("ui.overlay.leave")}
+          </button>
+        )}
       </div>
-      <div className="netbird_identity">
-        <div className="netbird_fact">
-          <span className="field_label">{t("ui.overlay.address_label")}</span>
-          <span className="netbird_fact_value">
-            {view.netbird_ip || t("ui.overlay.address_assigning")}
-          </span>
+      {isEnrolled ? (
+        <div className="netbird_identity">
+          <div className="netbird_fact">
+            <span className="field_label">{t("ui.overlay.address_label")}</span>
+            <span className="netbird_fact_value">
+              {view.netbird_ip || t("ui.overlay.address_assigning")}
+            </span>
+          </div>
+          <div className="netbird_fact">
+            <span className="field_label">{t("ui.overlay.name_label")}</span>
+            <span className="netbird_fact_value">{view.fqdn || "—"}</span>
+          </div>
+          <div className="netbird_fact">
+            <span className="field_label">
+              {t("ui.overlay.management_label")}
+            </span>
+            <span className="netbird_fact_value">{view.management_url}</span>
+          </div>
         </div>
-        <div className="netbird_fact">
-          <span className="field_label">{t("ui.overlay.name_label")}</span>
-          <span className="netbird_fact_value">{view.fqdn || "—"}</span>
-        </div>
-        <div className="netbird_fact">
-          <span className="field_label">
-            {t("ui.overlay.management_label")}
-          </span>
-          <span className="netbird_fact_value">{view.management_url}</span>
-        </div>
-      </div>
-      <SetupKeyRow hasSetupKey={view.has_setup_key} onChanged={onJoined} />
-      <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
-      {isReconfiguring && (
-        <JoinForm
-          isReady={isReady}
-          submitLabel={t("ui.overlay.reenroll")}
-          warning={t("ui.overlay.reenroll_warning")}
-          onJoined={() => {
-            setIsReconfiguring(false);
-            onJoined();
-          }}
-          onJoining={onJoining}
-        />
+      ) : (
+        <ol className="netbird_steps">
+          <li>{t("ui.overlay.join_step_network")}</li>
+          <li>{t("ui.overlay.join_step_peer")}</li>
+          <li>{t("ui.overlay.join_step_key")}</li>
+        </ol>
       )}
+      <SetupKeyRow hasSetupKey={view.has_setup_key} onChanged={onReload} />
+      <p className="field_hint">{t("ui.overlay.setup_key_hint")}</p>
+      <div className="netbird_join">
+        <PasswordInput
+          value={setupKey}
+          onChange={setSetupKey}
+          placeholder={t("ui.overlay.setup_key_placeholder")}
+        />
+        <input
+          className="input"
+          placeholder={t("ui.overlay.management_url_placeholder")}
+          value={managementUrl}
+          onChange={(event) => setManagementUrl(event.target.value)}
+        />
+      </div>
+      <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
+      <ApplyBar
+        isDirty={isDirty}
+        isBusy={isBusy}
+        label={isEnrolled ? t("ui.overlay.reenroll") : t("ui.overlay.join")}
+        hint={t("ui.overlay.apply_join_hint")}
+        warning={isEnrolled ? t("ui.overlay.reenroll_warning") : undefined}
+        blockedHint={isReady ? null : t("ui.overlay.service_first")}
+        error={error}
+        onReset={() => {
+          setSetupKey("");
+          setManagementUrl("");
+        }}
+        onApply={() => void join()}
+      />
+      {confirm.modal}
     </section>
   );
 }
@@ -453,120 +576,6 @@ function SetupKeyRow({ hasSetupKey, onChanged }: SetupKeyRowProps) {
         </div>
       )}
       {confirm.modal}
-    </>
-  );
-}
-
-interface JoinSectionProps {
-  isReady: boolean;
-  onJoined: () => void;
-  onJoining: (isJoining: boolean) => void;
-}
-
-function JoinSection({ isReady, onJoined, onJoining }: JoinSectionProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  return (
-    <section className="settings_group">
-      <div className="settings_group_title">
-        <h2>{t("ui.overlay.join_title")}</h2>
-      </div>
-      <ol className="netbird_steps">
-        <li>{t("ui.overlay.join_step_network")}</li>
-        <li>{t("ui.overlay.join_step_peer")}</li>
-        <li>{t("ui.overlay.join_step_key")}</li>
-      </ol>
-      <p className="field_hint">{t("ui.overlay.setup_key_hint")}</p>
-      {!isReady && (
-        <p className="field_hint">{t("ui.overlay.service_first")}</p>
-      )}
-      <JoinForm
-        isReady={isReady}
-        submitLabel={t("ui.overlay.join")}
-        onJoined={onJoined}
-        onJoining={onJoining}
-      />
-    </section>
-  );
-}
-
-interface JoinFormProps {
-  isReady: boolean;
-  submitLabel: string;
-  warning?: string;
-  onJoined: () => void;
-  /** Told when the join request is sent and when it has been answered. */
-  onJoining: (isJoining: boolean) => void;
-}
-
-function JoinForm({
-  isReady,
-  submitLabel,
-  warning,
-  onJoined,
-  onJoining,
-}: JoinFormProps) {
-  // Redrawn when the panel's language changes.
-  useLanguage();
-  const [setupKey, setSetupKey] = useState("");
-  const [managementUrl, setManagementUrl] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const join = async () => {
-    setIsBusy(true);
-    onJoining(true);
-    setError(null);
-    try {
-      await apiPost("/hub/overlay/netbird/join", {
-        setup_key: setupKey.trim(),
-        management_url: managementUrl.trim(),
-      });
-      setSetupKey("");
-      onJoined();
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-      onJoining(false);
-    }
-  };
-
-  return (
-    <>
-      {warning !== undefined && (
-        <div className="notice notice--warn">
-          <Icon name="alert" size={15} />
-          <div className="notice_body">{warning}</div>
-        </div>
-      )}
-      <div className="netbird_join">
-        <PasswordInput
-          value={setupKey}
-          onChange={setSetupKey}
-          placeholder={t("ui.overlay.setup_key_placeholder")}
-        />
-        <input
-          className="input"
-          placeholder={t("ui.overlay.management_url_placeholder")}
-          value={managementUrl}
-          onChange={(event) => setManagementUrl(event.target.value)}
-        />
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={!isReady || isBusy || setupKey.trim() === ""}
-          onClick={() => void join()}
-        >
-          {isBusy ? t("ui.overlay.joining") : submitLabel}
-        </button>
-      </div>
-      {error !== null && (
-        <div className="notice notice--error">
-          <Icon name="alert" size={15} />
-          <div className="notice_body">{error}</div>
-        </div>
-      )}
     </>
   );
 }

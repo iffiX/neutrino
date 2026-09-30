@@ -1,42 +1,59 @@
-/* --- Which overlay this box is on --- */
+/* --- Which overlays this box runs --- */
 
-/* A grid rather than a row: three cards, each with a sentence under its name,
-   and a row would either wrap badly or squeeze the sentences to nothing. */
+/* A grid rather than a row: each card has a sentence under its name, and a
+   row would either wrap badly or squeeze the sentences to nothing. */
 .overlay_choices {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--space-3);
 }
 
+/* One engine: the card picks whose settings show, the switch runs it. */
 .overlay_choice {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  align-items: flex-start;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   color: var(--color-text-muted);
-  text-align: left;
-  cursor: pointer;
   transition:
     border-color var(--transition-base),
     background var(--transition-base);
 }
 
-.overlay_choice:hover:not(:disabled) {
+.overlay_choice:hover {
   border-color: var(--color-accent);
-}
-
-.overlay_choice:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .overlay_choice--on {
   border-color: var(--color-accent);
   background: var(--color-accent-wash);
   color: var(--color-text);
+}
+
+.overlay_choice_select {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The choice panels below reuse the card for EasyTier's two modes. */
+button.overlay_choice {
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+  cursor: pointer;
 }
 
 .overlay_choice_head {

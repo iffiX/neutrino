@@ -345,10 +345,10 @@ def _converge_overlays(network: RouterNetworkConfig) -> list[RouterStepResult]:
         network: The parsed router configuration.
 
     Returns:
-        One result per NetBird overlay.
+        One result per running NetBird overlay.
     """
     results = []
-    for overlay in network.overlays:
+    for overlay in network.enabled_overlays:
         if overlay.provider != ROUTER_OVERLAY_NETBIRD:
             continue
 

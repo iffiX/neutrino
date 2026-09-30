@@ -2145,44 +2145,22 @@ class EasyTierView(BaseModel):
     live_peers: list[EasyTierPeerView] = Field(default_factory=list)
 
 
-class EasyTierNetworkRequest(BaseModel):
-    """The network this box is a member of."""
+class EasyTierSettingsRequest(BaseModel):
+    """Every EasyTier setting the Overlay page applies at once."""
 
-    network_name: str = Field(min_length=1, max_length=64)
+    # `manual` or `console`.
+    mode: str
+    # The console address with its token; None keeps the stored one and
+    # empty forgets it.
+    config_server: str | None = Field(default=None, max_length=512)
+    is_secure_mode: bool = False
+    network_name: str = Field(default="", max_length=64)
     # Empty keeps the secret already stored, so a form that never showed it
     # cannot blank it.
     network_secret: str = ""
     address: str = ""
     hostname: str = ""
-
-
-class EasyTierModeRequest(BaseModel):
-    """Where the network comes from: `manual` or `console`."""
-
-    mode: str
-
-
-class EasyTierConfigServerRequest(BaseModel):
-    """A console address with its token; empty forgets the stored one."""
-
-    config_server: str = Field(default="", max_length=512)
-
-
-class EasyTierSecureModeRequest(BaseModel):
-    """Whether the engine runs the console's network in secure mode."""
-
-    is_secure_mode: bool
-
-
-class EasyTierPeersRequest(BaseModel):
-    """What this box connects to when it starts."""
-
     peers: list[str] = Field(default_factory=list)
-
-
-class EasyTierNetworksRequest(BaseModel):
-    """The networks this box makes reachable to the others."""
-
     exported_networks: list[str] = Field(default_factory=list)
 
 
@@ -2201,29 +2179,36 @@ class EasyTierSecretView(BaseModel):
 
 
 class OverlayKindView(BaseModel):
-    """One overlay this hub knows about, as the chooser draws it."""
+    """One overlay engine this hub knows about, as its switch draws it."""
 
     key: str
-    # Empty for "none": the absence of an overlay is a word the panel has in
-    # every language, where a product's name is the same in all of them.
     title: str
+    is_enabled: bool
     is_integrated: bool
     is_supported: bool
     is_installed: bool
     is_active: bool
+    # How many online clients reach the hub through this engine now.
+    client_count: int = 0
 
 
 class OverlayChoiceView(BaseModel):
-    """Which overlay this box runs, and what it could run instead."""
+    """Which overlays this box runs."""
 
-    provider: str
     kinds: list[OverlayKindView] = Field(default_factory=list)
 
 
-class OverlayChoiceRequest(BaseModel):
-    """The overlay this box should run from now on."""
+class OverlayEngineSwitch(BaseModel):
+    """Whether one engine runs."""
 
-    provider: str
+    is_enabled: bool
+
+
+class OverlayChoiceRequest(BaseModel):
+    """The engines to turn on or off; an engine left out keeps what it has."""
+
+    netbird: OverlayEngineSwitch | None = None
+    easytier: OverlayEngineSwitch | None = None
 
 
 class NetbirdPeerView(BaseModel):

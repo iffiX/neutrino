@@ -6,11 +6,17 @@ editing anything under ``config/`` by hand:
     sudo nhub apply               # render, validate, apply all
     nhub apply --dry-run          # render and print, no effects
     sudo nhub apply --only router
+    sudo nhub apply --only overlay
 
 The unit files come with it. They ship in the package rather than being
 rendered from ``config/``, so an upgrade that changes one lands here: writing
 them is part of making the box true, and a unit already current is left
 alone.
+
+The apply runs the panel's converge steps in the panel's order: the enabled
+overlays start, then the routing state, dnsmasq and xray, and the overlays
+turned off stop last. The two pushes to devices and clients are the panel's;
+a peer is handed its state when it next reports to a running panel.
 """
 
 import argparse
@@ -27,15 +33,14 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_DROPIN_NAME,
     EASYTIER_GENERATED_NAME,
 )
-from neutrino_hub.modules.easytier.ops import EasyTierConfigApplier
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.renderer import render_arguments
 from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
 from neutrino_hub.modules.easytier.renderer import render_dropin
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
-from neutrino_hub.modules.overlay.config import provider_of
+from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
-from neutrino_hub.modules.overlay.ops import overlay_devices
+from neutrino_hub.modules.overlay.ops import OverlaySwitcher, overlay_devices
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
@@ -73,7 +78,7 @@ from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
 from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
-COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi", "easytier")
+COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi", "overlay")
 
 
 def main() -> int:
@@ -199,14 +204,15 @@ def _render(selected: tuple[str, ...]) -> dict:
             print("cliproxyapi: not installed, skipping")
         else:
             artifacts["cliproxyapi"] = gateway.render_with_stored_key()
-    if "easytier" in selected:
-        overlay = read_easytier()
-        if provider_of(network) != OVERLAY_EASYTIER:
-            print("easytier: not the chosen overlay, skipping")
-        elif not overlay.is_configured:
+    if "overlay" in selected:
+        artifacts["overlay"] = network
+        easytier = read_easytier()
+        if OVERLAY_EASYTIER not in enabled_providers(network):
+            print("easytier: not enabled, skipping")
+        elif not easytier.is_configured:
             print("easytier: nothing configured, skipping")
         else:
-            artifacts["easytier"] = overlay
+            artifacts["easytier"] = easytier
     return artifacts
 
 
@@ -236,6 +242,9 @@ def _print_artifacts(artifacts: dict) -> None:
     if "cliproxyapi" in artifacts:
         print(f"\n--- {UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME} ---")
         print(artifacts["cliproxyapi"])
+    if "overlay" in artifacts:
+        enabled = enabled_providers(artifacts["overlay"])
+        print(f"\n--- overlays enabled: {', '.join(enabled) or 'none'} ---")
     if "easytier" in artifacts:
         # The rendered file carries the network secret, which is the key the
         # whole network is encrypted under. A dry run prints what a person
@@ -277,9 +286,10 @@ def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:
 
 
 def _apply(artifacts: dict) -> None:
-    if "xray" in artifacts:
-        # _write already validated and installed the config.
-        XrayConfigApplier().restart()
+    switcher = OverlaySwitcher()
+    if "overlay" in artifacts:
+        for note in switcher.start(artifacts["overlay"]):
+            print(note)
     router_failure = ""
     if "router" in artifacts:
         # The same pass the resident router unit and the panel run, under the
@@ -296,16 +306,18 @@ def _apply(artifacts: dict) -> None:
             if install_dnsmasq(artifacts["dnsmasq"])
             else "dnsmasq unchanged"
         )
+    if "xray" in artifacts:
+        # _write already validated and installed the config.
+        XrayConfigApplier().restart()
     if "cliproxyapi" in artifacts:
         # The applier renders again with the key the belt above put in place,
         # writes the YAML with the served fingerprint, and restarts — the same
         # motion the panel's apply runs, so neither path leaves the gateway
         # behind the stored configuration.
         print(CliproxyApiConfigApplier().apply())
-    if "easytier" in artifacts:
-        print(
-            EasyTierConfigApplier().apply(artifacts["easytier"], hostname=gethostname())
-        )
+    if "overlay" in artifacts:
+        for note in switcher.stop(artifacts["overlay"]):
+            print(note)
     if router_failure:
         raise RuntimeError(router_failure)
 

@@ -23,11 +23,12 @@ from neutrino_hub.modules.router.controller import (
     RouterStateController,
     failure_text,
     rendered_overlay_devices,
+    router_lock,
 )
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
-from neutrino_hub.modules.overlay.ops import overlay_devices
+from neutrino_hub.modules.overlay.ops import OverlaySwitcher, overlay_devices
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
@@ -218,11 +219,11 @@ class PanelRuntime:
         ).with_overlay_devices(rendered_overlay_devices())
 
     def follow_overlay_devices(self) -> bool:
-        """Apply the routing state again when an overlay's device moved.
+        """Converge again when an overlay's device moved.
 
         Returns:
             True when the devices found now differ from the ones the loaded
-            ruleset names and a pass ran; False on a box not set up.
+            ruleset names and a converge ran; False on a box not set up.
         """
         try:
             network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
@@ -233,13 +234,15 @@ class PanelRuntime:
             return False
         LOGGER.info("overlay devices moved: %s", found)
         try:
-            results = self._router_controller().reconcile()
-        except (TimeoutError, ValueError, OSError, RuntimeError) as error:
+            self.converge_network_blocking()
+        except (
+            TimeoutError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            subprocess.SubprocessError,
+        ) as error:
             LOGGER.warning("overlay devices not applied: %s", error)
-            return True
-        failure = failure_text(results)
-        if failure:
-            LOGGER.warning("overlay devices not applied: %s", failure)
         return True
 
     def write_network(self, network: RouterNetworkConfig) -> None:
@@ -416,49 +419,110 @@ class PanelRuntime:
                     return link.ipv4_address
         return None
 
-    async def apply_all(self) -> str:
-        """Re-render every generated config and apply it.
+    async def converge_network(self, *, only: str | None = None) -> str:
+        """Make everything derived from ``config/`` true, and hand it on.
 
-        Serialized behind a lock: two browser tabs hitting Apply at once must
-        not interleave an xray restart with an nftables reload.
-
-        Returns:
-            A short description of what was applied.
-
-        Raises:
-            subprocess.CalledProcessError: If a command an apply runs fails.
-                The running services keep their previous configuration when
-                validation fails.
-            RuntimeError: If xray refused what it was handed, or the box is
-                not set up yet.
-            ValueError: If the configuration itself is invalid.
-        """
-        async with self._apply_lock:
-            return await asyncio.to_thread(self._apply_all_blocking)
-
-    async def apply_network(self, *, only: str | None = None) -> str:
-        """Re-render the router and DHCP, and make the interface roles real.
-
-        The interface work is the part the render pipeline cannot do:
-        NetworkManager owns the addresses, so role, address and clone-MAC
-        changes are pushed to it here.
+        Every writer of the network, the proxy or an overlay calls this, so
+        one sequence recomputes the set: the engines, the firewall, dnsmasq,
+        xray, and the state of every device and client. Serialized behind a
+        lock: two browser tabs hitting Apply at once must not interleave an
+        xray restart with an nftables reload.
 
         Args:
             only: Apply just this interface's role, leaving the others as they
-                are. The firewall and DHCP are still re-rendered from the whole
-                configuration, because a single role change alters both. None
-                applies every interface.
+                are. Every other step still runs on the whole configuration.
 
         Returns:
             A short description of what was applied.
 
         Raises:
             subprocess.CalledProcessError: If a command an apply runs fails.
-            RuntimeError: If the box is not set up yet.
-            ValueError: If ``only`` names no configured interface.
+            RuntimeError: If xray or an overlay engine refused what it was
+                handed, a routing step failed, or the box is not set up yet.
+                The steps after the one that failed still ran.
+            TimeoutError: When another writer holds the router lock too long.
+            ValueError: If ``only`` names no configured interface, or the
+                configuration is invalid.
         """
         async with self._apply_lock:
-            return await asyncio.to_thread(self._apply_network_blocking, only)
+            return await asyncio.to_thread(self.converge_network_blocking, only)
+
+    def converge_network_blocking(self, only: str | None = None) -> str:
+        """Run the converge step on the calling thread.
+
+        Under the router lock, in this order: the enabled engines start
+        (EasyTier restarted only when what it runs changed), the routing
+        state is reconciled, dnsmasq and xray restart only when their text
+        changed, every online device and every client is handed its state,
+        and only then are the engines turned off stopped, so a peer reached
+        through one of them hears the new state first.
+
+        Args:
+            only: Apply just this interface's role.
+
+        Returns:
+            A short description of what was applied.
+
+        Raises:
+            RuntimeError: If xray or an overlay engine refused what it was
+                handed, or a routing step failed.
+            TimeoutError: When another writer holds the router lock too long.
+            ValueError: If ``only`` names no configured interface, or the
+                configuration is invalid.
+            FileNotFoundError: When the box is not set up.
+        """
+        network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+        node_list = self.node_list()
+        routing = self._settled_routing(node_list)
+        resolve_node_secrets(node_list)
+        xray_config = XrayConfigRenderer(
+            node_list=node_list,
+            routing=routing,
+            down_tags={
+                tag
+                for tag, health in self.exit_controller.healths().items()
+                if health.is_down
+            },
+        ).render()
+        switcher = OverlaySwitcher()
+        changes: list[str] = []
+        failures: list[str] = []
+        with router_lock():
+            try:
+                changes += switcher.start(network)
+            except (
+                subprocess.SubprocessError,
+                OSError,
+                ValueError,
+                NotImplementedError,
+            ) as error:
+                failures.append(f"overlay: {command_failure_text(error)}")
+            # The interface must carry its new address before dnsmasq is told
+            # to bind it, or the restart fails with nothing to listen on.
+            results = self._router_controller().reconcile_locked(only=only)
+            changes += [line for result in results for line in result.changes]
+            if install_dnsmasq(self._dnsmasq_config()):
+                changes.append("dnsmasq restarted")
+            # A refused xray configuration stops none of the other steps.
+            try:
+                if XrayConfigApplier().apply_if_changed(xray_config):
+                    changes.append("xray restarted")
+            except (subprocess.SubprocessError, OSError, RuntimeError) as error:
+                failures.append(
+                    f"{command_failure_text(error)}. The firewall and DNS were "
+                    "applied without it."
+                )
+            changes += self._push_desired_states()
+            channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
+            changes += switcher.stop(network)
+        router_failure = failure_text(results)
+        if router_failure:
+            failures.append(router_failure)
+        if failures:
+            raise RuntimeError("; ".join(failures))
+        self.is_config_dirty = False
+        summary = "; ".join(changes) if changes else "nothing changed"
+        return f"applied ({summary})"
 
     def desired_state_for(self, device) -> tuple[str, dict]:
         """What a device should host, and the hash the agent compares against.
@@ -557,45 +621,6 @@ class PanelRuntime:
         """Say the AI gateway's counters or served list moved."""
         self.events.publish(WEB_EVENT_AI_USAGE)
 
-    def _apply_all_blocking(self) -> str:
-        node_list = self.node_list()
-        routing = self._settled_routing(node_list)
-
-        resolve_node_secrets(node_list)
-        xray_config = XrayConfigRenderer(
-            node_list=node_list,
-            routing=routing,
-            down_tags={
-                tag
-                for tag, health in self.exit_controller.healths().items()
-                if health.is_down
-            },
-        ).render()
-        dnsmasq_config = self._dnsmasq_config()
-
-        # A refused xray configuration does not stop the other two. The
-        # firewall is what makes the LAN reachable and dnsmasq is what answers
-        # its queries, and neither has anything to do with why xray said no.
-        xray_failure = ""
-        try:
-            XrayConfigApplier().apply(xray_config)
-        except (subprocess.SubprocessError, OSError, RuntimeError) as error:
-            xray_failure = command_failure_text(error)
-
-        results = self._router_controller().reconcile()
-        install_dnsmasq(dnsmasq_config)
-
-        if xray_failure:
-            raise RuntimeError(
-                f"{xray_failure}. The firewall and DNS were applied without it."
-            )
-        router_failure = failure_text(results)
-        if router_failure:
-            raise RuntimeError(router_failure)
-
-        self.is_config_dirty = False
-        return f"applied {len(node_list.enabled_nodes)} nodes"
-
     def _settled_routing(self, node_list: XrayNodeList) -> dict:
         """The routing options, with the scopes switched off if they cannot run.
 
@@ -630,28 +655,6 @@ class PanelRuntime:
             network=self.network(),
             routing=self._settled_routing(self.node_list()),
         ).render()
-
-    def _apply_network_blocking(self, only: str | None) -> str:
-        dnsmasq_config = self._dnsmasq_config()
-
-        # The interface must carry its new address before dnsmasq is told to
-        # bind it, or the restart fails with nothing to listen on. This is also
-        # the step that drops the connection the request arrived on, when a LAN
-        # address is what changed.
-        results = self._router_controller().reconcile(only=only)
-        is_dnsmasq_restarted = install_dnsmasq(dnsmasq_config)
-        changes = [line for result in results for line in result.changes]
-        if is_dnsmasq_restarted:
-            changes.append("dnsmasq restarted")
-        changes += self._push_desired_states()
-        channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
-        router_failure = failure_text(results)
-        if router_failure:
-            raise RuntimeError(router_failure)
-
-        self.is_config_dirty = False
-        summary = "; ".join(changes) if changes else "no interface change"
-        return f"applied network ({summary})"
 
     def _router_controller(self) -> RouterStateController:
         """The one pass every apply of the routing state runs."""

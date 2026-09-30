@@ -10,7 +10,7 @@ switching a port from LAN to WAN and back does not lose the addresses that were
 typed in for the other role.
 
 Pure: this module parses and shapes configuration. Making a role real —
-NetworkManager, routes, the firewall — is :mod:`neutrino_hub.modules.router.routes`.
+addresses, routes, the firewall — is :mod:`neutrino_hub.modules.router.routes`.
 """
 
 import dataclasses
@@ -441,19 +441,22 @@ class RouterOverlay:
     """One overlay network this box is a member of.
 
     A member, not a port: nobody plugs an overlay in, and the box does not
-    address it. What is left to decide is the same single question an
-    interface answers, so it carries the same field and no others.
+    address it. Besides whether it runs at all, what is left to decide is the
+    same single question an interface answers, so it carries the same field.
 
     Attributes:
         provider: Who runs the overlay, one of
             :data:`ROUTER_OVERLAY_KEYS`.
+        is_enabled: Whether the hub runs this engine. A row stored without
+            the field, the 0.4.0 shape, is a running one.
         is_exposed: Whether this box answers on the overlay, and whether the
             served networks reach it. One switch for both, because closing an
             overlay means cutting it off rather than going quiet on it while
-            still forwarding into the LAN.
+            still forwarding into the LAN. Kept while the engine is off.
     """
 
     provider: str
+    is_enabled: bool = True
     is_exposed: bool = True
 
     @property
@@ -479,10 +482,12 @@ class RouterOverlay:
             data: An entry of the ``overlays`` list.
 
         Returns:
-            The parsed overlay, exposed unless the entry says otherwise.
+            The parsed overlay, enabled and exposed unless the entry says
+            otherwise.
         """
         return cls(
             provider=str(data["provider"]),
+            is_enabled=bool(data.get("is_enabled", True)),
             is_exposed=bool(data.get("is_exposed", True)),
         )
 
@@ -492,7 +497,11 @@ class RouterOverlay:
         Returns:
             A plain object ready for ``config/router/network.json``.
         """
-        return {"provider": self.provider, "is_exposed": self.is_exposed}
+        return {
+            "provider": self.provider,
+            "is_enabled": self.is_enabled,
+            "is_exposed": self.is_exposed,
+        }
 
 
 @dataclass
@@ -554,7 +563,9 @@ class RouterNetworkConfig:
             ``balance`` to spread across the distinct upstream lines. Opt-in
             rather than inferred: guessing it would put traffic on a metered
             link whose owner forgot to mark it.
-        overlays: The overlay networks this box is a member of. A sibling of
+        overlays: One row per overlay engine this box has been configured
+            for, running or not, in the order the engines are listed. A
+            sibling of
             ``interfaces`` rather than an entry in it: switching modes
             rebuilds that list, and an overlay in there would be dropped by a
             change that has nothing to do with it.
@@ -638,10 +649,17 @@ class RouterNetworkConfig:
         )
 
     @property
+    def enabled_overlays(self) -> list[RouterOverlay]:
+        """The overlays the hub runs, in engine order."""
+        return [overlay for overlay in self.overlays if overlay.is_enabled]
+
+    @property
     def overlay_device_names(self) -> list[str]:
-        """The kernel devices the configured overlays ride on."""
+        """The kernel devices the running overlays ride on."""
         return _unique(
-            name for overlay in self.overlays for name in self.devices_of(overlay)
+            name
+            for overlay in self.enabled_overlays
+            for name in self.devices_of(overlay)
         )
 
     @property
@@ -649,7 +667,7 @@ class RouterNetworkConfig:
         """The overlay devices this box answers on and forwards to."""
         return _unique(
             name
-            for overlay in self.overlays
+            for overlay in self.enabled_overlays
             if overlay.is_exposed
             for name in self.devices_of(overlay)
         )
@@ -658,7 +676,11 @@ class RouterNetworkConfig:
     def exposed_overlay_peer_ports(self) -> list[int]:
         """The UDP ports the exposed overlays' peers knock on, ascending."""
         return sorted(
-            {overlay.peer_port for overlay in self.overlays if overlay.is_exposed}
+            {
+                overlay.peer_port
+                for overlay in self.enabled_overlays
+                if overlay.is_exposed
+            }
         )
 
     def local_networks(self, addresses: dict) -> list:
@@ -700,15 +722,15 @@ class RouterNetworkConfig:
         return found
 
     def overlay(self, provider: str) -> "RouterOverlay | None":
-        """Find one overlay by provider.
+        """Find one running overlay by provider.
 
         Args:
             provider: The provider key.
 
         Returns:
-            The overlay, or None when this box is not configured for it.
+            The overlay, or None when this box does not run it.
         """
-        for overlay in self.overlays:
+        for overlay in self.enabled_overlays:
             if overlay.provider == provider:
                 return overlay
         return None

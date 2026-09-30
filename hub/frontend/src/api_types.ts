@@ -1351,25 +1351,33 @@ export interface GiteaAdminCreate {
 export interface OverlayKindView {
   /** What config/ names it by. */
   key: string;
-  /** The product's own name; empty for the engine that is no engine. */
+  /** The product's own name, the same in every language. */
   title: string;
+  /** Whether the hub runs it. */
+  is_enabled: boolean;
   /** Whether this hub can run it at all yet. */
   is_integrated: boolean;
   /** Whether there is a build of it for this machine. */
   is_supported: boolean;
   is_installed: boolean;
   is_active: boolean;
+  /** How many online clients reach the hub through it now. */
+  client_count: number;
 }
 
 export interface OverlayChoiceView {
-  /** What config/ names right now; the page below the chooser follows it. */
-  provider: string;
   kinds: OverlayKindView[];
 }
 
-/** The overlay this box should run from now on. */
+/** Whether one engine runs. */
+export interface OverlayEngineSwitch {
+  is_enabled: boolean;
+}
+
+/** The engines to turn on or off; one left out keeps what it has. */
 export interface OverlayChoiceRequest {
-  provider: string;
+  netbird?: OverlayEngineSwitch;
+  easytier?: OverlayEngineSwitch;
 }
 
 // --- NetBird ---
@@ -1474,32 +1482,18 @@ export interface EasyTierView {
   live_peers: EasyTierPeer[];
 }
 
-export interface EasyTierNetworkRequest {
+/** Every EasyTier setting, applied at once. */
+export interface EasyTierSettingsRequest {
+  mode: EasyTierMode;
+  /** Null keeps the stored console address; empty forgets it. */
+  config_server: string | null;
+  is_secure_mode: boolean;
   network_name: string;
   /** Empty keeps the secret already stored. */
   network_secret: string;
   address: string;
   hostname: string;
-}
-
-export interface EasyTierModeRequest {
-  mode: EasyTierMode;
-}
-
-export interface EasyTierConfigServerRequest {
-  /** Empty forgets the stored console address. */
-  config_server: string;
-}
-
-export interface EasyTierSecureModeRequest {
-  is_secure_mode: boolean;
-}
-
-export interface EasyTierPeersRequest {
   peers: string[];
-}
-
-export interface EasyTierNetworksRequest {
   exported_networks: string[];
 }
 

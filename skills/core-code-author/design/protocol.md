@@ -240,7 +240,7 @@ TLS port.
 | `/api/hub/display` | The language and the palette the panel is drawn in, read before there is a session |
 | `/api/hub/dashboard` | The summary, the traffic history, the DNS log; `/ws/hub/dashboard/stat` and `/ws/hub/dashboard/dns_log` are its live readings |
 | `/api/hub/network` | The mode, the interfaces and their roles, Wi-Fi, what listens where |
-| `/api/hub/overlay` | Which overlay engine the box runs, and under it `netbird` (the network it joins) and `easytier` (the network it defines: peers, networks, secret) |
+| `/api/hub/overlay` | Which overlay engines the box runs, and under it `netbird` (the network it joins) and `easytier` (the network it defines: peers, networks, secret) |
 | `/api/hub/proxy` | Routing policy, and under it `node` (the exit nodes), `balancer`, and `geodata` (the databases the split runs on: which release is installed, and updating them to the latest) |
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | Every machine on record on the LAN: the list, a scan, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its Modules page shows |
@@ -312,20 +312,22 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/overlay` | | the engine and its state |
-| `POST /api/hub/overlay/set` | `{engine, ...}` | which engine the box runs |
+| `GET /api/hub/overlay` | | `OverlayChoiceView`: `kinds`, one row per engine in the engine table's order, `{key, title, is_enabled, is_integrated, is_supported, is_installed, is_active, client_count}`; `client_count` is the online clients whose socket comes from a network one of that engine's devices holds an address in |
+| `POST /api/hub/overlay/set` | `{netbird: {is_enabled}, easytier: {is_enabled}}`, an engine left out keeping what it has | turns engines on or off, any number at once, and runs the converge step; 400 `overlay_not_integrated {title}` or `overlay_not_supported {title}` for an engine being turned on, 502 `overlay_switch_failed {detail}` |
 | `GET /api/hub/overlay/netbird` | | the NetBird network the box joins |
-| `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it, and keeps the key sealed in `config/netbird/netbird.json` once the join succeeds |
-| `POST /api/hub/overlay/netbird/setup_key/set` | `{setup_key}`, empty to forget | replaces or forgets the kept key without joining; pushes every client's state |
+| `POST /api/hub/overlay/netbird/join` | the setup key and management URL | joins it, keeps the key sealed in `config/netbird/netbird.json` once the join succeeds, and runs the converge step; 502 `overlay_join_failed {detail}` |
+| `POST /api/hub/overlay/netbird/leave` | | asks the plane to delete the peer and deletes the profile; the kept key stays; runs the converge step; 502 `overlay_leave_failed {detail}` |
+| `POST /api/hub/overlay/netbird/setup_key/set` | `{setup_key}`, empty to forget | replaces or forgets the kept key without joining, and runs the converge step |
 | `GET /api/hub/overlay/easytier` | | the EasyTier network the box defines, its `mode`, `has_config_server`, `is_secure_mode`, and in console mode the `instances` the engine reports, each with the fields it came back without in `withheld` |
-| `POST /api/hub/overlay/easytier/mode/set` | `{mode}`, `manual` or `console` | where the network comes from; applies it and pushes every client's state |
-| `POST /api/hub/overlay/easytier/config_server/set` | `{config_server}`, empty to forget | keeps the console address with its token sealed in `config/easytier/easytier.json`, or forgets it; applies it and pushes every client's state |
-| `POST /api/hub/overlay/easytier/secure_mode/set` | `{is_secure_mode}` | whether the engine runs the console's network in secure mode; applies it and pushes every client's state |
-| `POST /api/hub/overlay/easytier/set` | its settings | |
-| `POST /api/hub/overlay/easytier/peer/set` | the peer list | |
-| `POST /api/hub/overlay/easytier/network/set` | the network list | |
+| `POST /api/hub/overlay/easytier/set` | `{mode, config_server, is_secure_mode, network_name, network_secret, address, hostname, peers, exported_networks}`: `mode` is `manual` or `console`; `config_server` null keeps the stored console address and empty forgets it; an empty `network_secret` keeps the stored secret | stores every setting at once, the console address with its token and the secret sealed in `config/easytier/easytier.json`, and runs the converge step; the manual network's name is checked in manual mode, and in console mode only when one is given; 502 `easytier_apply_failed {detail}` |
 | `POST /api/hub/overlay/easytier/suggestion/create` | | a suggested network for a member |
 | `GET /api/hub/overlay/easytier/secret` | | the network secret |
+
+Every write on this page, the Network page's writes and the Proxy page's
+`apply` run one converge step, `PanelRuntime.converge_network`, and so does
+the address sampler when the channel's address set or an overlay's device
+moved. Its steps and their order are [network.md](modules/network.md),
+"The converge step".
 
 #### `/api/hub/proxy`
 

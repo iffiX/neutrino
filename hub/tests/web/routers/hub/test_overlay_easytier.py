@@ -1,19 +1,24 @@
-"""The EasyTier sections' API, with the engine and the disk replaced.
+"""The EasyTier settings' API, with the converge step and the disk replaced.
 
 The network is a name and a secret this hub owns, so what is pinned here is
-where the secret lives (sealed, never in the view) and what the writes refuse
-before the engine is handed something it would read as a different network.
+where the secret lives (sealed, never in the view) and what the one write
+refuses before the engine is handed something it would read as a different
+network. Every setting travels in that one write, and a write that stored
+something converges once.
 """
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.easytier import ops as easytier_ops
-from neutrino_hub.modules.easytier.ops import EasyTierInstance, EasyTierPeer
+from neutrino_hub.modules.easytier.ops import (
+    EasyTierInstance,
+    EasyTierPeer,
+    read_stored,
+)
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
-from neutrino_hub.web import channel_overlay, channel_state
+from neutrino_hub.web import channel_overlay
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import overlay_easytier as easytier_router
 from tests.conftest import unlock_vault
@@ -65,38 +70,27 @@ class FakeRuntime:
     def __init__(self, network: RouterNetworkConfig):
         self._network = network
         self.services = FakeServices()
-        self.pushes: list = []
+        # What was stored each time the converge step ran.
+        self.converged: list = []
+        self.refusal: Exception | None = None
 
     def network(self) -> RouterNetworkConfig:
         return self._network
 
-
-class FakeApplier:
-    """Records what it was asked to apply instead of applying it."""
-
-    applied: list = []
-    modes: list = []
-    refusal: Exception | None = None
-
-    def apply(self, config, *, hostname: str) -> str:
-        if FakeApplier.refusal is not None:
-            raise FakeApplier.refusal
-        FakeApplier.applied.append((config.network_name, hostname))
-        FakeApplier.modes.append(config.mode)
+    async def converge_network(self, *, only=None) -> str:
+        if self.refusal is not None:
+            raise self.refusal
+        self.converged.append(read_stored())
         return "applied"
 
 
 @pytest.fixture
 def box(monkeypatch, tmp_path):
     """A gateway with an open vault, a fake engine, and config/ under tmp."""
-    FakeApplier.applied = []
-    FakeApplier.modes = []
-    FakeApplier.refusal = None
     unlock_vault(monkeypatch, tmp_path)
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config_dir)
-    monkeypatch.setattr(easytier_ops, "EasyTierConfigApplier", FakeApplier)
     monkeypatch.setattr(easytier_router, "EasyTierStatusReader", lambda: _Reader(PEERS))
     monkeypatch.setattr(
         channel_overlay,
@@ -107,11 +101,6 @@ def box(monkeypatch, tmp_path):
         easytier_router,
         "device_addresses",
         lambda: {"enp1s0": "192.168.100.1/24", "enp2s0": "198.51.100.9/25"},
-    )
-    monkeypatch.setattr(
-        channel_state,
-        "push_states",
-        lambda runtime, role: runtime.pushes.append(role),
     )
     runtime = FakeRuntime(
         RouterNetworkConfig.from_dict(
@@ -157,17 +146,26 @@ class _Reader:
         ]
 
 
+def settings(**changes) -> dict:
+    """A whole settings body in manual mode, with some fields changed."""
+    body = {
+        "mode": "manual",
+        "config_server": None,
+        "is_secure_mode": False,
+        "network_name": "neutrino-1234",
+        "network_secret": "a-network-secret",
+        "address": "10.0.0.1/24",
+        "hostname": "",
+        "peers": [],
+        "exported_networks": [],
+    }
+    body.update(changes)
+    return body
+
+
 def a_network(client) -> dict:
     """Store a network, the way the panel's first Apply does."""
-    return client.post(
-        "/api/hub/overlay/easytier/set",
-        json={
-            "network_name": "neutrino-1234",
-            "network_secret": "a-network-secret",
-            "address": "10.0.0.1/24",
-            "hostname": "",
-        },
-    ).json()
+    return client.post("/api/hub/overlay/easytier/set", json=settings()).json()
 
 
 # --- reading ----------------------------------------------------------------
@@ -234,40 +232,26 @@ def test_the_peers_are_the_others_and_this_box_is_the_node(box):
 # --- writing ----------------------------------------------------------------
 
 
-def test_storing_a_network_applies_it(box):
-    client, _ = box
+def test_storing_a_network_converges_on_it_once(box):
+    client, runtime = box
 
     payload = a_network(client)
 
     assert payload["network_name"] == "neutrino-1234"
     assert payload["address"] == "10.0.0.1/24"
-    assert FakeApplier.applied and FakeApplier.applied[0][0] == "neutrino-1234"
+    assert [config.network_name for config in runtime.converged] == ["neutrino-1234"]
 
 
-def test_storing_a_network_pushes_every_clients_state_once(box):
+def test_a_refused_network_is_not_stored_or_converged(box):
     client, runtime = box
-
-    a_network(client)
-
-    assert runtime.pushes == ["client"]
-
-
-def test_a_refused_network_pushes_nothing(box):
-    client, runtime = box
-    FakeApplier.refusal = OSError("engine refused")
 
     reply = client.post(
-        "/api/hub/overlay/easytier/set",
-        json={
-            "network_name": "neutrino-1234",
-            "network_secret": "a-network-secret",
-            "address": "10.0.0.1/24",
-            "hostname": "",
-        },
+        "/api/hub/overlay/easytier/set", json=settings(address="10.0.0.1")
     )
 
-    assert reply.status_code == 502
-    assert runtime.pushes == []
+    assert reply.status_code == 400
+    assert runtime.converged == []
+    assert read_stored().network_name == ""
 
 
 def test_an_empty_secret_keeps_the_one_already_stored(box):
@@ -276,12 +260,7 @@ def test_an_empty_secret_keeps_the_one_already_stored(box):
 
     client.post(
         "/api/hub/overlay/easytier/set",
-        json={
-            "network_name": "neutrino-1234",
-            "network_secret": "",
-            "address": "10.0.0.2/24",
-            "hostname": "",
-        },
+        json=settings(network_secret="", address="10.0.0.2/24"),
     )
 
     assert client.get("/api/hub/overlay/easytier/secret").json()["network_secret"] == (
@@ -294,7 +273,7 @@ def test_a_first_network_with_no_secret_is_refused(box):
 
     response = client.post(
         "/api/hub/overlay/easytier/set",
-        json={"network_name": "neutrino-1234", "network_secret": "", "address": ""},
+        json=settings(network_secret="", address=""),
     )
 
     assert response.status_code == 400
@@ -305,12 +284,7 @@ def test_a_name_that_could_hide_in_a_relay_whitelist_is_refused(box):
     client, _ = box
 
     response = client.post(
-        "/api/hub/overlay/easytier/set",
-        json={
-            "network_name": "two words",
-            "network_secret": "a-network-secret",
-            "address": "",
-        },
+        "/api/hub/overlay/easytier/set", json=settings(network_name="two words")
     )
 
     assert response.status_code == 400
@@ -321,12 +295,7 @@ def test_an_address_with_no_prefix_is_refused(box):
     client, _ = box
 
     response = client.post(
-        "/api/hub/overlay/easytier/set",
-        json={
-            "network_name": "neutrino-1234",
-            "network_secret": "a-network-secret",
-            "address": "10.0.0.1",
-        },
+        "/api/hub/overlay/easytier/set", json=settings(address="10.0.0.1")
     )
 
     assert response.status_code == 400
@@ -335,11 +304,10 @@ def test_an_address_with_no_prefix_is_refused(box):
 
 def test_the_bootstrap_peers_are_stored_in_order(box):
     client, _ = box
-    a_network(client)
 
     payload = client.post(
-        "/api/hub/overlay/easytier/peer/set",
-        json={"peers": ["tcp://198.51.100.7:11010", "txt://net.example.com"]},
+        "/api/hub/overlay/easytier/set",
+        json=settings(peers=["tcp://198.51.100.7:11010", "txt://net.example.com"]),
     ).json()
 
     assert payload["peers"] == ["tcp://198.51.100.7:11010", "txt://net.example.com"]
@@ -347,10 +315,9 @@ def test_the_bootstrap_peers_are_stored_in_order(box):
 
 def test_an_address_the_engine_would_not_dial_is_refused(box):
     client, _ = box
-    a_network(client)
 
     response = client.post(
-        "/api/hub/overlay/easytier/peer/set", json={"peers": ["example.com:11010"]}
+        "/api/hub/overlay/easytier/set", json=settings(peers=["example.com:11010"])
     )
 
     assert response.status_code == 400
@@ -361,11 +328,10 @@ def test_an_address_the_engine_would_not_dial_is_refused(box):
 
 def test_the_exported_networks_are_stored(box):
     client, _ = box
-    a_network(client)
 
     payload = client.post(
-        "/api/hub/overlay/easytier/network/set",
-        json={"exported_networks": ["192.168.100.0/24"]},
+        "/api/hub/overlay/easytier/set",
+        json=settings(exported_networks=["192.168.100.0/24"]),
     ).json()
 
     assert payload["exported_networks"] == ["192.168.100.0/24"]
@@ -373,29 +339,20 @@ def test_the_exported_networks_are_stored(box):
 
 def test_exporting_the_whole_internet_is_refused(box):
     client, _ = box
-    a_network(client)
 
     response = client.post(
-        "/api/hub/overlay/easytier/network/set",
-        json={"exported_networks": ["0.0.0.0/0"]},
+        "/api/hub/overlay/easytier/set", json=settings(exported_networks=["0.0.0.0/0"])
     )
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "easytier_network_invalid"
 
 
-def test_an_engine_that_refuses_what_was_written_is_reported(box):
-    client, _ = box
-    FakeApplier.refusal = OSError("the engine refused")
+def test_a_converge_that_fails_is_reported(box):
+    client, runtime = box
+    runtime.refusal = OSError("the engine refused")
 
-    response = client.post(
-        "/api/hub/overlay/easytier/set",
-        json={
-            "network_name": "neutrino-1234",
-            "network_secret": "a-network-secret",
-            "address": "",
-        },
-    )
+    response = client.post("/api/hub/overlay/easytier/set", json=settings())
 
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == "easytier_apply_failed"
@@ -404,6 +361,13 @@ def test_an_engine_that_refuses_what_was_written_is_reported(box):
 # --- the console mode -------------------------------------------------------
 
 CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_example"  # scan: allow
+
+
+def console(**changes) -> dict:
+    """A settings body in console mode with no manual network."""
+    return settings(
+        mode="console", network_name="", network_secret="", address="", **changes
+    )
 
 
 def test_a_box_starts_in_manual_mode_with_no_console(box):
@@ -417,64 +381,71 @@ def test_a_box_starts_in_manual_mode_with_no_console(box):
     assert payload["instances"] == []
 
 
-def test_choosing_the_console_applies_it_and_pushes_every_client(box):
+def test_the_console_mode_needs_no_manual_network(box):
     client, runtime = box
 
     payload = client.post(
-        "/api/hub/overlay/easytier/mode/set", json={"mode": "console"}
+        "/api/hub/overlay/easytier/set", json=console(config_server=CONSOLE)
     ).json()
 
     assert payload["mode"] == "console"
-    assert FakeApplier.modes == ["console"]
-    assert runtime.pushes == ["client"]
+    assert [config.mode for config in runtime.converged] == ["console"]
 
 
 def test_a_mode_that_is_not_one_is_refused(box):
     client, runtime = box
 
-    response = client.post("/api/hub/overlay/easytier/mode/set", json={"mode": "x"})
+    response = client.post("/api/hub/overlay/easytier/set", json=settings(mode="x"))
 
     assert response.status_code == 400
     assert response.json()["detail"] == {
         "code": "easytier_mode_unknown",
         "params": {"mode": "x"},
     }
-    assert runtime.pushes == []
+    assert runtime.converged == []
 
 
 def test_the_console_address_is_kept_sealed_and_never_shown(box):
-    client, runtime = box
+    client, _ = box
 
     payload = client.post(
-        "/api/hub/overlay/easytier/config_server/set", json={"config_server": CONSOLE}
+        "/api/hub/overlay/easytier/set", json=console(config_server=CONSOLE)
     ).json()
 
     assert payload["has_config_server"] is True
     assert "etk_example" not in str(payload)
     assert "etk_example" not in str(client.get("/api/hub/overlay/easytier").json())
-    assert runtime.pushes == ["client"]
+
+
+def test_no_console_address_keeps_the_kept_one(box):
+    client, _ = box
+    client.post("/api/hub/overlay/easytier/set", json=console(config_server=CONSOLE))
+
+    payload = client.post(
+        "/api/hub/overlay/easytier/set", json=console(is_secure_mode=True)
+    ).json()
+
+    assert payload["has_config_server"] is True
+    assert payload["is_secure_mode"] is True
 
 
 def test_an_empty_console_address_forgets_the_kept_one(box):
-    client, runtime = box
-    client.post(
-        "/api/hub/overlay/easytier/config_server/set", json={"config_server": CONSOLE}
-    )
+    client, _ = box
+    client.post("/api/hub/overlay/easytier/set", json=console(config_server=CONSOLE))
 
     payload = client.post(
-        "/api/hub/overlay/easytier/config_server/set", json={"config_server": ""}
+        "/api/hub/overlay/easytier/set", json=console(config_server="")
     ).json()
 
     assert payload["has_config_server"] is False
-    assert runtime.pushes == ["client", "client"]
 
 
 def test_a_console_address_that_is_not_one_is_refused_without_echoing_it(box):
     client, _ = box
 
     response = client.post(
-        "/api/hub/overlay/easytier/config_server/set",
-        json={"config_server": "http://example.com/etk secret"},
+        "/api/hub/overlay/easytier/set",
+        json=console(config_server="http://example.com/etk secret"),
     )
 
     assert response.status_code == 400
@@ -484,23 +455,23 @@ def test_a_console_address_that_is_not_one_is_refused_without_echoing_it(box):
     }
 
 
-def test_secure_mode_is_stored_and_pushed(box):
-    client, runtime = box
+def test_switching_to_the_console_keeps_the_manual_network(box):
+    client, _ = box
+    a_network(client)
 
-    payload = client.post(
-        "/api/hub/overlay/easytier/secure_mode/set", json={"is_secure_mode": True}
-    ).json()
+    client.post(
+        "/api/hub/overlay/easytier/set",
+        json=settings(mode="console", config_server=CONSOLE, network_secret=""),
+    )
 
-    assert payload["is_secure_mode"] is True
-    assert runtime.pushes == ["client"]
+    stored = read_stored()
+    assert stored.network_name == "neutrino-1234"
+    assert stored.secret() == "a-network-secret"
 
 
 def test_console_mode_shows_what_the_engine_runs(box):
     client, _ = box
-    client.post(
-        "/api/hub/overlay/easytier/config_server/set", json={"config_server": CONSOLE}
-    )
-    client.post("/api/hub/overlay/easytier/mode/set", json={"mode": "console"})
+    client.post("/api/hub/overlay/easytier/set", json=console(config_server=CONSOLE))
 
     payload = client.get("/api/hub/overlay/easytier").json()
 

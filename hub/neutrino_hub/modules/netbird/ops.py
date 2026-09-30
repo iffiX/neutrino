@@ -2,12 +2,8 @@
 
 There is nothing to render here: NetBird keeps its own state under
 ``/etc/netbird``, and the subnet routes live on the management plane, not on
-this box. What the gateway owns is joining, and telling the truth about what
-the daemon is doing.
-
-Leaving is deliberately absent. NetBird is the way back into this box, and a
-"disconnect" button pressed from abroad is a lockout; a hand at a local
-shell has ``netbird down``.
+this box. What the gateway owns is joining and leaving, and telling the truth
+about what the daemon is doing.
 """
 
 import json
@@ -353,6 +349,18 @@ class NetbirdEnroller:
                 raise
             self._reset_identity()
             run(command, timeout_s=JOIN_TIMEOUT_S)
+
+    def leave(self) -> None:
+        """Take the box off its NetBird network.
+
+        The plane is asked to delete the peer, and the profile goes with it;
+        the daemon keeps running with no network until the next join.
+
+        Raises:
+            subprocess.CalledProcessError: If the daemon does not come back.
+        """
+        run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
+        self._reset_identity()
 
     def _reset_identity(self) -> None:
         """Take the daemon back to a profile with no peer in it.

@@ -96,3 +96,9 @@
   border-radius: var(--radius-md);
   background: var(--color-bg);
 }
+
+/* A part of the settings panel, under its one title. */
+.easytier_subtitle {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 14px;
+}

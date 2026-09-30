@@ -98,7 +98,7 @@ class FakeRuntime:
     def routing(self) -> dict:
         return dict(self.files["xray/routing.json"])
 
-    async def apply_all(self) -> str:
+    async def converge_network(self, *, only=None) -> str:
         if self.apply_failure is not None:
             raise self.apply_failure
         return "applied 1 nodes"
