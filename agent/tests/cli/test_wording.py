@@ -37,6 +37,7 @@ UNSTRUCTURED_CODES = (
     "uninstall_failed",
     "verify_failed",
     "shell_unknown",
+    "session_unknown",
     "state_not_settled",
     "agent_internal",
     "kill_failed",

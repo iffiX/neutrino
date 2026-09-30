@@ -44,6 +44,7 @@ from neutrino_agent.exceptions import (
     SocketClosed,
 )
 from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.streams.shell_session import ShellSession
 from tests.conftest import BINDING_ID, BINDING_TOKEN, bind
 from tests.core.test_session import ScriptedClient
 
@@ -220,6 +221,29 @@ def test_a_changed_binding_closes_the_live_socket(config_path, monkeypatch):
     assert agent._session is None
 
 
+def test_every_socket_opens_shells_in_the_one_registry_the_report_lists(
+    config_path, monkeypatch
+):
+    agent, _script = scripted_agent(config_path, monkeypatch, [[WELCOME], [WELCOME]])
+
+    first = agent._open_session()._stream_kinds["shell"]
+    second = agent._open_session()._stream_kinds["shell"]
+
+    assert first.keywords["sessions"] is agent._shells
+    assert second.keywords["sessions"] is agent._shells
+    assert agent._operator._shells is agent._shells
+    agent._shells.take(
+        "tab-1",
+        is_resumed=False,
+        make=lambda on_change, on_end: ShellSession(
+            session_id="tab-1", terminal=None, account="root", title="bash"
+        ),
+    )
+    assert [
+        entry["session_id"] for entry in agent._report_payload()["machine"]["sessions"]
+    ] == ["tab-1"]
+
+
 def test_leave_gives_the_binding_back_and_leaves_the_service_unbound(
     config_path, monkeypatch
 ):
@@ -340,7 +364,14 @@ def test_the_report_carries_every_field_from_its_source(config_path, monkeypatch
     }
     assert report["type"] == "report"
     assert report["state_hash"] == ""
-    assert set(report["machine"]) == {"hostname", "platform", "accounts", "metrics"}
+    assert set(report["machine"]) == {
+        "hostname",
+        "platform",
+        "accounts",
+        "metrics",
+        "sessions",
+    }
+    assert report["machine"]["sessions"] == []
     assert report["machine"]["hostname"] == "box"
     assert report["machine"]["platform"] == agent.platform()
     assert report["machine"]["accounts"] == ["alice", "bob"]

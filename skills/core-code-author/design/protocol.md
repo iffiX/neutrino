@@ -729,7 +729,7 @@ and platform, which change between releases.
 
 | Section | `state` to agent | `report` from agent | `state` to client | `report` from client |
 | --- | --- | --- | --- | --- |
-| `machine` | | `{hostname, platform, accounts, metrics}` | | `{hostname, platform}` |
+| `machine` | | `{hostname, platform, accounts, metrics, sessions}` | | `{hostname, platform}` |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
@@ -741,7 +741,14 @@ and platform, which change between releases.
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
-error, the state error, or a failed `reinstall`. The AI gateway is a `services`
+error, the state error, or a failed `reinstall`.
+
+`sessions` lists the shells the agent keeps by id, oldest first, each
+`{session_id, account, started_at, title, is_attached, is_persistent}`:
+`started_at` is Unix seconds, `title` the last one the shell set with an OSC
+0 or 2 sequence and the shell's name before that, and `is_attached` whether
+a `shell` stream is attached now. It is an added field and keeps `PROTOCOL`
+as it is; an agent that predates it sends none. The AI gateway is a `services`
 entry whose `type` is `ai`, and a client gets its key through the `service`
 stream.
 
@@ -946,7 +953,7 @@ is added without a change to the protocol; a kind is added by a row here.
 
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
-| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell; terminal bytes both ways |
+| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell, or `{session_id, is_resumed}` for a shell the agent keeps; terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, `session_taken {session_id}` when another stream attached to its shell, empty when it closed on a persistent shell that runs on, or refused `session_unknown {session_id}` |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
@@ -962,7 +969,7 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 
 | `module` | Verbs |
 | --- | --- |
-| `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto the last three |
+| `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `persist {session_id, is_persistent}`, `stop_session {session_id}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto `kill` and the two remote desktop verbs; `persist` and `stop_session` refuse an id the agent does not hold with `session_unknown {session_id}` |
 | `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin` and `password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
 
 Two verbs every module answers: `validate`, as `command {module: <name>,
@@ -973,6 +980,20 @@ module runs as more than one unit. On `podman`, a `journal` naming a
 container is that container's; one naming none is the module's own. A terminal's first size is in its
 `open`; a later size is `open {kind: command, module: agent, verb: resize,
 shell: <id>, cols, rows}`, closed as soon as it is applied.
+
+A shell the agent keeps is named by a `session_id` the opener generates, a
+uuid, in the `shell` stream's `open`. An id the agent holds attaches the
+stream to that shell; an id it does not hold starts a new shell under it,
+unless the `open` says `is_resumed: true`, which is refused
+`session_unknown`. One stream is attached at a time: a new one closes the
+old with `session_taken`. An attaching stream is sent the shell's last
+256 KB of output first, and the terminal is resized to one row more and
+back so a full-screen program draws itself again. When a stream closes,
+its shell ends unless `persist {session_id, is_persistent: true}` made it
+persistent; `stop_session` ends it, and its attached stream closes with the
+exit code. Windows answers both verbs although it refuses `kill`. The
+sessions are the agent process's own, so an agent restart or upgrade ends
+every one.
 
 ### The service stream's close
 

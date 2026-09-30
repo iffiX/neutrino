@@ -4,11 +4,13 @@ Two anonymous pipes carry the console's input and output, and the console is
 created at the size the hub opened the stream with. PowerShell is started
 suspended on it, with the agent's own standard handles set aside so the
 child is born with the console's, put into a job object that kills every
-process in it when its last handle closes, and then resumed. A thread reads
-the console's output and sends it up, no faster than the hub's credit; the
-hub's bytes are written to the console's input, a resize resizes the
-console, and a close terminates the shell. The stream closes with the
-shell's exit code.
+process in it when its last handle closes, and then resumed. The console's
+output is read and sent up, no faster than the hub's credit; the hub's bytes
+are written to the console's input, a resize resizes the console, and ending
+the shell terminates it. Once the shell exits the console is closed, which
+ends its output. The shell is a
+:class:`~neutrino_agent.streams.shell_session.ShellSession`, kept by id when
+the stream's open names one.
 
 Windows 10 1809 is the first with a pseudo console; an older Windows refuses
 the stream with ``unsupported_platform``.
@@ -29,203 +31,16 @@ from neutrino_agent.constants import (
     AGENT_SHELL_COMMANDS,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
-    AGENT_WS_STREAM_CREDIT_BYTES,
+    AGENT_SHELL_WINDOWS_ACCOUNT,
 )
-from neutrino_agent.exceptions import StreamClosed, StreamRefused
+from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.platforms import win32
+from neutrino_agent.streams.shell_session import SessionShellStream, ShellSession
 
-DEFAULT_COLUMNS = 80
-DEFAULT_ROWS = 24
-# How long the wait for the shell's exit, and the wait for the hub's next
-# item, sleep before looking again.
+# How long the wait for the shell's exit sleeps before looking again.
 WINDOWS_SHELL_POLL_MS = 500
-WINDOWS_SHELL_POLL_S = WINDOWS_SHELL_POLL_MS / 1000
-# The exit code a shell the hub closed is terminated with.
+# The exit code a shell that was ended is terminated with.
 WINDOWS_SHELL_TERMINATED_CODE = 1
-
-
-class WindowsShellStream:
-    """One PowerShell on a pseudo console, served over one stream."""
-
-    def __init__(self, channel, args: dict, *, kernel32=None):
-        """
-        Args:
-            channel: The stream's channel.
-            args: ``{"cols", "rows"}``, the console's first size.
-            kernel32: The bound kernel32; None binds the real one.
-        """
-        self._channel = channel
-        self._columns = max(1, int(args.get("cols", DEFAULT_COLUMNS) or 0))
-        self._rows = max(1, int(args.get("rows", DEFAULT_ROWS) or 0))
-        self._kernel32 = kernel32
-        self._console = None
-        self._process = None
-        self._is_done = threading.Event()
-
-    def open(self) -> None:
-        """Check the stream can be served here.
-
-        Raises:
-            StreamRefused: ``unsupported_platform`` on a Windows with no
-                pseudo console, or where kernel32 cannot be loaded.
-        """
-        try:
-            kernel32 = self._bound_kernel32()
-        except (OSError, AttributeError):
-            raise StreamRefused("unsupported_platform") from None
-        if not hasattr(kernel32, "CreatePseudoConsole"):
-            raise StreamRefused("unsupported_platform")
-
-    def run(self) -> dict:
-        """Serve the shell until it exits or the hub closes the stream.
-
-        Returns:
-            ``{"code", "params"}``, with ``exit_code`` in the params once the
-            shell ran, ``shell_failed`` with ``detail`` when it could not
-            start.
-        """
-        kernel32 = self._bound_kernel32()
-        try:
-            console_input, input_writer = _pipe(kernel32)
-            output_reader, console_output = _pipe(kernel32)
-        except OSError as error:
-            return _failed(error)
-        console = ctypes.c_void_p()
-        result = kernel32.CreatePseudoConsole(
-            win32.Coord(self._columns, self._rows),
-            console_input,
-            console_output,
-            0,
-            ctypes.byref(console),
-        )
-        # The console holds its own ends of the pipes from here on.
-        kernel32.CloseHandle(console_input)
-        kernel32.CloseHandle(console_output)
-        if result != 0:
-            for handle in (input_writer, output_reader):
-                kernel32.CloseHandle(handle)
-            return {
-                "code": "shell_failed",
-                "params": {"detail": f"CreatePseudoConsole answered {result}"},
-            }
-        self._console = console
-        attributes = None
-        job = None
-        try:
-            attributes = _attribute_list(kernel32, console)
-            self._process = _start(
-                kernel32, list(AGENT_SHELL_COMMANDS["win32"]), attributes
-            )
-            job = _kill_on_close_job(kernel32)
-            kernel32.AssignProcessToJobObject(job, self._process.hProcess)
-            kernel32.ResumeThread(self._process.hThread)
-        except OSError as error:
-            if self._process is not None:
-                kernel32.TerminateProcess(self._process.hProcess, 1)
-            self._release(kernel32, attributes, job, input_writer, output_reader)
-            return _failed(error)
-        self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
-        reader = threading.Thread(
-            target=self._pump_output,
-            args=(kernel32, output_reader),
-            name=f"agent_shell_output_{self._channel.id}",
-            daemon=True,
-        )
-        feeder = threading.Thread(
-            target=self._feed_input,
-            args=(kernel32, input_writer),
-            name=f"agent_shell_input_{self._channel.id}",
-            daemon=True,
-        )
-        reader.start()
-        feeder.start()
-        exit_code = self._wait_for_exit(kernel32)
-        self._is_done.set()
-        # Closing the console ends its output pipe, which ends the reader.
-        kernel32.ClosePseudoConsole(console)
-        self._console = None
-        reader.join(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
-        feeder.join(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
-        self._release(kernel32, attributes, job, input_writer, output_reader)
-        return {"code": "", "params": {"exit_code": exit_code}}
-
-    def _bound_kernel32(self):
-        """kernel32, bound on first use."""
-        if self._kernel32 is None:
-            self._kernel32 = win32.libraries().kernel32
-        return self._kernel32
-
-    def _wait_for_exit(self, kernel32) -> int:
-        """Wait for the shell to exit, or end it once the hub closed the stream."""
-        handle = self._process.hProcess
-        while (
-            kernel32.WaitForSingleObject(handle, WINDOWS_SHELL_POLL_MS)
-            != win32.WAIT_OBJECT_0
-        ):
-            if self._is_done.is_set():
-                kernel32.TerminateProcess(handle, WINDOWS_SHELL_TERMINATED_CODE)
-        code = win32.DWORD(0)
-        kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-        return int(code.value)
-
-    def _pump_output(self, kernel32, output_reader) -> None:
-        """Send the console's output until it ends or the hub is gone."""
-        buffer = ctypes.create_string_buffer(AGENT_SHELL_READ_BYTES)
-        read = win32.DWORD(0)
-        while kernel32.ReadFile(
-            output_reader, buffer, AGENT_SHELL_READ_BYTES, ctypes.byref(read), None
-        ):
-            if read.value == 0:
-                return
-            try:
-                self._channel.send_bytes(buffer.raw[: read.value])
-            except StreamClosed:
-                return
-
-    def _feed_input(self, kernel32, input_writer) -> None:
-        """Write the hub's bytes to the console and apply its resizes."""
-        while not self._is_done.is_set():
-            item = self._channel.recv(timeout=WINDOWS_SHELL_POLL_S)
-            if item is None:
-                continue
-            if item[0] == "data":
-                _write(kernel32, input_writer, item[1])
-                self._channel.offer_credit(len(item[1]))
-            elif item[0] == "resize":
-                self._columns = max(1, int(item[1]))
-                self._rows = max(1, int(item[2]))
-                console = self._console
-                if console is not None:
-                    kernel32.ResizePseudoConsole(
-                        console, win32.Coord(self._columns, self._rows)
-                    )
-            elif item[0] == "close":
-                self._is_done.set()
-                kernel32.TerminateProcess(
-                    self._process.hProcess, WINDOWS_SHELL_TERMINATED_CODE
-                )
-                return
-
-    def _release(self, kernel32, attributes, job, *handles) -> None:
-        """Close the job, which ends every process left in it, and the handles."""
-        if job is not None:
-            kernel32.CloseHandle(job)
-        if attributes is not None:
-            kernel32.DeleteProcThreadAttributeList(attributes)
-        if self._console is not None:
-            kernel32.ClosePseudoConsole(self._console)
-            self._console = None
-        process = self._process
-        if process is not None:
-            handles = handles + (process.hThread, process.hProcess)
-        for handle in handles:
-            with contextlib.suppress(OSError):
-                kernel32.CloseHandle(handle)
-
-
-def _failed(error: OSError) -> dict:
-    """A shell that could not start, as the stream closes with it."""
-    return {"code": "shell_failed", "params": {"detail": str(error)[:200]}}
 
 
 def _write(kernel32, handle, data: bytes) -> None:
@@ -366,3 +181,209 @@ def _kill_on_close_job(kernel32):
         kernel32.CloseHandle(job)
         raise win32.last_error()
     return job
+
+
+class ConsoleTerminal:
+    """PowerShell on a pseudo console, as a shell session drives it."""
+
+    def __init__(self, kernel32, *, cols: int, rows: int):
+        """
+        Args:
+            kernel32: The bound kernel32.
+            cols: The console's first width.
+            rows: The console's first height.
+        """
+        self._kernel32 = kernel32
+        self._columns = cols
+        self._rows = rows
+        self._console = None
+        self._process = None
+        self._attributes = None
+        self._job = None
+        self._input_writer = None
+        self._output_reader = None
+        self._exit_code = WINDOWS_SHELL_TERMINATED_CODE
+        self._waiter: "threading.Thread | None" = None
+
+    def start(self) -> None:
+        """Make the console, start PowerShell on it in its job, resume it.
+
+        Raises:
+            OSError: When the console or the shell cannot be made.
+        """
+        kernel32 = self._kernel32
+        console_input, self._input_writer = _pipe(kernel32)
+        self._output_reader, console_output = _pipe(kernel32)
+        console = ctypes.c_void_p()
+        result = kernel32.CreatePseudoConsole(
+            win32.Coord(self._columns, self._rows),
+            console_input,
+            console_output,
+            0,
+            ctypes.byref(console),
+        )
+        # The console holds its own ends of the pipes from here on.
+        kernel32.CloseHandle(console_input)
+        kernel32.CloseHandle(console_output)
+        if result != 0:
+            self._release()
+            raise OSError(f"CreatePseudoConsole answered {result}")
+        self._console = console
+        try:
+            self._attributes = _attribute_list(kernel32, console)
+            self._process = _start(
+                kernel32, list(AGENT_SHELL_COMMANDS["win32"]), self._attributes
+            )
+            self._job = _kill_on_close_job(kernel32)
+            kernel32.AssignProcessToJobObject(self._job, self._process.hProcess)
+            kernel32.ResumeThread(self._process.hThread)
+        except OSError:
+            if self._process is not None:
+                kernel32.TerminateProcess(self._process.hProcess, 1)
+            self._release()
+            raise
+        self._waiter = threading.Thread(
+            target=self._wait_for_exit, name="agent_shell_console_exit", daemon=True
+        )
+        self._waiter.start()
+
+    def read(self) -> bytes:
+        """The console's next output.
+
+        Returns:
+            The bytes; empty once the console closed.
+        """
+        buffer = ctypes.create_string_buffer(AGENT_SHELL_READ_BYTES)
+        read = win32.DWORD(0)
+        if not self._kernel32.ReadFile(
+            self._output_reader,
+            buffer,
+            AGENT_SHELL_READ_BYTES,
+            ctypes.byref(read),
+            None,
+        ):
+            return b""
+        return buffer.raw[: read.value]
+
+    def write(self, data: bytes) -> None:
+        """Type into the console.
+
+        Args:
+            data: The bytes.
+        """
+        _write(self._kernel32, self._input_writer, data)
+
+    def resize(self, cols: int, rows: int) -> None:
+        """Resize the console.
+
+        Args:
+            cols: The width.
+            rows: The height.
+        """
+        self._columns = max(1, int(cols))
+        self._rows = max(1, int(rows))
+        console = self._console
+        if console is not None:
+            self._kernel32.ResizePseudoConsole(
+                console, win32.Coord(self._columns, self._rows)
+            )
+
+    def terminate(self) -> None:
+        """End the shell; its job ends everything it started."""
+        if self._process is not None:
+            self._kernel32.TerminateProcess(
+                self._process.hProcess, WINDOWS_SHELL_TERMINATED_CODE
+            )
+
+    def finish(self) -> int:
+        """Release the console, the job and every handle.
+
+        Returns:
+            The shell's exit code.
+        """
+        if self._waiter is not None:
+            self._waiter.join(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
+        self._release()
+        return self._exit_code
+
+    def _wait_for_exit(self) -> None:
+        """Wait for the shell to exit, then close the console to end its output."""
+        kernel32 = self._kernel32
+        handle = self._process.hProcess
+        while (
+            kernel32.WaitForSingleObject(handle, WINDOWS_SHELL_POLL_MS)
+            != win32.WAIT_OBJECT_0
+        ):
+            continue
+        code = win32.DWORD(0)
+        kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        self._exit_code = int(code.value)
+        console, self._console = self._console, None
+        if console is not None:
+            kernel32.ClosePseudoConsole(console)
+
+    def _release(self) -> None:
+        """Close the job, which ends every process left in it, and the handles."""
+        kernel32 = self._kernel32
+        if self._job is not None:
+            kernel32.CloseHandle(self._job)
+            self._job = None
+        if self._attributes is not None:
+            kernel32.DeleteProcThreadAttributeList(self._attributes)
+            self._attributes = None
+        console, self._console = self._console, None
+        if console is not None:
+            kernel32.ClosePseudoConsole(console)
+        handles = [self._input_writer, self._output_reader]
+        process, self._process = self._process, None
+        if process is not None:
+            handles += [process.hThread, process.hProcess]
+        self._input_writer = self._output_reader = None
+        for handle in handles:
+            if handle is not None:
+                with contextlib.suppress(OSError):
+                    kernel32.CloseHandle(handle)
+
+
+class WindowsShellStream(SessionShellStream):
+    """PowerShell on a pseudo console, kept by id when the open names one."""
+
+    def __init__(self, channel, args: dict, *, kernel32=None, sessions=None):
+        """
+        Args:
+            channel: The stream's channel.
+            args: ``{"cols", "rows"}``, the console's first size, with
+                ``session_id`` and ``is_resumed`` for a kept shell.
+            kernel32: The bound kernel32; None binds the real one.
+            sessions: The agent's shell registry; None keeps no shell past
+                its stream.
+        """
+        super().__init__(channel, args, sessions=sessions)
+        self._kernel32 = kernel32
+
+    def _check_platform(self) -> None:
+        """Refuse a Windows with no pseudo console, or no kernel32."""
+        try:
+            kernel32 = self._bound_kernel32()
+        except (OSError, AttributeError):
+            raise StreamRefused("unsupported_platform") from None
+        if not hasattr(kernel32, "CreatePseudoConsole"):
+            raise StreamRefused("unsupported_platform")
+
+    def _make_session(self, *, on_change=None, on_end=None) -> ShellSession:
+        return ShellSession(
+            session_id=self._session_id,
+            terminal=ConsoleTerminal(
+                self._bound_kernel32(), cols=self._columns, rows=self._rows
+            ),
+            account=AGENT_SHELL_WINDOWS_ACCOUNT,
+            title=AGENT_SHELL_COMMANDS["win32"][0],
+            on_change=on_change,
+            on_end=on_end,
+        )
+
+    def _bound_kernel32(self):
+        """kernel32, bound on first use."""
+        if self._kernel32 is None:
+            self._kernel32 = win32.libraries().kernel32
+        return self._kernel32

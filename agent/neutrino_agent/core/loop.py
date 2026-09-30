@@ -22,6 +22,7 @@ every surface does its own wording.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import functools
 import operator
 import os
 import threading
@@ -65,8 +66,10 @@ from neutrino_agent.exceptions import (
 )
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.rdp.host import RdpShareHost
-from neutrino_agent.streams import STREAM_KIND_PACKAGE
+from neutrino_agent.streams import STREAM_KIND_PACKAGE, STREAM_KIND_SHELL, STREAM_KINDS
 from neutrino_agent.streams.package import remove_stale
+from neutrino_agent.streams.shell import open_shell_stream
+from neutrino_agent.streams.shell_session import ShellSessionRegistry
 
 # How often an unbound or a replaced agent looks again, which is only to
 # notice that its binding file has since been written.
@@ -134,6 +137,8 @@ class Agent:
         # Set whenever there is something new to report, so a report goes up
         # then rather than at the end of the interval.
         self._news = threading.Event()
+        # The shells kept by id, across sockets, for as long as this runs.
+        self._shells = ShellSessionRegistry(on_change=self._news.set)
         var_dir = self._platform.agent_var_dir()
         self._engine = ModuleEngine(
             platform=self._platform,
@@ -474,6 +479,14 @@ class Agent:
             interval_s=AGENT_REPORT_INTERVAL_S,
             on_tick=self._tick,
             on_state=self._take_state,
+            stream_kinds=dict(
+                STREAM_KINDS,
+                **{
+                    STREAM_KIND_SHELL: functools.partial(
+                        open_shell_stream, sessions=self._shells
+                    )
+                },
+            ),
         )
 
     def _take_state(self, document: dict) -> None:
@@ -610,6 +623,7 @@ class Agent:
                 "platform": self._engine.platform_tuple,
                 "accounts": self._read_accounts(),
                 "metrics": self._read_metrics(),
+                "sessions": self._shells.describe(),
             },
             "network": network.describe(self._link_address(), self._read_interfaces()),
             "modules": self._engine.report(),
@@ -826,6 +840,7 @@ class Agent:
                     platform=self._platform,
                     reinstall=self._reinstall,
                     resize=self._resize_shell,
+                    shells=self._shells,
                     module_runners=self._engine.module_runners,
                     settle=self._desired.settle,
                     on_module_changed=self._report_module_now,

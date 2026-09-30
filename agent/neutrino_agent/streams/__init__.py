@@ -11,7 +11,7 @@ carries when it did what it was asked:
 
 | Opened by | kind | args | close ``params`` |
 | --- | --- | --- | --- |
-| hub | ``shell`` | ``{cols, rows}``, or ``{module: podman, container}`` | ``{exit_code}`` |
+| hub | ``shell`` | ``{cols, rows}``, with ``{session_id, is_resumed}`` for a kept shell, or ``{module: podman, container}`` | ``{exit_code}``; empty for a kept shell that runs on |
 | hub | ``file`` | ``{op, path, ...}``; ``op`` is ``list``, ``download``, ``upload``, ``rename``, ``remove``, ``directory_create`` or ``directory_download`` | the operation's own |
 | hub | ``command`` | ``{module, verb, ...args}`` | ``{exit_code, output, result}`` |
 | agent | ``log`` | ``{module}``, for an install or an uninstall | ``{state}`` |

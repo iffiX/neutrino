@@ -43,6 +43,8 @@ VERB_RESIZE = "resize"
 VERB_KILL = "kill"
 VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
 VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
+VERB_PERSIST = "persist"
+VERB_STOP_SESSION = "stop_session"
 
 # The verbs a ``command {module: agent}`` names.
 AGENT_VERBS = (
@@ -53,6 +55,8 @@ AGENT_VERBS = (
     VERB_KILL,
     VERB_REMOTE_DESKTOP_READ,
     VERB_REMOTE_DESKTOP_PASSWORD_SET,
+    VERB_PERSIST,
+    VERB_STOP_SESSION,
 )
 # The verbs the platform's power action carries out, by its own word.
 POWER_VERBS = {VERB_REBOOT: "reboot", VERB_SHUTDOWN: "poweroff"}
@@ -102,6 +106,7 @@ class DeviceOperator:
         remote_desktop=None,
         settle=None,
         on_module_changed=None,
+        shells=None,
     ):
         """
         Args:
@@ -121,6 +126,8 @@ class DeviceOperator:
                 nothing.
             on_module_changed: Called with the module name after one of its
                 verbs succeeded, so its details are read again at once.
+            shells: The shell registry the ``persist`` and ``stop_session``
+                verbs act on. None refuses both as unsupported.
         """
         self._platform = platform
         self._reinstall = reinstall
@@ -129,6 +136,7 @@ class DeviceOperator:
         self._remote_desktop = remote_desktop or RemoteDesktopReader(platform=platform)
         self._settle = settle
         self._on_module_changed = on_module_changed
+        self._shells = shells
 
     def run(self, module: str, verb: str, args: dict, on_line=None) -> CommandOutcome:
         """Run one command.
@@ -159,6 +167,8 @@ class DeviceOperator:
             return self._resize_shell(args)
         if verb == VERB_KILL:
             return self._kill_process(args)
+        if verb in (VERB_PERSIST, VERB_STOP_SESSION):
+            return self._session_verb(verb, args)
         if verb in (VERB_REMOTE_DESKTOP_READ, VERB_REMOTE_DESKTOP_PASSWORD_SET):
             return self._remote_desktop_verb(verb, args)
         return _refused("verb_unknown", module=AGENT_COMMAND_MODULE, verb=verb)
@@ -217,6 +227,21 @@ class DeviceOperator:
             or not self._resize(stream_id, cols, rows)
         ):
             return _refused("shell_unknown", shell=stream_id)
+        return CommandOutcome(exit_code=0, output="")
+
+    def _session_verb(self, verb: str, args: dict) -> CommandOutcome:
+        """Keep a shell past its stream, or end it."""
+        if self._shells is None:
+            return _refused("unsupported_platform")
+        session_id = str(args.get("session_id", "") or "")
+        if verb == VERB_PERSIST:
+            is_known = self._shells.persist(
+                session_id, bool(args.get("is_persistent", False))
+            )
+        else:
+            is_known = self._shells.stop(session_id)
+        if not is_known:
+            return _refused("session_unknown", session_id=session_id)
         return CommandOutcome(exit_code=0, output="")
 
     def _kill_process(self, args: dict) -> CommandOutcome:

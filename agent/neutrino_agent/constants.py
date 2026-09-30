@@ -127,6 +127,14 @@ AGENT_SHELL_READ_BYTES = 4096
 # How long a shell's process group may take to die after the hub closes
 # the stream, per signal.
 AGENT_SHELL_KILL_TIMEOUT_S = 2.0
+# How much of a shell's latest output is kept, and sent first to a stream
+# that attaches to the shell again.
+AGENT_SHELL_KEPT_BYTES = 256 * 1024
+# How much output may wait for an attached stream before the shell's
+# output is no longer read.
+AGENT_SHELL_PENDING_BYTES = 1024 * 1024
+# The account a shell runs as on Windows, where the agent is LocalSystem.
+AGENT_SHELL_WINDOWS_ACCOUNT = "SYSTEM"
 # How long a signalled process may take to leave before it is killed.
 AGENT_KILL_GRACE_S = 2.0
 

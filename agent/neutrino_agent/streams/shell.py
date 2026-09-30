@@ -3,15 +3,17 @@
 The hub's bytes go to the shell's terminal; whatever the terminal produces
 goes up as binary frames, no faster than the hub's credit allows; a resize,
 which arrives as a command naming the stream, sets the terminal's window.
-The stream ends when the shell exits or the hub closes it, and closes with
-the shell's exit status in its params. A ``shell`` opened with ``{module:
-podman, container}`` runs inside that container instead. On Windows the
-shell is PowerShell on a pseudo console, served by
+The stream closes with the shell's exit status in its params once the shell
+exits. A stream opened with a ``session_id`` attaches to a shell the agent
+keeps by that id, :mod:`neutrino_agent.streams.shell_session`, and a
+persistent one keeps running when its stream closes. A ``shell`` opened with
+``{module: podman, container}`` runs inside that container instead. On
+Windows the shell is PowerShell on a pseudo console, served by
 :class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`.
 
-The shell runs as the agent runs, which is root. Closing the stream kills
-the shell's whole terminal session, background jobs included, so a closed
-tab leaves nothing behind.
+The shell runs as the agent runs, which is root. Ending a shell kills its
+whole terminal session, background jobs included, so a closed tab leaves
+nothing behind.
 
 Not pure: starts processes and owns file descriptors.
 """
@@ -34,11 +36,12 @@ from neutrino_agent.constants import (
     AGENT_SHELL_FALLBACKS,
     AGENT_SHELL_KILL_TIMEOUT_S,
     AGENT_SHELL_READ_BYTES,
-    AGENT_WS_STREAM_CREDIT_BYTES,
+    AGENT_SHELL_WINDOWS_ACCOUNT,
 )
-from neutrino_agent.exceptions import StreamClosed, StreamRefused
+from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.modules.podman.applier import PodmanStatusReader
 from neutrino_agent.modules.podman.constants import PODMAN_BINARY
+from neutrino_agent.streams.shell_session import SessionShellStream, ShellSession
 
 try:
     import fcntl
@@ -53,9 +56,7 @@ CONTAINER_SHELL_COMMAND = "command -v bash >/dev/null 2>&1 && exec bash || exec 
 # The one module whose shells are served: a container's own.
 CONTAINER_MODULE = "podman"
 
-DEFAULT_COLUMNS = 80
-DEFAULT_ROWS = 24
-# How long the output loop waits on the terminal before looking again.
+# How long a read waits on the terminal before looking again.
 SELECT_TIMEOUT_S = 0.5
 PROC_DIR = "/proc"
 
@@ -105,19 +106,36 @@ def shell_command() -> list:
     return [login_shell(), "-i"]
 
 
+def shell_account() -> str:
+    """The account a shell here runs as.
+
+    Returns:
+        The agent's own account's name; ``SYSTEM`` on Windows.
+    """
+    if sys.platform == "win32" or pwd is None:
+        return AGENT_SHELL_WINDOWS_ACCOUNT
+    try:
+        return pwd.getpwuid(os.getuid()).pw_name
+    except KeyError:
+        return str(os.getuid())
+
+
 def listed_containers() -> list:
     """The names of every container podman knows, running or not."""
     reader = PodmanStatusReader()
     return [state.name for state in reader.survey(declared_names=[])]
 
 
-def open_shell_stream(channel, args: dict):
+def open_shell_stream(channel, args: dict, *, sessions=None):
     """The handler for one ``shell`` stream: this machine's, or a container's.
 
     Args:
         channel: The stream's channel.
-        args: ``{"cols", "rows"}``, with ``{"module", "container"}`` for a
-            shell inside a container.
+        args: ``{"cols", "rows"}``, with ``session_id`` and ``is_resumed``
+            for a kept shell, or ``{"module", "container"}`` for a shell
+            inside a container.
+        sessions: The agent's shell registry; None keeps no shell past its
+            stream.
 
     Returns:
         The handler, not yet opened.
@@ -131,8 +149,8 @@ def open_shell_stream(channel, args: dict):
         if sys.platform == "win32":
             from neutrino_agent.streams.windows_shell import WindowsShellStream
 
-            return WindowsShellStream(channel, args)
-        return ShellStream(channel, args)
+            return WindowsShellStream(channel, args, sessions=sessions)
+        return ShellStream(channel, args, sessions=sessions)
     if module != CONTAINER_MODULE:
         raise StreamRefused("verb_unknown", {"module": module})
     return ContainerShellStream(channel, args)
@@ -180,48 +198,35 @@ def _sweep_session(session_id: int) -> None:
             os.kill(pid, signal.SIGKILL)
 
 
-class ShellStream:
-    """One shell process on a pseudo-terminal, served over one stream."""
+class PtyTerminal:
+    """One process on a pseudo-terminal, as a shell session drives it."""
 
-    def __init__(self, channel, args: dict, *, command: "list | None" = None):
+    def __init__(self, command: list, *, cols: int, rows: int):
         """
         Args:
-            channel: The stream's channel.
-            args: ``{"cols", "rows"}``, the terminal's first size.
-            command: What to run on the terminal. None is the platform's
-                shell.
+            command: What runs on the terminal.
+            cols: The terminal's first width.
+            rows: The terminal's first height.
         """
-        self._channel = channel
-        self._columns = max(1, int(args.get("cols", DEFAULT_COLUMNS) or 0))
-        self._rows = max(1, int(args.get("rows", DEFAULT_ROWS) or 0))
-        self._command = list(command) if command else None
+        self._command = list(command)
+        self._columns = cols
+        self._rows = rows
         self._master_fd: "int | None" = None
         self._process: "subprocess.Popen | None" = None
-        self._is_done = threading.Event()
+        self._is_terminating = threading.Event()
 
-    def open(self) -> None:
-        """Check the stream can be served here.
+    def start(self) -> None:
+        """Open the terminal and start the process on it.
 
         Raises:
-            StreamRefused: On a platform with no pseudo-terminals.
-        """
-        if pty is None:
-            raise StreamRefused("unsupported_platform")
-
-    def run(self) -> dict:
-        """Serve the shell until it exits or the hub closes the stream.
-
-        Returns:
-            ``{"code", "params"}``, with ``exit_code`` in the params once the
-            shell ran, ``shell_failed`` with ``detail`` when it could not
-            start.
+            OSError: When the process cannot start.
         """
         master_fd, slave_fd = pty.openpty()
         self._master_fd = master_fd
-        self._apply_size()
+        self.resize(self._columns, self._rows)
         try:
             self._process = subprocess.Popen(
-                self._command or shell_command(),
+                self._command,
                 stdin=slave_fd,
                 stdout=slave_fd,
                 stderr=slave_fd,
@@ -229,66 +234,40 @@ class ShellStream:
                 cwd=login_home(),
                 env=shell_environment(),
             )
-        except OSError as error:
+        except OSError:
             os.close(master_fd)
             self._master_fd = None
-            return {"code": "shell_failed", "params": {"detail": str(error)[:200]}}
+            raise
         finally:
             # The child holds the slave end now; a copy here would keep the
             # master from ever reading end-of-file.
             os.close(slave_fd)
-        self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
-        feeder = threading.Thread(
-            target=self._feed_input, name=f"agent_shell_input_{self._channel.id}"
-        )
-        feeder.start()
-        try:
-            self._pump_output()
-        finally:
-            self._is_done.set()
-            exit_code = self._close()
-            feeder.join(timeout=AGENT_SHELL_KILL_TIMEOUT_S)
-        return {"code": "", "params": {"exit_code": exit_code}}
 
-    def _pump_output(self) -> None:
-        """Send the terminal's output until it ends or the hub is gone."""
-        while not self._is_done.is_set():
+    def read(self) -> bytes:
+        """The terminal's next output.
+
+        Returns:
+            The bytes; empty once the process ended or is being ended.
+        """
+        while not self._is_terminating.is_set():
             readable, _, _ = select.select([self._master_fd], [], [], SELECT_TIMEOUT_S)
             if not readable:
                 if self._process.poll() is not None:
-                    return
+                    return b""
                 continue
             try:
-                chunk = os.read(self._master_fd, AGENT_SHELL_READ_BYTES)
+                return os.read(self._master_fd, AGENT_SHELL_READ_BYTES)
             except OSError:
                 # The shell exited and took the terminal with it.
-                return
-            if not chunk:
-                return
-            try:
-                self._channel.send_bytes(chunk)
-            except StreamClosed:
-                return
+                return b""
+        return b""
 
-    def _feed_input(self) -> None:
-        """Write the hub's bytes to the terminal and apply its resizes."""
-        while not self._is_done.is_set():
-            item = self._channel.recv(timeout=SELECT_TIMEOUT_S)
-            if item is None:
-                continue
-            if item[0] == "data":
-                self._write(item[1])
-                self._channel.offer_credit(len(item[1]))
-            elif item[0] == "resize":
-                self._columns = max(1, int(item[1]))
-                self._rows = max(1, int(item[2]))
-                self._apply_size()
-            elif item[0] == "close":
-                self._is_done.set()
-                self._signal_group(signal.SIGHUP)
-                return
+    def write(self, data: bytes) -> None:
+        """Type into the terminal.
 
-    def _write(self, data: bytes) -> None:
+        Args:
+            data: The bytes.
+        """
         view = memoryview(data)
         while view and self._master_fd is not None:
             try:
@@ -297,24 +276,31 @@ class ShellStream:
                 return
             view = view[written:]
 
-    def _apply_size(self) -> None:
+    def resize(self, cols: int, rows: int) -> None:
+        """Set the terminal's window.
+
+        Args:
+            cols: The width.
+            rows: The height.
+        """
+        self._columns = max(1, int(cols))
+        self._rows = max(1, int(rows))
         if self._master_fd is None:
             return
         size = struct.pack("HHHH", self._rows, self._columns, 0, 0)
         with contextlib.suppress(OSError):
             fcntl.ioctl(self._master_fd, termios.TIOCSWINSZ, size)
 
-    def _signal_group(self, sig: int) -> None:
-        if self._process is None:
-            return
-        with contextlib.suppress(OSError):
-            os.killpg(self._process.pid, sig)
+    def terminate(self) -> None:
+        """Hang up on the process group; the read that waits returns."""
+        self._is_terminating.set()
+        self._signal_group(signal.SIGHUP)
 
-    def _close(self) -> int:
-        """Stop the shell and everything it started, release the terminal.
+    def finish(self) -> int:
+        """Stop the process and everything it started, release the terminal.
 
         Returns:
-            The shell's exit status; a signal death reads as 128 plus it.
+            The process's exit status; a signal death reads as 128 plus it.
         """
         process = self._process
         exit_code = 1
@@ -339,9 +325,54 @@ class ShellStream:
             self._master_fd = None
         return exit_code
 
+    def _signal_group(self, sig: int) -> None:
+        if self._process is None:
+            return
+        with contextlib.suppress(OSError):
+            os.killpg(self._process.pid, sig)
+
+
+class ShellStream(SessionShellStream):
+    """A shell on a pseudo-terminal, kept by id when the open names one."""
+
+    def __init__(
+        self, channel, args: dict, *, command: "list | None" = None, sessions=None
+    ):
+        """
+        Args:
+            channel: The stream's channel.
+            args: ``{"cols", "rows"}``, the terminal's first size, with
+                ``session_id`` and ``is_resumed`` for a kept shell.
+            command: What to run on the terminal. None is the platform's
+                shell.
+            sessions: The agent's shell registry; None keeps no shell past
+                its stream.
+        """
+        super().__init__(channel, args, sessions=sessions)
+        self._command = list(command) if command else None
+
+    def _check_platform(self) -> None:
+        """Refuse a platform with no pseudo-terminals."""
+        if pty is None:
+            raise StreamRefused("unsupported_platform")
+
+    def _make_session(self, *, on_change=None, on_end=None) -> ShellSession:
+        command = self._command or shell_command()
+        return ShellSession(
+            session_id=self._session_id,
+            terminal=PtyTerminal(command, cols=self._columns, rows=self._rows),
+            account=shell_account(),
+            title=os.path.basename(command[0]),
+            on_change=on_change,
+            on_end=on_end,
+        )
+
 
 class ContainerShellStream(ShellStream):
-    """A shell inside one podman container, on the same terminal."""
+    """A shell inside one podman container, on the same terminal.
+
+    It ends with its stream: a container's shell is never kept.
+    """
 
     def __init__(self, channel, args: dict):
         """

@@ -256,7 +256,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
 | Accounts | uid 1000 and above with a login shell | refused | `dscl`, uid 501 and above, home under `/Users` |
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
-| Refused | nothing | accounts, stepping down, packages, the `kill` verb | stepping down, packages |
+| Refused | nothing | accounts, stepping down, packages, the `kill` verb, but not `persist` or `stop_session` | stepping down, packages |
 | Shell stream | the login shell on a pseudo-terminal | PowerShell on a pseudo console, in a job that kills it on close | `zsh -il` on a pseudo-terminal |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
 | RustDesk | `/usr/lib/neutrino_agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
@@ -268,6 +268,15 @@ standard library; NVIDIA is the one exception, read through `nvidia-smi`
 where the driver installed it. The interfaces come from `ip -j addr`,
 skipping `lo`, and on every system a missing or all-zero MAC is recorded as
 `""` and a machine that cannot list its interfaces reports an empty list.
+
+**A shell can outlive its stream.** A `shell` stream opened with a
+`session_id` attaches to a shell the agent keeps under that id, or starts
+one there. The agent reads the shell's output all the time, keeps its last
+256 KB, and sends it first to a stream that attaches again. A shell that
+`persist` marked keeps running when its stream closes; any other ends with
+it. The report's `machine` section lists every kept shell, and the process
+holds them, so a restart ends them all ([protocol.md](protocol.md), "The
+verbs on a `command` stream").
 
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants. The seat reads the

@@ -67,7 +67,7 @@ def operator(**runners) -> DeviceOperator:
 # --- the agent's own verbs ---
 
 
-def test_the_agent_verbs_are_the_seven_the_protocol_names():
+def test_the_agent_verbs_are_the_nine_the_protocol_names():
     assert AGENT_VERBS == (
         "reboot",
         "shutdown",
@@ -76,6 +76,8 @@ def test_the_agent_verbs_are_the_seven_the_protocol_names():
         "kill",
         "remote_desktop_read",
         "remote_desktop_password_set",
+        "persist",
+        "stop_session",
     )
 
 
@@ -256,6 +258,73 @@ def test_kill_on_windows_is_refused_before_anything_is_signalled(monkeypatch):
 
     assert (outcome.exit_code, outcome.code) == (1, "unsupported_platform")
     assert signalled == []
+
+
+class FakeShells:
+    """The shell registry, holding one session id."""
+
+    def __init__(self):
+        self.persisted: list = []
+        self.stopped: list = []
+
+    def persist(self, session_id, is_persistent):
+        self.persisted.append((session_id, is_persistent))
+        return session_id == "tab-1"
+
+    def stop(self, session_id):
+        self.stopped.append(session_id)
+        return session_id == "tab-1"
+
+
+def shell_operator(shells) -> DeviceOperator:
+    return DeviceOperator(
+        platform=PowerPlatform(), remote_desktop=NoRemoteDesktop(), shells=shells
+    )
+
+
+def test_persist_and_stop_session_reach_the_shell_registry():
+    shells = FakeShells()
+    operator_ = shell_operator(shells)
+
+    persisted = operator_.run(
+        "agent", "persist", {"session_id": "tab-1", "is_persistent": True}
+    )
+    stopped = operator_.run("agent", "stop_session", {"session_id": "tab-1"})
+
+    assert (persisted.exit_code, persisted.code) == (0, "")
+    assert (stopped.exit_code, stopped.code) == (0, "")
+    assert shells.persisted == [("tab-1", True)]
+    assert shells.stopped == ["tab-1"]
+
+
+def test_an_unknown_session_is_refused_typed():
+    operator_ = shell_operator(FakeShells())
+
+    for verb in ("persist", "stop_session"):
+        outcome = operator_.run("agent", verb, {"session_id": "gone"})
+
+        assert outcome.code == "session_unknown"
+        assert outcome.params == {"session_id": "gone"}
+
+
+def test_windows_answers_the_session_verbs_while_it_refuses_kill(monkeypatch):
+    monkeypatch.setattr(commands.os, "name", "nt")
+    operator_ = shell_operator(FakeShells())
+
+    assert operator_.run("agent", "kill", {"pid": 4242}).code == "unsupported_platform"
+    assert operator_.run("agent", "stop_session", {"session_id": "tab-1"}).code == ""
+    assert (
+        operator_.run(
+            "agent", "persist", {"session_id": "tab-1", "is_persistent": False}
+        ).code
+        == ""
+    )
+
+
+def test_without_a_registry_the_session_verbs_are_unsupported():
+    outcome = operator().run("agent", "persist", {"session_id": "tab-1"})
+
+    assert outcome.code == "unsupported_platform"
 
 
 def test_remote_desktop_read_closes_with_its_result():

@@ -115,6 +115,8 @@ CLI_CODE_WORDS = {
     "user_name_invalid": "user name {user} is not a unix name",
     "user_name_duplicate": "user {user} is listed twice",
     "user_unknown": "{user} is not a configured user",
+    "session_taken": "another terminal attached to session {session_id}",
+    "session_unknown": "this machine keeps no terminal session {session_id}",
     "share_name_taken": "a share named {name} exists that this module did not make",
     "user_name_taken": "an account named {user} exists that this module did not make",
     "port_invalid": "{port} is not a port",

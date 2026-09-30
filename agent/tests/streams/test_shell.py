@@ -5,8 +5,10 @@ the close's params, the first size and a resize both reach the terminal,
 the hub's bytes reach the shell's input with credit offered back as each
 piece is written, a close from the hub ends a shell that would run on, the
 ``shell`` kind's entry picks the machine's shell or a container's by the
-open's ``module``, and a container shell is refused typed when podman does
-not list the container.
+open's ``module``, a container shell is refused typed when podman does
+not list the container, and a shell opened with a session id and made
+persistent keeps running when its stream closes and is attached again with
+its output.
 """
 
 import threading
@@ -21,6 +23,7 @@ from neutrino_agent.streams.shell import (
     ShellStream,
     open_shell_stream,
 )
+from neutrino_agent.streams.shell_session import ShellSessionRegistry
 from tests.streams.fake_channel import FakeChannel
 
 
@@ -147,6 +150,68 @@ def test_the_entry_picks_the_shell_by_the_opens_module():
         open_shell_stream(FakeChannel(), {"module": "samba"})
     assert refused.value.code == "verb_unknown"
     assert refused.value.params == {"module": "samba"}
+
+
+def serve_kept(registry, channel, session_id, **args):
+    stream = ShellStream(
+        channel,
+        {"cols": 80, "rows": 24, "session_id": session_id, **args},
+        command=["/bin/sh"],
+        sessions=registry,
+    )
+    stream.open()
+    outcome: dict = {}
+    thread = threading.Thread(target=lambda: outcome.update(stream.run()))
+    thread.start()
+    return thread, outcome
+
+
+def test_a_persistent_shell_survives_its_stream_and_is_attached_again():
+    registry = ShellSessionRegistry()
+    first = FakeChannel()
+    thread, outcome = serve_kept(registry, first, "tab-1")
+    first.feed(("data", b"echo kept-$((40 + 2))\n"))
+    wait_for_output(first, b"kept-42")
+    assert registry.persist("tab-1", True)
+
+    first.close_from_hub()
+    thread.join(timeout=5)
+    assert outcome == {"code": "", "params": {}}
+    (listed,) = registry.describe()
+    assert listed["is_attached"] is False
+    assert listed["account"] == shell_module.shell_account()
+
+    second = FakeChannel()
+    thread, outcome = serve_kept(registry, second, "tab-1", is_resumed=True)
+    wait_for_output(second, b"kept-42")
+    second.feed(("data", b"exit 5\n"))
+    thread.join(timeout=5)
+
+    assert outcome == {"code": "", "params": {"exit_code": 5}}
+    assert registry.describe() == []
+
+
+def test_a_kept_shell_that_is_not_persistent_ends_with_its_stream():
+    registry = ShellSessionRegistry()
+    channel = FakeChannel()
+    thread, outcome = serve_kept(registry, channel, "tab-2")
+    time.sleep(0.2)
+
+    channel.close_from_hub()
+    thread.join(timeout=5)
+
+    assert outcome["params"]["exit_code"] != 0
+    assert registry.describe() == []
+
+
+def test_the_entry_hands_the_registry_to_the_machines_shell():
+    registry = ShellSessionRegistry()
+
+    opened = open_shell_stream(
+        FakeChannel(), {"cols": 80, "rows": 24, "session_id": "s"}, sessions=registry
+    )
+
+    assert opened._sessions is registry
 
 
 def test_without_pseudo_terminals_a_shell_is_refused(monkeypatch):

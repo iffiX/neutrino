@@ -20,6 +20,7 @@ import pytest
 from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.platforms import win32
 from neutrino_agent.streams import shell as shell_module
+from neutrino_agent.streams.shell_session import ShellSessionRegistry
 from neutrino_agent.streams.windows_shell import WindowsShellStream
 from tests.streams.fake_channel import FakeChannel
 
@@ -282,6 +283,44 @@ def test_the_console_is_closed_and_every_handle_released_after_the_exit():
     assert "DeleteProcThreadAttributeList" in kernel32.names()
     for handle in (JOB, PROCESS, THREAD):
         assert handle in kernel32.closed
+
+
+def test_a_persistent_powershell_survives_its_stream_and_is_attached_again():
+    kernel32 = FakeKernel32([b"PS C:\\> "])
+    registry = ShellSessionRegistry()
+    first = FakeChannel()
+    outcome = {}
+
+    def serve(channel, **args):
+        stream = WindowsShellStream(
+            channel,
+            {"cols": 80, "rows": 24, "session_id": "tab-1", **args},
+            kernel32=kernel32,
+            sessions=registry,
+        )
+        stream.open()
+        outcome.clear()
+        outcome.update(stream.run())
+
+    thread = threading.Thread(target=serve, args=(first,))
+    thread.start()
+    time.sleep(0.1)
+    registry.persist("tab-1", True)
+    first.close_from_hub()
+    thread.join(timeout=5)
+
+    assert outcome == {"code": "", "params": {}}
+    assert "TerminateProcess" not in kernel32.names()
+    assert registry.describe()[0]["account"] == "SYSTEM"
+
+    second = FakeChannel()
+    second.feed(("data", b"exit 0\r"))
+    serve(second, cols=100, rows=30, is_resumed=True)
+
+    assert second.output() == b"PS C:\\> "
+    assert kernel32.resizes == [(CONSOLE, 100, 31), (CONSOLE, 100, 30)]
+    assert outcome == {"code": "", "params": {"exit_code": 0}}
+    assert registry.describe() == []
 
 
 def test_a_windows_without_a_pseudo_console_is_refused():
