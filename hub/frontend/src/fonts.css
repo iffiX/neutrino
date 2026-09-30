@@ -1,10 +1,26 @@
 /*
  * Self-hosted fonts, bundled so the panel never reaches out to a font CDN — it
  * runs on a gateway that may be the only thing between the LAN and a censored
- * network. Inter for prose, JetBrains Mono for every number, address, tag, and
- * terminal. Both are SIL Open Font License, so redistributing them here is
- * fine. `swap` shows the fallback stack until each face loads.
+ * network. Inter for prose, JetBrains Mono for every number, address and tag,
+ * both SIL Open Font License. MesloLGS NF, Apache-2.0, for the terminal: it
+ * carries the Nerd Font icons a powerlevel10k prompt draws. `swap` shows the
+ * fallback stack until each face loads.
  */
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/MesloLGSNF-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/MesloLGSNF-Bold.ttf") format("truetype");
+}
 
 @font-face {
   font-family: "Inter";

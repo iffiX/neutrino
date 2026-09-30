@@ -31,6 +31,11 @@ export type TerminalState = "connecting" | "open" | "closed";
 // that is memory nothing ever reclaims. Deep enough to scroll back through a
 // long build, shallow enough to forget.
 const TERMINAL_SCROLLBACK_LINES = 5000;
+// The panel carries MesloLGS NF, so a powerlevel10k prompt draws its icons.
+const TERMINAL_FONT_FAMILY =
+  '"MesloLGS NF", "JetBrains Mono", ui-monospace, monospace';
+const TERMINAL_FONT_SIZE = 13;
+const TERMINAL_FONT_FACE = `${TERMINAL_FONT_SIZE}px "MesloLGS NF"`;
 
 interface ShellTerminalProps {
   /** The websocket path to open, e.g. `/ws/agent/terminal?device_id=<id>`. */
@@ -72,8 +77,8 @@ export function ShellTerminal({
     }
 
     const terminal = new Terminal({
-      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-      fontSize: 13,
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontSize: TERMINAL_FONT_SIZE,
       lineHeight: 1.2,
       cursorBlink: true,
       // No convertEol: the far end allocates a pty, so its output already ends
@@ -123,6 +128,18 @@ export function ShellTerminal({
       sendResize();
     };
     remeasureRef.current = handleResize;
+
+    // The face loads on first use, after the terminal measured its cells with
+    // the fallback, so they are measured again once it is there.
+    let isDisposed = false;
+    void document.fonts.load(TERMINAL_FONT_FACE).then(() => {
+      if (isDisposed) {
+        return;
+      }
+      terminal.options.fontFamily = "monospace";
+      terminal.options.fontFamily = TERMINAL_FONT_FAMILY;
+      handleResize();
+    });
 
     socket.onopen = () => {
       onStateChangeRef.current?.("open");
@@ -174,6 +191,7 @@ export function ShellTerminal({
     window.addEventListener("resize", handleResize);
 
     return () => {
+      isDisposed = true;
       observer.disconnect();
       window.removeEventListener("resize", handleResize);
       dataSubscription.dispose();
