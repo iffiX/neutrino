@@ -884,6 +884,7 @@ the whole file back.
 | Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment, and whether a unit exists; the registry mirrors |
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
+| VS Code | each server's account, port, url and whether it runs; nothing is imported |
 | Samba on Windows and macOS | only the shares the module made, in the Linux shape with `params` `comment`, `read only` and `valid users`; the accounts it made; the sessions; and `fence {is_present, is_enabled, blocked}` |
 
 On Windows and macOS an agent with the `smb_server` capability runs the
@@ -898,6 +899,28 @@ the server and keeps its accounts and its fence. An apply refuses a name the
 machine already has for something the module did not make: a share with
 `share_name_taken {name}`, an account with `user_name_taken {user}`. An
 account the module made signs in once `set_password` has set its password.
+
+The `vscode` module runs Microsoft's standalone CLI, `code serve-web`, once
+per account. Its configuration is `{address, instances: [{account, port,
+token, password}]}`: `address` is the device's address the servers listen
+on, every address when empty; `token` is the instance's connection token,
+which the hub keeps sealed and sends in the clear inside the state; and
+`password` is the account's login, sent only to a Windows machine, where a
+task that runs as an account signs in with it. Its recipe is `{kind:
+vscode, package_kind, verify}`, `package_kind` being `tar` for the Linux
+tarball and `zip` for the Windows and macOS archives, and the agent opens
+`package {module: vscode}` for the archive and unpacks the one `code` or
+`code.exe` inside it: to `/usr/local/lib/neutrino_vscode` on Linux, and to
+`vscode` under the root the `hub_packages` capability names on Windows
+(`%ProgramData%\Neutrino`) and macOS (`/Library/Application
+Support/Neutrino`). `details` is `{instances: [{account, port, url,
+is_running, code}]}`, the url without its token and `code`
+`credential_invalid` for a Windows task that cannot sign its account in. An
+apply refuses `account_invalid`, `account_duplicate`, `port_invalid`,
+`port_duplicate`, `token_missing` and, on Windows, `credential_missing`, all
+naming the `account` or the `port`; `account_unknown {account}` for an
+account a Linux machine or a Mac does not have; and `credential_invalid
+{account}` when Windows refuses the login.
 
 Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. An install's or an uninstall's output

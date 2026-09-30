@@ -282,6 +282,13 @@ def test_the_file_share_drives_windows_own_smb_server():
     assert isinstance(WindowsPlatform().smb_server_applier(), SambaWindowsApplier)
 
 
+def test_the_hub_s_software_is_unpacked_beside_the_agent_s_state(monkeypatch):
+    monkeypatch.setenv("ProgramData", "D:\\Data")
+
+    assert "hub_packages" in WindowsPlatform.capabilities
+    assert WindowsPlatform().hub_package_root() == "D:\\Data\\Neutrino"
+
+
 @pytest.mark.parametrize(
     "action, command",
     [

@@ -113,6 +113,13 @@ def test_the_file_share_drives_the_mac_s_own_smb_server(tmp_path):
     )
 
 
+def test_the_hub_s_software_is_unpacked_beside_the_agent_s_state():
+    assert "hub_packages" in DarwinPlatform.capabilities
+    assert DarwinPlatform().hub_package_root() == (
+        "/Library/Application Support/Neutrino"
+    )
+
+
 def test_starting_the_service_bootstraps_and_kicks_the_job(monkeypatch):
     calls = []
     answering(

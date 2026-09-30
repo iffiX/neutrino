@@ -4,7 +4,7 @@ The contract names intents, not mechanisms: enumerate human accounts;
 resolve an account's home; run a process as an account; control the agent's
 own service; power actions; read host metrics; read the network interfaces;
 read the machine id; install and remove a package of a kind; drive the SMB
-server the system carries. A new platform is a new class, and
+server the system carries; unpack the hub's software. A new platform is a new class, and
 nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
@@ -264,6 +264,21 @@ class AgentPlatform:
                 the agent drives.
         """
         raise PlatformUnsupportedError("no system SMB server here")
+
+    def hub_package_root(self) -> str:
+        """Where software the hub sends down a package stream is unpacked.
+
+        Every account may read and run what is under it; each module keeps
+        its own directory there.
+
+        Returns:
+            The absolute directory path.
+
+        Raises:
+            PlatformUnsupportedError: On a platform whose software comes
+                from its package manager instead.
+        """
+        raise PlatformUnsupportedError("no root for the hub's software here")
 
     def remove_system_packages(self, names: list) -> str:
         """Remove packages by name with the machine's own package manager.

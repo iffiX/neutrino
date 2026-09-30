@@ -44,11 +44,12 @@ CONTRACT_CALLS = {
     ),
     "uninstall_package": ("packages", ("apt-get remove -y app",), {}),
     "smb_server_applier": ("smb_server", (), {}),
+    "hub_package_root": ("hub_packages", (), {}),
 }
 
 # Capabilities only a system that carries its own server has; Linux has
 # every other one.
-NOT_ON_LINUX = {"smb_server"}
+NOT_ON_LINUX = {"smb_server", "hub_packages"}
 
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {

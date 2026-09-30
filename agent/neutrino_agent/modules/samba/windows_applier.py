@@ -1,8 +1,9 @@
 """The file share on Windows' own SMB server.
 
 Each operation is one PowerShell script, handed a JSON document on its
-standard input and answering one JSON document on its standard output, so a
-password never appears on a command line. The module changes only the shares
+standard input and answering one JSON document on its standard output
+(:mod:`neutrino_agent.modules.powershell_run`), so a password never appears
+on a command line. The module changes only the shares
 and accounts it made: a share whose description starts with the marker and
 that the module's record lists, an account the record lists. Accounts are
 local, in no group, hidden from the sign-in screen and denied the console
@@ -17,13 +18,12 @@ Not pure: runs PowerShell and calls the local security policy.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import base64
 import ctypes
 import ipaddress
-import json
 import subprocess
 
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_DENIED_RIGHTS,
@@ -32,27 +32,11 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_FOLDER_CHANGE,
     SAMBA_WINDOWS_FOLDER_READ,
     SAMBA_WINDOWS_MARKER,
-    SAMBA_WINDOWS_POWERSHELL_TIMEOUT_S,
-    SAMBA_WINDOWS_REFUSAL_EXIT,
     SAMBA_WINDOWS_SHARE_CHANGE,
     SAMBA_WINDOWS_SHARE_OWNER,
     SAMBA_WINDOWS_SHARE_READ,
 )
-from neutrino_agent.modules.subprocess_run import run
 from neutrino_agent.platforms import win32
-
-# Every script reads its document from standard input and writes UTF-8.
-POWERSHELL_PROLOGUE = """
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-[Console]::InputEncoding = [Text.Encoding]::UTF8
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
-$d = [Console]::In.ReadToEnd() | ConvertFrom-Json
-function Send-Refusal($code, $params) {
-  @{code = $code; params = $params} | ConvertTo-Json -Compress -Depth 5
-  exit 3
-}
-"""
 
 # The server's state, the marked shares, the listed accounts, the sessions
 # and the fence.
@@ -94,11 +78,6 @@ if ($rule) {
 # Refuses names the module did not make, then converges the server, the
 # fence, the accounts and the shares.
 APPLY_SCRIPT = """
-function Invoke-Icacls {
-  $ErrorActionPreference = 'Continue'
-  & icacls.exe @args 2>&1 | Out-Null
-  return $LASTEXITCODE
-}
 $computer = $env:COMPUTERNAME
 foreach ($s in @($d.shares)) {
   $held = Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue
@@ -234,54 +213,6 @@ Enable-LocalUser -Name $d.name
 """
 
 
-def run_powershell(script: str, document: dict) -> dict:
-    """Run one script with a JSON document on its standard input.
-
-    The script travels as ``-EncodedCommand``, so no quoting of the command
-    line can change it, and the document never touches the command line.
-
-    Args:
-        script: The script, without the prologue that reads the document.
-        document: What the script reads as ``$d``.
-
-    Returns:
-        The JSON object the script printed last.
-
-    Raises:
-        ModuleApplyError: The code and params of a refusal the script sent.
-        OSError: When PowerShell cannot run, fails, or prints no JSON object.
-    """
-    encoded = base64.b64encode((POWERSHELL_PROLOGUE + script).encode("utf-16-le"))
-    result = run(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-EncodedCommand",
-            encoded.decode("ascii"),
-        ],
-        is_checked=False,
-        input_text=json.dumps(document),
-        timeout_s=SAMBA_WINDOWS_POWERSHELL_TIMEOUT_S,
-    )
-    answer = _last_json_object(result.stdout)
-    if result.exit_code == SAMBA_WINDOWS_REFUSAL_EXIT and answer is not None:
-        raise ModuleApplyError(
-            str(answer.get("code", "") or "apply_failed"),
-            dict(answer.get("params") or {}),
-        )
-    if not result.is_success:
-        raise OSError(
-            f"powershell exited {result.exit_code}: "
-            + (result.stderr.strip() or result.stdout.strip())[-500:]
-        )
-    if answer is None:
-        raise OSError("powershell printed no JSON object")
-    return answer
-
-
 def blocked_ranges(allowed_subnets: list) -> list:
     """Every address outside the allowed subnets, as firewall ranges.
 
@@ -397,28 +328,6 @@ def _address_range(version: int, first: int, last: int) -> str:
     return f"{make(first)}-{make(last)}"
 
 
-def _last_json_object(text: str) -> "dict | None":
-    """The last line of the output that parses as a JSON object."""
-    for line in reversed((text or "").splitlines()):
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            parsed = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
-
-
-def _listed(value) -> list:
-    """A PowerShell JSON member as a list: one object comes back bare."""
-    if isinstance(value, list):
-        return value
-    return [] if value is None else [value]
-
-
 class SambaWindowsApplier:
     """Converges Windows' SMB server with the module's configuration."""
 
@@ -459,9 +368,9 @@ class SambaWindowsApplier:
         return {
             "is_present": bool(read.get("is_present")),
             "is_running": bool(read.get("is_running")),
-            "shares": [_share_detail(entry) for entry in _listed(read.get("shares"))],
+            "shares": [_share_detail(entry) for entry in listed(read.get("shares"))],
             "sessions": [
-                _session_detail(entry) for entry in _listed(read.get("sessions"))
+                _session_detail(entry) for entry in listed(read.get("sessions"))
             ],
             "users": [
                 {
@@ -469,7 +378,7 @@ class SambaWindowsApplier:
                     "is_present": bool(entry.get("is_present")),
                     "has_password": bool(entry.get("is_enabled")),
                 }
-                for entry in _listed(read.get("users"))
+                for entry in listed(read.get("users"))
                 if isinstance(entry, dict)
             ],
             "fence": _fence_detail(read.get("fence")),
@@ -523,7 +432,7 @@ class SambaWindowsApplier:
         )
         for name in config.users:
             self._deny_logon(name)
-        return [str(note) for note in _listed(answer.get("notes"))]
+        return [str(note) for note in listed(answer.get("notes"))]
 
     def withdraw(self, record: dict, *, is_removed: bool) -> None:
         """Take the module's shares off the server.
@@ -590,7 +499,7 @@ def _share_detail(entry) -> dict:
     comment = description[len(SAMBA_WINDOWS_MARKER) :].strip()
     access = [
         item
-        for item in _listed(entry.get("access"))
+        for item in listed(entry.get("access"))
         if isinstance(item, dict)
         and str(item.get("account", "")) != SAMBA_WINDOWS_SHARE_OWNER
     ]
@@ -627,5 +536,5 @@ def _fence_detail(entry) -> dict:
     return {
         "is_present": bool(entry.get("is_present")),
         "is_enabled": bool(entry.get("is_enabled")),
-        "blocked": [str(item) for item in _listed(entry.get("blocked"))],
+        "blocked": [str(item) for item in listed(entry.get("blocked"))],
     }

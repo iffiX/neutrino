@@ -880,3 +880,66 @@ def test_a_system_with_its_own_smb_server_runs_the_file_share_alone(
     assert report["samba"]["state"] == "installed"
     assert report["fakedesk"]["state"] == "unsupported"
     assert engine.install("samba", receive=None) == {}
+
+
+class HubPackagesPlatform(SmbServerPlatform):
+    """A platform that also unpacks the hub's software, the way Windows does."""
+
+    capabilities = frozenset({"smb_server", "hub_packages"})
+
+    def __init__(self, root):
+        self._root = root
+
+    def hub_package_root(self):
+        return self._root
+
+
+def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(engine_module.rustdesk, "binary_path", lambda: "")
+    engine = ModuleEngine(
+        platform=HubPackagesPlatform(str(tmp_path / "Neutrino")),
+        configured_dir=str(tmp_path / "configured"),
+    )
+    engine.take_state(
+        {
+            "vscode": {
+                "want": "installed",
+                "config": {},
+                "install": {"kind": "vscode", "package_kind": "zip"},
+            }
+        }
+    )
+    received = []
+
+    def receive(name):
+        received.append(name)
+        return {"code": "hub_unreachable", "params": {}}
+
+    engine._refresh(is_forced=True)
+
+    assert set(engine.module_runners) == {"samba", "vscode"}
+    assert engine.report()["vscode"]["state"] == "absent"
+    assert engine.install("vscode", receive=receive) == {
+        "code": "hub_unreachable",
+        "params": {},
+    }
+    assert received == ["vscode"]
+
+
+def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
+    class PackagesPlatform(FakePlatform):
+        capabilities = frozenset({"packages"})
+
+    engine = ModuleEngine(
+        platform=PackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+
+    assert set(engine.module_runners) == {
+        "samba",
+        "gitea",
+        "podman",
+        "zfs",
+        "vscode",
+    }

@@ -46,9 +46,6 @@ SAMBA_WINDOWS_FOLDER_READ = "(OI)(CI)RX"
 # The account a share with no users is granted to, so the server never
 # falls back to granting Everyone.
 SAMBA_WINDOWS_SHARE_OWNER = "BUILTIN\\Administrators"
-SAMBA_WINDOWS_POWERSHELL_TIMEOUT_S = 120
-# The exit status a script ends with when it prints a refusal.
-SAMBA_WINDOWS_REFUSAL_EXIT = 3
 
 # macOS: smbd's launchd job and the plist it loads from.
 SAMBA_DARWIN_SMBD_TARGET = "system/com.apple.smbd"

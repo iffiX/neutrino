@@ -118,6 +118,7 @@ class WindowsPlatform(AgentPlatform):
             "network",
             "machine_id",
             "smb_server",
+            "hub_packages",
         }
     )
 
@@ -263,6 +264,14 @@ class WindowsPlatform(AgentPlatform):
         except OSError:
             return ""
         return str(value or "").strip()
+
+    def hub_package_root(self) -> str:
+        """Where the hub's software is unpacked: ``%ProgramData%\\Neutrino``.
+
+        Returns:
+            The absolute directory path.
+        """
+        return ntpath.dirname(windows_data_dir())
 
     def smb_server_applier(self) -> SambaWindowsApplier:
         """The applier that drives Windows' own SMB server.

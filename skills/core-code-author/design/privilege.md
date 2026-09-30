@@ -138,6 +138,21 @@ account's password is in the process list, where any local account can read
 it. The account can do nothing but reach the shares: it has no shell and no
 home, and the fence limits who reaches the server.
 
+## VS Code runs as the account it serves
+
+The agent's VS Code module starts each server as the account it names,
+never as root, so a browser that holds the token gets that account's files
+and nothing more. Its token file belongs to that account, mode 0600 on Linux
+and macOS, and on Windows is readable by the account, SYSTEM and the
+administrators alone.
+
+On Windows the account's password is needed to start it: the hub unseals the
+login it keeps in its vault and sends it inside the device's desired state,
+as it sends Gitea's secrets. The agent keeps its copy of that state in its
+data directory, which only SYSTEM and the administrators can open, and
+passes the password to PowerShell on standard input to register the task.
+Windows keeps the password with the task from then on.
+
 ## Where privilege is allowed to live
 
 Root-requiring calls stay in `neutrino_hub/system/` and in each module's `ops` or `apply`

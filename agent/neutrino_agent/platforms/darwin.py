@@ -128,6 +128,7 @@ class DarwinPlatform(AgentPlatform):
             "network",
             "machine_id",
             "smb_server",
+            "hub_packages",
         }
     )
 
@@ -282,6 +283,14 @@ class DarwinPlatform(AgentPlatform):
             ``[{"name", "mac", "addresses"}]``; empty when ifconfig fails.
         """
         return parse_ifconfig(_run(["ifconfig", "-a"]))
+
+    def hub_package_root(self) -> str:
+        """Where the hub's software is unpacked, beside the agent's own state.
+
+        Returns:
+            ``/Library/Application Support/Neutrino``.
+        """
+        return os.path.dirname(AGENT_DATA_DIR_DARWIN)
 
     def smb_server_applier(self) -> SambaDarwinApplier:
         """The applier that drives macOS's own SMB server.

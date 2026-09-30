@@ -1,21 +1,16 @@
 """The file share on Windows' own SMB server, with PowerShell faked.
 
-What these pin: every operation is one PowerShell run whose script travels
-encoded and whose document, the password included, travels on standard
-input; a refusal the script prints comes back as its code; the document an
-apply sends names only what the module made, the fence as ranges outside
+What these pin: the document an apply sends names only what the module made, the fence as ranges outside
 the allowed subnets, each share's rights, and the accounts to retire; each
 configured account is denied the console and RDP through the local policy;
 and the status reading is shaped the way the Linux module reports.
 """
 
-import base64
 import ctypes
 import json
 
 import pytest
 
-import neutrino_agent.modules.samba.windows_applier as applier_module
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.windows_applier import (
@@ -26,9 +21,7 @@ from neutrino_agent.modules.samba.windows_applier import (
     SambaWindowsApplier,
     blocked_ranges,
     deny_interactive_logon,
-    run_powershell,
 )
-from neutrino_agent.modules.subprocess_run import CommandResult
 
 ALL_IPV6 = "::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
 
@@ -62,68 +55,6 @@ class FakePowerShell:
         if self._error is not None:
             raise self._error
         return dict(self._answers.get(script, {}))
-
-
-def fake_run(result: CommandResult, calls: list):
-    """A stand-in for the module runner's ``run`` answering one result."""
-
-    def run(command, *, is_checked=True, input_text=None, timeout_s=0):
-        calls.append({"command": list(command), "input": input_text})
-        return result
-
-    return run
-
-
-def decoded_script(command: list) -> str:
-    encoded = command[command.index("-EncodedCommand") + 1]
-    return base64.b64decode(encoded).decode("utf-16-le")
-
-
-def test_a_script_runs_encoded_with_its_document_on_standard_input(monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        applier_module,
-        "run",
-        fake_run(CommandResult([], 0, 'noise\n{"notes": ["x"]}\n', ""), calls),
-    )
-
-    answer = run_powershell(PASSWORD_SCRIPT, {"name": "ann", "password": "s3cret"})
-
-    assert answer == {"notes": ["x"]}
-    ((call,),) = [calls]
-    command = call["command"]
-    assert command[:3] == ["powershell.exe", "-NoProfile", "-NonInteractive"]
-    assert decoded_script(command).endswith(PASSWORD_SCRIPT)
-    assert "[Console]::In.ReadToEnd()" in decoded_script(command)
-    assert all("s3cret" not in part for part in command)
-    assert json.loads(call["input"]) == {"name": "ann", "password": "s3cret"}
-
-
-def test_a_refusal_the_script_prints_is_raised_with_its_code(monkeypatch):
-    refusal = '{"code": "share_name_taken", "params": {"name": "media"}}'
-    monkeypatch.setattr(
-        applier_module, "run", fake_run(CommandResult([], 3, refusal, ""), [])
-    )
-
-    with pytest.raises(ModuleApplyError) as caught:
-        run_powershell(APPLY_SCRIPT, {})
-
-    assert caught.value.code == "share_name_taken"
-    assert caught.value.params == {"name": "media"}
-
-
-@pytest.mark.parametrize(
-    "result",
-    [
-        CommandResult([], 1, "", "New-SmbShare : Access is denied."),
-        CommandResult([], 0, "not json", ""),
-    ],
-)
-def test_a_failed_or_silent_script_is_an_os_error(monkeypatch, result):
-    monkeypatch.setattr(applier_module, "run", fake_run(result, []))
-
-    with pytest.raises(OSError):
-        run_powershell(STATUS_SCRIPT, {})
 
 
 def test_the_fence_blocks_every_address_outside_the_allowed_subnets():

@@ -29,7 +29,7 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, ZFS and the RustDesk host. The hub says what is wanted and sends
+  Podman, ZFS, VS Code and the RustDesk host. The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
   The state the agent receives names, per module, that `want`, the
@@ -222,9 +222,15 @@ it.
 
 The agent is root, so reaching down to an account is `runuser -u <account>
 --`, never `sudo`, for the reason the hub bans it
-([privilege.md](privilege.md)). Today that reach is one thing: the seat
+([privilege.md](privilege.md)). That reach is two things. One is the seat
 whose desktop is shared, whose RustDesk configuration lives in that
-account's own session. Everything else the agent does is root's own work.
+account's own session. The other is VS Code, whose servers run as the
+accounts the module names, each started by the system's own service
+manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
+`UserName` on macOS, and on Windows a scheduled task registered with the
+account's login, because LocalSystem cannot start a process as another
+account without its password. Everything else the agent does is root's own
+work.
 
 ## The platform layer
 
@@ -242,7 +248,10 @@ builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
-built-in RustDesk row. Every import
+built-in RustDesk row. A platform with `hub_packages` names a root that
+software the hub sends down a package stream is unpacked under, readable by
+every account, and gets the VS Code module; on Linux VS Code is one of the
+runners `packages` builds. Every import
 only POSIX has is guarded, so one package imports on all three systems.
 
 | | Linux | Windows | macOS |
@@ -261,6 +270,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
 | RustDesk | `/usr/lib/neutrino_agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
 | File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the work root at every apply and when the agent starts |
+| VS Code | the CLI in `/usr/local/lib/neutrino_vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/etc/neutrino/vscode` | the CLI in `%ProgramData%\Neutrino\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token | the CLI in `/Library/Application Support/Neutrino/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
 | Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer` |
 
 On Linux the metrics come from `/proc` and `/sys` with nothing but the

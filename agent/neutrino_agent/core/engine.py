@@ -51,6 +51,7 @@ from neutrino_agent.modules.samba.runner import (
     SambaNativeServerRunner,
 )
 from neutrino_agent.modules.system_package import SystemPackageModuleRunner
+from neutrino_agent.modules.vscode.runner import VscodeModuleRunner
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
 
@@ -180,7 +181,7 @@ class ModuleEngine(ReconcileWorker):
         self._system = None
         # The modules this agent applies the hub's configuration to, by
         # name; each also answers its own verbs.
-        self._module_runners = {}
+        kinds = []
         if "packages" in platform.capabilities:
             self._package = PackageModuleRunner(
                 platform=platform, log=self._collect, publish=self._publish
@@ -188,28 +189,22 @@ class ModuleEngine(ReconcileWorker):
             self._system = SystemPackageModuleRunner(
                 platform=platform, log=self._collect, publish=self._publish
             )
-            self._module_runners = {
-                runner.name: runner
-                for runner in (
-                    SambaModuleRunner(
-                        platform=platform, log=self._collect, publish=self._publish
-                    ),
-                    GiteaModuleRunner(
-                        platform=platform, log=self._collect, publish=self._publish
-                    ),
-                    PodmanModuleRunner(
-                        platform=platform, log=self._collect, publish=self._publish
-                    ),
-                    ZfsModuleRunner(
-                        platform=platform, log=self._collect, publish=self._publish
-                    ),
-                )
-            }
-        elif "smb_server" in platform.capabilities:
-            runner = SambaNativeServerRunner(
-                platform=platform, log=self._collect, publish=self._publish
-            )
-            self._module_runners = {runner.name: runner}
+            kinds = [
+                SambaModuleRunner,
+                GiteaModuleRunner,
+                PodmanModuleRunner,
+                ZfsModuleRunner,
+                VscodeModuleRunner,
+            ]
+        else:
+            if "smb_server" in platform.capabilities:
+                kinds.append(SambaNativeServerRunner)
+            if "hub_packages" in platform.capabilities:
+                kinds.append(VscodeModuleRunner)
+        self._module_runners = {}
+        for kind in kinds:
+            runner = kind(platform=platform, log=self._collect, publish=self._publish)
+            self._module_runners[runner.name] = runner
         super().__init__(log=log, on_change=on_change)
         # The built-in rows are known from the start, so their first
         # refresh is not news that wakes a report.
