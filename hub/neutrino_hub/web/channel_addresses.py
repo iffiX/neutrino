@@ -18,21 +18,32 @@ from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
 def channel_urls(runtime) -> list[str]:
     """Every address a machine can be told to reach the agent channel on.
 
+    Args:
+        runtime: The shared runtime, for the network configuration and the
+            port.
+
+    Returns:
+        Base ``https`` URLs, one per host :func:`channel_hosts` returns, in
+        its order.
+    """
+    port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+    return [f"https://{host}:{port}" for host in channel_hosts(runtime.network())]
+
+
+def channel_hosts(network) -> list[str]:
+    """Every address and name the box answers on.
+
     A served network contributes its configured address, every other exposed
     interface the address its live link holds, and an exposed NetBird
     overlay its name as well, so a peer on the overlay reaches the hub after
     its overlay address moved.
 
     Args:
-        runtime: The shared runtime, for the network configuration and the
-            port.
+        network: The router configuration.
 
     Returns:
-        Base ``https`` URLs, in configuration order, one per address, the
-        overlay's name last.
+        The hosts, in configuration order, the overlay's name last.
     """
-    port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
-    network = runtime.network()
     configured = {
         interface.device_name: interface.lan.address
         for interface in network.lan_interfaces
@@ -51,7 +62,7 @@ def channel_urls(runtime) -> list[str]:
     name = overlay_name(network)
     if name and name not in hosts:
         hosts.append(name)
-    return [f"https://{host}:{port}" for host in hosts]
+    return hosts
 
 
 def overlay_name(network) -> str:

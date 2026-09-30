@@ -47,6 +47,9 @@ RESET_COLLECTED_PATHS = (
     # The agent channel's certificate and key go with the fleet that pinned
     # them; the next setup generates a fresh identity for its own.
     "web/agent_tls",
+    # The panel's certificate authority, which browsers trusted for this box;
+    # the next setup generates another.
+    "web/panel_tls",
     # The id clients group this hub by; the next setup generates a new one.
     "web/identity.json",
     # Sealed under the vault's data key, which this reset also clears: left
@@ -64,6 +67,8 @@ RESET_STATE_PATHS = (
     "session.secret",
     "vault.key",
     "agent_tls_key.pem",
+    "panel_tls_certificate.pem",
+    "panel_tls_key.pem",
     "xray_node_health.json",
 )
 # Directories under the state root the hub filled itself. The module cache is

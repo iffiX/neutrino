@@ -102,6 +102,37 @@ WEB_AGENT_TLS_SUBJECT = "neutrino-hub"
 # Verification is the pinned fingerprint, not the validity window, so the
 # certificate simply has to outlive the box.
 WEB_AGENT_TLS_VALIDITY_DAYS = 3650
+# The panel's own certificate authority, which a browser installs once, and
+# the certificate the panel serves under it. The authority's certificate is
+# public and travels in a backup; its key beside it is sealed under the
+# vault's data key. The served pair is state, issued again whenever the names
+# the panel answers on change or it nears expiry.
+WEB_PANEL_TLS_DIR = UTILS_CONFIG_DIR / "web" / "panel_tls"
+WEB_PANEL_TLS_AUTHORITY_PATH = WEB_PANEL_TLS_DIR / "authority.pem"
+WEB_PANEL_TLS_AUTHORITY_KEY_PATH = WEB_PANEL_TLS_DIR / "authority_key.sealed"
+WEB_PANEL_TLS_AUTHORITY_KEY_AAD = b"panel_tls:authority"
+WEB_PANEL_TLS_SERVED_CERT_PATH = UTILS_STATE_ROOT / "panel_tls_certificate.pem"
+WEB_PANEL_TLS_SERVED_KEY_PATH = UTILS_STATE_ROOT / "panel_tls_key.pem"
+WEB_PANEL_TLS_AUTHORITY_VALIDITY_DAYS = 3650
+# Apple's ceiling for a server certificate is 398 days.
+WEB_PANEL_TLS_LEAF_VALIDITY_DAYS = 397
+WEB_PANEL_TLS_RENEW_BEFORE_DAYS = 30
+# How far back a new certificate starts, for a browser whose clock is behind.
+WEB_PANEL_TLS_BACKDATE_S = 300
+# What the authority may sign for. Chrome enforces these on a locally
+# installed root, so a leaf for any public name or address fails there.
+WEB_PANEL_TLS_PERMITTED_NETWORKS = (
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "100.64.0.0/10",
+    "127.0.0.0/8",
+)
+WEB_PANEL_TLS_PERMITTED_DOMAINS = ("localhost", "neutrino.internal", "netbird.cloud")
+WEB_PANEL_TLS_LOOPBACK_NAMES = ("127.0.0.1", "localhost")
+WEB_PANEL_TLS_AUTHORITY_ORGANIZATION = "Neutrino"
+WEB_PANEL_TLS_FILE_NAME = "neutrino-{hub}-ca.crt"
+WEB_PANEL_TLS_MEDIA_TYPE = "application/x-x509-ca-cert"
 # The hub's own identity, ``{id, name}``: the id clients group it by and the
 # name they show. Generated when missing; deleted by ``nhub reset all``.
 WEB_IDENTITY_FILE = "web/identity.json"

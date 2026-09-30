@@ -57,6 +57,8 @@ def box(tmp_path, monkeypatch):
     )
     (config / "web/agent_tls").mkdir()
     (config / "web/agent_tls/certificate.pem").write_text("cert")
+    (config / "web/panel_tls").mkdir()
+    (config / "web/panel_tls/authority.pem").write_text("authority")
     (config / "web/identity.json").write_text(
         json.dumps({"id": "a" * 32, "name": "gateway"})
     )
@@ -67,6 +69,8 @@ def box(tmp_path, monkeypatch):
     state.mkdir()
     (state / "session.secret").write_text("aa" * 32)
     (state / "vault.key").write_text("bb" * 32)
+    (state / "panel_tls_certificate.pem").write_text("leaf")
+    (state / "panel_tls_key.pem").write_text("key")
     (state / "xray_node_health.json").write_text("{}")
     (state / "hub_update").mkdir()
     (state / "hub_update/neutrino-hub_0.3.0_amd64.deb").write_bytes(b"deb")
@@ -105,6 +109,9 @@ def test_reset_all_forgets_the_keys_the_box_was_holding(box):
     assert not (box / "devices/aa-bb-cc-dd-ee-ff").exists()
     assert (box / "devices/devices.json").exists()
     assert not (box / "web/agent_tls").exists()
+    assert not (box / "web/panel_tls").exists()
+    assert not (box.parent / "state" / "panel_tls_certificate.pem").exists()
+    assert not (box.parent / "state" / "panel_tls_key.pem").exists()
     assert not (box.parent / "state" / "session.secret").exists()
     assert not (box.parent / "state" / "vault.key").exists()
 
