@@ -1,11 +1,12 @@
-"""The overlay's join material, read from what the box stores and runs.
+"""The overlays' join material, read from what the box stores and runs.
 
 NetBird hands its kept setup key, its management plane and the hub's overlay
 name; EasyTier in manual mode its network name, its secret and the uplink
 address its engine listens on, and in console mode the console's address and
 secure mode; both EasyTier shapes name the hub's own overlay address. No
 overlay, no kept key, no network, no address, no console address and a
-locked vault each read as none.
+locked vault each read as none. Two overlays running hand two objects,
+NetBird's first.
 """
 
 import pytest
@@ -24,8 +25,10 @@ CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_example"  # scan: allow
 
 
 class FakeRuntime:
-    def __init__(self, provider: str):
-        overlays = [] if provider == "none" else [{"provider": provider}]
+    def __init__(self, *providers: str):
+        overlays = [
+            {"provider": provider} for provider in providers if provider != "none"
+        ]
         self._network = RouterNetworkConfig.from_dict(
             {
                 "mode": "router",
@@ -100,10 +103,34 @@ class FakeInstances:
         ]
 
 
+def material_of(runtime) -> "dict | None":
+    """The one overlay's material, None when it has none."""
+    materials = channel_overlay.overlay_materials(runtime)
+    assert len(materials) <= 1
+    return materials[0] if materials else None
+
+
+def test_two_overlays_hand_two_objects_netbird_first(box):
+    keep_setup_key()
+    store_network()
+
+    materials = channel_overlay.overlay_materials(FakeRuntime("easytier", "netbird"))
+
+    assert [material["provider"] for material in materials] == ["netbird", "easytier"]
+
+
+def test_an_overlay_with_nothing_to_join_is_left_out_of_two(box):
+    store_network()
+
+    materials = channel_overlay.overlay_materials(FakeRuntime("netbird", "easytier"))
+
+    assert [material["provider"] for material in materials] == ["easytier"]
+
+
 def test_netbird_hands_its_key_its_plane_and_the_hubs_name(box):
     keep_setup_key("https://nb.example.org")
 
-    material = channel_overlay.overlay_material(FakeRuntime("netbird"))
+    material = material_of(FakeRuntime("netbird"))
 
     assert material == {
         "provider": "netbird",
@@ -114,13 +141,13 @@ def test_netbird_hands_its_key_its_plane_and_the_hubs_name(box):
 
 
 def test_netbird_without_a_kept_key_is_none(box):
-    assert channel_overlay.overlay_material(FakeRuntime("netbird")) is None
+    assert material_of(FakeRuntime("netbird")) is None
 
 
 def test_easytier_hands_its_name_its_secret_and_the_uplinks_address(box):
     store_network("10.0.0.1/24")
 
-    material = channel_overlay.overlay_material(FakeRuntime("easytier"))
+    material = material_of(FakeRuntime("easytier"))
 
     assert material == {
         "provider": "easytier",
@@ -135,7 +162,7 @@ def test_easytier_hands_its_name_its_secret_and_the_uplinks_address(box):
 def test_a_manual_network_with_no_address_names_no_hub_address(box):
     store_network()
 
-    material = channel_overlay.overlay_material(FakeRuntime("easytier"))
+    material = material_of(FakeRuntime("easytier"))
 
     assert material["hub_address"] == ""
 
@@ -144,7 +171,7 @@ def test_the_console_hands_its_address_secure_mode_and_the_hubs_address(box):
     store_console()
     FakeInstances.addresses = ["10.126.126.1/24"]
 
-    material = channel_overlay.overlay_material(FakeRuntime("easytier"))
+    material = material_of(FakeRuntime("easytier"))
 
     assert material == {
         "provider": "easytier",
@@ -159,7 +186,7 @@ def test_the_console_before_the_engine_reports_names_no_hub_address(box):
     store_console(is_secure_mode=False)
     FakeInstances.addresses = []
 
-    material = channel_overlay.overlay_material(FakeRuntime("easytier"))
+    material = material_of(FakeRuntime("easytier"))
 
     assert material["hub_address"] == ""
     assert material["is_secure_mode"] is False
@@ -168,25 +195,25 @@ def test_the_console_before_the_engine_reports_names_no_hub_address(box):
 def test_the_console_with_no_address_is_none(box):
     store_console("")
 
-    assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None
+    assert material_of(FakeRuntime("easytier")) is None
 
 
 def test_easytier_without_a_network_is_none(box):
-    assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None
+    assert material_of(FakeRuntime("easytier")) is None
 
 
 def test_easytier_with_no_address_to_dial_is_none(box):
     store_network()
     box.clear()
 
-    assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None
+    assert material_of(FakeRuntime("easytier")) is None
 
 
 def test_no_overlay_is_none_whatever_is_stored(box):
     keep_setup_key()
     store_network()
 
-    assert channel_overlay.overlay_material(FakeRuntime("none")) is None
+    assert material_of(FakeRuntime("none")) is None
 
 
 def test_a_locked_vault_is_none(box, monkeypatch, tmp_path):
@@ -196,8 +223,8 @@ def test_a_locked_vault_is_none(box, monkeypatch, tmp_path):
         "neutrino_hub.utils.constants.UTILS_STATE_ROOT", tmp_path / "nowhere"
     )
 
-    assert channel_overlay.overlay_material(FakeRuntime("netbird")) is None
-    assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None
+    assert material_of(FakeRuntime("netbird")) is None
+    assert material_of(FakeRuntime("easytier")) is None
 
 
 def test_a_locked_vault_hides_the_console_address(box, monkeypatch, tmp_path):
@@ -206,4 +233,4 @@ def test_a_locked_vault_hides_the_console_address(box, monkeypatch, tmp_path):
         "neutrino_hub.utils.constants.UTILS_STATE_ROOT", tmp_path / "nowhere"
     )
 
-    assert channel_overlay.overlay_material(FakeRuntime("easytier")) is None
+    assert material_of(FakeRuntime("easytier")) is None

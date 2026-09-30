@@ -502,7 +502,7 @@ def enrollment_link(
     fingerprint: str,
     *,
     role: str = CHANNEL_ROLE_AGENT,
-    overlay: "dict | None" = None,
+    overlays: "list | None" = None,
 ) -> str:
     """The link a ticket rides in.
 
@@ -511,15 +511,16 @@ def enrollment_link(
         token: The ticket.
         fingerprint: The certificate fingerprint the program pins.
         role: Who the link is for, ``agent`` or ``client``.
-        overlay: The overlay's join material a client link carries; a
-            client link without it carries null, a device link nothing.
+        overlays: The join material of every running overlay a client link
+            carries, the preferred first; a client link without it carries an
+            empty list, a device link nothing.
 
     Returns:
         The ``neutrino://enroll/`` link.
     """
     body = {"urls": urls, "token": token, "fp": fingerprint, "role": role}
     if role == CHANNEL_ROLE_CLIENT:
-        body["overlay"] = overlay
+        body["overlays"] = list(overlays or [])
     # The whole payload rides base64url, whose alphabet has no character a
     # shell splits or a URL escapes — the link pastes anywhere unquoted.
     payload = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()

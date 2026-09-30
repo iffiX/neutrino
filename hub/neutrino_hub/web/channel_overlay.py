@@ -1,12 +1,12 @@
-"""What a client needs to join the hub's overlay as an ordinary peer.
+"""What a client needs to join the hub's overlays as an ordinary peer.
 
 NetBird's material is the kept setup key, its management plane and the hub's
 name on the overlay. EasyTier's follows its mode: in manual mode the network's
 name, its secret and the address the hub's engine listens on; in console mode
 the console's address and whether it runs in secure mode. Both EasyTier
 shapes name the hub's own address on the overlay. The state frame and the
-enrolment link carry the same object, ``None`` whenever there is nothing to
-join with.
+enrolment link carry the same list, one object per running overlay with
+material, the preferred first; empty when there is nothing to join.
 """
 
 from neutrino_hub.modules.easytier.constants import (
@@ -51,19 +51,6 @@ def overlay_materials(runtime) -> list:
         if material is not None:
             materials.append(material)
     return materials
-
-
-def overlay_material(runtime) -> "dict | None":
-    """The join material of the preferred overlay this box runs.
-
-    Args:
-        runtime: The shared runtime, for the network configuration.
-
-    Returns:
-        The first of :func:`overlay_materials`, None when there is none.
-    """
-    materials = overlay_materials(runtime)
-    return materials[0] if materials else None
 
 
 def easytier_join_host(runtime) -> str:

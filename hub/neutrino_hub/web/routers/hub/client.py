@@ -73,7 +73,7 @@ def create_enrollment(
     request: ClientEnrollmentRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientEnrollmentView:
     """Create a client and the link its program joins with, carrying the
-    overlay's join material when the default permission allows ``overlay``.
+    overlays' join material when the default permission allows ``overlay``.
 
     Args:
         request: The client's name.
@@ -94,9 +94,9 @@ def create_enrollment(
         )
     urls, fingerprint = enrollment_link_parts(runtime)
     registry = ClientRegistry()
-    overlay = None
+    overlays = []
     if CLIENT_PERMISSION_OVERLAY in registry.default_permission():
-        overlay = channel_overlay.overlay_material(runtime)
+        overlays = channel_overlay.overlay_materials(runtime)
     client_id = registry.create(name)
     clear_enrollments(runtime, kind=CHANNEL_ROLE_CLIENT)
     token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
@@ -110,7 +110,7 @@ def create_enrollment(
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return ClientEnrollmentView(
         link=enrollment_link(
-            urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT, overlay=overlay
+            urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT, overlays=overlays
         ),
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
         expires_in_s=ENROLLMENT_TTL_S,

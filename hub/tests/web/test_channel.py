@@ -274,7 +274,7 @@ def test_a_peer_speaking_the_oldest_accepted_number_joins(api):
 
     reply = client.post("/api/channel/join", json=join_body(protocol=PROTOCOL_MIN))
 
-    assert PROTOCOL_MIN < PROTOCOL
+    assert PROTOCOL_MIN <= PROTOCOL
     assert reply.status_code == 200
 
 

@@ -3,7 +3,8 @@
 An agent's state is what its device is to host, composed from
 ``config/devices/<id>/``; a client's state is the published service list
 resolved for the scope its socket arrived from, whether it is switched
-off, the overlay's join material and the machines it may open a shell on,
+off, the join material of every running overlay and the machines it may
+open a shell on,
 each as far as its permission allows; every entry names the machine that
 provides it. Both name every address the hub answers the channel on. Each
 carries the hash the peer's reports name back; a client's is computed on the
@@ -66,17 +67,17 @@ def client_state(runtime, client_id: str) -> dict:
         client_id: The client; one that is switched off, or gone, is
             handed an empty list, and one that is on is handed the entries
             its permission allows by kind and by the device providing them,
-            the overlay's join material when it is allowed ``overlay``, and
+            the overlays' join material when it is allowed ``overlay``, and
             the managed machines its ``terminal`` permission allows.
 
     Returns:
-        ``{hash, is_disabled, services, urls, overlay, terminals}``.
+        ``{hash, is_disabled, services, urls, overlays, terminals}``.
     """
     registry = ClientRegistry()
     client = registry.get(client_id)
     is_disabled = client is None or client.is_disabled
     services = []
-    overlay = None
+    overlays = []
     terminals = []
     if not is_disabled:
         kinds = permitted_kinds(registry, client)
@@ -102,7 +103,7 @@ def client_state(runtime, client_id: str) -> dict:
         ]
         services = _named_entries(runtime, allowed)
         if CLIENT_PERMISSION_OVERLAY in kinds:
-            overlay = channel_overlay.overlay_material(runtime)
+            overlays = channel_overlay.overlay_materials(runtime)
         if CLIENT_PERMISSION_TERMINAL in kinds:
             terminals = [
                 terminal
@@ -115,7 +116,7 @@ def client_state(runtime, client_id: str) -> dict:
         "is_disabled": is_disabled,
         "services": services,
         "urls": channel_urls(runtime),
-        "overlay": overlay,
+        "overlays": overlays,
         "terminals": terminals,
     }
     serialized = json.dumps(body, sort_keys=True).encode("utf-8")

@@ -515,16 +515,12 @@
           "title": "Is Disabled",
           "type": "boolean"
         },
-        "overlay": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ChannelOverlay"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "overlays": {
+          "items": {
+            "$ref": "#/$defs/ChannelOverlay"
+          },
+          "title": "Overlays",
+          "type": "array"
         },
         "services": {
           "items": {
@@ -1214,5 +1210,5 @@
       "type": "object"
     }
   },
-  "protocol": 2
+  "protocol": 3
 }

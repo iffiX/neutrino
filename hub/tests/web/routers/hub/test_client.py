@@ -51,7 +51,7 @@ class FakeRuntime:
         self.client_sessions = RecordingSessions()
         self.client_catalog_host = {}
         self.pushed: list = []
-        self.overlay = None
+        self.overlays: list = []
 
     def forget_client(self, client_id: str) -> None:
         self.client_catalog_host.pop(client_id, None)
@@ -76,8 +76,8 @@ def api(monkeypatch, tmp_path):
     )
     runtime = FakeRuntime()
     monkeypatch.setattr(
-        "neutrino_hub.web.channel_overlay.overlay_material",
-        lambda given: given.overlay,
+        "neutrino_hub.web.channel_overlay.overlay_materials",
+        lambda given: given.overlays,
     )
     monkeypatch.setattr(
         channel_state,
@@ -447,22 +447,23 @@ NETBIRD_OVERLAY = {
 }
 
 
-def test_a_client_link_carries_the_overlay_while_the_default_allows_it(api):
+def test_a_client_link_carries_the_overlays_while_the_default_allows_it(api):
     client, runtime = api
-    runtime.overlay = NETBIRD_OVERLAY
+    runtime.overlays = [NETBIRD_OVERLAY]
 
     with_overlay = client.post("/api/hub/client/enrollment/create", json={"name": "a"})
     ClientRegistry().set_default_permission(["web"])
     without = client.post("/api/hub/client/enrollment/create", json={"name": "b"})
 
-    assert decoded_link(with_overlay.json()["link"])["overlay"] == NETBIRD_OVERLAY
-    assert decoded_link(without.json()["link"])["overlay"] is None
+    assert decoded_link(with_overlay.json()["link"])["overlays"] == [NETBIRD_OVERLAY]
+    assert decoded_link(without.json()["link"])["overlays"] == []
 
 
-def test_a_client_link_with_no_overlay_to_join_says_null(api):
+def test_a_client_link_with_no_overlay_to_join_carries_an_empty_list(api):
     client, _ = api
 
     reply = client.post("/api/hub/client/enrollment/create", json={"name": "a"})
 
     payload = decoded_link(reply.json()["link"])
-    assert "overlay" in payload and payload["overlay"] is None
+    assert payload["overlays"] == []
+    assert "overlay" not in payload

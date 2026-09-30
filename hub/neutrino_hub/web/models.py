@@ -1745,7 +1745,8 @@ class ChannelClientState(BaseModel):
     services: list[ChannelServiceEntry] = Field(default_factory=list)
     # Every address the hub answers the channel on.
     urls: list[str] = Field(default_factory=list)
-    overlay: ChannelOverlay | None = None
+    # One per running overlay with material, the preferred first.
+    overlays: list[ChannelOverlay] = Field(default_factory=list)
     terminals: list[ChannelTerminal] = Field(default_factory=list)
 
 

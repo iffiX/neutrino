@@ -18,6 +18,7 @@ LIVE = {
     "enp2s0": "203.0.113.7/24",
     "enp1s0": "192.168.8.1/24",
     "wt0": "100.88.178.129/16",
+    "easytier": "10.0.0.1/24",
 }
 
 
@@ -134,3 +135,41 @@ def test_an_interface_with_no_address_yet_is_left_out(live, monkeypatch):
     )
 
     assert channel_urls(runtime) == ["https://192.168.8.1:8443"]
+
+
+def test_two_overlays_name_the_hub_in_each_network(live):
+    """A client on either overlay reaches the hub at its address there, and
+    one moving from one overlay to the other already holds both."""
+    runtime = FakeRuntime(
+        network_config(
+            lan_entry("enp1s0", address="192.168.8.1"),
+            overlays=[
+                {"provider": "netbird", "is_enabled": True},
+                {"provider": "easytier", "is_enabled": True},
+            ],
+        )
+    )
+
+    assert channel_urls(runtime) == [
+        "https://192.168.8.1:8443",
+        "https://100.88.178.129:8443",
+        "https://10.0.0.1:8443",
+        "https://neutrino.netbird.cloud:8443",
+    ]
+
+
+def test_an_overlay_turned_off_is_named_nowhere(live):
+    runtime = FakeRuntime(
+        network_config(
+            lan_entry("enp1s0", address="192.168.8.1"),
+            overlays=[
+                {"provider": "netbird", "is_enabled": False},
+                {"provider": "easytier", "is_enabled": True},
+            ],
+        )
+    )
+
+    assert channel_urls(runtime) == [
+        "https://192.168.8.1:8443",
+        "https://10.0.0.1:8443",
+    ]

@@ -270,7 +270,7 @@ def test_the_hello_is_the_bindings_identity_card(bound, monkeypatch):
         "software": f"{CLIENT_SOFTWARE_PREFIX}{CLIENT_VERSION}",
         "token": "tok",
     }
-    assert PROTOCOL == 2 and CLIENT_ROLE == "client"
+    assert PROTOCOL == 3 and CLIENT_ROLE == "client"
     for absent in ("hostname", "platform", "catalog_hash", "state_hash", "kind"):
         assert absent not in hello
 

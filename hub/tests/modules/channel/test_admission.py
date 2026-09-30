@@ -35,3 +35,11 @@ def test_a_refusal_names_both_sides_and_the_floor(protocol, code):
 
 def test_a_missing_number_reads_as_zero_and_is_too_old():
     assert admit(0)["code"] == "protocol_too_old"
+
+
+@pytest.mark.parametrize("protocol", [1, 2])
+def test_a_0_3_or_0_4_peer_is_too_old(protocol):
+    """0.5.0 renamed the link's and the state's ``overlay`` to ``overlays``,
+    and the hub accepts no peer that reads the old name."""
+    assert PROTOCOL == 3
+    assert admit(protocol)["code"] == "protocol_too_old"

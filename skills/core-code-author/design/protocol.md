@@ -558,13 +558,13 @@ two documents and which streams each side opens.
 A link is `neutrino://enroll/<base64url>` over one JSON object:
 
 ```json
-{"urls": ["https://192.168.100.1:8443", "..."], "token": "...", "fp": "<sha256-hex>", "role": "client", "overlay": {"provider": "netbird", "...": "..."}}
+{"urls": ["https://192.168.100.1:8443", "..."], "token": "...", "fp": "<sha256-hex>", "role": "client", "overlays": [{"provider": "netbird", "...": "..."}]}
 ```
 
-A client link has `overlay`, the object of the same name in the client's
-`state`, taken for the default permission when the link is created: null
+A client link has `overlays`, the list of the same name in the client's
+`state`, taken for the default permission when the link is created: empty
 when that permission does not allow `overlay` or there is nothing to join. A
-device link has no `overlay`. A peer that does not know the member ignores
+device link has no `overlays`. A peer that does not know the member ignores
 it.
 
 `urls` is every exposed address on the agent port, because one of them is on
@@ -702,7 +702,7 @@ and platform, which change between releases.
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}]` | |
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
-| `overlay` | | | `{provider, ...}` or null: what the client joins the hub's overlay with | |
+| `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
 | `terminals` | | | `[{device_id, name, is_online}]`: the managed machines it may open a `shell` on | |
 | `error` | | `{code, params}` | | |
 
@@ -711,14 +711,17 @@ error, the state error, or a failed `reinstall`. The AI gateway is a `services`
 entry whose `type` is `ai`, and a client gets its key through the `service`
 stream.
 
-`urls` is every address the hub answers the channel on: the link's set, plus
-the overlay's own name where its daemon reports one. Both states carry it
+`urls` is every address the hub answers the channel on: the link's set, which
+holds the hub's address on every running overlay it is exposed on, plus
+NetBird's name for the hub where its daemon reports one. Both states carry it
 under their hash, and the hub pushes the state when the set changes: after a
-network apply, and when the address sampler reads a different set, which it
+converge step, and when the address sampler reads a different set, which it
 does every `WEB_ADDRESS_SAMPLE_INTERVAL_S` seconds.
 
-`overlay` is what a client joins the hub's overlay with as an ordinary peer,
-in one of three shapes:
+`overlays` is what a client joins the hub's overlays with as an ordinary
+peer: one object per running overlay that has material, in the engine
+table's order, NetBird first, which is the order the Overlay page draws and
+the order of preference. Each object has one of three shapes:
 
 ```json
 {"provider": "netbird", "setup_key": "...", "management_url": "", "fqdn": "hub.netbird.cloud"}
@@ -735,13 +738,14 @@ console address with its account token, kept sealed in
 `config/easytier/easytier.json`, and the console pushes the network itself.
 `hub_address` is the hub's own address on the EasyTier network, without its
 prefix length: the stored address in manual mode, the one the engine reports
-in console mode, empty when neither is known. `overlay` is null in seven
-cases: the box runs no overlay, NetBird has no kept key, EasyTier in manual
-mode has no network or no join host, EasyTier in console mode has no console
-address, the vault is locked, the client is switched off, or its permission
-does not allow `overlay`. The state is pushed to every client when the key is
-kept, replaced or forgotten, when anything EasyTier stores changes, and when
-the provider changes.
+in console mode, empty when neither is known. An overlay is left out of the
+list when NetBird has no kept key, EasyTier in manual mode has no network or
+no join host, EasyTier in console mode has no console address, or the vault
+is locked; the list is empty when the box runs no overlay, the client is
+switched off, or its permission does not allow `overlay`. The state is
+pushed to every client by the converge step, which every write of a key, a
+setting or an engine's switch runs, and a client reached through an engine
+being turned off is pushed before that engine stops.
 
 `terminals` lists every managed machine, the hub's own among them, online or
 not, with `is_online` read from its socket; it is empty unless the client's
@@ -968,7 +972,7 @@ is what a successful `join` leaves on both sides.
 
 The agent's and the client's `constants.py`, and the hub's
 `modules/channel/constants.py`, have `PROTOCOL`, the integer this build speaks,
-which is 1 in every 0.3 package and 2 from 0.4.0. The agent and the client send theirs in
+which is 1 in every 0.3 package, 2 in every 0.4 package and 3 from 0.5.0. The agent and the client send theirs in
 `hello`, and the hub sends its own in `welcome`. The hub alone also has
 `PROTOCOL_MIN`, the oldest number it still accepts. An agent or a client
 speaks one number; the hub meets peers from different releases and needs a
@@ -1096,7 +1100,7 @@ one; a package version changes on every release. One rule ties the two.
 | Adding a kind, a field or a code keeps `PROTOCOL`, and a patch release can add them. | A peer that reads tolerantly is unaffected. |
 | Removing anything, or changing its meaning, adds one to `PROTOCOL`; so does a change to the link, the ticket, the pin or the four words `hello`, `state`, `report`, `open`. | An old peer misreads it. |
 | The relation to the package version is one-way: a `PROTOCOL` change requires a new minor before 1.0 and a new major after it; a new minor or major can keep the number; a patch never changes `PROTOCOL`. | A person reads compatibility off the version and finds it true. |
-| `PROTOCOL_MIN` rises only when a new minor opens (a new major after 1.0), and at most to the number the previous minor spoke. | A hub one release ahead still accepts the fleet it had. |
+| `PROTOCOL_MIN` rises only when a new minor opens (a new major after 1.0). It rises at most to the number the previous minor spoke, except where the owner decides a change is too wide to carry the old peers, as 0.5.0 did by raising it to its own 3. | A hub one release ahead still accepts the fleet it had, unless its release notes say how that fleet is reinstalled. |
 
 Reading is tolerant and writing is strict. An unknown kind is closed
 `kind_unknown`, an unknown field is ignored, and a peer sends only what its own
@@ -1113,3 +1117,8 @@ more or one fewer fails. Changing a channel model fails that test until
 | --- | --- |
 | 1 | 0.3.0 |
 | 2 | 0.4.0 |
+| 3 | 0.5.0 |
+
+3 renamed the link's and the client state's `overlay`, one object or null,
+to `overlays`, a list. `PROTOCOL_MIN` is 3 from 0.5.0: a 0.3 or 0.4 agent or
+client is refused `protocol_too_old` and does not update itself from the hub.

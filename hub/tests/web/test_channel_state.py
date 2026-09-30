@@ -79,7 +79,7 @@ class FakeRuntime:
         )
         self.device_hostname: dict = {}
         self.device_address: dict = {}
-        self.overlay = None
+        self.overlays: list = []
 
     def host_scopes(self):
         return [LAN, OVERLAY]
@@ -96,11 +96,11 @@ def config_dir(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def overlay(monkeypatch):
-    """The overlay's join material is whatever the runtime holds."""
+    """The overlays' join material is whatever the runtime holds."""
     monkeypatch.setattr(
         channel_state.channel_overlay,
-        "overlay_material",
-        lambda runtime: runtime.overlay,
+        "overlay_materials",
+        lambda runtime: list(runtime.overlays),
     )
 
 
@@ -254,42 +254,57 @@ NETBIRD_OVERLAY = {
 }
 
 
-def test_a_clients_state_carries_the_overlay_and_its_key_moves_the_hash(config_dir):
+def test_a_clients_state_carries_the_overlays_and_a_key_moves_the_hash(config_dir):
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
-    runtime.overlay = NETBIRD_OVERLAY
+    runtime.overlays = [NETBIRD_OVERLAY]
 
     first = channel_state.client_state(runtime, client_id)
-    runtime.overlay = dict(NETBIRD_OVERLAY, setup_key="E5F6A7B8")  # scan: allow
+    runtime.overlays = [dict(NETBIRD_OVERLAY, setup_key="E5F6A7B8")]  # scan: allow
     second = channel_state.client_state(runtime, client_id)
 
-    assert first["overlay"] == NETBIRD_OVERLAY
-    assert second["overlay"]["setup_key"] == "E5F6A7B8"  # scan: allow
+    assert first["overlays"] == [NETBIRD_OVERLAY]
+    assert second["overlays"][0]["setup_key"] == "E5F6A7B8"  # scan: allow
     assert first["hash"] != second["hash"]
+    assert "overlay" not in first
 
 
-def test_a_client_without_overlay_permission_gets_null_and_keeps_its_list(
+def test_two_overlays_reach_the_client_in_their_order(config_dir):
+    runtime = FakeRuntime()
+    client_id = ClientRegistry().create("alice")
+    easytier = {"provider": "easytier", "mode": "console", "hub_address": ""}
+    runtime.overlays = [NETBIRD_OVERLAY, easytier]
+
+    state = channel_state.client_state(runtime, client_id)
+
+    assert [entry["provider"] for entry in state["overlays"]] == [
+        "netbird",
+        "easytier",
+    ]
+
+
+def test_a_client_without_overlay_permission_gets_none_and_keeps_its_list(
     config_dir,
 ):
     runtime = FakeRuntime()
     registry = ClientRegistry()
     client_id = registry.create("alice")
-    runtime.overlay = NETBIRD_OVERLAY
+    runtime.overlays = [NETBIRD_OVERLAY]
     registry.set_permission(client_id, ["web"])
 
     state = channel_state.client_state(runtime, client_id)
 
-    assert state["overlay"] is None
+    assert state["overlays"] == []
     assert [entry["id"] for entry in state["services"]] == ["web_gitea"]
 
 
-def test_no_overlay_to_join_is_null_with_the_list_still_there(config_dir):
+def test_no_overlay_to_join_is_an_empty_list_with_the_list_still_there(config_dir):
     runtime = FakeRuntime()
     client_id = ClientRegistry().create("alice")
 
     state = channel_state.client_state(runtime, client_id)
 
-    assert state["overlay"] is None
+    assert state["overlays"] == []
     assert [entry["id"] for entry in state["services"]] == ["web_gitea"]
 
 
