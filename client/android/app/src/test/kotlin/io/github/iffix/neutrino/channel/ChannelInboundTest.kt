@@ -31,6 +31,14 @@ class ChannelInboundTest {
     }
 
     @Test
+    fun aShellSessionReadsEveryFieldTheGoldenNames() {
+        assertEquals(
+            GoldenSchema.properties("ChannelShellSession"),
+            names(ChannelShellSession.serializer().descriptor),
+        )
+    }
+
+    @Test
     fun aWelcomeIsRead() {
         val text =
             """{"type":"welcome","protocol":3,"role":"hub","id":"h","name":"Neutrino","software":"neutrino_hub/0.5.0"}"""
