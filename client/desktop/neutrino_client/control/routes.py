@@ -134,6 +134,18 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _open_window_terminal(resident, payload)
         if route == "/api/terminal/input":
             return _terminal_input(resident, payload)
+        if route == "/api/terminal/persist":
+            return _answer_empty(
+                resident.persist_terminal(
+                    _terminal_id(payload), payload.get("is_persistent") is True
+                )
+            )
+        if route == "/api/terminal/stop":
+            return _answer_empty(
+                resident.stop_terminal_session(
+                    _hub_id(payload), str(payload.get("session_id", "") or "")
+                )
+            )
         if route == "/api/terminal/close":
             outcome = resident.close_terminal(_terminal_id(payload))
             if outcome.get("code"):
@@ -286,6 +298,7 @@ def _attach_terminal(resident, body: dict):
         str(body.get("device_id", "") or ""),
         _size(body, "cols"),
         _size(body, "rows"),
+        str(body.get("session_id", "") or ""),
     )
     if "code" in outcome:
         return refusal_status(str(outcome["code"])), outcome
@@ -308,6 +321,7 @@ def _open_window_terminal(resident, body: dict):
         str(body.get("device_id", "") or ""),
         _size(body, "cols"),
         _size(body, "rows"),
+        str(body.get("session_id", "") or ""),
     )
     if "code" in outcome:
         return refusal_status(str(outcome["code"])), outcome
@@ -332,6 +346,13 @@ def _answer(resident, outcome: dict):
     if outcome:
         return refusal_status(str(outcome.get("code", ""))), outcome
     return 200, state_payload(resident)
+
+
+def _answer_empty(outcome: dict):
+    """Empty on success, the refusal and its status otherwise."""
+    if outcome.get("code"):
+        return refusal_status(str(outcome["code"])), outcome
+    return 200, {}
 
 
 def _unknown_hub(hub_id: str):

@@ -36,6 +36,8 @@ CLIENT_CODE_WORDS = {
     "permission_denied": "the hub does not allow this client to use {kind}",
     "agent_offline": "that machine is not connected to the hub right now",
     "shell_unknown": "the hub no longer has that terminal open",
+    "session_taken": "another window attached to this session",
+    "session_unknown": "the machine no longer keeps this session",
     "kind_unknown": "the hub is too old to open this; update the hub",
     "overlay_daemon_down": "the virtual network service is not running on this machine; reinstall the client",
     "overlay_not_authorized": "joining the virtual network was not authorized on this machine",

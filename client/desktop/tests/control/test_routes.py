@@ -495,6 +495,49 @@ def test_the_windows_terminal_opens_with_its_size_and_answers_its_id():
     )
 
 
+def test_a_kept_session_is_opened_by_its_id():
+    resident = FakeResident()
+
+    routes.dispatch(
+        "POST",
+        "/api/terminal/open",
+        {"hub_id": "h1", "device_id": "d1", "cols": 80, "rows": 24, "session_id": "k1"},
+        resident,
+    )
+
+    assert resident.terminal_calls == [("window", "h1", "d1", 80, 24, "k1")]
+
+
+def test_persist_and_stop_reach_the_resident_and_answer_empty():
+    resident = FakeResident()
+
+    persisted = routes.dispatch(
+        "POST",
+        "/api/terminal/persist",
+        {"terminal_id": "t1", "is_persistent": True},
+        resident,
+    )
+    stopped = routes.dispatch(
+        "POST", "/api/terminal/stop", {"hub_id": "h1", "session_id": "k1"}, resident
+    )
+
+    assert (persisted, stopped) == ((200, {}), (200, {}))
+    assert resident.terminal_calls == [("persist", "t1", True), ("stop", "h1", "k1")]
+
+
+@pytest.mark.parametrize("code", ["session_unknown", "session_taken"])
+def test_a_refused_session_step_answers_its_code(code):
+    resident = FakeResident()
+    resident.session_reply = {"code": code, "params": {"session_id": "k1"}}
+
+    status, reply = routes.dispatch(
+        "POST", "/api/terminal/stop", {"hub_id": "h1", "session_id": "k1"}, resident
+    )
+
+    assert status == 400
+    assert reply == {"code": code, "params": {"session_id": "k1"}}
+
+
 def test_the_windows_keys_arrive_as_base64_and_reach_the_shell_as_bytes():
     resident = FakeResident()
     typed = base64.b64encode("ls é\r".encode()).decode()

@@ -44,6 +44,9 @@ CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
 # The module and verb a resize names on a ``command`` stream.
 CLIENT_SHELL_RESIZE_MODULE = "agent"
 CLIENT_SHELL_RESIZE_VERB = "resize"
+# The verbs that keep a shell session once nobody is attached, and end one.
+CLIENT_SHELL_PERSIST_VERB = "persist"
+CLIENT_SHELL_STOP_VERB = "stop_session"
 
 # How often an unbound resident looks at its configuration again.
 CLIENT_IDLE_POLL_INTERVAL_S = 2

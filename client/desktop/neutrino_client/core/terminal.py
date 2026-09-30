@@ -7,7 +7,8 @@ hub's output back, one direction each, because a Windows pipe handle serves
 one blocking operation at a time. The window's own terminal sends its keys
 as requests and takes the output as pushes. The typing side ending closes
 the stream; the hub closing it ends the output side, which ends the
-terminal.
+terminal. Each stream is attached to one shell session by its id; a session
+kept on the machine outlives the stream and is attached to again by that id.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -28,18 +29,25 @@ TERMINAL_BATCH_BYTES = 65536
 class TerminalBridge:
     """One shell stream, pumped to and from the terminal it is shown on."""
 
-    def __init__(self, *, stream):
+    def __init__(self, *, stream, session_id: str = ""):
         """
         Args:
             stream: The open ``shell`` stream.
+            session_id: The shell session the stream is attached to.
         """
         self._stream = stream
+        self._session_id = session_id
         self._is_closed_here = False
 
     @property
     def stream_id(self) -> int:
         """The shell stream's id, which a resize names."""
         return self._stream.stream_id
+
+    @property
+    def session_id(self) -> str:
+        """The shell session's id, which ``persist`` and ``stop_session`` name."""
+        return self._session_id
 
     @property
     def is_done(self) -> bool:

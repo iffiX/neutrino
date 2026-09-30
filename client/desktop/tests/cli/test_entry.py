@@ -68,11 +68,20 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
         (["status"], "status", ((), {})),
         (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
         (["quit"], "quit", ((), {})),
-        (["terminal", "lepton"], "terminal", (("lepton",), {"hub": ""})),
+        (
+            ["terminal", "lepton"],
+            "terminal",
+            (("lepton",), {"hub": "", "session_id": ""}),
+        ),
         (
             ["terminal", "lepton", "--hub", "home"],
             "terminal",
-            (("lepton",), {"hub": "home"}),
+            (("lepton",), {"hub": "home", "session_id": ""}),
+        ),
+        (
+            ["terminal", "lepton", "--session", "5d1c0e2a"],
+            "terminal",
+            (("lepton",), {"hub": "", "session_id": "5d1c0e2a"}),
         ),
     ],
 )

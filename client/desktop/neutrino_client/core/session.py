@@ -42,8 +42,10 @@ from neutrino_client.constants import (
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
     CLIENT_ROTATE_DELAY_S,
+    CLIENT_SHELL_PERSIST_VERB,
     CLIENT_SHELL_RESIZE_MODULE,
     CLIENT_SHELL_RESIZE_VERB,
+    CLIENT_SHELL_STOP_VERB,
     CLIENT_SOFTWARE_PREFIX,
     CLIENT_STREAM_CODE_KIND_UNKNOWN,
     CLIENT_STREAM_KIND_COMMAND,
@@ -139,8 +141,9 @@ def _clean_terminals(value) -> list:
         value: What the state carried.
 
     Returns:
-        ``[{device_id, name, is_online}]``, entries without a device id
-        dropped; empty when ``value`` is not a list.
+        ``[{device_id, name, is_online, sessions}]``, entries without a
+        device id dropped, ``sessions`` as :func:`_clean_sessions` keeps
+        them; empty when ``value`` is not a list.
     """
     kept = []
     for entry in value if isinstance(value, list) else []:
@@ -154,6 +157,41 @@ def _clean_terminals(value) -> list:
                 "device_id": device_id,
                 "name": str(entry.get("name", "") or "") or device_id,
                 "is_online": bool(entry.get("is_online")),
+                "sessions": _clean_sessions(entry.get("sessions")),
+            }
+        )
+    return kept
+
+
+def _clean_sessions(value) -> list:
+    """One machine's shell sessions as the session holds them.
+
+    Args:
+        value: What the state's ``terminals`` entry carried.
+
+    Returns:
+        ``[{session_id, account, started_at, title, is_attached,
+        is_persistent}]``, entries without an id dropped; empty when
+        ``value`` is not a list.
+    """
+    kept = []
+    for entry in value if isinstance(value, list) else []:
+        if not isinstance(entry, dict) or not entry.get("session_id"):
+            continue
+        started_at = entry.get("started_at")
+        kept.append(
+            {
+                "session_id": str(entry["session_id"]),
+                "account": str(entry.get("account", "") or ""),
+                "started_at": (
+                    started_at
+                    if isinstance(started_at, (int, float, str))
+                    and not isinstance(started_at, bool)
+                    else ""
+                ),
+                "title": str(entry.get("title", "") or ""),
+                "is_attached": entry.get("is_attached") is True,
+                "is_persistent": entry.get("is_persistent") is True,
             }
         )
     return kept
@@ -429,7 +467,14 @@ class ClientHubSession:
         stream = self._live_streams().open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
         return stream.wait_close(timeout_s)
 
-    def open_shell(self, device_id: str, cols: int, rows: int) -> ClientStream:
+    def open_shell(
+        self,
+        device_id: str,
+        cols: int,
+        rows: int,
+        session_id: str,
+        is_resumed: bool = False,
+    ) -> ClientStream:
         """Open a ``shell`` stream to one managed machine, credit granted.
 
         The hub's refusal arrives as the stream's close: a read comes back
@@ -439,6 +484,9 @@ class ClientHubSession:
             device_id: The machine, as the state's ``terminals`` names it.
             cols: The terminal's width in columns.
             rows: The terminal's height in rows.
+            session_id: The shell session's id, a fresh uuid for a new one.
+            is_resumed: Whether ``session_id`` names a session the machine
+                keeps, attached to again with its kept output.
 
         Returns:
             The open stream, to read, send on and close.
@@ -446,10 +494,68 @@ class ClientHubSession:
         Raises:
             GatewayUnreachable: When there is no socket, or it is gone.
         """
-        return self._live_streams().open(
-            CLIENT_STREAM_KIND_SHELL,
-            {"device_id": device_id, "cols": int(cols), "rows": int(rows)},
-            has_bytes=True,
+        args = {
+            "device_id": device_id,
+            "cols": int(cols),
+            "rows": int(rows),
+            "session_id": session_id,
+        }
+        if is_resumed:
+            args["is_resumed"] = True
+        return self._live_streams().open(CLIENT_STREAM_KIND_SHELL, args, has_bytes=True)
+
+    def persist_shell(
+        self,
+        session_id: str,
+        is_persistent: bool,
+        timeout_s: float = CLIENT_STREAM_TIMEOUT_S,
+    ) -> dict:
+        """Tell the hub whether a shell session outlives its stream.
+
+        Args:
+            session_id: The shell session's id.
+            is_persistent: Whether the machine keeps it once nobody is
+                attached.
+            timeout_s: How long to wait for the close.
+
+        Returns:
+            The close's ``params``.
+
+        Raises:
+            GatewayRefusedDetail: When the hub refused, ``session_unknown``
+                among the codes.
+            GatewayUnreachable: When there is no socket, it ends, or the
+                close does not arrive in time.
+        """
+        return self._agent_command(
+            {
+                "verb": CLIENT_SHELL_PERSIST_VERB,
+                "session_id": session_id,
+                "is_persistent": bool(is_persistent),
+            },
+            timeout_s,
+        )
+
+    def stop_shell_session(
+        self, session_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
+    ) -> dict:
+        """Have the hub end a shell session on its machine.
+
+        Args:
+            session_id: The shell session's id.
+            timeout_s: How long to wait for the close.
+
+        Returns:
+            The close's ``params``.
+
+        Raises:
+            GatewayRefusedDetail: When the hub refused, ``session_unknown``
+                among the codes.
+            GatewayUnreachable: When there is no socket, it ends, or the
+                close does not arrive in time.
+        """
+        return self._agent_command(
+            {"verb": CLIENT_SHELL_STOP_VERB, "session_id": session_id}, timeout_s
         )
 
     def resize_shell(
@@ -730,6 +836,14 @@ class ClientHubSession:
         ended.set()
         self._end_socket(client)
         return failure
+
+    def _agent_command(self, args: dict, timeout_s: float) -> dict:
+        """Open a ``command`` stream to the agent module and take its close."""
+        stream = self._live_streams().open(
+            CLIENT_STREAM_KIND_COMMAND,
+            dict(args, module=CLIENT_SHELL_RESIZE_MODULE),
+        )
+        return stream.wait_close(timeout_s)
 
     def _live_streams(self) -> ClientStreamRegistry:
         """The stream registry of the live socket.

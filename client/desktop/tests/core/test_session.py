@@ -57,6 +57,7 @@ WELCOME = {
 STATE = {"type": "state", "hash": "h1", "is_disabled": False, "services": HUB_SERVICES}
 MATERIAL = {"host": "h", "port": 21118, "password": "p"}  # scan: allow
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
+SESSION_ID = "5d1c0e2a-7b6f-4c1d-9a8e-3f2b1c0d9e8f"
 
 
 class ScriptedSocket:
@@ -696,7 +697,7 @@ def test_a_shell_opens_odd_with_its_size_and_grants_the_window(bound, monkeypatc
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    stream = session.open_shell("dev_lepton", 120, 40)
+    stream = session.open_shell("dev_lepton", 120, 40, SESSION_ID)
 
     assert stream.stream_id == 1
     assert made.sent[-2] == {
@@ -706,6 +707,7 @@ def test_a_shell_opens_odd_with_its_size_and_grants_the_window(bound, monkeypatc
         "device_id": "dev_lepton",
         "cols": 120,
         "rows": 40,
+        "session_id": SESSION_ID,
     }
     assert made.sent[-1] == {
         "type": "credit",
@@ -714,10 +716,105 @@ def test_a_shell_opens_odd_with_its_size_and_grants_the_window(bound, monkeypatc
     }
 
 
+def test_a_kept_session_is_opened_again_as_resumed(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    session.open_shell("dev_lepton", 80, 24, SESSION_ID, is_resumed=True)
+
+    opened = made.sent[-2]
+    assert (opened["session_id"], opened["is_resumed"]) == (SESSION_ID, True)
+
+
+def answered(session, made, ask, stream_id: int):
+    """Run one ask on a thread, answer its command's open, and hand back what it got."""
+    outcome = {}
+
+    def run() -> None:
+        try:
+            outcome["params"] = ask()
+        except Exception as error:  # noqa: BLE001 - handed back to the test
+            outcome["error"] = error
+
+    asking = threading.Thread(target=run)
+    asking.start()
+    deadline = time.monotonic() + 5
+    while made.sent[-1].get("stream") != stream_id and time.monotonic() < deadline:
+        time.sleep(0.01)
+    take(session, made, {"type": "close", "stream": stream_id, "params": {}})
+    asking.join(timeout=5)
+    return outcome
+
+
+def test_persist_and_stop_name_the_session_on_the_agent_module(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    def persist():
+        return session.persist_shell(SESSION_ID, True)
+
+    def stop():
+        return session.stop_shell_session(SESSION_ID)
+
+    assert answered(session, made, persist, 1) == {"params": {}}
+    assert answered(session, made, stop, 3) == {"params": {}}
+
+    commands = [frame for frame in made.sent if frame.get("kind") == "command"]
+    assert commands == [
+        {
+            "type": "open",
+            "stream": 1,
+            "kind": "command",
+            "verb": "persist",
+            "session_id": SESSION_ID,
+            "is_persistent": True,
+            "module": "agent",
+        },
+        {
+            "type": "open",
+            "stream": 3,
+            "kind": "command",
+            "verb": "stop_session",
+            "session_id": SESSION_ID,
+            "module": "agent",
+        },
+    ]
+
+
+def test_a_session_the_machine_does_not_keep_is_the_hubs_refusal(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    outcome = {}
+
+    def stop() -> None:
+        try:
+            session.stop_shell_session(SESSION_ID, timeout_s=5)
+        except GatewayRefusedDetail as refused:
+            outcome["code"] = refused.code
+
+    asking = threading.Thread(target=stop)
+    asking.start()
+    while made.sent[-1].get("kind") != "command":
+        time.sleep(0.01)
+    take(
+        session,
+        made,
+        {
+            "type": "close",
+            "stream": 1,
+            "code": "session_unknown",
+            "params": {"session_id": SESSION_ID},
+        },
+    )
+    asking.join(timeout=5)
+
+    assert outcome == {"code": "session_unknown"}
+
+
 def test_the_hubs_bytes_on_a_shell_reach_its_reader(bound, monkeypatch):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24)
+    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
 
     take(session, made, protocol.encode_binary(1, b"$ "))
 
@@ -727,7 +824,7 @@ def test_the_hubs_bytes_on_a_shell_reach_its_reader(bound, monkeypatch):
 def test_a_shell_sends_only_after_the_hubs_credit(bound, monkeypatch):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24)
+    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
     sent = threading.Thread(target=stream.send, args=(b"ls\n",))
 
     sent.start()
@@ -742,7 +839,7 @@ def test_a_shell_sends_only_after_the_hubs_credit(bound, monkeypatch):
 def test_a_resize_opens_a_command_naming_the_shell(bound, monkeypatch):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24)
+    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
     outcome = {}
 
     def resize() -> None:
@@ -771,7 +868,7 @@ def test_a_resize_opens_a_command_naming_the_shell(bound, monkeypatch):
 def test_a_socket_that_ends_wakes_a_shell_reader_empty(bound, monkeypatch):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    stream = session.open_shell("dev_lepton", 80, 24)
+    stream = session.open_shell("dev_lepton", 80, 24, SESSION_ID)
     outcome = {}
 
     def read() -> None:
@@ -789,7 +886,7 @@ def test_a_shell_with_no_socket_is_unreachable(bound):
     session, _listener = bound
 
     with pytest.raises(GatewayUnreachable):
-        session.open_shell("dev_lepton", 80, 24)
+        session.open_shell("dev_lepton", 80, 24, SESSION_ID)
 
 
 def test_a_stream_the_hub_opens_is_closed_kind_unknown(bound, monkeypatch):
@@ -1558,8 +1655,21 @@ EASYTIER_OVERLAY = {
     "peer": "tcp://203.0.113.7:11010",
     "hub_address": "10.144.144.1",
 }
+KEPT = {
+    "session_id": SESSION_ID,
+    "account": "alice",
+    "started_at": 1759300000,
+    "title": "vim notes.md",
+    "is_attached": False,
+    "is_persistent": True,
+}
 TERMINALS = [
-    {"device_id": "d1", "name": "lepton", "is_online": True},
+    {
+        "device_id": "d1",
+        "name": "lepton",
+        "is_online": True,
+        "sessions": [KEPT, {"account": "no id"}, dict(KEPT, session_id="s2", x=1)],
+    },
     {"device_id": "d2", "name": "", "is_online": False},
     {"name": "no id"},
     "junk",
@@ -1661,8 +1771,13 @@ def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch
     take(session, made, dict(STATE, terminals=TERMINALS))
 
     assert session.terminal_entries() == [
-        {"device_id": "d1", "name": "lepton", "is_online": True},
-        {"device_id": "d2", "name": "d2", "is_online": False},
+        {
+            "device_id": "d1",
+            "name": "lepton",
+            "is_online": True,
+            "sessions": [KEPT, dict(KEPT, session_id="s2")],
+        },
+        {"device_id": "d2", "name": "d2", "is_online": False, "sessions": []},
     ]
     session._end_socket(made)
     assert session.terminal_entries() == []

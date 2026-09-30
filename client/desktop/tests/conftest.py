@@ -437,6 +437,7 @@ class FakeResident:
         self.clipboard_reply = {"text": "echo pasted\n"}
         self.terminal_calls = []
         self.terminal_reply = {"terminal_id": "t1"}
+        self.session_reply = {}
         self.typed = []
         self.shown = [b"$ "]
         self.states = {
@@ -531,8 +532,11 @@ class FakeResident:
         self.overlay_calls.append(("pick", hub_id, provider))
         return dict(self.overlay_reply)
 
-    def open_terminal(self, hub_id: str, device_id: str, cols: int, rows: int):
-        self.terminal_calls.append(("open", hub_id, device_id, cols, rows))
+    def open_terminal(
+        self, hub_id: str, device_id: str, cols: int, rows: int, session_id=""
+    ):
+        call = ("open", hub_id, device_id, cols, rows)
+        self.terminal_calls.append(call + ((session_id,) if session_id else ()))
         return dict(self.terminal_reply)
 
     def attach_terminal(self, terminal_id: str, read) -> None:
@@ -559,9 +563,20 @@ class FakeResident:
         self.terminal_calls.append(("result", terminal_id))
         return {"exit_code": 0}
 
-    def open_window_terminal(self, hub_id: str, device_id: str, cols: int, rows: int):
-        self.terminal_calls.append(("window", hub_id, device_id, cols, rows))
+    def open_window_terminal(
+        self, hub_id: str, device_id: str, cols: int, rows: int, session_id=""
+    ):
+        call = ("window", hub_id, device_id, cols, rows)
+        self.terminal_calls.append(call + ((session_id,) if session_id else ()))
         return dict(self.terminal_reply)
+
+    def persist_terminal(self, terminal_id: str, is_persistent: bool) -> dict:
+        self.terminal_calls.append(("persist", terminal_id, is_persistent))
+        return dict(self.session_reply)
+
+    def stop_terminal_session(self, hub_id: str, session_id: str) -> dict:
+        self.terminal_calls.append(("stop", hub_id, session_id))
+        return dict(self.session_reply)
 
     def terminal_input(self, terminal_id: str, data: bytes) -> dict:
         if not self.has_terminal(terminal_id):

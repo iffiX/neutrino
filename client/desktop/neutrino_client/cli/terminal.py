@@ -1,7 +1,8 @@
 """``nclient terminal <machine>``: a shell on a machine a hub manages.
 
 The machine is one the hub offers a terminal on, named by its id or its
-name, the hub named with ``--hub`` when several are joined. The running
+name, the hub named with ``--hub`` when several are joined; ``--session``
+attaches to a shell session the machine keeps, by its id. The running
 client opens the shell through its hub; this terminal is put in raw mode
 and carries every key there and the shell's output back, over two control
 connections, one each way. A size change goes up as a resize.
@@ -30,13 +31,15 @@ EXIT_NO_MACHINE = 2
 TERMINAL_READ_BYTES = 4096
 
 
-def main(machine: str, *, hub: str = "", platform=None) -> int:
+def main(machine: str, *, hub: str = "", session_id: str = "", platform=None) -> int:
     """Attach this terminal to a shell on one machine.
 
     Args:
         machine: The machine's id or name.
         hub: The hub, by name or id; empty names the one hub whose
             machines match.
+        session_id: A shell session the machine keeps, attached to again;
+            empty opens a new one.
         platform: The machine's platform; None detects it.
 
     Returns:
@@ -63,6 +66,7 @@ def main(machine: str, *, hub: str = "", platform=None) -> int:
             "device_id": chosen["device_id"],
             "cols": size.columns,
             "rows": size.lines,
+            "session_id": session_id,
         },
     )
     if typing is None:

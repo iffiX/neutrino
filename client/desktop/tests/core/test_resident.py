@@ -16,6 +16,7 @@ line a step, and lets no step hold up the rest.
 import json
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -28,7 +29,7 @@ from neutrino_client.constants import (
 )
 from neutrino_client.core import enrollment
 from neutrino_client.core.resident import ClientResident
-from neutrino_client.exceptions import GatewayRefused
+from neutrino_client.exceptions import GatewayRefused, GatewayRefusedDetail
 from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.base import ServiceTypeHandler
 from neutrino_client.services.file import mount_record_id
@@ -1309,7 +1310,7 @@ def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
     lepton = {"device_id": "d1", "name": "lepton", "is_online": True}
     resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
 
-    assert resident.terminal_entries() == [dict(lepton, hub_id="h1")]
+    assert resident.terminal_entries() == [dict(lepton, hub_id="h1", sessions=[])]
 
 
 def offered(resident) -> None:
@@ -1334,9 +1335,62 @@ def test_a_terminal_opens_a_shell_stream_with_its_size(two_hubs_up):
             "device_id": "d1",
             "cols": 120,
             "rows": 40,
+            "session_id": outcome["session_id"],
         }
     ]
+    assert str(uuid.UUID(outcome["session_id"])) == outcome["session_id"]
     assert resident.has_terminal(outcome["terminal_id"])
+
+
+def test_every_new_terminal_is_a_new_session(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+
+    first = resident.open_terminal("h1", "d1", 80, 24)
+    second = resident.open_terminal("h1", "d1", 80, 24)
+
+    assert first["session_id"] != second["session_id"]
+
+
+def test_a_kept_session_is_attached_to_again_by_its_id(two_hubs_up):
+    resident, scripts = two_hubs_up
+    offered(resident)
+
+    outcome = resident.open_window_terminal("h1", "d1", 80, 24, "kept-1")
+
+    (made,) = scripts.sockets_of("hub.lan")
+    (opened,) = [frame for frame in made.sent if frame.get("kind") == "shell"]
+    assert (opened["session_id"], opened["is_resumed"]) == ("kept-1", True)
+    assert outcome["session_id"] == "kept-1"
+
+
+def test_persist_names_the_terminals_session_and_stop_names_the_hub(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    offered(resident)
+    outcome = resident.open_terminal("h1", "d1", 80, 24)
+    session = resident._sessions["c1"]
+    asked = []
+
+    def persist(session_id, is_persistent):
+        asked.append(("persist", session_id, is_persistent))
+
+    def stop(session_id):
+        asked.append(("stop", session_id))
+        raise GatewayRefusedDetail(
+            code="session_unknown", params={"session_id": session_id}
+        )
+
+    session.persist_shell = persist
+    session.stop_shell_session = stop
+
+    assert resident.persist_terminal(outcome["terminal_id"], True) == {}
+    assert resident.persist_terminal("nobody", True)["code"] == "unknown_terminal"
+    assert resident.stop_terminal_session("h1", "kept-9") == {
+        "code": "session_unknown",
+        "params": {"session_id": "kept-9"},
+    }
+    assert resident.stop_terminal_session("h9", "kept-9")["code"] == "unknown_hub"
+    assert asked == [("persist", outcome["session_id"], True), ("stop", "kept-9")]
 
 
 def test_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):

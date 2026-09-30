@@ -480,6 +480,8 @@ let shouldFocusShell = false;
 let shellThemeKey = '';
 // Output that arrived for a terminal before its open answered, by its id.
 const earlyOutput = {};
+// The kept sessions whose × was pressed once, by session id.
+const endArmed = {};
 // Lines a shell keeps above its window.
 const TERMINAL_SCROLLBACK_LINES = 5000;
 // The client carries MesloLGS NF, so a powerlevel10k prompt draws its icons.
@@ -578,11 +580,13 @@ function newShellButton(picked) {
   return open;
 }
 
-// The open shells: their tabs in a head, the active one's pane, and a line
-// saying where the keys go. With none open, a dashed frame says so and
-// offers the button that opens one.
+// The open shells and the kept sessions no tab shows: their tabs in a head,
+// the active one's pane, and a line saying where the keys go with the
+// shell's persistent switch at its end. With neither, a dashed frame says so
+// and offers the button that opens one.
 function shellPanel(state) {
-  if (shellTabs.length === 0) {
+  const kept = keptSessions(state);
+  if (shellTabs.length === 0 && kept.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'term_empty';
     empty.innerHTML = '<span>' + t('ui.terminal_none') + '</span>' +
@@ -599,16 +603,115 @@ function shellPanel(state) {
   const head = document.createElement('div');
   head.className = 'term_head';
   for (const tab of shellTabs) head.appendChild(shellTabButton(tab));
+  for (const entry of kept) head.appendChild(keptTabButton(entry));
   panel.appendChild(head);
   panel.appendChild(shellSurfaceElement());
   const active = activeTab();
   const status = document.createElement('div');
   status.className = 'term_status';
-  status.textContent = active && active.state === 'closed'
-    ? (active.note || t('ui.terminal_ended'))
-    : (active && active.pasteNote) || t('ui.terminal_keys');
+  const line = document.createElement('span');
+  line.textContent = !active ? t('ui.terminal_kept_hint')
+    : active.state === 'closed' ? (active.note || t('ui.terminal_ended'))
+    : active.hint || t('ui.terminal_keys');
+  status.appendChild(line);
+  if (active && active.state === 'open') status.appendChild(persistSwitch(active));
   panel.appendChild(status);
   return panel;
+}
+
+// Every persistent session a connected hub's machine keeps and no tab shows,
+// in the order the sessions began.
+function keptSessions(state) {
+  const shown = shellTabs.map((tab) => tab.session_id);
+  const kept = [];
+  for (const hub of state.hubs || []) {
+    if (hub.connection_state !== 'connected') continue;
+    const machines = (state.terminals || []).filter(
+      (machine) => machine.hub_id === hub.hub_id);
+    for (const machine of machines) {
+      for (const session of machine.sessions || []) {
+        if (!session.is_persistent || shown.indexOf(session.session_id) >= 0) continue;
+        kept.push({ hub: hub, machine: machine, session: session });
+      }
+    }
+  }
+  return kept.sort((one, other) =>
+    compareStarts(one.session.started_at, other.session.started_at));
+}
+
+function compareStarts(one, other) {
+  if (one < other) return -1;
+  return one > other ? 1 : 0;
+}
+
+// A kept session's tab: a click attaches to it, its kept output shown first;
+// × ends it on the machine after asking.
+function keptTabButton(entry) {
+  const session = entry.session;
+  const wrap = document.createElement('div');
+  wrap.className = 'term_tab kept';
+  const label = document.createElement('button');
+  label.type = 'button';
+  label.className = 'term_tab_label';
+  label.title = session.title || t('ui.machine_provided_by',
+    { hub: hubName(entry.hub), device: entry.machine.name });
+  label.innerHTML = marker('off');
+  label.appendChild(document.createTextNode(entry.machine.name));
+  label.disabled = !entry.machine.is_online || isHeld(entry.hub);
+  label.onclick = () => {
+    delete endArmed[session.session_id];
+    openShell(entry.hub, entry.machine, session);
+  };
+  wrap.appendChild(label);
+  wrap.appendChild(endButton(session.session_id, label.textContent, () =>
+    stopSession(entry.hub.hub_id, session.session_id)));
+  return wrap;
+}
+
+// The × of a tab whose session the machine keeps: the first press asks, the
+// second ends the session.
+function endButton(sessionId, name, onEnd) {
+  const close = document.createElement('button');
+  close.type = 'button';
+  const isArmed = !!endArmed[sessionId];
+  close.className = isArmed ? 'term_tab_close armed' : 'term_tab_close';
+  close.textContent = isArmed ? t('ui.terminal_end_ask') : '×';
+  close.title = isArmed ? t('ui.terminal_end_ask') : t('ui.terminal_close', { name: name });
+  close.setAttribute('aria-label', close.title);
+  close.onclick = () => {
+    if (!endArmed[sessionId]) { endArmed[sessionId] = true; redraw(); return; }
+    delete endArmed[sessionId];
+    onEnd();
+  };
+  return close;
+}
+
+function stopSession(hubId, sessionId) {
+  return api('/api/terminal/stop', { hub_id: hubId, session_id: sessionId });
+}
+
+// The switch at the end of the line under an open shell: on, its machine
+// keeps the session once nobody is attached.
+function persistSwitch(tab) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = tab.isPersistent ? 'switch on' : 'switch';
+  button.setAttribute('role', 'switch');
+  button.setAttribute('aria-checked', String(!!tab.isPersistent));
+  button.innerHTML = '<span class="switch_track"><span class="switch_thumb"></span></span>';
+  button.appendChild(document.createTextNode(t('ui.terminal_persistent')));
+  button.onclick = () => askPersist(tab, !tab.isPersistent);
+  return button;
+}
+
+function askPersist(tab, isPersistent) {
+  api('/api/terminal/persist',
+    { terminal_id: tab.terminal_id, is_persistent: isPersistent }).then((reply) => {
+    if (!reply) return;
+    tab.hint = reply.code ? wordCode(reply.code, reply.params) : '';
+    if (!reply.code) tab.isPersistent = isPersistent;
+    redraw();
+  });
 }
 
 function shellTabButton(tab) {
@@ -619,7 +722,18 @@ function shellTabButton(tab) {
   label.className = 'term_tab_label';
   label.innerHTML = marker(shellTone(tab));
   label.appendChild(document.createTextNode(tab.name));
-  label.onclick = () => { activeShell = tab.key; shouldFocusShell = true; redraw(); };
+  label.onclick = () => {
+    delete endArmed[tab.session_id];
+    activeShell = tab.key;
+    shouldFocusShell = true;
+    redraw();
+  };
+  wrap.appendChild(label);
+  if (tab.isPersistent && tab.state === 'open') {
+    wrap.appendChild(endButton(tab.session_id, tab.name, () =>
+      stopSession(tab.hub_id, tab.session_id).then(() => closeShell(tab))));
+    return wrap;
+  }
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'term_tab_close';
@@ -627,7 +741,6 @@ function shellTabButton(tab) {
   close.title = t('ui.terminal_close', { name: tab.name });
   close.setAttribute('aria-label', close.title);
   close.onclick = () => closeShell(tab);
-  wrap.appendChild(label);
   wrap.appendChild(close);
   return wrap;
 }
@@ -659,9 +772,10 @@ function shellSurfaceElement() {
   return shellSurface;
 }
 
-// A new shell on one machine: its tab and pane at once, the shell once the
-// resident has opened it at the pane's size.
-function openShell(hub, machine) {
+// A new shell on one machine, or a kept session attached to again: its tab
+// and pane at once, the shell once the resident has opened it at the pane's
+// size.
+function openShell(hub, machine, kept) {
   shellCounter += 1;
   const pane = document.createElement('div');
   pane.className = 'term_pane';
@@ -678,8 +792,9 @@ function openShell(hub, machine) {
   term.loadAddon(fit);
   const tab = {
     key: 'shell' + shellCounter, terminal_id: '', hub_id: hub.hub_id,
-    name: machine.name, term: term, fit: fit, pane: pane, state: 'connecting',
-    note: '', isRefused: false, typed: '', isSending: false, pasteNote: '',
+    name: machine.name, term: term, fit: fit, pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
+    isSending: false, hint: '', session_id: kept ? kept.session_id : '',
+    isPersistent: !!kept,
   };
   shellTabs.push(tab);
   activeShell = tab.key;
@@ -706,13 +821,14 @@ function openShell(hub, machine) {
   });
   api('/api/terminal/open', {
     hub_id: hub.hub_id, device_id: machine.device_id,
-    cols: term.cols, rows: term.rows,
+    cols: term.cols, rows: term.rows, session_id: tab.session_id,
   }).then((reply) => {
     if (!reply || reply.code || !reply.terminal_id) {
       endShell(tab, reply && reply.code ? wordCode(reply.code, reply.params) : '', true);
       return;
     }
     tab.terminal_id = reply.terminal_id;
+    tab.session_id = reply.session_id || tab.session_id;
     tab.state = 'open';
     const early = earlyOutput[reply.terminal_id] || [];
     delete earlyOutput[reply.terminal_id];
@@ -735,7 +851,7 @@ function pasteClipboard(tab) {
   api('/api/clipboard').then((reply) => {
     if (!reply) return;
     const note = reply.code ? wordCode(reply.code, reply.params) : '';
-    if (note !== tab.pasteNote) { tab.pasteNote = note; redraw(); }
+    if (note !== tab.hint) { tab.hint = note; redraw(); }
     if (!reply.code && reply.text) tab.term.paste(reply.text);
     tab.term.focus();
   });

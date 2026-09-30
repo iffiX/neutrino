@@ -110,6 +110,17 @@ def is_same_join(one: dict, other: dict) -> bool:
     return all(one.get(key) == other.get(key) for key in BINDING_IDENTITY_KEYS)
 
 
+def _hub_answer(call, *args) -> dict:
+    """Empty when one ask of a hub went through, else its refusal as a code."""
+    try:
+        call(*args)
+    except GatewayRefusedDetail as refused:
+        return {"code": refused.code, "params": dict(refused.params)}
+    except GatewayUnreachable as error:
+        return {"code": "hub_unreachable", "params": {"detail": str(error)}}
+    return {}
+
+
 class ClientResident:
     """Everything the person's surfaces face, over every hub joined."""
 
@@ -539,7 +550,14 @@ class ClientResident:
         is_wanted, _pick = session.overlay_wish()
         return self._keep_overlay_wish(session, is_wanted, provider)
 
-    def open_terminal(self, hub_id: str, device_id: str, cols: int, rows: int) -> dict:
+    def open_terminal(
+        self,
+        hub_id: str,
+        device_id: str,
+        cols: int,
+        rows: int,
+        session_id: str = "",
+    ) -> dict:
         """Open a shell on one machine a hub offers, for a terminal to attach to.
 
         Args:
@@ -547,10 +565,13 @@ class ClientResident:
             device_id: The machine, as the hub's ``terminals`` names it.
             cols: The terminal's width in columns.
             rows: The terminal's height in rows.
+            session_id: A shell session the machine keeps, attached to again
+                with its kept output; empty opens a new one under a fresh
+                uuid.
 
         Returns:
-            ``{"terminal_id"}``; ``unknown_hub``, ``unknown_terminal`` or
-            ``hub_unreachable`` otherwise.
+            ``{"terminal_id", "session_id"}``; ``unknown_hub``,
+            ``unknown_terminal`` or ``hub_unreachable`` otherwise.
         """
         session = self._find_session(hub_id)
         if session is None:
@@ -558,15 +579,20 @@ class ClientResident:
         known = {entry["device_id"] for entry in session.terminal_entries()}
         if device_id not in known:
             return {"code": "unknown_terminal", "params": {"device_id": device_id}}
+        is_resumed = bool(session_id)
+        session_id = session_id or str(uuid.uuid4())
         try:
-            stream = session.open_shell(device_id, cols, rows)
+            stream = session.open_shell(
+                device_id, cols, rows, session_id, is_resumed=is_resumed
+            )
         except GatewayUnreachable as error:
             return {"code": "hub_unreachable", "params": {"detail": str(error)}}
         terminal_id = uuid.uuid4().hex
+        bridge = TerminalBridge(stream=stream, session_id=session_id)
         with self._lock:
-            self._terminals[terminal_id] = (session, TerminalBridge(stream=stream))
+            self._terminals[terminal_id] = (session, bridge)
         self._log(f"a terminal on {device_id} is open")
-        return {"terminal_id": terminal_id}
+        return {"terminal_id": terminal_id, "session_id": session_id}
 
     def attach_terminal(self, terminal_id: str, read) -> None:
         """Carry what is typed on one terminal to its shell until either ends.
@@ -639,7 +665,12 @@ class ClientResident:
         return opened[1].outcome()
 
     def open_window_terminal(
-        self, hub_id: str, device_id: str, cols: int, rows: int
+        self,
+        hub_id: str,
+        device_id: str,
+        cols: int,
+        rows: int,
+        session_id: str = "",
     ) -> dict:
         """Open a shell for the window's own terminal, its output pushed there.
 
@@ -652,12 +683,14 @@ class ClientResident:
             device_id: The machine, as the hub's ``terminals`` names it.
             cols: The terminal's width in columns.
             rows: The terminal's height in rows.
+            session_id: A shell session the machine keeps, attached to
+                again; empty opens a new one.
 
         Returns:
-            ``{"terminal_id"}``; ``unknown_hub``, ``unknown_terminal`` or
-            ``hub_unreachable`` otherwise.
+            ``{"terminal_id", "session_id"}``; ``unknown_hub``,
+            ``unknown_terminal`` or ``hub_unreachable`` otherwise.
         """
-        outcome = self.open_terminal(hub_id, device_id, cols, rows)
+        outcome = self.open_terminal(hub_id, device_id, cols, rows, session_id)
         terminal_id = outcome.get("terminal_id")
         if terminal_id:
             threading.Thread(
@@ -685,6 +718,42 @@ class ClientResident:
         if not opened[1].send(data):
             return {"code": "shell_unknown", "params": {"shell": terminal_id}}
         return {}
+
+    def persist_terminal(self, terminal_id: str, is_persistent: bool) -> dict:
+        """Keep one terminal's shell session on its machine once nobody is attached, or not.
+
+        Args:
+            terminal_id: The terminal.
+            is_persistent: Whether the machine keeps the session.
+
+        Returns:
+            Empty on success; ``unknown_terminal``, the hub's refusal, or
+            ``hub_unreachable``.
+        """
+        opened = self._terminal(terminal_id)
+        if opened is None:
+            return {"code": "unknown_terminal", "params": {}}
+        session, bridge = opened
+        return _hub_answer(session.persist_shell, bridge.session_id, is_persistent)
+
+    def stop_terminal_session(self, hub_id: str, session_id: str) -> dict:
+        """End one shell session a hub's machine keeps, attached or not.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            session_id: The shell session's id.
+
+        Returns:
+            Empty on success; ``unknown_hub``, the hub's refusal, or
+            ``hub_unreachable``.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        outcome = _hub_answer(session.stop_shell_session, session_id)
+        if not outcome:
+            self._log(f"the shell session {session_id} was ended")
+        return outcome
 
     def close_terminal(self, terminal_id: str) -> dict:
         """End the shell of one of the window's terminals and forget it.

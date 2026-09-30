@@ -184,9 +184,28 @@ button.term_tab_close:hover { color: var(--color-error); }
 .term_pane { flex: 1; min-height: 0; overflow: hidden; }
 .term_pane.hidden { display: none; }
 .term_pane .xterm { padding: 8px; }
-.term_status { padding: 6px 14px; border-top: 1px solid var(--color-border);
+.term_status { display: flex; gap: 12px; align-items: center;
+               justify-content: space-between;
+               padding: 6px 14px; border-top: 1px solid var(--color-border);
                color: var(--color-text-muted); font-family: ui-monospace, monospace;
                font-size: 11px; }
+button.term_tab_close.armed { color: var(--color-error); font-size: 11px; }
+/* The persistent switch at the end of the line under a shell, after the
+   panel's toggle switch. */
+button.switch { display: inline-flex; flex: none; gap: 8px; align-items: center;
+                padding: 0; border: none; background: none;
+                color: var(--color-text-muted); font: inherit; cursor: pointer; }
+.switch_track { position: relative; width: 28px; height: 16px;
+                border: 1px solid var(--color-border-strong); border-radius: 999px;
+                background: var(--color-bg); }
+.switch_thumb { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px;
+                border-radius: 50%; background: var(--color-text-faint);
+                transition: transform .15s; }
+button.switch.on { color: var(--color-accent); }
+button.switch.on .switch_track { border-color: var(--color-accent);
+        background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
+button.switch.on .switch_thumb { background: var(--color-accent);
+                                 transform: translateX(12px); }
 .muted { color: var(--color-text-muted); }
 .form { display: flex; flex-direction: column; gap: 8px;
         padding: 10px 0 4px 20px; }

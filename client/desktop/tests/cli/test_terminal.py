@@ -122,6 +122,26 @@ def test_a_machine_by_name_on_the_hub_named_is_attached_and_carried(resident):
 
 def test_a_machine_by_id_needs_no_hub(resident):
     assert terminal.main("d3", platform=FakePlatform(FakeTerm())) == 0
+    assert resident["upgrades"][0][1]["session_id"] == ""
+
+
+def test_a_session_named_is_attached_to_again(resident):
+    status = terminal.main("d3", session_id="kept-1", platform=FakePlatform(FakeTerm()))
+
+    assert status == 0
+    assert resident["upgrades"][0][1]["session_id"] == "kept-1"
+
+
+def test_a_session_the_machine_no_longer_keeps_is_exit_1_in_words(resident, capsys):
+    resident["answers"]["/api/terminal/attach"] = (
+        400,
+        {"code": "session_unknown", "params": {"session_id": "kept-1"}},
+    )
+
+    status = terminal.main("d3", session_id="kept-1", platform=FakePlatform(FakeTerm()))
+
+    assert status == terminal.EXIT_REFUSED
+    assert "no longer keeps this session" in capsys.readouterr().err
 
 
 def test_one_name_on_two_hubs_is_refused_as_ambiguous(resident, capsys):

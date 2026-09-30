@@ -1074,7 +1074,9 @@ def test_the_terminals_page_is_a_machine_strip_over_a_panel_of_shells():
 
 def test_with_no_shell_open_a_dashed_frame_offers_a_new_terminal():
     panel = function_body("function shellPanel(state)")
-    empty = panel.split("if (shellTabs.length === 0) {")[1].split("\n  }")[0]
+    empty = panel.split("if (shellTabs.length === 0 && kept.length === 0) {")[1].split(
+        "\n  }"
+    )[0]
     frame = PAGE_CSS.split(".term_empty {")[1].split("}")[0]
 
     assert "empty.className = 'term_empty';" in empty
@@ -1114,7 +1116,7 @@ def test_each_open_shell_is_a_tab_that_closes_its_shell():
 
 
 def test_a_shell_is_xterm_fitted_to_its_pane_and_opened_at_that_size():
-    body = function_body("function openShell(hub, machine)")
+    body = function_body("function openShell(hub, machine, kept)")
     fit = function_body("function fitShell(tab)")
 
     assert "const term = new Terminal({" in body
@@ -1196,7 +1198,7 @@ def test_the_font_is_not_inlined_into_the_document():
 
 
 def test_meslolgs_nf_comes_first_and_every_shell_loads_it():
-    opening = function_body("function openShell(hub, machine)")
+    opening = function_body("function openShell(hub, machine, kept)")
     loading = function_body("function loadTerminalFont()")
     reading = PAGE_JS.split("async function fontBytes(name) {")[1].split("\n}")[0]
 
@@ -1217,7 +1219,7 @@ def test_meslolgs_nf_comes_first_and_every_shell_loads_it():
 
 
 def test_a_right_click_and_the_paste_chords_paste_the_residents_clipboard():
-    opening = function_body("function openShell(hub, machine)")
+    opening = function_body("function openShell(hub, machine, kept)")
     chord = function_body("function isPasteChord(event)")
     pasting = function_body("function pasteClipboard(tab)")
 
@@ -1233,3 +1235,75 @@ def test_a_right_click_and_the_paste_chords_paste_the_residents_clipboard():
     assert "wordCode(reply.code, reply.params)" in pasting
     assert EN_WORDS["code.clipboard_unreadable"]
     assert CATALOGS["zh-CN"]["code.clipboard_unreadable"]
+
+
+# --- the persistent sessions ---
+
+
+def test_the_kept_sessions_of_every_connected_hub_show_as_tabs_in_start_order():
+    panel = function_body("function shellPanel(state)")
+    kept = function_body("function keptSessions(state)")
+
+    assert "const kept = keptSessions(state);" in panel
+    assert "for (const entry of kept) head.appendChild(keptTabButton(entry));" in panel
+    assert "if (hub.connection_state !== 'connected') continue;" in kept
+    assert "if (!session.is_persistent || shown.indexOf(session.session_id) >= 0)" in (
+        kept
+    )
+    assert "compareStarts(one.session.started_at, other.session.started_at)" in kept
+
+
+def test_a_click_on_a_kept_tab_attaches_to_its_session():
+    tab = function_body("function keptTabButton(entry)")
+    opening = function_body("function openShell(hub, machine, kept)")
+
+    assert "openShell(entry.hub, entry.machine, session);" in tab
+    assert "session_id: kept ? kept.session_id : ''," in opening
+    assert "isPersistent: !!kept," in opening
+    assert "cols: term.cols, rows: term.rows, session_id: tab.session_id," in opening
+    assert "tab.session_id = reply.session_id || tab.session_id;" in opening
+
+
+def test_the_persistent_switch_sits_at_the_end_of_the_line_under_the_shell():
+    panel = function_body("function shellPanel(state)")
+    switch = function_body("function persistSwitch(tab)")
+    asking = function_body("function askPersist(tab, isPersistent)")
+    status = PAGE_CSS.split(".term_status {")[1].split("}")[0]
+
+    assert (
+        "if (active && active.state === 'open') "
+        "status.appendChild(persistSwitch(active));"
+    ) in panel
+    assert "button.className = tab.isPersistent ? 'switch on' : 'switch';" in switch
+    assert "button.setAttribute('role', 'switch');" in switch
+    assert "t('ui.terminal_persistent')" in switch
+    assert "api('/api/terminal/persist'," in asking
+    assert "{ terminal_id: tab.terminal_id, is_persistent: isPersistent }" in asking
+    assert "justify-content: space-between;" in status
+    assert EN_WORDS["ui.terminal_persistent"] == "Persistent"
+    assert CATALOGS["zh-CN"]["ui.terminal_persistent"] == "持久"
+
+
+def test_the_x_of_a_kept_session_asks_before_it_ends_it():
+    tab = function_body("function shellTabButton(tab)")
+    ending = function_body("function endButton(sessionId, name, onEnd)")
+    stopping = function_body("function stopSession(hubId, sessionId)")
+
+    assert "if (tab.isPersistent && tab.state === 'open') {" in tab
+    assert "stopSession(tab.hub_id, tab.session_id).then(() => closeShell(tab))" in tab
+    assert (
+        "if (!endArmed[sessionId]) { endArmed[sessionId] = true; redraw(); return; }"
+        in (ending)
+    )
+    assert "t('ui.terminal_end_ask')" in ending
+    assert "api('/api/terminal/stop', { hub_id: hubId, session_id: sessionId })" in (
+        stopping
+    )
+    assert EN_WORDS["ui.terminal_end_ask"] == "End session?"
+    assert CATALOGS["zh-CN"]["ui.terminal_end_ask"] == "结束会话？"
+
+
+def test_the_session_codes_are_worded_in_both_languages():
+    for code in ("session_taken", "session_unknown"):
+        assert EN_WORDS[f"code.{code}"]
+        assert CATALOGS["zh-CN"][f"code.{code}"]

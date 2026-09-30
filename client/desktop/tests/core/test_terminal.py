@@ -183,3 +183,28 @@ def test_the_windows_keys_reach_the_hub_and_its_close_ends_the_shell():
     assert [frame["type"] for frame in wire.text].count("close") == 1
     assert bridge.send(b"more") is False
     assert bridge.outcome() == {"exit_code": None}
+
+
+def test_a_bridge_names_the_session_its_stream_is_attached_to():
+    _registry, stream, _wire = shell()
+
+    assert TerminalBridge(stream=stream, session_id="kept-1").session_id == "kept-1"
+    assert TerminalBridge(stream=stream).session_id == ""
+
+
+def test_a_session_taken_by_another_stream_is_the_outcome():
+    registry, stream, _wire = shell()
+    bridge = TerminalBridge(stream=stream, session_id="kept-1")
+    registry.take_close(
+        {
+            "type": "close",
+            "stream": 1,
+            "code": "session_taken",
+            "params": {"session_id": "kept-1"},
+        }
+    )
+
+    assert bridge.outcome() == {
+        "code": "session_taken",
+        "params": {"session_id": "kept-1"},
+    }

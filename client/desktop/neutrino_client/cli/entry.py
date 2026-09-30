@@ -10,7 +10,7 @@ do the same things from a terminal.
     nclient gui [--hidden]
     nclient quit
     nclient service list | <kind> <action> [--hub <name>]
-    nclient terminal <machine> [--hub <name>]
+    nclient terminal <machine> [--hub <name>] [--session <id>]
 
 The client runs as a person and never as root. The one exception is
 ``nclient easytier-daemon``, which the system starts as root, or as SYSTEM
@@ -74,6 +74,11 @@ def main() -> int:
     )
     terminal_parser.add_argument("machine", help="the machine, by name or id")
     _add_hub_argument(terminal_parser)
+    terminal_parser.add_argument(
+        "--session",
+        default="",
+        help="a shell session the machine keeps, attached to again by its id",
+    )
     service_parser, service_kind_parsers = _add_service_parser(subparsers)
     daemon_parser = subparsers.add_parser(CLIENT_EASYTIER_DAEMON_VERB)
     daemon_parser.add_argument("--service", action="store_true")
@@ -98,7 +103,9 @@ def main() -> int:
     if arguments.command == "quit":
         return quit.main()
     if arguments.command == "terminal":
-        return terminal.main(arguments.machine, hub=arguments.hub)
+        return terminal.main(
+            arguments.machine, hub=arguments.hub, session_id=arguments.session
+        )
     if arguments.command == "service":
         return _run_service(arguments, service_parser, service_kind_parsers)
     return status.main()
