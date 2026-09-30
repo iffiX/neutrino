@@ -6,7 +6,9 @@ browser's input reaching the stream and a resize opening one ``command
 {agent, resize}`` stream naming the shell, the stream's bytes becoming
 output frames and its close an exit frame, the container variant
 opening the ``shell`` kind with the module and the container's name, and
-the close of a socket the browser already left raising nothing.
+the close of a socket the browser already left raising nothing; the
+session id the page generated riding the open, and a persist message
+opening one ``command {agent, persist}`` naming it.
 """
 
 import asyncio
@@ -208,3 +210,61 @@ def test_closing_a_socket_the_browser_already_left_is_quiet():
 def test_closing_with_any_other_disconnect_still_raises():
     with pytest.raises(WebSocketDisconnect):
         asyncio.run(ws._close(GoneSocket(1000)))
+
+
+def test_the_session_id_rides_the_open_and_a_persist_names_it(api):
+    client, runtime = api
+    socket = open_terminal(
+        client, f"/ws/agent/terminal?device_id={MAC}&session_id=4f1c2a"
+    )
+    try:
+        assert wait_until(lambda: runtime.agent_sessions.streams)
+        stream = runtime.agent_sessions.streams[0]
+        assert stream.args == {"cols": 80, "rows": 24, "session_id": "4f1c2a"}
+
+        socket.send_json({"type": "persist", "is_persistent": True})
+        assert wait_until(lambda: len(runtime.agent_sessions.streams) == 2)
+        persist = runtime.agent_sessions.streams[1]
+        assert (persist.kind, persist.args) == (
+            "command",
+            {
+                "module": "agent",
+                "verb": "persist",
+                "session_id": "4f1c2a",
+                "is_persistent": True,
+            },
+        )
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_persist_on_a_shell_opened_without_a_session_sends_nothing(api):
+    client, runtime = api
+    socket = open_terminal(client, f"/ws/agent/terminal?device_id={MAC}")
+    try:
+        assert wait_until(lambda: runtime.agent_sessions.streams)
+        stream = runtime.agent_sessions.streams[0]
+        socket.send_json({"type": "persist", "is_persistent": True})
+        socket.send_json({"type": "input", "data": "x"})
+        assert wait_until(lambda: stream.sent_bytes() == b"x")
+        assert len(runtime.agent_sessions.streams) == 1
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_attaching_a_listed_session_asks_the_agent_to_resume_it(api):
+    client, runtime = api
+    socket = open_terminal(
+        client,
+        f"/ws/agent/terminal?device_id={MAC}&session_id=4f1c2a&is_resumed=true",
+    )
+    try:
+        assert wait_until(lambda: runtime.agent_sessions.streams)
+        assert runtime.agent_sessions.streams[0].args == {
+            "cols": 80,
+            "rows": 24,
+            "session_id": "4f1c2a",
+            "is_resumed": True,
+        }
+    finally:
+        socket.__exit__(None, None, None)

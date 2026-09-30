@@ -43,6 +43,7 @@ from neutrino_hub.modules.services.host_scope import (
 )
 from neutrino_hub.web import channel_overlay
 from neutrino_hub.web.channel_addresses import channel_urls
+from neutrino_hub.web.shell_bridge import reported_sessions
 
 
 def agent_state(runtime, device_id: str) -> dict:
@@ -180,12 +181,18 @@ def push_states(runtime, role: str) -> None:
 
 
 def _terminals(runtime) -> list:
-    """Every managed machine, online or not, by its name and its presence."""
+    """Every managed machine, online or not, by its name, its presence and
+    the shell sessions it reports, oldest first."""
+    held: dict = {}
+    for entry in reported_sessions(runtime.agent_sessions):
+        session = {name: value for name, value in entry.items() if name != "device_id"}
+        held.setdefault(entry["device_id"], []).append(session)
     return [
         {
             "device_id": device.id,
             "name": _device_name(runtime, device),
             "is_online": runtime.agent_sessions.is_online(device.id),
+            "sessions": held.get(device.id, []),
         }
         for device in DeviceRegistry().all_stored()
         if device.is_managed

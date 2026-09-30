@@ -5,7 +5,10 @@ cross both ways, the agent's exit code closes the client's stream; a client
 without ``terminal`` is refused ``permission_denied`` before any agent stream
 opens; a device with no channel is ``agent_offline``; a resize reaches the
 agent naming the agent's own shell id, and one naming no open shell is
-``shell_unknown``.
+``shell_unknown``; the ``session_id`` a client generated rides the agent's
+open, and ``persist`` and ``stop_session`` reach the machine holding the
+session unchanged, found by the client's own bridge or by the reports,
+``session_unknown`` when no machine holds it.
 """
 
 import asyncio
@@ -73,7 +76,7 @@ def test_an_allowed_client_reaches_the_agent_and_bytes_cross_both_ways(config_di
     stream, shell, bridged = asyncio.run(scenario())
 
     assert (shell.kind, shell.args) == ("shell", {"cols": 132, "rows": 43})
-    assert bridged == {1: (DEVICE, shell.id)}
+    assert bridged == {1: (DEVICE, shell.id, "")}
     assert shell.sent_bytes() == b"ls\n"
     assert stream.sent_bytes() == b"file\n"
     assert stream.close_info == {"code": "", "params": {"exit_code": 7}}
@@ -174,7 +177,7 @@ def test_a_device_with_no_channel_is_agent_offline(config_dir):
 def test_a_resize_reaches_the_agent_naming_its_own_shell_id(config_dir):
     runtime = FakeRuntime()
     session = FakeSession("alice")
-    session.shells[3] = (DEVICE, 8)
+    session.shells[3] = (DEVICE, 8, "")
 
     async def scenario():
         stream = ScriptedChannelStream(
@@ -214,3 +217,198 @@ def test_a_resize_naming_no_open_shell_is_shell_unknown(config_dir):
     assert unknown == {"code": "shell_unknown", "params": {"shell": 9}}
     assert other["code"] == "verb_unknown"
     assert runtime.agent_sessions.streams == []
+
+
+def reporting(sessions: dict) -> dict:
+    """Latest reports naming each device's shell sessions by id."""
+    return {
+        device: {"machine": {"sessions": [{"session_id": sid} for sid in held]}}
+        for device, held in sessions.items()
+    }
+
+
+def closing_empty(args):
+    return [], {"code": "", "params": {}}
+
+
+def test_the_session_id_rides_the_agents_open(config_dir):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+    session = FakeSession(client_id)
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "shell", {"device_id": DEVICE, "session_id": "s-1"}, 1
+        )
+        serving = asyncio.create_task(serve_shell_stream(runtime, session, stream))
+        await until(lambda: session.shells)
+        bridged = dict(session.shells)
+        await stream.close()
+        await serving
+        return runtime.agent_sessions.streams[0], bridged
+
+    shell, bridged = asyncio.run(scenario())
+
+    assert shell.args == {"cols": 80, "rows": 24, "session_id": "s-1"}
+    assert bridged == {1: (DEVICE, shell.id, "s-1")}
+
+
+def test_a_persist_reaches_the_machine_its_bridge_names(config_dir):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+    runtime.agent_sessions.scripts["command"] = closing_empty
+    session = FakeSession(client_id)
+    session.shells[3] = (DEVICE, 8, "s-1")
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "command",
+            {
+                "module": "agent",
+                "verb": "persist",
+                "session_id": "s-1",
+                "is_persistent": True,
+            },
+            5,
+        )
+        await serve_command_stream(runtime, session, stream)
+        return stream
+
+    stream = asyncio.run(scenario())
+
+    (command,) = runtime.agent_sessions.streams
+    assert command.args == {
+        "module": "agent",
+        "verb": "persist",
+        "session_id": "s-1",
+        "is_persistent": True,
+    }
+    assert stream.close_info == {"code": "", "params": {}}
+
+
+def test_a_stop_reaches_the_machine_whose_report_lists_the_session(
+    config_dir, monkeypatch
+):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+    runtime.agent_sessions.scripts["command"] = closing_empty
+    monkeypatch.setattr(
+        runtime.agent_sessions, "reports", lambda: reporting({DEVICE: ["s-2"]})
+    )
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "command",
+            {"module": "agent", "verb": "stop_session", "session_id": "s-2"},
+            5,
+        )
+        await serve_command_stream(runtime, FakeSession(client_id), stream)
+        return stream
+
+    stream = asyncio.run(scenario())
+
+    (command,) = runtime.agent_sessions.streams
+    assert command.args == {
+        "module": "agent",
+        "verb": "stop_session",
+        "session_id": "s-2",
+    }
+    assert stream.close_info == {"code": "", "params": {}}
+
+
+def test_the_agents_refusal_of_a_session_verb_is_the_clients(config_dir, monkeypatch):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+    runtime.agent_sessions.scripts["command"] = lambda args: (
+        [],
+        {"code": "session_unknown", "params": {"session_id": "s-2"}},
+    )
+    monkeypatch.setattr(
+        runtime.agent_sessions, "reports", lambda: reporting({DEVICE: ["s-2"]})
+    )
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "command",
+            {"module": "agent", "verb": "stop_session", "session_id": "s-2"},
+            5,
+        )
+        await serve_command_stream(runtime, FakeSession(client_id), stream)
+        return stream.close_info
+
+    assert asyncio.run(scenario()) == {
+        "code": "session_unknown",
+        "params": {"session_id": "s-2"},
+    }
+
+
+def test_a_session_no_machine_holds_is_session_unknown(config_dir):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "command",
+            {"module": "agent", "verb": "stop_session", "session_id": "gone"},
+            5,
+        )
+        await serve_command_stream(runtime, FakeSession(client_id), stream)
+        return stream.close_info
+
+    assert asyncio.run(scenario()) == {
+        "code": "session_unknown",
+        "params": {"session_id": "gone"},
+    }
+    assert runtime.agent_sessions.streams == []
+
+
+def test_a_session_verb_on_a_machine_outside_the_terminal_filter_is_refused(
+    config_dir, monkeypatch
+):
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    registry.set_permission(client_id, ["terminal"], {"terminal": ["another"]})
+    runtime = FakeRuntime()
+    monkeypatch.setattr(
+        runtime.agent_sessions, "reports", lambda: reporting({DEVICE: ["s-2"]})
+    )
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "command",
+            {"module": "agent", "verb": "persist", "session_id": "s-2"},
+            5,
+        )
+        await serve_command_stream(runtime, FakeSession(client_id), stream)
+        return stream.close_info
+
+    assert asyncio.run(scenario()) == {
+        "code": "permission_denied",
+        "params": {"kind": "terminal"},
+    }
+    assert runtime.agent_sessions.streams == []
+
+
+def test_a_client_resuming_a_session_asks_the_agent_to_resume_it(config_dir):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+    session = FakeSession(client_id)
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "shell", {"device_id": DEVICE, "session_id": "s-1", "is_resumed": True}, 1
+        )
+        serving = asyncio.create_task(serve_shell_stream(runtime, session, stream))
+        await until(lambda: session.shells)
+        await stream.close()
+        await serving
+        return runtime.agent_sessions.streams[0]
+
+    shell = asyncio.run(scenario())
+
+    assert shell.args == {
+        "cols": 80,
+        "rows": 24,
+        "session_id": "s-1",
+        "is_resumed": True,
+    }

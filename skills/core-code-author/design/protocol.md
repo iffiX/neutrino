@@ -126,7 +126,7 @@ segment of a write, which is a verb.
 
 | Rule | Reason |
 | --- | --- |
-| Group, then page. `/api/hub/<page>` is a page of the hub itself and `/api/agent/<page>` a page of a managed device (`file`, `module`; the terminal is a socket only). One page is one router file on one prefix, `web/routers/hub/<page>.py` or `web/routers/agent/<page>.py`; what belongs to a page nests under it (`/api/hub/overlay/netbird/...`, `/api/hub/ai/gateway/...`, `/api/agent/module/samba/...`), and a large nested block is a second file on the same prefix (`hub/overlay_netbird.py`, `hub/ai_gateway.py`, `agent/module_samba.py`). `/ws` splits the same way into `/ws/hub/...` and `/ws/agent/...`. `/api/channel` is on the agent port's own app and is in no group. | The sidebar has two groups, a reader of a path finds the page it draws, and nothing is mounted at the top level. |
+| Group, then page. `/api/hub/<page>` is a page of the hub itself and `/api/agent/<page>` a page of a managed device (`file`, `module`, `terminal`, whose shells are a socket and whose sessions are routes). One page is one router file on one prefix, `web/routers/hub/<page>.py` or `web/routers/agent/<page>.py`; what belongs to a page nests under it (`/api/hub/overlay/netbird/...`, `/api/hub/ai/gateway/...`, `/api/agent/module/samba/...`), and a large nested block is a second file on the same prefix (`hub/overlay_netbird.py`, `hub/ai_gateway.py`, `agent/module_samba.py`). `/ws` splits the same way into `/ws/hub/...` and `/ws/agent/...`. `/api/channel` is on the agent port's own app and is in no group. | The sidebar has two groups, a reader of a path finds the page it draws, and nothing is mounted at the top level. |
 | Every segment is a singular `under_score` noun, with an adjective in front where one is needed: `wifi_network`, `ssh_key`, `seat_password`. The panel shows plurals; a path has none. | One spelling per thing across paths, models and config keys. |
 | An identifier names the member in the body or the query, never in the path: `?device_id=...` on a GET, `{device_id}` in a POST body. A path has no `{id}` in it. | A path is a fixed string a reader can grep, and an id is data. |
 | A read is a GET on a path of nouns and returns a view. A write is a POST whose last segment is one verb, with every argument in the body, and it returns what the matching read returns. The methods are GET and POST. | The page replaces its state with the response and merges nothing, so it cannot hold a version of the box that the box does not. |
@@ -241,7 +241,7 @@ The HTTP status names the class of the refusal:
 | --- | --- | --- |
 | 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
-| 404 | an unknown member | `device_unknown`, `https_authority_missing` |
+| 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}` |
 | 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_unreachable` |
 
@@ -276,10 +276,12 @@ TLS port.
 | `/api/hub/setting` | The panel's own: its port, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
 | `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, each importing what the machine already has and setting what it is to have |
+| `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 | `/api/channel` | Agents and clients on the agent port: `join` and `leave`, and `/api/channel/socket` for everything else |
 
-Terminals opens `/ws/agent/terminal?device_id=...`, Files reads
+Terminals opens `/ws/agent/terminal?device_id=...&session_id=...` and reads
+`/api/agent/terminal/session`, Files reads
 `/api/agent/file?device_id=...`, and Modules reads
 `/api/agent/module?device_id=...`. Adding a page adds a row and a file, and a
 route that fits no row is a route whose page has not been decided.
@@ -504,6 +506,16 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `POST /api/agent/file/rename` | `{device_id, path, name}` | |
 | `POST /api/agent/file/remove` | `{device_id, path}` | |
 
+#### `/api/agent/terminal`
+
+| Route | Parameters | Does |
+| --- | --- | --- |
+| `GET /api/agent/terminal/session` | | `TerminalSessionListView`: `sessions`, every session in the `machine` section of every online machine's latest report, `{device_id, device_name, session_id, account, started_at, title, is_attached, is_persistent}`, ordered by `started_at` |
+| `POST /api/agent/terminal/session/stop` | `{device_id, session_id}` | the `stop_session` verb on the machine, then the list once the machine reported; 404 `device_unknown`, 409 `agent_offline`, 404 `session_unknown {session_id}` when the machine holds no such session, 502 with any other code the agent closed with |
+
+A session is started by opening `/ws/agent/terminal` with a new
+`session_id`, so `session/stop` has no `session/start` beside it.
+
 #### `/api/agent/module`
 
 | Route | Parameters | Does |
@@ -552,7 +564,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `/ws/hub/dashboard/stat` | | the live readings the Dashboard draws |
 | `/ws/hub/dashboard/dns_log` | | the DNS log as it grows |
 | `/ws/hub/task` | `?task_id=` | one task's output |
-| `/ws/agent/terminal` | `?device_id=` | a shell on the device |
+| `/ws/agent/terminal` | `?device_id=&session_id=&is_resumed=` | a shell on the device, in the session the page generated `session_id` for, a uuid4 as 32 hex characters; with `is_resumed=true`, as the page opens a session the machine listed, it attaches to that session and its kept output comes first, and a session the machine no longer holds closes the socket with `session_unknown`. The browser sends `{type: input, data}`, `{type: resize, cols, rows}` and `{type: persist, is_persistent}`, each resize and persist a `command` stream to the agent; it receives `{type: output, data}` and `{type: exit, code}`, and a refusal closes the socket 1011 with the code as its reason, `session_taken` among them. Closing the socket closes the agent's `shell` stream, which ends the session unless it is persistent |
 | `/ws/agent/terminal` | `?device_id=&container=` | a shell inside one of its containers |
 | `/ws/agent/desktop` | `?device_id=` | reserved with the `desktop` kind; unimplemented |
 
@@ -569,7 +581,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_netbird.py` and `overlay_easytier.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py` and `module_zfs.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py` and `module_zfs.py`, `terminal.py` |
 | `web/routers/` | `channel.py`, on the agent port's app |
 | `web/` | `ws.py`, both socket groups |
 
@@ -737,7 +749,7 @@ and platform, which change between releases.
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online}]`: the managed machines it may open a `shell` on | |
+| `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines it may open a `shell` on, each with the sessions it holds | |
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
@@ -792,7 +804,16 @@ being turned off is pushed before that engine stops.
 not, with `is_online` read from its socket; it is empty unless the client's
 permission allows `terminal`, and holds only the machines its `terminal`
 device list names when it has one. The hub pushes every client its state when
-an agent's channel opens or ends, and when a device is deleted.
+an agent's channel opens or ends, when a report's `machine.sessions` differs
+from the one before it, and when a device is deleted.
+
+`sessions`, in an agent's `machine` section and in each `terminals` entry, is
+every shell session the machine holds, `[{session_id, account, started_at,
+title, is_attached, is_persistent}]`: the id its opener generated, the account
+its shell runs as, when it was opened in Unix seconds, the title the
+shell set, whether a stream is attached now, and whether it stays when its
+stream closes. A `terminals` entry lists them by `started_at` and is empty for
+a machine that is offline. The list is an added field and keeps `PROTOCOL`.
 
 ### The modules section, one entry per module
 
@@ -988,14 +1009,14 @@ is added without a change to the protocol; a kind is added by a row here.
 
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
-| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell, or `{session_id, is_resumed}` for a shell the agent keeps; terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, `session_taken {session_id}` when another stream attached to its shell, empty when it closed on a persistent shell that runs on, or refused `session_unknown {session_id}` |
+| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell, or `{session_id, is_resumed}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session and closes a stream already attached to it `session_taken {session_id}`; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise, and its kept output is sent first; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a persistent shell that runs on |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` |
 | client, to the hub | `service` | `{id}`: one published entry. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
-| client, to the hub | `shell` | `{device_id, cols, rows}`: a shell on a managed machine, which the hub opens as the agent's own `shell` and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
-| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open, `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
+| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id` and `is_resumed` and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
+| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, and the `shell` stream's permission refusals for that machine. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | hub, to an agent | `desktop` | reserved and unimplemented: no arguments, the agent connects to the machine's RustDesk direct port 21118 and relays bytes both ways for `/ws/agent/desktop`; the name says the purpose, the mechanism is the port |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
@@ -1007,6 +1028,11 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 | `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `persist {session_id, is_persistent}`, `stop_session {session_id}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto `kill` and the two remote desktop verbs; `persist` and `stop_session` refuse an id the agent does not hold with `session_unknown {session_id}` |
 | `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin` and `password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
 
+`persist` sets whether a session stays when its stream closes and
+`stop_session` ends it, which `POST /api/agent/terminal/session/stop` sends;
+both close `session_unknown {session_id}` for a session the machine does not
+hold.
+
 Two verbs every module answers: `validate`, as `command {module: <name>,
 verb: validate, config}`, checks a configuration before it is saved; and
 `journal`, as `command {module: <name>, verb: journal, lines}`, closes with
@@ -1014,7 +1040,8 @@ the tail of the module's units' journal in `output`, merged by time when the
 module runs as more than one unit. On `podman`, a `journal` naming a
 container is that container's; one naming none is the module's own. A terminal's first size is in its
 `open`; a later size is `open {kind: command, module: agent, verb: resize,
-shell: <id>, cols, rows}`, closed as soon as it is applied.
+shell: <id>, cols, rows}`, closed as soon as it is applied, and so is a
+`persist`.
 
 A shell the agent keeps is named by a `session_id` the opener generates, a
 uuid, in the `shell` stream's `open`. An id the agent holds attaches the

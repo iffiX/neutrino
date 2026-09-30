@@ -53,11 +53,19 @@
 }
 
 .terminal_panel_status {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--color-border);
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.terminal_panel_status_text {
+  min-width: 0;
 }
 
 /* --- One tab per open shell, in the header bar --- */
@@ -121,5 +129,11 @@
 }
 
 .terminal_tab_close:hover {
+  color: var(--color-error);
+}
+
+/* A kept session's ×, pressed once: the next press ends the session. */
+.terminal_tab_close--armed {
+  background: color-mix(in srgb, var(--color-error) 15%, transparent);
   color: var(--color-error);
 }

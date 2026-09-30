@@ -210,7 +210,7 @@ class ChannelSession:
         stream_handlers: Stream kind to the coroutine function serving a
             stream the peer opens, called with ``(session, stream)``.
         shells: A client's open ``shell`` streams by id, each the
-            ``(device_id, agent_stream_id)`` it is bridged to.
+            ``(device_id, agent_stream_id, session_id)`` it is bridged to.
         loop: The loop the socket is served on.
     """
 

@@ -956,6 +956,33 @@ export interface DeviceOnlineView {
   shown_module: string[];
 }
 
+/** One shell session a machine holds, as the Terminals page lists it. */
+export interface TerminalSessionView {
+  device_id: string;
+  device_name: string;
+  /** The id the page or the client that opened it generated. */
+  session_id: string;
+  account: string;
+  /** When it was opened, in Unix seconds. */
+  started_at: number;
+  title: string;
+  /** Whether a socket is attached to it now. */
+  is_attached: boolean;
+  /** Whether it stays when its socket closes. */
+  is_persistent: boolean;
+}
+
+/** Every shell session the online machines hold, oldest first. */
+export interface TerminalSessionListView {
+  sessions: TerminalSessionView[];
+}
+
+/** One session to end: the machine and the session's id. */
+export interface TerminalSessionStopRequest {
+  device_id: string;
+  session_id: string;
+}
+
 /** The machines a terminal or a file browser can open on, hub box first. */
 export interface DevicesOnlineResponse {
   devices: DeviceOnlineView[];

@@ -6,11 +6,13 @@ route cannot answer with a 401 the way an HTTP route does.
 
 A terminal reaches a device through its agent: the browser's socket and the
 agent's shell stream are bridged here, frame for frame. The browser sends
-``{"type": "input", "data"}`` and ``{"type": "resize", "cols", "rows"}``;
-it receives ``{"type": "output", "data"}`` and, once the shell is gone,
-``{"type": "exit", "code"}``. A shell's first size rides its open; a later
-one is a ``command {agent, resize, shell, cols, rows}`` stream, closed by
-the agent as soon as it is applied.
+``{"type": "input", "data"}``, ``{"type": "resize", "cols", "rows"}`` and
+``{"type": "persist", "is_persistent"}``; it receives
+``{"type": "output", "data"}`` and, once the shell is gone,
+``{"type": "exit", "code"}``. A shell's first size and its session id ride
+its open; a later size is a ``command {agent, resize, shell, cols, rows}``
+stream and a persist a ``command {agent, persist, session_id,
+is_persistent}``, each closed by the agent as soon as it is applied.
 """
 
 import asyncio
@@ -35,6 +37,7 @@ from neutrino_hub.web.events import event_frame
 from neutrino_hub.web.shell_bridge import (
     DEFAULT_COLUMNS,
     DEFAULT_ROWS,
+    persist_session,
     resize_shell,
     settle_shell,
     shell_output,
@@ -144,7 +147,11 @@ async def task_socket(websocket: WebSocket, task_id: str) -> None:
 
 @router.websocket("/ws/agent/terminal")
 async def terminal_socket(
-    websocket: WebSocket, device_id: str, container: str = ""
+    websocket: WebSocket,
+    device_id: str,
+    container: str = "",
+    session_id: str = "",
+    is_resumed: bool = False,
 ) -> None:
     """Bridge a browser terminal to a shell on a device, over its agent.
 
@@ -153,8 +160,17 @@ async def terminal_socket(
         device_id: Which device to open the shell on, from the query.
         container: A container on the device to open the shell inside of,
             from the query; empty opens a root shell on the device itself.
+        session_id: The session the page generated for the shell, from the
+            query.
+        is_resumed: Whether the page attaches to a session the machine
+            listed, from the query; the agent refuses one it does not hold
+            and sends the kept output first.
     """
     args = {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS}
+    if session_id:
+        args["session_id"] = session_id
+        if is_resumed:
+            args["is_resumed"] = True
     if container:
         args = {
             "module": CHANNEL_SHELL_CONTAINER_MODULE,
@@ -201,7 +217,9 @@ async def _serve_agent_stream(websocket: WebSocket, device_id: str, args: dict) 
         await websocket.close(code=POLICY_VIOLATION_CODE, reason=offline.code)
         return
 
-    reader = asyncio.create_task(_read_input(websocket, stream, sessions, device_id))
+    reader = asyncio.create_task(
+        _read_input(websocket, stream, sessions, device_id, args)
+    )
     pump = asyncio.create_task(_pump_stream(websocket, stream))
     info = await settle_shell(stream, reader, pump)
     refusal = str(info.get("code", "") or "") if info is not None else ""
@@ -249,8 +267,10 @@ async def _pump_stream(websocket: WebSocket, stream) -> None:
                 await websocket.send_json({"type": "output", "data": text})
 
 
-async def _read_input(websocket: WebSocket, stream, sessions, device_id: str) -> None:
-    """Forward keystrokes and resizes until the browser goes away.
+async def _read_input(
+    websocket: WebSocket, stream, sessions, device_id: str, args: dict
+) -> None:
+    """Forward keystrokes, resizes and persists until the browser goes away.
 
     Returns when the socket closes, which is how the caller learns the
     browser shut the terminal.
@@ -258,9 +278,13 @@ async def _read_input(websocket: WebSocket, stream, sessions, device_id: str) ->
     Args:
         websocket: The client socket.
         stream: The live shell stream to drive.
-        sessions: The agents' sessions, which a resize opens its command on.
+        sessions: The agents' sessions, which a resize or a persist opens
+            its command on.
         device_id: The device the shell runs on.
+        args: What the shell's open carried; a persist names its
+            ``session_id`` and is dropped when it has none.
     """
+    session_id = str(args.get("session_id", "") or "")
     try:
         while True:
             message = await websocket.receive_json()
@@ -274,6 +298,13 @@ async def _read_input(websocket: WebSocket, stream, sessions, device_id: str) ->
                     stream.id,
                     int(message.get("cols", DEFAULT_COLUMNS)),
                     int(message.get("rows", DEFAULT_ROWS)),
+                )
+            elif kind == "persist" and session_id:
+                await persist_session(
+                    sessions,
+                    device_id,
+                    session_id,
+                    bool(message.get("is_persistent", False)),
                 )
     except (WebSocketDisconnect, RuntimeError, ValueError, KeyError):
         return

@@ -21,7 +21,8 @@ import "./shell_terminal.css";
  *
  * xterm.js owns the DOM inside the surface, so this is imperative and lives in
  * one effect: build the terminal, wire the socket both ways, tear both down
- * together.
+ * together. Whether the session outlives the socket is a `persist` message on
+ * that socket, sent when the socket opens and whenever it changes.
  */
 
 export type TerminalState = "connecting" | "open" | "closed";
@@ -49,6 +50,13 @@ interface ShellTerminalProps {
   /** Called when the shell itself ends, by `exit` or Ctrl-D. */
   onExit?: (code: number | null) => void;
   onStateChange?: (state: TerminalState) => void;
+  /**
+   * Whether the session stays on the machine when this socket closes. Left
+   * undefined, nothing is sent: the socket names no session to keep.
+   */
+  isPersistent?: boolean;
+  /** Called with the code the socket closed with, empty for a plain close. */
+  onCloseReason?: (reason: string) => void;
 }
 
 export function ShellTerminal({
@@ -56,6 +64,8 @@ export function ShellTerminal({
   isVisible = true,
   onExit,
   onStateChange,
+  isPersistent,
+  onCloseReason,
 }: ShellTerminalProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -69,6 +79,11 @@ export function ShellTerminal({
   onExitRef.current = onExit;
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
+  const onCloseReasonRef = useRef(onCloseReason);
+  onCloseReasonRef.current = onCloseReason;
+  const isPersistentRef = useRef(isPersistent);
+  isPersistentRef.current = isPersistent;
+  const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     const surface = surfaceRef.current;
@@ -93,6 +108,7 @@ export function ShellTerminal({
     fitAddon.fit();
 
     const socket = new WebSocket(websocketUrl(socketPath));
+    socketRef.current = socket;
 
     const sendResize = () => {
       if (socket.readyState !== WebSocket.OPEN) {
@@ -144,6 +160,9 @@ export function ShellTerminal({
     socket.onopen = () => {
       onStateChangeRef.current?.("open");
       sendResize();
+      if (isPersistentRef.current === true) {
+        sendPersist(socket, true);
+      }
       terminal.focus();
     };
 
@@ -172,8 +191,9 @@ export function ShellTerminal({
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event: CloseEvent) => {
       onStateChangeRef.current?.("closed");
+      onCloseReasonRef.current?.(event.reason);
     };
 
     socket.onerror = () => {
@@ -196,11 +216,24 @@ export function ShellTerminal({
       window.removeEventListener("resize", handleResize);
       dataSubscription.dispose();
       socket.close();
+      socketRef.current = null;
       terminal.dispose();
       terminalRef.current = null;
       remeasureRef.current = () => {};
     };
   }, [socketPath]);
+
+  // A change of the switch reaches a session whose socket is open; one still
+  // connecting sends it on open.
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (isPersistent === undefined || socket === null) {
+      return;
+    }
+    if (socket.readyState === WebSocket.OPEN) {
+      sendPersist(socket, isPersistent);
+    }
+  }, [isPersistent]);
 
   // A shell already open takes the new palette where it stands.
   useEffect(() => {
@@ -227,4 +260,9 @@ export function ShellTerminal({
       ref={surfaceRef}
     />
   );
+}
+
+/** Tell the far end whether the session stays when this socket closes. */
+function sendPersist(socket: WebSocket, isPersistent: boolean) {
+  socket.send(JSON.stringify({ type: "persist", is_persistent: isPersistent }));
 }

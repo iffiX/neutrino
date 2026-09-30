@@ -20,6 +20,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from neutrino_hub.exceptions import AgentArtifactFetchError, AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CHUNK_BYTES,
+    CHANNEL_ROLE_CLIENT,
     CHANNEL_FRAME_OPEN,
     CHANNEL_FRAME_REPORT,
     CHANNEL_STREAM_COMMAND,
@@ -303,6 +304,13 @@ async def _serve_frames(websocket: WebSocket, session: ChannelSession, frames) -
             session.dispatch_text(decoded)
 
 
+def _sessions_of(report: dict) -> list:
+    """The shell sessions a report's ``machine`` section lists."""
+    machine = report.get("machine") if isinstance(report, dict) else None
+    sessions = machine.get("sessions") if isinstance(machine, dict) else None
+    return sessions if isinstance(sessions, list) else []
+
+
 def _is_panel_change(previous: dict, report: dict) -> bool:
     """Whether a report says anything new about what the panel draws.
 
@@ -335,6 +343,7 @@ class _AgentFrames:
         is_first = not session.report
         is_panel_change = _is_panel_change(session.report, report)
         is_module_change = session.report.get("modules") != report.get("modules")
+        is_session_change = _sessions_of(session.report) != _sessions_of(report)
         session.record_report(report)
         await asyncio.to_thread(
             record_report,
@@ -349,6 +358,10 @@ class _AgentFrames:
             runtime.published_services.schedule_refresh()
         if is_panel_change:
             runtime.events.publish(WEB_EVENT_DEVICE_REPORT, key)
+        if is_session_change:
+            await asyncio.to_thread(
+                channel_state.push_states, runtime, CHANNEL_ROLE_CLIENT
+            )
         runtime.events.publish(
             WEB_EVENT_METRICS, key, data=dict(runtime.device_metrics.get(key, {}))
         )

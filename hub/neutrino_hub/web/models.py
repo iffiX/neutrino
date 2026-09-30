@@ -1655,6 +1655,18 @@ class ChannelAgentState(BaseModel):
     urls: list[str] = Field(default_factory=list)
 
 
+class ChannelShellSession(BaseModel):
+    """One shell session a machine holds, as its agent reports it."""
+
+    session_id: str
+    account: str = ""
+    # When it was opened, in Unix seconds; the order sessions are listed in.
+    started_at: int = 0
+    title: str = ""
+    is_attached: bool = False
+    is_persistent: bool = False
+
+
 class ChannelMachine(BaseModel):
     """The ``machine`` section of an agent's report."""
 
@@ -1662,6 +1674,7 @@ class ChannelMachine(BaseModel):
     platform: dict = Field(default_factory=dict)
     accounts: list[str] = Field(default_factory=list)
     metrics: dict = Field(default_factory=dict)
+    sessions: list[ChannelShellSession] = Field(default_factory=list)
 
 
 class ChannelLink(BaseModel):
@@ -1767,6 +1780,8 @@ class ChannelTerminal(BaseModel):
     device_id: str
     name: str
     is_online: bool = False
+    # The shell sessions it holds, oldest first; empty while it is offline.
+    sessions: list[ChannelShellSession] = Field(default_factory=list)
 
 
 class ChannelClientState(BaseModel):
@@ -1794,6 +1809,32 @@ class ChannelClientReport(BaseModel):
 
     state_hash: str = ""
     machine: ChannelClientMachine = Field(default_factory=ChannelClientMachine)
+
+
+class TerminalSessionView(BaseModel):
+    """One shell session a machine holds, as the Terminals page lists it."""
+
+    device_id: str
+    device_name: str = ""
+    session_id: str
+    account: str = ""
+    started_at: int = 0
+    title: str = ""
+    is_attached: bool = False
+    is_persistent: bool = False
+
+
+class TerminalSessionListView(BaseModel):
+    """Every shell session the online machines hold, oldest first."""
+
+    sessions: list[TerminalSessionView] = Field(default_factory=list)
+
+
+class TerminalSessionStopRequest(BaseModel):
+    """One session to end: the machine and the session's id."""
+
+    device_id: str
+    session_id: str
 
 
 class DeviceModuleView(BaseModel):

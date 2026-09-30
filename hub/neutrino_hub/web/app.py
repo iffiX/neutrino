@@ -34,6 +34,7 @@ from neutrino_hub.web.routers.agent import (
     module_podman,
     module_samba,
     module_zfs,
+    terminal,
 )
 from neutrino_hub.web.routers.hub import (
     ai,
@@ -79,6 +80,7 @@ API_ROUTERS = (
     module_gitea.router,
     module_podman.router,
     module_zfs.router,
+    terminal.router,
 )
 
 LOGGER = logging.getLogger(__name__)

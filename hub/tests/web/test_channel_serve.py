@@ -365,6 +365,33 @@ def test_a_report_whose_modules_moved_recomposes_the_published_list(api):
         socket.__exit__(None, None, None)
 
 
+def test_a_report_whose_sessions_moved_hands_every_client_its_state(api, monkeypatch):
+    client, runtime = api
+    pushed: list = []
+    monkeypatch.setattr(
+        channel_serve.channel_state,
+        "push_states",
+        lambda runtime, role: pushed.append(role),
+    )
+    device_id, token = bound_device()
+    machine = {"hostname": "box", "platform": PLATFORM, "metrics": {}}
+    held = {**machine, "sessions": [{"session_id": "s-1"}]}
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report(machine=machine))
+        socket.receive_json()
+        socket.send_json(report(machine=machine))
+        socket.send_json(report(machine=held))
+        socket.send_json(report(machine=held))
+        assert wait_until(
+            lambda: runtime.agent_sessions.get(device_id).report_serial == 4
+        )
+
+        assert pushed == ["client"]
+    finally:
+        socket.__exit__(None, None, None)
+
+
 def test_an_uninstall_the_machine_confirms_keeps_the_row_saying_absent(api):
     """The reported bug: the machine took the module off and said so, and
     the row the Modules page reads never agreed with it. What the person

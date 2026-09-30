@@ -328,10 +328,54 @@ def test_the_terminals_list_every_managed_machine_while_terminal_is_allowed(
     refused = channel_state.client_state(runtime, client_id)
 
     assert sorted(allowed["terminals"], key=lambda entry: entry["name"]) == [
-        {"device_id": online.id, "name": "lepton", "is_online": True},
-        {"device_id": offline.id, "name": "muon", "is_online": False},
+        {"device_id": online.id, "name": "lepton", "is_online": True, "sessions": []},
+        {"device_id": offline.id, "name": "muon", "is_online": False, "sessions": []},
     ]
     assert refused["terminals"] == []
+
+
+def test_each_terminal_carries_the_sessions_its_machine_reports_oldest_first(
+    config_dir, monkeypatch
+):
+    runtime = FakeRuntime()
+    devices = DeviceRegistry()
+    machine = devices.create("lepton")
+    devices.issue_token(machine.id)
+    runtime.agent_sessions.online.add(machine.id.lower())
+    held = [
+        {"session_id": "late", "started_at": 1790762400},
+        {
+            "session_id": "early",
+            "started_at": 1790758800,
+            "account": "root",
+            "is_persistent": True,
+        },
+    ]
+    monkeypatch.setattr(
+        runtime.agent_sessions,
+        "reports",
+        lambda: {machine.id: {"machine": {"sessions": held}}},
+    )
+    client_id = ClientRegistry().create("alice")
+
+    before = channel_state.client_state(runtime, client_id)
+    (terminal,) = before["terminals"]
+    held.pop()
+    after = channel_state.client_state(runtime, client_id)
+
+    assert [entry["session_id"] for entry in terminal["sessions"]] == [
+        "early",
+        "late",
+    ]
+    assert terminal["sessions"][0] == {
+        "session_id": "early",
+        "account": "root",
+        "started_at": 1790758800,
+        "title": "",
+        "is_attached": False,
+        "is_persistent": True,
+    }
+    assert after["hash"] != before["hash"]
 
 
 def test_every_entry_names_the_machine_that_provides_it(config_dir, monkeypatch):

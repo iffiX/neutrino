@@ -1,11 +1,15 @@
 """A client's shell on a managed machine, bridged to that machine's agent.
 
-A client opens ``shell {device_id, cols, rows}``; the hub opens the agent's
-own ``shell`` stream and relays bytes both ways, each side under the other's
-credit, as the panel's terminal does. The client's stream closes with the
-agent's ``exit_code``, or with the refusal. A later size is a client-opened
-``command {agent, resize, shell, cols, rows}`` naming the client's own shell
-stream, which the hub maps to the agent's.
+A client opens ``shell {device_id, cols, rows, session_id, is_resumed}``; the
+hub opens the agent's own ``shell`` stream with the same ``session_id`` and
+``is_resumed`` and relays
+bytes both ways, each side under the other's credit, as the panel's terminal
+does. The client's stream closes with the agent's ``exit_code``, or with the
+refusal. A later size is a client-opened ``command {agent, resize, shell,
+cols, rows}`` naming the client's own shell stream, which the hub maps to the
+agent's. ``command {agent, persist, session_id, is_persistent}`` and
+``command {agent, stop_session, session_id}`` go to the machine holding the
+session unchanged, since the id is the agent's own.
 """
 
 import asyncio
@@ -14,11 +18,14 @@ import contextlib
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_BINDING_UNKNOWN,
+    CHANNEL_CODE_SESSION_UNKNOWN,
     CHANNEL_CODE_SHELL_UNKNOWN,
     CHANNEL_CODE_VERB_UNKNOWN,
     CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_STREAM_SHELL,
+    CHANNEL_VERB_PERSIST,
     CHANNEL_VERB_RESIZE,
+    CHANNEL_VERB_STOP_SESSION,
 )
 from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.constants import (
@@ -35,7 +42,9 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.web.shell_bridge import (
     DEFAULT_COLUMNS,
     DEFAULT_ROWS,
+    device_of_session,
     resize_shell,
+    session_command,
     settle_shell,
     shell_output,
 )
@@ -53,19 +62,25 @@ async def serve_shell_stream(
         stream: The client's stream, closed here.
     """
     device_id = str(stream.args.get("device_id", "") or "")
+    session_id = str(stream.args.get("session_id", "") or "")
     code, params = await asyncio.to_thread(_judge, session.key, device_id)
     if code:
         await stream.close(code, params)
         return
     cols, rows = _size(stream.args)
+    args = {"cols": cols, "rows": rows}
+    if session_id:
+        args["session_id"] = session_id
+        if stream.args.get("is_resumed") is True:
+            args["is_resumed"] = True
     try:
         shell = await runtime.agent_sessions.open_stream(
-            device_id, CHANNEL_STREAM_SHELL, {"cols": cols, "rows": rows}
+            device_id, CHANNEL_STREAM_SHELL, args
         )
     except AgentOfflineError as offline:
         await stream.close(offline.code, {"device": device_id})
         return
-    session.shells[stream.id] = (device_id, shell.id)
+    session.shells[stream.id] = (device_id, shell.id, session_id)
     reader = asyncio.create_task(_forward_input(stream, shell))
     pump = asyncio.create_task(_forward_output(shell, stream))
     try:
@@ -85,7 +100,8 @@ async def serve_shell_stream(
 async def serve_command_stream(
     runtime, session: ChannelSession, stream: ChannelStream
 ) -> None:
-    """Serve a ``command`` stream a client opened; only ``resize`` is one.
+    """Serve a ``command`` stream a client opened: ``resize``, ``persist`` or
+    ``stop_session`` on module ``agent``.
 
     Args:
         runtime: The shared runtime.
@@ -94,6 +110,12 @@ async def serve_command_stream(
     """
     module = str(stream.args.get("module", "") or "")
     verb = str(stream.args.get("verb", "") or "")
+    if module == CHANNEL_COMMAND_MODULE_AGENT and verb in (
+        CHANNEL_VERB_PERSIST,
+        CHANNEL_VERB_STOP_SESSION,
+    ):
+        await _serve_session_verb(runtime, session, stream, verb)
+        return
     if module != CHANNEL_COMMAND_MODULE_AGENT or verb != CHANNEL_VERB_RESIZE:
         await stream.close(CHANNEL_CODE_VERB_UNKNOWN, {"module": module, "verb": verb})
         return
@@ -102,7 +124,7 @@ async def serve_command_stream(
     if bridged is None:
         await stream.close(CHANNEL_CODE_SHELL_UNKNOWN, {"shell": shell_id})
         return
-    device_id, agent_shell_id = bridged
+    device_id, agent_shell_id, _ = bridged
     cols, rows = _size(stream.args)
     try:
         await resize_shell(
@@ -112,6 +134,48 @@ async def serve_command_stream(
         await stream.close(offline.code, {"device": device_id})
         return
     await stream.close()
+
+
+async def _serve_session_verb(
+    runtime, session: ChannelSession, stream: ChannelStream, verb: str
+) -> None:
+    """Send ``persist`` or ``stop_session`` to the machine holding the session.
+
+    The machine is the one this client's open bridge names for the id, else
+    the online machine whose report lists it; the client must be allowed a
+    terminal there. The agent's close is the client's.
+
+    Args:
+        runtime: The shared runtime.
+        session: The client's session.
+        stream: The client's stream, closed here.
+        verb: ``persist`` or ``stop_session``.
+    """
+    session_id = str(stream.args.get("session_id", "") or "")
+    device_id = next(
+        (
+            bridged[0]
+            for bridged in session.shells.values()
+            if session_id and bridged[2] == session_id
+        ),
+        "",
+    ) or (device_of_session(runtime.agent_sessions, session_id) if session_id else "")
+    if not device_id:
+        await stream.close(CHANNEL_CODE_SESSION_UNKNOWN, {"session_id": session_id})
+        return
+    code, params = await asyncio.to_thread(_judge, session.key, device_id)
+    if code:
+        await stream.close(code, params)
+        return
+    args = {"session_id": session_id}
+    if verb == CHANNEL_VERB_PERSIST:
+        args["is_persistent"] = bool(stream.args.get("is_persistent", False))
+    try:
+        info = await session_command(runtime.agent_sessions, device_id, verb, args)
+    except AgentOfflineError as offline:
+        await stream.close(offline.code, {"device": device_id})
+        return
+    await stream.close(info["code"], info["params"])
 
 
 def _judge(client_id: str, device_id: str) -> tuple:

@@ -3,12 +3,23 @@ and the resize.
 
 The output is the stream's data items and nothing else; the end is settled
 by whichever side stops first, the shell stream closed either way; a resize
-is one ``command {agent, resize}`` stream naming the agent's shell.
+is one ``command {agent, resize}`` stream naming the agent's shell. The
+sessions are the online reports' ``machine.sessions``, normalized and
+oldest first; a session verb is answered by the agent's close, and one the
+agent never closes by ``agent_never_reported``.
 """
 
 import asyncio
 
-from neutrino_hub.web.shell_bridge import resize_shell, settle_shell, shell_output
+from neutrino_hub.web import shell_bridge
+from neutrino_hub.web.shell_bridge import (
+    device_of_session,
+    reported_sessions,
+    resize_shell,
+    session_command,
+    settle_shell,
+    shell_output,
+)
 from tests.conftest import FakeChannelSessions, ScriptedChannelStream
 
 DEVICE = "device-one"
@@ -77,3 +88,75 @@ def test_a_resize_opens_one_command_naming_the_shell():
         "cols": 120,
         "rows": 40,
     }
+
+
+def test_the_sessions_are_every_online_report_s_oldest_first(monkeypatch):
+    sessions = FakeChannelSessions(online=[DEVICE, "device-two"])
+    reports = {
+        DEVICE: {
+            "machine": {
+                "sessions": [
+                    {"session_id": "b", "started_at": 1790762400},
+                    {"account": "root"},
+                    "nonsense",
+                ]
+            }
+        },
+        "device-two": {
+            "machine": {
+                "sessions": [
+                    {
+                        "session_id": "a",
+                        "started_at": 1790758800,
+                        "is_persistent": 1,
+                    }
+                ]
+            }
+        },
+        "device-three": {"machine": {}},
+    }
+    monkeypatch.setattr(sessions, "reports", lambda: reports)
+
+    listed = reported_sessions(sessions)
+
+    assert [(row["device_id"], row["session_id"]) for row in listed] == [
+        ("device-two", "a"),
+        (DEVICE, "b"),
+    ]
+    assert listed[0]["is_persistent"] is True
+    assert listed[1]["title"] == ""
+    assert device_of_session(sessions, "b") == DEVICE
+    assert device_of_session(sessions, "gone") == ""
+
+
+def test_a_session_verb_is_answered_by_the_agents_close():
+    sessions = FakeChannelSessions(online=[DEVICE])
+    sessions.scripts["command"] = lambda args: (
+        [],
+        {"code": "session_unknown", "params": {"session_id": args["session_id"]}},
+    )
+
+    info = asyncio.run(
+        session_command(sessions, DEVICE, "stop_session", {"session_id": "s"})
+    )
+
+    (command,) = sessions.streams
+    assert command.args == {
+        "module": "agent",
+        "verb": "stop_session",
+        "session_id": "s",
+    }
+    assert info == {"code": "session_unknown", "params": {"session_id": "s"}}
+
+
+def test_a_session_verb_the_agent_never_closes_is_never_reported(monkeypatch):
+    sessions = FakeChannelSessions(online=[DEVICE])
+    monkeypatch.setattr(shell_bridge, "CHANNEL_CALL_TIMEOUT_S", 0.01)
+
+    info = asyncio.run(
+        session_command(
+            sessions, DEVICE, "persist", {"session_id": "s", "is_persistent": True}
+        )
+    )
+
+    assert info == {"code": "agent_never_reported", "params": {}}
