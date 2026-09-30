@@ -42,6 +42,32 @@ phase() {
 }
 ran() { [ "$1" -eq 0 ] || FAILURES=$((FAILURES + 1)); }
 
+# Turn the panel's HTTPS on or off through its own Settings route, and wait
+# for it to answer by the new scheme. The first argument is the scheme wanted.
+PANEL_AUTHORITY=/etc/neutrino/hub/web/panel_tls/authority.pem
+panel_scheme() {
+    local wanted="$1" current verb jar
+    current=$(python3 -c "import json; s=json.load(open('/etc/neutrino/hub/web/settings.json')); print('https' if s.get('is_https_enabled') else 'http')")
+    [ "$current" = "$wanted" ] && return 0
+    verb=enable
+    [ "$wanted" = http ] && verb=disable
+    jar=$(mktemp)
+    curl -s -f --cacert "$PANEL_AUTHORITY" -c "$jar" -X POST \
+        "$current://127.0.0.1:8080/api/hub/auth/login" \
+        -H 'content-type: application/json' \
+        -d "{\"password\":\"$PASSWORD\"}" -o /dev/null || return 1
+    curl -s -f --cacert "$PANEL_AUTHORITY" -b "$jar" -X POST \
+        "$current://127.0.0.1:8080/api/hub/setting/https/$verb" -o /dev/null || return 1
+    rm -f "$jar"
+    for _ in $(seq 1 60); do
+        sleep 1
+        curl -s -f --cacert "$PANEL_AUTHORITY" -o /dev/null \
+            "$wanted://127.0.0.1:8080/api/hub/display" && return 0
+    done
+    echo "  the panel never answered over $wanted"
+    return 1
+}
+
 phase "the machine as it arrived"
 python3 -c "import sys; sys.path.insert(0, '$HERE'); import machine_state; machine_state.write_snapshot('$BEFORE')"
 INTERFACE="$(python3 -c "import sys; sys.path.insert(0, '$HERE'); import machine_state; print(machine_state.first_interface())")"
@@ -142,6 +168,16 @@ ran $?
 # update to: it installs, gates, and rolls back when the gate cannot pass.
 phase "the hub updating itself"
 NEUTRINO_PACKAGE="$PACKAGE" python3 -m pytest "$HERE/test_panel_update.py" -q
+ran $?
+
+# Once more with the panel on HTTPS: the gate reaches the panel by the scheme
+# the settings say, trusting the hub's own authority.
+phase "the hub updating itself, the panel on HTTPS"
+panel_scheme https
+ran $?
+NEUTRINO_PACKAGE="$PACKAGE" python3 -m pytest "$HERE/test_panel_update.py" -q
+ran $?
+panel_scheme http
 ran $?
 
 phase "reset"

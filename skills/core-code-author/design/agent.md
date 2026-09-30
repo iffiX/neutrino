@@ -265,8 +265,9 @@ reports the same.
 
 ## Two ports, one process
 
-The hub's panel port is plain HTTP behind a session, and its agent port is
-pinned TLS serving `/api/channel` alone. Both are uvicorn servers in one
+The hub's panel port is HTTP, or HTTPS under the hub's own certificate
+authority, behind a session, and its agent port is pinned TLS serving
+`/api/channel` alone. Both are uvicorn servers in one
 process. The ports, the certificate, the fingerprint and the hub's own
 identity are in [protocol.md](protocol.md), "Two ports, two audiences".
 
@@ -394,9 +395,10 @@ read. A website in their browser gets nothing at all: the agent listens on no
 local port, so there is nothing for a cross-site form to post to.
 
 **Rooting the hub box** is outside the model: the key, the vault and the
-panel all live there. The panel port itself is plain HTTP by
-[architecture.md](architecture.md)'s local-trust decision; the agent channel
-is hardened separately because it crosses networks the panel never does.
+panel all live there. The panel port itself is plain HTTP unless its HTTPS is
+turned on, by [architecture.md](architecture.md)'s local-trust decision; the
+agent channel is hardened separately because it crosses networks the panel
+never does.
 
 ## Atomicity is a rule, not a habit
 

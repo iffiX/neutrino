@@ -5,6 +5,7 @@ rather than fail, so a `pytest` at the repository root walks past them instead
 of trying to take the workstation's network apart.
 """
 
+import json
 import os
 
 import pytest
@@ -12,8 +13,11 @@ import pytest
 import machine_state
 from panel_client import PanelClient
 
-PANEL_DEFAULT_URL = "http://127.0.0.1:8080"
 PANEL_PASSWORD_ENV = "NEUTRINO_PANEL_PASSWORD"
+# Where the box keeps the panel's scheme and port, and the authority its
+# certificate is signed by.
+PANEL_SETTINGS_PATH = "/etc/neutrino/hub/web/settings.json"
+PANEL_AUTHORITY_PATH = "/etc/neutrino/hub/web/panel_tls/authority.pem"
 VAULT_PASSPHRASE_ENV = "NEUTRINO_VAULT_PASSPHRASE"
 
 
@@ -21,7 +25,7 @@ def pytest_addoption(parser) -> None:
     """Where the box is and how to get into it."""
     parser.addoption(
         "--panel",
-        default=os.environ.get("NEUTRINO_PANEL_URL", PANEL_DEFAULT_URL),
+        default=os.environ.get("NEUTRINO_PANEL_URL", "") or panel_default_url(),
         help="the panel to drive",
     )
     parser.addoption(
@@ -51,6 +55,21 @@ def pytest_addoption(parser) -> None:
     )
 
 
+def panel_default_url() -> str:
+    """The panel on loopback, by the scheme and port the box's settings say.
+
+    Returns:
+        ``http://127.0.0.1:8080`` when the settings cannot be read.
+    """
+    try:
+        with open(PANEL_SETTINGS_PATH, encoding="utf-8") as stream:
+            settings = json.load(stream)
+    except (OSError, ValueError):
+        settings = {}
+    scheme = "https" if settings.get("is_https_enabled") else "http"
+    return f"{scheme}://127.0.0.1:{settings.get('listen_port', 8080)}"
+
+
 @pytest.fixture(scope="session")
 def panel(request) -> PanelClient:
     """A session on the panel under test.
@@ -63,7 +82,11 @@ def panel(request) -> PanelClient:
         pytest.skip(
             f"these need a live box: pass --password or set ${PANEL_PASSWORD_ENV}"
         )
-    client = PanelClient(base_url=request.config.getoption("--panel"))
+    base_url = request.config.getoption("--panel")
+    client = PanelClient(
+        base_url=base_url,
+        authority=PANEL_AUTHORITY_PATH if base_url.startswith("https:") else None,
+    )
     client.sign_in(password)
     return client
 

@@ -46,6 +46,8 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_MEMINFO_PATH,
     HUB_UPDATE_OUTPUT_LIMIT_BYTES,
     HUB_UPDATE_PACKAGE_MODE,
+    HUB_UPDATE_PANEL_AUTHORITY_PATH,
+    HUB_UPDATE_PANEL_SETTINGS_PATH,
     HUB_UPDATE_PANEL_UNIT,
     HUB_UPDATE_REASON_GATE_FAILED,
     HUB_UPDATE_REASON_INSTALL_FAILED,
@@ -189,8 +191,11 @@ gate() {
             systemctl is-active --quiet "$unit" \\
                 || { ok=0; report="$report $unit=$(systemctl is-active "$unit")"; }
         done
-        curl -fsS -m 5 -o /dev/null "http://127.0.0.1:$PORT$HEALTH_PATH" \\
-            || { ok=0; report="$report http=failed"; }
+        scheme=http
+        grep -Eq '"is_https_enabled": *true' @SETTINGS@ 2>/dev/null && scheme=https
+        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null \\
+            "$scheme://127.0.0.1:$PORT$HEALTH_PATH" \\
+            || { ok=0; report="$report $scheme=failed"; }
         seen=$(nhub --version 2>/dev/null)
         [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
         [ "$ok" = 1 ] && return 0
@@ -465,6 +470,8 @@ def render_script(
         "@POLL@": str(poll_s),
         "@OUTPUT_LIMIT@": str(int(output_limit_bytes)),
         "@HEALTH_PATH@": shlex.quote(HUB_UPDATE_HEALTH_PATH),
+        "@SETTINGS@": shlex.quote(str(HUB_UPDATE_PANEL_SETTINGS_PATH)),
+        "@AUTHORITY@": shlex.quote(str(HUB_UPDATE_PANEL_AUTHORITY_PATH)),
         "@INSTALL@": install,
         "@AGENT_INSTALL@": agent_install_command(plan.family),
         "@MEMINFO@": shlex.quote(meminfo_path),

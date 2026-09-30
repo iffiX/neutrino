@@ -2,7 +2,8 @@
 
 The first sample is not itself news, a set equal to the last says nothing,
 and a set that moved runs the converge step once, which hands both roles
-their state. A sample whose overlay devices moved has converged already.
+their state. A sample whose overlay devices moved has converged already. Every sample hands the set to the
+panel's certificate, which is issued again when its names moved.
 """
 
 from neutrino_hub.web import address_sampler as sampler_module
@@ -33,6 +34,11 @@ class StubRuntime:
 def sampler(monkeypatch) -> tuple:
     runtime = StubRuntime()
     monkeypatch.setattr(sampler_module, "channel_urls", lambda given: list(given.urls))
+    monkeypatch.setattr(
+        sampler_module.panel_tls,
+        "follow_addresses",
+        lambda urls: runtime.calls.append(("certificate", list(urls))),
+    )
     return PanelAddressSampler(runtime=runtime), runtime
 
 
@@ -86,7 +92,7 @@ def test_each_sample_follows_the_overlay_devices_before_reading(monkeypatch):
 
     watcher.sample_once()
 
-    assert runtime.calls == ["follow", "routes", "urls"]
+    assert runtime.calls == ["follow", "routes", "urls", ("certificate", runtime.urls)]
 
 
 def test_every_sample_checks_the_overlays_routes(monkeypatch):
@@ -98,3 +104,12 @@ def test_every_sample_checks_the_overlays_routes(monkeypatch):
     watcher.sample_once()
 
     assert runtime.calls.count("routes") == 2
+
+
+def test_every_sample_hands_the_set_to_the_panel_certificate(monkeypatch):
+    watcher, runtime = sampler(monkeypatch)
+
+    watcher.sample_once()
+    watcher.sample_once()
+
+    assert runtime.calls.count(("certificate", runtime.urls)) == 2

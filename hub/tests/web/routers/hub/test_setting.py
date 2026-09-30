@@ -1203,3 +1203,232 @@ def test_a_staging_that_fails_records_why_and_ends_the_task_failed(update_box):
     assert record.started_at == "2026-09-20T15:00:00Z"
     assert record.finished_at.endswith("Z")
     assert installer.launched == []
+
+
+# --- HTTPS: the scheme, the authority and the certificate the panel serves ---
+
+
+class HttpsRuntime:
+    """The settings and the network the HTTPS routes reach for."""
+
+    def __init__(self):
+        self.settings = {"listen_port": 8080}
+
+    def network(self):
+        return SimpleNamespace()
+
+
+@pytest.fixture
+def https_box(monkeypatch, tmp_path):
+    """The Settings routers over a config directory and certificates of their own.
+
+    Only the authority route is served without the session override, so a
+    request without a cookie shows which route skips the session.
+    """
+    from functools import partial
+
+    from neutrino_hub.web import panel_tls
+    from tests.conftest import unlock_vault
+
+    config_dir = tmp_path / "hub"
+    (config_dir / "web").mkdir(parents=True)
+    (config_dir / "web" / "settings.json").write_text(json.dumps({"listen_port": 8080}))
+    (config_dir / "web" / "identity.json").write_text(
+        json.dumps({"id": "a" * 32, "name": "Argon"})
+    )
+    monkeypatch.setattr(neutrino_hub.utils.json_file, "UTILS_CONFIG_DIR", config_dir)
+    unlock_vault(monkeypatch, tmp_path)
+    monkeypatch.setattr(panel_tls, "_served_contexts", [])
+    monkeypatch.setattr(panel_tls, "_last_renewed_at", None)
+    authority = {
+        "certificate_path": tmp_path / "authority.pem",
+        "sealed_key_path": tmp_path / "authority_key.sealed",
+    }
+    served = {
+        "served_certificate_path": tmp_path / "leaf.pem",
+        "served_key_path": tmp_path / "leaf_key.pem",
+    }
+    for name in ("ensure_authority", "reset_authority"):
+        original = getattr(panel_tls, name)
+        monkeypatch.setattr(
+            panel_tls, name, partial(original, **authority, host_name="argon")
+        )
+    for name in ("authority_der", "authority_fingerprint"):
+        original = getattr(panel_tls, name)
+        monkeypatch.setattr(
+            panel_tls,
+            name,
+            partial(original, certificate_path=authority["certificate_path"]),
+        )
+    monkeypatch.setattr(
+        panel_tls,
+        "renew_served_leaf",
+        partial(panel_tls.renew_served_leaf, **authority, **served),
+    )
+    monkeypatch.setattr(
+        settings_router,
+        "WEB_PANEL_TLS_AUTHORITY_PATH",
+        authority["certificate_path"],
+    )
+    monkeypatch.setattr(
+        settings_router,
+        "WEB_PANEL_TLS_SERVED_CERT_PATH",
+        served["served_certificate_path"],
+    )
+    monkeypatch.setattr(
+        settings_router,
+        "channel_hosts",
+        lambda network: ["192.168.100.1", "203.0.113.9"],
+    )
+    restarts: list = []
+    monkeypatch.setattr(
+        settings_router, "_restart_panel", lambda: restarts.append("restarted")
+    )
+    runtime = HttpsRuntime()
+    runtime.sessions = SessionStore(
+        password_hash=hash_password(PANEL_PASSWORD), session_ttl_hours=1
+    )
+    app = FastAPI()
+    app.include_router(settings_router.router)
+    app.include_router(settings_router.authority_router)
+    app.dependency_overrides[get_runtime] = lambda: runtime
+    with TestClient(app) as opened:
+        yield opened, config_dir, restarts, runtime, app
+
+
+def signed_in(https_box):
+    opened, _, _, _, app = https_box
+    app.dependency_overrides[require_session] = lambda: None
+    return opened
+
+
+def stored_https(config_dir) -> bool:
+    settings = json.loads((config_dir / "web" / "settings.json").read_text())
+    return settings.get("is_https_enabled", False)
+
+
+def test_https_is_off_and_no_authority_exists_before_it_is_asked_for(https_box):
+    opened = signed_in(https_box)
+
+    view = opened.get("/api/hub/setting/https").json()
+
+    assert view["is_https_enabled"] is False
+    assert view["has_authority"] is False
+    assert view["authority_file_name"] == "neutrino-argon-ca.crt"
+
+
+def test_turning_https_on_makes_the_authority_writes_the_flag_and_restarts(
+    https_box,
+):
+    opened = signed_in(https_box)
+    _, config_dir, restarts, _, _ = https_box
+
+    view = opened.post("/api/hub/setting/https/enable").json()
+
+    assert view["is_https_enabled"] is True
+    assert view["has_authority"] is True
+    assert len(view["authority_fingerprint"]) == 64
+    assert "192.168.100.1" in view["leaf_names"]
+    assert "203.0.113.9" not in view["leaf_names"]
+    assert view["leaf_expires_at"] > view["leaf_issued_at"]
+    assert view["renewed_at"] is None
+    assert stored_https(config_dir) is True
+    assert restarts == ["restarted"]
+
+
+def test_turning_https_on_twice_restarts_once(https_box):
+    opened = signed_in(https_box)
+    _, _, restarts, _, _ = https_box
+    opened.post("/api/hub/setting/https/enable")
+
+    opened.post("/api/hub/setting/https/enable")
+
+    assert restarts == ["restarted"]
+
+
+def test_turning_https_off_keeps_the_certificates(https_box):
+    opened = signed_in(https_box)
+    _, config_dir, restarts, _, _ = https_box
+    fingerprint = opened.post("/api/hub/setting/https/enable").json()[
+        "authority_fingerprint"
+    ]
+
+    view = opened.post("/api/hub/setting/https/disable").json()
+
+    assert view["is_https_enabled"] is False
+    assert view["authority_fingerprint"] == fingerprint
+    assert stored_https(config_dir) is False
+    assert restarts == ["restarted", "restarted"]
+
+
+def test_a_reset_replaces_the_authority_and_the_certificate_it_signed(https_box):
+    opened = signed_in(https_box)
+    _, _, restarts, _, _ = https_box
+    before = opened.post("/api/hub/setting/https/enable").json()
+
+    after = opened.post("/api/hub/setting/https/authority/reset").json()
+
+    assert after["authority_fingerprint"] != before["authority_fingerprint"]
+    assert after["is_https_enabled"] is True
+    assert after["renewed_at"] is not None
+    assert restarts == ["restarted"]
+
+
+def test_the_authority_downloads_without_a_session(https_box):
+    opened, _, _, _, app = https_box
+    app.dependency_overrides[require_session] = lambda: None
+    fingerprint = opened.post("/api/hub/setting/https/enable").json()[
+        "authority_fingerprint"
+    ]
+    app.dependency_overrides.pop(require_session)
+
+    download = opened.get("/api/hub/setting/https/authority")
+
+    assert opened.get("/api/hub/setting/https").status_code == 401
+    assert download.status_code == 200
+    assert download.headers["content-type"] == "application/x-x509-ca-cert"
+    assert 'filename="neutrino-argon-ca.crt"' in download.headers["content-disposition"]
+    assert hashlib.sha256(download.content).hexdigest() == fingerprint
+
+
+def test_an_authority_download_before_there_is_one_is_refused_by_code(https_box):
+    opened, _, _, _, _ = https_box
+
+    download = opened.get("/api/hub/setting/https/authority")
+
+    assert download.status_code == 404
+    assert download.json()["detail"]["code"] == "https_authority_missing"
+
+
+def test_a_locked_vault_turns_nothing_on(https_box, monkeypatch, tmp_path):
+    from neutrino_hub.exceptions import VaultLockedError
+
+    opened = signed_in(https_box)
+    _, config_dir, restarts, _, _ = https_box
+    (tmp_path / "state" / "vault.key").unlink()
+
+    with pytest.raises(VaultLockedError):
+        opened.post("/api/hub/setting/https/enable")
+
+    assert stored_https(config_dir) is False
+    assert restarts == []
+
+
+def test_the_session_cookie_is_secure_while_the_panel_speaks_https(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        web_auth, "WEB_LOGIN_LOCKOUT_STATE_PATH", tmp_path / "login_lockout.json"
+    )
+    runtime = CookieRuntime()
+    app = FastAPI()
+    app.include_router(auth_router.router)
+    app.dependency_overrides[get_runtime] = lambda: runtime
+
+    with TestClient(app) as opened:
+        plain = opened.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
+        runtime.settings["is_https_enabled"] = True
+        secure = opened.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
+
+    assert "secure" not in plain.headers["set-cookie"].lower()
+    assert "secure" in secure.headers["set-cookie"].lower()

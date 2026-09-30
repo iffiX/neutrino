@@ -212,25 +212,32 @@ def reinstall(package: str) -> None:
 
 
 def _panel_answers() -> bool:
-    """Whether the panel is serving on its own port."""
-    port = run(
-        ["python3", "-c", PANEL_PORT_SCRIPT],
-    ).strip()
+    """Whether the panel is serving on its own port, by its own scheme."""
+    scheme, _, port = run(["python3", "-c", PANEL_PORT_SCRIPT]).strip().partition(" ")
     probe = subprocess.run(
-        ["curl", "-s", "-o", "/dev/null", f"http://127.0.0.1:{port or 8080}/"],
+        [
+            "curl",
+            "-s",
+            "--cacert",
+            PANEL_AUTHORITY_PATH,
+            "-o",
+            "/dev/null",
+            f"{scheme or 'http'}://127.0.0.1:{port or 8080}/",
+        ],
         capture_output=True,
     )
     return probe.returncode == 0
 
 
-# Read from the panel's own settings rather than assumed: the port is a thing
-# somebody can move, and a check that hard-codes it reports a moved panel as a
-# dead one.
+# Read from the panel's own settings rather than assumed: the port and the
+# scheme are things somebody can change, and a check that hard-codes them
+# reports a moved panel as a dead one.
 PANEL_PORT_SCRIPT = (
     "import json;"
-    "print(json.load(open('/etc/neutrino/hub/web/settings.json'))"
-    ".get('listen_port', 8080))"
+    "s=json.load(open('/etc/neutrino/hub/web/settings.json'));"
+    "print('https' if s.get('is_https_enabled') else 'http', s.get('listen_port', 8080))"
 )
+PANEL_AUTHORITY_PATH = "/etc/neutrino/hub/web/panel_tls/authority.pem"
 
 
 def addresses_and_routes() -> list:

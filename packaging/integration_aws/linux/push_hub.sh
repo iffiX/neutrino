@@ -47,5 +47,6 @@ esac
 echo "$LINK" > "$STATE/enroll_link"
 
 echo
-echo "panel     http://$(hub_ip):$PANEL_PORT  (password in state/panel_password)"
+panel_connect
+echo "panel     $PANEL_BASE  (password in state/panel_password)"
 echo "link      state/enroll_link"

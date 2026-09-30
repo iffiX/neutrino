@@ -31,16 +31,22 @@ rm -f /tmp/answers.json
 grep -E "panel is at|enroll" /tmp/setup.log || true
 
 echo "== enrollment link"
+CURL=(curl -s -f)
+if sudo grep -Eq '"is_https_enabled": *true' /etc/neutrino/hub/web/settings.json; then
+    sudo cat /etc/neutrino/hub/web/panel_tls/authority.pem > /tmp/panel_authority.pem
+    PANEL="https://127.0.0.1:8080"
+    CURL+=(--cacert /tmp/panel_authority.pem)
+fi
 COOKIES="$(mktemp)"
 for _ in $(seq 1 30); do
-    if curl -s -f -c "$COOKIES" -X POST "$PANEL/api/hub/auth/login" \
+    if "${CURL[@]}" -c "$COOKIES" -X POST "$PANEL/api/hub/auth/login" \
         -H 'content-type: application/json' \
         -d "{\"password\":\"$NEUTRINO_PANEL_PASSWORD\"}" > /dev/null; then
         break
     fi
     sleep 1
 done
-LINK="$(curl -s -f -b "$COOKIES" -X POST "$PANEL/api/hub/device/enrollment/create" \
+LINK="$("${CURL[@]}" -b "$COOKIES" -X POST "$PANEL/api/hub/device/enrollment/create" \
     -H 'content-type: application/json' \
     -d "{\"name\":\"${NEUTRINO_DEVICE_NAME:-}\"}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["link"])')"
 rm -f "$COOKIES"

@@ -148,6 +148,24 @@ which of the three it did.
 | An update of the hub itself | `journalctl -u neutrino_hub_update`, and `/var/lib/neutrino/hub_update/update.log` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
 
+## Checking the panel's HTTPS
+
+With `is_https_enabled` on, the panel's certificate chains to the hub's own
+authority and names the address it was reached at:
+
+```bash
+sudo openssl s_client -connect 127.0.0.1:8080 \
+    -CAfile /etc/neutrino/hub/web/panel_tls/authority.pem </dev/null 2>/dev/null \
+    | grep -E 'subject=|Verify return code'
+sudo openssl x509 -in /var/lib/neutrino/panel_tls_certificate.pem -noout -ext subjectAltName -dates
+```
+
+`Verify return code: 0 (ok)` is the chain holding. A browser that still warns
+has not installed the authority, or was given a new one by
+**Regenerate certificate**; Settings downloads the current one. A panel that
+answers plain HTTP with HTTPS on has no certificate to serve, and
+`journalctl -u neutrino_hub_web` names why, usually `vault_locked`.
+
 ## Updating the hub from the panel
 
 Settings has an Update panel; `sudo nhub update` does the same from a
@@ -161,7 +179,9 @@ the transient unit `neutrino_hub_update` with `update.sh` from that directory.
 The unit runs the package manager, then holds a gate of up to 180 seconds:
 `neutrino_hub_web` and whichever of `neutrino_hub_router` and
 `neutrino_hub_dnsmasq` were running must be active, `GET /api/hub/display` on
-the panel's port must answer 200, and `nhub --version` must print the target.
+the panel's port must answer 200, over HTTPS trusting
+`/etc/neutrino/hub/web/panel_tls/authority.pem` when `is_https_enabled` is
+on at that moment, and `nhub --version` must print the target.
 A gate that fails installs the previous package and holds the gate again.
 
 When `/proc/meminfo` gives less than 300 MB of `MemAvailable` as the unit

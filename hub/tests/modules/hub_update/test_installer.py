@@ -1,6 +1,8 @@
 """Staging a package and handing the install to systemd, with nothing real."""
 
 import hashlib
+import json
+import os
 import io
 import subprocess
 from collections import namedtuple
@@ -621,3 +623,56 @@ def test_a_staged_plan_names_the_hubs_own_interpreter(tmp_path, roots):
     )
 
     assert plan.python == installer_module.sys.executable
+
+
+def gate_of(text: str) -> str:
+    """The gate function the script defines, on its own."""
+    start = text.index("gate() {")
+    return text[start : text.index("\n}\n", start) + 3]
+
+
+@pytest.mark.parametrize(
+    "settings, scheme",
+    [
+        ({"listen_port": 8080}, "http"),
+        ({"listen_port": 8080, "is_https_enabled": False}, "http"),
+        ({"listen_port": 8080, "is_https_enabled": True}, "https"),
+    ],
+)
+def test_the_gate_reads_the_scheme_when_it_runs(
+    tmp_path, monkeypatch, settings, scheme
+):
+    """The panel's scheme can change between staging and the gate, so the
+    script reads the settings each time it probes."""
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+    authority = tmp_path / "authority.pem"
+    monkeypatch.setattr(
+        installer_module, "HUB_UPDATE_PANEL_SETTINGS_PATH", settings_path
+    )
+    monkeypatch.setattr(installer_module, "HUB_UPDATE_PANEL_AUTHORITY_PATH", authority)
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    calls = tmp_path / "curl.args"
+    (fake / "curl").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {calls}\n')
+    (fake / "nhub").write_text("#!/bin/sh\necho 0.3.1\n")
+    for program in ("curl", "nhub"):
+        (fake / program).chmod(0o755)
+    text = render_script(plan_in(tmp_path, rollback=False), directory=tmp_path)
+    harness = (
+        gate_of(text)
+        + "UNITS=''; PORT=8080; HEALTH_PATH=/api/hub/display; GATE_TIMEOUT=5; "
+        + f"POLL=0; LOG={tmp_path / 'log'}; gate 0.3.1\n"
+    )
+
+    result = subprocess.run(
+        ["sh", "-c", harness],
+        env={**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    arguments = calls.read_text().split("\n")
+    assert f"{scheme}://127.0.0.1:8080/api/hub/display" in arguments
+    assert arguments[arguments.index("--cacert") + 1] == str(authority)

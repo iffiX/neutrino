@@ -51,6 +51,7 @@ def paths(tmp_path, monkeypatch):
     unlock_vault(monkeypatch, tmp_path)
     monkeypatch.setattr(panel_tls, "_served_contexts", [])
     monkeypatch.setattr(panel_tls, "_last_renewed_at", None)
+    monkeypatch.setattr(panel_tls, "_loaded_certificate", b"")
     return {
         "certificate_path": tmp_path / "authority.pem",
         "sealed_key_path": tmp_path / "authority_key.sealed",
@@ -294,7 +295,9 @@ def test_a_renewal_reaches_the_next_connection_on_a_live_context(served):
     context.load_cert_chain(
         str(served["served_certificate_path"]), str(served["served_key_path"])
     )
-    watch_served_context(context)
+    watch_served_context(
+        context, served_certificate_path=served["served_certificate_path"]
+    )
     listener = socket.create_server(("127.0.0.1", 0))
     port = listener.getsockname()[1]
     stop = threading.Event()
@@ -318,6 +321,11 @@ def test_a_renewal_reaches_the_next_connection_on_a_live_context(served):
         first = served_names(served, port)
         renew_served_leaf(["127.0.0.1", "192.168.7.1"], **served, now=NOW)
         second = served_names(served, port)
+        # A pair another process wrote, such as `nhub apply`, is loaded by
+        # the next look even when its names are already the ones wanted.
+        write_served_leaf(["127.0.0.1", "10.1.1.1"], **served)
+        renew_served_leaf(["127.0.0.1", "10.1.1.1"], **served, now=NOW)
+        third = served_names(served, port)
     finally:
         stop.set()
         thread.join(timeout=2)
@@ -325,6 +333,7 @@ def test_a_renewal_reaches_the_next_connection_on_a_live_context(served):
 
     assert first == ["127.0.0.1"]
     assert second == ["127.0.0.1", "192.168.7.1"]
+    assert third == ["127.0.0.1", "10.1.1.1"]
 
 
 def served_names(served, port: int) -> list:

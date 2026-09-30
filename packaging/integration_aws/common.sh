@@ -61,24 +61,41 @@ pack_tree() {
         done | tar --null -T - -czf "$STATE/src.tgz")
 }
 
+# The panel's scheme, as the hub's own settings say it. Over HTTPS the
+# authority is copied here, and the panel is reached by its own name pinned to
+# the hub's address, since its certificate carries no public address.
+panel_connect() {
+    PANEL_CURL=(curl -s -f)
+    if ssh_hub "sudo grep -Eq '\"is_https_enabled\": *true' /etc/neutrino/hub/web/settings.json"; then
+        ssh_hub "sudo cat /etc/neutrino/hub/web/panel_tls/authority.pem" > "$STATE/panel_authority.pem"
+        PANEL_BASE="https://hub.neutrino.internal:$PANEL_PORT"
+        PANEL_CURL+=(--cacert "$STATE/panel_authority.pem"
+            --connect-to "hub.neutrino.internal:$PANEL_PORT:$(hub_ip):$PANEL_PORT")
+    else
+        PANEL_BASE="http://$(hub_ip):$PANEL_PORT"
+    fi
+}
+
 # The panel on the hub, one signed-in session per call.
 panel_post() {
     local path="$1" body="$2" jar
+    panel_connect
     jar="$(mktemp)"
-    curl -s -f -c "$jar" -X POST "http://$(hub_ip):$PANEL_PORT/api/hub/auth/login" \
+    "${PANEL_CURL[@]}" -c "$jar" -X POST "$PANEL_BASE/api/hub/auth/login" \
         -H 'content-type: application/json' \
         -d "{\"password\":\"$(state panel_password)\"}" -o /dev/null
-    curl -s -f -b "$jar" -X POST "http://$(hub_ip):$PANEL_PORT$path" \
+    "${PANEL_CURL[@]}" -b "$jar" -X POST "$PANEL_BASE$path" \
         -H 'content-type: application/json' -d "$body"
     rm -f "$jar"
 }
 panel_get() {
     local path="$1" jar
+    panel_connect
     jar="$(mktemp)"
-    curl -s -f -c "$jar" -X POST "http://$(hub_ip):$PANEL_PORT/api/hub/auth/login" \
+    "${PANEL_CURL[@]}" -c "$jar" -X POST "$PANEL_BASE/api/hub/auth/login" \
         -H 'content-type: application/json' \
         -d "{\"password\":\"$(state panel_password)\"}" -o /dev/null
-    curl -s -f -b "$jar" "http://$(hub_ip):$PANEL_PORT$path"
+    "${PANEL_CURL[@]}" -b "$jar" "$PANEL_BASE$path"
     rm -f "$jar"
 }
 

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
 
+from neutrino_hub.web.constants import WEB_SETTING_HTTPS
 from neutrino_hub.web.dependencies import get_runtime, session_cookie
 from neutrino_hub.web.models import LoginRequest, SessionView
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -29,7 +30,8 @@ def login(
         runtime: The shared runtime.
 
     Returns:
-        Whether a session was created. A lockout is explicit: the page shows
+        Whether a session was created; the cookie is ``Secure`` while the
+        panel speaks HTTPS. A lockout is explicit: the page shows
         a countdown, and hiding it would only punish the owner's typos while
         telling an attacker nothing they cannot measure.
     """
@@ -44,6 +46,7 @@ def login(
         token,
         httponly=True,
         samesite="lax",
+        secure=bool(runtime.settings.get(WEB_SETTING_HTTPS, False)),
         max_age=runtime.settings.get("session_ttl_hours", 168) * 3600,
     )
     return SessionView(is_authenticated=True)

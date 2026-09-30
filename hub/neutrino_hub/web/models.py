@@ -1324,6 +1324,35 @@ class PanelSettings(BaseModel):
     hub_name: str = ""
 
 
+class PanelHttpsView(BaseModel):
+    """The panel's scheme and the certificates behind it.
+
+    Attributes:
+        is_https_enabled: Whether ``web/settings.json`` says the panel speaks
+            HTTPS.
+        has_authority: Whether the hub has made its certificate authority.
+        authority_fingerprint: The SHA-256 of the authority's DER encoding,
+            64 lowercase hex characters; empty without an authority.
+        authority_created_at: When the authority was made, as an ISO stamp.
+        authority_file_name: What the downloaded authority is called.
+        leaf_names: The addresses and names the served certificate carries.
+        leaf_issued_at: When the served certificate was issued.
+        leaf_expires_at: When it expires.
+        renewed_at: When it was last issued again for new names or a near
+            expiry; None when it has not been since the panel started.
+    """
+
+    is_https_enabled: bool
+    has_authority: bool
+    authority_fingerprint: str = ""
+    authority_created_at: str | None = None
+    authority_file_name: str = ""
+    leaf_names: list[str] = Field(default_factory=list)
+    leaf_issued_at: str | None = None
+    leaf_expires_at: str | None = None
+    renewed_at: str | None = None
+
+
 class PanelDisplay(BaseModel):
     """The language and the palette the panel is drawn in, before there is a
     session."""

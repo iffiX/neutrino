@@ -17,6 +17,7 @@ import os
 import shutil
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -89,10 +90,12 @@ from neutrino_hub.web.agent_tls import ensure_certificate
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
     WEB_IDENTITY_FILE,
+    WEB_PANEL_TLS_AUTHORITY_PATH,
     WEB_SETUP_GRACE_S,
     WEB_SETUP_WAIT_S,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
+from neutrino_hub.web.panel_tls import is_https_enabled
 from neutrino_hub.web.setup_app import WebSetupServer, WebSetupSession
 
 from neutrino_hub.cli.password import is_password_set, store_password
@@ -733,7 +736,7 @@ def _enrollment_link(password: str) -> tuple:
     """
     if is_dev_root_set():
         return "", "No panel is running under --dev; start one with `nhub --dev run`."
-    base = f"http://127.0.0.1:{_configured_port()}"
+    base = f"{_panel_scheme()}://127.0.0.1:{_configured_port()}"
     # The panel was started a moment ago and binds its socket when uvicorn is
     # ready, not when systemd returns, so the first ask is often too early.
     deadline = time.monotonic() + SETUP_PANEL_WAIT_S
@@ -772,12 +775,24 @@ def _post(url: str, body: dict, *, cookie: str = ""):
     )
     if cookie:
         request.add_header("Cookie", cookie)
-    return urllib.request.urlopen(request, timeout=SETUP_PANEL_TIMEOUT_S)
+    context = None
+    if url.startswith("https:"):
+        # The panel's certificate is signed by this hub's own authority, and
+        # 127.0.0.1 is one of its names.
+        context = ssl.create_default_context(cafile=str(WEB_PANEL_TLS_AUTHORITY_PATH))
+    return urllib.request.urlopen(
+        request, timeout=SETUP_PANEL_TIMEOUT_S, context=context
+    )
 
 
 def _configured_port() -> int:
     """The port the panel was told to listen on."""
     return read_config("web/settings.json").get("listen_port", WEB_DEFAULT_LISTEN_PORT)
+
+
+def _panel_scheme() -> str:
+    """``https`` when the panel's settings say it speaks HTTPS, else ``http``."""
+    return "https" if is_https_enabled() else "http"
 
 
 def _panel_url() -> str:
@@ -789,16 +804,17 @@ def _panel_url() -> str:
         — and the hostname when it has neither.
     """
     port = _configured_port()
+    scheme = _panel_scheme()
     network = _network_config()
     for interface in network.interfaces:
         if interface.role == "lan" and interface.lan.address:
-            return f"http://{interface.lan.address}:{port}"
+            return f"{scheme}://{interface.lan.address}:{port}"
     status = RouterLinkStatus()
     for name in network.exposed_device_names:
         address = status.link(name).ipv4_address
         if address:
-            return f"http://{address.partition('/')[0]}:{port}"
-    return f"http://{socket.gethostname()}:{port}"
+            return f"{scheme}://{address.partition('/')[0]}:{port}"
+    return f"{scheme}://{socket.gethostname()}:{port}"
 
 
 def _step_cliproxyapi(reporter: InstallReporter) -> str:

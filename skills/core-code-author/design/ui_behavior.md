@@ -208,8 +208,8 @@ one, whose dialog words the cascade
 ([architecture.md](architecture.md), "The credential vault"). A stored value
 is never read back into a field for any purpose.
 
-A copy button goes through `copyText`, which falls back to a selection because
-the panel is served over plain HTTP and the clipboard API is absent there. It
+A copy button goes through `copyText`, which falls back to a selection when
+the panel is served over plain HTTP, where the clipboard API is absent. It
 confirms in place, swapping to a check and `Copied` for a moment, because a copy
 that looks like nothing happened gets pressed again.
 

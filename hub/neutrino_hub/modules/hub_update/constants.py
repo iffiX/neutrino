@@ -1,5 +1,7 @@
 """Fixed values of the hub_update module."""
 
+from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+
 # Where the hub's own releases are published, and how a release is asked for.
 HUB_UPDATE_REPOSITORY = "iffiX/neutrino"
 HUB_UPDATE_LATEST_URL = "https://api.github.com/repos/{repository}/releases/latest"
@@ -57,6 +59,12 @@ HUB_UPDATE_AGENT_COMMAND = "nagent"
 HUB_UPDATE_PANEL_UNIT = "neutrino_hub_web"
 HUB_UPDATE_GATE_UNITS = ("neutrino_hub_router", "neutrino_hub_dnsmasq")
 HUB_UPDATE_HEALTH_PATH = "/api/hub/display"
+# What the gate reads to reach the panel by the scheme it serves: its
+# settings, and the authority its certificate is signed by.
+HUB_UPDATE_PANEL_SETTINGS_PATH = UTILS_CONFIG_DIR / "web" / "settings.json"
+HUB_UPDATE_PANEL_AUTHORITY_PATH = (
+    UTILS_CONFIG_DIR / "web" / "panel_tls" / "authority.pem"
+)
 HUB_UPDATE_GATE_TIMEOUT_S = 180
 HUB_UPDATE_GATE_POLL_S = 2
 HUB_UPDATE_OUTPUT_LIMIT_BYTES = 4 * 1024

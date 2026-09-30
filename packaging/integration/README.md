@@ -53,7 +53,7 @@ Options, each also readable from the environment:
 
 | Option | Environment | What it says |
 | --- | --- | --- |
-| `--panel` | `NEUTRINO_PANEL_URL` | Where the panel answers. Default `http://127.0.0.1:8080`. |
+| `--panel` | `NEUTRINO_PANEL_URL` | Where the panel answers. Default: loopback, by the scheme and port in the box's `web/settings.json`; an `https` panel is trusted by the box's own authority. |
 | `--password` | `NEUTRINO_PANEL_PASSWORD` | Its password. Without it every check skips. |
 | `--before` | `NEUTRINO_BEFORE_STATE` | The machine's state from before the install, written by `machine_state.write_snapshot()`. |
 | `--mode` | `NEUTRINO_SETUP_MODE` | Which mode the box was set up in. |

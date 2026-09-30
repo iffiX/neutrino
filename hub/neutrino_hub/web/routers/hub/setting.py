@@ -1,4 +1,4 @@
-"""The Settings tab: the panel's own port, password, backup and versions."""
+"""The Settings tab: the panel's own port, scheme, password, backup and versions."""
 
 import hashlib
 import io
@@ -21,7 +21,8 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from cryptography import x509
 
 from neutrino_hub.exceptions import (
     HubUpdateError,
@@ -70,11 +71,17 @@ from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
     WEB_DEFAULT_THEME,
     WEB_LANGUAGES,
+    WEB_PANEL_TLS_AUTHORITY_PATH,
+    WEB_PANEL_TLS_MEDIA_TYPE,
+    WEB_PANEL_TLS_SERVED_CERT_PATH,
     WEB_PORT_MAX,
     WEB_PORT_MIN,
     WEB_RESTART_DELAY_S,
+    WEB_SETTING_HTTPS,
     WEB_THEMES,
 )
+from neutrino_hub.web.channel_addresses import channel_hosts
+from neutrino_hub.web import panel_tls
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.identity import hub_name, set_hub_name
 from neutrino_hub.web.models import (
@@ -85,6 +92,7 @@ from neutrino_hub.web.models import (
     HubReleaseView,
     HubUpdateRecordView,
     HubUpdateRequest,
+    PanelHttpsView,
     PanelSettings,
     PasswordChange,
     PasswordChangeResult,
@@ -102,6 +110,9 @@ from neutrino_hub.modules.xray.constants import XRAY_BINARY, XRAY_VERSION
 router = APIRouter(
     prefix="/api/hub/setting", tags=["setting"], dependencies=[Depends(require_session)]
 )
+# The one route of this page a browser reaches before it has a session: the
+# authority's certificate, which it has to install before it trusts the panel.
+authority_router = APIRouter(prefix="/api/hub/setting", tags=["setting"])
 
 # The one version both packages share; an agent reporting a different one
 # is asked to upgrade rather than negotiated with.
@@ -135,6 +146,8 @@ SETTINGS_ERROR_LANGUAGE_UNKNOWN = "language_unknown"
 SETTINGS_ERROR_THEME_UNKNOWN = "theme_unknown"
 # The 422 the page words when it is asked to name the hub nothing.
 SETTINGS_ERROR_HUB_NAME_REQUIRED = "hub_name_required"
+# The 404 for an authority download on a box that has not made one.
+HTTPS_ERROR_AUTHORITY_MISSING = "https_authority_missing"
 # The 409s and the 502 the update panel words.
 UPDATE_ERROR_NOT_PACKAGED = "hub_not_packaged"
 UPDATE_ERROR_IN_PROGRESS = "update_in_progress"
@@ -266,6 +279,168 @@ def _restart_panel() -> None:
         ["systemctl", "restart", "--no-block", SYSTEM_CORE_UNITS["web"]],
         is_checked=False,
     )
+
+
+@router.get("/https", response_model=PanelHttpsView)
+def read_https() -> PanelHttpsView:
+    """Read the panel's scheme and the state of its certificates.
+
+    Returns:
+        Whether the panel speaks HTTPS, the authority's fingerprint and when
+        it was made, and the served certificate's names, issue and expiry.
+    """
+    return _https_view()
+
+
+@authority_router.get("/https/authority")
+def download_authority() -> Response:
+    """Download the hub's certificate authority, for a browser to install.
+
+    No session: a browser installs it before it can trust the panel, and a
+    certificate is public.
+
+    Returns:
+        The authority's DER encoding as ``neutrino-<hub>-ca.crt``.
+
+    Raises:
+        HTTPException: 404 with ``https_authority_missing`` when the hub has
+            not made one.
+    """
+    try:
+        der = panel_tls.authority_der()
+    except (OSError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": HTTPS_ERROR_AUTHORITY_MISSING, "params": {}},
+        ) from error
+    return Response(
+        content=der,
+        media_type=WEB_PANEL_TLS_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{_authority_file_name()}"'
+        },
+    )
+
+
+@router.post("/https/enable", response_model=PanelHttpsView)
+def enable_https(
+    background: BackgroundTasks, runtime: PanelRuntime = Depends(get_runtime)
+) -> PanelHttpsView:
+    """Serve the panel over HTTPS, making a missing authority first.
+
+    The answer goes out before the panel restarts onto the new scheme, as a
+    port move does.
+
+    Args:
+        background: Where the restart is queued.
+        runtime: The shared runtime, for the names the panel answers on.
+
+    Returns:
+        The scheme and certificates, as a read returns them.
+
+    Raises:
+        VaultLockedError: If the authority is missing and there is no data
+            key to seal its key under.
+    """
+    panel_tls.ensure_authority()
+    _renew_for(runtime)
+    if _write_https(True):
+        background.add_task(_restart_panel)
+    return _https_view()
+
+
+@router.post("/https/disable", response_model=PanelHttpsView)
+def disable_https(background: BackgroundTasks) -> PanelHttpsView:
+    """Serve the panel over plain HTTP; the certificates are kept.
+
+    Args:
+        background: Where the restart is queued.
+
+    Returns:
+        The scheme and certificates, as a read returns them.
+    """
+    if _write_https(False):
+        background.add_task(_restart_panel)
+    return _https_view()
+
+
+@router.post("/https/authority/reset", response_model=PanelHttpsView)
+def reset_https_authority(
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PanelHttpsView:
+    """Replace the certificate authority and the certificate it signed.
+
+    Every browser that installed the old authority has to install this one.
+    The panel serves the new certificate from the next connection on.
+
+    Args:
+        runtime: The shared runtime, for the names the panel answers on.
+
+    Returns:
+        The scheme and certificates, as a read returns them.
+
+    Raises:
+        VaultLockedError: If there is no data key to seal the new key under.
+    """
+    panel_tls.reset_authority()
+    _renew_for(runtime)
+    return _https_view()
+
+
+def _renew_for(runtime: PanelRuntime) -> None:
+    """Issue the served certificate for the names the panel answers on now."""
+    names = panel_tls.leaf_names(channel_hosts(runtime.network()))
+    panel_tls.renew_served_leaf(names)
+
+
+def _write_https(is_enabled: bool) -> bool:
+    """Store the scheme; True when it changed."""
+    with CONFIG_WRITE_LOCK:
+        settings = read_config(PANEL_SETTINGS_FILE)
+        if bool(settings.get(WEB_SETTING_HTTPS, False)) == is_enabled:
+            return False
+        settings[WEB_SETTING_HTTPS] = is_enabled
+        write_config(PANEL_SETTINGS_FILE, settings)
+    return True
+
+
+def _https_view() -> PanelHttpsView:
+    """The scheme and what the certificates on disk say."""
+    view = PanelHttpsView(
+        is_https_enabled=panel_tls.is_https_enabled(),
+        has_authority=False,
+        authority_file_name=_authority_file_name(),
+    )
+    try:
+        authority = x509.load_pem_x509_certificate(
+            WEB_PANEL_TLS_AUTHORITY_PATH.read_bytes()
+        )
+    except (OSError, ValueError):
+        return view
+    view.has_authority = True
+    view.authority_fingerprint = panel_tls.authority_fingerprint()
+    view.authority_created_at = authority.not_valid_before_utc.isoformat()
+    try:
+        leaf = x509.load_pem_x509_certificate(
+            WEB_PANEL_TLS_SERVED_CERT_PATH.read_bytes()
+        )
+    except (OSError, ValueError):
+        return view
+    view.leaf_names = panel_tls.certificate_names(leaf)
+    view.leaf_issued_at = leaf.not_valid_before_utc.isoformat()
+    view.leaf_expires_at = leaf.not_valid_after_utc.isoformat()
+    renewed = panel_tls.last_renewed_at()
+    view.renewed_at = renewed.isoformat() if renewed else None
+    return view
+
+
+def _authority_file_name() -> str:
+    """What the downloaded authority is called, after this hub's name."""
+    try:
+        name = hub_name()
+    except (OSError, ValueError):
+        name = ""
+    return panel_tls.authority_file_name(name)
 
 
 @router.post("/password/set", response_model=PasswordChangeResult)

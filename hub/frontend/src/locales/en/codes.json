@@ -244,5 +244,6 @@
   "code.write_failed": "The machine could not write that.",
   "code.overlay_subnet_overlap": "{title}'s network {subnet} overlaps {conflict}. Change one of them first.",
   "code.overlay_default_route_refused": "{title} installed a default route; the hub takes it away and keeps its own uplink as the way out.",
-  "code.overlay_route_overlap": "{title} routes {route}, which overlaps {conflict}."
+  "code.overlay_route_overlap": "{title} routes {route}, which overlaps {conflict}.",
+  "code.https_authority_missing": "This hub has no certificate authority yet; turning HTTPS on makes one."
 }

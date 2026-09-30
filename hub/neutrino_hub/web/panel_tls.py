@@ -47,10 +47,12 @@ from neutrino_hub.web.constants import (
     WEB_PANEL_TLS_RENEW_BEFORE_DAYS,
     WEB_PANEL_TLS_SERVED_CERT_PATH,
     WEB_PANEL_TLS_SERVED_KEY_PATH,
+    WEB_SETTING_HTTPS,
 )
 from neutrino_hub.web.channel_addresses import channel_hosts
 
 LOGGER = logging.getLogger(__name__)
+PANEL_TLS_SETTINGS_FILE = "web/settings.json"
 # One DNS label: what a host name may be made of to stand in a certificate.
 PANEL_TLS_LABEL_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
@@ -59,6 +61,39 @@ PANEL_TLS_LABEL_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 _served_contexts: list = []
 _state_lock = threading.Lock()
 _last_renewed_at: "datetime | None" = None
+# The served certificate those contexts hold, so a pair another process
+# wrote is loaded as well.
+_loaded_certificate = b""
+
+
+def is_https_enabled() -> bool:
+    """Whether ``web/settings.json`` says the panel speaks HTTPS.
+
+    Returns:
+        The stored flag, False when the file or the key is missing.
+    """
+    try:
+        return bool(read_config(PANEL_TLS_SETTINGS_FILE).get(WEB_SETTING_HTTPS))
+    except (FileNotFoundError, ValueError):
+        return False
+
+
+def ensure_served() -> bool:
+    """Make a missing authority, and a served certificate for the names now.
+
+    What ``nhub apply``, the panel's start and turning HTTPS on share.
+
+    Returns:
+        True when a certificate was issued.
+
+    Raises:
+        VaultLockedError: If something is missing and there is no data key
+            to seal or unseal the authority's key with.
+        OSError: If a file cannot be written.
+        ValueError: If the authority's files are malformed.
+    """
+    ensure_authority()
+    return renew_served_leaf(served_names())
 
 
 def ensure_authority(
@@ -497,30 +532,28 @@ def renew_served_leaf(
         ValueError: If the authority's files are malformed.
     """
     global _last_renewed_at
-    if not is_leaf_due(
+    is_due = is_leaf_due(
         names,
         certificate_path=certificate_path,
-        served_certificate_path=served_certificate_path,
-        served_key_path=served_key_path,
-        now=now,
-    ):
-        return False
-    is_replacing = served_certificate_path.is_file()
-    write_served_leaf(
-        names,
-        certificate_path=certificate_path,
-        sealed_key_path=sealed_key_path,
         served_certificate_path=served_certificate_path,
         served_key_path=served_key_path,
         now=now,
     )
-    with _state_lock:
+    if is_due:
+        is_replacing = served_certificate_path.is_file()
+        write_served_leaf(
+            names,
+            certificate_path=certificate_path,
+            sealed_key_path=sealed_key_path,
+            served_certificate_path=served_certificate_path,
+            served_key_path=served_key_path,
+            now=now,
+        )
         if is_replacing:
-            _last_renewed_at = now or datetime.now(timezone.utc)
-        contexts = list(_served_contexts)
-    for context in contexts:
-        context.load_cert_chain(str(served_certificate_path), str(served_key_path))
-    return True
+            with _state_lock:
+                _last_renewed_at = now or datetime.now(timezone.utc)
+    _load_served_pair(served_certificate_path, served_key_path)
+    return is_due
 
 
 def follow_addresses(urls: list) -> None:
@@ -536,16 +569,24 @@ def follow_addresses(urls: list) -> None:
         LOGGER.warning("panel certificate not renewed: %s", error)
 
 
-def watch_served_context(context) -> None:
+def watch_served_context(
+    context, *, served_certificate_path: Path = WEB_PANEL_TLS_SERVED_CERT_PATH
+) -> None:
     """Register a live TLS context that a renewal loads the new pair into.
 
     Args:
         context: The ``ssl.SSLContext`` the panel's server hands out
-            connections from.
+            connections from, already loaded with the served pair.
+        served_certificate_path: The served certificate it was loaded from.
     """
+    global _loaded_certificate
     with _state_lock:
         if context not in _served_contexts:
             _served_contexts.append(context)
+        try:
+            _loaded_certificate = served_certificate_path.read_bytes()
+        except OSError:
+            _loaded_certificate = b""
 
 
 def last_renewed_at() -> "datetime | None":
@@ -578,6 +619,23 @@ def certificate_names(certificate) -> list:
         str(value) for value in extension.value.get_values_for_type(x509.IPAddress)
     )
     return names
+
+
+def _load_served_pair(certificate_path: Path, key_path: Path) -> None:
+    """Load the served pair into every watched context when it is not the one held."""
+    global _loaded_certificate
+    with _state_lock:
+        if not _served_contexts:
+            return
+        try:
+            current = certificate_path.read_bytes()
+        except OSError:
+            return
+        if current == _loaded_certificate:
+            return
+        for context in _served_contexts:
+            context.load_cert_chain(str(certificate_path), str(key_path))
+        _loaded_certificate = current
 
 
 def _general_name(name: str):

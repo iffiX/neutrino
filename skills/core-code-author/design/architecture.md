@@ -14,7 +14,7 @@ config/ ──render──▶ /var/lib/neutrino/generated/ ──apply──▶ 
   ▲                                              xray, dnsmasq, cliproxyapi,
   │ every change is a write here                 nftables, the overlays, units
   │
-web/ (FastAPI, root) ◀────── hub/frontend/ (browser, plain HTTP, password)
+web/ (FastAPI, root) ◀────── hub/frontend/ (browser, HTTP or HTTPS, password)
   ▲                    ▲
   │ one socket over    │ one socket over pinned TLS: the published
   │ pinned TLS:        │ list down, a service stream for its material
@@ -286,7 +286,7 @@ where"), behind a password, and the agent channel carries its secrets under
 pinned TLS. Trusting the machines and distrusting the wire is the whole
 model.
 
-## The agent channel is pinned TLS; the panel is not
+## The agent channel is pinned TLS; the panel is verified by a chain
 
 Desired state carries real secrets, so the wire between hub and agent is
 treated as hostile even where the machines on it are not. The agent API is
@@ -295,9 +295,12 @@ setup. The enrollment link carries the certificate's SHA-256 fingerprint, and
 the agent pins it — verification is the fingerprint, not a chain, so no device
 installs a CA and no name has to match.
 
-The panel a browser reads stays plain HTTP on its own port: a self-signed
-certificate in a browser is a warning on every page, while the same
-certificate pinned by an agent is exact. Two audiences, two transports,
+The panel a browser reads speaks plain HTTP on its own port until somebody
+turns its HTTPS on. A browser verifies by chain and by name, not by
+fingerprint, so the panel's certificate is signed by the hub's own
+certificate authority, which a browser installs once. The authority's name
+constraints permit private and CGNAT addresses and a few private names only,
+so installing it trusts nothing public. Two audiences, two transports,
 because they verify differently.
 
 The wire itself is [protocol.md](protocol.md): which port serves what, the

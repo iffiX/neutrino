@@ -67,8 +67,10 @@ from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
     WEB_IDENTITY_FILE,
+    WEB_PANEL_TLS_SERVED_CERT_PATH,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
+from neutrino_hub.web.panel_tls import ensure_served
 from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
@@ -125,6 +127,17 @@ def main() -> int:
         code = getattr(error, "code", "agent_tls_key_unavailable")
         print(
             f'error: {{"code": "{code}"}}: the agent channel has no served key '
+            f"({error})",
+            file=sys.stderr,
+        )
+
+    try:
+        if ensure_served():
+            print(f"panel certificate issued at {WEB_PANEL_TLS_SERVED_CERT_PATH}")
+    except (OSError, ValueError) as error:
+        code = getattr(error, "code", "panel_tls_unavailable")
+        print(
+            f'error: {{"code": "{code}"}}: the panel certificate is not ready '
             f"({error})",
             file=sys.stderr,
         )

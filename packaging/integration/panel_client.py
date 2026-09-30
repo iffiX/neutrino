@@ -6,6 +6,7 @@ here knows what any page means.
 """
 
 import json
+import ssl
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
@@ -18,17 +19,30 @@ PANEL_TIMEOUT_S = 90
 class PanelClient:
     """One browser's worth of session against one panel."""
 
-    def __init__(self, *, base_url: str, timeout_s: int = PANEL_TIMEOUT_S):
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        authority: "str | None" = None,
+        timeout_s: int = PANEL_TIMEOUT_S,
+    ):
         """
         Args:
             base_url: Where the panel answers, without a trailing slash.
+            authority: The certificate authority an ``https`` panel is
+                trusted by; None trusts the system's.
             timeout_s: Seconds one call may take.
         """
         self.base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
-        self._opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(CookieJar())
-        )
+        handlers = [urllib.request.HTTPCookieProcessor(CookieJar())]
+        if authority is not None:
+            handlers.append(
+                urllib.request.HTTPSHandler(
+                    context=ssl.create_default_context(cafile=authority)
+                )
+            )
+        self._opener = urllib.request.build_opener(*handlers)
 
     def sign_in(self, password: str) -> None:
         """Open a session.

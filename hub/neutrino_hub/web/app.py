@@ -72,6 +72,7 @@ API_ROUTERS = (
     service.router,
     credential.router,
     setting.router,
+    setting.authority_router,
     file.router,
     module.router,
     module_samba.router,

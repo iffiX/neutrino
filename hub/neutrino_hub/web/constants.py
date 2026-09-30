@@ -133,6 +133,9 @@ WEB_PANEL_TLS_LOOPBACK_NAMES = ("127.0.0.1", "localhost")
 WEB_PANEL_TLS_AUTHORITY_ORGANIZATION = "Neutrino"
 WEB_PANEL_TLS_FILE_NAME = "neutrino-{hub}-ca.crt"
 WEB_PANEL_TLS_MEDIA_TYPE = "application/x-x509-ca-cert"
+# The panel's scheme, kept in ``web/settings.json``; off until somebody turns
+# it on.
+WEB_SETTING_HTTPS = "is_https_enabled"
 # The hub's own identity, ``{id, name}``: the id clients group it by and the
 # name they show. Generated when missing; deleted by ``nhub reset all``.
 WEB_IDENTITY_FILE = "web/identity.json"

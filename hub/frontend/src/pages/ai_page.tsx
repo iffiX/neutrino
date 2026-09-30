@@ -377,6 +377,7 @@ export function AiPage() {
   );
 }
 
+// The gateway answers plain HTTP, whichever scheme the panel is on.
 function originWith(port: number): string {
-  return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  return `http://${window.location.hostname}:${port}`;
 }
