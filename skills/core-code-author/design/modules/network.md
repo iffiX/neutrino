@@ -478,15 +478,15 @@ about what the hub removes, and the hub removes nothing.
 | Serving a network | our dnsmasq and hostapd units | already ours, already driven this way |
 | NAT, forwarding, policy routing | our nftables ruleset and `ip rule` | already ours |
 
-The last two rows are the point: **the routing half already works this way.**
-`routes.py` calls `ip` directly in eight places for the default route, the
-`fwmark` rule and table 100, and `RouterDefaultRouteApplier` installs its own
-multipath default route at a metric that beats whatever else is there. What
-still goes through `nmcli` is addressing (`routes.py`), the Wi-Fi scan and
-join (`wifi.py`, 396 lines), and what the panel's Network page reads
-(`link_status.py`) — all of it on `network_manager.py`, 392 lines of nothing
-else. Replacing the engines means replacing those three too, and the Wi-Fi
-page is the one that goes dark first if it is forgotten.
+The routing half and the addressing half work the same way. `routes.py`
+calls `ip` for the default route, the `fwmark` rule and table 100, and
+`RouterDefaultRouteApplier` installs its own multipath default route at a
+metric that beats whatever else is there. Addressing goes through `links.py`
+with `ip`, the Wi-Fi scan and join through `supplicant.py` with
+`wpa_supplicant`, a published access point through `wifi.py` with hostapd, a
+lease through `dhcp_client.py` with `dhcpcd`, and what the panel's Network
+page reads through `link_status.py` with `ip`. No part of the layer calls
+`nmcli`.
 
 Each engine is driven the way dnsmasq already is — our configuration, our
 state, nothing of theirs:

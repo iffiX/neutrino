@@ -215,9 +215,9 @@ class RouterWifiSettings:
     Joining a network and publishing one are different enough to need separate
     fields, and both are kept so switching roles does not erase the other.
 
-    The passphrase of a *joined* network is deliberately absent: NetworkManager
-    stores it in the connection it creates, so keeping a second copy here would
-    only be one more place for a secret to leak from.
+    The passphrase of a *joined* network is deliberately absent: it is kept
+    with the saved network in ``config/router/connections.json``, so a second
+    copy here would only be one more place for a secret to leak from.
 
     Attributes:
         ssid: The network this interface joins in the ``wan`` role.
@@ -370,7 +370,7 @@ class RouterInterface:
 
         The untagged main has no device of its own — its traffic lives on the
         trunk port — so everything that talks to the system (nftables,
-        dnsmasq, scans, NetworkManager) must address the parent.
+        dnsmasq, scans, ``ip``) must address the parent.
 
         Returns:
             The parent's name for an untagged main, this entry's name

@@ -1,7 +1,8 @@
 """Making the rendered routing state real.
 
 Everything with a system effect in the router layer lives here: the interface
-roles pushed into NetworkManager, the default route shared between uplinks,
+roles made real with ``ip``, ``wpa_supplicant`` and ``dhcpcd``, the default
+route shared between uplinks,
 forwarding sysctls, the policy route TPROXY needs, and loading the nftables
 ruleset. The renderers stay pure so they can be tested without root.
 """
@@ -73,25 +74,6 @@ from neutrino_hub.system.systemd_ctl import is_unit_startable, unit_state
 XRAY_SERVICE_USER = "xray"
 
 DNSMASQ_SERVICE_NAME = SYSTEM_CORE_UNITS["dnsmasq"]
-
-# Properties NetworkManager can only adopt by tearing the connection down and
-# building it again. Everything else — metrics, never-default, autoconnect — it
-# takes in place with `device reapply`.
-#
-# The distinction is not cosmetic. A reactivation restarts DHCP and re-runs
-# address-conflict detection, and a gateway that ARP-probes its own address
-# while a second one of its interfaces sits on the same subnet gets an answer
-# from itself. NetworkManager has been seen to fail that badly enough to apply
-# the address and install no routes at all, which takes the box off the
-# internet. So a metric edit must never reach for this door.
-REACTIVATION_PROPERTIES = frozenset(
-    {
-        "ipv4.method",
-        "ipv4.addresses",
-        "ipv4.gateway",
-        "802-3-ethernet.cloned-mac-address",
-    }
-)
 
 
 def lookup_xray_uid() -> int:
@@ -295,7 +277,8 @@ def build_uplink_plan(
 
 
 class RouterInterfaceApplier:
-    """Pushes interface roles into NetworkManager.
+    """Makes interface roles real: addresses with ``ip``, radios with
+    ``wpa_supplicant``, leases with ``dhcpcd``.
 
     Each interface is applied on its own and only when something actually
     differs, because activating a connection drops every session on that
@@ -517,7 +500,7 @@ class RouterInterfaceApplier:
             One line per change actually made.
 
         Raises:
-            subprocess.CalledProcessError: If NetworkManager rejects the configuration.
+            subprocess.CalledProcessError: If a command it runs fails.
         """
         if not self._network.is_addressing_owned:
             # Somebody else's machine. Its address, its route and its lease
@@ -812,9 +795,9 @@ class RouterInterfaceApplier:
 class RouterDefaultRouteApplier:
     """Shares the default route between the balanced uplinks.
 
-    Backup uplinks need nothing here: NetworkManager gives every uplink's own
-    default route the metric of its connection, and the kernel prefers the
-    lowest, so a backup at a high metric is already ignored until the balanced
+    Backup uplinks need nothing here: every uplink's own default route is
+    installed at the metric the plan gives it, by the lease client or by
+    ``ip`` for a static uplink, and the kernel prefers the lowest, so a backup at a high metric is already ignored until the balanced
     ones lose their routes entirely.
 
     Balancing is what the kernel will not do on its own. Two uplinks at the
