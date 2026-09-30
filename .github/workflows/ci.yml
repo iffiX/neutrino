@@ -57,6 +57,22 @@ jobs:
       - run: pytest -q
         working-directory: client/desktop
 
+  android:
+    name: android tests, lint and ktlint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - run: ./gradlew --no-daemon ktlintCheck test lint
+        working-directory: client/android
+
   agent_oldest_python:
     name: agent on Python 3.9
     runs-on: ubuntu-24.04

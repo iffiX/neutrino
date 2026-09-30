@@ -1,0 +1,11 @@
+{
+  "ui": {
+    "about": "关于",
+    "about_version": "{version} · Android",
+    "app_licence": "许可 AGPL-3.0",
+    "back": "返回",
+    "carried_cores": "随 app 携带的核心",
+    "join_hint": "扫描二维码，或粘贴链接。",
+    "join_coming": "从手机加入要等下一个版本。"
+  }
+}

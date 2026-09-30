@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The N of the mark in one colour, for the launcher's themed icons. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M34.88,75.66 L44.16,75.66 L53.16,29.81 L43.88,29.81 Z M59.34,75.66 L68.62,75.66 L77.62,29.81 L68.34,29.81 Z M43.88,29.81 L53.16,29.81 L68.62,75.66 L59.34,75.66 Z" />
+</vector>

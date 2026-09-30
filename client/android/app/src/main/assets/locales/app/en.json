@@ -1,0 +1,11 @@
+{
+  "ui": {
+    "about": "About",
+    "about_version": "{version} · Android",
+    "app_licence": "Licensed AGPL-3.0",
+    "back": "Back",
+    "carried_cores": "Cores carried in the app",
+    "join_hint": "Scan the QR code, or paste the link.",
+    "join_coming": "Joining from the phone arrives with the next build."
+  }
+}

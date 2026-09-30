@@ -1,0 +1,13 @@
+# Gradle and the IDE.
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+
+# The cores packaging/mobile_netbird.py and packaging/mobile_easytier.py
+# build from their pinned sources; never committed.
+app/libs/
+app/src/main/jniLibs/
