@@ -198,3 +198,12 @@ const val SEAL_TAG_BITS = 128
 
 /** The sealing key's length. */
 const val SEAL_KEY_BITS = 256
+
+/** The clip extra that keeps a copied secret out of the clipboard's preview, read from Android 13. */
+const val CLIENT_CLIP_SENSITIVE_EXTRA = "android.content.extra.IS_SENSITIVE"
+
+/** How long a copy button shows that it copied. */
+const val CLIENT_COPIED_SHOWN_MILLIS = 1500L
+
+/** How many characters of a masked key stay readable. */
+const val CLIENT_KEY_SHOWN_PREFIX = 6

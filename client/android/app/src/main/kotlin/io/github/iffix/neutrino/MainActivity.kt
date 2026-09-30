@@ -16,6 +16,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.iffix.neutrino.design.NeutrinoPalette
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.shell.AppShell
+import io.github.iffix.neutrino.shell.ClientController
 import io.github.iffix.neutrino.words.WordCatalog
 
 /** The one window: every screen is drawn inside it. */
@@ -45,12 +46,17 @@ class MainActivity : ComponentActivity() {
         }
         val identity =
             "${application.deviceName} · android/${application.architecture} · client ${BuildConfig.VERSION_NAME}"
+        val hubs by application.connections.views.collectAsStateWithLifecycle(emptyList())
+        val context = LocalContext.current
+        val actions = remember(context) { ClientController(context, application.connections) }
         NeutrinoTheme(palette, words) {
             AppShell(
                 identity = identity,
                 version = BuildConfig.VERSION_NAME,
                 settings = settings,
                 onSaveSettings = application.settingsStore::save,
+                hubs = hubs,
+                actions = actions,
             )
         }
     }

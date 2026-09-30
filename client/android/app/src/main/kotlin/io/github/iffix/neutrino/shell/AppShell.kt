@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,6 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.github.iffix.neutrino.CLIENT_SIDEBAR_MIN_WIDTH_DP
+import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.screen.AboutScreen
 import io.github.iffix.neutrino.screen.AiScreen
@@ -38,9 +40,18 @@ import io.github.iffix.neutrino.settings.ClientSettings
  * @param version The app's version.
  * @param settings The settings in force.
  * @param onSaveSettings What saving the settings does.
+ * @param hubs Every hub joined.
+ * @param actions What the screens can do.
  */
 @Composable
-fun AppShell(identity: String, version: String, settings: ClientSettings, onSaveSettings: (ClientSettings) -> Unit) {
+fun AppShell(
+    identity: String,
+    version: String,
+    settings: ClientSettings,
+    onSaveSettings: (ClientSettings) -> Unit,
+    hubs: List<HubView>,
+    actions: ClientActions,
+) {
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
     val navigation = rememberNavController()
@@ -63,13 +74,19 @@ fun AppShell(identity: String, version: String, settings: ClientSettings, onSave
                 NavHost(
                     navController = navigation,
                     startDestination = AppScreen.HUBS.route,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).imePadding(),
                 ) {
                     val join = { navigation.navigate(AppScreen.JOIN.route) }
-                    composable(AppScreen.HUBS.route) { HubsScreen(onJoin = join) }
-                    composable(AppScreen.WEB.route) { WebScreen(onJoin = join) }
-                    composable(AppScreen.PORTS.route) { PortsScreen(onJoin = join) }
-                    composable(AppScreen.AI.route) { AiScreen(onJoin = join) }
+                    composable(AppScreen.HUBS.route) {
+                        HubsScreen(hubs, onJoin = join, onLeave = actions::leave, onReconnect = actions::reconnect)
+                    }
+                    composable(AppScreen.WEB.route) { WebScreen(hubs, onOpen = actions::openUrl, onJoin = join) }
+                    composable(AppScreen.PORTS.route) {
+                        PortsScreen(hubs, onCopy = { actions.copy(it) }, onJoin = join)
+                    }
+                    composable(AppScreen.AI.route) {
+                        AiScreen(hubs, material = actions::serviceMaterial, onCopy = actions::copy, onJoin = join)
+                    }
                     composable(AppScreen.FILES.route) { FilesScreen(onJoin = join) }
                     composable(AppScreen.TERMINALS.route) { TerminalScreen(onJoin = join) }
                     composable(AppScreen.REMOTE_DESKTOP.route) { RemoteDesktopScreen(onJoin = join) }
@@ -80,7 +97,9 @@ fun AppShell(identity: String, version: String, settings: ClientSettings, onSave
                             onAbout = { navigation.navigate(AppScreen.ABOUT.route) },
                         )
                     }
-                    composable(AppScreen.JOIN.route) { JoinScreen() }
+                    composable(AppScreen.JOIN.route) {
+                        JoinScreen(onJoin = actions::join, onJoined = { navigation.popBackStack() })
+                    }
                     composable(AppScreen.ABOUT.route) { AboutScreen(version) }
                 }
                 if (!isWide) BottomBar(current = tab, onOpen = open)
