@@ -1362,6 +1362,7 @@ def _to_view(
         # A beating agent is proof of reachability the ARP sweep cannot give:
         # a machine on the overlay has no neighbour entry on any LAN.
         is_online=device.is_online or is_agent_online,
+        is_neighbour=device.is_neighbour,
         is_agent_online=is_agent_online,
         has_ssh=device.has_ssh,
         is_stored=device.is_stored,

@@ -975,6 +975,8 @@ export interface DeviceView {
   vendor: string;
   /** Reachable by any route: seen on the network, or its agent is beating. */
   is_online: boolean;
+  /** In the kernel's neighbour table, STALE included, FAILED or INCOMPLETE not. */
+  is_neighbour: boolean;
   /** Its agent beat within the last half minute. */
   is_agent_online: boolean;
   has_ssh: boolean;

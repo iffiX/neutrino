@@ -14,6 +14,9 @@ from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.devices.constants import DEVICE_LAN_SCAN_TIMEOUT_S
 
+# The neighbour states the kernel keeps for an address nothing answered at.
+NEIGHBOUR_STATES_GONE = ("FAILED", "INCOMPLETE")
+
 # The kernel's IPv4 neighbour table, as a file. Counting from here costs a read
 # where `ip neigh` would cost a process, and the count is wanted on every
 # statistics frame.
@@ -35,12 +38,15 @@ class DiscoveredDevice:
         vendor: Vendor string from the OUI database, empty when unknown.
         is_online: Whether it answered this scan, as opposed to only appearing
             in the neighbour table.
+        is_neighbour: Whether the kernel's neighbour table holds it in a
+            state other than FAILED or INCOMPLETE, STALE included.
     """
 
     mac_address: str
     ipv4_address: str
     vendor: str
     is_online: bool
+    is_neighbour: bool = False
 
 
 def count_lan_neighbours(lan_interfaces: list[str]) -> int:
@@ -152,6 +158,8 @@ class LanScanner:
             fields = line.split()
             if len(fields) < 4 or "lladdr" not in fields:
                 continue
+            if fields[-1] in NEIGHBOUR_STATES_GONE:
+                continue
             address = fields[0]
             mac_address = fields[fields.index("lladdr") + 1].lower()
             devices.append(
@@ -160,6 +168,7 @@ class LanScanner:
                     ipv4_address=address,
                     vendor="",
                     is_online=fields[-1] in ("REACHABLE", "DELAY", "PROBE"),
+                    is_neighbour=True,
                 )
             )
         return devices

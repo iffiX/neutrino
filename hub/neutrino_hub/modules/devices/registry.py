@@ -137,6 +137,8 @@ class ManagedDevice:
         icon: User-chosen icon key.
         vendor: OUI vendor string from the scan.
         is_online: Whether the latest scan saw it.
+        is_neighbour: Whether the kernel's neighbour table holds it, in a
+            state other than FAILED or INCOMPLETE.
         ssh: Stored SSH settings, when configured.
         client: Agent state.
         shown_modules: The module tabs its Modules page shows; empty means
@@ -152,6 +154,7 @@ class ManagedDevice:
     icon: str | None = None
     vendor: str = ""
     is_online: bool = False
+    is_neighbour: bool = False
     ssh: dict | None = None
     client: DeviceClientInfo = field(default_factory=DeviceClientInfo)
     shown_modules: list = field(default_factory=list)
@@ -239,6 +242,7 @@ class DeviceRegistry:
             device.ipv4_address = found.ipv4_address or device.ipv4_address
             device.vendor = found.vendor or device.vendor
             device.is_online = device.is_online or found.is_online
+            device.is_neighbour = device.is_neighbour or found.is_neighbour
         return sorted(devices.values(), key=_list_order)
 
     def get(self, device_id: str) -> "ManagedDevice | None":

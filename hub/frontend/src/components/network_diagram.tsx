@@ -144,11 +144,11 @@ export function NetworkDiagram({
       .filter((entry): entry is InterfaceView => entry !== undefined),
   );
 
-  // Devices worth drawing: everything online, plus the silent ones somebody
-  // cared enough to name. Unnamed neighbours that stopped answering are scan
-  // residue, not topology.
+  // Devices worth drawing: everything online, every neighbour the kernel
+  // still holds, STALE included, and the silent ones somebody named. A
+  // neighbour the kernel marked FAILED or INCOMPLETE is gone.
   const shownDevices = devices.filter(
-    (device) => device.is_online || device.name !== null,
+    (device) => device.is_online || device.is_neighbour || device.name !== null,
   );
   const lanEntries = network.interfaces.filter(
     (entry) =>

@@ -1062,6 +1062,9 @@ class DeviceView(BaseModel):
     icon: str | None = None
     vendor: str = ""
     is_online: bool = False
+    # Whether the kernel's neighbour table holds it, STALE included and
+    # FAILED or INCOMPLETE not: the topology draws such a device unnamed.
+    is_neighbour: bool = False
     # Whether the agent has beaten recently. False on a device with no agent,
     # and on one whose agent has gone quiet — which is how a machine that is
     # up but no longer reporting is told apart from one that is off.
