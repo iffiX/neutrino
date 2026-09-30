@@ -1372,7 +1372,8 @@ function drawWebEntry(card, state, hub, entry) {
   const noteKey = 'web_' + serviceKey(entry);
   const row = entryRow(hub, entry, payload.url || '', serviceNotes[noteKey] || '');
   const open = document.createElement('button');
-  open.textContent = t('ui.open');
+  // An entry that opens only through localhost is forwarded here first.
+  open.textContent = payload.is_local_only === true ? t('ui.open_local') : t('ui.open');
   open.disabled = !entry.is_healthy || isHeld(hub);
   open.onclick = () => serviceAction('web',
     { hub_id: entry.hub_id, id: entry.id }, noteKey);

@@ -1307,3 +1307,14 @@ def test_the_session_codes_are_worded_in_both_languages():
     for code in ("session_taken", "session_unknown"):
         assert EN_WORDS[f"code.{code}"]
         assert CATALOGS["zh-CN"][f"code.{code}"]
+
+
+def test_a_local_only_web_entry_says_it_opens_on_this_machine():
+    row = function_body("function drawWebEntry(card, state, hub, entry)")
+
+    assert (
+        "open.textContent = payload.is_local_only === true "
+        "? t('ui.open_local') : t('ui.open');"
+    ) in row
+    assert EN_WORDS["ui.open_local"] == "Open locally"
+    assert CATALOGS["zh-CN"]["ui.open_local"] == "本机打开"

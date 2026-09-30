@@ -53,6 +53,7 @@ CLIENT_CODE_WORDS = {
     "overlay_missing": "this hub publishes no virtual network",
     "overlay_wish_unsaved": "the virtual network choice could not be saved: {detail}",
     "clipboard_unreadable": "the clipboard could not be read: {detail}",
+    "web_token_missing": "the hub sent no token for this page; try again",
     "mount_not_authorized": "mounting was not authorized on this machine",
     "mount_tooling_missing": "the mount tooling is missing on this machine",
     "control_peer_refused": "the running client belongs to another account",

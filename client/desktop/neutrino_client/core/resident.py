@@ -69,6 +69,7 @@ SHUTDOWN_STEPS = (
     ("ai", "ai", "restored"),
     ("file", "mounts", "{count} detached"),
     ("port", "forwards", "{count} closed"),
+    ("web", "web forwards", "{count} closed"),
     ("rdp", "viewers", "{count} closed"),
 )
 # How long a burst of changes is left to settle before the watchers hear.
@@ -149,7 +150,9 @@ class ClientResident:
         self._services = {
             handler.service_type: handler
             for handler in (
-                WebServiceHandler(platform=self.platform),
+                WebServiceHandler(
+                    platform=self.platform, open_service=self.open_service, log=log
+                ),
                 PortServiceHandler(log=log, on_change=self.notify),
                 AiServiceHandler(
                     store=self._store,
@@ -866,8 +869,8 @@ class ClientResident:
 
         The order is the one that leaves the machine as it was found: the
         sockets closed, the virtual networks counted and kept, the tools
-        restored, the shares unmounted, the forwards closed, the viewers
-        closed. The steps share
+        restored, the shares unmounted, the forwards and the web forwards
+        closed, the viewers closed. The steps share
         ``CLIENT_SHUTDOWN_DEADLINE_S``; a step past its part of what is left
         is given up and the next runs.
         """

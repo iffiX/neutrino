@@ -997,6 +997,7 @@ def test_the_shutdown_logs_one_line_a_step_in_order(config_path):
         "ai: restored",
         "mounts: 2 detached",
         "forwards: 1 closed",
+        "web forwards: 0 closed",
         "viewers: 0 closed",
         "shut down",
     ]
