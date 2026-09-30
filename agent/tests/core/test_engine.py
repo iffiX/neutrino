@@ -841,6 +841,9 @@ class SmbServerApplier:
     def read_status(self, record):
         return {"is_present": True, "is_running": True}
 
+    def reload_fence(self):
+        """Nothing kept to load."""
+
 
 class SmbServerPlatform(AgentPlatform):
     """A platform that carries its own SMB server, the way Windows does."""

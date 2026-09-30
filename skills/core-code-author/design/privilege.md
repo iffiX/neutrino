@@ -128,6 +128,16 @@ hold belong to **managed devices**, are entered per device, and are used only
 over SSH to those devices. Never add a prompt for the local one — it would be
 a credential with nothing to spend it on and somewhere to leak from.
 
+## A password on a managed machine's command line
+
+The agent's file share sets an account's password on the machine it
+manages. On Windows the password reaches PowerShell on standard input and
+never a command line. On macOS `sysadminctl` and `dscl -passwd` take a
+password only as an argument, so while `dscl -passwd` runs the share
+account's password is in the process list, where any local account can read
+it. The account can do nothing but reach the shares: it has no shell and no
+home, and the fence limits who reaches the server.
+
 ## Where privilege is allowed to live
 
 Root-requiring calls stay in `neutrino_hub/system/` and in each module's `ops` or `apply`

@@ -411,6 +411,9 @@ class FakeNativeApplier:
     def set_password(self, name, password):
         self.calls.append(("set_password", name, password))
 
+    def reload_fence(self):
+        self.calls.append(("reload_fence",))
+
 
 class NativeServerPlatform(RecordingPlatform):
     """A system that carries its own SMB server, the way Windows does."""
@@ -448,6 +451,8 @@ def native():
     held = SambaNativeServerRunner(platform=platform, log=lambda m: None, clock=clock)
     held.applier = platform.applier
     held.clock = clock
+    assert platform.applier.calls == [("reload_fence",)]
+    platform.applier.calls.clear()
     return held
 
 

@@ -206,9 +206,10 @@ class SambaNativeServerRunner(ModuleRunner):
 
     Windows and macOS carry the server, so there is nothing to install or
     uninstall; the platform's applier converges the shares, the accounts
-    and the fence. A root-only record under the agent's work root lists what
-    the module made. The server's state is read at most every 30 seconds
-    and again after every change.
+    and the fence, and loads the fence again when the runner is built. A
+    root-only record under the agent's work root lists what the module
+    made. The server's state is read at most every 30 seconds and again
+    after every change.
     """
 
     name = "samba"
@@ -235,6 +236,10 @@ class SambaNativeServerRunner(ModuleRunner):
         self._lock = threading.Lock()
         self._status: "dict | None" = None
         self._status_at = 0.0
+        try:
+            self._applier.reload_fence()
+        except (OSError, subprocess.SubprocessError) as error:
+            self._log(f"samba: the fence did not load: {error}")
 
     def verify(self, resolved: dict) -> bool:
         """Whether the system's SMB server is there.

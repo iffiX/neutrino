@@ -101,6 +101,18 @@ def test_a_job_launchd_does_not_hold_is_stopped(monkeypatch):
     assert DarwinPlatform().read_agent_service_state() == "stopped"
 
 
+def test_the_file_share_drives_the_mac_s_own_smb_server(tmp_path):
+    from neutrino_agent.modules.samba.darwin_applier import SambaDarwinApplier
+
+    applier = DarwinPlatform().smb_server_applier()
+
+    assert "smb_server" in DarwinPlatform.capabilities
+    assert isinstance(applier, SambaDarwinApplier)
+    assert applier._rules_path == (
+        "/Library/Application Support/Neutrino/agent/samba_pf.conf"
+    )
+
+
 def test_starting_the_service_bootstraps_and_kicks_the_job(monkeypatch):
     calls = []
     answering(

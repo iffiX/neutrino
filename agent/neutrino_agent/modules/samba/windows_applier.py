@@ -547,6 +547,9 @@ class SambaWindowsApplier:
             },
         )
 
+    def reload_fence(self) -> None:
+        """Nothing to load: the firewall keeps the rule across a restart."""
+
     def set_password(self, name: str, password: str) -> None:
         """Set one of the module's accounts' password and enable it.
 

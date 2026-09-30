@@ -256,8 +256,8 @@ class AgentPlatform:
         """The applier that drives the SMB server the system itself carries.
 
         Returns:
-            An applier with ``read_status``, ``apply``, ``withdraw`` and
-            ``set_password``.
+            An applier with ``read_status``, ``apply``, ``withdraw``,
+            ``set_password`` and ``reload_fence``.
 
         Raises:
             PlatformUnsupportedError: When the system carries no SMB server

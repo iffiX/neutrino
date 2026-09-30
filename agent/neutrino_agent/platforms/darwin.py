@@ -4,8 +4,9 @@ The agent runs as the ``com.neutrino.agent`` LaunchDaemon and keeps its
 state under ``/Library/Application Support``. The accounts come from the
 directory service, the metrics from ``host_statistics``, ``vm_stat`` and
 ``sysctl``, the interfaces from ``ifconfig``, the machine id from the
-platform expert. It steps down to no account and installs no package, so
-those capabilities are not advertised.
+platform expert. The file share module drives macOS's own SMB server. It
+steps down to no account and installs no package, so those capabilities are
+not advertised.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -27,6 +28,8 @@ from neutrino_agent.constants import (
     AGENT_LAUNCHD_PLIST_PATH,
 )
 from neutrino_agent.core.metrics import HostMetrics
+from neutrino_agent.modules.samba.constants import SAMBA_DARWIN_PF_RULES_NAME
+from neutrino_agent.modules.samba.darwin_applier import SambaDarwinApplier
 from neutrino_agent.platforms.base import AgentPlatform
 
 try:
@@ -124,6 +127,7 @@ class DarwinPlatform(AgentPlatform):
             "metrics",
             "network",
             "machine_id",
+            "smb_server",
         }
     )
 
@@ -278,6 +282,17 @@ class DarwinPlatform(AgentPlatform):
             ``[{"name", "mac", "addresses"}]``; empty when ifconfig fails.
         """
         return parse_ifconfig(_run(["ifconfig", "-a"]))
+
+    def smb_server_applier(self) -> SambaDarwinApplier:
+        """The applier that drives macOS's own SMB server.
+
+        Returns:
+            A :class:`SambaDarwinApplier` keeping its pf rules under the
+            work root.
+        """
+        return SambaDarwinApplier(
+            rules_path=os.path.join(self.agent_var_dir(), SAMBA_DARWIN_PF_RULES_NAME)
+        )
 
     def read_machine_id(self) -> str:
         """The platform UUID the firmware reports.

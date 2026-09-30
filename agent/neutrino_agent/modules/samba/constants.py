@@ -50,6 +50,34 @@ SAMBA_WINDOWS_POWERSHELL_TIMEOUT_S = 120
 # The exit status a script ends with when it prints a refusal.
 SAMBA_WINDOWS_REFUSAL_EXIT = 3
 
+# macOS: smbd's launchd job and the plist it loads from.
+SAMBA_DARWIN_SMBD_TARGET = "system/com.apple.smbd"
+SAMBA_DARWIN_SMBD_PLIST = "/System/Library/LaunchDaemons/com.apple.smbd.plist"
+# The start of the record name of every share point the module made.
+SAMBA_DARWIN_SHARE_PREFIX = "neutrino_"
+# The full name of every account the module made.
+SAMBA_DARWIN_ACCOUNT_NAME = "neutrino file share"
+# The group macOS limits SMB to, where the system has one.
+SAMBA_DARWIN_ACCESS_GROUP = "com.apple.access_smb"
+# The pf anchor the fence lives in; /etc/pf.conf evaluates com.apple/*.
+SAMBA_DARWIN_PF_ANCHOR = "com.apple/neutrino_smb"
+# The fence's rules, kept under the work root and loaded again at start.
+SAMBA_DARWIN_PF_RULES_NAME = "samba_pf.conf"
+SAMBA_DARWIN_PF_TABLE = "neutrino_smb_allowed"
+# The access-control entries a share grants an account.
+SAMBA_DARWIN_ACL_CHANGE = (
+    "list,add_file,search,delete,add_subdirectory,delete_child,readattr,"
+    "writeattr,readextattr,writeextattr,readsecurity,read,write,append,execute,"
+    "file_inherit,directory_inherit"
+)
+SAMBA_DARWIN_ACL_READ = (
+    "list,search,readattr,readextattr,readsecurity,read,execute,"
+    "file_inherit,directory_inherit"
+)
+# An account's login shell: none.
+SAMBA_DARWIN_SHELL = "/usr/bin/false"
+SAMBA_DARWIN_HOME = "/var/empty"
+
 
 def samba_unit(family: str) -> str:
     """The unit this family's Samba runs as.
