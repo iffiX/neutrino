@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.words
 
+import io.github.iffix.neutrino.CLIENT_HUB_CODES
 import io.github.iffix.neutrino.CLIENT_LANGUAGES
 import io.github.iffix.neutrino.CLIENT_THEMES
 import io.github.iffix.neutrino.RepositoryFiles
@@ -79,6 +80,29 @@ class WordCatalogTest {
             val words = catalog(language)
             for (name in CLIENT_LANGUAGES) assertTrue(words.has("ui.language_name.$name"))
             for (theme in CLIENT_THEMES) assertTrue(words.has("ui.theme_name.$theme"))
+        }
+    }
+
+    @Test
+    fun everyCodeTheHubMaySendIsWordedInEveryLanguage() {
+        for (language in CLIENT_LANGUAGES) {
+            val words = catalog(language)
+            for (code in CLIENT_HUB_CODES) assertTrue("code.$code in $language", words.has("code.$code"))
+        }
+    }
+
+    @Test
+    fun everyCodeTheAppRefusesWithIsWordedInEveryLanguage() {
+        val sources = RepositoryFiles.file("client/android/app/src/main/kotlin").walkTopDown().filter {
+            it.extension ==
+                "kt"
+        }
+        val pattern = Regex("refused\\(\\s*\"([a-z_]+)\"")
+        val codes = sources.flatMap { file -> pattern.findAll(file.readText()).map { it.groupValues[1] } }.toSet()
+        assertTrue(codes.size > 10)
+        for (language in CLIENT_LANGUAGES) {
+            val words = catalog(language)
+            for (code in codes) assertTrue("code.$code in $language", words.has("code.$code"))
         }
     }
 

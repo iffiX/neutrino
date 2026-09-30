@@ -1,4 +1,7 @@
 {
+  "code": {
+    "verb_unknown": "hub 不认识这个命令，请先更新 hub"
+  },
   "ui": {
     "about": "关于",
     "about_version": "{version} · Android",

@@ -1,4 +1,7 @@
 {
+  "code": {
+    "verb_unknown": "the hub does not know this command; update the hub"
+  },
   "ui": {
     "about": "About",
     "about_version": "{version} · Android",

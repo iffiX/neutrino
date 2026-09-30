@@ -163,6 +163,7 @@ androidComponents {
 tasks.withType<Test>().configureEach {
     systemProperty("neutrino.repositoryRoot", repositoryRoot.absolutePath)
     inputs.dir(repositoryRoot.resolve("client/desktop/frontend/locales"))
+    inputs.file(repositoryRoot.resolve("hub/tests/web/channel_schema.json"))
 }
 
 dependencies {
@@ -177,8 +178,11 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.okhttp)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
 }
