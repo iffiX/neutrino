@@ -124,29 +124,44 @@ export function PanelPortPanel() {
         onApply={() => void apply()}
       />
 
-      {movingTo !== null && <MovingOverlay port={movingTo} />}
+      {movingTo !== null && (
+        <MovingOverlay destination={originWith(movingTo)} />
+      )}
     </section>
   );
 }
 
+interface MovingOverlayProps {
+  /** The origin the restarted panel answers on. */
+  destination: string;
+  /** Go there after this long even when no probe answered: a probe cannot
+   * cross from one scheme to the other, so a scheme change goes blind. */
+  goAfterMs?: number;
+}
+
 /**
- * The wait between the old port closing and the new one answering.
+ * The wait between the old panel closing and the new one answering.
  *
  * Polling the new origin rather than counting seconds: a restart takes as long
  * as it takes, and the panel answering is the only thing that means it is
  * over. The session cookie is named after the port, so the new origin is
  * arrived at signed out and its login page is what answers.
  */
-function MovingOverlay({ port }: { port: number }) {
+export function MovingOverlay({ destination, goAfterMs }: MovingOverlayProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const startedAt = useRef(Date.now());
   const [isLost, setIsLost] = useState(false);
 
   useEffect(() => {
-    const destination = originWith(port);
     const timer = window.setInterval(() => {
-      if (Date.now() - startedAt.current > MOVE_TIMEOUT_MS) {
+      const elapsedMs = Date.now() - startedAt.current;
+      if (goAfterMs !== undefined && elapsedMs > goAfterMs) {
+        window.clearInterval(timer);
+        window.location.replace(destination);
+        return;
+      }
+      if (elapsedMs > MOVE_TIMEOUT_MS) {
         window.clearInterval(timer);
         setIsLost(true);
         return;
@@ -164,7 +179,7 @@ function MovingOverlay({ port }: { port: number }) {
         .catch(() => undefined);
     }, MOVE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [port]);
+  }, [destination, goAfterMs]);
 
   return (
     <div className="panel_move">
@@ -172,14 +187,14 @@ function MovingOverlay({ port }: { port: number }) {
         <>
           <Icon name="alert" size={16} />
           <div className="panel_move_body">
-            {t("ui.network.panel_move_lost", { origin: originWith(port) })}
+            {t("ui.network.panel_move_lost", { origin: destination })}
           </div>
         </>
       ) : (
         <>
           <Spinner />
           <div className="panel_move_body">
-            {t("ui.network.panel_moving", { origin: originWith(port) })}
+            {t("ui.network.panel_moving", { origin: destination })}
           </div>
         </>
       )}

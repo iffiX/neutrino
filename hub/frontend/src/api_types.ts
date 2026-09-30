@@ -1173,6 +1173,23 @@ export interface RestoreResult {
 }
 
 /** The panel's own settings. */
+/** The panel's scheme and the certificates behind it. */
+export interface PanelHttpsView {
+  is_https_enabled: boolean;
+  has_authority: boolean;
+  /** SHA-256 of the authority's DER, as hex; empty without one. */
+  authority_fingerprint: string;
+  authority_created_at: string | null;
+  /** What the downloaded authority is called. */
+  authority_file_name: string;
+  /** The addresses and names the served certificate carries. */
+  leaf_names: string[];
+  leaf_issued_at: string | null;
+  leaf_expires_at: string | null;
+  /** When it was last issued again; null when not since the panel started. */
+  renewed_at: string | null;
+}
+
 export interface PanelSettings {
   listen_port: number;
   /** The language the panel is drawn in. Left out of a write, it stays. */

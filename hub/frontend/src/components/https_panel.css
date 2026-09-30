@@ -1,0 +1,35 @@
+.https_status {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.https_status_line {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 60%, transparent);
+}
+
+.https_status_line:last-child {
+  border-bottom: none;
+}
+
+.https_status_line dt {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.https_status_line dd {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.https_status_value--mono {
+  font-family: var(--font-mono);
+}

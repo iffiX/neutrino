@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
+import { HttpsPanel } from "../components/https_panel";
 import { Icon } from "../components/icon";
 import { Spinner } from "../components/spinner";
 import { UpdatePanel } from "../components/update_panel";
@@ -357,6 +358,8 @@ export function SettingsPage() {
         <LanguagePanel />
 
         <AppearancePanel />
+
+        <HttpsPanel />
 
         <section className="card">
           <div className="card_header">
