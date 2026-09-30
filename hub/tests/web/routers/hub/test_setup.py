@@ -144,3 +144,25 @@ def test_it_serves_once_it_has_the_port(session):
         assert server.start()
     finally:
         server.stop()
+
+
+def test_finishing_over_https_hands_the_page_the_authority(client, session):
+    authority = {
+        "url": "https://192.168.8.1:8080/api/hub/setting/https/authority",
+        "file_name": "neutrino-argon-ca.crt",
+        "fingerprint": "ab" * 32,
+        "der": "YQ==",
+    }
+    session.finish(panel_url="https://192.168.8.1:8080", authority=authority)
+
+    state = client.get(f"/api/hub/setup/state?token={session.token}").json()
+
+    assert state["authority"] == authority
+
+
+def test_finishing_over_http_hands_the_page_no_authority(client, session):
+    session.finish(panel_url="http://192.168.8.1:8080")
+
+    state = client.get(f"/api/hub/setup/state?token={session.token}").json()
+
+    assert state["authority"] is None

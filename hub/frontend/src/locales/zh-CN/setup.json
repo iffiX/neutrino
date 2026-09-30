@@ -92,5 +92,14 @@
   "ui.setup.step_write_answers": "写入你的选择",
   "ui.setup.step_overlay": "设置虚拟网",
   "ui.setup.step_local_agent": "安装本机被控端",
-  "ui.setup.step_panel_password": "设置面板密码"
+  "ui.setup.step_panel_password": "设置面板密码",
+  "ui.setup.step_panel_tls": "生成面板证书",
+  "ui.setup.https_label": "面板使用 HTTPS",
+  "ui.setup.https_description": "面板是否使用 HTTPS。无论是否开启，hub 都会生成证书。",
+  "ui.setup.review_https": "HTTPS",
+  "ui.setup.install_title": "在这台设备上安装证书",
+  "ui.setup.install_lead": "装好之后，浏览器打开面板时不会再有警告。",
+  "ui.setup.install_fingerprint": "SHA-256 {fingerprint}",
+  "ui.setup.review_https_on": "开启",
+  "ui.setup.review_https_off": "关闭"
 }

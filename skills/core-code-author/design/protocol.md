@@ -294,9 +294,9 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/setup/context` | | the box as the wizard finds it |
-| `GET /api/hub/setup/state` | | each step and where it is |
+| `GET /api/hub/setup/state` | | each step and where it is; once done, `panel_url`, and `authority` when the answers turned HTTPS on: `{url, file_name, fingerprint, der}`, the DER in base64 so the last page downloads it while the panel starts |
 | `POST /api/hub/setup/link/create` | | a blank enrolment link for the box's own agent |
-| `POST /api/hub/setup/answer/set` | the wizard's answers | writes them and runs the steps |
+| `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `is_https_enabled` among them | writes them and runs the steps |
 
 #### `/api/hub/auth`
 

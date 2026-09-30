@@ -608,3 +608,23 @@
   color: var(--color-text-muted);
   font-weight: 500;
 }
+
+.setup_install {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.setup_install_title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.setup_install_fingerprint {
+  margin: 0;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

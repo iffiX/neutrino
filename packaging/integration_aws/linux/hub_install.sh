@@ -3,8 +3,9 @@
 # that was pushed beside it, sets the box up as a server, and mints one
 # enrollment link, which is the last line it prints.
 #
-# Environment: NEUTRINO_PANEL_PASSWORD, NEUTRINO_VAULT_PASSPHRASE, and
-# NEUTRINO_DEVICE_NAME for what the joining machine will be called.
+# Environment: NEUTRINO_PANEL_PASSWORD, NEUTRINO_VAULT_PASSPHRASE,
+# NEUTRINO_DEVICE_NAME for what the joining machine will be called, and
+# NEUTRINO_PANEL_HTTPS=true for a panel that speaks HTTPS.
 
 set -euo pipefail
 
@@ -22,7 +23,8 @@ cat > /tmp/answers.json <<JSON
 {
   "password": "$NEUTRINO_PANEL_PASSWORD",
   "vault_passphrase": "$NEUTRINO_VAULT_PASSPHRASE",
-  "network": { "mode": "server" }
+  "network": { "mode": "server" },
+  "is_https_enabled": ${NEUTRINO_PANEL_HTTPS:-false}
 }
 JSON
 sudo nhub setup --stdin < /tmp/answers.json > /tmp/setup.log 2>&1 \

@@ -138,6 +138,7 @@ class WizardAnswers:
         listen_port: The port the panel answers on. Asked whatever shape this
             box is, because every one of them answers somewhere.
         language: The language the panel is drawn in.
+        is_https_enabled: Whether the panel speaks HTTPS.
     """
 
     password: str
@@ -146,6 +147,7 @@ class WizardAnswers:
     proxy: WizardProxy = field(default_factory=WizardProxy)
     listen_port: int = WEB_DEFAULT_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
+    is_https_enabled: bool = False
 
 
 # What an answers document may say, and which planner keyword each becomes.
@@ -168,6 +170,7 @@ WIZARD_DOCUMENT_KEYS = (
     "proxy",
     "listen_port",
     "language",
+    "is_https_enabled",
 )
 # A document need not answer the proxy screen; skipping it is what an
 # unanswered one means, exactly as it does on the screen.
@@ -231,6 +234,7 @@ def from_document(document: dict) -> WizardAnswers:
         proxy=_proxy_from(document.get("proxy", {}), network["mode"]),
         listen_port=_port_from(document.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
         language=_language_from(document.get("language", WEB_DEFAULT_LANGUAGE)),
+        is_https_enabled=_https_from(document.get("is_https_enabled", False)),
     )
 
 
@@ -268,6 +272,23 @@ def _port_from(given) -> int:
     if isinstance(given, int) and 1 <= given <= 65535:
         return given
     raise WizardAborted(f"{given!r} is not a port number")
+
+
+def _https_from(given) -> bool:
+    """Whether the panel speaks HTTPS, read rather than asked for.
+
+    Args:
+        given: The document's ``is_https_enabled``, false when it has none.
+
+    Returns:
+        The answer.
+
+    Raises:
+        WizardAborted: When it is not true or false.
+    """
+    if isinstance(given, bool):
+        return given
+    raise WizardAborted(f"'is_https_enabled' must be true or false, not {given!r}")
 
 
 def _language_from(given) -> str:
@@ -389,6 +410,7 @@ class SetupWizard:
         self._proxy = WizardProxy()
         self._listen_port = WEB_DEFAULT_LISTEN_PORT
         self._language = WEB_DEFAULT_LANGUAGE
+        self._is_https_enabled = False
 
     def run(self) -> WizardAnswers:
         """Ask every screen, and hand back what they answered.
@@ -425,6 +447,7 @@ class SetupWizard:
             proxy=self._proxy,
             listen_port=self._listen_port,
             language=self._language,
+            is_https_enabled=self._is_https_enabled,
         )
 
     def _ask_language(self) -> int:
@@ -438,8 +461,8 @@ class SetupWizard:
         self._language = codes[answer]
         return WIZARD_NEXT
 
-    def _ask_password(self) -> bool:
-        """The two secrets, each asked for twice."""
+    def _ask_password(self) -> int:
+        """The two secrets, each asked for twice, and the panel's scheme."""
         self._say(
             f"At least {PASSWORDS_PANEL_RULES.min_length} characters, and "
             "better for mixing letters,"
@@ -466,6 +489,13 @@ class SetupWizard:
             self._say(f"  {error}")
             self._prompt("Press Enter to try again")
             return WIZARD_AGAIN
+        print()
+        self._say("The hub makes the panel's certificates either way; the")
+        self._say("Settings page turns HTTPS on or off later.")
+        answer = self._yes_no("Does the panel speak HTTPS", default=False)
+        if answer is None:
+            return WIZARD_PREVIOUS
+        self._is_https_enabled = answer
         return WIZARD_NEXT
 
     def _say_entropy(self, secret: str) -> None:
@@ -855,6 +885,7 @@ class SetupWizard:
         else:
             self._say("  proxy          off")
         self._say(f"  language       {WIZARD_LANGUAGE_NAMES[self._language]}")
+        self._say(f"  HTTPS          {'on' if self._is_https_enabled else 'off'}")
         self._say("")
         if ROUTER_MODES_BY_KEY[self._mode].is_addressing_owned:
             self._say("Saying yes here takes the interfaces over, replaces the")
@@ -870,8 +901,9 @@ class SetupWizard:
             self._say("network might be interrupted, please reconnect when")
             self._say("interruption happens.")
             self._say("")
+            scheme = "https" if self._is_https_enabled else "http"
             self._say(
-                f"The panel will be at http://{self._address}:{self._listen_port}"
+                f"The panel will be at {scheme}://{self._address}:{self._listen_port}"
             )
             self._say(f"and the run is written to {UTILS_SETUP_LOG_PATH}.")
         else:
@@ -1289,7 +1321,14 @@ def _served_default(names: list, *, taken: str = "") -> int:
     return 1
 
 
-def finish(*, panel_url: str, link: str = "", note: str = "", joined=None) -> None:
+def finish(
+    *,
+    panel_url: str,
+    link: str = "",
+    note: str = "",
+    joined=None,
+    authority: "dict | None" = None,
+) -> None:
     """The last screen: where the panel is, and how a device joins it.
 
     Drawn after the machine has been changed rather than before, because the
@@ -1304,10 +1343,17 @@ def finish(*, panel_url: str, link: str = "", note: str = "", joined=None) -> No
         note: Why there is no link, when there is none.
         joined: Called after the wait for the names of the devices that came
             in, so this module reads no configuration of its own.
+        authority: The certificate authority a browser installs before it
+            opens an HTTPS panel, as :func:`authority_lines` takes it; None
+            when the panel speaks HTTP.
     """
     _headline(WIZARD_DONE_TITLE)
     print(f"  The panel is at   {panel_url}")
     print()
+    if authority:
+        for line in authority_lines(authority):
+            print(line)
+        print()
     if link:
         print("  To bring a device in, install the agent on it and run:")
         print()
@@ -1322,6 +1368,25 @@ def finish(*, panel_url: str, link: str = "", note: str = "", joined=None) -> No
     print()
     _watch(joined)
     print()
+
+
+def authority_lines(authority: dict) -> list:
+    """What the terminal says about installing the panel's authority.
+
+    Args:
+        authority: ``url``, where a browser downloads it, and
+            ``fingerprint``, the SHA-256 of its DER as hex.
+
+    Returns:
+        The lines to print, indented like the rest of the screen.
+    """
+    fingerprint = authority["fingerprint"].upper()
+    pairs = ":".join(fingerprint[at : at + 2] for at in range(0, len(fingerprint), 2))
+    return [
+        "  Install the hub's certificate authority in each browser first:",
+        f"    {authority['url']}",
+        f"  SHA-256 {pairs}",
+    ]
 
 
 def _watch(joined) -> None:

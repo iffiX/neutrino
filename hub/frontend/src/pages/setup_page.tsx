@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import { AuthorityInstall } from "../components/authority_install";
 import { Icon } from "../components/icon";
 import { PasswordField } from "../components/password_field";
 import { ToggleSwitch } from "../components/toggle_switch";
@@ -20,6 +21,7 @@ import {
 } from "../password_strength";
 import type {
   SetupAnswers,
+  SetupAuthority,
   SetupContext,
   SetupInterface,
   SetupState,
@@ -65,6 +67,8 @@ const SETUP_BRAND_NAME = "Neutrino Hub";
 const POLL_INTERVAL_MS = 700;
 /** How long the finished screen is left up before it hands over. */
 const HANDOVER_SECONDS = 5;
+/** What the downloaded authority is, so a device offers to install it. */
+const AUTHORITY_MEDIA_TYPE = "application/x-x509-ca-cert";
 /** How many unanswered polls mean this page is no longer on the same wire. */
 const LOST_POLL_COUNT = 5;
 /** Where the run writes itself down, named on the screen that warns about
@@ -102,6 +106,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
   const [repeated, setRepeated] = useState("");
   const [vaultPassphrase, setVaultPassphrase] = useState("");
   const [vaultRepeated, setVaultRepeated] = useState("");
+  const [isHttps, setIsHttps] = useState(false);
   const [mode, setMode] = useState(context.modes[0]?.key ?? "server");
   const [wan, setWan] = useState("");
   const [lan, setLan] = useState("");
@@ -231,6 +236,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
       };
     }
     document.listen_port = listenPort;
+    document.is_https_enabled = isHttps;
     return document;
   }, [
     mode,
@@ -254,6 +260,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     isSocksDirect,
     socksDirectPort,
     listenPort,
+    isHttps,
   ]);
 
   const start = async () => {
@@ -292,12 +299,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
     }
   }, [isRejected, state]);
 
+  const scheme = isHttps ? "https" : "http";
   if (state !== null && !isRejected) {
     return (
       <SetupRunning
         state={state}
         isLost={missedPolls > LOST_POLL_COUNT}
-        fallbackUrl={`http://${address}:${listenPort}`}
+        fallbackUrl={`${scheme}://${address}:${listenPort}`}
       />
     );
   }
@@ -427,6 +435,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
             rules={VAULT_PASSPHRASE_RULES}
             onChange={setVaultPassphrase}
             onRepeatedChange={setVaultRepeated}
+          />
+          <ToggleSwitch
+            isOn={isHttps}
+            label={t("ui.setup.https_label")}
+            description={t("ui.setup.https_description")}
+            onChange={setIsHttps}
           />
         </div>
       )}
@@ -680,7 +694,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
               <div className="notice_body">
                 {t("ui.setup.interruption")}{" "}
                 {t("ui.setup.panel_will_be_at", {
-                  url: `http://${address}:${listenPort}`,
+                  url: `${scheme}://${address}:${listenPort}`,
                   path: SETUP_LOG_PATH,
                 })}
               </div>
@@ -723,6 +737,14 @@ export function SetupPage({ token, context }: SetupPageProps) {
             <Row
               name={t("ui.setup.review_panel_port")}
               value={String(listenPort)}
+            />
+            <Row
+              name={t("ui.setup.review_https")}
+              value={
+                isHttps
+                  ? t("ui.setup.review_https_on")
+                  : t("ui.setup.review_https_off")
+              }
             />
             {isSideGateway && (
               <Row name={t("ui.setup.review_upstream")} value={upstream} />
@@ -833,6 +855,7 @@ function SetupRunning({
   const isDone = state.state === "done";
   const isFailed = state.state === "failed";
   const panelUrl = state.panel_url || fallbackUrl;
+  const authority = isDone ? state.authority : null;
   const [remainingS, setRemainingS] = useState(HANDOVER_SECONDS);
   // Lit one painted frame after done, never with it: a transition only runs
   // between two rendered states, and a screen that mounts already lit has
@@ -855,8 +878,11 @@ function SetupRunning({
   // somebody is about to go and act on. The countdown reaching zero is not
   // enough on its own: the panel this page goes to is still starting, so it
   // is asked first, and the page leaves only for a panel that answers.
+  // An HTTPS panel is on another scheme than this page, so it cannot be asked
+  // from here, and the authority is installed before it is opened: that run
+  // waits for the press instead.
   useEffect(() => {
-    if (!isDone && !isLost) {
+    if ((!isDone && !isLost) || authority !== null) {
       return;
     }
     const handle = window.setInterval(() => {
@@ -875,7 +901,7 @@ function SetupRunning({
       });
     }, 1000);
     return () => window.clearInterval(handle);
-  }, [isDone, isLost, panelUrl]);
+  }, [isDone, isLost, panelUrl, authority]);
 
   return (
     <SetupFrame
@@ -884,9 +910,11 @@ function SetupRunning({
       actions={
         isDone ? (
           <div className="setup_handover">
-            <p className="setup_lead">
-              {t("ui.setup.handover", { seconds: remainingS })}
-            </p>
+            {authority === null && (
+              <p className="setup_lead">
+                {t("ui.setup.handover", { seconds: remainingS })}
+              </p>
+            )}
             <a className="button button--primary" href={panelUrl}>
               {t("ui.setup.open_panel")}
               <Icon name="chevron_right" size={14} />
@@ -895,6 +923,7 @@ function SetupRunning({
         ) : undefined
       }
     >
+      {authority !== null && <SetupAuthorityInstall authority={authority} />}
       <ol className="setup_steps">
         {state.steps.map((step) => (
           <li
@@ -928,6 +957,39 @@ function SetupRunning({
       )}
     </SetupFrame>
   );
+}
+
+/** The authority to install before the panel is opened over HTTPS. */
+function SetupAuthorityInstall({ authority }: { authority: SetupAuthority }) {
+  // The panel serving the download is still starting, so the file is made
+  // from the bytes the finished state carried.
+  const href = useMemo(() => {
+    const bytes = Uint8Array.from(atob(authority.der), (character) =>
+      character.charCodeAt(0),
+    );
+    return URL.createObjectURL(
+      new Blob([bytes], { type: AUTHORITY_MEDIA_TYPE }),
+    );
+  }, [authority.der]);
+  useEffect(() => () => URL.revokeObjectURL(href), [href]);
+
+  return (
+    <section className="setup_install">
+      <h2 className="setup_install_title">{t("ui.setup.install_title")}</h2>
+      <p className="setup_lead">{t("ui.setup.install_lead")}</p>
+      <AuthorityInstall href={href} fileName={authority.file_name} />
+      <p className="setup_install_fingerprint">
+        {t("ui.setup.install_fingerprint", {
+          fingerprint: fingerprintPairs(authority.fingerprint),
+        })}
+      </p>
+    </section>
+  );
+}
+
+/** A hex fingerprint as colon-separated uppercase pairs, as systems show it. */
+function fingerprintPairs(hex: string): string {
+  return (hex.toUpperCase().match(/../g) ?? []).join(":");
 }
 
 function PortChoice({

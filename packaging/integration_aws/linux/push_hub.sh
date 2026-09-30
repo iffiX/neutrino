@@ -39,7 +39,8 @@ scp_hub "$HERE/linux/hub_install.sh" "$HUB_USER@$(hub_ip):/tmp/hub_install.sh"
 
 echo "== installing"
 LINK="$(ssh_hub "NEUTRINO_PANEL_PASSWORD='$PASSWORD' NEUTRINO_VAULT_PASSPHRASE='$PASSPHRASE' \
-    NEUTRINO_DEVICE_NAME='aws-windows' bash /tmp/hub_install.sh /tmp/hub.deb" | tee /dev/stderr | tail -1)"
+    NEUTRINO_DEVICE_NAME='aws-windows' NEUTRINO_PANEL_HTTPS='${NEUTRINO_PANEL_HTTPS:-false}' \
+    bash /tmp/hub_install.sh /tmp/hub.deb" | tee /dev/stderr | tail -1)"
 case "$LINK" in
     neutrino://enroll/*) ;;
     *) echo "no enrollment link came back" >&2; exit 1 ;;

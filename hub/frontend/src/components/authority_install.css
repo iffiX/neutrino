@@ -1,0 +1,42 @@
+.authority_install {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.authority_install_download {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.authority_install_devices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.authority_install_device summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.authority_install_device[open] summary {
+  color: var(--color-text);
+}
+
+.authority_install_steps {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-5);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}

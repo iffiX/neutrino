@@ -92,5 +92,14 @@
   "ui.setup.step_write_answers": "Writing what you chose",
   "ui.setup.step_overlay": "Setting the overlay",
   "ui.setup.step_local_agent": "Installing this machine's agent",
-  "ui.setup.step_panel_password": "Setting the panel password"
+  "ui.setup.step_panel_password": "Setting the panel password",
+  "ui.setup.step_panel_tls": "Generating the panel's certificates",
+  "ui.setup.https_label": "HTTPS for the panel",
+  "ui.setup.https_description": "Whether the panel speaks HTTPS. The hub makes the certificates either way.",
+  "ui.setup.review_https": "HTTPS",
+  "ui.setup.install_title": "Install the certificate on this device",
+  "ui.setup.install_lead": "With it installed, the browser opens the panel without a warning.",
+  "ui.setup.install_fingerprint": "SHA-256 {fingerprint}",
+  "ui.setup.review_https_on": "on",
+  "ui.setup.review_https_off": "off"
 }

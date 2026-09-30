@@ -11,6 +11,7 @@ converges rather than duplicating work.
 """
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -91,11 +92,18 @@ from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
     WEB_IDENTITY_FILE,
     WEB_PANEL_TLS_AUTHORITY_PATH,
+    WEB_SETTING_HTTPS,
     WEB_SETUP_GRACE_S,
     WEB_SETUP_WAIT_S,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
-from neutrino_hub.web.panel_tls import is_https_enabled
+from neutrino_hub.web.identity import hub_name
+from neutrino_hub.web.panel_tls import (
+    authority_der,
+    authority_file_name,
+    ensure_served,
+    is_https_enabled,
+)
 from neutrino_hub.web.setup_app import WebSetupServer, WebSetupSession
 
 from neutrino_hub.cli.password import is_password_set, store_password
@@ -107,6 +115,9 @@ from neutrino_hub.cli import wizard
 # What the panel is asked for, on loopback, once it is running.
 SETUP_LOGIN_PATH = "/api/hub/auth/login"
 SETUP_ENROLLMENT_PATH = "/api/hub/device/enrollment/create"
+# Where a browser downloads the panel's certificate authority, before it has
+# a session.
+SETUP_AUTHORITY_PATH = "/api/hub/setting/https/authority"
 SETUP_PANEL_TIMEOUT_S = 10
 # How long the panel gets to start listening before its link is given up on.
 SETUP_PANEL_WAIT_S = 30.0
@@ -536,7 +547,11 @@ def _setup(
                 SecretVault().initialize(answers.vault_passphrase)
                 write_config("router/network.json", answers.network.to_dict())
                 _write_proxy(answers.proxy)
-                _write_panel_settings(answers.listen_port, answers.language)
+                _write_panel_settings(
+                    answers.listen_port,
+                    answers.language,
+                    answers.is_https_enabled,
+                )
             except (
                 subprocess.SubprocessError,
                 OSError,
@@ -554,16 +569,52 @@ def _setup(
     reporter.done("stored")
 
     panel_url = _panel_url()
+    authority = _authority(panel_url) if answers.is_https_enabled else None
     if server is not None:
-        return _hand_over(server, panel_url, answers.password, reporter)
+        return _hand_over(server, panel_url, answers.password, reporter, authority)
     _start_panel()
     _install_local_agent(answers.password, reporter)
     link, note = _enrollment_link(answers.password)
-    wizard.finish(panel_url=panel_url, link=link, note=note, joined=_joined_devices)
+    wizard.finish(
+        panel_url=panel_url,
+        link=link,
+        note=note,
+        joined=_joined_devices,
+        authority=authority,
+    )
     return 0
 
 
-def _hand_over(server, panel_url: str, password: str, reporter) -> int:
+def _authority(panel_url: str) -> "dict | None":
+    """The certificate authority a browser installs before it opens the panel.
+
+    Args:
+        panel_url: Where the panel answers, which serves the download.
+
+    Returns:
+        ``url`` and ``file_name`` for the download, ``fingerprint`` as hex,
+        and ``der`` in base64 for a page that downloads it while the panel
+        is still starting; None when there is no authority.
+    """
+    try:
+        der = authority_der()
+    except (OSError, ValueError):
+        return None
+    try:
+        name = hub_name()
+    except (OSError, ValueError):
+        name = ""
+    return {
+        "url": f"{panel_url}{SETUP_AUTHORITY_PATH}",
+        "file_name": authority_file_name(name),
+        "fingerprint": hashlib.sha256(der).hexdigest(),
+        "der": base64.b64encode(der).decode("ascii"),
+    }
+
+
+def _hand_over(
+    server, panel_url: str, password: str, reporter, authority: "dict | None" = None
+) -> int:
     """Give the port back and start the panel the browser goes on to.
 
     The enrollment link is not generated for the person here: a browser that
@@ -576,11 +627,13 @@ def _hand_over(server, panel_url: str, password: str, reporter) -> int:
         panel_url: Where the panel will answer.
         password: The panel password, to mint the local agent's link with.
         reporter: Where the local agent step is reported.
+        authority: The authority the last page offers to install, None when
+            the panel speaks HTTP.
 
     Returns:
         Process exit status.
     """
-    server.session.finish(panel_url=panel_url)
+    server.session.finish(panel_url=panel_url, authority=authority)
     # The closing screen exists only if a poll reads the finished state, so
     # the server waits for that rather than racing it on a timer; a page
     # somebody closed stops nothing beyond the grace. The moment after is
@@ -593,6 +646,10 @@ def _hand_over(server, panel_url: str, password: str, reporter) -> int:
     print()
     print(f"  The panel is at   {panel_url}")
     print()
+    if authority:
+        for line in wizard.authority_lines(authority):
+            print(line)
+        print()
     return 0
 
 
@@ -679,16 +736,18 @@ def _install_local_agent(password: str, reporter) -> None:
     reporter.done("installed and joined")
 
 
-def _write_panel_settings(port: int, language: str) -> None:
-    """Put the panel on the port and in the language that were asked for.
+def _write_panel_settings(port: int, language: str, is_https_enabled: bool) -> None:
+    """Put the panel on the port, language and scheme that were asked for.
 
     Args:
         port: What the wizard collected.
         language: The language the panel is drawn in.
+        is_https_enabled: Whether the panel speaks HTTPS.
     """
     settings = read_config("web/settings.json")
     settings["listen_port"] = port
     settings["language"] = language
+    settings[WEB_SETTING_HTTPS] = is_https_enabled
     write_config("web/settings.json", settings)
 
 
@@ -1073,6 +1132,13 @@ def _step_agent_tls(reporter: InstallReporter) -> str:
     return "present"
 
 
+def _step_panel_tls(reporter: InstallReporter) -> str:
+    """Make the panel's certificate authority and the certificate it signs."""
+    if ensure_served():
+        return "generated"
+    return "present"
+
+
 def _step_systemd_units(reporter: InstallReporter) -> str:
     written = SystemdUnitInstaller().install()
     is_changed = bool(written)
@@ -1239,6 +1305,7 @@ CORE_STEPS = (
     ("xray_core", "Installing xray-core and geodata", _step_xray_core),
     ("config_files", "Preparing config/ from examples", _step_config_files),
     ("agent_tls", "Generating the agent channel certificate", _step_agent_tls),
+    ("panel_tls", "Generating the panel's certificates", _step_panel_tls),
     ("systemd_units", "Installing systemd units", _step_systemd_units),
     ("interfaces", "Applying the interface roles", _step_interfaces),
     ("render_all", "Rendering and applying configuration", _step_render_all),

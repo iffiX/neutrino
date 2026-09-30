@@ -603,3 +603,55 @@ def test_every_screen_has_the_title_it_is_drawn_with():
     count = len([line for line in screens.splitlines() if "self._" in line])
     assert count == len(wizard.WIZARD_TITLES)
     assert wizard.WIZARD_TITLES[-1] == "Ready"
+
+
+def https_document(**extra) -> dict:
+    return {
+        "password": "a-long-enough-password",
+        "vault_passphrase": VAULT_PASSPHRASE,
+        "network": {"mode": "server"},
+        **extra,
+    }
+
+
+def test_a_document_that_does_not_mention_https_leaves_it_off(monkeypatch):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    assert wizard.from_document(https_document()).is_https_enabled is False
+
+
+def test_a_document_turns_https_on(monkeypatch):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    answers = wizard.from_document(https_document(is_https_enabled=True))
+
+    assert answers.is_https_enabled is True
+
+
+def test_a_scheme_that_is_not_true_or_false_is_refused(monkeypatch):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    with pytest.raises(WizardAborted, match="is_https_enabled"):
+        wizard.from_document(https_document(is_https_enabled="yes"))
+
+
+@pytest.mark.parametrize(
+    "typed, expected, step",
+    [
+        ("", False, "next"),
+        ("n", False, "next"),
+        ("y", True, "next"),
+        ("b", False, "previous"),
+    ],
+)
+def test_https_is_asked_after_the_passwords_and_defaults_to_no(
+    monkeypatch, typed, expected, step
+):
+    asked = wizard.SetupWizard(links=[])
+    monkeypatch.setattr(wizard, "read_new_password", _returning_password)
+    monkeypatch.setattr("builtins.input", lambda prompt="": typed)
+
+    moved = asked._ask_password()
+
+    assert moved == (wizard.WIZARD_NEXT if step == "next" else wizard.WIZARD_PREVIOUS)
+    assert asked._is_https_enabled is expected

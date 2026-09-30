@@ -64,6 +64,7 @@ class WebSetupSession:
         self._notes: list = []
         self._message = ""
         self._panel_url = ""
+        self._authority: "dict | None" = None
 
     # --- what the browser reads ---
 
@@ -75,14 +76,16 @@ class WebSetupSession:
         """Where this run has got to.
 
         Returns:
-            The state name, every step reported so far, and the panel's
-            address once there is one.
+            The state name, every step reported so far, the panel's address
+            once there is one, and the certificate authority to install
+            before opening it, None when the panel speaks HTTP.
         """
         with self._lock:
             reply = {
                 "state": self._state,
                 "message": self._message,
                 "panel_url": self._panel_url,
+                "authority": self._authority,
                 "steps": list(self._steps),
                 "notes": list(self._notes),
             }
@@ -178,15 +181,19 @@ class WebSetupSession:
         with self._lock:
             self._notes.append(text)
 
-    def finish(self, *, panel_url: str) -> None:
+    def finish(self, *, panel_url: str, authority: "dict | None" = None) -> None:
         """Say the box is set up and where its panel will answer.
 
         Args:
             panel_url: Where to send the browser once the panel is up.
+            authority: The certificate authority the page offers to install
+                first: ``url``, ``file_name``, ``fingerprint`` and ``der`` in
+                base64. None when the panel speaks HTTP.
         """
         with self._lock:
             self._state = WEB_SETUP_STATE_DONE
             self._panel_url = panel_url
+            self._authority = authority
             for entry in self._steps:
                 if entry["status"] == WEB_SETUP_STEP_RUNNING:
                     entry["status"] = WEB_SETUP_STEP_FAILED

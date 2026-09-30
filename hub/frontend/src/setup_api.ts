@@ -60,11 +60,25 @@ export interface SetupStep {
   note: string;
 }
 
+/** The certificate authority a browser installs before an HTTPS panel. */
+export interface SetupAuthority {
+  /** Where the panel serves it once it is up. */
+  url: string;
+  /** What the downloaded file is called. */
+  file_name: string;
+  /** SHA-256 of its DER encoding, as hex. */
+  fingerprint: string;
+  /** Its DER encoding in base64, downloadable while the panel starts. */
+  der: string;
+}
+
 /** How far the run has got. */
 export interface SetupState {
   state: "asking" | "rejected" | "running" | "done" | "failed";
   message: string;
   panel_url: string;
+  /** The authority to install first; null when the panel speaks HTTP. */
+  authority: SetupAuthority | null;
   steps: SetupStep[];
   notes: string[];
 }
@@ -99,6 +113,8 @@ export interface SetupAnswers {
   network: SetupNetworkAnswers;
   proxy?: SetupProxyAnswers;
   listen_port?: number;
+  /** Whether the panel speaks HTTPS; off when left out. */
+  is_https_enabled?: boolean;
 }
 
 /** What the hub made of one share link. */

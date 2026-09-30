@@ -211,3 +211,77 @@ def test_the_log_is_named_before_the_first_step(monkeypatch):
 
 class _NoAnswers:
     password = "x"
+    is_https_enabled = False
+
+
+@pytest.mark.parametrize("is_https", [False, True])
+def test_the_panel_settings_carry_the_scheme_asked_for(tmp_path, monkeypatch, is_https):
+    from neutrino_hub.utils.json_file import read_config, write_config
+
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    write_config("web/settings.json", {"listen_port": 8080, "is_https_enabled": True})
+
+    setup._write_panel_settings(8090, "zh-CN", is_https)
+
+    settings = read_config("web/settings.json")
+    assert settings["listen_port"] == 8090
+    assert settings["language"] == "zh-CN"
+    assert settings["is_https_enabled"] is is_https
+
+
+def test_the_panel_certificates_are_made_right_after_the_agent_channels():
+    names = [step_id for step_id, _, _ in setup.CORE_STEPS]
+
+    assert names.index("panel_tls") == names.index("agent_tls") + 1
+    assert names.index("panel_tls") > names.index("config_files")
+
+
+def test_an_https_run_hands_over_the_authority_to_install(monkeypatch, tmp_path):
+    """The last screen names where to download the authority and its
+    fingerprint; an HTTP run names neither."""
+    import base64
+    import hashlib
+
+    finished: list = []
+    der = b"a certificate"
+    monkeypatch.setattr(setup, "store_password", lambda password: None)
+    monkeypatch.setattr(setup, "_panel_url", lambda: "https://192.168.8.1:8080")
+    monkeypatch.setattr(setup, "_start_panel", lambda: None)
+    monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
+    monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
+    monkeypatch.setattr(setup, "authority_der", lambda: der)
+    monkeypatch.setattr(setup, "hub_name", lambda: "Argon")
+    monkeypatch.setattr(
+        setup.wizard, "finish", lambda **keywords: finished.append(keywords)
+    )
+    answers = _NoAnswers()
+    answers.is_https_enabled = True
+
+    setup._setup(_SilentReporter(), [], answers)
+
+    assert finished[0]["authority"] == {
+        "url": "https://192.168.8.1:8080/api/hub/setting/https/authority",
+        "file_name": "neutrino-argon-ca.crt",
+        "fingerprint": hashlib.sha256(der).hexdigest(),
+        "der": base64.b64encode(der).decode("ascii"),
+    }
+    lines = setup.wizard.authority_lines(finished[0]["authority"])
+    assert lines[1].strip() == finished[0]["authority"]["url"]
+    assert lines[2].startswith("  SHA-256 ")
+    assert lines[2].count(":") == 31
+
+
+def test_an_http_run_hands_over_no_authority(monkeypatch):
+    finished: list = []
+    monkeypatch.setattr(setup, "store_password", lambda password: None)
+    monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.168.8.1:8080")
+    monkeypatch.setattr(setup, "_start_panel", lambda: None)
+    monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
+    monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
+    monkeypatch.setattr(
+        setup.wizard, "finish", lambda **keywords: finished.append(keywords)
+    )
+
+    setup._setup(_SilentReporter(), [], _NoAnswers())
+
+    assert finished[0]["authority"] is None
