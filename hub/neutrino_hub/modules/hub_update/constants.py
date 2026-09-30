@@ -45,6 +45,13 @@ HUB_UPDATE_UNIT_ENVIRONMENT = (
     "DEBIAN_FRONTEND=noninteractive",
     "DPKG_DEB_THREADS_MAX=1",
 )
+# Below this much available memory the unit stops these units before the
+# package unpacks, and starts them again once the install is done.
+HUB_UPDATE_LOW_MEMORY_BYTES = 300 * 1024 * 1024
+HUB_UPDATE_SHED_UNITS = ("neutrino_hub_web", "neutrino_hub_cliproxyapi")
+HUB_UPDATE_MEMINFO_PATH = "/proc/meminfo"
+# What says this machine has an agent of its own to reinstall.
+HUB_UPDATE_AGENT_COMMAND = "nagent"
 # What the gate holds for: the panel, and whichever of these was running when
 # the install was staged.
 HUB_UPDATE_PANEL_UNIT = "neutrino_hub_web"

@@ -2,7 +2,8 @@
 
 The package manager, systemctl, curl and nhub are scripts on a PATH of the
 test's own, each saying and exiting what one case needs; the state file the
-script leaves is read back the way the panel reads it.
+script leaves is read back the way the panel reads it. The kernel's memory
+figure is a file of the test's own too.
 """
 
 import json
@@ -37,7 +38,9 @@ def box(tmp_path):
     return bin_dir, directory
 
 
-def plan_for(directory: Path, *, rollback: bool = True) -> HubUpdatePlan:
+def plan_for(
+    directory: Path, *, rollback: bool = True, python: str = ""
+) -> HubUpdatePlan:
     return HubUpdatePlan(
         from_version="0.3.0",
         to_version="0.3.1",
@@ -47,19 +50,28 @@ def plan_for(directory: Path, *, rollback: bool = True) -> HubUpdatePlan:
         port=8080,
         units=("neutrino_hub_web", "neutrino_hub_router"),
         started_at="2026-09-20T15:00:00Z",
+        python=python,
     )
 
 
-def run_script(box, *, rollback: bool = True) -> tuple[int, dict]:
+def run_script(
+    box, *, rollback: bool = True, available_kb: int = 2_000_000, python: str = ""
+) -> tuple[int, dict]:
     """Run the rendered script and read the record it left."""
     bin_dir, directory = box
+    meminfo = directory / "meminfo"
+    meminfo.write_text(
+        f"MemTotal:        4000000 kB\nMemAvailable:    {available_kb} kB\n"
+    )
     script = directory / "update.sh"
     script.write_text(
         render_script(
-            plan_for(directory, rollback=rollback),
+            plan_for(directory, rollback=rollback, python=python),
             directory=directory,
             gate_timeout_s=1,
             poll_s=0.2,
+            meminfo_path=str(meminfo),
+            agent_command=str(bin_dir / "nagent"),
         )
     )
     environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
@@ -207,3 +219,135 @@ def test_only_the_tail_of_a_long_log_is_kept(box):
     assert len(raw["output"].encode()) <= 4096 + 16
     assert raw["output"].endswith("5000\n")
     assert not raw["output"].startswith("1\n")
+
+
+# --- a machine short of memory ----------------------------------------------
+
+
+def recording_systemctl(bin_dir: Path, calls: Path) -> None:
+    """A systemctl that says every unit is running and writes down each call."""
+    stub(bin_dir, "systemctl", body=f'echo "systemctl $*" >> {calls}; exit 0')
+    stub(
+        bin_dir,
+        "apt-get",
+        body=f'echo "apt-get $*" >> {calls}; echo "Setting up neutrino-hub"',
+    )
+
+
+def test_short_of_memory_the_panel_and_the_gateway_stop_for_the_unpack(box):
+    bin_dir, directory = box
+    calls = directory / "calls"
+    recording_systemctl(bin_dir, calls)
+
+    code, raw = run_script(box, available_kb=200_000)
+
+    lines = calls.read_text().splitlines()
+    install = next(i for i, line in enumerate(lines) if line.startswith("apt-get"))
+    assert lines.index("systemctl stop neutrino_hub_web") < install
+    assert lines.index("systemctl stop neutrino_hub_cliproxyapi") < install
+    assert lines.index("systemctl start neutrino_hub_web") > install
+    assert lines.index("systemctl start neutrino_hub_cliproxyapi") > install
+    assert code == 0
+    assert raw["stage"] == "installed"
+    assert "200000 kB available" in raw["output"]
+
+
+def test_with_memory_to_spare_nothing_is_stopped(box):
+    bin_dir, directory = box
+    calls = directory / "calls"
+    recording_systemctl(bin_dir, calls)
+
+    run_script(box, available_kb=900_000)
+
+    assert "systemctl stop" not in calls.read_text()
+
+
+def test_a_failed_install_starts_again_what_it_stopped(box):
+    bin_dir, directory = box
+    calls = directory / "calls"
+    recording_systemctl(bin_dir, calls)
+    stub(bin_dir, "apt-get", body=f'echo "apt-get $*" >> {calls}; exit 100')
+
+    _, raw = run_script(box, rollback=False, available_kb=100_000)
+
+    assert raw["stage"] == "failed"
+    assert "systemctl start neutrino_hub_web" in calls.read_text()
+
+
+# --- the box's own agent ----------------------------------------------------
+
+
+def agent_stubs(bin_dir: Path, directory: Path, *, package: str) -> Path:
+    """An installed agent, and an interpreter naming the package the cache
+    holds for it."""
+    calls = directory / "calls"
+    stub(bin_dir, "nagent", body="exit 0")
+    stub(bin_dir, "hub_python", body=f'echo "{package}"')
+    stub(
+        bin_dir,
+        "apt-get",
+        body=f'echo "apt-get $*" >> {calls}; echo "Setting up $*"',
+    )
+    return calls
+
+
+def test_the_boxs_own_agent_is_reinstalled_from_the_cache_after_the_gate(box):
+    bin_dir, directory = box
+    package = "/var/lib/neutrino/agent_cache/neutrino-agent_0.3.1_amd64.deb"
+    calls = agent_stubs(bin_dir, directory, package=package)
+
+    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
+
+    installs = [line for line in calls.read_text().splitlines()]
+    assert installs[0].endswith("neutrino-hub_0.3.1_amd64.deb")
+    assert installs[1].endswith(package)
+    assert code == 0
+    assert raw["stage"] == "installed"
+    assert f"agent: reinstalling {package}" in raw["output"]
+
+
+def test_an_agent_that_will_not_reinstall_leaves_the_hub_installed(box):
+    bin_dir, directory = box
+    agent_stubs(bin_dir, directory, package="/cache/neutrino-agent.deb")
+    stub(
+        bin_dir,
+        "apt-get",
+        body='case "$*" in *neutrino-agent*) exit 100;; esac; echo ok',
+    )
+
+    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
+
+    assert code == 0
+    assert raw["stage"] == "installed"
+    assert "agent: the reinstall failed" in raw["output"]
+
+
+def test_a_cache_with_no_agent_for_this_machine_installs_none(box):
+    bin_dir, directory = box
+    calls = agent_stubs(bin_dir, directory, package="")
+
+    _, raw = run_script(box, python=str(bin_dir / "hub_python"))
+
+    assert len(calls.read_text().splitlines()) == 1
+    assert "this hub carries no agent for this machine" in raw["output"]
+
+
+def test_a_box_with_no_agent_gets_none(box):
+    bin_dir, directory = box
+    calls = agent_stubs(bin_dir, directory, package="/cache/neutrino-agent.deb")
+    (bin_dir / "nagent").unlink()
+
+    run_script(box, python=str(bin_dir / "hub_python"))
+
+    assert len(calls.read_text().splitlines()) == 1
+
+
+def test_a_rolled_back_hub_reinstalls_no_agent(box):
+    bin_dir, directory = box
+    calls = agent_stubs(bin_dir, directory, package="/cache/neutrino-agent.deb")
+    stub(bin_dir, "nhub", body='echo "0.3.0"')
+
+    _, raw = run_script(box, python=str(bin_dir / "hub_python"))
+
+    assert raw["stage"] == "rolled_back"
+    assert "neutrino-agent" not in calls.read_text()

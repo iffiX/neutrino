@@ -14,6 +14,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 from dataclasses import dataclass
@@ -22,8 +23,13 @@ from pathlib import Path
 from typing import Callable
 
 from neutrino_hub import HUB_PACKAGE_ASSET
-from neutrino_hub.exceptions import HubUpdateError
+from neutrino_hub.exceptions import AgentArtifactFetchError, HubUpdateError
+from neutrino_hub.modules.devices.agent_package import (
+    AGENT_PACKAGE_FAMILY_OF_PLATFORM,
+    AgentPackageCache,
+)
 from neutrino_hub.modules.hub_update.constants import (
+    HUB_UPDATE_AGENT_COMMAND,
     HUB_UPDATE_DIR_MODE,
     HUB_UPDATE_DIR_NAME,
     HUB_UPDATE_FETCH_LIMIT_BYTES,
@@ -36,6 +42,8 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_LAUNCH_TIMEOUT_S,
     HUB_UPDATE_LOCK_TIMEOUT_S,
     HUB_UPDATE_LOG_NAME,
+    HUB_UPDATE_LOW_MEMORY_BYTES,
+    HUB_UPDATE_MEMINFO_PATH,
     HUB_UPDATE_OUTPUT_LIMIT_BYTES,
     HUB_UPDATE_PACKAGE_MODE,
     HUB_UPDATE_PANEL_UNIT,
@@ -50,6 +58,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_REASON_SPACE_SHORT,
     HUB_UPDATE_SCRIPT_MODE,
     HUB_UPDATE_SCRIPT_NAME,
+    HUB_UPDATE_SHED_UNITS,
     HUB_UPDATE_STAGE_FAILED,
     HUB_UPDATE_STAGE_INSTALLED,
     HUB_UPDATE_STAGE_INSTALLING,
@@ -68,7 +77,7 @@ from neutrino_hub.modules.hub_update.release import (
     version_of_asset,
 )
 from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStateFile
-from neutrino_hub.system.machine import distribution_family
+from neutrino_hub.system.machine import distribution_family, machine_architecture
 from neutrino_hub.system.systemd_ctl import unit_state
 from neutrino_hub.utils import constants
 from neutrino_hub.utils.subprocess_run import run
@@ -121,6 +130,12 @@ UNITS=@UNITS@
 STARTED=@STARTED@
 GATE_TIMEOUT=@GATE_TIMEOUT@
 POLL=@POLL@
+MEMINFO=@MEMINFO@
+LOW_MEMORY_KB=@LOW_MEMORY_KB@
+SHED=@SHED@
+PYTHON=@PYTHON@
+AGENT_COMMAND=@AGENT_COMMAND@
+STOPPED=''
 PACE='nice -n 10'
 command -v ionice >/dev/null 2>&1 && PACE="ionice -c 2 -n 7 $PACE"
 
@@ -135,6 +150,34 @@ write_state() {
     } > "$STATE.tmp"
     chmod 600 "$STATE.tmp"
     mv -f "$STATE.tmp" "$STATE"
+}
+
+shed() {
+    available=$(awk '/^MemAvailable:/ {print $2}' "$MEMINFO" 2>/dev/null)
+    [ -n "$available" ] && [ "$available" -lt "$LOW_MEMORY_KB" ] || return 0
+    for unit in $SHED; do
+        systemctl is-active --quiet "$unit" || continue
+        systemctl stop "$unit" && STOPPED="$STOPPED $unit"
+    done
+    echo "memory: ${available} kB available; stopped$STOPPED before the unpack" >> "$LOG"
+}
+
+unshed() {
+    for unit in $STOPPED; do
+        systemctl start "$unit" >> "$LOG" 2>&1
+    done
+    STOPPED=''
+}
+
+install_agent() {
+    [ -n "$PYTHON" ] && command -v "$AGENT_COMMAND" >/dev/null 2>&1 || return 0
+    AGENT=$("$PYTHON" -c 'from neutrino_hub.modules.hub_update.installer import local_agent_package; print(local_agent_package())' 2>> "$LOG")
+    if [ -z "$AGENT" ]; then
+        echo "agent: this hub carries no agent for this machine" >> "$LOG"
+        return 0
+    fi
+    echo "agent: reinstalling $AGENT" >> "$LOG"
+    ( @AGENT_INSTALL@ ) >> "$LOG" 2>&1 || echo "agent: the reinstall failed" >> "$LOG"
 }
 
 gate() {
@@ -159,13 +202,17 @@ gate() {
 
 : > "$LOG"
 sync
+shed
 if ( @INSTALL@ ) >> "$LOG" 2>&1; then
+    unshed
     if gate "$TO"; then
+        install_agent
         write_state @STAGE_INSTALLED@ ''
         exit 0
     fi
     reason=@REASON_GATE_FAILED@
 else
+    unshed
     reason=@REASON_INSTALL_FAILED@
 fi
 if [ -z "$ROLLBACK" ]; then
@@ -197,6 +244,9 @@ class HubUpdatePlan:
         units: The units the gate holds for: the panel, and those of the
             router's that were running when the plan was made.
         started_at: When the update started, as an ISO stamp.
+        python: The hub's own interpreter, which names this machine's agent
+            package in the cache once the new hub is installed; empty leaves
+            the agent alone.
     """
 
     from_version: str
@@ -207,6 +257,7 @@ class HubUpdatePlan:
     port: int
     units: tuple[str, ...]
     started_at: str
+    python: str = ""
 
 
 def space_needed(
@@ -319,6 +370,46 @@ def install_commands(family: str, path: Path) -> tuple[str, str]:
     )
 
 
+def agent_install_command(family: str) -> str:
+    """What installs the agent package the script finds, on this family.
+
+    Args:
+        family: The distribution family.
+
+    Returns:
+        The install command line, naming the file as ``"$AGENT"``.
+
+    Raises:
+        ValueError: If no package manager is known for the family.
+    """
+    if family not in INSTALL_COMMANDS:
+        raise ValueError(f"no package manager is known for {family}")
+    lock = str(HUB_UPDATE_LOCK_TIMEOUT_S)
+    return (
+        INSTALL_COMMANDS[family][0]
+        .replace("@PATH@", '"$AGENT"')
+        .replace("@LOCK@", lock)
+    )
+
+
+def local_agent_package() -> str:
+    """This machine's own agent package, as the hub's cache holds it.
+
+    Returns:
+        The file's path; empty when the cache holds none for this machine or
+        it cannot be had.
+    """
+    family = AGENT_PACKAGE_FAMILY_OF_PLATFORM.get(distribution_family(), "")
+    architecture = machine_architecture()
+    cache = AgentPackageCache()
+    if not family or not cache.serves(family=family, architecture=architecture):
+        return ""
+    try:
+        return str(cache.package(family=family, architecture=architecture))
+    except (OSError, ValueError, AgentArtifactFetchError):
+        return ""
+
+
 def render_script(
     plan: HubUpdatePlan,
     *,
@@ -326,8 +417,16 @@ def render_script(
     gate_timeout_s: int = HUB_UPDATE_GATE_TIMEOUT_S,
     poll_s: float = HUB_UPDATE_GATE_POLL_S,
     output_limit_bytes: int = HUB_UPDATE_OUTPUT_LIMIT_BYTES,
+    meminfo_path: str = HUB_UPDATE_MEMINFO_PATH,
+    low_memory_bytes: int = HUB_UPDATE_LOW_MEMORY_BYTES,
+    agent_command: str = HUB_UPDATE_AGENT_COMMAND,
 ) -> str:
     """The shell the transient unit runs. Pure.
+
+    On a machine with less available memory than ``low_memory_bytes`` it stops
+    the panel and the AI gateway before the package unpacks and starts them
+    after; once the new hub passes its gate it reinstalls the machine's own
+    agent from the hub's cache.
 
     Args:
         plan: What to install and what to hold for.
@@ -335,6 +434,11 @@ def render_script(
         gate_timeout_s: How long the gate holds before it gives up.
         poll_s: How often the gate looks.
         output_limit_bytes: How much of the log's tail the state file keeps.
+        meminfo_path: Where the kernel says how much memory is available.
+        low_memory_bytes: Below this, the panel and the AI gateway stop for
+            the unpack.
+        agent_command: The command whose presence says the machine has an
+            agent of its own.
 
     Returns:
         The script's text.
@@ -362,6 +466,12 @@ def render_script(
         "@OUTPUT_LIMIT@": str(int(output_limit_bytes)),
         "@HEALTH_PATH@": shlex.quote(HUB_UPDATE_HEALTH_PATH),
         "@INSTALL@": install,
+        "@AGENT_INSTALL@": agent_install_command(plan.family),
+        "@MEMINFO@": shlex.quote(meminfo_path),
+        "@LOW_MEMORY_KB@": str(int(low_memory_bytes) // 1024),
+        "@SHED@": shlex.quote(" ".join(HUB_UPDATE_SHED_UNITS)),
+        "@PYTHON@": shlex.quote(plan.python),
+        "@AGENT_COMMAND@": shlex.quote(agent_command),
         "@ROLLBACK_INSTALL@": rollback_install or "false",
         "@STAGE_INSTALLED@": HUB_UPDATE_STAGE_INSTALLED,
         "@STAGE_ROLLING_BACK@": HUB_UPDATE_STAGE_ROLLING_BACK,
@@ -540,6 +650,7 @@ class HubUpdateInstaller:
             port=port,
             units=self._gate_units(),
             started_at=_now(),
+            python=sys.executable,
         )
 
     def plan_for_file(
@@ -624,6 +735,7 @@ class HubUpdateInstaller:
             port=port,
             units=self._gate_units(),
             started_at=_now(),
+            python=sys.executable,
         )
 
     def launch(self, plan: HubUpdatePlan) -> None:

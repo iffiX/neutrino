@@ -598,3 +598,26 @@ def test_a_plan_without_a_rollback_renders_an_empty_rollback(tmp_path):
 
     assert "ROLLBACK=''\n" in text
     assert "( false )" in text
+
+
+def test_the_agent_is_installed_by_the_forward_command_naming_the_file_found():
+    assert installer_module.agent_install_command("debian") == (
+        "$PACE apt-get install -y --reinstall --allow-downgrades "
+        '-o DPkg::Lock::Timeout=300 "$AGENT"'
+    )
+    assert installer_module.agent_install_command("rhel") == (
+        '$PACE dnf reinstall -y "$AGENT" || $PACE dnf install -y "$AGENT"'
+    )
+
+
+def test_a_staged_plan_names_the_hubs_own_interpreter(tmp_path, roots):
+    """Once the new hub is installed, its interpreter names the box's own
+    agent package in the cache."""
+    package = tmp_path / "neutrino-hub_0.3.0_amd64.deb"
+    package.write_bytes(b"package")
+
+    plan = make_installer(tmp_path, checker=Checker()).plan_for_file(
+        package, current="0.3.0", port=8080
+    )
+
+    assert plan.python == installer_module.sys.executable

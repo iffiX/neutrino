@@ -1122,3 +1122,5 @@ more or one fewer fails. Changing a channel model fails that test until
 3 renamed the link's and the client state's `overlay`, one object or null,
 to `overlays`, a list. `PROTOCOL_MIN` is 3 from 0.5.0: a 0.3 or 0.4 agent or
 client is refused `protocol_too_old` and does not update itself from the hub.
+The hub's update reinstalls the box's own agent from the hub's cache; any
+other agent is reinstalled from the Devices page or by hand.

@@ -164,6 +164,16 @@ The unit runs the package manager, then holds a gate of up to 180 seconds:
 the panel's port must answer 200, and `nhub --version` must print the target.
 A gate that fails installs the previous package and holds the gate again.
 
+When `/proc/meminfo` gives less than 300 MB of `MemAvailable` as the unit
+starts, it stops `neutrino_hub_web` and `neutrino_hub_cliproxyapi`, where
+running, before the package manager runs, and starts them again once it has
+finished, whether the install succeeded or not. After the gate passes, a box
+with `nagent` on it reinstalls its own agent from the hub's cache,
+`/var/lib/neutrino/agent_cache/`, the file the new hub hands its own machine,
+as `nhub setup` does; a failure there is written to `update.log` and leaves
+the hub `installed`. That is how the hub's own agent follows a hub whose
+protocol number rose past it.
+
 `state.json` in that directory records where it stands: `installing`,
 `installed`, `rolling_back`, `rolled_back` or `failed`, with `reason` naming
 the first failure and `output` the tail of `update.log`. The panel reads it
