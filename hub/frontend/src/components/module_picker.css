@@ -72,10 +72,30 @@
   background: var(--color-accent-wash);
 }
 
+.module_picker_row_text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .module_picker_row_name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A module the machine's system cannot run: greyed out, with the reason. */
+.module_picker_row--unsupported {
+  color: var(--color-text-faint);
+}
+
+.module_picker_row--unsupported .module_picker_check {
+  border-color: var(--color-border);
+}
+
+.module_picker_row_note {
+  font-family: var(--font-sans);
+  font-size: 11px;
 }
 
 .module_picker_error {

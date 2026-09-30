@@ -207,6 +207,7 @@
   "ui.module_picker.hint": "在这台机器的页面上显示",
   "ui.module_picker.label": "显示的模块",
   "ui.module_picker.open": "选择显示哪些模块",
+  "ui.module_picker.unsupported": "这台机器的系统不支持",
   "ui.modules.agent_offline": "被控端已离线",
   "ui.modules.configure": "配置",
   "ui.modules.configure_close": "收起配置",

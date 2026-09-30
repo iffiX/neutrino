@@ -288,6 +288,23 @@ it. The report's `machine` section lists every kept shell, and the process
 holds them, so a restart ends them all ([protocol.md](protocol.md), "The
 verbs on a `command` stream").
 
+### Which modules each system runs
+
+A module runs on a system when its manifest has a branch for the machine's
+platform and the machine's `version` is not below that branch's
+`min_version` ([protocol.md](protocol.md), "The modules section, one entry
+per module"). The Modules page greys out every other module in its picker
+and never shows it as a tab. The agent's minimum system stays where it is; a
+module a system cannot run is left out on that system.
+
+| Module | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| File share (Samba) | yes | no | no |
+| Gitea | amd64 and arm64 | no | no |
+| Containers (Podman) | yes | no | no |
+| ZFS storage | yes | no | no |
+| Remote desktop (RustDesk, AnyDesk, TeamViewer) | yes | yes | yes |
+
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants. The seat reads the
 grants from the system's privacy database, and its attention is

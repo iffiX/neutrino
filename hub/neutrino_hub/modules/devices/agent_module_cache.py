@@ -17,6 +17,7 @@ Not pure: fetches over the network and writes under the state root.
 
 import hashlib
 import json
+import re
 import shutil
 import threading
 import urllib.request
@@ -85,13 +86,54 @@ def resolve_platform_entry(manifest: dict, platform: dict) -> tuple:
 
     Returns:
         ``(platform_key, entry)``, or ``("", None)`` when the manifest
-        offers this platform nothing.
+        offers this platform nothing. An entry whose ``min_version`` is
+        above the tuple's ``version`` is no entry; a tuple with no
+        ``version`` is not ruled out.
     """
     platforms = manifest.get("platforms", {})
     for key in platform_keys(platform):
         if key in platforms:
-            return key, platforms[key]
+            entry = platforms[key]
+            floor = entry.get("min_version", "") if isinstance(entry, dict) else ""
+            if is_version_below(str(platform.get("version", "") or ""), str(floor)):
+                return "", None
+            return key, entry
     return "", None
+
+
+def is_version_below(version: str, floor: str) -> bool:
+    """Whether a reported system version is below a manifest's floor.
+
+    Both are dotted numbers compared part by part: ``2.27`` is below
+    ``2.28``, ``15.3.1`` is not below ``12.3``.
+
+    Args:
+        version: What the agent reported; empty when it reported none.
+        floor: The entry's ``min_version``; empty when it names none.
+
+    Returns:
+        True only when both are given and ``version`` is lower.
+    """
+    if not version or not floor:
+        return False
+    return version_parts(version) < version_parts(floor)
+
+
+def version_parts(version: str) -> tuple:
+    """A dotted version as the tuple of its leading numbers.
+
+    Args:
+        version: A version such as ``2.36``, ``26100`` or ``15.3.1``.
+
+    Returns:
+        One int per part, from each part's leading digits; 0 for a part
+        with none.
+    """
+    parts = []
+    for part in version.strip().split("."):
+        lead = re.match(r"\d*", part).group()
+        parts.append(int(lead) if lead else 0)
+    return tuple(parts)
 
 
 def looks_like_package(content: bytes, package_kind: str) -> bool:

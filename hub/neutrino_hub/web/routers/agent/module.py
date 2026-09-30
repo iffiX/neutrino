@@ -157,7 +157,6 @@ def list_modules(
     keys = platform_keys(platform)
     modules = []
     for name, manifest in load_module_manifests().items():
-        platforms = manifest.get("platforms", {})
         _, entry = resolve_platform_entry(manifest, platform)
         modules.append(
             DeviceModuleView(
@@ -168,7 +167,7 @@ def list_modules(
                 installer=manifest.get("installer", ""),
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
-                is_supported=(any(key in platforms for key in keys) if keys else True),
+                is_supported=(entry is not None if keys else True),
                 is_native=(entry == {}),
                 is_data_kept=_is_data_kept(entry),
                 source=manifest.get("source", ""),

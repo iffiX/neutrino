@@ -326,3 +326,42 @@ def test_the_loader_refuses_a_manifest_that_names_no_source(tmp_path, monkeypatc
 
     assert "sample.json" in str(refusal.value)
     assert "source" in str(refusal.value)
+
+
+@pytest.mark.parametrize("floor", ["2.28", "17763", "12.3.1"])
+def test_the_loader_accepts_a_dotted_floor(floor, tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "user",
+            "source": "vendor",
+            "platforms": {"linux": {"verify": "which s", "min_version": floor}},
+        },
+    )
+
+    assert "sample" in load_module_manifests()
+
+
+@pytest.mark.parametrize("floor", ["", "2.x", "v2.28", 2.28])
+def test_the_loader_refuses_a_floor_that_is_not_a_dotted_number(
+    floor, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "user",
+            "source": "vendor",
+            "platforms": {"linux": {"verify": "which s", "min_version": floor}},
+        },
+    )
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "min_version" in str(refusal.value)

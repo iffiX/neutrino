@@ -20,6 +20,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.devices.manifests import (
+    load_module_manifests as shipped_manifests,
+)
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import ModuleDeviceFields
@@ -351,6 +354,68 @@ def test_a_module_with_no_build_for_the_platform_is_refused(api, tmp_path):
     assert refused.status_code == 409
     assert refused.json()["detail"]["code"] == "no_platform_build"
     assert modules_file(tmp_path) == {}
+
+
+# What each shipped manifest offers a Windows machine and a Mac: the modules
+# the picker lets a person choose there.
+SUPPORTED_OFF_LINUX = {
+    "anydesk": (True, True),
+    "gitea": (False, False),
+    "podman": (False, False),
+    "samba": (False, False),
+    "teamviewer": (True, True),
+    "zfs": (False, False),
+}
+WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
+DARWIN = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"}
+
+
+def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
+    api, monkeypatch
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+
+    seen = {}
+    for platform in (WINDOWS, DARWIN):
+        runtime.device_platform[DEVICE] = platform
+        rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
+        for row in rows["modules"]:
+            seen.setdefault(row["name"], []).append(row["is_supported"])
+
+    assert {name: tuple(flags) for name, flags in seen.items()} == (SUPPORTED_OFF_LINUX)
+
+
+def test_a_machine_below_the_entry_floor_cannot_run_the_module(api, monkeypatch):
+    client, runtime = api
+    monkeypatch.setattr(
+        device_modules,
+        "load_module_manifests",
+        lambda: {
+            "floored": {
+                "title": "Floored",
+                "installer": "hub",
+                "platforms": {
+                    "linux-amd64": {"verify": "f --version", "min_version": "2.28"}
+                },
+            }
+        },
+    )
+    runtime.agent_sessions.online.add(DEVICE)
+    old = {"os": "linux", "family": "rhel", "arch": "amd64", "version": "2.17"}
+    new = {**old, "version": "2.34"}
+
+    runtime.device_platform[DEVICE] = old
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+    refused = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "floored"}
+    )
+    runtime.device_platform[DEVICE] = new
+    newer = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["is_supported"] is False
+    assert refused.json()["detail"]["code"] == "no_platform_build"
+    assert newer["is_supported"] is True
 
 
 def test_the_row_names_the_newest_task_carrying_the_modules_lines(api):

@@ -49,7 +49,8 @@ import "./modules_page.css";
  * The page opens on a machine the way Terminals and Files do. Under the
  * chips, one small tab per module the machine's page shows, each wearing the
  * state its agent last reported, and a `+` that picks which modules the page
- * shows for this machine. Under the current tab sits the module's output: the
+ * shows for this machine. A module the machine's system cannot run is greyed
+ * out in the picker and never shown as a tab. Under the current tab sits the module's output: the
  * lines the agent sends up while it installs or uninstalls, and the tail of
  * the module's own journal on the machine the rest of the time, polled while
  * the page is open. Then the four presses that write what the hub wants of
@@ -624,7 +625,7 @@ function rowsByName(
 }
 
 /** Which tabs the page shows: what the row stores, else what the machine
- * reports. */
+ * reports; never a module the machine's system cannot run. */
 function shownModules(
   device: DeviceOnlineView | null,
   rows: Record<string, DeviceModuleView>,
@@ -632,10 +633,13 @@ function shownModules(
   if (device === null) {
     return [];
   }
+  const runnable = PAGE_MODULES.filter(
+    (name) => rows[name]?.is_supported !== false,
+  );
   if (device.shown_module.length > 0) {
-    return PAGE_MODULES.filter((name) => device.shown_module.includes(name));
+    return runnable.filter((name) => device.shown_module.includes(name));
   }
-  return PAGE_MODULES.filter((name) => rows[name]?.state !== "unknown");
+  return runnable.filter((name) => rows[name]?.state !== "unknown");
 }
 
 /** Every module the picker can show, named as its manifest names it. */
@@ -643,6 +647,7 @@ function pickable(rows: Record<string, DeviceModuleView>): PickableModule[] {
   return PAGE_MODULES.map((name) => ({
     name,
     title: rows[name]?.title ?? name,
+    isSupported: rows[name]?.is_supported !== false,
   }));
 }
 

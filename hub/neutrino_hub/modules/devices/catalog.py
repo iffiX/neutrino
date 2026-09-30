@@ -109,6 +109,7 @@ class DeviceCatalogCache:
             str(platform.get("os", "")),
             str(platform.get("family", "")),
             str(platform.get("arch", "")),
+            str(platform.get("version", "")),
         )
         held = self._by_key.get(key)
         if held is None:

@@ -16,6 +16,7 @@ without either of them sorting.
 """
 
 import json
+import re
 
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_TIERS,
@@ -25,6 +26,8 @@ from neutrino_hub.utils.constants import UTILS_DATA_DIR
 from neutrino_hub.utils.json_file import strip_comments
 
 MANIFESTS_DIR = UTILS_DATA_DIR / "manifests"
+# What a platform branch's ``min_version`` looks like: 2.28, 26100, 12.3.
+MANIFEST_VERSION_PATTERN = r"\d+(\.\d+)*"
 
 
 def load_module_manifests() -> dict:
@@ -87,7 +90,8 @@ def _check_branches(file_name: str, manifest: dict) -> None:
         manifest: The parsed manifest.
 
     Raises:
-        ValueError: Naming the branch and what it lacks.
+        ValueError: Naming the branch and what it lacks, or a
+            ``min_version`` that is not a dotted number.
     """
     is_installed_by_hub = manifest.get("installer") != AGENT_MODULE_INSTALLER_USER
     platforms = manifest.get("platforms", {})
@@ -98,6 +102,14 @@ def _check_branches(file_name: str, manifest: dict) -> None:
             raise ValueError(f"manifest {file_name}: platform {key} must be an object")
         if entry == {}:
             continue
+        floor = entry.get("min_version")
+        if floor is not None and not (
+            isinstance(floor, str) and re.fullmatch(MANIFEST_VERSION_PATTERN, floor)
+        ):
+            raise ValueError(
+                f"manifest {file_name}: platform {key} min_version must be a "
+                f"dotted number, not {floor!r}"
+            )
         if not str(entry.get("verify", "") or ""):
             raise ValueError(
                 f"manifest {file_name}: platform {key} must name a verify command"

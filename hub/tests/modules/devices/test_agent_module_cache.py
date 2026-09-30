@@ -14,6 +14,7 @@ import pytest
 from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleCache,
+    is_version_below,
     looks_like_package,
     platform_keys,
     resolve_platform_entry,
@@ -304,3 +305,50 @@ def _pinned_manifest(digest):
     if digest:
         entry["sha256"] = digest
     return {"name": "rustdesk", "installer": "hub", "platforms": {AMD64_KEY: entry}}
+
+
+FLOORED = {
+    "name": "floored",
+    "platforms": {
+        "linux-amd64": {"url": "https://vendor.example/f", "min_version": "2.28"},
+        "windows": {"verify": "where f", "min_version": "17763"},
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "platform, expected_key",
+    [
+        ({**AMD64, "version": "2.36"}, "linux-amd64"),
+        ({**AMD64, "version": "2.28"}, "linux-amd64"),
+        ({**AMD64, "version": "2.27"}, ""),
+        ({**AMD64, "version": "2.3"}, ""),
+        ({**UNKNOWN, "version": "26100"}, "windows"),
+        ({**UNKNOWN, "version": "17134"}, ""),
+    ],
+)
+def test_a_platform_below_the_entry_floor_resolves_to_nothing(platform, expected_key):
+    key, entry = resolve_platform_entry(FLOORED, platform)
+
+    assert key == expected_key
+    assert (entry is None) == (expected_key == "")
+
+
+def test_a_platform_that_reports_no_version_is_not_ruled_out():
+    assert resolve_platform_entry(FLOORED, AMD64)[0] == "linux-amd64"
+
+
+@pytest.mark.parametrize(
+    "version, floor, is_below",
+    [
+        ("15.3.1", "12.3", False),
+        ("12.2", "12.3", True),
+        ("12.3", "12.3", False),
+        ("2.28", "2.28.1", True),
+        ("26100", "17763", False),
+        ("", "2.28", False),
+        ("2.17", "", False),
+    ],
+)
+def test_versions_compare_part_by_part(version, floor, is_below):
+    assert is_version_below(version, floor) is is_below

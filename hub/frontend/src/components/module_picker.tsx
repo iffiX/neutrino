@@ -19,13 +19,16 @@ import "./module_picker.css";
  *
  * It opens the same small panel the vault picker does, one row per module
  * with a check beside the ones the page shows, and every check is written to
- * the device's row at once.
+ * the device's row at once. A module the machine's system cannot run is
+ * greyed out and cannot be checked.
  */
 
 /** One module the picker can show or hide. */
 export interface PickableModule {
   name: string;
   title: string;
+  /** False greys the row out: the machine's system cannot run it. */
+  isSupported: boolean;
 }
 
 const PANEL_GAP_PX = 4;
@@ -175,7 +178,7 @@ export function ModulePicker({
               {t("ui.module_picker.hint")}
             </span>
             {modules.map((module) => {
-              const isShown = shown.includes(module.name);
+              const isShown = module.isSupported && shown.includes(module.name);
               return (
                 <button
                   key={module.name}
@@ -184,14 +187,28 @@ export function ModulePicker({
                   aria-checked={isShown}
                   className={`module_picker_row ${
                     isShown ? "module_picker_row--on" : ""
-                  }`}
-                  disabled={isSaving}
+                  } ${module.isSupported ? "" : "module_picker_row--unsupported"}`}
+                  disabled={isSaving || !module.isSupported}
+                  title={
+                    module.isSupported
+                      ? undefined
+                      : t("ui.module_picker.unsupported")
+                  }
                   onClick={() => void toggle(module.name)}
                 >
                   <span className="module_picker_check">
                     {isShown && <Icon name="check" size={12} />}
                   </span>
-                  <span className="module_picker_row_name">{module.title}</span>
+                  <span className="module_picker_row_text">
+                    <span className="module_picker_row_name">
+                      {module.title}
+                    </span>
+                    {!module.isSupported && (
+                      <span className="module_picker_row_note">
+                        {t("ui.module_picker.unsupported")}
+                      </span>
+                    )}
+                  </span>
                 </button>
               );
             })}

@@ -207,6 +207,7 @@
   "ui.module_picker.hint": "Shown on this machine's page",
   "ui.module_picker.label": "Shown modules",
   "ui.module_picker.open": "Pick which modules are shown",
+  "ui.module_picker.unsupported": "This machine's system cannot run it",
   "ui.modules.agent_offline": "The agent is offline",
   "ui.modules.configure": "Configure",
   "ui.modules.configure_close": "Hide configuration",

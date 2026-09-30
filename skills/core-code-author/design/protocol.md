@@ -242,7 +242,7 @@ The HTTP status names the class of the refusal:
 | 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing` |
-| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest` |
+| 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}` |
 | 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `geodata_unreachable`, `release_dns_failed`, `release_timed_out`, `release_refused`, `release_http_error {status}`, `release_unreachable` |
 
 Every surface words a code itself: the hub's catalogs are
@@ -809,7 +809,13 @@ an agent's channel opens or ends, and when a device is deleted.
 per platform, each with a `verify` command and, for a module the hub installs,
 an `uninstall` block; the loader refuses a manifest that lacks either. The hub
 resolves the branch for the machine's platform and sends it with the state;
-the agent has no manifest logic of its own.
+the agent has no manifest logic of its own. A branch may name `min_version`,
+a dotted number the loader checks: a machine whose platform `version` is
+below it resolves no branch, the same as a platform the manifest does not
+name, and one that reports no `version` is not ruled out. `GET
+/api/agent/module` answers such a module `is_supported: false`, the Modules
+page greys it out in its picker and never shows it as a tab, and a press on
+it is refused 409 `no_platform_build {module}`.
 
 The agent observes each module it has a runner for and reports a state derived
 from the same facts, whoever installed the software:
