@@ -499,7 +499,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `GET /api/agent/file` | `?device_id=&path=` | lists a directory |
 | `GET /api/agent/file/download` | `?device_id=&path=` | one file's bytes |
 | `GET /api/agent/file/directory/download` | `?device_id=&path=` | a directory as an archive |
-| `POST /api/agent/file/upload` | multipart with `device_id` and `path` | |
+| `POST /api/agent/file/upload` | multipart with `device_id` and `path` | the file lands in the directory `path`; the stream's `path` is that directory joined with the file's name by the device's own separator, `\` when its platform's `os` is `windows` |
 | `POST /api/agent/file/directory/create` | `{device_id, path}` | |
 | `POST /api/agent/file/rename` | `{device_id, path, name}` | |
 | `POST /api/agent/file/remove` | `{device_id, path}` | |

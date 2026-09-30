@@ -7,6 +7,7 @@ refuses comes back typed.
 """
 
 import asyncio
+import ntpath
 import posixpath
 from urllib.parse import quote
 
@@ -34,6 +35,9 @@ from neutrino_hub.web.models import (
     DeviceFileRename,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+
+# The platform tuple's ``os`` for a machine whose paths use backslashes.
+FILE_OS_WINDOWS = "windows"
 
 router = APIRouter(
     prefix="/api/agent/file",
@@ -144,7 +148,7 @@ async def upload_file(
 
     The body is a multipart form: ``device_id`` names the device, ``path``
     the destination directory, and ``file`` is the file, which lands under
-    its own name.
+    its own name, joined with the device's own separator.
 
     Args:
         request: The incoming request.
@@ -174,7 +178,7 @@ async def upload_file(
         device_id,
         {
             "op": CHANNEL_FILE_OP_UPLOAD,
-            "path": posixpath.join(directory, name),
+            "path": _joined(runtime, device_id, directory, name),
             "size": int(size),
         },
     )
@@ -274,6 +278,14 @@ def _entry_view(entry: dict) -> DeviceFileEntryView:
 
 def _directories_first(entry: DeviceFileEntryView) -> tuple:
     return (not entry.is_dir, entry.name.lower())
+
+
+def _joined(runtime: PanelRuntime, device_id: str, directory: str, name: str) -> str:
+    """A file name joined to a directory with the device's own separator."""
+    platform = runtime.device_platform.get(device_id, {})
+    if platform.get("os") == FILE_OS_WINDOWS:
+        return ntpath.join(directory, name)
+    return posixpath.join(directory, name)
 
 
 async def _open(runtime: PanelRuntime, device_id: str, args: dict):

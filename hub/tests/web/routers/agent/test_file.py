@@ -23,17 +23,24 @@ MAC = "aa:bb:cc:dd:ee:ff"
 class FakeRuntime:
     def __init__(self):
         self.agent_sessions = FakeChannelSessions(online=[MAC])
+        self.device_platform: dict = {}
 
 
 @pytest.fixture
-def api():
+def served():
     app = FastAPI()
     app.include_router(device_files.router)
     app.dependency_overrides[require_session] = lambda: None
     runtime = FakeRuntime()
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
-        yield client, runtime.agent_sessions
+        yield client, runtime
+
+
+@pytest.fixture
+def api(served):
+    client, runtime = served
+    return client, runtime.agent_sessions
 
 
 def done(**fields) -> dict:
@@ -220,6 +227,38 @@ def test_an_upload_is_one_file_pushed_through_the_stream(api):
     (stream,) = opened(sessions)
     assert stream.args == {"op": "upload", "path": "/srv/in/photo.jpg", "size": 9}
     assert stream.sent_bytes() == b"jpegbytes"
+
+
+@pytest.mark.parametrize(
+    "platform, directory, joined",
+    [
+        (
+            {"os": "windows", "arch": "x86_64"},
+            "C:\\Users\\ada",
+            "C:\\Users\\ada\\photo.jpg",
+        ),
+        ({"os": "windows", "arch": "x86_64"}, "C:\\", "C:\\photo.jpg"),
+        ({"os": "darwin", "arch": "arm64"}, "/Users/ada", "/Users/ada/photo.jpg"),
+        ({}, "/srv/in", "/srv/in/photo.jpg"),
+    ],
+)
+def test_an_upload_is_joined_with_the_devices_own_separator(
+    served, platform, directory, joined
+):
+    """The stream's ``path`` keeps its meaning: the file's full path, in the
+    form the machine itself writes."""
+    client, runtime = served
+    runtime.device_platform[MAC] = platform
+    runtime.agent_sessions.scripts["file"] = lambda args: ([], done())
+
+    client.post(
+        "/api/agent/file/upload",
+        data={"device_id": MAC, "path": directory},
+        files={"file": ("photo.jpg", b"jpegbytes", "image/jpeg")},
+    )
+
+    (stream,) = opened(runtime.agent_sessions)
+    assert stream.args["path"] == joined
 
 
 def test_an_upload_the_agent_refuses_is_typed(api):
