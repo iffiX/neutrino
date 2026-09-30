@@ -298,6 +298,15 @@ class LinuxPlatform(AgentPlatform):
             check=False,
         )
 
+    def stop_agent_service(self) -> None:
+        """Stop the agent's own service; it stays enabled. Best-effort."""
+        subprocess.run(
+            ["systemctl", "stop", AGENT_SERVICE_NAME],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+
     def agent_service_start_hint(self) -> str:
         """The systemctl command that starts the agent's own service."""
         return f"sudo systemctl enable --now {AGENT_SERVICE_NAME}"

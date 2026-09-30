@@ -10,6 +10,7 @@ log sink.
 
 import base64
 import json
+import subprocess
 
 import pytest
 
@@ -18,7 +19,13 @@ import neutrino_agent.core.enrollment as enrollment
 import neutrino_agent.core.loop as loop_module
 import neutrino_agent.core.store as store_module
 import neutrino_agent.platforms.base as platforms_base_module
+import neutrino_agent.platforms.darwin as darwin_module
+import neutrino_agent.platforms.linux as linux_module
+import neutrino_agent.platforms.windows as windows_module
 from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.darwin import DarwinPlatform
+from neutrino_agent.platforms.linux import LinuxPlatform
+from neutrino_agent.platforms.windows import WindowsPlatform
 
 
 @pytest.fixture(autouse=True)
@@ -186,3 +193,113 @@ class FakeControlAgent:
 
     def leave(self):
         self.is_left = True
+
+
+def completed(stdout: str = "", returncode: int = 0):
+    """A finished process as ``subprocess.run`` hands it back."""
+    return subprocess.CompletedProcess([], returncode, stdout=stdout, stderr="")
+
+
+class FakeSystemd:
+    """systemd for the agent's unit: ``is-active``, ``enable --now``, ``stop``."""
+
+    platform_class = LinuxPlatform
+    platform_module = linux_module
+
+    def __init__(self):
+        self.calls: list = []
+        self.is_running = False
+        self.is_refusing = False
+
+    def __call__(self, command, **kwargs):
+        command = list(command)
+        self.calls.append(command)
+        if command[:2] == ["systemctl", "is-active"]:
+            word = "active" if self.is_running else "inactive"
+            return completed(word + "\n", 0 if self.is_running else 3)
+        if self.is_refusing:
+            return completed("", 1)
+        if command[:3] == ["systemctl", "enable", "--now"]:
+            self.is_running = True
+        elif command[:2] == ["systemctl", "stop"]:
+            self.is_running = False
+        return completed("")
+
+
+class FakeServiceControlManager:
+    """The Windows service control manager through ``sc``; a start or a stop
+    reads pending once before it settles."""
+
+    platform_class = WindowsPlatform
+    platform_module = windows_module
+
+    def __init__(self):
+        self.calls: list = []
+        self.is_running = False
+        self.is_refusing = False
+        self._pending = 0
+
+    def __call__(self, command, **kwargs):
+        command = list(command)
+        self.calls.append(command)
+        if command[:2] == ["sc", "query"]:
+            if self._pending:
+                number, self._pending = self._pending, 0
+            else:
+                number = 4 if self.is_running else 1
+            return completed(f"        STATE              : {number}  WORD\n")
+        if self.is_refusing:
+            return completed("[SC] StartService FAILED 1058", 1058)
+        if command[:2] == ["sc", "start"]:
+            self.is_running, self._pending = True, 2
+        elif command[:2] == ["sc", "stop"]:
+            self.is_running, self._pending = False, 3
+        return completed("")
+
+
+class FakeLaunchd:
+    """launchd for the agent's job: ``print``, ``bootstrap``, ``kickstart``,
+    ``bootout``."""
+
+    platform_class = DarwinPlatform
+    platform_module = darwin_module
+
+    def __init__(self):
+        self.calls: list = []
+        self.is_running = False
+        self.is_refusing = False
+
+    def __call__(self, command, **kwargs):
+        command = list(command)
+        self.calls.append(command)
+        if command[:2] == ["launchctl", "print"]:
+            if not self.is_running:
+                return completed("", 113)
+            return completed("system/com.neutrino.agent = {\n\tstate = running\n}\n")
+        if self.is_refusing:
+            return completed("", 5)
+        if command[:2] == ["launchctl", "kickstart"]:
+            self.is_running = True
+        elif command[:2] == ["launchctl", "bootout"]:
+            self.is_running = False
+        return completed("")
+
+
+@pytest.fixture(params=[FakeSystemd, FakeServiceControlManager, FakeLaunchd])
+def service_manager(request, monkeypatch):
+    """Each platform's service manager, faked, answering for this machine."""
+    import neutrino_agent.cli.start as start_module
+    import neutrino_agent.cli.status as status_module
+    import neutrino_agent.cli.stop as stop_module
+
+    manager = request.param()
+    monkeypatch.setattr(manager.platform_module.subprocess, "run", manager)
+    platform = manager.platform_class()
+
+    def this_platform():
+        return platform
+
+    for module in (start_module, status_module, stop_module):
+        monkeypatch.setattr(module, "detect_platform", this_platform)
+    monkeypatch.setattr(status_module, "SERVICE_SETTLE_POLL_S", 0)
+    return manager

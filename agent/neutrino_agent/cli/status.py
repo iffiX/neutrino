@@ -25,6 +25,21 @@ STATUS_UNBOUND = "this machine has joined no gateway"
 # How long the running service gets to answer on its control socket; a
 # small board under load takes more than a second.
 STATUS_CONTROL_TIMEOUT_S = 5
+# The words a service manager uses for a service on its way somewhere:
+# systemd's and the Windows service control manager's.
+SERVICE_TRANSIENT_STATES = (
+    "activating",
+    "deactivating",
+    "reloading",
+    "start_pending",
+    "stop_pending",
+    "continue_pending",
+    "pause_pending",
+)
+# How long ``start`` and ``stop`` wait for the service to settle, and how
+# often they look.
+SERVICE_SETTLE_TIMEOUT_S = 15
+SERVICE_SETTLE_POLL_S = 0.5
 
 # What the channel's own failures say on this surface; every other code is
 # worded by the shared table. The advice lines name the next step.
@@ -114,6 +129,25 @@ def service_state() -> str:
         return detect_platform().read_agent_service_state()
     except PlatformUnsupportedError:
         return "unknown"
+
+
+def settled_service_state(*, clock=time.monotonic, sleep=time.sleep) -> str:
+    """The agent service's state once it is no longer on its way somewhere.
+
+    Args:
+        clock: The monotonic clock the wait is measured on.
+        sleep: Called with the seconds between two looks.
+
+    Returns:
+        The first state word outside the transient set, or the last one
+        read when the wait ran out.
+    """
+    deadline = clock() + SERVICE_SETTLE_TIMEOUT_S
+    state = service_state()
+    while state in SERVICE_TRANSIENT_STATES and clock() < deadline:
+        sleep(SERVICE_SETTLE_POLL_S)
+        state = service_state()
+    return state
 
 
 def word_error(error: dict) -> str:

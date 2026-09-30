@@ -142,6 +142,16 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("no agent service to start here")
 
+    def stop_agent_service(self) -> None:
+        """Stop the agent's own service, leaving it to start at the next boot.
+
+        Best-effort: the caller reads the state afterwards.
+
+        Raises:
+            PlatformUnsupportedError: When there is no service to stop.
+        """
+        raise PlatformUnsupportedError("no agent service to stop here")
+
     def agent_service_start_hint(self) -> str:
         """The command a person runs to start the agent's own service.
 

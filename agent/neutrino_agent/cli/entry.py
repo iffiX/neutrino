@@ -4,6 +4,8 @@
     nagent leave
     nagent status
     nagent sync
+    nagent start [--yes]
+    nagent stop [--yes]
     nagent rdp start [--user <name>] | stop
     nagent run
     nagent service run
@@ -18,7 +20,7 @@ import subprocess
 import sys
 
 from neutrino_agent import AGENT_VERSION
-from neutrino_agent.cli import join, leave, rdp, run, service, status, sync
+from neutrino_agent.cli import join, leave, rdp, run, service, start, status, stop, sync
 
 # Everything the agent does is root's to do, and the control socket it asks
 # through is root's to open. Only ``--version`` answers any account.
@@ -28,6 +30,8 @@ ROOT_COMMANDS = {
     "status": "it asks the agent over its root-only control socket",
     "sync": "it asks the agent over its root-only control socket",
     "rdp": "it configures this machine's desktop share",
+    "start": "it starts the agent's service",
+    "stop": "it stops the agent's service",
     "run": "the agent manages this machine",
     "service": "the agent manages this machine",
 }
@@ -60,14 +64,30 @@ def main() -> int:
     subparsers.add_parser("leave", help="leave the hub")
     subparsers.add_parser("status", help="what this machine is bound to")
     subparsers.add_parser("sync", help="ask the hub for this machine's state now")
-    subparsers.add_parser("run", help="run the agent in the foreground")
+    start_parser = subparsers.add_parser("start", help="start the agent's service")
+    start_parser.add_argument(
+        "--yes", action="store_true", help="start without asking first"
+    )
+    stop_parser = subparsers.add_parser("stop", help="stop the agent's service")
+    stop_parser.add_argument(
+        "--yes", action="store_true", help="stop without asking first"
+    )
+    subparsers.add_parser(
+        "run",
+        help="run the agent in the foreground, the entry the systemd unit and "
+        "the LaunchDaemon start; use start and stop otherwise",
+    )
     service_parser = subparsers.add_parser(
         "service", help="the agent as the Windows service"
     )
     service_actions = service_parser.add_subparsers(
         dest="service_command", metavar="<action>"
     )
-    service_actions.add_parser("run", help="what the service control manager starts")
+    service_actions.add_parser(
+        "run",
+        help="the foreground entry the service control manager starts; use "
+        "start and stop otherwise",
+    )
     rdp_parser = _add_rdp_parser(subparsers)
 
     arguments = parser.parse_args()
@@ -82,6 +102,10 @@ def main() -> int:
         return join.main(arguments.link, is_forced=arguments.yes)
     if arguments.command == "leave":
         return leave.main()
+    if arguments.command == "start":
+        return start.main(is_forced=arguments.yes)
+    if arguments.command == "stop":
+        return stop.main(is_forced=arguments.yes)
     if arguments.command == "run":
         return run.main()
     if arguments.command == "sync":

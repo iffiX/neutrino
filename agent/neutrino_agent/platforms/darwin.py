@@ -228,6 +228,18 @@ class DarwinPlatform(AgentPlatform):
         ):
             subprocess.run(command, capture_output=True, timeout=30, check=False)
 
+    def stop_agent_service(self) -> None:
+        """Unload the agent's own job; its plist loads it at the next boot.
+
+        Best-effort.
+        """
+        subprocess.run(
+            ["launchctl", "bootout", DARWIN_LAUNCHD_TARGET],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+
     def agent_service_start_hint(self) -> str:
         """The launchctl command that loads the agent's own job."""
         return f"sudo launchctl bootstrap system {AGENT_LAUNCHD_PLIST_PATH}"

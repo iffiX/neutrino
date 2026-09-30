@@ -1,7 +1,8 @@
 """``nagent run``: the agent in the foreground.
 
-This is what the systemd unit starts. The control socket always serves — it
-is how ``nagent`` reaches the running agent.
+This is the entry the systemd unit and the LaunchDaemon start; a person
+starts and stops the service with ``nagent start`` and ``nagent stop``. The
+control socket always serves: it is how ``nagent`` reaches the running agent.
 """
 
 from neutrino_agent.control.server import ControlServer

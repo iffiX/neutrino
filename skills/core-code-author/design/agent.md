@@ -46,6 +46,7 @@ hub's pages, in the agent, and in the client:
 | Say which modules are absent, installed, stopped or running, and configure them | Send a report now (`nagent sync`) |
 | Reboot, shut down, reinstall the agent | Share the desktop and stop sharing it |
 | Read and set up a person's own AnyDesk or TeamViewer | Read the binding and status |
+| | Start and stop the agent's service |
 
 Root is uid 0. `nagent` refuses any other account; the one thing anybody can
 run is `nagent --version`.
@@ -197,7 +198,8 @@ is its only client:
 | `status` | reads the binding |
 | `sync` | sends a report now |
 | `rdp start`, `rdp stop` | share and unshare the desktop |
-| `run` | what systemd starts |
+| `start`, `stop` | start and stop the agent's service through systemd, the service control manager or launchd; the binding is not touched |
+| `run` | the foreground entry systemd and launchd start; `service run` is Windows' |
 
 Connections persist between requests and each is served on its own thread.
 Every refusal is `{"code": ...}`; a handler exception never drops the

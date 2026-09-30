@@ -18,7 +18,9 @@ def test_the_gate_covers_every_verb():
         "rdp",
         "run",
         "service",
+        "start",
         "status",
+        "stop",
         "sync",
     ]
 
