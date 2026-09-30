@@ -513,7 +513,7 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
     assert "Prebuilt Binaries License" in (carried / "wintun.txt").read_text()
     note = (carried / "packet_stub.txt").read_text()
     assert "not Npcap's Packet.dll" in note
-    assert "client/packaging/packet_stub.c" in note
+    assert "client/desktop/packaging/packet_stub.c" in note
 
 
 # --- the stand-in packet.dll ---
@@ -601,7 +601,7 @@ def test_the_stand_in_exports_what_the_core_imports():
 
 def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
     workflow = (
-        Path(build_msi.__file__).resolve().parents[2]
+        Path(build_msi.__file__).resolve().parents[3]
         / ".github"
         / "workflows"
         / "release.yml"
@@ -609,8 +609,8 @@ def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
     job = workflow.split("  client_windows:")[1].split("\n  client_macos:")[0]
 
     assert "ilammy/msvc-dev-cmd" in job
-    compile_at = job.index("cl /nologo /O2 /LD client/packaging/packet_stub.c")
-    build_at = job.index("python client/packaging/build_msi.py")
+    compile_at = job.index("cl /nologo /O2 /LD client/desktop/packaging/packet_stub.c")
+    build_at = job.index("python client/desktop/packaging/build_msi.py")
     assert compile_at < build_at
     assert "--packet-dll build/packet_stub/packet.dll" in job
 

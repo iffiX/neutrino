@@ -1,11 +1,11 @@
 """The client's GUI page, loaded from the frontend files the package ships.
 
-The page is plain HTML, CSS and JavaScript under ``client/frontend/``, copied
-into ``neutrino_client/data/gui/`` by the packaging builds; a checkout with
-no built copy reads the source directory directly. The page's requests ride
-the in-process channel over a message bridge. The document carries both word
-catalogs inlined, the way the stylesheets and the scripts are, xterm.js from
-``vendor/`` among them, so the page loads nothing on its own.
+The page is plain HTML, CSS and JavaScript under ``client/desktop/frontend/``,
+copied into ``neutrino_client/data/gui/`` by the packaging builds; a checkout
+with no built copy reads the source directory directly. The page's requests
+ride the in-process channel over a message bridge. The document carries both
+word catalogs inlined, the way the stylesheets and the scripts are, xterm.js
+from ``vendor/`` among them, so the page loads nothing on its own.
 
 The page redraws only when the state payload actually changed, and never
 while the person holds a text selection, a focused form field, or an open
@@ -37,7 +37,7 @@ def gui_dir() -> pathlib.Path:
 
     Returns:
         The packaged ``data/gui`` directory when it holds the page, the
-        ``client/frontend`` source directory otherwise.
+        ``client/desktop/frontend`` source directory otherwise.
 
     Raises:
         FileNotFoundError: When neither directory holds the page.
@@ -114,9 +114,7 @@ def window_icon_path() -> str:
         # else, so that one comes first where it exists.
         names.insert(0, "neutrino_client.ico")
     candidates = [GUI_DATA_DIR / name for name in names]
-    candidates.append(
-        _PACKAGE_DIR.parent.parent / "images" / "icons" / "neutrino_256.png"
-    )
+    candidates.append(_PACKAGE_DIR.parents[2] / "images" / "icons" / "neutrino_256.png")
     for path in candidates:
         if path.is_file():
             return str(path)

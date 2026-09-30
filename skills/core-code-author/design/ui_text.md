@@ -114,14 +114,14 @@ The panel and the client page speak English and Simplified Chinese; the
 command lines stay English. Every word a surface shows comes from a catalog,
 never from a literal in a component.
 
-**One catalog format on both surfaces.** A flat JSON object per language,
-keys `ui.<area>.<thing>`, `state.<token>` and `code.<code>`, values whole
-sentences or labels with `{name}` placeholders. The hub keeps one file per
-page group under `hub/frontend/src/locales/<language>/`; the client keeps
-`client/frontend/locales/<language>.json`. `t(key, params)` reads the current
-language, falls back to English, then to the key itself. A key set differing
-between the two languages, a key used in the source but absent from English,
-or a backend code with no `code.<code>` entry fails the tests.
+**One catalog format on both surfaces.** A flat JSON object per language, keys
+`ui.<area>.<thing>`, `state.<token>` and `code.<code>`, values whole sentences
+or labels with `{name}` placeholders. The hub keeps one file per page group
+under `hub/frontend/src/locales/<language>/`; the client keeps
+`client/desktop/frontend/locales/<language>.json`. `t(key, params)` reads the
+current language, falls back to English, then to the key itself. A key set
+differing between the two languages, a key used in the source but absent from
+English, or a backend code with no `code.<code>` entry fails the tests.
 
 **Where the language is chosen.** The hub's is a setting in
 `config/web/settings.json`, asked first by `nhub setup` and by the web setup

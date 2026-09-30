@@ -21,7 +21,7 @@ du -h "$STATE/src.tgz" | cut -f1
 # box has no MSVC, which is what the release workflow builds it with.
 echo "== building packet.dll"
 x86_64-w64-mingw32-gcc -shared -O2 -o "$STATE/packet.dll" \
-    "$REPO/client/packaging/packet_stub.c"
+    "$REPO/client/desktop/packaging/packet_stub.c"
 
 echo "== pushing to $(win_ip)"
 ssh_win 'New-Item -Force -ItemType Directory -Path C:\neutrino, C:\neutrino\src | Out-Null'

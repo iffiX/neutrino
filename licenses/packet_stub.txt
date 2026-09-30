@@ -2,7 +2,7 @@ packet.dll in the Windows client
 --------------------------------
 
 The packet.dll beside easytier-core.exe is not Npcap's Packet.dll. It is a
-stand-in built from client/packaging/packet_stub.c in the Neutrino
+stand-in built from client/desktop/packaging/packet_stub.c in the Neutrino
 repository, and it is under the Neutrino licence:
 
 MIT License

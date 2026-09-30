@@ -255,11 +255,11 @@ sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 
 <img src="images/web/architecture_zh.svg" width="100%" alt="架构" />
 
-| 目录      | 内容                                                                                                                   |
-| --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `hub/`    | `neutrino_hub` 包：`modules/` 每个功能一个模块，`web/` FastAPI 面板，`cli/` 全部 `nhub` 子命令，`frontend/` React 源码 |
-| `agent/`  | `neutrino_agent` 包：纯标准库，Linux，root，无窗口                                                                     |
-| `client/` | `neutrino_client` 包：托盘和窗口，`packaging/` 里是 deb、rpm、msi、pkg 的构建脚本                                      |
+| 目录              | 内容                                                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `hub/`            | `neutrino_hub` 包：`modules/` 每个功能一个模块，`web/` FastAPI 面板，`cli/` 全部 `nhub` 子命令，`frontend/` React 源码 |
+| `agent/`          | `neutrino_agent` 包：纯标准库，Linux，root，无窗口                                                                     |
+| `client/desktop/` | `neutrino_client` 包：托盘和窗口，`packaging/` 里是 deb、rpm、msi、pkg 的构建脚本                                      |
 
 </details>
 

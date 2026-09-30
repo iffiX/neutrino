@@ -280,10 +280,10 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build/packet_stub | Out-Null
-          cl /nologo /O2 /LD client/packaging/packet_stub.c /Fe:build/packet_stub/packet.dll /Fo:build/packet_stub/
+          cl /nologo /O2 /LD client/desktop/packaging/packet_stub.c /Fe:build/packet_stub/packet.dll /Fo:build/packet_stub/
           if ($LASTEXITCODE -ne 0) { throw "cl exited $LASTEXITCODE" }
 
-      - run: python client/packaging/build_msi.py --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
+      - run: python client/desktop/packaging/build_msi.py --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
 
       # The installer is what ships, so it is run here rather than only
       # compiled: whether the compiled client answers, whether the entry
@@ -341,7 +341,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: python3 client/packaging/build_pkg.py --output-dir dist --architecture arm64
+      - run: python3 client/desktop/packaging/build_pkg.py --output-dir dist --architecture arm64
 
       - name: Install it, use it
         run: |

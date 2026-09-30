@@ -1,6 +1,6 @@
 """Build the client's .rpm.
 
-    python3 client/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
+    python3 client/desktop/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
 The same payload the .deb carries: the client compiled under
 /opt/neutrino_client with the window's bindings inside it, the mount helper

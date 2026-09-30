@@ -21,7 +21,7 @@ new floor is written down.
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build_release.py:164`) | Debian 12, Ubuntu 22.04 |
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build_release.py:174`) | RHEL 9, AlmaLinux 9 |
 | client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
-| client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`client/packaging/build_msi.py:28`, `client/packaging/build_msi.py:69`) | Windows 10 1809 |
+| client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`client/desktop/packaging/build_msi.py:28`, `client/desktop/packaging/build_msi.py:69`) | Windows 10 1809 |
 | client `.apk` | none | `openProxyFileDescriptor`, which the Files provider serves a share's file through, from API level 26 (`minSdk` in `client/android/`) | Android 8.0 |
 | client iOS app | none | `NSFileProviderReplicatedExtension`, the File Provider extension's base class, from iOS 16 (the deployment target in `client/ios/`) | iOS 16 |
 
@@ -36,9 +36,9 @@ machine installs and is checked against whichever of the two names its
 repositories carry (`hub/neutrino_hub/system/package_manager.py:128`).
 
 The client's `.rpm` reaches RHEL 9 and AlmaLinux 9 because either WebKit2 ABI
-satisfies it, and RHEL 9 has 4.0 (`client/packaging/build_rpm.py:54`). The
-introspection library on RHEL 9 is older than the bindings need, so the
-package installs its own (`client/packaging/payload.py:127`).
+satisfies it, and RHEL 9 has 4.0 (`client/desktop/packaging/build_rpm.py:54`).
+The introspection library on RHEL 9 is older than the bindings need, so the
+package installs its own (`client/desktop/packaging/payload.py:127`).
 
 The two phone rows are the floor each app's build declares: `minSdk 26` in
 the Gradle project and a deployment target of 16.0 in the Xcode project. The
@@ -79,11 +79,11 @@ releases a supported family provides.
 
 | Component | Minimum | What needs it | Where |
 | --- | --- | --- | --- |
-| WebKitGTK | the 4.0 or the 4.1 ABI | the window itself; `ctypes.CDLL` opens the newest library the machine has and pins the bindings to that API version | `client/neutrino_client/constants.py:88`, `client/neutrino_client/gui/webkitgtk.py:196` |
-| girepository | 1.72, installed by the package | PyGObject 3.50 compiles against calls that arrived in 1.72, and RHEL 9 has 1.68 | `client/packaging/payload.py:127` |
-| libffi | 8 | the bindings compiled in `debian:12` link it | `client/packaging/payload.py:136` |
-| AyatanaAppIndicator3 | optional | the tray; without `libayatana-appindicator3.so.1` the tray is drawn as a GTK status icon | `client/neutrino_client/gui/tray_linux.py:17`, `client/neutrino_client/gui/tray_linux.py:98` |
-| pyobjc | 12.2.2, from wheels tagged macOS 10.13 | the macOS window | `client/packaging/build_pkg.py:75` |
+| WebKitGTK | the 4.0 or the 4.1 ABI | the window itself; `ctypes.CDLL` opens the newest library the machine has and pins the bindings to that API version | `client/desktop/neutrino_client/constants.py:88`, `client/desktop/neutrino_client/gui/webkitgtk.py:196` |
+| girepository | 1.72, installed by the package | PyGObject 3.50 compiles against calls that arrived in 1.72, and RHEL 9 has 1.68 | `client/desktop/packaging/payload.py:127` |
+| libffi | 8 | the bindings compiled in `debian:12` link it | `client/desktop/packaging/payload.py:136` |
+| AyatanaAppIndicator3 | optional | the tray; without `libayatana-appindicator3.so.1` the tray is drawn as a GTK status icon | `client/desktop/neutrino_client/gui/tray_linux.py:17`, `client/desktop/neutrino_client/gui/tray_linux.py:98` |
+| pyobjc | 12.2.2, from wheels tagged macOS 10.13 | the macOS window | `client/desktop/packaging/build_pkg.py:75` |
 | Windows Installer | 5.0 | the `.msi`, which WiX 6 writes at that version by default | `packaging/wix_build.py:28` |
 
 ## Why the client's floor comes from its build container
@@ -118,14 +118,14 @@ cp313 wheel for x86-64 and for aarch64, the highest tag among them being
 the staged tree, takes the highest `GLIBC_` version any of them names, and
 exits when it is above `PACKAGING_GLIBC_FLOOR`
 (`hub/packaging/venv_tree.py:633`, `agent/packaging/payload.py:343`,
-`client/packaging/payload.py:437`). The constant is 2.34 in all three
+`client/desktop/packaging/payload.py:437`). The constant is 2.34 in all three
 packages (`hub/packaging/constants.py:12`, `agent/packaging/constants.py:12`,
-`client/packaging/constants.py:13`). A build whose tree needs more than that
-fails at that line, before anything is published.
+`client/desktop/packaging/constants.py:13`). A build whose tree needs more than
+that fails at that line, before anything is published.
 
 **The two formats declare the floor differently.** An `.rpm` gets its glibc
-requirement from a scan of its own payload, with only the interpreter's
-library excluded (`client/packaging/build_rpm.py:97`), so `dnf` rejects a
+requirement from a scan of its own payload, with only the interpreter's library
+excluded (`client/desktop/packaging/build_rpm.py:97`), so `dnf` rejects a
 package the machine is too old for. A `.deb` declares no libc dependency at
 all, and `apt` installs it on a machine below the floor, where the first run
 fails on the missing symbol version. The assertion at build time takes the

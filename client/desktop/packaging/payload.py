@@ -33,13 +33,13 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import nuitka_build  # noqa: E402
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
 
 CLIENT_ROOT = Path(__file__).resolve().parent.parent
-REPO_ROOT = CLIENT_ROOT.parent
+REPO_ROOT = CLIENT_ROOT.parent.parent
 PACKAGE_NAME = "neutrino-client"
 
 # A glibc version as readelf's version sections name it.
@@ -233,7 +233,7 @@ def version() -> str:
     ):
         if line.startswith("version = "):
             return line.split('"')[1]
-    raise SystemExit("no version in client/pyproject.toml")
+    raise SystemExit("no version in client/desktop/pyproject.toml")
 
 
 def machine_name(architecture: str) -> str:

@@ -53,9 +53,9 @@ raise RefusalError("vault_locked", params={})
 - Every public docstring names each kind it raises under `Raises:` and the
   condition, so a caller reads the contract without reading the body.
 - The three packages keep three tables. `hub/neutrino_hub/exceptions.py`,
-  `agent/neutrino_agent/exceptions.py` and `client/neutrino_client/exceptions.py`
-  never import one another; a kind two packages both need is copied, in the
-  same way the wire code is.
+  `agent/neutrino_agent/exceptions.py` and
+  `client/desktop/neutrino_client/exceptions.py` never import one another; a
+  kind two packages both need is copied, in the same way the wire code is.
 
 ## Choosing the kind
 

@@ -15,7 +15,7 @@ Not pure: reads the icon sources and writes files.
 import struct
 from pathlib import Path
 
-ICONS_DIR = Path(__file__).resolve().parent.parent.parent / "images" / "icons"
+ICONS_DIR = Path(__file__).resolve().parents[3] / "images" / "icons"
 
 # The edges each container carries, and for macOS the four-letter type that
 # names one. Sizes above what the source set holds are left out rather than

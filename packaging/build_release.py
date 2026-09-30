@@ -188,13 +188,14 @@ CLIENT_BUILDS = {
 }
 
 CLIENT_CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/client /build/images /build/packaging && "
-    "cp -r /src/client/neutrino_client /src/client/packaging "
-    "/src/client/frontend /src/client/pyproject.toml /build/client/ && "
+    "{install} && mkdir -p /build/client/desktop /build/images /build/packaging && "
+    "cp -r /src/client/desktop/neutrino_client /src/client/desktop/packaging "
+    "/src/client/desktop/frontend /src/client/desktop/pyproject.toml "
+    "/build/client/desktop/ && "
     "cp /src/packaging/*.py /build/packaging/ && "
     "cp -r /src/images/icons /build/images/ && "
     "cp -r /src/licenses /build/licenses && cd /build && "
-    "python3 client/packaging/{script} --output-dir /out "
+    "python3 client/desktop/packaging/{script} --output-dir /out "
     "--architecture {architecture}"
 )
 

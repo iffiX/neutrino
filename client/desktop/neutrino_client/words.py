@@ -1,10 +1,11 @@
 """The words the client's own surfaces say, in the language this person picked.
 
-The catalogs are the page's own files, ``client/frontend/locales/<language>.json``,
-copied into ``neutrino_client/data/gui/locales/`` by the packaging builds; a
-checkout with no built copy reads the source directory directly. One flat
-object per language, keys such as ``ui.tray.open`` and ``code.busy``, values
-whole sentences with ``{name}`` holes.
+The catalogs are the page's own files,
+``client/desktop/frontend/locales/<language>.json``, copied into
+``neutrino_client/data/gui/locales/`` by the packaging builds; a checkout with
+no built copy reads the source directory directly. One flat object per
+language, keys such as ``ui.tray.open`` and ``code.busy``, values whole
+sentences with ``{name}`` holes.
 
 The page is handed both catalogs inlined in its document; Python reads the
 same files here, so the window title, the tray menu and the page never drift
@@ -32,8 +33,8 @@ def locales_dir() -> pathlib.Path:
 
     Returns:
         The packaged ``data/gui/locales`` directory when it holds the
-        English catalog, the ``client/frontend/locales`` source directory
-        otherwise.
+        English catalog, the ``client/desktop/frontend/locales`` source
+        directory otherwise.
 
     Raises:
         FileNotFoundError: When neither directory holds the catalogs.

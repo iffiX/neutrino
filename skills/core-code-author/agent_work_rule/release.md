@@ -254,14 +254,14 @@ podman or docker is not optional. `--architecture arm64` runs those containers
 under emulation; the host needs QEMU registered with binfmt_misc first.
 
 The client is compiled, and Nuitka under emulation takes hours, so its Linux
-packages are built on a machine of their own architecture. The Windows
-`.msi` needs Windows and WiX (`dotnet tool install --global wix`):
-`client/packaging/build_msi.py` builds it, and `--stage-only` writes and
-checks the whole payload without one. Either way it takes `--packet-dll`,
-the stand-in `packet.dll` built from `client/packaging/packet_stub.c` (MSVC
-in the release workflow, MinGW for the lab box), and refuses to build
+packages are built on a machine of their own architecture. The Windows `.msi`
+needs Windows and WiX (`dotnet tool install --global wix`):
+`client/desktop/packaging/build_msi.py` builds it, and `--stage-only` writes
+and checks the whole payload without one. Either way it takes `--packet-dll`,
+the stand-in `packet.dll` built from `client/desktop/packaging/packet_stub.c`
+(MSVC in the release workflow, MinGW for the lab box), and refuses to build
 without it. The macOS `.pkg` needs macOS:
-`client/packaging/build_pkg.py`.
+`client/desktop/packaging/build_pkg.py`.
 
 The agent's `.msi` is built on Windows by `agent/packaging/build_msi.py` and
 its `.pkg` on a Mac by `agent/packaging/build_pkg.py`, from the same shared

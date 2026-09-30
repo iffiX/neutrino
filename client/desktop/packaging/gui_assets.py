@@ -1,9 +1,9 @@
 """Stage the GUI page and icon into a built client package tree.
 
-The page's source of truth is ``client/frontend/``; the one icon source is
-``images/icons/`` at the repository root. Every client package build copies
-both into the package's ``data/gui/``, which a checkout does not carry. The
-word catalogs go with them, under ``data/gui/locales/``, where the page's
+The page's source of truth is ``client/desktop/frontend/``; the one icon
+source is ``images/icons/`` at the repository root. Every client package build
+copies both into the package's ``data/gui/``, which a checkout does not carry.
+The word catalogs go with them, under ``data/gui/locales/``, where the page's
 loader and the resident both read them, and the vendored terminal library
 under ``data/gui/vendor/``.
 
@@ -19,7 +19,7 @@ CLIENT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = CLIENT_ROOT / "frontend"
 LOCALES_DIR = FRONTEND_DIR / "locales"
 VENDOR_DIR = FRONTEND_DIR / "vendor"
-ICONS_DIR = CLIENT_ROOT.parent / "images" / "icons"
+ICONS_DIR = CLIENT_ROOT.parent.parent / "images" / "icons"
 
 
 def stage_gui(package_dir: Path) -> None:

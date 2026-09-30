@@ -1,6 +1,6 @@
 """Build the client's macOS installer.
 
-    python3 client/packaging/build_pkg.py --output-dir dist/
+    python3 client/desktop/packaging/build_pkg.py --output-dir dist/
 
 The installer carries the client compiled into an app bundle: Nuitka turns
 the package, the interpreter it runs on and the window's Python side into
@@ -39,7 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import bundled  # noqa: E402
 import icons  # noqa: E402
 import nuitka_build  # noqa: E402

@@ -221,11 +221,11 @@ The HTTP status names the class of the refusal:
 
 Every surface words a code itself: the hub's catalogs are
 `hub/frontend/src/locales/<language>/codes.json` under `code.<code>`, the
-client's are `client/frontend/locales/<language>.json`, and each command line
-has its `cli/wording.py`. A code with no sentence fails the completeness test
-of its surface. `hub/tests/web/test_code_wording.py` walks every raise site in
-the hub, and the agent's and the client's wording tests walk theirs. A new
-code and its wording are one change.
+client's are `client/desktop/frontend/locales/<language>.json`, and each
+command line has its `cli/wording.py`. A code with no sentence fails the
+completeness test of its surface. `hub/tests/web/test_code_wording.py` walks
+every raise site in the hub, and the agent's and the client's wording tests
+walk theirs. A new code and its wording are one change.
 
 ## What exists
 

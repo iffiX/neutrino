@@ -1,17 +1,17 @@
 """The page's contract, checked on the frontend files it ships.
 
-The page is plain HTML, CSS and JavaScript under ``client/frontend/``, so
-what can be checked here is the contract's visible surface: the sidebar in
-its order with a glyph on every entry and the settings entry below a rule,
-one hub row per hub and the join row always there, one panel per kind
-listing every hub's entries in hub order with the line each carries while
-nothing is offered, every entry's one provider line, the one AI switch,
-the staging keyed by service key, the redraw guards, the bridge adapter with no direct
-network reach, and the word catalogs asserted complete: the two languages
-carry the same keys, every key the page asks for is in them, and every
-``{code}`` and every state token the client can emit is enumerated from the
-source and must have a wording, so a new code or state without a word fails
-this suite. Nothing of the agent's Modules section is left.
+The page is plain HTML, CSS and JavaScript under ``client/desktop/frontend/``,
+so what can be checked here is the contract's visible surface: the sidebar in
+its order with a glyph on every entry and the settings entry below a rule, one
+hub row per hub and the join row always there, one panel per kind listing
+every hub's entries in hub order with the line each carries while nothing is
+offered, every entry's one provider line, the one AI switch, the staging keyed
+by service key, the redraw guards, the bridge adapter with no direct network
+reach, and the word catalogs asserted complete: the two languages carry the
+same keys, every key the page asks for is in them, and every ``{code}`` and
+every state token the client can emit is enumerated from the source and must
+have a wording, so a new code or state without a word fails this suite.
+Nothing of the agent's Modules section is left.
 """
 
 import pathlib
@@ -165,7 +165,7 @@ def test_the_document_carries_both_catalogs_so_the_page_fetches_nothing():
 def test_the_page_loads_from_the_checkout_when_nothing_is_built():
     assert page.gui_dir() == page.GUI_SOURCE_DIR
     assert page.GUI_SOURCE_DIR.name == "frontend"
-    assert page.GUI_SOURCE_DIR.parent.name == "client"
+    assert page.GUI_SOURCE_DIR.parent.name == "desktop"
     assert words.locales_dir() == words.LOCALES_SOURCE_DIR
 
 

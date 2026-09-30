@@ -1,6 +1,6 @@
 """Build the client's .deb.
 
-    python3 client/packaging/build_deb.py --output-dir dist/ --architecture amd64
+    python3 client/desktop/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
 The package carries the client compiled under /opt/neutrino_client, the
 window's bindings inside it, the mount helper compiled beside the path

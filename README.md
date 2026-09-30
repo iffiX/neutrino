@@ -230,14 +230,14 @@ The three packages share one version number, and the panel marks an agent or a c
 | Client    | tray and window · port forwarder · mount helper · cc-switch · RustDesk viewer                                                                                        |
 
 ```bash
-pip install -e "hub[dev]" && pip install -e agent && pip install -e client
+pip install -e "hub[dev]" && pip install -e agent && pip install -e client/desktop
 black --check hub agent client
 cd hub && pytest -q
 cd hub/frontend && npm run build
 nhub apply --dry-run
 ```
 
-Python 3.12 or newer, Node 24 or newer, black and pytest; `hub/`, `agent/` and `client/` are the three packages, `config/` the source of truth at runtime, `docs/` the site and `packaging/` the VM rig. The contributor standard is [AGENTS.md](AGENTS.md).
+Python 3.12 or newer, Node 24 or newer, black and pytest; `hub/`, `agent/` and `client/desktop/` are the three packages, `config/` the source of truth at runtime, `docs/` the site and `packaging/` the VM rig. The contributor standard is [AGENTS.md](AGENTS.md).
 </details>
 
 ## Acknowledgements

@@ -52,10 +52,10 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: pip install -e client pytest
+      - run: pip install -e client/desktop pytest
 
       - run: pytest -q
-        working-directory: client
+        working-directory: client/desktop
 
   agent_oldest_python:
     name: agent on Python 3.9

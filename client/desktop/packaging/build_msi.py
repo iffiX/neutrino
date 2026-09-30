@@ -1,6 +1,6 @@
 """Build the client's Windows installer.
 
-    python client/packaging/build_msi.py --output-dir dist/ --architecture x64 \
+    python client/desktop/packaging/build_msi.py --output-dir dist/ --architecture x64 \
         --packet-dll build/packet_stub/packet.dll
 
 The installer carries the client compiled: Nuitka turns the package, the
@@ -62,7 +62,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import bundled  # noqa: E402
 import icons  # noqa: E402
 import nuitka_build  # noqa: E402
@@ -804,7 +804,8 @@ def _check_packet_dll(packet_dll: "Path | None") -> None:
     if packet_dll is None:
         raise SystemExit(
             "easytier-core does not start without a packet.dll beside it; "
-            "build one from client/packaging/packet_stub.c and pass --packet-dll"
+            "build one from client/desktop/packaging/packet_stub.c and pass "
+            "--packet-dll"
         )
     if not packet_dll.is_file():
         raise SystemExit(f"there is no packet.dll at {packet_dll}")
