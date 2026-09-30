@@ -23,6 +23,7 @@
     "key_show": "显示密钥",
     "leave_confirm": "离开 {hub}？本机会忘掉它的链接和密钥。",
     "or": "或",
+    "overlay_count": "此 hub 发布了 {count} 个虚拟网",
     "scan_hint": "对准 hub 客户端页面上的二维码"
   }
 }

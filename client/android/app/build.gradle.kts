@@ -179,6 +179,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+    implementation(files("libs/netbird.aar"))
     implementation(libs.zxing.core)
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

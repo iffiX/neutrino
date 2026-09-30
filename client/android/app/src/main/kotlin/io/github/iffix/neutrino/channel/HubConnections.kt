@@ -36,7 +36,7 @@ class HubConnections(
 ) {
     private val sessions = MutableStateFlow<Map<String, HubSession>>(emptyMap())
 
-    /** Every hub's view, in the order joined. */
+    /** Every hub's view, in the order joined, each with its binding as the store keeps it now. */
     @OptIn(ExperimentalCoroutinesApi::class)
     val views: Flow<List<HubView>> = sessions.flatMapLatest { held ->
         if (held.isEmpty()) {
@@ -44,6 +44,8 @@ class HubConnections(
         } else {
             combine(held.values.map { it.view }) { it.toList() }
         }
+    }.combine(store.bindings) { views, bindings ->
+        views.map { view -> bindings.firstOrNull { it.id == view.binding.id }?.let { view.copy(binding = it) } ?: view }
     }
 
     /** Run one session per binding, following the store as bindings come and go. */

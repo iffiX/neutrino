@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.shell
 
+import android.content.Intent
 import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelResult
 import kotlinx.serialization.json.JsonObject
@@ -52,4 +53,27 @@ interface ClientActions {
      * @param isSecret Whether the phone should keep it out of its clipboard preview.
      */
     fun copy(text: String, isSecret: Boolean = false)
+
+    /**
+     * What the phone asks before the app may run a VPN.
+     *
+     * @return The consent screen to show, or null once the person has consented.
+     */
+    fun overlayConsent(): Intent?
+
+    /**
+     * Want, or stop wanting, one hub's virtual network.
+     *
+     * @param bindingId The hub.
+     * @param isWanted The wish.
+     */
+    fun setOverlayWanted(bindingId: String, isWanted: Boolean)
+
+    /**
+     * Pick which of a hub's virtual networks to join.
+     *
+     * @param bindingId The hub.
+     * @param provider The network's provider.
+     */
+    fun pickOverlay(bindingId: String, provider: String)
 }

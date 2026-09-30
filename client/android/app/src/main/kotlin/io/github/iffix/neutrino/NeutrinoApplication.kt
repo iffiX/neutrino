@@ -5,12 +5,15 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.KeystoreSecretSealer
 import io.github.iffix.neutrino.channel.ClientMachine
 import io.github.iffix.neutrino.channel.HubConnections
 import io.github.iffix.neutrino.channel.OkHttpHubTransport
+import io.github.iffix.neutrino.overlay.OverlayController
+import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.settings.ClientSettingsStore
 import java.io.File
 import java.net.Inet4Address
@@ -57,6 +60,13 @@ class NeutrinoApplication : Application() {
         HubConnections(bindingStore, OkHttpHubTransport(), machine, ::resolveHubName, scope)
     }
 
+    /** The wish to be on a hub's virtual network, and the one network the VPN runs. */
+    val overlays: OverlayController by lazy {
+        OverlayController(bindingStore, ServiceOverlayLauncher(this), SystemClock::elapsedRealtime) { bindingId ->
+            connections.session(bindingId)?.networkChanged()
+        }
+    }
+
     /** The name this phone goes by: the one the person gave it, else its model. */
     val deviceName: String
         get() = Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
@@ -72,6 +82,7 @@ class NeutrinoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         connections.start()
+        overlays.start(scope, connections.views)
         val connectivity = getSystemService(ConnectivityManager::class.java)
         connectivity.registerDefaultNetworkCallback(NetworkWatch())
     }

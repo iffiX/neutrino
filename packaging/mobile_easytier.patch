@@ -1,0 +1,232 @@
+diff -ruN a/easytier-contrib/easytier-android-jni/Cargo.toml b/easytier-contrib/easytier-android-jni/Cargo.toml
+--- a/easytier-contrib/easytier-android-jni/Cargo.toml
++++ b/easytier-contrib/easytier-android-jni/Cargo.toml
+@@ -13,4 +13,5 @@
+ android_logger = "0.13"
+ serde = { version = "1.0.220", features = ["derive"] }
+ serde_json = "1.0"
+-easytier = { path = "../../easytier" }
+\ No newline at end of file
++easytier = { path = "../../easytier" }
++easytier-ffi = { path = "../easytier-ffi" }
+\ No newline at end of file
+diff -ruN a/easytier-contrib/easytier-android-jni/src/lib.rs b/easytier-contrib/easytier-android-jni/src/lib.rs
+--- a/easytier-contrib/easytier-android-jni/src/lib.rs
++++ b/easytier-contrib/easytier-android-jni/src/lib.rs
+@@ -6,6 +6,9 @@
+ use std::ffi::{CStr, CString};
+ use std::ptr;
+ 
++// The C interface is linked into this library.
++use easytier_ffi as _;
++
+ // 定义 KeyValuePair 结构体
+ #[repr(C)]
+ #[derive(Clone, Copy)]
+@@ -26,6 +29,13 @@
+         length: usize,
+     ) -> std::ffi::c_int;
+     fn collect_network_infos(infos: *mut KeyValuePair, max_length: usize) -> std::ffi::c_int;
++    fn run_web_client(
++        config_server: *const std::ffi::c_char,
++        hostname: *const std::ffi::c_char,
++        state_dir: *const std::ffi::c_char,
++        secure_mode: std::ffi::c_int,
++    ) -> std::ffi::c_int;
++    fn stop_web_client() -> std::ffi::c_int;
+ }
+ 
+ // 初始化 Android 日志
+@@ -317,3 +327,50 @@
+         None => ptr::null_mut(),
+     }
+ }
++
++/// Start the web client of an EasyTier console.
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_com_easytier_jni_EasyTierJNI_runWebClient(
++    mut env: JNIEnv,
++    _class: JClass,
++    config_server: JString,
++    hostname: JString,
++    state_dir: JString,
++    secure_mode: jni::sys::jboolean,
++) -> jint {
++    Lazy::force(&LOGGER_INIT);
++    let texts = [&config_server, &hostname, &state_dir].map(|value| jstring_to_cstring(&mut env, value));
++    let [Ok(config_server), Ok(hostname), Ok(state_dir)] = texts else {
++        throw_exception(&mut env, "Invalid web client argument");
++        return -1;
++    };
++    unsafe {
++        let result = run_web_client(
++            config_server.as_ptr(),
++            hostname.as_ptr(),
++            state_dir.as_ptr(),
++            secure_mode as std::ffi::c_int,
++        );
++        if result != 0
++            && let Some(error) = get_last_error()
++        {
++            throw_exception(&mut env, &error);
++        }
++        result
++    }
++}
++
++/// Stop the web client and the networks it started.
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_com_easytier_jni_EasyTierJNI_stopWebClient(mut env: JNIEnv, _class: JClass) -> jint {
++    Lazy::force(&LOGGER_INIT);
++    unsafe {
++        let result = stop_web_client();
++        if result != 0
++            && let Some(error) = get_last_error()
++        {
++            throw_exception(&mut env, &error);
++        }
++        result
++    }
++}
+diff -ruN a/easytier-contrib/easytier-ffi/Cargo.toml b/easytier-contrib/easytier-ffi/Cargo.toml
+--- a/easytier-contrib/easytier-ffi/Cargo.toml
++++ b/easytier-contrib/easytier-ffi/Cargo.toml
+@@ -4,7 +4,7 @@
+ edition.workspace = true
+ 
+ [lib]
+-crate-type = ["cdylib"]
++crate-type = ["cdylib", "rlib"]
+ 
+ [dependencies]
+ easytier = { path = "../../easytier" }
+@@ -15,3 +15,4 @@
+ serde = { version = "1.0", features = ["derive"] }
+ serde_json = "1"
+ uuid = "1.17.0"
++tokio = { version = "1", features = ["rt-multi-thread"] }
+diff -ruN a/easytier-contrib/easytier-ffi/src/lib.rs b/easytier-contrib/easytier-ffi/src/lib.rs
+--- a/easytier-contrib/easytier-ffi/src/lib.rs
++++ b/easytier-contrib/easytier-ffi/src/lib.rs
+@@ -1,4 +1,5 @@
+-use std::sync::Mutex;
++use std::path::PathBuf;
++use std::sync::{Arc, Mutex};
+ 
+ use dashmap::DashMap;
+ use easytier::{
+@@ -8,8 +9,19 @@
+ 
+ static INSTANCE_NAME_ID_MAP: once_cell::sync::Lazy<DashMap<String, uuid::Uuid>> =
+     once_cell::sync::Lazy::new(DashMap::new);
+-static INSTANCE_MANAGER: once_cell::sync::Lazy<NetworkInstanceManager> =
+-    once_cell::sync::Lazy::new(NetworkInstanceManager::new);
++static INSTANCE_MANAGER: once_cell::sync::Lazy<Arc<NetworkInstanceManager>> =
++    once_cell::sync::Lazy::new(|| Arc::new(NetworkInstanceManager::new()));
++
++// The console's web client runs on a runtime of its own and pushes its networks into
++// INSTANCE_MANAGER, where set_tun_fd and collect_network_infos find them by name.
++static WEB_RUNTIME: once_cell::sync::Lazy<tokio::runtime::Runtime> = once_cell::sync::Lazy::new(|| {
++    tokio::runtime::Builder::new_multi_thread()
++        .enable_all()
++        .build()
++        .expect("a runtime for the web client")
++});
++static WEB_CLIENT: once_cell::sync::Lazy<Mutex<Option<easytier::web_client::WebClient>>> =
++    once_cell::sync::Lazy::new(|| Mutex::new(None));
+ 
+ static ERROR_MSG: once_cell::sync::Lazy<Mutex<Vec<u8>>> =
+     once_cell::sync::Lazy::new(|| Mutex::new(Vec::new()));
+@@ -41,15 +53,16 @@
+             .to_string_lossy()
+             .into_owned()
+     };
+-    if !INSTANCE_NAME_ID_MAP.contains_key(&inst_name) {
+-        return -1;
+-    }
+-
+-    let inst_id = *INSTANCE_NAME_ID_MAP
+-        .get(&inst_name)
+-        .as_ref()
+-        .unwrap()
+-        .value();
++    let named = INSTANCE_NAME_ID_MAP.get(&inst_name).map(|entry| *entry.value());
++    let inst_id = match named.or_else(|| {
++        INSTANCE_MANAGER
++            .list_network_instance_ids()
++            .into_iter()
++            .find(|id| INSTANCE_MANAGER.get_instance_name(id).as_deref() == Some(inst_name.as_str()))
++    }) {
++        Some(id) => id,
++        None => return -1,
++    };
+ 
+     match INSTANCE_MANAGER.set_tun_fd(&inst_id, fd) {
+         Ok(_) => 0,
+@@ -237,6 +250,66 @@
+     index as std::ffi::c_int
+ }
+ 
++fn c_text(text: *const std::ffi::c_char) -> String {
++    unsafe {
++        assert!(!text.is_null());
++        std::ffi::CStr::from_ptr(text).to_string_lossy().into_owned()
++    }
++}
++
++/// # Safety
++/// Start the web client of an EasyTier console: the console pushes the networks it runs.
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn run_web_client(
++    config_server: *const std::ffi::c_char,
++    hostname: *const std::ffi::c_char,
++    state_dir: *const std::ffi::c_char,
++    secure_mode: std::ffi::c_int,
++) -> std::ffi::c_int {
++    let config_server = c_text(config_server);
++    let hostname = c_text(hostname);
++    let state_dir = c_text(state_dir);
++    let mut held = WEB_CLIENT.lock().unwrap();
++    if held.is_some() {
++        set_error_msg("the web client is already running");
++        return -1;
++    }
++    let started = WEB_RUNTIME.block_on(easytier::web_client::run_web_client(
++        &config_server,
++        easytier::common::MachineIdOptions {
++            explicit_machine_id: None,
++            state_dir: Some(PathBuf::from(state_dir)),
++        },
++        Some(hostname),
++        secure_mode != 0,
++        INSTANCE_MANAGER.clone(),
++        None,
++    ));
++    match started {
++        Ok(client) => {
++            *held = Some(client);
++            0
++        }
++        Err(e) => {
++            set_error_msg(&format!("failed to start the web client: {}", e));
++            -1
++        }
++    }
++}
++
++/// Stop the web client and every network it started.
++#[unsafe(no_mangle)]
++pub extern "C" fn stop_web_client() -> std::ffi::c_int {
++    let client = WEB_CLIENT.lock().unwrap().take();
++    WEB_RUNTIME.block_on(async move { drop(client) });
++    if let Err(e) = INSTANCE_MANAGER.retain_network_instance(Vec::new()) {
++        set_error_msg(&format!("failed to stop instances: {}", e));
++        return -1;
++    }
++    INSTANCE_NAME_ID_MAP.clear();
++    0
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;

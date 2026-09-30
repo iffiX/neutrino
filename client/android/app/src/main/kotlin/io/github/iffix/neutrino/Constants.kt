@@ -207,3 +207,33 @@ const val CLIENT_COPIED_SHOWN_MILLIS = 1500L
 
 /** How many characters of a masked key stay readable. */
 const val CLIENT_KEY_SHOWN_PREFIX = 6
+
+/** How long a hub's channel may be lost before the phone moves to the hub's next network. */
+const val CLIENT_OVERLAY_FAILOVER_S = 30L
+
+/** How often the overlay controller looks at the channels again while nothing changes. */
+const val OVERLAY_CHECK_INTERVAL_S = 5L
+
+/** The name of the one manual EasyTier instance the app runs. */
+const val OVERLAY_EASYTIER_INSTANCE = "neutrino"
+
+/** How often an EasyTier engine reads its core's state. */
+const val OVERLAY_POLL_MILLIS = 1000L
+
+/** The MTU of an EasyTier TUN device. */
+const val OVERLAY_TUN_MTU = 1380
+
+/** NetBird's own management plane, for a hub that names none. */
+const val OVERLAY_NETBIRD_DEFAULT_MANAGEMENT_URL = "https://api.netbird.io:443"
+
+/** The VPN service's action that runs one hub's network. */
+const val OVERLAY_SERVICE_ACTION_START = "io.github.iffix.neutrino.overlay.START"
+
+/** The VPN service's action that leaves the network. */
+const val OVERLAY_SERVICE_ACTION_STOP = "io.github.iffix.neutrino.overlay.STOP"
+
+/** The extra naming the hub's binding. */
+const val OVERLAY_SERVICE_EXTRA_BINDING = "binding_id"
+
+/** The extra naming the network's provider. */
+const val OVERLAY_SERVICE_EXTRA_PROVIDER = "provider"

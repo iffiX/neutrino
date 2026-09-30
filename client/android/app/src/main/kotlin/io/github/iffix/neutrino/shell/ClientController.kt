@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.VpnService
 import android.os.PersistableBundle
 import androidx.core.net.toUri
 import io.github.iffix.neutrino.CLIENT_CLIP_SENSITIVE_EXTRA
@@ -12,6 +13,7 @@ import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.EnrollmentLink
 import io.github.iffix.neutrino.channel.HubConnections
+import io.github.iffix.neutrino.overlay.OverlayController
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -19,8 +21,13 @@ import kotlinx.serialization.json.JsonObject
  *
  * @param context The window the actions start activities from.
  * @param connections The hub sessions.
+ * @param overlays The virtual network's wish and pick.
  */
-class ClientController(private val context: Context, private val connections: HubConnections) : ClientActions {
+class ClientController(
+    private val context: Context,
+    private val connections: HubConnections,
+    private val overlays: OverlayController,
+) : ClientActions {
     override suspend fun join(link: String): ChannelResult<HubBinding> =
         when (val parsed = EnrollmentLink.parse(link)) {
             is ChannelResult.Refused -> parsed
@@ -53,4 +60,10 @@ class ClientController(private val context: Context, private val connections: Hu
         }
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
     }
+
+    override fun overlayConsent(): Intent? = VpnService.prepare(context)
+
+    override fun setOverlayWanted(bindingId: String, isWanted: Boolean) = overlays.setWanted(bindingId, isWanted)
+
+    override fun pickOverlay(bindingId: String, provider: String) = overlays.pick(bindingId, provider)
 }

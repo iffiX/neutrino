@@ -1,5 +1,8 @@
 package io.github.iffix.neutrino.shell
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -9,6 +12,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -20,11 +26,14 @@ import androidx.navigation.compose.rememberNavController
 import io.github.iffix.neutrino.CLIENT_SIDEBAR_MIN_WIDTH_DP
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.overlay.OverlayPhase
+import io.github.iffix.neutrino.overlay.OverlayStatus
 import io.github.iffix.neutrino.screen.AboutScreen
 import io.github.iffix.neutrino.screen.AiScreen
 import io.github.iffix.neutrino.screen.FilesScreen
 import io.github.iffix.neutrino.screen.HubsScreen
 import io.github.iffix.neutrino.screen.JoinScreen
+import io.github.iffix.neutrino.screen.OverlayChipLine
 import io.github.iffix.neutrino.screen.PortsScreen
 import io.github.iffix.neutrino.screen.RemoteDesktopScreen
 import io.github.iffix.neutrino.screen.SettingsScreen
@@ -42,6 +51,7 @@ import io.github.iffix.neutrino.settings.ClientSettings
  * @param onSaveSettings What saving the settings does.
  * @param hubs Every hub joined.
  * @param actions What the screens can do.
+ * @param overlayStatus What the running network's engine last said.
  */
 @Composable
 fun AppShell(
@@ -51,7 +61,27 @@ fun AppShell(
     onSaveSettings: (ClientSettings) -> Unit,
     hubs: List<HubView>,
     actions: ClientActions,
+    overlayStatus: OverlayStatus?,
 ) {
+    var consentFor by remember { mutableStateOf("") }
+    val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK &&
+            consentFor.isNotEmpty()
+        ) {
+            actions.setOverlayWanted(consentFor, true)
+        }
+        consentFor = ""
+    }
+    val toggleOverlay = { bindingId: String, isWanted: Boolean ->
+        val ask = if (isWanted) actions.overlayConsent() else null
+        if (ask == null) {
+            actions.setOverlayWanted(bindingId, isWanted)
+        } else {
+            consentFor = bindingId
+            consent.launch(ask)
+        }
+    }
+    val overlayValue = overlayStatus?.takeIf { it.phase == OverlayPhase.ON }?.address
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
     val navigation = rememberNavController()
@@ -67,7 +97,7 @@ fun AppShell(
             Column(modifier = Modifier.weight(1f)) {
                 TopBar(
                     title = words.word(screen.titleKey),
-                    overlayValue = words.word("ui.overlay_off"),
+                    overlayValue = overlayValue ?: words.word("ui.overlay_off"),
                     onBack = back,
                     isWide = isWide,
                 )
@@ -78,7 +108,20 @@ fun AppShell(
                 ) {
                     val join = { navigation.navigate(AppScreen.JOIN.route) }
                     composable(AppScreen.HUBS.route) {
-                        HubsScreen(hubs, onJoin = join, onLeave = actions::leave, onReconnect = actions::reconnect)
+                        HubsScreen(
+                            hubs,
+                            onJoin = join,
+                            onLeave = actions::leave,
+                            onReconnect = actions::reconnect,
+                            overlayLine = { hub ->
+                                OverlayChipLine(
+                                    hub,
+                                    overlayStatus,
+                                    onToggle = { toggleOverlay(hub.binding.id, it) },
+                                    onPick = { actions.pickOverlay(hub.binding.id, it) },
+                                )
+                            },
+                        )
                     }
                     composable(AppScreen.WEB.route) { WebScreen(hubs, onOpen = actions::openUrl, onJoin = join) }
                     composable(AppScreen.PORTS.route) {

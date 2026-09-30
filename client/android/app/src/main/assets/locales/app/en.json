@@ -23,6 +23,7 @@
     "key_show": "Show the key",
     "leave_confirm": "Leave {hub}? This phone forgets its link and its key.",
     "or": "or",
+    "overlay_count": "This hub publishes {count} virtual networks",
     "scan_hint": "Point the camera at the QR code on the hub's Clients page"
   }
 }

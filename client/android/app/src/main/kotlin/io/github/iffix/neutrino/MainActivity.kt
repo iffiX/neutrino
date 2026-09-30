@@ -48,7 +48,8 @@ class MainActivity : ComponentActivity() {
             "${application.deviceName} · android/${application.architecture} · client ${BuildConfig.VERSION_NAME}"
         val hubs by application.connections.views.collectAsStateWithLifecycle(emptyList())
         val context = LocalContext.current
-        val actions = remember(context) { ClientController(context, application.connections) }
+        val actions = remember(context) { ClientController(context, application.connections, application.overlays) }
+        val overlayStatus by application.overlays.status.collectAsStateWithLifecycle()
         NeutrinoTheme(palette, words) {
             AppShell(
                 identity = identity,
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
                 onSaveSettings = application.settingsStore::save,
                 hubs = hubs,
                 actions = actions,
+                overlayStatus = overlayStatus,
             )
         }
     }
