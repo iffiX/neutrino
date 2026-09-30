@@ -28,6 +28,9 @@ import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.overlay.OverlayPhase
 import io.github.iffix.neutrino.overlay.OverlayStatus
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopTarget
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopViewer
 import io.github.iffix.neutrino.screen.AboutScreen
 import io.github.iffix.neutrino.screen.AiScreen
 import io.github.iffix.neutrino.screen.FilesScreen
@@ -54,6 +57,7 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
  * @param actions What the screens can do.
  * @param overlayStatus What the running network's engine last said.
  * @param terminalTabs Every terminal tab.
+ * @param remoteDesktopCore What the remote desktop viewer draws and sends input with.
  */
 @Composable
 fun AppShell(
@@ -65,7 +69,9 @@ fun AppShell(
     actions: ClientActions,
     overlayStatus: OverlayStatus?,
     terminalTabs: TerminalTabs,
+    remoteDesktopCore: RemoteDesktopCore,
 ) {
+    var viewing by remember { mutableStateOf<RemoteDesktopTarget?>(null) }
     var consentFor by remember { mutableStateOf("") }
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK &&
@@ -143,7 +149,14 @@ fun AppShell(
                         )
                     }
                     composable(AppScreen.TERMINALS.route) { TerminalScreen(hubs, terminalTabs, onJoin = join) }
-                    composable(AppScreen.REMOTE_DESKTOP.route) { RemoteDesktopScreen(onJoin = join) }
+                    composable(AppScreen.REMOTE_DESKTOP.route) {
+                        RemoteDesktopScreen(
+                            hubs,
+                            material = actions::serviceMaterial,
+                            onView = { viewing = it },
+                            onJoin = join,
+                        )
+                    }
                     composable(AppScreen.SETTINGS.route) {
                         SettingsScreen(
                             saved = settings,
@@ -159,6 +172,7 @@ fun AppShell(
                 if (!isWide) BottomBar(current = tab, onOpen = open)
             }
         }
+        viewing?.let { target -> RemoteDesktopViewer(target, remoteDesktopCore, onClose = { viewing = null }) }
     }
 }
 

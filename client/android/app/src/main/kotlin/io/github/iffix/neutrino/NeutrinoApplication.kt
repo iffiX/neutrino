@@ -18,6 +18,8 @@ import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
+import io.github.iffix.neutrino.remotedesktop.MissingRemoteDesktopCore
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
 import io.github.iffix.neutrino.settings.ClientSettingsStore
 import io.github.iffix.neutrino.terminal.StreamOpener
 import io.github.iffix.neutrino.terminal.TerminalTabs
@@ -106,6 +108,9 @@ class NeutrinoApplication : Application() {
             scope = scope,
         )
     }
+
+    /** What the remote desktop viewer decodes and sends input with. */
+    val remoteDesktopCore: RemoteDesktopCore = MissingRemoteDesktopCore()
 
     /** The name this phone goes by: the one the person gave it, else its model. */
     val deviceName: String

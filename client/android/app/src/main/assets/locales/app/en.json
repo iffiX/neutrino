@@ -1,5 +1,6 @@
 {
   "code": {
+    "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
     "session_taken": "another window took over this terminal",
     "session_unknown": "that machine no longer keeps this terminal",
     "verb_unknown": "the hub does not know this command; update the hub"
@@ -29,6 +30,8 @@
     "overlay_count": "This hub publishes {count} virtual networks",
     "password_not_saved": "Password not saved",
     "paste": "Paste",
+    "rdp_disconnect": "Disconnect",
+    "rdp_keyboard": "Keyboard",
     "remember": "Remember",
     "scan_hint": "Point the camera at the QR code on the hub's Clients page",
     "share_login_needed": "Give this share's password on the Files screen first.",

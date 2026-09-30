@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
                 actions = actions,
                 overlayStatus = overlayStatus,
                 terminalTabs = application.terminalTabs,
+                remoteDesktopCore = application.remoteDesktopCore,
             )
         }
     }
