@@ -48,4 +48,6 @@ Files and directories use `under_score` (see [layout_style.md](layout_style.md))
 names the one concept the module owns. This holds for TypeScript too — a React
 component file is `nodes_page.tsx`, not `NodesPage.tsx` (the component *inside*
 is still `NodesPage`); see
-[typescript_style.md](typescript_style.md).
+[typescript_style.md](typescript_style.md). Kotlin and Swift files are named
+after their one type in PascalCase, as those languages do; see
+[kotlin_style.md](kotlin_style.md) and [swift_style.md](swift_style.md).

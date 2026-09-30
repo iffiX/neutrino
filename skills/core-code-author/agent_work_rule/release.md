@@ -1,23 +1,25 @@
 # Releases
 
 A release is one tag, one version, and one set of packages built from it. The
-hub, the agent and the client are versioned together and released together.
+hub, the agent, the desktop client and the two phone apps are versioned
+together and released together.
 
 Wording rules for the entries themselves are in
 [../coding_style/comment_style.md](../coding_style/comment_style.md); who may
 commit and when is in [commit.md](commit.md).
 
-## One tag, three packages, compatibility by protocol number
+## One tag, every package, compatibility by protocol number
 
-One tag builds the hub, the agent and the client at one version. Whether an
-agent or a client works with a hub is decided by `PROTOCOL`, the number each
+One tag builds the hub, the agent, the desktop client and the two phone apps
+at one version. Whether an agent or a client works with a hub is decided by `PROTOCOL`, the number each
 package speaks; the hub accepts every number from `PROTOCOL_MIN` to its own
 ([../design/protocol.md](../design/protocol.md), "Versioning"). A peer outside
 that range is rejected at the door with `protocol_too_old` or
 `protocol_too_new` and keeps its binding.
 
 An agent whose hub names a newer `software` upgrades itself from the package
-the hub keeps; a client is upgraded when its person installs the new package.
+the hub keeps; a client, on a computer or a phone, is upgraded when its person
+installs the new package.
 
 Every package reads its version from package metadata. It is never written
 into the source twice.
@@ -80,8 +82,18 @@ A release with nothing under a heading omits the heading.
 
 ## What goes in a release
 
-Three sections, one per package, so nobody downloads the wrong thing. Name the
+One section per package, so nobody downloads the wrong thing. Name the
 platform in words, not only in the filename.
+
+| Platform | Hub | Agent | Client |
+| --- | --- | --- | --- |
+| Debian, Ubuntu, Raspberry Pi OS | `.deb` | `.deb` | `.deb` |
+| Fedora, RHEL, AlmaLinux, Rocky | `.rpm` | `.rpm` | `.rpm` |
+| Arch, EndeavourOS, Manjaro | `.pkg.tar.zst` | none | none |
+| Windows 10 and 11 | none | `.msi` | `.msi` |
+| macOS on Apple silicon | none | `.pkg` | `.pkg` |
+| Android 8 or newer | none | none | `.apk` |
+| iOS 16 or newer | none | none | TestFlight or the App Store; `.ipa` for TrollStore |
 
 ### Hub
 
@@ -177,6 +189,35 @@ what the build runner is.
 sudo apt install ./neutrino-client_<version>_amd64.deb
 nclient join '<client link from the Clients page>'
 ```
+
+### Android app
+
+The Android app is the client on a phone. It carries the NetBird, EasyTier
+and RustDesk cores compiled from their pinned sources, and is licensed
+AGPL-3.0 by `client/android/LICENSE`. The release build is signed with the
+project's release key, and the workflow checks the signing certificate's
+fingerprint before it attaches the file.
+
+| File | For |
+| --- | --- |
+| `neutrino-client-<version>-android.apk` | Android 8 or newer, arm64-v8a |
+
+The person installs the `.apk` on the phone, then scans the QR code on the
+**Clients** page or pastes the client link.
+
+### iOS app
+
+The iOS app is the client on an iPhone, with the same cores and the same
+licence, by `client/ios/LICENSE`. It is distributed through TestFlight and the
+App Store outside mainland China. The release page carries one file beside
+them:
+
+| File | For |
+| --- | --- |
+| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, installed with TrollStore |
+
+Until the project has an Apple developer account, the workflow builds the
+`.ipa` unsigned and uploads nothing to TestFlight.
 
 ### Source archive
 

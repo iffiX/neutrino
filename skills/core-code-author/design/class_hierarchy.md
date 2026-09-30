@@ -42,5 +42,14 @@ class DeviceSshOperator: ...     # Device -> Ssh -> Operator
 - Constants for a family use the domain prefix (`XRAY_`, `ROUTER_`, `SAMBA_`, `SYSTEM_`,
   `WEB_`) and live in that package's `constants.py`.
 
+The Kotlin and Swift apps keep the same `<Domain><Thing><Role>` shape, with
+the domain a feature of the app: `ChannelSocketClient`, `OverlayNetbirdDriver`,
+`FilesSmbReader`. Where the platform requires a base class, its name is the
+role: `OverlayVpnService` and `FilesDocumentsProvider` on Android,
+`OverlayPacketTunnelProvider` and `FilesReplicatedExtension` on iOS. Each
+language's file rules are in
+[../coding_style/kotlin_style.md](../coding_style/kotlin_style.md) and
+[../coding_style/swift_style.md](../coding_style/swift_style.md).
+
 When a genuinely new family appears, propose the name rather than inventing one
 silently — consistency beats brevity.

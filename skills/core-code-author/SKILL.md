@@ -46,6 +46,9 @@ conventions explicit so nobody drifts.
    - [coding_style/typescript_style.md](coding_style/typescript_style.md) — the
      React + TypeScript frontend: prettier/eslint, under_score files, no `any`,
      component order.
+   - [coding_style/kotlin_style.md](coding_style/kotlin_style.md) and
+     [coding_style/swift_style.md](coding_style/swift_style.md): the Android
+     and iOS apps: formatters, PascalCase files, errors, no force unwrap.
 
 2. **Documentation style** — how the three kinds of document in this repo are
    written, in English and in Chinese. Grounded in a full-text study of the

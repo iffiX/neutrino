@@ -263,7 +263,7 @@ Claude Code and ChatGPT assisted with implementation, debugging, design and docu
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). The Android and iOS apps under `client/android/` and `client/ios/` compile in the RustDesk core, so each of those two directories is AGPL-3.0 by the `LICENSE` inside it.
 
 <div align="center">
 

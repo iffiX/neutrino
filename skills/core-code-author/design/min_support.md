@@ -22,6 +22,8 @@ new floor is written down.
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build_release.py:174`) | RHEL 9, AlmaLinux 9 |
 | client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
 | client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`client/packaging/build_msi.py:28`, `client/packaging/build_msi.py:69`) | Windows 10 1809 |
+| client `.apk` | none | `openProxyFileDescriptor`, which the Files provider serves a share's file through, from API level 26 (`minSdk` in `client/android/`) | Android 8.0 |
+| client iOS app | none | `NSFileProviderReplicatedExtension`, the File Provider extension's base class, from iOS 16 (the deployment target in `client/ios/`) | iOS 16 |
 
 Ubuntu 22.04 has glibc 2.35, above all four Linux floors, and the hub's `.deb`
 reaches it because the DHCP client is named `dhcpcd-base | dhcpcd5`
@@ -37,6 +39,11 @@ The client's `.rpm` reaches RHEL 9 and AlmaLinux 9 because either WebKit2 ABI
 satisfies it, and RHEL 9 has 4.0 (`client/packaging/build_rpm.py:54`). The
 introspection library on RHEL 9 is older than the bindings need, so the
 package installs its own (`client/packaging/payload.py:127`).
+
+The two phone rows are the floor each app's build declares: `minSdk 26` in
+the Gradle project and a deployment target of 16.0 in the Xcode project. The
+phone's installer rejects the app on an older system, so the floor is
+enforced by the declaration itself.
 
 ## What the hub drives
 

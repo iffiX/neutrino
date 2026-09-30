@@ -284,7 +284,7 @@ Claude Code 和 ChatGPT 参与了编写；每个版本发布前作者都逐项�
 
 ## 许可证
 
-[MIT](LICENSE)。
+[MIT](LICENSE)。`client/android/` 和 `client/ios/` 下的 Android、iOS 应用编进了 RustDesk 核心，这两个目录按各自目录里的 `LICENSE` 采用 AGPL-3.0。
 
 <div align="center">
 

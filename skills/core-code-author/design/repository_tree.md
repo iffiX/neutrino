@@ -4,19 +4,28 @@ How the repository is arranged, and why each directory is the kind of thing it
 is. The rest of this standard governs what goes *inside* a package; this page
 governs the tree itself.
 
-## Three packages, one repository
+## Three packages and two apps, one repository
 
-The repository ships three distributions, and the split is the first thing to
-know about the tree: `hub/` is the appliance, `agent/` is what runs as root on
-the Linux, Windows and macOS machines the appliance manages, `client/` is what
-runs in a person's own session on Linux, Windows or macOS. They share no code. The agent is pure
-standard library, because it installs on a machine somebody else administers
-and a dependency is a thing that can be missing there.
+The repository ships three Python distributions and two mobile apps, and the
+split is the first thing to know about the tree: `hub/` is the appliance,
+`agent/` is what runs as root on the Linux, Windows and macOS machines the
+appliance manages, `client/desktop/` is what runs in a person's own session on
+Linux, Windows or macOS, and `client/android/` and `client/ios/` are what
+runs on that person's phone. They share no code. The agent is pure standard library,
+because it installs on a machine somebody else administers and a dependency is
+a thing that can be missing there.
+
+The two apps are licensed AGPL-3.0, each by the `LICENSE` in its own
+directory, because the RustDesk core is compiled into them; the rest of the
+repository is MIT.
 
 ```
 hub/                 The `neutrino_hub` distribution: the appliance.
 agent/               The `neutrino_agent` distribution: the device agent.
-client/              The `neutrino_client` distribution: the tray and window.
+client/
+  desktop/           The `neutrino_client` distribution: the tray and window.
+  android/           The Android app, a Gradle project in Kotlin.
+  ios/               The iOS app, an Xcode project in Swift.
 packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
 docs/                memory.md, the working copy's own notes (gitignored), and
@@ -95,10 +104,10 @@ agent/
   tests/
 ```
 
-## Inside `client/`
+## Inside `client/desktop/`
 
 ```
-client/
+client/desktop/
   neutrino_client/   The client: one resident per person with a tray and a
                      window; never root.
     core/            The one WebSocket to the hub, enrollment, session.
@@ -120,6 +129,25 @@ client/
   packaging/         The .deb, .rpm, .msi and .pkg builders, the payload
                      every one of them stages, and the icon containers.
   tests/
+```
+
+## Inside `client/android/` and `client/ios/`
+
+Each app is one person's session on a phone: it joins a hub by the client
+link, shows the services the hub publishes, and runs one overlay network at a
+time. Neither shares code with the desktop client. Both speak the channel of
+[docs/guide/protocol/channel.md](../../../docs/guide/protocol/channel.md), and
+their tests read `hub/tests/web/channel_schema.json`, the golden the hub's
+tests pin, so one commit changes the channel for all three clients.
+
+```
+client/android/      Gradle project, Kotlin and Jetpack Compose, minSdk 26
+                     (Android 8), applicationId `io.github.iffix.neutrino`.
+                     Style: ../coding_style/kotlin_style.md.
+client/ios/          Xcode project, Swift and SwiftUI, iOS 16. Three targets:
+                     the app, the Packet Tunnel extension that runs the
+                     overlay, the File Provider extension that shows the
+                     shares. Style: ../coding_style/swift_style.md.
 ```
 
 ## Inside `packaging/`
@@ -223,3 +251,7 @@ editing it should not need to know how the code is arranged.
 | Something the wheel must carry (a unit, an example, an icon) | `hub/neutrino_hub/data/<kind>/` |
 | A check that needs root, a real interface or a package installed | `packaging/integration/` |
 | Anything the managed machines run | `agent/neutrino_agent/` |
+| Anything a person's computer runs | `client/desktop/neutrino_client/` |
+| A screen, a service kind or a platform piece of the Android app | `client/android/`, in Kotlin |
+| The same on iOS: the app, the Packet Tunnel or the File Provider extension | `client/ios/`, in Swift |
+| A script that builds a core the phones compile in | `packaging/mobile_<core>.py` |

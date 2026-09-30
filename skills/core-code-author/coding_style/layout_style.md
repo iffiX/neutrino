@@ -27,8 +27,13 @@ neutrino_hub/cli/apply.py
 
 ## Rules
 
-- All source directories and files use `under_score` — never hyphens, never
-  camelCase, never PascalCase for directories. No exceptions.
+- Python and TypeScript source directories and files use `under_score`:
+  never hyphens, never camelCase, never PascalCase. No exceptions.
+- Kotlin and Swift files follow their language: a file is named after the one
+  type it holds, in PascalCase (`ChannelSocketClient.kt`,
+  `ChannelSocketClient.swift`). Their directories still use `under_score`,
+  apart from the target directories Xcode names after each target.
+  Details: [kotlin_style.md](kotlin_style.md), [swift_style.md](swift_style.md).
 - A directory name states a role, not a grab-bag: `modules/xray/`,
   `modules/router/`, `neutrino_hub/system/`. Do not create `utils2/`, `misc/`, `helpers/`, `common/`,
   `stuff/`, `new/`, or `tmp/` as source directories, and never name a directory

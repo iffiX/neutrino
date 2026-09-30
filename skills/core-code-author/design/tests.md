@@ -1,16 +1,21 @@
 # Tests
 
-Three blocks of tests, split by what they may touch: the **agent** block and
-the **hub** block run in-process in milliseconds and touch nothing outside
-their own temporary directories; the **integration** block runs on live
-machines in the CI/CD release pipeline and touches everything, because the
-seams it exists for — package managers, systemd, wires between two machines
-— are exactly what the in-process blocks fake.
+Six blocks of tests, split by what they may touch. The **agent**, **client**
+and **hub** blocks run in-process in milliseconds and touch nothing outside
+their own temporary directories. The **android** and **ios** blocks run the
+apps' unit tests on the build machine, with the phone's system services faked.
+The **integration** block runs on live machines in the CI/CD release pipeline
+and touches everything, because the seams it exists for (package managers,
+systemd, wires between two machines) are exactly what the in-process blocks
+fake.
 
 | Block | Lives in | Runs | May touch |
 | --- | --- | --- | --- |
 | agent | `agent/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms, injected clocks, sockets on temporary paths; an autouse fixture redirects every store off the real machine |
+| client | `client/desktop/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms and toolkits, the compiled and fetched parts stood in for |
 | hub | `hub/tests/` | `pytest -q`, under a minute, every commit | FastAPI test clients and temporary config roots; never a unit, an interface, or `/etc` |
+| android | `client/android/app/src/test/` | `./gradlew test lint`, every commit | JUnit on the JVM; a fake socket, fake Keystore and fake VpnService; never an emulator or a device |
+| ios | `client/ios/<target>Tests/` | `xcodebuild test` on the simulator, every commit | XCTest; a fake socket, fake Keychain and fake tunnel provider; never a device |
 | integration | `packaging/integration/` | `run_on_box.sh` on the pipeline's VM pair; minutes | A whole machine: real installs, real systemd, real DHCP on a served wire, a real client VM |
 
 ## The mirror rule
@@ -49,7 +54,7 @@ file owns:
 
 ## The client block
 
-The same shape under `client/tests/`:
+The same shape under `client/desktop/tests/`:
 
 | Directory | What its tests pin |
 | --- | --- |
@@ -60,6 +65,23 @@ The same shape under `client/tests/`:
 | `platforms/` | Linux, Windows and macOS behind one contract: the mount location's shape per platform, the Windows console and pipe helpers, `darwin` refusing what the Mac does not carry. |
 | `packaging/` | What every package carries, staged into `tmp_path` with the compiled and fetched parts stood in for: the payload, the pinned cc-switch and RustDesk viewer, the icons, the deb and rpm, the msi and the pkg, and the refusal for a machine none is published for. |
 | `cli/` | Every command × root refused and ordinary × bound and unbound × resident alive and dead; `gui`, `quit`, the mount helper, the `service` verbs, `easytier-daemon` put together over a temporary directory; the wording table complete in both languages. |
+
+## The android and ios blocks
+
+The mirror rule holds per language. `src/main/kotlin/<package path>/<Type>.kt`
+is tested by `src/test/kotlin/<package path>/<Type>Test.kt`, and a Swift file
+`<dir>/<Type>.swift` in a target by `<dir>/<Type>Tests.swift` in that target's
+test bundle ([kotlin_style.md](../coding_style/kotlin_style.md),
+[swift_style.md](../coding_style/swift_style.md)).
+
+Both apps speak the channel of `docs/guide/protocol/channel.md` and share no
+code with the desktop client. Their channel tests read
+`hub/tests/web/channel_schema.json`, the hub's golden, by its path in the
+repository and never from a copy, so a change to a channel model fails the
+phones' tests in the same commit that fails the hub's. What else each pins:
+enrollment from a scanned or pasted link with the fingerprint checked first,
+the binding stored in the Keystore or the Keychain, the overlay switch per
+hub, and every refusal read as its `{code, params}`.
 
 ## The hub block
 

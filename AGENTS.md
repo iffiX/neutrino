@@ -5,8 +5,10 @@ proxy routing (xray), a FastAPI + React control panel, NetBird remote access,
 an AI gateway (CLIProxyAPI), and Gitea, Samba, Podman and ZFS as modules. A
 device agent under `agent/` reconciles modules on managed LAN machines.
 
-Ships as three packages: `neutrino_hub` (`hub/`), `neutrino_agent` (`agent/`)
-and `neutrino_client` (`client/`).
+Ships as three packages and two apps: `neutrino_hub` (`hub/`),
+`neutrino_agent` (`agent/`) and `neutrino_client` (`client/desktop/`), and the
+Android app (`client/android/`, Kotlin) and the iOS app (`client/ios/`,
+Swift). The two apps are AGPL-3.0; the rest is MIT.
 
 Every agent working here — Claude Code, Codex, Cursor, or otherwise — follows
 the standard in [`skills/core-code-author/`](skills/core-code-author/SKILL.md). This file is the
@@ -36,12 +38,14 @@ and leave this pointing at it.**
 | [coding_style/naming_style.md](skills/core-code-author/coding_style/naming_style.md) | Naming anything: `is_`/`has_` bools, constant prefixes, banned terms. |
 | [coding_style/python_style.md](skills/core-code-author/coding_style/python_style.md) | Writing Python: file and method order, black, Google docstrings. |
 | [coding_style/typescript_style.md](skills/core-code-author/coding_style/typescript_style.md) | Touching `hub/frontend/`: no `any`, `import type`, API types mirror the backend models. |
+| [coding_style/kotlin_style.md](skills/core-code-author/coding_style/kotlin_style.md) | Touching `client/android/`: PascalCase files, ktlint, one `Exceptions.kt`, refusals as sealed results, no `!!`. |
+| [coding_style/swift_style.md](skills/core-code-author/coding_style/swift_style.md) | Touching `client/ios/`: PascalCase files, swift-format, one `Error` enum per target, no force unwrap. |
 | [design/protocol.md](skills/core-code-author/design/protocol.md) | Adding or renaming any endpoint, frame, kind or code: the two ports, path rules and the verb table, refusals as `{code, params}`, every route, the channel, admission, versioning by protocol number. |
 | [design/modules/network.md](skills/core-code-author/design/modules/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
 | [design/modules/proxy.md](skills/core-code-author/design/modules/proxy.md) | Touching the proxy: the scopes and what each diverts, exit selection, where every lookup resolves, what an overlay member can do, the consequences of a dead exit. |
 | [design/modules/ai.md](skills/core-code-author/design/modules/ai.md) | Touching the AI gateway: how a request routes, the gateway-owned model namespace, what each AI panel surface owns, metering. |
 | [design/agent.md](skills/core-code-author/design/agent.md) | Touching the agent: the hub and root as its only authorities, the four module states and `want`, the desktop share, the root-only control socket, the Linux-only platform layer. |
-| [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the four blocks (agent / client / hub / integration), the mirror rule, what each area pins, what a change owes. |
+| [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the six blocks (agent / client / hub / android / ios / integration), the mirror rule, what each area pins, what a change owes. |
 | [design/visual.md](skills/core-code-author/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/ui_behavior.md](skills/core-code-author/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
 | [design/class_design.md](skills/core-code-author/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
@@ -58,11 +62,15 @@ and leave this pointing at it.**
 ```bash
 pip install -e "hub[dev]"            # nhub, black, pytest, detect-secrets
 pip install -e agent                 # nagent
+pip install -e client/desktop        # nclient
 
-black --check hub agent              # REQUIRED before every commit
+black --check hub agent client       # REQUIRED before every commit
 nhub scan-secrets                    # REQUIRED before every commit
 cd hub && pytest -q                  # hub tests
 cd agent && pytest -q                # agent tests
+cd client/desktop && pytest -q       # desktop client tests
+cd client/android && ./gradlew test lint   # Android app tests and lint
+cd client/ios && xcodebuild test     # iOS app tests, on a Mac
 
 cd hub/frontend && npx prettier --check src && npx eslint src --max-warnings 0
 cd hub/frontend && npm run build     # REQUIRED after frontend changes
@@ -106,11 +114,15 @@ agent/
                       library, no dependencies.
   tests/
 client/
-  neutrino_client/    The client: a person's session on Linux, Windows or
+  desktop/
+    neutrino_client/  The client: a person's session on Linux, Windows or
                       macOS; a tray and a window.
-  frontend/           The client window's page: plain HTML/CSS/JS, no toolchain.
-  packaging/          deb, rpm, msi and pkg builds of the compiled client.
-  tests/
+    frontend/         The client window's page: plain HTML/CSS/JS, no toolchain.
+    packaging/        deb, rpm, msi and pkg builds of the compiled client.
+    tests/
+  android/            The Android app: Gradle, Kotlin, Jetpack Compose.
+                      AGPL-3.0.
+  ios/                The iOS app: Xcode, Swift, SwiftUI. AGPL-3.0.
 config/               Source of truth at runtime. Real files gitignored.
                       /etc/neutrino/config once installed.
 skills/core-code-author/        This standard. The single source of truth for rules.
