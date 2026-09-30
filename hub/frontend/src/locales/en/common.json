@@ -43,5 +43,6 @@
   "ui.authority.windows_2": "Choose Local Machine, then Place all certificates in the following store.",
   "ui.authority.windows_3": "Browse to Trusted Root Certification Authorities, then finish.",
   "ui.authority.windows_4": "Restart the browser.",
-  "ui.brand.hub": "Neutrino Hub"
+  "ui.brand.hub": "Neutrino Hub",
+  "ui.row_menu.open": "More actions"
 }

@@ -128,6 +128,12 @@ A destructive action repeated on every row arms instead of opening a dialog —
 second — because one modal per process is a dialog nobody reads by the third
 time.
 
+An action a row shows only on hover sits behind a `⋯` button as well, which is
+always there on a touch screen or in a narrow window (`row_menu.tsx`, used by
+`device_monitor` and the file browser). The menu lists the row's actions, and
+an item that arms keeps the menu open, so the second press acts. A file row at
+phone width takes two lines: the icon and the name, then the size and the time.
+
 ## Inline forms
 
 A record is added where its list is. `Add node` opens a form in place with a

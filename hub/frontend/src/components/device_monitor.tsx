@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
 
 import { Icon } from "./icon";
+import { RowMenu } from "./row_menu";
 import { apiPost, describeError } from "../api_client";
 import { toDeviceMetrics } from "../device_metrics";
 import { formatDuration, formatTimeAgo } from "../format_duration";
@@ -219,18 +220,35 @@ export function DeviceMonitor({ device }: DeviceMonitorProps) {
                           {process.memory_percent.toFixed(1)}
                         </td>
                         <td className="kill">
-                          <button
-                            type="button"
-                            className={`device_monitor_kill ${pendingKillPid === process.pid ? "device_monitor_kill--armed" : ""}`}
-                            title={
-                              pendingKillPid === process.pid
-                                ? t("ui.device_monitor.kill_again")
-                                : t("ui.device_monitor.kill")
-                            }
-                            onClick={() => void handleKill(process.pid)}
+                          <RowMenu
+                            items={[
+                              {
+                                key: "kill",
+                                label:
+                                  pendingKillPid === process.pid
+                                    ? t("ui.device_monitor.kill_again")
+                                    : t("ui.device_monitor.kill"),
+                                icon: "close",
+                                isDanger: true,
+                                isArming: true,
+                                isArmed: pendingKillPid === process.pid,
+                                onSelect: () => void handleKill(process.pid),
+                              },
+                            ]}
                           >
-                            <Icon name="close" size={11} />
-                          </button>
+                            <button
+                              type="button"
+                              className={`device_monitor_kill ${pendingKillPid === process.pid ? "device_monitor_kill--armed" : ""}`}
+                              title={
+                                pendingKillPid === process.pid
+                                  ? t("ui.device_monitor.kill_again")
+                                  : t("ui.device_monitor.kill")
+                              }
+                              onClick={() => void handleKill(process.pid)}
+                            >
+                              <Icon name="close" size={11} />
+                            </button>
+                          </RowMenu>
                         </td>
                       </tr>
                     ))}

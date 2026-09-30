@@ -176,3 +176,38 @@
   font-family: var(--font-mono);
   font-size: 11px;
 }
+
+/* At phone width a row takes two lines: the icon and the name, then the size
+   and the time, with the ⋯ menu beside both. */
+@media (max-width: 720px) {
+  .file_browser_row:not(.file_browser_row--edit) {
+    grid-template-columns: 22px auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "icon name name actions"
+      ".    size time actions";
+    row-gap: 0;
+  }
+
+  .file_browser_row:not(.file_browser_row--edit) > .file_browser_icon {
+    grid-area: icon;
+  }
+
+  .file_browser_row:not(.file_browser_row--edit) > .file_browser_name,
+  .file_browser_row:not(.file_browser_row--edit) > .file_browser_inline_input {
+    grid-area: name;
+  }
+
+  .file_browser_row:not(.file_browser_row--edit) > .file_browser_size {
+    grid-area: size;
+    text-align: left;
+  }
+
+  .file_browser_row:not(.file_browser_row--edit) > .file_browser_time {
+    grid-area: time;
+    text-align: left;
+  }
+
+  .file_browser_row:not(.file_browser_row--edit) > .row_menu {
+    grid-area: actions;
+  }
+}

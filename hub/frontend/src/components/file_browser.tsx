@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { Icon } from "./icon";
+import { RowMenu } from "./row_menu";
+import type { RowMenuItem } from "./row_menu";
 import {
   ApiError,
   apiGet,
@@ -199,6 +201,52 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
     }
   };
 
+  const startRename = (entry: DeviceFileEntry) => {
+    setRenameFrom(entry.name);
+    setRenameTo(entry.name);
+    setDeleteName(null);
+  };
+
+  const armDelete = (entry: DeviceFileEntry) => {
+    setDeleteName(entry.name);
+    setRenameFrom(null);
+  };
+
+  // The same actions as the row's hover buttons, for the ⋯ menu; deleting
+  // arms on the first press and acts on the second, as the button does.
+  const rowItems = (entry: DeviceFileEntry): RowMenuItem[] => {
+    const isArmed = deleteName === entry.name;
+    const items: RowMenuItem[] = [];
+    if (!entry.is_link) {
+      items.push({
+        key: "download",
+        label: entry.is_dir
+          ? t("ui.files.download_archive")
+          : t("ui.files.download"),
+        icon: "download",
+        onSelect: () => handleDownload(entry),
+      });
+    }
+    items.push(
+      {
+        key: "rename",
+        label: t("ui.files.rename"),
+        icon: "edit",
+        onSelect: () => startRename(entry),
+      },
+      {
+        key: "delete",
+        label: isArmed ? t("ui.files.delete_armed") : t("ui.files.delete"),
+        icon: "trash",
+        isDanger: true,
+        isArming: true,
+        isArmed,
+        onSelect: () => (isArmed ? void handleDelete(entry) : armDelete(entry)),
+      },
+    );
+    return items;
+  };
+
   const handleDelete = async (entry: DeviceFileEntry) => {
     setError(null);
     try {
@@ -352,56 +400,51 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
               <span className="file_browser_time">
                 {formatModified(entry.modified_at)}
               </span>
-              <span className="file_browser_actions">
-                {!entry.is_link && (
+              <RowMenu items={rowItems(entry)}>
+                <span className="file_browser_actions">
+                  {!entry.is_link && (
+                    <button
+                      type="button"
+                      className="file_browser_action"
+                      title={
+                        entry.is_dir
+                          ? t("ui.files.download_archive")
+                          : t("ui.files.download")
+                      }
+                      onClick={() => handleDownload(entry)}
+                    >
+                      <Icon name="download" size={13} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="file_browser_action"
-                    title={
-                      entry.is_dir
-                        ? t("ui.files.download_archive")
-                        : t("ui.files.download")
-                    }
-                    onClick={() => handleDownload(entry)}
+                    title={t("ui.files.rename")}
+                    onClick={() => startRename(entry)}
                   >
-                    <Icon name="download" size={13} />
+                    <Icon name="edit" size={13} />
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="file_browser_action"
-                  title={t("ui.files.rename")}
-                  onClick={() => {
-                    setRenameFrom(entry.name);
-                    setRenameTo(entry.name);
-                    setDeleteName(null);
-                  }}
-                >
-                  <Icon name="edit" size={13} />
-                </button>
-                {deleteName === entry.name ? (
-                  <button
-                    type="button"
-                    className="file_browser_action file_browser_action--danger"
-                    title={t("ui.files.delete_armed")}
-                    onClick={() => void handleDelete(entry)}
-                  >
-                    <Icon name="check" size={13} />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="file_browser_action file_browser_action--danger"
-                    title={t("ui.files.delete")}
-                    onClick={() => {
-                      setDeleteName(entry.name);
-                      setRenameFrom(null);
-                    }}
-                  >
-                    <Icon name="trash" size={13} />
-                  </button>
-                )}
-              </span>
+                  {deleteName === entry.name ? (
+                    <button
+                      type="button"
+                      className="file_browser_action file_browser_action--danger"
+                      title={t("ui.files.delete_armed")}
+                      onClick={() => void handleDelete(entry)}
+                    >
+                      <Icon name="check" size={13} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="file_browser_action file_browser_action--danger"
+                      title={t("ui.files.delete")}
+                      onClick={() => armDelete(entry)}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  )}
+                </span>
+              </RowMenu>
             </div>
           ))
         )}
