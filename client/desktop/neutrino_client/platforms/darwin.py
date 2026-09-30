@@ -27,6 +27,7 @@ except ImportError:  # Windows has no account database module.
     pwd = None
 
 from neutrino_client.constants import (
+    CLIENT_CLIPBOARD_TIMEOUT_S,
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_DARWIN,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
@@ -82,6 +83,8 @@ LANGUAGE_ENTRY = re.compile(r'"([^"]+)"')
 
 OPEN_TOOL = "open"
 OPEN_TIMEOUT_S = 10
+
+PASTE_TOOL = "pbpaste"
 
 
 def _smb_refusal(output: str) -> str:
@@ -232,6 +235,25 @@ class DarwinPlatform(ClientPlatform):
             run_quietly([OPEN_TOOL, url], timeout_s=OPEN_TIMEOUT_S)
         except (OSError, subprocess.SubprocessError):
             super().open_url(url)
+
+    def read_clipboard(self) -> str:
+        """The text on the clipboard, from ``pbpaste``.
+
+        Returns:
+            The text; empty when the clipboard holds none.
+
+        Raises:
+            OSError: When ``pbpaste`` cannot run, fails, or takes too long.
+        """
+        try:
+            result = run_quietly(
+                [PASTE_TOOL], timeout_s=CLIENT_CLIPBOARD_TIMEOUT_S, encoding="utf-8"
+            )
+        except subprocess.SubprocessError as error:
+            raise OSError(f"{PASTE_TOOL}: {error}") from error
+        if result.returncode != 0:
+            raise OSError(f"{PASTE_TOOL}: {(result.stderr or '').strip()[:200]}")
+        return result.stdout or ""
 
     def raw_terminal(self) -> PosixRawTerminal:
         """Standard input in raw mode."""

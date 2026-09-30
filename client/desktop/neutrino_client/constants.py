@@ -181,6 +181,9 @@ CLIENT_SHUTDOWN_DEADLINE_S = 10
 CLIENT_PROMPT_TIMEOUT_S = 10
 CLIENT_PROMPT_EXIT_TIMEOUT_S = 5
 
+# How long reading this person's clipboard for a paste may take.
+CLIENT_CLIPBOARD_TIMEOUT_S = 5
+
 # The resident's own log, beside its state; one file, kept to a size, the
 # previous one beside it. A window process has no terminal to speak to.
 CLIENT_LOG_FILE_NAME = "client.log"

@@ -236,6 +236,7 @@ def test_the_deb_carries_the_licences_of_everything_in_it(deb):
         "cc_switch.txt",
         "easytier.txt",
         "gobject_introspection.txt",
+        "meslolgs_nf.txt",
         "netbird.txt",
         "rustdesk.txt",
         "xterm.txt",

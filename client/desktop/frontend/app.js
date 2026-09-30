@@ -482,7 +482,14 @@ let shellThemeKey = '';
 const earlyOutput = {};
 // Lines a shell keeps above its window.
 const TERMINAL_SCROLLBACK_LINES = 5000;
-const TERMINAL_FONT = 'ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace';
+// The client carries MesloLGS NF, so a powerlevel10k prompt draws its icons.
+const TERMINAL_FONT_FAMILY = 'MesloLGS NF';
+const TERMINAL_FONT = '"' + TERMINAL_FONT_FAMILY + '", ui-monospace, "Cascadia Mono", ' +
+  'Consolas, Menlo, monospace';
+// Its two faces, by the name the resident serves each under and the weight.
+const TERMINAL_FONT_FACES = [['regular', '400'], ['bold', '700']];
+// The faces' load, begun by the first shell; every shell redraws once done.
+let terminalFontLoad = null;
 
 function drawTerminals(state) {
   const hubs = state.hubs || [];
@@ -598,7 +605,8 @@ function shellPanel(state) {
   const status = document.createElement('div');
   status.className = 'term_status';
   status.textContent = active && active.state === 'closed'
-    ? (active.note || t('ui.terminal_ended')) : t('ui.terminal_keys');
+    ? (active.note || t('ui.terminal_ended'))
+    : (active && active.pasteNote) || t('ui.terminal_keys');
   panel.appendChild(status);
   return panel;
 }
@@ -671,7 +679,7 @@ function openShell(hub, machine) {
   const tab = {
     key: 'shell' + shellCounter, terminal_id: '', hub_id: hub.hub_id,
     name: machine.name, term: term, fit: fit, pane: pane, state: 'connecting',
-    note: '', isRefused: false, typed: '', isSending: false,
+    note: '', isRefused: false, typed: '', isSending: false, pasteNote: '',
   };
   shellTabs.push(tab);
   activeShell = tab.key;
@@ -679,7 +687,18 @@ function openShell(hub, machine) {
   redraw();
   term.open(pane);
   fitShell(tab);
+  loadTerminalFont();
   term.onData((data) => sendShellKeys(tab, data));
+  pane.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    pasteClipboard(tab);
+  });
+  term.attachCustomKeyEventHandler((event) => {
+    if (event.type !== 'keydown' || !isPasteChord(event)) return true;
+    event.preventDefault();
+    pasteClipboard(tab);
+    return false;
+  });
   term.onResize((size) => {
     if (tab.state !== 'open') return;
     api('/api/terminal/resize',
@@ -700,6 +719,65 @@ function openShell(hub, machine) {
     for (const piece of early) takeShellPiece(piece);
     redraw();
   });
+}
+
+// Ctrl+Shift+V everywhere, and Cmd+V on a Mac.
+function isPasteChord(event) {
+  const key = (event.key || '').toLowerCase();
+  if (key !== 'v' || event.altKey) return false;
+  return (event.ctrlKey && event.shiftKey) || (event.metaKey && !event.ctrlKey);
+}
+
+// Pastes the clipboard as the resident reads it; a refusal shows in the line
+// under the shell until the next paste.
+function pasteClipboard(tab) {
+  if (tab.state !== 'open') return;
+  api('/api/clipboard').then((reply) => {
+    if (!reply) return;
+    const note = reply.code ? wordCode(reply.code, reply.params) : '';
+    if (note !== tab.pasteNote) { tab.pasteNote = note; redraw(); }
+    if (!reply.code && reply.text) tab.term.paste(reply.text);
+    tab.term.focus();
+  });
+}
+
+// Loads both faces once, through the resident in pieces, then has every shell
+// measure its cells again in the loaded face.
+function loadTerminalFont() {
+  if (terminalFontLoad) return terminalFontLoad;
+  terminalFontLoad = Promise.all(TERMINAL_FONT_FACES.map((entry) =>
+    fontBytes(entry[0]).then((bytes) => {
+      const face = new FontFace(TERMINAL_FONT_FAMILY, bytes, { weight: entry[1] });
+      document.fonts.add(face);
+      return face.load();
+    }))).then(() => {
+    for (const tab of shellTabs) {
+      tab.term.options.fontFamily = 'monospace';
+      tab.term.options.fontFamily = TERMINAL_FONT;
+      fitShell(tab);
+    }
+  }).catch(() => {});
+  return terminalFontLoad;
+}
+
+// One face's file, asked for piece by piece until its size is reached.
+async function fontBytes(name) {
+  const pieces = [];
+  let offset = 0;
+  let size = 1;
+  while (offset < size) {
+    const reply = await api('/api/font?name=' + name + '&offset=' + offset);
+    if (!reply || reply.code) throw new Error('font ' + name);
+    const piece = base64Bytes(reply.data);
+    if (piece.length === 0) break;
+    pieces.push(piece);
+    offset += piece.length;
+    size = reply.size;
+  }
+  const bytes = new Uint8Array(offset);
+  let at = 0;
+  for (const piece of pieces) { bytes.set(piece, at); at += piece.length; }
+  return bytes.buffer;
 }
 
 // One piece the resident pushed: output for a shell, or how it ended.

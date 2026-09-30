@@ -305,6 +305,18 @@ class WindowsPlatform(ClientPlatform):
         """This process's console in raw VT mode."""
         return WindowsRawConsole()
 
+    def read_clipboard(self) -> str:
+        """The clipboard's text, read through ``OpenClipboard``.
+
+        Returns:
+            The text; empty when the clipboard holds none.
+
+        Raises:
+            OSError: When another program holds the clipboard or Windows
+                refuses.
+        """
+        return self._win32().clipboard_text()
+
     def easytier_daemon_address(self) -> str:
         """The pipe named ``neutrino_client_easytier``."""
         return CLIENT_EASYTIER_PIPE_WINDOWS
@@ -460,6 +472,34 @@ class _WindowsApi:
         """
         if not win32.libraries().kernel32.AssignProcessToJobObject(job, process_handle):
             raise win32.last_error()
+
+    def clipboard_text(self) -> str:
+        """The clipboard's Unicode text, the clipboard closed again after.
+
+        Returns:
+            The text; empty when the clipboard holds no text.
+
+        Raises:
+            OSError: When the clipboard cannot be opened or its text locked.
+        """
+        libraries = win32.libraries()
+        user32 = libraries.user32
+        kernel32 = libraries.kernel32
+        if not user32.OpenClipboard(None):
+            raise win32.last_error()
+        try:
+            handle = user32.GetClipboardData(win32.CF_UNICODETEXT)
+            if not handle:
+                return ""
+            pointer = kernel32.GlobalLock(handle)
+            if not pointer:
+                raise win32.last_error()
+            try:
+                return ctypes.wstring_at(pointer)
+            finally:
+                kernel32.GlobalUnlock(handle)
+        finally:
+            user32.CloseClipboard()
 
     def add_connection(
         self, *, local: str, remote: str, username: str, password: str

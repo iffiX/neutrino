@@ -14,8 +14,11 @@ have a wording, so a new code or state without a word fails this suite.
 Nothing of the agent's Modules section is left.
 """
 
+import hashlib
 import pathlib
 import re
+
+import pytest
 
 import neutrino_client
 from neutrino_client import words
@@ -1170,3 +1173,63 @@ def test_xterm_and_its_fit_addon_are_vendored_and_inlined():
     assert "<script src=" not in document
     assert "sourceMappingURL" not in document
     assert ".xterm-viewport" in document
+
+
+# --- the terminal's font and the paste ---
+
+# The two faces as romkatv/powerlevel10k-media v2.3.3 publishes them.
+MESLO_SHA256 = {
+    "regular": "d97946186e97f8d7c0139e8983abf40a1d2d086924f2c5dbf1c29bd8f2c6e57d",  # scan: allow
+    "bold": "b6c0199cf7c7483c8343ea020658925e6de0aeb318b89908152fcb4d19226003",  # scan: allow
+}
+
+
+@pytest.mark.parametrize("face", sorted(MESLO_SHA256))
+def test_meslolgs_nf_is_vendored_byte_for_byte(face):
+    data = (page.gui_dir() / page.GUI_TERMINAL_FONTS[face]).read_bytes()
+
+    assert hashlib.sha256(data).hexdigest() == MESLO_SHA256[face]
+
+
+def test_the_font_is_not_inlined_into_the_document():
+    assert len(page.control_page_html().encode("utf-8")) < 2 * 1024 * 1024
+
+
+def test_meslolgs_nf_comes_first_and_every_shell_loads_it():
+    opening = function_body("function openShell(hub, machine)")
+    loading = function_body("function loadTerminalFont()")
+    reading = PAGE_JS.split("async function fontBytes(name) {")[1].split("\n}")[0]
+
+    assert "const TERMINAL_FONT_FAMILY = 'MesloLGS NF';" in PAGE_JS
+    assert "const TERMINAL_FONT = '\"' + TERMINAL_FONT_FAMILY + '\", ui-monospace" in (
+        PAGE_JS
+    )
+    assert "const TERMINAL_FONT_FACES = [['regular', '400'], ['bold', '700']];" in (
+        PAGE_JS
+    )
+    assert "loadTerminalFont();" in opening
+    assert "new FontFace(TERMINAL_FONT_FAMILY, bytes, { weight: entry[1] })" in loading
+    assert "document.fonts.add(face);" in loading
+    assert "tab.term.options.fontFamily = TERMINAL_FONT;" in loading
+    assert "fitShell(tab);" in loading
+    assert "api('/api/font?name=' + name + '&offset=' + offset)" in reading
+    assert set(page.GUI_TERMINAL_FONTS) == {"regular", "bold"}
+
+
+def test_a_right_click_and_the_paste_chords_paste_the_residents_clipboard():
+    opening = function_body("function openShell(hub, machine)")
+    chord = function_body("function isPasteChord(event)")
+    pasting = function_body("function pasteClipboard(tab)")
+
+    assert "pane.addEventListener('contextmenu', (event) => {" in opening
+    assert "term.attachCustomKeyEventHandler((event) => {" in opening
+    assert opening.count("pasteClipboard(tab);") == 2
+    assert "(event.ctrlKey && event.shiftKey) || (event.metaKey && !event.ctrlKey)" in (
+        chord
+    )
+    assert "api('/api/clipboard')" in pasting
+    assert "tab.term.paste(reply.text);" in pasting
+    assert "navigator.clipboard" not in PAGE_JS
+    assert "wordCode(reply.code, reply.params)" in pasting
+    assert EN_WORDS["code.clipboard_unreadable"]
+    assert CATALOGS["zh-CN"]["code.clipboard_unreadable"]

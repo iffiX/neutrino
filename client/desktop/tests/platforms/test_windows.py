@@ -5,6 +5,7 @@ share is mapped in this very session with the login on standard input and
 never on an argument vector. Every Win32 call rides the seam.
 """
 
+import ctypes
 import os
 
 import pytest
@@ -474,3 +475,92 @@ def test_every_core_joins_one_job_that_ends_with_the_daemon():
 def test_windows_has_no_service_control_left_for_easytier():
     assert not hasattr(WindowsPlatform, "easytier_join")
     assert not hasattr(windows_module, "SERVICE_REFUSALS")
+
+
+# --- the clipboard ---
+
+
+class FakeClipboardLibraries:
+    """user32 and kernel32 as far as a clipboard read reaches them.
+
+    Attributes:
+        calls: Every call, in order.
+    """
+
+    def __init__(self, text, *, is_open=True):
+        self.calls = []
+        self._buffer = None if text is None else ctypes.create_unicode_buffer(text)
+        self._is_open = is_open
+        self.user32 = self
+        self.kernel32 = self
+
+    def OpenClipboard(self, owner):
+        self.calls.append(("OpenClipboard", owner))
+        return 1 if self._is_open else 0
+
+    def GetClipboardData(self, kind):
+        self.calls.append(("GetClipboardData", kind))
+        return 77 if self._buffer is not None else None
+
+    def GlobalLock(self, handle):
+        self.calls.append(("GlobalLock", handle))
+        return ctypes.addressof(self._buffer)
+
+    def GlobalUnlock(self, handle):
+        self.calls.append(("GlobalUnlock", handle))
+        return 1
+
+    def CloseClipboard(self):
+        self.calls.append(("CloseClipboard",))
+        return 1
+
+
+def clipboard_api(monkeypatch, libraries):
+    from neutrino_client.platforms.windows import _WindowsApi
+
+    def loaded():
+        return libraries
+
+    monkeypatch.setattr(windows_module.win32, "libraries", loaded)
+    return _WindowsApi.__new__(_WindowsApi)
+
+
+def test_the_clipboard_is_read_through_the_win32_seam():
+    class ClipboardWin32(FakeWin32):
+        def clipboard_text(self):
+            return "echo hi"
+
+    fake = ClipboardWin32()
+
+    assert WindowsPlatform(win32=fake).read_clipboard() == "echo hi"
+
+
+def test_the_clipboards_unicode_text_is_read_and_the_clipboard_closed(monkeypatch):
+    libraries = FakeClipboardLibraries("ls -la ~/文档")
+    api = clipboard_api(monkeypatch, libraries)
+
+    assert api.clipboard_text() == "ls -la ~/文档"
+    assert libraries.calls == [
+        ("OpenClipboard", None),
+        ("GetClipboardData", 13),
+        ("GlobalLock", 77),
+        ("GlobalUnlock", 77),
+        ("CloseClipboard",),
+    ]
+
+
+def test_a_clipboard_without_text_reads_empty(monkeypatch):
+    libraries = FakeClipboardLibraries(None)
+    api = clipboard_api(monkeypatch, libraries)
+
+    assert api.clipboard_text() == ""
+    assert libraries.calls[-1] == ("CloseClipboard",)
+
+
+def test_a_clipboard_another_program_holds_is_an_os_error(monkeypatch):
+    libraries = FakeClipboardLibraries("x", is_open=False)
+    api = clipboard_api(monkeypatch, libraries)
+
+    with pytest.raises(OSError):
+        api.clipboard_text()
+    assert libraries.calls == [("OpenClipboard", None)]

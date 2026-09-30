@@ -6,9 +6,9 @@ import time
 
 import pytest
 
-from neutrino_client.control import routes
+from neutrino_client.control import page, routes
 from neutrino_client.exceptions import EnrollmentError
-from tests.conftest import FakeResident
+from tests.conftest import FakeClientPlatform, FakeResident
 
 
 def test_state_carries_the_persons_facts_the_hubs_and_no_token():
@@ -536,3 +536,78 @@ def test_the_result_names_how_the_shell_ended():
     assert routes.dispatch(
         "POST", "/api/terminal/result", {"terminal_id": "t1"}, resident
     ) == (200, {"exit_code": 0})
+
+
+# --- the clipboard and the terminal's font ---
+
+
+def test_the_clipboard_route_answers_the_text_the_resident_read():
+    resident = FakeResident()
+
+    assert routes.dispatch("GET", "/api/clipboard", None, resident) == (
+        200,
+        {"text": "echo pasted\n"},
+    )
+
+
+def test_a_clipboard_that_cannot_be_read_answers_its_code():
+    resident = FakeResident()
+    resident.clipboard_reply = {
+        "code": "clipboard_unreadable",
+        "params": {"detail": "busy"},
+    }
+
+    status, reply = routes.dispatch("GET", "/api/clipboard", None, resident)
+
+    assert status == 400
+    assert reply == {"code": "clipboard_unreadable", "params": {"detail": "busy"}}
+
+
+def test_the_resident_words_a_clipboard_the_platform_cannot_read():
+    from neutrino_client.core.resident import ClientResident
+
+    class Unreadable(FakeClientPlatform):
+        def read_clipboard(self):
+            raise OSError("no display")
+
+    class Readable(FakeClientPlatform):
+        def read_clipboard(self):
+            return "pwd"
+
+    resident = ClientResident.__new__(ClientResident)
+    resident.platform = Unreadable()
+    assert resident.read_clipboard() == {
+        "code": "clipboard_unreadable",
+        "params": {"detail": "no display"},
+    }
+    resident.platform = Readable()
+    assert resident.read_clipboard() == {"text": "pwd"}
+
+
+def test_the_font_is_served_in_pieces_that_add_up_to_the_file():
+    whole = (page.gui_dir() / page.GUI_TERMINAL_FONTS["regular"]).read_bytes()
+    pieces = []
+    offset = 0
+    while offset < len(whole):
+        status, reply = routes.dispatch(
+            "GET", f"/api/font?name=regular&offset={offset}", None, FakeResident()
+        )
+        assert status == 200
+        assert reply["offset"] == offset and reply["size"] == len(whole)
+        piece = base64.b64decode(reply["data"])
+        assert 0 < len(piece) <= page.GUI_FONT_CHUNK_BYTES
+        pieces.append(piece)
+        offset += len(piece)
+
+    assert b"".join(pieces) == whole
+    assert len(pieces) > 1
+
+
+@pytest.mark.parametrize(
+    "query", ["name=../../etc/passwd", "name=", "name=regular&offset=x"]
+)
+def test_a_font_the_page_does_not_carry_is_an_unknown_request(query):
+    status, reply = routes.dispatch("GET", "/api/font?" + query, None, FakeResident())
+
+    assert status == 404
+    assert reply["code"] == "unknown_request"

@@ -3,17 +3,22 @@
 A mount is the one privileged step and rides the root helper under
 ``pkexec`` with the credentials file on its argument vector and the
 password nowhere; a declined authorization is typed; attachment is read
-from the kernel's mount table.
+from the kernel's mount table. The clipboard is read with the session's
+own tool, else through GTK.
 """
 
 import collections
 import os
 import struct
+import subprocess
 
 import pytest
 
 import neutrino_client.platforms.linux as linux_module
-from neutrino_client.constants import CLIENT_MOUNT_HELPER_PATH
+from neutrino_client.constants import (
+    CLIENT_CLIPBOARD_TIMEOUT_S,
+    CLIENT_MOUNT_HELPER_PATH,
+)
 from neutrino_client.exceptions import (
     ControlSocketUnavailableError,
     ShareAttachError,
@@ -316,3 +321,96 @@ def test_the_daemons_state_directory_is_its_owners_alone(tmp_path):
 def test_linux_has_no_overlay_helper_left():
     assert not hasattr(LinuxPlatform, "easytier_join")
     assert not hasattr(LinuxPlatform, "easytier_leave")
+
+
+# --- the clipboard ---
+
+
+class ClipboardTools:
+    """``shutil.which`` and ``subprocess.run`` for the clipboard tools.
+
+    Attributes:
+        installed: The tools found on PATH.
+        commands: Every command run, in order.
+        result: What every run answers.
+    """
+
+    def __init__(self, installed, result=None):
+        self.installed = set(installed)
+        self.commands = []
+        self.result = result if result is not None else completed(stdout="ls -la\n")
+
+    def which(self, name):
+        return f"/usr/bin/{name}" if name in self.installed else None
+
+    def run(self, command, **kwargs):
+        self.commands.append(list(command))
+        return self.result
+
+
+def clipboard_session(monkeypatch, tools, *, wayland="", display=""):
+    for name, value in (("WAYLAND_DISPLAY", wayland), ("DISPLAY", display)):
+        if value:
+            monkeypatch.setenv(name, value)
+        else:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(linux_module.shutil, "which", tools.which)
+    monkeypatch.setattr(linux_module.subprocess, "run", tools.run)
+
+
+def refuse_gtk(timeout_s):
+    raise AssertionError("GTK is asked only when no tool serves the session")
+
+
+def test_a_wayland_session_is_read_with_wl_paste(monkeypatch):
+    tools = ClipboardTools({"wl-paste", "xclip"})
+    clipboard_session(monkeypatch, tools, wayland="wayland-0", display=":0")
+    monkeypatch.setattr(linux_module, "gtk_clipboard_text", refuse_gtk)
+
+    assert LinuxPlatform().read_clipboard() == "ls -la\n"
+    assert tools.commands == [["wl-paste", "--no-newline", "--type", "text"]]
+
+
+def test_an_x_session_is_read_with_xclip(monkeypatch):
+    tools = ClipboardTools({"xclip"})
+    clipboard_session(monkeypatch, tools, wayland="wayland-0", display=":0")
+    monkeypatch.setattr(linux_module, "gtk_clipboard_text", refuse_gtk)
+
+    assert LinuxPlatform().read_clipboard() == "ls -la\n"
+    assert tools.commands == [["xclip", "-selection", "clipboard", "-o"]]
+
+
+def test_a_clipboard_the_tool_finds_no_text_on_reads_empty(monkeypatch):
+    tools = ClipboardTools({"xclip"}, completed(returncode=1, stderr="no STRING"))
+    clipboard_session(monkeypatch, tools, display=":0")
+
+    assert LinuxPlatform().read_clipboard() == ""
+
+
+def test_without_a_tool_the_clipboard_is_read_through_gtk(monkeypatch):
+    tools = ClipboardTools(set())
+    clipboard_session(monkeypatch, tools, display=":0")
+    asked = []
+
+    def gtk_text(timeout_s):
+        asked.append(timeout_s)
+        return "from gtk"
+
+    monkeypatch.setattr(linux_module, "gtk_clipboard_text", gtk_text)
+
+    assert LinuxPlatform().read_clipboard() == "from gtk"
+    assert tools.commands == []
+    assert asked == [CLIENT_CLIPBOARD_TIMEOUT_S]
+
+
+def test_a_tool_that_hangs_is_an_os_error(monkeypatch):
+    tools = ClipboardTools({"xclip"})
+
+    def hang(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 5)
+
+    tools.run = hang
+    clipboard_session(monkeypatch, tools, display=":0")
+
+    with pytest.raises(OSError):
+        LinuxPlatform().read_clipboard()

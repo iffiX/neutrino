@@ -444,3 +444,32 @@ def test_easytier_is_asked_of_the_daemons_socket_and_prompts_for_nothing():
     )
     assert not hasattr(darwin_module, "OSASCRIPT_TOOL")
     assert not hasattr(DarwinPlatform, "easytier_join")
+
+
+# --- the clipboard ---
+
+
+def test_the_clipboard_is_read_with_pbpaste(monkeypatch):
+    recorder = CommandRecorder([completed(stdout="git status\n")])
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    assert DarwinPlatform().read_clipboard() == "git status\n"
+    assert recorder.commands == [["pbpaste"]]
+
+
+def test_a_pbpaste_that_fails_is_an_os_error(monkeypatch):
+    recorder = CommandRecorder([completed(returncode=1, stderr="no pasteboard")])
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    with pytest.raises(OSError):
+        DarwinPlatform().read_clipboard()
+
+
+def test_a_pbpaste_that_hangs_is_an_os_error(monkeypatch):
+    def hang(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 5)
+
+    monkeypatch.setattr(darwin_module.subprocess, "run", hang)
+
+    with pytest.raises(OSError):
+        DarwinPlatform().read_clipboard()

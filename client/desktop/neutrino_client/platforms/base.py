@@ -356,6 +356,18 @@ class ClientPlatform:
         """
         webbrowser.open(url)
 
+    def read_clipboard(self) -> str:
+        """The text on this person's clipboard.
+
+        Returns:
+            The text; empty when the clipboard holds none.
+
+        Raises:
+            PlatformUnsupportedError: Where no clipboard can be read.
+            OSError: When the clipboard cannot be read.
+        """
+        raise PlatformUnsupportedError("no clipboard is read here")
+
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float
     ) -> tuple:

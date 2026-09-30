@@ -50,6 +50,7 @@ CLIENT_CODE_WORDS = {
     "overlay_request_invalid": "the virtual network service did not understand the request; update the client",
     "overlay_missing": "this hub publishes no virtual network",
     "overlay_wish_unsaved": "the virtual network choice could not be saved: {detail}",
+    "clipboard_unreadable": "the clipboard could not be read: {detail}",
     "mount_not_authorized": "mounting was not authorized on this machine",
     "mount_tooling_missing": "the mount tooling is missing on this machine",
     "control_peer_refused": "the running client belongs to another account",

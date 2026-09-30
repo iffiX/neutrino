@@ -223,6 +223,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     ) == [
         "cc_switch.txt",
         "easytier.txt",
+        "meslolgs_nf.txt",
         "netbird.txt",
         "rustdesk.txt",
         "xterm.txt",
@@ -406,6 +407,7 @@ def test_the_licences_travel_inside_the_bundle(tmp_path):
     assert sorted(path.name for path in (tmp_path / "licenses").iterdir()) == [
         "cc_switch.txt",
         "easytier.txt",
+        "meslolgs_nf.txt",
         "netbird.txt",
         "rustdesk.txt",
         "xterm.txt",

@@ -19,6 +19,7 @@ import time
 import urllib.parse
 
 from neutrino_client import CLIENT_VERSION
+from neutrino_client.control import page
 from neutrino_client.core.resident import end_process
 from neutrino_client.exceptions import EnrollmentError, PlatformUnsupportedError
 
@@ -85,6 +86,13 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return 200, state_payload(resident)
         if route == "/api/fs":
             return _list_directories(resident, query)
+        if route == "/api/font":
+            return _font_piece(query)
+        if route == "/api/clipboard":
+            outcome = resident.read_clipboard()
+            if outcome.get("code"):
+                return refusal_status(str(outcome["code"])), outcome
+            return 200, outcome
         return 404, {"code": "unknown_request", "params": {}}
     if method == "POST":
         if route == "/api/join":
@@ -336,6 +344,17 @@ def _service_action(resident, service_type: str, body: dict):
     if outcome:
         return refusal_status(str(outcome.get("code", ""))), outcome
     return 200, state_payload(resident)
+
+
+def _font_piece(query: str):
+    """One piece of a face of the terminal's font, by ``name`` and ``offset``."""
+    values = urllib.parse.parse_qs(query)
+    name = (values.get("name") or [""])[0]
+    try:
+        offset = int((values.get("offset") or ["0"])[0])
+        return 200, page.terminal_font_piece(name, offset)
+    except (KeyError, ValueError, OSError):
+        return 404, {"code": "unknown_request", "params": {}}
 
 
 def _list_directories(resident, query: str):

@@ -6,6 +6,7 @@
   "code.busy": "still handling the last request",
   "code.client_disabled": "the hub has switched this client off",
   "code.client_internal": "the client hit an unexpected error ({error}); check its log",
+  "code.clipboard_unreadable": "the clipboard could not be read: {detail}",
   "code.control_channel_closed": "the client stopped answering; open it again",
   "code.control_peer_refused": "the running client belongs to another account",
   "code.control_socket_unavailable": "this session has no place for the client's socket",

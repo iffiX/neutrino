@@ -16,6 +16,7 @@ import shutil
 import socket
 import struct
 import subprocess
+import threading
 
 try:
     import pwd
@@ -23,6 +24,7 @@ except ImportError:  # Windows has no account database module.
     pwd = None
 
 from neutrino_client.constants import (
+    CLIENT_CLIPBOARD_TIMEOUT_S,
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_LINUX,
     CLIENT_EASYTIER_STATE_DIR_LINUX,
@@ -35,7 +37,7 @@ from neutrino_client.exceptions import (
     PlatformUnsupportedError,
     ShareAttachError,
 )
-from neutrino_client.platforms.base import ClientPlatform, run_on_pty
+from neutrino_client.platforms.base import ClientPlatform, run_on_pty, run_quietly
 from neutrino_client.platforms.posix_terminal import PosixRawTerminal
 
 CIFS_HELPER = "mount.cifs"
@@ -52,6 +54,11 @@ PROC_MOUNTS_ESCAPES = (
     ("\n", "\\012"),
 )
 CONFIG_DIR_NAME = "neutrino_client"
+# The clipboard tools, each with the variable naming the session it serves.
+CLIPBOARD_TOOLS = (
+    ("WAYLAND_DISPLAY", ("wl-paste", "--no-newline", "--type", "text")),
+    ("DISPLAY", ("xclip", "-selection", "clipboard", "-o")),
+)
 
 
 class LinuxPlatform(ClientPlatform):
@@ -194,6 +201,35 @@ class LinuxPlatform(ClientPlatform):
         """Standard input in raw mode."""
         return PosixRawTerminal()
 
+    def read_clipboard(self) -> str:
+        """The text on the clipboard of this person's session.
+
+        ``wl-paste`` on a Wayland session and ``xclip`` on an X one, when
+        the tool is installed, else GTK's own clipboard.
+
+        Returns:
+            The text; empty when the clipboard holds none.
+
+        Raises:
+            OSError: When the tool cannot run or takes too long, or GTK is
+                missing or does not answer in time.
+        """
+        for variable, tool in CLIPBOARD_TOOLS:
+            if os.environ.get(variable) and shutil.which(tool[0]):
+                try:
+                    result = run_quietly(
+                        list(tool),
+                        timeout_s=CLIENT_CLIPBOARD_TIMEOUT_S,
+                        encoding="utf-8",
+                    )
+                except subprocess.SubprocessError as error:
+                    raise OSError(f"{tool[0]}: {error}") from error
+                # Both tools end non-zero on a clipboard that holds no text.
+                if result.returncode != 0:
+                    return ""
+                return result.stdout or ""
+        return gtk_clipboard_text(CLIENT_CLIPBOARD_TIMEOUT_S)
+
     def easytier_daemon_address(self) -> str:
         """``/run/neutrino_client_easytier.sock``."""
         return CLIENT_EASYTIER_SOCKET_PATH_LINUX
@@ -218,6 +254,44 @@ class LinuxPlatform(ClientPlatform):
         )
         if outcome is not None:
             raise ShareAttachError(outcome[0], detail=outcome[1])
+
+
+def gtk_clipboard_text(timeout_s: float) -> str:
+    """The clipboard's text as GTK reads it, asked on GTK's own main loop.
+
+    Args:
+        timeout_s: How long the main loop is given to answer.
+
+    Returns:
+        The text; empty when the clipboard holds none.
+
+    Raises:
+        OSError: When GTK cannot be loaded.
+        TimeoutError: When no main loop answers in time.
+    """
+    try:
+        import gi
+
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("Gdk", "3.0")
+        from gi.repository import Gdk, GLib, Gtk
+    except (ImportError, ValueError) as error:
+        raise OSError(f"no clipboard tool and no GTK here: {error}") from error
+    answer = {"text": ""}
+    done = threading.Event()
+
+    def received(_clipboard, text) -> None:
+        answer["text"] = text or ""
+        done.set()
+
+    def ask() -> bool:
+        Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).request_text(received)
+        return False
+
+    GLib.idle_add(ask)
+    if not done.wait(timeout_s):
+        raise TimeoutError("the clipboard did not answer")
+    return answer["text"]
 
 
 def run_root_helper(

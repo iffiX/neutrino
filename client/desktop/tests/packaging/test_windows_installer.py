@@ -504,6 +504,7 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
     assert sorted(path.name for path in carried.iterdir()) == [
         "cc_switch.txt",
         "easytier.txt",
+        "meslolgs_nf.txt",
         "netbird.txt",
         "packet_stub.txt",
         "rustdesk.txt",

@@ -5,13 +5,15 @@ copied into ``neutrino_client/data/gui/`` by the packaging builds; a checkout
 with no built copy reads the source directory directly. The page's requests
 ride the in-process channel over a message bridge. The document carries both
 word catalogs inlined, the way the stylesheets and the scripts are, xterm.js
-from ``vendor/`` among them, so the page loads nothing on its own.
+from ``vendor/`` among them, so the page loads nothing on its own; the
+terminal's font comes over the same bridge, one piece per request.
 
 The page redraws only when the state payload actually changed, and never
 while the person holds a text selection, a focused form field, or an open
 dialog.
 """
 
+import base64
 import json
 import os
 import pathlib
@@ -30,6 +32,14 @@ GUI_WORDS_TAG = GUI_WORDS_OPENING + "{}</script>"
 # names them under ``vendor/``.
 GUI_VENDOR_STYLES = ("vendor/xterm.css",)
 GUI_VENDOR_SCRIPTS = ("vendor/xterm.js", "vendor/addon-fit.js")
+# The terminal's font, MesloLGS NF, by the name the page asks for each face.
+# The faces are read in pieces over the bridge rather than inlined: WebView2
+# takes a document of at most 2 MiB.
+GUI_TERMINAL_FONTS = {
+    "regular": "vendor/MesloLGSNF-Regular.ttf",
+    "bold": "vendor/MesloLGSNF-Bold.ttf",
+}
+GUI_FONT_CHUNK_BYTES = 512 * 1024
 
 
 def gui_dir() -> pathlib.Path:
@@ -58,6 +68,34 @@ def gui_asset(name: str) -> str:
         The file's content.
     """
     return (gui_dir() / name).read_text(encoding="utf-8")
+
+
+def terminal_font_piece(name: str, offset: int) -> dict:
+    """One piece of one face of the terminal's font.
+
+    Args:
+        name: The face, a key of ``GUI_TERMINAL_FONTS``.
+        offset: Where in the file the piece starts.
+
+    Returns:
+        ``{"data", "offset", "size"}``: at most ``GUI_FONT_CHUNK_BYTES`` of
+        the file as base64, where they start, and the file's whole size.
+
+    Raises:
+        KeyError: When ``name`` names no face.
+        FileNotFoundError: When the face is not on this machine.
+    """
+    path = gui_dir() / GUI_TERMINAL_FONTS[name]
+    with open(path, "rb") as stream:
+        size = os.fstat(stream.fileno()).st_size
+        start = min(max(int(offset), 0), size)
+        stream.seek(start)
+        data = stream.read(GUI_FONT_CHUNK_BYTES)
+    return {
+        "data": base64.b64encode(data).decode("ascii"),
+        "offset": start,
+        "size": size,
+    }
 
 
 def control_page_html() -> str:

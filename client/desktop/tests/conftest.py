@@ -434,6 +434,7 @@ class FakeResident:
         self.exits = []
         self.overlay_calls = []
         self.overlay_reply = {}
+        self.clipboard_reply = {"text": "echo pasted\n"}
         self.terminal_calls = []
         self.terminal_reply = {"terminal_id": "t1"}
         self.typed = []
@@ -522,6 +523,9 @@ class FakeResident:
     def leave_overlay(self, hub_id: str) -> dict:
         self.overlay_calls.append(("leave", hub_id))
         return dict(self.overlay_reply)
+
+    def read_clipboard(self) -> dict:
+        return dict(self.clipboard_reply)
 
     def pick_overlay(self, hub_id: str, provider: str) -> dict:
         self.overlay_calls.append(("pick", hub_id, provider))

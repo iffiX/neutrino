@@ -49,6 +49,7 @@ from neutrino_client.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
     GatewayUntrusted,
+    PlatformUnsupportedError,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
@@ -379,6 +380,18 @@ class ClientResident:
             self._is_announcing = True
             self._is_pending_announcement = False
         threading.Thread(target=self._announce, daemon=True).start()
+
+    def read_clipboard(self) -> dict:
+        """The text on this person's clipboard, for a paste into a terminal.
+
+        Returns:
+            ``{"text"}``; ``clipboard_unreadable`` with the reason when the
+            platform cannot read it.
+        """
+        try:
+            return {"text": self.platform.read_clipboard()}
+        except (OSError, PlatformUnsupportedError) as error:
+            return {"code": "clipboard_unreadable", "params": {"detail": str(error)}}
 
     def list_directories(self, path: str) -> list:
         """The subdirectory names under a directory, as this person."""

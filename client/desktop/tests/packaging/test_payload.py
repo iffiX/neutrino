@@ -96,11 +96,14 @@ def test_the_staged_tree_carries_both_word_catalogs(tmp_path):
 
 
 def test_the_staged_tree_carries_the_vendored_terminal(tmp_path):
-    """The page inlines xterm.js from here, or the Terminals page cannot draw."""
+    """The page inlines xterm.js from here, or the Terminals page cannot draw,
+    and reads the terminal's font from here byte for byte."""
     staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
 
     vendor = staged / "data" / "gui" / "vendor"
     assert sorted(path.name for path in vendor.iterdir()) == [
+        "MesloLGSNF-Bold.ttf",
+        "MesloLGSNF-Regular.ttf",
         "addon-fit.js",
         "xterm.css",
         "xterm.js",
@@ -310,6 +313,7 @@ def test_the_licences_the_package_owes_are_staged(tmp_path):
         "cc_switch.txt",
         "easytier.txt",
         "gobject_introspection.txt",
+        "meslolgs_nf.txt",
         "netbird.txt",
         "rustdesk.txt",
         "xterm.txt",

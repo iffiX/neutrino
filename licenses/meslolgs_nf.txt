@@ -1,4 +1,4 @@
-MesloLGS NF Regular and Bold, from romkatv/powerlevel10k-media v2.3.3, carried in the Neutrino hub panel for its terminal under the terms below.
+MesloLGS NF Regular and Bold, from romkatv/powerlevel10k-media v2.3.3, carried in the Neutrino hub panel and the Neutrino desktop client for their terminals under the terms below.
 Corresponding source: https://github.com/romkatv/powerlevel10k-media/tree/v2.3.3
 
 Copyright 2009, 2010, 2013 André Berg

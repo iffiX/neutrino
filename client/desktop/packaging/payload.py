@@ -152,6 +152,7 @@ CARRIED_LICENSES = (
     "netbird.txt",
     "easytier.txt",
     "xterm.txt",
+    "meslolgs_nf.txt",
 )
 # The Windows installer also carries EasyTier's wintun.dll, under WireGuard's
 # prebuilt binaries licence, and the stand-in packet.dll, which says what it

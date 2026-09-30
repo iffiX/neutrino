@@ -128,6 +128,9 @@ LR_DEFAULTSIZE = 0x0040
 IDI_APPLICATION = 32512
 NOTIFY_ICON_TIP_LENGTH = 128
 
+# The clipboard's text, as UTF-16.
+CF_UNICODETEXT = 13
+
 # The language a LANGID names: its low ten bits are the primary language,
 # and 0x04 is Chinese in every region Windows knows.
 LANGUAGE_PRIMARY_MASK = 0x3FF
@@ -738,3 +741,9 @@ class Win32Libraries:
         self.user32.TranslateMessage.argtypes = [ctypes.c_void_p]
         self.user32.DispatchMessageW.argtypes = [ctypes.c_void_p]
         self.user32.DispatchMessageW.restype = ctypes.c_ssize_t
+        self.user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+        self.user32.GetClipboardData.argtypes = [ctypes.c_uint]
+        self.user32.GetClipboardData.restype = ctypes.c_void_p
+        self.kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+        self.kernel32.GlobalLock.restype = ctypes.c_void_p
+        self.kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
