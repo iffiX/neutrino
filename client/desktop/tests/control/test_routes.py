@@ -363,6 +363,23 @@ def test_a_network_step_reaches_the_resident_and_answers_the_state(path, verb):
     assert state["hubs"][0]["overlay"]["state"] == "on"
 
 
+def test_a_pick_names_the_hub_and_the_provider():
+    resident = FakeResident()
+
+    status, state = routes.dispatch(
+        "POST", "/api/overlay/pick", {"hub_id": "h1", "provider": "easytier"}, resident
+    )
+
+    assert status == 200
+    assert resident.overlay_calls == [("pick", "h1", "easytier")]
+    assert [
+        network["provider"] for network in state["hubs"][0]["overlay"]["networks"]
+    ] == [
+        "netbird",
+        "easytier",
+    ]
+
+
 @pytest.mark.parametrize(
     "code, expected",
     [

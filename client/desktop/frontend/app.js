@@ -287,6 +287,7 @@ const CODE_TONES = {
   overlay_restart_failed: 'bad',
   overlay_console_invalid: 'bad',
   overlay_request_invalid: 'bad',
+  overlay_wish_unsaved: 'bad',
   unsupported_platform: 'bad',
   crashed: 'bad',
 };
@@ -294,6 +295,8 @@ const CODE_TONES = {
 const OVERLAY_STATES = ['off', 'joining', 'waiting', 'on', 'leaving', 'failed'];
 // The states in which a press on the chip leaves the network.
 const OVERLAY_HELD_STATES = ['waiting', 'on'];
+// The name each virtual network's provider goes by in the picker.
+const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };
 
 function codeTone(code) {
   return CODE_TONES[code] || 'wait';
@@ -877,6 +880,8 @@ function hubRow(hub) {
   row.appendChild(body);
   const chip = overlayChip(hub);
   if (chip) row.appendChild(chip);
+  const networkPicker = overlayPicker(hub);
+  if (networkPicker) row.appendChild(networkPicker);
   if (isReplaced) {
     const reconnect = document.createElement('button');
     reconnect.textContent = t('ui.reconnect');
@@ -896,14 +901,16 @@ function hubRow(hub) {
   return row;
 }
 
-// The virtual network's chip on a hub row: its state and address, pressed
-// to join or leave. It stands whatever the socket's state, since the
-// virtual network is what can bring a hub back.
+// The virtual network's chip on a hub row: the current network's state and
+// address, pressed to want the hub's virtual network or not. It stands
+// whatever the socket's state, since the virtual network is what can bring
+// a hub back.
 function overlayChip(hub) {
   const overlay = hub.overlay;
   if (!overlay) return null;
   const isOn = overlay.state === 'on';
-  const isHeldNetwork = OVERLAY_HELD_STATES.indexOf(overlay.state) >= 0;
+  const isHeldNetwork = overlay.is_wanted
+    || OVERLAY_HELD_STATES.indexOf(overlay.state) >= 0;
   const isMoving = overlay.state === 'joining' || overlay.state === 'leaving';
   const isWorking = (overlay.work || {}).state === 'working';
   const chip = document.createElement('button');
@@ -914,6 +921,33 @@ function overlayChip(hub) {
   chip.appendChild(document.createTextNode(overlayWords(overlay)));
   chip.onclick = () => askOverlay(hub, isHeldNetwork);
   return chip;
+}
+
+// Beside the chip, when the hub publishes more than one virtual network: the
+// one this machine is on or aims at, and a pick moves it to another.
+function overlayPicker(hub) {
+  const overlay = hub.overlay;
+  const networks = (overlay && overlay.networks) || [];
+  if (networks.length < 2) return null;
+  const isMoving = overlay.state === 'joining' || overlay.state === 'leaving';
+  const isWorking = (overlay.work || {}).state === 'working';
+  const options = networks.map((network) => ({
+    value: network.provider,
+    label: OVERLAY_TITLES[network.provider] || network.provider,
+  }));
+  const key = hubKey(hub);
+  const wrap = picker('overlay_' + key, options, overlay.provider, (provider) => {
+    delete overlayNotes[key];
+    send('/api/overlay/pick', { hub_id: key, provider: provider }).then((reply) => {
+      if (reply && reply.code) {
+        overlayNotes[key] = wordCode(reply.code, reply.params);
+        redraw();
+      }
+    });
+  }, isMoving || isWorking || isHeld(hub));
+  wrap.classList.add('overlay_pick');
+  wrap.title = t('ui.overlay_pick');
+  return wrap;
 }
 
 function overlayTone(overlay) {
@@ -930,7 +964,8 @@ function overlayWords(overlay) {
   return parts.join(' · ');
 }
 
-// A press on the chip: leave when the network is held, join otherwise; a
+// A press on the chip: leave when the network is wanted or held, join
+// otherwise; a
 // refusal is worded under the row until the next press.
 function askOverlay(hub, isHeldNetwork) {
   const key = hubKey(hub);

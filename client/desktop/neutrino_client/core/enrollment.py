@@ -1,9 +1,8 @@
 """Joining a hub as one person, leaving it, and the bindings kept in between.
 
 The link is ``neutrino://enroll/<payload>`` where the payload is base64url
-over ``{"urls": [...], "token": ..., "fp": ..., "role": "client", "overlay":
-...}``. That
-alphabet holds no character a shell splits or a URL escapes. ``fp`` pins the
+over ``{"urls": [...], "token": ..., "fp": ..., "role": "client", "overlays":
+[...]}``. That alphabet holds no character a shell splits or a URL escapes. ``fp`` pins the
 hub: it is the SHA-256 fingerprint of the agent port's TLS certificate,
 checked on every connection before anything is sent. A link whose ``role``
 is not ``client`` was made for a device agent and is refused.
@@ -11,13 +10,16 @@ is not ``client`` was made for a device agent and is refused.
 The bindings live in ``client.json`` in the person's own configuration
 directory, mode 0600, one per hub joined:
 ``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
-fingerprint, token, overlay}], "exit_hub_id"}``. A file without ``bindings``
+fingerprint, token, overlays, is_overlay_wanted, overlay_pick}],
+"exit_hub_id"}``. A file without ``bindings``
 reads as none. ``gateway_urls`` is every address the hub answers on, from the
 link and then from each ``state`` frame; ``gateway_url`` is the one that last
 answered. A binding written by 0.3.0 has no list and reads as one with none.
-``overlay`` is how this machine joins the hub's virtual network, from the
-link and then from each ``state``: ``null``, or one provider's own fields,
-the secret among them, which is why the file is 0600.
+``overlays`` is how this machine joins each of the hub's virtual networks,
+the hub's preferred first, from the link and then from each ``state``: one
+provider's own fields each, the secret among them, which is why the file is
+0600. ``is_overlay_wanted`` is this person's wish to be on the hub's virtual
+network, and ``overlay_pick`` the provider they chose, empty for the first.
 
 A connection round is the addresses in ``candidate_urls`` order: the address
 ``hub.neutrino.internal`` resolves to on the network this machine stands on,
@@ -62,7 +64,7 @@ from neutrino_client.services.store import ClientServiceStore
 
 LINK_PREFIX = "neutrino://enroll/"
 # What one binding keeps: every field a string but the list of every address
-# the hub answers on and the overlay object.
+# the hub answers on, the list of overlay objects and the wish.
 BINDING_KEYS = (
     "id",
     "name",
@@ -72,10 +74,13 @@ BINDING_KEYS = (
     "gateway_urls",
     "fingerprint",
     "token",
-    "overlay",
+    "overlays",
+    "is_overlay_wanted",
+    "overlay_pick",
 )
 BINDING_URLS_KEY = "gateway_urls"
-BINDING_OVERLAY_KEY = "overlay"
+BINDING_OVERLAYS_KEY = "overlays"
+BINDING_OVERLAY_WISH_KEY = "is_overlay_wanted"
 # The string fields each overlay object carries, by provider and, for
 # EasyTier, by mode. An EasyTier object that names no mode is a manual one,
 # as a hub before the console mode sends it.
@@ -91,8 +96,8 @@ OVERLAY_DEFAULT_MODES = {"netbird": "", "easytier": "manual"}
 OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn", "hub_address")
 
 
-def parse_link(link: str) -> "tuple[list, str, str, dict | None]":
-    """Pull the addresses, ticket, fingerprint and overlay out of a link.
+def parse_link(link: str) -> "tuple[list, str, str, list]":
+    """Pull the addresses, ticket, fingerprint and overlays out of a link.
 
     Args:
         link: What the person pasted; the bare payload without its scheme
@@ -101,8 +106,8 @@ def parse_link(link: str) -> "tuple[list, str, str, dict | None]":
     Returns:
         The hub base URLs in the order the hub offered them, the enrollment
         ticket, the certificate fingerprint the hub pins, empty when the
-        link carries none, and the overlay object, None when the link
-        carries none or one this client cannot read.
+        link carries none, and the overlay objects this client can read,
+        the hub's preferred first, empty when the link carries none.
 
     Raises:
         EnrollmentError: ``link_missing`` for an empty paste,
@@ -124,14 +129,14 @@ def parse_link(link: str) -> "tuple[list, str, str, dict | None]":
         token = str(payload.get("token", ""))
         fingerprint = str(payload.get("fp", "")).strip().lower()
         role = str(payload.get("role", ""))
-        overlay = clean_overlay(payload.get("overlay"))
+        overlays = clean_overlays(payload.get("overlays"))
     except (binascii.Error, ValueError, UnicodeDecodeError, AttributeError) as error:
         raise EnrollmentError("link_unreadable") from error
     if not urls or not token:
         raise EnrollmentError("link_incomplete")
     if role != CLIENT_ROLE:
         raise EnrollmentError("link_not_for_client", {"role": role})
-    return urls, token, fingerprint, overlay
+    return urls, token, fingerprint, overlays
 
 
 def config_path() -> str:
@@ -329,24 +334,58 @@ def note_urls(binding_id: str, gateway_urls: list) -> None:
     _note(binding_id, gateway_urls=clean_urls(gateway_urls))
 
 
-def note_overlay(binding_id: str, overlay: "dict | None") -> None:
-    """Record the overlay object the hub's state names, on one binding.
+def note_overlays(binding_id: str, overlays: list) -> None:
+    """Record the overlay objects the hub's state names, on one binding.
 
     Args:
         binding_id: The binding the state arrived on.
-        overlay: The object, already cleaned, or None.
+        overlays: The objects, in the hub's order.
 
     Raises:
         OSError: When the file cannot be written.
     """
-    _note(binding_id, overlay=clean_overlay(overlay))
+    _note(binding_id, overlays=clean_overlays(overlays))
 
 
-def clean_overlay(value) -> "dict | None":
-    """An overlay object as a binding keeps it.
+def note_overlay_wish(binding_id: str, is_wanted: bool, pick: str) -> None:
+    """Record whether this person wants to be on a hub's virtual network, and which.
+
+    Args:
+        binding_id: The binding to the hub.
+        is_wanted: Whether this machine is to be on the hub's virtual network.
+        pick: The provider chosen, empty for the hub's first.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    _note(binding_id, is_overlay_wanted=bool(is_wanted), overlay_pick=str(pick))
+
+
+def clean_overlays(value) -> list:
+    """The overlay objects as a binding keeps them.
 
     Args:
         value: What a link, a state or the file carried.
+
+    Returns:
+        Each object :func:`clean_overlay` reads, in order, the first of each
+        provider only; empty when ``value`` is not a list.
+    """
+    kept: list = []
+    for item in value if isinstance(value, list) else []:
+        cleaned = clean_overlay(item)
+        if cleaned is not None and all(
+            other["provider"] != cleaned["provider"] for other in kept
+        ):
+            kept.append(cleaned)
+    return kept
+
+
+def clean_overlay(value) -> "dict | None":
+    """One overlay object as a binding keeps it.
+
+    Args:
+        value: One object a link, a state or the file carried.
 
     Returns:
         ``{"provider", ...}`` with exactly the provider's own fields, each a
@@ -553,7 +592,7 @@ def enroll(link: str) -> dict:
             protocol, the hub refused the ticket, the reply names no id or
             token, or no address answered.
     """
-    gateway_urls, ticket, fingerprint, overlay = parse_link(link)
+    gateway_urls, ticket, fingerprint, overlays = parse_link(link)
     payload = join_payload(ticket)
     reply = None
     refusal = ""
@@ -586,7 +625,7 @@ def enroll(link: str) -> dict:
             "gateway_urls": gateway_urls,
             "fingerprint": fingerprint,
             "token": reply.get("token", ""),
-            "overlay": overlay,
+            "overlays": overlays,
         }
     )
     if not _is_complete(binding):
@@ -615,14 +654,15 @@ def leave(binding: dict) -> None:
 
 
 def _binding(raw: dict) -> dict:
-    """One binding with every kept field, each a string but the list and the overlay."""
+    """One binding with every kept field, each a string but the lists and the wish."""
     binding = {
         key: str(raw.get(key, "") or "")
         for key in BINDING_KEYS
-        if key not in (BINDING_URLS_KEY, BINDING_OVERLAY_KEY)
+        if key not in (BINDING_URLS_KEY, BINDING_OVERLAYS_KEY, BINDING_OVERLAY_WISH_KEY)
     }
     binding[BINDING_URLS_KEY] = clean_urls(raw.get(BINDING_URLS_KEY))
-    binding[BINDING_OVERLAY_KEY] = clean_overlay(raw.get(BINDING_OVERLAY_KEY))
+    binding[BINDING_OVERLAYS_KEY] = clean_overlays(raw.get(BINDING_OVERLAYS_KEY))
+    binding[BINDING_OVERLAY_WISH_KEY] = raw.get(BINDING_OVERLAY_WISH_KEY) is True
     return binding
 
 

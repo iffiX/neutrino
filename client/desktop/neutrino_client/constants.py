@@ -217,6 +217,9 @@ CLIENT_OVERLAY_JOIN_TIMEOUT_S = 60
 CLIENT_OVERLAY_STATUS_TIMEOUT_S = 10
 # How often each network's daemon is asked where this machine stands.
 CLIENT_OVERLAY_POLL_INTERVAL_S = 15
+# How long a hub's channel stays lost before the client moves to the next of
+# that hub's virtual networks it has material for.
+CLIENT_OVERLAY_FAILOVER_S = 30
 
 # The EasyTier daemon: a long-running process of this package, root on Linux
 # and macOS and SYSTEM on Windows, the only thing that runs easytier-core. It

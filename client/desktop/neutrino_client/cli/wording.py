@@ -49,6 +49,7 @@ CLIENT_CODE_WORDS = {
     "overlay_console_invalid": "the hub named an EasyTier console this client cannot use",
     "overlay_request_invalid": "the virtual network service did not understand the request; update the client",
     "overlay_missing": "this hub publishes no virtual network",
+    "overlay_wish_unsaved": "the virtual network choice could not be saved: {detail}",
     "mount_not_authorized": "mounting was not authorized on this machine",
     "mount_tooling_missing": "the mount tooling is missing on this machine",
     "control_peer_refused": "the running client belongs to another account",

@@ -9,8 +9,9 @@ the older single-binding shape reads as no bindings, and a binding without
 the address list reads as one with none. The candidates of a connection
 round, the hub's name in a stored address's scheme and port, and the notes
 a session writes onto its binding are pinned here too. The link's overlay
-object is kept on the binding with only its provider's own fields, an
-unknown provider reading as none, and its secret never reaches the log.
+objects are kept on the binding in the hub's order with only their
+providers' own fields, one per provider, an unknown provider dropped; the
+wish and the pick are kept per binding.
 """
 
 import base64
@@ -193,7 +194,9 @@ def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
         "gateway_urls": ["https://hub:8443"],
         "fingerprint": "ab" * 32,
         "token": "tok",
-        "overlay": None,
+        "overlays": [],
+        "is_overlay_wanted": False,
+        "overlay_pick": "",
     }
     assert enrollment.bindings() == [binding]
 
@@ -596,19 +599,26 @@ CONSOLE = {
 }
 
 
-def test_a_link_without_an_overlay_carries_none():
-    *_, overlay = parse_link(link_for({"urls": ["http://g"], "token": "t"}))
+def test_a_link_without_overlays_carries_none():
+    *_, overlays = parse_link(link_for({"urls": ["http://g"], "token": "t"}))
 
-    assert overlay is None
+    assert overlays == []
 
 
 @pytest.mark.parametrize("material", [NETBIRD, EASYTIER, CONSOLE])
-def test_a_link_carries_the_overlay_object(material):
-    *_, overlay = parse_link(
-        link_for({"urls": ["http://g"], "token": "t", "overlay": material})
+def test_a_link_carries_the_overlay_objects(material):
+    *_, overlays = parse_link(
+        link_for({"urls": ["http://g"], "token": "t", "overlays": [material]})
     )
 
-    assert overlay == material
+    assert overlays == [material]
+
+
+def test_the_overlays_keep_the_hubs_order_and_one_object_per_provider():
+    raw = [EASYTIER, {"provider": "zerotier"}, NETBIRD, CONSOLE]
+
+    assert enrollment.clean_overlays(raw) == [EASYTIER, NETBIRD]
+    assert enrollment.clean_overlays({"provider": "netbird"}) == []
 
 
 def test_an_overlay_keeps_only_its_providers_fields():
@@ -655,35 +665,53 @@ def test_a_netbird_overlay_may_name_no_management_url_or_fqdn():
     assert enrollment.clean_overlay(raw) == raw
 
 
-def test_the_join_keeps_the_links_overlay_on_the_binding(monkeypatch):
+def test_the_join_keeps_the_links_overlays_on_the_binding(monkeypatch):
     def post(self, path, payload):
         return {"id": "c9", "token": "tok9"}
 
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
 
     binding = enrollment.enroll(
-        link_for({"urls": ["http://g:1"], "token": "t", "overlay": EASYTIER})
+        link_for({"urls": ["http://g:1"], "token": "t", "overlays": [EASYTIER]})
     )
 
-    assert binding["overlay"] == EASYTIER
-    assert enrollment.bindings()[0]["overlay"] == EASYTIER
+    assert binding["overlays"] == [EASYTIER]
+    assert enrollment.bindings()[0]["overlays"] == [EASYTIER]
+    assert binding["is_overlay_wanted"] is False
 
 
-def test_note_overlay_writes_and_clears_one_bindings_object():
+def test_note_overlays_writes_and_clears_one_bindings_list():
     enrollment.add_binding(BINDING)
     enrollment.add_binding(SECOND)
 
-    enrollment.note_overlay("c2", NETBIRD)
-    assert [binding["overlay"] for binding in enrollment.bindings()] == [
-        None,
-        NETBIRD,
+    enrollment.note_overlays("c2", [NETBIRD, EASYTIER])
+    assert [binding["overlays"] for binding in enrollment.bindings()] == [
+        [],
+        [NETBIRD, EASYTIER],
     ]
-    enrollment.note_overlay("c2", None)
+    enrollment.note_overlays("c2", [])
 
-    assert enrollment.bindings()[1]["overlay"] is None
+    assert enrollment.bindings()[1]["overlays"] == []
 
 
-def test_a_binding_file_with_an_overlay_is_0600(config_path):
-    enrollment.add_binding(dict(BINDING, overlay=NETBIRD))
+def test_the_wish_and_the_pick_are_kept_per_binding():
+    enrollment.add_binding(BINDING)
+    enrollment.add_binding(SECOND)
+
+    enrollment.note_overlay_wish("c2", True, "easytier")
+
+    first, second = enrollment.bindings()
+    assert (first["is_overlay_wanted"], first["overlay_pick"]) == (False, "")
+    assert (second["is_overlay_wanted"], second["overlay_pick"]) == (True, "easytier")
+
+
+def test_a_wish_that_is_not_a_bool_reads_as_none():
+    enrollment.add_binding(dict(BINDING, is_overlay_wanted="yes"))
+
+    assert enrollment.bindings()[0]["is_overlay_wanted"] is False
+
+
+def test_a_binding_file_with_overlays_is_0600(config_path):
+    enrollment.add_binding(dict(BINDING, overlays=[NETBIRD]))
 
     assert config_path.stat().st_mode & 0o777 == 0o600

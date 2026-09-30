@@ -226,6 +226,9 @@ class ClientHubSession:
         self._hub_software = ""
         self._is_disabled = False
         self._was_disabled = False
+        self._lost_since = time.monotonic()
+        # The hosts of the virtual network last switched to, tried first.
+        self._preferred_hosts: list = []
 
     # --- what the resident reads ---
 
@@ -290,17 +293,59 @@ class ClientHubSession:
                 return []
             return [entry for entry in self._services_list if isinstance(entry, dict)]
 
-    def overlay(self) -> "dict | None":
-        """How this machine joins the hub's virtual network, as last named.
+    def overlays(self) -> list:
+        """How this machine joins each of the hub's virtual networks, as last named.
 
         Returns:
-            The binding's overlay object, None when the hub named none; it
-            is kept while the socket is down, since the virtual network is
+            The binding's overlay objects, the hub's preferred first; they
+            are kept while the socket is down, since a virtual network is
             what can bring the hub back.
         """
         with self._lock:
-            overlay = self._binding.get("overlay")
-            return dict(overlay) if isinstance(overlay, dict) else None
+            return [dict(item) for item in self._binding.get("overlays") or []]
+
+    def overlay_wish(self) -> "tuple[bool, str]":
+        """This person's wish for the hub's virtual network.
+
+        Returns:
+            Whether this machine is to be on it, and the provider chosen,
+            empty for the hub's first.
+        """
+        with self._lock:
+            return (
+                self._binding.get("is_overlay_wanted") is True,
+                str(self._binding.get("overlay_pick", "") or ""),
+            )
+
+    def set_overlay_wish(self, is_wanted: bool, pick: str) -> None:
+        """Keep this person's wish for the hub's virtual network on the binding.
+
+        Args:
+            is_wanted: Whether this machine is to be on it.
+            pick: The provider chosen, empty for the hub's first.
+
+        Raises:
+            OSError: When the binding file cannot be written.
+        """
+        with self._lock:
+            binding_id = self._binding.get("id", "")
+        enrollment.note_overlay_wish(binding_id, is_wanted, pick)
+        with self._lock:
+            self._binding["is_overlay_wanted"] = bool(is_wanted)
+            self._binding["overlay_pick"] = str(pick)
+
+    def lost_since(self) -> "float | None":
+        """Since when the socket has been down.
+
+        Returns:
+            The monotonic time the socket was lost, or the session was made
+            when it never came up; None while it is up or another socket
+            holds the binding.
+        """
+        with self._lock:
+            if self._is_welcomed or self._is_replaced:
+                return None
+            return self._lost_since
 
     def terminal_entries(self) -> list:
         """The machines the hub offers a terminal on, while its socket is up.
@@ -319,6 +364,24 @@ class ClientHubSession:
     def reconnect_soon(self) -> None:
         """Cut the wait before the next connection attempt short."""
         self._news.set()
+
+    def reconnect_through(self, hosts: list) -> None:
+        """Connect through the addresses on these hosts first, from the next round.
+
+        A socket that is down starts that round now, its backoff at the
+        floor; a live one is kept.
+
+        Args:
+            hosts: The hub's host names or addresses on the network just
+                joined; empty entries are ignored.
+        """
+        with self._lock:
+            self._preferred_hosts = [host for host in hosts if host]
+            is_down = not self._is_welcomed
+            if is_down:
+                self._backoff_s = CLIENT_BACKOFF_MIN_S
+        if is_down:
+            self._news.set()
 
     def reconnect(self) -> None:
         """Take the binding back from the socket that replaced it, and connect now."""
@@ -512,11 +575,19 @@ class ClientHubSession:
         """
         with self._lock:
             binding = dict(self._binding)
+            preferred_hosts = list(self._preferred_hosts)
         name_url = enrollment.hub_name_url(binding["gateway_url"])
         stored = enrollment.stored_urls(binding)
+        candidates = enrollment.candidate_urls(binding, name_url)
+        preferred = [
+            url
+            for url in stored
+            if urllib.parse.urlsplit(url).hostname in preferred_hosts
+        ]
+        candidates = preferred + [url for url in candidates if url not in preferred]
         untrusted: "Exception | None" = None
         failure: "Exception | None" = None
-        for index, url in enumerate(enrollment.candidate_urls(binding, name_url)):
+        for index, url in enumerate(candidates):
             if index and self._stop.wait(timeout=CLIENT_ROTATE_DELAY_S):
                 break
             client = self._open_client(url)
@@ -535,6 +606,7 @@ class ClientHubSession:
             else:
                 with self._lock:
                     self._connected_url = url
+                    self._preferred_hosts = []
                 self._note_url(url)
                 return client
             finally:
@@ -750,23 +822,23 @@ class ClientHubSession:
             with self._lock:
                 self._binding["gateway_urls"] = previous
 
-    def _note_overlay(self, overlay) -> None:
-        """Write the hub's overlay object onto the binding, when it changed."""
-        cleaned = enrollment.clean_overlay(overlay)
+    def _note_overlays(self, overlays) -> None:
+        """Write the hub's overlay objects onto the binding, when they changed."""
+        cleaned = enrollment.clean_overlays(overlays)
         with self._lock:
-            previous = self._binding.get("overlay")
+            previous = list(self._binding.get("overlays") or [])
             if previous == cleaned:
                 return
-            self._binding["overlay"] = cleaned
+            self._binding["overlays"] = cleaned
             binding_id = self._binding.get("id", "")
-        provider = (cleaned or {}).get("provider", "")
-        self._log(f"the hub's virtual network changed: {provider or 'no provider'}")
+        providers = ", ".join(item["provider"] for item in cleaned)
+        self._log(f"the hub's virtual networks changed: {providers or 'none'}")
         try:
-            enrollment.note_overlay(binding_id, cleaned)
+            enrollment.note_overlays(binding_id, cleaned)
         except OSError as error:
-            self._log(f"could not record the hub's virtual network: {error}")
+            self._log(f"could not record the hub's virtual networks: {error}")
             with self._lock:
-                self._binding["overlay"] = previous
+                self._binding["overlays"] = previous
 
     def _watch_network(self) -> bool:
         """Look at the route to the hub.
@@ -941,8 +1013,8 @@ class ClientHubSession:
         urls = message.get("urls")
         if isinstance(urls, list):
             self._note_urls(urls)
-        if "overlay" in message:
-            self._note_overlay(message.get("overlay"))
+        if "overlays" in message:
+            self._note_overlays(message.get("overlays"))
         terminals = message.get("terminals", [])
         is_disabled = bool(message.get("is_disabled"))
         with self._lock:
@@ -993,6 +1065,8 @@ class ClientHubSession:
             if self._client is client:
                 self._client = None
                 streams, self._streams = self._streams, None
+            if self._is_welcomed:
+                self._lost_since = time.monotonic()
             self._is_welcomed = False
         client.close()
         if streams is not None:

@@ -135,6 +135,13 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _answer(resident, resident.join_overlay(_hub_id(payload)))
         if route == "/api/overlay/leave":
             return _answer(resident, resident.leave_overlay(_hub_id(payload)))
+        if route == "/api/overlay/pick":
+            return _answer(
+                resident,
+                resident.pick_overlay(
+                    _hub_id(payload), str(payload.get("provider", "") or "")
+                ),
+            )
         if route.startswith(SERVICES_PREFIX):
             return _service_action(resident, route[len(SERVICES_PREFIX) :], payload)
         if route == "/api/fs":

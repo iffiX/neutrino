@@ -1550,6 +1550,14 @@ NETBIRD_OVERLAY = {
     "management_url": "https://nb.example",
     "fqdn": "hub.netbird.cloud",
 }
+EASYTIER_OVERLAY = {
+    "provider": "easytier",
+    "mode": "manual",
+    "network_name": "home",
+    "network_secret": "s3cret",  # scan: allow
+    "peer": "tcp://203.0.113.7:11010",
+    "hub_address": "10.144.144.1",
+}
 TERMINALS = [
     {"device_id": "d1", "name": "lepton", "is_online": True},
     {"device_id": "d2", "name": "", "is_online": False},
@@ -1558,42 +1566,45 @@ TERMINALS = [
 ]
 
 
-def test_a_states_overlay_is_kept_on_the_binding(bound, monkeypatch, config_path):
+def test_a_states_overlays_are_kept_on_the_binding(bound, monkeypatch, config_path):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY, EASYTIER_OVERLAY]))
 
-    assert session.overlay() == NETBIRD_OVERLAY
-    assert stored_binding(config_path)["overlay"] == NETBIRD_OVERLAY
+    assert session.overlays() == [NETBIRD_OVERLAY, EASYTIER_OVERLAY]
+    assert stored_binding(config_path)["overlays"] == [
+        NETBIRD_OVERLAY,
+        EASYTIER_OVERLAY,
+    ]
 
 
-def test_the_same_overlay_a_second_time_writes_nothing(bound, monkeypatch, config_path):
+def test_the_same_overlays_a_second_time_write_nothing(bound, monkeypatch, config_path):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY]))
     written = config_path.read_bytes()
     os.utime(config_path, ns=(0, 0))
 
-    take(session, made, dict(STATE, hash="h2", overlay=NETBIRD_OVERLAY))
+    take(session, made, dict(STATE, hash="h2", overlays=[NETBIRD_OVERLAY]))
 
     assert config_path.stat().st_mtime_ns == 0
     assert config_path.read_bytes() == written
 
 
-def test_a_null_overlay_clears_it_and_a_state_without_one_keeps_it(
+def test_an_empty_list_clears_the_overlays_and_a_state_without_one_keeps_them(
     bound, monkeypatch, config_path
 ):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY]))
 
     take(session, made, dict(STATE))
-    assert session.overlay() == NETBIRD_OVERLAY
-    take(session, made, dict(STATE, overlay=None))
+    assert session.overlays() == [NETBIRD_OVERLAY]
+    take(session, made, dict(STATE, overlays=[]))
 
-    assert session.overlay() is None
-    assert stored_binding(config_path)["overlay"] is None
+    assert session.overlays() == []
+    assert stored_binding(config_path)["overlays"] == []
 
 
 def test_the_overlay_secret_never_reaches_the_log(monkeypatch, config_path):
@@ -1602,9 +1613,45 @@ def test_the_overlay_secret_never_reaches_the_log(monkeypatch, config_path):
     session = session_for(log=lines.append)
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(session, made, dict(STATE, overlay=NETBIRD_OVERLAY))
+    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY]))
 
     assert lines and not any("KEY-1" in line for line in lines)
+
+
+def test_the_wish_is_written_onto_the_binding(bound, config_path):
+    session, _listener = bound
+
+    session.set_overlay_wish(True, "easytier")
+
+    assert session.overlay_wish() == (True, "easytier")
+    stored = stored_binding(config_path)
+    assert (stored["is_overlay_wanted"], stored["overlay_pick"]) == (True, "easytier")
+
+
+def test_the_channel_is_lost_from_the_start_until_welcomed_and_again_after(
+    bound, monkeypatch
+):
+    session, _listener = bound
+    assert session.lost_since() is not None
+
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    assert session.lost_since() is None
+
+    before = time.monotonic()
+    session._end_socket(made)
+    assert session.lost_since() >= before
+
+
+def test_a_switch_reconnects_through_that_networks_address_first(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
+
+    session.reconnect_through(["100.64.0.1", ""])
+    session.run_once()
+
+    assert script.hosts == ["100.64.0.1"]
 
 
 def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch):

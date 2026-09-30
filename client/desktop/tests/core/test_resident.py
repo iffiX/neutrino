@@ -1211,7 +1211,7 @@ class FakeOverlayDriver:
 def overlay_resident(config_path):
     bind(
         config_path,
-        bindings=[dict(BINDING, gateway_url=HOME_URL, overlay=EASYTIER_OVERLAY)],
+        bindings=[dict(BINDING, gateway_url=HOME_URL, overlays=[EASYTIER_OVERLAY])],
     )
     driver = FakeOverlayDriver()
     resident = ClientResident(
@@ -1246,6 +1246,38 @@ def test_join_and_leave_reach_the_hubs_network(overlay_resident):
     assert resident.leave_overlay("c1") == {}
     wait_until(lambda: len(driver.steps) == 2)
     assert driver.steps[-1] == ("leave", "home")
+
+
+def test_join_and_leave_keep_the_wish_on_the_binding(overlay_resident):
+    resident, driver = overlay_resident
+
+    resident.join_overlay("h1")
+    assert enrollment.bindings()[0]["is_overlay_wanted"] is True
+    wait_until(lambda: driver.steps == [("join", "home")])
+
+    resident.leave_overlay("h1")
+    assert enrollment.bindings()[0]["is_overlay_wanted"] is False
+
+
+def test_a_pick_keeps_the_provider_on_the_binding(overlay_resident):
+    resident, _driver = overlay_resident
+
+    assert resident.pick_overlay("h1", "easytier") == {}
+    assert resident.pick_overlay("h1", "netbird")["code"] == "overlay_missing"
+    assert resident.pick_overlay("h9", "easytier")["code"] == "unknown_hub"
+
+    assert enrollment.bindings()[0]["overlay_pick"] == "easytier"
+
+
+def test_a_joined_network_has_its_hub_connect_through_it_first(overlay_resident):
+    resident, _driver = overlay_resident
+    session = resident._sessions["c1"]
+    hosts = []
+    session.reconnect_through = hosts.append
+
+    resident._overlay_joined(dict(EASYTIER_OVERLAY, hub_address="10.144.144.1/24"))
+
+    assert hosts == [["10.144.144.1"]]
 
 
 def test_joining_the_network_of_a_hub_nobody_joined_is_unknown_hub(

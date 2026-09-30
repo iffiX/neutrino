@@ -7,8 +7,8 @@ disk it holds one :class:`~neutrino_client.core.session.ClientHubSession`,
 and it owns the five service handlers, the store and the choice of exit
 hub, so a service is addressed by hub and id together and a hub that goes
 away takes only its own entries with it. Beside the sessions it holds this
-machine's membership of each hub's virtual network, which a hub row joins
-and leaves, and the terminals open on the machines a hub offers.
+machine's membership of each hub's virtual networks, which a hub row joins,
+leaves and picks among, and the terminals open on the machines a hub offers.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -37,7 +37,11 @@ from neutrino_client.constants import (
     CLIENT_STREAM_TIMEOUT_S,
 )
 from neutrino_client.core import enrollment
-from neutrino_client.core.overlay import OverlayMemberships
+from neutrino_client.core.overlay import (
+    OverlayMemberships,
+    overlay_hub_hosts,
+    overlay_key,
+)
 from neutrino_client.core.session import CONNECTION_CONNECTED, ClientHubSession
 from neutrino_client.core.terminal import TerminalBridge
 from neutrino_client.exceptions import (
@@ -167,6 +171,7 @@ class ClientResident:
             hostname=self.hostname(),
             log=log,
             on_change=self.notify,
+            on_joined=self._overlay_joined,
             drivers=overlay_drivers,
         )
         # One session per binding, by binding id, in the order joined.
@@ -474,28 +479,52 @@ class ClientResident:
         self._session_for(hub_id).reconnect()
 
     def join_overlay(self, hub_id: str) -> dict:
-        """Join one hub's virtual network.
+        """Want to be on one hub's virtual network, and join its current one.
 
         Args:
             hub_id: The hub, by its id or by its binding's id.
 
         Returns:
             Empty when the join was started; ``unknown_hub``,
-            ``overlay_missing`` or ``busy`` otherwise.
+            ``overlay_missing``, ``overlay_wish_unsaved`` or ``busy``
+            otherwise.
         """
         return self._overlay_step(hub_id, is_join=True)
 
     def leave_overlay(self, hub_id: str) -> dict:
-        """Leave one hub's virtual network.
+        """Stop wanting one hub's virtual network, and leave its current one.
 
         Args:
             hub_id: The hub, by its id or by its binding's id.
 
         Returns:
             Empty when the leave was started; ``unknown_hub``,
-            ``overlay_missing`` or ``busy`` otherwise.
+            ``overlay_missing``, ``overlay_wish_unsaved`` or ``busy``
+            otherwise.
         """
         return self._overlay_step(hub_id, is_join=False)
+
+    def pick_overlay(self, hub_id: str, provider: str) -> dict:
+        """Choose which of one hub's virtual networks this machine is on.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+            provider: The provider of the network chosen.
+
+        Returns:
+            Empty when the choice was taken; ``unknown_hub``,
+            ``overlay_missing``, ``overlay_wish_unsaved`` or ``busy``
+            otherwise.
+        """
+        session = self._find_session(hub_id)
+        if session is None:
+            return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        key = session.hub_id() or session.binding_id
+        outcome = self._overlay.pick(key, provider)
+        if outcome:
+            return outcome
+        is_wanted, _pick = session.overlay_wish()
+        return self._keep_overlay_wish(session, is_wanted, provider)
 
     def open_terminal(self, hub_id: str, device_id: str, cols: int, rows: int) -> dict:
         """Open a shell on one machine a hub offers, for a terminal to attach to.
@@ -893,23 +922,54 @@ class ClientResident:
         self._overlay.refresh()
 
     def _overlay_bindings(self) -> list:
-        """Each hub's overlay object, by hub id, for the memberships."""
+        """Each hub's overlay objects and wish, by hub id, for the memberships."""
         with self._lock:
             sessions = list(self._sessions.values())
-        return [
-            (session.hub_id() or session.binding_id, session.overlay())
-            for session in sessions
-        ]
+        rows = []
+        for session in sessions:
+            is_wanted, pick = session.overlay_wish()
+            rows.append(
+                {
+                    "hub_id": session.hub_id() or session.binding_id,
+                    "overlays": session.overlays(),
+                    "is_wanted": is_wanted,
+                    "pick": pick,
+                    "lost_since": session.lost_since(),
+                }
+            )
+        return rows
 
     def _overlay_step(self, hub_id: str, *, is_join: bool) -> dict:
-        """Join or leave the network of the hub a page named."""
+        """Keep the wish of the hub a page named, then join or leave its network."""
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
+        _is_wanted, pick = session.overlay_wish()
+        refusal = self._keep_overlay_wish(session, is_join, pick)
+        if refusal:
+            return refusal
         key = session.hub_id() or session.binding_id
         if is_join:
             return self._overlay.join(key)
         return self._overlay.leave(key)
+
+    def _keep_overlay_wish(self, session, is_wanted: bool, pick: str) -> dict:
+        """Write one hub's wish onto its binding; the refusal when it cannot be."""
+        try:
+            session.set_overlay_wish(is_wanted, pick)
+        except OSError as error:
+            self._log(f"could not record the virtual network wish: {error}")
+            return {"code": "overlay_wish_unsaved", "params": {"detail": str(error)}}
+        return {}
+
+    def _overlay_joined(self, material: dict) -> None:
+        """A network was joined: each hub on it connects through it first."""
+        key = overlay_key(material)
+        with self._lock:
+            sessions = list(self._sessions.values())
+        for session in sessions:
+            if any(overlay_key(item) == key for item in session.overlays()):
+                session.reconnect_through(overlay_hub_hosts(material))
 
     def _hub_disabled(self, session: ClientHubSession) -> None:
         """A hub switched this client off: let go of what it published."""

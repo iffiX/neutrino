@@ -10,7 +10,10 @@ manual network's status asks the one portal by the network's name, and a
 console's is the instance the daemon's own networks do not name; a leave on
 release happens only when no other hub names the network; a lane that works
 answers busy; a step's failure stays until the network is on; every state
-word is in the table.
+word is in the table. A hub whose wish is on joins the first of its networks
+or the one picked, once; its channel lost for the failover time, or its
+current network gone from the list, moves it to the next, leaving first;
+a hub with one network never switches.
 """
 
 import json
@@ -18,7 +21,10 @@ import subprocess
 
 import pytest
 
-from neutrino_client.constants import CLIENT_EASYTIER_RPC_PORTAL
+from neutrino_client.constants import (
+    CLIENT_EASYTIER_RPC_PORTAL,
+    CLIENT_OVERLAY_FAILOVER_S,
+)
 from neutrino_client.core.easytier_daemon import EasytierDaemon
 from neutrino_client.core.overlay import (
     OVERLAY_STATES,
@@ -151,13 +157,37 @@ def run_inline(target) -> None:
 
 
 class Bindings:
-    """What the resident would hand the memberships: hub id and object."""
+    """What the resident would hand the memberships, one row per hub.
+
+    Attributes:
+        rows: ``(hub_id, object, a list of objects, or None)``.
+        wishes: ``{hub_id: (is_wanted, pick)}``; a hub not named wants nothing.
+        lost: ``{hub_id: monotonic time its channel was lost}``.
+    """
 
     def __init__(self, rows):
         self.rows = list(rows)
+        self.wishes = {}
+        self.lost = {}
 
     def __call__(self):
-        return list(self.rows)
+        answer = []
+        for hub_id, material in self.rows:
+            if isinstance(material, dict):
+                overlays = [material]
+            else:
+                overlays = list(material or [])
+            is_wanted, pick = self.wishes.get(hub_id, (False, ""))
+            answer.append(
+                {
+                    "hub_id": hub_id,
+                    "overlays": overlays,
+                    "is_wanted": is_wanted,
+                    "pick": pick,
+                    "lost_since": self.lost.get(hub_id),
+                }
+            )
+        return answer
 
 
 def memberships(tmp_path, rows, start_thread=run_inline):
@@ -710,3 +740,216 @@ def test_no_secret_reaches_a_row(tmp_path):
 def test_every_state_word_is_in_the_table(state):
     assert state in OVERLAY_STATES
     assert len(OVERLAY_STATES) == 6
+
+
+# --- the wish per hub, the pick and the failover ---
+
+
+class RecordingDriver:
+    """A provider's daemon that does as it is told and remembers what.
+
+    Attributes:
+        steps: ``(verb, provider)`` for every join and leave, in order,
+            shared between the drivers of one test.
+        is_on: Whether this provider's network is held.
+        refusal: The code a join fails with, empty for none.
+    """
+
+    def __init__(self, provider, steps):
+        self.provider = provider
+        self.steps = steps
+        self.is_on = False
+        self.refusal = ""
+
+    def status(self, material):
+        return {
+            "is_on": self.is_on,
+            "is_waiting": False,
+            "is_other_network": False,
+            "address": "10.0.0.5" if self.is_on else "",
+            "is_hub_seen": self.is_on,
+        }
+
+    def join(self, material, hostname):
+        self.steps.append(("join", self.provider))
+        if self.refusal:
+            raise OverlayControlError(self.refusal)
+        self.is_on = True
+
+    def leave(self, material):
+        self.steps.append(("leave", self.provider))
+        self.is_on = False
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def wishful(rows, wishes, *, lost=None):
+    """Memberships over recording drivers and a clock, every joined network told."""
+    steps = []
+    bindings = Bindings(rows)
+    bindings.wishes = dict(wishes)
+    bindings.lost = dict(lost or {})
+    clock = Clock()
+    joined_networks = []
+    drivers = {
+        "netbird": RecordingDriver("netbird", steps),
+        "easytier": RecordingDriver("easytier", steps),
+    }
+    subject = OverlayMemberships(
+        platform=None,
+        bindings_of=bindings,
+        hostname="box",
+        log=discard,
+        on_joined=joined_networks.append,
+        start_thread=run_inline,
+        drivers=drivers,
+        clock=clock,
+    )
+    return subject, steps, bindings, clock, joined_networks, drivers
+
+
+def test_a_wanted_hub_joins_the_first_of_its_two_networks():
+    subject, steps, _bindings, _clock, joined_networks, _drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
+    )
+
+    subject.probe()
+    subject.reconcile()
+
+    assert steps == [("join", "netbird")]
+    assert joined_networks == [NETBIRD]
+    row = subject.hub_row("h1")
+    assert (row["provider"], row["state"], row["is_wanted"]) == ("netbird", "on", True)
+    assert row["networks"] == [
+        {"provider": "netbird", "network": "nb.example"},
+        {"provider": "easytier", "network": "home"},
+    ]
+
+
+def test_a_hub_whose_wish_is_off_joins_nothing():
+    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {}
+    )
+
+    subject.probe()
+    subject.reconcile()
+
+    assert steps == []
+    assert subject.hub_row("h1")["is_wanted"] is False
+
+
+def test_a_channel_lost_for_the_failover_time_moves_to_the_next_network():
+    subject, steps, bindings, clock, joined_networks, _drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
+    )
+    subject.reconcile()
+    bindings.lost = {"h1": clock.now}
+
+    clock.now += CLIENT_OVERLAY_FAILOVER_S - 1
+    subject.reconcile()
+    assert steps == [("join", "netbird")]
+    assert subject.next_deadline() == 1
+
+    clock.now += 1
+    subject.reconcile()
+    assert steps == [("join", "netbird"), ("leave", "netbird"), ("join", "easytier")]
+    assert joined_networks == [NETBIRD, EASYTIER]
+    assert subject.hub_row("h1")["provider"] == "easytier"
+
+    clock.now += 1
+    subject.reconcile()
+    assert len(steps) == 3
+
+
+def test_a_network_the_hub_stops_naming_is_left_for_its_new_first():
+    subject, steps, bindings, _clock, _joined, _drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
+    )
+    subject.reconcile()
+
+    bindings.rows = [("h1", [EASYTIER])]
+    subject.reconcile()
+
+    assert steps == [("join", "netbird"), ("leave", "netbird"), ("join", "easytier")]
+    assert subject.hub_row("h1")["provider"] == "easytier"
+
+
+def test_the_network_the_person_picked_is_joined_first():
+    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "easytier")}
+    )
+
+    subject.reconcile()
+
+    assert steps == [("join", "easytier")]
+
+
+def test_a_hub_with_one_network_never_switches():
+    subject, steps, bindings, clock, _joined, _drivers = wishful(
+        [("h1", [NETBIRD])], {"h1": (True, "")}
+    )
+    subject.reconcile()
+    bindings.lost = {"h1": clock.now}
+
+    clock.now += 10 * CLIENT_OVERLAY_FAILOVER_S
+    subject.reconcile()
+
+    assert steps == [("join", "netbird")]
+    assert subject.next_deadline() is None
+
+
+def test_a_pick_while_on_leaves_the_current_network_and_joins_the_picked():
+    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
+    )
+    subject.reconcile()
+
+    assert subject.pick("h1", "easytier") == {}
+
+    assert steps == [("join", "netbird"), ("leave", "netbird"), ("join", "easytier")]
+    assert subject.hub_row("h1")["provider"] == "easytier"
+
+
+def test_a_pick_while_off_moves_the_row_and_joins_nothing():
+    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {}
+    )
+
+    assert subject.pick("h1", "easytier") == {}
+    assert subject.pick("h1", "zerotier")["code"] == "overlay_missing"
+
+    assert steps == []
+    assert subject.hub_row("h1")["provider"] == "easytier"
+
+
+def test_a_join_that_failed_is_not_tried_again_by_itself():
+    subject, steps, _bindings, _clock, _joined, drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
+    )
+    drivers["netbird"].refusal = "overlay_join_failed"
+
+    subject.reconcile()
+    subject.probe()
+    subject.reconcile()
+
+    assert steps == [("join", "netbird")]
+    assert subject.hub_row("h1")["code"] == "overlay_join_failed"
+
+
+def test_a_network_already_held_stays_current_after_a_restart():
+    subject, steps, _bindings, _clock, _joined, drivers = wishful(
+        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
+    )
+    drivers["easytier"].is_on = True
+
+    subject.probe()
+    subject.reconcile()
+
+    assert steps == []
+    assert subject.hub_row("h1")["provider"] == "easytier"

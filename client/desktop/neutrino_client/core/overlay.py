@@ -2,11 +2,14 @@
 
 A virtual network is not a service a hub publishes: it is a way to reach the
 hub, so it lives beside the sessions rather than among the handlers. Each
-hub's state names how to join its network: NetBird's setup key, or for
-EasyTier either a manual network's name, secret and peer or an EasyTier
-console's address. One :class:`OverlayMemberships` holds one membership per
-network, keyed by NetBird's management URL, EasyTier's network name or the
-console's address, so two hubs on the same network read one state. The
+hub's state names how to join each of its networks, preferred first:
+NetBird's setup key, or for EasyTier either a manual network's name, secret
+and peer or an EasyTier console's address. The person's wish to be on a
+hub's virtual network is kept per hub, and this machine is on one of that
+hub's networks at a time. One :class:`OverlayMemberships` holds one
+membership per network, keyed by NetBird's management URL, EasyTier's
+network name or the console's address, so two hubs on the same network read
+one state. The
 daemons the packages register as services hold the membership itself; this
 side joins, leaves and asks, one step at a time per provider, and leaves
 nothing behind on exit because nothing here is what keeps a network up.
@@ -25,10 +28,12 @@ import functools
 import json
 import subprocess
 import threading
+import time
 import urllib.parse
 
 from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
+    CLIENT_OVERLAY_FAILOVER_S,
     CLIENT_OVERLAY_JOIN_TIMEOUT_S,
     CLIENT_OVERLAY_POLL_INTERVAL_S,
     CLIENT_OVERLAY_STATUS_TIMEOUT_S,
@@ -73,6 +78,9 @@ EASYTIER_PEER_LOCAL_COST = "Local"
 # is a manual one.
 EASYTIER_MODE_MANUAL = "manual"
 EASYTIER_MODE_CONSOLE = "console"
+# The least wait between two looks at a failover that is due, while a lane
+# of its switch is still working.
+OVERLAY_FAILOVER_RECHECK_S = 5
 
 
 def is_console_material(material: dict) -> bool:
@@ -149,6 +157,23 @@ def overlay_network(material: dict) -> str:
         except ValueError:
             return ""
     return material.get("network_name", "")
+
+
+def overlay_hub_hosts(material: dict) -> list:
+    """The hub's own host names or addresses on the network one object names.
+
+    Args:
+        material: The hub's overlay object.
+
+    Returns:
+        NetBird's name for the hub, or the hub's EasyTier address; empty
+        when the hub named neither.
+    """
+    if material["provider"] == "netbird":
+        host = material.get("fqdn", "")
+    else:
+        host = _address(material.get("hub_address", ""))
+    return [host] if host else []
 
 
 def _nobody(*_args) -> None:
@@ -570,7 +595,15 @@ def _raise_refusal(answer: dict) -> None:
 
 
 class OverlayMemberships:
-    """One membership per network the joined hubs name, and one lane per provider."""
+    """One membership per network the joined hubs name, and one lane per provider.
+
+    Each hub names its networks in its order of preference; this machine is
+    on at most one of them per hub, the current one. While a hub's wish is
+    on, the current network is joined once, and a switch leaves the current
+    network before it joins the next: when the hub's channel has been lost
+    for ``CLIENT_OVERLAY_FAILOVER_S`` and the hub names another network, or
+    when the hub stops naming the current one.
+    """
 
     def __init__(
         self,
@@ -580,28 +613,37 @@ class OverlayMemberships:
         hostname: str,
         log=print,
         on_change=None,
+        on_joined=None,
         start_thread=None,
         drivers=None,
+        clock=None,
     ):
         """
         Args:
             platform: The machine's platform.
-            bindings_of: Returns ``[(hub_id, overlay object or None)]`` for
-                every hub joined, in order.
+            bindings_of: Returns one ``{hub_id, overlays, is_wanted, pick,
+                lost_since}`` per hub joined, in order: the hub's overlay
+                objects, the person's wish, the provider chosen or empty,
+                and the monotonic time its channel was lost or None.
             hostname: What this machine is called on an EasyTier network.
             log: Callable used for progress messages.
             on_change: Called with no arguments after every change a page
                 draws; None for nobody listening.
+            on_joined: Called with an overlay object after a join of its
+                network succeeded; None for nobody listening.
             start_thread: ``start_thread(target)`` runs a lane's job; None
                 uses a daemon thread. Tests pass one that runs inline.
             drivers: ``{provider: driver}``; None builds the NetBird and
                 EasyTier drivers over the platform.
+            clock: Returns the monotonic time; None uses ``time.monotonic``.
         """
         self._platform = platform
         self._bindings_of = bindings_of
         self._hostname = hostname
         self._log = log
         self._on_change = on_change if on_change is not None else _nobody
+        self._on_joined = on_joined if on_joined is not None else _nobody
+        self._clock = clock if clock is not None else time.monotonic
         self._drivers = (
             drivers
             if drivers is not None
@@ -620,11 +662,20 @@ class OverlayMemberships:
             for provider in self._drivers
         }
         self._lock = threading.Lock()
-        # Each joined hub's object as last read, by hub id.
+        # Each joined hub's objects as last read, by hub id, preferred first.
         self._materials: dict = {}
-        # Every hub's object this run has read, kept after the hub goes so
+        # Each joined hub's wish: {is_wanted, pick, lost_since}.
+        self._wishes: dict = {}
+        # Every hub's objects this run has read, kept after the hub goes so
         # its network can still be left.
         self._known: dict = {}
+        # The network each hub is on or aimed at, as its object.
+        self._current: dict = {}
+        # The provider each hub's current network was last joined on by
+        # itself, so a join that failed is not tried again on every poll.
+        self._attempted: dict = {}
+        # When each hub last switched networks, on the clock.
+        self._switched_at: dict = {}
         # One record per network: {state, code, params, address, is_hub_seen}.
         self._records: dict = {}
         self._news = threading.Event()
@@ -639,13 +690,20 @@ class OverlayMemberships:
 
         Returns:
             ``{provider, network, state, code, params, address,
-            is_hub_seen, work}``; None when the hub names no network.
+            is_hub_seen, work, is_wanted, networks}`` for the current
+            network, ``networks`` being ``[{provider, network}]`` for every
+            network the hub names; None when the hub names none.
         """
         with self._lock:
-            material = self._materials.get(hub_id)
+            material = self._choose(hub_id)
             if material is None:
                 return None
             record = dict(self._records.get(overlay_key(material)) or _off_record())
+            networks = [
+                {"provider": item["provider"], "network": overlay_network(item)}
+                for item in self._materials.get(hub_id) or []
+            ]
+            is_wanted = bool((self._wishes.get(hub_id) or {}).get("is_wanted"))
         return {
             "provider": material["provider"],
             "network": overlay_network(material),
@@ -655,10 +713,12 @@ class OverlayMemberships:
             "address": record["address"],
             "is_hub_seen": record["is_hub_seen"],
             "work": self._lanes[material["provider"]].status(),
+            "is_wanted": is_wanted,
+            "networks": networks,
         }
 
     def join(self, hub_id: str) -> dict:
-        """Join one hub's network, on its provider's lane.
+        """Join one hub's current network, on its provider's lane.
 
         Args:
             hub_id: The hub, by its id.
@@ -670,7 +730,7 @@ class OverlayMemberships:
         return self._submit(hub_id, OVERLAY_STATE_JOINING)
 
     def leave(self, hub_id: str) -> dict:
-        """Leave one hub's network, on its provider's lane.
+        """Leave one hub's current network, on its provider's lane.
 
         Args:
             hub_id: The hub, by its id.
@@ -681,37 +741,143 @@ class OverlayMemberships:
         """
         return self._submit(hub_id, OVERLAY_STATE_LEAVING)
 
+    def pick(self, hub_id: str, provider: str) -> dict:
+        """Make one of a hub's networks its current one.
+
+        While the hub's wish is on and its current network is held or being
+        joined, the current network is left and the picked one joined.
+
+        Args:
+            hub_id: The hub, by its id.
+            provider: The provider of the network picked.
+
+        Returns:
+            Empty when the pick was taken; ``overlay_missing`` when the hub
+            names no such network, ``busy`` while a lane of the switch works.
+        """
+        self.refresh_bindings()
+        with self._lock:
+            chosen = next(
+                (
+                    item
+                    for item in self._materials.get(hub_id) or []
+                    if item["provider"] == provider
+                ),
+                None,
+            )
+            current = self._choose(hub_id)
+            is_wanted = bool((self._wishes.get(hub_id) or {}).get("is_wanted"))
+        if chosen is None or current is None:
+            return {"code": "overlay_missing", "params": {"hub_id": hub_id}}
+        if chosen["provider"] == current["provider"]:
+            return {}
+        record = self._record(current)
+        if is_wanted and record["state"] in OVERLAY_HELD_STATES + (
+            OVERLAY_STATE_JOINING,
+        ):
+            return self._switch(hub_id, current, chosen)
+        with self._lock:
+            self._current[hub_id] = chosen
+        self._on_change()
+        return {}
+
+    def reconcile(self) -> None:
+        """Hold every hub whose wish is on to one network, switching when it must.
+
+        A hub whose current network is gone from its list moves to its
+        first; one whose channel has been lost for
+        ``CLIENT_OVERLAY_FAILOVER_S`` moves to the network after the current
+        one; one whose current network is off is joined, once.
+        """
+        self.refresh_bindings()
+        now = self._clock()
+        with self._lock:
+            hubs = [
+                (hub_id, list(materials), dict(self._wishes.get(hub_id) or {}))
+                for hub_id, materials in self._materials.items()
+            ]
+        for hub_id, materials, wish in hubs:
+            if not materials or not wish.get("is_wanted"):
+                continue
+            with self._lock:
+                previous = self._current.get(hub_id)
+                providers = [item["provider"] for item in materials]
+                is_gone = previous is not None and previous["provider"] not in providers
+                if is_gone:
+                    self._current.pop(hub_id, None)
+                current = self._choose(hub_id)
+                deadline = self._failover_deadline(hub_id, wish, len(materials))
+            if is_gone:
+                self._log(
+                    f"overlay: the hub no longer names {overlay_network(previous)}; "
+                    f"moving to {overlay_network(current)}"
+                )
+                if self._switch(hub_id, previous, current):
+                    with self._lock:
+                        self._current[hub_id] = previous
+                continue
+            if deadline is not None and now >= deadline:
+                index = providers.index(current["provider"])
+                following = materials[(index + 1) % len(materials)]
+                self._log(
+                    f"overlay: the hub's channel is lost; moving from "
+                    f"{overlay_network(current)} to {overlay_network(following)}"
+                )
+                self._switch(hub_id, current, following)
+                continue
+            self._join_once(hub_id, current)
+
+    def next_deadline(self) -> "float | None":
+        """How long until the next hub's channel has been lost long enough.
+
+        Returns:
+            Seconds from now, zero or more; None while no hub is waiting on
+            one.
+        """
+        now = self._clock()
+        with self._lock:
+            deadlines = [
+                self._failover_deadline(hub_id, wish, len(self._materials[hub_id]))
+                for hub_id, wish in self._wishes.items()
+                if hub_id in self._materials
+            ]
+        pending = [deadline for deadline in deadlines if deadline is not None]
+        return max(min(pending) - now, 0) if pending else None
+
     def release_hub(self, hub_id: str) -> int:
-        """Leave a hub's network when no other hub joined names it.
+        """Leave a hub's networks when no other hub joined names them.
 
         Args:
             hub_id: The hub being let go of.
 
         Returns:
-            1 when a leave was started, 0 otherwise.
+            How many leaves were started.
         """
         self.refresh_bindings()
         with self._lock:
-            material = self._known.pop(hub_id, None)
-            if material is None:
-                return 0
-            key = overlay_key(material)
-            is_shared = any(
-                overlay_key(other) == key
-                for other_id, other in self._materials.items()
+            materials = self._known.pop(hub_id, None) or []
+            for table in (self._current, self._attempted, self._switched_at):
+                table.pop(hub_id, None)
+            others = [
+                overlay_key(other)
+                for other_id, items in self._materials.items()
                 if other_id != hub_id
-            )
-            record = self._records.get(key) or _off_record()
+                for other in items
+            ]
+        count = 0
+        for material in materials:
+            record = self._record(material)
             is_on = record["state"] in OVERLAY_HELD_STATES + (OVERLAY_STATE_JOINING,)
-        if is_shared or not is_on:
-            return 0
-        self._log(f"leaving {overlay_network(material)}, which no hub joined names")
-        self._lanes[material["provider"]].submit(
-            OVERLAY_STATE_LEAVING,
-            functools.partial(self._run_step, material, OVERLAY_STATE_LEAVING),
-            if_busy=IF_BUSY_KEEP_ONE,
-        )
-        return 1
+            if overlay_key(material) in others or not is_on:
+                continue
+            self._log(f"leaving {overlay_network(material)}, which no hub joined names")
+            self._lanes[material["provider"]].submit(
+                OVERLAY_STATE_LEAVING,
+                functools.partial(self._run_step, material, OVERLAY_STATE_LEAVING),
+                if_busy=IF_BUSY_KEEP_ONE,
+            )
+            count += 1
+        return count
 
     def release(self) -> int:
         """Let go of nothing: the daemons hold the networks.
@@ -732,15 +898,37 @@ class OverlayMemberships:
         self._news.set()
 
     def refresh_bindings(self) -> None:
-        """Take each hub's overlay object as the sessions hold it now."""
-        current = {}
-        for hub_id, material in self._bindings_of():
-            if hub_id and isinstance(material, dict):
-                current[hub_id] = dict(material)
+        """Take each hub's overlay objects and wish as the sessions hold them now."""
+        materials = {}
+        wishes = {}
+        for row in self._bindings_of():
+            hub_id = row.get("hub_id")
+            if not hub_id:
+                continue
+            materials[hub_id] = [
+                dict(item)
+                for item in row.get("overlays") or []
+                if isinstance(item, dict)
+            ]
+            wishes[hub_id] = {
+                "is_wanted": row.get("is_wanted") is True,
+                "pick": str(row.get("pick", "") or ""),
+                "lost_since": row.get("lost_since"),
+            }
         with self._lock:
-            is_changed = current != self._materials
-            self._materials = current
-            self._known.update(current)
+            is_changed = materials != self._materials or any(
+                (wishes[hub_id]["is_wanted"], wishes[hub_id]["pick"])
+                != (
+                    (self._wishes.get(hub_id) or {}).get("is_wanted"),
+                    (self._wishes.get(hub_id) or {}).get("pick"),
+                )
+                for hub_id in wishes
+            )
+            self._materials = materials
+            self._wishes = wishes
+            self._known.update(
+                {hub_id: items for hub_id, items in materials.items() if items}
+            )
         if is_changed:
             self._on_change()
 
@@ -753,8 +941,9 @@ class OverlayMemberships:
         self.refresh_bindings()
         with self._lock:
             networks = {}
-            for material in self._materials.values():
-                networks.setdefault(overlay_key(material), material)
+            for materials in self._materials.values():
+                for material in materials:
+                    networks.setdefault(overlay_key(material), material)
         is_changed = False
         for key, material in networks.items():
             if self._lanes[material["provider"]].is_working:
@@ -775,7 +964,7 @@ class OverlayMemberships:
             self._on_change()
 
     def start(self) -> None:
-        """Probe on a thread of its own, every ``CLIENT_OVERLAY_POLL_INTERVAL_S``."""
+        """Probe and reconcile on a thread of its own, every ``CLIENT_OVERLAY_POLL_INTERVAL_S``."""
         thread = threading.Thread(
             target=self._poll_forever, name="client_overlay", daemon=True
         )
@@ -793,19 +982,128 @@ class OverlayMemberships:
             try:
                 self.refresh_bindings()
                 self.probe()
+                self.reconcile()
             except Exception as error:  # noqa: BLE001 - the poll must survive
                 self._log(f"overlay: could not look at the networks: {error}")
-            self._news.wait(timeout=CLIENT_OVERLAY_POLL_INTERVAL_S)
+            wait_s = CLIENT_OVERLAY_POLL_INTERVAL_S
+            try:
+                deadline = self.next_deadline()
+            except Exception:  # noqa: BLE001 - the poll must survive
+                deadline = None
+            if deadline is not None:
+                wait_s = min(wait_s, max(deadline, OVERLAY_FAILOVER_RECHECK_S))
+            self._news.wait(timeout=wait_s)
+
+    def _choose(self, hub_id: str) -> "dict | None":
+        """The hub's current network, chosen when it has none; the lock is held.
+
+        A hub with no current network takes one this machine already holds,
+        else the one the person picked, else the hub's first. A current
+        network the hub no longer names is kept for the reconcile to leave.
+        """
+        materials = self._materials.get(hub_id) or []
+        if not materials:
+            return None
+        by_provider = {item["provider"]: item for item in materials}
+        current = self._current.get(hub_id)
+        if current is not None and current["provider"] in by_provider:
+            chosen = by_provider[current["provider"]]
+            self._current[hub_id] = chosen
+            return chosen
+        held = [
+            item
+            for item in materials
+            if (self._records.get(overlay_key(item)) or {}).get("state")
+            in OVERLAY_HELD_STATES
+        ]
+        pick = (self._wishes.get(hub_id) or {}).get("pick", "")
+        chosen = held[0] if held else by_provider.get(pick, materials[0])
+        if current is None:
+            self._current[hub_id] = chosen
+        return chosen
+
+    def _failover_deadline(self, hub_id: str, wish: dict, count: int) -> "float | None":
+        """When a hub moves to its next network; the lock is held."""
+        lost_since = wish.get("lost_since")
+        if not wish.get("is_wanted") or count < 2 or lost_since is None:
+            return None
+        since = max(lost_since, self._switched_at.get(hub_id, lost_since))
+        return since + CLIENT_OVERLAY_FAILOVER_S
+
+    def _record(self, material: dict) -> dict:
+        """One network's record as it stands, off when it has none."""
+        with self._lock:
+            return dict(self._records.get(overlay_key(material)) or _off_record())
+
+    def _join_once(self, hub_id: str, material: dict) -> None:
+        """Join a wanted hub's current network when it is off and not yet tried."""
+        record = self._record(material)
+        if record["state"] in OVERLAY_HELD_STATES + (
+            OVERLAY_STATE_JOINING,
+            OVERLAY_STATE_LEAVING,
+        ):
+            return
+        with self._lock:
+            if self._attempted.get(hub_id) == material["provider"]:
+                return
+        lane = self._lanes[material["provider"]]
+        if lane.is_working:
+            return
+        with self._lock:
+            self._attempted[hub_id] = material["provider"]
+        self._log(f"overlay: joining {overlay_network(material)}")
+        self._set_record(
+            overlay_key(material), _off_record(state=OVERLAY_STATE_JOINING)
+        )
+        lane.submit(
+            OVERLAY_STATE_JOINING,
+            functools.partial(self._run_step, material, OVERLAY_STATE_JOINING),
+        )
+
+    def _switch(self, hub_id: str, old: dict, new: dict) -> dict:
+        """Leave one network and join another, on the new network's lane.
+
+        Returns:
+            Empty when the switch was started; ``busy`` while a lane works.
+        """
+        for provider in {old["provider"], new["provider"]}:
+            lane = self._lanes[provider]
+            if lane.is_working:
+                return {"code": "busy", "params": {"step": lane.status()["step"]}}
+        with self._lock:
+            self._current[hub_id] = new
+            self._attempted[hub_id] = new["provider"]
+            self._switched_at[hub_id] = self._clock()
+        self._set_record(overlay_key(new), _off_record(state=OVERLAY_STATE_JOINING))
+        return self._lanes[new["provider"]].submit(
+            OVERLAY_STATE_JOINING,
+            functools.partial(self._run_switch, hub_id, old, new),
+        )
+
+    def _run_switch(self, hub_id: str, old: dict, new: dict) -> dict:
+        """Leave the old network unless another hub is on it, then join the new."""
+        with self._lock:
+            is_shared = any(
+                other_id != hub_id
+                and (self._wishes.get(other_id) or {}).get("is_wanted")
+                and overlay_key(current) == overlay_key(old)
+                for other_id, current in self._current.items()
+            )
+        if not is_shared and self._record(old)["state"] != OVERLAY_STATE_OFF:
+            self._run_step(old, OVERLAY_STATE_LEAVING)
+        return self._run_step(new, OVERLAY_STATE_JOINING)
 
     def _submit(self, hub_id: str, step: str) -> dict:
         self.refresh_bindings()
         with self._lock:
-            material = self._materials.get(hub_id)
+            material = self._choose(hub_id)
         if material is None:
             return {"code": "overlay_missing", "params": {"hub_id": hub_id}}
         lane = self._lanes[material["provider"]]
         if lane.is_working:
             return {"code": "busy", "params": {"step": lane.status()["step"]}}
+        with self._lock:
+            self._attempted[hub_id] = material["provider"]
         self._set_record(overlay_key(material), _off_record(state=step))
         return lane.submit(step, functools.partial(self._run_step, material, step))
 
@@ -831,6 +1129,8 @@ class OverlayMemberships:
             self._log(f"overlay: {step} {overlay_network(material)}: {error.code}")
             return refusal
         self._set_record(key, self._observe(material))
+        if step == OVERLAY_STATE_JOINING:
+            self._on_joined(dict(material))
         return {}
 
     def _observe(self, material: dict) -> dict:

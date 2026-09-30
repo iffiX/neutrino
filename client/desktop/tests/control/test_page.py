@@ -623,6 +623,32 @@ def test_a_hub_row_carries_the_virtual_network_chip_between_body_and_leave():
     assert CATALOGS["zh-CN"]["ui.overlay"] == "虚拟网"
 
 
+def test_the_chip_leaves_while_the_network_is_wanted_or_held():
+    chip = PAGE_JS.split("function overlayChip(hub)")[1].split("\n}")[0]
+
+    assert "const isHeldNetwork = overlay.is_wanted" in chip
+    assert "|| OVERLAY_HELD_STATES.indexOf(overlay.state) >= 0;" in chip
+
+
+def test_a_hub_with_several_networks_gets_the_picker_beside_the_chip():
+    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
+    chooser = PAGE_JS.split("function overlayPicker(hub)")[1].split("\n}")[0]
+
+    assert body.index("overlayChip(hub)") < body.index("overlayPicker(hub)")
+    assert body.index("overlayPicker(hub)") < body.index("row.appendChild(leave);")
+    assert "if (networks.length < 2) return null;" in chooser
+    assert "picker('overlay_' + key, options, overlay.provider," in chooser
+    assert "send('/api/overlay/pick', { hub_id: key, provider: provider })" in chooser
+    assert "isMoving || isWorking || isHeld(hub)" in chooser
+    assert "wrap.title = t('ui.overlay_pick');" in chooser
+    assert "const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };" in (
+        PAGE_JS
+    )
+    assert ".picker.overlay_pick { flex: none;" in PAGE_CSS
+    assert EN_WORDS["ui.overlay_pick"] == "Choose the virtual network"
+    assert CATALOGS["zh-CN"]["ui.overlay_pick"] == "选择虚拟网"
+
+
 def test_a_console_waiting_to_be_attached_is_amber_with_a_hint():
     body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
     tone = PAGE_JS.split("function overlayTone(overlay)")[1].split("\n}")[0]

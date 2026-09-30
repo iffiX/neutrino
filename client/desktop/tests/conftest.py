@@ -208,7 +208,9 @@ BINDING = {
     "gateway_urls": [],
     "fingerprint": "",
     "token": "tok",
-    "overlay": None,
+    "overlays": [],
+    "is_overlay_wanted": False,
+    "overlay_pick": "",
 }
 OFFICE_BINDING = {
     "id": "c2",
@@ -219,7 +221,9 @@ OFFICE_BINDING = {
     "gateway_urls": [],
     "fingerprint": "",
     "token": "tok2",
-    "overlay": None,
+    "overlays": [],
+    "is_overlay_wanted": False,
+    "overlay_pick": "",
 }
 
 
@@ -248,6 +252,11 @@ OVERLAY_ROW = {
     "address": "100.64.0.7",
     "is_hub_seen": True,
     "work": {"state": "idle", "step": "", "code": "", "params": {}},
+    "is_wanted": True,
+    "networks": [
+        {"provider": "netbird", "network": "api.netbird.io"},
+        {"provider": "easytier", "network": "home"},
+    ],
 }
 HUB_ROW = {
     "hub_id": "h1",
@@ -512,6 +521,10 @@ class FakeResident:
 
     def leave_overlay(self, hub_id: str) -> dict:
         self.overlay_calls.append(("leave", hub_id))
+        return dict(self.overlay_reply)
+
+    def pick_overlay(self, hub_id: str, provider: str) -> dict:
+        self.overlay_calls.append(("pick", hub_id, provider))
         return dict(self.overlay_reply)
 
     def open_terminal(self, hub_id: str, device_id: str, cols: int, rows: int):
