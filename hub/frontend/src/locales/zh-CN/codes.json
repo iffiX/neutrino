@@ -229,6 +229,7 @@
   "code.upstream_gateway_is_this_box": "该网络自己的路由器不能是这台机器自己的地址。",
   "code.upstream_gateway_outside": "该网络自己的路由器必须落在 {subnet} 内。",
   "code.user_unknown": "这个用户还没有在这台机器上生效。",
+  "code.user_name_taken": "这台机器上已经有一个不是共享模块建的账户叫 {user}。",
   "code.validate_failed": "这台机器不接受这份配置：{detail}",
   "code.vault_locked": "保管库已锁定，解锁后才能使用已存凭据。",
   "code.vault_passphrase_needed": "请输入这份备份封存时用的保险库口令。",

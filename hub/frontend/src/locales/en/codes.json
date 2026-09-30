@@ -229,6 +229,7 @@
   "code.upstream_gateway_is_this_box": "That network's own router cannot be this box's own address.",
   "code.upstream_gateway_outside": "That network's own router has to lie inside {subnet}.",
   "code.user_unknown": "The user is not applied on this machine yet.",
+  "code.user_name_taken": "This machine already has an account called {user} that the share module did not make.",
   "code.validate_failed": "The machine will not take that configuration: {detail}",
   "code.vault_locked": "The vault is locked; unlock it to use stored credentials.",
   "code.vault_passphrase_needed": "Enter the vault passphrase this backup was sealed with.",

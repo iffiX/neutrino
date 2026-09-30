@@ -38,6 +38,21 @@ SSH_UNSUPPORTED_OS_STATUS = 95
 # manages it, so no ``want`` is ever written for a user-tier module.
 AGENT_MODULE_INSTALLER_TIERS = ("platform", "hub", "user")
 AGENT_MODULE_INSTALLER_USER = "user"
+# A platform branch whose ``installer`` is this names software the system
+# itself carries, such as Windows' and macOS's own SMB servers: nothing is
+# downloaded or installed, and the agent's runner checks for it itself.
+AGENT_MODULE_INSTALLER_BUILTIN = "builtin"
+# The branch fields that say the hub or the agent fetches or installs
+# something, none of which a builtin branch may name.
+AGENT_MODULE_DOWNLOAD_FIELDS = (
+    "url",
+    "github_repo",
+    "asset_pattern",
+    "download",
+    "package_kind",
+    "packages",
+    "pre_install",
+)
 
 # The agent module cache: what the hub presents when it fetches a module for
 # a managed machine, and what it accepts back. The ceiling is generous —

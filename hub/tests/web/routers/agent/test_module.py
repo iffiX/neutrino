@@ -362,7 +362,7 @@ SUPPORTED_OFF_LINUX = {
     "anydesk": (True, True),
     "gitea": (False, False),
     "podman": (False, False),
-    "samba": (False, False),
+    "samba": (True, True),
     "teamviewer": (True, True),
     "zfs": (False, False),
 }
@@ -384,6 +384,22 @@ def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
             seen.setdefault(row["name"], []).append(row["is_supported"])
 
     assert {name: tuple(flags) for name, flags in seen.items()} == (SUPPORTED_OFF_LINUX)
+
+
+def test_a_windows_machine_takes_the_file_share_as_its_own_server(
+    api, monkeypatch, tmp_path
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_platform[DEVICE] = WINDOWS
+
+    answer = client.post(
+        f"{MODULE_PATH}/start", json={"device_id": DEVICE, "module": "samba"}
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path)["samba"]["want"] == "running"
 
 
 def test_a_machine_below_the_entry_floor_cannot_run_the_module(api, monkeypatch):

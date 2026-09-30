@@ -19,6 +19,8 @@ import json
 import re
 
 from neutrino_hub.modules.devices.constants import (
+    AGENT_MODULE_DOWNLOAD_FIELDS,
+    AGENT_MODULE_INSTALLER_BUILTIN,
     AGENT_MODULE_INSTALLER_TIERS,
     AGENT_MODULE_INSTALLER_USER,
 )
@@ -83,15 +85,20 @@ def _check_branches(file_name: str, manifest: dict) -> None:
     exit says whether the software is there. A module the hub installs
     carries an ``uninstall`` block too: the packages to take off, the
     commands to run after, and whether the module's data stays. A branch
-    that is ``{}`` says the platform carries the software natively.
+    that is ``{}`` says the platform carries the software natively. A branch
+    whose ``installer`` is ``builtin`` names software the system carries,
+    which the agent's runner checks for itself: it names nothing to
+    download or install and needs neither ``verify`` nor ``uninstall``.
 
     Args:
         file_name: The manifest's file, for the message.
         manifest: The parsed manifest.
 
     Raises:
-        ValueError: Naming the branch and what it lacks, or a
-            ``min_version`` that is not a dotted number.
+        ValueError: Naming the branch and what it lacks, a
+            ``min_version`` that is not a dotted number, an ``installer``
+            other than ``builtin``, or a builtin branch naming something
+            to download or install.
     """
     is_installed_by_hub = manifest.get("installer") != AGENT_MODULE_INSTALLER_USER
     platforms = manifest.get("platforms", {})
@@ -110,6 +117,19 @@ def _check_branches(file_name: str, manifest: dict) -> None:
                 f"manifest {file_name}: platform {key} min_version must be a "
                 f"dotted number, not {floor!r}"
             )
+        if "installer" in entry:
+            if entry["installer"] != AGENT_MODULE_INSTALLER_BUILTIN:
+                raise ValueError(
+                    f"manifest {file_name}: platform {key} installer must be "
+                    f"{AGENT_MODULE_INSTALLER_BUILTIN!r}, not {entry['installer']!r}"
+                )
+            named = [field for field in AGENT_MODULE_DOWNLOAD_FIELDS if field in entry]
+            if named:
+                raise ValueError(
+                    f"manifest {file_name}: platform {key} is builtin and names "
+                    f"nothing to download or install, not {', '.join(named)}"
+                )
+            continue
         if not str(entry.get("verify", "") or ""):
             raise ValueError(
                 f"manifest {file_name}: platform {key} must name a verify command"

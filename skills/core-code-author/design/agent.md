@@ -299,7 +299,7 @@ module a system cannot run is left out on that system.
 
 | Module | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| File share (Samba) | yes | no | no |
+| File share | Samba | the system's own SMB server | the system's own SMB server |
 | Gitea | amd64 and arm64 | no | no |
 | Containers (Podman) | yes | no | no |
 | ZFS storage | yes | no | no |

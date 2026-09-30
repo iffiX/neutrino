@@ -188,10 +188,11 @@ def test_the_loader_refuses_a_manifest_without_a_real_tier(
 
 def test_every_branch_the_hub_installs_from_says_how_to_verify_and_uninstall():
     """What the agent is sent for a module: the command whose exit says the
-    software is there, and the block an uninstall runs by."""
+    software is there, and the block an uninstall runs by; a builtin branch
+    installs nothing and the agent's runner checks for it itself."""
     for name, manifest in load_module_manifests().items():
         for key, entry in manifest["platforms"].items():
-            if entry == {}:
+            if entry == {} or entry.get("installer") == "builtin":
                 continue
             assert entry["verify"], (name, key)
             if manifest["installer"] == "user":
@@ -365,3 +366,62 @@ def test_the_loader_refuses_a_floor_that_is_not_a_dotted_number(
         load_module_manifests()
 
     assert "min_version" in str(refusal.value)
+
+
+@pytest.mark.parametrize(
+    "platform",
+    [
+        {"os": "windows", "family": "", "arch": "amd64", "version": "19045"},
+        {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"},
+    ],
+)
+def test_samba_is_the_system_s_own_server_on_windows_and_macos(platform):
+    key, entry = resolve_platform_entry(load_module_manifests()["samba"], platform)
+
+    assert key == platform["os"]
+    assert entry == {"installer": "builtin"}
+
+
+def test_a_builtin_branch_needs_no_verify_and_no_uninstall(tmp_path, monkeypatch):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "platform",
+            "source": "system",
+            "platforms": {"windows": {"installer": "builtin"}},
+        },
+    )
+
+    assert "sample" in load_module_manifests()
+
+
+@pytest.mark.parametrize(
+    "branch",
+    [
+        {"installer": "builtin", "url": "https://vendor.example/s.msi"},
+        {"installer": "builtin", "packages": ["samba"]},
+        {"installer": "vendor", "verify": "where s"},
+    ],
+)
+def test_the_loader_refuses_a_branch_installer_that_is_not_a_bare_builtin(
+    branch, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
+    write_manifest(
+        tmp_path,
+        "sample",
+        {
+            "name": "sample",
+            "installer": "platform",
+            "source": "system",
+            "platforms": {"windows": branch},
+        },
+    )
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "installer" in str(refusal.value) or "builtin" in str(refusal.value)

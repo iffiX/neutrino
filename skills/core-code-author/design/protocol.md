@@ -807,7 +807,13 @@ an agent's channel opens or ends, and when a device is deleted.
 
 `install` and `uninstall` come from `data/manifests/<module>.json`, one branch
 per platform, each with a `verify` command and, for a module the hub installs,
-an `uninstall` block; the loader refuses a manifest that lacks either. The hub
+an `uninstall` block; the loader refuses a manifest that lacks either. A branch
+whose `installer` is `builtin` names software the system itself carries, as
+Samba's `windows` and `darwin` branches name the system's own SMB server: it
+names nothing to download or install, needs neither `verify` nor `uninstall`,
+and the agent's runner checks for the software itself; the loader refuses any
+other branch `installer` and a builtin branch naming `url`, `packages` or any
+other download field. The hub
 resolves the branch for the machine's platform and sends it with the state;
 the agent has no manifest logic of its own. A branch may name `min_version`,
 a dotted number the loader checks: a machine whose platform `version` is

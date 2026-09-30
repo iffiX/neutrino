@@ -68,6 +68,8 @@ interface PanelTarget {
   basePath: string;
   /** Whether anything here can be applied. Offline machines take no orders. */
   isEditable: boolean;
+  /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
+  platformOs: string;
 }
 
 /** The modules this page has panels for, in tab order. */
@@ -77,6 +79,9 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       isEditable={target.isEditable}
+      isSystemServer={
+        target.platformOs !== "" && target.platformOs !== LINUX_OS
+      }
     />
   ),
   gitea: (target) => (
@@ -103,6 +108,9 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
 };
 
 const PAGE_MODULES = Object.keys(MODULE_PANELS);
+
+/** The one system whose file share is Samba; the others serve with their own. */
+const LINUX_OS = "linux";
 
 /** The modules whose block imports what the machine already has. */
 const IMPORTING_MODULES = ["samba", "gitea", "podman"];
@@ -572,6 +580,7 @@ export function ModulesPage() {
             deviceId,
             basePath: `/agent/module/${activeModule}`,
             isEditable: isAgentOnline,
+            platformOs: selectedDevice?.platform.os ?? "",
           })}
         </fieldset>
       )}

@@ -62,12 +62,16 @@ interface SambaPanelsProps {
   /** Where Samba answers: `/agent/module/samba`. */
   basePath: string;
   isEditable: boolean;
+  /** Whether the machine serves its shares with its system's own SMB server
+   * rather than Samba: Windows and macOS. */
+  isSystemServer?: boolean;
 }
 
 export function SambaPanels({
   deviceId,
   basePath,
   isEditable,
+  isSystemServer = false,
 }: SambaPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -241,6 +245,9 @@ export function SambaPanels({
         <div className="settings_group_title">
           <h2>{t("ui.samba.shares_title")}</h2>
         </div>
+        {isSystemServer && (
+          <p className="field_hint">{t("ui.samba.system_server")}</p>
+        )}
         {shares.length === 0 && (
           <p className="field_hint">{t("ui.samba.shares_empty")}</p>
         )}
@@ -249,6 +256,7 @@ export function SambaPanels({
             key={index}
             share={share}
             userNames={users}
+            isSystemServer={isSystemServer}
             isLive={savedShares.some((saved) => saved.name === share.name)}
             onChange={(patch) => updateShare(index, patch)}
             onRemove={() =>
@@ -343,6 +351,9 @@ export function SambaPanels({
 interface ShareEditorProps {
   share: SambaShare;
   userNames: string[];
+  /** Whether the system's own SMB server serves it, which grants a share
+   * with no users to the machine's administrators alone. */
+  isSystemServer: boolean;
   /** Whether a share by this name is applied — its address answers. */
   isLive: boolean;
   onChange: (patch: Partial<SambaShare>) => void;
@@ -352,6 +363,7 @@ interface ShareEditorProps {
 function ShareEditor({
   share,
   userNames,
+  isSystemServer,
   isLive,
   onChange,
   onRemove,
@@ -461,7 +473,11 @@ function ShareEditor({
             </div>
             <span className="field_hint">
               {share.valid_users.length === 0
-                ? t("ui.samba.share_users_all")
+                ? t(
+                    isSystemServer
+                      ? "ui.samba.share_users_administrators"
+                      : "ui.samba.share_users_all",
+                  )
                 : t("ui.samba.share_users_picked")}
             </span>
           </div>
