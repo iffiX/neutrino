@@ -192,19 +192,19 @@ def test_a_bridge_names_the_session_its_stream_is_attached_to():
     assert TerminalBridge(stream=stream).session_id == ""
 
 
-def test_a_session_taken_by_another_stream_is_the_outcome():
+def test_a_session_the_machine_no_longer_keeps_is_the_outcome():
     registry, stream, _wire = shell()
     bridge = TerminalBridge(stream=stream, session_id="kept-1")
     registry.take_close(
         {
             "type": "close",
             "stream": 1,
-            "code": "session_taken",
+            "code": "session_unknown",
             "params": {"session_id": "kept-1"},
         }
     )
 
     assert bridge.outcome() == {
-        "code": "session_taken",
+        "code": "session_unknown",
         "params": {"session_id": "kept-1"},
     }

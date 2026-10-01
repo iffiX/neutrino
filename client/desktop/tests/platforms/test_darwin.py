@@ -473,3 +473,21 @@ def test_a_pbpaste_that_hangs_is_an_os_error(monkeypatch):
 
     with pytest.raises(OSError):
         DarwinPlatform().read_clipboard()
+
+
+def test_the_clipboard_is_written_with_pbcopy(monkeypatch):
+    recorder = CommandRecorder([completed()])
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    DarwinPlatform().write_clipboard("make test")
+
+    assert recorder.commands == [["pbcopy"]]
+    assert recorder.inputs == ["make test"]
+
+
+def test_a_pbcopy_that_fails_is_an_os_error(monkeypatch):
+    recorder = CommandRecorder([completed(returncode=1, stderr="no pasteboard")])
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    with pytest.raises(OSError):
+        DarwinPlatform().write_clipboard("x")

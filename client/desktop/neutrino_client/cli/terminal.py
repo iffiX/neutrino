@@ -91,7 +91,8 @@ def main(machine: str, *, hub: str = "", session_id: str = "", platform=None) ->
 
 def _choose_machine(state: dict, needle: str, hub: str) -> "dict | None":
     """The one offered machine the person named, or None after saying why."""
-    machines = list(state.get("terminals") or [])
+    terminals = state.get("terminals")
+    machines = list((terminals or {}).get("machines") or [])
     if hub:
         chosen_hub = wording.choose_hub(list(state.get("hubs") or []), hub)
         if chosen_hub is None:

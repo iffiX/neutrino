@@ -10,7 +10,7 @@ is not ``client`` was made for a device agent and is refused.
 The bindings live in ``client.json`` in the person's own configuration
 directory, mode 0600, one per hub joined:
 ``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
-fingerprint, token, overlays, is_overlay_wanted, overlay_pick}],
+fingerprint, token, overlays, is_overlay_on, overlay_pick}],
 "exit_hub_id"}``. A file without ``bindings``
 reads as none. ``gateway_urls`` is every address the hub answers on, from the
 link and then from each ``state`` frame; ``gateway_url`` is the one that last
@@ -18,8 +18,9 @@ answered. A binding written by 0.3.0 has no list and reads as one with none.
 ``overlays`` is how this machine joins each of the hub's virtual networks,
 the hub's preferred first, from the link and then from each ``state``: one
 provider's own fields each, the secret among them, which is why the file is
-0600. ``is_overlay_wanted`` is this person's wish to be on the hub's virtual
-network, and ``overlay_pick`` the provider they chose, empty for the first.
+0600. ``is_overlay_on`` is whether the hub's virtual network was last
+``on``, which a start connects once, and ``overlay_pick`` the provider the
+person chose, empty for the first.
 
 A connection round is the addresses in ``candidate_urls`` order: the address
 ``hub.neutrino.internal`` resolves to on the network this machine stands on,
@@ -75,12 +76,12 @@ BINDING_KEYS = (
     "fingerprint",
     "token",
     "overlays",
-    "is_overlay_wanted",
+    "is_overlay_on",
     "overlay_pick",
 )
 BINDING_URLS_KEY = "gateway_urls"
 BINDING_OVERLAYS_KEY = "overlays"
-BINDING_OVERLAY_WISH_KEY = "is_overlay_wanted"
+BINDING_OVERLAY_ON_KEY = "is_overlay_on"
 # The string fields each overlay object carries, by provider and, for
 # EasyTier, by mode. An EasyTier object that names no mode is a manual one,
 # as a hub before the console mode sends it.
@@ -347,18 +348,18 @@ def note_overlays(binding_id: str, overlays: list) -> None:
     _note(binding_id, overlays=clean_overlays(overlays))
 
 
-def note_overlay_wish(binding_id: str, is_wanted: bool, pick: str) -> None:
-    """Record whether this person wants to be on a hub's virtual network, and which.
+def note_overlay_choice(binding_id: str, is_on: bool, pick: str) -> None:
+    """Record where a hub's virtual network stands, and the engine chosen.
 
     Args:
         binding_id: The binding to the hub.
-        is_wanted: Whether this machine is to be on the hub's virtual network.
+        is_on: Whether the hub's virtual network is ``on``.
         pick: The provider chosen, empty for the hub's first.
 
     Raises:
         OSError: When the file cannot be written.
     """
-    _note(binding_id, is_overlay_wanted=bool(is_wanted), overlay_pick=str(pick))
+    _note(binding_id, is_overlay_on=bool(is_on), overlay_pick=str(pick))
 
 
 def clean_overlays(value) -> list:
@@ -658,11 +659,11 @@ def _binding(raw: dict) -> dict:
     binding = {
         key: str(raw.get(key, "") or "")
         for key in BINDING_KEYS
-        if key not in (BINDING_URLS_KEY, BINDING_OVERLAYS_KEY, BINDING_OVERLAY_WISH_KEY)
+        if key not in (BINDING_URLS_KEY, BINDING_OVERLAYS_KEY, BINDING_OVERLAY_ON_KEY)
     }
     binding[BINDING_URLS_KEY] = clean_urls(raw.get(BINDING_URLS_KEY))
     binding[BINDING_OVERLAYS_KEY] = clean_overlays(raw.get(BINDING_OVERLAYS_KEY))
-    binding[BINDING_OVERLAY_WISH_KEY] = raw.get(BINDING_OVERLAY_WISH_KEY) is True
+    binding[BINDING_OVERLAY_ON_KEY] = raw.get(BINDING_OVERLAY_ON_KEY) is True
     return binding
 
 

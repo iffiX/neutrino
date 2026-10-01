@@ -195,7 +195,7 @@ def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
         "fingerprint": "ab" * 32,
         "token": "tok",
         "overlays": [],
-        "is_overlay_wanted": False,
+        "is_overlay_on": False,
         "overlay_pick": "",
     }
     assert enrollment.bindings() == [binding]
@@ -677,7 +677,7 @@ def test_the_join_keeps_the_links_overlays_on_the_binding(monkeypatch):
 
     assert binding["overlays"] == [EASYTIER]
     assert enrollment.bindings()[0]["overlays"] == [EASYTIER]
-    assert binding["is_overlay_wanted"] is False
+    assert binding["is_overlay_on"] is False
 
 
 def test_note_overlays_writes_and_clears_one_bindings_list():
@@ -698,17 +698,17 @@ def test_the_wish_and_the_pick_are_kept_per_binding():
     enrollment.add_binding(BINDING)
     enrollment.add_binding(SECOND)
 
-    enrollment.note_overlay_wish("c2", True, "easytier")
+    enrollment.note_overlay_choice("c2", True, "easytier")
 
     first, second = enrollment.bindings()
-    assert (first["is_overlay_wanted"], first["overlay_pick"]) == (False, "")
-    assert (second["is_overlay_wanted"], second["overlay_pick"]) == (True, "easytier")
+    assert (first["is_overlay_on"], first["overlay_pick"]) == (False, "")
+    assert (second["is_overlay_on"], second["overlay_pick"]) == (True, "easytier")
 
 
 def test_a_wish_that_is_not_a_bool_reads_as_none():
-    enrollment.add_binding(dict(BINDING, is_overlay_wanted="yes"))
+    enrollment.add_binding(dict(BINDING, is_overlay_on="yes"))
 
-    assert enrollment.bindings()[0]["is_overlay_wanted"] is False
+    assert enrollment.bindings()[0]["is_overlay_on"] is False
 
 
 def test_a_binding_file_with_overlays_is_0600(config_path):

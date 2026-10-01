@@ -18,13 +18,24 @@ const DETAIL_CODES = [
   'switch_failed', 'reconcile_failed', 'mount_failed', 'unmount_failed',
   'forward_failed',
 ];
-// The mount states that are a step on the way, each with its own word.
+// The mount states that are a step on the way.
 const MOUNT_BUSY_STATES = ['queued', 'mounting', 'pending'];
 
 // Claude Code's four role slots and Codex's reasoning scale, as the client
 // stores them.
 const CLAUDE_SLOTS = ['default', 'opus', 'sonnet', 'haiku'];
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
+
+// The licence the client ships under and where its source and the source of
+// every program it carries are.
+const CLIENT_LICENCE = 'MIT';
+const SOURCE_LINKS = [
+  ['Neutrino', 'https://github.com/iffiX/neutrino'],
+  ['NetBird', 'https://github.com/netbirdio/netbird'],
+  ['EasyTier', 'https://github.com/EasyTier/EasyTier'],
+  ['RustDesk', 'https://github.com/rustdesk/rustdesk'],
+  ['cc-switch', 'https://github.com/SaladDay/cc-switch-cli'],
+];
 
 function fill(template, params) {
   return template.replace(/\{(\w+)\}/g, (whole, key) =>
@@ -78,28 +89,17 @@ function wordError(e) {
 let lastState = null;
 let lastSerialized = '';
 let pendingState = null;
-// Notes a refusal left on one entry, by type and service key.
-let serviceNotes = {};
 // What each AI tool points with, as the Config dialog left it; sent with
 // the next switch, and null rebuilds it from the next server state.
 let aiStaged = null;
-// Records whose unmount is in flight, so the button greys at once.
-const fileAsked = {};
-// Hubs whose Leave is in flight, by hub key: the button greys and spins
-// until the state push that drops the row.
-const leaveAsked = {};
-// A refused join or leave of a hub's virtual network, by hub key, worded
-// under its row until the next press.
-const overlayNotes = {};
-// Whether a refresh is in flight: the refresh button spins until the next
-// pushed state or REFRESH_SPIN_MS, whichever comes first.
-let isRefreshing = false;
-let refreshTimer = null;
-const REFRESH_SPIN_MS = 3000;
 // The staged file configs, one per service key: {is_open, username,
 // password, path}. The password lives only here and in the one request
 // that sends it.
 let fileStaged = {};
+// The join row while its link is checked, and the code a refused link left
+// under the input until the next press.
+let isJoining = false;
+let joinError = null;
 
 // What one hub is keyed by on this page: its id once its welcome named
 // it, its binding's id before that.
@@ -111,7 +111,7 @@ function hubKey(hub) {
 function serviceKey(entry) {
   return entry.hub_id + '/' + entry.id;
 }
-// Dialogs are built outside draw() and counted here, so a poll never
+// Dialogs are built outside draw() and counted here, so a push never
 // redraws under one.
 let openDialogs = 0;
 
@@ -162,6 +162,7 @@ function bridgeReady() {
 function canRedraw() {
   if (openDialogs > 0) return false;
   if (openPicker) return false;
+  if (openMenu) return false;
   const selection = window.getSelection ? window.getSelection() : null;
   if (selection && selection.type === 'Range') return false;
   const active = document.activeElement;
@@ -186,59 +187,88 @@ function redraw() {
   if (lastState !== null) draw(lastState);
 }
 
-// The resident pushes every change of state here; nothing polls for it.
-// A push ends a refresh in flight, and the button stops spinning even when
-// the state is the one already drawn. A shell's output comes the same way,
-// as a piece naming its terminal.
+// The resident pushes every change of state here; nothing polls for it. A
+// shell's output comes the same way, as a piece naming its terminal.
 window.neutrinoState = (state) => {
   if (!state) return;
   if (state.terminal) { takeShellPiece(state.terminal); return; }
   if (state.code) { renderHint(wordCode(state.code, state.params)); return; }
-  const wasRefreshing = isRefreshing;
-  settleRefresh();
-  if (!present(state) && wasRefreshing) redraw();
+  present(state);
 };
-
-// The refresh in flight is over: the timer is dropped and the flag cleared.
-function settleRefresh() {
-  clearTimeout(refreshTimer);
-  refreshTimer = null;
-  isRefreshing = false;
-}
-
-// A press on the refresh button: every hub is asked again, and the button
-// spins until the next pushed state or the timer.
-function askRefresh() {
-  if (isRefreshing) return;
-  isRefreshing = true;
-  redraw();
-  refreshTimer = setTimeout(() => { settleRefresh(); redraw(); }, REFRESH_SPIN_MS);
-  api('/api/refresh', {});
-}
 
 async function firstFrame() {
   const state = await api('/api/state');
   window.neutrinoState(state);
 }
 
+// A request whose answer is the whole state draws it at once.
 async function send(path, body) {
   const reply = await api(path, body || {});
   if (reply && !reply.code) { lastSerialized = JSON.stringify(reply); draw(reply); }
   return reply;
 }
 
-async function serviceAction(type, body, noteKey) {
-  const reply = await api('/api/services/' + type, body);
-  if (!reply) return false;
-  if (reply.code) {
-    serviceNotes[noteKey] = wordCode(reply.code, reply.params);
-    redraw();
-    return false;
+// --- the destructive press: the first arms, the second within 5 s acts ---
+
+const ARM_MS = 5000;
+let armedKey = '';
+let armTimer = null;
+
+function isArmed(key) {
+  return armedKey === key;
+}
+
+function arm(key) {
+  clearTimeout(armTimer);
+  armedKey = key;
+  armTimer = setTimeout(disarm, ARM_MS);
+  redraw();
+}
+
+function disarm() {
+  clearTimeout(armTimer);
+  armTimer = null;
+  if (!armedKey) return;
+  armedKey = '';
+  redraw();
+}
+
+// A press anywhere but on the armed button disarms it.
+document.addEventListener('mousedown', (event) => {
+  if (!armedKey) return;
+  const target = event.target.closest ? event.target.closest('[data-arm]') : null;
+  if (!target || target.dataset.arm !== armedKey) disarm();
+}, true);
+
+// A red-outlined button that arms on the first press and acts on the second.
+function armedButton(key, label, armedLabel, onAct) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.arm = key;
+  button.className = isArmed(key) ? 'danger armed' : 'danger';
+  button.textContent = isArmed(key) ? armedLabel : label;
+  button.onclick = () => {
+    if (!isArmed(key)) { arm(key); return; }
+    disarm();
+    onAct();
+  };
+  return button;
+}
+
+// A button that is its job's indicator while the job runs: a spinner, the
+// in-progress word, and no press.
+function jobButton(label, job, className) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  if (className) button.className = className;
+  if (job) {
+    button.innerHTML = '<span class="spin"></span>';
+    button.appendChild(document.createTextNode(t('ui.job.' + job)));
+    button.disabled = true;
+  } else {
+    button.textContent = label;
   }
-  delete serviceNotes[noteKey];
-  lastSerialized = JSON.stringify(reply);
-  draw(reply);
-  return true;
+  return button;
 }
 
 // --- the sidebar and its entries ---
@@ -259,53 +289,21 @@ const KINDS = [
   ['rdp', 'ui.panel_desktops', drawDesktopEntry, 'ui.empty_desktops'],
 ];
 
-// What each code a hub row or a virtual network chip carries means for its
-// colour: amber is unreachable with nothing broken, red needs a person to
-// change something. A code outside the table reads as amber.
-const CODE_TONES = {
-  hub_unreachable: 'wait',
-  client_disabled: 'wait',
-  overlay_other_network: 'wait',
-  overlay_not_authorized: 'wait',
-  overlay_missing: 'wait',
-  busy: 'wait',
-  hub_untrusted: 'bad',
-  binding_unknown: 'bad',
-  protocol_too_old: 'bad',
-  protocol_too_new: 'bad',
-  hub_refused: 'bad',
-  hub_reply_unreadable: 'bad',
-  hello_invalid: 'bad',
-  role_mismatch: 'bad',
-  bundle_missing: 'bad',
-  overlay_daemon_down: 'bad',
-  overlay_join_failed: 'bad',
-  overlay_leave_failed: 'bad',
-  overlay_network_invalid: 'bad',
-  overlay_peer_invalid: 'bad',
-  overlay_secret_missing: 'bad',
-  overlay_restart_failed: 'bad',
-  overlay_console_invalid: 'bad',
-  overlay_request_invalid: 'bad',
-  overlay_wish_unsaved: 'bad',
-  unsupported_platform: 'bad',
-  crashed: 'bad',
-};
-// The words a virtual network's state takes, as the resident names them.
-const OVERLAY_STATES = ['off', 'joining', 'waiting', 'on', 'leaving', 'failed'];
-// The states in which a press on the chip leaves the network.
-const OVERLAY_HELD_STATES = ['waiting', 'on'];
-// The name each virtual network's provider goes by in the picker.
+// The codes on a hub that is down which a person has to act on: its dot is
+// red. Any other code leaves it amber.
+const PERSON_CODES = [
+  'hub_untrusted', 'binding_unknown', 'protocol_too_old', 'protocol_too_new',
+];
+// The five states of a hub's connection, as the resident names them.
+const CONNECTION_STATES = ['connected', 'connecting', 'down', 'replaced', 'disabled'];
+// The three states of a hub's virtual network.
+const OVERLAY_STATES = ['off', 'connecting', 'on'];
+// The name each virtual network's engine goes by.
 const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };
 
-function codeTone(code) {
-  return CODE_TONES[code] || 'wait';
-}
-
-// A status mark: a dot in its tone, or an amber spinner for a step in flight.
+// A status mark: a dot in its tone; 'pulse' is the amber dot of work running.
 function marker(tone) {
-  return tone === 'spin' ? '<span class="spin warn"></span>'
-    : '<span class="dot ' + tone + '"></span>';
+  return '<span class="dot ' + (tone === 'pulse' ? 'wait pulse' : tone) + '"></span>';
 }
 
 function draw(state) {
@@ -314,13 +312,14 @@ function draw(state) {
   setTheme(state.theme);
   document.title = t('ui.window.title');
   document.querySelector('h1').textContent = t('ui.window.title');
-  drawRefresh();
+  drawRefresh(state);
   document.getElementById('ident').textContent =
     state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
     ' · client ' + state.version;
   drawTabs();
   document.getElementById('page_title').textContent = tabTitle(openTab);
   dropStaleFileStages(state);
+  mergeSessions(state);
 
   const content = document.getElementById('content');
   content.innerHTML = '';
@@ -329,7 +328,7 @@ function draw(state) {
   } else if (openTab === 'terminals') {
     content.appendChild(drawTerminals(state));
   } else if (openTab === 'settings') {
-    content.appendChild(drawSettings());
+    content.appendChild(drawSettings(state));
   } else {
     content.appendChild(kindTab(state, KINDS.filter((kind) => kind[0] === openTab)[0]));
   }
@@ -399,20 +398,77 @@ function icon(name, size) {
     ' focusable="false">' + ICON_SHAPES[name] + '</svg>';
 }
 
-// The refresh button in the top bar: every hub is asked again, and it spins
-// until the next pushed state or the timer.
-function drawRefresh() {
+// Whether any hub waits for the answer to a refresh.
+function isAnyRefreshing(state) {
+  return (state.hubs || []).some((hub) => isRefreshing(hub));
+}
+
+function isRefreshing(hub) {
+  return !!(hub.jobs && hub.jobs.is_refreshing);
+}
+
+// The refresh button in the top bar: a spinner while any hub refreshes,
+// pressed only when none does.
+function drawRefresh(state) {
   const button = document.getElementById('refresh');
   button.title = t('ui.refresh');
   button.setAttribute('aria-label', t('ui.refresh'));
-  if (isRefreshing) {
+  if (isAnyRefreshing(state)) {
     button.innerHTML = '<span class="spin"></span>';
     button.disabled = true;
   } else {
     button.textContent = '↻';
     button.disabled = false;
   }
-  button.onclick = askRefresh;
+  button.onclick = () => send('/api/refresh', {});
+}
+
+// --- the row every page is made of ---
+
+// A row: the dot, then the body's lines (title, state word, mono line,
+// error line, reason line), then the actions, the red-outlined one last.
+function rowElement(parts) {
+  const row = document.createElement('div');
+  row.className = 'feat';
+  row.innerHTML = marker(parts.tone);
+  const body = document.createElement('div');
+  body.className = 'body';
+  const lines = [
+    ['title', parts.title], ['note', parts.word], ['sub', parts.mono],
+    ['note muted', parts.provider],
+  ];
+  for (const [className, text] of lines) {
+    if (!text) continue;
+    const line = document.createElement('div');
+    line.className = className;
+    line.textContent = text;
+    body.appendChild(line);
+  }
+  for (const extra of parts.extras || []) body.appendChild(extra);
+  if (parts.error) body.appendChild(errorLine(parts.error));
+  if (parts.reason) body.appendChild(reasonLine(parts.reason));
+  row.appendChild(body);
+  if (parts.actions && parts.actions.length) {
+    const actions = document.createElement('div');
+    actions.className = 'row_actions';
+    for (const action of parts.actions) actions.appendChild(action);
+    row.appendChild(actions);
+  }
+  return row;
+}
+
+function errorLine(text) {
+  const line = document.createElement('div');
+  line.className = 'err';
+  line.textContent = text;
+  return line;
+}
+
+function reasonLine(text) {
+  const line = document.createElement('div');
+  line.className = 'reason';
+  line.textContent = text;
+  return line;
 }
 
 // --- one kind's panel: every hub's entries of that kind, in hub order ---
@@ -424,30 +480,28 @@ function kindTab(state, kind) {
   const card = panelCard(t(titleKey), false);
   let count = 0;
   for (const hub of hubs) {
-    if (hub.connection_state !== 'connected') {
-      card.appendChild(downRow(hub));
-    } else {
-      for (const entry of entriesOf(state, hub, type)) {
+    const entries = entriesOf(state, hub, type);
+    if (isReachable(hub)) {
+      for (const entry of entries) {
         build(card, state, hub, entry);
         count += 1;
       }
+    } else {
+      card.appendChild(downRow(hub));
     }
   }
   if (count === 0) card.appendChild(emptyRow(t(emptyKey)));
-  const work = state.rdp_work || {};
-  if (type === 'rdp' && work.code) card.appendChild(errorLine(wordCode(work.code, work.params)));
   return card;
+}
+
+// Whether a hub's socket is up, so its entries stand.
+function isReachable(hub) {
+  return hub.connection === 'connected' || hub.connection === 'disabled';
 }
 
 // A hub whose socket is down publishes nothing; its row in a panel says why.
 function downRow(hub) {
-  const row = document.createElement('div');
-  row.className = 'feat greyed';
-  row.innerHTML = marker('off') + '<div class="body"><div class="title">' +
-    hubName(hub) + '</div><div class="note">' +
-    (hub.connection_state === 'replaced' ? t('state.replaced') : t('ui.reconnecting')) +
-    '</div></div>';
-  return row;
+  return rowElement({ tone: hubTone(hub), title: hubName(hub), word: hubWord(hub) });
 }
 
 function hubName(hub) {
@@ -461,16 +515,461 @@ function waitCard() {
   return wait;
 }
 
-// --- the terminals page: a strip of machines, one tab per open shell ---
+// --- the Hubs page: one row per hub, the join row under them ---
 
-// Every shell open in this window, in the order opened: {key, terminal_id,
-// hub_id, name, term, fit, pane, state, note, isRefused, typed, isSending}.
-// The panes live in one surface that outlives every redraw, so a redraw
-// moves them rather than rebuilding them and the shells keep running.
+function drawHubs(state) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  for (const notice of state.notices || []) {
+    card.appendChild(errorLine(wordCode(notice.code, notice.params)));
+  }
+  const hubs = state.hubs || [];
+  for (const hub of hubs) card.appendChild(hubRow(hub));
+  if (hubs.length === 0) {
+    card.appendChild(rowElement({ tone: 'off', title: t('ui.no_hubs') }));
+  }
+  card.appendChild(joinRow());
+  return card;
+}
+
+// Where one hub stands, as a colour: amber pulsing while anything runs on
+// the row or the socket is connecting, green connected, red for a code a
+// person has to act on, grey for a hub never reached, amber otherwise.
+function hubTone(hub) {
+  const jobs = hub.jobs || {};
+  if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';
+  if (hub.connection === 'connecting') return 'pulse';
+  if (hub.connection === 'connected') return 'ok';
+  if (hub.connection === 'down') {
+    const code = hub.last_error ? hub.last_error.code : '';
+    if (PERSON_CODES.indexOf(code) >= 0) return 'bad';
+    return hub.software ? 'wait' : 'off';
+  }
+  return 'wait';
+}
+
+// The hub's state word: the job running on it, else its connection's.
+function hubWord(hub) {
+  const jobs = hub.jobs || {};
+  if (jobs.is_leaving) return t('ui.job.leaving');
+  if (jobs.is_refreshing) return t('ui.job.refreshing');
+  const connection = CONNECTION_STATES.indexOf(hub.connection) >= 0
+    ? hub.connection : 'connecting';
+  return t('ui.state.' + connection);
+}
+
+// One hub: its name, its state word, its address, the AI marker, its
+// virtual network's line, the error line; and the picker, the network
+// button, Reconnect while replaced, and Leave.
+function hubRow(hub) {
+  const jobs = hub.jobs || {};
+  const software = hub.software ? ' · ' + t('ui.hub_software', { software: hub.software }) : '';
+  const extras = [];
+  if (hub.is_exit) extras.push(noteLine(t('ui.hub_is_exit')));
+  extras.push(overlayLine(hub));
+  const overlay = hub.overlay || {};
+  if (overlay.state === 'off' && overlay.error) {
+    extras.push(errorLine(wordError(overlay.error)));
+  }
+  if (hub.last_error) extras.push(errorLine(wordError(hub.last_error)));
+  const actions = [];
+  const networkPicker = overlayPicker(hub);
+  if (networkPicker) actions.push(networkPicker);
+  const network = overlayButton(hub);
+  actions.push(network);
+  if (hub.connection === 'replaced') {
+    const reconnect = document.createElement('button');
+    reconnect.type = 'button';
+    reconnect.textContent = t('ui.reconnect');
+    reconnect.onclick = () => send('/api/session/start', { hub_id: hubKey(hub) });
+    actions.push(reconnect);
+  }
+  actions.push(leaveButton(hub));
+  return rowElement({
+    tone: hubTone(hub),
+    title: hubName(hub),
+    word: hubWord(hub),
+    mono: hub.gateway_url + software,
+    extras: extras,
+    reason: network.disabled && !jobs.is_leaving ? overlayReason(hub) : '',
+    actions: actions,
+  });
+}
+
+// Leave: arms on the first press, leaves on the second, and is the row's
+// indicator while the hub is being left.
+function leaveButton(hub) {
+  if ((hub.jobs || {}).is_leaving) return jobButton('', 'leaving', 'danger');
+  const key = 'leave:' + hubKey(hub);
+  return armedButton(key, t('ui.leave'), t('ui.leave_armed'),
+    () => send('/api/leave', { hub_id: hubKey(hub) }));
+}
+
+// The line for the hub's virtual network: the engine or the word for it,
+// the state word, the address while on.
+function overlayLine(hub) {
+  const overlay = hub.overlay || {};
+  const networks = overlay.networks || [];
+  const state = OVERLAY_STATES.indexOf(overlay.state) >= 0 ? overlay.state : 'off';
+  const line = document.createElement('div');
+  line.className = 'overlay_line';
+  const tone = overlay.state === 'on' && !(hub.jobs || {}).overlay_job ? 'ok'
+    : overlay.state === 'connecting' || (hub.jobs || {}).overlay_job ? 'pulse' : 'off';
+  line.innerHTML = marker(tone);
+  const name = networks.length === 1
+    ? (OVERLAY_TITLES[networks[0].provider] || networks[0].provider)
+    : t('ui.overlay');
+  line.appendChild(document.createTextNode(
+    name + ' · ' + t('ui.overlay.' + state, { address: overlay.address || '' })));
+  return line;
+}
+
+// The engine picker, while the hub publishes two networks or more; it
+// picks only while the network is off, and names the engine otherwise.
+function overlayPicker(hub) {
+  const overlay = hub.overlay || {};
+  const networks = overlay.networks || [];
+  if (networks.length < 2) return null;
+  const options = networks.map((network) => ({
+    value: network.provider,
+    label: OVERLAY_TITLES[network.provider] || network.provider,
+  }));
+  const key = hubKey(hub);
+  const isLocked = overlay.state !== 'off' || !!(hub.jobs || {}).overlay_job
+    || hub.connection === 'disabled' || !!(hub.jobs || {}).is_leaving;
+  const wrap = picker('overlay_' + key, options, overlay.network, (provider) => {
+    send('/api/overlay/pick', { hub_id: key, provider: provider });
+  }, isLocked);
+  wrap.classList.add('overlay_pick');
+  wrap.title = t('ui.overlay_pick');
+  return wrap;
+}
+
+// The one network button: Connect while off, Cancel while connecting,
+// Disconnect while on; the step that stops the engine shows on it.
+function overlayButton(hub) {
+  const overlay = hub.overlay || {};
+  const jobs = hub.jobs || {};
+  const key = hubKey(hub);
+  if (jobs.overlay_job === 'disconnecting') return jobButton('', 'disconnecting');
+  const button = document.createElement('button');
+  button.type = 'button';
+  if (overlay.state === 'connecting') {
+    button.innerHTML = '<span class="spin"></span>';
+    button.appendChild(document.createTextNode(t('ui.network_cancel')));
+    button.onclick = () => send('/api/overlay/cancel', { hub_id: key });
+    return button;
+  }
+  if (overlay.state === 'on') {
+    button.textContent = t('ui.network_disconnect');
+    button.onclick = () => send('/api/overlay/disconnect', { hub_id: key });
+  } else {
+    button.textContent = t('ui.network_connect');
+    button.onclick = () => send('/api/overlay/connect', { hub_id: key });
+  }
+  button.disabled = (overlay.networks || []).length === 0
+    || hub.connection === 'disabled' || !!jobs.is_leaving;
+  return button;
+}
+
+// Why the network button cannot act.
+function overlayReason(hub) {
+  if (hub.connection === 'disabled') return t('ui.reason.disabled');
+  if (((hub.overlay || {}).networks || []).length === 0) return t('ui.reason.no_network');
+  return '';
+}
+
+// The row that is always there: paste a link, join one more hub.
+function joinRow() {
+  const body = document.createElement('div');
+  const line = document.createElement('div');
+  line.className = 'row';
+  const input = document.createElement('input');
+  input.placeholder = 'neutrino://enroll/...';
+  input.onkeydown = (e) => { if (e.key === 'Enter') join(); };
+  input.onblur = settle;
+  const button = jobButton(t('ui.join'), isJoining ? 'joining' : '');
+  button.onclick = join;
+  function join() {
+    if (isJoining) return;
+    isJoining = true;
+    joinError = null;
+    redraw();
+    api('/api/join', { link: input.value }).then((reply) => {
+      isJoining = false;
+      joinError = reply && reply.error ? reply.error : null;
+      if (reply && !reply.code) { lastSerialized = JSON.stringify(reply); draw(reply); }
+    });
+  }
+  line.appendChild(input);
+  line.appendChild(button);
+  body.appendChild(line);
+  return rowElement({
+    tone: 'off',
+    title: t('ui.add_hub'),
+    word: t('ui.paste_hint'),
+    extras: [body],
+    error: joinError ? wordCode(joinError.code, joinError.params) : '',
+  });
+}
+
+function noteLine(text) {
+  const note = document.createElement('div');
+  note.className = 'note muted';
+  note.textContent = text;
+  return note;
+}
+
+function entriesOf(state, hub, type) {
+  return (state.services || []).filter(
+    (entry) => entry.hub_id === hub.hub_id && entry.type === type);
+}
+
+// The line a panel carries while no hub has anything of its kind.
+function emptyRow(line) {
+  const row = document.createElement('div');
+  row.className = 'feat';
+  row.innerHTML = '<div class="body"><div class="note muted">' + line +
+    '</div></div>';
+  return row;
+}
+
+function panelCard(title, isDirty) {
+  const card = document.createElement('div');
+  card.className = isDirty ? 'card dirty' : 'card';
+  const heading = document.createElement('div');
+  heading.className = 'panel_title';
+  heading.textContent = title;
+  card.appendChild(heading);
+  return card;
+}
+
+// --- the entries of the service pages ---
+
+// Which hub, which of its machines and which module an entry comes from; a
+// hub that names no machine leaves the address the entry points at.
+function providerLine(hub, entry) {
+  return t('ui.provided_by', {
+    hub: hubName(hub), device: entry.device_name || entryHost(entry),
+    module: entryModule(entry),
+  });
+}
+
+// The module names an origin code stands for; the AI gateway is worded in
+// the page's language.
+const ENTRY_MODULES = {
+  gitea_module: 'Gitea', samba_module: 'Samba', device_share: 'RustDesk',
+};
+
+// The module an entry comes from, by its origin code: a container by its
+// image, without the registry or the path in front; a hand-declared record,
+// and an entry from a hub that sends no code, by its own title.
+function entryModule(entry) {
+  const code = entry.description_code;
+  if (code === 'ai_gateway') return t('ui.module_ai_gateway');
+  if (code === 'container') {
+    const image = (entry.description_params || {}).image || '';
+    return image.split('/').pop() || entry.title;
+  }
+  return ENTRY_MODULES[code] || entry.title;
+}
+
+// The host an entry's payload points at, wherever its type keeps it.
+function entryHost(entry) {
+  const payload = entry.payload || {};
+  const url = payload.url || payload.endpoint;
+  if (url) {
+    const match = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]+\]|[^/:?#]+)/i.exec(url);
+    return match ? match[1] : url;
+  }
+  return payload.host || '';
+}
+
+// The work on an entry: its own job, else its hub's refresh.
+function entryWork(hub, entry) {
+  if (entry.job) return entry.job;
+  return isRefreshing(hub) ? 'refreshing' : '';
+}
+
+// An entry's dot: amber pulsing while work runs on it, green healthy,
+// amber unhealthy.
+function entryTone(hub, entry) {
+  if (entryWork(hub, entry)) return 'pulse';
+  return entry.is_healthy ? 'ok' : 'wait';
+}
+
+// An entry's state word: the work running on it, else unhealthy, else what
+// the caller says it stands at.
+function entryWord(hub, entry, standing) {
+  const work = entryWork(hub, entry);
+  if (work) return t('ui.job.' + work);
+  if (!entry.is_healthy) return t('ui.unhealthy');
+  return standing || '';
+}
+
+// Why an entry's action cannot run, empty when it can.
+function entryReason(hub, entry, isHealthNeeded) {
+  if (hub.connection === 'disabled') return t('ui.reason.disabled');
+  if (isHealthNeeded && !entry.is_healthy) return t('ui.reason.unhealthy');
+  return '';
+}
+
+// Whether an entry's actions may run: nothing at work on it, its hub not
+// refreshing and not switched off.
+function isEntryFree(hub, entry) {
+  return !entryWork(hub, entry) && hub.connection !== 'disabled';
+}
+
+function entryRow(hub, entry, mono, standing, actions, reason, extras) {
+  return rowElement({
+    tone: entryTone(hub, entry),
+    title: entry.title,
+    word: entryWord(hub, entry, standing),
+    mono: mono,
+    provider: providerLine(hub, entry),
+    error: wordError(entry.last_error),
+    reason: reason,
+    actions: actions,
+    extras: extras,
+  });
+}
+
+function serviceAction(type, body) {
+  return send('/api/services/' + type, body);
+}
+
+function drawWebEntry(card, state, hub, entry) {
+  const payload = entry.payload || {};
+  const isLocal = payload.is_local_only === true;
+  const open = jobButton(isLocal ? t('ui.open_local') : t('ui.open'), entry.job);
+  if (!entry.job) {
+    open.disabled = !entry.is_healthy || !isEntryFree(hub, entry);
+    open.onclick = () => serviceAction('web', { hub_id: entry.hub_id, id: entry.id });
+  }
+  const reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
+  card.appendChild(entryRow(hub, entry, payload.url || '', '', [open], reason));
+}
+
+function drawPortEntry(card, state, hub, entry) {
+  const payload = entry.payload || {};
+  const forward = (state.forwards || {})[serviceKey(entry)] || {};
+  const isOn = !!forward.is_active;
+  const local = isOn ? ' → ' + t('ui.forwarding_to', { port: forward.local_port }) : '';
+  const button = jobButton(isOn ? t('ui.port_disconnect') : t('ui.port_connect'),
+    entry.job, isOn ? 'danger' : '');
+  if (!entry.job) {
+    button.disabled = !isEntryFree(hub, entry) || (!entry.is_healthy && !isOn);
+    button.onclick = () => serviceAction('port',
+      { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn });
+  }
+  const reason = button.disabled && !entryWork(hub, entry)
+    ? entryReason(hub, entry, !isOn) : '';
+  card.appendChild(entryRow(hub, entry,
+    (payload.host || '') + ':' + (payload.port || '') + local, '', [button], reason));
+}
+
+// --- the remote desktops panel: connect there ---
+
+function drawDesktopEntry(card, state, hub, entry) {
+  const payload = entry.payload || {};
+  const viewer = (state.viewers || {})[serviceKey(entry)] || {};
+  const isOpen = !!viewer.is_running;
+  const connect = jobButton(t('ui.rdp_connect'), entry.job);
+  if (!entry.job) {
+    connect.disabled = !entry.is_healthy || !isEntryFree(hub, entry) || isOpen;
+    connect.onclick = () => serviceAction('rdp',
+      { action: 'connect', hub_id: entry.hub_id, id: entry.id });
+  }
+  const reason = connect.disabled && !entryWork(hub, entry) && !isOpen
+    ? entryReason(hub, entry, true) : '';
+  card.appendChild(entryRow(hub, entry,
+    (payload.host || '') + ':' + (payload.port || ''),
+    isOpen ? t('ui.rdp_open') : '', [connect], reason));
+}
+
+// --- the AI panel: one gateway per hub, one of them the tools' ---
+
+// What each tool points with, staged by the Config dialog and sent with
+// the next switch; rebuilt from the server state once a switch lands.
+function ensureAiStaged(state) {
+  if (aiStaged) return aiStaged;
+  aiStaged = {
+    tool_configs: JSON.parse(JSON.stringify(state.ai_tool_configs || {})),
+  };
+  return aiStaged;
+}
+
+// Whether a switch of the tools runs anywhere.
+function isAiSwitching(state) {
+  if (((state.ai || {}).work || {}).state === 'working') return true;
+  return (state.services || []).some((entry) => entry.type === 'ai' && entry.job);
+}
+
+// A gateway is in use while its hub is the exit and the tools are pointed;
+// switching one on points the tools at it and leaves every other off.
+function drawAiEntry(card, state, hub, entry) {
+  const staged = ensureAiStaged(state);
+  const ai = state.ai || {};
+  const isExit = !!hub.is_exit;
+  const isInUse = isExit && !!ai.is_enabled;
+  const payload = entry.payload || {};
+  const isFree = entry.is_healthy && isEntryFree(hub, entry) && !isAiSwitching(state);
+  const config = document.createElement('button');
+  config.type = 'button';
+  config.className = 'ghost';
+  config.textContent = t('ui.config');
+  config.disabled = !isFree;
+  config.onclick = () => openConfigDialog(staged, payload.models || [],
+    () => { if (isInUse) askAiUse(hub, entry, true); });
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = isInUse ? 'chip on' : 'chip';
+  toggle.disabled = !isFree;
+  if (entry.job) {
+    toggle.innerHTML = '<span class="spin"></span>';
+    toggle.appendChild(document.createTextNode(t('ui.job.switching')));
+  } else {
+    toggle.innerHTML = marker(isInUse && ai.is_active ? 'ok' : 'off');
+    toggle.appendChild(document.createTextNode(t('ui.ai_use')));
+  }
+  toggle.onclick = () => askAiUse(hub, entry, !isInUse);
+  const extras = [];
+  if (isExit && ai.code) extras.push(errorLine(wordCode(ai.code, ai.params)));
+  const reason = !isFree && !entryWork(hub, entry) && !isAiSwitching(state)
+    ? entryReason(hub, entry, true) : '';
+  card.appendChild(entryRow(hub, entry, payload.endpoint || '',
+    isInUse && ai.is_active ? t('ui.ai_on') : '', [config, toggle], reason, extras));
+}
+
+// Switching a gateway on makes its hub the exit first, then points the
+// tools; switching the one in use off puts the tools back.
+async function askAiUse(hub, entry, isOn) {
+  const isEnabled = !!(lastState && (lastState.ai || {}).is_enabled);
+  if (isOn && !hub.is_exit) {
+    const reply = await send('/api/exit/set', { hub_id: hubKey(hub) });
+    if (!reply || reply.code || isEnabled) return;
+  }
+  const reply = await serviceAction('ai', {
+    hub_id: entry.hub_id,
+    is_enabled: isOn,
+    tool_configs: ensureAiStaged(lastState).tool_configs,
+  });
+  if (reply && !reply.code) { aiStaged = null; redraw(); }
+}
+
+// --- the terminals page: the machine chips, the tab strip, the terminal ---
+
+// Every tab, in the order it appeared: {key, hub_id, device_id, name,
+// session_id, terminal_id, term, fit, pane, state, note, isRefused, typed,
+// isSending, isListed, flags}. ``state`` is 'idle' for a listed session no
+// window of this page attached to yet, 'connecting', 'open', 'ended' once the
+// hub stopped listing the session, or 'closed' once the shell ended. The
+// panes live in one surface that outlives every redraw, so a redraw moves
+// them rather than rebuilding them and the shells keep running.
 const shellTabs = [];
 let activeShell = '';
 let shellCounter = 0;
-// The machine the strip has picked, by hub and device.
+// The machine the chips have picked, by hub and device.
 let shellPick = null;
 // The surface the panes live in, made once.
 let shellSurface = null;
@@ -480,8 +979,6 @@ let shouldFocusShell = false;
 let shellThemeKey = '';
 // Output that arrived for a terminal before its open answered, by its id.
 const earlyOutput = {};
-// The kept sessions whose × was pressed once, by session id.
-const endArmed = {};
 // Lines a shell keeps above its window.
 const TERMINAL_SCROLLBACK_LINES = 5000;
 // The client carries MesloLGS NF, so a powerlevel10k prompt draws its icons.
@@ -492,6 +989,80 @@ const TERMINAL_FONT = '"' + TERMINAL_FONT_FAMILY + '", ui-monospace, "Cascadia M
 const TERMINAL_FONT_FACES = [['regular', '400'], ['bold', '700']];
 // The faces' load, begun by the first shell; every shell redraws once done.
 let terminalFontLoad = null;
+// The font size every shell draws in until the state names the kept one.
+const TERMINAL_FONT_SIZE = 13;
+// The context menu open over a terminal, or null.
+let openMenu = null;
+// The sessions whose tab this page closed, by hub and session id, until the
+// hub stops listing them.
+const closedSessions = new Set();
+
+function terminalFontSize() {
+  return (lastState && lastState.terminal_font_size) || TERMINAL_FONT_SIZE;
+}
+
+function isMac() {
+  return !!lastState && (lastState.platform || {}).os === 'darwin';
+}
+
+function isLinux() {
+  return !!lastState && (lastState.platform || {}).os === 'linux';
+}
+
+// The sessions the hubs list, merged into the strip: a listed session no
+// tab shows gets a tab, and a tab whose listed session is gone is ended.
+// Only a hub whose socket is up says anything about its sessions.
+function mergeSessions(state) {
+  const sessions = ((state.terminals || {}).sessions) || [];
+  const reachable = (state.hubs || []).filter(isReachable).map((hub) => hub.hub_id);
+  const listed = new Set(sessions.map((row) => row.hub_id + '/' + row.session_id));
+  for (const tab of shellTabs) {
+    if (!tab.session_id || reachable.indexOf(tab.hub_id) < 0) continue;
+    const isListedNow = listed.has(tab.hub_id + '/' + tab.session_id);
+    if (isListedNow) tab.isListed = true;
+    if (tab.isListed && !isListedNow && ['idle', 'connecting', 'open'].indexOf(tab.state) >= 0) {
+      endTab(tab, t('ui.terminal_ended'));
+    }
+  }
+  for (const key of Array.from(closedSessions)) {
+    if (!listed.has(key)) closedSessions.delete(key);
+  }
+  const shown = new Set(shellTabs.map((tab) => tab.hub_id + '/' + tab.session_id));
+  const isFirst = shellTabs.length === 0;
+  for (const row of sessions) {
+    const key = row.hub_id + '/' + row.session_id;
+    if (shown.has(key) || closedSessions.has(key)) continue;
+    const machine = machineOf(state, row.hub_id, row.device_id);
+    if (!machine) continue;
+    const tab = newTab(row.hub_id, machine, row.session_id);
+    tab.state = 'idle';
+    tab.isListed = true;
+  }
+  if (isFirst && shellTabs.length && !activeShell) {
+    activeShell = shellTabs[0].key;
+  }
+}
+
+function machineOf(state, hubId, deviceId) {
+  return (((state.terminals || {}).machines) || []).filter((machine) =>
+    machine.hub_id === hubId && machine.device_id === deviceId)[0] || null;
+}
+
+// The session row the hub last listed for a tab, or null.
+function sessionRow(tab) {
+  const sessions = ((lastState && lastState.terminals) || {}).sessions || [];
+  return sessions.filter((row) =>
+    row.hub_id === tab.hub_id && row.session_id === tab.session_id)[0] || null;
+}
+
+// A tab's two flags and its owner: the hub's last word, else what this
+// window set on a session the hub has not listed yet, which this client
+// opened.
+function tabFlags(tab) {
+  const row = sessionRow(tab);
+  if (row) return row;
+  return Object.assign({ is_owned: true, owner: '', attached_count: 1 }, tab.flags);
+}
 
 function drawTerminals(state) {
   const hubs = state.hubs || [];
@@ -501,16 +1072,25 @@ function drawTerminals(state) {
     shellThemeKey = themeKey;
     for (const tab of shellTabs) tab.term.options.theme = terminalTheme();
   }
+  for (const tab of shellTabs) {
+    if (tab.term.options.fontSize !== terminalFontSize()) {
+      tab.term.options.fontSize = terminalFontSize();
+    }
+  }
   const page = document.createElement('div');
   page.className = 'term_page';
   page.appendChild(machineStrip(state));
   page.appendChild(shellPanel(state));
   window.requestAnimationFrame(fitActiveShell);
+  const active = activeTab();
+  if (active && active.state === 'idle') {
+    window.requestAnimationFrame(() => attachShell(active));
+  }
   return page;
 }
 
 // Every machine a connected hub offers a terminal on, one chip each with its
-// presence dot, and the button that opens a new shell on the picked one.
+// presence dot, and the button that opens a new terminal on the picked one.
 function machineStrip(state) {
   const card = document.createElement('div');
   card.className = 'card term_pick';
@@ -519,8 +1099,8 @@ function machineStrip(state) {
   const picked = pickedMachine(state);
   let count = 0;
   for (const hub of state.hubs || []) {
-    if (hub.connection_state !== 'connected') continue;
-    const machines = (state.terminals || []).filter(
+    if (!isReachable(hub)) continue;
+    const machines = (((state.terminals || {}).machines) || []).filter(
       (machine) => machine.hub_id === hub.hub_id);
     for (const machine of machines) {
       count += 1;
@@ -529,7 +1109,6 @@ function machineStrip(state) {
       chip.type = 'button';
       chip.className = isPicked ? 'chip on' : 'chip';
       chip.title = t('ui.machine_provided_by', { hub: hubName(hub), device: machine.name });
-      chip.disabled = isHeld(hub);
       chip.innerHTML = marker(machine.is_online ? 'ok' : 'off');
       chip.appendChild(document.createTextNode(machine.name));
       chip.onclick = () => {
@@ -546,47 +1125,52 @@ function machineStrip(state) {
   const line = document.createElement('div');
   line.className = 'term_pick_line';
   line.appendChild(chips);
-  line.appendChild(newShellButton(picked));
+  const open = newShellButton(picked);
+  line.appendChild(open);
   card.appendChild(line);
   if (picked) {
-    const provider = document.createElement('div');
-    provider.className = 'note muted';
-    provider.textContent = t('ui.machine_provided_by',
-      { hub: hubName(picked.hub), device: picked.machine.name });
-    card.appendChild(provider);
+    card.appendChild(noteLine(t('ui.machine_provided_by',
+      { hub: hubName(picked.hub), device: picked.machine.name })));
   }
+  if (open.disabled) card.appendChild(reasonLine(newShellReason(picked)));
   return card;
 }
 
-// The machine the strip has picked, while a connected hub still offers it.
+// The machine the chips have picked, while a connected hub still offers it.
 function pickedMachine(state) {
   if (!shellPick) return null;
   for (const hub of state.hubs || []) {
-    if (hub.connection_state !== 'connected' || hub.hub_id !== shellPick.hub_id) continue;
-    const machine = (state.terminals || []).filter((each) =>
-      each.hub_id === hub.hub_id && each.device_id === shellPick.device_id)[0];
+    if (!isReachable(hub) || hub.hub_id !== shellPick.hub_id) continue;
+    const machine = machineOf(state, hub.hub_id, shellPick.device_id);
     if (machine) return { hub: hub, machine: machine };
   }
   return null;
 }
 
-// The button that opens a new shell on the picked machine.
+function canOpenShell(picked) {
+  return !!picked && picked.machine.is_online && picked.hub.connection === 'connected';
+}
+
+function newShellReason(picked) {
+  if (!picked) return t('ui.reason.no_machine');
+  if (picked.hub.connection === 'disabled') return t('ui.reason.disabled');
+  return t('ui.reason.offline');
+}
+
+// The button that opens a new terminal on the picked machine.
 function newShellButton(picked) {
   const open = document.createElement('button');
   open.type = 'button';
   open.textContent = t('ui.terminal_new');
-  open.disabled = !picked || !picked.machine.is_online || isHeld(picked.hub);
+  open.disabled = !canOpenShell(picked);
   open.onclick = () => openShell(picked.hub, picked.machine);
   return open;
 }
 
-// The open shells and the kept sessions no tab shows: their tabs in a head,
-// the active one's pane, and a line saying where the keys go with the
-// shell's persistent switch at its end. With neither, a dashed frame says so
-// and offers the button that opens one.
+// The tab strip, the active terminal, and the status line with the hint and
+// the two switches. With no tab, a dashed frame offers a new terminal.
 function shellPanel(state) {
-  const kept = keptSessions(state);
-  if (shellTabs.length === 0 && kept.length === 0) {
+  if (shellTabs.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'term_empty';
     empty.innerHTML = '<span>' + t('ui.terminal_none') + '</span>' +
@@ -603,117 +1187,74 @@ function shellPanel(state) {
   const head = document.createElement('div');
   head.className = 'term_head';
   for (const tab of shellTabs) head.appendChild(shellTabButton(tab));
-  for (const entry of kept) head.appendChild(keptTabButton(entry));
+  // A double click on the strip's empty space opens a new terminal.
+  head.ondblclick = (event) => {
+    if (event.target !== head) return;
+    const picked = pickedMachine(state);
+    if (canOpenShell(picked)) openShell(picked.hub, picked.machine);
+  };
   panel.appendChild(head);
   panel.appendChild(shellSurfaceElement());
-  const active = activeTab();
-  const status = document.createElement('div');
-  status.className = 'term_status';
-  const line = document.createElement('span');
-  line.textContent = !active ? t('ui.terminal_kept_hint')
-    : active.state === 'closed' ? (active.note || t('ui.terminal_ended'))
-    : active.hint || t('ui.terminal_keys');
-  status.appendChild(line);
-  if (active && active.state === 'open') status.appendChild(persistSwitch(active));
-  panel.appendChild(status);
+  panel.appendChild(statusLine(activeTab()));
   return panel;
 }
 
-// Every persistent session a connected hub's machine keeps and no tab shows,
-// in the order the sessions began.
-function keptSessions(state) {
-  const shown = shellTabs.map((tab) => tab.session_id);
-  const kept = [];
-  for (const hub of state.hubs || []) {
-    if (hub.connection_state !== 'connected') continue;
-    const machines = (state.terminals || []).filter(
-      (machine) => machine.hub_id === hub.hub_id);
-    for (const machine of machines) {
-      for (const session of machine.sessions || []) {
-        if (!session.is_persistent || shown.indexOf(session.session_id) >= 0) continue;
-        kept.push({ hub: hub, machine: machine, session: session });
-      }
-    }
+// The line under the terminal: where the keys go, or why the shell ended,
+// then the two switches.
+function statusLine(tab) {
+  const status = document.createElement('div');
+  status.className = 'term_status';
+  const hint = document.createElement('span');
+  hint.className = 'term_hint';
+  hint.textContent = !tab ? t('ui.terminal_keys')
+    : tab.state === 'closed' || tab.state === 'ended' ? (tab.note || t('ui.terminal_ended'))
+    : tab.hint || t('ui.terminal_keys');
+  status.appendChild(hint);
+  if (!tab) return status;
+  const flags = tabFlags(tab);
+  const isOpen = tab.state === 'open';
+  const isEnabled = isOpen && flags.is_owned;
+  const switches = document.createElement('div');
+  switches.className = 'term_switches';
+  if (!flags.is_owned) {
+    switches.appendChild(reasonLine(t('ui.reason.not_owned', { owner: flags.owner })));
   }
-  return kept.sort((one, other) =>
-    compareStarts(one.session.started_at, other.session.started_at));
+  switches.appendChild(flagSwitch(t('ui.terminal_persistent'), !!flags.is_persistent,
+    isEnabled, () => askPersist(tab, !flags.is_persistent, !!flags.is_shared)));
+  switches.appendChild(flagSwitch(t('ui.terminal_shared'), !!flags.is_shared,
+    isEnabled, () => askPersist(tab, !!flags.is_persistent, !flags.is_shared)));
+  status.appendChild(switches);
+  return status;
 }
 
-function compareStarts(one, other) {
-  if (one < other) return -1;
-  return one > other ? 1 : 0;
-}
-
-// A kept session's tab: a click attaches to it, its kept output shown first;
-// × ends it on the machine after asking.
-function keptTabButton(entry) {
-  const session = entry.session;
-  const wrap = document.createElement('div');
-  wrap.className = 'term_tab kept';
-  const label = document.createElement('button');
-  label.type = 'button';
-  label.className = 'term_tab_label';
-  label.title = session.title || t('ui.machine_provided_by',
-    { hub: hubName(entry.hub), device: entry.machine.name });
-  label.innerHTML = marker('off');
-  label.appendChild(document.createTextNode(entry.machine.name));
-  label.disabled = !entry.machine.is_online || isHeld(entry.hub);
-  label.onclick = () => {
-    delete endArmed[session.session_id];
-    openShell(entry.hub, entry.machine, session);
-  };
-  wrap.appendChild(label);
-  wrap.appendChild(endButton(session.session_id, label.textContent, () =>
-    stopSession(entry.hub.hub_id, session.session_id)));
-  return wrap;
-}
-
-// The × of a tab whose session the machine keeps: the first press asks, the
-// second ends the session.
-function endButton(sessionId, name, onEnd) {
-  const close = document.createElement('button');
-  close.type = 'button';
-  const isArmed = !!endArmed[sessionId];
-  close.className = isArmed ? 'term_tab_close armed' : 'term_tab_close';
-  close.textContent = isArmed ? t('ui.terminal_end_ask') : '×';
-  close.title = isArmed ? t('ui.terminal_end_ask') : t('ui.terminal_close', { name: name });
-  close.setAttribute('aria-label', close.title);
-  close.onclick = () => {
-    if (!endArmed[sessionId]) { endArmed[sessionId] = true; redraw(); return; }
-    delete endArmed[sessionId];
-    onEnd();
-  };
-  return close;
-}
-
-function stopSession(hubId, sessionId) {
-  return api('/api/terminal/stop', { hub_id: hubId, session_id: sessionId });
-}
-
-// The switch at the end of the line under an open shell: on, its machine
-// keeps the session once nobody is attached.
-function persistSwitch(tab) {
+function flagSwitch(label, isOn, isEnabled, onFlip) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = tab.isPersistent ? 'switch on' : 'switch';
+  button.className = isOn ? 'switch on' : 'switch';
   button.setAttribute('role', 'switch');
-  button.setAttribute('aria-checked', String(!!tab.isPersistent));
+  button.setAttribute('aria-checked', String(isOn));
+  button.disabled = !isEnabled;
   button.innerHTML = '<span class="switch_track"><span class="switch_thumb"></span></span>';
-  button.appendChild(document.createTextNode(t('ui.terminal_persistent')));
-  button.onclick = () => askPersist(tab, !tab.isPersistent);
+  button.appendChild(document.createTextNode(label));
+  button.onclick = onFlip;
   return button;
 }
 
-function askPersist(tab, isPersistent) {
-  api('/api/terminal/persist',
-    { terminal_id: tab.terminal_id, is_persistent: isPersistent }).then((reply) => {
+// Both flags go in one persist; the resident shows them at once and the
+// hub's next state confirms them.
+function askPersist(tab, isPersistent, isShared) {
+  api('/api/terminal/persist', {
+    terminal_id: tab.terminal_id, is_persistent: isPersistent, is_shared: isShared,
+  }).then((reply) => {
     if (!reply) return;
     tab.hint = reply.code ? wordCode(reply.code, reply.params) : '';
-    if (!reply.code) tab.isPersistent = isPersistent;
+    if (!reply.code) tab.flags = { is_persistent: isPersistent, is_shared: isShared };
     redraw();
   });
 }
 
+// One tab: its dot, its label, its badges and its ×; a middle click closes
+// it as × does.
 function shellTabButton(tab) {
   const wrap = document.createElement('div');
   wrap.className = tab.key === activeShell ? 'term_tab on' : 'term_tab';
@@ -721,34 +1262,83 @@ function shellTabButton(tab) {
   label.type = 'button';
   label.className = 'term_tab_label';
   label.innerHTML = marker(shellTone(tab));
-  label.appendChild(document.createTextNode(tab.name));
-  label.onclick = () => {
-    delete endArmed[tab.session_id];
-    activeShell = tab.key;
-    shouldFocusShell = true;
-    redraw();
+  label.title = tab.name;
+  label.appendChild(document.createTextNode(
+    tab.state === 'ended' ? t('ui.terminal_ended') : tab.name));
+  const flags = tabFlags(tab);
+  if (flags.is_persistent) label.appendChild(badge(t('ui.badge.kept')));
+  if (flags.is_shared) label.appendChild(badge(t('ui.badge.shared')));
+  if ((flags.attached_count || 0) > 1) label.appendChild(badge(String(flags.attached_count)));
+  label.onclick = () => selectTab(tab);
+  wrap.onmousedown = (event) => { if (event.button === 1) event.preventDefault(); };
+  wrap.onauxclick = (event) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    pressClose(tab);
   };
   wrap.appendChild(label);
-  if (tab.isPersistent && tab.state === 'open') {
-    wrap.appendChild(endButton(tab.session_id, tab.name, () =>
-      stopSession(tab.hub_id, tab.session_id).then(() => closeShell(tab))));
-    return wrap;
-  }
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'term_tab_close';
-  close.textContent = '×';
-  close.title = t('ui.terminal_close', { name: tab.name });
-  close.setAttribute('aria-label', close.title);
-  close.onclick = () => closeShell(tab);
-  wrap.appendChild(close);
+  wrap.appendChild(closeButton(tab));
   return wrap;
 }
 
-// A shell's dot: an amber spinner while it opens, green while open, red for
-// a refusal, grey once it ended.
+function badge(text) {
+  const mark = document.createElement('span');
+  mark.className = 'badge';
+  mark.textContent = text;
+  return mark;
+}
+
+// Whether closing a tab ends a session others can see or that outlives it.
+function isGuarded(tab) {
+  const flags = tabFlags(tab);
+  return ['idle', 'connecting', 'open'].indexOf(tab.state) >= 0
+    && (flags.is_persistent || flags.is_shared);
+}
+
+// The ×: a plain session ends with its tab; a kept or shared one arms, and
+// the second press ends the session.
+function closeButton(tab) {
+  const key = 'end:' + tab.key;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.dataset.arm = key;
+  close.className = isArmed(key) ? 'term_tab_close armed' : 'term_tab_close';
+  close.textContent = isArmed(key) ? t('ui.terminal_end_armed') : '×';
+  close.title = t('ui.terminal_close', { name: tab.name });
+  close.setAttribute('aria-label', close.title);
+  close.onclick = () => pressClose(tab);
+  return close;
+}
+
+function pressClose(tab) {
+  const key = 'end:' + tab.key;
+  if (!isGuarded(tab)) { closeShell(tab); return; }
+  if (!isArmed(key)) { arm(key); return; }
+  disarm();
+  api('/api/terminal/stop', { hub_id: tab.hub_id, session_id: tab.session_id })
+    .then((reply) => {
+      if (reply && reply.code) {
+        tab.hint = wordCode(reply.code, reply.params);
+        redraw();
+        return;
+      }
+      closeShell(tab);
+    });
+}
+
+// Selecting a tab shows it, and attaches a listed session on first sight.
+function selectTab(tab) {
+  activeShell = tab.key;
+  shouldFocusShell = true;
+  redraw();
+  if (tab.state === 'idle') attachShell(tab);
+}
+
+// A shell's dot: amber pulsing while it opens or waits to attach, green
+// while open, red for a refusal, grey once it ended.
 function shellTone(tab) {
-  if (tab.state === 'connecting') return 'spin';
+  if (tab.state === 'connecting') return 'pulse';
+  if (tab.state === 'idle') return 'off';
   if (tab.state === 'open') return 'ok';
   return tab.isRefused ? 'bad' : 'off';
 }
@@ -772,17 +1362,15 @@ function shellSurfaceElement() {
   return shellSurface;
 }
 
-// A new shell on one machine, or a kept session attached to again: its tab
-// and pane at once, the shell once the resident has opened it at the pane's
-// size.
-function openShell(hub, machine, kept) {
+// A tab and its pane, its terminal made and wired, attached to nothing yet.
+function newTab(hubId, machine, sessionId) {
   shellCounter += 1;
   const pane = document.createElement('div');
-  pane.className = 'term_pane';
+  pane.className = 'term_pane hidden';
   shellSurfaceElement().appendChild(pane);
   const term = new Terminal({
     fontFamily: TERMINAL_FONT,
-    fontSize: 13,
+    fontSize: terminalFontSize(),
     lineHeight: 1.2,
     cursorBlink: true,
     theme: terminalTheme(),
@@ -791,27 +1379,39 @@ function openShell(hub, machine, kept) {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   const tab = {
-    key: 'shell' + shellCounter, terminal_id: '', hub_id: hub.hub_id,
-    name: machine.name, term: term, fit: fit, pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
-    isSending: false, hint: '', session_id: kept ? kept.session_id : '',
-    isPersistent: !!kept,
+    key: 'shell' + shellCounter, terminal_id: '', hub_id: hubId,
+    device_id: machine.device_id, name: machine.name, term: term, fit: fit,
+    pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
+    isSending: false, hint: '', session_id: sessionId || '', isListed: false,
+    flags: {},
   };
   shellTabs.push(tab);
-  activeShell = tab.key;
-  shouldFocusShell = true;
-  redraw();
   term.open(pane);
-  fitShell(tab);
   loadTerminalFont();
+  wireShell(tab);
+  return tab;
+}
+
+// The keys, the menu, the mouse and the size of one terminal.
+function wireShell(tab) {
+  const term = tab.term;
   term.onData((data) => sendShellKeys(tab, data));
-  pane.addEventListener('contextmenu', (event) => {
+  tab.pane.addEventListener('contextmenu', (event) => {
     event.preventDefault();
-    pasteClipboard(tab);
+    openTerminalMenu(tab, event.clientX, event.clientY);
+  });
+  tab.pane.addEventListener('mouseup', (event) => {
+    if (event.button !== 1 || !isLinux()) return;
+    event.preventDefault();
+    const selection = term.getSelection();
+    if (selection && tab.state === 'open') term.paste(selection);
   });
   term.attachCustomKeyEventHandler((event) => {
-    if (event.type !== 'keydown' || !isPasteChord(event)) return true;
+    if (event.type !== 'keydown') return true;
+    const chord = terminalChord(event);
+    if (!chord) return true;
     event.preventDefault();
-    pasteClipboard(tab);
+    runTerminalChord(tab, chord);
     return false;
   });
   term.onResize((size) => {
@@ -819,9 +1419,124 @@ function openShell(hub, machine, kept) {
     api('/api/terminal/resize',
       { terminal_id: tab.terminal_id, cols: size.cols, rows: size.rows });
   });
+}
+
+// What a key press asks of the terminal itself: copy, paste, page, or the
+// font size; empty for a key the shell takes.
+function terminalChord(event) {
+  const key = (event.key || '').toLowerCase();
+  if (event.altKey) return '';
+  const isCommand = isMac() && event.metaKey && !event.ctrlKey;
+  if ((event.ctrlKey && event.shiftKey && key === 'c') || (isCommand && key === 'c')) {
+    return 'copy';
+  }
+  if ((event.ctrlKey && event.shiftKey && key === 'v') || (isCommand && key === 'v')) {
+    return 'paste';
+  }
+  if (event.shiftKey && !event.ctrlKey && key === 'pageup') return 'page_up';
+  if (event.shiftKey && !event.ctrlKey && key === 'pagedown') return 'page_down';
+  if (event.ctrlKey && !event.shiftKey && (key === '=' || key === '+')) return 'larger';
+  if (event.ctrlKey && event.shiftKey && key === '+') return 'larger';
+  if (event.ctrlKey && key === '-') return 'smaller';
+  return '';
+}
+
+function runTerminalChord(tab, chord) {
+  if (chord === 'copy') copySelection(tab);
+  else if (chord === 'paste') pasteClipboard(tab);
+  else if (chord === 'page_up') tab.term.scrollPages(-1);
+  else if (chord === 'page_down') tab.term.scrollPages(1);
+  else if (chord === 'larger') send('/api/terminal/font', { size: terminalFontSize() + 1 });
+  else if (chord === 'smaller') send('/api/terminal/font', { size: terminalFontSize() - 1 });
+}
+
+// The selection goes to the system clipboard through the resident.
+function copySelection(tab) {
+  const text = tab.term.getSelection();
+  if (!text) return;
+  api('/api/clipboard', { text: text }).then((reply) => {
+    const note = reply && reply.code ? wordCode(reply.code, reply.params) : '';
+    if (note !== tab.hint) { tab.hint = note; redraw(); }
+  });
+}
+
+// Pastes the clipboard as the resident reads it; a refusal shows in the line
+// under the terminal until the next paste.
+function pasteClipboard(tab) {
+  if (tab.state !== 'open') return;
+  api('/api/clipboard').then((reply) => {
+    if (!reply) return;
+    const note = reply.code ? wordCode(reply.code, reply.params) : '';
+    if (note !== tab.hint) { tab.hint = note; redraw(); }
+    if (!reply.code && reply.text) tab.term.paste(reply.text);
+    tab.term.focus();
+  });
+}
+
+// The menu a right click opens at the pointer: Copy with a selection,
+// Paste, Select all, Clear. Escape or a press elsewhere closes it.
+function openTerminalMenu(tab, x, y) {
+  closeTerminalMenu();
+  const menu = document.createElement('div');
+  menu.className = 'menu';
+  const items = [
+    [t('ui.menu.copy'), !tab.term.hasSelection(), () => copySelection(tab)],
+    [t('ui.menu.paste'), tab.state !== 'open', () => pasteClipboard(tab)],
+    [t('ui.menu.select_all'), false, () => tab.term.selectAll()],
+    [t('ui.menu.clear'), false, () => tab.term.clear()],
+  ];
+  for (const [label, isDisabled, onPick] of items) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'menu_row';
+    item.textContent = label;
+    item.disabled = isDisabled;
+    item.onmousedown = (event) => event.stopPropagation();
+    item.onclick = () => { closeTerminalMenu(); onPick(); tab.term.focus(); };
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  menu.style.left = Math.min(x, window.innerWidth - width - 4) + 'px';
+  menu.style.top = Math.min(y, window.innerHeight - height - 4) + 'px';
+  openMenu = menu;
+}
+
+function closeTerminalMenu() {
+  if (!openMenu) return;
+  openMenu.remove();
+  openMenu = null;
+  settle();
+}
+document.addEventListener('mousedown', closeTerminalMenu);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeTerminalMenu();
+});
+
+// A new terminal on one machine: its tab at once, the shell once the
+// resident has opened it at the pane's size.
+function openShell(hub, machine) {
+  const tab = newTab(hub.hub_id, machine, '');
+  activeShell = tab.key;
+  shouldFocusShell = true;
+  redraw();
+  startShell(tab);
+}
+
+// A listed session's tab attaches when first shown, its kept output first.
+function attachShell(tab) {
+  if (tab.state !== 'idle') return;
+  tab.state = 'connecting';
+  redraw();
+  startShell(tab);
+}
+
+function startShell(tab) {
+  fitShell(tab);
   api('/api/terminal/open', {
-    hub_id: hub.hub_id, device_id: machine.device_id,
-    cols: term.cols, rows: term.rows, session_id: tab.session_id,
+    hub_id: tab.hub_id, device_id: tab.device_id,
+    cols: tab.term.cols, rows: tab.term.rows, session_id: tab.session_id,
   }).then((reply) => {
     if (!reply || reply.code || !reply.terminal_id) {
       endShell(tab, reply && reply.code ? wordCode(reply.code, reply.params) : '', true);
@@ -834,26 +1549,6 @@ function openShell(hub, machine, kept) {
     delete earlyOutput[reply.terminal_id];
     for (const piece of early) takeShellPiece(piece);
     redraw();
-  });
-}
-
-// Ctrl+Shift+V everywhere, and Cmd+V on a Mac.
-function isPasteChord(event) {
-  const key = (event.key || '').toLowerCase();
-  if (key !== 'v' || event.altKey) return false;
-  return (event.ctrlKey && event.shiftKey) || (event.metaKey && !event.ctrlKey);
-}
-
-// Pastes the clipboard as the resident reads it; a refusal shows in the line
-// under the shell until the next paste.
-function pasteClipboard(tab) {
-  if (tab.state !== 'open') return;
-  api('/api/clipboard').then((reply) => {
-    if (!reply) return;
-    const note = reply.code ? wordCode(reply.code, reply.params) : '';
-    if (note !== tab.hint) { tab.hint = note; redraw(); }
-    if (!reply.code && reply.text) tab.term.paste(reply.text);
-    tab.term.focus();
   });
 }
 
@@ -910,17 +1605,25 @@ function takeShellPiece(piece) {
     return;
   }
   const end = piece.end || {};
-  if (!end.code) { dropShell(tab); return; }
-  endShell(tab, wordCode(end.code, end.params), true);
+  if (!end.code && !tab.isListed && !isGuarded(tab)) { dropShell(tab); return; }
+  endShell(tab, end.code ? wordCode(end.code, end.params) : t('ui.terminal_ended'),
+    !!end.code);
 }
 
-// A shell that ended or was refused keeps its tab, saying why.
+// A shell that ended or was refused keeps its tab and its output, saying why.
 function endShell(tab, note, isRefused) {
   tab.state = 'closed';
   tab.note = note;
   tab.isRefused = isRefused;
   if (note) tab.term.write('\r\n' + note + '\r\n');
   redraw();
+}
+
+// A session the hub stopped listing: its tab stays with its last output.
+function endTab(tab, note) {
+  tab.state = 'ended';
+  tab.note = note;
+  tab.isRefused = false;
 }
 
 // Keys go in the order typed: one request at a time, whatever was typed
@@ -940,9 +1643,10 @@ function flushShellKeys(tab) {
     .then(() => flushShellKeys(tab));
 }
 
-// Closing a tab ends its shell.
+// Closing a tab ends its window's stream, and with it a plain session.
 function closeShell(tab) {
   if (tab.state === 'open') api('/api/terminal/close', { terminal_id: tab.terminal_id });
+  if (tab.session_id) closedSessions.add(tab.hub_id + '/' + tab.session_id);
   dropShell(tab);
 }
 
@@ -1013,214 +1717,236 @@ function base64Bytes(encoded) {
   return bytes;
 }
 
-// --- the Hubs tab: one row per hub, and the row that joins another ---
+// --- the Files panel: Configure, then Mount / Unmount ---
 
-function drawHubs(state) {
-  const card = document.createElement('div');
-  card.className = 'card';
-  const hubs = state.hubs || [];
-  for (const hub of hubs) card.appendChild(hubRow(hub));
-  if (hubs.length === 0) {
-    const none = document.createElement('div');
-    none.className = 'feat';
-    none.innerHTML = marker('off') + '<div class="body"><div>' +
-      t('ui.no_hubs') + '</div></div>';
-    card.appendChild(none);
+function mountDefaultPath(payload, state) {
+  // A drive letter where that is the shape, the platform's own free one.
+  if ((state.mount_location_shape || 'path') === 'drive_letter') {
+    return state.mount_location_suggestion || 'N:';
   }
-  card.appendChild(joinRow(state));
-  return card;
+  return (state.home || '') + '/nas/' + (payload.share || '');
 }
 
-// Where one hub stands, as a colour: green connected; an amber spinner
-// while reconnecting to a hub that answered before; amber unreachable with
-// nothing broken; red for a refusal a person has to act on; grey for a hub
-// not reached yet.
-function hubTone(hub) {
-  if (hub.connection_state === 'connected' && !hub.is_disabled) return 'ok';
-  if (hub.is_disabled || hub.connection_state === 'replaced') return 'wait';
-  const code = hub.last_error ? hub.last_error.code : '';
-  if (code) return codeTone(code);
-  return hub.hub_software ? 'spin' : 'off';
-}
-
-// Bound is not the same as reached: the socket may be down, or another
-// client's may hold the binding, while the binding stands, and the row
-// says which.
-function hubRow(hub) {
-  const row = document.createElement('div');
-  row.className = 'feat';
-  const isReplaced = hub.connection_state === 'replaced';
-  const isReaching = hub.connection_state === 'reconnecting';
-  const tone = hubTone(hub);
-  const word = isReplaced ? t('state.replaced')
-    : hub.is_disabled ? t('ui.disabled')
-    : isReaching ? (tone === 'off' ? t('ui.not_reached') : t('ui.reconnecting'))
-    : t('ui.connected');
-  const software = hub.hub_software
-    ? ' · ' + t('ui.hub_software', { software: hub.hub_software }) : '';
-  const body = document.createElement('div');
-  body.className = 'body';
-  body.innerHTML = '<div class="title">' + hubName(hub) +
-    '</div><div class="note">' + word + '</div>' +
-    '<div class="sub">' + hub.gateway_url + software + '</div>' +
-    (hub.is_exit ? '<div class="note muted">' + t('ui.hub_is_exit') + '</div>' : '');
-  const lastError = wordError(hub.last_error);
-  if (lastError) body.appendChild(errorLine(lastError));
-  const overlay = hub.overlay || {};
-  if (overlay.code) body.appendChild(errorLine(wordCode(overlay.code, overlay.params)));
-  if (overlay.state === 'waiting') body.appendChild(noteLine(t('ui.overlay_waiting_hint')));
-  if (overlayNotes[hubKey(hub)]) body.appendChild(errorLine(overlayNotes[hubKey(hub)]));
-  row.innerHTML = marker(tone);
-  row.appendChild(body);
-  const chip = overlayChip(hub);
-  if (chip) row.appendChild(chip);
-  const networkPicker = overlayPicker(hub);
-  if (networkPicker) row.appendChild(networkPicker);
-  if (isReplaced) {
-    const reconnect = document.createElement('button');
-    reconnect.textContent = t('ui.reconnect');
-    reconnect.onclick = () => send('/api/session/start', { hub_id: hubKey(hub) });
-    row.appendChild(reconnect);
+// A form staged for an entry no hub carries any more is gone.
+function dropStaleFileStages(state) {
+  const present = new Set((state.services || []).map(serviceKey));
+  for (const key of Object.keys(fileStaged)) {
+    if (!present.has(key)) delete fileStaged[key];
   }
-  const leave = document.createElement('button');
-  leave.className = 'danger';
-  if (leaveAsked[hubKey(hub)]) {
-    leave.innerHTML = '<span class="spin"></span>' + t('ui.disconnect');
-    leave.disabled = true;
-  } else {
-    leave.textContent = t('ui.disconnect');
-  }
-  leave.onclick = () => askLeave(hub);
-  row.appendChild(leave);
-  return row;
 }
 
-// The virtual network's chip on a hub row: the current network's state and
-// address, pressed to want the hub's virtual network or not. It stands
-// whatever the socket's state, since the virtual network is what can bring
-// a hub back.
-function overlayChip(hub) {
-  const overlay = hub.overlay;
-  if (!overlay) return null;
-  const isOn = overlay.state === 'on';
-  const isHeldNetwork = overlay.is_wanted
-    || OVERLAY_HELD_STATES.indexOf(overlay.state) >= 0;
-  const isMoving = overlay.state === 'joining' || overlay.state === 'leaving';
-  const isWorking = (overlay.work || {}).state === 'working';
-  const chip = document.createElement('button');
-  chip.type = 'button';
-  chip.className = isOn ? 'chip on' : 'chip';
-  chip.disabled = isMoving || isWorking || isHeld(hub);
-  chip.innerHTML = marker(isMoving ? 'spin' : overlayTone(overlay));
-  chip.appendChild(document.createTextNode(overlayWords(overlay)));
-  chip.onclick = () => askOverlay(hub, isHeldNetwork);
-  return chip;
-}
+// The codes a record can only leave with a new login: mounting it again as
+// it stands would be refused again, so Mount opens the form instead.
+const LOGIN_CODES = ['share_login_rejected', 'credentials_missing'];
 
-// Beside the chip, when the hub publishes more than one virtual network: the
-// one this machine is on or aims at, and a pick moves it to another.
-function overlayPicker(hub) {
-  const overlay = hub.overlay;
-  const networks = (overlay && overlay.networks) || [];
-  if (networks.length < 2) return null;
-  const isMoving = overlay.state === 'joining' || overlay.state === 'leaving';
-  const isWorking = (overlay.work || {}).state === 'working';
-  const options = networks.map((network) => ({
-    value: network.provider,
-    label: OVERLAY_TITLES[network.provider] || network.provider,
-  }));
-  const key = hubKey(hub);
-  const wrap = picker('overlay_' + key, options, overlay.provider, (provider) => {
-    delete overlayNotes[key];
-    send('/api/overlay/pick', { hub_id: key, provider: provider }).then((reply) => {
-      if (reply && reply.code) {
-        overlayNotes[key] = wordCode(reply.code, reply.params);
-        redraw();
+// The panel is marked dirty while any entry's form is open.
+function drawFileEntry(card, state, hub, entry) {
+  const key = serviceKey(entry);
+  const payload = entry.payload || {};
+  const records = (state.mounts || []).filter(
+    (record) => record.hub_id === entry.hub_id && record.entry_id === entry.id);
+  const record = records[0];
+  const staged = fileStaged[key];
+  if (staged && staged.is_open) card.classList.add('dirty');
+  const config = document.createElement('button');
+  config.type = 'button';
+  config.className = 'ghost';
+  config.textContent = t('ui.config');
+  config.disabled = !isEntryFree(hub, entry);
+  config.onclick = () => {
+    if (staged && staged.is_open) {
+      delete fileStaged[key];
+    } else {
+      fileStaged[key] = {
+        is_open: true, username: record ? (record.username || '') : '',
+        password: '',
+        path: record ? record.path : mountDefaultPath(payload, state),
+      };
+    }
+    redraw();
+  };
+  const mount = mountButton(hub, entry, record, staged);
+  const extras = records.map((each) => drawMountRecord(each));
+  if (staged && staged.is_open) {
+    extras.push(drawFileForm(staged, state, () => {
+      if (!entry.job) {
+        mount.disabled = !isEntryFree(hub, entry) || !entry.is_healthy
+          || !staged.username || !staged.path;
       }
-    });
-  }, isMoving || isWorking || isHeld(hub));
-  wrap.classList.add('overlay_pick');
-  wrap.title = t('ui.overlay_pick');
-  return wrap;
+    }));
+  }
+  let reason = '';
+  if (mount.disabled && !entryWork(hub, entry)) {
+    reason = entryReason(hub, entry, !(record && record.is_attached))
+      || t('ui.reason.mount_form');
+  }
+  card.appendChild(entryRow(hub, entry,
+    '//' + (payload.host || '') + '/' + (payload.share || ''),
+    '', [config, mount], reason, extras));
 }
 
-function overlayTone(overlay) {
-  if (overlay.state === 'on') return 'ok';
-  if (overlay.state === 'waiting') return 'wait';
-  if (overlay.code) return codeTone(overlay.code);
-  return 'off';
-}
-
-function overlayWords(overlay) {
-  const state = OVERLAY_STATES.indexOf(overlay.state) >= 0 ? overlay.state : 'off';
-  const parts = [t('ui.overlay'), t('ui.overlay_' + state)];
-  if (overlay.address) parts.push(overlay.address);
-  return parts.join(' · ');
-}
-
-// A press on the chip: leave when the network is wanted or held, join
-// otherwise; a
-// refusal is worded under the row until the next press.
-function askOverlay(hub, isHeldNetwork) {
-  const key = hubKey(hub);
-  delete overlayNotes[key];
-  send(isHeldNetwork ? '/api/overlay/leave' : '/api/overlay/join', { hub_id: key })
-    .then((reply) => {
-      if (reply && reply.code) {
-        overlayNotes[key] = wordCode(reply.code, reply.params);
-        redraw();
-      }
-    });
-}
-
-// Leave greys and spins at once; the row goes with the state that answers,
-// and a refused leave puts the button back.
-function askLeave(hub) {
-  const key = hubKey(hub);
-  leaveAsked[key] = true;
-  redraw();
-  send('/api/leave', { hub_id: key }).then((reply) => {
-    delete leaveAsked[key];
-    if (reply && reply.code) redraw();
-  });
-}
-
-// The row that is always there: paste a link, join one more hub.
-function joinRow(state) {
-  const wrap = document.createElement('div');
-  wrap.className = 'feat';
-  const body = document.createElement('div');
-  body.className = 'body';
-  body.innerHTML = '<div class="title">' + t('ui.add_hub') + '</div>' +
-    '<div class="note">' + t('ui.paste_hint') + '</div>';
-  const row = document.createElement('div');
-  row.className = 'row';
-  row.style.marginTop = '8px';
-  const input = document.createElement('input');
-  input.placeholder = 'neutrino://enroll/...';
-  input.onkeydown = (e) => { if (e.key === 'Enter') join(); };
-  input.onblur = settle;
+// The one button beside Configure: Mount, its job while it mounts, Unmount
+// once mounted, its job while it unmounts. An open form always wins: what
+// it holds is sent as a fresh mount.
+function mountButton(hub, entry, record, staged) {
+  if (entry.job) {
+    return jobButton('', entry.job, entry.job === 'unmounting' ? 'danger' : '');
+  }
   const button = document.createElement('button');
-  button.textContent = t('ui.connect');
-  button.onclick = join;
-  function join() { send('/api/join', { link: input.value }); }
-  row.appendChild(input);
-  row.appendChild(button);
-  body.appendChild(row);
-  const refusal = state.error ? wordCode(state.error.code, state.error.params) : '';
-  if (refusal) body.appendChild(errorLine(refusal));
-  wrap.appendChild(body);
+  button.type = 'button';
+  const isFree = isEntryFree(hub, entry);
+  if (staged && staged.is_open) {
+    button.textContent = t('ui.mount');
+    button.disabled = !isFree || !entry.is_healthy || !staged.username || !staged.path;
+    button.onclick = () => {
+      const sent = {
+        action: 'mount', hub_id: entry.hub_id, id: entry.id,
+        username: staged.username, password: staged.password, path: staged.path,
+      };
+      staged.password = '';
+      delete fileStaged[serviceKey(entry)];
+      serviceAction('file', sent);
+    };
+    return button;
+  }
+  if (record === undefined) {
+    button.textContent = t('ui.mount');
+    button.disabled = true;
+    return button;
+  }
+  if (LOGIN_CODES.indexOf(record.code) >= 0) {
+    // Nothing to retry with: the press opens the form, the login prefilled.
+    button.textContent = t('ui.mount');
+    button.disabled = !isFree;
+    button.onclick = () => {
+      fileStaged[serviceKey(entry)] = {
+        is_open: true, username: record.username || '', password: '',
+        path: record.path,
+      };
+      redraw();
+    };
+    return button;
+  }
+  if (!record.is_attached) {
+    button.textContent = t('ui.mount');
+    button.disabled = !isFree || !entry.is_healthy;
+    button.onclick = () => serviceAction('file',
+      { action: 'mount', hub_id: entry.hub_id, record_id: record.record_id });
+    return button;
+  }
+  button.className = 'danger';
+  button.textContent = t('ui.unmount');
+  button.disabled = !isFree;
+  button.onclick = () => serviceAction('file',
+    { action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id });
+  return button;
+}
+
+// A record's own line carries only where it stands: the words, never a
+// button.
+function drawMountRecord(record) {
+  const line = document.createElement('div');
+  line.className = 'rec';
+  const isBusy = MOUNT_BUSY_STATES.indexOf(record.state) >= 0;
+  const status = isBusy ? t('ui.job.mounting')
+    : record.code ? wordCode(record.code, record.params)
+    : record.is_attached ? '' : t('ui.not_attached');
+  const tone = isBusy ? 'pulse' : record.is_attached ? 'ok' : record.code ? 'bad' : 'off';
+  line.innerHTML = marker(tone);
+  const path = document.createElement('span');
+  path.className = 'path';
+  path.textContent = record.path + (status ? ' — ' + status : '');
+  line.appendChild(path);
+  return line;
+}
+
+// The form's fields write the stage as typed, and onChange keeps the Mount
+// button in step with them.
+function drawFileForm(staged, state, onChange) {
+  const form = document.createElement('div');
+  form.className = 'form';
+  const fields = [
+    ['username', t('ui.username_hint'), 'text'],
+    ['password', t('ui.password_hint'), 'password'],
+  ];
+  for (const [name, hint, type] of fields) {
+    const line = document.createElement('div');
+    line.className = 'row';
+    const input = document.createElement('input');
+    input.type = type;
+    input.placeholder = hint;
+    input.value = staged[name];
+    input.oninput = () => { staged[name] = input.value; onChange(); };
+    // Leaving the field lets a state that arrived while typing draw.
+    input.onblur = settle;
+    line.appendChild(input);
+    form.appendChild(line);
+  }
+  if ((state.mount_location_shape || 'path') === 'drive_letter') {
+    form.appendChild(driveLetterLine(staged, state));
+  } else {
+    form.appendChild(mountPathLine(staged, onChange));
+  }
+  return form;
+}
+
+// A directory under the home, with a Browse button that lists it as this
+// person.
+function mountPathLine(staged, onChange) {
+  const pathLine = document.createElement('div');
+  pathLine.className = 'row';
+  const path = document.createElement('input');
+  path.placeholder = t('ui.path_hint');
+  path.value = staged.path;
+  path.oninput = () => { staged.path = path.value; onChange(); };
+  path.onblur = settle;
+  const browse = document.createElement('button');
+  browse.type = 'button';
+  browse.className = 'ghost';
+  browse.textContent = t('ui.browse');
+  browse.onclick = () => openBrowser(staged.path, (chosen) => {
+    staged.path = chosen;
+    redraw();
+  });
+  pathLine.appendChild(path);
+  pathLine.appendChild(browse);
+  return pathLine;
+}
+
+// A drive letter picked from the ones still free, with a caption naming
+// where the share turns up.
+function driveLetterLine(staged, state) {
+  const wrap = document.createElement('div');
+  const letters = (state.mount_location_choices || []).slice();
+  if (staged.path && letters.indexOf(staged.path) < 0) letters.unshift(staged.path);
+  const options = letters.map((letter) => (
+    { value: letter, label: t('ui.mount_drive_label') + ' ' + letter }));
+  staged.path = staged.path || (letters[0] || '');
+  const select = picker('mount_drive', options, staged.path,
+    (value) => { staged.path = value; redraw(); }, false);
+  const caption = document.createElement('div');
+  caption.className = 'feat';
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = t('ui.mount_drive_caption');
+  caption.appendChild(note);
+  wrap.appendChild(select);
+  wrap.appendChild(caption);
   return wrap;
 }
+
+// --- the Settings page: the window's own choices, then About ---
 
 // What the settings page holds before Save: {language, theme}, or null while
 // it holds what the window already uses.
 let settingsDraft = null;
 
-// The settings page: what this window keeps for itself, the language and
-// the palette. Nothing is sent until Save, and the frame is lit while the
-// page holds a change.
-function drawSettings() {
+// The settings card: the language and the palette, nothing sent until
+// Save, the frame lit while the page holds a change; under it the About
+// section as plain rows.
+function drawSettings(state) {
+  const page = document.createElement('div');
+  page.className = 'settings_page';
   const draft = settingsDraft || { language: language, theme: theme };
   const isDirty = draft.language !== language || draft.theme !== theme;
   const card = panelCard(t('ui.settings_title'), isDirty);
@@ -1245,8 +1971,8 @@ function drawSettings() {
     (value) => stage('theme', value), false));
   const actions = document.createElement('div');
   actions.className = 'row';
-  actions.style.marginTop = '8px';
   const save = document.createElement('button');
+  save.type = 'button';
   save.textContent = t('ui.save');
   save.disabled = !isDirty;
   save.onclick = () => {
@@ -1260,6 +1986,7 @@ function drawSettings() {
     redraw();
   };
   const cancel = document.createElement('button');
+  cancel.type = 'button';
   cancel.className = 'ghost';
   cancel.textContent = t('ui.cancel');
   cancel.disabled = !isDirty;
@@ -1267,237 +1994,40 @@ function drawSettings() {
   actions.appendChild(save);
   actions.appendChild(cancel);
   card.appendChild(actions);
-  return card;
+  page.appendChild(card);
+  page.appendChild(aboutSection(state));
+  return page;
 }
 
-function noteLine(text) {
-  const note = document.createElement('div');
-  note.className = 'note muted';
-  note.textContent = text;
-  return note;
-}
-
-function errorLine(text) {
-  const err = document.createElement('div');
-  err.className = 'err';
-  err.style.marginTop = '10px';
-  err.textContent = text;
-  return err;
-}
-
-function entriesOf(state, hub, type) {
-  return (state.services || []).filter(
-    (entry) => entry.hub_id === hub.hub_id && entry.type === type);
-}
-
-// The line a panel carries while no hub has anything of its kind.
-function emptyRow(line) {
-  const row = document.createElement('div');
-  row.className = 'feat';
-  row.innerHTML = '<div class="body"><div class="note muted">' + line +
-    '</div></div>';
-  return row;
-}
-
-function panelCard(title, isDirty) {
-  const card = document.createElement('div');
-  card.className = isDirty ? 'card dirty' : 'card';
+// About: the version, the licence and the source links, as plain rows.
+function aboutSection(state) {
+  const section = document.createElement('section');
+  section.className = 'about';
   const heading = document.createElement('div');
   heading.className = 'panel_title';
-  heading.textContent = title;
-  card.appendChild(heading);
-  return card;
-}
-
-function entryRow(hub, entry, payloadText, extraNote) {
-  const row = document.createElement('div');
-  row.className = entry.is_healthy ? 'feat' : 'feat greyed';
-  const note = (entry.is_healthy ? '' : t('ui.unhealthy')) +
-    (extraNote ? (entry.is_healthy ? '' : ' — ') + extraNote : '');
-  row.innerHTML = '<span class="dot ' + (entry.is_healthy ? 'ok' : 'off') +
-    '"></span>' +
-    '<div class="body"><div class="title">' + entry.title + '</div>' +
-    '<div class="note">' + payloadText + (note ? ' — ' + note : '') + '</div>' +
-    '<div class="note muted">' + providerLine(hub, entry) + '</div>' +
-    '</div>';
-  return row;
-}
-
-// Which hub, which of its machines and which module an entry comes from; a
-// hub that names no machine leaves the address the entry points at.
-function providerLine(hub, entry) {
-  return t('ui.provided_by', {
-    hub: hubName(hub), device: entry.device_name || entryHost(entry),
-    module: entryModule(entry),
-  });
-}
-
-// The module names an origin code stands for; the AI gateway is worded in
-// the page's language.
-const ENTRY_MODULES = {
-  gitea_module: 'Gitea', samba_module: 'Samba', device_share: 'RustDesk',
-};
-
-// The module an entry comes from, by its origin code: a container by its
-// image, without the registry or the path in front; a hand-declared record,
-// and an entry from a hub that sends no code, by its own title.
-function entryModule(entry) {
-  const code = entry.description_code;
-  if (code === 'ai_gateway') return t('ui.module_ai_gateway');
-  if (code === 'container') {
-    const image = (entry.description_params || {}).image || '';
-    return image.split('/').pop() || entry.title;
+  heading.textContent = t('ui.about');
+  section.appendChild(heading);
+  const rows = [
+    [t('ui.about_version'), state.version],
+    [t('ui.about_licence'), CLIENT_LICENCE],
+  ].concat(SOURCE_LINKS.map(([name, url]) => [t('ui.about_source', { name: name }), url]));
+  for (const [name, value] of rows) {
+    const row = document.createElement('div');
+    row.className = 'about_row';
+    const label = document.createElement('span');
+    label.className = 'muted';
+    label.textContent = name;
+    const text = document.createElement('span');
+    text.className = 'sub';
+    text.textContent = value;
+    row.appendChild(label);
+    row.appendChild(text);
+    section.appendChild(row);
   }
-  return ENTRY_MODULES[code] || entry.title;
+  return section;
 }
 
-// The host an entry's payload points at, wherever its type keeps it.
-function entryHost(entry) {
-  const payload = entry.payload || {};
-  const url = payload.url || payload.endpoint;
-  if (url) {
-    const match = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]+\]|[^/:?#]+)/i.exec(url);
-    return match ? match[1] : url;
-  }
-  return payload.host || '';
-}
-
-// Every button of a hub greys while that hub has this client switched off.
-function isHeld(hub) {
-  return !!hub.is_disabled;
-}
-
-function drawWebEntry(card, state, hub, entry) {
-  const payload = entry.payload || {};
-  const noteKey = 'web_' + serviceKey(entry);
-  const row = entryRow(hub, entry, payload.url || '', serviceNotes[noteKey] || '');
-  const open = document.createElement('button');
-  // An entry that opens only through localhost is forwarded here first.
-  open.textContent = payload.is_local_only === true ? t('ui.open_local') : t('ui.open');
-  open.disabled = !entry.is_healthy || isHeld(hub);
-  open.onclick = () => serviceAction('web',
-    { hub_id: entry.hub_id, id: entry.id }, noteKey);
-  row.appendChild(open);
-  card.appendChild(row);
-}
-
-function drawPortEntry(card, state, hub, entry) {
-  const payload = entry.payload || {};
-  const forward = (state.forwards || {})[serviceKey(entry)] || {};
-  const isOn = !!forward.is_active;
-  const noteKey = 'port_' + serviceKey(entry);
-  const local = isOn
-    ? ' → ' + t('ui.forwarding_to', { port: forward.local_port }) : '';
-  const note = serviceNotes[noteKey] || '';
-  const row = entryRow(
-    hub, entry, (payload.host || '') + ':' + (payload.port || '') + local, note);
-  const button = document.createElement('button');
-  button.className = isOn ? 'danger' : '';
-  button.textContent = isOn ? t('ui.port_disconnect') : t('ui.port_connect');
-  button.disabled = (!entry.is_healthy && !isOn) || isHeld(hub);
-  button.onclick = () => serviceAction('port',
-    { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn }, noteKey);
-  row.appendChild(button);
-  card.appendChild(row);
-}
-
-// --- the remote desktops panel: connect there ---
-
-function drawDesktopEntry(card, state, hub, entry) {
-  const work = state.rdp_work || {};
-  const isWorking = work.state === 'working';
-  const payload = entry.payload || {};
-  const noteKey = 'rdp_' + serviceKey(entry);
-  const viewer = (state.viewers || {})[serviceKey(entry)] || {};
-  const open = viewer.is_running ? ' — ' + t('ui.rdp_open') : '';
-  const isThisOne = work.step === 'connecting:' + serviceKey(entry);
-  const row = entryRow(
-    hub, entry, (payload.host || '') + ':' + (payload.port || '') + open,
-    serviceNotes[noteKey] || '');
-  const connect = document.createElement('button');
-  if (isWorking && isThisOne) {
-    connect.innerHTML = '<span class="spin"></span>' + t('ui.rdp_connecting');
-  } else {
-    connect.textContent = t('ui.rdp_connect');
-  }
-  connect.disabled = isWorking || !entry.is_healthy || isHeld(hub);
-  connect.onclick = () => serviceAction('rdp',
-    { action: 'connect', hub_id: entry.hub_id, id: entry.id }, noteKey);
-  row.appendChild(connect);
-  card.appendChild(row);
-}
-
-// --- the AI panel: one gateway per hub, one of them the tools' ---
-
-// What each tool points with, staged by the Config dialog and sent with
-// the next switch; rebuilt from the server state once a switch lands.
-function ensureAiStaged(state) {
-  if (aiStaged) return aiStaged;
-  aiStaged = {
-    tool_configs: JSON.parse(JSON.stringify(state.ai_tool_configs || {})),
-  };
-  return aiStaged;
-}
-
-// A gateway is in use while its hub is the exit and the tools are pointed;
-// switching one on points the tools at it and leaves every other off.
-function drawAiEntry(card, state, hub, entry) {
-  const staged = ensureAiStaged(state);
-  const ai = state.ai || {};
-  const work = ai.work || {};
-  const isWorking = work.state === 'working';
-  const isExit = !!hub.is_exit;
-  const isInUse = isExit && !!ai.is_enabled;
-  const payload = entry.payload || {};
-  const noteKey = 'ai_' + serviceKey(entry);
-  const note = isExit && isWorking ? t('ui.ai_switching')
-    : isInUse && ai.is_active ? t('ui.ai_on') : '';
-  const row = entryRow(hub, entry, payload.endpoint || '', note);
-  const config = document.createElement('button');
-  config.className = 'ghost';
-  config.textContent = t('ui.config');
-  config.disabled = !entry.is_healthy || isHeld(hub) || isWorking;
-  config.onclick = () => openConfigDialog(staged, payload.models || [],
-    () => { if (isInUse) askAiUse(hub, entry, true, noteKey); });
-  row.appendChild(config);
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = isInUse ? 'chip on' : 'chip';
-  toggle.disabled = !entry.is_healthy || isHeld(hub) || isWorking;
-  toggle.innerHTML = isExit && isWorking ? marker('spin')
-    : marker(isInUse && ai.is_active ? 'ok' : 'off');
-  toggle.appendChild(document.createTextNode(t('ui.ai_use')));
-  toggle.onclick = () => askAiUse(hub, entry, !isInUse, noteKey);
-  row.appendChild(toggle);
-  card.appendChild(row);
-
-  const notes = [];
-  if (isExit && ai.code) notes.push(wordCode(ai.code, ai.params));
-  if (isExit && work.code) notes.push(wordCode(work.code, work.params));
-  for (const text of notes) card.appendChild(errorLine(text));
-}
-
-// Switching a gateway on makes its hub the exit first, then points the
-// tools; switching the one in use off puts the tools back.
-async function askAiUse(hub, entry, isOn, noteKey) {
-  const isEnabled = !!(lastState && (lastState.ai || {}).is_enabled);
-  if (isOn && !hub.is_exit) {
-    const reply = await send('/api/exit/set', { hub_id: hubKey(hub) });
-    if (!reply || reply.code) {
-      serviceNotes[noteKey] = reply ? wordCode(reply.code, reply.params) : '';
-      redraw();
-      return;
-    }
-    delete serviceNotes[noteKey];
-    if (isEnabled) return;
-  }
-  const isSent = await serviceAction('ai', {
-    hub_id: entry.hub_id,
-    is_enabled: isOn,
-    tool_configs: ensureAiStaged(lastState).tool_configs,
-  }, noteKey);
-  if (isSent) { aiStaged = null; redraw(); }
-}
+// --- the one picker, and the dialogs ---
 
 // Which picker is open, by the id the caller gave it. Kept outside the
 // element so a redraw finds it again.
@@ -1675,239 +2205,6 @@ function closeDialog(overlay) {
   openDialogs -= 1;
   overlay.remove();
   settle();
-}
-
-// --- the Files panel: Config, then Mount / Unmount ---
-
-function mountDefaultPath(payload, state) {
-  // A drive letter where that is the shape, the platform's own free one.
-  if ((state.mount_location_shape || 'path') === 'drive_letter') {
-    return state.mount_location_suggestion || 'N:';
-  }
-  return (state.home || '') + '/nas/' + (payload.share || '');
-}
-
-// A form staged for an entry no hub carries any more is gone.
-function dropStaleFileStages(state) {
-  const present = new Set((state.services || []).map(serviceKey));
-  for (const key of Object.keys(fileStaged)) {
-    if (!present.has(key)) delete fileStaged[key];
-  }
-}
-
-// The panel is marked dirty while any entry's form is open.
-function drawFileEntry(card, state, hub, entry) {
-  const key = serviceKey(entry);
-  const payload = entry.payload || {};
-  const records = (state.mounts || []).filter(
-    (record) => record.hub_id === entry.hub_id && record.entry_id === entry.id);
-  const noteKey = 'file_' + key;
-  const note = serviceNotes[noteKey] || '';
-  const row = entryRow(
-    hub, entry, '//' + (payload.host || '') + '/' + (payload.share || ''), note);
-
-  const staged = fileStaged[key];
-  if (staged && staged.is_open) card.classList.add('dirty');
-  const config = document.createElement('button');
-  config.className = 'ghost';
-  config.textContent = t('ui.config');
-  config.disabled = isHeld(hub);
-  config.onclick = () => {
-    if (staged && staged.is_open) {
-      delete fileStaged[key];
-    } else {
-      const kept = records[0];
-      fileStaged[key] = {
-        is_open: true, username: kept ? (kept.username || '') : '',
-        password: '',
-        path: kept ? kept.path : mountDefaultPath(payload, state),
-      };
-    }
-    redraw();
-  };
-  row.appendChild(config);
-
-  const mount = mountButton(entry, records[0], staged, noteKey);
-  if (isHeld(hub)) mount.disabled = true;
-  row.appendChild(mount);
-  card.appendChild(row);
-
-  for (const record of records)
-    card.appendChild(drawMountRecord(record, state, noteKey));
-  if (staged && staged.is_open)
-    card.appendChild(drawFileForm(staged, state));
-}
-
-// A record on its way says which step it is on; anywhere else, nothing.
-function mountBusyWord(state) {
-  return MOUNT_BUSY_STATES.indexOf(state) >= 0 ? t('ui.mount_' + state) : '';
-}
-
-// The codes a record can only leave with a new login: mounting it again as
-// it stands would be refused again, so Mount opens the form instead.
-const LOGIN_CODES = ['share_login_rejected', 'credentials_missing'];
-
-// The one button position beside Config: Mount morphs through the
-// transients and into Unmount, never a second button anywhere. An open
-// form always wins: what it holds is sent as a fresh mount, whether or not
-// a record already stands, and the hub-side record and its saved login are
-// replaced by it.
-function mountButton(entry, record, staged, noteKey) {
-  const button = document.createElement('button');
-  const key = serviceKey(entry);
-  const isBusy = record !== undefined && (fileAsked[record.record_id] ||
-    mountBusyWord(record.state));
-  if (!isBusy && staged && staged.is_open) {
-    button.textContent = t('ui.mount');
-    button.disabled = !entry.is_healthy || !staged.path;
-    button.onclick = async () => {
-      const sent = {
-        action: 'mount', hub_id: entry.hub_id, id: entry.id,
-        username: staged.username, password: staged.password, path: staged.path,
-      };
-      staged.password = '';
-      if (await serviceAction('file', sent, noteKey)) {
-        delete fileStaged[key];
-        redraw();
-      }
-    };
-    return button;
-  }
-  if (record === undefined) {
-    button.textContent = t('ui.mount');
-    button.disabled = true;
-    return button;
-  }
-  const askedStep = fileAsked[record.record_id];
-  const busyWord = askedStep ? t('ui.unmounting')
-    : mountBusyWord(record.state);
-  if (busyWord) {
-    button.textContent = busyWord;
-    button.disabled = true;
-    return button;
-  }
-  if (LOGIN_CODES.indexOf(record.code) >= 0) {
-    // Nothing to retry with: the press opens the form, the login prefilled.
-    button.textContent = t('ui.mount');
-    button.onclick = () => {
-      fileStaged[key] = {
-        is_open: true, username: record.username || '', password: '',
-        path: record.path,
-      };
-      redraw();
-    };
-    return button;
-  }
-  if (record.state === 'detached' || record.code) {
-    button.textContent = t('ui.mount');
-    button.onclick = () => serviceAction('file',
-      { action: 'mount', hub_id: entry.hub_id, record_id: record.record_id },
-      noteKey);
-    return button;
-  }
-  button.className = 'danger';
-  button.textContent = t('ui.unmount');
-  button.onclick = () => {
-    fileAsked[record.record_id] = 'unmounting';
-    redraw();
-    serviceAction('file',
-      { action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id },
-      noteKey
-    ).then(() => { delete fileAsked[record.record_id]; redraw(); });
-  };
-  return button;
-}
-
-// A record's own line carries only where it stands: the words, never a
-// button.
-function drawMountRecord(record, state, noteKey) {
-  const line = document.createElement('div');
-  line.className = 'rec';
-  const askedStep = fileAsked[record.record_id];
-  const busyWord = askedStep ? t('ui.unmounting')
-    : mountBusyWord(record.state);
-  const status = busyWord ? busyWord
-    : record.code ? wordCode(record.code, record.params)
-    : record.is_attached ? '' : t('ui.not_attached');
-  const marker = busyWord ? '<span class="spin"></span>'
-    : '<span class="dot ' +
-      (record.is_attached ? 'ok' : record.code ? 'bad' : 'off') + '"></span>';
-  line.innerHTML = marker +
-    '<span class="path">' + record.path +
-    (status ? ' — ' + status : '') + '</span>';
-  return line;
-}
-
-function drawFileForm(staged, state) {
-  const form = document.createElement('div');
-  form.className = 'form';
-  const fields = [
-    ['username', t('ui.username_hint'), 'text'],
-    ['password', t('ui.password_hint'), 'password'],
-  ];
-  for (const [name, hint, type] of fields) {
-    const line = document.createElement('div');
-    line.className = 'row';
-    const input = document.createElement('input');
-    input.type = type;
-    input.placeholder = hint;
-    input.value = staged[name];
-    input.oninput = () => { staged[name] = input.value; };
-    // Leaving the field lets a state that arrived while typing draw.
-    input.onblur = settle;
-    line.appendChild(input);
-    form.appendChild(line);
-  }
-  if ((state.mount_location_shape || 'path') === 'drive_letter') {
-    form.appendChild(driveLetterLine(staged, state));
-  } else {
-    form.appendChild(mountPathLine(staged));
-  }
-  return form;
-}
-
-// A directory under the home, with a Browse button that lists it as this
-// person.
-function mountPathLine(staged) {
-  const pathLine = document.createElement('div');
-  pathLine.className = 'row';
-  const path = document.createElement('input');
-  path.placeholder = t('ui.path_hint');
-  path.value = staged.path;
-  path.oninput = () => { staged.path = path.value; };
-  path.onblur = settle;
-  const browse = document.createElement('button');
-  browse.className = 'ghost';
-  browse.textContent = t('ui.browse');
-  browse.onclick = () => openBrowser(staged.path, (chosen) => {
-    staged.path = chosen;
-    redraw();
-  });
-  pathLine.appendChild(path);
-  pathLine.appendChild(browse);
-  return pathLine;
-}
-
-// A drive letter picked from the ones still free, with a caption naming
-// where the share turns up.
-function driveLetterLine(staged, state) {
-  const wrap = document.createElement('div');
-  const letters = (state.mount_location_choices || []).slice();
-  if (staged.path && letters.indexOf(staged.path) < 0) letters.unshift(staged.path);
-  const options = letters.map((letter) => (
-    { value: letter, label: t('ui.mount_drive_label') + ' ' + letter }));
-  staged.path = staged.path || (letters[0] || '');
-  const select = picker('mount_drive', options, staged.path,
-    (value) => { staged.path = value; }, false);
-  const caption = document.createElement('div');
-  caption.className = 'feat';
-  const note = document.createElement('div');
-  note.className = 'note';
-  note.textContent = t('ui.mount_drive_caption');
-  caption.appendChild(note);
-  wrap.appendChild(select);
-  wrap.appendChild(caption);
-  return wrap;
 }
 
 // --- the browse dialog, fed by the client as this person ---

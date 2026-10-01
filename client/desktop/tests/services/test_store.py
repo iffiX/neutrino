@@ -107,6 +107,7 @@ def test_a_file_an_older_build_wrote_is_read_without_its_keys(tmp_path):
         "machine_id": "",
         "language": "",
         "theme": "",
+        "terminal_font_size": 0,
         "ai": {"tool_configs": {"claude": {"default": "m2"}}},
         "mounts": {"r1": RECORD},
     }
@@ -212,3 +213,17 @@ def test_no_write_path_serializes_a_secret(store, tmp_path):
 
     forbidden = {"password", "api_key", "key", "token"}
     assert forbidden.isdisjoint(set(keys_of(json.loads(raw.decode()))))
+
+
+def test_no_terminal_font_size_is_kept_until_one_is_set(store):
+    assert store.terminal_font_size() == 0
+
+
+def test_the_terminal_font_size_round_trips_held_to_its_range(store, tmp_path):
+    store.set_terminal_font_size(16)
+    assert store.terminal_font_size() == 16
+
+    store.set_terminal_font_size(200)
+    assert store.terminal_font_size() == 32
+    store.set_terminal_font_size(1)
+    assert json.loads((tmp_path / "state.json").read_text())["terminal_font_size"] == 8

@@ -514,6 +514,24 @@ class FakeClipboardLibraries:
         self.calls.append(("CloseClipboard",))
         return 1
 
+    def EmptyClipboard(self):
+        self.calls.append(("EmptyClipboard",))
+        return 1
+
+    def GlobalAlloc(self, flags, size):
+        self.calls.append(("GlobalAlloc", flags, size))
+        self._buffer = ctypes.create_string_buffer(size)
+        return 88
+
+    def GlobalFree(self, handle):
+        self.calls.append(("GlobalFree", handle))
+        return None
+
+    def SetClipboardData(self, kind, handle):
+        self.calls.append(("SetClipboardData", kind, handle))
+        self.written = ctypes.wstring_at(ctypes.addressof(self._buffer))
+        return handle
+
 
 def clipboard_api(monkeypatch, libraries):
     from neutrino_client.platforms.windows import _WindowsApi
@@ -563,4 +581,45 @@ def test_a_clipboard_another_program_holds_is_an_os_error(monkeypatch):
 
     with pytest.raises(OSError):
         api.clipboard_text()
+    assert libraries.calls == [("OpenClipboard", None)]
+
+
+def test_the_clipboard_is_written_through_the_win32_seam():
+    class ClipboardWin32(FakeWin32):
+        def set_clipboard_text(self, text):
+            self.written = text
+
+    fake = ClipboardWin32()
+
+    WindowsPlatform(win32=fake).write_clipboard("dir")
+
+    assert fake.written == "dir"
+
+
+def test_the_clipboards_unicode_text_is_written_and_the_clipboard_closed(monkeypatch):
+    libraries = FakeClipboardLibraries(None)
+    api = clipboard_api(monkeypatch, libraries)
+
+    api.set_clipboard_text("cd ~/文档")
+
+    assert libraries.written == "cd ~/文档"
+    names = [call[0] for call in libraries.calls]
+    assert names == [
+        "OpenClipboard",
+        "EmptyClipboard",
+        "GlobalAlloc",
+        "GlobalLock",
+        "GlobalUnlock",
+        "SetClipboardData",
+        "CloseClipboard",
+    ]
+    assert libraries.calls[2][1] == 0x0002
+
+
+def test_a_clipboard_another_program_holds_refuses_the_write(monkeypatch):
+    libraries = FakeClipboardLibraries(None, is_open=False)
+    api = clipboard_api(monkeypatch, libraries)
+
+    with pytest.raises(OSError):
+        api.set_clipboard_text("x")
     assert libraries.calls == [("OpenClipboard", None)]

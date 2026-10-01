@@ -16,6 +16,12 @@ A ``refused`` frame ends the socket whenever it arrives, and says the same
 as one that arrives instead of the welcome: its code decides what becomes
 of the binding.
 
+The connection is one of five states: ``connected``, ``connecting`` while a
+round runs or a lost socket is about to be opened again, ``down`` once a
+round ended in a code and the backoff runs, ``replaced`` while another
+socket holds the binding, and ``disabled`` while the hub has this client
+switched off. A refresh is the same loop moved to now.
+
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
 """
@@ -38,6 +44,7 @@ from neutrino_client.constants import (
     CLIENT_HUB_ROLE,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
+    CLIENT_REFRESH_TIMEOUT_S,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
@@ -67,10 +74,22 @@ from neutrino_client.exceptions import (
     SocketClosed,
 )
 
-# How the three connection states of a session are named to every surface.
+# How the five connection states of a session are named to every surface.
 CONNECTION_CONNECTED = "connected"
-CONNECTION_RECONNECTING = "reconnecting"
+CONNECTION_CONNECTING = "connecting"
+CONNECTION_DOWN = "down"
 CONNECTION_REPLACED = "replaced"
+CONNECTION_DISABLED = "disabled"
+CONNECTION_STATES = (
+    CONNECTION_CONNECTED,
+    CONNECTION_CONNECTING,
+    CONNECTION_DOWN,
+    CONNECTION_REPLACED,
+    CONNECTION_DISABLED,
+)
+# The states a refresh acts on; the other two change only by a person's
+# Reconnect or by the hub.
+CONNECTION_REFRESHABLE = (CONNECTION_CONNECTED, CONNECTION_CONNECTING, CONNECTION_DOWN)
 
 # How long a stop waits for the loop thread to come back, its connect in
 # progress aborted.
@@ -134,67 +153,90 @@ def _nobody(*_args) -> None:
     """Nobody listening."""
 
 
-def _clean_terminals(value) -> list:
-    """The state's ``terminals`` list as the session holds it.
+def clean_terminals(value) -> dict:
+    """The state's ``terminals`` as the session holds it: machines and sessions.
+
+    The hub sends either ``{machines, sessions}`` or a list of machines,
+    each with its own ``sessions``; both read as the same two lists.
 
     Args:
         value: What the state carried.
 
     Returns:
-        ``[{device_id, name, is_online, sessions}]``, entries without a
-        device id dropped, ``sessions`` as :func:`_clean_sessions` keeps
-        them; empty when ``value`` is not a list.
+        ``{"machines": [{device_id, name, is_online}], "sessions": [...]}``,
+        each session as :func:`_clean_session` keeps it and stamped with
+        its machine; a machine or a session without an id is dropped.
     """
-    kept = []
-    for entry in value if isinstance(value, list) else []:
+    if isinstance(value, dict):
+        machines = value.get("machines")
+        listed = value.get("sessions")
+    else:
+        machines, listed = value, []
+    kept_machines = []
+    sessions = []
+    for entry in machines if isinstance(machines, list) else []:
         if not isinstance(entry, dict):
             continue
         device_id = str(entry.get("device_id", "") or "")
         if not device_id:
             continue
-        kept.append(
+        kept_machines.append(
             {
                 "device_id": device_id,
                 "name": str(entry.get("name", "") or "") or device_id,
                 "is_online": bool(entry.get("is_online")),
-                "sessions": _clean_sessions(entry.get("sessions")),
             }
         )
-    return kept
+        nested = entry.get("sessions")
+        for session in nested if isinstance(nested, list) else []:
+            cleaned = _clean_session(session, device_id)
+            if cleaned is not None:
+                sessions.append(cleaned)
+    for session in listed if isinstance(listed, list) else []:
+        cleaned = _clean_session(session, "")
+        if cleaned is not None:
+            sessions.append(cleaned)
+    return {"machines": kept_machines, "sessions": sessions}
 
 
-def _clean_sessions(value) -> list:
-    """One machine's shell sessions as the session holds them.
+def _clean_session(entry, device_id: str) -> "dict | None":
+    """One shell session as the session holds it.
 
     Args:
-        value: What the state's ``terminals`` entry carried.
+        entry: What the hub sent for it.
+        device_id: The machine it was listed under, empty when the entry
+            names its own.
 
     Returns:
-        ``[{session_id, account, started_at, title, is_attached,
-        is_persistent}]``, entries without an id dropped; empty when
-        ``value`` is not a list.
+        ``{session_id, device_id, owner, is_owned, is_persistent,
+        is_shared, attached_count, title, started_at}``; None for an entry
+        without a session id or a machine.
     """
-    kept = []
-    for entry in value if isinstance(value, list) else []:
-        if not isinstance(entry, dict) or not entry.get("session_id"):
-            continue
-        started_at = entry.get("started_at")
-        kept.append(
-            {
-                "session_id": str(entry["session_id"]),
-                "account": str(entry.get("account", "") or ""),
-                "started_at": (
-                    started_at
-                    if isinstance(started_at, (int, float, str))
-                    and not isinstance(started_at, bool)
-                    else ""
-                ),
-                "title": str(entry.get("title", "") or ""),
-                "is_attached": entry.get("is_attached") is True,
-                "is_persistent": entry.get("is_persistent") is True,
-            }
-        )
-    return kept
+    if not isinstance(entry, dict) or not entry.get("session_id"):
+        return None
+    device_id = str(entry.get("device_id", "") or "") or device_id
+    if not device_id:
+        return None
+    started_at = entry.get("started_at")
+    attached_count = entry.get("attached_count")
+    if not isinstance(attached_count, int) or isinstance(attached_count, bool):
+        attached_count = 1 if entry.get("is_attached") is True else 0
+    return {
+        "session_id": str(entry["session_id"]),
+        "device_id": device_id,
+        "owner": str(entry.get("owner", "") or ""),
+        "is_owned": entry.get("is_owned") is True,
+        "is_persistent": entry.get("is_persistent") is True,
+        "is_shared": entry.get("is_shared") is True,
+        "attached_count": max(attached_count, 0),
+        "title": str(entry.get("title", "") or ""),
+        "started_at": (
+            started_at
+            if isinstance(started_at, (int, float, str))
+            and not isinstance(started_at, bool)
+            else ""
+        ),
+    }
 
 
 class ClientHubSession:
@@ -211,6 +253,7 @@ class ClientHubSession:
         on_services=None,
         on_disabled=None,
         on_unbound=None,
+        refresh_timeout_s: float = CLIENT_REFRESH_TIMEOUT_S,
     ):
         """
         Args:
@@ -228,6 +271,7 @@ class ClientHubSession:
                 switches this client off; None for nobody listening.
             on_unbound: Called with this session when the hub says it holds
                 no such binding; None for nobody listening.
+            refresh_timeout_s: How long a refresh waits for its answer.
         """
         self._log = log
         self._lock = threading.Lock()
@@ -257,15 +301,21 @@ class ClientHubSession:
         # Set while another socket holds this binding; only a person clears it.
         self._is_replaced = False
         self._is_unbound = False
+        # Set once a round ended in a code, until the next round begins.
+        self._is_down = False
         self._last_error: "dict | None" = None
         self._services_list: list = []
-        self._terminals: list = []
+        self._terminals: dict = {"machines": [], "sessions": []}
         self._state_hash = ""
         self._hub_software = ""
         self._is_disabled = False
         self._was_disabled = False
-        self._lost_since = time.monotonic()
-        # The hosts of the virtual network last switched to, tried first.
+        # The refresh in flight, if any, and the count that tells a timer
+        # of an older one apart.
+        self._is_refreshing = False
+        self._refresh_count = 0
+        self._refresh_timeout_s = refresh_timeout_s
+        # The hosts of the virtual network this machine is on, tried first.
         self._preferred_hosts: list = []
 
     # --- what the resident reads ---
@@ -300,14 +350,15 @@ class ClientHubSession:
         with self._lock:
             return self._hub_software
 
-    def connection_state(self) -> str:
-        """Where the socket stands, one of the three ``CONNECTION_*`` states."""
+    def connection(self) -> str:
+        """Where the socket stands, one of ``CONNECTION_STATES``."""
         with self._lock:
-            if self._is_replaced:
-                return CONNECTION_REPLACED
-            return (
-                CONNECTION_CONNECTED if self._is_welcomed else CONNECTION_RECONNECTING
-            )
+            return self._connection()
+
+    def is_refreshing(self) -> bool:
+        """Whether a refresh waits for its answer."""
+        with self._lock:
+            return self._is_refreshing
 
     def is_disabled(self) -> bool:
         """Whether the hub has switched this client off."""
@@ -342,24 +393,24 @@ class ClientHubSession:
         with self._lock:
             return [dict(item) for item in self._binding.get("overlays") or []]
 
-    def overlay_wish(self) -> "tuple[bool, str]":
-        """This person's wish for the hub's virtual network.
+    def overlay_choice(self) -> "tuple[bool, str]":
+        """Where the hub's virtual network last stood, and the engine chosen.
 
         Returns:
-            Whether this machine is to be on it, and the provider chosen,
+            Whether the network was last ``on``, and the provider chosen,
             empty for the hub's first.
         """
         with self._lock:
             return (
-                self._binding.get("is_overlay_wanted") is True,
+                self._binding.get("is_overlay_on") is True,
                 str(self._binding.get("overlay_pick", "") or ""),
             )
 
-    def set_overlay_wish(self, is_wanted: bool, pick: str) -> None:
-        """Keep this person's wish for the hub's virtual network on the binding.
+    def set_overlay_choice(self, is_on: bool, pick: str) -> None:
+        """Keep where the hub's virtual network stands, and the engine chosen.
 
         Args:
-            is_wanted: Whether this machine is to be on it.
+            is_on: Whether the network is ``on``.
             pick: The provider chosen, empty for the hub's first.
 
         Raises:
@@ -367,23 +418,39 @@ class ClientHubSession:
         """
         with self._lock:
             binding_id = self._binding.get("id", "")
-        enrollment.note_overlay_wish(binding_id, is_wanted, pick)
+        enrollment.note_overlay_choice(binding_id, is_on, pick)
         with self._lock:
-            self._binding["is_overlay_wanted"] = bool(is_wanted)
+            self._binding["is_overlay_on"] = bool(is_on)
             self._binding["overlay_pick"] = str(pick)
 
-    def lost_since(self) -> "float | None":
-        """Since when the socket has been down.
+    def reaches_through(self, hosts: list) -> bool:
+        """Whether the hub's channel answers on one of these hosts.
+
+        The live socket counts when it was opened through one of them;
+        otherwise each host's address the binding holds is opened and its
+        certificate checked, and closed again before any hello.
+
+        Args:
+            hosts: The hub's names or addresses on a virtual network.
 
         Returns:
-            The monotonic time the socket was lost, or the session was made
-            when it never came up; None while it is up or another socket
-            holds the binding.
+            True when one of them answers as this hub.
         """
         with self._lock:
-            if self._is_welcomed or self._is_replaced:
-                return None
-            return self._lost_since
+            binding = dict(self._binding)
+            in_use = self._connected_url if self._is_welcomed else ""
+        if in_use and urllib.parse.urlsplit(in_use).hostname in hosts:
+            return True
+        port = urllib.parse.urlsplit(binding.get("gateway_url", "")).port or 443
+        for host in hosts:
+            client = self._open_client(f"https://{host}:{port}")
+            try:
+                client.connect()
+            except (GatewayRefused, GatewayUnreachable, GatewayUntrusted):
+                continue
+            client.close()
+            return True
+        return False
 
     def terminal_entries(self) -> list:
         """The machines the hub offers a terminal on, while its socket is up.
@@ -395,23 +462,47 @@ class ClientHubSession:
         with self._lock:
             if not self._is_welcomed:
                 return []
-            return [dict(entry) for entry in self._terminals]
+            return [dict(entry) for entry in self._terminals["machines"]]
+
+    def note_session_flags(
+        self, session_id: str, is_persistent: bool, is_shared: bool
+    ) -> None:
+        """Show a shell session's two flags as set, until the hub's next state.
+
+        Args:
+            session_id: The shell session's id.
+            is_persistent: Whether the machine keeps it.
+            is_shared: Whether every client with terminal rights lists it.
+        """
+        with self._lock:
+            for entry in self._terminals["sessions"]:
+                if entry["session_id"] == session_id:
+                    entry["is_persistent"] = bool(is_persistent)
+                    entry["is_shared"] = bool(is_shared)
+
+    def terminal_sessions(self) -> list:
+        """The shell sessions the hub lists for this client, while its socket is up.
+
+        Returns:
+            One row per session, as :func:`clean_terminals` keeps it; empty
+            while the socket is down.
+        """
+        with self._lock:
+            if not self._is_welcomed:
+                return []
+            return [dict(entry) for entry in self._terminals["sessions"]]
 
     # --- what the resident does ---
-
-    def reconnect_soon(self) -> None:
-        """Cut the wait before the next connection attempt short."""
-        self._news.set()
 
     def reconnect_through(self, hosts: list) -> None:
         """Connect through the addresses on these hosts first, from the next round.
 
         A socket that is down starts that round now, its backoff at the
-        floor; a live one is kept.
+        floor; a live one is kept. An empty list drops the preference.
 
         Args:
-            hosts: The hub's host names or addresses on the network just
-                joined; empty entries are ignored.
+            hosts: The hub's host names or addresses on the network this
+                machine is on; empty entries are ignored.
         """
         with self._lock:
             self._preferred_hosts = [host for host in hosts if host]
@@ -428,24 +519,46 @@ class ClientHubSession:
         self._news.set()
         self._on_change()
 
-    def refresh(self) -> None:
-        """Ask the hub again now: a report on a live socket, else a round at once.
+    def refresh(self) -> bool:
+        """Ask the hub again now, and wait for its answer as refreshing.
 
-        A socket that is down has its backoff put back to the floor and its
-        wait ended.
+        The error line goes first. A connected hub is sent a report with
+        ``is_refresh``, which the hub answers with its whole state; a hub
+        that is connecting or down has its backoff put back to the floor,
+        its wait ended, and a round started, which resolves its name again.
+        Refreshing ends with the next state, a round ending in a code, or
+        ``refresh_timeout_s``.
+
+        Returns:
+            Whether the hub entered refreshing: False while it is replaced,
+            disabled, or already refreshing.
         """
         with self._lock:
-            client = self._client if self._is_welcomed else None
+            connection = self._connection()
+            if connection not in CONNECTION_REFRESHABLE or self._is_refreshing:
+                return False
+            self._is_refreshing = True
+            self._refresh_count += 1
+            count = self._refresh_count
+            self._last_error = None
+            client = self._client if connection == CONNECTION_CONNECTED else None
             if client is None:
                 self._backoff_s = CLIENT_BACKOFF_MIN_S
+        timer = threading.Timer(
+            self._refresh_timeout_s, self._refresh_timed_out, args=(count,)
+        )
+        timer.daemon = True
+        timer.start()
         if client is None:
             self._news.set()
-            return
-        try:
-            self._report(client)
-        except GatewayUnreachable:
-            # The reader sees the socket's end.
-            pass
+        else:
+            try:
+                self._report(client, is_refresh=True)
+            except GatewayUnreachable:
+                # The reader sees the socket's end.
+                pass
+        self._on_change()
+        return True
 
     def open_service(
         self, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
@@ -508,14 +621,17 @@ class ClientHubSession:
         self,
         session_id: str,
         is_persistent: bool,
+        is_shared: bool,
         timeout_s: float = CLIENT_STREAM_TIMEOUT_S,
     ) -> dict:
-        """Tell the hub whether a shell session outlives its stream.
+        """Tell the hub whether a shell session outlives its stream, and who sees it.
 
         Args:
             session_id: The shell session's id.
             is_persistent: Whether the machine keeps it once nobody is
                 attached.
+            is_shared: Whether every client with terminal rights on the
+                machine lists it.
             timeout_s: How long to wait for the close.
 
         Returns:
@@ -523,7 +639,7 @@ class ClientHubSession:
 
         Raises:
             GatewayRefusedDetail: When the hub refused, ``session_unknown``
-                among the codes.
+                and ``session_not_owned`` among the codes.
             GatewayUnreachable: When there is no socket, it ends, or the
                 close does not arrive in time.
         """
@@ -532,6 +648,7 @@ class ClientHubSession:
                 "verb": CLIENT_SHELL_PERSIST_VERB,
                 "session_id": session_id,
                 "is_persistent": bool(is_persistent),
+                "is_shared": bool(is_shared),
             },
             timeout_s,
         )
@@ -643,8 +760,12 @@ class ClientHubSession:
         """
         with self._lock:
             is_idle = self._is_replaced or self._is_unbound
+            was_down = self._is_down
+            self._is_down = False
         if is_idle:
             return CLIENT_IDLE_POLL_INTERVAL_S
+        if was_down:
+            self._on_change()
         try:
             client = self._connect_round()
         except (GatewayRefused, GatewayUntrusted) as error:
@@ -656,7 +777,8 @@ class ClientHubSession:
             return CLIENT_BACKOFF_MIN_S
         if isinstance(failure, GatewayRefused):
             return self._on_rejected(failure)
-        return self._on_unreachable(failure)
+        self._log(f"hub socket lost: {failure}; connecting again")
+        return CLIENT_BACKOFF_MIN_S
 
     def _connect_round(self):
         """Connect through the first of the hub's addresses that answers.
@@ -712,7 +834,6 @@ class ClientHubSession:
             else:
                 with self._lock:
                     self._connected_url = url
-                    self._preferred_hosts = []
                 self._note_url(url)
                 return client
             finally:
@@ -759,7 +880,9 @@ class ClientHubSession:
         try:
             client.send_text(json.dumps(self._hello()))
             welcome = self._take_welcome(client)
-            self._report(client)
+            with self._lock:
+                is_refreshing = self._is_refreshing
+            self._report(client, is_refresh=is_refreshing)
         except SocketClosed as closed:
             raise close_error(closed.code, closed.reason) from closed
         except Exception:
@@ -1035,29 +1158,30 @@ class ClientHubSession:
             self._binding["hub_id"] = hub_id
             self._binding["hub_name"] = hub_name
 
-    def _report(self, client) -> None:
+    def _report(self, client, is_refresh: bool = False) -> None:
         """Send what is true of this machine and the hash of the state held.
 
         Args:
             client: The connected socket.
+            is_refresh: Whether the hub is asked for its whole state
+                whatever the hash.
 
         Raises:
             GatewayUnreachable: When the socket is gone.
         """
         with self._lock:
             state_hash = self._state_hash
-        client.send_text(
-            json.dumps(
-                {
-                    "type": protocol.FRAME_REPORT,
-                    "state_hash": state_hash,
-                    "machine": {
-                        "hostname": self._hostname,
-                        "platform": dict(self._platform_tuple),
-                    },
-                }
-            )
-        )
+        report = {
+            "type": protocol.FRAME_REPORT,
+            "state_hash": state_hash,
+            "machine": {
+                "hostname": self._hostname,
+                "platform": dict(self._platform_tuple),
+            },
+        }
+        if is_refresh:
+            report["is_refresh"] = True
+        client.send_text(json.dumps(report))
 
     def _report_on_interval(self, client, ended: threading.Event) -> None:
         """Report every interval until the socket ends, and look at the network."""
@@ -1135,8 +1259,9 @@ class ClientHubSession:
             self._services_list = [
                 entry for entry in services if isinstance(entry, dict)
             ]
-            self._terminals = _clean_terminals(terminals)
+            self._terminals = clean_terminals(terminals)
             self._state_hash = str(message.get("hash", "") or "")
+            self._is_refreshing = False
         self._take_disabled(is_disabled)
         if not is_disabled:
             self._on_services(self)
@@ -1148,10 +1273,6 @@ class ClientHubSession:
             was_disabled = self._was_disabled
             self._is_disabled = is_disabled
             self._was_disabled = is_disabled
-            if is_disabled:
-                self._last_error = {"code": "client_disabled", "params": {}}
-            elif self._last_error and self._last_error.get("code") == "client_disabled":
-                self._last_error = None
         if is_disabled and not was_disabled:
             self._log("the hub switched this client off")
             self._on_disabled(self)
@@ -1179,8 +1300,6 @@ class ClientHubSession:
             if self._client is client:
                 self._client = None
                 streams, self._streams = self._streams, None
-            if self._is_welcomed:
-                self._lost_since = time.monotonic()
             self._is_welcomed = False
         client.close()
         if streams is not None:
@@ -1200,10 +1319,28 @@ class ClientHubSession:
             self._is_replaced = True
         self._log("another client took this binding; not reconnecting until asked")
 
+    def _connection(self) -> str:
+        """Where the socket stands; the lock is held."""
+        if self._is_replaced:
+            return CONNECTION_REPLACED
+        if self._is_welcomed:
+            return CONNECTION_DISABLED if self._is_disabled else CONNECTION_CONNECTED
+        return CONNECTION_DOWN if self._is_down else CONNECTION_CONNECTING
+
+    def _refresh_timed_out(self, count: int) -> None:
+        """End the refresh numbered ``count`` when nothing answered it."""
+        with self._lock:
+            if not self._is_refreshing or self._refresh_count != count:
+                return
+            self._is_refreshing = False
+        self._on_change()
+
     def _on_unreachable(self, error: Exception) -> int:
-        """Back off after a broken wire."""
+        """Back off after a round that reached no address."""
         with self._lock:
             self._last_error = channel_error(error)
+            self._is_down = True
+            self._is_refreshing = False
             delay = self._backoff_s
             self._backoff_s = min(self._backoff_s * 2, CLIENT_BACKOFF_MAX_S)
         self._log(f"hub socket failed: {error}; retrying in {delay}s")
@@ -1224,6 +1361,8 @@ class ClientHubSession:
             return self._unbind(rejection)
         with self._lock:
             self._last_error = rejection
+            self._is_down = True
+            self._is_refreshing = False
         self._log(f"{error}; asking again in {CLIENT_BACKOFF_MAX_S}s")
         self._on_change()
         return CLIENT_BACKOFF_MAX_S
@@ -1232,6 +1371,8 @@ class ClientHubSession:
         """Hand the binding back: the hub holds no such binding any more."""
         with self._lock:
             self._is_unbound = True
+            self._is_down = True
+            self._is_refreshing = False
             self._last_error = rejection
         self._log("unbound: the hub no longer knows this client")
         self._on_unbound(self)

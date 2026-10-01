@@ -204,6 +204,17 @@ class AiServiceHandler(ServiceTypeHandler):
             self._is_enabled = bool(body.get("is_enabled"))
         return self._worker.submit(AI_STEP_SWITCHING, self.reconcile)
 
+    def settle(self, timeout_s: float) -> dict:
+        """Wait for the lane to be idle, and say how its last step ended.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            The step's failure ``{"code", "params"}``, empty without one.
+        """
+        return self._worker.wait_idle(timeout_s)
+
     def state(self) -> dict:
         """This person's AI standing, for the state payload.
 

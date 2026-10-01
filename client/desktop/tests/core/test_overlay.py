@@ -1,30 +1,35 @@
-"""This machine's membership of each hub's virtual network.
+"""This machine's place on each hub's virtual network.
 
-The CLIs run on a scripted platform. Pinned here: NetBird's join carries
+The drivers run on a scripted platform. Pinned here: NetBird's join carries
 the setup key, the management URL and ``--disable-dns``, and refuses without
-running while the daemon is on another network; two hubs on one management
-URL read one membership; EasyTier is asked of the client's EasyTier daemon,
-here the real daemon behind a fake socket, with the secret and the console's
-address in the request's body and never on a CLI's argument vector; a
-manual network's status asks the one portal by the network's name, and a
-console's is the instance the daemon's own networks do not name; a leave on
-release happens only when no other hub names the network; a lane that works
-answers busy; a step's failure stays until the network is on; every state
-word is in the table. A hub whose wish is on joins the first of its networks
-or the one picked, once; its channel lost for the failover time, or its
-current network gone from the list, moves it to the next, leaving first;
-a hub with one network never switches.
+running while the daemon is on another network; EasyTier is asked of the
+client's EasyTier daemon, here the real daemon behind a fake socket, with
+the secret and the console's address in the request's body and never on a
+CLI's argument vector; a manual network's status asks the one portal by the
+network's name, and a console's is the instance the daemon's own networks do
+not name.
+
+The memberships run on recording drivers. Pinned here: the three states
+``off``, ``connecting`` and ``on`` and nothing else; a connect is one attempt
+that ends ``on`` once the engine has an address and the hub answers through
+the network, or ``off`` with the engine's code, ``overlay_no_address`` or
+``overlay_hub_unreachable`` within its time, its engine stopped, with no
+retry; Cancel stops a connect at any point and Disconnect a network that is
+on; a press that does not fit the state is dropped; the picker changes the
+engine only while off and nothing changes it by itself; a network the hub
+stops naming goes off with ``overlay_withdrawn``; an engine that stops by
+itself goes off with its code; a binding last on gets one connect at start;
+a hub's release stops the engine only when no other hub is on it.
 """
 
 import json
 import subprocess
+import threading
+import time
 
 import pytest
 
-from neutrino_client.constants import (
-    CLIENT_EASYTIER_RPC_PORTAL,
-    CLIENT_OVERLAY_FAILOVER_S,
-)
+from neutrino_client.constants import CLIENT_EASYTIER_RPC_PORTAL
 from neutrino_client.core.easytier_daemon import EasytierDaemon
 from neutrino_client.core.overlay import (
     OVERLAY_STATES,
@@ -32,6 +37,7 @@ from neutrino_client.core.overlay import (
     OverlayMemberships,
     OverlayNetbirdDriver,
     netbird_management_key,
+    overlay_hub_hosts,
     overlay_key,
     overlay_network,
 )
@@ -51,7 +57,7 @@ EASYTIER = {
     "network_name": "home",
     "network_secret": "s3cret",  # scan: allow
     "peer": "tcp://203.0.113.7:11010",
-    "hub_address": "",
+    "hub_address": "10.144.144.1",
 }
 CONSOLE_ADDRESS = "tcp://et-web.console.easytier.net:22020/etk_token1"  # scan: allow
 CONSOLE = {
@@ -101,8 +107,6 @@ class ScriptedPlatform:
         self.runs.append((binary, list(args)))
         verb = args[0] if binary == "netbird" else args[-1]
         answer = self.answers.get((binary, verb))
-        if isinstance(answer, Exception):
-            raise answer
         if answer is None:
             return subprocess.CompletedProcess([binary], 0, stdout="", stderr="")
         return answer
@@ -126,6 +130,7 @@ class FakeSocket:
     Attributes:
         requests: Every request as it crossed, decoded.
         error: Raised instead of answering, for a daemon that is down.
+        refusal: Answered to every request but a status.
     """
 
     def __init__(self, tmp_path):
@@ -152,70 +157,25 @@ class FakeSocket:
         return json.loads(json.dumps(self.daemon.handle(crossed)))
 
 
-def run_inline(target) -> None:
-    target()
-
-
-class Bindings:
-    """What the resident would hand the memberships, one row per hub.
-
-    Attributes:
-        rows: ``(hub_id, object, a list of objects, or None)``.
-        wishes: ``{hub_id: (is_wanted, pick)}``; a hub not named wants nothing.
-        lost: ``{hub_id: monotonic time its channel was lost}``.
-    """
-
-    def __init__(self, rows):
-        self.rows = list(rows)
-        self.wishes = {}
-        self.lost = {}
-
-    def __call__(self):
-        answer = []
-        for hub_id, material in self.rows:
-            if isinstance(material, dict):
-                overlays = [material]
-            else:
-                overlays = list(material or [])
-            is_wanted, pick = self.wishes.get(hub_id, (False, ""))
-            answer.append(
-                {
-                    "hub_id": hub_id,
-                    "overlays": overlays,
-                    "is_wanted": is_wanted,
-                    "pick": pick,
-                    "lost_since": self.lost.get(hub_id),
-                }
-            )
-        return answer
-
-
-def memberships(tmp_path, rows, start_thread=run_inline):
+def drivers(tmp_path):
+    """The NetBird and EasyTier drivers over one scripted platform."""
     platform = ScriptedPlatform(tmp_path)
     platform.socket = FakeSocket(tmp_path)
-    bindings = Bindings(rows)
-    subject = OverlayMemberships(
-        platform=platform,
-        bindings_of=bindings,
-        hostname="Alice's box",
-        log=discard,
-        start_thread=start_thread,
-        drivers={
-            "netbird": OverlayNetbirdDriver(platform=platform),
-            "easytier": OverlayEasytierDriver(platform=platform, ask=platform.socket),
-        },
+    return (
+        OverlayNetbirdDriver(platform=platform),
+        OverlayEasytierDriver(platform=platform, ask=platform.socket),
+        platform,
     )
-    return subject, platform, bindings
 
 
 # --- NetBird ---
 
 
 def test_a_netbird_join_carries_the_key_the_url_and_no_dns(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", NETBIRD)])
+    netbird, _easytier, platform = drivers(tmp_path)
     platform.answer("netbird", "status", stdout=netbird_status(is_connected=False))
 
-    assert subject.join("h1") == {}
+    netbird.join(NETBIRD, "box")
 
     ups = [args for binary, args in platform.runs if args[0] == "up"]
     assert ups == [
@@ -231,22 +191,21 @@ def test_a_netbird_join_carries_the_key_the_url_and_no_dns(tmp_path):
 
 
 def test_a_daemon_on_another_network_is_refused_and_left_alone(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", NETBIRD)])
+    netbird, _easytier, platform = drivers(tmp_path)
     platform.answer(
         "netbird", "status", stdout=netbird_status(url="https://api.netbird.io:443")
     )
 
-    subject.join("h1")
+    with pytest.raises(OverlayControlError) as refused:
+        netbird.join(NETBIRD, "box")
 
+    assert refused.value.code == "overlay_other_network"
+    assert refused.value.params == {"network": "nb.example"}
     assert all(args[0] != "up" for _binary, args in platform.runs)
-    row = subject.hub_row("h1")
-    assert row["state"] == "failed"
-    assert row["code"] == "overlay_other_network"
-    assert row["params"] == {"network": "nb.example"}
 
 
 def test_a_connected_daemon_reads_on_with_its_address_and_the_hub_seen(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", NETBIRD)])
+    netbird, _easytier, platform = drivers(tmp_path)
     platform.answer(
         "netbird",
         "status",
@@ -255,32 +214,23 @@ def test_a_connected_daemon_reads_on_with_its_address_and_the_hub_seen(tmp_path)
         ),
     )
 
-    subject.probe()
+    status = netbird.status(NETBIRD)
 
-    row = subject.hub_row("h1")
-    assert (row["state"], row["address"], row["is_hub_seen"]) == (
-        "on",
+    assert (status["is_on"], status["address"], status["is_hub_seen"]) == (
+        True,
         "100.64.0.7",
         True,
     )
 
 
-def test_two_hubs_on_one_management_url_read_one_membership(tmp_path):
+def test_two_hubs_on_one_management_url_are_one_network():
     other = dict(NETBIRD, management_url="https://NB.example:443/", fqdn="o")
-    subject, platform, _bindings = memberships(
-        tmp_path, [("h1", NETBIRD), ("h2", other)]
-    )
-    platform.answer("netbird", "status", stdout=netbird_status())
-
-    subject.probe()
 
     assert overlay_key(NETBIRD) == overlay_key(other)
-    assert [subject.hub_row(hub)["state"] for hub in ("h1", "h2")] == ["on", "on"]
-    assert len([run for run in platform.runs if run[1][0] == "status"]) == 1
 
 
 def test_a_daemon_that_does_not_answer_is_daemon_down(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", NETBIRD)])
+    netbird, _easytier, platform = drivers(tmp_path)
     platform.answer(
         "netbird",
         "status",
@@ -288,33 +238,38 @@ def test_a_daemon_that_does_not_answer_is_daemon_down(tmp_path):
         stderr="failed to connect to daemon error: context deadline exceeded",
     )
 
-    subject.probe()
+    with pytest.raises(OverlayControlError) as refused:
+        netbird.status(NETBIRD)
 
-    assert subject.hub_row("h1")["code"] == "overlay_daemon_down"
+    assert refused.value.code == "overlay_daemon_down"
 
 
 def test_a_daemon_that_needs_login_reads_off(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", NETBIRD)])
+    netbird, _easytier, platform = drivers(tmp_path)
     platform.answer("netbird", "status", stdout="Daemon status: NeedsLogin\n")
 
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "off"
+    assert netbird.status(NETBIRD)["is_on"] is False
 
 
 def test_a_leave_is_netbird_down(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", NETBIRD)])
-    platform.answer("netbird", "status", stdout=netbird_status(is_connected=False))
+    netbird, _easytier, platform = drivers(tmp_path)
 
-    assert subject.leave("h1") == {}
+    netbird.leave(NETBIRD)
 
     assert ("netbird", ["down"]) in platform.runs
-    assert subject.hub_row("h1")["state"] == "off"
 
 
 def test_the_default_management_url_is_netbirds_own():
     assert netbird_management_key("") == "https://api.netbird.io:443"
     assert netbird_management_key("http://nb.lan") == "http://nb.lan:80"
+
+
+def test_the_hubs_hosts_on_a_network_are_its_name_or_its_address():
+    assert overlay_hub_hosts(NETBIRD) == ["hub.nb.example"]
+    assert overlay_hub_hosts(dict(EASYTIER, hub_address="10.144.144.1/24")) == [
+        "10.144.144.1"
+    ]
+    assert overlay_hub_hosts(dict(EASYTIER, hub_address="")) == []
 
 
 # --- EasyTier ---
@@ -344,9 +299,9 @@ def joined(platform, *names):
 
 
 def test_an_easytier_join_hands_the_daemon_the_secret_in_the_body(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    _netbird, easytier, platform = drivers(tmp_path)
 
-    assert subject.join("h1") == {}
+    easytier.join(EASYTIER, "Alice's box")
 
     joins = [r for r in platform.socket.requests if r["verb"] == "join"]
     assert joins == [
@@ -364,11 +319,11 @@ def test_an_easytier_join_hands_the_daemon_the_secret_in_the_body(tmp_path):
 
 
 def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    _netbird, easytier, platform = drivers(tmp_path)
     joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
 
-    subject.probe()
+    status = easytier.status(EASYTIER)
 
     assert platform.runs == [
         (
@@ -376,9 +331,8 @@ def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
             ["-p", CLIENT_EASYTIER_RPC_PORTAL, "-o", "json", "-n", "home", "peer"],
         )
     ]
-    row = subject.hub_row("h1")
-    assert (row["state"], row["address"], row["is_hub_seen"]) == (
-        "on",
+    assert (status["is_on"], status["address"], status["is_hub_seen"]) == (
+        True,
         "10.144.144.5",
         True,
     )
@@ -387,31 +341,26 @@ def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
 def test_a_network_the_daemon_does_not_hold_is_off_without_asking_the_core(
     tmp_path,
 ):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    _netbird, easytier, platform = drivers(tmp_path)
 
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "off"
+    assert easytier.status(EASYTIER)["is_on"] is False
     assert platform.runs == []
 
 
-def test_the_hub_is_seen_only_at_its_own_address_when_it_names_one(tmp_path):
-    named = dict(EASYTIER, hub_address="10.144.144.9")
-    subject, platform, _bindings = memberships(tmp_path, [("h1", named)])
+def test_the_hub_is_seen_only_at_its_own_address(tmp_path):
+    _netbird, easytier, platform = drivers(tmp_path)
     joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
 
-    subject.probe()
-    assert subject.hub_row("h1")["is_hub_seen"] is False
-
-    bindings_row = dict(EASYTIER, hub_address="10.144.144.1")
-    subject._bindings_of = Bindings([("h1", bindings_row)])
-    subject.probe()
-    assert subject.hub_row("h1")["is_hub_seen"] is True
+    assert (
+        easytier.status(dict(EASYTIER, hub_address="10.144.144.9"))["is_hub_seen"]
+        is False
+    )
+    assert easytier.status(EASYTIER)["is_hub_seen"] is True
 
 
 def test_an_instance_the_core_does_not_run_is_off(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    _netbird, easytier, platform = drivers(tmp_path)
     joined(platform, "home")
     platform.answer(
         "easytier-cli",
@@ -419,65 +368,32 @@ def test_an_instance_the_core_does_not_run_is_off(tmp_path):
         stderr="Error: Rust error: No instance matches the selector",
     )
 
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "off"
-
-
-def test_a_portal_nobody_listens_on_is_off(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
-    joined(platform, "home")
-    platform.answer(
-        "easytier-cli", "peer", returncode=1, stderr="failed to connect to server"
-    )
-
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "off"
+    assert easytier.status(EASYTIER)["is_on"] is False
 
 
 def test_a_daemon_that_does_not_answer_is_daemon_down_for_easytier(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    _netbird, easytier, platform = drivers(tmp_path)
     platform.socket.error = ConnectionRefusedError(111, "Connection refused")
 
-    subject.probe()
-    assert subject.hub_row("h1")["code"] == "overlay_daemon_down"
-
-    assert subject.join("h1") == {}
-    assert subject.hub_row("h1")["state"] == "failed"
-    assert subject.hub_row("h1")["code"] == "overlay_daemon_down"
+    with pytest.raises(OverlayControlError) as refused:
+        easytier.status(EASYTIER)
+    assert refused.value.code == "overlay_daemon_down"
 
 
-def test_a_daemons_refusal_is_the_rows_code(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+def test_a_daemons_refusal_is_the_joins_code(tmp_path):
+    _netbird, easytier, platform = drivers(tmp_path)
     platform.socket.refusal = {"code": "overlay_peer_invalid", "params": {}}
 
-    subject.join("h1")
-
-    assert subject.hub_row("h1")["code"] == "overlay_peer_invalid"
-
-
-def test_a_step_failure_stays_until_the_network_is_on(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
-    platform.socket.refusal = {"code": "overlay_restart_failed", "params": {}}
-
-    subject.join("h1")
-    subject.probe()
-    assert subject.hub_row("h1")["code"] == "overlay_restart_failed"
-
-    platform.socket.refusal = None
-    joined(platform, "home")
-    platform.answer("easytier-cli", "peer", stdout=easytier_peers())
-    subject.probe()
-    assert subject.hub_row("h1")["state"] == "on"
-    assert subject.hub_row("h1")["code"] == ""
+    with pytest.raises(OverlayControlError) as refused:
+        easytier.join(EASYTIER, "box")
+    assert refused.value.code == "overlay_peer_invalid"
 
 
 def test_an_easytier_leave_asks_the_daemon_to_drop_the_network(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
+    _netbird, easytier, platform = drivers(tmp_path)
     joined(platform, "home")
 
-    assert subject.leave("h1") == {}
+    easytier.leave(EASYTIER)
 
     assert {"verb": "leave", "network_name": "home"} in platform.socket.requests
     assert platform.socket.daemon.networks() == []
@@ -512,9 +428,9 @@ def test_a_console_is_keyed_by_its_address_and_named_by_its_host():
 
 
 def test_a_console_join_hands_the_daemon_the_address_in_the_body(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    _netbird, easytier, platform = drivers(tmp_path)
 
-    assert subject.join("h1") == {}
+    easytier.join(CONSOLE, "box")
 
     joins = [r for r in platform.socket.requests if r["verb"] == "join_console"]
     assert joins == [
@@ -524,25 +440,20 @@ def test_a_console_join_hands_the_daemon_the_address_in_the_body(tmp_path):
             "is_secure_mode": True,
         }
     ]
-    assert platform.socket.daemon.console() == {
-        "config_server": CONSOLE_ADDRESS,
-        "is_secure_mode": True,
-    }
     assert all("etk_token1" not in " ".join(args) for _b, args in platform.runs)
 
 
 def test_a_console_is_on_at_the_instance_no_manual_network_names(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
+    _netbird, easytier, platform = drivers(tmp_path)
     joined(platform, "home")
-    subject.join("h1")
+    easytier.join(CONSOLE, "box")
     platform.answer("easytier-cli", "node", stdout=console_nodes())
     platform.answer("easytier-cli", "peer", stdout=console_peers())
 
-    subject.probe()
+    status = easytier.status(CONSOLE)
 
-    row = subject.hub_row("h1")
-    assert (row["state"], row["address"], row["is_hub_seen"]) == (
-        "on",
+    assert (status["is_on"], status["address"], status["is_hub_seen"]) == (
+        True,
         "10.126.126.4",
         True,
     )
@@ -550,230 +461,76 @@ def test_a_console_is_on_at_the_instance_no_manual_network_names(tmp_path):
         "easytier-cli",
         ["-p", CLIENT_EASYTIER_RPC_PORTAL, "-o", "json", "-n", "office", "peer"],
     ) in platform.runs
-    assert row["network"] == "et-web.console.easytier.net"
 
 
-def test_a_lone_console_instance_is_read_from_its_configuration(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
-    subject.join("h1")
-    platform.answer(
-        "easytier-cli",
-        "node",
-        stdout=json.dumps({"config": 'instance_name = "office"\n'}),
-    )
-    platform.answer("easytier-cli", "peer", stdout=console_peers())
-
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "on"
-
-
-def test_a_console_whose_core_runs_no_instance_yet_is_waiting(tmp_path):
-    """The console holds the machine and has attached it to no network."""
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
-    subject.join("h1")
+def test_a_console_whose_core_runs_no_instance_yet_has_no_address(tmp_path):
+    _netbird, easytier, platform = drivers(tmp_path)
+    easytier.join(CONSOLE, "box")
     platform.answer(
         "easytier-cli", "node", returncode=1, stderr="no running instances found"
     )
 
-    subject.probe()
+    status = easytier.status(CONSOLE)
 
-    row = subject.hub_row("h1")
-    assert (row["state"], row["code"], row["address"]) == ("waiting", "", "")
-    assert subject.release() == 1
-
-
-def test_a_waiting_console_turns_on_once_an_instance_appears(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
-    subject.join("h1")
-    assert subject.hub_row("h1")["state"] == "waiting"
-
-    platform.answer("easytier-cli", "node", stdout=console_nodes())
-    platform.answer("easytier-cli", "peer", stdout=console_peers())
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "on"
-
-
-def test_a_console_whose_core_is_not_running_is_off(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
-    subject.join("h1")
-    platform.socket.supervisor.is_running = False
-
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "off"
-
-
-def test_a_console_that_is_not_configured_is_off(tmp_path):
-    subject, _platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
-
-    subject.probe()
-
-    assert subject.hub_row("h1")["state"] == "off"
-
-
-def test_leaving_a_waiting_console_drops_it(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
-    subject.join("h1")
-    assert subject.hub_row("h1")["state"] == "waiting"
-
-    assert subject.leave("h1") == {}
-
-    assert platform.socket.daemon.console() is None
-    assert subject.hub_row("h1")["state"] == "off"
+    assert (status["is_on"], status["is_waiting"], status["address"]) == (
+        False,
+        True,
+        "",
+    )
 
 
 def test_another_console_held_by_the_daemon_is_another_network(tmp_path):
-    other = dict(CONSOLE, config_server="tcp://console.example:22020/etk_other")
-    subject, platform, _bindings = memberships(tmp_path, [("h1", CONSOLE)])
-    platform.socket.daemon.handle(
-        {"verb": "join_console", "config_server": other["config_server"]}
-    )
+    other = "tcp://console.example:22020/etk_other"
+    _netbird, easytier, platform = drivers(tmp_path)
+    platform.socket.daemon.handle({"verb": "join_console", "config_server": other})
 
-    subject.probe()
-    assert subject.hub_row("h1")["code"] == "overlay_other_network"
-
-    subject.join("h1")
-    row = subject.hub_row("h1")
-    assert (row["state"], row["code"]) == ("failed", "overlay_other_network")
-    assert row["params"] == {"network": "et-web.console.easytier.net"}
-
-
-def test_a_console_leave_drops_only_the_console_this_hub_names(tmp_path):
-    other = dict(CONSOLE, config_server="tcp://console.example:22020/etk_other")
-    subject, platform, bindings = memberships(tmp_path, [("h1", CONSOLE)])
-    platform.socket.daemon.handle(
-        {"verb": "join_console", "config_server": other["config_server"]}
-    )
-
-    subject.leave("h1")
+    assert easytier.status(CONSOLE)["is_other_network"] is True
+    easytier.leave(CONSOLE)
     assert platform.socket.daemon.console() is not None
-    assert all(r["verb"] != "leave_console" for r in platform.socket.requests)
-
-    platform.socket.daemon.handle({"verb": "leave_console"})
-    subject.join("h1")
-    subject.leave("h1")
-    assert platform.socket.daemon.console() is None
 
 
 # --- the memberships ---
 
 
-def test_a_hub_naming_no_network_has_no_row_and_no_join(tmp_path):
-    subject, _platform, _bindings = memberships(tmp_path, [("h1", None)])
-
-    assert subject.hub_row("h1") is None
-    assert subject.join("h1") == {
-        "code": "overlay_missing",
-        "params": {"hub_id": "h1"},
-    }
-
-
-def test_a_working_lane_answers_busy(tmp_path):
-    held = []
-    subject, _platform, _bindings = memberships(
-        tmp_path, [("h1", EASYTIER)], start_thread=held.append
-    )
-
-    assert subject.join("h1") == {}
-    assert subject.hub_row("h1")["state"] == "joining"
-    assert subject.leave("h1") == {"code": "busy", "params": {"step": "joining"}}
-    held[0]()
-    assert subject.hub_row("h1")["work"]["state"] == "idle"
-
-
-def leaves(platform):
-    return [r for r in platform.socket.requests if r["verb"] == "leave"]
-
-
-def test_release_leaves_only_a_network_no_other_hub_names(tmp_path):
-    subject, platform, bindings = memberships(
-        tmp_path, [("h1", EASYTIER), ("h2", EASYTIER)]
-    )
-    joined(platform, "home")
-    platform.answer("easytier-cli", "peer", stdout=easytier_peers())
-    subject.probe()
-
-    bindings.rows = [("h2", EASYTIER)]
-    assert subject.release_hub("h1") == 0
-    assert leaves(platform) == []
-
-    bindings.rows = []
-    assert subject.release_hub("h2") == 1
-    assert leaves(platform) == [{"verb": "leave", "network_name": "home"}]
-
-
-def test_release_leaves_nothing_that_is_off(tmp_path):
-    subject, platform, bindings = memberships(tmp_path, [("h1", EASYTIER)])
-    subject.probe()
-    bindings.rows = []
-
-    assert subject.release_hub("h1") == 0
-    assert leaves(platform) == []
-
-
-def test_a_shutdown_keeps_every_network_and_counts_them(tmp_path):
-    subject, platform, _bindings = memberships(tmp_path, [("h1", EASYTIER)])
-    joined(platform, "home")
-    platform.answer("easytier-cli", "peer", stdout=easytier_peers())
-    subject.probe()
-
-    assert subject.release() == 1
-    assert leaves(platform) == []
-
-
-def test_no_secret_reaches_a_row(tmp_path):
-    subject, _platform, _bindings = memberships(
-        tmp_path, [("h1", EASYTIER), ("h2", NETBIRD), ("h3", CONSOLE)]
-    )
-
-    rows = json.dumps([subject.hub_row(hub) for hub in ("h1", "h2", "h3")])
-
-    assert "s3cret" not in rows and KEY not in rows  # scan: allow
-    assert "etk_token1" not in rows
-
-
-@pytest.mark.parametrize(
-    "state", ["off", "joining", "waiting", "on", "leaving", "failed"]
-)
-def test_every_state_word_is_in_the_table(state):
-    assert state in OVERLAY_STATES
-    assert len(OVERLAY_STATES) == 6
-
-
-# --- the wish per hub, the pick and the failover ---
-
-
-class RecordingDriver:
-    """A provider's daemon that does as it is told and remembers what.
+class FakeDriver:
+    """An engine that does as it is told and remembers what.
 
     Attributes:
         steps: ``(verb, provider)`` for every join and leave, in order,
             shared between the drivers of one test.
-        is_on: Whether this provider's network is held.
-        refusal: The code a join fails with, empty for none.
+        is_on: Whether the engine runs the network.
+        address: The address it reports while on; empty for none yet.
+        join_refusal: The code a join fails with, empty for none.
+        status_refusal: The code a status fails with, empty for none.
+        on_join: Called inside a join, for a test to act mid-step.
     """
 
     def __init__(self, provider, steps):
         self.provider = provider
         self.steps = steps
         self.is_on = False
-        self.refusal = ""
+        self.address = "10.0.0.5"
+        self.join_refusal = ""
+        self.status_refusal = ""
+        self.on_join = None
 
     def status(self, material):
+        if self.status_refusal:
+            raise OverlayControlError(self.status_refusal)
         return {
             "is_on": self.is_on,
             "is_waiting": False,
             "is_other_network": False,
-            "address": "10.0.0.5" if self.is_on else "",
+            "address": self.address if self.is_on else "",
             "is_hub_seen": self.is_on,
         }
 
     def join(self, material, hostname):
         self.steps.append(("join", self.provider))
-        if self.refusal:
-            raise OverlayControlError(self.refusal)
+        if self.on_join is not None:
+            self.on_join()
+        if self.join_refusal:
+            raise OverlayControlError(self.join_refusal)
         self.is_on = True
 
     def leave(self, material):
@@ -782,6 +539,8 @@ class RecordingDriver:
 
 
 class Clock:
+    """A monotonic clock a test moves by hand, moved by every wait."""
+
     def __init__(self):
         self.now = 1000.0
 
@@ -789,167 +548,378 @@ class Clock:
         return self.now
 
 
-def wishful(rows, wishes, *, lost=None):
-    """Memberships over recording drivers and a clock, every joined network told."""
+class Hubs:
+    """What the resident hands the memberships, and what it is told.
+
+    Attributes:
+        rows: ``{hub_id: [objects]}`` in join order.
+        choices: ``{hub_id: (is_on, pick)}``.
+        kept: Every ``(hub_id, is_on, pick)`` written onto a binding.
+        routes: Every ``(hub_id, hosts)`` the channel was pointed at.
+        is_reached: Whether the hub's channel answers through the network.
+    """
+
+    def __init__(self, rows):
+        self.rows = dict(rows)
+        self.choices = {}
+        self.kept = []
+        self.routes = []
+        self.is_reached = True
+
+    def __call__(self):
+        answer = []
+        for hub_id, overlays in self.rows.items():
+            is_on, pick = self.choices.get(hub_id, (False, ""))
+            answer.append(
+                {
+                    "hub_id": hub_id,
+                    "overlays": list(overlays),
+                    "is_on": is_on,
+                    "pick": pick,
+                }
+            )
+        return answer
+
+    def keep(self, hub_id, is_on, pick):
+        self.kept.append((hub_id, is_on, pick))
+        self.choices[hub_id] = (is_on, pick)
+
+    def route(self, hub_id, hosts):
+        self.routes.append((hub_id, list(hosts)))
+
+    def reaches(self, hub_id, hosts):
+        return self.is_reached
+
+
+def run_inline(target) -> None:
+    target()
+
+
+def subject_for(rows, *, start_thread=run_inline, timeout_s=0.05):
     steps = []
-    bindings = Bindings(rows)
-    bindings.wishes = dict(wishes)
-    bindings.lost = dict(lost or {})
-    clock = Clock()
-    joined_networks = []
-    drivers = {
-        "netbird": RecordingDriver("netbird", steps),
-        "easytier": RecordingDriver("easytier", steps),
+    engines = {
+        "netbird": FakeDriver("netbird", steps),
+        "easytier": FakeDriver("easytier", steps),
     }
+    hubs = Hubs(rows)
     subject = OverlayMemberships(
         platform=None,
-        bindings_of=bindings,
+        bindings_of=hubs,
         hostname="box",
         log=discard,
-        on_joined=joined_networks.append,
-        start_thread=run_inline,
-        drivers=drivers,
-        clock=clock,
+        on_route=hubs.route,
+        reaches_hub=hubs.reaches,
+        keep_choice=hubs.keep,
+        drivers=engines,
+        start_thread=start_thread,
+        connect_timeout_s=timeout_s,
+        poll_s=0.01,
     )
-    return subject, steps, bindings, clock, joined_networks, drivers
+    return subject, engines, hubs, steps
 
 
-def test_a_wanted_hub_joins_the_first_of_its_two_networks():
-    subject, steps, _bindings, _clock, joined_networks, _drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
-    )
+def test_the_states_are_off_connecting_and_on_and_nothing_else():
+    assert OVERLAY_STATES == ("off", "connecting", "on")
 
-    subject.probe()
-    subject.reconcile()
 
-    assert steps == [("join", "netbird")]
-    assert joined_networks == [NETBIRD]
+def test_a_hub_starts_off_on_its_first_network_with_both_listed():
+    subject, _engines, _hubs, steps = subject_for({"h1": [NETBIRD, EASYTIER]})
+    subject.refresh_bindings()
+
     row = subject.hub_row("h1")
-    assert (row["provider"], row["state"], row["is_wanted"]) == ("netbird", "on", True)
-    assert row["networks"] == [
-        {"provider": "netbird", "network": "nb.example"},
-        {"provider": "easytier", "network": "home"},
-    ]
 
-
-def test_a_hub_whose_wish_is_off_joins_nothing():
-    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {}
-    )
-
-    subject.probe()
-    subject.reconcile()
-
+    assert row == {
+        "network": "netbird",
+        "networks": [
+            {"provider": "netbird", "network": "nb.example"},
+            {"provider": "easytier", "network": "home"},
+        ],
+        "state": "off",
+        "address": "",
+        "error": None,
+    }
+    assert subject.job("h1") == ""
     assert steps == []
-    assert subject.hub_row("h1")["is_wanted"] is False
 
 
-def test_a_channel_lost_for_the_failover_time_moves_to_the_next_network():
-    subject, steps, bindings, clock, joined_networks, _drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
-    )
-    subject.reconcile()
-    bindings.lost = {"h1": clock.now}
+def test_a_connect_ends_on_with_the_address_once_the_hub_answers_through_it():
+    subject, _engines, hubs, steps = subject_for({"h1": [NETBIRD, EASYTIER]})
 
-    clock.now += CLIENT_OVERLAY_FAILOVER_S - 1
-    subject.reconcile()
+    subject.connect("h1")
+
+    row = subject.hub_row("h1")
+    assert (row["state"], row["address"], row["error"]) == ("on", "10.0.0.5", None)
+    assert subject.job("h1") == ""
     assert steps == [("join", "netbird")]
-    assert subject.next_deadline() == 1
-
-    clock.now += 1
-    subject.reconcile()
-    assert steps == [("join", "netbird"), ("leave", "netbird"), ("join", "easytier")]
-    assert joined_networks == [NETBIRD, EASYTIER]
-    assert subject.hub_row("h1")["provider"] == "easytier"
-
-    clock.now += 1
-    subject.reconcile()
-    assert len(steps) == 3
+    assert hubs.routes == [("h1", ["hub.nb.example"])]
+    assert hubs.kept == [("h1", True, "netbird")]
 
 
-def test_a_network_the_hub_stops_naming_is_left_for_its_new_first():
-    subject, steps, bindings, _clock, _joined, _drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
-    )
-    subject.reconcile()
-
-    bindings.rows = [("h1", [EASYTIER])]
-    subject.reconcile()
-
-    assert steps == [("join", "netbird"), ("leave", "netbird"), ("join", "easytier")]
-    assert subject.hub_row("h1")["provider"] == "easytier"
-
-
-def test_the_network_the_person_picked_is_joined_first():
-    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "easytier")}
+def test_a_connect_shows_connecting_and_its_job_until_it_ends():
+    held = []
+    subject, _engines, _hubs, _steps = subject_for(
+        {"h1": [NETBIRD]}, start_thread=held.append
     )
 
-    subject.reconcile()
+    subject.connect("h1")
+
+    assert subject.hub_row("h1")["state"] == "connecting"
+    assert subject.job("h1") == "connecting"
+    held[0]()
+    assert subject.hub_row("h1")["state"] == "on"
+
+
+def test_an_engine_that_will_not_start_is_off_with_its_code_and_no_retry():
+    subject, engines, hubs, steps = subject_for({"h1": [NETBIRD, EASYTIER]})
+    engines["netbird"].join_refusal = "overlay_join_failed"
+
+    subject.connect("h1")
+    subject.watch()
+
+    row = subject.hub_row("h1")
+    assert (row["state"], row["error"]) == (
+        "off",
+        {"code": "overlay_join_failed", "params": {}},
+    )
+    assert row["network"] == "netbird"
+    assert steps == [("join", "netbird")]
+    assert hubs.kept[-1] == ("h1", False, "")
+
+
+def test_no_address_in_time_is_off_with_its_code_and_the_engine_stopped():
+    subject, engines, hubs, steps = subject_for({"h1": [EASYTIER]})
+    engines["easytier"].address = ""
+
+    subject.connect("h1")
+
+    assert subject.hub_row("h1")["error"] == {
+        "code": "overlay_no_address",
+        "params": {},
+    }
+    assert subject.hub_row("h1")["state"] == "off"
+    assert steps == [("join", "easytier"), ("leave", "easytier")]
+    assert hubs.routes == [("h1", [])]
+
+
+def test_a_hub_that_does_not_answer_through_the_network_in_time_is_off():
+    subject, _engines, hubs, steps = subject_for({"h1": [EASYTIER]})
+    hubs.is_reached = False
+
+    subject.connect("h1")
+
+    assert subject.hub_row("h1")["state"] == "off"
+    assert subject.hub_row("h1")["error"]["code"] == "overlay_hub_unreachable"
+    assert steps == [("join", "easytier"), ("leave", "easytier")]
+    assert hubs.routes == [("h1", ["10.144.144.1"]), ("h1", [])]
+
+
+def test_a_cancel_stops_the_connect_and_goes_off_without_an_error():
+    started = threading.Event()
+    release = threading.Event()
+    subject, engines, hubs, steps = subject_for(
+        {"h1": [NETBIRD]}, start_thread=_thread, timeout_s=5
+    )
+
+    def hold():
+        started.set()
+        release.wait(5)
+
+    engines["netbird"].on_join = hold
+    subject.connect("h1")
+    assert started.wait(5)
+
+    subject.cancel("h1")
+    _wait_for(lambda: subject.hub_row("h1")["state"] == "off")
+    release.set()
+    time.sleep(0.1)
+
+    row = subject.hub_row("h1")
+    assert (row["state"], row["error"]) == ("off", None)
+    assert subject.job("h1") == ""
+    assert ("leave", "netbird") in steps
+    assert hubs.kept[-1] == ("h1", False, "")
+
+
+def test_a_disconnect_stops_the_engine_and_goes_off():
+    subject, _engines, hubs, steps = subject_for({"h1": [NETBIRD]})
+    subject.connect("h1")
+
+    subject.disconnect("h1")
+
+    assert subject.hub_row("h1")["state"] == "off"
+    assert steps == [("join", "netbird"), ("leave", "netbird")]
+    assert hubs.routes[-1] == ("h1", [])
+    assert hubs.kept[-1] == ("h1", False, "netbird")
+
+
+def test_a_disconnect_shows_its_job_while_the_engine_stops():
+    held = []
+    subject, _engines, _hubs, _steps = subject_for({"h1": [NETBIRD]})
+    subject.connect("h1")
+    subject._start_thread = held.append
+
+    subject.disconnect("h1")
+
+    assert (subject.hub_row("h1")["state"], subject.job("h1")) == (
+        "on",
+        "disconnecting",
+    )
+    held[0]()
+    assert (subject.hub_row("h1")["state"], subject.job("h1")) == ("off", "")
+
+
+def test_presses_that_do_not_fit_the_state_are_dropped():
+    held = []
+    subject, _engines, _hubs, steps = subject_for(
+        {"h1": [NETBIRD], "h2": []}, start_thread=held.append
+    )
+
+    subject.cancel("h1")
+    subject.disconnect("h1")
+    subject.connect("h2")
+    subject.connect("h1")
+    subject.connect("h1")
+    subject.disconnect("h1")
+
+    assert len(held) == 1
+    held[0]()
+    subject.connect("h1")
+    subject.cancel("h1")
+    assert len(held) == 1
+    assert steps == [("join", "netbird")]
+
+
+def test_the_pick_moves_the_engine_only_while_off_and_is_kept():
+    subject, _engines, hubs, steps = subject_for({"h1": [NETBIRD, EASYTIER]})
+
+    subject.pick("h1", "easytier")
+    assert subject.hub_row("h1")["network"] == "easytier"
+    assert hubs.kept == [("h1", False, "easytier")]
+
+    subject.connect("h1")
+    subject.pick("h1", "netbird")
+    assert subject.hub_row("h1")["network"] == "easytier"
+    assert steps == [("join", "easytier")]
+    subject.pick("h1", "wireguard")
+    assert hubs.kept[-1] == ("h1", True, "easytier")
+
+
+def test_a_failed_connect_never_moves_to_another_network():
+    subject, engines, _hubs, steps = subject_for({"h1": [NETBIRD, EASYTIER]})
+    engines["netbird"].join_refusal = "overlay_join_failed"
+
+    subject.connect("h1")
+    for _ in range(3):
+        subject.watch()
+
+    assert steps == [("join", "netbird")]
+    assert subject.hub_row("h1")["network"] == "netbird"
+
+
+def test_a_network_the_hub_withdraws_while_on_goes_off_with_its_code():
+    subject, _engines, hubs, steps = subject_for({"h1": [NETBIRD, EASYTIER]})
+    subject.connect("h1")
+
+    hubs.rows["h1"] = [EASYTIER]
+    subject.refresh()
+
+    row = subject.hub_row("h1")
+    assert (row["state"], row["error"]) == (
+        "off",
+        {"code": "overlay_withdrawn", "params": {"network": "nb.example"}},
+    )
+    assert row["network"] == "easytier"
+    assert steps == [("join", "netbird"), ("leave", "netbird")]
+
+
+def test_an_engine_that_stops_by_itself_goes_off_with_a_code():
+    subject, engines, _hubs, _steps = subject_for({"h1": [NETBIRD]})
+    subject.connect("h1")
+
+    engines["netbird"].is_on = False
+    subject.watch()
+    assert subject.hub_row("h1")["error"]["code"] == "overlay_engine_stopped"
+
+    subject.connect("h1")
+    engines["netbird"].status_refusal = "overlay_daemon_down"
+    subject.watch()
+    assert subject.hub_row("h1")["state"] == "off"
+    assert subject.hub_row("h1")["error"]["code"] == "overlay_daemon_down"
+
+
+def test_a_moved_address_is_drawn_while_on():
+    subject, engines, _hubs, _steps = subject_for({"h1": [NETBIRD]})
+    subject.connect("h1")
+
+    engines["netbird"].address = "10.0.0.9"
+    subject.watch()
+
+    assert subject.hub_row("h1")["address"] == "10.0.0.9"
+
+
+def test_a_refresh_clears_the_error_and_nothing_else():
+    subject, engines, _hubs, _steps = subject_for({"h1": [NETBIRD]})
+    engines["netbird"].join_refusal = "overlay_join_failed"
+    subject.connect("h1")
+
+    subject.clear_error("h1")
+
+    assert subject.hub_row("h1")["error"] is None
+    assert subject.hub_row("h1")["state"] == "off"
+
+
+def test_a_binding_last_on_gets_one_connect_at_start_and_no_retry():
+    subject, engines, hubs, steps = subject_for({"h1": [EASYTIER], "h2": [NETBIRD]})
+    hubs.choices = {"h1": (True, "easytier"), "h2": (False, "")}
+    engines["easytier"].join_refusal = "overlay_join_failed"
+
+    subject.resume()
+    subject.watch()
+    subject.watch()
 
     assert steps == [("join", "easytier")]
+    assert subject.hub_row("h1")["state"] == "off"
+    assert hubs.choices["h1"] == (False, "easytier")
+    assert subject.hub_row("h2")["state"] == "off"
 
 
-def test_a_hub_with_one_network_never_switches():
-    subject, steps, bindings, clock, _joined, _drivers = wishful(
-        [("h1", [NETBIRD])], {"h1": (True, "")}
+def test_a_release_stops_the_engine_only_when_no_other_hub_is_on_it():
+    subject, _engines, _hubs, steps = subject_for({"h1": [EASYTIER], "h2": [EASYTIER]})
+    subject.connect("h1")
+    subject.connect("h2")
+
+    assert subject.release_hub("h1") == 0
+    assert steps == [("join", "easytier"), ("join", "easytier")]
+    assert subject.release_hub("h2") == 1
+    assert steps[-1] == ("leave", "easytier")
+
+
+def test_a_shutdown_keeps_every_network_and_counts_them():
+    subject, _engines, _hubs, steps = subject_for({"h1": [NETBIRD]})
+    subject.connect("h1")
+
+    assert subject.release() == 1
+    assert ("leave", "netbird") not in steps
+
+
+def test_no_secret_reaches_a_row():
+    subject, _engines, _hubs, _steps = subject_for(
+        {"h1": [EASYTIER], "h2": [NETBIRD], "h3": [CONSOLE]}
     )
-    subject.reconcile()
-    bindings.lost = {"h1": clock.now}
+    subject.refresh_bindings()
 
-    clock.now += 10 * CLIENT_OVERLAY_FAILOVER_S
-    subject.reconcile()
+    rows = json.dumps([subject.hub_row(hub) for hub in ("h1", "h2", "h3")])
 
-    assert steps == [("join", "netbird")]
-    assert subject.next_deadline() is None
+    assert "s3cret" not in rows and KEY not in rows  # scan: allow
+    assert "etk_token1" not in rows
 
 
-def test_a_pick_while_on_leaves_the_current_network_and_joins_the_picked():
-    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
-    )
-    subject.reconcile()
-
-    assert subject.pick("h1", "easytier") == {}
-
-    assert steps == [("join", "netbird"), ("leave", "netbird"), ("join", "easytier")]
-    assert subject.hub_row("h1")["provider"] == "easytier"
+def _thread(target) -> None:
+    threading.Thread(target=target, daemon=True).start()
 
 
-def test_a_pick_while_off_moves_the_row_and_joins_nothing():
-    subject, steps, _bindings, _clock, _joined, _drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {}
-    )
-
-    assert subject.pick("h1", "easytier") == {}
-    assert subject.pick("h1", "zerotier")["code"] == "overlay_missing"
-
-    assert steps == []
-    assert subject.hub_row("h1")["provider"] == "easytier"
-
-
-def test_a_join_that_failed_is_not_tried_again_by_itself():
-    subject, steps, _bindings, _clock, _joined, drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
-    )
-    drivers["netbird"].refusal = "overlay_join_failed"
-
-    subject.reconcile()
-    subject.probe()
-    subject.reconcile()
-
-    assert steps == [("join", "netbird")]
-    assert subject.hub_row("h1")["code"] == "overlay_join_failed"
-
-
-def test_a_network_already_held_stays_current_after_a_restart():
-    subject, steps, _bindings, _clock, _joined, drivers = wishful(
-        [("h1", [NETBIRD, EASYTIER])], {"h1": (True, "")}
-    )
-    drivers["easytier"].is_on = True
-
-    subject.probe()
-    subject.reconcile()
-
-    assert steps == []
-    assert subject.hub_row("h1")["provider"] == "easytier"
+def _wait_for(predicate, timeout_s=5) -> None:
+    deadline = time.monotonic() + timeout_s
+    while not predicate():
+        assert time.monotonic() < deadline, "the state never came"
+        time.sleep(0.01)

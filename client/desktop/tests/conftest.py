@@ -209,7 +209,7 @@ BINDING = {
     "fingerprint": "",
     "token": "tok",
     "overlays": [],
-    "is_overlay_wanted": False,
+    "is_overlay_on": False,
     "overlay_pick": "",
 }
 OFFICE_BINDING = {
@@ -222,7 +222,7 @@ OFFICE_BINDING = {
     "fingerprint": "",
     "token": "tok2",
     "overlays": [],
-    "is_overlay_wanted": False,
+    "is_overlay_on": False,
     "overlay_pick": "",
 }
 
@@ -244,50 +244,66 @@ def bind(path, url="http://127.0.0.1:9", fingerprint="", bindings=None) -> None:
 
 # The overlay part of a hub row: a NetBird network this machine is on.
 OVERLAY_ROW = {
-    "provider": "netbird",
-    "network": "api.netbird.io",
-    "state": "on",
-    "code": "",
-    "params": {},
-    "address": "100.64.0.7",
-    "is_hub_seen": True,
-    "work": {"state": "idle", "step": "", "code": "", "params": {}},
-    "is_wanted": True,
+    "network": "netbird",
     "networks": [
         {"provider": "netbird", "network": "api.netbird.io"},
         {"provider": "easytier", "network": "home"},
     ],
+    "state": "on",
+    "address": "100.64.0.7",
+    "error": None,
 }
+# The jobs of a hub at rest.
+IDLE_JOBS = {"is_refreshing": False, "overlay_job": "", "is_leaving": False}
 HUB_ROW = {
     "hub_id": "h1",
     "hub_name": "home",
-    "hub_software": "neutrino_hub/0.3.0",
     "binding_id": "c1",
-    "name": "box",
     "gateway_url": "https://hub.lan:8443",
-    "connection_state": "connected",
-    "is_disabled": False,
-    "is_exit": True,
+    "software": "neutrino_hub/0.3.0",
+    "connection": "connected",
     "last_error": None,
+    "is_exit": True,
     "overlay": dict(OVERLAY_ROW),
+    "jobs": dict(IDLE_JOBS),
 }
 # The machines the first hub offers a terminal on, as the resident merges them.
 TERMINALS = [
     {"hub_id": "h1", "device_id": "d_lepton", "name": "lepton", "is_online": True},
     {"hub_id": "h1", "device_id": "d_muon", "name": "muon", "is_online": False},
 ]
+# The sessions the first hub lists for this client.
+TERMINAL_SESSIONS = [
+    {
+        "hub_id": "h1",
+        "session_id": "s1",
+        "device_id": "d_lepton",
+        "owner": "client:c1",
+        "is_owned": True,
+        "is_persistent": True,
+        "is_shared": False,
+        "attached_count": 0,
+        "title": "zsh",
+        "started_at": 1700000000,
+    }
+]
 OFFICE_ROW = {
     "hub_id": "h2",
     "hub_name": "office",
-    "hub_software": "neutrino_hub/0.3.0",
     "binding_id": "c2",
-    "name": "box",
     "gateway_url": "https://office.lan:8443",
-    "connection_state": "connected",
-    "is_disabled": False,
-    "is_exit": False,
+    "software": "neutrino_hub/0.3.0",
+    "connection": "connected",
     "last_error": None,
-    "overlay": None,
+    "is_exit": False,
+    "overlay": {
+        "network": "",
+        "networks": [],
+        "state": "off",
+        "address": "",
+        "error": None,
+    },
+    "jobs": dict(IDLE_JOBS),
 }
 
 
@@ -435,6 +451,9 @@ class FakeResident:
         self.overlay_calls = []
         self.overlay_reply = {}
         self.clipboard_reply = {"text": "echo pasted\n"}
+        self.clipboard_written = []
+        self.clipboard_write_reply = {}
+        self.notices_value = []
         self.terminal_calls = []
         self.terminal_reply = {"terminal_id": "t1"}
         self.session_reply = {}
@@ -481,6 +500,12 @@ class FakeResident:
     def set_theme(self, theme: str) -> None:
         self.theme_value = theme
 
+    def terminal_font_size(self) -> int:
+        return self.__dict__.get("font_size", 13)
+
+    def set_terminal_font_size(self, size: int) -> None:
+        self.font_size = size
+
     def platform_tuple(self) -> dict:
         return {"os": "linux", "family": "debian", "arch": "amd64"}
 
@@ -511,22 +536,41 @@ class FakeResident:
     def service_entries(self) -> list:
         return json.loads(json.dumps(SERVICES)) if self.is_bound else []
 
+    def entry_rows(self) -> list:
+        return [
+            dict(entry, job="", last_error=None) for entry in self.service_entries()
+        ]
+
+    def notices(self) -> list:
+        return [dict(notice) for notice in self.notices_value]
+
     def service_states(self) -> dict:
         return json.loads(json.dumps(self.states))
 
     def terminal_entries(self) -> list:
         return json.loads(json.dumps(TERMINALS)) if self.is_bound else []
 
-    def join_overlay(self, hub_id: str) -> dict:
-        self.overlay_calls.append(("join", hub_id))
+    def terminal_sessions(self) -> list:
+        return json.loads(json.dumps(TERMINAL_SESSIONS)) if self.is_bound else []
+
+    def connect_overlay(self, hub_id: str) -> dict:
+        self.overlay_calls.append(("connect", hub_id))
         return dict(self.overlay_reply)
 
-    def leave_overlay(self, hub_id: str) -> dict:
-        self.overlay_calls.append(("leave", hub_id))
+    def cancel_overlay(self, hub_id: str) -> dict:
+        self.overlay_calls.append(("cancel", hub_id))
+        return dict(self.overlay_reply)
+
+    def disconnect_overlay(self, hub_id: str) -> dict:
+        self.overlay_calls.append(("disconnect", hub_id))
         return dict(self.overlay_reply)
 
     def read_clipboard(self) -> dict:
         return dict(self.clipboard_reply)
+
+    def write_clipboard(self, text: str) -> dict:
+        self.clipboard_written.append(text)
+        return dict(self.clipboard_write_reply)
 
     def pick_overlay(self, hub_id: str, provider: str) -> dict:
         self.overlay_calls.append(("pick", hub_id, provider))
@@ -570,8 +614,10 @@ class FakeResident:
         self.terminal_calls.append(call + ((session_id,) if session_id else ()))
         return dict(self.terminal_reply)
 
-    def persist_terminal(self, terminal_id: str, is_persistent: bool) -> dict:
-        self.terminal_calls.append(("persist", terminal_id, is_persistent))
+    def persist_terminal(
+        self, terminal_id: str, is_persistent: bool, is_shared: bool
+    ) -> dict:
+        self.terminal_calls.append(("persist", terminal_id, is_persistent, is_shared))
         return dict(self.session_reply)
 
     def stop_terminal_session(self, hub_id: str, session_id: str) -> dict:
@@ -602,7 +648,7 @@ class FakeResident:
         self.connected_links.append(link)
         self.is_bound = True
 
-    def disconnect(self, hub_id: str = "") -> None:
+    def leave(self, hub_id: str = "") -> None:
         hub = self._hub(hub_id)
         self.disconnected.append(hub["hub_id"])
         self.hubs_value = [row for row in self.hubs_value if row is not hub]
@@ -611,7 +657,7 @@ class FakeResident:
     def reconnect(self, hub_id: str = "") -> None:
         hub = self._hub(hub_id)
         self.reconnects.append(hub_id)
-        hub["connection_state"] = "reconnecting"
+        hub["connection"] = "connecting"
 
     def refresh(self) -> None:
         self.refreshes += 1
@@ -621,7 +667,7 @@ class FakeResident:
         chosen = [row for row in rows if hub_id in (row["hub_id"], row["binding_id"])]
         if not chosen:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        if chosen[0]["connection_state"] != "connected":
+        if chosen[0]["connection"] != "connected":
             return {"code": "no_exit_hub", "params": {"hub_id": hub_id}}
         self.exits.append(chosen[0]["hub_id"])
         for row in rows:

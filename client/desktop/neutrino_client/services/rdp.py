@@ -180,6 +180,17 @@ class RdpViewerHandler(ServiceTypeHandler):
         self._log(f"opened the desktop viewer for {key}")
         return {}
 
+    def settle(self, timeout_s: float) -> dict:
+        """Wait for the lane to be idle, and say how its last step ended.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            The step's failure ``{"code", "params"}``, empty without one.
+        """
+        return self._worker.wait_idle(timeout_s)
+
     def state(self) -> dict:
         """Which desktops a viewer is open on.
 

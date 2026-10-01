@@ -7,8 +7,16 @@ disk it holds one :class:`~neutrino_client.core.session.ClientHubSession`,
 and it owns the five service handlers, the store and the choice of exit
 hub, so a service is addressed by hub and id together and a hub that goes
 away takes only its own entries with it. Beside the sessions it holds this
-machine's membership of each hub's virtual networks, which a hub row joins,
-leaves and picks among, and the terminals open on the machines a hub offers.
+machine's place on each hub's virtual network, which a hub row connects,
+cancels, disconnects and picks the engine of, and the terminals open on the
+machines a hub offers.
+
+It holds the one state document the page draws, and the jobs in it: per hub
+whether a refresh waits for its answer, the step on its virtual network and
+whether it is being left, and per service entry the step a press started
+and the failure it ended in. A press that starts a job writes the job and
+announces it before it returns; a press on something already at work is
+dropped and logged.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -18,6 +26,7 @@ does its own wording.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import functools
 import os
 import socket
 import sys
@@ -31,18 +40,20 @@ from neutrino_client.constants import (
     CLIENT_DEFAULT_THEME,
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_MOUNT_CREDENTIALS_DIR_NAME,
+    CLIENT_NOTICE_S,
     CLIENT_ORIGINAL_DIR_NAME,
     CLIENT_SHUTDOWN_DEADLINE_S,
     CLIENT_STATE_FILE_NAME,
     CLIENT_STREAM_TIMEOUT_S,
+    CLIENT_TERMINAL_FONT_SIZE,
 )
 from neutrino_client.core import enrollment
-from neutrino_client.core.overlay import (
-    OverlayMemberships,
-    overlay_hub_hosts,
-    overlay_key,
+from neutrino_client.core.overlay import OverlayMemberships
+from neutrino_client.core.session import (
+    CONNECTION_CONNECTED,
+    CONNECTION_DISABLED,
+    ClientHubSession,
 )
-from neutrino_client.core.session import CONNECTION_CONNECTED, ClientHubSession
 from neutrino_client.core.terminal import TerminalBridge
 from neutrino_client.exceptions import (
     GatewayRefused,
@@ -53,6 +64,7 @@ from neutrino_client.exceptions import (
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
+from neutrino_client.services.base import service_key
 from neutrino_client.services.file import FileServiceHandler
 from neutrino_client.services.port import PortServiceHandler
 from neutrino_client.services.rdp import RdpViewerHandler
@@ -78,6 +90,19 @@ ANNOUNCE_SETTLE_S = 0.05
 # session outlives a change to any other field, the addresses included,
 # which the session itself writes.
 BINDING_IDENTITY_KEYS = ("id", "fingerprint", "token")
+# The step a press on a service entry starts, by its type and action, as
+# the page words it under ``ui.job.``.
+JOB_OPENING = "opening"
+JOB_FORWARDING = "forwarding"
+JOB_DISCONNECTING = "disconnecting"
+JOB_MOUNTING = "mounting"
+JOB_UNMOUNTING = "unmounting"
+JOB_SWITCHING = "switching"
+JOB_CONNECTING = "connecting"
+# The mount record states that read as a mount at work.
+MOUNT_WORKING_STATES = ("pending", "queued", "mounting")
+# How long a service job waits for the lane it started.
+SERVICE_SETTLE_TIMEOUT_S = 300
 
 
 def end_process(status: int = 0) -> None:
@@ -122,18 +147,30 @@ def _hub_answer(call, *args) -> dict:
     return {}
 
 
+def _start_daemon_thread(target) -> None:
+    threading.Thread(target=target, daemon=True).start()
+
+
 class ClientResident:
     """Everything the person's surfaces face, over every hub joined."""
 
-    def __init__(self, *, log=print, platform=None, overlay_drivers=None):
+    def __init__(
+        self, *, log=print, platform=None, overlay_drivers=None, start_thread=None
+    ):
         """
         Args:
             log: Callable used for progress messages.
             platform: The machine's platform; None detects it.
             overlay_drivers: ``{provider: driver}`` for the virtual
                 networks; None drives the carried NetBird and EasyTier.
+            start_thread: ``start_thread(target)`` runs a job a press
+                started; None uses a daemon thread. Tests pass one that
+                runs inline.
         """
         self._log = log
+        self._start_thread = (
+            start_thread if start_thread is not None else _start_daemon_thread
+        )
         self._lock = threading.Lock()
         self.platform = platform if platform is not None else detect_platform()
         self._platform_tuple = platform_tuple()
@@ -186,11 +223,21 @@ class ClientResident:
             hostname=self.hostname(),
             log=log,
             on_change=self.notify,
-            on_joined=self._overlay_joined,
+            on_route=self._overlay_route,
+            reaches_hub=self._overlay_reaches,
+            keep_choice=self._overlay_keep,
             drivers=overlay_drivers,
         )
         # One session per binding, by binding id, in the order joined.
         self._sessions: dict = {}
+        # The bindings being left, by id.
+        self._leaving: set = set()
+        # The step a press started on a service entry, and the failure the
+        # last one ended in, by service key.
+        self._entry_jobs: dict = {}
+        self._entry_errors: dict = {}
+        # What the page shows above the hubs for a while: [{code, params, id}].
+        self._notices: list = []
         # Every terminal open or ended and not yet asked about, by its id:
         # ``(session, bridge)``.
         self._terminals: dict = {}
@@ -250,34 +297,81 @@ class ClientResident:
         """One row per hub joined, in the order joined.
 
         Returns:
-            ``[{hub_id, hub_name, hub_software, binding_id, name,
-            gateway_url, connection_state, is_disabled, is_exit,
-            last_error, overlay}]``; ``overlay`` is the virtual network's
-            row, None when the hub names none. No token and no secret is in
-            it.
+            ``[{hub_id, hub_name, binding_id, gateway_url, software,
+            connection, last_error, is_exit, overlay, jobs}]``:
+            ``connection`` is one of the session's five states, ``overlay``
+            the virtual network's ``{network, networks, state, address,
+            error}``, and ``jobs`` ``{is_refreshing, overlay_job,
+            is_leaving}``. No token and no secret is in it.
         """
         exit_hub_id = self.exit_hub_id()
         with self._lock:
             sessions = list(self._sessions.values())
+            leaving = set(self._leaving)
         rows = []
         for session in sessions:
             binding = session.binding()
             hub_id = binding.get("hub_id", "")
+            key = hub_id or session.binding_id
             rows.append(
                 {
                     "hub_id": hub_id,
                     "hub_name": binding.get("hub_name", ""),
-                    "hub_software": session.hub_software(),
                     "binding_id": binding.get("id", ""),
-                    "name": binding.get("name", ""),
                     "gateway_url": binding.get("gateway_url", ""),
-                    "connection_state": session.connection_state(),
-                    "is_disabled": session.is_disabled(),
-                    "is_exit": bool(hub_id) and hub_id == exit_hub_id,
+                    "software": session.hub_software(),
+                    "connection": session.connection(),
                     "last_error": session.last_error(),
-                    "overlay": self._overlay.hub_row(hub_id or session.binding_id),
+                    "is_exit": bool(hub_id) and hub_id == exit_hub_id,
+                    "overlay": self._overlay.hub_row(key),
+                    "jobs": {
+                        "is_refreshing": session.is_refreshing(),
+                        "overlay_job": self._overlay.job(key),
+                        "is_leaving": session.binding_id in leaving,
+                    },
                 }
             )
+        return rows
+
+    def notices(self) -> list:
+        """What the page shows above the hubs for a while.
+
+        Returns:
+            ``[{code, params}]``, the newest last.
+        """
+        with self._lock:
+            return [
+                {"code": notice["code"], "params": dict(notice["params"])}
+                for notice in self._notices
+            ]
+
+    def entry_rows(self) -> list:
+        """The service entries of every connected hub, each with its job.
+
+        Returns:
+            The entries of :meth:`service_entries`, each with ``job``, the
+            step at work on it or empty, and ``last_error``, the failure the
+            last one ended in or None.
+        """
+        entries = self.service_entries()
+        mounts = self._services["file"].state().get("mounts") or []
+        with self._lock:
+            jobs = dict(self._entry_jobs)
+            errors = dict(self._entry_errors)
+        rows = []
+        for entry in entries:
+            key = service_key(entry.get("hub_id", ""), entry.get("id", ""))
+            job = jobs.get(key, "")
+            if not job and entry.get("type") == "file":
+                if any(
+                    record.get("hub_id") == entry.get("hub_id")
+                    and record.get("entry_id") == entry.get("id")
+                    and record.get("state") in MOUNT_WORKING_STATES
+                    for record in mounts
+                ):
+                    job = JOB_MOUNTING
+            error = errors.get(key)
+            rows.append(dict(entry, job=job, last_error=dict(error) if error else None))
         return rows
 
     def terminal_entries(self) -> list:
@@ -293,6 +387,24 @@ class ClientResident:
             hub_id = session.hub_id()
             merged.extend(
                 dict(entry, hub_id=hub_id) for entry in session.terminal_entries()
+            )
+        return merged
+
+    def terminal_sessions(self) -> list:
+        """The shell sessions every connected hub lists for this client, merged.
+
+        Returns:
+            ``[{hub_id, session_id, device_id, owner, is_owned,
+            is_persistent, is_shared, attached_count, title, started_at}]``
+            in hub order.
+        """
+        with self._lock:
+            sessions = list(self._sessions.values())
+        merged = []
+        for session in sessions:
+            hub_id = session.hub_id()
+            merged.extend(
+                dict(entry, hub_id=hub_id) for entry in session.terminal_sessions()
             )
         return merged
 
@@ -372,6 +484,19 @@ class ClientResident:
         self._store.set_theme(theme)
         self.notify()
 
+    def terminal_font_size(self) -> int:
+        """The terminal's font size in pixels; the default until one is chosen."""
+        return self._store.terminal_font_size() or CLIENT_TERMINAL_FONT_SIZE
+
+    def set_terminal_font_size(self, size: int) -> None:
+        """Keep the terminal's font size, and say so.
+
+        Args:
+            size: The size in pixels; one out of range is held to the range.
+        """
+        self._store.set_terminal_font_size(size)
+        self.notify()
+
     def subscribe(self, watcher) -> None:
         """Be told after every change of the state the page draws.
 
@@ -406,6 +531,22 @@ class ClientResident:
             return {"text": self.platform.read_clipboard()}
         except (OSError, PlatformUnsupportedError) as error:
             return {"code": "clipboard_unreadable", "params": {"detail": str(error)}}
+
+    def write_clipboard(self, text: str) -> dict:
+        """Put text on this person's clipboard, for a copy out of a terminal.
+
+        Args:
+            text: The text.
+
+        Returns:
+            Empty when it was written; ``clipboard_unwritable`` with the
+            reason when the platform cannot write it.
+        """
+        try:
+            self.platform.write_clipboard(text)
+        except (OSError, PlatformUnsupportedError) as error:
+            return {"code": "clipboard_unwritable", "params": {"detail": str(error)}}
+        return {}
 
     def list_directories(self, path: str) -> list:
         """The subdirectory names under a directory, as this person."""
@@ -458,16 +599,52 @@ class ClientResident:
         ).start()
         self._log("left the hub")
 
-    def refresh(self) -> None:
-        """Ask every hub again now.
+    def leave(self, hub_id: str = "") -> None:
+        """Start leaving one hub: the row shows it at once, and goes once done.
 
-        A connected hub is sent a report; a hub whose socket is down has its
-        backoff put back to the floor and a round started at once.
+        A second press while the hub is being left is dropped and logged.
+
+        Args:
+            hub_id: The hub to leave, by its id or by its binding's id;
+                empty names the one hub joined.
+
+        Raises:
+            KeyError: If ``hub_id`` names no hub this person has joined, or
+                is empty while several are.
+        """
+        session = self._session_for(hub_id)
+        with self._lock:
+            is_dropped = session.binding_id in self._leaving
+            self._leaving.add(session.binding_id)
+        if is_dropped:
+            self._log(f"a second leave of {session.binding_id} was dropped")
+            return
+        self.notify()
+        self._start_thread(functools.partial(self._leave_now, session))
+
+    def refresh(self) -> None:
+        """Ask every hub that can answer again now, and show the work.
+
+        Each connected, connecting or down hub loses its error line and its
+        virtual network's error, its entries lose theirs, and it waits as
+        refreshing until its answer; a replaced or disabled hub is left as
+        it is. A press while any hub still refreshes is dropped and logged.
         """
         with self._lock:
             sessions = list(self._sessions.values())
+        if any(session.is_refreshing() for session in sessions):
+            self._log("a refresh while one runs was dropped")
+            return
         for session in sessions:
-            session.refresh()
+            if not session.refresh():
+                continue
+            hub_id = session.hub_id()
+            self._overlay.clear_error(hub_id or session.binding_id)
+            with self._lock:
+                for key in list(self._entry_errors):
+                    if key.startswith(hub_id + "/"):
+                        self._entry_errors.pop(key, None)
+        self.notify()
 
     def set_exit(self, hub_id: str) -> dict:
         """Choose the hub whose AI gateway the tools point at, and point them.
@@ -485,7 +662,7 @@ class ClientResident:
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        if session.connection_state() != CONNECTION_CONNECTED:
+        if session.connection() != CONNECTION_CONNECTED:
             return {"code": "no_exit_hub", "params": {"hub_id": hub_id}}
         self._pin_exit(session.hub_id())
         self._services["ai"].refresh(entries=self.service_entries())
@@ -505,53 +682,54 @@ class ClientResident:
         """
         self._session_for(hub_id).reconnect()
 
-    def join_overlay(self, hub_id: str) -> dict:
-        """Want to be on one hub's virtual network, and join its current one.
+    def connect_overlay(self, hub_id: str) -> dict:
+        """Start one connect to one hub's chosen virtual network.
 
         Args:
             hub_id: The hub, by its id or by its binding's id.
 
         Returns:
-            Empty when the join was started; ``unknown_hub``,
-            ``overlay_missing``, ``overlay_wish_unsaved`` or ``busy``
-            otherwise.
+            Empty, the press taken or dropped; ``unknown_hub`` otherwise.
         """
-        return self._overlay_step(hub_id, is_join=True)
+        return self._overlay_press(hub_id, self._overlay.connect)
 
-    def leave_overlay(self, hub_id: str) -> dict:
-        """Stop wanting one hub's virtual network, and leave its current one.
+    def cancel_overlay(self, hub_id: str) -> dict:
+        """Stop a connect to one hub's virtual network in progress.
 
         Args:
             hub_id: The hub, by its id or by its binding's id.
 
         Returns:
-            Empty when the leave was started; ``unknown_hub``,
-            ``overlay_missing``, ``overlay_wish_unsaved`` or ``busy``
-            otherwise.
+            Empty, the press taken or dropped; ``unknown_hub`` otherwise.
         """
-        return self._overlay_step(hub_id, is_join=False)
+        return self._overlay_press(hub_id, self._overlay.cancel)
+
+    def disconnect_overlay(self, hub_id: str) -> dict:
+        """Stop one hub's virtual network that is on.
+
+        Args:
+            hub_id: The hub, by its id or by its binding's id.
+
+        Returns:
+            Empty, the press taken or dropped; ``unknown_hub`` otherwise.
+        """
+        return self._overlay_press(hub_id, self._overlay.disconnect)
 
     def pick_overlay(self, hub_id: str, provider: str) -> dict:
-        """Choose which of one hub's virtual networks this machine is on.
+        """Choose the engine of one hub's virtual network while it is off.
 
         Args:
             hub_id: The hub, by its id or by its binding's id.
             provider: The provider of the network chosen.
 
         Returns:
-            Empty when the choice was taken; ``unknown_hub``,
-            ``overlay_missing``, ``overlay_wish_unsaved`` or ``busy``
-            otherwise.
+            Empty, the pick taken or dropped; ``unknown_hub`` otherwise.
         """
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        key = session.hub_id() or session.binding_id
-        outcome = self._overlay.pick(key, provider)
-        if outcome:
-            return outcome
-        is_wanted, _pick = session.overlay_wish()
-        return self._keep_overlay_wish(session, is_wanted, provider)
+        self._overlay.pick(session.hub_id() or session.binding_id, provider)
+        return {}
 
     def open_terminal(
         self,
@@ -722,22 +900,35 @@ class ClientResident:
             return {"code": "shell_unknown", "params": {"shell": terminal_id}}
         return {}
 
-    def persist_terminal(self, terminal_id: str, is_persistent: bool) -> dict:
-        """Keep one terminal's shell session on its machine once nobody is attached, or not.
+    def persist_terminal(
+        self, terminal_id: str, is_persistent: bool, is_shared: bool
+    ) -> dict:
+        """Set whether one terminal's shell session outlives its windows, and who sees it.
+
+        The session's row in the state document takes both values at once
+        on success; the next state from the hub confirms them.
 
         Args:
             terminal_id: The terminal.
             is_persistent: Whether the machine keeps the session.
+            is_shared: Whether every client with terminal rights on the
+                machine lists it.
 
         Returns:
-            Empty on success; ``unknown_terminal``, the hub's refusal, or
-            ``hub_unreachable``.
+            Empty on success; ``unknown_terminal``, the hub's refusal,
+            ``session_not_owned`` among them, or ``hub_unreachable``.
         """
         opened = self._terminal(terminal_id)
         if opened is None:
             return {"code": "unknown_terminal", "params": {}}
         session, bridge = opened
-        return _hub_answer(session.persist_shell, bridge.session_id, is_persistent)
+        outcome = _hub_answer(
+            session.persist_shell, bridge.session_id, is_persistent, is_shared
+        )
+        if not outcome:
+            session.note_session_flags(bridge.session_id, is_persistent, is_shared)
+            self.notify()
+        return outcome
 
     def stop_terminal_session(self, hub_id: str, session_id: str) -> dict:
         """End one shell session a hub's machine keeps, attached or not.
@@ -782,7 +973,12 @@ class ClientResident:
             callback()
 
     def service_action(self, service_type: str, body: dict) -> dict:
-        """Hand one page action to the handler for its service type.
+        """Start one page action on a service entry, as that entry's job.
+
+        The entry's job is written and announced before this returns, and
+        the handler runs on a thread of its own; how it ends is the entry's
+        ``last_error``. A press on an entry already at work is dropped and
+        logged; an open that needs no forward runs at once and has no job.
 
         Args:
             service_type: The type the page acted on.
@@ -791,17 +987,34 @@ class ClientResident:
                 lands.
 
         Returns:
-            Empty on success, ``{"code", "params"}`` on a refusal;
-            ``client_disabled`` while that hub has this client switched off.
+            Empty, the press taken or dropped; ``unknown_request`` for a
+            type or an action nothing handles, ``client_disabled`` while
+            that hub has this client switched off.
         """
         handler = self._services.get(service_type)
         if handler is None:
             return {"code": "unknown_request", "params": {}}
         hub_id = str(body.get("hub_id", "") or "") or self.exit_hub_id()
         session = self._find_session(hub_id)
-        if session is not None and session.is_disabled():
+        if session is not None and session.connection() == CONNECTION_DISABLED:
             return {"code": "client_disabled", "params": {}}
-        return handler.act(entries=self.service_entries(), body=body)
+        body = dict(body, hub_id=hub_id)
+        key, job = self._entry_job(service_type, body)
+        if not job:
+            return self._answer_now(
+                handler.act(entries=self.service_entries(), body=body)
+            )
+        with self._lock:
+            is_dropped = key in self._entry_jobs or self._is_mounting(key)
+            if not is_dropped:
+                self._entry_jobs[key] = job
+                self._entry_errors.pop(key, None)
+        if is_dropped:
+            self._log(f"a press on {key} while it works was dropped")
+            return {}
+        self.notify()
+        self._start_thread(functools.partial(self._run_entry_job, handler, key, body))
+        return {}
 
     def open_service(
         self, hub_id: str, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
@@ -908,6 +1121,73 @@ class ClientResident:
                     self._is_announcing = False
                     return
 
+    def _entry_job(self, service_type: str, body: dict) -> "tuple[str, str]":
+        """The service key a press acts on and the job it starts; no job for an instant one."""
+        hub_id = str(body.get("hub_id", ""))
+        entry_id = str(body.get("id", "") or "")
+        action = str(body.get("action", "") or "")
+        if service_type == "file" and body.get("record_id"):
+            records = self._services["file"].state().get("mounts") or []
+            for record in records:
+                if record.get("record_id") == body.get("record_id"):
+                    hub_id = str(record.get("hub_id", ""))
+                    entry_id = str(record.get("entry_id", ""))
+        key = service_key(hub_id, entry_id)
+        if service_type == "web":
+            entry = next(
+                (
+                    item
+                    for item in self.service_entries()
+                    if item.get("hub_id") == hub_id and item.get("id") == entry_id
+                ),
+                {},
+            )
+            is_local = (entry.get("payload") or {}).get("is_local_only") is True
+            return key, JOB_OPENING if is_local else ""
+        if service_type == "port":
+            return key, JOB_FORWARDING if body.get("is_enabled") else JOB_DISCONNECTING
+        if service_type == "file":
+            return key, JOB_UNMOUNTING if action == "unmount" else JOB_MOUNTING
+        if service_type == "ai":
+            return key, JOB_SWITCHING
+        if service_type == "rdp":
+            return key, JOB_CONNECTING
+        return key, ""
+
+    def _is_mounting(self, key: str) -> bool:
+        """Whether a mount record of one entry is on its way; the lock is held."""
+        hub_id, _, entry_id = key.partition("/")
+        for record in self._services["file"].state().get("mounts") or []:
+            if (
+                record.get("hub_id") == hub_id
+                and record.get("entry_id") == entry_id
+                and record.get("state") in MOUNT_WORKING_STATES
+            ):
+                return True
+        return False
+
+    def _run_entry_job(self, handler, key: str, body: dict) -> None:
+        """Run one entry's job, then write how it ended and announce it."""
+        try:
+            outcome = handler.act(entries=self.service_entries(), body=body)
+            if not outcome:
+                outcome = handler.settle(SERVICE_SETTLE_TIMEOUT_S)
+        except Exception as error:  # noqa: BLE001 - reported on the row
+            outcome = {"code": "crashed", "params": {"detail": str(error)[:200]}}
+        outcome = self._answer_now(outcome)
+        with self._lock:
+            self._entry_jobs.pop(key, None)
+            if outcome:
+                self._entry_errors[key] = dict(outcome)
+        self.notify()
+
+    def _answer_now(self, outcome: dict) -> dict:
+        """A handler's answer, with ``busy`` dropped and logged."""
+        if outcome and outcome.get("code") == "busy":
+            self._log("a press on a lane at work was dropped")
+            return {}
+        return outcome or {}
+
     def _terminal(self, terminal_id: str) -> "tuple | None":
         """One terminal's session and bridge, None for an id nobody opened."""
         with self._lock:
@@ -994,10 +1274,15 @@ class ClientResident:
 
     def _forget_session(self, session: ClientHubSession) -> None:
         """Stop one session and let go of everything its hub published."""
+        hub_id = session.hub_id()
         with self._lock:
             self._sessions.pop(session.binding_id, None)
+            self._leaving.discard(session.binding_id)
+            for table in (self._entry_jobs, self._entry_errors):
+                for key in [key for key in table if key.startswith(hub_id + "/")]:
+                    table.pop(key, None)
         session.stop()
-        self._release_hub(session.hub_id())
+        self._release_hub(hub_id or session.binding_id)
         self._services["ai"].refresh(entries=self.service_entries())
         self.notify()
 
@@ -1007,67 +1292,98 @@ class ClientResident:
         self._overlay.refresh()
 
     def _overlay_bindings(self) -> list:
-        """Each hub's overlay objects and wish, by hub id, for the memberships."""
+        """Each hub's overlay objects and choice, by hub id, for the memberships."""
         with self._lock:
             sessions = list(self._sessions.values())
         rows = []
         for session in sessions:
-            is_wanted, pick = session.overlay_wish()
+            is_on, pick = session.overlay_choice()
             rows.append(
                 {
                     "hub_id": session.hub_id() or session.binding_id,
                     "overlays": session.overlays(),
-                    "is_wanted": is_wanted,
+                    "is_on": is_on,
                     "pick": pick,
-                    "lost_since": session.lost_since(),
                 }
             )
         return rows
 
-    def _overlay_step(self, hub_id: str, *, is_join: bool) -> dict:
-        """Keep the wish of the hub a page named, then join or leave its network."""
+    def _overlay_press(self, hub_id: str, press) -> dict:
+        """Hand one press on a hub's virtual network to the memberships."""
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        _is_wanted, pick = session.overlay_wish()
-        refusal = self._keep_overlay_wish(session, is_join, pick)
-        if refusal:
-            return refusal
-        key = session.hub_id() or session.binding_id
-        if is_join:
-            return self._overlay.join(key)
-        return self._overlay.leave(key)
-
-    def _keep_overlay_wish(self, session, is_wanted: bool, pick: str) -> dict:
-        """Write one hub's wish onto its binding; the refusal when it cannot be."""
-        try:
-            session.set_overlay_wish(is_wanted, pick)
-        except OSError as error:
-            self._log(f"could not record the virtual network wish: {error}")
-            return {"code": "overlay_wish_unsaved", "params": {"detail": str(error)}}
+        press(session.hub_id() or session.binding_id)
         return {}
 
-    def _overlay_joined(self, material: dict) -> None:
-        """A network was joined: each hub on it connects through it first."""
-        key = overlay_key(material)
-        with self._lock:
-            sessions = list(self._sessions.values())
-        for session in sessions:
-            if any(overlay_key(item) == key for item in session.overlays()):
-                session.reconnect_through(overlay_hub_hosts(material))
+    def _overlay_route(self, hub_id: str, hosts: list) -> None:
+        """A hub's channel connects through its hosts on the network first."""
+        session = self._find_session(hub_id)
+        if session is not None:
+            session.reconnect_through(hosts)
+
+    def _overlay_reaches(self, hub_id: str, hosts: list) -> bool:
+        """Whether a hub's channel answers on its hosts on the network."""
+        session = self._find_session(hub_id)
+        return session is not None and session.reaches_through(hosts)
+
+    def _overlay_keep(self, hub_id: str, is_on: bool, pick: str) -> None:
+        """Write where a hub's network stands onto its binding.
+
+        Raises:
+            OSError: When the binding file cannot be written.
+        """
+        session = self._find_session(hub_id)
+        if session is not None:
+            session.set_overlay_choice(is_on, pick)
 
     def _hub_disabled(self, session: ClientHubSession) -> None:
         """A hub switched this client off: let go of what it published."""
         self._release_hub(session.hub_id())
 
     def _hub_unbound(self, session: ClientHubSession) -> None:
-        """A hub holds no such binding: drop it, and everything it published."""
+        """A hub holds no such binding: drop it, and say so above the hubs."""
+        binding = session.binding()
         try:
             enrollment.remove_binding(session.binding_id)
         except OSError as error:
             self._log(f"could not remove the binding: {error}")
         self._forget_session(session)
         self._follow_exit()
+        self._add_notice(
+            "binding_unknown",
+            {"hub": binding.get("hub_name") or binding.get("gateway_url", "")},
+        )
+
+    def _add_notice(self, code: str, params: dict) -> None:
+        """Show one notice above the hubs for ``CLIENT_NOTICE_S``."""
+        notice = {"code": code, "params": dict(params), "id": uuid.uuid4().hex}
+        with self._lock:
+            self._notices.append(notice)
+        timer = threading.Timer(
+            CLIENT_NOTICE_S, self._drop_notice, args=(notice["id"],)
+        )
+        timer.daemon = True
+        timer.start()
+        self.notify()
+
+    def _drop_notice(self, notice_id: str) -> None:
+        """Take one notice down."""
+        with self._lock:
+            self._notices = [
+                notice for notice in self._notices if notice["id"] != notice_id
+            ]
+        self.notify()
+
+    def _leave_now(self, session: ClientHubSession) -> None:
+        """Leave one hub; a leave that cannot finish puts the row back."""
+        try:
+            self.disconnect(session.binding_id)
+        except (KeyError, OSError) as error:
+            self._log(f"could not leave the hub: {error}")
+            with self._lock:
+                self._leaving.discard(session.binding_id)
+            self.notify()
 
     def _adopt_external_binding(self) -> None:
         """Pick up a binding file another process wrote.

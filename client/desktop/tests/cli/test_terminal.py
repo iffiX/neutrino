@@ -16,11 +16,14 @@ STATE = {
         {"hub_id": "h1", "hub_name": "home", "gateway_url": "https://h"},
         {"hub_id": "h2", "hub_name": "office", "gateway_url": "https://o"},
     ],
-    "terminals": [
-        {"hub_id": "h1", "device_id": "d1", "name": "lepton", "is_online": True},
-        {"hub_id": "h2", "device_id": "d2", "name": "lepton", "is_online": True},
-        {"hub_id": "h2", "device_id": "d3", "name": "muon", "is_online": True},
-    ],
+    "terminals": {
+        "machines": [
+            {"hub_id": "h1", "device_id": "d1", "name": "lepton", "is_online": True},
+            {"hub_id": "h2", "device_id": "d2", "name": "lepton", "is_online": True},
+            {"hub_id": "h2", "device_id": "d3", "name": "muon", "is_online": True},
+        ],
+        "sessions": [],
+    },
 }
 
 
