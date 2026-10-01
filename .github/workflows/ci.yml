@@ -70,7 +70,7 @@ jobs:
 
       - uses: android-actions/setup-android@v4
 
-      # The NetBird and EasyTier libraries the app carries, built from their
+      # The NetBird, EasyTier and RustDesk libraries the app carries, built from their
       # pinned sources and kept while the scripts that pin them are unchanged.
       - uses: actions/setup-go@v7
         with:
@@ -83,7 +83,11 @@ jobs:
           path: |
             client/android/app/libs
             client/android/app/src/main/jniLibs
-          key: android-cores-${{ hashFiles('packaging/mobile_netbird.py', 'packaging/mobile_easytier.py', 'packaging/mobile_easytier.patch') }}
+          key: android-cores-${{ hashFiles('packaging/mobile_netbird.py', 'packaging/mobile_easytier.py', 'packaging/mobile_easytier.patch', 'packaging/mobile_rustdesk.py', 'packaging/mobile_rustdesk.patch') }}
+
+      # The JNI side of the RustDesk core is compiled with the app.
+      - name: Install the NDK and CMake the app builds with
+        run: sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
 
       - name: Build the phone cores
         if: steps.cores.outputs.cache-hit != 'true'
@@ -97,6 +101,8 @@ jobs:
           cargo install cargo-ndk --locked
           python3 packaging/mobile_netbird.py
           python3 packaging/mobile_easytier.py
+          sudo apt-get install -y nasm
+          python3 packaging/mobile_rustdesk.py
 
       - run: ./gradlew --no-daemon ktlintCheck test lint
         working-directory: client/android
