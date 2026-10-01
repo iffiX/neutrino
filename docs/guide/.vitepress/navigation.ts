@@ -22,14 +22,6 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Install the hub", link: "/hub/install" },
       { text: "Network", link: "/hub/network" },
-      {
-        text: "Overlay",
-        collapsed: true,
-        items: [
-          { text: "NetBird", link: "/hub/overlay-netbird" },
-          { text: "EasyTier", link: "/hub/overlay-easytier" },
-        ],
-      },
       { text: "Proxy", link: "/hub/proxy" },
       { text: "AI", link: "/hub/ai" },
       { text: "Devices", link: "/hub/devices" },
@@ -37,42 +29,6 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
       { text: "Services", link: "/hub/services" },
       { text: "Credentials", link: "/hub/credentials" },
       { text: "Settings", link: "/hub/settings" },
-      { text: "Terminals", link: "/hub/terminals" },
-      { text: "Files", link: "/hub/files" },
-      {
-        text: "Modules",
-        link: "/hub/modules",
-        collapsed: true,
-        items: [
-          { text: "Samba", link: "/hub/samba" },
-          { text: "Gitea", link: "/hub/gitea" },
-          { text: "Containers", link: "/hub/containers" },
-          { text: "ZFS", link: "/hub/zfs" },
-        ],
-      },
-      { text: "nhub commands", link: "/hub/cli" },
-    ],
-  },
-  {
-    text: "Agent",
-    items: [
-      { text: "Install the agent", link: "/agent/install" },
-      { text: "nagent commands", link: "/agent/cli" },
-    ],
-  },
-  {
-    text: "Client",
-    items: [
-      { text: "Install the client", link: "/client/install" },
-      { text: "The window", link: "/client/window" },
-      { text: "Web", link: "/client/web" },
-      { text: "Ports", link: "/client/ports" },
-      { text: "AI", link: "/client/ai" },
-      { text: "Files", link: "/client/files" },
-      { text: "Remote desktops", link: "/client/remote-desktops" },
-      { text: "Virtual networks", link: "/client/overlay" },
-      { text: "Terminals", link: "/client/terminals" },
-      { text: "nclient commands", link: "/client/cli" },
     ],
   },
   {
@@ -89,7 +45,7 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
   {
     text: "开始",
     items: [
-      { text: "总览", link: "/zh-CN/overview" },
+      { text: "概述", link: "/zh-CN/overview" },
       { text: "快速上手", link: "/zh-CN/quick-start" },
     ],
   },
@@ -98,14 +54,6 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "安装 hub", link: "/zh-CN/hub/install" },
       { text: "网络", link: "/zh-CN/hub/network" },
-      {
-        text: "虚拟网",
-        collapsed: true,
-        items: [
-          { text: "NetBird", link: "/zh-CN/hub/overlay-netbird" },
-          { text: "EasyTier", link: "/zh-CN/hub/overlay-easytier" },
-        ],
-      },
       { text: "代理", link: "/zh-CN/hub/proxy" },
       { text: "AI", link: "/zh-CN/hub/ai" },
       { text: "设备", link: "/zh-CN/hub/devices" },
@@ -113,42 +61,6 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
       { text: "服务", link: "/zh-CN/hub/services" },
       { text: "凭据", link: "/zh-CN/hub/credentials" },
       { text: "设置", link: "/zh-CN/hub/settings" },
-      { text: "终端", link: "/zh-CN/hub/terminals" },
-      { text: "文件", link: "/zh-CN/hub/files" },
-      {
-        text: "模块",
-        link: "/zh-CN/hub/modules",
-        collapsed: true,
-        items: [
-          { text: "Samba", link: "/zh-CN/hub/samba" },
-          { text: "Gitea", link: "/zh-CN/hub/gitea" },
-          { text: "容器", link: "/zh-CN/hub/containers" },
-          { text: "ZFS", link: "/zh-CN/hub/zfs" },
-        ],
-      },
-      { text: "nhub 命令", link: "/zh-CN/hub/cli" },
-    ],
-  },
-  {
-    text: "被控端",
-    items: [
-      { text: "安装被控端", link: "/zh-CN/agent/install" },
-      { text: "nagent 命令", link: "/zh-CN/agent/cli" },
-    ],
-  },
-  {
-    text: "客户端",
-    items: [
-      { text: "安装客户端", link: "/zh-CN/client/install" },
-      { text: "窗口", link: "/zh-CN/client/window" },
-      { text: "网页", link: "/zh-CN/client/web" },
-      { text: "端口", link: "/zh-CN/client/ports" },
-      { text: "AI", link: "/zh-CN/client/ai" },
-      { text: "文件", link: "/zh-CN/client/files" },
-      { text: "远程桌面", link: "/zh-CN/client/remote-desktops" },
-      { text: "虚拟网", link: "/zh-CN/client/overlay" },
-      { text: "终端", link: "/zh-CN/client/terminals" },
-      { text: "nclient 命令", link: "/zh-CN/client/cli" },
     ],
   },
   {
@@ -164,13 +76,11 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
 export const navEn: DefaultTheme.NavItem[] = [
   { text: "Quick start", link: "/quick-start" },
   { text: "Hub", link: "/hub/install" },
-  { text: "Client", link: "/client/install" },
   { text: "GitHub", link: GITHUB_URL },
 ];
 
 export const navZh: DefaultTheme.NavItem[] = [
   { text: "快速上手", link: "/zh-CN/quick-start" },
   { text: "Hub", link: "/zh-CN/hub/install" },
-  { text: "客户端", link: "/zh-CN/client/install" },
   { text: "GitHub", link: GITHUB_URL },
 ];

@@ -1,0 +1,191 @@
+{
+  "version": "0.5.0",
+  "language": "en",
+  "theme": "dark",
+  "hostname": "laptop",
+  "platform": { "os": "linux", "family": "debian", "arch": "amd64" },
+  "mount_location_shape": "path",
+  "mount_location_suggestion": "/home/alice/neutrino",
+  "mount_location_choices": [],
+  "home": "/home/alice",
+  "is_connected": true,
+  "exit_hub_id": "h1",
+  "hubs": [
+    {
+      "hub_id": "h1",
+      "hub_name": "home",
+      "hub_software": "neutrino_hub/0.5.0",
+      "binding_id": "c1",
+      "name": "laptop",
+      "gateway_url": "https://192.168.50.1:8443",
+      "connection_state": "connected",
+      "is_disabled": false,
+      "is_exit": true,
+      "last_error": null,
+      "overlay": {
+        "provider": "easytier",
+        "network": "home",
+        "state": "on",
+        "code": "",
+        "params": {},
+        "address": "10.144.0.7",
+        "is_hub_seen": true,
+        "work": { "state": "idle", "step": "", "code": "", "params": {} },
+        "is_wanted": true,
+        "networks": [
+          { "provider": "easytier", "network": "home" },
+          { "provider": "netbird", "network": "api.netbird.io" }
+        ]
+      }
+    },
+    {
+      "hub_id": "h2",
+      "hub_name": "office",
+      "hub_software": "neutrino_hub/0.5.0",
+      "binding_id": "c2",
+      "name": "laptop",
+      "gateway_url": "https://10.20.0.1:8443",
+      "connection_state": "connected",
+      "is_disabled": false,
+      "is_exit": false,
+      "last_error": null,
+      "overlay": null
+    }
+  ],
+  "services": [
+    {
+      "hub_id": "h1",
+      "id": "ai",
+      "type": "ai",
+      "title": "AI tools",
+      "payload": {
+        "endpoint": "http://192.168.50.1:8317",
+        "protocol": "anthropic",
+        "models": ["claude-sonnet", "gpt-5"]
+      },
+      "is_healthy": true,
+      "source": "module",
+      "description": ""
+    },
+    {
+      "hub_id": "h1",
+      "id": "gitea_d_lepton",
+      "type": "web",
+      "title": "Gitea",
+      "payload": { "url": "http://192.168.50.20:3000/" },
+      "is_healthy": true,
+      "source": "module",
+      "description": "on lepton"
+    },
+    {
+      "hub_id": "h1",
+      "id": "vscode_d_lepton",
+      "type": "web",
+      "title": "VS Code (alice)",
+      "payload": { "url": "http://127.0.0.1:8000/", "is_local_only": true },
+      "is_healthy": true,
+      "source": "module",
+      "description": "on lepton"
+    },
+    {
+      "hub_id": "h1",
+      "id": "svc_wiki",
+      "type": "web",
+      "title": "Wiki",
+      "payload": { "url": "http://wiki.lan/" },
+      "is_healthy": true,
+      "source": "declared",
+      "description": "declared by hand"
+    },
+    {
+      "hub_id": "h1",
+      "id": "svc_postgres",
+      "type": "port",
+      "title": "postgres",
+      "payload": { "host": "192.168.50.20", "port": 5432 },
+      "is_healthy": true,
+      "source": "module",
+      "description": "published by container postgres:16"
+    },
+    {
+      "hub_id": "h1",
+      "id": "share_media",
+      "type": "file",
+      "title": "media",
+      "payload": { "protocol": "smb", "host": "192.168.50.20", "share": "media" },
+      "is_healthy": true,
+      "source": "module",
+      "description": "on lepton"
+    },
+    {
+      "hub_id": "h1",
+      "id": "rdp_studio",
+      "type": "rdp",
+      "title": "studio",
+      "payload": { "protocol": "rustdesk", "host": "192.168.50.30", "port": 21118 },
+      "is_healthy": true,
+      "source": "device",
+      "description": "shared from studio"
+    },
+    {
+      "hub_id": "h2",
+      "id": "svc_docs",
+      "type": "web",
+      "title": "Docs",
+      "payload": { "url": "http://docs.lan/" },
+      "is_healthy": true,
+      "source": "declared",
+      "description": "declared by hand"
+    }
+  ],
+  "terminals": [
+    {
+      "hub_id": "h1",
+      "device_id": "d_lepton",
+      "name": "lepton",
+      "is_online": true,
+      "sessions": [
+        {
+          "session_id": "s_build",
+          "account": "root",
+          "started_at": 1790845920,
+          "title": "build",
+          "is_attached": false,
+          "is_persistent": true
+        }
+      ]
+    },
+    {
+      "hub_id": "h1",
+      "device_id": "d_studio",
+      "name": "studio",
+      "is_online": true,
+      "sessions": []
+    }
+  ],
+  "forwards": {
+    "h1/svc_postgres": { "local_port": 5432, "is_active": true }
+  },
+  "mounts": [
+    {
+      "record_id": "r1",
+      "hub_id": "h1",
+      "entry_id": "share_media",
+      "path": "/home/alice/neutrino/media",
+      "username": "alice",
+      "is_attached": true,
+      "state": "mounted",
+      "code": "",
+      "params": {}
+    }
+  ],
+  "ai": {
+    "is_enabled": true,
+    "is_active": true,
+    "state": "installed",
+    "code": "",
+    "params": {}
+  },
+  "ai_tool_configs": { "claude": { "default": "claude-sonnet" } },
+  "viewers": {}
+}

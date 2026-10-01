@@ -1,0 +1,54 @@
+{
+  "_comment": "Applied inside the page before each shot, in this order, to text, input values, and title and aria-label attributes. A pattern is a JavaScript regular expression with the flags beside it. A public IPv4 address is replaced only outside the private, shared, loopback and link-local ranges. literals are exact strings; add the ones that name you to redact.local.json beside this file, which git ignores.",
+  "patterns": [
+    {
+      "name": "hex_fingerprint",
+      "regex": "\\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){15,}\\b|\\b[0-9a-f]{40,128}\\b",
+      "flags": "g",
+      "replace": "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+    },
+    {
+      "name": "mac_address",
+      "regex": "\\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\\b",
+      "flags": "g",
+      "replace": "02:00:00:00:00:01"
+    },
+    {
+      "name": "easytier_token",
+      "regex": "etk_[A-Za-z0-9_-]{6,}",
+      "flags": "g",
+      "replace": "etk_xxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "api_key",
+      "regex": "sk-[A-Za-z0-9_-]{6,}",
+      "flags": "g",
+      "replace": "sk-xxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "email",
+      "regex": "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+      "flags": "g",
+      "replace": "you@example.com"
+    },
+    {
+      "name": "netbird_fqdn",
+      "regex": "\\b[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.netbird\\.(?:cloud|selfhosted)\\b",
+      "flags": "gi",
+      "replace": "peer.netbird.cloud"
+    },
+    {
+      "name": "public_ipv4",
+      "regex": "\\b(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}\\b",
+      "flags": "g",
+      "replace": "203.0.113.10",
+      "is_public_ipv4_only": true
+    }
+  ],
+  "literals": [
+    {
+      "find": "nmxhub",
+      "replace": "home-hub"
+    }
+  ]
+}

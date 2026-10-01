@@ -1,0 +1,125 @@
+"""Check that the guide's pages and the shot table name the same images.
+
+Fails when a page references a screenshot the table does not name for that
+page, or when the table names a screenshot its page does not reference. A
+screenshot is referenced as ``/guide/<language>/<name>.webp`` and named in
+``shots.json`` as ``<name>.png`` under its English page path; a ``zh`` entry
+belongs to the page under ``zh-CN/``, and an ``os`` entry to both. Pages the
+table lists as pending are skipped.
+
+Run from anywhere: ``python3 packaging/integration/screenshots/check_shots.py``.
+"""
+
+import json
+import pathlib
+import re
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+REPOSITORY = HERE.parents[2]
+SHOTS_FILE = HERE / "shots.json"
+GUIDE_DIR = REPOSITORY / "docs" / "guide"
+CHINESE_PREFIX = "zh-CN/"
+SKIPPED_DIRS = {"node_modules", ".vitepress", "public"}
+SKIPPED_PAGES = {"README.md"}
+# An image the build copies from images/guide/: /guide/<dir>/<name>.<ext>.
+IMAGE_REFERENCE = re.compile(r"/guide/(en|zh|os)/([A-Za-z0-9_]+)\.(?:webp|png)")
+
+
+def guide_pages() -> list:
+    """Every page of the site, as a path relative to the guide.
+
+    Returns:
+        Relative paths such as ``hub/install.md`` and ``zh-CN/hub/install.md``.
+    """
+    pages = []
+    for path in sorted(GUIDE_DIR.rglob("*.md")):
+        relative = path.relative_to(GUIDE_DIR)
+        if relative.parts[0] in SKIPPED_DIRS or str(relative) in SKIPPED_PAGES:
+            continue
+        pages.append(relative.as_posix())
+    return pages
+
+
+def english_path(page: str) -> str:
+    """A page's English path, the key the table uses."""
+    return page.removeprefix(CHINESE_PREFIX)
+
+
+def named_images(table: dict) -> set:
+    """Every (page, directory, name) the table names.
+
+    Args:
+        table: The parsed ``shots.json``.
+
+    Returns:
+        One tuple per image and page it belongs to.
+    """
+    named = set()
+    for shot in table["shots"]:
+        name = shot["file"].removesuffix(".png")
+        page = shot["page"]
+        language = shot["language"]
+        if language in ("en", "os"):
+            named.add((page, language, name))
+        if language in ("zh", "os"):
+            named.add((CHINESE_PREFIX + page, language, name))
+    return named
+
+
+def referenced_images(pages: list) -> set:
+    """Every (page, directory, name) the pages reference.
+
+    Args:
+        pages: The pages to read, relative to the guide.
+
+    Returns:
+        One tuple per image reference.
+    """
+    referenced = set()
+    for page in pages:
+        text = (GUIDE_DIR / page).read_text()
+        for directory, name in IMAGE_REFERENCE.findall(text):
+            referenced.add((page, directory, name))
+    return referenced
+
+
+def main() -> int:
+    """Compare the table with the pages.
+
+    Returns:
+        0 when they agree, 1 otherwise.
+    """
+    table = json.loads(SHOTS_FILE.read_text())
+    pending = set(table.get("pending", []))
+    pages = [page for page in guide_pages() if english_path(page) not in pending]
+    checked = set(pages)
+    named = {item for item in named_images(table) if item[0] in checked}
+    referenced = referenced_images(pages)
+    problems = []
+    for page, directory, name in sorted(referenced - named):
+        problems.append(
+            f"{page}: references /guide/{directory}/{name}, not in shots.json"
+        )
+    for page, directory, name in sorted(named - referenced):
+        problems.append(
+            f"{page}: shots.json names {directory}/{name}.png, the page does not use it"
+        )
+    missing = sorted(
+        {shot["page"] for shot in table["shots"]}
+        - {english_path(page) for page in guide_pages()}
+    )
+    for page in missing:
+        problems.append(f"shots.json names page {page}, which does not exist")
+    for problem in problems:
+        print(problem)
+    if problems:
+        return 1
+    print(
+        f"{len(referenced)} image references match shots.json across {len(pages)} pages"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

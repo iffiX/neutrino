@@ -18,11 +18,11 @@ title: 支持的平台
 
 包自带 Python，装在 `/opt/neutrino/python`，与发行版的 Python 无关。
 
-| 依赖           | 软件包                                                                                                                 |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 依赖           | 软件包                                                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | deb 必需       | systemd、nftables、dnsmasq-base、iproute2、wpasupplicant、dhcpcd-base \| dhcpcd5、fail2ban、iw、arp-scan、vnstat、curl、smbclient |
-| deb 推荐       | hostapd                                                                                                                |
-| RHEL 系的 EPEL | fail2ban、arp-scan、vnstat                                                                                             |
+| deb 推荐       | hostapd                                                                                                                           |
+| RHEL 系的 EPEL | fail2ban、arp-scan、vnstat                                                                                                        |
 
 Debian 系里 dhcpcd 的依赖写成 dhcpcd-base | dhcpcd5：Ubuntu 从 24.04 起叫前一个名字，22.04 上同一个守护进程叫后一个，机器上有哪个就装哪个。
 

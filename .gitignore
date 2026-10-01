@@ -80,3 +80,6 @@ hub/neutrino_hub/data/frontend/
 
 # One AWS run at a time: its key, ids, addresses and panel password.
 packaging/integration_aws/state/
+
+# Literal strings the screenshot tool replaces that name the person capturing.
+packaging/integration/screenshots/redact.local.json

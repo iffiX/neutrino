@@ -6,14 +6,14 @@ title: Network
 
 The **Network** page sets the box's shape, the role of each interface and the networks the panel is reachable on. Read this page to learn what each shape does to your network before you change it. The page's sections, in order:
 
-| Section            | What it sets                                                  |
-| ------------------ | ------------------------------------------------------------- |
-| **Mode**           | the box's shape                                               |
-| **Topology**       | the role and address of each interface, in the routing shapes |
+| Section             | What it sets                                                  |
+| ------------------- | ------------------------------------------------------------- |
+| **Mode**            | the box's shape                                               |
+| **Topology**        | the role and address of each interface, in the routing shapes |
 | **Fixed addresses** | the devices that always get one address                       |
-| **Known networks** | the networks a WAN radio joins                                |
-| **Exposure**       | the networks the box accepts connections on                   |
-| **Panel port**     | the port the panel listens on                                 |
+| **Known networks**  | the networks a WAN radio joins                                |
+| **Exposure**        | the networks the box accepts connections on                   |
+| **Panel port**      | the port the panel listens on                                 |
 
 ## The shapes
 
