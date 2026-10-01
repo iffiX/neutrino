@@ -8,13 +8,19 @@ import android.view.Surface
  */
 interface RemoteDesktopCore {
     /**
-     * Connect to a shared desktop. Both callbacks run on the main thread.
+     * Connect to a shared desktop. Every callback runs on the main thread.
      *
      * @param target Where it answers, with its seat password.
      * @param onState Called with each change of the connection.
      * @param onFrameSize Called with the remote picture's width and height when they change.
+     * @param onClipboard Called with text copied on the remote machine.
      */
-    fun connect(target: RemoteDesktopTarget, onState: (RemoteDesktopState) -> Unit, onFrameSize: (Int, Int) -> Unit)
+    fun connect(
+        target: RemoteDesktopTarget,
+        onState: (RemoteDesktopState) -> Unit,
+        onFrameSize: (Int, Int) -> Unit,
+        onClipboard: (String) -> Unit,
+    )
 
     /**
      * Draw the picture into this surface from now on.
@@ -44,6 +50,13 @@ interface RemoteDesktopCore {
      * @param text The text.
      */
     fun type(text: String)
+
+    /**
+     * Put text on the remote machine's clipboard.
+     *
+     * @param text The text.
+     */
+    fun clipboard(text: String)
 
     /** Close the connection. */
     fun disconnect()

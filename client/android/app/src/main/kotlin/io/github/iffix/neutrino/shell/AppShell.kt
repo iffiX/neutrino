@@ -196,7 +196,9 @@ fun AppShell(
                 }
             }
             viewing?.let { (_, target) ->
-                RemoteDesktopViewer(target, remoteDesktopCore, onClose = actions::closeDesktop)
+                RemoteDesktopViewer(target, remoteDesktopCore, onCopied = {
+                    actions.copy(it)
+                }, onClose = actions::closeDesktop)
             }
         }
     }

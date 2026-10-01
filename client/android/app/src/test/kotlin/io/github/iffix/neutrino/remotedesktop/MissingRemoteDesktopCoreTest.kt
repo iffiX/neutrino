@@ -8,7 +8,7 @@ class MissingRemoteDesktopCoreTest {
     @Test
     fun aConnectionStopsAtOnceSayingNoCoreIsBuiltIn() {
         val states = mutableListOf<RemoteDesktopState>()
-        MissingRemoteDesktopCore().connect(RemoteDesktopTarget("a", "h", 1, "p"), { states += it }, { _, _ -> })
+        MissingRemoteDesktopCore().connect(RemoteDesktopTarget("a", "h", 1, "p"), { states += it }, { _, _ -> }, {})
         assertEquals(listOf(RemoteDesktopState.Stopped(ChannelResult.refused("rdp_core_missing"))), states)
     }
 }
