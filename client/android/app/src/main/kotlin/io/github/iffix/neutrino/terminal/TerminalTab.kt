@@ -11,6 +11,7 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * @property name The machine's name.
  * @property title What the shell last set as its title.
  * @property owner Who opened the session, as the hub names it; empty until the hub lists it.
+ * @property ownerName The opener's name, as the hub lists it; empty until the hub lists it.
  * @property isOwned Whether this phone opened the session.
  * @property isPersistent Whether the session outlives every window.
  * @property isShared Whether every client with terminal rights on the machine lists the session.
@@ -26,6 +27,7 @@ data class TerminalTab(
     val name: String,
     val title: String = "",
     val owner: String = "",
+    val ownerName: String = "",
     val isOwned: Boolean = true,
     val isPersistent: Boolean = false,
     val isShared: Boolean = false,
