@@ -1,8 +1,9 @@
 """The Terminals page's session list and the session stop.
 
 What these pin: every online machine's reported sessions listed oldest
-first with the machine's name, an entry naming no id dropped and one
-whose stamp is not a number listed at 0; a stop sent
+first with the machine's name, whoever owns them, each saying whether the
+panel owns it; an entry naming no id dropped and one whose stamp is not a
+number listed at 0; a stop sent
 as the agent's ``stop_session`` verb and answered with the list read after
 the machine's next report; an unknown device, an offline one, and a session
 the machine does not hold each refused with its own code.
@@ -13,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web import shell_bridge
 from neutrino_hub.web.routers.agent import terminal
 from tests.conftest import FakeDeviceRegistry, FakeModuleRuntime, managed_device
 
@@ -34,6 +36,7 @@ def api(monkeypatch):
     runtime = FakeModuleRuntime(devices=devices, online=[DEVICE, OTHER])
     FakeDeviceRegistry.runtime = runtime
     monkeypatch.setattr(terminal, "DeviceRegistry", FakeDeviceRegistry)
+    monkeypatch.setattr(shell_bridge, "DeviceRegistry", FakeDeviceRegistry)
     reports = {
         DEVICE: {
             "machine": {
@@ -43,7 +46,9 @@ def api(monkeypatch):
                         1790762400,
                         account="root",
                         title="htop",
+                        owner="hub",
                         is_persistent=True,
+                        attached_count=2,
                     ),
                     {"account": "root"},
                 ]
@@ -52,7 +57,13 @@ def api(monkeypatch):
         OTHER: {
             "machine": {
                 "sessions": [
-                    session("a", 1790758800, is_attached=True),
+                    session(
+                        "a",
+                        1790758800,
+                        owner="client:c1",
+                        is_attached=True,
+                        is_shared=False,
+                    ),
                     {"session_id": "c", "started_at": "not a stamp"},
                 ]
             }
@@ -80,6 +91,8 @@ def test_every_reported_session_is_listed_oldest_first(api):
     assert listed[0]["started_at"] == 0
     assert listed[1]["device_name"] == "xenon"
     assert listed[1]["is_attached"] is True
+    assert listed[1]["attached_count"] == 1
+    assert (listed[1]["owner"], listed[1]["is_owned"]) == ("client:c1", False)
     assert listed[2] == {
         "device_id": DEVICE,
         "device_name": "argon",
@@ -87,8 +100,12 @@ def test_every_reported_session_is_listed_oldest_first(api):
         "account": "root",
         "started_at": 1790762400,
         "title": "htop",
+        "owner": "hub",
+        "is_owned": True,
         "is_attached": False,
         "is_persistent": True,
+        "is_shared": False,
+        "attached_count": 2,
     }
 
 

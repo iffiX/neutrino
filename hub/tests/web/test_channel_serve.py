@@ -4,10 +4,12 @@ The test plays the peer over a socket past its hello. What these pin is
 the frame sequence both packages must match: a report recorded by id with
 its link address, the state pushed on the first report whose hash differs
 and never again while the hub's copy stands, a peer-opened ``package``
-stream served under credit with the sha256 in its close, a ``log`` stream
+stream served under credit with the sha256 in its close and its download
+and sending written into the module's task, a ``log`` stream
 becoming the task the panel follows, ending with the module's state and
 the failure's code, a ``service`` stream closed with the entry's material,
-an unknown kind closed ``kind_unknown``, and a socket ending taking the
+an unknown kind closed ``kind_unknown``, a client's ``is_refresh`` report
+answered with its whole state whatever the hash, and a socket ending taking the
 binding offline.
 """
 
@@ -961,6 +963,25 @@ def test_a_later_client_report_whose_hash_differs_is_answered_with_the_state(api
         session = runtime.client_sessions.get(client_id)
         assert session.offered_hash == again["hash"]
         socket.send_json(client_report(again["hash"]))
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        assert socket.receive_json()["code"] == "kind_unknown"
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_refresh_report_is_answered_with_the_whole_state_whatever_its_hash(api):
+    client, runtime = api
+    client_id, token = bound_client()
+    socket = welcomed(client, client_id, token, role="client")
+    try:
+        socket.send_json(client_report())
+        first = socket.receive_json()
+
+        socket.send_json({**client_report(first["hash"]), "is_refresh": True})
+
+        again = socket.receive_json()
+        assert again == first
+        socket.send_json(client_report(first["hash"]))
         socket.send_json({"type": "open", "stream": 1, "kind": "package"})
         assert socket.receive_json()["code"] == "kind_unknown"
     finally:

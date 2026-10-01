@@ -59,10 +59,15 @@ CHANNEL_COMMAND_MODULE_AGENT = "agent"
 CHANNEL_VERB_RESIZE = "resize"
 CHANNEL_VERB_VALIDATE = "validate"
 CHANNEL_VERB_JOURNAL = "journal"
-# The two verbs on a shell session: whether it outlives its stream, and
-# ending it. Both name the session by the id its opener generated.
+# The two verbs on a shell session: whether it outlives its streams and
+# whether others see it, and ending it. Both name the session by the id its
+# opener generated.
 CHANNEL_VERB_PERSIST = "persist"
 CHANNEL_VERB_STOP_SESSION = "stop_session"
+# The owner the hub stamps on a kept shell's open: the panel's own, or a
+# client's as the prefix followed by its id.
+CHANNEL_SHELL_OWNER_HUB = "hub"
+CHANNEL_SHELL_OWNER_CLIENT_PREFIX = "client:"
 
 # The hub allots even stream ids from here; a peer's ids are odd.
 CHANNEL_FIRST_HUB_STREAM_ID = 0
@@ -89,10 +94,10 @@ CHANNEL_CODE_KIND_UNKNOWN = "kind_unknown"
 CHANNEL_CODE_VERB_UNKNOWN = "verb_unknown"
 # A client's resize names a shell stream it has no bridge open on.
 CHANNEL_CODE_SHELL_UNKNOWN = "shell_unknown"
-# A session verb names a session no online machine reports; a shell stream
-# is closed because another opened the same session.
+# A session verb names a session no online machine reports, or a persist
+# comes from a viewer that did not open the session.
 CHANNEL_CODE_SESSION_UNKNOWN = "session_unknown"
-CHANNEL_CODE_SESSION_TAKEN = "session_taken"
+CHANNEL_CODE_SESSION_NOT_OWNED = "session_not_owned"
 CHANNEL_CODE_REPLACED = "replaced"
 CHANNEL_CODE_BINDING_UNKNOWN = "binding_unknown"
 CHANNEL_CODE_TICKET_SPENT = "ticket_spent"

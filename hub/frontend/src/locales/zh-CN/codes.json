@@ -185,7 +185,7 @@
   "code.self_unbound": "这台机器没有加入本中枢。",
   "code.server_error": "服务器返回了错误。",
   "code.service_unknown": "这台机器上没有这个服务。",
-  "code.session_taken": "这个终端在别处打开了，所以这里关闭了。",
+  "code.session_not_owned": "这个终端是别处打开的，只有打开它的一方能设置保留或共享。",
   "code.session_unknown": "机器上已经没有这个终端会话。",
   "code.share_exists": "{dataset} 已经共享了。",
   "code.share_link_unreadable": "这个分享链接读不出来：{detail}",

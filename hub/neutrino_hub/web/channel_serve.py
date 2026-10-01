@@ -430,7 +430,8 @@ class _ClientFrames:
         self._client = client
 
     async def take_report(self, report: dict) -> None:
-        """Record one report and hand the state down when the hashes differ."""
+        """Record one report and hand the state down when the hashes differ,
+        or whatever they are when the report says ``is_refresh``."""
         runtime = self._runtime
         session = self._session
         session.record_report(report)
@@ -451,6 +452,6 @@ class _ClientFrames:
         document = await asyncio.to_thread(
             channel_state.client_state, runtime, self._client.id
         )
-        if document["hash"] != session.state_hash:
+        if report.get("is_refresh") is True or document["hash"] != session.state_hash:
             await session.push_state(document)
         session.offered_hash = document["hash"]

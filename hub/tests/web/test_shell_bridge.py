@@ -6,15 +6,26 @@ by whichever side stops first, the shell stream closed either way; a resize
 is one ``command {agent, resize}`` stream naming the agent's shell. The
 sessions are the online reports' ``machine.sessions``, normalized and
 oldest first; a session verb is answered by the agent's close, and one the
-agent never closes by ``agent_never_reported``.
+agent never closes by ``agent_never_reported``. Which sessions a viewer sees:
+its own and the shared ones on machines it has terminal rights on, each
+saying whether the viewer owns it; a persist is refused only for a session
+reported under another owner.
 """
 
 import asyncio
+from types import SimpleNamespace
 
+import pytest
+
+from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web import shell_bridge
 from neutrino_hub.web.shell_bridge import (
     device_of_session,
+    is_persist_refused,
+    persist_flags,
     reported_sessions,
+    sessions_for,
     resize_shell,
     session_command,
     settle_shell,
@@ -127,6 +138,101 @@ def test_the_sessions_are_every_online_report_s_oldest_first(monkeypatch):
     assert listed[1]["title"] == ""
     assert device_of_session(sessions, "b") == DEVICE
     assert device_of_session(sessions, "gone") == ""
+
+
+@pytest.fixture
+def viewers(tmp_path, monkeypatch):
+    """Two machines, three clients and the sessions the machines report."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    devices = DeviceRegistry()
+    lepton = devices.create("lepton")
+    xenon = devices.create("xenon")
+    clients = ClientRegistry()
+    alice = clients.create("alice")
+    bob = clients.create("bob")
+    carol = clients.create("carol")
+    clients.set_permission(bob, ["terminal"], {"terminal": [xenon.id]})
+    clients.set_disabled(carol, True)
+    agent_sessions = FakeChannelSessions(online=[lepton.id, xenon.id])
+    reports = {
+        lepton.id: held(
+            ("s1", "hub", False),
+            ("s2", f"client:{alice}", False),
+            ("s3", f"client:{bob}", True),
+        ),
+        xenon.id: held(("s4", "hub", True), ("s5", f"client:{alice}", True)),
+    }
+    monkeypatch.setattr(agent_sessions, "reports", lambda: reports)
+    runtime = SimpleNamespace(agent_sessions=agent_sessions, device_hostname={})
+    return runtime, alice, bob, carol, lepton
+
+
+def held(*sessions) -> dict:
+    """A report holding sessions given as ``(id, owner, is_shared)``."""
+    return {
+        "machine": {
+            "sessions": [
+                {
+                    "session_id": session_id,
+                    "started_at": int(session_id[1:]),
+                    "owner": owner,
+                    "is_shared": is_shared,
+                }
+                for session_id, owner, is_shared in sessions
+            ]
+        }
+    }
+
+
+def seen(rows: list) -> list:
+    return [(row["session_id"], row["is_owned"]) for row in rows]
+
+
+def test_the_panel_sees_its_own_sessions_and_every_shared_one(viewers):
+    runtime, *_ = viewers
+
+    assert seen(sessions_for(runtime, "hub")) == [
+        ("s1", True),
+        ("s3", False),
+        ("s4", True),
+        ("s5", False),
+    ]
+
+
+def test_a_client_sees_its_own_sessions_and_the_shared_ones(viewers):
+    runtime, alice, *_ = viewers
+
+    rows = sessions_for(runtime, f"client:{alice}")
+
+    assert seen(rows) == [("s2", True), ("s3", False), ("s4", False), ("s5", True)]
+    assert rows[0]["device_name"] == "lepton"
+
+
+def test_a_client_sees_shared_sessions_only_where_it_has_terminal_rights(viewers):
+    runtime, _, bob, carol, _ = viewers
+
+    assert seen(sessions_for(runtime, f"client:{bob}")) == [
+        ("s3", True),
+        ("s4", False),
+        ("s5", False),
+    ]
+    assert sessions_for(runtime, f"client:{carol}") == []
+
+
+def test_a_persist_is_refused_only_on_a_session_another_viewer_owns(viewers):
+    runtime, alice, _, _, lepton = viewers
+    sessions = runtime.agent_sessions
+
+    assert is_persist_refused(sessions, lepton.id, "s2", "hub") is True
+    assert is_persist_refused(sessions, lepton.id, "s2", f"client:{alice}") is False
+    assert is_persist_refused(sessions, lepton.id, "new", "hub") is False
+
+
+def test_a_persist_names_only_the_flags_it_was_given():
+    assert persist_flags({"is_shared": 1}) == {"is_shared": True}
+    assert persist_flags({"is_persistent": False, "data": "x"}) == {
+        "is_persistent": False
+    }
 
 
 def test_a_session_verb_is_answered_by_the_agents_close():

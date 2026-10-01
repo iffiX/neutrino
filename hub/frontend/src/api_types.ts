@@ -968,10 +968,18 @@ export interface TerminalSessionView {
   /** When it was opened, in Unix seconds. */
   started_at: number;
   title: string;
+  /** Who opened it: `hub` for this panel, `client:<id>` for a client. */
+  owner: string;
+  /** Whether this panel opened it; only the owner sets its two flags. */
+  is_owned: boolean;
   /** Whether a socket is attached to it now. */
   is_attached: boolean;
-  /** Whether it stays when its socket closes. */
+  /** Whether it stays when its last socket closes. */
   is_persistent: boolean;
+  /** Whether every viewer with terminal rights on the machine sees it. */
+  is_shared: boolean;
+  /** How many sockets are attached now. */
+  attached_count: number;
 }
 
 /** Every shell session the online machines hold, oldest first. */

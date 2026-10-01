@@ -5,10 +5,25 @@
         "ChannelDesktopReport": {
           "description": "What the machine last said about sharing its desktop.",
           "properties": {
+            "is_shared": {
+              "default": false,
+              "title": "Is Shared",
+              "type": "boolean"
+            },
             "account": {
               "default": "",
               "title": "Account",
               "type": "string"
+            },
+            "share_id": {
+              "default": "",
+              "title": "Share Id",
+              "type": "string"
+            },
+            "port": {
+              "default": 0,
+              "title": "Port",
+              "type": "integer"
             },
             "attention": {
               "default": "",
@@ -19,21 +34,6 @@
               "default": 0,
               "title": "Connected Count",
               "type": "integer"
-            },
-            "is_shared": {
-              "default": false,
-              "title": "Is Shared",
-              "type": "boolean"
-            },
-            "port": {
-              "default": 0,
-              "title": "Port",
-              "type": "integer"
-            },
-            "share_id": {
-              "default": "",
-              "title": "Share Id",
-              "type": "string"
             }
           },
           "title": "ChannelDesktopReport",
@@ -61,22 +61,22 @@
         "ChannelInterface": {
           "description": "One interface of the machine.",
           "properties": {
-            "addresses": {
-              "items": {
-                "type": "string"
-              },
-              "title": "Addresses",
-              "type": "array"
+            "name": {
+              "default": "",
+              "title": "Name",
+              "type": "string"
             },
             "mac": {
               "default": "",
               "title": "Mac",
               "type": "string"
             },
-            "name": {
-              "default": "",
-              "title": "Name",
-              "type": "string"
+            "addresses": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Addresses",
+              "type": "array"
             }
           },
           "title": "ChannelInterface",
@@ -85,11 +85,6 @@
         "ChannelLink": {
           "description": "The interface the socket runs on, as the agent sees it.",
           "properties": {
-            "address": {
-              "default": "",
-              "title": "Address",
-              "type": "string"
-            },
             "interface": {
               "default": "",
               "title": "Interface",
@@ -99,6 +94,11 @@
               "default": "",
               "title": "Mac",
               "type": "string"
+            },
+            "address": {
+              "default": "",
+              "title": "Address",
+              "type": "string"
             }
           },
           "title": "ChannelLink",
@@ -107,6 +107,16 @@
         "ChannelMachine": {
           "description": "The ``machine`` section of an agent's report.",
           "properties": {
+            "hostname": {
+              "default": "",
+              "title": "Hostname",
+              "type": "string"
+            },
+            "platform": {
+              "additionalProperties": true,
+              "title": "Platform",
+              "type": "object"
+            },
             "accounts": {
               "items": {
                 "type": "string"
@@ -114,19 +124,9 @@
               "title": "Accounts",
               "type": "array"
             },
-            "hostname": {
-              "default": "",
-              "title": "Hostname",
-              "type": "string"
-            },
             "metrics": {
               "additionalProperties": true,
               "title": "Metrics",
-              "type": "object"
-            },
-            "platform": {
-              "additionalProperties": true,
-              "title": "Platform",
               "type": "object"
             },
             "sessions": {
@@ -143,30 +143,30 @@
         "ChannelModuleReport": {
           "description": "What the agent observed of one module.",
           "properties": {
-            "code": {
+            "state": {
               "default": "",
-              "title": "Code",
+              "title": "State",
               "type": "string"
-            },
-            "details": {
-              "additionalProperties": true,
-              "title": "Details",
-              "type": "object"
             },
             "is_active": {
               "default": false,
               "title": "Is Active",
               "type": "boolean"
             },
+            "code": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            },
             "params": {
               "additionalProperties": true,
               "title": "Params",
               "type": "object"
             },
-            "state": {
-              "default": "",
-              "title": "State",
-              "type": "string"
+            "details": {
+              "additionalProperties": true,
+              "title": "Details",
+              "type": "object"
             }
           },
           "title": "ChannelModuleReport",
@@ -175,15 +175,15 @@
         "ChannelNetwork": {
           "description": "The ``network`` section of an agent's report.",
           "properties": {
+            "link": {
+              "$ref": "#/$defs/ChannelLink"
+            },
             "interfaces": {
               "items": {
                 "$ref": "#/$defs/ChannelInterface"
               },
               "title": "Interfaces",
               "type": "array"
-            },
-            "link": {
-              "$ref": "#/$defs/ChannelLink"
             }
           },
           "title": "ChannelNetwork",
@@ -192,9 +192,28 @@
         "ChannelShellSession": {
           "description": "One shell session a machine holds, as its agent reports it.",
           "properties": {
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
             "account": {
               "default": "",
               "title": "Account",
+              "type": "string"
+            },
+            "started_at": {
+              "default": 0,
+              "title": "Started At",
+              "type": "integer"
+            },
+            "title": {
+              "default": "",
+              "title": "Title",
+              "type": "string"
+            },
+            "owner": {
+              "default": "",
+              "title": "Owner",
               "type": "string"
             },
             "is_attached": {
@@ -207,19 +226,15 @@
               "title": "Is Persistent",
               "type": "boolean"
             },
-            "session_id": {
-              "title": "Session Id",
-              "type": "string"
+            "is_shared": {
+              "default": false,
+              "title": "Is Shared",
+              "type": "boolean"
             },
-            "started_at": {
+            "attached_count": {
               "default": 0,
-              "title": "Started At",
+              "title": "Attached Count",
               "type": "integer"
-            },
-            "title": {
-              "default": "",
-              "title": "Title",
-              "type": "string"
             }
           },
           "required": [
@@ -231,6 +246,24 @@
       },
       "description": "The ``report`` frame from an agent.",
       "properties": {
+        "state_hash": {
+          "default": "",
+          "title": "State Hash",
+          "type": "string"
+        },
+        "machine": {
+          "$ref": "#/$defs/ChannelMachine"
+        },
+        "network": {
+          "$ref": "#/$defs/ChannelNetwork"
+        },
+        "modules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ChannelModuleReport"
+          },
+          "title": "Modules",
+          "type": "object"
+        },
         "desktop": {
           "$ref": "#/$defs/ChannelDesktopReport"
         },
@@ -244,24 +277,6 @@
             }
           ],
           "default": null
-        },
-        "machine": {
-          "$ref": "#/$defs/ChannelMachine"
-        },
-        "modules": {
-          "additionalProperties": {
-            "$ref": "#/$defs/ChannelModuleReport"
-          },
-          "title": "Modules",
-          "type": "object"
-        },
-        "network": {
-          "$ref": "#/$defs/ChannelNetwork"
-        },
-        "state_hash": {
-          "default": "",
-          "title": "State Hash",
-          "type": "string"
         }
       },
       "title": "ChannelAgentReport",
@@ -380,13 +395,18 @@
       },
       "description": "The ``report`` frame from a client.",
       "properties": {
-        "machine": {
-          "$ref": "#/$defs/ChannelClientMachine"
-        },
         "state_hash": {
           "default": "",
           "title": "State Hash",
           "type": "string"
+        },
+        "machine": {
+          "$ref": "#/$defs/ChannelClientMachine"
+        },
+        "is_refresh": {
+          "default": false,
+          "title": "Is Refresh",
+          "type": "boolean"
         }
       },
       "title": "ChannelClientReport",
@@ -397,29 +417,23 @@
         "ChannelOverlay": {
           "description": "What a client joins the hub's overlay with; only its provider's fields.",
           "properties": {
-            "config_server": {
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "setup_key": {
               "default": "",
-              "title": "Config Server",
+              "title": "Setup Key",
+              "type": "string"
+            },
+            "management_url": {
+              "default": "",
+              "title": "Management Url",
               "type": "string"
             },
             "fqdn": {
               "default": "",
               "title": "Fqdn",
-              "type": "string"
-            },
-            "hub_address": {
-              "default": "",
-              "title": "Hub Address",
-              "type": "string"
-            },
-            "is_secure_mode": {
-              "default": false,
-              "title": "Is Secure Mode",
-              "type": "boolean"
-            },
-            "management_url": {
-              "default": "",
-              "title": "Management Url",
               "type": "string"
             },
             "mode": {
@@ -442,13 +456,19 @@
               "title": "Peer",
               "type": "string"
             },
-            "provider": {
-              "title": "Provider",
+            "config_server": {
+              "default": "",
+              "title": "Config Server",
               "type": "string"
             },
-            "setup_key": {
+            "is_secure_mode": {
+              "default": false,
+              "title": "Is Secure Mode",
+              "type": "boolean"
+            },
+            "hub_address": {
               "default": "",
-              "title": "Setup Key",
+              "title": "Hub Address",
               "type": "string"
             }
           },
@@ -461,6 +481,39 @@
         "ChannelServiceEntry": {
           "description": "One published service as a client is given it.",
           "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "type": {
+              "title": "Type",
+              "type": "string"
+            },
+            "title": {
+              "title": "Title",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": true,
+              "title": "Payload",
+              "type": "object"
+            },
+            "is_healthy": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Is Healthy"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
             "description": {
               "default": "",
               "title": "Description",
@@ -480,39 +533,6 @@
               "default": "",
               "title": "Device Name",
               "type": "string"
-            },
-            "id": {
-              "title": "Id",
-              "type": "string"
-            },
-            "is_healthy": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "title": "Is Healthy"
-            },
-            "payload": {
-              "additionalProperties": true,
-              "title": "Payload",
-              "type": "object"
-            },
-            "source": {
-              "title": "Source",
-              "type": "string"
-            },
-            "title": {
-              "title": "Title",
-              "type": "string"
-            },
-            "type": {
-              "title": "Type",
-              "type": "string"
             }
           },
           "required": [
@@ -525,12 +545,62 @@
           "title": "ChannelServiceEntry",
           "type": "object"
         },
-        "ChannelShellSession": {
-          "description": "One shell session a machine holds, as its agent reports it.",
+        "ChannelTerminal": {
+          "description": "One managed machine a client may open a shell on.",
           "properties": {
+            "device_id": {
+              "title": "Device Id",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "is_online": {
+              "default": false,
+              "title": "Is Online",
+              "type": "boolean"
+            },
+            "sessions": {
+              "items": {
+                "$ref": "#/$defs/ChannelTerminalSession"
+              },
+              "title": "Sessions",
+              "type": "array"
+            }
+          },
+          "required": [
+            "device_id",
+            "name"
+          ],
+          "title": "ChannelTerminal",
+          "type": "object"
+        },
+        "ChannelTerminalSession": {
+          "description": "One shell session as a client is shown it in a ``terminals`` entry.",
+          "properties": {
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
             "account": {
               "default": "",
               "title": "Account",
+              "type": "string"
+            },
+            "started_at": {
+              "default": 0,
+              "title": "Started At",
+              "type": "integer"
+            },
+            "title": {
+              "default": "",
+              "title": "Title",
+              "type": "string"
+            },
+            "owner": {
+              "default": "",
+              "title": "Owner",
               "type": "string"
             },
             "is_attached": {
@@ -543,56 +613,36 @@
               "title": "Is Persistent",
               "type": "boolean"
             },
-            "session_id": {
-              "title": "Session Id",
-              "type": "string"
+            "is_shared": {
+              "default": false,
+              "title": "Is Shared",
+              "type": "boolean"
             },
-            "started_at": {
+            "attached_count": {
               "default": 0,
-              "title": "Started At",
+              "title": "Attached Count",
               "type": "integer"
             },
-            "title": {
-              "default": "",
-              "title": "Title",
-              "type": "string"
-            }
-          },
-          "required": [
-            "session_id"
-          ],
-          "title": "ChannelShellSession",
-          "type": "object"
-        },
-        "ChannelTerminal": {
-          "description": "One managed machine a client may open a shell on.",
-          "properties": {
             "device_id": {
               "title": "Device Id",
               "type": "string"
             },
-            "is_online": {
-              "default": false,
-              "title": "Is Online",
-              "type": "boolean"
-            },
-            "name": {
-              "title": "Name",
+            "device_name": {
+              "default": "",
+              "title": "Device Name",
               "type": "string"
             },
-            "sessions": {
-              "items": {
-                "$ref": "#/$defs/ChannelShellSession"
-              },
-              "title": "Sessions",
-              "type": "array"
+            "is_owned": {
+              "default": false,
+              "title": "Is Owned",
+              "type": "boolean"
             }
           },
           "required": [
-            "device_id",
-            "name"
+            "session_id",
+            "device_id"
           ],
-          "title": "ChannelTerminal",
+          "title": "ChannelTerminalSession",
           "type": "object"
         }
       },
@@ -607,13 +657,6 @@
           "title": "Is Disabled",
           "type": "boolean"
         },
-        "overlays": {
-          "items": {
-            "$ref": "#/$defs/ChannelOverlay"
-          },
-          "title": "Overlays",
-          "type": "array"
-        },
         "services": {
           "items": {
             "$ref": "#/$defs/ChannelServiceEntry"
@@ -621,18 +664,25 @@
           "title": "Services",
           "type": "array"
         },
-        "terminals": {
-          "items": {
-            "$ref": "#/$defs/ChannelTerminal"
-          },
-          "title": "Terminals",
-          "type": "array"
-        },
         "urls": {
           "items": {
             "type": "string"
           },
           "title": "Urls",
+          "type": "array"
+        },
+        "overlays": {
+          "items": {
+            "$ref": "#/$defs/ChannelOverlay"
+          },
+          "title": "Overlays",
+          "type": "array"
+        },
+        "terminals": {
+          "items": {
+            "$ref": "#/$defs/ChannelTerminal"
+          },
+          "title": "Terminals",
           "type": "array"
         }
       },
@@ -923,9 +973,28 @@
         "ChannelShellSession": {
           "description": "One shell session a machine holds, as its agent reports it.",
           "properties": {
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
             "account": {
               "default": "",
               "title": "Account",
+              "type": "string"
+            },
+            "started_at": {
+              "default": 0,
+              "title": "Started At",
+              "type": "integer"
+            },
+            "title": {
+              "default": "",
+              "title": "Title",
+              "type": "string"
+            },
+            "owner": {
+              "default": "",
+              "title": "Owner",
               "type": "string"
             },
             "is_attached": {
@@ -938,19 +1007,15 @@
               "title": "Is Persistent",
               "type": "boolean"
             },
-            "session_id": {
-              "title": "Session Id",
-              "type": "string"
+            "is_shared": {
+              "default": false,
+              "title": "Is Shared",
+              "type": "boolean"
             },
-            "started_at": {
+            "attached_count": {
               "default": 0,
-              "title": "Started At",
+              "title": "Attached Count",
               "type": "integer"
-            },
-            "title": {
-              "default": "",
-              "title": "Title",
-              "type": "string"
             }
           },
           "required": [
@@ -962,6 +1027,16 @@
       },
       "description": "The ``machine`` section of an agent's report.",
       "properties": {
+        "hostname": {
+          "default": "",
+          "title": "Hostname",
+          "type": "string"
+        },
+        "platform": {
+          "additionalProperties": true,
+          "title": "Platform",
+          "type": "object"
+        },
         "accounts": {
           "items": {
             "type": "string"
@@ -969,19 +1044,9 @@
           "title": "Accounts",
           "type": "array"
         },
-        "hostname": {
-          "default": "",
-          "title": "Hostname",
-          "type": "string"
-        },
         "metrics": {
           "additionalProperties": true,
           "title": "Metrics",
-          "type": "object"
-        },
-        "platform": {
-          "additionalProperties": true,
-          "title": "Platform",
           "type": "object"
         },
         "sessions": {
@@ -1294,9 +1359,28 @@
     "ChannelShellSession": {
       "description": "One shell session a machine holds, as its agent reports it.",
       "properties": {
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
         "account": {
           "default": "",
           "title": "Account",
+          "type": "string"
+        },
+        "started_at": {
+          "default": 0,
+          "title": "Started At",
+          "type": "integer"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "owner": {
+          "default": "",
+          "title": "Owner",
           "type": "string"
         },
         "is_attached": {
@@ -1309,19 +1393,15 @@
           "title": "Is Persistent",
           "type": "boolean"
         },
-        "session_id": {
-          "title": "Session Id",
-          "type": "string"
+        "is_shared": {
+          "default": false,
+          "title": "Is Shared",
+          "type": "boolean"
         },
-        "started_at": {
+        "attached_count": {
           "default": 0,
-          "title": "Started At",
+          "title": "Attached Count",
           "type": "integer"
-        },
-        "title": {
-          "default": "",
-          "title": "Title",
-          "type": "string"
         }
       },
       "required": [
@@ -1332,12 +1412,31 @@
     },
     "ChannelTerminal": {
       "$defs": {
-        "ChannelShellSession": {
-          "description": "One shell session a machine holds, as its agent reports it.",
+        "ChannelTerminalSession": {
+          "description": "One shell session as a client is shown it in a ``terminals`` entry.",
           "properties": {
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
             "account": {
               "default": "",
               "title": "Account",
+              "type": "string"
+            },
+            "started_at": {
+              "default": 0,
+              "title": "Started At",
+              "type": "integer"
+            },
+            "title": {
+              "default": "",
+              "title": "Title",
+              "type": "string"
+            },
+            "owner": {
+              "default": "",
+              "title": "Owner",
               "type": "string"
             },
             "is_attached": {
@@ -1350,25 +1449,36 @@
               "title": "Is Persistent",
               "type": "boolean"
             },
-            "session_id": {
-              "title": "Session Id",
-              "type": "string"
+            "is_shared": {
+              "default": false,
+              "title": "Is Shared",
+              "type": "boolean"
             },
-            "started_at": {
+            "attached_count": {
               "default": 0,
-              "title": "Started At",
+              "title": "Attached Count",
               "type": "integer"
             },
-            "title": {
-              "default": "",
-              "title": "Title",
+            "device_id": {
+              "title": "Device Id",
               "type": "string"
+            },
+            "device_name": {
+              "default": "",
+              "title": "Device Name",
+              "type": "string"
+            },
+            "is_owned": {
+              "default": false,
+              "title": "Is Owned",
+              "type": "boolean"
             }
           },
           "required": [
-            "session_id"
+            "session_id",
+            "device_id"
           ],
-          "title": "ChannelShellSession",
+          "title": "ChannelTerminalSession",
           "type": "object"
         }
       },
@@ -1378,18 +1488,18 @@
           "title": "Device Id",
           "type": "string"
         },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
         "is_online": {
           "default": false,
           "title": "Is Online",
           "type": "boolean"
         },
-        "name": {
-          "title": "Name",
-          "type": "string"
-        },
         "sessions": {
           "items": {
-            "$ref": "#/$defs/ChannelShellSession"
+            "$ref": "#/$defs/ChannelTerminalSession"
           },
           "title": "Sessions",
           "type": "array"
@@ -1400,6 +1510,75 @@
         "name"
       ],
       "title": "ChannelTerminal",
+      "type": "object"
+    },
+    "ChannelTerminalSession": {
+      "description": "One shell session as a client is shown it in a ``terminals`` entry.",
+      "properties": {
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "account": {
+          "default": "",
+          "title": "Account",
+          "type": "string"
+        },
+        "started_at": {
+          "default": 0,
+          "title": "Started At",
+          "type": "integer"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "owner": {
+          "default": "",
+          "title": "Owner",
+          "type": "string"
+        },
+        "is_attached": {
+          "default": false,
+          "title": "Is Attached",
+          "type": "boolean"
+        },
+        "is_persistent": {
+          "default": false,
+          "title": "Is Persistent",
+          "type": "boolean"
+        },
+        "is_shared": {
+          "default": false,
+          "title": "Is Shared",
+          "type": "boolean"
+        },
+        "attached_count": {
+          "default": 0,
+          "title": "Attached Count",
+          "type": "integer"
+        },
+        "device_id": {
+          "title": "Device Id",
+          "type": "string"
+        },
+        "device_name": {
+          "default": "",
+          "title": "Device Name",
+          "type": "string"
+        },
+        "is_owned": {
+          "default": false,
+          "title": "Is Owned",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session_id",
+        "device_id"
+      ],
+      "title": "ChannelTerminalSession",
       "type": "object"
     },
     "ChannelWelcome": {

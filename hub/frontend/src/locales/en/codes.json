@@ -185,7 +185,7 @@
   "code.self_unbound": "The machine is not enrolled with this hub.",
   "code.server_error": "The server answered with an error.",
   "code.service_unknown": "That service is not on this box.",
-  "code.session_taken": "This terminal was opened somewhere else, so it closed here.",
+  "code.session_not_owned": "Another viewer opened this terminal, so only it can make the terminal persistent or shared.",
   "code.session_unknown": "That terminal session is no longer on the machine.",
   "code.share_exists": "{dataset} is already shared.",
   "code.share_link_unreadable": "That share link cannot be read: {detail}",

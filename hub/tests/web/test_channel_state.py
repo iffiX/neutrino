@@ -334,7 +334,7 @@ def test_the_terminals_list_every_managed_machine_while_terminal_is_allowed(
     assert refused["terminals"] == []
 
 
-def test_each_terminal_carries_the_sessions_its_machine_reports_oldest_first(
+def test_each_terminal_carries_the_sessions_the_client_sees_oldest_first(
     config_dir, monkeypatch
 ):
     runtime = FakeRuntime()
@@ -342,13 +342,18 @@ def test_each_terminal_carries_the_sessions_its_machine_reports_oldest_first(
     machine = devices.create("lepton")
     devices.issue_token(machine.id)
     runtime.agent_sessions.online.add(machine.id.lower())
+    client_id = ClientRegistry().create("alice")
     held = [
-        {"session_id": "late", "started_at": 1790762400},
+        {"session_id": "late", "started_at": 1790762400, "is_shared": True},
+        {"session_id": "panel", "started_at": 1790760000, "owner": "hub"},
         {
             "session_id": "early",
             "started_at": 1790758800,
             "account": "root",
+            "owner": f"client:{client_id}",
             "is_persistent": True,
+            "is_attached": True,
+            "attached_count": 2,
         },
     ]
     monkeypatch.setattr(
@@ -356,7 +361,6 @@ def test_each_terminal_carries_the_sessions_its_machine_reports_oldest_first(
         "reports",
         lambda: {machine.id: {"machine": {"sessions": held}}},
     )
-    client_id = ClientRegistry().create("alice")
 
     before = channel_state.client_state(runtime, client_id)
     (terminal,) = before["terminals"]
@@ -369,12 +373,19 @@ def test_each_terminal_carries_the_sessions_its_machine_reports_oldest_first(
     ]
     assert terminal["sessions"][0] == {
         "session_id": "early",
+        "device_id": machine.id,
+        "device_name": "lepton",
         "account": "root",
         "started_at": 1790758800,
         "title": "",
-        "is_attached": False,
+        "owner": f"client:{client_id}",
+        "is_owned": True,
+        "is_attached": True,
         "is_persistent": True,
+        "is_shared": False,
+        "attached_count": 2,
     }
+    assert terminal["sessions"][1]["is_owned"] is False
     assert after["hash"] != before["hash"]
 
 

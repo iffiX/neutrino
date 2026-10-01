@@ -1,13 +1,14 @@
 """A client's shell on a managed machine, bridged to that machine's agent.
 
-A client opens ``shell {device_id, cols, rows, session_id, is_resumed}``; the
-hub opens the agent's own ``shell`` stream with the same ``session_id`` and
-``is_resumed`` and relays
-bytes both ways, each side under the other's credit, as the panel's terminal
-does. The client's stream closes with the agent's ``exit_code``, or with the
-refusal. A later size is a client-opened ``command {agent, resize, shell,
-cols, rows}`` naming the client's own shell stream, which the hub maps to the
-agent's. ``command {agent, persist, session_id, is_persistent}`` and
+A client opens ``shell {device_id, cols, rows, session_id, is_resumed,
+is_shared}``; the hub opens the agent's own ``shell`` stream with the same
+``session_id``, ``is_resumed`` and ``is_shared``, stamped ``owner:
+client:<id>``, and relays bytes both ways, each side under the other's
+credit, as the panel's terminal does. The client's stream closes with the
+agent's ``exit_code``, or with the refusal. A later size is a client-opened
+``command {agent, resize, shell, cols, rows}`` naming the client's own shell
+stream, which the hub maps to the agent's. ``command {agent, persist,
+session_id, is_persistent, is_shared}`` from the session's owner and
 ``command {agent, stop_session, session_id}`` go to the machine holding the
 session unchanged, since the id is the agent's own.
 """
@@ -18,6 +19,7 @@ import contextlib
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_BINDING_UNKNOWN,
+    CHANNEL_CODE_SESSION_NOT_OWNED,
     CHANNEL_CODE_SESSION_UNKNOWN,
     CHANNEL_CODE_SHELL_UNKNOWN,
     CHANNEL_CODE_VERB_UNKNOWN,
@@ -42,7 +44,10 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.web.shell_bridge import (
     DEFAULT_COLUMNS,
     DEFAULT_ROWS,
+    client_owner,
     device_of_session,
+    is_persist_refused,
+    persist_flags,
     resize_shell,
     session_command,
     settle_shell,
@@ -71,6 +76,8 @@ async def serve_shell_stream(
     args = {"cols": cols, "rows": rows}
     if session_id:
         args["session_id"] = session_id
+        args["owner"] = client_owner(session.key)
+        args["is_shared"] = stream.args.get("is_shared") is True
         if stream.args.get("is_resumed") is True:
             args["is_resumed"] = True
     try:
@@ -143,7 +150,8 @@ async def _serve_session_verb(
 
     The machine is the one this client's open bridge names for the id, else
     the online machine whose report lists it; the client must be allowed a
-    terminal there. The agent's close is the client's.
+    terminal there, and a ``persist`` must come from the session's owner.
+    The agent's close is the client's.
 
     Args:
         runtime: The shared runtime.
@@ -169,7 +177,14 @@ async def _serve_session_verb(
         return
     args = {"session_id": session_id}
     if verb == CHANNEL_VERB_PERSIST:
-        args["is_persistent"] = bool(stream.args.get("is_persistent", False))
+        if is_persist_refused(
+            runtime.agent_sessions, device_id, session_id, client_owner(session.key)
+        ):
+            await stream.close(
+                CHANNEL_CODE_SESSION_NOT_OWNED, {"session_id": session_id}
+            )
+            return
+        args.update(persist_flags(stream.args))
     try:
         info = await session_command(runtime.agent_sessions, device_id, verb, args)
     except AgentOfflineError as offline:

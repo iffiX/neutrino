@@ -6,9 +6,12 @@ without ``terminal`` is refused ``permission_denied`` before any agent stream
 opens; a device with no channel is ``agent_offline``; a resize reaches the
 agent naming the agent's own shell id, and one naming no open shell is
 ``shell_unknown``; the ``session_id`` a client generated rides the agent's
-open, and ``persist`` and ``stop_session`` reach the machine holding the
-session unchanged, found by the client's own bridge or by the reports,
-``session_unknown`` when no machine holds it.
+open stamped ``owner: client:<id>`` with its ``is_shared``, and ``persist``
+and ``stop_session`` reach the machine holding the session unchanged, found
+by the client's own bridge or by the reports, ``session_unknown`` when no
+machine holds it; a ``persist`` on a session another viewer owns is
+``session_not_owned`` and reaches no machine, a ``stop_session`` on one is
+sent.
 """
 
 import asyncio
@@ -249,8 +252,68 @@ def test_the_session_id_rides_the_agents_open(config_dir):
 
     shell, bridged = asyncio.run(scenario())
 
-    assert shell.args == {"cols": 80, "rows": 24, "session_id": "s-1"}
+    assert shell.args == {
+        "cols": 80,
+        "rows": 24,
+        "session_id": "s-1",
+        "owner": f"client:{client_id}",
+        "is_shared": False,
+    }
     assert bridged == {1: (DEVICE, shell.id, "s-1")}
+
+
+def test_a_shared_open_says_so_to_the_agent(config_dir):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+    session = FakeSession(client_id)
+
+    async def scenario():
+        stream = ScriptedChannelStream(
+            "shell",
+            {"device_id": DEVICE, "session_id": "s-1", "is_shared": True},
+            1,
+        )
+        serving = asyncio.create_task(serve_shell_stream(runtime, session, stream))
+        await until(lambda: session.shells)
+        await stream.close()
+        await serving
+        return runtime.agent_sessions.streams[0]
+
+    assert asyncio.run(scenario()).args["is_shared"] is True
+
+
+def test_a_persist_on_a_session_another_viewer_owns_is_session_not_owned(
+    config_dir, monkeypatch
+):
+    client_id = ClientRegistry().create("alice")
+    runtime = FakeRuntime()
+    runtime.agent_sessions.scripts["command"] = closing_empty
+    reports = {
+        DEVICE: {"machine": {"sessions": [{"session_id": "s-2", "owner": "hub"}]}}
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+
+    async def scenario(verb: str):
+        stream = ScriptedChannelStream(
+            "command",
+            {"module": "agent", "verb": verb, "session_id": "s-2", "is_shared": True},
+            5,
+        )
+        await serve_command_stream(runtime, FakeSession(client_id), stream)
+        return stream
+
+    persist = asyncio.run(scenario("persist"))
+    assert persist.close_info == {
+        "code": "session_not_owned",
+        "params": {"session_id": "s-2"},
+    }
+    assert runtime.agent_sessions.streams == []
+
+    stop = asyncio.run(scenario("stop_session"))
+    assert stop.close_info == {"code": "", "params": {}}
+    assert [stream.args["verb"] for stream in runtime.agent_sessions.streams] == [
+        "stop_session"
+    ]
 
 
 def test_a_persist_reaches_the_machine_its_bridge_names(config_dir):
@@ -410,5 +473,7 @@ def test_a_client_resuming_a_session_asks_the_agent_to_resume_it(config_dir):
         "cols": 80,
         "rows": 24,
         "session_id": "s-1",
+        "owner": f"client:{client_id}",
+        "is_shared": False,
         "is_resumed": True,
     }

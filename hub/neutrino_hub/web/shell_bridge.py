@@ -4,23 +4,36 @@ The panel's terminal socket and a client's ``shell`` stream both drive one
 agent shell: its output read as it arrives, its end settled when either side
 stops, and a later size sent on a ``command {agent, resize}`` stream the
 agent closes itself. A shell is a session its opener names by a generated
-id: the agent reports every session it holds, a ``persist`` command keeps
-one past its stream, and ``stop_session`` ends one.
+id: the hub stamps the opener as its ``owner``, the agent reports every
+session it holds, a ``persist`` command from the owner keeps one past its
+streams or shares it, and ``stop_session`` ends one. Which sessions a viewer
+sees is :func:`sessions_for`.
 """
 
 import asyncio
 import contextlib
+import functools
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CALL_TIMEOUT_S,
     CHANNEL_CODE_NEVER_REPORTED,
     CHANNEL_COMMAND_MODULE_AGENT,
+    CHANNEL_SHELL_OWNER_CLIENT_PREFIX,
+    CHANNEL_SHELL_OWNER_HUB,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_VERB_PERSIST,
     CHANNEL_VERB_RESIZE,
     CHANNEL_VERB_STOP_SESSION,
 )
+from neutrino_hub.modules.clients.constants import CLIENT_PERMISSION_TERMINAL
+from neutrino_hub.modules.clients.permissions import (
+    is_device_permitted,
+    permitted_devices,
+    permitted_kinds,
+)
+from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 
 # The size a shell opens at when the viewer names none.
 DEFAULT_COLUMNS = 80
@@ -97,15 +110,17 @@ async def resize_shell(sessions, device_id: str, shell_id: int, cols: int, rows:
 
 
 async def persist_session(
-    sessions, device_id: str, session_id: str, is_persistent: bool
+    sessions, device_id: str, session_id: str, flags: dict
 ) -> None:
-    """Tell the agent whether a session outlives its stream; it closes the command.
+    """Set a session's two flags on the agent; it closes the command.
 
     Args:
         sessions: The agents' sessions.
         device_id: The device.
         session_id: The session, by the id its opener generated.
-        is_persistent: Whether it stays when its stream closes.
+        flags: ``is_persistent``, whether it stays when its last stream
+            closes, and ``is_shared``, whether every viewer with terminal
+            rights on the machine sees it; a flag left out keeps its value.
 
     Raises:
         AgentOfflineError: When the device has no channel.
@@ -117,8 +132,131 @@ async def persist_session(
             "module": CHANNEL_COMMAND_MODULE_AGENT,
             "verb": CHANNEL_VERB_PERSIST,
             "session_id": session_id,
-            "is_persistent": bool(is_persistent),
+            **flags,
         },
+    )
+
+
+def persist_flags(message: dict) -> dict:
+    """The flags a ``persist`` names, each a bool; the ones it leaves out absent.
+
+    Args:
+        message: The browser's message or the client's command arguments.
+
+    Returns:
+        ``is_persistent`` and ``is_shared`` where the message carries them.
+    """
+    return {
+        name: bool(message[name])
+        for name in ("is_persistent", "is_shared")
+        if name in message
+    }
+
+
+def client_owner(client_id: str) -> str:
+    """The owner the hub stamps on a shell a client opens.
+
+    Args:
+        client_id: The client.
+
+    Returns:
+        ``client:<id>``.
+    """
+    return f"{CHANNEL_SHELL_OWNER_CLIENT_PREFIX}{client_id}"
+
+
+def is_persist_refused(
+    agent_sessions, device_id: str, session_id: str, viewer: str
+) -> bool:
+    """Whether a ``persist`` from this viewer is refused ``session_not_owned``.
+
+    Args:
+        agent_sessions: The agents' sessions, whose reports name each
+            session's owner.
+        device_id: The machine holding the session.
+        session_id: The session.
+        viewer: The owner stamp of whoever sent it: ``hub`` or
+            ``client:<id>``.
+
+    Returns:
+        True when the machine reports the session under another owner; a
+        session it does not list yet is the viewer's own new one.
+    """
+    for session in reported_sessions(agent_sessions):
+        if session["device_id"] == device_id and session["session_id"] == session_id:
+            return session["owner"] != "" and session["owner"] != viewer
+    return False
+
+
+def sessions_for(runtime, viewer: str) -> list:
+    """The shell sessions one viewer sees, from the machines' latest reports.
+
+    Args:
+        runtime: The shared runtime.
+        viewer: ``hub`` for the panel, ``client:<id>`` for a client.
+
+    Returns:
+        Every session the viewer owns, and every shared session on a machine
+        it has terminal rights on, oldest first, as :func:`viewer_rows`
+        gives them. A client that is gone or switched off sees none.
+    """
+    if viewer == CHANNEL_SHELL_OWNER_HUB:
+        is_allowed = _every_device
+    else:
+        is_allowed = _client_terminal_rights(
+            viewer.removeprefix(CHANNEL_SHELL_OWNER_CLIENT_PREFIX)
+        )
+        if is_allowed is None:
+            return []
+    seen = [
+        session
+        for session in reported_sessions(runtime.agent_sessions)
+        if session["owner"] == viewer
+        or (session["is_shared"] and is_allowed(session["device_id"]))
+    ]
+    return viewer_rows(runtime, viewer, seen)
+
+
+def viewer_rows(runtime, viewer: str, sessions: list) -> list:
+    """Reported sessions as one viewer is shown them.
+
+    Args:
+        runtime: The shared runtime, for the machines' names.
+        viewer: The owner stamp ``is_owned`` is read against.
+        sessions: Entries of :func:`reported_sessions`.
+
+    Returns:
+        Each entry with ``device_name`` and ``is_owned`` added.
+    """
+    names = {
+        device.id: device_name(runtime, device)
+        for device in DeviceRegistry().all_stored()
+    }
+    return [
+        {
+            **session,
+            "device_name": names.get(session["device_id"], session["device_id"]),
+            "is_owned": session["owner"] == viewer,
+        }
+        for session in sessions
+    ]
+
+
+def device_name(runtime, device) -> str:
+    """What the hub calls one device: its name, its hostname, its address.
+
+    Args:
+        runtime: The shared runtime, for the hostname the machine reports.
+        device: The stored device.
+
+    Returns:
+        The first of those that is set, else the device's id.
+    """
+    return (
+        device.name
+        or runtime.device_hostname.get(device.id, "")
+        or device.ipv4_address
+        or device.id
     )
 
 
@@ -164,8 +302,9 @@ def reported_sessions(agent_sessions) -> list:
             each machine's ``machine.sessions``.
 
     Returns:
-        ``{device_id, session_id, account, started_at, title, is_attached,
-        is_persistent}`` per session, ordered by ``started_at``.
+        ``{device_id, session_id, account, started_at, title, owner,
+        is_attached, is_persistent, is_shared, attached_count}`` per session,
+        ordered by ``started_at``.
     """
     listed = []
     for device_id, report in agent_sessions.reports().items():
@@ -186,21 +325,27 @@ def session_fields(entry) -> "dict | None":
         entry: One member of a report's ``machine.sessions``.
 
     Returns:
-        ``{session_id, account, started_at, title, is_attached,
-        is_persistent}``, or None for an entry naming no id.
+        ``{session_id, account, started_at, title, owner, is_attached,
+        is_persistent, is_shared, attached_count}``, or None for an entry
+        naming no id. An agent that reports no count has one stream
+        attached while ``is_attached`` holds.
     """
     if not isinstance(entry, dict):
         return None
     session_id = str(entry.get("session_id", "") or "")
     if not session_id:
         return None
+    is_attached = bool(entry.get("is_attached", False))
     return {
         "session_id": session_id,
         "account": str(entry.get("account", "") or ""),
         "started_at": _seconds(entry.get("started_at")),
         "title": str(entry.get("title", "") or ""),
-        "is_attached": bool(entry.get("is_attached", False)),
+        "owner": str(entry.get("owner", "") or ""),
+        "is_attached": is_attached,
         "is_persistent": bool(entry.get("is_persistent", False)),
+        "is_shared": bool(entry.get("is_shared", False)),
+        "attached_count": _count(entry.get("attached_count"), int(is_attached)),
     }
 
 
@@ -218,6 +363,37 @@ def device_of_session(agent_sessions, session_id: str) -> str:
         if session["session_id"] == session_id:
             return session["device_id"]
     return ""
+
+
+def _every_device(device_id: str) -> bool:
+    """The panel's terminal rights: every machine."""
+    return True
+
+
+def _client_terminal_rights(client_id: str):
+    """Whether a client has terminal rights on a machine, as a predicate;
+    None for a client that is gone or switched off."""
+    registry = ClientRegistry()
+    client = registry.get(client_id)
+    if client is None or client.is_disabled:
+        return None
+    if CLIENT_PERMISSION_TERMINAL not in permitted_kinds(registry, client):
+        return _no_device
+    devices = permitted_devices(registry, client)
+    return functools.partial(is_device_permitted, devices, CLIENT_PERMISSION_TERMINAL)
+
+
+def _no_device(device_id: str) -> bool:
+    """Terminal rights on no machine."""
+    return False
+
+
+def _count(value, fallback: int) -> int:
+    """A reported count, the fallback where it is not a number."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _seconds(value) -> int:

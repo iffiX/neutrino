@@ -7,8 +7,10 @@ browser's input reaching the stream and a resize opening one ``command
 output frames and its close an exit frame, the container variant
 opening the ``shell`` kind with the module and the container's name, and
 the close of a socket the browser already left raising nothing; the
-session id the page generated riding the open, and a persist message
-opening one ``command {agent, persist}`` naming it.
+session id the page generated riding the open stamped ``owner: hub``, a
+persist message opening one ``command {agent, persist}`` naming it with
+both flags, and a persist on a session another viewer owns answered with
+a ``session_not_owned`` frame and sent nowhere.
 """
 
 import asyncio
@@ -220,9 +222,15 @@ def test_the_session_id_rides_the_open_and_a_persist_names_it(api):
     try:
         assert wait_until(lambda: runtime.agent_sessions.streams)
         stream = runtime.agent_sessions.streams[0]
-        assert stream.args == {"cols": 80, "rows": 24, "session_id": "4f1c2a"}
+        assert stream.args == {
+            "cols": 80,
+            "rows": 24,
+            "session_id": "4f1c2a",
+            "owner": "hub",
+            "is_shared": False,
+        }
 
-        socket.send_json({"type": "persist", "is_persistent": True})
+        socket.send_json({"type": "persist", "is_persistent": True, "is_shared": 1})
         assert wait_until(lambda: len(runtime.agent_sessions.streams) == 2)
         persist = runtime.agent_sessions.streams[1]
         assert (persist.kind, persist.args) == (
@@ -232,8 +240,33 @@ def test_the_session_id_rides_the_open_and_a_persist_names_it(api):
                 "verb": "persist",
                 "session_id": "4f1c2a",
                 "is_persistent": True,
+                "is_shared": True,
             },
         )
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_persist_on_a_session_another_viewer_owns_is_refused(api, monkeypatch):
+    client, runtime = api
+    reports = {
+        MAC: {"machine": {"sessions": [{"session_id": "4f1c2a", "owner": "client:c1"}]}}
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+    socket = open_terminal(
+        client,
+        f"/ws/agent/terminal?device_id={MAC}&session_id=4f1c2a&is_resumed=true",
+    )
+    try:
+        assert wait_until(lambda: runtime.agent_sessions.streams)
+        socket.send_json({"type": "persist", "is_shared": True})
+
+        assert socket.receive_json() == {
+            "type": "refused",
+            "code": "session_not_owned",
+            "params": {"session_id": "4f1c2a"},
+        }
+        assert len(runtime.agent_sessions.streams) == 1
     finally:
         socket.__exit__(None, None, None)
 
@@ -264,6 +297,8 @@ def test_attaching_a_listed_session_asks_the_agent_to_resume_it(api):
             "cols": 80,
             "rows": 24,
             "session_id": "4f1c2a",
+            "owner": "hub",
+            "is_shared": False,
             "is_resumed": True,
         }
     finally:

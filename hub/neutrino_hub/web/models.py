@@ -1688,8 +1688,23 @@ class ChannelShellSession(BaseModel):
     # When it was opened, in Unix seconds; the order sessions are listed in.
     started_at: int = 0
     title: str = ""
+    # Who opened it, as the hub stamped the open: ``hub`` or ``client:<id>``.
+    owner: str = ""
     is_attached: bool = False
     is_persistent: bool = False
+    # Whether every viewer with terminal rights on the machine sees it.
+    is_shared: bool = False
+    # How many streams are attached now.
+    attached_count: int = 0
+
+
+class ChannelTerminalSession(ChannelShellSession):
+    """One shell session as a client is shown it in a ``terminals`` entry."""
+
+    device_id: str
+    device_name: str = ""
+    # Whether this client is its owner.
+    is_owned: bool = False
 
 
 class ChannelMachine(BaseModel):
@@ -1805,8 +1820,9 @@ class ChannelTerminal(BaseModel):
     device_id: str
     name: str
     is_online: bool = False
-    # The shell sessions it holds, oldest first; empty while it is offline.
-    sessions: list[ChannelShellSession] = Field(default_factory=list)
+    # The sessions this client sees on it: its own and the shared ones,
+    # oldest first; empty while it is offline.
+    sessions: list[ChannelTerminalSession] = Field(default_factory=list)
 
 
 class ChannelClientState(BaseModel):
@@ -1834,6 +1850,9 @@ class ChannelClientReport(BaseModel):
 
     state_hash: str = ""
     machine: ChannelClientMachine = Field(default_factory=ChannelClientMachine)
+    # A refresh the person asked for: the hub answers with its whole state,
+    # whatever the hash.
+    is_refresh: bool = False
 
 
 class TerminalSessionView(BaseModel):
@@ -1845,8 +1864,14 @@ class TerminalSessionView(BaseModel):
     account: str = ""
     started_at: int = 0
     title: str = ""
+    # Who opened it: ``hub`` for this panel, ``client:<id>`` for a client.
+    owner: str = ""
+    # Whether this panel opened it; only the owner sets its two flags.
+    is_owned: bool = False
     is_attached: bool = False
     is_persistent: bool = False
+    is_shared: bool = False
+    attached_count: int = 0
 
 
 class TerminalSessionListView(BaseModel):
