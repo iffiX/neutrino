@@ -10,30 +10,7 @@
       "height": 860
     }
   },
-  "pending": [
-    "agent/cli.md",
-    "agent/install.md",
-    "client/ai.md",
-    "client/cli.md",
-    "client/files.md",
-    "client/install.md",
-    "client/overlay.md",
-    "client/ports.md",
-    "client/remote-desktops.md",
-    "client/terminals.md",
-    "client/web.md",
-    "client/window.md",
-    "hub/cli.md",
-    "hub/containers.md",
-    "hub/files.md",
-    "hub/gitea.md",
-    "hub/modules.md",
-    "hub/overlay-easytier.md",
-    "hub/overlay-netbird.md",
-    "hub/samba.md",
-    "hub/terminals.md",
-    "hub/zfs.md"
-  ],
+  "pending": [],
   "shots": [
     {
       "file": "setup_secrets.png",

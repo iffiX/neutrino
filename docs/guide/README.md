@@ -24,7 +24,7 @@ npm run build
 npm run preview
 ```
 
-`check` runs prettier, ESLint and TypeScript. `build` writes
+`check` runs prettier, ESLint, TypeScript and the shot check. `build` writes
 `.vitepress/dist/`. `preview` serves that directory on
 `http://127.0.0.1:4173/`.
 
@@ -41,25 +41,27 @@ needs no rewrite rules.
 
 ## Locale layout
 
-English is the root locale; Simplified Chinese lives under `zh-CN/`. Pages
-are grouped by component, and each group runs install, use, commands.
+English is the root locale; Simplified Chinese lives under `zh-CN/`. The
+sidebar follows the panel's own: the hub's pages, then the pages that act on
+one managed machine, then the clients, the commands and the reference.
 
 ```text
 docs/guide/
   index.md                      English home
   overview.md, quick-start.md   Start
-  hub/                          install, one page per panel page in sidebar
-                                order, cli (nhub)
-  agent/                        install, cli (nagent)
-  client/                       install, window, one page per client panel,
-                                cli (nclient)
-  reference/                    platforms, troubleshooting
+  hub/                          install, then one page per page of the panel's
+                                Hub group, in its order
+  agent/                        terminals, files, modules, and modules/ with
+                                one page per module
+  client/                       desktop, android
+  commands/                     nhub, nagent, nclient
+  reference/, protocol/         platforms, troubleshooting, the channel
   zh-CN/                        the same tree in Chinese
   README.md                     this page, excluded from the build
   .vitepress/config.mts         site, locales, search, base path
   .vitepress/navigation.ts      sidebarEn / sidebarZh, navEn / navZh
   .vitepress/theme/             styling on top of the default theme
-  .vitepress/prepare_assets.mjs copies images into public/ before a build
+  .vitepress/prepare_assets.mjs copies and converts images into public/
 ```
 
 The two locales carry the same paths, the same heading count and the same
@@ -80,9 +82,17 @@ register file.
 | `images/guide/` (recursive)                          | `public/guide/` | `/guide/en/<name>.webp`, `/guide/zh/<name>.webp`, `/guide/os/<name>.webp` |
 | `images/web/architecture.svg`, `architecture_zh.svg` | `public/guide/` | `/guide/architecture.svg`                                                 |
 
-`images/guide/` may not exist in a fresh working copy; the script skips what is
-missing rather than failing, and the pages show broken images until the
-screenshots land.
+Every screenshot has an entry in
+`packaging/integration/screenshots/shots.json`, and the tool beside it
+captures them as png. The script writes each png under `images/guide/` as the
+webp of the same name, replacing an older webp. For a table entry with no
+image yet, it writes a one-pixel placeholder and prints a warning, so the
+build goes on.
+
+`npm run check` runs `check_shots.py`, which fails when a page references an
+image the table does not name for that page, or the table names one the page
+does not use. Add a screenshot to the table and to both language pages in the
+same change.
 
 Nothing copied into `public/` is committed: `.gitignore` holds
 `public/neutrino_64.png`, `public/neutrino_512.png` and `public/guide/`.
@@ -90,9 +100,9 @@ Nothing copied into `public/` is committed: `.gitignore` holds
 ## GitHub Pages
 
 `.github/workflows/docs.yml` builds and checks every pull request that
-touches `docs/guide/**`, `images/guide/**`, `images/icons/**`, `images/web/**`
-or the workflow itself. It publishes on a pushed `v*` tag, so the site shows
-the guide of the newest release.
+touches `docs/guide/**`, `images/guide/**`, `images/icons/**`, `images/web/**`,
+`packaging/integration/screenshots/**` or the workflow itself. It publishes
+on a pushed `v*` tag, so the site shows the guide of the newest release.
 
 The three Pages steps (`configure-pages`, `upload-pages-artifact` and the
 `deploy` job) run only on a `v*` tag and only when the repository variable
