@@ -214,6 +214,10 @@
   font-size: 11px;
 }
 
+.usage_device--none {
+  color: var(--color-text-faint);
+}
+
 .usage_split {
   display: flex;
   gap: 4px;

@@ -53,7 +53,7 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
               <td>
                 <div className="usage_name">{key.name}</div>
                 <span
-                  className={`usage_device ${key.client_name === null ? "faint" : ""}`}
+                  className={`usage_device ${key.client_name === null ? "usage_device--none" : ""}`}
                 >
                   {key.client_name ?? t("ui.usage.no_client")}
                 </span>
