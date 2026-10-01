@@ -48,6 +48,7 @@ recorded. A button reads its own job from there and from nowhere else.
 | The sidebar's foot shows the machine's name, its platform and the client's version. | A person with two clients open tells them apart there. |
 | Every page body scrolls, except Terminals, which gives the terminal the height left under its chips and tabs. | A page squeezed to fit is a page that cannot be read; a terminal is sized to its box by design. |
 | A page changes with no transition animation. | A fade adds time to every press and tells nothing. |
+| A rotation or a window resize keeps every page's state and every running job; an attached terminal and an open viewer stay as they are. | The state is in the core, and a page is a view of it. |
 | A page's content sits in cards with a 16 px gutter; a card is one concern, as in the panel. | The panel's reader is the client's reader. |
 
 A row is the unit every page is made of:
@@ -362,6 +363,10 @@ word. The controls:
 
 A row whose entry is unhealthy shows the code's wording on the reason line:
 `rdp_nobody_seated`, `rdp_screen_not_allowed`.
+
+The viewer shares the clipboard both ways: text copied on the remote machine
+is on this device's clipboard, and a paste in the viewer sends this device's
+clipboard. On a phone the viewer page keeps its session through a rotation.
 
 ## The Settings page
 
