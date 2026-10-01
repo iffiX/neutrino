@@ -128,7 +128,7 @@ AGENT_SHELL_READ_BYTES = 4096
 # the stream, per signal.
 AGENT_SHELL_KILL_TIMEOUT_S = 2.0
 # How much of a shell's latest output is kept, and sent first to a stream
-# that attaches to the shell again.
+# that attaches to the running shell.
 AGENT_SHELL_KEPT_BYTES = 256 * 1024
 # How much output may wait for an attached stream before the shell's
 # output is no longer read.

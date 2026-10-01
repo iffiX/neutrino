@@ -2,11 +2,12 @@
 
 The hub's bytes go to the shell's terminal; whatever the terminal produces
 goes up as binary frames, no faster than the hub's credit allows; a resize,
-which arrives as a command naming the stream, sets the terminal's window.
+which arrives as a command naming the stream, sets the stream's window.
 The stream closes with the shell's exit status in its params once the shell
 exits. A stream opened with a ``session_id`` attaches to a shell the agent
-keeps by that id, :mod:`neutrino_agent.streams.shell_session`, and a
-persistent one keeps running when its stream closes. A ``shell`` opened with
+keeps by that id, :mod:`neutrino_agent.streams.shell_session`, beside any
+other stream attached to it, and the terminal takes the smallest window
+of them. A ``shell`` opened with
 ``{module: podman, container}`` runs inside that container instead. On
 Windows the shell is PowerShell on a pseudo console, served by
 :class:`~neutrino_agent.streams.windows_shell.WindowsShellStream`.

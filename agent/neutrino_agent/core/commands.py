@@ -93,6 +93,11 @@ def _refused(code: str, **params) -> CommandOutcome:
     return CommandOutcome(exit_code=1, output="", code=code, params=params)
 
 
+def _given_flag(args: dict, key: str) -> "bool | None":
+    """A flag the verb carries, or None when it names none."""
+    return None if args.get(key) is None else bool(args[key])
+
+
 class DeviceOperator:
     """Runs the commands the hub opens on this device."""
 
@@ -236,7 +241,9 @@ class DeviceOperator:
         session_id = str(args.get("session_id", "") or "")
         if verb == VERB_PERSIST:
             is_known = self._shells.persist(
-                session_id, bool(args.get("is_persistent", False))
+                session_id,
+                is_persistent=_given_flag(args, "is_persistent"),
+                is_shared=_given_flag(args, "is_shared"),
             )
         else:
             is_known = self._shells.stop(session_id)

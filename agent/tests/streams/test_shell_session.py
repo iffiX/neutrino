@@ -5,10 +5,12 @@ held id is attached to; a resumed id the agent does not hold is refused
 ``session_unknown``; a closed stream ends a shell unless it is persistent,
 and a persistent one keeps its output while nobody watches; attaching again
 sends the kept output first, at most 256 KB of it, then resizes the
-terminal away and back; a second stream takes the shell and the first
-closes ``session_taken``; ending a shell closes its stream with the exit
-code and drops it from the list; and the list the report carries names each
-session's account, start, title and whether it is attached and persistent.
+terminal away and back; streams attached together each get the output,
+each one's input reaches the shell, the terminal takes the smallest window,
+and one leaving leaves the others; a shared shell outlives its last stream;
+ending a shell closes its streams with the exit code and drops it from the
+list; and the list the report carries names each session's account, start,
+title, owner, sharing, persistence and how many streams are attached.
 """
 
 import queue
@@ -139,7 +141,7 @@ def registry():
 def test_a_new_id_starts_a_shell_and_its_exit_closes_the_stream(registry):
     terminal = FakeTerminal()
     channel = FakeChannel()
-    served = serve(registry, terminal, channel, session_id="s1")
+    served = serve(registry, terminal, channel, session_id="s1", owner="client:7")
     terminal.say(b"hello\r\n")
     wait_until(lambda: b"hello" in channel.output())
 
@@ -152,8 +154,11 @@ def test_a_new_id_starts_a_shell_and_its_exit_closes_the_stream(registry):
         "account": "root",
         "started_at": 1700000000,
         "title": "bash",
+        "owner": "client:7",
         "is_attached": True,
         "is_persistent": False,
+        "is_shared": False,
+        "attached_count": 1,
     }
     wait_until(lambda: registry.describe() == [])
     assert registry.changes
@@ -215,18 +220,115 @@ def test_a_persistent_shell_outlives_its_stream_and_keeps_its_output(registry):
     assert again.join()["params"] == {"exit_code": 0}
 
 
-def test_a_second_stream_takes_the_shell_and_the_first_closes_taken(registry):
+def test_two_streams_both_get_the_output_and_both_type_into_the_shell(registry):
     terminal = FakeTerminal()
-    first = FakeChannel()
+    first, second = FakeChannel(), FakeChannel()
     held = serve(registry, terminal, first, session_id="s1")
     wait_until(lambda: registry.describe() != [])
+    joined = serve(registry, terminal, second, session_id="s1")
+    wait_until(lambda: registry.describe()[0]["attached_count"] == 2)
 
-    taker = serve(registry, terminal, FakeChannel(), session_id="s1")
+    terminal.say(b"shown to both\r\n")
+    wait_until(lambda: b"shown to both" in first.output())
+    wait_until(lambda: b"shown to both" in second.output())
+    first.feed(("data", b"ls\r"))
+    second.feed(("data", b"pwd\r"))
+    wait_until(lambda: len(terminal.written) == 2)
 
-    assert held.join() == {"code": "session_taken", "params": {"session_id": "s1"}}
-    assert registry.describe()[0]["is_attached"] is True
+    assert sorted(terminal.written) == [b"ls\r", b"pwd\r"]
     terminal.exit(0)
-    assert taker.join()["params"] == {"exit_code": 0}
+    assert held.join()["params"] == {"exit_code": 0}
+    assert joined.join()["params"] == {"exit_code": 0}
+
+
+def test_one_stream_leaving_leaves_the_other_attached(registry):
+    terminal = FakeTerminal()
+    first, second = FakeChannel(), FakeChannel()
+    held = serve(registry, terminal, first, session_id="s1")
+    wait_until(lambda: registry.describe() != [])
+    joined = serve(registry, terminal, second, session_id="s1")
+    wait_until(lambda: registry.describe()[0]["attached_count"] == 2)
+
+    first.close_from_hub()
+
+    assert held.join() == {"code": "", "params": {}}
+    (listed,) = registry.describe()
+    assert listed["attached_count"] == 1
+    assert listed["is_attached"] is True
+    terminal.say(b"still here\r\n")
+    wait_until(lambda: b"still here" in second.output())
+    second.close_from_hub()
+    assert joined.join()["params"] == {"exit_code": 129}
+    wait_until(lambda: registry.describe() == [])
+
+
+def test_the_terminal_takes_the_smallest_attached_window(registry):
+    terminal = FakeTerminal()
+    first, second = FakeChannel(), FakeChannel()
+    held = serve(registry, terminal, first, session_id="s1", cols=120, rows=40)
+    wait_until(lambda: registry.describe() != [])
+    joined = serve(registry, terminal, second, session_id="s1", cols=100, rows=50)
+    wait_until(lambda: registry.describe()[0]["attached_count"] == 2)
+
+    assert terminal.resizes == [(100, 41), (100, 40)]
+    first.feed(("resize", 90, 60))
+    wait_until(lambda: terminal.resizes[-1] == (90, 50))
+    first.close_from_hub()
+    held.join()
+    wait_until(lambda: terminal.resizes[-1] == (100, 50))
+
+    terminal.exit(0)
+    joined.join()
+
+
+def test_a_late_stream_gets_the_kept_output_before_the_live_stream(registry):
+    terminal = FakeTerminal()
+    first, late = FakeChannel(), FakeChannel()
+    held = serve(registry, terminal, first, session_id="s1")
+    terminal.say(b"earlier\r\n")
+    wait_until(lambda: b"earlier" in first.output())
+
+    joined = serve(registry, terminal, late, session_id="s1", is_resumed=True)
+    wait_until(lambda: b"earlier" in late.output())
+    terminal.say(b"live\r\n")
+    wait_until(lambda: b"live" in late.output())
+
+    assert late.output() == b"earlier\r\nlive\r\n"
+    assert first.output() == b"earlier\r\nlive\r\n"
+    terminal.exit(0)
+    held.join()
+    joined.join()
+
+
+def test_a_shared_shell_outlives_its_last_stream(registry):
+    terminal = FakeTerminal()
+    channel = FakeChannel()
+    served = serve(registry, terminal, channel, session_id="s1", is_shared=True)
+    wait_until(lambda: registry.describe() != [])
+
+    channel.close_from_hub()
+
+    assert served.join() == {"code": "", "params": {}}
+    (listed,) = registry.describe()
+    assert listed["is_shared"] is True
+    assert listed["attached_count"] == 0
+    assert registry.stop("s1") is True
+    wait_until(lambda: registry.describe() == [])
+
+
+def test_persist_sets_each_flag_it_names_and_keeps_the_other(registry):
+    terminal = FakeTerminal()
+    served = serve(registry, terminal, FakeChannel(), session_id="s1")
+    wait_until(lambda: registry.describe() != [])
+
+    assert registry.persist("s1", is_shared=True)
+    assert registry.persist("s1", is_persistent=True)
+    assert registry.persist("s1", is_shared=False)
+
+    (listed,) = registry.describe()
+    assert (listed["is_persistent"], listed["is_shared"]) == (True, False)
+    terminal.exit(0)
+    served.join()
 
 
 def test_the_hubs_bytes_and_resizes_reach_the_kept_shell(registry):
