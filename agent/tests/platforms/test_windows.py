@@ -439,3 +439,9 @@ def test_an_account_home_powershell_cannot_give_is_an_os_error():
 
     with pytest.raises(OSError):
         WindowsPlatform(powershell=powershell).account_home("hanha")
+
+
+def test_the_agent_s_log_is_agent_log_under_the_data_root(monkeypatch):
+    monkeypatch.setenv("ProgramData", "D:\\Data")
+
+    assert WindowsPlatform().agent_log_path() == "D:\\Data\\Neutrino\\agent\\agent.log"

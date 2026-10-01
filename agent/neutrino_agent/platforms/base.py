@@ -4,8 +4,8 @@ The contract names intents, not mechanisms: enumerate human accounts;
 resolve an account's home; run a process as an account; control the agent's
 own service; power actions; read host metrics; read the network interfaces;
 read the machine id; install and remove a package of a kind; drive the SMB
-server the system carries; unpack the hub's software. A new platform is a new class, and
-nothing above this seam changes.
+server the system carries; unpack the hub's software; find the agent's own
+log. A new platform is a new class, and nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
 Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
@@ -56,6 +56,15 @@ class AgentPlatform:
             The absolute directory path.
         """
         return AGENT_VAR_DIR
+
+    def agent_log_path(self) -> str:
+        """The file the agent's own log goes to on this platform.
+
+        Returns:
+            The absolute file path, empty where the service manager's
+            journal keeps the log.
+        """
+        return ""
 
     def human_accounts(self) -> list:
         """The accounts this platform judges to be people.

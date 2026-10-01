@@ -25,6 +25,7 @@ from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
     AGENT_WINDOWS_DATA_SUBDIR,
+    AGENT_WINDOWS_LOG_NAME,
     AGENT_WINDOWS_PROGRAM_DATA_DEFAULT,
     AGENT_WINDOWS_SERVICE_NAME,
 )
@@ -184,6 +185,14 @@ class WindowsPlatform(AgentPlatform):
             The absolute directory path.
         """
         return windows_data_dir()
+
+    def agent_log_path(self) -> str:
+        """The service's log: ``agent.log`` under the data root.
+
+        Returns:
+            The absolute file path.
+        """
+        return ntpath.join(windows_data_dir(), AGENT_WINDOWS_LOG_NAME)
 
     def human_accounts(self) -> list:
         """The enabled local accounts that are people, read at most every 30 s.

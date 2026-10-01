@@ -16,6 +16,7 @@ from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.windows_applier import (
     APPLY_SCRIPT,
     PASSWORD_SCRIPT,
+    SERVER_LOG_SCRIPT,
     STATUS_SCRIPT,
     WITHDRAW_SCRIPT,
     SambaWindowsApplier,
@@ -314,3 +315,24 @@ def test_a_policy_that_refuses_is_an_os_error_and_the_handle_is_closed(
     assert [call for call in advapi32.calls if call == ("close",)] == [
         ("close",)
     ] * closes
+
+
+def test_the_server_log_is_the_smb_server_s_latest_events():
+    answer = {"lines": ["2026-10-02T10:00:00 1001 A client connected."]}
+    powershell = FakePowerShell({SERVER_LOG_SCRIPT: answer})
+
+    lines = SambaWindowsApplier(powershell=powershell).read_server_log(50)
+
+    assert lines == ["2026-10-02T10:00:00 1001 A client connected."]
+    ((script, document),) = powershell.runs
+    assert document == {
+        "log_name": "Microsoft-Windows-SMBServer/Operational",
+        "lines": 50,
+    }
+    assert "Get-WinEvent -LogName $d.log_name -MaxEvents $d.lines" in script
+
+
+def test_a_server_log_powershell_cannot_give_is_no_lines():
+    powershell = FakePowerShell(error=OSError("gone"))
+
+    assert SambaWindowsApplier(powershell=powershell).read_server_log(50) == []

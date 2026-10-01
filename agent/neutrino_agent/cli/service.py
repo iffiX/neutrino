@@ -11,14 +11,13 @@ import logging.handlers
 import os
 import sys
 
-from neutrino_agent.constants import AGENT_WINDOWS_SERVICE_NAME
+from neutrino_agent.constants import AGENT_WINDOWS_LOG_NAME, AGENT_WINDOWS_SERVICE_NAME
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.platforms.windows_service import ServiceControlDispatcher
 
 # --- config ---
-SERVICE_LOG_NAME = "agent.log"
 SERVICE_LOG_MAX_BYTES = 1024 * 1024
 SERVICE_LOG_BACKUP_COUNT = 3
 SERVICE_LOG_FORMAT = "%(asctime)s %(message)s"
@@ -72,7 +71,7 @@ def service_log(data_dir: str):
     logger = logging.Logger("neutrino_agent.service", logging.INFO)
     os.makedirs(data_dir, exist_ok=True)
     handler = logging.handlers.RotatingFileHandler(
-        os.path.join(data_dir, SERVICE_LOG_NAME),
+        os.path.join(data_dir, AGENT_WINDOWS_LOG_NAME),
         maxBytes=SERVICE_LOG_MAX_BYTES,
         backupCount=SERVICE_LOG_BACKUP_COUNT,
         encoding="utf-8",

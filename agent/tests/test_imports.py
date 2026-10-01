@@ -71,6 +71,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.gitea.renderer",
     "neutrino_agent.modules.gitea.runner",
     "neutrino_agent.modules.installers",
+    "neutrino_agent.modules.log_tail",
     "neutrino_agent.modules.package",
     "neutrino_agent.modules.powershell_run",
     "neutrino_agent.modules.podman",
