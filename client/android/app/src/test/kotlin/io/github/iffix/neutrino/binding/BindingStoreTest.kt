@@ -43,9 +43,9 @@ class BindingStoreTest {
     fun updateChangesOneAndIgnoresAnUnknownId() {
         val store = store()
         store.put(Samples.binding)
-        assertEquals(true, store.update("b1") { it.copy(isOverlayWanted = true) }?.isOverlayWanted)
+        assertEquals(true, store.update("b1") { it.copy(isOverlayOn = true) }?.isOverlayOn)
         assertNull(store.update("nobody") { it })
-        assertEquals(true, store().get("b1")?.isOverlayWanted)
+        assertEquals(true, store().get("b1")?.isOverlayOn)
     }
 
     @Test

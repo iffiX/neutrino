@@ -4,6 +4,7 @@ import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.PROTOCOL
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -38,6 +39,15 @@ class ChannelFramesTest {
         val report = ChannelFrames.report("h1", Samples.machine)
         assertConforms(report, "ChannelClientReport")
         assertEquals(GoldenSchema.properties("ChannelClientReport"), report.keys - "type")
+    }
+
+    @Test
+    fun aRefreshReportSaysSo() {
+        assertEquals(
+            true,
+            ChannelFrames.report("h1", Samples.machine, isRefresh = true)["is_refresh"]!!.jsonPrimitive.boolean,
+        )
+        assertEquals(false, ChannelFrames.report("h1", Samples.machine)["is_refresh"]!!.jsonPrimitive.boolean)
     }
 
     @Test

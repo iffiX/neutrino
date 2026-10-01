@@ -17,16 +17,29 @@ object QrFrameDecoder {
     )
 
     /**
-     * The text of the QR code in a frame.
+     * The text of the QR code in a frame, or in one square of it.
      *
      * @param luminance The frame's Y plane, one byte per pixel, rows [rowStride] bytes apart.
      * @param width The frame's width in pixels.
      * @param height The frame's height in pixels.
      * @param rowStride The bytes from one row's start to the next.
+     * @param region The square decoded, or null for the whole frame.
      * @return The code's text, or null when the frame holds none that reads.
+     * @throws IllegalArgumentException When the region does not fit in the frame.
      */
-    fun decode(luminance: ByteArray, width: Int, height: Int, rowStride: Int = width): String? {
-        val source = PlanarYUVLuminanceSource(luminance, rowStride, height, 0, 0, width, height, false)
+    fun decode(
+        luminance: ByteArray,
+        width: Int,
+        height: Int,
+        rowStride: Int = width,
+        region: QrScanRegion? = null,
+    ): String? {
+        val left = region?.left ?: 0
+        val top = region?.top ?: 0
+        val cropWidth = region?.side ?: width
+        val cropHeight = region?.side ?: height
+        require(left + cropWidth <= width && top + cropHeight <= height) { "the region lies outside the frame" }
+        val source = PlanarYUVLuminanceSource(luminance, rowStride, height, left, top, cropWidth, cropHeight, false)
         for (bitmap in listOf(BinaryBitmap(HybridBinarizer(source)), BinaryBitmap(HybridBinarizer(source.invert())))) {
             try {
                 return QRCodeReader().decode(bitmap, hints).text

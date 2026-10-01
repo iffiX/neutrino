@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import io.github.iffix.neutrino.CLIENT_BOTTOM_BAR_HEIGHT_DP
 import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoTheme
 
@@ -40,7 +41,7 @@ fun BottomBar(current: AppScreen, onOpen: (AppScreen) -> Unit, modifier: Modifie
             .background(palette.bg)
             .drawBehind { drawLine(palette.border, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
             .navigationBarsPadding()
-            .height(56.dp),
+            .height(CLIENT_BOTTOM_BAR_HEIGHT_DP.dp),
     ) {
         for (tab in AppScreen.tabs) {
             val isActive = tab == current

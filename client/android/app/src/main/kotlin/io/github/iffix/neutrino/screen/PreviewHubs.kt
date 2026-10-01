@@ -13,7 +13,7 @@ import io.github.iffix.neutrino.words.WordCatalog
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-/** Sample hubs the screens' previews draw: one connected with a service of each type, one reconnecting. */
+/** Sample hubs the screens' previews draw: one connected with a service of each type, one down. */
 object PreviewHubs {
     private fun payload(vararg fields: Pair<String, Any>) = JsonObject(
         fields.associate { (name, value) ->
@@ -89,7 +89,7 @@ object PreviewHubs {
         terminals = listOf(ChannelTerminal("d1", "Argon", true), ChannelTerminal("d2", "Neutrino", true)),
     )
 
-    /** The hub that is reconnecting. */
+    /** The hub that is down. */
     val lepton = HubView(
         binding = HubBinding(
             id = "b2",
@@ -98,7 +98,7 @@ object PreviewHubs {
             fingerprint = "",
             token = "",
         ),
-        connection = HubConnection.RECONNECTING,
+        connection = HubConnection.DOWN,
         software = "neutrino_hub/0.5.0",
     )
 

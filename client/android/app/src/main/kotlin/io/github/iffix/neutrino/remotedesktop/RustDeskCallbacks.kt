@@ -17,4 +17,11 @@ interface RustDeskCallbacks {
      * @param height Its height in pixels.
      */
     fun onSize(width: Int, height: Int)
+
+    /**
+     * Text was copied on the remote machine.
+     *
+     * @param text The text.
+     */
+    fun onClipboard(text: String)
 }

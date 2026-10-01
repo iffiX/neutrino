@@ -1,16 +1,16 @@
 package io.github.iffix.neutrino.terminal
 
-/** Where one terminal tab's shell stands. */
+/** Where one terminal tab's stream stands. */
 enum class TerminalPhase {
-    /** The tab exists and its shell is being opened or attached. */
+    /** A new shell is being opened, or a listed one attached. */
     CONNECTING,
 
     /** The shell's stream is open. */
     OPEN,
 
-    /** The stream is gone while the shell may still run: a kept session, or a lost socket. */
+    /** No stream is attached while the session may still run: listed and not yet selected, or a lost socket. */
     DETACHED,
 
-    /** The shell ended, or the hub refused it. */
+    /** The session is gone from the hub's list, the shell ended, or the hub refused it. */
     ENDED,
 }

@@ -11,11 +11,18 @@ src/lib.rs: under `native`, `bridge_generated` is not compiled (it is the
 Dart bridge flutter_rust_bridge_codegen generates, not in the source tree),
 and `native_ffi` is.
 
+src/client/io_loop.rs: under `native`, the remote clipboard's text goes to
+the session's `clipboard` callback, as on iOS, and not to the Java clipboard
+manager the Flutter app registers.
+
 src/native_ffi.rs: the interface. `NativeHandler` implements the session
 callbacks (`InvokeUiSession`); every frame is drawn into the window given by
-`nd_attach_window`, and the login, the end of the connection and each frame
-size go to the host's callbacks. `nd_init`, `nd_start`, `nd_attach_window`,
-`nd_mouse`, `nd_key`, `nd_text` and `nd_close` are exported with C linkage.
+`nd_attach_window`, and the login, the end of the connection, each frame
+size and the remote clipboard's text go to the host's callbacks. `nd_start`
+turns the peer's clipboard option on, and `nd_clipboard` sends the host's
+clipboard text to the remote machine. `nd_init`, `nd_start`,
+`nd_attach_window`, `nd_mouse`, `nd_key`, `nd_text`, `nd_clipboard` and
+`nd_close` are exported with C linkage.
 It also implements the two Dart conversion traits for `EventToUI` that the
 generated bridge otherwise implements; no Dart stream is opened in this
 build.
@@ -47,16 +54,66 @@ build.
  #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
  pub mod flutter;
  #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
+--- a/src/client/io_loop.rs
++++ b/src/client/io_loop.rs
+@@ -1479,8 +1479,19 @@
+                                 self.handler.clipboard(content);
+                             }
+                         }
+-                        #[cfg(target_os = "android")]
++                        #[cfg(all(target_os = "android", not(feature = "native")))]
+                         crate::clipboard::handle_msg_clipboard(cb);
++                        #[cfg(all(target_os = "android", feature = "native"))]
++                        {
++                            let content = if cb.compress {
++                                hbb_common::compress::decompress(&cb.content)
++                            } else {
++                                cb.content.into()
++                            };
++                            if let Ok(content) = String::from_utf8(content) {
++                                self.handler.clipboard(content);
++                            }
++                        }
+                     }
+                 }
+                 Some(message::Union::MultiClipboards(_mcb)) => {
+@@ -1508,8 +1519,23 @@
+                                 }
+                             }
+                         }
+-                        #[cfg(target_os = "android")]
++                        #[cfg(all(target_os = "android", not(feature = "native")))]
+                         crate::clipboard::handle_msg_multi_clipboards(_mcb);
++                        #[cfg(all(target_os = "android", feature = "native"))]
++                        if let Some(cb) = _mcb
++                            .clipboards
++                            .iter()
++                            .find(|c| c.format.enum_value() == Ok(ClipboardFormat::Text))
++                        {
++                            let content = if cb.compress {
++                                hbb_common::compress::decompress(&cb.content)
++                            } else {
++                                cb.content.to_vec()
++                            };
++                            if let Ok(content) = String::from_utf8(content) {
++                                self.handler.clipboard(content);
++                            }
++                        }
+                     }
+                 }
+                 #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste"))]
 --- a/src/native_ffi.rs
 +++ b/src/native_ffi.rs
-@@ -0,0 +1,410 @@
+@@ -0,0 +1,447 @@
 +//! A C interface to one remote desktop session, for a host app with no Dart.
 +//!
 +//! The host calls `nd_init` once, `nd_start` per connection and `nd_close` to end it.
 +//! Frames are drawn straight into the window handed over by `nd_attach_window`.
-+//! The connection's progress comes back through the callbacks given to `nd_start`.
++//! The connection's progress and the remote clipboard's text come back through the callbacks
++//! given to `nd_start`; `nd_clipboard` sends the host's clipboard text to the remote machine.
 +
 +use crate::{
++    client::{Data, Interface},
 +    flutter_ffi::EventToUI,
 +    ui_session_interface::{io_loop, InvokeUiSession, Session},
 +};
@@ -88,6 +145,7 @@ build.
 +    pub context: *mut c_void,
 +    pub on_state: Option<unsafe extern "C" fn(*mut c_void, c_int, *const c_char)>,
 +    pub on_size: Option<unsafe extern "C" fn(*mut c_void, c_int, c_int)>,
++    pub on_clipboard: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
 +}
 +
 +unsafe impl Send for NdCallbacks {}
@@ -143,6 +201,15 @@ build.
 +        if let Some(callbacks) = *CALLBACKS.read().unwrap() {
 +            if let Some(on_state) = callbacks.on_state {
 +                unsafe { on_state(callbacks.context, state, text.as_ptr()) };
++            }
++        }
++    }
++
++    fn tell_clipboard(&self, text: &str) {
++        let text = CString::new(text.replace('\0', "")).unwrap_or_default();
++        if let Some(callbacks) = *CALLBACKS.read().unwrap() {
++            if let Some(on_clipboard) = callbacks.on_clipboard {
++                unsafe { on_clipboard(callbacks.context, text.as_ptr()) };
 +            }
 +        }
 +    }
@@ -288,7 +355,9 @@ build.
 +            self.tell_state(ND_STATE_CLOSED, if text.is_empty() { title } else { text });
 +        }
 +    }
-+    fn clipboard(&self, _content: String) {}
++    fn clipboard(&self, content: String) {
++        self.tell_clipboard(&content);
++    }
 +    fn cancel_msgbox(&self, _tag: &str) {}
 +    fn switch_back(&self, _id: &str) {}
 +    fn portable_service_running(&self, _running: bool) {}
@@ -366,11 +435,13 @@ build.
 +        server_clipboard_enabled: Arc::new(RwLock::new(true)),
 +        ..Default::default()
 +    };
-+    session
-+        .lc
-+        .write()
-+        .unwrap()
-+        .initialize(id, ConnType::DEFAULT_CONN, None, false, None, None, None);
++    {
++        let mut lc = session.lc.write().unwrap();
++        lc.initialize(id, ConnType::DEFAULT_CONN, None, false, None, None, None);
++        let mut peer = lc.load_config();
++        peer.disable_clipboard.v = false;
++        lc.save_config(peer);
++    }
 +    *slot = Some(session.clone());
 +    std::thread::spawn(move || {
 +        let round = session.connection_round_state.lock().unwrap().new_round();
@@ -437,6 +508,27 @@ build.
 +    if !text.is_empty() {
 +        with_session(|session| session.input_string(&text));
 +    }
++}
++
++/// Send text to the remote machine's clipboard.
++#[no_mangle]
++pub unsafe extern "C" fn nd_clipboard(text: *const c_char) {
++    let text = text_of(text);
++    if text.is_empty() {
++        return;
++    }
++    with_session(|session| {
++        if !session.is_text_clipboard_required() {
++            return;
++        }
++        let mut msg = Message::new();
++        msg.set_clipboard(Clipboard {
++            content: text.clone().into_bytes().into(),
++            format: ClipboardFormat::Text.into(),
++            ..Default::default()
++        });
++        session.send(Data::Message(msg));
++    });
 +}
 +
 +/// End the session; no callback runs after this returns.

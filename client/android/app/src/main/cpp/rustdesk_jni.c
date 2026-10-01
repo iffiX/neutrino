@@ -13,6 +13,7 @@ typedef struct {
     void *context;
     void (*on_state)(void *context, int state, const char *text);
     void (*on_size)(void *context, int width, int height);
+    void (*on_clipboard)(void *context, const char *text);
 } NdCallbacks;
 
 static void (*nd_init)(const char *app_dir);
@@ -21,6 +22,7 @@ static void (*nd_attach_window)(ANativeWindow *window);
 static void (*nd_mouse)(int x, int y, int mask);
 static void (*nd_key)(const char *name, bool down);
 static void (*nd_text)(const char *text);
+static void (*nd_clipboard)(const char *text);
 static void (*nd_close)(void);
 
 static JavaVM *java_vm;
@@ -28,6 +30,7 @@ static pthread_key_t attached_key;
 static jobject listener;
 static jmethodID on_state_method;
 static jmethodID on_size_method;
+static jmethodID on_clipboard_method;
 
 static void detach_thread(void *env) {
     (void) env;
@@ -58,6 +61,15 @@ static void forward_size(void *context, int width, int height) {
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
+static void forward_clipboard(void *context, const char *text) {
+    JNIEnv *env = thread_env();
+    if (env == NULL) return;
+    jstring words = (*env)->NewStringUTF(env, text);
+    (*env)->CallVoidMethod(env, (jobject) context, on_clipboard_method, words);
+    (*env)->DeleteLocalRef(env, words);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void) reserved;
     java_vm = vm;
@@ -77,9 +89,10 @@ Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_open(JNIEnv *env, job
     nd_mouse = dlsym(core, "nd_mouse");
     nd_key = dlsym(core, "nd_key");
     nd_text = dlsym(core, "nd_text");
+    nd_clipboard = dlsym(core, "nd_clipboard");
     nd_close = dlsym(core, "nd_close");
     bool is_complete = nd_init && nd_start && nd_attach_window && nd_mouse && nd_key && nd_text
-                       && nd_close;
+                       && nd_clipboard && nd_close;
     return is_complete ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -101,8 +114,9 @@ Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_start(JNIEnv *env, jo
     jclass kind = (*env)->GetObjectClass(env, events);
     on_state_method = (*env)->GetMethodID(env, kind, "onState", "(ILjava/lang/String;)V");
     on_size_method = (*env)->GetMethodID(env, kind, "onSize", "(II)V");
+    on_clipboard_method = (*env)->GetMethodID(env, kind, "onClipboard", "(Ljava/lang/String;)V");
     listener = (*env)->NewGlobalRef(env, events);
-    NdCallbacks callbacks = {listener, forward_state, forward_size};
+    NdCallbacks callbacks = {listener, forward_state, forward_size, forward_clipboard};
     const char *host = (*env)->GetStringUTFChars(env, peer, NULL);
     const char *secret = (*env)->GetStringUTFChars(env, password, NULL);
     int result = nd_start(host, port, secret, callbacks);
@@ -151,6 +165,18 @@ Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_text(JNIEnv *env, job
     (*env)->GetByteArrayRegion(env, utf8, 0, length, (jbyte *) typed);
     nd_text(typed);
     free(typed);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_clipboard(JNIEnv *env, jobject self,
+                                                                      jbyteArray utf8) {
+    (void) self;
+    jsize length = (*env)->GetArrayLength(env, utf8);
+    char *copied = calloc((size_t) length + 1, 1);
+    if (copied == NULL) return;
+    (*env)->GetByteArrayRegion(env, utf8, 0, length, (jbyte *) copied);
+    nd_clipboard(copied);
+    free(copied);
 }
 
 JNIEXPORT void JNICALL

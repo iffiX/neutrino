@@ -1,29 +1,42 @@
 package io.github.iffix.neutrino.shell
 
 import android.content.Intent
-import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
 import kotlinx.serialization.json.JsonObject
 
-/** What a person can do from a screen; the screens call these and draw what comes back. */
+/**
+ * What a person can do from a screen. An action that starts a job writes the job into the app
+ * core's state before it returns; the screens draw what the state then says.
+ */
 interface ClientActions {
     /**
-     * Join the hub a pasted or scanned link names.
+     * Start joining the hub a pasted or scanned link names.
      *
      * @param link The link's text.
-     * @return The binding kept, or the refusal to word.
      */
-    suspend fun join(link: String): ChannelResult<HubBinding>
+    fun join(link: String)
+
+    /** The Join page has drawn the join's end. */
+    fun clearJoin()
 
     /**
-     * Leave one hub.
+     * Start leaving one hub.
      *
      * @param bindingId The binding's id.
-     * @return Ok once forgotten, or the refusal that kept it.
      */
-    suspend fun leave(bindingId: String): ChannelResult<Unit>
+    fun leave(bindingId: String)
+
+    /**
+     * Take a hub's binding back from a socket that replaced this one.
+     *
+     * @param bindingId The binding's id.
+     */
+    fun reconnect(bindingId: String)
+
+    /** Refresh every hub, and drop every error line. */
+    fun refresh()
 
     /**
      * The material one published entry takes from its hub.
@@ -33,13 +46,6 @@ interface ClientActions {
      * @return The material, or the refusal to word.
      */
     suspend fun serviceMaterial(bindingId: String, entryId: String): ChannelResult<JsonObject>
-
-    /**
-     * Take a hub's binding back from a socket that replaced this one.
-     *
-     * @param bindingId The binding's id.
-     */
-    fun reconnect(bindingId: String)
 
     /**
      * Open an address in the phone's browser.
@@ -64,15 +70,28 @@ interface ClientActions {
     fun overlayConsent(): Intent?
 
     /**
-     * Want, or stop wanting, one hub's virtual network.
+     * Press Connect on a hub's virtual network.
      *
      * @param bindingId The hub.
-     * @param isWanted The wish.
      */
-    fun setOverlayWanted(bindingId: String, isWanted: Boolean)
+    fun connectOverlay(bindingId: String)
 
     /**
-     * Pick which of a hub's virtual networks to join.
+     * Press Cancel on a hub's virtual network while it connects.
+     *
+     * @param bindingId The hub.
+     */
+    fun cancelOverlay(bindingId: String)
+
+    /**
+     * Press Disconnect on a hub's virtual network.
+     *
+     * @param bindingId The hub.
+     */
+    fun disconnectOverlay(bindingId: String)
+
+    /**
+     * Pick which of a hub's virtual networks the next connect joins.
      *
      * @param bindingId The hub.
      * @param provider The network's provider.
@@ -98,9 +117,28 @@ interface ClientActions {
     suspend fun giveShareLogin(root: ShareRoot, login: ShareLogin, isKept: Boolean): ChannelResult<Unit>
 
     /**
+     * Forget a share's kept login.
+     *
+     * @param rootKey The share's root id.
+     */
+    fun forgetShareLogin(rootKey: String)
+
+    /**
      * Show a share in the system's Files.
      *
      * @param rootKey The share's root id.
      */
     fun openShare(rootKey: String)
+
+    /**
+     * Press Connect on a shared desktop: its material is fetched and the viewer opens.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param name What the viewer's bar shows.
+     */
+    fun connectDesktop(bindingId: String, entryId: String, name: String)
+
+    /** Close the remote desktop viewer. */
+    fun closeDesktop()
 }

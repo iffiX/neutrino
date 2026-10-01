@@ -8,14 +8,14 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.PersistableBundle
 import android.provider.DocumentsContract
+import android.util.Log
 import androidx.core.net.toUri
 import io.github.iffix.neutrino.CLIENT_CLIP_SENSITIVE_EXTRA
 import io.github.iffix.neutrino.CLIENT_FILES_AUTHORITY
+import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
-import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelResult
-import io.github.iffix.neutrino.channel.EnrollmentLink
 import io.github.iffix.neutrino.channel.HubConnections
 import io.github.iffix.neutrino.files.ShareDocumentId
 import io.github.iffix.neutrino.files.ShareLogin
@@ -23,17 +23,19 @@ import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
 import io.github.iffix.neutrino.overlay.OverlayController
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 
 /**
- * The actions over the hub sessions and the phone's own browser and clipboard.
+ * The actions over the app core and the phone's own browser and clipboard.
  *
  * @param context The window the actions start activities from.
  * @param connections The hub sessions.
- * @param overlays The virtual network's wish and pick.
+ * @param overlays The virtual networks.
+ * @param desktops The remote desktop Connects and viewer.
  * @param shares The SMB connections.
  * @param logins The shares' logins.
  */
@@ -41,24 +43,29 @@ class ClientController(
     private val context: Context,
     private val connections: HubConnections,
     private val overlays: OverlayController,
+    private val desktops: RemoteDesktopSessions,
     private val shares: SmbShareClient,
     private val logins: ShareLoginStore,
 ) : ClientActions {
-    override suspend fun join(link: String): ChannelResult<HubBinding> =
-        when (val parsed = EnrollmentLink.parse(link)) {
-            is ChannelResult.Refused -> parsed
-            is ChannelResult.Ok -> connections.join(parsed.value)
-        }
+    override fun join(link: String) = connections.startJoin(link)
 
-    override suspend fun leave(bindingId: String): ChannelResult<Unit> = connections.leave(bindingId)
+    override fun clearJoin() = connections.clearJoin()
+
+    override fun leave(bindingId: String) = connections.startLeave(bindingId)
+
+    override fun reconnect(bindingId: String) {
+        connections.session(bindingId)?.reconnect()
+    }
+
+    override fun refresh() {
+        overlays.clearErrors()
+        desktops.clearErrors()
+        connections.refresh()
+    }
 
     override suspend fun serviceMaterial(bindingId: String, entryId: String): ChannelResult<JsonObject> {
         val session = connections.session(bindingId) ?: return ChannelResult.refused("unknown_hub")
         return session.openService(entryId)
-    }
-
-    override fun reconnect(bindingId: String) {
-        connections.session(bindingId)?.reconnect()
     }
 
     override fun openUrl(url: String) {
@@ -79,7 +86,11 @@ class ClientController(
 
     override fun overlayConsent(): Intent? = VpnService.prepare(context)
 
-    override fun setOverlayWanted(bindingId: String, isWanted: Boolean) = overlays.setWanted(bindingId, isWanted)
+    override fun connectOverlay(bindingId: String) = overlays.connect(bindingId)
+
+    override fun cancelOverlay(bindingId: String) = overlays.cancel(bindingId)
+
+    override fun disconnectOverlay(bindingId: String) = overlays.disconnect(bindingId)
 
     override fun pickOverlay(bindingId: String, provider: String) = overlays.pick(bindingId, provider)
 
@@ -101,6 +112,15 @@ class ClientController(
             }
         }
 
+    override fun forgetShareLogin(rootKey: String) {
+        shares.drop(rootKey)
+        try {
+            logins.forget(rootKey)
+        } catch (_: IOException) {
+            Log.w(CLIENT_LOG_TAG, "the kept logins could not be written")
+        }
+    }
+
     override fun openShare(rootKey: String) {
         val root = DocumentsContract.buildRootUri(CLIENT_FILES_AUTHORITY, rootKey)
         val view = Intent(Intent.ACTION_VIEW).setDataAndType(root, DocumentsContract.Root.MIME_TYPE_ITEM)
@@ -116,8 +136,13 @@ class ClientController(
             try {
                 context.startActivity(pick)
             } catch (_: ActivityNotFoundException) {
-                // The phone has no Files app to show the share in.
+                Log.i(CLIENT_LOG_TAG, "the phone has no Files app to show the share in")
             }
         }
     }
+
+    override fun connectDesktop(bindingId: String, entryId: String, name: String) =
+        desktops.connect(bindingId, entryId, name)
+
+    override fun closeDesktop() = desktops.close()
 }

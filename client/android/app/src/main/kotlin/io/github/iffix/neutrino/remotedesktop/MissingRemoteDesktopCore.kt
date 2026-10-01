@@ -9,6 +9,7 @@ class MissingRemoteDesktopCore : RemoteDesktopCore {
         target: RemoteDesktopTarget,
         onState: (RemoteDesktopState) -> Unit,
         onFrameSize: (Int, Int) -> Unit,
+        onClipboard: (String) -> Unit,
     ) {
         onState(RemoteDesktopState.Stopped(ChannelResult.refused("rdp_core_missing")))
     }
@@ -20,6 +21,8 @@ class MissingRemoteDesktopCore : RemoteDesktopCore {
     override fun key(code: String, isDown: Boolean) = Unit
 
     override fun type(text: String) = Unit
+
+    override fun clipboard(text: String) = Unit
 
     override fun disconnect() = Unit
 }

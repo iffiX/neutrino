@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.remotedesktop
 
+import android.content.ClipboardManager
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
@@ -31,6 +32,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +48,7 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
@@ -74,15 +77,23 @@ private enum class TwoFingerMode { UNDECIDED, PINCH, SCROLL }
 
 /**
  * The viewer over the whole window: a bar with the machine's name, Keyboard and Disconnect, the
- * remote picture below it, and a row of keys a phone keyboard lacks. A tap clicks, a long press
- * right-clicks, one finger drags, a pinch zooms and moves the picture, two fingers scroll.
+ * remote picture below it, and a row of keys a phone keyboard lacks with Paste beside them. A
+ * tap clicks, a long press right-clicks, one finger drags, a pinch zooms and moves the picture,
+ * two fingers scroll. Text copied on the remote machine lands on the phone's clipboard; Paste
+ * puts the phone's clipboard on the remote machine's and presses Ctrl+V there.
  *
  * @param target The desktop to show.
  * @param core What decodes the picture and sends the input.
+ * @param onCopied What text copied on the remote machine does: it goes on the phone's clipboard.
  * @param onClose What Disconnect and Back do.
  */
 @Composable
-fun RemoteDesktopViewer(target: RemoteDesktopTarget, core: RemoteDesktopCore, onClose: () -> Unit) {
+fun RemoteDesktopViewer(
+    target: RemoteDesktopTarget,
+    core: RemoteDesktopCore,
+    onCopied: (String) -> Unit,
+    onClose: () -> Unit,
+) {
     val words = NeutrinoTheme.words
     val palette = NeutrinoTheme.palette
     var state by remember(target) { mutableStateOf<RemoteDesktopState>(RemoteDesktopState.Connecting) }
@@ -92,6 +103,8 @@ fun RemoteDesktopViewer(target: RemoteDesktopTarget, core: RemoteDesktopCore, on
         mutableStateOf(TextFieldValue(RDP_TYPING_SENTINEL, TextRange(RDP_TYPING_SENTINEL.length)))
     }
     val focus = remember { FocusRequester() }
+    val context = LocalContext.current
+    val copied = rememberUpdatedState(onCopied)
     val keyboard = LocalSoftwareKeyboardController.current
     val isShowing = state == RemoteDesktopState.Showing
     BackHandler(onBack = onClose)
@@ -102,6 +115,7 @@ fun RemoteDesktopViewer(target: RemoteDesktopTarget, core: RemoteDesktopCore, on
             onFrameSize = { width, height ->
                 viewport = viewport.sized(viewport.viewWidth, viewport.viewHeight, width, height)
             },
+            onClipboard = { text -> copied.value(text) },
         )
         onDispose { core.disconnect() }
     }
@@ -293,13 +307,27 @@ fun RemoteDesktopViewer(target: RemoteDesktopTarget, core: RemoteDesktopCore, on
                 modifier = Modifier.size(1.dp).alpha(0f).focusRequester(focus),
             )
         }
-        if (isShowing) KeyBar(held, onBarKey)
+        if (isShowing) {
+            KeyBar(held, onBarKey) {
+                val text = context.getSystemService(ClipboardManager::class.java).primaryClip
+                    ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                if (text.isNotEmpty()) {
+                    core.clipboard(text)
+                    core.key(RemoteDesktopKey.CTRL.code, true)
+                    core.key(RemoteDesktopKey.PASTE, true)
+                    core.key(RemoteDesktopKey.PASTE, false)
+                    core.key(RemoteDesktopKey.CTRL.code, false)
+                    releaseHeld()
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun KeyBar(held: Set<RemoteDesktopKey>, onKey: (RemoteDesktopKey) -> Unit) {
+private fun KeyBar(held: Set<RemoteDesktopKey>, onKey: (RemoteDesktopKey) -> Unit, onPaste: () -> Unit) {
     val palette = NeutrinoTheme.palette
+    val words = NeutrinoTheme.words
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -326,6 +354,19 @@ private fun KeyBar(held: Set<RemoteDesktopKey>, onKey: (RemoteDesktopKey) -> Uni
                     style = NeutrinoTheme.mono.copy(color = if (isHeld) palette.accent else palette.text),
                 )
             }
+        }
+        val shape = RoundedCornerShape(6.dp)
+        Box(
+            modifier = Modifier
+                .heightIn(min = 34.dp)
+                .clip(shape)
+                .background(palette.surface)
+                .border(1.dp, palette.borderStrong, shape)
+                .clickable(role = Role.Button, onClick = onPaste)
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicText(words.word("ui.paste"), style = NeutrinoTheme.mono.copy(color = palette.text))
         }
     }
 }

@@ -1,6 +1,8 @@
 package io.github.iffix.neutrino.terminal
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.util.Base64
 import android.webkit.JavascriptInterface
@@ -13,7 +15,9 @@ import io.github.iffix.neutrino.design.NeutrinoPalette
 import org.json.JSONObject
 
 /**
- * The WebView the terminals are drawn in: xterm.js from the app's assets, one pane per tab.
+ * The WebView the terminals are drawn in: xterm.js from the app's assets, one pane per tab, each
+ * scrolled by touch with a thin bar, and a long press opening Copy, Paste, Select all and Clear
+ * through the system clipboard.
  *
  * @param context The window's context.
  * @param tabs The tabs whose output it draws and whose input it sends.
@@ -23,6 +27,7 @@ import org.json.JSONObject
 class TerminalView(context: Context, private val tabs: TerminalTabs, private val onCtrlUsed: () -> Unit) :
     WebView(context) {
     private val opened = mutableSetOf<String>()
+    private val clipboard = context.getSystemService(ClipboardManager::class.java)
     private var isReady = false
     private var pending: (() -> Unit)? = null
 
@@ -71,7 +76,7 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
      * @param palette The palette.
      */
     fun palette(palette: NeutrinoPalette) {
-        val theme = JSONObject()
+        val terminal = JSONObject()
             .put("background", hex(palette.termBg))
             .put("foreground", hex(palette.termFg))
             .put("cursor", hex(palette.accent))
@@ -82,7 +87,30 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
             .put("yellow", hex(palette.signalWarn))
             .put("blue", hex(palette.accent))
             .put("cyan", hex(palette.accent))
+        val chrome = JSONObject()
+            .put("bar", hex(palette.textMuted))
+            .put("menu-ground", hex(palette.bg))
+            .put("menu-border", hex(palette.border))
+            .put("menu-text", hex(palette.text))
+            .put("menu-faint", hex(palette.textFaint))
+            .put("menu-lift", hex(palette.elevated))
+            .put("menu-accent", hex(palette.accent))
+            .put("menu-shadow", hex(palette.shadow))
+        val theme = JSONObject().put("terminal", terminal).put("chrome", chrome)
         run { call("neutrino.theme(${JSONObject.quote(theme.toString())})") }
+    }
+
+    /**
+     * Word the long press menu.
+     *
+     * @param copy Copy's label.
+     * @param paste Paste's label.
+     * @param selectAll Select all's label.
+     * @param clear Clear's label.
+     */
+    fun labels(copy: String, paste: String, selectAll: String, clear: String) {
+        val labels = JSONObject().put("copy", copy).put("paste", paste).put("selectAll", selectAll).put("clear", clear)
+        run { call("neutrino.labels(${JSONObject.quote(labels.toString())})") }
     }
 
     /** Stop drawing output; the tabs keep it for the next view. */
@@ -138,5 +166,16 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
         fun ctrlUsed() {
             post(onCtrlUsed)
         }
+
+        @JavascriptInterface
+        fun copy(text: String) {
+            if (text.isEmpty()) return
+            post { clipboard.setPrimaryClip(ClipData.newPlainText("", text)) }
+        }
+
+        @JavascriptInterface
+        fun paste(): String = clipboard.primaryClip?.takeIf {
+            it.itemCount > 0
+        }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
     }
 }

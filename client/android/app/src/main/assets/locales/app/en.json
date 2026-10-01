@@ -1,13 +1,13 @@
 {
   "code": {
+    "overlay_wish_unsaved": "the virtual network choice could not be saved",
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
     "rdp_login_failed": "The machine refused the access password.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
-    "about": "About",
-    "about_version": "{version} · Android",
+    "about_build": "{version} · Android",
     "ai_qr_hint": "A chat app that scans this code can use this gateway.",
     "ai_qr_label": "QR code of the gateway address and the key",
     "app_licence": "Licensed AGPL-3.0",
@@ -21,24 +21,26 @@
     "core_patch": "Patch",
     "core_source": "Source 1.4.9",
     "desktop_only": "Desktop only",
+    "forget_password": "Forget password",
+    "forget_password_arm": "Press again to forget",
     "gateway_address": "Gateway address",
+    "hub_forgot": "{hub} no longer knows this phone, so its row was removed.",
     "join_hint": "Scan the QR code, or paste the link.",
-    "joining": "Joining…",
     "key_hide": "Hide the key",
     "key_show": "Show the key",
-    "leave_confirm": "Leave {hub}? This phone forgets its link and its key.",
     "open_in_files": "Open in Files",
     "or": "or",
     "overlay_count": "This hub publishes {count} virtual networks",
     "password_not_saved": "Password not saved",
     "paste": "Paste",
+    "qr": "QR",
     "rdp_disconnect": "Disconnect",
     "rdp_keyboard": "Keyboard",
+    "reason_viewer_open": "A viewer is open.",
     "remember": "Remember",
     "scan_hint": "Point the camera at the QR code on the hub's Clients page",
     "share_login_needed": "Give this share's password on the Files screen first.",
     "terminal_detached": "Detached; it attaches again once the hub answers.",
-    "terminal_end": "End",
-    "terminal_end_confirm": "End the persistent session on {name}? Its shell exits on that machine."
+    "terminal_expand": "Show the machines and the tabs"
   }
 }

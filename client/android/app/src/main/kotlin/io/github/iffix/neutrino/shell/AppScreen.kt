@@ -20,7 +20,6 @@ enum class AppScreen(val route: String, val titleKey: String, val icon: AppIcon?
     REMOTE_DESKTOP("remote_desktop", "ui.panel_desktops", AppIcon.DESKTOP),
     SETTINGS("settings", "ui.settings", AppIcon.SETTINGS),
     JOIN("join", "ui.add_hub", null, HUBS),
-    ABOUT("about", "ui.about", null, SETTINGS),
     ;
 
     companion object {

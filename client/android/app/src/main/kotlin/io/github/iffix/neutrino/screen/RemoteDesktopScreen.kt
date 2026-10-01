@@ -2,84 +2,70 @@ package io.github.iffix.neutrino.screen
 
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubView
-import io.github.iffix.neutrino.design.DotTone
+import io.github.iffix.neutrino.design.ErrorLine
 import io.github.iffix.neutrino.design.FeatureRow
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
-import io.github.iffix.neutrino.remotedesktop.RemoteDesktopTarget
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
+import io.github.iffix.neutrino.design.ReasonLine
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 
 /**
- * The desktops the machines of the joined hubs share, each with Connect; a press takes the
- * address and seat password from the hub and opens the viewer.
+ * The desktops the machines of the joined hubs share, each with Connect: the button shows the
+ * job while the address and seat password come from the hub, then the viewer opens.
  *
  * @param hubs Every hub joined.
- * @param material What the hub hands this phone for one entry: `{host, port, password}`.
- * @param onView What a connection with its material does: open the viewer.
- * @param onJoin What pressing Join a hub does.
+ * @param connecting The entries whose Connect runs, by entry key.
+ * @param errors The code each entry's last Connect ended in, by entry key.
+ * @param viewingKey The entry the open viewer shows, or null.
+ * @param onConnect What pressing Connect does, with the binding id, the entry id and the viewer's title.
  */
 @Composable
 fun RemoteDesktopScreen(
     hubs: List<HubView>,
-    material: suspend (String, String) -> ChannelResult<JsonObject>,
-    onView: (RemoteDesktopTarget) -> Unit,
-    onJoin: () -> Unit,
+    connecting: Set<String>,
+    errors: Map<String, ChannelResult.Refused>,
+    viewingKey: String?,
+    onConnect: (String, String, String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
-    val palette = NeutrinoTheme.palette
-    val scope = rememberCoroutineScope()
-    var working by remember { mutableStateOf("") }
-    val notes = remember { mutableStateMapOf<String, ChannelResult.Refused>() }
-    ServiceList(hubs, "rdp", "ui.empty_desktops", onJoin) { hub, entry, hasDivider ->
-        val key = hub.binding.id + "/" + entry.id
+    ServiceList(hubs, "rdp", "ui.empty_desktops") { hub, entry, hasDivider ->
+        val key = RemoteDesktopSessions.keyOf(hub.binding.id, entry.id)
         val host = entry.text("host")
         val isHealthy = entry.isHealthy != false
-        val connect = {
-            working = key
-            notes.remove(key)
-            scope.launch {
-                val name = hub.binding.title + ":" + entry.deviceName.ifEmpty { entry.title }
-                when (val target = RemoteDesktopTarget.of(name, material(hub.binding.id, entry.id))) {
-                    is ChannelResult.Refused -> notes[key] = target
-                    is ChannelResult.Ok -> onView(target.value)
-                }
-                working = ""
-            }
-            Unit
+        val isBusy = key in connecting
+        val reason = when {
+            !isHealthy -> entry.descriptionCode.takeIf { it.isNotEmpty() }?.let { words.refusal(it) }
+                ?: words.word("ui.reason.unhealthy")
+
+            viewingKey != null -> words.word("ui.reason_viewer_open")
+
+            else -> null
         }
         FeatureRow(
-            marker = if (isHealthy) DotTone.OK else DotTone.OFF,
-            isGreyed = !isHealthy,
+            marker = entryTone(hub, entry, isBusy),
             hasDivider = hasDivider,
-            trailing = {
+            actions = {
                 NeutrinoButton(
-                    label = words.word(if (working == key) "ui.rdp_connecting" else "ui.rdp_connect"),
-                    onClick = connect,
-                    isEnabled = working.isEmpty() && isHealthy,
+                    label = words.word(if (isBusy) "ui.job.connecting" else "ui.rdp_connect"),
+                    onClick = {
+                        val name = hub.binding.title + ":" + entry.deviceName.ifEmpty { entry.title }
+                        onConnect(hub.binding.id, entry.id, name)
+                    },
+                    isEnabled = reason == null && !isBusy && !hub.jobs.isRefreshing,
+                    isBusy = isBusy,
                     isSmall = true,
                 )
             },
         ) {
             BasicText(entry.title, style = NeutrinoTheme.rowTitle)
+            if (viewingKey == key) BasicText(words.word("ui.rdp_open"), style = NeutrinoTheme.note)
             BasicText("$host:${entry.number("port") ?: ""}", style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
-            if (!isHealthy) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
-            notes[key]?.let { note ->
-                BasicText(
-                    words.refusal(note.code, note.wordParams),
-                    style = NeutrinoTheme.note.copy(color = palette.error),
-                )
-            }
+            ErrorLine(errors[key])
+            ReasonLine(reason)
         }
     }
 }
@@ -92,14 +78,8 @@ private fun RemoteDesktopScreenPreview() {
             "ui.machine_provided_by" to "由 {hub}:{device} 提供",
             "ui.rdp_connect" to "连接",
             "ui.unhealthy" to "当前无法访问",
-            "ui.reconnecting" to "正在重新连接 hub",
         ),
     ) {
-        RemoteDesktopScreen(
-            PreviewHubs.all,
-            material = { _, _ -> ChannelResult.refused("rdp_not_shared") },
-            onView = {},
-            onJoin = {},
-        )
+        RemoteDesktopScreen(PreviewHubs.all, emptySet(), emptyMap(), null, onConnect = { _, _, _ -> })
     }
 }

@@ -15,7 +15,7 @@ class AppScreenTest {
     @Test
     fun aScreenReachedFromAnotherBelongsToItsTab() {
         assertEquals(AppScreen.HUBS, AppScreen.JOIN.parent)
-        assertEquals(AppScreen.SETTINGS, AppScreen.ABOUT.parent)
+        assertEquals(listOf(AppScreen.JOIN), AppScreen.entries.filter { it.icon == null })
     }
 
     @Test

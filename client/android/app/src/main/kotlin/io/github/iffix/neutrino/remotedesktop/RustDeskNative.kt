@@ -67,6 +67,13 @@ object RustDeskNative {
      */
     external fun text(utf8: ByteArray)
 
+    /**
+     * Text for the remote machine's clipboard.
+     *
+     * @param utf8 The text in UTF-8.
+     */
+    external fun clipboard(utf8: ByteArray)
+
     /** End the session; no callback runs after this returns. */
     external fun close()
 

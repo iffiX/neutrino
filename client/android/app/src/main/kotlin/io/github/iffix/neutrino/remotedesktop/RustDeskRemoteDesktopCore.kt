@@ -24,6 +24,7 @@ class RustDeskRemoteDesktopCore(private val appDir: String) : RemoteDesktopCore 
         target: RemoteDesktopTarget,
         onState: (RemoteDesktopState) -> Unit,
         onFrameSize: (Int, Int) -> Unit,
+        onClipboard: (String) -> Unit,
     ) {
         if (isRunning) disconnect()
         if (!isInitialized) {
@@ -47,6 +48,10 @@ class RustDeskRemoteDesktopCore(private val appDir: String) : RemoteDesktopCore 
             override fun onSize(width: Int, height: Int) {
                 main.post { if (current == session && isRunning) onFrameSize(width, height) }
             }
+
+            override fun onClipboard(text: String) {
+                main.post { if (current == session && isRunning) onClipboard(text) }
+            }
         }
         val started = RustDeskNative.start(target.host, target.port, target.password, callbacks)
         if (started != 0) {
@@ -69,6 +74,10 @@ class RustDeskRemoteDesktopCore(private val appDir: String) : RemoteDesktopCore 
 
     override fun type(text: String) {
         if (isRunning) RustDeskNative.text(text.toByteArray(Charsets.UTF_8))
+    }
+
+    override fun clipboard(text: String) {
+        if (isRunning) RustDeskNative.clipboard(text.toByteArray(Charsets.UTF_8))
     }
 
     override fun disconnect() {
