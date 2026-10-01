@@ -282,10 +282,13 @@ skipping `lo`, and on every system a missing or all-zero MAC is recorded as
 **A shell can outlive its stream.** A `shell` stream opened with a
 `session_id` attaches to a shell the agent keeps under that id, or starts
 one there. The agent reads the shell's output all the time, keeps its last
-256 KB, and sends it first to a stream that attaches again. A shell that
-`persist` marked keeps running when its stream closes; any other ends with
-it. The report's `machine` section lists every kept shell, and the process
-holds them, so a restart ends them all ([protocol.md](protocol.md), "The
+256 KB, and sends it first to a stream that attaches. Any number of streams
+attach to one shell at once: each receives all the output, input from any
+reaches the shell, and the terminal takes the smallest window's size. A
+shell that `persist` marked persistent or shared keeps running when its last
+stream closes; any other ends with it. The agent keeps the `owner` the hub
+stamped on the open as given. The report's `machine` section lists every
+kept shell, and the process holds them, so a restart ends them all ([protocol.md](protocol.md), "The
 verbs on a `command` stream").
 
 ### Which modules each system runs

@@ -72,7 +72,7 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 
 | Symptom            | Cause                                                                                             | Fix                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `session_taken`    | another window or device attached to the same session, and a session holds one terminal at a time | select the session's tab again to take it back; the other window's terminal closes |
+| `session_not_owned` | another viewer opened the session, and only its owner sets **Persistent** and **Shared** | ask whoever opened it to switch it, or open a terminal of your own |
 | `session_unknown`  | the session ended, or the agent restarted or updated, which ends every session on that machine    | open a new terminal on the machine                                                 |
 | `shell_unknown`    | the hub no longer holds the shell the client resized                                              | close the terminal in the client and open it again                                 |
 | `unknown_terminal` | `nclient terminal` named a machine no joined hub offers a terminal on                             | run `nclient terminal` with a machine the client's **Terminals** page lists        |

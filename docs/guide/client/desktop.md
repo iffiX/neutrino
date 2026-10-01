@@ -216,7 +216,7 @@ A kept session shows as a tab with a grey dot. Select that tab to attach, and th
 | `permission_denied` | the hub's **Clients** page does not let this client open terminals |
 | `agent_offline`     | the machine is not connected to its hub                            |
 | `unknown_terminal`  | the hub offers no terminal on that machine                         |
-| `session_taken`     | another window attached to the session                             |
+| `session_not_owned` | another viewer opened the session, so its switches are not this client's |
 | `session_unknown`   | the machine no longer keeps the session                            |
 
 ## Remote desktops
