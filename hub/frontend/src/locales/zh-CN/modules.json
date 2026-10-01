@@ -266,7 +266,7 @@
   "ui.samba.share_read_only_hint": "是否对所有人都拒绝写入。",
   "ui.samba.share_remove": "移除",
   "ui.samba.share_users": "谁可以用",
-  "ui.samba.share_users_administrators": "一个都没选：只有这台机器的管理员能用。",
+  "ui.samba.share_users_administrators": "只有这台机器的管理员能用；目前还没有配置用户。",
   "ui.samba.share_users_all": "未选择：所有用户都可以用。",
   "ui.samba.share_users_none": "所有用户；目前还没有配置用户。",
   "ui.samba.share_users_picked": "只有选中的用户可以用。",

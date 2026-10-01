@@ -75,7 +75,7 @@
   "ui.settings.update_check": "Check for updates",
   "ui.settings.update_checking": "Checking…",
   "ui.settings.update_checkout": "This hub runs from a checkout; update it with git.",
-  "ui.settings.update_confirm_body": "The package is downloaded and checked, then installed by systemd outside the panel. The panel restarts, this page reloads to the sign-in, and the agents on your devices update themselves from the new hub. If {version} does not answer within three minutes, {from} is put back.",
+  "ui.settings.update_confirm_body": "The package is downloaded and checked, then installed by systemd outside the panel. The panel restarts and this page reloads to the sign-in. Agents on your devices update themselves from the new hub, except an agent on an older protocol: the hub refuses it, and you reinstall it with Reinstall agent on the Devices page or by hand. If {version} does not answer within three minutes, {from} is put back.",
   "ui.settings.update_confirm_no_rollback": "No release carries the package of {from}, so nothing can be put back if {version} does not come up; that would need a terminal on the box.",
   "ui.settings.update_confirm_title": "Install {version}",
   "ui.settings.update_current": "This hub",

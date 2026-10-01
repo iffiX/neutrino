@@ -452,7 +452,13 @@ function ShareEditor({
       <div className="field">
         <span className="field_label">{t("ui.samba.share_users")}</span>
         {userNames.length === 0 ? (
-          <span className="field_hint">{t("ui.samba.share_users_none")}</span>
+          <span className="field_hint">
+            {t(
+              isSystemServer
+                ? "ui.samba.share_users_administrators"
+                : "ui.samba.share_users_none",
+            )}
+          </span>
         ) : (
           <div className="samba_user_chips">
             <div className="samba_user_chip_list">
@@ -473,11 +479,7 @@ function ShareEditor({
             </div>
             <span className="field_hint">
               {share.valid_users.length === 0
-                ? t(
-                    isSystemServer
-                      ? "ui.samba.share_users_administrators"
-                      : "ui.samba.share_users_all",
-                  )
+                ? t("ui.samba.share_users_all")
                 : t("ui.samba.share_users_picked")}
             </span>
           </div>

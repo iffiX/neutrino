@@ -75,7 +75,7 @@
   "ui.settings.update_check": "检查更新",
   "ui.settings.update_checking": "检查中…",
   "ui.settings.update_checkout": "这个 hub 从检出运行，请用 git 更新。",
-  "ui.settings.update_confirm_body": "先下载并校验安装包，再由 systemd 在面板之外安装。面板会重启，这一页会自己刷新回登录页，各设备上的被控端会从新 hub 自行更新。如果 {version} 三分钟内没有应答，会装回 {from}。",
+  "ui.settings.update_confirm_body": "先下载并校验安装包，再由 systemd 在面板之外安装。面板会重启，这一页会自己刷新回登录页。各设备上的被控端会从新 hub 自行更新；协议更旧的被控端除外，hub 拒绝它，要在设备页用「重新安装被控端」重装，或者手动重装。如果 {version} 三分钟内没有应答，会装回 {from}。",
   "ui.settings.update_confirm_no_rollback": "没有任何发行版本带 {from} 的安装包，所以 {version} 起不来时没有东西可以装回；那时需要到盒子上用终端处理。",
   "ui.settings.update_confirm_title": "安装 {version}",
   "ui.settings.update_current": "这个 hub",

@@ -266,7 +266,7 @@
   "ui.samba.share_read_only_hint": "Whether writing is refused for everyone, whoever they are.",
   "ui.samba.share_remove": "Remove",
   "ui.samba.share_users": "Who may use it",
-  "ui.samba.share_users_administrators": "None picked: only this machine's administrators may use it.",
+  "ui.samba.share_users_administrators": "Only this machine's administrators; no users are configured yet.",
   "ui.samba.share_users_all": "None picked: every user may use it.",
   "ui.samba.share_users_none": "Every user; none are configured yet.",
   "ui.samba.share_users_picked": "Only the picked users may use it.",
