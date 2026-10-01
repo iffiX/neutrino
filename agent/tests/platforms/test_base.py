@@ -107,7 +107,7 @@ def test_windows_and_macos_install_nothing_and_step_down_to_nobody():
         assert "packages" not in platform_class.capabilities
         assert "system_packages" not in platform_class.capabilities
         assert "run_as" not in platform_class.capabilities
-    assert "accounts" not in WindowsPlatform.capabilities
+    assert "accounts" in WindowsPlatform.capabilities
     assert "accounts" in DarwinPlatform.capabilities
 
 
