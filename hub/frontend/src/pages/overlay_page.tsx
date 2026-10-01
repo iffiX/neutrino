@@ -5,6 +5,7 @@ import { ApplyBar } from "../components/apply_bar";
 import { EasyTierSection } from "../components/easytier_panels";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
+import { KeptSecretRow } from "../components/kept_secret_row";
 import { OverlayModePanel } from "../components/overlay_mode_panel";
 import { OverlayPeers } from "../components/overlay_peers";
 import type { OverlayPeerRow } from "../components/overlay_peers";
@@ -128,12 +129,12 @@ export function OverlayPage() {
         </div>
       )}
 
-      {selected === PROVIDER_NETBIRD && (
-        <NetbirdSection isEnabled={isEnabled(PROVIDER_NETBIRD)} />
+      {selected === PROVIDER_NETBIRD && isEnabled(PROVIDER_NETBIRD) && (
+        <NetbirdSection />
       )}
 
-      {selected === PROVIDER_EASYTIER && (
-        <EasyTierSection isEnabled={isEnabled(PROVIDER_EASYTIER)} />
+      {selected === PROVIDER_EASYTIER && isEnabled(PROVIDER_EASYTIER) && (
+        <EasyTierSection />
       )}
     </div>
   );
@@ -192,15 +193,10 @@ function daemonBadge(view: NetbirdView, isJoining: boolean) {
   }
 }
 
-interface NetbirdSectionProps {
-  /** Whether the hub runs NetBird now. */
-  isEnabled: boolean;
-}
-
 /**
  * NetBird: its settings, LAN route guidance, and live peers.
  */
-function NetbirdSection({ isEnabled }: NetbirdSectionProps) {
+function NetbirdSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<NetbirdView>("/hub/overlay/netbird");
@@ -256,16 +252,7 @@ function NetbirdSection({ isEnabled }: NetbirdSectionProps) {
         </div>
       </div>
 
-      {!isEnabled && (
-        <div className="notice">
-          <Icon name="blocked" size={15} />
-          <div className="notice_body">
-            {t("ui.overlay.engine_off", { title: NETBIRD_PRODUCT_NAME })}
-          </div>
-        </div>
-      )}
-
-      {isEnabled && !view.is_installed && (
+      {!view.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.overlay.install_first")}</div>
@@ -342,9 +329,9 @@ interface NetbirdSettingsPanelProps {
 }
 
 /**
- * NetBird's settings in one frame: where this gateway stands, the key kept
- * for clients, and the join itself, which the apply bar sends. Leaving is
- * the one action in the title.
+ * NetBird's settings in one frame. Before joining: the steps, the join form
+ * and the apply bar that sends it. After: where this gateway stands, the key
+ * kept for clients, and Leave in the title.
  */
 function NetbirdSettingsPanel({
   view,
@@ -363,7 +350,7 @@ function NetbirdSettingsPanel({
 
   const isEnrolled = view.is_enrolled && !isJoining;
   const isReady = view.is_installed && view.is_active;
-  const isDirty = setupKey.trim() !== "";
+  const isDirty = !isEnrolled && setupKey.trim() !== "";
 
   const join = async () => {
     setIsBusy(true);
@@ -425,61 +412,73 @@ function NetbirdSettingsPanel({
         )}
       </div>
       {isEnrolled ? (
-        <div className="netbird_identity">
-          <div className="netbird_fact">
-            <span className="field_label">{t("ui.overlay.address_label")}</span>
-            <span className="netbird_fact_value">
-              {view.netbird_ip || t("ui.overlay.address_assigning")}
-            </span>
+        <>
+          <div className="netbird_identity">
+            <div className="netbird_fact">
+              <span className="field_label">
+                {t("ui.overlay.address_label")}
+              </span>
+              <span className="netbird_fact_value">
+                {view.netbird_ip || t("ui.overlay.address_assigning")}
+              </span>
+            </div>
+            <div className="netbird_fact">
+              <span className="field_label">{t("ui.overlay.name_label")}</span>
+              <span className="netbird_fact_value">{view.fqdn || "—"}</span>
+            </div>
+            <div className="netbird_fact">
+              <span className="field_label">
+                {t("ui.overlay.management_label")}
+              </span>
+              <span className="netbird_fact_value">{view.management_url}</span>
+            </div>
           </div>
-          <div className="netbird_fact">
-            <span className="field_label">{t("ui.overlay.name_label")}</span>
-            <span className="netbird_fact_value">{view.fqdn || "—"}</span>
-          </div>
-          <div className="netbird_fact">
-            <span className="field_label">
-              {t("ui.overlay.management_label")}
-            </span>
-            <span className="netbird_fact_value">{view.management_url}</span>
-          </div>
-        </div>
+          <SetupKeyRow hasSetupKey={view.has_setup_key} onChanged={onReload} />
+          <p className="field_hint">{t("ui.overlay.setup_key_hint")}</p>
+          <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
+          {error !== null && (
+            <div className="notice notice--error">
+              <Icon name="alert" size={15} />
+              <div className="notice_body">{error}</div>
+            </div>
+          )}
+        </>
       ) : (
-        <ol className="netbird_steps">
-          <li>{t("ui.overlay.join_step_network")}</li>
-          <li>{t("ui.overlay.join_step_peer")}</li>
-          <li>{t("ui.overlay.join_step_key")}</li>
-        </ol>
+        <>
+          <ol className="netbird_steps">
+            <li>{t("ui.overlay.join_step_network")}</li>
+            <li>{t("ui.overlay.join_step_peer")}</li>
+            <li>{t("ui.overlay.join_step_key")}</li>
+          </ol>
+          <div className="netbird_join">
+            <PasswordInput
+              value={setupKey}
+              onChange={setSetupKey}
+              placeholder={t("ui.overlay.setup_key_placeholder")}
+            />
+            <input
+              className="input"
+              placeholder={t("ui.overlay.management_url_placeholder")}
+              value={managementUrl}
+              onChange={(event) => setManagementUrl(event.target.value)}
+            />
+          </div>
+          <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
+          <ApplyBar
+            isDirty={isDirty}
+            isBusy={isBusy}
+            label={t("ui.overlay.join")}
+            hint={t("ui.overlay.apply_join_hint")}
+            blockedHint={isReady ? null : t("ui.overlay.service_first")}
+            error={error}
+            onReset={() => {
+              setSetupKey("");
+              setManagementUrl("");
+            }}
+            onApply={() => void join()}
+          />
+        </>
       )}
-      <SetupKeyRow hasSetupKey={view.has_setup_key} onChanged={onReload} />
-      <p className="field_hint">{t("ui.overlay.setup_key_hint")}</p>
-      <div className="netbird_join">
-        <PasswordInput
-          value={setupKey}
-          onChange={setSetupKey}
-          placeholder={t("ui.overlay.setup_key_placeholder")}
-        />
-        <input
-          className="input"
-          placeholder={t("ui.overlay.management_url_placeholder")}
-          value={managementUrl}
-          onChange={(event) => setManagementUrl(event.target.value)}
-        />
-      </div>
-      <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
-      <ApplyBar
-        isDirty={isDirty}
-        isBusy={isBusy}
-        label={isEnrolled ? t("ui.overlay.reenroll") : t("ui.overlay.join")}
-        hint={t("ui.overlay.apply_join_hint")}
-        warning={isEnrolled ? t("ui.overlay.reenroll_warning") : undefined}
-        blockedHint={isReady ? null : t("ui.overlay.service_first")}
-        error={error}
-        onReset={() => {
-          setSetupKey("");
-          setManagementUrl("");
-        }}
-        onApply={() => void join()}
-      />
       {confirm.modal}
     </section>
   );
@@ -490,13 +489,13 @@ interface SetupKeyRowProps {
   onChanged: () => void;
 }
 
-/** Whether a setup key is kept for clients, with Replace and Forget. */
+/** The setup key kept for clients, saved or forgotten at once. */
 function SetupKeyRow({ hasSetupKey, onChanged }: SetupKeyRowProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const confirm = useConfirm();
-  const [isReplacing, setIsReplacing] = useState(false);
   const [setupKey, setSetupKey] = useState("");
+  const [revision, setRevision] = useState(0);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -508,7 +507,7 @@ function SetupKeyRow({ hasSetupKey, onChanged }: SetupKeyRowProps) {
         setup_key: value,
       });
       setSetupKey("");
-      setIsReplacing(false);
+      setRevision((current) => current + 1);
       onChanged();
     } catch (cause: unknown) {
       setError(describeError(cause));
@@ -528,63 +527,17 @@ function SetupKeyRow({ hasSetupKey, onChanged }: SetupKeyRowProps) {
 
   return (
     <>
-      <div className="netbird_fact netbird_setup_key">
-        <span className="field_label">{t("ui.overlay.setup_key_label")}</span>
-        <span className="netbird_fact_value">
-          {hasSetupKey
-            ? t("ui.overlay.setup_key_kept")
-            : t("ui.overlay.setup_key_missing")}
-        </span>
-        {isReplacing ? (
-          <>
-            <PasswordInput
-              value={setupKey}
-              onChange={setSetupKey}
-              placeholder={t("ui.overlay.setup_key_placeholder")}
-            />
-            <button
-              type="button"
-              className="button button--small button--primary"
-              disabled={isBusy || setupKey.trim() === ""}
-              onClick={() => void store(setupKey.trim())}
-            >
-              {t("ui.overlay.setup_key_save")}
-            </button>
-            <button
-              type="button"
-              className="button button--small"
-              disabled={isBusy}
-              onClick={() => {
-                setSetupKey("");
-                setIsReplacing(false);
-              }}
-            >
-              {t("ui.overlay.setup_key_cancel")}
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="button button--small"
-              disabled={isBusy}
-              onClick={() => setIsReplacing(true)}
-            >
-              {t("ui.overlay.setup_key_replace")}
-            </button>
-            {hasSetupKey && (
-              <button
-                type="button"
-                className="button button--small button--danger"
-                disabled={isBusy}
-                onClick={askForget}
-              >
-                {t("ui.overlay.setup_key_forget")}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      <KeptSecretRow
+        key={revision}
+        label={t("ui.overlay.setup_key_label")}
+        isKept={hasSetupKey}
+        value={setupKey}
+        onChange={setSetupKey}
+        placeholder={t("ui.overlay.setup_key_placeholder")}
+        onSave={() => void store(setupKey.trim())}
+        onForget={askForget}
+        isBusy={isBusy}
+      />
       {error !== null && (
         <div className="notice notice--error">
           <Icon name="alert" size={15} />

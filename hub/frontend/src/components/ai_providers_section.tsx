@@ -5,6 +5,7 @@ import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { ToggleSwitch } from "./toggle_switch";
+import { Picker } from "./picker";
 import { VaultPicker } from "./vault_picker";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
@@ -417,20 +418,15 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
             onChange={(event) => setName(event.target.value)}
           />
         </label>
-        <label className="field">
-          <span className="field_label">{t("ui.ai.field_kind")}</span>
-          <select
-            className="input"
-            value={kind}
-            onChange={(event) => setKind(event.target.value as AiProviderKind)}
-          >
-            {PROVIDER_KINDS.map((option) => (
-              <option key={option} value={option}>
-                {t(PROVIDER_KIND_LABEL_KEYS[option])}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Picker
+          options={PROVIDER_KINDS.map((option) => ({
+            id: option,
+            name: t(PROVIDER_KIND_LABEL_KEYS[option]),
+          }))}
+          value={kind}
+          onChange={(id) => setKind(id as AiProviderKind)}
+          label={t("ui.ai.field_kind")}
+        />
       </div>
       <label className="field">
         <span className="field_label">{t("ui.ai.field_base_url")}</span>

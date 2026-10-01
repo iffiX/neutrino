@@ -115,7 +115,6 @@ CLI_CODE_WORDS = {
     "user_name_invalid": "user name {user} is not a unix name",
     "user_name_duplicate": "user {user} is listed twice",
     "user_unknown": "{user} is not a configured user",
-    "session_taken": "another terminal attached to session {session_id}",
     "account_invalid": "{account} is not a usable account name",
     "account_duplicate": "{account} is named for two servers",
     "account_unknown": "this machine has no account {account}",

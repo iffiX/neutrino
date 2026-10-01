@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
+import { Picker } from "./picker";
+import type { PickerOption } from "./picker";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { isInSubnet, isIpv4Address, parseIpv4 } from "../ipv4_address";
@@ -25,7 +27,6 @@ import "./static_lease_panel.css";
  * applies, so the bar stays dark on a row the hub would refuse.
  */
 
-const MAC_LIST_ID = "static_lease_known_macs";
 const HOSTNAME_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
 const PREFIX_MAX = 32;
 
@@ -77,6 +78,9 @@ export function StaticLeasePanel({
   }, [network.static_leases, isReseedable]);
 
   const leasing = leasingNetworks(network);
+  const knownMacs = devices
+    .filter((device) => device.link_mac.length > 0)
+    .map(macOption);
   const errors = rows.map((row, index) =>
     validateRow(row, index, rows, leasing),
   );
@@ -146,19 +150,18 @@ export function StaticLeasePanel({
             const rowError = firstError(rowErrors);
             return (
               <li className="static_lease_row" key={index}>
-                <input
-                  className={`input mono ${rowErrors.mac_address === undefined ? "" : "input--invalid"}`}
-                  aria-label={t("ui.network.static_lease_mac_label")}
-                  list={MAC_LIST_ID}
+                <Picker
+                  options={knownMacs}
                   value={row.mac_address}
-                  placeholder="aa:bb:cc:dd:ee:ff"
-                  spellCheck={false}
-                  onChange={(event) =>
-                    edit(index, { mac_address: event.target.value })
-                  }
+                  onChange={(mac_address) => edit(index, { mac_address })}
                   onBlur={() =>
                     edit(index, { mac_address: normaliseMac(row.mac_address) })
                   }
+                  label={t("ui.network.static_lease_mac_label")}
+                  placeholder="aa:bb:cc:dd:ee:ff"
+                  isInvalid={rowErrors.mac_address !== undefined}
+                  isLabelHidden
+                  isTyped
                 />
                 <input
                   className={`input mono ${rowErrors.address === undefined ? "" : "input--invalid"}`}
@@ -203,18 +206,6 @@ export function StaticLeasePanel({
           })}
         </ul>
       )}
-
-      <datalist id={MAC_LIST_ID}>
-        {devices
-          .filter((device) => device.link_mac.length > 0)
-          .map((device) => (
-            <option
-              key={device.id}
-              value={device.link_mac}
-              label={deviceLabel(device)}
-            />
-          ))}
-      </datalist>
 
       <div className="static_lease_add">
         <button
@@ -336,9 +327,13 @@ function firstError(errors: RowErrors): string | null {
   return errors.mac_address ?? errors.address ?? errors.name ?? null;
 }
 
-/** What a discovered device reads as in the MAC list. */
-function deviceLabel(device: DeviceView): string {
-  return [device.name, device.vendor, device.ipv4_address]
-    .filter((part): part is string => part !== null && part.length > 0)
-    .join(" · ");
+/** A discovered device as a row of the MAC list: its name and address. */
+function macOption(device: DeviceView): PickerOption {
+  return {
+    id: device.link_mac,
+    name: device.link_mac,
+    detail: [device.name, device.ipv4_address]
+      .filter((part): part is string => part !== null && part.length > 0)
+      .join(" · "),
+  };
 }

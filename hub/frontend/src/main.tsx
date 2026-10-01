@@ -1,16 +1,16 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import "./fonts.css";
+import "./theme.css";
+import "./themes/dark.css";
+import "./themes/light.css";
+
 import { App } from "./app";
 import { apiGet } from "./api_client";
 import { LANGUAGE_DEFAULT, setLanguage } from "./i18n";
 import { THEME_DEFAULT, setThemeChoice } from "./theme";
 import type { PanelDisplay } from "./api_types";
-
-import "./fonts.css";
-import "./theme.css";
-import "./themes/dark.css";
-import "./themes/light.css";
 
 const container = document.getElementById("root");
 if (container === null) {

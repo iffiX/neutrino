@@ -267,8 +267,8 @@ class FakeShells:
         self.persisted: list = []
         self.stopped: list = []
 
-    def persist(self, session_id, is_persistent):
-        self.persisted.append((session_id, is_persistent))
+    def persist(self, session_id, is_persistent=None, is_shared=None):
+        self.persisted.append((session_id, is_persistent, is_shared))
         return session_id == "tab-1"
 
     def stop(self, session_id):
@@ -293,8 +293,22 @@ def test_persist_and_stop_session_reach_the_shell_registry():
 
     assert (persisted.exit_code, persisted.code) == (0, "")
     assert (stopped.exit_code, stopped.code) == (0, "")
-    assert shells.persisted == [("tab-1", True)]
+    assert shells.persisted == [("tab-1", True, None)]
     assert shells.stopped == ["tab-1"]
+
+
+def test_persist_carries_is_shared_and_a_missing_flag_as_none():
+    shells = FakeShells()
+    operator_ = shell_operator(shells)
+
+    operator_.run(
+        "agent",
+        "persist",
+        {"session_id": "tab-1", "is_persistent": False, "is_shared": True},
+    )
+    operator_.run("agent", "persist", {"session_id": "tab-1", "is_shared": False})
+
+    assert shells.persisted == [("tab-1", False, True), ("tab-1", None, False)]
 
 
 def test_an_unknown_session_is_refused_typed():
@@ -315,7 +329,9 @@ def test_windows_answers_the_session_verbs_while_it_refuses_kill(monkeypatch):
     assert operator_.run("agent", "stop_session", {"session_id": "tab-1"}).code == ""
     assert (
         operator_.run(
-            "agent", "persist", {"session_id": "tab-1", "is_persistent": False}
+            "agent",
+            "persist",
+            {"session_id": "tab-1", "is_persistent": False, "is_shared": True},
         ).code
         == ""
     )

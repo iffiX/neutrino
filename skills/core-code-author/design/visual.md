@@ -72,6 +72,8 @@ token under it resolves from that file.
 - Nothing outside CSS owns a colour. Recharts props take `var(--color-accent)`,
   and `terminalTheme()` resolves the terminal tokens through `themeToken()`
   when a terminal is created and again on a theme change.
+- Component stylesheets enter the page after `theme.css` and the theme files,
+  and override a base rule by their order, never by a longer selector.
 - The client window's `style.css` uses the same token names and values, in two
   blocks of its own.
 

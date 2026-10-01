@@ -158,7 +158,7 @@ export function OverlayModePanel({
               </button>
               <ToggleSwitch
                 isOn={isOn}
-                label={t("ui.overlay.engine_switch", { title: kind.title })}
+                label={t("ui.overlay.engine_switch")}
                 isDisabled={isBusy || (blocked !== null && !isOn)}
                 onChange={(isNowOn) => {
                   setError(null);
