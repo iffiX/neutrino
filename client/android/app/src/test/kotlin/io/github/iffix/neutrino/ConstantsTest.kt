@@ -6,7 +6,7 @@ import org.junit.Test
 class ConstantsTest {
     private fun pinnedTag(script: String, name: String): String {
         val text = RepositoryFiles.text("packaging/$script")
-        return Regex("""$name = "v([0-9.]+)"""").find(text)?.groupValues?.get(1)
+        return Regex("""$name = "v?([0-9.]+)"""").find(text)?.groupValues?.get(1)
             ?: throw AssertionError("$script pins no $name")
     }
 
@@ -15,6 +15,13 @@ class ConstantsTest {
         val versions = CLIENT_CARRIED_CORES.associate { (name, version, _) -> name to version }
         assertEquals(pinnedTag("mobile_netbird.py", "NETBIRD_MOBILE_TAG"), versions["NetBird"])
         assertEquals(pinnedTag("mobile_easytier.py", "EASYTIER_MOBILE_TAG"), versions["EasyTier"])
+        assertEquals(pinnedTag("mobile_rustdesk.py", "RUSTDESK_MOBILE_TAG"), versions[CLIENT_RUSTDESK_CORE])
+    }
+
+    @Test
+    fun theRustDeskSourceLinkNamesThePinnedTag() {
+        val tag = pinnedTag("mobile_rustdesk.py", "RUSTDESK_MOBILE_TAG")
+        assertEquals("https://github.com/rustdesk/rustdesk/tree/$tag", CLIENT_RUSTDESK_SOURCE_URL)
     }
 
     @Test

@@ -40,8 +40,18 @@ const val ICON_STROKE_WIDTH = 1.6f
 val CLIENT_CARRIED_CORES: List<Triple<String, String, String>> = listOf(
     Triple("NetBird", "0.78.1", "BSD-3-Clause"),
     Triple("EasyTier", "2.6.4", "LGPL-3.0"),
-    Triple("RustDesk", "1.4.9", "AGPL-3.0"),
+    Triple(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0"),
 )
+
+/** The carried core whose source and patch the About screen links. */
+const val CLIENT_RUSTDESK_CORE = "RustDesk"
+
+/** RustDesk's source at the tag the app's core is built from. */
+const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tree/1.4.9"
+
+/** The patch the app's RustDesk core is built with, at the app's release tag `v{version}`. */
+const val CLIENT_RUSTDESK_PATCH_URL =
+    "https://github.com/iffiX/neutrino/blob/v{version}/packaging/mobile_rustdesk.patch"
 
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
 const val PROTOCOL = 3

@@ -16,6 +16,8 @@
     "client_key": "此客户端的密钥",
     "copied": "已复制",
     "copy": "复制",
+    "core_patch": "补丁",
+    "core_source": "源码 1.4.9",
     "desktop_only": "仅桌面",
     "gateway_address": "网关地址",
     "join_hint": "扫描二维码，或粘贴链接。",

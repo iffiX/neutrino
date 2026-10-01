@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,9 +10,13 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.CLIENT_CARRIED_CORES
+import io.github.iffix.neutrino.CLIENT_RUSTDESK_CORE
+import io.github.iffix.neutrino.CLIENT_RUSTDESK_PATCH_URL
+import io.github.iffix.neutrino.CLIENT_RUSTDESK_SOURCE_URL
 import io.github.iffix.neutrino.design.Badge
 import io.github.iffix.neutrino.design.FeatureRow
 import io.github.iffix.neutrino.design.NeutrinoPalette
@@ -57,11 +62,30 @@ fun AboutScreen(version: String) {
                             )
                             Badge(licence)
                         }
+                        if (name == CLIENT_RUSTDESK_CORE) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                SourceLink(words.word("ui.core_source"), CLIENT_RUSTDESK_SOURCE_URL)
+                                SourceLink(
+                                    words.word("ui.core_patch"),
+                                    CLIENT_RUSTDESK_PATCH_URL.replace("{version}", version),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SourceLink(label: String, url: String) {
+    val uriHandler = LocalUriHandler.current
+    BasicText(
+        label,
+        style = NeutrinoTheme.note.copy(color = NeutrinoTheme.palette.accent),
+        modifier = Modifier.clickable { uriHandler.openUri(url) },
+    )
 }
 
 @Preview(widthDp = 400, heightDp = 500)
@@ -73,6 +97,8 @@ private fun AboutScreenPreview() {
             "ui.about_version" to "{version} · Android",
             "ui.app_licence" to "许可 AGPL-3.0",
             "ui.carried_cores" to "随 app 携带的核心",
+            "ui.core_source" to "源码 1.4.9",
+            "ui.core_patch" to "补丁",
         ),
     )
     NeutrinoTheme(NeutrinoPalette.dark, words) { AboutScreen("0.5.0") }

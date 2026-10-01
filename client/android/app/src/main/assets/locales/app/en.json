@@ -16,6 +16,8 @@
     "client_key": "This client's key",
     "copied": "Copied",
     "copy": "Copy",
+    "core_patch": "Patch",
+    "core_source": "Source 1.4.9",
     "desktop_only": "Desktop only",
     "gateway_address": "Gateway address",
     "join_hint": "Scan the QR code, or paste the link.",

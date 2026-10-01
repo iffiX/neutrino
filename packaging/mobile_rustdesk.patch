@@ -1,0 +1,462 @@
+RustDesk 1.4.9 for the Neutrino Android app: a C interface to one remote
+desktop session, for a host with no Dart. Applied by mobile_rustdesk.py with
+`patch -p1` at the root of the source tree.
+
+Cargo.toml: the `native` feature, which turns `flutter` on. The client,
+server and keyboard code call into src/flutter.rs and src/flutter_ffi.rs in
+some thirty places, so those two modules stay compiled; they need the
+flutter_rust_bridge crate and no Dart.
+
+src/lib.rs: under `native`, `bridge_generated` is not compiled (it is the
+Dart bridge flutter_rust_bridge_codegen generates, not in the source tree),
+and `native_ffi` is.
+
+src/native_ffi.rs: the interface. `NativeHandler` implements the session
+callbacks (`InvokeUiSession`); every frame is drawn into the window given by
+`nd_attach_window`, and the login, the end of the connection and each frame
+size go to the host's callbacks. `nd_init`, `nd_start`, `nd_attach_window`,
+`nd_mouse`, `nd_key`, `nd_text` and `nd_close` are exported with C linkage.
+It also implements the two Dart conversion traits for `EventToUI` that the
+generated bridge otherwise implements; no Dart stream is opened in this
+build.
+
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -26,6 +26,7 @@
+ use_rubato = ["rubato"]
+ use_dasp = ["dasp"]
+ flutter = ["flutter_rust_bridge"]
++native = ["flutter"]
+ default = ["use_dasp"]
+ hwcodec = ["scrap/hwcodec"]
+ vram = ["scrap/vram"]
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -29,8 +29,13 @@
+ pub mod ui;
+ mod version;
+ pub use version::*;
+-#[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
++#[cfg(all(
++    any(target_os = "android", target_os = "ios", feature = "flutter"),
++    not(feature = "native")
++))]
+ mod bridge_generated;
++#[cfg(feature = "native")]
++pub mod native_ffi;
+ #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
+ pub mod flutter;
+ #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
+--- a/src/native_ffi.rs
++++ b/src/native_ffi.rs
+@@ -0,0 +1,410 @@
++//! A C interface to one remote desktop session, for a host app with no Dart.
++//!
++//! The host calls `nd_init` once, `nd_start` per connection and `nd_close` to end it.
++//! Frames are drawn straight into the window handed over by `nd_attach_window`.
++//! The connection's progress comes back through the callbacks given to `nd_start`.
++
++use crate::{
++    flutter_ffi::EventToUI,
++    ui_session_interface::{io_loop, InvokeUiSession, Session},
++};
++use flutter_rust_bridge::{rust2dart::IntoIntoDart, IntoDart};
++use hbb_common::{
++    config, log,
++    message_proto::*,
++    rendezvous_proto::ConnType,
++};
++use std::{
++    ffi::{CStr, CString},
++    os::raw::{c_char, c_int, c_void},
++    sync::{Arc, Mutex, RwLock},
++};
++
++/// The session logged in; frames follow.
++pub const ND_STATE_CONNECTED: c_int = 1;
++/// The machine refused the password.
++pub const ND_STATE_LOGIN_FAILED: c_int = 2;
++/// The connection ended; the text says why.
++pub const ND_STATE_CLOSED: c_int = 3;
++
++const WINDOW_FORMAT_RGBA_8888: i32 = 1;
++
++/// What the host is told, with the context pointer it gave.
++#[repr(C)]
++#[derive(Clone, Copy)]
++pub struct NdCallbacks {
++    pub context: *mut c_void,
++    pub on_state: Option<unsafe extern "C" fn(*mut c_void, c_int, *const c_char)>,
++    pub on_size: Option<unsafe extern "C" fn(*mut c_void, c_int, c_int)>,
++}
++
++unsafe impl Send for NdCallbacks {}
++unsafe impl Sync for NdCallbacks {}
++
++#[repr(C)]
++struct ANativeWindowBuffer {
++    width: i32,
++    height: i32,
++    stride: i32,
++    format: i32,
++    bits: *mut c_void,
++    reserved: [u32; 6],
++}
++
++#[link(name = "android")]
++extern "C" {
++    fn ANativeWindow_acquire(window: *mut c_void);
++    fn ANativeWindow_release(window: *mut c_void);
++    fn ANativeWindow_setBuffersGeometry(window: *mut c_void, w: i32, h: i32, format: i32) -> i32;
++    fn ANativeWindow_lock(
++        window: *mut c_void,
++        buffer: *mut ANativeWindowBuffer,
++        bounds: *mut c_void,
++    ) -> i32;
++    fn ANativeWindow_unlockAndPost(window: *mut c_void) -> i32;
++}
++
++struct NativeWindow {
++    window: usize,
++    size: (usize, usize),
++}
++
++lazy_static::lazy_static! {
++    static ref CALLBACKS: RwLock<Option<NdCallbacks>> = RwLock::new(None);
++    static ref WINDOW: Mutex<NativeWindow> = Mutex::new(NativeWindow { window: 0, size: (0, 0) });
++    static ref SESSION: RwLock<Option<Session<NativeHandler>>> = RwLock::new(None);
++    static ref MODIFIERS: Mutex<[bool; 4]> = Mutex::new([false; 4]);
++}
++
++/// The session's link to the host: callbacks out and the window frames are drawn into.
++#[derive(Clone, Default)]
++pub struct NativeHandler {
++    origin: Arc<RwLock<(i32, i32)>>,
++    display: Arc<RwLock<i32>>,
++    frame_size: Arc<Mutex<(usize, usize)>>,
++    is_connected: Arc<Mutex<bool>>,
++}
++
++impl NativeHandler {
++    fn tell_state(&self, state: c_int, text: &str) {
++        let text = CString::new(text.replace('\0', "")).unwrap_or_default();
++        if let Some(callbacks) = *CALLBACKS.read().unwrap() {
++            if let Some(on_state) = callbacks.on_state {
++                unsafe { on_state(callbacks.context, state, text.as_ptr()) };
++            }
++        }
++    }
++
++    fn tell_size(&self, width: usize, height: usize) {
++        if let Some(callbacks) = *CALLBACKS.read().unwrap() {
++            if let Some(on_size) = callbacks.on_size {
++                unsafe { on_size(callbacks.context, width as c_int, height as c_int) };
++            }
++        }
++    }
++}
++
++fn draw(window: &mut NativeWindow, rgba: &scrap::ImageRgb) {
++    if window.window == 0 || rgba.w == 0 || rgba.h == 0 {
++        return;
++    }
++    let handle = window.window as *mut c_void;
++    if window.size != (rgba.w, rgba.h) {
++        unsafe {
++            ANativeWindow_setBuffersGeometry(
++                handle,
++                rgba.w as i32,
++                rgba.h as i32,
++                WINDOW_FORMAT_RGBA_8888,
++            )
++        };
++        window.size = (rgba.w, rgba.h);
++    }
++    let mut buffer = ANativeWindowBuffer {
++        width: 0,
++        height: 0,
++        stride: 0,
++        format: 0,
++        bits: std::ptr::null_mut(),
++        reserved: [0; 6],
++    };
++    if unsafe { ANativeWindow_lock(handle, &mut buffer, std::ptr::null_mut()) } != 0 {
++        return;
++    }
++    let source_stride = rgba.raw.len() / rgba.h;
++    let rows = rgba.h.min(buffer.height.max(0) as usize);
++    let columns = rgba.w.min(buffer.width.max(0) as usize);
++    let target_stride = buffer.stride.max(0) as usize * 4;
++    let target = unsafe {
++        std::slice::from_raw_parts_mut(buffer.bits as *mut u8, target_stride * rows)
++    };
++    for row in 0..rows {
++        let from = &rgba.raw[row * source_stride..row * source_stride + columns * 4];
++        let to = &mut target[row * target_stride..row * target_stride + columns * 4];
++        for (pixel, out) in from.chunks_exact(4).zip(to.chunks_exact_mut(4)) {
++            out[0] = pixel[2];
++            out[1] = pixel[1];
++            out[2] = pixel[0];
++            out[3] = 255;
++        }
++    }
++    unsafe { ANativeWindow_unlockAndPost(handle) };
++}
++
++fn is_password_box(msgtype: &str) -> bool {
++    msgtype.contains("password") || msgtype.contains("2fa") || msgtype.contains("login")
++}
++
++impl InvokeUiSession for NativeHandler {
++    fn set_cursor_data(&self, _cd: CursorData) {}
++    fn set_cursor_id(&self, _id: String) {}
++    fn set_cursor_position(&self, _cp: CursorPosition) {}
++    fn set_display(&self, x: i32, y: i32, _w: i32, _h: i32, _cursor_embedded: bool, _scale: f64) {
++        *self.origin.write().unwrap() = (x, y);
++    }
++    fn switch_display(&self, display: &SwitchDisplay) {
++        *self.origin.write().unwrap() = (display.x, display.y);
++        *self.display.write().unwrap() = display.display;
++    }
++    fn set_peer_info(&self, peer_info: &PeerInfo) {
++        let display = peer_info
++            .displays
++            .get(peer_info.current_display.max(0) as usize)
++            .or(peer_info.displays.first());
++        if let Some(display) = display {
++            *self.origin.write().unwrap() = (display.x, display.y);
++        }
++        *self.display.write().unwrap() = peer_info.current_display;
++        let mut is_connected = self.is_connected.lock().unwrap();
++        if !*is_connected {
++            *is_connected = true;
++            self.tell_state(ND_STATE_CONNECTED, "");
++        }
++    }
++    fn set_displays(&self, _displays: &Vec<DisplayInfo>) {}
++    fn set_platform_additions(&self, _data: &str) {}
++    fn on_connected(&self, _conn_type: ConnType) {}
++    fn update_privacy_mode(&self) {}
++    fn set_permission(&self, _name: &str, _value: bool) {}
++    fn close_success(&self) {}
++    fn update_quality_status(&self, _qs: crate::client::QualityStatus) {}
++    fn set_connection_type(&self, _is_secured: bool, _direct: bool, _stream_type: &str) {}
++    fn set_fingerprint(&self, _fingerprint: String) {}
++    fn job_error(&self, _id: i32, _err: String, _file_num: i32) {}
++    fn job_done(&self, _id: i32, _file_num: i32) {}
++    fn clear_all_jobs(&self) {}
++    fn new_message(&self, _msg: String) {}
++    fn update_transfer_list(&self) {}
++    fn load_last_job(&self, _cnt: i32, _job_json: &str, _auto_start: bool) {}
++    fn update_folder_files(
++        &self,
++        _id: i32,
++        _entries: &Vec<FileEntry>,
++        _path: String,
++        _is_local: bool,
++        _only_count: bool,
++    ) {
++    }
++    fn confirm_delete_files(&self, _id: i32, _i: i32, _name: String) {}
++    fn override_file_confirm(
++        &self,
++        _id: i32,
++        _file_num: i32,
++        _to: String,
++        _is_upload: bool,
++        _is_identical: bool,
++    ) {
++    }
++    fn update_block_input_state(&self, _on: bool) {}
++    fn job_progress(&self, _id: i32, _file_num: i32, _speed: f64, _finished_size: f64) {}
++    fn adapt_size(&self) {}
++    fn on_rgba(&self, _display: usize, rgba: &mut scrap::ImageRgb) {
++        {
++            let mut size = self.frame_size.lock().unwrap();
++            if *size != (rgba.w, rgba.h) {
++                *size = (rgba.w, rgba.h);
++                self.tell_size(rgba.w, rgba.h);
++            }
++        }
++        draw(&mut WINDOW.lock().unwrap(), rgba);
++    }
++    fn msgbox(&self, msgtype: &str, title: &str, text: &str, _link: &str, _retry: bool) {
++        log::info!("msgbox {msgtype}: {title}: {text}");
++        if is_password_box(msgtype) {
++            self.tell_state(ND_STATE_LOGIN_FAILED, title);
++        } else if msgtype.contains("error") {
++            self.tell_state(ND_STATE_CLOSED, if text.is_empty() { title } else { text });
++        }
++    }
++    fn clipboard(&self, _content: String) {}
++    fn cancel_msgbox(&self, _tag: &str) {}
++    fn switch_back(&self, _id: &str) {}
++    fn portable_service_running(&self, _running: bool) {}
++    fn on_voice_call_started(&self) {}
++    fn on_voice_call_closed(&self, _reason: &str) {}
++    fn on_voice_call_waiting(&self) {}
++    fn on_voice_call_incoming(&self) {}
++    fn get_rgba(&self, _display: usize) -> *const u8 {
++        std::ptr::null()
++    }
++    fn next_rgba(&self, _display: usize) {}
++    #[cfg(all(feature = "vram", feature = "flutter"))]
++    fn on_texture(&self, _display: usize, _texture: *mut c_void) {}
++    fn set_multiple_windows_session(&self, _sessions: Vec<WindowsSession>) {}
++    fn set_current_display(&self, _disp_idx: i32) {}
++    #[cfg(feature = "flutter")]
++    fn is_multi_ui_session(&self) -> bool {
++        false
++    }
++    fn update_record_status(&self, _start: bool) {}
++    fn printer_request(&self, _id: i32, _path: String) {}
++    fn handle_screenshot_resp(&self, _sid: String, _msg: String) {}
++    fn handle_terminal_response(&self, _response: TerminalResponse) {}
++}
++
++unsafe fn text_of(text: *const c_char) -> String {
++    if text.is_null() {
++        return String::new();
++    }
++    CStr::from_ptr(text).to_string_lossy().into_owned()
++}
++
++fn with_session(action: impl FnOnce(&Session<NativeHandler>)) {
++    if let Some(session) = SESSION.read().unwrap().as_ref() {
++        action(session);
++    }
++}
++
++/// Set where the core keeps its configuration, and start its log. Call once.
++#[no_mangle]
++pub unsafe extern "C" fn nd_init(app_dir: *const c_char) {
++    *config::APP_DIR.write().unwrap() = text_of(app_dir);
++    #[cfg(target_os = "android")]
++    android_logger::init_once(
++        android_logger::Config::default()
++            .with_max_level(log::LevelFilter::Info)
++            .with_tag("rustdesk"),
++    );
++}
++
++/// Connect to `peer:port` directly with the password; returns 0, or -1 while a session runs.
++#[no_mangle]
++pub unsafe extern "C" fn nd_start(
++    peer: *const c_char,
++    port: c_int,
++    password: *const c_char,
++    callbacks: NdCallbacks,
++) -> c_int {
++    let mut slot = SESSION.write().unwrap();
++    if slot.is_some() {
++        return -1;
++    }
++    let host = text_of(peer);
++    let id = if host.contains(':') {
++        format!("[{host}]:{port}")
++    } else {
++        format!("{host}:{port}")
++    };
++    *CALLBACKS.write().unwrap() = Some(callbacks);
++    *MODIFIERS.lock().unwrap() = [false; 4];
++    let session: Session<NativeHandler> = Session {
++        password: text_of(password),
++        server_keyboard_enabled: Arc::new(RwLock::new(true)),
++        server_file_transfer_enabled: Arc::new(RwLock::new(true)),
++        server_clipboard_enabled: Arc::new(RwLock::new(true)),
++        ..Default::default()
++    };
++    session
++        .lc
++        .write()
++        .unwrap()
++        .initialize(id, ConnType::DEFAULT_CONN, None, false, None, None, None);
++    *slot = Some(session.clone());
++    std::thread::spawn(move || {
++        let round = session.connection_round_state.lock().unwrap().new_round();
++        io_loop(session, round);
++    });
++    0
++}
++
++/// Draw frames into this `ANativeWindow*`, or into nothing when it is null.
++#[no_mangle]
++pub unsafe extern "C" fn nd_attach_window(window: *mut c_void) {
++    let mut current = WINDOW.lock().unwrap();
++    if current.window != 0 {
++        ANativeWindow_release(current.window as *mut c_void);
++    }
++    if !window.is_null() {
++        ANativeWindow_acquire(window);
++    }
++    current.window = window as usize;
++    current.size = (0, 0);
++    drop(current);
++    if !window.is_null() {
++        with_session(|session| session.refresh_video(*session.ui_handler.display.read().unwrap()));
++    }
++}
++
++/// A mouse event at `x, y` in the frame's pixels, with RustDesk's mask: type in the low 3 bits,
++/// buttons above. A wheel event carries its steps in `x, y`.
++#[no_mangle]
++pub extern "C" fn nd_mouse(x: c_int, y: c_int, mask: c_int) {
++    let [alt, ctrl, shift, command] = *MODIFIERS.lock().unwrap();
++    with_session(|session| {
++        let (x, y) = if mask & crate::input::MOUSE_TYPE_MASK == crate::input::MOUSE_TYPE_WHEEL {
++            (x, y)
++        } else {
++            let origin = *session.ui_handler.origin.read().unwrap();
++            (x + origin.0, y + origin.1)
++        };
++        session.send_mouse(mask, x, y, alt, ctrl, shift, command);
++    });
++}
++
++/// A key by RustDesk's name (`VK_ESCAPE`, `VK_CONTROL`, `VK_A`), pressed or released.
++#[no_mangle]
++pub unsafe extern "C" fn nd_key(name: *const c_char, down: bool) {
++    let name = text_of(name);
++    let mut modifiers = MODIFIERS.lock().unwrap();
++    match name.as_str() {
++        "VK_MENU" => modifiers[0] = down,
++        "VK_CONTROL" => modifiers[1] = down,
++        "VK_SHIFT" => modifiers[2] = down,
++        "Meta" => modifiers[3] = down,
++        _ => {}
++    }
++    let [alt, ctrl, shift, command] = *modifiers;
++    drop(modifiers);
++    with_session(|session| session.input_key(&name, down, false, alt, ctrl, shift, command));
++}
++
++/// Text typed on the host's keyboard.
++#[no_mangle]
++pub unsafe extern "C" fn nd_text(text: *const c_char) {
++    let text = text_of(text);
++    if !text.is_empty() {
++        with_session(|session| session.input_string(&text));
++    }
++}
++
++/// End the session; no callback runs after this returns.
++#[no_mangle]
++pub extern "C" fn nd_close() {
++    if let Some(session) = SESSION.write().unwrap().take() {
++        session.close();
++    }
++    *CALLBACKS.write().unwrap() = None;
++}
++
++/// No Dart stream is opened in this build; an event converts to Dart's null.
++impl IntoDart for EventToUI {
++    fn into_dart(self) -> flutter_rust_bridge::DartAbi {
++        ().into_dart()
++    }
++}
++
++impl IntoIntoDart<EventToUI> for EventToUI {
++    fn into_into_dart(self) -> Self {
++        self
++    }
++}
