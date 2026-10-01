@@ -1,8 +1,9 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
+import { Picker } from "./picker";
 import { VaultPicker } from "./vault_picker";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { hasWord, t, useLanguage } from "../i18n";
@@ -53,7 +54,6 @@ export function VscodePanels({
 }: VscodePanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const accountListId = useId();
   const resource = useApiResource<VscodeDeviceView>(
     apiPath(basePath, { device_id: deviceId }),
     {
@@ -155,28 +155,22 @@ export function VscodePanels({
         {draft.instances.length === 0 && (
           <p className="field_hint">{t("ui.vscode.empty")}</p>
         )}
-        <datalist id={accountListId}>
-          {saved.accounts.map((account) => (
-            <option key={account} value={account} />
-          ))}
-        </datalist>
         {draft.instances.map((instance, index) => {
           const seen = reported.get(instance.account);
           const isRunning = seen?.is_running === true;
           return (
             <div className="vscode_instance" key={index}>
-              <label className="field">
-                <span className="field_label">{t("ui.vscode.account")}</span>
-                <input
-                  className="input"
-                  list={accountListId}
-                  placeholder={t("ui.vscode.account_placeholder")}
-                  value={instance.account}
-                  onChange={(event) =>
-                    updateInstance(index, { account: event.target.value })
-                  }
-                />
-              </label>
+              <Picker
+                options={saved.accounts.map((account) => ({
+                  id: account,
+                  name: account,
+                }))}
+                value={instance.account}
+                onChange={(account) => updateInstance(index, { account })}
+                label={t("ui.vscode.account")}
+                placeholder={t("ui.vscode.account_placeholder")}
+                isTyped
+              />
               <label className="field vscode_instance_port">
                 <span className="field_label">{t("ui.vscode.port")}</span>
                 <input

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "./icon";
+import { Picker } from "./picker";
 import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { VaultPicker } from "./vault_picker";
@@ -212,26 +213,16 @@ export function InstallAgentModal({
                 onChange={(event) => setUsername(event.target.value)}
               />
             </label>
-            <label className="field">
-              <span className="field_label">
-                {t("ui.install_agent.credential")}
-              </span>
-              <select
-                className="select"
-                value={credentialKind}
-                onChange={(event) =>
-                  setCredentialKind(event.target.value as CredentialKind)
-                }
-              >
-                <option value="key">{t("ui.install_agent.kind_key")}</option>
-                <option value="login">
-                  {t("ui.install_agent.kind_login")}
-                </option>
-              </select>
-              <span className="field_hint">
-                {t("ui.install_agent.credential_hint")}
-              </span>
-            </label>
+            <Picker
+              options={[
+                { id: "key", name: t("ui.install_agent.kind_key") },
+                { id: "login", name: t("ui.install_agent.kind_login") },
+              ]}
+              value={credentialKind}
+              onChange={(id) => setCredentialKind(id as CredentialKind)}
+              label={t("ui.install_agent.credential")}
+              hint={t("ui.install_agent.credential_hint")}
+            />
           </div>
 
           {credentialKind === "key" ? (

@@ -9,6 +9,7 @@ import { NetworkExposurePanel } from "../components/network_exposure_panel";
 import { NetworkModePanel } from "../components/network_mode_panel";
 import { PanelPortPanel } from "../components/panel_port_panel";
 import { PasswordInput } from "../components/password_input";
+import { Picker } from "../components/picker";
 import { SavedNetworksPanel } from "../components/saved_networks_panel";
 import { SignalBars } from "../components/signal_bars";
 import { StaticLeasePanel } from "../components/static_lease_panel";
@@ -1005,19 +1006,15 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
                 <span className="field_error">{errors.ap_passphrase}</span>
               )}
             </label>
-            <label className="field">
-              <span className="field_label">{t("ui.network.field_band")}</span>
-              <select
-                className="select"
-                value={draft.wifi.ap_band}
-                onChange={(event) =>
-                  update((next) => (next.wifi.ap_band = event.target.value))
-                }
-              >
-                <option value="bg">{t("ui.network.band_bg")}</option>
-                <option value="a">{t("ui.network.band_a")}</option>
-              </select>
-            </label>
+            <Picker
+              options={[
+                { id: "bg", name: t("ui.network.band_bg") },
+                { id: "a", name: t("ui.network.band_a") },
+              ]}
+              value={draft.wifi.ap_band}
+              onChange={(band) => update((next) => (next.wifi.ap_band = band))}
+              label={t("ui.network.field_band")}
+            />
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
+import { Picker } from "./picker";
 import { ZfsTopology } from "./zfs_topology";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
@@ -410,20 +411,19 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
               )}
               {isReplacing && (
                 <>
-                  <select
-                    className="select zfs_replace_select"
-                    value={replaceWith ?? ""}
-                    onChange={(event) =>
-                      setReplaceWith(event.target.value || null)
-                    }
-                  >
-                    <option value="">{t("ui.zfs.replacement_pick")}</option>
-                    {availableDisks.map((disk) => (
-                      <option key={disk.by_id} value={disk.by_id}>
-                        {shortId(disk)} · {formatBytes(disk.size_bytes)}
-                      </option>
-                    ))}
-                  </select>
+                  <Picker
+                    className="zfs_replace_select"
+                    options={availableDisks.map((disk) => ({
+                      id: disk.by_id,
+                      name: shortId(disk),
+                      detail: formatBytes(disk.size_bytes),
+                    }))}
+                    value={replaceWith}
+                    onChange={setReplaceWith}
+                    label={t("ui.zfs.replacement_pick")}
+                    placeholder={t("ui.zfs.replacement_pick")}
+                    isLabelHidden
+                  />
                   <button
                     type="button"
                     className="button button--small"
@@ -873,27 +873,17 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                   </span>
                 </div>
                 <div className="zfs_dataset_fields">
-                  <label className="field">
-                    <span className="field_label">
-                      {t("ui.zfs.dataset_pool")}
-                    </span>
-                    <select
-                      className="select"
-                      value={datasetDraft.pool || view.pools[0]?.name || ""}
-                      onChange={(event) =>
-                        setDatasetDraft({
-                          ...datasetDraft,
-                          pool: event.target.value,
-                        })
-                      }
-                    >
-                      {view.pools.map((pool) => (
-                        <option key={pool.name} value={pool.name}>
-                          {pool.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <Picker
+                    options={view.pools.map((pool) => ({
+                      id: pool.name,
+                      name: pool.name,
+                    }))}
+                    value={datasetDraft.pool || view.pools[0]?.name || ""}
+                    onChange={(pool) =>
+                      setDatasetDraft({ ...datasetDraft, pool })
+                    }
+                    label={t("ui.zfs.dataset_pool")}
+                  />
                   <label className="field">
                     <span className="field_label">
                       {t("ui.zfs.dataset_name")}
@@ -935,48 +925,28 @@ export function ZfsPanels({ deviceId, basePath, isEditable }: ZfsPanelsProps) {
                       {t("ui.zfs.mountpoint_hint")}
                     </span>
                   </label>
-                  <label className="field">
-                    <span className="field_label">
-                      {t("ui.zfs.compression")}
-                    </span>
-                    <select
-                      className="select"
-                      value={datasetDraft.compression}
-                      onChange={(event) =>
-                        setDatasetDraft({
-                          ...datasetDraft,
-                          compression: event.target.value,
-                        })
-                      }
-                    >
-                      {COMPRESSIONS.map((compression) => (
-                        <option key={compression} value={compression}>
-                          {compression}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span className="field_label">
-                      {t("ui.zfs.record_size")}
-                    </span>
-                    <select
-                      className="select"
-                      value={datasetDraft.recordsize}
-                      onChange={(event) =>
-                        setDatasetDraft({
-                          ...datasetDraft,
-                          recordsize: event.target.value,
-                        })
-                      }
-                    >
-                      {RECORDSIZES.map((recordsize) => (
-                        <option key={recordsize} value={recordsize}>
-                          {recordsize}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <Picker
+                    options={COMPRESSIONS.map((compression) => ({
+                      id: compression,
+                      name: compression,
+                    }))}
+                    value={datasetDraft.compression}
+                    onChange={(compression) =>
+                      setDatasetDraft({ ...datasetDraft, compression })
+                    }
+                    label={t("ui.zfs.compression")}
+                  />
+                  <Picker
+                    options={RECORDSIZES.map((recordsize) => ({
+                      id: recordsize,
+                      name: recordsize,
+                    }))}
+                    value={datasetDraft.recordsize}
+                    onChange={(recordsize) =>
+                      setDatasetDraft({ ...datasetDraft, recordsize })
+                    }
+                    label={t("ui.zfs.record_size")}
+                  />
                 </div>
                 <p className="field_hint">{t("ui.zfs.record_hint")}</p>
                 <div className="zfs_builder_actions">

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AuthorityInstall } from "../components/authority_install";
 import { Icon } from "../components/icon";
 import { PasswordField } from "../components/password_field";
+import { Picker } from "../components/picker";
 import { ToggleSwitch } from "../components/toggle_switch";
 import {
   LANGUAGES,
@@ -397,20 +398,16 @@ export function SetupPage({ token, context }: SetupPageProps) {
       {index === SCREEN_LANGUAGE && (
         <div className="setup_body">
           <p className="setup_lead">{t("ui.setup.language_lead")}</p>
-          <label className="field setup_field--narrow">
-            <span className="field_label">{t("ui.setup.language_label")}</span>
-            <select
-              className="select"
-              value={language}
-              onChange={(event) => setLanguage(event.target.value)}
-            >
-              {LANGUAGES.map((offered) => (
-                <option key={offered} value={offered}>
-                  {LANGUAGE_NAMES[offered]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Picker
+            className="setup_field--narrow"
+            options={LANGUAGES.map((offered) => ({
+              id: offered,
+              name: LANGUAGE_NAMES[offered],
+            }))}
+            value={language}
+            onChange={setLanguage}
+            label={t("ui.setup.language_label")}
+          />
         </div>
       )}
 

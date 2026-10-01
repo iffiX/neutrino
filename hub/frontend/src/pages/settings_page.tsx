@@ -5,6 +5,7 @@ import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { HttpsPanel } from "../components/https_panel";
 import { Icon } from "../components/icon";
+import { Picker } from "../components/picker";
 import { Spinner } from "../components/spinner";
 import { UpdatePanel } from "../components/update_panel";
 import {
@@ -633,24 +634,19 @@ function LanguagePanel() {
       </div>
 
       <div className="settings_form">
-        <label className="field">
-          <span className="field_label">{t("ui.settings.language_field")}</span>
-          <select
-            className="select"
-            value={chosen}
-            onChange={(event) => {
-              setError(null);
-              setChosen(asLanguage(event.target.value));
-            }}
-          >
-            {LANGUAGES.map((language) => (
-              <option key={language} value={language}>
-                {LANGUAGE_NAMES[language]}
-              </option>
-            ))}
-          </select>
-          <span className="field_hint">{t("ui.settings.language_hint")}</span>
-        </label>
+        <Picker
+          options={LANGUAGES.map((language) => ({
+            id: language,
+            name: LANGUAGE_NAMES[language],
+          }))}
+          value={chosen}
+          onChange={(id) => {
+            setError(null);
+            setChosen(asLanguage(id));
+          }}
+          label={t("ui.settings.language_field")}
+          hint={t("ui.settings.language_hint")}
+        />
 
         <ApplyBar
           isDirty={isDirty}
@@ -717,24 +713,19 @@ function AppearancePanel() {
       </div>
 
       <div className="settings_form">
-        <label className="field">
-          <span className="field_label">{t("ui.settings.theme_field")}</span>
-          <select
-            className="select"
-            value={chosen}
-            onChange={(event) => {
-              setError(null);
-              setChosen(asTheme(event.target.value));
-            }}
-          >
-            {THEMES.map((theme) => (
-              <option key={theme} value={theme}>
-                {t(`ui.settings.theme_name.${theme}`)}
-              </option>
-            ))}
-          </select>
-          <span className="field_hint">{t("ui.settings.theme_hint")}</span>
-        </label>
+        <Picker
+          options={THEMES.map((theme) => ({
+            id: theme,
+            name: t(`ui.settings.theme_name.${theme}`),
+          }))}
+          value={chosen}
+          onChange={(id) => {
+            setError(null);
+            setChosen(asTheme(id));
+          }}
+          label={t("ui.settings.theme_field")}
+          hint={t("ui.settings.theme_hint")}
+        />
 
         <ApplyBar
           isDirty={isDirty}
