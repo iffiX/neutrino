@@ -306,6 +306,22 @@ def test_the_boxs_own_agent_is_reinstalled_from_the_cache_after_the_gate(box):
     assert f"agent: reinstalling {package}" in raw["output"]
 
 
+def test_an_agent_already_at_the_caches_version_is_left_alone(box):
+    """A same-version update reinstalls the hub but not the agent, so the
+    agent and the desktop share it hosts keep running."""
+    bin_dir, directory = box
+    package = "/var/lib/neutrino/agent_cache/neutrino-agent_0.3.1_amd64.deb"
+    calls = agent_stubs(bin_dir, directory, package=package)
+    stub(bin_dir, "nagent", body='[ "$1" = "--version" ] && echo 0.3.1; exit 0')
+
+    code, raw = run_script(box, python=str(bin_dir / "hub_python"))
+
+    assert code == 0
+    assert raw["stage"] == "installed"
+    assert "agent: already 0.3.1" in raw["output"]
+    assert "neutrino-agent" not in calls.read_text()
+
+
 def test_an_agent_that_will_not_reinstall_leaves_the_hub_installed(box):
     bin_dir, directory = box
     agent_stubs(bin_dir, directory, package="/cache/neutrino-agent.deb")

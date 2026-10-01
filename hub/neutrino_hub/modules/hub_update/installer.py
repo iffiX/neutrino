@@ -178,6 +178,12 @@ install_agent() {
         echo "agent: this hub carries no agent for this machine" >> "$LOG"
         return 0
     fi
+    WANTED=$(basename "$AGENT" | sed -E 's/^neutrino-agent[_-]([^_-]+)[_-].*$/\\1/')
+    INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
+    if [ -n "$INSTALLED" ] && [ "$INSTALLED" = "$WANTED" ]; then
+        echo "agent: already $INSTALLED" >> "$LOG"
+        return 0
+    fi
     echo "agent: reinstalling $AGENT" >> "$LOG"
     ( @AGENT_INSTALL@ ) >> "$LOG" 2>&1 || echo "agent: the reinstall failed" >> "$LOG"
 }
