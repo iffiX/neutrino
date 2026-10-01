@@ -110,6 +110,9 @@ conventions explicit so nobody drifts.
    - [design/ui_behavior.md](design/ui_behavior.md) — how each kind of panel
      component behaves: page and panel composition, apply bars and dirty
      frames, when an effect happens, and the ask-before-inventing rule.
+   - [design/client.md](design/client.md) — the three clients as one design:
+     the one state document, the layout, the button rule, refresh, and every
+     page's state machines.
    - [design/privilege.md](design/privilege.md) — why the panel runs as root, what the
      systemd unit narrows and what it deliberately does not, and the rule that
      stepping down to a service account uses `runuser` rather than `sudo`.

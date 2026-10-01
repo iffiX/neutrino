@@ -48,6 +48,7 @@ and leave this pointing at it.**
 | [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the six blocks (agent / client / hub / android / ios / integration), the mirror rule, what each area pins, what a change owes. |
 | [design/visual.md](skills/core-code-author/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/ui_behavior.md](skills/core-code-author/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
+| [design/client.md](skills/core-code-author/design/client.md) | Touching any client (`client/desktop`, `client/android`, `client/ios`): the one state document, the layout, the button rule, refresh, and every page's state machines; the three clients change together. |
 | [design/class_design.md](skills/core-code-author/design/class_design.md) | Adding a class: one concept per class, explicit `__init__` kwargs. |
 | [design/class_hierarchy.md](skills/core-code-author/design/class_hierarchy.md) | Naming a class: the per-package `<Domain><Thing><Role>` families. |
 | [design/repository_tree.md](skills/core-code-author/design/repository_tree.md) | Adding a directory to the source tree, or unsure what an existing one is for. |

@@ -98,6 +98,37 @@ Never a borderless button for a standalone action: it reads as text until
 hovered. A borderless control reads as one that cannot be pressed, so a
 disabled button is the other thing allowed to lose its border.
 
+## One picker for every choice
+
+A control that offers a list to choose from is the picker `picker.tsx` draws,
+whatever the list holds: a credential, a machine's MAC address, an account on
+a machine, a credential kind, a sort order, a theme. The browser's own
+`<select>` and `<datalist>` are never used: each browser draws them in its own
+style, and a page then shows three menus that do not match. `vault_picker.tsx`
+is the picker with the vault's rows and the row that stores one more.
+
+The picker is a control shaped like an input (`.select`, the caret at its
+right) over a panel fixed to the viewport, so no scrolling container clips it:
+
+- the panel carries the ground, border and radius of `.input`, the
+  `--color-shadow` drop and the `fade_in_up` entrance; it is as wide as the
+  control, and flips above it when there is no room below;
+- a row is 34px in `--font-mono` at 12px: the name at the left, and at the
+  right in `--color-text-faint` the detail that tells two rows apart (a
+  fingerprint, a machine's name and address, a port);
+- the row under the cursor and the row already chosen lift to
+  `--color-elevated` and take the accent as text, as the panel's other lists
+  mark one;
+- a row that creates an entry rather than picking one (Add SSH key) sits
+  last under a top border, with the accent as its text and never as a fill;
+- five rows show at once and the rest by scrolling;
+- arrows move, Enter picks, Escape closes the list before anything holding
+  the picker (a modal) sees it, Tab closes it.
+
+A field that takes typed text and also offers choices (an account name, a MAC
+address) is the same picker with an input as its control: the rows filter as
+the person types, and what they typed stays when no row is chosen.
+
 ## Frames
 
 - One framed group (`settings_group`) per unit of change, closed by one apply
