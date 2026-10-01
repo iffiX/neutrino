@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
@@ -67,22 +67,16 @@ function SshKeysSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<KeysResponse>(KEYS_PATH);
-  const [keys, setKeys] = useState<KeyView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-
-  useEffect(() => {
-    if (resource.data !== null) {
-      setKeys(resource.data.keys);
-    }
-  }, [resource.data]);
+  const keys = resource.data?.keys ?? [];
 
   const handleAdded = (created: KeyView) => {
-    setKeys((current) => [created, ...current]);
+    resource.setData({ keys: [created, ...keys] });
     setIsAdding(false);
   };
 
   const handleDeleted = (keyId: string) => {
-    setKeys((current) => current.filter((key) => key.id !== keyId));
+    resource.setData({ keys: keys.filter((key) => key.id !== keyId) });
     resource.reload();
   };
 
@@ -135,22 +129,18 @@ function LoginsSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<LoginsResponse>(LOGINS_PATH);
-  const [logins, setLogins] = useState<LoginView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-
-  useEffect(() => {
-    if (resource.data !== null) {
-      setLogins(resource.data.logins);
-    }
-  }, [resource.data]);
+  const logins = resource.data?.logins ?? [];
 
   const handleAdded = (created: LoginView) => {
-    setLogins((current) => [created, ...current]);
+    resource.setData({ logins: [created, ...logins] });
     setIsAdding(false);
   };
 
   const handleDeleted = (loginId: string) => {
-    setLogins((current) => current.filter((login) => login.id !== loginId));
+    resource.setData({
+      logins: logins.filter((login) => login.id !== loginId),
+    });
     resource.reload();
   };
 
@@ -204,22 +194,18 @@ function TokensSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<TokensResponse>(TOKENS_PATH);
-  const [tokens, setTokens] = useState<TokenView[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-
-  useEffect(() => {
-    if (resource.data !== null) {
-      setTokens(resource.data.tokens);
-    }
-  }, [resource.data]);
+  const tokens = resource.data?.tokens ?? [];
 
   const handleAdded = (created: TokenView) => {
-    setTokens((current) => [created, ...current]);
+    resource.setData({ tokens: [created, ...tokens] });
     setIsAdding(false);
   };
 
   const handleDeleted = (tokenId: string) => {
-    setTokens((current) => current.filter((token) => token.id !== tokenId));
+    resource.setData({
+      tokens: tokens.filter((token) => token.id !== tokenId),
+    });
     resource.reload();
   };
 

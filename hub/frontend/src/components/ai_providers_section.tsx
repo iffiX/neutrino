@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { ApplyBar } from "./apply_bar";
@@ -11,6 +11,7 @@ import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
+import { useDraft } from "../use_draft";
 import type {
   AiProviderKind,
   AiProviderModel,
@@ -79,6 +80,11 @@ interface ProviderDragState {
   maxDeltaY: number;
 }
 
+/** What the list starts from: the providers as stored, in their order. */
+function providersOf(response: AiProvidersResponse): AiProviderView[] {
+  return response.providers;
+}
+
 interface AiProvidersSectionProps {
   /** The gateway is running an older set of providers than the stored ones. */
   isServingStale: boolean;
@@ -93,8 +99,10 @@ export function AiProvidersSection({
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<AiProvidersResponse>(AI_PATH);
-  const [saved, setSaved] = useState<AiProviderView[]>([]);
-  const [draft, setDraft] = useState<AiProviderView[]>([]);
+  const providersDraft = useDraft(resource.data, providersOf);
+  const saved = resource.data?.providers ?? [];
+  const draft = providersDraft.draft ?? [];
+  const setDraft = providersDraft.setDraft;
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -102,13 +110,6 @@ export function AiProvidersSection({
   const [applyNotice, setApplyNotice] = useState<string | null>(null);
   const [drag, setDrag] = useState<ProviderDragState | null>(null);
   const rowNodes = useRef(new Map<string, HTMLDivElement>());
-
-  useEffect(() => {
-    if (resource.data !== null) {
-      setSaved(resource.data.providers);
-      setDraft(resource.data.providers);
-    }
-  }, [resource.data]);
 
   const changedProviders = draft.filter(
     (provider) =>
@@ -124,6 +125,15 @@ export function AiProvidersSection({
   // nowhere to go.
   const isReorderable = draft.length > 1 && editingId === null;
 
+  const foldSaved = (change: (list: AiProviderView[]) => AiProviderView[]) => {
+    if (resource.data !== null) {
+      resource.setData({
+        ...resource.data,
+        providers: change(resource.data.providers),
+      });
+    }
+  };
+
   const handleSaved = (savedProvider: AiProviderView) => {
     const fold = (list: AiProviderView[]) =>
       list.some((provider) => provider.id === savedProvider.id)
@@ -131,7 +141,7 @@ export function AiProvidersSection({
             provider.id === savedProvider.id ? savedProvider : provider,
           )
         : [...list, savedProvider];
-    setSaved(fold);
+    foldSaved(fold);
     setDraft(fold);
     setIsAdding(false);
     setEditingId(null);
@@ -140,7 +150,7 @@ export function AiProvidersSection({
   const handleDeleted = (providerId: string) => {
     const drop = (list: AiProviderView[]) =>
       list.filter((provider) => provider.id !== providerId);
-    setSaved(drop);
+    foldSaved(drop);
     setDraft(drop);
     setDrag(null);
   };
@@ -253,7 +263,7 @@ export function AiProvidersSection({
   };
 
   const handleReset = () => {
-    setDraft(saved);
+    providersDraft.reset();
     setDrag(null);
     setApplyError(null);
     setApplyNotice(null);

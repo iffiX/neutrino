@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { useDraft } from "../use_draft";
 import type { ApplyResult, ProxyView, SocksPort } from "../api_types";
 
 import "./socks_ports_panel.css";
@@ -37,20 +38,15 @@ interface SocksPortsPanelProps {
 export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const [ports, setPorts] = useState<SocksPort[]>(applied.socks_ports);
+  const portsDraft = useDraft(applied, socksPortsOf);
+  const ports = portsDraft.draft ?? applied.socks_ports;
+  const setPorts = portsDraft.setDraft;
   const [draftPort, setDraftPort] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Keyed on the listeners alone. The whole settings object is replaced on
-  // every keystroke elsewhere on the page, and resetting on that would throw
-  // away a row somebody had just added.
-  useEffect(() => {
-    setPorts(applied.socks_ports);
-  }, [applied.socks_ports]);
-
-  const isDirty = JSON.stringify(ports) !== JSON.stringify(applied.socks_ports);
+  const isDirty = portsDraft.isDirty;
   const problem = validate(draftPort, ports);
 
   const add = () => {
@@ -176,11 +172,16 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
         warning={t("ui.proxy.warning_restart")}
         error={error}
         notice={notice}
-        onReset={() => setPorts(applied.socks_ports)}
+        onReset={portsDraft.reset}
         onApply={() => void apply()}
       />
     </section>
   );
+}
+
+/** What the rows start from: the listeners as saved. */
+function socksPortsOf(settings: ProxyView): SocksPort[] {
+  return settings.socks_ports;
 }
 
 function retarget(

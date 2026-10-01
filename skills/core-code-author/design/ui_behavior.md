@@ -64,6 +64,7 @@ The frame lights whenever the bar does — `settings_group--dirty`, or
 
 Reset returns the draft to what the gateway holds and clears the outcome. Both
 buttons are dead while nothing has changed and while an apply is in flight.
+A refresh never replaces a dirty draft; the apply bar is what ends a draft.
 
 ## Where buttons live
 

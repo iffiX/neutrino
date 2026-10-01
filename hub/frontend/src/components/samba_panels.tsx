@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ApiError } from "../api_client";
 import { copyText } from "../copy_text";
 
@@ -13,6 +13,7 @@ import { apiPath, apiPost, describeError } from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
   ApplyResult,
@@ -101,8 +102,12 @@ export function SambaPanels({
     { invalidateOn: liveOn },
   );
 
-  const [shares, setShares] = useState<SambaShare[]>([]);
-  const [users, setUsers] = useState<string[]>([]);
+  const sharesDraft = useDraft(resource.data, sharesOf);
+  const usersDraft = useDraft(resource.data, userNamesOf);
+  const shares = sharesDraft.draft ?? [];
+  const setShares = sharesDraft.setDraft;
+  const users = usersDraft.draft ?? [];
+  const setUsers = usersDraft.setDraft;
   const [newUser, setNewUser] = useState("");
   const [newPassword, setNewPassword] = useState("");
   // Passwords waiting for Apply to create their accounts. Held here and
@@ -114,23 +119,11 @@ export function SambaPanels({
   const [notice, setNotice] = useState<Partial<Record<GroupName, string>>>({});
   const [errors, setErrors] = useState<Partial<Record<GroupName, string>>>({});
 
-  useEffect(() => {
-    if (resource.data !== null) {
-      setShares(resource.data.shares);
-      setUsers(resource.data.users.map((user) => user.name));
-    }
-  }, [resource.data]);
-
   const savedShares = resource.data?.shares ?? [];
   const savedUsers = resource.data?.users ?? [];
-  const savedUserNames = savedUsers.map((user) => user.name);
 
-  const isSharesDirty =
-    resource.data !== null &&
-    JSON.stringify(shares) !== JSON.stringify(savedShares);
-  const isUsersDirty =
-    resource.data !== null &&
-    JSON.stringify(users) !== JSON.stringify(savedUserNames);
+  const isSharesDirty = sharesDraft.isDirty;
+  const isUsersDirty = usersDraft.isDirty;
   // A staged password is a change like any other, and the frame has to say so:
   // the glow and the Apply beneath it answer one question — is there something
   // here that has not been applied — so a box that lights the button and not
@@ -305,7 +298,7 @@ export function SambaPanels({
           blockedHint={blockedHint}
           error={errors.shares}
           notice={notice.shares}
-          onReset={() => setShares(savedShares)}
+          onReset={sharesDraft.reset}
           onApply={() => void applyGroup("shares")}
         />
       </section>
@@ -359,7 +352,7 @@ export function SambaPanels({
           error={errors.users}
           notice={notice.users}
           onReset={() => {
-            setUsers(savedUserNames);
+            usersDraft.reset();
             setPendingPasswords({});
           }}
           onApply={() => void applyGroup("users")}
@@ -369,6 +362,14 @@ export function SambaPanels({
       <StatusSection status={status.data} />
     </>
   );
+}
+
+function sharesOf(view: SambaDeviceView): SambaShare[] {
+  return view.shares;
+}
+
+function userNamesOf(view: SambaDeviceView): string[] {
+  return view.users.map((user) => user.name);
 }
 
 interface ShareEditorProps {

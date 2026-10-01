@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
@@ -8,6 +8,7 @@ import { ToggleSwitch } from "./toggle_switch";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { useDraft } from "../use_draft";
 import type {
   ApplyResult,
   GiteaConfigUpdate,
@@ -48,29 +49,12 @@ export function GiteaPanels({
     apiPath(basePath, { device_id: deviceId }),
   );
 
+  const saved = resource.data;
   // The form's own fields; the machine they are written to is the page's.
-  const [draft, setDraft] = useState<GiteaAccessDraft | null>(null);
+  const { draft, setDraft, isDirty, reset } = useDraft(saved, accessDraftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (resource.data !== null) {
-      setDraft({
-        listen_port: resource.data.listen_port,
-        root_url: resource.data.root_url,
-        is_registration_enabled: resource.data.is_registration_enabled,
-      });
-    }
-  }, [resource.data]);
-
-  const saved = resource.data;
-  const isDirty =
-    draft !== null &&
-    saved !== null &&
-    (draft.listen_port !== saved.listen_port ||
-      draft.root_url !== saved.root_url ||
-      draft.is_registration_enabled !== saved.is_registration_enabled);
 
   const applyAccess = async () => {
     if (draft === null) {
@@ -197,13 +181,7 @@ export function GiteaPanels({
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
           notice={notice}
-          onReset={() =>
-            setDraft({
-              listen_port: saved.listen_port,
-              root_url: saved.root_url,
-              is_registration_enabled: saved.is_registration_enabled,
-            })
-          }
+          onReset={reset}
           onApply={() => void applyAccess()}
         />
       </section>
@@ -217,6 +195,15 @@ export function GiteaPanels({
       />
     </>
   );
+}
+
+/** What the Access group starts from: its fields as saved. */
+function accessDraftOf(view: GiteaDeviceView): GiteaAccessDraft {
+  return {
+    listen_port: view.listen_port,
+    root_url: view.root_url,
+    is_registration_enabled: view.is_registration_enabled,
+  };
 }
 
 interface AdminSectionProps {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ApplyBar } from "./apply_bar";
@@ -12,6 +12,7 @@ import { ToggleSwitch } from "./toggle_switch";
 import { apiGet, apiPath, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
   ApplyResult,
@@ -73,8 +74,13 @@ export function ContainersPanels({
     },
   );
 
-  const [containers, setContainers] = useState<PodmanContainer[]>([]);
-  const [mirrors, setMirrors] = useState<string[]>([]);
+  const saved = resource.data;
+  const containersDraft = useDraft(saved, containersOf);
+  const mirrorsDraft = useDraft(saved, mirrorsOf);
+  const containers = containersDraft.draft ?? [];
+  const setContainers = containersDraft.setDraft;
+  const mirrors = mirrorsDraft.draft ?? [];
+  const setMirrors = mirrorsDraft.setDraft;
   const [isMirrorsBusy, setIsMirrorsBusy] = useState(false);
   const [mirrorsNotice, setMirrorsNotice] = useState<string | null>(null);
   const [mirrorsError, setMirrorsError] = useState<string | null>(null);
@@ -85,30 +91,7 @@ export function ContainersPanels({
   const [shellTarget, setShellTarget] = useState<string | null>(null);
   const [journalTarget, setJournalTarget] = useState<string | null>(null);
 
-  // The live list refreshes on its own, so the draft is only re-seeded when
-  // the *saved declarations* actually changed — otherwise a refresh would
-  // wipe an edit in progress, including a freshly added container that exists
-  // nowhere else yet.
-  const lastSyncedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (resource.data === null) {
-      return;
-    }
-    const savedJson = JSON.stringify([
-      resource.data.containers,
-      resource.data.mirrors,
-    ]);
-    if (savedJson !== lastSyncedRef.current) {
-      lastSyncedRef.current = savedJson;
-      setContainers(resource.data.containers);
-      setMirrors(resource.data.mirrors);
-    }
-  }, [resource.data]);
-
-  const saved = resource.data;
-  const isDirty =
-    saved !== null &&
-    JSON.stringify(containers) !== JSON.stringify(saved.containers);
+  const isDirty = containersDraft.isDirty;
   const filledMirrors = mirrors.filter((mirror) => mirror !== "");
   const isMirrorsDirty =
     saved !== null &&
@@ -296,7 +279,7 @@ export function ContainersPanels({
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={mirrorsError}
           notice={mirrorsNotice}
-          onReset={() => setMirrors(saved.mirrors)}
+          onReset={mirrorsDraft.reset}
           onApply={() => void applyMirrors()}
         />
       </section>
@@ -349,7 +332,7 @@ export function ContainersPanels({
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
           notice={notice}
-          onReset={() => setContainers(saved.containers)}
+          onReset={containersDraft.reset}
           onApply={() => void applyContainers()}
         />
       </section>
@@ -366,6 +349,14 @@ export function ContainersPanels({
 }
 
 /** The image without its tag; the tag chips swap what follows the colon. */
+function containersOf(view: PodmanDeviceView): PodmanContainer[] {
+  return view.containers;
+}
+
+function mirrorsOf(view: PodmanDeviceView): string[] {
+  return view.mirrors;
+}
+
 function imageBase(image: string): string {
   const colon = image.lastIndexOf(":");
   return colon > image.lastIndexOf("/") ? image.slice(0, colon) : image;

@@ -7,6 +7,7 @@ import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { interruptionWarning } from "../network_warnings";
 import { useApiResource } from "../use_api_resource";
+import { useDraft } from "../use_draft";
 import type { PanelSettings } from "../api_types";
 
 import "./panel_port_panel.css";
@@ -37,18 +38,12 @@ export function PanelPortPanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<PanelSettings>("/hub/setting");
-  const [port, setPort] = useState<number | null>(null);
-  const [httpsPort, setHttpsPort] = useState<number | null>(null);
+  const portsDraft = useDraft(resource.data, portsOf);
+  const port = portsDraft.draft?.listen_port ?? null;
+  const httpsPort = portsDraft.draft?.https_listen_port ?? null;
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [movingTo, setMovingTo] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (resource.data !== null) {
-      setPort(resource.data.listen_port);
-      setHttpsPort(resource.data.https_listen_port);
-    }
-  }, [resource.data]);
 
   const applied = resource.data?.listen_port ?? null;
   const appliedHttps = resource.data?.https_listen_port ?? null;
@@ -99,7 +94,10 @@ export function PanelPortPanel() {
             scheme="http"
             onChange={(value) => {
               setError(null);
-              setPort(value);
+              portsDraft.setDraft((current) => ({
+                ...current,
+                listen_port: value,
+              }));
             }}
           />
           <PortField
@@ -109,7 +107,10 @@ export function PanelPortPanel() {
             scheme="https"
             onChange={(value) => {
               setError(null);
-              setHttpsPort(value);
+              portsDraft.setDraft((current) => ({
+                ...current,
+                https_listen_port: value,
+              }));
             }}
           />
         </div>
@@ -122,16 +123,27 @@ export function PanelPortPanel() {
         hint={applyHint(port, httpsPort)}
         warning={interruptionWarning(t("ui.network.warning_panel_restart"))}
         error={error}
-        onReset={() => {
-          setPort(applied);
-          setHttpsPort(appliedHttps);
-        }}
+        onReset={portsDraft.reset}
         onApply={() => void apply()}
       />
 
       {movingTo !== null && <MovingOverlay destination={movingTo} />}
     </section>
   );
+}
+
+/** The two ports as the form holds them; a cleared field holds null. */
+interface PanelPortsDraft {
+  listen_port: number | null;
+  https_listen_port: number | null;
+}
+
+/** What the form starts from: the two ports as saved. */
+function portsOf(settings: PanelSettings): PanelPortsDraft {
+  return {
+    listen_port: settings.listen_port,
+    https_listen_port: settings.https_listen_port,
+  };
 }
 
 interface MovingOverlayProps {
