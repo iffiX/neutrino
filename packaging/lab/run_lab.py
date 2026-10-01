@@ -30,10 +30,12 @@ from pathlib import Path
 LAB_DIR = Path(__file__).resolve().parent
 SUITE_DIR = LAB_DIR.parent / "integration"
 
-# Where the lab keeps its files unless NEUTRINO_VM_LAB says otherwise; the
-# same default setup_vms.sh has.
+# Where the lab keeps its files unless NEUTRINO_VM_LAB says otherwise. It is
+# outside every home directory because qemu runs as its own account, which
+# cannot search /home, so a root under it fails at the first disk.
 LAB_ROOT_ENV = "NEUTRINO_VM_LAB"
-LAB_ROOT_DEFAULT = Path.home() / ".local" / "share" / "neutrino_vm_lab"
+LAB_ROOT_DEFAULT = Path("/var/lib/neutrino_vm_lab")
+LAB_ROOT_FORBIDDEN = Path("/home")
 
 # The hub VM setup_vms.sh names with its default prefix, where the suite lands
 # inside it, and the libvirt connection it uses.
@@ -71,6 +73,11 @@ def main() -> int:
     if not package.is_file():
         raise SystemExit(f"{package} is not a file")
     lab = Path(os.environ.get(LAB_ROOT_ENV) or LAB_ROOT_DEFAULT)
+    if LAB_ROOT_FORBIDDEN in lab.resolve().parents:
+        raise SystemExit(
+            f"the lab root {lab} is under {LAB_ROOT_FORBIDDEN}, which qemu cannot "
+            f"search; set {LAB_ROOT_ENV} to a directory outside it"
+        )
     _check_tools()
     environment = dict(
         os.environ, NEUTRINO_VM_LAB=str(lab), LIBVIRT_DEFAULT_URI=LAB_LIBVIRT_URI
