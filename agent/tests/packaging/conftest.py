@@ -1,9 +1,10 @@
 """The build scripts on the import path, the way they put each other there.
 
-``agent/packaging`` and the repository's own ``packaging`` are scripts rather
-than packages — importing either as one would shadow the ``packaging``
-distribution the tooling itself uses — so both directories go on the path
-and their modules are imported by their own names.
+``agent/packaging`` and the repository's own ``packaging`` are not packages —
+importing either as one would shadow the ``packaging`` distribution the
+tooling itself uses — so both directories go on the path. The package's own
+modules are imported by their own names, the shared ones as
+``shared.<module>``.
 """
 
 import sys

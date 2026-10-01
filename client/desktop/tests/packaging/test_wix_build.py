@@ -9,7 +9,7 @@ import xml.etree.ElementTree
 
 import pytest
 
-import wix_build
+from shared import wix_build
 
 WXS = "{http://wixtoolset.org/schemas/v4/wxs}"
 UTIL = "{http://wixtoolset.org/schemas/v4/wxs/util}"

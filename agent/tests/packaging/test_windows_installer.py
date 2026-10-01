@@ -17,7 +17,7 @@ import pytest
 
 import build_msi
 import payload
-import wix_build
+from shared import wix_build
 
 # The client's own upgrade code, which this one must not be.
 CLIENT_UPGRADE_CODE = "0221A508-0A7E-4CFE-B517-B901D9318962"

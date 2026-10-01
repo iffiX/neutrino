@@ -31,10 +31,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
-import nuitka_build  # noqa: E402
+from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
-import rustdesk_assets  # noqa: E402
-import wix_build  # noqa: E402
+from shared import rustdesk_assets  # noqa: E402
+from shared import wix_build  # noqa: E402
 
 REPO_ROOT = payload.REPO_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME

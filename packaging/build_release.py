@@ -34,10 +34,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# What the hub's packaging has decided about the machines it builds for is
-# read from there rather than repeated here.
-sys.path.insert(0, str(REPO_ROOT / "hub" / "packaging"))
-from constants import PACKAGING_ARCHITECTURE_NAMES  # noqa: E402
+# The name each family gives a machine is read from the shared table rather
+# than repeated here.
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared.constants import PACKAGING_ARCHITECTURE_NAMES  # noqa: E402
 
 # The source of everything the packages carry, pinned to the archive at the
 # tag the binaries were built from: RustDesk (AGPL-3.0) in the agent and the
@@ -192,7 +192,7 @@ CLIENT_CONTAINER_BUILD = (
     "cp -r /src/client/desktop/neutrino_client /src/client/desktop/packaging "
     "/src/client/desktop/frontend /src/client/desktop/pyproject.toml "
     "/build/client/desktop/ && "
-    "cp /src/packaging/*.py /build/packaging/ && "
+    "cp -r /src/packaging/shared /build/packaging/ && "
     "cp -r /src/images/icons /build/images/ && "
     "cp -r /src/licenses /build/licenses && cd /build && "
     "python3 client/desktop/packaging/{script} --output-dir /out "
@@ -209,9 +209,10 @@ AGENT_CONTAINER_BUILD = (
 )
 
 CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/hub /build/agent /build/images && "
+    "{install} && mkdir -p /build/hub /build/agent /build/images /build/packaging && "
     "cp -r /src/hub/neutrino_hub /src/hub/packaging /src/hub/pyproject.toml "
     "/build/hub/ && "
+    "cp -r /src/packaging/shared /build/packaging/ && "
     "cp -r /src/agent/neutrino_agent /src/agent/packaging "
     "/src/agent/pyproject.toml "
     "/build/agent/ && "

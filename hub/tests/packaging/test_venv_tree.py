@@ -471,18 +471,20 @@ def test_the_stamp_carries_the_version_and_the_file_name_with_the_version_open()
     )
 
 
-def test_the_release_build_reads_the_architecture_table_the_packaging_owns():
-    """One table names the machine for every family; the release build
-    reads it rather than keeping a copy that could drift."""
+def test_the_release_build_reads_the_naming_tables_the_packaging_owns():
+    """One table names the machine for every family and one the file of
+    every format; the release build and the hub's build read them rather
+    than keeping a copy that could drift."""
     import importlib.util
     from pathlib import Path
 
-    import constants
+    from shared import constants
 
     script = Path(venv_tree.HUB_ROOT).parent / "packaging" / "build_release.py"
     spec = importlib.util.spec_from_file_location("build_release", script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert module.PACKAGING_ARCHITECTURE_NAMES is constants.PACKAGING_ARCHITECTURE_NAMES
+    assert venv_tree.PACKAGING_ASSET_PATTERNS is constants.PACKAGING_ASSET_PATTERNS
     assert set(constants.PACKAGING_ARCHITECTURE_NAMES) == {"amd64", "arm64"}
     assert set(constants.PACKAGING_ASSET_PATTERNS) == {"deb", "rpm", "pkg"}

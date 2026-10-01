@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import payload  # noqa: E402
-import rustdesk_assets  # noqa: E402
+from shared import rustdesk_assets  # noqa: E402
 
 # The AI tool switcher, published as one static binary per machine. The musl
 # builds are the ones that need nothing of the machine's own C library.
@@ -56,7 +56,7 @@ CC_SWITCH_ASSETS = {
 CC_SWITCH_BINARY_NAME = "cc-switch"
 CC_SWITCH_WINDOWS_BINARY_NAME = "cc-switch.exe"
 
-# The RustDesk viewer, pinned in ``packaging/rustdesk_assets.py``. Linux
+# The RustDesk viewer, pinned in ``packaging/shared/rustdesk_assets.py``. Linux
 # takes it out of upstream's Flutter .deb, Windows takes the portable
 # executable as it is, and macOS takes the app bundle out of the disk image.
 # Where the upstream package keeps the whole viewer: the binary, the

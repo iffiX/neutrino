@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 
 import build_msi
-import nuitka_build
+from shared import nuitka_build
 import payload
-import wix_build
+from shared import wix_build
 
 # The agent's own upgrade code, which this one must not be.
 AGENT_UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"

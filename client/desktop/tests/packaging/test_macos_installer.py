@@ -16,9 +16,9 @@ import pytest
 
 import build_pkg
 import bundled
-import nuitka_build
+from shared import nuitka_build
 import payload
-import pkg_build
+from shared import pkg_build
 
 
 def darwin_build_machine(monkeypatch, *, machine="arm64", version=(3, 13, 7)):

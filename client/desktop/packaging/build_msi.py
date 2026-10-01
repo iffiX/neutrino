@@ -65,9 +65,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import bundled  # noqa: E402
 import icons  # noqa: E402
-import nuitka_build  # noqa: E402
+from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
-import wix_build  # noqa: E402
+from shared import wix_build  # noqa: E402
 
 # The service names and the portal are the client's own, named here so the
 # installer and the runtime cannot drift.

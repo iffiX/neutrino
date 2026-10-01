@@ -3,7 +3,7 @@ download is stood in for."""
 
 import pytest
 
-import rustdesk_assets
+from shared import rustdesk_assets
 
 
 def test_every_pin_is_a_flutter_asset_of_the_pinned_release():

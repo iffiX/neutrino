@@ -16,7 +16,7 @@ import zipfile
 
 import pytest
 
-import nuitka_build
+from shared import nuitka_build
 import payload
 
 # A readelf whose answer for a file is the version its own name spells, so a

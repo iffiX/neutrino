@@ -34,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
-import nuitka_build  # noqa: E402
+from shared import nuitka_build  # noqa: E402
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
 

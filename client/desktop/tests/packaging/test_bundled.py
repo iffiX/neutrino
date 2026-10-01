@@ -14,7 +14,7 @@ import pytest
 
 import bundled
 import payload
-import rustdesk_assets
+from shared import rustdesk_assets
 
 MACHINES = ("x86_64", "aarch64")
 

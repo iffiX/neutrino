@@ -32,7 +32,13 @@ import zipfile
 import urllib.request
 from pathlib import Path
 
-from constants import PACKAGING_ASSET_PATTERNS, PACKAGING_GLIBC_FLOOR
+from constants import PACKAGING_GLIBC_FLOOR
+
+# The repository's packaging directory, for the names every package shares.
+SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
+if str(SHARED_PACKAGING_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_PACKAGING_DIR))
+from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 HUB_ROOT = Path(__file__).resolve().parent.parent
 AGENT_ROOT = HUB_ROOT.parent / "agent"

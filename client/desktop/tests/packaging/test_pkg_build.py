@@ -4,7 +4,7 @@ pkgbuild command that takes them; Apple's tools are stood in for."""
 import plistlib
 from pathlib import Path
 
-import pkg_build
+from shared import pkg_build
 
 
 def test_a_daemon_lands_under_launch_daemons_started_and_kept_alive(tmp_path):
