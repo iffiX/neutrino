@@ -99,8 +99,8 @@ agent/
     exceptions.py    The package's one exception table; the channel kinds
                      are the copy the client keeps too.
     data/            Ships inside the package: systemd/ its unit.
-  packaging/         Its .deb, .rpm, .msi and .pkg builders and the payload
-                     they stage.
+  packaging/         Its .deb and .rpm builders and the payload every
+                     package stages, the .msi and .pkg included.
   tests/
 ```
 
@@ -126,8 +126,9 @@ client/desktop/
                      polkit/ the policy for the mount helper.
   frontend/          The window's page: plain HTML, CSS and JavaScript, no
                      framework and no node toolchain.
-  packaging/         The .deb, .rpm, .msi and .pkg builders, the payload
-                     every one of them stages, and the icon containers.
+  packaging/         The .deb and .rpm builders, the payload every package
+                     stages, the .msi and .pkg included, and the icon
+                     containers.
   tests/
 ```
 
@@ -152,16 +153,45 @@ client/ios/          Xcode project, Swift and SwiftUI, iOS 16. Three targets:
 
 ## Inside `packaging/`
 
-`build_release.py` builds every artifact of a release, including the source
-archive. `nuitka_build.py`, `wix_build.py`, `pkg_build.py` and
-`rustdesk_assets.py` are the compile, the `.msi`, the `.pkg` and the pinned
-RustDesk that every package's installer builds from. `integration/` is the part that cannot run anywhere else: scripts that drive a **built package on a
-live box**, deliberately outside `hub/tests` because pytest must stay runnable
-on a workstation with no root and no interfaces to break. `integration_aws/`
-is the same idea for the platforms the pipeline VM cannot carry: it rents a
-Windows Server and a Mac by the hour, builds their installers there, and
-joins each to a rented Linux hub as a device. Its `state/` is one run's key
-and addresses, gitignored, and its `down.sh` is what stops the bill.
+`packaging/` holds one script per thing a release builds, and the machinery
+that checks a built package. Every script runs the same way on a machine that
+can build its target and in the release workflow, which only sets up the host
+and calls it.
+
+```
+packaging/
+  shared/            Library modules, no main(): constants.py the names of
+                     package files and machines, the Nuitka, WiX, pkg and
+                     RustDesk builders, the container runner, the cores cache.
+  build/             One build_<target>.py per target: build_hub.py,
+                     build_agent.py and build_client_desktop.py in containers;
+                     build_agent_windows.py, build_agent_macos.py,
+                     build_client_windows.py, build_client_macos.py,
+                     build_client_android.py and build_client_ios.py
+                     natively; build_core_<core>.py for each core the phones
+                     carry; build_sources.py, build_checksums.py and
+                     build_docs.py.
+  ci/                check.py: installs a built package where it runs and
+                     checks it works.
+  lab/               The VM lab: run_lab.py builds a hub VM and a client VM
+                     with setup_vms.sh and runs the integration suite in the
+                     hub; vm_exec.py drives a VM through its guest agent;
+                     windows/ the Windows client walk.
+  integration/       The suite that runs on the box: pytest files,
+                     run_on_box.sh and run_mode_matrix.sh.
+  screenshots/       The guide's screenshot tool and its shot list.
+  integration_aws/   The same idea as the lab for the platforms it cannot
+                     carry.
+```
+
+`integration/` is the part that cannot run anywhere else: checks that drive a
+**built package on a live box**, deliberately outside `hub/tests` because
+pytest must stay runnable on a workstation with no root and no interfaces to
+break. The lab keeps its images, disks and key under the directory
+`NEUTRINO_VM_LAB` names. `integration_aws/` rents a Windows Server and a Mac
+by the hour, builds their installers there, and joins each to a rented Linux
+hub as a device. Its `state/` is one run's key and addresses, gitignored, and
+its `down.sh` is what stops the bill.
 
 ## The rules that shaped it
 
@@ -254,4 +284,5 @@ editing it should not need to know how the code is arranged.
 | Anything a person's computer runs | `client/desktop/neutrino_client/` |
 | A screen, a service kind or a platform piece of the Android app | `client/android/`, in Kotlin |
 | The same on iOS: the app, the Packet Tunnel or the File Provider extension | `client/ios/`, in Swift |
-| A script that builds a core the phones compile in | `packaging/mobile_<core>.py` |
+| A script that builds a core the phones compile in | `packaging/build/build_core_<core>.py` |
+| A script that builds or checks a release target | `packaging/build/build_<target>.py`, `packaging/ci/check.py` |

@@ -32,7 +32,7 @@ Before you start, the hub must be in the state each entry's `state` names, and
 its panel must be reachable from this machine. The tool switches the panel's
 language for each language's shots and sets it back at the end.
 
-1. Change to this directory with `cd packaging/integration/screenshots`.
+1. Change to this directory with `cd packaging/screenshots`.
 1. Export the panel password as `NEUTRINO_PANEL_PASSWORD`, or type it when the tool prompts.
 1. Run `python3 capture.py --panel https://<hub-address>:<panel-port> --ignore-https-errors`, where the address and port are the panel's.
 1. For an entry with a `manual` step, bring the opened browser window to the state it names, then press Enter in the terminal.

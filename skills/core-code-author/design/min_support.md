@@ -17,11 +17,11 @@ new floor is written down.
 | hub `.deb`, `.rpm` | 2.34 | the cryptography and bcrypt extensions in the environment the package installs (`hub/packaging/venv_tree.py:80`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | agent `.deb`, `.rpm` | 2.27 | the RustDesk host binary (`agent/packaging/constants.py:8`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | agent `.msi` | none | the pseudo console the shell stream runs PowerShell on (`agent/neutrino_agent/streams/windows_shell.py:76`) | Windows 10 1809 |
-| agent `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
-| client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build_release.py:164`) | Debian 12, Ubuntu 22.04 |
-| client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build_release.py:174`) | RHEL 9, AlmaLinux 9 |
-| client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
-| client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`client/desktop/packaging/build_msi.py:28`, `client/desktop/packaging/build_msi.py:69`) | Windows 10 1809 |
+| agent `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
+| client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build/build_client_desktop.py:40`) | Debian 12, Ubuntu 22.04 |
+| client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build/build_client_desktop.py:50`) | RHEL 9, AlmaLinux 9 |
+| client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
+| client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`packaging/build/build_client_windows.py:41`, `packaging/build/build_client_windows.py:90`) | Windows 10 1809 |
 | client `.apk` | none | `openProxyFileDescriptor`, which the Files provider serves a share's file through, from API level 26 (`minSdk` in `client/android/`) | Android 8.0 |
 | client iOS app | none | `NSFileProviderReplicatedExtension`, the File Provider extension's base class, from iOS 16 (the deployment target in `client/ios/`) | iOS 16 |
 
@@ -86,22 +86,22 @@ releases a supported family provides.
 | girepository | 1.72, installed by the package | PyGObject 3.50 compiles against calls that arrived in 1.72, and RHEL 9 has 1.68 | `client/desktop/packaging/payload.py:127` |
 | libffi | 8 | the bindings compiled in `debian:12` link it | `client/desktop/packaging/payload.py:136` |
 | AyatanaAppIndicator3 | optional | the tray; without `libayatana-appindicator3.so.1` the tray is drawn as a GTK status icon | `client/desktop/neutrino_client/gui/tray_linux.py:17`, `client/desktop/neutrino_client/gui/tray_linux.py:98` |
-| pyobjc | 12.2.2, from wheels tagged macOS 10.13 | the macOS window | `client/desktop/packaging/build_pkg.py:75` |
-| Windows Installer | 5.0 | the `.msi`, which WiX 6 writes at that version by default | `packaging/wix_build.py:28` |
+| pyobjc | 12.2.2, from wheels tagged macOS 10.13 | the macOS window | `packaging/build/build_client_macos.py:131` |
+| Windows Installer | 5.0 | the `.msi`, which WiX 6 writes at that version by default | `packaging/shared/wix_build.py:28` |
 
 ## Why the client's floor comes from its build container
 
 The client is the one package that compiles C where it is built. Nuitka
 generates C for `nclient` and for `mount_helper`, and the container's linker
 binds every libc call to the newest symbol version that container's glibc
-defines (`packaging/nuitka_build.py:57`). An older machine refuses those
+defines (`packaging/shared/nuitka_build.py:57`). An older machine refuses those
 symbol versions whatever its distribution is called.
 
 Building the `.rpm` in `fedora:41` produced a package RHEL 9 could not load:
 glibc 2.40 resolves `strtol` and `sscanf` to the `__isoc23_*` symbols that
 arrived in 2.38, so the binaries asked for 2.38 on a family whose oldest
 member has 2.34. Both Linux clients are built in `debian:12` now
-(`packaging/build_release.py:162`), which puts every symbol at 2.34 or below
+(`packaging/build/build_client_desktop.py:27`), which puts every symbol at 2.34 or below
 and leaves the RHEL-family names to the spec file.
 
 The hub and the agent compile nothing in their containers. The hub installs
@@ -122,7 +122,7 @@ the staged tree, takes the highest `GLIBC_` version any of them names, and
 exits when it is above `PACKAGING_GLIBC_FLOOR`
 (`hub/packaging/venv_tree.py:633`, `agent/packaging/payload.py:343`,
 `client/desktop/packaging/payload.py:437`). The constant is 2.34 in all three
-packages (`hub/packaging/constants.py:12`, `agent/packaging/constants.py:12`,
+packages (`hub/packaging/constants.py:13`, `agent/packaging/constants.py:12`,
 `client/desktop/packaging/constants.py:13`). A build whose tree needs more than
 that fails at that line, before anything is published.
 
@@ -135,7 +135,7 @@ fails on the missing symbol version. The assertion at build time takes the
 place of the declaration the format omits.
 
 **A VM of the oldest system is the proof.**
-`packaging/integration/setup_vms.sh ubuntu 22.04` builds that machine
-(`packaging/integration/setup_vms.sh:48`), and `run_mode_matrix.sh` installs
+`packaging/lab/setup_vms.sh ubuntu 22.04` builds that machine
+(`packaging/lab/setup_vms.sh:50`), and `run_mode_matrix.sh` installs
 the packages on it and exercises the modes. A floor in this page moves after
 that run has passed on the system it names.

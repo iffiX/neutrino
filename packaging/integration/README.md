@@ -23,11 +23,10 @@ reconfigures a box's network, installs packages, or both.
 | `test_reset_hands_back.py` | That `nhub reset all` gave the network back. |
 | `run_on_box.sh` | The single-mode lifecycle, from an uninstalled machine and back to one. |
 | `run_mode_matrix.sh` | The matrix lifecycle: install, server, the whole walk, reset. |
-| `setup_vms.sh` | The mini network the matrix wants: a hub with three ports and a client on the served wire, on a distro and version named to pin behaviour. |
 
 `panel_client.py` is the signed-in caller; `machine_state.py` reads the facts
-about the box that no API can answer; `vm_exec.py` drives a lab VM through the
-QEMU guest agent, which survives everything the tests do to its network.
+about the box that no API can answer. The VMs the suite runs on are built and
+driven from `../lab/`.
 
 ## Running them
 
@@ -64,23 +63,22 @@ repository root walks past it instead of taking a workstation's network apart.
 
 ## The mini network
 
-The matrix wants a machine with three ports and a neighbour to serve, and
-`setup_vms.sh` builds exactly that on a libvirt host:
+The matrix wants a machine with three ports and a neighbour to serve.
+`../lab/setup_vms.sh` builds exactly that on a libvirt host, and
+`../lab/run_lab.py` builds it, pushes this suite and a package into the hub,
+and runs the matrix there:
 
 ```bash
-./setup_vms.sh debian 12          # or: ubuntu 22.04, alma 9, arch rolling …
-python3 vm_exec.py nmxhub 'mkdir -p /opt/integration'
-for f in *.py *.sh pytest.ini; do python3 vm_exec.py nmxhub push "$PWD/$f" "/opt/integration/$f"; done
-python3 vm_exec.py nmxhub push ~/.local/share/neutrino_vm_lab/id_lab /opt/integration/id_lab
-python3 vm_exec.py nmxhub 'chmod 600 /opt/integration/id_lab'
-python3 vm_exec.py nmxhub push neutrino-hub_0.4.0_amd64.deb /tmp/neutrino-hub_0.4.0_amd64.deb
-python3 vm_exec.py nmxhub 'bash /opt/integration/run_mode_matrix.sh /tmp/neutrino-hub_0.4.0_amd64.deb --client'
+export NEUTRINO_VM_LAB=/var/lib/neutrino_vm_lab
+sg libvirt -c "python3 packaging/lab/run_lab.py neutrino-hub_0.5.0_amd64.deb"
+sg libvirt -c "python3 packaging/lab/run_lab.py neutrino-hub_0.5.0_amd64.deb --distro ubuntu --version 22.04 --lifecycle"
 ```
 
 `id_lab` is the key `setup_vms.sh` generated for the `lab` account on both
-VMs, and it is what the lifecycle walks in `run_on_box.sh` reach the client
-with. They fail naming it when it is not beside them: a walk that passed by
-skipping is a walk that tested nothing.
+VMs, and `run_lab.py` copies it beside the suite; it is what the lifecycle
+walks in `run_on_box.sh` reach the client with. They fail naming it when it
+is not beside them: a walk that passed by skipping is a walk that tested
+nothing.
 
 The distro and version name the exact cloud image, so a behaviour seen on
 `debian 12` is pinned to that release rather than to whatever the lab had

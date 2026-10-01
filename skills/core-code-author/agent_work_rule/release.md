@@ -237,16 +237,39 @@ tampered download fails loudly rather than half-installing.
 
 ## Building the packages
 
+Every target is one script under `packaging/build/`, and each runs the same
+way on a machine that can build it as in the tag workflow. The docstring at
+the top of each names the hosts it runs on, and the script stops with one
+sentence when a tool it needs is missing.
+
+| Script | Builds | Runs on |
+| --- | --- | --- |
+| `build_hub.py` | the hub's `.deb`, `.rpm` and Arch package | Linux with podman or docker, after `npm run build` in `hub/frontend` |
+| `build_agent.py` | the agent's `.deb` and `.rpm` | Linux with podman or docker |
+| `build_client_desktop.py` | the client's `.deb` and `.rpm` | Linux of the target architecture, with podman or docker |
+| `build_agent_windows.py`, `build_client_windows.py` | the two `.msi` | Windows with Python 3.13 and WiX 6 |
+| `build_agent_macos.py`, `build_client_macos.py` | the two `.pkg` | macOS on Apple silicon with Python 3.13 |
+| `build_client_android.py` | the `.apk`, with its cores | Linux or macOS with JDK 17 and the Android SDK |
+| `build_client_ios.py` | nothing yet: it prints the `xcodebuild` steps | macOS with Xcode |
+| `build_core_netbird.py`, `build_core_easytier.py` | one core the phones carry | Linux |
+| `build_sources.py`, `build_checksums.py` | the source archive, `SHA256SUMS` over a directory | anywhere |
+
 ```bash
-python3 packaging/build_release.py --output-dir dist/
+python3 packaging/build/build_agent.py --architecture amd64 --output-dir dist/
+python3 packaging/build/build_hub.py --architecture amd64 --output-dir dist/ \
+    --agent-packages dist/
+python3 packaging/build/build_checksums.py --output-dir dist/
 ```
 
-One command builds everything for the host's architecture and writes
-`SHA256SUMS` beside it. `--only` builds one part: `hub`, `agent`, `client`,
-`sources`, or `checksums` over a directory the parts were collected into,
-which is how the tag workflow splits the work across runners. `--families`
-chooses the distribution families; the agent and the client have no Arch
-package and say so rather than failing.
+`--families` chooses the distribution families of the Linux builds; the agent
+and the client have no Arch package and say so rather than failing.
+`packaging/ci/check.py <target> <artifact>` installs a built package where it
+runs, checks that it works, and removes it again; the workflow runs it after
+every build.
+
+The cores the phone apps carry are cached under
+`~/.cache/neutrino/cores/<core>-<commit>-<abi>/`, and the workflow's cache
+uses the same name, so a core is built once per pinned commit.
 
 The hub and the agent are built in containers of the target family, because
 each carries an interpreter compiled against that family's C libraries, so
@@ -256,16 +279,17 @@ under emulation; the host needs QEMU registered with binfmt_misc first.
 The client is compiled, and Nuitka under emulation takes hours, so its Linux
 packages are built on a machine of their own architecture. The Windows `.msi`
 needs Windows and WiX (`dotnet tool install --global wix`):
-`client/desktop/packaging/build_msi.py` builds it, and `--stage-only` writes
+`packaging/build/build_client_windows.py` builds it, and `--stage-only` writes
 and checks the whole payload without one. Either way it takes `--packet-dll`,
 the stand-in `packet.dll` built from `client/desktop/packaging/packet_stub.c`
 (MSVC in the release workflow, MinGW for the lab box), and refuses to build
 without it. The macOS `.pkg` needs macOS:
-`client/desktop/packaging/build_pkg.py`.
+`packaging/build/build_client_macos.py`.
 
-The agent's `.msi` is built on Windows by `agent/packaging/build_msi.py` and
-its `.pkg` on a Mac by `agent/packaging/build_pkg.py`, from the same shared
-Nuitka, WiX, pkg and RustDesk builders under `packaging/` the client's use.
+The agent's `.msi` is built on Windows by
+`packaging/build/build_agent_windows.py` and its `.pkg` on a Mac by
+`packaging/build/build_agent_macos.py`, from the same Nuitka, WiX, pkg and
+RustDesk builders under `packaging/shared/` the client's use.
 
 The agent packages a hub package carries are built inside the hub's own build
 container and land under `/var/lib/neutrino/agent_cache/`, with
@@ -302,15 +326,20 @@ git push origin v0.4.0
 
 `.github/workflows/release.yml` builds the hub and the agent for both
 architectures in containers, the client's Linux packages on native runners of
-each architecture, the Windows installer, the macOS installer and the source
-archive, generates `SHA256SUMS` over all of it, and opens a draft release. The
-Windows job installs what it built, runs the client from it and uninstalls
-again; the macOS job installs its package and runs `nclient` from it; a broken
-installer fails the build rather than the person who downloads it. The
-agent's Windows job installs its `.msi`, checks that `neutrino_agent` and
-`RustDesk` run, and uninstalls again; its macOS job installs the `.pkg`,
-checks the LaunchDaemon runs, and removes it. The hub jobs wait for both. Fill in the
-changelog, check the section headings still match what shipped, and publish.
+each architecture, the Windows installer, the macOS installer, the apk and the
+source archive, generates `SHA256SUMS` over all of it, and opens a draft
+release. Each job runs one `packaging/build/` script and then
+`packaging/ci/check.py` on what it built, so a broken package fails the build
+rather than the person who downloads it: every Linux package is installed in
+a fresh container of its family and its command answers `--version`; the
+client's Windows job installs the `.msi`, runs the client from it and
+uninstalls again, and its macOS job installs the `.pkg` and runs `nclient`
+from it; the agent's Windows job installs its `.msi`, checks that
+`neutrino_agent` and `RustDesk` run, and uninstalls again, and its macOS job
+installs the `.pkg`, checks the LaunchDaemon runs, and removes it; the apk is
+installed and launched once in an emulator. The hub jobs wait for the agent's.
+Fill in the changelog, check the section headings still match what shipped,
+and publish.
 
 Running the same workflow from the Actions tab builds the packages and attaches
 them as artifacts without creating a release, which is how a change to the

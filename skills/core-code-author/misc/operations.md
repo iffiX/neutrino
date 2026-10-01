@@ -252,3 +252,25 @@ copied build shows on the next page load with no restart. Restarting
 `neutrino_hub_web` closes every agent channel for a moment: an install in
 progress on a device fails with `hub_unreachable` and the agent retries on
 its own, so restart between installs, not during one.
+
+## Running a package through the VM lab
+
+`packaging/lab/run_lab.py` takes a hub package from nothing to a tested hub
+on two fresh VMs: `setup_vms.sh` builds a hub with three ports and a client on
+the wire it serves, the suite under `packaging/integration/` and the package
+go into the hub, and `run_mode_matrix.sh --client` walks every mode there.
+`--lifecycle` builds the pair again and runs `run_on_box.sh` on it as well.
+The exit status is the number of phases that failed.
+
+The lab's images, disks and SSH key live in the directory `NEUTRINO_VM_LAB`
+names, which qemu's own user must be able to reach, so not one under `/home`.
+The libvirt group is needed to drive it:
+
+```bash
+export NEUTRINO_VM_LAB=/var/lib/neutrino_vm_lab
+sg libvirt -c "python3 packaging/lab/run_lab.py dist/neutrino-hub_<version>_amd64.deb"
+```
+
+The package keeps its release name, because `nhub update --package` reads the
+version off it. `--distro` and `--version` pick the cloud image, `debian 12`
+by default. One run takes about ten minutes.

@@ -24,7 +24,7 @@ box; this one exercises it where a screenshot can be taken.
 ## Running it
 
 ```bash
-cd packaging/integration/windows
+cd packaging/lab/windows
 ./vm.py serve                                   # once; then copy the msi to ~/win_share/new_client.msi on the host
 for f in *.ps1 *.py; do ./vm.py put "$f" "C:\\$f"; done
 ./vm.py exec "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\launch_gui.ps1"

@@ -36,6 +36,13 @@ NEUTRINO_DOCS_BASE=/neutrino/ npm run build
 NEUTRINO_DOCS_BASE=/neutrino/ npm run preview
 ```
 
+`packaging/build/build_docs.py` runs the same steps the workflow runs:
+`npm ci` with `--install`, then `check`, then `build` once for each `--base`.
+
+```bash
+python3 ../../packaging/build/build_docs.py --install --base /neutrino/
+```
+
 `cleanUrls` is off, so pages keep their `.html` addresses and a static server
 needs no rewrite rules.
 
@@ -83,7 +90,7 @@ register file.
 | `images/web/architecture.svg`, `architecture_zh.svg` | `public/guide/` | `/guide/architecture.svg`                                                 |
 
 Every screenshot has an entry in
-`packaging/integration/screenshots/shots.json`, and the tool beside it
+`packaging/screenshots/shots.json`, and the tool beside it
 captures them as png. The script writes each png under `images/guide/` as the
 webp of the same name, replacing an older webp. For a table entry with no
 image yet, it writes a one-pixel placeholder and prints a warning, so the
@@ -101,7 +108,8 @@ Nothing copied into `public/` is committed: `.gitignore` holds
 
 `.github/workflows/docs.yml` builds and checks every pull request that
 touches `docs/guide/**`, `images/guide/**`, `images/icons/**`, `images/web/**`,
-`packaging/integration/screenshots/**` or the workflow itself. It publishes
+`packaging/screenshots/**`, `packaging/build/build_docs.py` or the workflow
+itself, by running `packaging/build/build_docs.py`. It publishes
 on a pushed `v*` tag, so the site shows the guide of the newest release.
 
 The three Pages steps (`configure-pages`, `upload-pages-artifact` and the

@@ -135,7 +135,7 @@ python3 agent/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
 Each package is fixed to one architecture, because it includes an interpreter
 and a compiled desktop host, so each build runs in a container of the family and
-the machine it is for. `packaging/build_release.py` drives that matrix for
+the machine it is for. `packaging/build/build_agent.py` drives that matrix for
 `amd64` and `arm64`. The hub's own package build seeds its cache from the agent
 packages already built, so a hub and the agents it installs are one version.
 

@@ -64,7 +64,7 @@ pip install -e "hub[dev]"            # nhub, black, pytest, detect-secrets
 pip install -e agent                 # nagent
 pip install -e client/desktop        # nclient
 
-black --check hub agent client       # REQUIRED before every commit
+black --check hub agent client packaging  # REQUIRED before every commit
 nhub scan-secrets                    # REQUIRED before every commit
 cd hub && pytest -q                  # hub tests
 cd agent && pytest -q                # agent tests
@@ -118,11 +118,15 @@ client/
     neutrino_client/  The client: a person's session on Linux, Windows or
                       macOS; a tray and a window.
     frontend/         The client window's page: plain HTML/CSS/JS, no toolchain.
-    packaging/        deb, rpm, msi and pkg builds of the compiled client.
+    packaging/        deb and rpm builds of the compiled client, and the
+                      payload every package stages.
     tests/
   android/            The Android app: Gradle, Kotlin, Jetpack Compose.
                       AGPL-3.0.
   ios/                The iOS app: Xcode, Swift, SwiftUI. AGPL-3.0.
+packaging/            build/ one script per release target, shared/ what
+                      they share, ci/ the post-install checks, lab/ the VM
+                      lab, integration/ the suite that runs on a box.
 config/               Source of truth at runtime. Real files gitignored.
                       /etc/neutrino/config once installed.
 skills/core-code-author/        This standard. The single source of truth for rules.
