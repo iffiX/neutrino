@@ -211,9 +211,17 @@ class ModuleRunner:
         try:
             self.validate(dict(config) if isinstance(config, dict) else {})
         except ModuleApplyError as error:
-            return command_outcome(1, error.code, error.params)
+            return self._validate_refused(error.code, error.params)
         except PlatformUnsupportedError:
-            return command_outcome(1, "unsupported_platform")
+            return self._validate_refused("unsupported_platform", {})
         except Exception as error:  # noqa: BLE001 - reported, never raised
-            return command_outcome(1, "validate_failed", {"detail": str(error)[:200]})
+            return self._validate_refused(
+                "validate_failed", {"detail": str(error)[:200]}
+            )
         return command_outcome(0)
+
+    def _validate_refused(self, code: str, params: "dict | None") -> dict:
+        """Log one refused configuration and answer with its code."""
+        named = " ".join(f"{key}={value}" for key, value in (params or {}).items())
+        self._log(f"{self.name} validate refused: {code} {named}".rstrip())
+        return command_outcome(1, code, params)
