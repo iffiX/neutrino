@@ -45,7 +45,7 @@ title: 设置
 | **这个浏览器已信任证书**（This browser trusts the certificate.）                 | 可以点**开启 HTTPS**                      |
 | **先安装证书并重启浏览器**（Install the certificate, then restart the browser.） | 浏览器不认这张证书，**开启 HTTPS** 是灰的 |
 
-点**开启 HTTPS**，页面跳到 `https://` 地址；此后 HTTP 端口把每个浏览器都转过去。**关闭 HTTPS**（Disable HTTPS）让页面回到 `http://` 地址，在那里重新登录：带 `Secure` 的会话 cookie 浏览器只在 HTTPS 上发送。
+点**开启 HTTPS**，页面跳到 `https://` 地址；此后 HTTP 端口把每个浏览器都转过去。**关闭 HTTPS**（Disable HTTPS）让页面回到 `http://` 地址，在那里重新登录：每个端口各有一个会话 cookie，切换时离开的那个端口上的会话被结束。
 
 ![HTTPS 已开启，下面是各条状态](/guide/zh/settings_https_on.webp)
 

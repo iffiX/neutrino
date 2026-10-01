@@ -8,12 +8,12 @@ Find the code or the label on your screen in the section for the place it appear
 
 ## The panel is unreachable
 
-| Symptom                                                             | Cause                                                                                                               | Fix                                                                                                             |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| the browser reaches nothing at `http://<hub>:8080`                  | the panel's unit is down, the port moved, or this network is not exposed                                            | run `systemctl status neutrino_hub_web` on the box, then read **Panel ports** and **Exposure** on **Network**   |
-| `http://<hub>:8080` moves to `https://<hub>`, which reaches nothing | HTTPS is on, so the HTTP port sends every browser to the HTTPS port, and that port is unreachable from here         | read **HTTPS port** under **Panel ports** on **Network**, and check that the port is open on the way to the box |
-| the session ends after a panel port changed                         | the panel restarted on the new port, and the session cookie is named after the HTTP port, `neutrino_session_<port>` | sign in again at the new address                                                                                |
-| the session ends after **Disable HTTPS**                            | the session cookie is `Secure` while HTTPS is on, and a browser sends it over HTTPS only                            | sign in again at the `http://` address                                                                          |
+| Symptom                                                             | Cause                                                                                                          | Fix                                                                                                             |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| the browser reaches nothing at `http://<hub>:8080`                  | the panel's unit is down, the port moved, or this network is not exposed                                       | run `systemctl status neutrino_hub_web` on the box, then read **Panel ports** and **Exposure** on **Network**   |
+| `http://<hub>:8080` moves to `https://<hub>`, which reaches nothing | HTTPS is on, so the HTTP port sends every browser to the HTTPS port, and that port is unreachable from here    | read **HTTPS port** under **Panel ports** on **Network**, and check that the port is open on the way to the box |
+| the session ends after a panel port changed                         | the panel restarted on the new port, and the session cookie is named after the port, `neutrino_session_<port>` | sign in again at the new address                                                                                |
+| the session ends after **Enable HTTPS** or **Disable HTTPS**        | each port has a session cookie of its own, and the switch ends the session on the port you leave               | sign in again at the address the page moved to                                                                  |
 
 ## The browser warns about the certificate
 
@@ -70,12 +70,12 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 
 ## A terminal closes
 
-| Symptom            | Cause                                                                                             | Fix                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `session_not_owned` | another viewer opened the session, and only its owner sets **Persistent** and **Shared** | ask whoever opened it to switch it, or open a terminal of your own |
-| `session_unknown`  | the session ended, or the agent restarted or updated, which ends every session on that machine    | open a new terminal on the machine                                                 |
-| `shell_unknown`    | the hub no longer holds the shell the client resized                                              | close the terminal in the client and open it again                                 |
-| `unknown_terminal` | `nclient terminal` named a machine no joined hub offers a terminal on                             | run `nclient terminal` with a machine the client's **Terminals** page lists        |
+| Symptom             | Cause                                                                                          | Fix                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `session_not_owned` | another viewer opened the session, and only its owner sets **Persistent** and **Shared**       | ask whoever opened it to switch it, or open a terminal of your own          |
+| `session_unknown`   | the session ended, or the agent restarted or updated, which ends every session on that machine | open a new terminal on the machine                                          |
+| `shell_unknown`     | the hub no longer holds the shell the client resized                                           | close the terminal in the client and open it again                          |
+| `unknown_terminal`  | `nclient terminal` named a machine no joined hub offers a terminal on                          | run `nclient terminal` with a machine the client's **Terminals** page lists |
 
 ## The client does not connect
 
