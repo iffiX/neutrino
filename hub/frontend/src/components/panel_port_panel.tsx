@@ -12,17 +12,16 @@ import type { PanelSettings } from "../api_types";
 import "./panel_port_panel.css";
 
 /**
- * The port the panel itself answers on.
+ * The two ports the panel itself answers on, HTTP and HTTPS.
  *
- * Every other service settles its port in its own tab; the panel is a service
- * too, and the only place its port had been asked for was the setup wizard. It
- * belongs on this page because it is a question about how the box is reached,
- * which is what the rest of the page is.
+ * Every other service settles its port in its own tab; the panel's belong on
+ * this page because they are a question about how the box is reached, which
+ * is what the rest of the page is.
  *
- * Applying restarts the panel. The answer is written before the socket closes,
- * and this waits for the new port to answer and goes there — the address does
- * not change, so where to look is known exactly. The session does not travel
- * with it: the cookie is named after the port.
+ * Applying restarts the panel. The answer is written before the socket
+ * closes, and this waits for the port of the scheme this page is on to answer
+ * and goes there; the host does not change, so where to look is known
+ * exactly.
  */
 
 const PORT_MIN = 1;
@@ -32,27 +31,36 @@ const PORT_MAX = 65535;
 // long has something else wrong with it.
 const MOVE_TIMEOUT_MS = 30000;
 const MOVE_POLL_MS = 500;
+const HTTPS_SCHEME_PORT = 443;
 
 export function PanelPortPanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<PanelSettings>("/hub/setting");
   const [port, setPort] = useState<number | null>(null);
+  const [httpsPort, setHttpsPort] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [movingTo, setMovingTo] = useState<number | null>(null);
+  const [movingTo, setMovingTo] = useState<string | null>(null);
 
   useEffect(() => {
     if (resource.data !== null) {
       setPort(resource.data.listen_port);
+      setHttpsPort(resource.data.https_listen_port);
     }
   }, [resource.data]);
 
   const applied = resource.data?.listen_port ?? null;
-  const isDirty = port !== null && applied !== null && port !== applied;
+  const appliedHttps = resource.data?.https_listen_port ?? null;
+  const isDirty =
+    port !== null &&
+    httpsPort !== null &&
+    applied !== null &&
+    (port !== applied || httpsPort !== appliedHttps);
+  const isPairValid = isValid(port) && isValid(httpsPort) && port !== httpsPort;
 
   const apply = async () => {
-    if (port === null) {
+    if (port === null || httpsPort === null) {
       return;
     }
     setIsBusy(true);
@@ -60,9 +68,10 @@ export function PanelPortPanel() {
     try {
       const saved = await apiPost<PanelSettings>("/hub/setting/set", {
         listen_port: port,
+        https_listen_port: httpsPort,
       });
       resource.setData(saved);
-      setMovingTo(saved.listen_port);
+      setMovingTo(currentOrigin(saved));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -83,50 +92,44 @@ export function PanelPortPanel() {
         <div className="skeleton" style={{ height: 72 }} />
       ) : (
         <div className="field_grid">
-          <label className="field">
-            <span className="field_label">
-              {t("ui.network.panel_port_field")}
-            </span>
-            <input
-              className="input"
-              value={port === null ? "" : String(port)}
-              inputMode="numeric"
-              onChange={(event) => {
-                setError(null);
-                setPort(Number(event.target.value) || 0);
-              }}
-            />
-            <span className="field_hint">
-              {isDirty
-                ? t("ui.network.panel_port_moves_to", {
-                    origin: originWith(port ?? 0),
-                  })
-                : t("ui.network.panel_port_reached_at", {
-                    origin: originWith(applied ?? 0),
-                  })}
-            </span>
-          </label>
+          <PortField
+            label={t("ui.network.panel_port_field")}
+            value={port}
+            applied={applied}
+            scheme="http"
+            onChange={(value) => {
+              setError(null);
+              setPort(value);
+            }}
+          />
+          <PortField
+            label={t("ui.network.panel_https_port_field")}
+            value={httpsPort}
+            applied={appliedHttps}
+            scheme="https"
+            onChange={(value) => {
+              setError(null);
+              setHttpsPort(value);
+            }}
+          />
         </div>
       )}
 
       <ApplyBar
-        isDirty={isDirty && isValid(port)}
+        isDirty={isDirty && isPairValid}
         isBusy={isBusy}
         label={t("ui.network.apply_panel_port")}
-        hint={
-          isValid(port)
-            ? t("ui.network.apply_panel_port_hint")
-            : t("ui.network.port_range", { min: PORT_MIN, max: PORT_MAX })
-        }
+        hint={applyHint(port, httpsPort)}
         warning={interruptionWarning(t("ui.network.warning_panel_restart"))}
         error={error}
-        onReset={() => setPort(applied)}
+        onReset={() => {
+          setPort(applied);
+          setHttpsPort(appliedHttps);
+        }}
         onApply={() => void apply()}
       />
 
-      {movingTo !== null && (
-        <MovingOverlay destination={originWith(movingTo)} />
-      )}
+      {movingTo !== null && <MovingOverlay destination={movingTo} />}
     </section>
   );
 }
@@ -134,9 +137,6 @@ export function PanelPortPanel() {
 interface MovingOverlayProps {
   /** The origin the restarted panel answers on. */
   destination: string;
-  /** Go there after this long even when no probe answered: a probe cannot
-   * cross from one scheme to the other, so a scheme change goes blind. */
-  goAfterMs?: number;
 }
 
 /**
@@ -147,7 +147,7 @@ interface MovingOverlayProps {
  * over. The session cookie is named after the port, so the new origin is
  * arrived at signed out and its login page is what answers.
  */
-export function MovingOverlay({ destination, goAfterMs }: MovingOverlayProps) {
+function MovingOverlay({ destination }: MovingOverlayProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const startedAt = useRef(Date.now());
@@ -155,13 +155,7 @@ export function MovingOverlay({ destination, goAfterMs }: MovingOverlayProps) {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      const elapsedMs = Date.now() - startedAt.current;
-      if (goAfterMs !== undefined && elapsedMs > goAfterMs) {
-        window.clearInterval(timer);
-        window.location.replace(destination);
-        return;
-      }
-      if (elapsedMs > MOVE_TIMEOUT_MS) {
+      if (Date.now() - startedAt.current > MOVE_TIMEOUT_MS) {
         window.clearInterval(timer);
         setIsLost(true);
         return;
@@ -179,7 +173,7 @@ export function MovingOverlay({ destination, goAfterMs }: MovingOverlayProps) {
         .catch(() => undefined);
     }, MOVE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [destination, goAfterMs]);
+  }, [destination]);
 
   return (
     <div className="panel_move">
@@ -202,10 +196,67 @@ export function MovingOverlay({ destination, goAfterMs }: MovingOverlayProps) {
   );
 }
 
+interface PortFieldProps {
+  label: string;
+  value: number | null;
+  applied: number | null;
+  scheme: "http" | "https";
+  onChange: (value: number) => void;
+}
+
+/** One of the two ports, with the address it is reached at or moves to. */
+function PortField({
+  label,
+  value,
+  applied,
+  scheme,
+  onChange,
+}: PortFieldProps) {
+  return (
+    <label className="field">
+      <span className="field_label">{label}</span>
+      <input
+        className="input"
+        value={value === null ? "" : String(value)}
+        inputMode="numeric"
+        onChange={(event) => onChange(Number(event.target.value) || 0)}
+      />
+      <span className="field_hint">
+        {value !== applied
+          ? t("ui.network.panel_port_moves_to", {
+              origin: originOf(scheme, value ?? 0),
+            })
+          : t("ui.network.panel_port_reached_at", {
+              origin: originOf(scheme, applied ?? 0),
+            })}
+      </span>
+    </label>
+  );
+}
+
+function applyHint(port: number | null, httpsPort: number | null): string {
+  if (!isValid(port) || !isValid(httpsPort)) {
+    return t("ui.network.port_range", { min: PORT_MIN, max: PORT_MAX });
+  }
+  if (port === httpsPort) {
+    return t("ui.network.panel_ports_differ");
+  }
+  return t("ui.network.apply_panel_port_hint");
+}
+
 function isValid(port: number | null): boolean {
   return port !== null && port >= PORT_MIN && port <= PORT_MAX;
 }
 
-function originWith(port: number): string {
-  return `${window.location.protocol}//${window.location.hostname}:${port}`;
+/** This host on a scheme and port, the port left out where it is the default. */
+function originOf(scheme: "http" | "https", port: number): string {
+  const isDefault = scheme === "https" && port === HTTPS_SCHEME_PORT;
+  return `${scheme}://${window.location.hostname}${isDefault ? "" : `:${port}`}`;
+}
+
+/** Where this page goes after a move: the port of the scheme it is on. */
+function currentOrigin(saved: PanelSettings): string {
+  return window.location.protocol === "https:"
+    ? originOf("https", saved.https_listen_port)
+    : originOf("http", saved.listen_port);
 }

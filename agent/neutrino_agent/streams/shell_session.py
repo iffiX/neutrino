@@ -2,18 +2,19 @@
 
 A shell is a :class:`ShellSession`: the terminal it runs on, a thread that
 reads everything the terminal prints, and the latest 256 KB of that output.
-One ``shell`` stream at a time is attached to it and gets the output as it
-comes; a stream that attaches again is sent the kept output first, then the
-terminal is resized away and back so a full-screen program draws itself
-again. A stream that attaches while another is attached ends the other with
-``session_taken``.
+Any number of ``shell`` streams attach to it at once: each gets every byte
+of output, each one's input reaches the shell, and the terminal's size is
+the smallest attached window's columns and rows. A stream that attaches to
+a running shell is sent the kept output first, then the terminal is resized
+away and back so a full-screen program draws itself again.
 
 A stream opened with a ``session_id`` names its session in the agent's
 :class:`ShellSessionRegistry`: an id the registry holds is attached to, and
 an id it does not hold starts a new shell under that id, unless the open
-says ``is_resumed``, which is refused ``session_unknown``. When the stream
-closes, a persistent session keeps running and any other ends. The registry
-lives as long as the agent's process, so a restart ends every session.
+says ``is_resumed``, which is refused ``session_unknown``. When the last
+stream closes, a persistent or shared session keeps running and any other
+ends. The registry lives as long as the agent's process, so a restart ends
+every session.
 
 Not pure: runs a thread per shell.
 """
@@ -50,13 +51,23 @@ def _started_at(described: dict) -> int:
 
 
 class ShellAttachment:
-    """The output waiting for one attached stream, and how it ended."""
+    """The output waiting for one attached stream, its window, and how it ended."""
 
-    def __init__(self, kept: bytes = b""):
+    def __init__(
+        self,
+        kept: bytes = b"",
+        *,
+        cols: int = DEFAULT_COLUMNS,
+        rows: int = DEFAULT_ROWS,
+    ):
         """
         Args:
             kept: Output to send before anything new.
+            cols: The stream's terminal width.
+            rows: The stream's terminal height.
         """
+        self.cols = cols
+        self.rows = rows
         self._condition = threading.Condition()
         self._chunks: collections.deque = collections.deque()
         self._pending = 0
@@ -130,7 +141,7 @@ class ShellAttachment:
 
 
 class ShellSession:
-    """One shell on its terminal, kept whether or not a stream is attached."""
+    """One shell on its terminal, shared by every stream attached to it."""
 
     def __init__(
         self,
@@ -159,14 +170,18 @@ class ShellSession:
         self.session_id = session_id
         self.account = account
         self.started_at = int(clock())
+        self.owner = ""
         self.is_persistent = False
+        self.is_shared = False
         self._terminal = terminal
         self._title = title
         self._on_change = on_change
         self._on_end = on_end
         self._lock = threading.Lock()
         self._kept = bytearray()
-        self._attachment: "ShellAttachment | None" = None
+        self._attachments: list = []
+        self._size_lock = threading.Lock()
+        self._size: "tuple | None" = None
         self._result: "dict | None" = None
         self._is_ended = threading.Event()
 
@@ -184,7 +199,7 @@ class ShellSession:
         ).start()
 
     def attach(self, *, is_resumed: bool, cols: int, rows: int) -> ShellAttachment:
-        """Attach a stream, ending the one attached before it.
+        """Attach a stream beside every stream already attached.
 
         Args:
             is_resumed: Whether the shell ran before this stream: its kept
@@ -196,19 +211,14 @@ class ShellSession:
             The stream's attachment.
         """
         with self._lock:
-            previous = self._attachment
-            attachment = ShellAttachment(bytes(self._kept) if is_resumed else b"")
+            attachment = ShellAttachment(
+                bytes(self._kept) if is_resumed else b"", cols=cols, rows=rows
+            )
             if self._result is not None:
                 attachment.end(self._result)
             else:
-                self._attachment = attachment
-        if previous is not None:
-            previous.end(
-                {"code": "session_taken", "params": {"session_id": self.session_id}}
-            )
-        if is_resumed:
-            self._terminal.resize(cols, rows + 1)
-            self._terminal.resize(cols, rows)
+                self._attachments.append(attachment)
+        self._fit(is_redrawn=is_resumed)
         self._changed()
         return attachment
 
@@ -219,13 +229,15 @@ class ShellSession:
             attachment: The stream's attachment.
 
         Returns:
-            Whether the shell is to keep running: it is persistent.
+            Whether the shell is to keep running: another stream is still
+            attached, or it is persistent or shared.
         """
         attachment.release()
         with self._lock:
-            if self._attachment is attachment:
-                self._attachment = None
-            is_kept = self.is_persistent
+            if attachment in self._attachments:
+                self._attachments.remove(attachment)
+            is_kept = bool(self._attachments) or self.is_persistent or self.is_shared
+        self._fit(is_redrawn=False)
         self._changed()
         return is_kept
 
@@ -237,14 +249,18 @@ class ShellSession:
         """
         self._terminal.write(data)
 
-    def resize(self, cols: int, rows: int) -> None:
-        """Give the terminal a new size.
+    def resize(self, attachment: ShellAttachment, cols: int, rows: int) -> None:
+        """Take a new window size from one attached stream.
 
         Args:
-            cols: The width.
-            rows: The height.
+            attachment: The stream's attachment.
+            cols: The stream's new width.
+            rows: The stream's new height.
         """
-        self._terminal.resize(cols, rows)
+        with self._lock:
+            attachment.cols = cols
+            attachment.rows = rows
+        self._fit(is_redrawn=False)
 
     def end(self) -> None:
         """End the shell and everything it started."""
@@ -267,8 +283,8 @@ class ShellSession:
         """The session as the report lists it.
 
         Returns:
-            ``{"session_id", "account", "started_at", "title",
-            "is_attached", "is_persistent"}``.
+            ``{"session_id", "account", "started_at", "title", "owner",
+            "is_attached", "is_persistent", "is_shared", "attached_count"}``.
         """
         with self._lock:
             return {
@@ -276,8 +292,11 @@ class ShellSession:
                 "account": self.account,
                 "started_at": self.started_at,
                 "title": self._title,
-                "is_attached": self._attachment is not None,
+                "owner": self.owner,
+                "is_attached": bool(self._attachments),
                 "is_persistent": self.is_persistent,
+                "is_shared": self.is_shared,
+                "attached_count": len(self._attachments),
             }
 
     def _read_forever(self) -> None:
@@ -293,24 +312,42 @@ class ShellSession:
                 self._kept += chunk
                 del self._kept[: max(0, len(self._kept) - AGENT_SHELL_KEPT_BYTES)]
                 is_retitled = self._take_title(chunk)
-                attachment = self._attachment
-                if attachment is not None:
+                attachments = list(self._attachments)
+                for attachment in attachments:
                     attachment.push(chunk)
             if is_retitled:
                 self._changed()
-            if attachment is not None:
+            for attachment in attachments:
                 attachment.wait_for_room()
         exit_code = self._terminal.finish()
         result = {"code": "", "params": {"exit_code": exit_code}}
         with self._lock:
             self._result = result
-            attachment = self._attachment
-            self._attachment = None
-        if attachment is not None:
+            attachments = self._attachments
+            self._attachments = []
+        for attachment in attachments:
             attachment.end(result)
         self._is_ended.set()
         if self._on_end is not None:
             self._on_end(self)
+
+    def _fit(self, *, is_redrawn: bool) -> None:
+        """Size the terminal to the smallest attached window, once it changed."""
+        with self._size_lock:
+            with self._lock:
+                windows = [(each.cols, each.rows) for each in self._attachments]
+            if not windows:
+                return
+            size = (min(cols for cols, _ in windows), min(rows for _, rows in windows))
+            if self._size is None:
+                self._size = size
+                return
+            if is_redrawn:
+                self._terminal.resize(size[0], size[1] + 1)
+            elif size == self._size:
+                return
+            self._terminal.resize(*size)
+            self._size = size
 
     def _take_title(self, chunk: bytes) -> bool:
         """Keep the last title the output sets. Call under the lock."""
@@ -379,20 +416,31 @@ class ShellSessionRegistry:
                 del self._sessions[session.session_id]
         self._changed()
 
-    def persist(self, session_id: str, is_persistent: bool) -> bool:
-        """Say whether a session outlives the stream attached to it.
+    def persist(
+        self,
+        session_id: str,
+        is_persistent: "bool | None" = None,
+        is_shared: "bool | None" = None,
+    ) -> bool:
+        """Say whether a session outlives its streams and who may list it.
 
         Args:
             session_id: The session.
-            is_persistent: Keep it when its stream closes.
+            is_persistent: Keep it when its last stream closes; None keeps
+                the value it has.
+            is_shared: Open it to everyone with terminal rights on this
+                machine, which also keeps it when its last stream closes;
+                None keeps the value it has.
 
         Returns:
             False when no session has that id.
         """
         with self._lock:
             session = self._sessions.get(session_id)
-            if session is not None:
+            if session is not None and is_persistent is not None:
                 session.is_persistent = bool(is_persistent)
+            if session is not None and is_shared is not None:
+                session.is_shared = bool(is_shared)
         if session is None:
             return False
         self._changed()
@@ -434,7 +482,7 @@ class SessionShellStream:
     """One ``shell`` stream, attached to a shell kept by id or started for it.
 
     A subclass names the platform's terminal and account; the stream reads
-    ``session_id`` and ``is_resumed`` from its open.
+    ``session_id``, ``is_resumed``, ``owner`` and ``is_shared`` from its open.
     """
 
     def __init__(self, channel, args: dict, *, sessions=None):
@@ -442,7 +490,9 @@ class SessionShellStream:
         Args:
             channel: The stream's channel.
             args: ``{"cols", "rows"}``, the terminal's size, with
-                ``session_id`` and ``is_resumed`` for a kept shell.
+                ``session_id`` and ``is_resumed`` for a kept shell, and
+                ``owner``, the hub's stamp kept as given, and ``is_shared``
+                for a new one.
             sessions: The agent's :class:`ShellSessionRegistry`; None keeps
                 no shell past its stream.
         """
@@ -451,6 +501,8 @@ class SessionShellStream:
         self._rows = max(1, int(args.get("rows", DEFAULT_ROWS) or 0))
         self._session_id = str(args.get("session_id", "") or "")
         self._is_resumed = bool(args.get("is_resumed", False))
+        self._owner = str(args.get("owner", "") or "")
+        self._is_shared = bool(args.get("is_shared", False))
         self._sessions = sessions
         self._session: "ShellSession | None" = None
         self._is_held = False
@@ -468,18 +520,17 @@ class SessionShellStream:
             self._session = self._make_session()
             return
         self._session, self._is_held = self._sessions.take(
-            self._session_id, is_resumed=self._is_resumed, make=self._make_session
+            self._session_id, is_resumed=self._is_resumed, make=self._make_kept_session
         )
 
     def run(self) -> dict:
-        """Serve the shell until it ends, another stream takes it, or the
-        stream closes.
+        """Serve the shell until it ends or the stream closes.
 
         Returns:
             ``{"code", "params"}``: ``exit_code`` once the shell ended,
-            ``session_taken`` when another stream attached, empty params
-            when the stream closed on a shell that keeps running, and
-            ``shell_failed`` with ``detail`` when it could not start.
+            empty params when the stream closed on a shell that keeps
+            running, and ``shell_failed`` with ``detail`` when it could not
+            start.
         """
         session = self._session
         # Attached before it starts, so the stream sees a new shell's first
@@ -498,7 +549,7 @@ class SessionShellStream:
         self._channel.offer_credit(AGENT_WS_STREAM_CREDIT_BYTES)
         feeder = threading.Thread(
             target=self._feed_input,
-            args=(session,),
+            args=(session, attachment),
             name=f"agent_shell_input_{self._channel.id}",
             daemon=True,
         )
@@ -521,6 +572,13 @@ class SessionShellStream:
         """A new, unstarted session on the platform's terminal."""
         raise NotImplementedError
 
+    def _make_kept_session(self, *, on_change=None, on_end=None) -> ShellSession:
+        """A new session the registry holds, with the open's owner and sharing."""
+        session = self._make_session(on_change=on_change, on_end=on_end)
+        session.owner = self._owner
+        session.is_shared = self._is_shared
+        return session
+
     def _pump_output(self, attachment: ShellAttachment) -> "dict | None":
         """Send the attachment's output; None once the stream itself closed."""
         while True:
@@ -537,8 +595,8 @@ class SessionShellStream:
             if self._is_done.is_set():
                 return None
 
-    def _feed_input(self, session: ShellSession) -> None:
-        """Type the hub's bytes into the shell and apply its resizes."""
+    def _feed_input(self, session: ShellSession, attachment: ShellAttachment) -> None:
+        """Type the hub's bytes into the shell and pass on its resizes."""
         while not self._is_done.is_set():
             item = self._channel.recv(timeout=SESSION_POLL_S)
             if item is None:
@@ -549,7 +607,7 @@ class SessionShellStream:
             elif item[0] == "resize":
                 self._columns = max(1, int(item[1]))
                 self._rows = max(1, int(item[2]))
-                session.resize(self._columns, self._rows)
+                session.resize(attachment, self._columns, self._rows)
             elif item[0] == "close":
                 self._is_done.set()
                 return

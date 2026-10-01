@@ -239,9 +239,18 @@ def test_every_socket_opens_shells_in_the_one_registry_the_report_lists(
             session_id="tab-1", terminal=None, account="root", title="bash"
         ),
     )
-    assert [
-        entry["session_id"] for entry in agent._report_payload()["machine"]["sessions"]
-    ] == ["tab-1"]
+    (listed,) = agent._report_payload()["machine"]["sessions"]
+    assert listed["session_id"] == "tab-1"
+    assert {
+        "session_id",
+        "account",
+        "started_at",
+        "title",
+        "owner",
+        "is_persistent",
+        "is_shared",
+        "attached_count",
+    } <= set(listed)
 
 
 def test_leave_gives_the_binding_back_and_leaves_the_service_unbound(

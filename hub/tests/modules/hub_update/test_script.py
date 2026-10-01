@@ -48,6 +48,7 @@ def plan_for(
         rollback=directory / "neutrino-hub_0.3.0_amd64.deb" if rollback else None,
         family="debian",
         port=8080,
+        https_port=8444,
         units=("neutrino_hub_web", "neutrino_hub_router"),
         started_at="2026-09-20T15:00:00Z",
         python=python,

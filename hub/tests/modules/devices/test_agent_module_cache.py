@@ -14,9 +14,11 @@ import pytest
 from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleCache,
+    AgentModuleFetchProgress,
     is_version_below,
     looks_like_package,
     platform_keys,
+    read_in_chunks,
     resolve_platform_entry,
 )
 
@@ -53,7 +55,7 @@ def cache(tmp_path):
 def serving(content=DEB, fetches=None):
     """A fetch that hands back fixed bytes and counts the calls."""
 
-    def fetch(entry):
+    def fetch(entry, progress=None):
         if fetches is not None:
             fetches.append(entry.get("url", ""))
         return content
@@ -132,7 +134,7 @@ def test_a_second_asker_waits_on_the_first_fetch_rather_than_starting_one(cache)
     release = threading.Event()
     fetches: list = []
 
-    def slow_fetch(entry):
+    def slow_fetch(entry, progress=None):
         fetches.append(entry.get("url", ""))
         started.set()
         release.wait(timeout=5)
@@ -225,7 +227,9 @@ def test_a_github_release_entry_resolves_and_fetches_plain(cache, monkeypatch):
         staticmethod(lambda repo, pattern: f"https://github.example/{repo}/{pattern}"),
     )
     monkeypatch.setattr(
-        AgentModuleCache, "_fetch_plain", staticmethod(lambda url: binary)
+        AgentModuleCache,
+        "_fetch_plain",
+        staticmethod(lambda url, progress=None: binary),
     )
     manifest = {
         "name": "cc_switch",
@@ -293,7 +297,7 @@ def test_a_real_disk_image_opens_like_one():
         assert looks_like_package(opening + b"rest-of-the-image", "dmg")
 
 
-def _serve_deb(url):
+def _serve_deb(url, progress=None):
     return DEB
 
 
@@ -352,3 +356,111 @@ def test_a_platform_that_reports_no_version_is_not_ruled_out():
 )
 def test_versions_compare_part_by_part(version, floor, is_below):
     assert is_version_below(version, floor) is is_below
+
+
+# --- progress lines while the hub downloads ---
+
+MEGABYTE = 1024 * 1024
+
+
+class ChunkedResponse:
+    """A response that hands out its body in the sizes asked for."""
+
+    def __init__(self, body: bytes, *, is_sized: bool = True):
+        self._body = body
+        self._offset = 0
+        self.headers = {"Content-Length": str(len(body))} if is_sized else {}
+        self.reads: list = []
+
+    def read(self, size):
+        self.reads.append(size)
+        chunk = self._body[self._offset : self._offset + size]
+        self._offset += len(chunk)
+        return chunk
+
+
+class StoppedClock:
+    """A clock that moves only when told."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_download_is_read_in_64_kb_chunks():
+    response = ChunkedResponse(b"x" * (200 * 1024))
+
+    content = read_in_chunks(response, None)
+
+    assert content == b"x" * (200 * 1024)
+    assert set(response.reads) == {64 * 1024}
+
+
+def test_progress_is_written_every_five_percent_and_at_the_end():
+    lines: list = []
+    progress = AgentModuleFetchProgress(
+        title="VS Code 1.140.0",
+        source="Microsoft",
+        on_line=lines.append,
+        clock=StoppedClock(),
+    )
+    response = ChunkedResponse(b"x" * (20 * MEGABYTE))
+
+    read_in_chunks(response, progress)
+
+    assert lines[0] == "hub: downloading VS Code 1.140.0 from Microsoft, 0.1 / 20.0 MB"
+    assert (
+        lines[-1] == "hub: downloading VS Code 1.140.0 from Microsoft, 20.0 / 20.0 MB"
+    )
+    # The first chunk, one line per 5 percent after it, and the last again.
+    assert len(lines) == 22
+
+
+def test_progress_is_written_every_two_seconds_when_the_size_is_unknown():
+    lines: list = []
+    clock = StoppedClock()
+    progress = AgentModuleFetchProgress(
+        title="Gitea 1.27.3", source="", on_line=lines.append, clock=clock
+    )
+
+    progress.note(MEGABYTE, 0)
+    clock.now = 1.0
+    progress.note(2 * MEGABYTE, 0)
+    clock.now = 2.5
+    progress.note(3 * MEGABYTE, 0)
+
+    assert lines == [
+        "hub: downloading Gitea 1.27.3, 1.0 MB",
+        "hub: downloading Gitea 1.27.3, 3.0 MB",
+    ]
+
+
+def test_a_fetch_tells_its_progress_and_a_held_artifact_says_it_is_cached(
+    cache, monkeypatch
+):
+    lines: list = []
+    monkeypatch.setattr(
+        AgentModuleCache,
+        "_fetch_plain",
+        staticmethod(_serve_deb_telling),
+    )
+    manifest = {**MANIFEST, "title": "FakeDesk", "version": "2.0", "source": "Vendor"}
+
+    cache.artifact(
+        name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
+    )
+    cache.artifact(
+        name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
+    )
+
+    assert lines == [
+        "hub: downloading FakeDesk 2.0 from Vendor, 0.0 / 0.0 MB",
+        "hub: FakeDesk 2.0 is in the cache",
+    ]
+
+
+def _serve_deb_telling(url, progress=None):
+    progress.note(len(DEB), len(DEB), is_done=True)
+    return DEB

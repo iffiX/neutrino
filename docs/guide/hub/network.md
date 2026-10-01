@@ -16,7 +16,7 @@ On the **Network** page you choose what the box is to your network and decide wh
 | **Known networks**   | router, with a radio | the wireless networks a WAN radio joins             |
 | **Routing behavior** | router               | how uplinks and served networks behave together     |
 | **Exposure**         | every mode           | the networks the box accepts connections on         |
-| **Panel port**       | every mode           | the port the panel listens on                       |
+| **Panel ports**      | every mode           | the ports the panel serves HTTP and HTTPS on        |
 
 ## Choose the shape
 
@@ -102,11 +102,11 @@ A LAN radio has an **Access point** with a **Network name**, a **Passphrase** an
 
 The apply bar warns before each kind of loss. An exposed uplink accepts connections from the internet on every port the box listens on. A network you untick stops reaching the box, and the warning counts the managed devices that reach the hub through it. Traffic the box forwards between networks is unaffected.
 
-## Panel port
+## Panel ports
 
-**Panel port** is the TCP port the panel listens on, on every exposed interface:
+The panel listens on two TCP ports on every exposed interface: **HTTP port**, `8080` unless setup chose another, and **HTTPS port**, `443` unless setup chose another. Both ports serve the panel whether HTTPS is on or off. Under each field the panel shows the address that port is reached at.
 
-1. Under **Panel port**, type the new **Port**.
+1. Under **Panel ports**, type the new **HTTP port**, the new **HTTPS port**, or both. The two must differ.
 1. Select **Apply panel port**.
 
-The panel restarts on the new port, and the page reads **Moving to** the new address, where you sign in again. When that address is unreachable from where you are, the page reads **No answer at** that address. Whether the panel speaks HTTP or HTTPS is set on [Settings](./settings.md).
+The panel restarts, and the page reads **Moving to** the new address on the scheme it was open on, where you sign in again. When that address is unreachable from where you are, the page reads **No answer at** that address. Whether the HTTP port sends browsers to the HTTPS port is set on [Settings](./settings.md#https).

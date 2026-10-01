@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
+import { Picker } from "../components/picker";
+import type { PickerOption } from "../components/picker";
 import { StatusDot } from "../components/status_dot";
 import { StringListEditor } from "../components/string_list_editor";
 import { ApiError, apiGet, apiPost, describeError } from "../api_client";
@@ -94,6 +96,12 @@ const HOST_PLACEHOLDER = "192.168.100.7";
 
 /** The port a file service takes when the field is left blank. */
 const FILE_PORT_PLACEHOLDER = "445";
+
+/** The schemes a web service is opened with. */
+const SCHEME_OPTIONS: PickerOption[] = [
+  { id: "http", name: "http" },
+  { id: "https", name: "https" },
+];
 
 const KIND_KEYS: Record<DeclaredServiceCreate["kind"], string> = {
   web: "ui.services.kind_web",
@@ -463,24 +471,14 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
             onChange={(event) => setName(event.target.value)}
           />
         </label>
-        <label className="field">
-          <span className="field_label">{t("ui.services.field_kind")}</span>
-          <select
-            className="input"
-            value={kind}
-            onChange={(event) =>
-              setKind(event.target.value as DeclaredServiceCreate["kind"])
-            }
-          >
-            {(Object.keys(KIND_KEYS) as DeclaredServiceCreate["kind"][]).map(
-              (option) => (
-                <option key={option} value={option}>
-                  {t(KIND_KEYS[option])}
-                </option>
-              ),
-            )}
-          </select>
-        </label>
+        <Picker
+          options={(
+            Object.keys(KIND_KEYS) as DeclaredServiceCreate["kind"][]
+          ).map((option) => ({ id: option, name: t(KIND_KEYS[option]) }))}
+          value={kind}
+          onChange={(id) => setKind(id as DeclaredServiceCreate["kind"])}
+          label={t("ui.services.field_kind")}
+        />
       </div>
       <div className="declared_form_row">
         <label className="field">
@@ -512,17 +510,12 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
       </div>
       {kind === "web" && (
         <div className="declared_form_row">
-          <label className="field">
-            <span className="field_label">{t("ui.services.field_scheme")}</span>
-            <select
-              className="input"
-              value={scheme}
-              onChange={(event) => setScheme(event.target.value)}
-            >
-              <option value="http">http</option>
-              <option value="https">https</option>
-            </select>
-          </label>
+          <Picker
+            options={SCHEME_OPTIONS}
+            value={scheme}
+            onChange={setScheme}
+            label={t("ui.services.field_scheme")}
+          />
           <label className="field">
             <span className="field_label">{t("ui.services.field_path")}</span>
             <input

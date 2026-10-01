@@ -197,6 +197,10 @@ mean it. The exception is a modal that captures the keyboard: a terminal's
 Escape belongs to the shell, the way every established terminal works, and its
 hint names the close button instead.
 
+A field that takes a directory on a machine has **Browse…** beside it, which
+opens the file browser in a modal at the field's path, files greyed, and
+writes back the directory chosen (`directory_picker_modal.tsx`).
+
 ## Secrets
 
 A secret the hub is **given** is write-only: typed once, listed back as metadata

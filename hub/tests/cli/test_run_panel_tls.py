@@ -1,8 +1,9 @@
-"""The panel's scheme at start: web/settings.json decides it.
+"""The panel's certificate at start, which the HTTPS port serves.
 
-Every start makes a missing authority and certificate, whichever scheme is
-on. HTTPS serves the certificate; HTTPS with nothing to serve answers over
-HTTP and says why, and the example ships with HTTPS off.
+Every start makes a missing authority and certificate. A certificate there to
+serve is handed to the HTTPS port whatever the scheme setting says; with
+nothing to serve the panel answers over HTTP alone and says why, and the
+example ships with HTTPS off.
 """
 
 import json
@@ -10,9 +11,10 @@ import json
 from neutrino_hub.cli import run
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.utils.constants import UTILS_EXAMPLES_DIR
+from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 
-def served_with(monkeypatch, tmp_path, *, is_https: bool, has_key: bool, failure=None):
+def served_with(monkeypatch, tmp_path, *, has_key: bool, failure=None):
     calls: list = []
 
     def ensure() -> bool:
@@ -25,33 +27,25 @@ def served_with(monkeypatch, tmp_path, *, is_https: bool, has_key: bool, failure
     if has_key:
         key.write_text("key")
     monkeypatch.setattr(run, "ensure_served", ensure)
-    monkeypatch.setattr(run, "is_https_enabled", lambda: is_https)
     monkeypatch.setattr(run, "WEB_PANEL_TLS_SERVED_KEY_PATH", key)
     monkeypatch.setattr(run, "WEB_PANEL_TLS_SERVED_CERT_PATH", tmp_path / "cert.pem")
     return run._panel_certificate(), calls
 
 
-def test_http_serves_no_certificate_and_still_makes_one(monkeypatch, tmp_path):
-    arguments, calls = served_with(monkeypatch, tmp_path, is_https=False, has_key=True)
-
-    assert arguments == {}
-    assert calls == ["ensure"]
-
-
-def test_https_serves_the_certificate(monkeypatch, tmp_path):
-    arguments, _ = served_with(monkeypatch, tmp_path, is_https=True, has_key=True)
+def test_a_certificate_there_is_served_and_still_made_first(monkeypatch, tmp_path):
+    arguments, calls = served_with(monkeypatch, tmp_path, has_key=True)
 
     assert arguments == {
         "ssl_certfile": str(tmp_path / "cert.pem"),
         "ssl_keyfile": str(tmp_path / "key.pem"),
     }
+    assert calls == ["ensure"]
 
 
-def test_https_with_nothing_to_serve_answers_over_http(monkeypatch, tmp_path, capsys):
+def test_nothing_to_serve_leaves_the_https_port_out(monkeypatch, tmp_path, capsys):
     arguments, _ = served_with(
         monkeypatch,
         tmp_path,
-        is_https=True,
         has_key=False,
         failure=VaultLockedError(),
     )
@@ -62,11 +56,17 @@ def test_https_with_nothing_to_serve_answers_over_http(monkeypatch, tmp_path, ca
     assert '"code": "panel_tls_unavailable"' in error
 
 
-def test_the_example_ships_with_https_off():
-    example = json.loads(
+def example() -> dict:
+    return json.loads(
         (UTILS_EXAMPLES_DIR / "web" / "settings.example.json").read_text(
             encoding="utf-8"
         )
     )
 
-    assert example["is_https_enabled"] is False
+
+def test_the_example_ships_with_https_off():
+    assert example()["is_https_enabled"] is False
+
+
+def test_the_example_carries_the_https_port():
+    assert example()["https_listen_port"] == WEB_DEFAULT_HTTPS_LISTEN_PORT

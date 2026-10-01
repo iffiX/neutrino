@@ -6,35 +6,44 @@ and one set of rules cover both, and this page is their only record. An
 endpoint, a frame, a kind or a code absent from this page does not exist.
 Adding one is an edit here in the same change.
 
-## Two ports, two audiences
+## Three ports, two audiences
 
-The hub listens on two ports because its two audiences verify it differently.
-A browser trusts a password on a local network; an agent or a client trusts a
-pinned certificate on any network.
+The hub listens for two audiences, which verify it differently. A browser
+trusts a password on a local network, and reaches the panel on two ports, one
+per scheme; an agent or a client trusts a pinned certificate on any network.
 
 | Port | Transport | Serves | Authenticated by |
 | --- | --- | --- | --- |
-| `listen_port`, default 8080 | HTTP, or TLS with the hub's own certificate once `is_https_enabled` is on | the panel: its page, every `/api/hub` and `/api/agent` route, every `/ws` socket | the session cookie |
+| `listen_port`, default 8080 | HTTP | the panel: its page, every `/api/hub` and `/api/agent` route, every `/ws` socket; while `is_https_enabled` is on, a 301 to the HTTPS port for every path but the authority's download | the session cookie |
+| `https_listen_port`, default 443 | TLS with the hub's own certificate, whatever `is_https_enabled` says | the same panel | the session cookie |
 | `agent_listen_port`, default 8443 | TLS, pinned by fingerprint | `/api/channel` and nothing else | the ticket at `join`, then the token in `hello` |
 
-Both are uvicorn servers in the one `nhub run --only-web` process, with one
-shared runtime. That runtime is where a ticket generated on the panel port is
-spent on the agent port. The panel app does not include the channel routes,
-so the channel has no plaintext form.
+All three are uvicorn servers in the one `nhub run --only-web` process, with
+one shared runtime. That runtime is where a ticket generated on a panel port
+is spent on the agent port. The panel app does not include the channel
+routes, so the channel has no plaintext form. A panel port change through
+`POST /api/hub/setting/set` restarts the process; a port that is the other
+panel port or the agent port is refused 400 `port_already_in_use {value}`.
 
-### The panel port
+### The panel ports
 
-The session cookie is named after the port, `neutrino_session_<port>`, so two
-hubs on one host keep separate sessions. The login page reads
-`/api/hub/setup`, `/api/hub/auth` and `/api/hub/display` before a session
-exists, so those prefixes take no session dependency, and neither does
-`GET /api/hub/setting/https/authority`, which a browser downloads before it
-trusts the panel. Every other route on this port requires the session, and
-every state-changing route checks the `Origin` header against the panel's
-own.
+The session cookie is named after the HTTP port, `neutrino_session_<port>`,
+so two hubs on one host keep separate sessions, and one session holds on both
+ports. The login page reads `/api/hub/setup`, `/api/hub/auth` and
+`/api/hub/display` before a session exists, so those prefixes take no session
+dependency, and neither do `GET /api/hub/setting/https/authority`, which a
+browser downloads before it trusts the panel, and
+`GET /api/hub/setting/https/probe`, which a page on HTTP fetches from the
+HTTPS port to learn whether this browser trusts the certificate. Every other
+route requires the session, and every state-changing route checks the
+`Origin` header against the panel's own.
 
-`is_https_enabled` in `config/web/settings.json` decides the scheme, and it
-is false until somebody turns it on. The certificate is signed by the hub's
+`is_https_enabled` in `config/web/settings.json` is false until somebody
+turns it on, and decides two things: whether the HTTP port answers 301 to
+`https://<same host>[:<https_listen_port> when not 443]<path>`, and whether
+the session cookie is `Secure`. The running app reads it at every request,
+so turning it on or off restarts nothing; a plain websocket is closed while
+it is on. The certificate is signed by the hub's
 own certificate authority: EC P-256, valid for ten years, `CA:TRUE` with a
 path length of 0, and name constraints that permit `10.0.0.0/8`,
 `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `127.0.0.0/8` and the
@@ -54,8 +63,7 @@ when it ends in `netbird.cloud`. A public address is never in it. It and its
 key are state, `/var/lib/neutrino/panel_tls_certificate.pem` and
 `panel_tls_key.pem`, mode 0600. The address sampler issues it again when that
 name set changes or it expires within 30 days, and loads it into the live TLS
-context, so the next connection gets it without a restart. The session cookie
-is `Secure` while the panel speaks HTTPS.
+context, so the next connection gets it without a restart.
 
 ### The agent port
 
@@ -132,7 +140,7 @@ segment of a write, which is a verb.
 | A read is a GET on a path of nouns and returns a view. A write is a POST whose last segment is one verb, with every argument in the body, and it returns what the matching read returns. The methods are GET and POST. | The page replaces its state with the response and merges nothing, so it cannot hold a version of the box that the box does not. |
 | A verb comes from the verb table, an opposite is added with its pair, and paths of paired verbs have the same depth: `channel/join` and `channel/leave`, `module/install` and `module/uninstall`, `module/start` and `module/stop`. A new verb enters the table before it enters a path. | The table is closed, so the route test checks every path against it. |
 | A word with a fixed meaning inside a domain (`scrub`, `import`, `backup`) can be a noun in the middle of a path: `pool/scrub/stop`. | The domain's own word is the one a reader searches for. |
-| `/api/hub/setup`, `/api/hub/auth`, `/api/hub/display` and `GET /api/hub/setting/https/authority` take no session dependency. `GET /api/hub/display` returns `{language, theme}` in one response, and both change through `POST /api/hub/setting/set`. | The login page reads them before there is a session, and a browser installs the authority before it trusts the panel. |
+| `/api/hub/setup`, `/api/hub/auth`, `/api/hub/display`, `GET /api/hub/setting/https/authority` and `GET /api/hub/setting/https/probe` take no session dependency. `GET /api/hub/display` returns `{language, theme}` in one response, and both change through `POST /api/hub/setting/set`. | The login page reads them before there is a session, a browser installs the authority before it trusts the panel, and a page on HTTP probes the HTTPS port before it offers HTTPS. |
 | The router file is named after its page; the library package under `modules/` keeps its own name, so `modules/router` serves `/api/hub/network` and `modules/xray` serves `/api/hub/proxy`. | A page is what a person sees; a package is what the code does. |
 
 ### The verbs
@@ -273,7 +281,7 @@ TLS port.
 | `/api/hub/client` | Enrolled client sessions and the links that enrol them |
 | `/api/hub/service` | The published service list and manual declarations |
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
-| `/api/hub/setting` | The panel's own: its port, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
+| `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
 | `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, each setting what it is to have and all but `zfs` and `vscode` importing what the machine already has |
 | `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
@@ -296,9 +304,9 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/setup/context` | | the box as the wizard finds it |
-| `GET /api/hub/setup/state` | | each step and where it is; once done, `panel_url`, and `authority` when the answers turned HTTPS on: `{url, file_name, fingerprint, der}`, the DER in base64 so the last page downloads it while the panel starts |
+| `GET /api/hub/setup/state` | | each step and where it is; once done, `panel_url`, the `https://` address when the answers turned HTTPS on, with no port when it is 443, and `authority` then: `{url, file_name, fingerprint, der}`, `url` on the HTTP port and the DER in base64 so the last page downloads it while the panel starts |
 | `POST /api/hub/setup/link/create` | | a blank enrolment link for the box's own agent |
-| `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `is_https_enabled` among them | writes them and runs the steps |
+| `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `listen_port`, `https_listen_port` and `is_https_enabled` among them | writes them and runs the steps |
 
 #### `/api/hub/auth`
 
@@ -478,12 +486,13 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/setting` | | `SettingsView` |
-| `POST /api/hub/setting/set` | the settings, `hub_name`, `language` and `theme` among them | `SettingsView` |
-| `GET /api/hub/setting/https` | | `PanelHttpsView`: `is_https_enabled`, `has_authority`, the authority's `authority_fingerprint` and `authority_created_at`, `authority_file_name`, the served certificate's `leaf_names`, `leaf_issued_at` and `leaf_expires_at`, and `renewed_at`, the last time it was issued again since the panel started |
-| `GET /api/hub/setting/https/authority` | | no session: the authority's DER as `neutrino-<hub>-ca.crt`, `application/x-x509-ca-cert`; 404 `https_authority_missing` before there is one |
-| `POST /api/hub/setting/https/enable` | | makes a missing authority, issues the served certificate, writes `is_https_enabled: true` and restarts the panel after answering; `PanelHttpsView` |
-| `POST /api/hub/setting/https/disable` | | writes `is_https_enabled: false` and restarts the panel after answering; the certificates stay; `PanelHttpsView` |
-| `POST /api/hub/setting/https/authority/reset` | | a new authority and a certificate signed by it, served from the next connection; every browser installs the new authority; `PanelHttpsView` |
+| `POST /api/hub/setting/set` | the settings, `listen_port`, `https_listen_port`, `hub_name`, `language` and `theme` among them; an absent `https_listen_port` keeps it | `SettingsView`; a port change restarts the panel after answering; 400 `port_out_of_range {minimum, maximum, value}`, `port_already_in_use {value}` |
+| `GET /api/hub/setting/https` | | `PanelHttpsView`: `is_https_enabled`, `listen_port`, `https_listen_port`, `has_authority`, the authority's `authority_fingerprint` and `authority_created_at`, `authority_file_name`, the served certificate's `leaf_names`, `leaf_issued_at` and `leaf_expires_at`, and `renewed_at`, the last time it was issued again since the panel started |
+| `GET /api/hub/setting/https/authority` | | no session, and served by the HTTP port while HTTPS is on: the authority's DER as `neutrino-<hub>-ca.crt`, `application/x-x509-ca-cert`; 404 `https_authority_missing` before there is one |
+| `GET /api/hub/setting/https/probe` | | no session: 204 and an empty body; a page on HTTP fetches it from the HTTPS port, and a fetch that completes means the browser trusts the certificate |
+| `POST /api/hub/setting/https/enable` | | makes a missing authority, issues the served certificate and writes `is_https_enabled: true`; the HTTP port redirects from the next request, nothing restarts; `PanelHttpsView` |
+| `POST /api/hub/setting/https/disable` | | writes `is_https_enabled: false`; the HTTP port serves the panel from the next request, nothing restarts, the certificates stay; `PanelHttpsView` |
+| `POST /api/hub/setting/https/authority/reset` | | a new authority and a certificate signed by it, served from the next connection; every browser installs the new authority; `PanelHttpsResetView`, `PanelHttpsView` with `authority_der`, the new authority's DER in base64; 409 `https_reset_over_https` when the request came over HTTPS |
 | `POST /api/hub/setting/password/set` | the old and the new password | |
 | `POST /api/hub/setting/backup` | | an archive of `config/` |
 | `POST /api/hub/setting/restore` | the archive | |
@@ -521,8 +530,8 @@ published as one `web` entry, `vscode_<device id>_<account>`, titled
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/agent/terminal/session` | | `TerminalSessionListView`: `sessions`, every session in the `machine` section of every online machine's latest report, `{device_id, device_name, session_id, account, started_at, title, is_attached, is_persistent}`, ordered by `started_at` |
-| `POST /api/agent/terminal/session/stop` | `{device_id, session_id}` | the `stop_session` verb on the machine, then the list once the machine reported; 404 `device_unknown`, 409 `agent_offline`, 404 `session_unknown {session_id}` when the machine holds no such session, 502 with any other code the agent closed with |
+| `GET /api/agent/terminal/session` | | `TerminalSessionListView`: `sessions`, every session in the `machine` section of every online machine's latest report, whoever opened it, `{device_id, device_name, session_id, account, started_at, title, owner, is_owned, is_attached, is_persistent, is_shared, attached_count}`, ordered by `started_at`; `is_owned` is true for the sessions the panel opened, `owner: hub`, and the page attaches only to those and to shared ones |
+| `POST /api/agent/terminal/session/stop` | `{device_id, session_id}` | the `stop_session` verb on the machine, for any session whoever owns it, then the list once the machine reported; 404 `device_unknown`, 409 `agent_offline`, 404 `session_unknown {session_id}` when the machine holds no such session, 502 with any other code the agent closed with |
 
 A session is started by opening `/ws/agent/terminal` with a new
 `session_id`, so `session/stop` has no `session/start` beside it.
@@ -577,7 +586,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `/ws/hub/dashboard/stat` | | the live readings the Dashboard draws |
 | `/ws/hub/dashboard/dns_log` | | the DNS log as it grows |
 | `/ws/hub/task` | `?task_id=` | one task's output |
-| `/ws/agent/terminal` | `?device_id=&session_id=&is_resumed=` | a shell on the device, in the session the page generated `session_id` for, a uuid4 as 32 hex characters; with `is_resumed=true`, as the page opens a session the machine listed, it attaches to that session and its kept output comes first, and a session the machine no longer holds closes the socket with `session_unknown`. The browser sends `{type: input, data}`, `{type: resize, cols, rows}` and `{type: persist, is_persistent}`, each resize and persist a `command` stream to the agent; it receives `{type: output, data}` and `{type: exit, code}`, and a refusal closes the socket 1011 with the code as its reason, `session_taken` among them. Closing the socket closes the agent's `shell` stream, which ends the session unless it is persistent |
+| `/ws/agent/terminal` | `?device_id=&session_id=&is_resumed=&is_shared=` | a shell on the device, in the session the page generated `session_id` for, a uuid4 as 32 hex characters, which the hub opens stamped `owner: hub` and with `is_shared`, false when absent; with `is_resumed=true`, as the page opens a session the machine listed, it attaches to that session beside any other stream and its kept output comes first, and a session the machine no longer holds closes the socket with `session_unknown`. The browser sends `{type: input, data}`, `{type: resize, cols, rows}` and `{type: persist, is_persistent, is_shared}`, each resize and persist a `command` stream to the agent, a persist naming only the flags it carries; a persist on a session the machine reports under another owner opens nothing and is answered `{type: refused, code: session_not_owned, params: {session_id}}` with the socket left open. It receives `{type: output, data}` and `{type: exit, code}`, and a refusal closes the socket 1011 with the code as its reason. Closing the socket closes the agent's `shell` stream, which ends the session when no other stream is attached and it is neither persistent nor shared |
 | `/ws/agent/terminal` | `?device_id=&container=` | a shell inside one of its containers |
 | `/ws/agent/desktop` | `?device_id=` | reserved with the `desktop` kind; unimplemented |
 
@@ -755,6 +764,7 @@ and platform, which change between releases.
 | Section | `state` to agent | `report` from agent | `state` to client | `report` from client |
 | --- | --- | --- | --- | --- |
 | `machine` | | `{hostname, platform, accounts, metrics, sessions}` | | `{hostname, platform}` |
+| `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
 | `modules` | `{name: {want, config, install, uninstall}}` | `{name: {state, is_active, code, params, details}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, account, share_id, port, attention, connected_count}` | | |
@@ -762,18 +772,21 @@ and platform, which change between releases.
 | `is_disabled` | | | bool | |
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines it may open a `shell` on, each with the sessions it holds | |
+| `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines it may open a `shell` on, each with the sessions this client sees there | |
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
 error, the state error, or a failed `reinstall`.
 
 `sessions` lists the shells the agent keeps by id, oldest first, each
-`{session_id, account, started_at, title, is_attached, is_persistent}`:
-`started_at` is Unix seconds, `title` the last one the shell set with an OSC
-0 or 2 sequence and the shell's name before that, and `is_attached` whether
-a `shell` stream is attached now. It is an added field and keeps `PROTOCOL`
-as it is; an agent that predates it sends none. The AI gateway is a `services`
+`{session_id, account, started_at, title, owner, is_attached, is_persistent,
+is_shared, attached_count}`: `started_at` is Unix seconds, `title` the last
+one the shell set with an OSC 0 or 2 sequence and the shell's name before
+that, `owner` the stamp the hub put on the `shell` open that started it,
+`is_attached` whether any `shell` stream is attached now and
+`attached_count` how many are. It is an added field and keeps `PROTOCOL`
+as it is; an agent that predates it sends none, and one before 0.5.0 sends
+no `owner`, `is_shared` or `attached_count`. The AI gateway is a `services`
 entry whose `type` is `ai`, and a client gets its key through the `service`
 stream.
 
@@ -818,15 +831,35 @@ not, with `is_online` read from its socket; it is empty unless the client's
 permission allows `terminal`, and holds only the machines its `terminal`
 device list names when it has one. The hub pushes every client its state when
 an agent's channel opens or ends, when a report's `machine.sessions` differs
-from the one before it, and when a device is deleted.
+from the one before it, and when a device is deleted; the same report move
+publishes `device_report` to the panel, whose session list reads it.
 
 `sessions`, in an agent's `machine` section and in each `terminals` entry, is
 every shell session the machine holds, `[{session_id, account, started_at,
-title, is_attached, is_persistent}]`: the id its opener generated, the account
-its shell runs as, when it was opened in Unix seconds, the title the
-shell set, whether a stream is attached now, and whether it stays when its
-stream closes. A `terminals` entry lists them by `started_at` and is empty for
-a machine that is offline. The list is an added field and keeps `PROTOCOL`.
+title, owner, is_attached, is_persistent, is_shared, attached_count}]`: the id
+its opener generated, the account its shell runs as, when it was opened in
+Unix seconds, the title the shell set, who opened it as the hub stamped it,
+whether a stream is attached now, whether it stays when its last stream
+closes, whether every viewer with terminal rights on the machine can attach
+to it, and how many streams are attached. A `terminals` entry lists them by
+`started_at` and is empty for a machine that is offline. The list is an added
+field and keeps `PROTOCOL`.
+
+A `terminals` entry holds the sessions one viewer sees, which the hub's
+`sessions_for` gives from the machines' latest reports: every session the
+client owns, and every shared session on a machine it has terminal rights on.
+Each carries `device_id`, `device_name` and `is_owned` beside the fields
+above, `is_owned` being true for the sessions this client opened. The panel
+is the viewer `owner: hub` and lists every session
+(`GET /api/agent/terminal/session`).
+
+The hub stamps `owner` on every `shell` open it sends an agent for a kept
+shell: `hub` for the panel's `/ws/agent/terminal`, `client:<id>` for a
+client's `shell` stream; whoever opens the shell does not send it. A
+`persist` from any viewer other than the owner the machine reports is
+refused `session_not_owned {session_id}` and reaches no machine; a session
+the machine does not list yet is the opener's own. `stop_session` is not
+held to the owner.
 
 ### The modules section, one entry per module
 
@@ -1023,14 +1056,14 @@ is added without a change to the protocol; a kind is added by a row here.
 
 | Opened by | `kind` | Arguments and result |
 | --- | --- | --- |
-| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell, or `{session_id, is_resumed}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session and closes a stream already attached to it `session_taken {session_id}`; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise, and its kept output is sent first; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a persistent shell that runs on |
+| hub, to an agent | `shell` | `{cols, rows}`, with `{module: podman, container}` added for a container's shell, or `{session_id, is_resumed, owner, is_shared}` for a shell the agent keeps: `session_id` names the session and is generated by whoever opened the shell; an id the machine holds attaches to that session beside every stream already attached to it, and its kept output is sent first; `is_resumed: true` asks only for a session the machine holds, refused `session_unknown {session_id}` otherwise; `owner` is the hub's stamp, which the agent keeps as given and reports; `is_shared`, false when absent, says whether a new session starts shared; a shell opened without an id ends with its stream. Terminal bytes both ways; closed with `params: {exit_code}` once the shell ends, or empty when the stream closed on a shell that runs on |
 | hub, to an agent | `file` | one file operation `{op, path, ...}`; `op` is `list`, `download`, `upload`, `rename`, `remove`, `directory_create` or `directory_download`, and every path is absolute in the machine's own form. `list` closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. `separator` and the drive list are added and keep `PROTOCOL`; an agent before 0.5.0 sends no `separator` |
 | agent, to the hub | `log` | `{module}`: opened for an install or an uninstall, output up as binary frames line by line, closed with `params: {state}` |
 | hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{zfs, validate, config}`; an unknown kind is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}` |
 | agent, to the hub | `package` | `{module}` for a module's package bytes from the hub's cache, `{}` for the agent's own package; the close's `params` has the `sha256` |
 | client, to the hub | `service` | `{id}`: one published entry. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
-| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id` and `is_resumed` and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
-| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, and the `shell` stream's permission refusals for that machine. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
+| client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
+| client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
 | hub, to an agent | `desktop` | reserved and unimplemented: no arguments, the agent connects to the machine's RustDesk direct port 21118 and relays bytes both ways for `/ws/agent/desktop`; the name says the purpose, the mechanism is the port |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
@@ -1039,13 +1072,15 @@ Installing and uninstalling are no kind and no verb: they follow from `want`.
 
 | `module` | Verbs |
 | --- | --- |
-| `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `persist {session_id, is_persistent}`, `stop_session {session_id}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto `kill` and the two remote desktop verbs; `persist` and `stop_session` refuse an id the agent does not hold with `session_unknown {session_id}` |
+| `agent` | `reboot`, `shutdown`, `reinstall`, `resize`, `kill {pid}`, `persist {session_id, is_persistent, is_shared}`, `stop_session {session_id}`, `remote_desktop_read`, `remote_desktop_password_set`; the HTTP routes `process/kill`, `remote_desktop` and `remote_desktop/password/set` map onto `kill` and the two remote desktop verbs; `persist` and `stop_session` refuse an id the agent does not hold with `session_unknown {session_id}` |
 | `samba`, `gitea`, `podman`, `zfs` | the module's own, spelled without a module prefix because the `module` field is the prefix: `set_password` on `samba`, `admin` and `password` on `gitea`, `control` and `journal {name}` on `podman`, `op` and `scan` on `zfs` |
 
-`persist` sets whether a session stays when its stream closes and
-`stop_session` ends it, which `POST /api/agent/terminal/session/stop` sends;
-both close `session_unknown {session_id}` for a session the machine does not
-hold.
+`persist` sets whether a session stays when its last stream closes,
+`is_persistent`, and whether every viewer with terminal rights on the
+machine can attach to it, `is_shared`; a flag the verb leaves out keeps its
+value. `stop_session` ends a session, and
+`POST /api/agent/terminal/session/stop` sends it. Both close
+`session_unknown {session_id}` for a session the machine does not hold.
 
 Two verbs every module answers: `validate`, as `command {module: <name>,
 verb: validate, config}`, checks a configuration before it is saved; and
@@ -1061,13 +1096,15 @@ A shell the agent keeps is named by a `session_id` the opener generates, a
 uuid, in the `shell` stream's `open`. An id the agent holds attaches the
 stream to that shell; an id it does not hold starts a new shell under it,
 unless the `open` says `is_resumed: true`, which is refused
-`session_unknown`. One stream is attached at a time: a new one closes the
-old with `session_taken`. An attaching stream is sent the shell's last
-256 KB of output first, and the terminal is resized to one row more and
-back so a full-screen program draws itself again. When a stream closes,
-its shell ends unless `persist {session_id, is_persistent: true}` made it
-persistent; `stop_session` ends it, and its attached stream closes with the
-exit code. Windows answers both verbs although it refuses `kill`. The
+`session_unknown`. Any number of streams attach to one session at once, as
+in tmux: every stream receives all the output, input from any stream
+reaches the shell, and the terminal's size is the smallest attached
+window's columns and rows, set again on every attach, detach and resize.
+A stream that attaches to a running shell is sent its last 256 KB of output
+first, then the live output, and the terminal is resized to one row more
+and back so a full-screen program draws itself again. When the last stream
+closes, the shell ends unless it is persistent or shared; `stop_session`
+ends it, and every attached stream closes with the exit code. Windows answers both verbs although it refuses `kill`. The
 sessions are the agent process's own, so an agent restart or upgrade ends
 every one.
 
@@ -1102,7 +1139,7 @@ first that fails gives the close its code:
 
 | Concern | Rule |
 | --- | --- |
-| When `state` is pushed | To an agent, one push on a connection's first `report` whose `state_hash` differs, and after that only when the hub's own hash changes; to a client, on any report whose `state_hash` differs, and when the hub's own hash changes. An agent whose apply failed keeps reporting the old hash; the hub shows that and pushes nothing, and the agent retries only when the state's hash changes. |
+| When `state` is pushed | To an agent, one push on a connection's first `report` whose `state_hash` differs, and after that only when the hub's own hash changes; to a client, on any report whose `state_hash` differs or that says `is_refresh: true`, and when the hub's own hash changes. An agent whose apply failed keeps reporting the old hash; the hub shows that and pushes nothing, and the agent retries only when the state's hash changes. |
 | `nagent sync` | Sends one `report` now, from which the hub compares hashes. |
 | The `package` stream | The agent opens it and grants credit as it writes to disk. The sha256 in the close's `params` is checked after the close, and only a matching file goes to `systemd-run`. A socket that drops mid-transfer deletes the temporary file and locks no update target; only a failed install locks it. |
 | The two hashes | The fingerprint of the published service list is computed on the unresolved list and drives the push; the `state.hash` a client receives is computed on the list resolved for its scope. |

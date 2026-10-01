@@ -127,6 +127,7 @@ TO=@TO@
 PACKAGE=@PACKAGE@
 ROLLBACK=@ROLLBACK@
 PORT=@PORT@
+HTTPS_PORT=@HTTPS_PORT@
 HEALTH_PATH=@HEALTH_PATH@
 UNITS=@UNITS@
 STARTED=@STARTED@
@@ -197,14 +198,12 @@ gate() {
             systemctl is-active --quiet "$unit" \\
                 || { ok=0; report="$report $unit=$(systemctl is-active "$unit")"; }
         done
-        first=http
-        second=https
+        first="http://127.0.0.1:$PORT"
+        second="https://127.0.0.1:$HTTPS_PORT"
         grep -Eq '"is_https_enabled": *true' @SETTINGS@ 2>/dev/null \\
-            && { first=https; second=http; }
-        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null \\
-            "$first://127.0.0.1:$PORT$HEALTH_PATH" \\
-            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null \\
-            "$second://127.0.0.1:$PORT$HEALTH_PATH" \\
+            && { first="https://127.0.0.1:$HTTPS_PORT"; second="http://127.0.0.1:$PORT"; }
+        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$first$HEALTH_PATH" \\
+            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$second$HEALTH_PATH" \\
             || { ok=0; report="$report panel=failed"; }
         seen=$(nhub --version 2>/dev/null)
         [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
@@ -255,7 +254,10 @@ class HubUpdatePlan:
         rollback: The running version's own package beside it, or None when
             no release carries one.
         family: The distribution family, which names the package manager.
-        port: The panel's port, which the gate probes.
+        port: The panel's HTTP port, which the gate probes while HTTPS is
+            off.
+        https_port: The panel's HTTPS port, which the gate probes while
+            HTTPS is on.
         units: The units the gate holds for: the panel, and those of the
             router's that were running when the plan was made.
         started_at: When the update started, as an ISO stamp.
@@ -270,6 +272,7 @@ class HubUpdatePlan:
     rollback: Path | None
     family: str
     port: int
+    https_port: int
     units: tuple[str, ...]
     started_at: str
     python: str = ""
@@ -474,6 +477,7 @@ def render_script(
         "@PACKAGE@": shlex.quote(str(plan.package)),
         "@ROLLBACK@": shlex.quote(str(plan.rollback) if plan.rollback else ""),
         "@PORT@": shlex.quote(str(plan.port)),
+        "@HTTPS_PORT@": shlex.quote(str(plan.https_port)),
         "@UNITS@": shlex.quote(" ".join(plan.units)),
         "@STARTED@": shlex.quote(plan.started_at),
         "@GATE_TIMEOUT@": str(int(gate_timeout_s)),
@@ -607,6 +611,7 @@ class HubUpdateInstaller:
         *,
         current: str,
         port: int,
+        https_port: int,
         on_progress: Callable[[str], None] | None = None,
     ) -> HubUpdatePlan:
         """Stage a release: room, the package, its digest, the rollback.
@@ -614,7 +619,8 @@ class HubUpdateInstaller:
         Args:
             release: What to install.
             current: The version running.
-            port: The panel's port, for the gate.
+            port: The panel's HTTP port, for the gate.
+            https_port: The panel's HTTPS port, for the gate.
             on_progress: Told one line per step taken, when given.
 
         Returns:
@@ -665,6 +671,7 @@ class HubUpdateInstaller:
             rollback=rollback,
             family=self._family or distribution_family(),
             port=port,
+            https_port=https_port,
             units=self._gate_units(),
             started_at=_now(),
             python=sys.executable,
@@ -676,6 +683,7 @@ class HubUpdateInstaller:
         *,
         current: str,
         port: int,
+        https_port: int,
         on_progress: Callable[[str], None] | None = None,
     ) -> HubUpdatePlan:
         """Stage a package file somebody brought, its version read off its name.
@@ -683,7 +691,8 @@ class HubUpdateInstaller:
         Args:
             package: The file.
             current: The version running.
-            port: The panel's port, for the gate.
+            port: The panel's HTTP port, for the gate.
+            https_port: The panel's HTTPS port, for the gate.
             on_progress: Told one line per step taken, when given.
 
         Returns:
@@ -750,6 +759,7 @@ class HubUpdateInstaller:
             rollback=rollback,
             family=self._family or distribution_family(),
             port=port,
+            https_port=https_port,
             units=self._gate_units(),
             started_at=_now(),
             python=sys.executable,

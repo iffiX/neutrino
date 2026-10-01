@@ -1,5 +1,6 @@
-"""The Settings tab: the panel's own port, scheme, password, backup and versions."""
+"""The Settings tab: the panel's own ports, scheme, password, backup and versions."""
 
+import base64
 import hashlib
 import io
 import json
@@ -18,6 +19,7 @@ from fastapi import (
     Depends,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     status,
 )
@@ -67,6 +69,8 @@ from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LANGUAGE,
     WEB_DEFAULT_LISTEN_PORT,
     WEB_DEFAULT_THEME,
@@ -78,6 +82,7 @@ from neutrino_hub.web.constants import (
     WEB_PORT_MIN,
     WEB_RESTART_DELAY_S,
     WEB_SETTING_HTTPS,
+    WEB_SETTING_HTTPS_PORT,
     WEB_THEMES,
 )
 from neutrino_hub.web.channel_addresses import channel_hosts
@@ -92,6 +97,7 @@ from neutrino_hub.web.models import (
     HubReleaseView,
     HubUpdateRecordView,
     HubUpdateRequest,
+    PanelHttpsResetView,
     PanelHttpsView,
     PanelSettings,
     PasswordChange,
@@ -110,8 +116,9 @@ from neutrino_hub.modules.xray.constants import XRAY_BINARY, XRAY_VERSION
 router = APIRouter(
     prefix="/api/hub/setting", tags=["setting"], dependencies=[Depends(require_session)]
 )
-# The one route of this page a browser reaches before it has a session: the
-# authority's certificate, which it has to install before it trusts the panel.
+# The routes of this page a browser reaches before it has a session: the
+# authority's certificate, which it has to install before it trusts the panel,
+# and the probe that says whether it trusts the HTTPS port yet.
 authority_router = APIRouter(prefix="/api/hub/setting", tags=["setting"])
 
 # The one version both packages share; an agent reporting a different one
@@ -148,6 +155,10 @@ SETTINGS_ERROR_THEME_UNKNOWN = "theme_unknown"
 SETTINGS_ERROR_HUB_NAME_REQUIRED = "hub_name_required"
 # The 404 for an authority download on a box that has not made one.
 HTTPS_ERROR_AUTHORITY_MISSING = "https_authority_missing"
+# The 409 for regenerating the authority from a page served over HTTPS.
+HTTPS_ERROR_RESET_OVER_HTTPS = "https_reset_over_https"
+# The 400 for a panel port another of the hub's listeners already holds.
+SETTINGS_ERROR_PORT_TAKEN = "port_already_in_use"
 # The 409s and the 502 the update panel words.
 UPDATE_ERROR_NOT_PACKAGED = "hub_not_packaged"
 UPDATE_ERROR_IN_PROGRESS = "update_in_progress"
@@ -167,11 +178,12 @@ def read_settings(runtime: PanelRuntime = Depends(get_runtime)) -> PanelSettings
         runtime: The shared runtime.
 
     Returns:
-        The port the panel answers on, the language and the palette it is
-        drawn in, and the name clients show this hub as.
+        The ports the panel answers HTTP and HTTPS on, the language and the
+        palette it is drawn in, and the name clients show this hub as.
     """
     return PanelSettings(
         listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
+        https_listen_port=_https_listen_port(runtime),
         language=str(runtime.settings.get("language", WEB_DEFAULT_LANGUAGE)),
         theme=str(runtime.settings.get("theme", WEB_DEFAULT_THEME)),
         hub_name=hub_name(),
@@ -186,35 +198,51 @@ def update_settings(
 ) -> PanelSettings:
     """Write the panel's own settings.
 
-    A port change restarts the panel, and the answer goes out first with the
-    restart behind it: the process serving this request is the one being
-    restarted, so the browser is told where to look before the socket it
-    asked on closes.
+    A change of either port restarts the panel, and the answer goes out first
+    with the restart behind it: the process serving this request is the one
+    being restarted, so the browser is told where to look before the socket
+    it asked on closes.
 
     Args:
-        request: The port to answer on, the language and the palette to draw
-            in, and the hub's name. A body leaving one of those out leaves it
-            as it is.
+        request: The HTTP and HTTPS ports to answer on, the language and the
+            palette to draw in, and the hub's name. A body leaving one of
+            those out leaves it as it is, the HTTP port excepted.
         background: Where the restart is queued.
         runtime: The shared runtime.
 
     Returns:
-        The port the panel is moving to, the language and the palette it is
+        The ports the panel is moving to, the language and the palette it is
         drawn in, and the hub's name.
 
     Raises:
-        HTTPException: 400 when the port is not one a listener may take, 422
-            with ``language_unknown`` for a language this panel does not
-            ship, 422 with ``theme_unknown`` for a theme it does not have,
-            and 422 with ``hub_name_required`` for a blank name.
+        HTTPException: 400 with ``port_out_of_range`` when a port is not one
+            a listener may take, 400 with ``port_already_in_use`` when the
+            two ports are one or either is the agent port, 400 with
+            ``language_unknown`` for a language this panel does not ship,
+            400 with ``theme_unknown`` for a theme it does not have, and 400
+            with ``hub_name_required`` for a blank name.
     """
-    if not WEB_PORT_MIN <= request.listen_port <= WEB_PORT_MAX:
-        raise _coded_bad_request(
-            "port_out_of_range",
-            minimum=WEB_PORT_MIN,
-            maximum=WEB_PORT_MAX,
-            value=request.listen_port,
-        )
+    https_port = (
+        request.https_listen_port
+        if "https_listen_port" in request.model_fields_set
+        else _https_listen_port(runtime)
+    )
+    for port in (request.listen_port, https_port):
+        if not WEB_PORT_MIN <= port <= WEB_PORT_MAX:
+            raise _coded_bad_request(
+                "port_out_of_range",
+                minimum=WEB_PORT_MIN,
+                maximum=WEB_PORT_MAX,
+                value=port,
+            )
+    agent_port = int(
+        runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+    )
+    if https_port == request.listen_port:
+        raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=https_port)
+    for port in (request.listen_port, https_port):
+        if port == agent_port:
+            raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=port)
     if request.language not in WEB_LANGUAGES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -244,15 +272,19 @@ def update_settings(
     )
     stored_theme = str(settings.get("theme", WEB_DEFAULT_THEME))
     theme = request.theme if "theme" in request.model_fields_set else stored_theme
-    is_moving = (
-        int(settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)) != request.listen_port
+    stored_port = int(settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
+    stored_https_port = int(
+        settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
     )
+    is_moving = stored_port != request.listen_port or stored_https_port != https_port
     if is_moving or language != stored_language or theme != stored_theme:
         settings["listen_port"] = request.listen_port
+        settings[WEB_SETTING_HTTPS_PORT] = https_port
         settings["language"] = language
         settings["theme"] = theme
         write_config(PANEL_SETTINGS_FILE, settings)
         runtime.settings["listen_port"] = request.listen_port
+        runtime.settings[WEB_SETTING_HTTPS_PORT] = https_port
         runtime.settings["language"] = language
         runtime.settings["theme"] = theme
     if is_renaming:
@@ -261,6 +293,7 @@ def update_settings(
         background.add_task(_restart_panel)
     return PanelSettings(
         listen_port=request.listen_port,
+        https_listen_port=https_port,
         language=language,
         theme=theme,
         hub_name=hub_name(),
@@ -282,14 +315,18 @@ def _restart_panel() -> None:
 
 
 @router.get("/https", response_model=PanelHttpsView)
-def read_https() -> PanelHttpsView:
-    """Read the panel's scheme and the state of its certificates.
+def read_https(runtime: PanelRuntime = Depends(get_runtime)) -> PanelHttpsView:
+    """Read the panel's scheme, its two ports and the state of its certificates.
+
+    Args:
+        runtime: The shared runtime, for the ports.
 
     Returns:
-        Whether the panel speaks HTTPS, the authority's fingerprint and when
-        it was made, and the served certificate's names, issue and expiry.
+        Whether the HTTP port sends browsers to the HTTPS port, both ports,
+        the authority's fingerprint and when it was made, and the served
+        certificate's names, issue and expiry.
     """
-    return _https_view()
+    return _https_view(runtime)
 
 
 @authority_router.get("/https/authority")
@@ -297,7 +334,7 @@ def download_authority() -> Response:
     """Download the hub's certificate authority, for a browser to install.
 
     No session: a browser installs it before it can trust the panel, and a
-    certificate is public.
+    certificate is public. The HTTP port serves it while HTTPS is on.
 
     Returns:
         The authority's DER encoding as ``neutrino-<hub>-ca.crt``.
@@ -322,18 +359,30 @@ def download_authority() -> Response:
     )
 
 
-@router.post("/https/enable", response_model=PanelHttpsView)
-def enable_https(
-    background: BackgroundTasks, runtime: PanelRuntime = Depends(get_runtime)
-) -> PanelHttpsView:
-    """Serve the panel over HTTPS, making a missing authority first.
+@authority_router.get("/https/probe", status_code=status.HTTP_204_NO_CONTENT)
+def probe_https() -> Response:
+    """Answer with nothing, for a page on HTTP to fetch over HTTPS.
 
-    The answer goes out before the panel restarts onto the new scheme, as a
-    port move does.
+    No session: a page fetches it from the HTTPS port, and the fetch
+    succeeding is what says this browser trusts the certificate.
+
+    Returns:
+        An empty 204.
+    """
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/https/enable", response_model=PanelHttpsView)
+def enable_https(runtime: PanelRuntime = Depends(get_runtime)) -> PanelHttpsView:
+    """Send the HTTP port's browsers to the HTTPS port.
+
+    A missing authority is made first. Both ports are already served, so
+    nothing restarts: the next request on the HTTP port is redirected, and
+    the next session cookie is ``Secure``.
 
     Args:
-        background: Where the restart is queued.
-        runtime: The shared runtime, for the names the panel answers on.
+        runtime: The shared runtime, for the names the panel answers on and
+            the setting the redirect reads.
 
     Returns:
         The scheme and certificates, as a read returns them.
@@ -344,47 +393,55 @@ def enable_https(
     """
     panel_tls.ensure_authority()
     _renew_for(runtime)
-    if _write_https(True):
-        background.add_task(_restart_panel)
-    return _https_view()
+    _write_https(True, runtime)
+    return _https_view(runtime)
 
 
 @router.post("/https/disable", response_model=PanelHttpsView)
-def disable_https(background: BackgroundTasks) -> PanelHttpsView:
-    """Serve the panel over plain HTTP; the certificates are kept.
+def disable_https(runtime: PanelRuntime = Depends(get_runtime)) -> PanelHttpsView:
+    """Serve the panel on the HTTP port again; the certificates are kept.
 
     Args:
-        background: Where the restart is queued.
+        runtime: The shared runtime, for the setting the redirect reads.
 
     Returns:
         The scheme and certificates, as a read returns them.
     """
-    if _write_https(False):
-        background.add_task(_restart_panel)
-    return _https_view()
+    _write_https(False, runtime)
+    return _https_view(runtime)
 
 
-@router.post("/https/authority/reset", response_model=PanelHttpsView)
+@router.post("/https/authority/reset", response_model=PanelHttpsResetView)
 def reset_https_authority(
-    runtime: PanelRuntime = Depends(get_runtime),
-) -> PanelHttpsView:
+    request: Request, runtime: PanelRuntime = Depends(get_runtime)
+) -> PanelHttpsResetView:
     """Replace the certificate authority and the certificate it signed.
 
     Every browser that installed the old authority has to install this one.
     The panel serves the new certificate from the next connection on.
 
     Args:
+        request: The incoming request, whose scheme is checked.
         runtime: The shared runtime, for the names the panel answers on.
 
     Returns:
-        The scheme and certificates, as a read returns them.
+        The scheme and certificates, as a read returns them, and the new
+        authority's DER in base64.
 
     Raises:
+        HTTPException: 409 with ``https_reset_over_https`` when the request
+            came over HTTPS.
         VaultLockedError: If there is no data key to seal the new key under.
     """
+    if request.url.scheme == "https":
+        raise _conflict(HTTPS_ERROR_RESET_OVER_HTTPS)
     panel_tls.reset_authority()
     _renew_for(runtime)
-    return _https_view()
+    view = _https_view(runtime)
+    return PanelHttpsResetView(
+        **view.model_dump(),
+        authority_der=base64.b64encode(panel_tls.authority_der()).decode("ascii"),
+    )
 
 
 def _renew_for(runtime: PanelRuntime) -> None:
@@ -393,21 +450,29 @@ def _renew_for(runtime: PanelRuntime) -> None:
     panel_tls.renew_served_leaf(names)
 
 
-def _write_https(is_enabled: bool) -> bool:
-    """Store the scheme; True when it changed."""
+def _write_https(is_enabled: bool, runtime: PanelRuntime) -> None:
+    """Store the scheme, in the file and in the settings the redirect reads."""
     with CONFIG_WRITE_LOCK:
         settings = read_config(PANEL_SETTINGS_FILE)
-        if bool(settings.get(WEB_SETTING_HTTPS, False)) == is_enabled:
-            return False
-        settings[WEB_SETTING_HTTPS] = is_enabled
-        write_config(PANEL_SETTINGS_FILE, settings)
-    return True
+        if bool(settings.get(WEB_SETTING_HTTPS, False)) != is_enabled:
+            settings[WEB_SETTING_HTTPS] = is_enabled
+            write_config(PANEL_SETTINGS_FILE, settings)
+    runtime.settings[WEB_SETTING_HTTPS] = is_enabled
 
 
-def _https_view() -> PanelHttpsView:
-    """The scheme and what the certificates on disk say."""
+def _https_listen_port(runtime: PanelRuntime) -> int:
+    """The port the panel serves HTTPS on."""
+    return int(
+        runtime.settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
+    )
+
+
+def _https_view(runtime: PanelRuntime) -> PanelHttpsView:
+    """The scheme, the two ports and what the certificates on disk say."""
     view = PanelHttpsView(
         is_https_enabled=panel_tls.is_https_enabled(),
+        listen_port=int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
+        https_listen_port=_https_listen_port(runtime),
         has_authority=False,
         authority_file_name=_authority_file_name(),
     )
@@ -1019,20 +1084,26 @@ async def install_release(
     )
     stream = runtime.tasks.start(
         label=HUB_UPDATE_TASK_LABEL,
-        source=_update_source(installer, found, port=_listen_port(runtime)),
+        source=_update_source(
+            installer,
+            found,
+            port=_listen_port(runtime),
+            https_port=_https_listen_port(runtime),
+        ),
     )
     return TaskStarted(task_id=stream.id)
 
 
 async def _update_source(
-    installer: HubUpdateInstaller, found: HubRelease, *, port: int
+    installer: HubUpdateInstaller, found: HubRelease, *, port: int, https_port: int
 ):
     """Stage the release in a thread, relaying its progress, then hand over.
 
     Args:
         installer: What stages and launches.
         found: The release to install.
-        port: The panel's port, for the unit's gate.
+        port: The panel's HTTP port, for the unit's gate.
+        https_port: The panel's HTTPS port, for the unit's gate.
 
     Yields:
         Progress lines for the task stream.
@@ -1050,7 +1121,12 @@ async def _update_source(
     yield f"staging {found.asset_name} of {found.tag}\n"
     staging = asyncio.ensure_future(
         asyncio.to_thread(
-            installer.prepare, found, current=HUB_VERSION, port=port, on_progress=say
+            installer.prepare,
+            found,
+            current=HUB_VERSION,
+            port=port,
+            https_port=https_port,
+            on_progress=say,
         )
     )
     while not staging.done():

@@ -4,7 +4,7 @@ title: Install the hub
 
 # Install the hub
 
-At the end of this page the hub package is on your always-on Linux box, and you are signed in to its panel. Between the two, `sudo nhub setup` shows six question screens and runs its steps. The panel then listens on the port you chose, `8080` unless you change it.
+At the end of this page the hub package is on your always-on Linux box, and you are signed in to its panel. Between the two, `sudo nhub setup` shows six question screens and runs its steps. The panel then serves HTTP on the port you chose, `8080` unless you change it, and HTTPS on a second port, `443` unless you change it.
 
 ## Before you start
 
@@ -71,7 +71,7 @@ Pick **English** or **简体中文** under **Language**. The panel is drawn in t
 1. Type the **Vault master passphrase** twice. It has at least 16 characters with a lowercase letter, an uppercase letter, a digit and a symbol.
 1. Optional: turn on **HTTPS for the panel**.
 
-The passphrase seals every credential the box holds, and restoring a backup requires it again. The hub makes the panel's certificates whether HTTPS is on or off, and [Settings](./settings.md) switches HTTPS later.
+The passphrase seals every credential the box holds, and restoring a backup requires it again. With HTTPS on, the HTTP port sends every browser to the HTTPS port. The hub makes the panel's certificates either way, and [Settings](./settings.md#https) switches HTTPS later.
 
 ### Shape
 
@@ -90,11 +90,11 @@ Server and side gateway keep every address on the machine. Router and one-arm ro
 
 ### Ports
 
-**Which ports?** shows the fields the chosen shape needs. Every shape has **Panel answers on port**.
+**Which ports?** shows the fields the chosen shape needs. Every shape has **Panel answers on port** for HTTP and **HTTPS port**, and the two must differ.
 
 | Shape          | Fields                                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
-| Server         | none beyond the panel port; every port keeps its address and answers                                   |
+| Server         | none beyond the panel ports; every port keeps its address and answers                                  |
 | Side gateway   | **Port on that network**, **This box's address**, **Prefix length**, **That network's own router**     |
 | Router         | **Out to the internet**, **In to your devices**, **This box's address**, **Prefix length**             |
 | One-arm router | **The one port, out and in**, **VLAN tag for your devices**, **This box's address**, **Prefix length** |
@@ -113,7 +113,7 @@ A router sets only its first uplink and its first served network here.
 
 ### Ready
 
-**Ready** lists the shape, the language, the ports, the panel port, **HTTPS** on or off, and the proxy. Read it and select **Set this box up**. For a router or a one-arm router, a warning names the panel's new address and the log file, `/var/log/neutrino/setup.log`. The network can drop while the interfaces change; refresh the page to reconnect.
+**Ready** lists the shape, the language, the ports, the panel port, the HTTPS port, **HTTPS** on or off, and the proxy. Read it and select **Set this box up**. For a router or a one-arm router, a warning names the panel's new address and the log file, `/var/log/neutrino/setup.log`. The network can drop while the interfaces change; refresh the page to reconnect.
 
 ## Watch the steps
 
@@ -124,15 +124,15 @@ The screen reads **Making it so** and lists each step as it runs, from **Checkin
 When the title reads **This box is a gateway**, the next action depends on the HTTPS answer:
 
 - With HTTPS off, the page moves to the panel by itself after a few seconds. **Open the panel** goes there at once.
-- With HTTPS on, the page shows **Install the certificate on this device** with an **Install certificate** button. Under it are the steps for Windows, macOS, Linux, iPhone and iPad, and Android, with your device's steps open. Install the authority, check its fingerprint against the **SHA-256** line, then select **Open the panel**.
+- With HTTPS on, the page shows **Install the certificate on this device** with an **Install certificate** button. Under it is one tab per system, with your device's tab selected and its steps shown. Install the authority and check its fingerprint against the **SHA-256** line. Restart the browser, then open the panel's `https://` address.
 
-The terminal prints the panel's address, and with HTTPS on, the authority's download address and fingerprint.
+The terminal prints the panel's address, and with HTTPS on, the authority's download address on the HTTP port and its fingerprint.
 
 ## Sign in
 
 ![The sign-in page](/guide/en/login.webp)
 
-1. Open the panel's address, `http://` or `https://` followed by the box's address and the panel port.
+1. Open the panel's address. With HTTPS off, it is `http://` followed by the box's address and the panel port. With HTTPS on, it is `https://` followed by the box's address, and the HTTPS port when that is not `443`.
 1. Type the **Panel password** and select **Sign in**.
 
 The panel opens on the [Dashboard](./dashboard.md). After repeated wrong passwords, the sign-in page reads **Locked after repeated failures.**, and `sudo nhub unlock` on the box clears the lock.

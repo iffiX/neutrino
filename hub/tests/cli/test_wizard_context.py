@@ -33,6 +33,16 @@ def test_the_context_names_what_each_port_is_doing(monkeypatch):
     }
 
 
+def test_the_browser_starts_both_panel_ports_where_the_terminal_does(monkeypatch):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", _one_wired_port)
+    asked = wizard.SetupWizard(links=[])
+
+    defaults = wizard.context()["defaults"]
+
+    assert defaults["listen_port"] == asked._listen_port
+    assert defaults["https_listen_port"] == asked._https_listen_port
+
+
 def test_a_machine_with_no_port_is_refused_the_same_way(monkeypatch):
     monkeypatch.setattr(wizard, "RouterLinkStatus", _no_ports)
 

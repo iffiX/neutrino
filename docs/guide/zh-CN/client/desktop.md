@@ -212,7 +212,7 @@ shell 下面一行的末尾是 **持久**（Persistent）开关。打开后，�
 | `permission_denied` | hub 的客户端页不允许这个客户端打开终端 |
 | `agent_offline`     | 那台机器现在没有连到 hub               |
 | `unknown_terminal`  | hub 没有提供那台机器的终端             |
-| `session_taken`     | 另一个窗口连上了这个会话               |
+| `session_not_owned` | 会话是别的查看者打开的，开关不归这个客户端 |
 | `session_unknown`   | 那台机器已经不保留这个会话             |
 
 ## 远程桌面

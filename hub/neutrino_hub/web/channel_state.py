@@ -43,7 +43,7 @@ from neutrino_hub.modules.services.host_scope import (
 )
 from neutrino_hub.web import channel_overlay
 from neutrino_hub.web.channel_addresses import channel_urls
-from neutrino_hub.web.shell_bridge import reported_sessions
+from neutrino_hub.web.shell_bridge import client_owner, device_name, sessions_for
 
 
 def agent_state(runtime, device_id: str) -> dict:
@@ -69,7 +69,8 @@ def client_state(runtime, client_id: str) -> dict:
             handed an empty list, and one that is on is handed the entries
             its permission allows by kind and by the device providing them,
             the overlays' join material when it is allowed ``overlay``, and
-            the managed machines its ``terminal`` permission allows.
+            the managed machines its ``terminal`` permission allows, each
+            with the sessions :func:`sessions_for` gives it there.
 
     Returns:
         ``{hash, is_disabled, services, urls, overlays, terminals}``.
@@ -108,7 +109,7 @@ def client_state(runtime, client_id: str) -> dict:
         if CLIENT_PERMISSION_TERMINAL in kinds:
             terminals = [
                 terminal
-                for terminal in _terminals(runtime)
+                for terminal in _terminals(runtime, client_owner(client_id))
                 if is_device_permitted(
                     devices, CLIENT_PERMISSION_TERMINAL, terminal["device_id"]
                 )
@@ -180,17 +181,16 @@ def push_states(runtime, role: str) -> None:
         session.offered_hash = document["hash"]
 
 
-def _terminals(runtime) -> list:
+def _terminals(runtime, viewer: str) -> list:
     """Every managed machine, online or not, by its name, its presence and
-    the shell sessions it reports, oldest first."""
+    the shell sessions the viewer sees on it, oldest first."""
     held: dict = {}
-    for entry in reported_sessions(runtime.agent_sessions):
-        session = {name: value for name, value in entry.items() if name != "device_id"}
-        held.setdefault(entry["device_id"], []).append(session)
+    for session in sessions_for(runtime, viewer):
+        held.setdefault(session["device_id"], []).append(session)
     return [
         {
             "device_id": device.id,
-            "name": _device_name(runtime, device),
+            "name": device_name(runtime, device),
             "is_online": runtime.agent_sessions.is_online(device.id),
             "sessions": held.get(device.id, []),
         }
@@ -208,7 +208,7 @@ def _named_entries(runtime, entries: list) -> list:
     """
     names = {}
     for device in DeviceRegistry().all_stored():
-        names[device.id] = _device_name(runtime, device)
+        names[device.id] = device_name(runtime, device)
     by_address = {
         address: names[device_id]
         for device_id, address in runtime.device_address.items()
@@ -219,23 +219,13 @@ def _named_entries(runtime, entries: list) -> list:
     for entry, catalog in zip(entries, catalog_entries(entries)):
         device_id = entry.get("device_id") or ""
         if device_id:
-            device_name = names.get(device_id, "")
+            provider = names.get(device_id, "")
         elif entry.get("source") == SERVICES_SOURCE_DECLARED:
-            device_name = by_address.get(entry_host(entry), "")
+            provider = by_address.get(entry_host(entry), "")
         else:
-            device_name = hub_machine
-        named.append({**catalog, "device_name": device_name})
+            provider = hub_machine
+        named.append({**catalog, "device_name": provider})
     return named
-
-
-def _device_name(runtime, device) -> str:
-    """What the hub calls one device: its name, its hostname, its address."""
-    return (
-        device.name
-        or runtime.device_hostname.get(device.id, "")
-        or device.ipv4_address
-        or device.id
-    )
 
 
 def _compose(runtime, role: str, key: str) -> dict:

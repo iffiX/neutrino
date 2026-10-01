@@ -1,31 +1,39 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
 import { AuthorityInstall } from "./authority_install";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
-import { MovingOverlay } from "./panel_port_panel";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
-import type { PanelHttpsView } from "../api_types";
+import type { PanelHttpsResetView, PanelHttpsView } from "../api_types";
 
+import "./apply_bar.css";
 import "./https_panel.css";
 
 /**
- * Whether the panel speaks HTTPS, and the certificates behind it.
+ * Whether the HTTP port sends browsers to the HTTPS port, and the
+ * certificates behind it.
  *
- * Turning HTTPS on or off restarts the panel onto the other scheme, so it is
- * one press with no draft. The authority installs while HTTPS is off too, so
- * a browser trusts the panel before the first HTTPS page loads. The served
- * certificate follows the box's addresses by itself; regenerating replaces
- * the authority, which every browser then installs again.
+ * Both ports are always served, so turning HTTPS on or off is one press with
+ * no draft and no restart. A page on HTTP fetches the probe from the HTTPS
+ * port to learn whether this browser trusts the certificate, and offers
+ * Enable only once it does. Regenerating is an HTTP-only action, and the new
+ * authority downloads from the answer itself.
  */
 
-/** How long a scheme change waits before it goes to the new origin anyway. */
-const SCHEME_FOLLOW_MS = 8000;
 /** Where the authority downloads, with or without a session. */
 const AUTHORITY_DOWNLOAD_PATH = "/api/hub/setting/https/authority";
+/** What a page on HTTP fetches from the HTTPS port. */
+const PROBE_PATH = "/api/hub/setting/https/probe";
+/** How long a probe waits before the certificate counts as untrusted. */
+const PROBE_TIMEOUT_MS = 5000;
+const AUTHORITY_MEDIA_TYPE = "application/x-x509-ca-cert";
+const HTTPS_SCHEME_PORT = 443;
+
+type Trust = "checking" | "trusted" | "untrusted";
 
 export function HttpsPanel() {
   // Redrawn when the panel's language changes.
@@ -34,10 +42,42 @@ export function HttpsPanel() {
   const confirm = useConfirm();
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [destination, setDestination] = useState<string | null>(null);
+  const [trust, setTrust] = useState<Trust>("checking");
+  const [isAwaitingInstall, setIsAwaitingInstall] = useState(false);
+  const [isRegenerated, setIsRegenerated] = useState(false);
   const view = resource.data;
+  const isOnHttps = window.location.protocol === "https:";
+  const httpsPort = view?.https_listen_port ?? null;
+
+  const probe = useCallback(async () => {
+    if (httpsPort === null) {
+      return;
+    }
+    setTrust("checking");
+    setTrust(
+      (await isTrusted(httpsOrigin(httpsPort))) ? "trusted" : "untrusted",
+    );
+  }, [httpsPort]);
+
+  useEffect(() => {
+    if (!isOnHttps) {
+      void probe();
+    }
+  }, [isOnHttps, probe]);
+
+  useEffect(() => {
+    if (isOnHttps || !isAwaitingInstall) {
+      return;
+    }
+    const probeOnReturn = () => void probe();
+    window.addEventListener("focus", probeOnReturn);
+    return () => window.removeEventListener("focus", probeOnReturn);
+  }, [isOnHttps, isAwaitingInstall, probe]);
 
   const switchScheme = async (isOn: boolean) => {
+    if (view === null) {
+      return;
+    }
     setIsBusy(true);
     setError(null);
     try {
@@ -45,7 +85,13 @@ export function HttpsPanel() {
         isOn ? "/hub/setting/https/enable" : "/hub/setting/https/disable",
       );
       resource.setData(next);
-      setDestination(originOf(isOn));
+      if (isOn && !isOnHttps) {
+        window.location.replace(
+          `${httpsOrigin(next.https_listen_port)}${here()}`,
+        );
+      } else if (!isOn && isOnHttps) {
+        window.location.replace(`${httpOrigin(next.listen_port)}${here()}`);
+      }
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -57,9 +103,14 @@ export function HttpsPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      resource.setData(
-        await apiPost<PanelHttpsView>("/hub/setting/https/authority/reset"),
+      const next = await apiPost<PanelHttpsResetView>(
+        "/hub/setting/https/authority/reset",
       );
+      resource.setData(next);
+      downloadAuthority(next.authority_der, next.authority_file_name);
+      setIsRegenerated(true);
+      setIsAwaitingInstall(true);
+      setTrust("untrusted");
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -74,6 +125,8 @@ export function HttpsPanel() {
       confirmLabel: t("ui.settings.https_regenerate_confirm"),
       onConfirm: () => void regenerate(),
     });
+
+  const isTrustedHere = isOnHttps || (trust === "trusted" && !isRegenerated);
 
   return (
     <section className="card">
@@ -91,15 +144,15 @@ export function HttpsPanel() {
           onRetry={resource.reload}
         />
       ) : view === null ? (
-        <div className="skeleton" style={{ height: 220 }} />
+        <div className="skeleton" style={{ height: 320 }} />
       ) : (
         <div className="settings_form">
           <p className="muted">{t("ui.settings.https_hint")}</p>
 
           <dl className="https_status">
             <StatusLine
-              label={t("ui.settings.https_scheme")}
-              value={view.is_https_enabled ? "HTTPS" : "HTTP"}
+              label={t("ui.settings.https_addresses")}
+              value={<Addresses view={view} isOnHttps={isOnHttps} />}
             />
             <StatusLine
               label={t("ui.settings.https_fingerprint")}
@@ -139,50 +192,66 @@ export function HttpsPanel() {
             />
           </dl>
 
-          {error !== null && (
-            <div className="notice notice--error">
-              <Icon name="alert" size={15} />
-              <div className="notice_body">{error}</div>
-            </div>
-          )}
-
-          <div className="settings_actions">
-            <button
-              type="button"
-              className="button button--primary"
-              disabled={isBusy || destination !== null}
-              onClick={() => void switchScheme(!view.is_https_enabled)}
-            >
-              <Icon name="lock" size={14} />
-              {view.is_https_enabled
-                ? t("ui.settings.https_disable")
-                : t("ui.settings.https_enable")}
-            </button>
-            {view.has_authority && (
-              <button
-                type="button"
-                className="button button--danger"
-                disabled={isBusy || destination !== null}
-                onClick={askRegenerate}
-              >
-                <Icon name="refresh" size={14} />
-                {t("ui.settings.https_regenerate")}
-              </button>
-            )}
-          </div>
-
           {view.has_authority && (
-            <AuthorityInstall
-              href={AUTHORITY_DOWNLOAD_PATH}
-              fileName={view.authority_file_name}
-            />
+            <AuthorityInstall fileName={view.authority_file_name} />
           )}
+
+          <div className="apply_bar">
+            {error !== null && (
+              <div className="notice notice--error">
+                <Icon name="alert" size={15} />
+                <div className="notice_body">{error}</div>
+              </div>
+            )}
+            <div className="apply_bar_row">
+              <span className="field_hint">
+                {t(hintKey(view, isOnHttps, trust, isRegenerated))}
+              </span>
+              <div className="button_row">
+                <button
+                  type="button"
+                  className="button button--danger"
+                  disabled={isBusy || isOnHttps}
+                  onClick={askRegenerate}
+                >
+                  <Icon name="refresh" size={14} />
+                  {t("ui.settings.https_regenerate")}
+                </button>
+                {view.has_authority ? (
+                  <a
+                    className="button"
+                    href={AUTHORITY_DOWNLOAD_PATH}
+                    download={view.authority_file_name}
+                    onClick={() => setIsAwaitingInstall(true)}
+                  >
+                    <Icon name="download" size={14} />
+                    {t("ui.authority.install")}
+                  </a>
+                ) : (
+                  <button type="button" className="button" disabled>
+                    <Icon name="download" size={14} />
+                    {t("ui.authority.install")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="button button--primary"
+                  disabled={
+                    isBusy || (!view.is_https_enabled && !isTrustedHere)
+                  }
+                  onClick={() => void switchScheme(!view.is_https_enabled)}
+                >
+                  <Icon name="lock" size={14} />
+                  {view.is_https_enabled
+                    ? t("ui.settings.https_disable")
+                    : t("ui.settings.https_enable")}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {destination !== null && (
-        <MovingOverlay destination={destination} goAfterMs={SCHEME_FOLLOW_MS} />
-      )}
       {confirm.modal}
     </section>
   );
@@ -194,7 +263,7 @@ function StatusLine({
   isMono = false,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   isMono?: boolean;
 }) {
   return (
@@ -207,10 +276,107 @@ function StatusLine({
   );
 }
 
-/** This page's origin on the other scheme, same host and port. */
-function originOf(isHttps: boolean): string {
-  const { hostname, port } = window.location;
-  return `${isHttps ? "https" : "http"}://${hostname}${port ? `:${port}` : ""}`;
+/** Both of the panel's addresses on this host, the one in use marked. */
+function Addresses({
+  view,
+  isOnHttps,
+}: {
+  view: PanelHttpsView;
+  isOnHttps: boolean;
+}) {
+  const addresses = [
+    { origin: httpOrigin(view.listen_port), isCurrent: !isOnHttps },
+    { origin: httpsOrigin(view.https_listen_port), isCurrent: isOnHttps },
+  ];
+  return (
+    <div className="https_addresses">
+      {addresses.map((address) => (
+        <span key={address.origin} className="https_address">
+          <span className="https_status_value--mono">{address.origin}</span>
+          {address.isCurrent && (
+            <span className="badge badge--accent">
+              {t("ui.settings.https_current")}
+            </span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The line left of the buttons: what stands between this page and HTTPS. */
+function hintKey(
+  view: PanelHttpsView,
+  isOnHttps: boolean,
+  trust: Trust,
+  isRegenerated: boolean,
+): string {
+  if (isRegenerated) {
+    return "ui.settings.https_regenerated";
+  }
+  if (isOnHttps) {
+    return view.is_https_enabled
+      ? "ui.settings.https_turn_off_first"
+      : "ui.settings.https_open_over_http";
+  }
+  if (trust === "checking") {
+    return "ui.settings.https_checking";
+  }
+  return trust === "trusted"
+    ? "ui.settings.https_trusted"
+    : "ui.settings.https_untrusted";
+}
+
+/** Whether this browser completes a request to the HTTPS port. */
+async function isTrusted(origin: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  try {
+    // no-cors: the answer is unreadable across origins, and a completed
+    // request is the whole answer; a certificate the browser rejects fails it.
+    await fetch(`${origin}${PROBE_PATH}`, {
+      mode: "no-cors",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+/** Hand the browser the new authority from the answer that carried it. */
+function downloadAuthority(derBase64: string, fileName: string): void {
+  const bytes = Uint8Array.from(atob(derBase64), (character) =>
+    character.charCodeAt(0),
+  );
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: AUTHORITY_MEDIA_TYPE }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function httpOrigin(port: number): string {
+  return `http://${window.location.hostname}:${port}`;
+}
+
+function httpsOrigin(port: number): string {
+  const suffix = port === HTTPS_SCHEME_PORT ? "" : `:${port}`;
+  return `https://${window.location.hostname}${suffix}`;
+}
+
+/** This page's path, query and fragment, kept across a scheme change. */
+function here(): string {
+  const { pathname, search, hash } = window.location;
+  return `${pathname}${search}${hash}`;
 }
 
 /** A hex fingerprint as colon-separated uppercase pairs, as systems show it. */

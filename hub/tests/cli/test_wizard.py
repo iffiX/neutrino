@@ -655,3 +655,98 @@ def test_https_is_asked_after_the_passwords_and_defaults_to_no(
 
     assert moved == (wizard.WIZARD_NEXT if step == "next" else wizard.WIZARD_PREVIOUS)
     assert asked._is_https_enabled is expected
+
+
+def test_a_document_without_an_https_port_gets_443(monkeypatch):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    assert wizard.from_document(https_document()).https_listen_port == 443
+
+
+def test_a_document_names_the_https_port(monkeypatch):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    answers = wizard.from_document(
+        https_document(listen_port=80, https_listen_port=8444)
+    )
+
+    assert answers.listen_port == 80
+    assert answers.https_listen_port == 8444
+
+
+@pytest.mark.parametrize(
+    "ports, refusal",
+    [
+        ({"listen_port": 8080, "https_listen_port": 8080}, "must differ"),
+        ({"https_listen_port": 0}, "not a port number"),
+        ({"https_listen_port": "443"}, "not a port number"),
+    ],
+)
+def test_an_https_port_that_cannot_be_served_is_refused(monkeypatch, ports, refusal):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    with pytest.raises(WizardAborted, match=refusal):
+        wizard.from_document(https_document(**ports))
+
+
+def ports_screen(monkeypatch, typed: list) -> "wizard.SetupWizard":
+    """A server's ports screen, answered line by line."""
+    lines = iter(typed)
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    monkeypatch.setattr(wizard, "RouterLinkStatus", _AddressedLinks)
+    asked = wizard.SetupWizard(links=_AddressedLinks().all_links())
+    asked._mode = "server"
+    return asked
+
+
+def test_the_https_port_is_asked_after_the_panel_port(monkeypatch):
+    asked = ports_screen(monkeypatch, ["80", "8444"])
+
+    moved = asked._ask_ports()
+
+    assert moved == wizard.WIZARD_NEXT
+    assert asked._listen_port == 80
+    assert asked._https_listen_port == 8444
+
+
+def test_the_https_port_defaults_to_443(monkeypatch):
+    asked = ports_screen(monkeypatch, ["", ""])
+
+    asked._ask_ports()
+
+    assert asked._https_listen_port == 443
+
+
+def test_an_https_port_that_is_the_panel_port_is_asked_again(monkeypatch, capsys):
+    asked = ports_screen(monkeypatch, ["80", "80", "443"])
+
+    asked._ask_ports()
+
+    assert asked._https_listen_port == 443
+    assert "port of its own" in capsys.readouterr().out
+
+
+def test_b_at_the_https_port_steps_back(monkeypatch):
+    asked = ports_screen(monkeypatch, ["80", "b"])
+
+    assert asked._ask_ports() == wizard.WIZARD_PREVIOUS
+
+
+@pytest.mark.parametrize(
+    "is_https, https_port, address",
+    [
+        (False, 443, "http://192.168.8.1:80"),
+        (True, 443, "https://192.168.8.1"),
+        (True, 8444, "https://192.168.8.1:8444"),
+    ],
+)
+def test_the_review_names_the_address_a_browser_ends_up_on(
+    is_https, https_port, address
+):
+    asked = wizard.SetupWizard(links=[])
+    asked._address = "192.168.8.1"
+    asked._listen_port = 80
+    asked._https_listen_port = https_port
+    asked._is_https_enabled = is_https
+
+    assert asked._panel_address() == address

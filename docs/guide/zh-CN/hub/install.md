@@ -4,7 +4,7 @@ title: 安装 hub
 
 # 安装 hub
 
-hub 装在一台常开的 Linux 机器上：装一个包，运行一次 `sudo nhub setup`，回答六屏问题，然后登录面板。面板默认监听 `8080` 端口，向导里可以改。
+hub 装在一台常开的 Linux 机器上：装一个包，运行一次 `sudo nhub setup`，回答六屏问题，然后登录面板。面板的 HTTP 默认在 `8080` 端口，HTTPS 默认在 `443` 端口，向导里都可以改。
 
 ## 开始之前
 
@@ -69,7 +69,7 @@ ARM64 机器用 `neutrino-hub_0.5.0_arm64.deb` 或 `neutrino-hub-0.5.0-1.aarch64
 1. 输入两遍 **保险库主口令**（Vault master passphrase），至少 16 个字符，要有小写字母、大写字母、数字和符号。
 1. 可选：打开 **面板使用 HTTPS**（HTTPS for the panel）。
 
-主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。无论 HTTPS 开不开，hub 都生成面板证书；之后在[设置](./settings.md)页随时切换。
+主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。开了 HTTPS，HTTP 端口会把每个浏览器转到 HTTPS 端口。无论开不开，hub 都生成面板证书；之后在[设置](./settings.md#https)页随时切换。
 
 ### 形态
 
@@ -88,11 +88,11 @@ ARM64 机器用 `neutrino-hub_0.5.0_arm64.deb` 或 `neutrino-hub-0.5.0-1.aarch64
 
 ### 网口
 
-**用哪些网口？**（Which ports?）按所选形态列出要填的项。每种形态都有 **面板监听端口**（Panel answers on port）。
+**用哪些网口？**（Which ports?）按所选形态列出要填的项。每种形态都有 HTTP 用的 **面板监听端口**（Panel answers on port）和 **HTTPS 端口**（HTTPS port），两个端口不能相同。
 
 | 形态     | 要填的项                                                                                                                                                                   |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 服务器   | 只有面板端口；每个网口保留现有地址并照常应答                                                                                                                               |
+| 服务器   | 只有两个面板端口；每个网口保留现有地址并照常应答                                                                                                                           |
 | 旁路网关 | **接入该网络的网口**（Port on that network）、**这台机器的地址**（This box's address）、**前缀长度**（Prefix length）、**该网络自己的路由器**（That network's own router） |
 | 路由器   | **对外出网**（Out to the internet）、**对内接设备**（In to your devices）、**这台机器的地址**、**前缀长度**                                                                |
 | 单臂路由 | **单臂网口，出入合一**（The one port, out and in）、**设备所在的 VLAN 标签**（VLAN tag for your devices）、**这台机器的地址**、**前缀长度**                                |
@@ -111,7 +111,7 @@ ARM64 机器用 `neutrino-hub_0.5.0_arm64.deb` 或 `neutrino-hub-0.5.0-1.aarch64
 
 ### 就绪
 
-**就绪**（Ready）列出形态、语言、网口、面板端口、**HTTPS** 开关和代理。核对之后选择 **开始配置这台机器**。路由器和单臂路由会多一条警告，写着面板的新地址和日志文件 `/var/log/neutrino/setup.log`。网口切换时网络可能中断，刷新页面即可重新连上。
+**就绪**（Ready）列出形态、语言、网口、面板端口、HTTPS 端口、**HTTPS** 开关和代理。核对之后选择 **开始配置这台机器**。路由器和单臂路由会多一条警告，写着面板的新地址和日志文件 `/var/log/neutrino/setup.log`。网口切换时网络可能中断，刷新页面即可重新连上。
 
 ## 看着步骤跑完
 
@@ -122,15 +122,15 @@ ARM64 机器用 `neutrino-hub_0.5.0_arm64.deb` 或 `neutrino-hub-0.5.0-1.aarch64
 标题变成 **这台机器已是网关**（This box is a gateway）之后，下一步看 HTTPS 的回答：
 
 - HTTPS 关着：页面几秒后自动转到面板，选择 **打开面板**（Open the panel）可以立刻过去。
-- HTTPS 开着：页面出现 **在这台设备上安装证书**（Install the certificate on this device），带一个 **安装证书**（Install certificate）按钮，下面分别是 Windows、macOS、Linux、iPhone 和 iPad、Android 的步骤，当前设备的那一组已展开。装好证书颁发机构，核对它的指纹与 **SHA-256** 一行一致，再选择 **打开面板**。
+- HTTPS 开着：页面出现 **在这台设备上安装证书**（Install the certificate on this device），带一个 **安装证书**（Install certificate）按钮。按钮下面每个系统一个标签，当前设备的标签已选中，只显示它的步骤。装好证书颁发机构，核对它的指纹与 **SHA-256** 一行一致。然后重启浏览器，打开面板的 `https://` 地址。
 
-终端里打印面板地址；HTTPS 开着时，还打印证书颁发机构的下载地址和指纹。
+终端里打印面板地址；HTTPS 开着时，还打印证书颁发机构在 HTTP 端口上的下载地址和指纹。
 
 ## 登录
 
 ![登录页](/guide/zh/login.webp)
 
-1. 打开面板地址：`http://` 或 `https://`，加上这台机器的地址和面板端口。
+1. 打开面板地址。HTTPS 关着时，是 `http://` 加这台机器的地址和面板端口；开着时，是 `https://` 加这台机器的地址，HTTPS 端口不是 `443` 时再加上端口。
 1. 输入 **面板密码**，选择 **登录**（Sign in）。
 
 登录后进入[总览](./dashboard.md)页。密码连续输错后，登录页写着 **多次失败后已锁定。**（Locked after repeated failures.），在这台机器上运行 `sudo nhub unlock` 解锁。

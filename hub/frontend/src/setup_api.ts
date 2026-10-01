@@ -38,6 +38,7 @@ export interface SetupDefaults {
   socks_proxy_port: number;
   socks_direct_port: number;
   listen_port: number;
+  https_listen_port: number;
 }
 
 /** The facts the questions are asked against. */
@@ -113,7 +114,9 @@ export interface SetupAnswers {
   network: SetupNetworkAnswers;
   proxy?: SetupProxyAnswers;
   listen_port?: number;
-  /** Whether the panel speaks HTTPS; off when left out. */
+  /** The port the panel answers HTTPS on; 443 when left out. */
+  https_listen_port?: number;
+  /** Whether the HTTP port sends browsers to the HTTPS port; off when left out. */
   is_https_enabled?: boolean;
 }
 

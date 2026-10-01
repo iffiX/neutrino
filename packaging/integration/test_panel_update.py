@@ -112,12 +112,13 @@ def rolled_back(updated, package):
     import os
 
     staged = f"{UPDATE_DIR}/{os.path.basename(package)}"
-    _, _, port_text = (
-        machine_state.run([HUB_PYTHON, "-c", machine_state.PANEL_PORT_SCRIPT])
+    port_text, _, https_port_text = (
+        machine_state.run([HUB_PYTHON, "-c", machine_state.PANEL_PORTS_SCRIPT])
         .strip()
         .partition(" ")
     )
     port = int(port_text)
+    https_port = int(https_port_text)
     snippet = f"""
 from pathlib import Path
 from neutrino_hub import HUB_VERSION
@@ -129,6 +130,7 @@ installer = HubUpdateInstaller(checker=HubReleaseChecker(), state=HubUpdateState
 plan = HubUpdatePlan(
     from_version=HUB_VERSION, to_version="9.9.9", package=Path({staged!r}),
     rollback=Path({staged!r}), family=distribution_family(), port={port},
+    https_port={https_port},
     units=("neutrino_hub_web",), started_at="2026-01-01T00:00:00Z",
 )
 installer.launch(plan)

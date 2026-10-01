@@ -2,8 +2,9 @@
 
 What these pin: the view reads the instances, each with its login and what
 the machine reports of it, and the accounts; a set is checked on the agent
-with the accounts and ports alone, stores each instance beside its login and
-a token sealed once per account and kept across sets, and pushes; two
+as the agent will receive it, each token opened and on Windows each login's
+password, stores each instance beside its login and a token sealed once per
+account and kept across sets, and pushes; two
 instances sharing an account or a port, a login the vault does not hold, and
 a Windows instance with no login are each refused by code before the agent
 is asked; the state the agent is sent holds each instance's opened token,
@@ -108,7 +109,16 @@ def test_a_set_is_checked_stored_with_a_token_per_account_kept_and_pushed(
     assert runtime.agent_sessions.validations[0] == (
         DEVICE,
         "vscode",
-        {"instances": [{"account": "alice", "port": 8000}]},
+        {
+            "address": runtime.device_address[DEVICE],
+            "instances": [
+                {
+                    "account": "alice",
+                    "port": 8000,
+                    "token": store.vscode_token(DEVICE, "alice"),
+                }
+            ],
+        },
     )
     assert stored(tmp_path)[0]["token_sealed"] == seal
     assert stored(tmp_path)[1]["token_sealed"] != seal
@@ -170,6 +180,27 @@ def test_a_windows_instance_needs_a_stored_login(api):
         "params": {"field": "login_id"},
     }
     assert taken.status_code == 200
+
+
+@pytest.mark.parametrize("platform, has_password", [(WINDOWS, True), (LINUX, False)])
+def test_the_agent_checks_the_token_and_on_windows_the_password(
+    api, platform, has_password
+):
+    client, runtime = api
+    runtime.device_platform[DEVICE] = platform
+    instance = {"account": "hanha", "port": 8000, "login_id": login("hanha")}
+
+    answer = client.post(
+        f"{BASE}/set", json={"device_id": DEVICE, "instances": [instance]}
+    )
+
+    assert answer.status_code == 200
+    (checked,) = runtime.agent_sessions.validations[0][2]["instances"]
+    assert checked["token"] == DesiredStateStore().vscode_token(DEVICE, "hanha")
+    assert ("password" in checked) is has_password
+    if has_password:
+        assert checked["password"] == "pw-hanha"
+    assert "token_sealed" not in checked and "login_id" not in checked
 
 
 @pytest.mark.parametrize("platform, has_password", [(WINDOWS, True), (LINUX, False)])

@@ -7,12 +7,14 @@ route cannot answer with a 401 the way an HTTP route does.
 A terminal reaches a device through its agent: the browser's socket and the
 agent's shell stream are bridged here, frame for frame. The browser sends
 ``{"type": "input", "data"}``, ``{"type": "resize", "cols", "rows"}`` and
-``{"type": "persist", "is_persistent"}``; it receives
-``{"type": "output", "data"}`` and, once the shell is gone,
-``{"type": "exit", "code"}``. A shell's first size and its session id ride
-its open; a later size is a ``command {agent, resize, shell, cols, rows}``
-stream and a persist a ``command {agent, persist, session_id,
-is_persistent}``, each closed by the agent as soon as it is applied.
+``{"type": "persist", "is_persistent", "is_shared"}``; it receives
+``{"type": "output", "data"}``, ``{"type": "refused", "code", "params"}``
+for a persist on a session the panel does not own, and, once the shell is
+gone, ``{"type": "exit", "code"}``. A shell's first size, its session id and
+the ``owner: hub`` stamp ride its open; a later size is a ``command {agent,
+resize, shell, cols, rows}`` stream and a persist a ``command {agent,
+persist, session_id, is_persistent, is_shared}``, each closed by the agent
+as soon as it is applied.
 """
 
 import asyncio
@@ -24,7 +26,9 @@ from starlette.websockets import WebSocketState
 
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_CODE_SESSION_NOT_OWNED,
     CHANNEL_SHELL_CONTAINER_MODULE,
+    CHANNEL_SHELL_OWNER_HUB,
     CHANNEL_STREAM_SHELL,
 )
 from neutrino_hub.web.constants import (
@@ -37,6 +41,8 @@ from neutrino_hub.web.events import event_frame
 from neutrino_hub.web.shell_bridge import (
     DEFAULT_COLUMNS,
     DEFAULT_ROWS,
+    is_persist_refused,
+    persist_flags,
     persist_session,
     resize_shell,
     settle_shell,
@@ -152,8 +158,11 @@ async def terminal_socket(
     container: str = "",
     session_id: str = "",
     is_resumed: bool = False,
+    is_shared: bool = False,
 ) -> None:
     """Bridge a browser terminal to a shell on a device, over its agent.
+
+    A shell with a session id is opened as the panel's own, ``owner: hub``.
 
     Args:
         websocket: The client socket.
@@ -165,10 +174,13 @@ async def terminal_socket(
         is_resumed: Whether the page attaches to a session the machine
             listed, from the query; the agent refuses one it does not hold
             and sends the kept output first.
+        is_shared: Whether a new session starts shared, from the query.
     """
     args = {"cols": DEFAULT_COLUMNS, "rows": DEFAULT_ROWS}
     if session_id:
         args["session_id"] = session_id
+        args["owner"] = CHANNEL_SHELL_OWNER_HUB
+        args["is_shared"] = is_shared
         if is_resumed:
             args["is_resumed"] = True
     if container:
@@ -300,11 +312,19 @@ async def _read_input(
                     int(message.get("rows", DEFAULT_ROWS)),
                 )
             elif kind == "persist" and session_id:
+                if is_persist_refused(
+                    sessions, device_id, session_id, CHANNEL_SHELL_OWNER_HUB
+                ):
+                    await websocket.send_json(
+                        {
+                            "type": "refused",
+                            "code": CHANNEL_CODE_SESSION_NOT_OWNED,
+                            "params": {"session_id": session_id},
+                        }
+                    )
+                    continue
                 await persist_session(
-                    sessions,
-                    device_id,
-                    session_id,
-                    bool(message.get("is_persistent", False)),
+                    sessions, device_id, session_id, persist_flags(message)
                 )
     except (WebSocketDisconnect, RuntimeError, ValueError, KeyError):
         return

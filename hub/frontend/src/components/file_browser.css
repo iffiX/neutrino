@@ -177,6 +177,33 @@
   font-size: 11px;
 }
 
+/* Picking a directory: files are listed but greyed, and the foot carries the
+   directory open and the two buttons. */
+.file_browser_row--muted {
+  opacity: 0.45;
+}
+
+.file_browser_pick_foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.file_browser_pick_path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* At phone width a row takes two lines: the icon and the name, then the size
    and the time, with the ⋯ menu beside both. */
 @media (max-width: 720px) {

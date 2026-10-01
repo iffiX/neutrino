@@ -1,10 +1,11 @@
 """The Terminals page's shell sessions, beside its socket.
 
 A shell opened on ``/ws/agent/terminal`` is a session its page names by a
-generated id. Every online machine's agent reports the sessions it holds in
-its ``machine`` section; this lists them, and ends one with the agent's
-``stop_session`` verb. A session is kept past its socket by a ``persist``
-message on that socket.
+generated id, stamped ``owner: hub``. Every online machine's agent reports
+the sessions it holds in its ``machine`` section; this lists every one of
+them, each saying whether the panel owns it, and ends one with the agent's
+``stop_session`` verb, whoever owns it. A session is kept past its socket or
+shared by a ``persist`` message on that socket.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +14,7 @@ from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_SESSION_UNKNOWN,
     CHANNEL_COMMAND_MODULE_AGENT,
+    CHANNEL_SHELL_OWNER_HUB,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_VERB_STOP_SESSION,
 )
@@ -28,7 +30,7 @@ from neutrino_hub.web.models import (
     TerminalSessionView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-from neutrino_hub.web.shell_bridge import reported_sessions
+from neutrino_hub.web.shell_bridge import reported_sessions, viewer_rows
 
 router = APIRouter(
     prefix="/api/agent/terminal",
@@ -50,22 +52,15 @@ def list_sessions(
         runtime: The shared runtime, for the agents' latest reports.
 
     Returns:
-        The sessions, each with the machine holding it.
+        The sessions, each with the machine holding it and whether the
+        panel opened it.
     """
-    registry = DeviceRegistry()
-    names: dict = {}
-    sessions = []
-    for entry in reported_sessions(runtime.agent_sessions):
-        device_id = entry["device_id"]
-        if device_id not in names:
-            device = registry.get(device_id)
-            names[device_id] = (
-                (device.name if device is not None else "")
-                or runtime.device_hostname.get(device_id, "")
-                or device_id
-            )
-        sessions.append(TerminalSessionView(device_name=names[device_id], **entry))
-    return TerminalSessionListView(sessions=sessions)
+    rows = viewer_rows(
+        runtime, CHANNEL_SHELL_OWNER_HUB, reported_sessions(runtime.agent_sessions)
+    )
+    return TerminalSessionListView(
+        sessions=[TerminalSessionView(**row) for row in rows]
+    )
 
 
 @router.post("/session/stop", response_model=TerminalSessionListView)

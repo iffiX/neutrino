@@ -214,6 +214,10 @@
   font-size: 11px;
 }
 
+.usage_device--none {
+  color: var(--color-text-faint);
+}
+
 .usage_split {
   display: flex;
   gap: 4px;
@@ -314,6 +318,10 @@
 
 .usage_table_control .select {
   width: auto;
+}
+
+.usage_table_sort {
+  min-width: 150px;
 }
 
 .usage_table_pager {

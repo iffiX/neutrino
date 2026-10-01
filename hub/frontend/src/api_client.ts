@@ -156,8 +156,19 @@ export function websocketUrl(path: string): string {
 /** Human-readable message for anything thrown by the API layer. */
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === "") {
+      return error.message;
+    }
     const key = "code." + error.code;
-    return error.code && hasWord(key) ? t(key, error.params) : error.message;
+    if (hasWord(key)) {
+      return t(key, error.params);
+    }
+    const params = Object.entries(error.params)
+      .map(([name, value]) => `${name}=${value}`)
+      .join(", ");
+    return params === ""
+      ? t("ui.api.refused_bare", { code: error.code })
+      : t("ui.api.refused", { code: error.code, params });
   }
   if (error instanceof Error) {
     return error.message;

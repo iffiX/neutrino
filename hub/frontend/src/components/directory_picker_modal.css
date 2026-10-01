@@ -1,0 +1,57 @@
+/* The directory picker: the confirm modal's frame, wide and tall enough for
+   a listing, with the file browser filling it. */
+
+.directory_picker_backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  overflow-y: auto;
+  padding: var(--space-5);
+  background: var(--color-overlay);
+  backdrop-filter: blur(4px);
+  animation: fade_in_up 160ms ease both;
+}
+
+.directory_picker_modal {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  height: min(620px, calc(100vh - 2 * var(--space-5)));
+  height: min(620px, calc(100dvh - 2 * var(--space-5)));
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent),
+    0 30px 80px -30px var(--color-shadow);
+}
+
+.directory_picker_head {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.directory_picker_head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+/* The browser's own frame would sit inside this one, so it gives it up. */
+.directory_picker_modal .file_browser {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.directory_picker_modal .file_browser_list {
+  flex: 1;
+  max-height: none;
+}

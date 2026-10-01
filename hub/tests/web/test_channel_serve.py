@@ -4,10 +4,12 @@ The test plays the peer over a socket past its hello. What these pin is
 the frame sequence both packages must match: a report recorded by id with
 its link address, the state pushed on the first report whose hash differs
 and never again while the hub's copy stands, a peer-opened ``package``
-stream served under credit with the sha256 in its close, a ``log`` stream
+stream served under credit with the sha256 in its close and its download
+and sending written into the module's task, a ``log`` stream
 becoming the task the panel follows, ending with the module's state and
 the failure's code, a ``service`` stream closed with the entry's material,
-an unknown kind closed ``kind_unknown``, and a socket ending taking the
+an unknown kind closed ``kind_unknown``, a client's ``is_refresh`` report
+answered with its whole state whatever the hash, and a socket ending taking the
 binding offline.
 """
 
@@ -117,10 +119,12 @@ class StubModules:
         self.path = path
         self.asked: list = []
 
-    def artifact(self, *, name, manifest, platform):
+    def artifact(self, *, name, manifest, platform, on_progress=None):
         from types import SimpleNamespace
 
         self.asked.append((name, dict(platform)))
+        if on_progress is not None:
+            on_progress(f"hub: downloading {name}, 1.0 / 1.0 MB")
         return SimpleNamespace(path=self.path)
 
 
@@ -388,6 +392,8 @@ def test_a_report_whose_sessions_moved_hands_every_client_its_state(api, monkeyp
         )
 
         assert pushed == ["client"]
+        # The first report, then the sessions moving, which the panel reads too.
+        assert runtime.events.published.count(("device_report", device_id)) == 2
     finally:
         socket.__exit__(None, None, None)
 
@@ -729,6 +735,41 @@ def test_a_package_stream_naming_a_module_is_served_from_the_module_cache(api):
         socket.__exit__(None, None, None)
 
 
+def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+        socket.send_json(
+            {"type": "open", "stream": 1, "kind": "log", "module": "samba"}
+        )
+        socket.receive_json()
+        label = channel_serve.module_task_label(device_id, "samba")
+        assert wait_until(lambda: runtime.tasks.running(label) is not None)
+        expected = runtime.package_path.read_bytes()
+
+        socket.send_json(
+            {"type": "open", "stream": 3, "kind": "package", "module": "samba"}
+        )
+        socket.receive_json()
+        socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
+        received = b""
+        while len(received) < len(expected):
+            received += socket.receive_bytes()[4:]
+        socket.receive_json()
+
+        task = runtime.tasks.running(label)
+        assert wait_until(lambda: len(task.buffer) == 2)
+        assert task.buffer == [
+            "hub: downloading samba, 1.0 / 1.0 MB\n",
+            "hub: sending 0.1 MB to box\n",
+        ]
+    finally:
+        socket.__exit__(None, None, None)
+
+
 def test_a_package_the_hub_cannot_produce_is_closed_with_the_typed_reason(api):
     client, runtime = api
     device_id, token = bound_device()
@@ -924,6 +965,25 @@ def test_a_later_client_report_whose_hash_differs_is_answered_with_the_state(api
         session = runtime.client_sessions.get(client_id)
         assert session.offered_hash == again["hash"]
         socket.send_json(client_report(again["hash"]))
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        assert socket.receive_json()["code"] == "kind_unknown"
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_refresh_report_is_answered_with_the_whole_state_whatever_its_hash(api):
+    client, runtime = api
+    client_id, token = bound_client()
+    socket = welcomed(client, client_id, token, role="client")
+    try:
+        socket.send_json(client_report())
+        first = socket.receive_json()
+
+        socket.send_json({**client_report(first["hash"]), "is_refresh": True})
+
+        again = socket.receive_json()
+        assert again == first
+        socket.send_json(client_report(first["hash"]))
         socket.send_json({"type": "open", "stream": 1, "kind": "package"})
         assert socket.receive_json()["code"] == "kind_unknown"
     finally:

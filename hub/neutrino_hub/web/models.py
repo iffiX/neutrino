@@ -6,7 +6,12 @@ so a rename here is a rename there.
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE, WEB_DEFAULT_THEME
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
+    WEB_DEFAULT_LANGUAGE,
+    WEB_DEFAULT_LISTEN_PORT,
+    WEB_DEFAULT_THEME,
+)
 
 
 class LoginRequest(BaseModel):
@@ -1306,12 +1311,14 @@ class PasswordChangeResult(BaseModel):
 class PanelSettings(BaseModel):
     """The panel's own settings.
 
-    Three fields, and they are the ones nowhere else can hold: every other
-    service settles its port in its own tab, and the language and the theme
-    belong to the whole panel rather than to any one page.
+    The fields nowhere else can hold: every other service settles its port in
+    its own tab, and the language and the theme belong to the whole panel
+    rather than to any one page.
 
     Attributes:
-        listen_port: The TCP port the panel answers on.
+        listen_port: The TCP port the panel answers HTTP on.
+        https_listen_port: The TCP port the panel answers HTTPS on. A write
+            that leaves it out leaves it as it is.
         language: The language the panel is drawn in. A write that leaves it
             out leaves it as it is.
         theme: The palette the panel is drawn in. A write that leaves it out
@@ -1321,17 +1328,20 @@ class PanelSettings(BaseModel):
     """
 
     listen_port: int
+    https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
     theme: str = WEB_DEFAULT_THEME
     hub_name: str = ""
 
 
 class PanelHttpsView(BaseModel):
-    """The panel's scheme and the certificates behind it.
+    """The panel's scheme, its two ports and the certificates behind it.
 
     Attributes:
-        is_https_enabled: Whether ``web/settings.json`` says the panel speaks
-            HTTPS.
+        is_https_enabled: Whether the HTTP port sends every browser to the
+            HTTPS port, as ``web/settings.json`` says.
+        listen_port: The TCP port the panel answers HTTP on.
+        https_listen_port: The TCP port the panel answers HTTPS on.
         has_authority: Whether the hub has made its certificate authority.
         authority_fingerprint: The SHA-256 of the authority's DER encoding,
             64 lowercase hex characters; empty without an authority.
@@ -1345,6 +1355,8 @@ class PanelHttpsView(BaseModel):
     """
 
     is_https_enabled: bool
+    listen_port: int = WEB_DEFAULT_LISTEN_PORT
+    https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
     has_authority: bool
     authority_fingerprint: str = ""
     authority_created_at: str | None = None
@@ -1353,6 +1365,17 @@ class PanelHttpsView(BaseModel):
     leaf_issued_at: str | None = None
     leaf_expires_at: str | None = None
     renewed_at: str | None = None
+
+
+class PanelHttpsResetView(PanelHttpsView):
+    """The certificates after the authority was made again.
+
+    Attributes:
+        authority_der: The new authority's DER encoding in base64, for the
+            page to download at once.
+    """
+
+    authority_der: str
 
 
 class PanelDisplay(BaseModel):
@@ -1665,8 +1688,23 @@ class ChannelShellSession(BaseModel):
     # When it was opened, in Unix seconds; the order sessions are listed in.
     started_at: int = 0
     title: str = ""
+    # Who opened it, as the hub stamped the open: ``hub`` or ``client:<id>``.
+    owner: str = ""
     is_attached: bool = False
     is_persistent: bool = False
+    # Whether every viewer with terminal rights on the machine sees it.
+    is_shared: bool = False
+    # How many streams are attached now.
+    attached_count: int = 0
+
+
+class ChannelTerminalSession(ChannelShellSession):
+    """One shell session as a client is shown it in a ``terminals`` entry."""
+
+    device_id: str
+    device_name: str = ""
+    # Whether this client is its owner.
+    is_owned: bool = False
 
 
 class ChannelMachine(BaseModel):
@@ -1782,8 +1820,9 @@ class ChannelTerminal(BaseModel):
     device_id: str
     name: str
     is_online: bool = False
-    # The shell sessions it holds, oldest first; empty while it is offline.
-    sessions: list[ChannelShellSession] = Field(default_factory=list)
+    # The sessions this client sees on it: its own and the shared ones,
+    # oldest first; empty while it is offline.
+    sessions: list[ChannelTerminalSession] = Field(default_factory=list)
 
 
 class ChannelClientState(BaseModel):
@@ -1811,6 +1850,9 @@ class ChannelClientReport(BaseModel):
 
     state_hash: str = ""
     machine: ChannelClientMachine = Field(default_factory=ChannelClientMachine)
+    # A refresh the person asked for: the hub answers with its whole state,
+    # whatever the hash.
+    is_refresh: bool = False
 
 
 class TerminalSessionView(BaseModel):
@@ -1822,8 +1864,14 @@ class TerminalSessionView(BaseModel):
     account: str = ""
     started_at: int = 0
     title: str = ""
+    # Who opened it: ``hub`` for this panel, ``client:<id>`` for a client.
+    owner: str = ""
+    # Whether this panel opened it; only the owner sets its two flags.
+    is_owned: bool = False
     is_attached: bool = False
     is_persistent: bool = False
+    is_shared: bool = False
+    attached_count: int = 0
 
 
 class TerminalSessionListView(BaseModel):

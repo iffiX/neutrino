@@ -221,10 +221,11 @@ def test_the_panel_settings_carry_the_scheme_asked_for(tmp_path, monkeypatch, is
     monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
     write_config("web/settings.json", {"listen_port": 8080, "is_https_enabled": True})
 
-    setup._write_panel_settings(8090, "zh-CN", is_https)
+    setup._write_panel_settings(8090, 8453, "zh-CN", is_https)
 
     settings = read_config("web/settings.json")
     assert settings["listen_port"] == 8090
+    assert settings["https_listen_port"] == 8453
     assert settings["language"] == "zh-CN"
     assert settings["is_https_enabled"] is is_https
 
@@ -245,7 +246,8 @@ def test_an_https_run_hands_over_the_authority_to_install(monkeypatch, tmp_path)
     finished: list = []
     der = b"a certificate"
     monkeypatch.setattr(setup, "store_password", lambda password: None)
-    monkeypatch.setattr(setup, "_panel_url", lambda: "https://192.168.8.1:8080")
+    monkeypatch.setattr(setup, "_panel_url", lambda: "https://192.168.8.1")
+    monkeypatch.setattr(setup, "_panel_http_url", lambda: "http://192.168.8.1:8080")
     monkeypatch.setattr(setup, "_start_panel", lambda: None)
     monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
     monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
@@ -260,7 +262,7 @@ def test_an_https_run_hands_over_the_authority_to_install(monkeypatch, tmp_path)
     setup._setup(_SilentReporter(), [], answers)
 
     assert finished[0]["authority"] == {
-        "url": "https://192.168.8.1:8080/api/hub/setting/https/authority",
+        "url": "http://192.168.8.1:8080/api/hub/setting/https/authority",
         "file_name": "neutrino-argon-ca.crt",
         "fingerprint": hashlib.sha256(der).hexdigest(),
         "der": base64.b64encode(der).decode("ascii"),

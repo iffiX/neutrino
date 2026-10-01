@@ -2,12 +2,15 @@ import "./range_switch.css";
 
 /**
  * A row of pill buttons choosing one value out of a fixed few: the window a
- * chart draws, or the share of traffic it shows. One is always on.
+ * chart draws, the share of traffic it shows, or the system a help text is
+ * for. One is always on.
  */
 
 export interface RangeOption<T extends string> {
   value: T;
   label: string;
+  /** One word drawn as a badge inside the pill, where one is due. */
+  badge?: string;
 }
 
 interface RangeSwitchProps<T extends string> {
@@ -33,6 +36,11 @@ export function RangeSwitch<T extends string>({
           onClick={() => onChange(option.value)}
         >
           {option.label}
+          {option.badge !== undefined && (
+            <span className="badge badge--accent range_switch_badge">
+              {option.badge}
+            </span>
+          )}
         </button>
       ))}
     </div>

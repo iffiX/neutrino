@@ -68,9 +68,9 @@ panel_connect() {
     PANEL_CURL=(curl -s -f)
     if ssh_hub "sudo grep -Eq '\"is_https_enabled\": *true' /etc/neutrino/hub/web/settings.json"; then
         ssh_hub "sudo cat /etc/neutrino/hub/web/panel_tls/authority.pem" > "$STATE/panel_authority.pem"
-        PANEL_BASE="https://hub.neutrino.internal:$PANEL_PORT"
+        PANEL_BASE="https://hub.neutrino.internal:$PANEL_HTTPS_PORT"
         PANEL_CURL+=(--cacert "$STATE/panel_authority.pem"
-            --connect-to "hub.neutrino.internal:$PANEL_PORT:$(hub_ip):$PANEL_PORT")
+            --connect-to "hub.neutrino.internal:$PANEL_HTTPS_PORT:$(hub_ip):$PANEL_HTTPS_PORT")
     else
         PANEL_BASE="http://$(hub_ip):$PANEL_PORT"
     fi
@@ -195,6 +195,8 @@ wait_ssh() {
     return 1
 }
 
-# The panel's own port and the agent channel's, as the hub installs them.
+# The panel's HTTP and HTTPS ports and the agent channel's, as the hub installs
+# them.
 PANEL_PORT=8080
+PANEL_HTTPS_PORT=443
 AGENT_PORT=8443

@@ -75,16 +75,14 @@ from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
     WEB_PANEL_TLS_SERVED_CERT_PATH,
     WEB_PANEL_TLS_SERVED_KEY_PATH,
+    WEB_SETTING_HTTPS_PORT,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
-from neutrino_hub.web.panel_tls import (
-    ensure_served,
-    is_https_enabled,
-    watch_served_context,
-)
+from neutrino_hub.web.panel_tls import ensure_served, watch_served_context
 from neutrino_hub.utils.json_file import read_config
 
 # --- config ---
@@ -341,11 +339,12 @@ def _first_binary(candidates: tuple, name: str):
 def _serve_panel(arguments) -> int:
     """Run the control panel and the agent channel, and nothing else.
 
-    Two servers, one loop: the panel, over HTTPS with its own certificate
-    when ``web/settings.json`` says so, and the agent routes on their own TLS
-    port, only when the vault's data key can unseal the channel's private
-    key. ``--reload`` serves the panel alone, because uvicorn's reloader
-    supervises a single server.
+    Three servers, one loop: the panel over HTTP on its port and over HTTPS
+    on its HTTPS port with its own certificate, whatever ``is_https_enabled``
+    says, and the agent routes on their own TLS port, only when the vault's
+    data key can unseal the channel's private key. ``--reload`` serves the
+    panel alone over HTTP, because uvicorn's reloader supervises a single
+    server.
 
     Args:
         arguments: The parsed command line.
@@ -368,7 +367,7 @@ def _serve_panel(arguments) -> int:
         )
     panel_tls = _panel_certificate()
     if arguments.reload:
-        print("  --reload serves the panel only; the agent port is not served")
+        print("  --reload serves the panel over HTTP only; no other port is served")
         uvicorn.run(
             APPLICATION_PATH,
             factory=True,
@@ -377,26 +376,22 @@ def _serve_panel(arguments) -> int:
             reload=True,
             log_level="info",
             access_log=False,
-            **panel_tls,
         )
         return 0
-    panel_config = uvicorn.Config(
-        APPLICATION_PATH,
-        factory=True,
-        host=arguments.host,
-        port=port,
-        log_level="info",
-        access_log=False,
-        # A browser's open websockets otherwise hold a graceful shutdown
-        # until systemd's own timeout; a stop is allowed seconds, not it.
-        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
-        **panel_tls,
-    )
-    if panel_tls:
+    servers = [uvicorn.Server(_panel_config(arguments.host, port))]
+    https_port = _configured_https_port()
+    if panel_tls and https_port == port:
+        print(
+            f'error: {{"code": "port_already_in_use", "params": {{"value": {port}}}}}: '
+            "the HTTPS port is the HTTP port; the HTTPS port is not served",
+            file=sys.stderr,
+        )
+    elif panel_tls:
+        https_config = _panel_config(arguments.host, https_port, **panel_tls)
         # Loaded here so the context a renewal reloads is the one serving.
-        panel_config.load()
-        watch_served_context(panel_config.ssl)
-    servers = [uvicorn.Server(panel_config)]
+        https_config.load()
+        watch_served_context(https_config.ssl)
+        servers.append(uvicorn.Server(https_config))
     agent_key_path = _agent_key()
     if agent_key_path is not None:
         servers.append(
@@ -420,13 +415,39 @@ def _serve_panel(arguments) -> int:
     return 0
 
 
-def _panel_certificate() -> dict:
-    """Make the panel's pair true, and the TLS arguments it is served with.
+def _panel_config(host: str, port: int, **tls) -> uvicorn.Config:
+    """One listener of the panel application.
+
+    Args:
+        host: The address to bind.
+        port: The port to bind.
+        **tls: uvicorn's ``ssl_certfile`` and ``ssl_keyfile`` for the HTTPS
+            port; none for the HTTP port.
 
     Returns:
-        uvicorn's ``ssl_certfile`` and ``ssl_keyfile`` when HTTPS is on and
-        a certificate is there to serve; empty otherwise, and the panel
-        answers over HTTP with the reason as one coded line in the log.
+        The server's configuration.
+    """
+    return uvicorn.Config(
+        APPLICATION_PATH,
+        factory=True,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=False,
+        # A browser's open websockets otherwise hold a graceful shutdown
+        # until systemd's own timeout; a stop is allowed seconds, not it.
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
+        **tls,
+    )
+
+
+def _panel_certificate() -> dict:
+    """Make the panel's pair true, and the TLS arguments the HTTPS port uses.
+
+    Returns:
+        uvicorn's ``ssl_certfile`` and ``ssl_keyfile`` when a certificate is
+        there to serve; empty otherwise, and the HTTPS port is not served,
+        with the reason as one coded line in the log.
     """
     try:
         ensure_served()
@@ -437,12 +458,10 @@ def _panel_certificate() -> dict:
             f"({error})",
             file=sys.stderr,
         )
-    if not is_https_enabled():
-        return {}
     if not WEB_PANEL_TLS_SERVED_KEY_PATH.is_file():
         print(
-            'error: {"code": "panel_tls_unavailable"}: HTTPS is on and there is '
-            "no certificate to serve; serving the panel over HTTP",
+            'error: {"code": "panel_tls_unavailable"}: there is no certificate '
+            "to serve; the panel answers over HTTP alone",
             file=sys.stderr,
         )
         return {}
@@ -745,6 +764,18 @@ def _configured_port() -> int:
         )
     except (FileNotFoundError, ValueError):
         return WEB_DEFAULT_LISTEN_PORT
+
+
+def _configured_https_port() -> int:
+    """The port the panel serves HTTPS on, from the settings or the default."""
+    try:
+        return int(
+            read_config(PANEL_SETTINGS_FILE).get(
+                WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT
+            )
+        )
+    except (FileNotFoundError, ValueError):
+        return WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 
 def _configured_agent_port() -> int:
