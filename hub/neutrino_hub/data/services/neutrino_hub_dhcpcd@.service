@@ -13,6 +13,10 @@ Environment=PYTHONPATH=@REPO_ROOT@
 ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-dhcpcd --interface %i
 Restart=on-failure
 RestartSec=5
+# The address stays on the interface (`persistent`), so a client that does not
+# leave on SIGTERM is killed after five seconds instead of holding a mode
+# change for systemd's ninety.
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target

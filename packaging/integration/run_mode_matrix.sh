@@ -63,7 +63,7 @@ if [ "${2:-}" = "--client" ]; then
 fi
 
 phase "the matrix: every mode, every switch, the proxy in each"
-python3 -m pytest "$HERE/test_mode_matrix.py" -q
+python3 -m pytest "$HERE/test_mode_matrix.py" -q --durations=10
 ran $?
 
 phase "reset"
