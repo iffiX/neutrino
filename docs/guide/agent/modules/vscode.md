@@ -3,3 +3,51 @@ title: VS Code
 ---
 
 # VS Code
+
+The **VS Code** module runs VS Code in the browser on a managed machine, one instance per account. A desktop client opens each instance through a port forwarded to its own `127.0.0.1`. The agent runs Microsoft's standalone VS Code CLI, which the hub fetches at one pinned build.
+
+| System  | Machines that run it                      |
+| ------- | ----------------------------------------- |
+| Linux   | amd64 and arm64, with glibc 2.28 or newer |
+| Windows | amd64                                     |
+| macOS   | Apple silicon                             |
+
+## Turn it on
+
+1. On the **VS Code** tab of the [Modules](../modules.md) page, select **Install**.
+1. Select **Configure**. The **Instances** section opens under the tab.
+
+VS Code runs Microsoft's own build under Microsoft's license terms, and turning the module on accepts them. **Read the terms** above the section opens them at `https://code.visualstudio.com/license`.
+
+![The VS Code tab with one instance and its account](/guide/en/vscode_panel.webp)
+
+## Add an instance
+
+1. Under **Instances**, select **Add instance**.
+1. Fill **Account** with the name of an account on the machine.
+1. Optional: change the **Port**. A new instance gets the port after the highest one in use, starting at 8000.
+1. On a Windows machine, pick the account's login under **Windows login for** the account.
+1. Select **Apply VS Code**. The machine saves the instances and restarts them.
+
+Each instance runs as its account, so files it creates belong to that account. Its row reads **running** or **not running**, and a reason appears under the row when the machine reports one.
+
+## Windows logins
+
+Windows starts an instance as its account only with that account's password. Store the account's username and password under **Logins** on the [Credentials](../../hub/credentials.md) page, then pick that login on the instance.
+
+When the account's password changes on Windows, the agent reports `credential_invalid` for the instance, and its row says Windows no longer accepts the login. Update the login on the **Credentials** page, or pick another one, and select **Apply VS Code** again.
+
+## Refusals on apply
+
+| Code                 | Cause                                                      |
+| -------------------- | ---------------------------------------------------------- |
+| `account_unknown`    | the machine has no account by that name                    |
+| `account_duplicate`  | two instances name the same account                        |
+| `port_duplicate`     | two instances use the same port                            |
+| `port_invalid`       | the port is outside 1024 to 65535                          |
+| `credential_missing` | a Windows instance has no login picked                     |
+| `token_missing`      | the vault is locked, so the instance's token is unreadable |
+
+## Open it from a client
+
+Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled with **VS Code** and the account. The row is for reference; only a desktop client opens the instance. The client's **Web** panel shows **Open locally**, which forwards the instance's port to `127.0.0.1` and opens it in the browser with the instance's token. The Android app lists the entry greyed out with a desktop-only badge.

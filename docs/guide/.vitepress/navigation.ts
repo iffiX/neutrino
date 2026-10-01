@@ -34,6 +34,25 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
+    text: "Managed machines",
+    items: [
+      { text: "Terminals", link: "/agent/terminals" },
+      { text: "Files", link: "/agent/files" },
+      {
+        text: "Modules",
+        link: "/agent/modules",
+        collapsed: false,
+        items: [
+          { text: "File share", link: "/agent/modules/shares" },
+          { text: "Gitea", link: "/agent/modules/gitea" },
+          { text: "Containers", link: "/agent/modules/containers" },
+          { text: "ZFS storage", link: "/agent/modules/zfs" },
+          { text: "VS Code", link: "/agent/modules/vscode" },
+        ],
+      },
+    ],
+  },
+  {
     text: "Reference",
     items: [
       { text: "Supported platforms", link: "/reference/platforms" },
@@ -65,6 +84,25 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
       { text: "服务", link: "/zh-CN/hub/services" },
       { text: "凭据", link: "/zh-CN/hub/credentials" },
       { text: "设置", link: "/zh-CN/hub/settings" },
+    ],
+  },
+  {
+    text: "被控端",
+    items: [
+      { text: "终端", link: "/zh-CN/agent/terminals" },
+      { text: "文件", link: "/zh-CN/agent/files" },
+      {
+        text: "模块",
+        link: "/zh-CN/agent/modules",
+        collapsed: false,
+        items: [
+          { text: "File share", link: "/zh-CN/agent/modules/shares" },
+          { text: "Gitea", link: "/zh-CN/agent/modules/gitea" },
+          { text: "Containers", link: "/zh-CN/agent/modules/containers" },
+          { text: "ZFS storage", link: "/zh-CN/agent/modules/zfs" },
+          { text: "VS Code", link: "/zh-CN/agent/modules/vscode" },
+        ],
+      },
     ],
   },
   {
