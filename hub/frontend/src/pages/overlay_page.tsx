@@ -128,12 +128,12 @@ export function OverlayPage() {
         </div>
       )}
 
-      {selected === PROVIDER_NETBIRD && (
-        <NetbirdSection isEnabled={isEnabled(PROVIDER_NETBIRD)} />
+      {selected === PROVIDER_NETBIRD && isEnabled(PROVIDER_NETBIRD) && (
+        <NetbirdSection />
       )}
 
-      {selected === PROVIDER_EASYTIER && (
-        <EasyTierSection isEnabled={isEnabled(PROVIDER_EASYTIER)} />
+      {selected === PROVIDER_EASYTIER && isEnabled(PROVIDER_EASYTIER) && (
+        <EasyTierSection />
       )}
     </div>
   );
@@ -192,15 +192,10 @@ function daemonBadge(view: NetbirdView, isJoining: boolean) {
   }
 }
 
-interface NetbirdSectionProps {
-  /** Whether the hub runs NetBird now. */
-  isEnabled: boolean;
-}
-
 /**
  * NetBird: its settings, LAN route guidance, and live peers.
  */
-function NetbirdSection({ isEnabled }: NetbirdSectionProps) {
+function NetbirdSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<NetbirdView>("/hub/overlay/netbird");
@@ -256,16 +251,7 @@ function NetbirdSection({ isEnabled }: NetbirdSectionProps) {
         </div>
       </div>
 
-      {!isEnabled && (
-        <div className="notice">
-          <Icon name="blocked" size={15} />
-          <div className="notice_body">
-            {t("ui.overlay.engine_off", { title: NETBIRD_PRODUCT_NAME })}
-          </div>
-        </div>
-      )}
-
-      {isEnabled && !view.is_installed && (
+      {!view.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.overlay.install_first")}</div>

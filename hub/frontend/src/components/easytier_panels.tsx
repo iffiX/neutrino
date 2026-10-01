@@ -84,12 +84,7 @@ const EASYTIER_PEER_PORT = 11010;
 /** How often the peer table is read; peers connect and drop on their own. */
 const PEER_RELOAD_MS = 5000;
 
-interface EasyTierSectionProps {
-  /** Whether the hub runs EasyTier now. */
-  isEnabled: boolean;
-}
-
-export function EasyTierSection({ isEnabled }: EasyTierSectionProps) {
+export function EasyTierSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<EasyTierView>("/hub/overlay/easytier");
@@ -154,16 +149,7 @@ export function EasyTierSection({ isEnabled }: EasyTierSectionProps) {
         </div>
       </div>
 
-      {!isEnabled && (
-        <div className="notice">
-          <Icon name="blocked" size={15} />
-          <div className="notice_body">
-            {t("ui.overlay.engine_off", { title: EASYTIER_PRODUCT_NAME })}
-          </div>
-        </div>
-      )}
-
-      {isEnabled && !view.is_installed && (
+      {!view.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.overlay.engine_absent")}</div>
