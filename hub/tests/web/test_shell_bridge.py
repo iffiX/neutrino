@@ -23,11 +23,12 @@ from neutrino_hub.web import shell_bridge
 from neutrino_hub.web.shell_bridge import (
     device_of_session,
     is_persist_refused,
+    owner_name,
     persist_flags,
     reported_sessions,
-    sessions_for,
     resize_shell,
     session_command,
+    sessions_for,
     settle_shell,
     shell_output,
 )
@@ -217,6 +218,18 @@ def test_a_client_sees_shared_sessions_only_where_it_has_terminal_rights(viewers
         ("s5", False),
     ]
     assert sessions_for(runtime, f"client:{carol}") == []
+
+
+def test_a_row_names_its_owner(viewers, monkeypatch):
+    runtime, alice, *_ = viewers
+    monkeypatch.setattr(shell_bridge, "hub_name", lambda: "Neutrino")
+
+    rows = {row["session_id"]: row for row in sessions_for(runtime, "hub")}
+
+    assert rows["s1"]["owner_name"] == "Neutrino"
+    assert rows["s5"]["owner_name"] == "alice"
+    assert owner_name("client:nobody", ClientRegistry()) == "client:nobody"
+    assert owner_name("", ClientRegistry()) == ""
 
 
 def test_a_persist_is_refused_only_on_a_session_another_viewer_owns(viewers):

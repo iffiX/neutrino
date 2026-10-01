@@ -632,6 +632,11 @@
               "title": "Device Name",
               "type": "string"
             },
+            "owner_name": {
+              "default": "",
+              "title": "Owner Name",
+              "type": "string"
+            },
             "is_owned": {
               "default": false,
               "title": "Is Owned",
@@ -1468,6 +1473,11 @@
               "title": "Device Name",
               "type": "string"
             },
+            "owner_name": {
+              "default": "",
+              "title": "Owner Name",
+              "type": "string"
+            },
             "is_owned": {
               "default": false,
               "title": "Is Owned",
@@ -1566,6 +1576,11 @@
         "device_name": {
           "default": "",
           "title": "Device Name",
+          "type": "string"
+        },
+        "owner_name": {
+          "default": "",
+          "title": "Owner Name",
           "type": "string"
         },
         "is_owned": {

@@ -1703,6 +1703,8 @@ class ChannelTerminalSession(ChannelShellSession):
 
     device_id: str
     device_name: str = ""
+    # What the owner is called: the hub's name, or the client's.
+    owner_name: str = ""
     # Whether this client is its owner.
     is_owned: bool = False
 
@@ -1866,6 +1868,8 @@ class TerminalSessionView(BaseModel):
     title: str = ""
     # Who opened it: ``hub`` for this panel, ``client:<id>`` for a client.
     owner: str = ""
+    # What the owner is called: the hub's name, or the client's.
+    owner_name: str = ""
     # Whether this panel opened it; only the owner sets its two flags.
     is_owned: bool = False
     is_attached: bool = False

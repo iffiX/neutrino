@@ -34,6 +34,7 @@ from neutrino_hub.modules.clients.permissions import (
 )
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.web.identity import hub_name
 
 # The size a shell opens at when the viewer names none.
 DEFAULT_COLUMNS = 80
@@ -226,20 +227,46 @@ def viewer_rows(runtime, viewer: str, sessions: list) -> list:
         sessions: Entries of :func:`reported_sessions`.
 
     Returns:
-        Each entry with ``device_name`` and ``is_owned`` added.
+        Each entry with ``device_name``, ``owner_name`` and ``is_owned``
+        added.
     """
     names = {
         device.id: device_name(runtime, device)
         for device in DeviceRegistry().all_stored()
     }
+    clients = ClientRegistry()
     return [
         {
             **session,
             "device_name": names.get(session["device_id"], session["device_id"]),
+            "owner_name": owner_name(session["owner"], clients),
             "is_owned": session["owner"] == viewer,
         }
         for session in sessions
     ]
+
+
+def owner_name(owner: str, clients: ClientRegistry) -> str:
+    """What a session's owner is called: the hub's name, or a client's.
+
+    Args:
+        owner: The stamp a session holds, ``hub`` or ``client:<id>``.
+        clients: The registry the client's name is read from.
+
+    Returns:
+        The hub's name for the panel, the client's name for a client the
+        registry holds, and the stamp itself otherwise.
+    """
+    if owner == CHANNEL_SHELL_OWNER_HUB:
+        try:
+            return hub_name() or owner
+        except (FileNotFoundError, ValueError):
+            return owner
+    if owner.startswith(CHANNEL_SHELL_OWNER_CLIENT_PREFIX):
+        client = clients.get(owner[len(CHANNEL_SHELL_OWNER_CLIENT_PREFIX) :])
+        if client is not None and client.name:
+            return client.name
+    return owner
 
 
 def device_name(runtime, device) -> str:

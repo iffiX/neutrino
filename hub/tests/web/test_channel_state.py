@@ -379,6 +379,7 @@ def test_each_terminal_carries_the_sessions_the_client_sees_oldest_first(
         "started_at": 1790758800,
         "title": "",
         "owner": f"client:{client_id}",
+        "owner_name": "alice",
         "is_owned": True,
         "is_attached": True,
         "is_persistent": True,

@@ -101,6 +101,7 @@ def test_every_reported_session_is_listed_oldest_first(api):
         "started_at": 1790762400,
         "title": "htop",
         "owner": "hub",
+        "owner_name": "hub",
         "is_owned": True,
         "is_attached": False,
         "is_persistent": True,
