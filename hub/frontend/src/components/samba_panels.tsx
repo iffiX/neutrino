@@ -48,6 +48,13 @@ const PASSWORD_ERROR_KEYS: Record<string, string> = {
   command_failed: "code.command_failed",
 };
 
+/** What the path field shows before anything is typed, per system. */
+const SHARE_PATH_PLACEHOLDER = "/srv/share";
+const SHARE_PATH_PLACEHOLDER_WINDOWS = "C:\\Users\\lab\\Share";
+
+/** A Windows share path starts at a drive. */
+const WINDOWS_DRIVE_PATH = /^[A-Za-z]:\\/;
+
 const EMPTY_SHARE: SambaShare = {
   name: "",
   path: "",
@@ -65,6 +72,8 @@ interface SambaPanelsProps {
   /** Whether the machine serves its shares with its system's own SMB server
    * rather than Samba: Windows and macOS. */
   isSystemServer?: boolean;
+  /** Whether the machine runs Windows, whose share paths start at a drive. */
+  isWindows?: boolean;
 }
 
 export function SambaPanels({
@@ -72,6 +81,7 @@ export function SambaPanels({
   basePath,
   isEditable,
   isSystemServer = false,
+  isWindows = false,
 }: SambaPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -128,6 +138,16 @@ export function SambaPanels({
     isUsersDirty || Object.keys(pendingPasswords).length > 0;
 
   const applyGroup = async (group: GroupName) => {
+    const sent = isWindows ? shares.map(withBackslashes) : shares;
+    if (
+      group === "shares" &&
+      isWindows &&
+      sent.some((share) => !WINDOWS_DRIVE_PATH.test(share.path))
+    ) {
+      setNotice({});
+      setErrors({ shares: t("ui.samba.share_path_drive") });
+      return;
+    }
     setBusyGroup(group);
     setErrors({});
     setNotice({});
@@ -135,7 +155,7 @@ export function SambaPanels({
       await (group === "shares"
         ? apiPost<SambaDeviceView>(`${basePath}/share/set`, {
             device_id: deviceId,
-            shares,
+            shares: sent,
           })
         : apiPost<SambaDeviceView>(`${basePath}/user/set`, {
             device_id: deviceId,
@@ -257,6 +277,7 @@ export function SambaPanels({
             share={share}
             userNames={users}
             isSystemServer={isSystemServer}
+            isWindows={isWindows}
             isLive={savedShares.some((saved) => saved.name === share.name)}
             onChange={(patch) => updateShare(index, patch)}
             onRemove={() =>
@@ -354,6 +375,8 @@ interface ShareEditorProps {
   /** Whether the system's own SMB server serves it, which grants a share
    * with no users to the machine's administrators alone. */
   isSystemServer: boolean;
+  /** Whether the machine runs Windows, whose share paths start at a drive. */
+  isWindows: boolean;
   /** Whether a share by this name is applied — its address answers. */
   isLive: boolean;
   onChange: (patch: Partial<SambaShare>) => void;
@@ -364,11 +387,16 @@ function ShareEditor({
   share,
   userNames,
   isSystemServer,
+  isWindows,
   isLive,
   onChange,
   onRemove,
 }: ShareEditorProps) {
   const [isCopied, setIsCopied] = useState(false);
+  const isPathRefused =
+    isWindows &&
+    share.path !== "" &&
+    !WINDOWS_DRIVE_PATH.test(withBackslashes(share).path);
 
   // The host the browser reached this panel by is the host the share answers
   // on — true on the LAN today and still true over an overlay later.
@@ -429,10 +457,19 @@ function ShareEditor({
           <span className="field_label">{t("ui.samba.share_path")}</span>
           <input
             className="input"
-            placeholder="/srv/share"
+            placeholder={
+              isWindows
+                ? SHARE_PATH_PLACEHOLDER_WINDOWS
+                : SHARE_PATH_PLACEHOLDER
+            }
             value={share.path}
             onChange={(event) => onChange({ path: event.target.value })}
           />
+          {isPathRefused && (
+            <span className="field_error">
+              {t("ui.samba.share_path_drive")}
+            </span>
+          )}
         </label>
         <label className="field">
           <span className="field_label">{t("ui.samba.share_comment")}</span>
@@ -613,6 +650,11 @@ function StatusSection({ status }: StatusSectionProps) {
       )}
     </section>
   );
+}
+
+/** A Windows share with its path's forward slashes turned into backslashes. */
+function withBackslashes(share: SambaShare): SambaShare {
+  return { ...share, path: share.path.replace(/\//g, "\\") };
 }
 
 function wordPasswordFailure(cause: unknown): string {

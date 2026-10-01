@@ -80,6 +80,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       isEditable={target.isEditable}
+      isWindows={target.platformOs === WINDOWS_OS}
       isSystemServer={
         target.platformOs !== "" && target.platformOs !== LINUX_OS
       }

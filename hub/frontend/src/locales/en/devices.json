@@ -47,6 +47,8 @@
   "state.ssh": "ssh",
   "state.unreachable": "unreachable",
   "ui.api.malformed": "Malformed response from the API",
+  "ui.api.refused": "The machine refused: {code} ({params}).",
+  "ui.api.refused_bare": "The machine refused: {code}.",
   "ui.api.unknown_error": "Unknown error",
   "ui.api.unreachable": "Cannot reach the gateway API",
   "ui.apply_bar.applying": "Applying…",

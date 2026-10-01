@@ -269,6 +269,7 @@
   "ui.samba.share_name": "名称",
   "ui.samba.share_new": "新建共享",
   "ui.samba.share_path": "路径",
+  "ui.samba.share_path_drive": "路径要从盘符开始，比如 C:\\Users\\lab\\Share。",
   "ui.samba.share_read_only": "只读",
   "ui.samba.share_read_only_hint": "是否对所有人都拒绝写入。",
   "ui.samba.share_remove": "移除",

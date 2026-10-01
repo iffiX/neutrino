@@ -269,6 +269,7 @@
   "ui.samba.share_name": "Name",
   "ui.samba.share_new": "new share",
   "ui.samba.share_path": "Path",
+  "ui.samba.share_path_drive": "Start the path at a drive, such as C:\\Users\\lab\\Share.",
   "ui.samba.share_read_only": "Read only",
   "ui.samba.share_read_only_hint": "Whether writing is refused for everyone, whoever they are.",
   "ui.samba.share_remove": "Remove",
