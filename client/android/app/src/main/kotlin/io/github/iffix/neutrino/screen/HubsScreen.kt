@@ -144,9 +144,9 @@ private fun HubRow(
     val networkReason = when {
         line.state != OverlayState.OFF -> null
 
-        hub.isDisabled -> words.word("ui.reason_hub_disabled")
+        hub.isDisabled -> words.word("ui.reason.disabled")
 
-        networks.isEmpty() -> words.refusal("overlay_missing")
+        networks.isEmpty() -> words.word("ui.reason.no_network")
 
         otherNetwork != null -> words.refusal(
             "overlay_other_network",
@@ -171,7 +171,7 @@ private fun HubRow(
             }
             when {
                 line.state == OverlayState.CONNECTING -> NeutrinoButton(
-                    words.word("ui.cancel"),
+                    words.word("ui.network_cancel"),
                     { onOverlayCancel(id) },
                     isSmall = true,
                     isBusy = true,
@@ -205,8 +205,8 @@ private fun HubRow(
             }
             ArmedButton(
                 key = "leave-$id",
-                label = words.word(if (hub.jobs.isLeaving) "ui.job.leaving" else "ui.disconnect"),
-                armedLabel = words.word("ui.leave_arm"),
+                label = words.word(if (hub.jobs.isLeaving) "ui.job.leaving" else "ui.leave"),
+                armedLabel = words.word("ui.leave_armed"),
                 onAct = { onLeave(id) },
                 isBusy = hub.jobs.isLeaving,
             )
@@ -238,7 +238,7 @@ private fun HubRow(
             BasicText(words.word("ui.overlay") + " · " + state + engine, style = NeutrinoTheme.note)
         }
         ErrorLine(line.error)
-        ReasonLine(networkReason ?: words.word("ui.reason_hub_disabled").takeIf { hub.isDisabled })
+        ReasonLine(networkReason ?: words.word("ui.reason.disabled").takeIf { hub.isDisabled })
     }
 }
 
@@ -250,7 +250,7 @@ private fun HubsScreenPreview() {
             "ui.state.connected" to "已连接",
             "ui.state.down" to "未连上",
             "ui.hub_software" to "运行 {software}",
-            "ui.disconnect" to "离开",
+            "ui.leave" to "离开",
             "ui.add_hub" to "加入 hub",
             "ui.network_connect" to "连接",
             "ui.overlay" to "虚拟网",

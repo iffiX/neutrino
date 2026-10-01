@@ -211,8 +211,8 @@ private fun MachinesCard(
             }
             ReasonLine(
                 when {
-                    picked == null -> words.word("ui.reason_pick_machine")
-                    !picked.second.isOnline -> words.word("ui.reason_machine_offline")
+                    picked == null -> words.word("ui.reason.no_machine")
+                    !picked.second.isOnline -> words.word("ui.reason.offline")
                     else -> null
                 },
             )
@@ -312,8 +312,8 @@ private fun TabStrip(open: List<TerminalTab>, active: String, onPick: (String) -
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (tab.isPersistent) Badge(words.word("ui.terminal_badge_kept"))
-                    if (tab.isShared) Badge(words.word("ui.terminal_badge_shared"))
+                    if (tab.isPersistent) Badge(words.word("ui.badge.kept"))
+                    if (tab.isShared) Badge(words.word("ui.badge.shared"))
                     if (tab.attachedCount > 1) Badge(tab.attachedCount.toString())
                 }
                 val label = words.word("ui.terminal_close", mapOf("name" to name))
@@ -339,7 +339,7 @@ private fun TabStrip(open: List<TerminalTab>, active: String, onPick: (String) -
                 ) {
                     if (isArmed) {
                         BasicText(
-                            words.word("ui.terminal_end_arm"),
+                            words.word("ui.terminal_end_armed"),
                             style = NeutrinoTheme.note.copy(color = palette.bg),
                         )
                     } else {
@@ -367,10 +367,10 @@ private fun TerminalPane(
     LaunchedEffect(palette) { view.palette(palette) }
     LaunchedEffect(words) {
         view.labels(
-            copy = words.word("ui.copy"),
-            paste = words.word("ui.paste"),
-            selectAll = words.word("ui.terminal_select_all"),
-            clear = words.word("ui.terminal_clear"),
+            copy = words.word("ui.menu.copy"),
+            paste = words.word("ui.menu.paste"),
+            selectAll = words.word("ui.menu.select_all"),
+            clear = words.word("ui.menu.clear"),
         )
     }
     LaunchedEffect(live) { view.panes(live) }
@@ -418,7 +418,7 @@ private fun StatusLine(tab: TerminalTab?, onPersist: (TerminalTab, Boolean, Bool
         }
         if (tab != null) {
             ErrorLine(tab.note)
-            ReasonLine(words.word("ui.terminal_opened_by", mapOf("owner" to tab.owner)).takeIf { !tab.isOwned })
+            ReasonLine(words.word("ui.reason.not_owned", mapOf("owner" to tab.owner)).takeIf { !tab.isOwned })
         }
     }
 }

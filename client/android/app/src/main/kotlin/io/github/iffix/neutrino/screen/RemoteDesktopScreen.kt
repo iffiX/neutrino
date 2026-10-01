@@ -38,7 +38,7 @@ fun RemoteDesktopScreen(
         val isBusy = key in connecting
         val reason = when {
             !isHealthy -> entry.descriptionCode.takeIf { it.isNotEmpty() }?.let { words.refusal(it) }
-                ?: words.word("ui.unhealthy")
+                ?: words.word("ui.reason.unhealthy")
 
             viewingKey != null -> words.word("ui.reason_viewer_open")
 

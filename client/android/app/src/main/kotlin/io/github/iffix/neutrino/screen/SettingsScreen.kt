@@ -99,9 +99,9 @@ private fun AboutSection(version: String) {
     Column(modifier = Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         BasicText(words.word("ui.about"), style = NeutrinoTheme.rowTitle)
         BasicText(words.word("ui.window.title"), style = NeutrinoTheme.body)
-        BasicText(words.word("ui.about_version", mapOf("version" to version)), style = NeutrinoTheme.mono)
+        BasicText(words.word("ui.about_build", mapOf("version" to version)), style = NeutrinoTheme.mono)
         BasicText(words.word("ui.app_licence"), style = NeutrinoTheme.note)
-        SourceLink(words.word("ui.source"), CLIENT_SOURCE_URL)
+        SourceLink(words.word("ui.about_source", mapOf("name" to words.word("ui.window.title"))), CLIENT_SOURCE_URL)
         BasicText(
             words.word("ui.carried_cores"),
             style = NeutrinoTheme.note,
@@ -153,7 +153,7 @@ private fun SettingsScreenPreview() {
             "ui.cancel" to "取消",
             "ui.save" to "保存",
             "ui.about" to "关于",
-            "ui.about_version" to "{version} · Android",
+            "ui.about_build" to "{version} · Android",
         ),
     )
     NeutrinoTheme(NeutrinoPalette.dark, words) {

@@ -92,7 +92,7 @@ fun JoinScreen(join: HubJoin, onJoin: (String) -> Unit, onJoined: () -> Unit) {
                     },
                 )
                 NeutrinoButton(
-                    words.word(if (join.isJoining) "ui.job.joining" else "ui.connect"),
+                    words.word(if (join.isJoining) "ui.job.joining" else "ui.join"),
                     {
                         scanned = ""
                         onJoin(link)
@@ -188,7 +188,7 @@ private fun JoinScreenPreview() {
             "ui.scan_hint" to "对准 hub 客户端页面上的二维码",
             "ui.or" to "或",
             "ui.paste_hint" to "粘贴 hub 客户端页面上的链接",
-            "ui.connect" to "加入",
+            "ui.join" to "加入",
             "ui.camera_allow" to "允许使用相机",
         ),
     ) { JoinScreen(HubJoin(refusal = ChannelResult.refused("link_unreadable")), onJoin = {}, onJoined = {}) }

@@ -6,6 +6,7 @@ import io.github.iffix.neutrino.OVERLAY_CONNECT_TIMEOUT_S
 import io.github.iffix.neutrino.OVERLAY_STOP_TIMEOUT_S
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
+import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubView
@@ -200,8 +201,10 @@ class OverlayController(
                 current.update { it - attempt.bindingId }
             }
 
-            binding.overlays.none { it.provider == attempt.provider } ->
-                end(attempt.bindingId, ChannelResult.refused("overlay_withdrawn"))
+            binding.overlays.none { it.provider == attempt.provider } -> end(
+                attempt.bindingId,
+                ChannelResult.refused("overlay_withdrawn", "network" to ChannelOverlay(attempt.provider).title),
+            )
 
             else -> settle()
         }
