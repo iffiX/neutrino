@@ -53,6 +53,13 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
+    text: "Clients",
+    items: [
+      { text: "Desktop client", link: "/client/desktop" },
+      { text: "Android app", link: "/client/android" },
+    ],
+  },
+  {
     text: "Reference",
     items: [
       { text: "Supported platforms", link: "/reference/platforms" },
@@ -106,6 +113,13 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
+    text: "客户端",
+    items: [
+      { text: "桌面客户端", link: "/zh-CN/client/desktop" },
+      { text: "Android 应用", link: "/zh-CN/client/android" },
+    ],
+  },
+  {
     text: "参考",
     items: [
       { text: "支持的平台", link: "/zh-CN/reference/platforms" },
@@ -118,11 +132,13 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
 export const navEn: DefaultTheme.NavItem[] = [
   { text: "Quick start", link: "/quick-start" },
   { text: "Hub", link: "/hub/install" },
+  { text: "Clients", link: "/client/desktop" },
   { text: "GitHub", link: GITHUB_URL },
 ];
 
 export const navZh: DefaultTheme.NavItem[] = [
   { text: "快速上手", link: "/zh-CN/quick-start" },
   { text: "Hub", link: "/zh-CN/hub/install" },
+  { text: "客户端", link: "/zh-CN/client/desktop" },
   { text: "GitHub", link: GITHUB_URL },
 ];
