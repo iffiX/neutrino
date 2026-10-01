@@ -33,6 +33,7 @@ dev = [
 # The guide's screenshot tool, packaging/integration/screenshots/capture.py.
 screenshots = [
     "playwright>=1.47",
+    "qrcode>=8.0",
 ]
 
 [tool.black]

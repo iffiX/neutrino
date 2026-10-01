@@ -9,7 +9,7 @@ into the webp the pages reference.
 
 | File | What it holds |
 | --- | --- |
-| `shots.json` | One entry per image: file, language directory, page, source, viewport, element, what to wait for, the state the hub must be in, and the manual step when one is needed. |
+| `shots.json` | One entry per image: file, language directory, page, source, viewport, element, what to wait for, the state the hub must be in, the manual step when one is needed, and `redraw_qr`, the stand-in text a shot's QR code is redrawn from. |
 | `redact.json` | The patterns and literal strings replaced inside the page before each shot. |
 | `redact.local.json` | Optional, ignored by git: more `literals` in the same shape, for names you do not commit. |
 | `capture.py` | Signs in to the panel, takes the panel and client shots, and prints what it replaced in each. |
@@ -63,7 +63,9 @@ The `os` entries are system dialogs, taken by hand on that system and saved as
 ## What is replaced
 
 `redact.json` replaces, in text, form values, `title` and `aria-label`:
-hex fingerprints, MAC addresses, `etk_` tokens, `sk-` keys, e-mail addresses,
-NetBird peer names, and IPv4 addresses outside the private, shared, loopback and
-link-local ranges. The literal strings replace host and account names. Text
-drawn on a canvas, such as a QR code or a chart, is left as it is.
+enrolment links, hex fingerprints, MAC addresses, `etk_` tokens, `sk-` keys,
+e-mail addresses, NetBird peer names, and IPv4 addresses outside the private,
+shared, loopback and link-local ranges. The literal strings replace host and
+account names. A shot with `redraw_qr` has its `.qr_code` redrawn by the tool
+from that stand-in text before the rules run. Other drawn content, such as a
+chart, is left as it is.

@@ -2,6 +2,12 @@
   "_comment": "Applied inside the page before each shot, in this order, to text, input values, and title and aria-label attributes. A pattern is a JavaScript regular expression with the flags beside it. A public IPv4 address is replaced only outside the private, shared, loopback and link-local ranges. literals are exact strings; add the ones that name you to redact.local.json beside this file, which git ignores.",
   "patterns": [
     {
+      "name": "enrollment_link",
+      "regex": "neutrino://enroll/[A-Za-z0-9_-]+=*",
+      "flags": "g",
+      "replace": "neutrino://enroll/example"
+    },
+    {
       "name": "hex_fingerprint",
       "regex": "\\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){15,}\\b|\\b[0-9a-f]{40,128}\\b",
       "flags": "g",

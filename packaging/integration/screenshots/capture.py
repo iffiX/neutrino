@@ -2,7 +2,8 @@
 
 Reads ``shots.json``, signs in to the panel, switches the panel's language for
 each language's shots and puts the language back at the end, and for every
-shot sets the viewport, opens the page, waits for the element, replaces what
+shot sets the viewport, opens the page, waits for the element, redraws a
+QR code from the shot's ``redraw_qr`` stand-in, replaces what
 ``redact.json`` names inside the page, and writes the element at twice the
 pixel density to ``images/guide/<language>/<file>``. Each shot's
 replacements are printed after it.
@@ -27,6 +28,7 @@ import pathlib
 import re
 import sys
 
+import qrcode
 from playwright.sync_api import sync_playwright
 
 from client_window import ClientWindowServer
@@ -94,6 +96,45 @@ REDACT_SCRIPT = """
   return report;
 }
 """
+
+
+# The panel's QR code element, and the border it draws around the code.
+QR_SELECTOR = ".qr_code"
+QR_BORDER_MODULES = 4
+
+# Runs inside the page: draws the given modules into every QR code element,
+# one unit square per dark module, and returns how many it redrew.
+REDRAW_QR_SCRIPT = """
+([selector, modules]) => {
+  const size = modules.length;
+  const parts = [];
+  modules.forEach((cells, row) => cells.forEach((isDark, col) => {
+    if (isDark) parts.push('M' + col + ' ' + row + 'h1v1h-1z');
+  }));
+  const codes = document.querySelectorAll(selector);
+  for (const code of codes) {
+    code.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+    for (const rect of code.querySelectorAll('rect')) {
+      rect.setAttribute('width', size);
+      rect.setAttribute('height', size);
+    }
+    for (const path of code.querySelectorAll('path')) {
+      path.setAttribute('d', parts.join(''));
+    }
+  }
+  return codes.length;
+}
+"""
+
+
+def qr_modules(text: str) -> list:
+    """The dark modules of a QR code of ``text``, border included, by row."""
+    code = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_M, border=QR_BORDER_MODULES
+    )
+    code.add_data(text)
+    code.make(fit=True)
+    return code.get_matrix()
 
 
 def read_rules() -> list:
@@ -192,6 +233,11 @@ def take(
         input("Press Enter when the page shows it. ")
     page.wait_for_selector(resolve(shot["wait_for"], labels), timeout=WAIT_TIMEOUT_MS)
     page.wait_for_load_state("networkidle")
+    if shot.get("redraw_qr"):
+        redrawn = page.evaluate(
+            REDRAW_QR_SCRIPT, [QR_SELECTOR, qr_modules(shot["redraw_qr"])]
+        )
+        print(f"  {redrawn} QR code redrawn from {shot['redraw_qr']}")
     report = page.evaluate(REDACT_SCRIPT, rules)
     target = IMAGES_DIR / shot["language"] / shot["file"]
     target.parent.mkdir(parents=True, exist_ok=True)

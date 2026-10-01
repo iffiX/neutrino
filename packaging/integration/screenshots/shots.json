@@ -465,6 +465,7 @@
       "url": "/clients",
       "element": "viewport",
       "wait_for": ".qr_code",
+      "redraw_qr": "neutrino://enroll/example",
       "state": "Any hub.",
       "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link, Copy and the QR code showing."
     },
@@ -477,6 +478,7 @@
       "url": "/clients",
       "element": "viewport",
       "wait_for": ".qr_code",
+      "redraw_qr": "neutrino://enroll/example",
       "state": "Any hub.",
       "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link, Copy and the QR code showing."
     },
