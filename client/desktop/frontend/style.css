@@ -104,6 +104,9 @@ button.refresh { display: inline-flex; align-items: center; justify-content: cen
         box-shadow: 0 0 10px -1px var(--color-warn); }
 .bad { background: var(--color-signal-error);
        box-shadow: 0 0 10px -1px var(--color-error); }
+/* The amber dot of work running right now. */
+.dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
 input, select { padding: 9px 12px; border: 1px solid var(--color-border);
         border-radius: 8px; background: var(--color-bg);
         color: var(--color-text);
@@ -120,6 +123,10 @@ button.danger { border-color: color-mix(in srgb, var(--color-error) 50%, transpa
                 background: none; color: var(--color-error); }
 button:disabled { opacity: .4; cursor: not-allowed;
                   border-color: var(--color-border); }
+/* A destructive button armed by its first press: filled red until the
+   second press or a press elsewhere. */
+button.danger.armed { border-color: var(--color-error); background: var(--color-error);
+                      color: var(--color-bg); }
 .feat { display: flex; gap: 12px; align-items: center; padding: 12px 0;
         border-bottom: 1px solid var(--color-border); }
 .feat:last-child { border-bottom: none; }
@@ -127,6 +134,17 @@ button:disabled { opacity: .4; cursor: not-allowed;
 .feat .body { flex: 1; min-width: 0; }
 .feat .title { font-weight: 600; }
 .feat .note { color: var(--color-text-muted); font-size: 12px; }
+.feat .sub { overflow-wrap: anywhere; }
+.feat .err { margin-top: 4px; }
+/* The faint line under a row that says why a button cannot act. */
+.reason { color: var(--color-text-faint); font-size: 12px; }
+/* A row's actions, in one line at its right; a button that is its job's
+   indicator carries the spinner before its word. */
+.row_actions { flex: none; display: flex; flex-wrap: wrap; gap: 8px;
+               align-items: center; justify-content: flex-end; }
+.row_actions button { display: inline-flex; gap: 8px; align-items: center; }
+.overlay_line { display: flex; gap: 8px; align-items: center; margin-top: 4px;
+                color: var(--color-text-muted); font-size: 12px; }
 .panel_title { color: var(--color-text-muted); font-size: 11px;
          text-transform: uppercase;
          letter-spacing: .08em; border-bottom: 1px solid var(--color-border);
@@ -190,6 +208,21 @@ button.term_tab_close:hover { color: var(--color-error); }
                color: var(--color-text-muted); font-family: ui-monospace, monospace;
                font-size: 11px; }
 button.term_tab_close.armed { color: var(--color-error); font-size: 11px; }
+/* The words after a tab's label: kept, shared, how many windows. */
+.badge { padding: 0 6px; border: 1px solid var(--color-border-strong);
+         border-radius: 999px; color: var(--color-text-muted);
+         font-family: ui-monospace, monospace; font-size: 10px; line-height: 16px; }
+.term_switches { display: flex; gap: 14px; align-items: center; }
+/* The menu a right click opens over a terminal, at the pointer. */
+.menu { position: fixed; z-index: 30; min-width: 160px; padding: 4px;
+        border: 1px solid var(--color-border); border-radius: 8px;
+        background: var(--color-bg);
+        box-shadow: 0 12px 28px -12px var(--color-shadow); }
+.menu_row { display: block; width: 100%; padding: 7px 10px; border: none;
+            border-radius: 6px; background: none; color: var(--color-text);
+            font-size: 13px; text-align: left; }
+.menu_row:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
 /* The persistent switch at the end of the line under a shell, after the
    panel's toggle switch. */
 button.switch { display: inline-flex; flex: none; gap: 8px; align-items: center;
@@ -221,6 +254,11 @@ button.switch.on .switch_thumb { background: var(--color-accent);
          overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .modal label, .settings label { color: var(--color-text-muted); font-size: 12px; }
 .settings { display: flex; flex-direction: column; gap: 10px; }
+/* About, under the settings card: plain rows, no card. */
+.settings_page { display: flex; flex-direction: column; gap: 24px; }
+.about { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
+.about_row { display: flex; gap: 16px; align-items: baseline; font-size: 13px; }
+.about_row .muted { flex: none; width: 160px; }
 .settings .picker { flex: none; max-width: 360px; }
 .modal select { width: 100%; }
 .dirlist { overflow-y: auto; border: 1px solid var(--color-border);

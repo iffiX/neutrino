@@ -1,10 +1,10 @@
 """One service's single lane: idle, working on one step, or failed.
 
 A service does one thing at a time. A request that arrives while a step is
-running is refused as ``busy``, never queued: the page greys the control
-while the lane works, and a person who keeps pressing gets the same answer
-each time. The one exception is a change the hub sends, which must not be
-lost: it is kept as the one job to run once the lane is free.
+running is refused as ``busy``, never queued; the resident drops such a
+request before any page sees the code. The one exception is a change the
+hub sends, which must not be lost: it is kept as the one job to run once
+the lane is free.
 
 The lane's standing is what the page draws as a spinner or a failure, and
 every change of it is announced so the window redraws at once.
@@ -51,6 +51,8 @@ class ServiceWorker:
         self._step = ""
         self._failure: dict = {}
         self._kept: "tuple | None" = None
+        self._idle = threading.Event()
+        self._idle.set()
 
     def status(self) -> dict:
         """The lane's standing, for the state payload.
@@ -99,6 +101,25 @@ class ServiceWorker:
         self._start_thread(lambda: self._run(step, job))
         return {}
 
+    def wait_idle(self, timeout_s: float) -> dict:
+        """Wait until no step runs, and say how the last one ended.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            The last failure ``{"code", "params"}``, empty when the lane is
+            idle without one or still works after ``timeout_s``.
+        """
+        self._idle.wait(timeout=timeout_s)
+        with self._lock:
+            if self._state != WORK_FAILED:
+                return {}
+            return {
+                "code": str(self._failure.get("code", "")),
+                "params": dict(self._failure.get("params", {})),
+            }
+
     def clear_failure(self) -> None:
         """Forget the last failure; the lane is idle again."""
         with self._lock:
@@ -109,6 +130,7 @@ class ServiceWorker:
         self._on_change()
 
     def _begin(self, step: str) -> None:
+        self._idle.clear()
         self._state = WORK_WORKING
         self._step = step
         self._failure = {}
@@ -128,6 +150,8 @@ class ServiceWorker:
                 if kept is not None:
                     step, job = kept
                     self._begin(step)
+                else:
+                    self._idle.set()
             self._on_change()
             if kept is None:
                 return

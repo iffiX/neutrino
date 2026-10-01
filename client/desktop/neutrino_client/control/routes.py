@@ -41,16 +41,19 @@ def state_payload(resident) -> dict:
         resident: The running :class:`~neutrino_client.core.resident.ClientResident`.
 
     Returns:
-        The state payload: the machine, the hubs joined as ``hubs``, each
-        with its virtual network's row, the services they publish as
-        ``services`` and the machines they offer a terminal on as
-        ``terminals``, each stamped with its ``hub_id``, then every
-        handler's state; no token, password or network secret is in it.
+        The state document: the machine, the hubs joined as ``hubs``, each
+        with its connection, its virtual network and its jobs, the services
+        they publish as ``services``, each with its job, the machines they
+        offer a terminal on and the sessions they list as ``terminals``
+        ``{machines, sessions}``, each stamped with its ``hub_id``, the
+        notices above the hubs, then every handler's state; no token,
+        password or network secret is in it.
     """
     state = {
         "version": CLIENT_VERSION,
         "language": resident.language(),
         "theme": resident.theme(),
+        "terminal_font_size": resident.terminal_font_size(),
         "hostname": resident.hostname(),
         "platform": resident.platform_tuple(),
         "mount_location_shape": resident.mount_location_shape(),
@@ -60,8 +63,12 @@ def state_payload(resident) -> dict:
         "is_connected": resident.is_connected(),
         "exit_hub_id": resident.exit_hub_id(),
         "hubs": resident.hubs(),
-        "services": resident.service_entries(),
-        "terminals": resident.terminal_entries(),
+        "notices": resident.notices(),
+        "services": resident.entry_rows(),
+        "terminals": {
+            "machines": resident.terminal_entries(),
+            "sessions": resident.terminal_sessions(),
+        },
     }
     state.update(resident.service_states())
     return state
@@ -103,6 +110,9 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
         if route == "/api/theme":
             resident.set_theme(str(payload.get("theme", "")))
             return 200, state_payload(resident)
+        if route == "/api/terminal/font":
+            resident.set_terminal_font_size(_size(payload, "size"))
+            return 200, state_payload(resident)
         if route == "/api/leave":
             return _leave(resident, payload)
         if route == "/api/session/start":
@@ -137,7 +147,9 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
         if route == "/api/terminal/persist":
             return _answer_empty(
                 resident.persist_terminal(
-                    _terminal_id(payload), payload.get("is_persistent") is True
+                    _terminal_id(payload),
+                    payload.get("is_persistent") is True,
+                    payload.get("is_shared") is True,
                 )
             )
         if route == "/api/terminal/stop":
@@ -151,10 +163,16 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             if outcome.get("code"):
                 return refusal_status(outcome["code"]), outcome
             return 200, {}
-        if route == "/api/overlay/join":
-            return _answer(resident, resident.join_overlay(_hub_id(payload)))
-        if route == "/api/overlay/leave":
-            return _answer(resident, resident.leave_overlay(_hub_id(payload)))
+        if route == "/api/overlay/connect":
+            return _answer(resident, resident.connect_overlay(_hub_id(payload)))
+        if route == "/api/overlay/cancel":
+            return _answer(resident, resident.cancel_overlay(_hub_id(payload)))
+        if route == "/api/overlay/disconnect":
+            return _answer(resident, resident.disconnect_overlay(_hub_id(payload)))
+        if route == "/api/clipboard":
+            return _answer_empty(
+                resident.write_clipboard(str(payload.get("text", "") or ""))
+            )
         if route == "/api/overlay/pick":
             return _answer(
                 resident,
@@ -253,7 +271,7 @@ def _join(resident, body: dict):
 def _leave(resident, body: dict):
     hub_id = str(body.get("hub_id", ""))
     try:
-        resident.disconnect(hub_id)
+        resident.leave(hub_id)
     except KeyError:
         return _unknown_hub(hub_id)
     return 200, state_payload(resident)

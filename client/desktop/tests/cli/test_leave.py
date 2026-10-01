@@ -105,7 +105,7 @@ def test_a_resident_that_forgot_the_hub_is_worded(resident, capsys):
     def forget(hub_id: str = "") -> None:
         raise KeyError(hub_id)
 
-    resident.disconnect = forget
+    resident.leave = forget
 
     assert leave_cli.main("office") == 1
 

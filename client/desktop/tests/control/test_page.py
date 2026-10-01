@@ -55,6 +55,42 @@ DETAIL_FALLBACK_CODES = {
 
 MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
 
+# The words of client.md, by key, in both catalogs.
+CONNECTION_STATES = ("connected", "connecting", "down", "replaced", "disabled")
+OVERLAY_STATES = ("off", "connecting", "on")
+JOB_WORDS = (
+    "refreshing",
+    "connecting",
+    "disconnecting",
+    "leaving",
+    "joining",
+    "mounting",
+    "unmounting",
+    "forwarding",
+    "switching",
+    "opening",
+)
+CLIENT_MD_WORDS = {
+    "ui.state.connected": "Connected",
+    "ui.state.connecting": "Connecting…",
+    "ui.state.down": "Not connected",
+    "ui.state.replaced": "Replaced by another client",
+    "ui.state.disabled": "Disabled by the hub",
+    "ui.overlay.off": "Not connected",
+    "ui.overlay.connecting": "Connecting…",
+    "ui.overlay.on": "Connected · {address}",
+    "ui.job.refreshing": "Refreshing…",
+    "ui.job.connecting": "Connecting…",
+    "ui.job.disconnecting": "Disconnecting…",
+    "ui.job.leaving": "Leaving…",
+    "ui.job.joining": "Joining…",
+    "ui.job.mounting": "Mounting…",
+    "ui.job.unmounting": "Unmounting…",
+    "ui.job.forwarding": "Forwarding…",
+    "ui.job.switching": "Switching tools…",
+    "ui.job.opening": "Opening…",
+}
+
 # The five kinds in the order the sidebar lists them: the catalog key stem,
 # the type on the wire, the heading, the function drawing one entry, and the
 # line the panel carries while no hub publishes the kind.
@@ -182,7 +218,9 @@ def test_both_languages_carry_the_same_keys():
 
 def test_every_key_the_page_asks_for_is_in_the_catalog():
     # What the page builds from a token, which no whole literal carries.
-    built = {f"ui.mount_{state}" for state in MOUNT_BUSY_STATES}
+    built = {f"ui.job.{job}" for job in JOB_WORDS}
+    built |= {f"ui.state.{state}" for state in CONNECTION_STATES}
+    built |= {f"ui.overlay.{state}" for state in OVERLAY_STATES}
     built |= {f"ui.language_name.{language}" for language in CLIENT_LANGUAGES}
     built |= {f"ui.theme_name.{theme}" for theme in CLIENT_THEMES}
 
@@ -305,22 +343,6 @@ def test_a_sidebar_lists_the_hubs_and_every_kind_and_nothing_of_modules_is_left(
     assert "ui.section_services" not in EN_WORDS
 
 
-def test_the_open_tab_draws_the_hubs_a_kind_or_the_terminals():
-    body = PAGE_JS.split("function draw(state)")[1].split("\n}")[0]
-
-    assert "let openTab = 'hubs';" in PAGE_JS
-    assert "content.appendChild(drawHubs(state));" in body
-    assert "content.appendChild(drawTerminals(state));" in body
-    assert "kindTab(state, KINDS.filter((kind) => kind[0] === openTab)[0])" in body
-    assert "document.getElementById('page_title').textContent = tabTitle(openTab);" in (
-        body
-    )
-    assert "content.appendChild(drawSettings());" in body
-    tab = PAGE_JS.split("function tabButton(tab)")[1].split("\n}")[0]
-    assert "button.className = tab === openTab ? 'tab on' : 'tab';" in tab
-    assert "button.onclick = () => { openTab = tab; redraw(); };" in tab
-
-
 def test_every_sidebar_entry_carries_its_glyph_before_its_name():
     tab = PAGE_JS.split("function tabButton(tab)")[1].split("\n}")[0]
     glyphs = PAGE_JS.split("const TAB_ICONS = {")[1].split("};")[0]
@@ -391,54 +413,6 @@ def test_the_window_is_a_sidebar_beside_a_content_that_fills_the_width():
     assert (CLIENT_GUI_WINDOW_WIDTH, CLIENT_GUI_WINDOW_HEIGHT) == (1080, 640)
 
 
-def test_one_row_per_hub_names_it_its_standing_and_its_software():
-    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
-
-    assert "for (const hub of hubs) card.appendChild(hubRow(hub));" in PAGE_JS
-    assert "hubName(hub)" in body
-    assert "return hub.hub_name || hub.gateway_url;" in PAGE_JS
-    assert "t('ui.hub_software', { software: hub.hub_software })" in body
-    assert "hub.connection_state === 'reconnecting'" in body
-    assert "hub.is_disabled ? t('ui.disabled')" in body
-    assert "wordError(hub.last_error)" in body
-    assert "leave.onclick = () => askLeave(hub);" in body
-    assert EN_WORDS["ui.disconnect"] == "Leave"
-
-
-def test_leave_greys_and_spins_until_the_state_that_drops_the_row():
-    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
-    asking = PAGE_JS.split("function askLeave(hub)")[1].split("\n}")[0]
-
-    assert "if (leaveAsked[hubKey(hub)]) {" in body
-    assert "leave.innerHTML = '<span class=\"spin\"></span>' + t('ui.disconnect');" in (
-        body
-    )
-    assert "leave.disabled = true;" in body
-    assert "leaveAsked[key] = true;" in asking
-    assert "send('/api/leave', { hub_id: key })" in asking
-    assert "delete leaveAsked[key];" in asking
-
-
-def test_the_top_bar_carries_a_refresh_button_that_spins_until_a_push():
-    button = PAGE_JS.split("function drawRefresh()")[1].split("\n}")[0]
-    asking = PAGE_JS.split("function askRefresh()")[1].split("\n}")[0]
-    push = PAGE_JS.split("window.neutrinoState = (state) => {")[1].split("\n};")[0]
-
-    assert 'class="ghost refresh" id="refresh"' in PAGE_HTML
-    assert "drawRefresh();" in PAGE_JS.split("function draw(state)")[1]
-    assert "button.title = t('ui.refresh');" in button
-    assert "button.textContent = '↻';" in button
-    assert "button.innerHTML = '<span class=\"spin\"></span>';" in button
-    assert "api('/api/refresh', {});" in asking
-    assert "REFRESH_SPIN_MS = 3000;" in PAGE_JS
-    assert "settleRefresh();" in push
-    assert "button.refresh" in PAGE_CSS
-    assert EN_WORDS["ui.refresh"] == "Refresh"
-    assert CATALOGS["zh-CN"]["ui.refresh"] == "刷新"
-    assert "hub_version" not in PAGE_JS
-    assert "ui.hub_version" not in EN_WORDS
-
-
 def test_a_hub_row_carries_no_target_radio_and_names_the_hub_the_tools_use():
     body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
 
@@ -446,43 +420,6 @@ def test_a_hub_row_carries_no_target_radio_and_names_the_hub_the_tools_use():
     assert "ui.hub_exit" not in EN_WORDS
     assert "t('ui.hub_is_exit')" in body
     assert EN_WORDS["ui.hub_is_exit"] == "the AI tools point at this hub"
-
-
-def test_the_ai_panel_switches_one_gateway_on_and_every_other_off():
-    entry = PAGE_JS.split("function drawAiEntry(card, state, hub, entry)")[1].split(
-        "\n}"
-    )[0]
-    asking = PAGE_JS.split("async function askAiUse(hub, entry, isOn, noteKey)")[
-        1
-    ].split("\n}")[0]
-
-    assert "const isInUse = isExit && !!ai.is_enabled;" in entry
-    assert "toggle.className = isInUse ? 'chip on' : 'chip';" in entry
-    assert "toggle.onclick = () => askAiUse(hub, entry, !isInUse, noteKey);" in entry
-    assert "t('ui.ai_use')" in entry
-    assert "if (isOn && !hub.is_exit) {" in asking
-    assert "send('/api/exit/set', { hub_id: hubKey(hub) })" in asking
-    assert "if (isEnabled) return;" in asking
-    assert "is_enabled: isOn," in asking
-    assert EN_WORDS["ui.ai_use"] == "The AI tools use this gateway"
-    assert CATALOGS["zh-CN"]["ui.ai_use"] == "AI 工具使用此网关"
-    assert EN_WORDS["code.no_exit_hub"]
-    for gone in ("ui.apply", "ui.ai_enabled", "ui.ai_exit_is", "ui.ai_off"):
-        assert gone not in EN_WORDS, gone
-
-
-def test_the_join_row_is_always_there_and_words_a_refused_link():
-    body = PAGE_JS.split("function joinRow(state)")[1].split("\n}")[0]
-
-    assert "card.appendChild(joinRow(state));" in PAGE_JS
-    assert "t('ui.add_hub')" in body and "t('ui.paste_hint')" in body
-    assert "send('/api/join', { link: input.value })" in body
-    assert "wordCode(state.error.code, state.error.params)" in body
-    assert "input.onblur = settle;" in body
-    assert EN_WORDS["ui.add_hub"] == "Join a hub"
-    assert EN_WORDS["ui.connect"] == "Join"
-    assert "t('ui.no_hubs')" in PAGE_JS
-    assert "not_connected" not in PAGE_JS
 
 
 def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
@@ -493,46 +430,6 @@ def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
 
 
 # --- one panel per kind, in hub order ---
-
-
-def test_a_kind_is_one_panel_listing_every_hubs_entries_in_hub_order():
-    body = PAGE_JS.split("function kindTab(state, kind)")[1].split("\n}")[0]
-
-    assert "const card = panelCard(t(titleKey), false);" in body
-    assert body.count("panelCard(") == 1
-    assert "for (const hub of hubs) {" in body
-    assert "for (const entry of entriesOf(state, hub, type)) {" in body
-    assert "build(card, state, hub, entry);" in body
-    assert "hub.connection_state !== 'connected'" in body
-    assert "card.appendChild(downRow(hub));" in body
-    assert "hubBlock" not in PAGE_JS and "hub_title" not in PAGE_JS
-    assert "entry.hub_id === hub.hub_id && entry.type === type" in PAGE_JS
-
-
-def test_every_entry_names_its_hub_and_machine_with_the_address_behind():
-    row = PAGE_JS.split("function entryRow(hub, entry, payloadText, extraNote)")[
-        1
-    ].split("\n}")[0]
-    provider = PAGE_JS.split("function providerLine(hub, entry)")[1].split("\n}")[0]
-    host = PAGE_JS.split("function entryHost(entry)")[1].split("\n}")[0]
-
-    assert "providerLine(hub, entry)" in row
-    assert row.count('class="note muted"') == 1
-    assert "describeEntry" not in PAGE_JS
-    assert "t('ui.provided_by', {" in provider
-    assert "hub: hubName(hub), device: entry.device_name || entryHost(entry)," in (
-        provider
-    )
-    assert "module: entryModule(entry)," in provider
-    assert "payload.url || payload.endpoint" in host
-    assert "return payload.host || '';" in host
-    for _, _, _, builder, _ in SERVICE_PANELS:
-        body = PAGE_JS.split(f"function {builder}(card, state, hub, entry)")[1].split(
-            "\n}"
-        )[0]
-        assert "entryRow(" in body and "hub, entry," in body, builder
-    assert EN_WORDS["ui.provided_by"] == "from {hub}:{device}:{module}"
-    assert CATALOGS["zh-CN"]["ui.provided_by"] == "由 {hub}:{device}:{module} 提供"
 
 
 def test_every_action_names_the_entrys_hub():
@@ -546,29 +443,6 @@ def test_every_action_names_the_entrys_hub():
         "hub_id: entry.hub_id,\n    is_enabled: isOn,",
     ):
         assert sent in PAGE_JS, sent
-
-
-def test_the_staging_is_keyed_by_service_key_and_the_tools_stage_is_one():
-    assert "let aiStaged = null;" in PAGE_JS
-    assert "function ensureAiStaged(state)" in PAGE_JS
-    assert "aiStaged = null;" in PAGE_JS
-    assert "const staged = fileStaged[key];" in PAGE_JS
-    assert "(state.forwards || {})[serviceKey(entry)]" in PAGE_JS
-    assert "(state.viewers || {})[serviceKey(entry)]" in PAGE_JS
-    assert "record.hub_id === entry.hub_id && record.entry_id === entry.id" in PAGE_JS
-    assert "serviceNotes[noteKey]" in PAGE_JS
-    assert "serviceNotes.ai" not in PAGE_JS
-
-
-def test_a_saved_config_is_sent_at_once_only_for_the_gateway_in_use():
-    body = PAGE_JS.split("function drawAiEntry(card, state, hub, entry)")[1].split(
-        "\n}"
-    )[0]
-    dialog = PAGE_JS.split("function openConfigDialog(staged, models, onSave)")[1]
-
-    assert "() => { if (isInUse) askAiUse(hub, entry, true, noteKey); });" in body
-    assert "onSave();" in dialog.split("save.onclick")[1].split("};")[0]
-    assert "entryRow(hub, entry, payload.endpoint || '', note)" in body
 
 
 def test_leaving_a_text_field_lets_a_held_state_draw():
@@ -605,80 +479,6 @@ def test_a_panel_with_no_entry_of_its_kind_draws_its_empty_line_once():
 # --- the virtual network chip and the colour tiers ---
 
 
-def test_a_hub_row_carries_the_virtual_network_chip_between_body_and_leave():
-    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
-    chip = PAGE_JS.split("function overlayChip(hub)")[1].split("\n}")[0]
-    asking = PAGE_JS.split("function askOverlay(hub, isHeldNetwork)")[1].split("\n}")[0]
-
-    assert body.index("row.appendChild(body);") < body.index("overlayChip(hub)")
-    assert body.index("overlayChip(hub)") < body.index("row.appendChild(leave);")
-    assert "if (!overlay) return null;" in chip
-    assert "chip.className = isOn ? 'chip on' : 'chip';" in chip
-    assert "chip.disabled = isMoving || isWorking || isHeld(hub);" in chip
-    assert "marker(isMoving ? 'spin' : overlayTone(overlay))" in chip
-    assert "connection_state" not in chip
-    assert "isHeldNetwork ? '/api/overlay/leave' : '/api/overlay/join'" in asking
-    assert "chip.onclick = () => askOverlay(hub, isHeldNetwork);" in chip
-    assert "const OVERLAY_HELD_STATES = ['waiting', 'on'];" in PAGE_JS
-    assert "{ hub_id: key }" in asking
-    assert "wordCode(overlay.code, overlay.params)" in body
-    assert EN_WORDS["ui.overlay"] == "Virtual network"
-    assert CATALOGS["zh-CN"]["ui.overlay"] == "虚拟网"
-
-
-def test_the_chip_leaves_while_the_network_is_wanted_or_held():
-    chip = PAGE_JS.split("function overlayChip(hub)")[1].split("\n}")[0]
-
-    assert "const isHeldNetwork = overlay.is_wanted" in chip
-    assert "|| OVERLAY_HELD_STATES.indexOf(overlay.state) >= 0;" in chip
-
-
-def test_a_hub_with_several_networks_gets_the_picker_beside_the_chip():
-    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
-    chooser = PAGE_JS.split("function overlayPicker(hub)")[1].split("\n}")[0]
-
-    assert body.index("overlayChip(hub)") < body.index("overlayPicker(hub)")
-    assert body.index("overlayPicker(hub)") < body.index("row.appendChild(leave);")
-    assert "if (networks.length < 2) return null;" in chooser
-    assert "picker('overlay_' + key, options, overlay.provider," in chooser
-    assert "send('/api/overlay/pick', { hub_id: key, provider: provider })" in chooser
-    assert "isMoving || isWorking || isHeld(hub)" in chooser
-    assert "wrap.title = t('ui.overlay_pick');" in chooser
-    assert "const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };" in (
-        PAGE_JS
-    )
-    assert ".picker.overlay_pick { flex: none;" in PAGE_CSS
-    assert EN_WORDS["ui.overlay_pick"] == "Choose the virtual network"
-    assert CATALOGS["zh-CN"]["ui.overlay_pick"] == "选择虚拟网"
-
-
-def test_a_console_waiting_to_be_attached_is_amber_with_a_hint():
-    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
-    tone = PAGE_JS.split("function overlayTone(overlay)")[1].split("\n}")[0]
-
-    assert "if (overlay.state === 'waiting') return 'wait';" in tone
-    assert (
-        "if (overlay.state === 'waiting') "
-        "body.appendChild(noteLine(t('ui.overlay_waiting_hint')));"
-    ) in body
-    assert EN_WORDS["ui.overlay_waiting"] == "Waiting for the console"
-    assert CATALOGS["zh-CN"]["ui.overlay_waiting"] == "等待控制台挂载"
-    assert EN_WORDS["ui.overlay_waiting_hint"]
-    assert CATALOGS["zh-CN"]["ui.overlay_waiting_hint"]
-
-
-def test_every_overlay_state_has_a_word():
-    from neutrino_client.core.overlay import OVERLAY_STATES
-
-    listed = PAGE_JS.split("const OVERLAY_STATES = [")[1].split("];")[0]
-    assert re.findall(r"'([a-z]+)'", listed) == list(OVERLAY_STATES)
-    for state in OVERLAY_STATES:
-        assert EN_WORDS[f"ui.overlay_{state}"]
-        assert CATALOGS["zh-CN"][f"ui.overlay_{state}"]
-    for state in ("on", "joining", "leaving"):
-        assert EN_WORDS[f"state.{state}"]
-
-
 def code_tones() -> dict:
     """The page's code-to-colour table."""
     listed = PAGE_JS.split("const CODE_TONES = {")[1].split("};")[0]
@@ -703,47 +503,6 @@ RED_CODES = {
     "overlay_daemon_down",
     "overlay_join_failed",
 }
-
-
-def test_every_code_a_row_or_a_chip_carries_has_its_colour():
-    tones = code_tones()
-    overlay_codes = {
-        code for code in catalog_keys("code.") if code.startswith("overlay_")
-    }
-    hub_codes = {
-        "hello_invalid",
-        "role_mismatch",
-        "hub_unreachable",
-        "hub_untrusted",
-        "hub_refused",
-        "hub_reply_unreadable",
-        "binding_unknown",
-        "client_disabled",
-        "protocol_too_old",
-        "protocol_too_new",
-    }
-
-    assert (overlay_codes | hub_codes | AMBER_CODES | RED_CODES) <= set(tones)
-    for code in AMBER_CODES:
-        assert tones[code] == "wait", code
-    for code in RED_CODES:
-        assert tones[code] == "bad", code
-    assert set(tones.values()) <= {"wait", "bad"}
-
-
-def test_the_hub_row_colours_by_the_fixed_tiers():
-    tone = PAGE_JS.split("function hubTone(hub)")[1].split("\n}")[0]
-
-    assert (
-        "if (hub.connection_state === 'connected' && !hub.is_disabled) return 'ok';"
-        in (tone)
-    )
-    assert "if (code) return codeTone(code);" in tone
-    assert "return hub.hub_software ? 'spin' : 'off';" in tone
-    assert "row.innerHTML = marker(tone);" in PAGE_JS
-    for token in ("--color-signal-ok", "--color-signal-warn", "--color-signal-error"):
-        assert token in PAGE_CSS
-    assert ".spin.warn { border-top-color: var(--color-signal-warn); }" in PAGE_CSS
 
 
 def test_the_ai_switch_sends_the_toggle_and_the_tool_configs_together():
@@ -773,40 +532,9 @@ def test_the_desktops_panel_only_connects():
 # --- the language and the theme on the settings page ---
 
 
-def test_the_settings_page_carries_the_language_and_sends_it_on_save():
-    body = PAGE_JS.split("function drawSettings()")[1].split("\n}")[0]
-
-    assert "openSettingsDialog" not in PAGE_JS
-    assert "const card = panelCard(t('ui.settings_title'), isDirty);" in body
-    assert "save.disabled = !isDirty;" in body
-    assert "cancel.onclick = () => { settingsDraft = null; redraw(); };" in body
-    assert "openDialog(" not in body
-    assert "picker('language', languageOptions, draft.language" in body
-    assert "send('/api/language', { language: draft.language })" in body
-    assert "t('ui.save')" in body and "t('ui.cancel')" in body
-    assert "ui.close" not in body
-    assert "LANGUAGES.map(" in body
-    assert "languageRow" not in PAGE_JS
-    assert EN_WORDS["ui.language"] == "Language"
-    for language in CLIENT_LANGUAGES:
-        assert EN_WORDS[f"ui.language_name.{language}"]
-
-
 def test_the_page_words_itself_in_the_language_the_state_names():
     assert "setLanguage(state.language);" in PAGE_JS
     assert "document.documentElement.lang = language;" in PAGE_JS
-
-
-def test_the_settings_dialog_carries_the_theme_after_the_language():
-    body = PAGE_JS.split("function drawSettings()")[1].split("\n}")[0]
-
-    assert body.index("picker('language'") < body.index("picker('theme'")
-    assert "picker('theme', themeOptions, draft.theme" in body
-    assert "send('/api/theme', { theme: draft.theme })" in body
-    assert "THEMES.map(" in body
-    assert EN_WORDS["ui.theme"] == "Theme"
-    for theme in CLIENT_THEMES:
-        assert EN_WORDS[f"ui.theme_name.{theme}"]
 
 
 def test_the_page_draws_itself_in_the_theme_the_state_names():
@@ -825,30 +553,6 @@ def test_the_window_carries_both_palettes_and_starts_dark():
 
 
 # --- greyed, never hidden ---
-
-
-def test_an_unhealthy_entry_is_greyed_never_dropped():
-    assert "'feat' : 'feat greyed'" in PAGE_JS
-    assert EN_WORDS["ui.unhealthy"] == "not reachable now"
-
-
-def test_everything_of_a_hub_greys_while_it_has_the_client_switched_off():
-    assert "function isHeld(hub)" in PAGE_JS
-    assert PAGE_JS.count("isHeld(hub)") >= 6
-    assert "isHeld(state)" not in PAGE_JS
-    assert EN_WORDS["ui.disabled"] == "Switched off by the hub"
-
-
-def test_a_replaced_socket_shows_its_state_and_one_reconnect_button():
-    body = PAGE_JS.split("function hubRow(hub)")[1].split("\n}")[0]
-
-    assert "hub.connection_state === 'replaced'" in body
-    assert "t('state.replaced')" in body
-    assert "reconnect.textContent = t('ui.reconnect');" in body
-    assert "send('/api/session/start', { hub_id: hubKey(hub) })" in body
-    assert body.count("t('ui.reconnect')") == 1
-    assert EN_WORDS["state.replaced"] == "Replaced by another client"
-    assert EN_WORDS["ui.reconnect"] == "Reconnect"
 
 
 def test_every_choice_the_page_offers_goes_through_the_one_picker():
@@ -882,29 +586,7 @@ def test_the_pickers_list_stops_at_five_rows_and_scrolls():
     assert "max-height: 163px" in PAGE_CSS
 
 
-def test_a_drive_letter_mount_is_picked_from_the_free_letters():
-    """Where a mount is a drive letter there is no path to type or browse."""
-    assert "(state.mount_location_shape || 'path') === 'drive_letter'" in PAGE_JS
-    assert "function driveLetterLine(staged, state)" in PAGE_JS
-    assert "state.mount_location_choices" in PAGE_JS
-    assert "t('ui.mount_drive_caption')" in PAGE_JS
-    # The browser belongs to the path shape alone, and is never a dead button.
-    assert "browse.disabled" not in PAGE_JS
-    assert "function mountPathLine(staged)" in PAGE_JS
-
-
 # --- busy states spin ---
-
-
-def test_every_mount_busy_state_has_a_spinner_word():
-    assert '<span class="spin">' in PAGE_JS
-    assert (
-        "const MOUNT_BUSY_STATES = %s;" % str(list(MOUNT_BUSY_STATES)).replace('"', "'")
-        in PAGE_JS
-    )
-    assert "t('ui.mount_' + state)" in PAGE_JS
-    for state in MOUNT_BUSY_STATES:
-        assert EN_WORDS[f"ui.mount_{state}"]
 
 
 # --- the redraw guards ---
@@ -962,30 +644,8 @@ def test_a_redraw_the_person_caused_always_happens():
     assert PAGE_JS.count("settle();") >= 2
 
 
-def test_the_lanes_standing_greys_and_spins():
-    assert "const isWorking = work.state === 'working';" in PAGE_JS
-    assert "t('ui.ai_switching')" in PAGE_JS
-    assert "t('ui.rdp_connecting')" in PAGE_JS
-    assert "work.step === 'connecting:' + serviceKey(entry)" in PAGE_JS
-    assert EN_WORDS["code.busy"]
-
-
-def test_a_failed_switch_leaves_the_switch_live_for_the_same_ask_again():
-    body = PAGE_JS.split("function drawAiEntry(card, state, hub, entry)")[1].split(
-        "\n}"
-    )[0]
-    assert "toggle.disabled = !entry.is_healthy || isHeld(hub) || isWorking;" in body
-    assert "if (isExit && work.code) notes.push(wordCode(work.code, work.params));" in (
-        body
-    )
-
-
 def test_a_sent_mount_password_is_cleared_from_the_stage():
     assert "staged.password = '';" in PAGE_JS
-
-
-def test_a_refused_link_is_worded_from_its_code():
-    assert "wordCode(state.error.code, state.error.params)" in PAGE_JS
 
 
 def test_the_page_offers_no_reassurance_prose():
@@ -1031,102 +691,12 @@ def test_an_entrys_module_is_named_from_its_origin_code_and_its_title_behind():
     assert catalog_keys("ui.description.") == set()
 
 
-def test_no_entry_line_says_published():
-    for language in CLIENT_LANGUAGES:
-        for key, word in CATALOGS[language].items():
-            if key.startswith("ui."):
-                assert "publish" not in word and "发布" not in word, key
-
-
 # --- the terminals page ---
 
 
 def function_body(signature: str) -> str:
     """One top-level function's body, up to its closing brace."""
     return PAGE_JS.split(signature)[1].split("\n}")[0]
-
-
-def test_the_terminals_page_is_a_machine_strip_over_a_panel_of_shells():
-    body = function_body("function drawTerminals(state)")
-    strip = function_body("function machineStrip(state)")
-
-    button = function_body("function newShellButton(picked)")
-
-    assert "page.appendChild(machineStrip(state));" in body
-    assert "page.appendChild(shellPanel(state));" in body
-    assert body.index("machineStrip(state)") < body.index("shellPanel(state)")
-    assert "machine.hub_id === hub.hub_id" in strip
-    assert "chip.innerHTML = marker(machine.is_online ? 'ok' : 'off');" in strip
-    assert "line.appendChild(newShellButton(picked));" in strip
-    assert "open.textContent = t('ui.terminal_new');" in button
-    assert (
-        "open.disabled = !picked || !picked.machine.is_online || isHeld(picked.hub);"
-        in button
-    )
-    assert "open.onclick = () => openShell(picked.hub, picked.machine);" in button
-    assert "card.appendChild(emptyRow(t('ui.empty_terminals')));" in strip
-    assert "t('ui.machine_provided_by'," in strip
-    assert (EN_WORDS["ui.terminal_new"], CATALOGS["zh-CN"]["ui.terminal_new"]) == (
-        "New terminal",
-        "新终端",
-    )
-
-
-def test_with_no_shell_open_a_dashed_frame_offers_a_new_terminal():
-    panel = function_body("function shellPanel(state)")
-    empty = panel.split("if (shellTabs.length === 0 && kept.length === 0) {")[1].split(
-        "\n  }"
-    )[0]
-    frame = PAGE_CSS.split(".term_empty {")[1].split("}")[0]
-
-    assert "empty.className = 'term_empty';" in empty
-    assert "t('ui.terminal_none')" in empty and "t('ui.terminal_pick_hint')" in empty
-    assert "const open = newShellButton(pickedMachine(state));" in empty
-    assert "icon('terminal', 14)" in empty
-    assert "empty.appendChild(open);" in empty
-    assert "flex: 1;" in frame
-    assert "border: 1px dashed var(--color-border-strong);" in frame
-    for theme in ("dark", "light"):
-        block = PAGE_CSS.split(f'[data-theme="{theme}"] {{')[1].split("}")[0]
-        assert "--color-border-strong:" in block and "--color-text-faint:" in block
-    assert (EN_WORDS["ui.terminal_none"], CATALOGS["zh-CN"]["ui.terminal_none"]) == (
-        "No terminal open",
-        "没有打开的终端",
-    )
-
-
-def test_each_open_shell_is_a_tab_that_closes_its_shell():
-    panel = function_body("function shellPanel(state)")
-    tab = function_body("function shellTabButton(tab)")
-    closing = function_body("function closeShell(tab)")
-    tone = function_body("function shellTone(tab)")
-
-    assert "for (const tab of shellTabs) head.appendChild(shellTabButton(tab));" in (
-        panel
-    )
-    assert "panel.appendChild(shellSurfaceElement());" in panel
-    assert "wrap.className = tab.key === activeShell ? 'term_tab on' : 'term_tab';" in (
-        tab
-    )
-    assert "close.onclick = () => closeShell(tab);" in tab
-    assert "api('/api/terminal/close', { terminal_id: tab.terminal_id });" in closing
-    assert "if (tab.state === 'connecting') return 'spin';" in tone
-    assert "return tab.isRefused ? 'bad' : 'off';" in tone
-    assert EN_WORDS["ui.terminal_close"] == "Close {name}"
-
-
-def test_a_shell_is_xterm_fitted_to_its_pane_and_opened_at_that_size():
-    body = function_body("function openShell(hub, machine, kept)")
-    fit = function_body("function fitShell(tab)")
-
-    assert "const term = new Terminal({" in body
-    assert "const fit = new FitAddon.FitAddon();" in body
-    assert body.index("term.open(pane);") < body.index("api('/api/terminal/open'")
-    assert "cols: term.cols, rows: term.rows," in body
-    assert "term.onData((data) => sendShellKeys(tab, data));" in body
-    assert "api('/api/terminal/resize'," in body
-    assert "proposed.cols === tab.term.cols && proposed.rows === tab.term.rows" in fit
-    assert "new ResizeObserver(fitActiveShell).observe(shellSurface);" in PAGE_JS
 
 
 def test_keys_go_one_request_at_a_time_and_output_comes_as_pushed_pieces():
@@ -1197,124 +767,347 @@ def test_the_font_is_not_inlined_into_the_document():
     assert len(page.control_page_html().encode("utf-8")) < 2 * 1024 * 1024
 
 
-def test_meslolgs_nf_comes_first_and_every_shell_loads_it():
-    opening = function_body("function openShell(hub, machine, kept)")
-    loading = function_body("function loadTerminalFont()")
-    reading = PAGE_JS.split("async function fontBytes(name) {")[1].split("\n}")[0]
+# --- the persistent sessions ---
 
+
+def body_of(name: str) -> str:
+    """One function of the page's script, from its line to the next one's."""
+    start = PAGE_JS.index(f"function {name}(")
+    following = PAGE_JS.find("\nfunction ", start + 1)
+    following_async = PAGE_JS.find("\nasync function ", start + 1)
+    ends = [end for end in (following, following_async) if end > 0]
+    return PAGE_JS[start : min(ends) if ends else len(PAGE_JS)]
+
+
+# --- the words and the colours of client.md ---
+
+
+def test_every_word_of_client_md_is_in_both_catalogs_as_written():
+    for key, english in CLIENT_MD_WORDS.items():
+        assert EN_WORDS[key] == english
+        assert CATALOGS["zh-CN"][key]
+    assert CATALOGS["zh-CN"]["ui.state.disabled"] == "已被 hub 停用"
+    assert CATALOGS["zh-CN"]["ui.overlay.on"] == "已连接 · {address}"
+
+
+def test_the_page_names_the_five_connections_and_the_three_network_states():
+    listed = PAGE_JS.split("const CONNECTION_STATES = [")[1].split("];")[0]
+    assert re.findall(r"'([a-z]+)'", listed) == list(CONNECTION_STATES)
+    listed = PAGE_JS.split("const OVERLAY_STATES = [")[1].split("];")[0]
+    assert re.findall(r"'([a-z]+)'", listed) == list(OVERLAY_STATES)
+    from neutrino_client.core.overlay import OVERLAY_STATES as CORE_OVERLAY
+    from neutrino_client.core.session import CONNECTION_STATES as CORE_CONNECTION
+
+    assert tuple(CORE_OVERLAY) == OVERLAY_STATES
+    assert tuple(CORE_CONNECTION) == CONNECTION_STATES
+
+
+def test_the_hub_dot_follows_the_colour_table():
+    tone = body_of("hubTone")
+    assert (
+        "if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';"
+        in tone
+    )
+    assert "if (hub.connection === 'connecting') return 'pulse';" in tone
+    assert "if (hub.connection === 'connected') return 'ok';" in tone
+    assert "return hub.software ? 'wait' : 'off';" in tone
+    listed = PAGE_JS.split("const PERSON_CODES = [")[1].split("];")[0]
+    assert set(re.findall(r"'([a-z_]+)'", listed)) == {
+        "hub_untrusted",
+        "binding_unknown",
+        "protocol_too_old",
+        "protocol_too_new",
+    }
+
+
+def test_a_pulsing_dot_is_the_amber_one_animated():
+    assert "(tone === 'pulse' ? 'wait pulse' : tone)" in PAGE_JS
+    assert ".dot.pulse { animation: pulse" in PAGE_CSS
+
+
+def test_the_busy_code_reaches_no_word_on_the_page():
+    assert "busy" not in PAGE_JS
+
+
+# --- one state, pushed ---
+
+
+def test_the_page_keeps_no_refresh_timer_and_no_remembered_outcome():
+    for gone in (
+        "REFRESH_SPIN_MS",
+        "refreshTimer",
+        "leaveAsked",
+        "overlayNotes",
+        "serviceNotes",
+        "fileAsked",
+        "isHeld",
+    ):
+        assert gone not in PAGE_JS
+
+
+def test_the_refresh_button_spins_while_any_hub_refreshes():
+    refresh = body_of("drawRefresh")
+    assert "if (isAnyRefreshing(state)) {" in refresh
+    assert "button.disabled = true;" in refresh
+    assert "button.onclick = () => send('/api/refresh', {});" in refresh
+
+
+def test_every_entry_of_a_refreshing_hub_pulses_with_its_actions_off():
+    assert "return isRefreshing(hub) ? 'refreshing' : '';" in body_of("entryWork")
+    assert "return !entryWork(hub, entry) && hub.connection !== 'disabled';" in (
+        body_of("isEntryFree")
+    )
+    assert "if (entryWork(hub, entry)) return 'pulse';" in body_of("entryTone")
+
+
+def test_a_button_that_starts_a_job_is_its_indicator():
+    button = body_of("jobButton")
+    assert "button.innerHTML = '<span class=\"spin\"></span>';" in button
+    assert "t('ui.job.' + job)" in button
+    assert "button.disabled = true;" in button
+
+
+def test_a_failed_job_is_worded_on_its_rows_error_line():
+    assert "error: wordError(entry.last_error)," in body_of("entryRow")
+
+
+# --- the Hubs page ---
+
+
+def test_a_hub_row_draws_its_word_its_network_line_and_its_controls_in_order():
+    row = body_of("hubRow")
+    assert row.index("overlayPicker(hub)") < row.index("overlayButton(hub)")
+    assert row.index("overlayButton(hub)") < row.index("t('ui.reconnect')")
+    assert row.index("t('ui.reconnect')") < row.index("leaveButton(hub)")
+    assert "if (hub.connection === 'replaced') {" in row
+    assert "if (hub.is_exit) extras.push(noteLine(t('ui.hub_is_exit')));" in row
+    word = body_of("hubWord")
+    assert "if (jobs.is_leaving) return t('ui.job.leaving');" in word
+    assert "if (jobs.is_refreshing) return t('ui.job.refreshing');" in word
+    assert "return t('ui.state.' + connection);" in word
+
+
+def test_leave_arms_on_the_first_press_and_shows_its_job():
+    leave = body_of("leaveButton")
+    assert (
+        "if ((hub.jobs || {}).is_leaving) return jobButton('', 'leaving', 'danger');"
+        in (leave)
+    )
+    assert "armedButton(key, t('ui.leave'), t('ui.leave_armed')," in leave
+    armed = body_of("armedButton")
+    assert "if (!isArmed(key)) { arm(key); return; }" in armed
+    assert "const ARM_MS = 5000;" in PAGE_JS
+    assert "button.danger.armed {" in PAGE_CSS
+    assert "confirm(" not in PAGE_JS
+
+
+def test_the_network_button_is_connect_cancel_or_disconnect():
+    button = body_of("overlayButton")
+    assert (
+        "if (jobs.overlay_job === 'disconnecting') return jobButton('', 'disconnecting');"
+        in (button)
+    )
+    assert "send('/api/overlay/cancel', { hub_id: key })" in button
+    assert "send('/api/overlay/disconnect', { hub_id: key })" in button
+    assert "send('/api/overlay/connect', { hub_id: key })" in button
+    assert "/api/overlay/join" not in PAGE_JS and "/api/overlay/leave" not in PAGE_JS
+
+
+def test_the_picker_shows_with_two_networks_and_picks_only_while_off():
+    chooser = body_of("overlayPicker")
+    assert "if (networks.length < 2) return null;" in chooser
+    assert (
+        "const isLocked = overlay.state !== 'off' || !!(hub.jobs || {}).overlay_job"
+        in (chooser)
+    )
+    assert "send('/api/overlay/pick', { hub_id: key, provider: provider });" in chooser
+
+
+def test_a_hub_with_one_network_names_that_engine_on_its_line():
+    line = body_of("overlayLine")
+    assert "const name = networks.length === 1" in line
+    assert "t('ui.overlay.' + state, { address: overlay.address || '' })" in line
+
+
+def test_a_disabled_network_button_says_why():
+    reason = body_of("overlayReason")
+    assert "t('ui.reason.disabled')" in reason
+    assert "t('ui.reason.no_network')" in reason
+
+
+def test_the_join_button_shows_joining_and_a_refusal_under_the_input():
+    row = body_of("joinRow")
+    assert "jobButton(t('ui.join'), isJoining ? 'joining' : '')" in row
+    assert "joinError = reply && reply.error ? reply.error : null;" in row
+    assert "error: joinError ? wordCode(joinError.code, joinError.params) : ''," in row
+
+
+def test_a_notice_stands_above_the_hubs():
+    hubs = body_of("drawHubs")
+    assert "for (const notice of state.notices || []) {" in hubs
+
+
+# --- the service pages ---
+
+
+def test_every_entry_is_one_row_with_its_provider_line():
+    row = body_of("entryRow")
+    assert "provider: providerLine(hub, entry)," in row
+    for build in ("drawWebEntry", "drawPortEntry", "drawAiEntry", "drawFileEntry"):
+        assert "entryRow(hub, entry," in body_of(build)
+
+
+def test_a_local_only_web_entry_opens_through_a_forward_as_a_job():
+    web = body_of("drawWebEntry")
+    assert "jobButton(isLocal ? t('ui.open_local') : t('ui.open'), entry.job)" in web
+
+
+def test_a_forward_disconnects_even_while_its_entry_is_unhealthy():
+    port = body_of("drawPortEntry")
+    assert "(!entry.is_healthy && !isOn)" in port
+
+
+def test_the_ai_switch_and_configure_wait_for_any_switch_running():
+    ai = body_of("drawAiEntry")
+    assert "&& !isAiSwitching(state);" in ai
+    assert "t('ui.job.switching')" in ai
+
+
+def test_a_mount_waits_for_a_user_name_and_a_path():
+    mount = body_of("mountButton")
+    assert "!staged.username || !staged.path" in mount
+    assert "t('ui.reason.mount_form')" in body_of("drawFileEntry")
+
+
+def test_a_desktop_connects_once_while_no_viewer_runs():
+    desktop = body_of("drawDesktopEntry")
+    assert "|| isOpen;" in desktop
+    assert "jobButton(t('ui.rdp_connect'), entry.job)" in desktop
+
+
+# --- the terminals ---
+
+
+def test_the_listed_sessions_become_tabs_and_a_gone_one_ends():
+    merge = body_of("mergeSessions")
+    assert "if (tab.isListed && !isListedNow" in merge
+    assert "endTab(tab, t('ui.terminal_ended'));" in merge
+    assert "const tab = newTab(row.hub_id, machine, row.session_id);" in merge
+    assert "tab.state = 'idle';" in merge
+    assert "activeShell = shellTabs[0].key;" in merge
+
+
+def test_the_active_listed_tab_attaches_when_the_page_opens():
+    assert "if (active && active.state === 'idle') {" in body_of("drawTerminals")
+    assert "if (tab.state === 'idle') attachShell(tab);" in body_of("selectTab")
+
+
+def test_a_tab_shows_its_badges():
+    tab = body_of("shellTabButton")
+    assert (
+        "if (flags.is_persistent) label.appendChild(badge(t('ui.badge.kept')));" in tab
+    )
+    assert "if (flags.is_shared) label.appendChild(badge(t('ui.badge.shared')));" in tab
+    assert "if ((flags.attached_count || 0) > 1)" in tab
+
+
+def test_the_two_switches_act_only_for_the_owner_of_an_open_tab():
+    status = body_of("statusLine")
+    assert "const isEnabled = isOpen && flags.is_owned;" in status
+    assert "t('ui.reason.not_owned', { owner: flags.owner })" in status
+    assert (
+        "t('ui.terminal_persistent')" in status and "t('ui.terminal_shared')" in status
+    )
+    persist = body_of("askPersist")
+    assert (
+        "terminal_id: tab.terminal_id, is_persistent: isPersistent, is_shared: isShared,"
+        in (persist)
+    )
+
+
+def test_a_plain_session_closes_and_a_kept_or_shared_one_arms():
+    guarded = body_of("isGuarded")
+    assert "(flags.is_persistent || flags.is_shared)" in guarded
+    close = body_of("pressClose")
+    assert "if (!isGuarded(tab)) { closeShell(tab); return; }" in close
+    assert (
+        "api('/api/terminal/stop', { hub_id: tab.hub_id, session_id: tab.session_id })"
+        in (close)
+    )
+
+
+def test_a_middle_click_closes_a_tab_and_a_double_click_opens_one():
+    assert "if (event.button !== 1) return;" in body_of("shellTabButton")
+    assert "head.ondblclick = (event) => {" in body_of("shellPanel")
+
+
+def test_the_right_click_opens_the_menu_at_the_pointer():
+    assert "openTerminalMenu(tab, event.clientX, event.clientY);" in body_of(
+        "wireShell"
+    )
+    menu = body_of("openTerminalMenu")
+    for key in ("ui.menu.copy", "ui.menu.paste", "ui.menu.select_all", "ui.menu.clear"):
+        assert f"t('{key}')" in menu
+    assert "!tab.term.hasSelection()" in menu
+    assert "if (event.key === 'Escape') closeTerminalMenu();" in PAGE_JS
+
+
+def test_the_copy_and_paste_chords_follow_each_system():
+    chord = body_of("terminalChord")
+    assert (
+        "(event.ctrlKey && event.shiftKey && key === 'c') || (isCommand && key === 'c')"
+        in (chord)
+    )
+    assert (
+        "(event.ctrlKey && event.shiftKey && key === 'v') || (isCommand && key === 'v')"
+        in (chord)
+    )
+    assert "const isCommand = isMac() && event.metaKey && !event.ctrlKey;" in chord
+    assert "api('/api/clipboard', { text: text })" in body_of("copySelection")
+    assert "api('/api/clipboard').then(" in body_of("pasteClipboard")
+    assert "if (event.button !== 1 || !isLinux()) return;" in body_of("wireShell")
+
+
+def test_shift_page_keys_page_and_ctrl_plus_minus_keep_the_font_size():
+    chord = body_of("terminalChord")
+    assert "key === 'pageup') return 'page_up';" in chord
+    assert "key === 'pagedown') return 'page_down';" in chord
+    run = body_of("runTerminalChord")
+    assert "tab.term.scrollPages(-1)" in run
+    assert "send('/api/terminal/font', { size: terminalFontSize() + 1 })" in run
+
+
+def test_the_terminal_draws_in_meslolgs_nf_loaded_through_the_resident():
     assert "const TERMINAL_FONT_FAMILY = 'MesloLGS NF';" in PAGE_JS
     assert "const TERMINAL_FONT = '\"' + TERMINAL_FONT_FAMILY + '\", ui-monospace" in (
         PAGE_JS
     )
-    assert "const TERMINAL_FONT_FACES = [['regular', '400'], ['bold', '700']];" in (
-        PAGE_JS
-    )
-    assert "loadTerminalFont();" in opening
-    assert "new FontFace(TERMINAL_FONT_FAMILY, bytes, { weight: entry[1] })" in loading
-    assert "document.fonts.add(face);" in loading
-    assert "tab.term.options.fontFamily = TERMINAL_FONT;" in loading
-    assert "fitShell(tab);" in loading
-    assert "api('/api/font?name=' + name + '&offset=' + offset)" in reading
-    assert set(page.GUI_TERMINAL_FONTS) == {"regular", "bold"}
+    assert "loadTerminalFont();" in body_of("newTab")
+    assert "api('/api/font?name=' + name + '&offset=' + offset)" in body_of("fontBytes")
 
 
-def test_a_right_click_and_the_paste_chords_paste_the_residents_clipboard():
-    opening = function_body("function openShell(hub, machine, kept)")
-    chord = function_body("function isPasteChord(event)")
-    pasting = function_body("function pasteClipboard(tab)")
-
-    assert "pane.addEventListener('contextmenu', (event) => {" in opening
-    assert "term.attachCustomKeyEventHandler((event) => {" in opening
-    assert opening.count("pasteClipboard(tab);") == 2
-    assert "(event.ctrlKey && event.shiftKey) || (event.metaKey && !event.ctrlKey)" in (
-        chord
-    )
-    assert "api('/api/clipboard')" in pasting
-    assert "tab.term.paste(reply.text);" in pasting
-    assert "navigator.clipboard" not in PAGE_JS
-    assert "wordCode(reply.code, reply.params)" in pasting
-    assert EN_WORDS["code.clipboard_unreadable"]
-    assert CATALOGS["zh-CN"]["code.clipboard_unreadable"]
+def test_no_session_taken_handling_is_left():
+    assert "session_taken" not in PAGE_JS
+    assert "code.session_taken" not in EN_WORDS
+    assert EN_WORDS["code.session_not_owned"]
 
 
-# --- the persistent sessions ---
+# --- the settings page ---
 
 
-def test_the_kept_sessions_of_every_connected_hub_show_as_tabs_in_start_order():
-    panel = function_body("function shellPanel(state)")
-    kept = function_body("function keptSessions(state)")
-
-    assert "const kept = keptSessions(state);" in panel
-    assert "for (const entry of kept) head.appendChild(keptTabButton(entry));" in panel
-    assert "if (hub.connection_state !== 'connected') continue;" in kept
-    assert "if (!session.is_persistent || shown.indexOf(session.session_id) >= 0)" in (
-        kept
-    )
-    assert "compareStarts(one.session.started_at, other.session.started_at)" in kept
+def test_the_settings_card_carries_the_language_then_the_theme_and_saves_both():
+    settings = body_of("drawSettings")
+    assert settings.index("t('ui.language')") < settings.index("t('ui.theme')")
+    assert "send('/api/language', { language: draft.language });" in settings
+    assert "send('/api/theme', { theme: draft.theme });" in settings
+    assert "save.disabled = !isDirty;" in settings
+    assert "page.appendChild(aboutSection(state));" in settings
 
 
-def test_a_click_on_a_kept_tab_attaches_to_its_session():
-    tab = function_body("function keptTabButton(entry)")
-    opening = function_body("function openShell(hub, machine, kept)")
-
-    assert "openShell(entry.hub, entry.machine, session);" in tab
-    assert "session_id: kept ? kept.session_id : ''," in opening
-    assert "isPersistent: !!kept," in opening
-    assert "cols: term.cols, rows: term.rows, session_id: tab.session_id," in opening
-    assert "tab.session_id = reply.session_id || tab.session_id;" in opening
-
-
-def test_the_persistent_switch_sits_at_the_end_of_the_line_under_the_shell():
-    panel = function_body("function shellPanel(state)")
-    switch = function_body("function persistSwitch(tab)")
-    asking = function_body("function askPersist(tab, isPersistent)")
-    status = PAGE_CSS.split(".term_status {")[1].split("}")[0]
-
-    assert (
-        "if (active && active.state === 'open') "
-        "status.appendChild(persistSwitch(active));"
-    ) in panel
-    assert "button.className = tab.isPersistent ? 'switch on' : 'switch';" in switch
-    assert "button.setAttribute('role', 'switch');" in switch
-    assert "t('ui.terminal_persistent')" in switch
-    assert "api('/api/terminal/persist'," in asking
-    assert "{ terminal_id: tab.terminal_id, is_persistent: isPersistent }" in asking
-    assert "justify-content: space-between;" in status
-    assert EN_WORDS["ui.terminal_persistent"] == "Persistent"
-    assert CATALOGS["zh-CN"]["ui.terminal_persistent"] == "持久"
-
-
-def test_the_x_of_a_kept_session_asks_before_it_ends_it():
-    tab = function_body("function shellTabButton(tab)")
-    ending = function_body("function endButton(sessionId, name, onEnd)")
-    stopping = function_body("function stopSession(hubId, sessionId)")
-
-    assert "if (tab.isPersistent && tab.state === 'open') {" in tab
-    assert "stopSession(tab.hub_id, tab.session_id).then(() => closeShell(tab))" in tab
-    assert (
-        "if (!endArmed[sessionId]) { endArmed[sessionId] = true; redraw(); return; }"
-        in (ending)
-    )
-    assert "t('ui.terminal_end_ask')" in ending
-    assert "api('/api/terminal/stop', { hub_id: hubId, session_id: sessionId })" in (
-        stopping
-    )
-    assert EN_WORDS["ui.terminal_end_ask"] == "End session?"
-    assert CATALOGS["zh-CN"]["ui.terminal_end_ask"] == "结束会话？"
-
-
-def test_the_session_codes_are_worded_in_both_languages():
-    for code in ("session_taken", "session_unknown"):
-        assert EN_WORDS[f"code.{code}"]
-        assert CATALOGS["zh-CN"][f"code.{code}"]
-
-
-def test_a_local_only_web_entry_says_it_opens_on_this_machine():
-    row = function_body("function drawWebEntry(card, state, hub, entry)")
-
-    assert (
-        "open.textContent = payload.is_local_only === true "
-        "? t('ui.open_local') : t('ui.open');"
-    ) in row
-    assert EN_WORDS["ui.open_local"] == "Open locally"
-    assert CATALOGS["zh-CN"]["ui.open_local"] == "本机打开"
+def test_about_is_plain_rows_under_the_card_with_no_page_of_its_own():
+    about = body_of("aboutSection")
+    for key in ("ui.about", "ui.about_version", "ui.about_licence", "ui.about_source"):
+        assert f"t('{key}'" in about
+    assert "card" not in about
+    assert "const CLIENT_LICENCE = 'MIT';" in PAGE_JS
+    assert "https://github.com/iffiX/neutrino" in PAGE_JS

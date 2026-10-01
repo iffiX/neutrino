@@ -2,7 +2,8 @@
 
 The file is the person's own, mode 0600, under the client's configuration
 directory. It holds this installation's id, the language this person
-reads, the palette the window draws in, the AI tool choices and the mount
+reads, the palette the window draws in, the terminal's font size, the AI
+tool choices and the mount
 records: the hub and entry a share came from, its host, its login name and
 where it goes. Nothing about a service standing on is here; that is the
 running client's own and starts clean.
@@ -28,6 +29,8 @@ from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_DEFAULT_THEME,
     CLIENT_LANGUAGES,
+    CLIENT_TERMINAL_FONT_SIZE_MAX,
+    CLIENT_TERMINAL_FONT_SIZE_MIN,
     CLIENT_THEMES,
 )
 
@@ -89,6 +92,22 @@ def _theme(raw) -> str:
     return raw if raw in CLIENT_THEMES else ""
 
 
+def _font_size(raw) -> int:
+    """The kept terminal font size, 0 where the file names none in range.
+
+    Args:
+        raw: What the file held under ``terminal_font_size``.
+
+    Returns:
+        A size within the range, or 0.
+    """
+    if not isinstance(raw, int) or isinstance(raw, bool):
+        return 0
+    if not CLIENT_TERMINAL_FONT_SIZE_MIN <= raw <= CLIENT_TERMINAL_FONT_SIZE_MAX:
+        return 0
+    return raw
+
+
 def _kept(data: dict) -> dict:
     """The store's own keys, whatever else the file carries.
 
@@ -97,7 +116,8 @@ def _kept(data: dict) -> dict:
 
     Returns:
         ``{"machine_id": str, "language": str, "theme": str,
-        "ai": {"tool_configs": {...}}, "mounts": {id: record}}``.
+        "terminal_font_size": int, "ai": {"tool_configs": {...}},
+        "mounts": {id: record}}``.
     """
     ai = data.get("ai")
     mounts = data.get("mounts")
@@ -108,6 +128,7 @@ def _kept(data: dict) -> dict:
         "machine_id": machine_id if isinstance(machine_id, str) else "",
         "language": _language(data.get("language")),
         "theme": _theme(data.get("theme")),
+        "terminal_font_size": _font_size(data.get("terminal_font_size")),
         "ai": {"tool_configs": _tool_configs(ai.get("tool_configs"))},
         "mounts": {
             str(record_id): _record(record)
@@ -185,6 +206,29 @@ class ClientServiceStore:
 
         def change(data: dict) -> None:
             data["theme"] = _theme(theme) or CLIENT_DEFAULT_THEME
+
+        self._mutate(change)
+
+    def terminal_font_size(self) -> int:
+        """The terminal's font size this person chose.
+
+        Returns:
+            The size in pixels, or 0 until one is set.
+        """
+        return self._read()["terminal_font_size"]
+
+    def set_terminal_font_size(self, size: int) -> None:
+        """Record the terminal's font size.
+
+        Args:
+            size: The size in pixels; one out of range is held to the range.
+        """
+        held = min(
+            max(int(size), CLIENT_TERMINAL_FONT_SIZE_MIN), CLIENT_TERMINAL_FONT_SIZE_MAX
+        )
+
+        def change(data: dict) -> None:
+            data["terminal_font_size"] = held
 
         self._mutate(change)
 

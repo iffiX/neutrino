@@ -28,16 +28,32 @@ def test_state_carries_the_persons_facts_the_hubs_and_no_token():
     assert set(state["hubs"][0]) == {
         "hub_id",
         "hub_name",
-        "hub_software",
         "binding_id",
-        "name",
         "gateway_url",
-        "connection_state",
-        "is_disabled",
-        "is_exit",
+        "software",
+        "connection",
         "last_error",
+        "is_exit",
         "overlay",
+        "jobs",
     }
+    assert set(state["hubs"][0]["overlay"]) == {
+        "network",
+        "networks",
+        "state",
+        "address",
+        "error",
+    }
+    assert state["hubs"][0]["jobs"] == {
+        "is_refreshing": False,
+        "overlay_job": "",
+        "is_leaving": False,
+    }
+    assert all(
+        entry["job"] == "" and entry["last_error"] is None
+        for entry in state["services"]
+    )
+    assert state["notices"] == []
     assert [(entry["hub_id"], entry["type"]) for entry in state["services"]] == [
         ("h1", "ai"),
         ("h1", "web"),
@@ -55,7 +71,7 @@ def test_state_carries_the_persons_facts_the_hubs_and_no_token():
     assert state["mounts"][0]["hub_id"] == "h1"
     assert state["ai"]["is_enabled"] is True
     assert "tok" not in json.dumps(state)
-    for gone in ("connection_state", "gateway_url", "hub_version", "last_error"):
+    for gone in ("connection", "gateway_url", "hub_version", "last_error"):
         assert gone not in state
     assert "caller" not in state and "accounts" not in state and "modules" not in state
 
@@ -116,7 +132,7 @@ def test_choosing_the_exit_answers_the_state_with_the_choice():
 
 def test_only_a_connected_hub_can_be_the_exit():
     resident = FakeResident()
-    resident.hubs_value[1]["connection_state"] = "reconnecting"
+    resident.hubs_value[1]["connection"] = "connecting"
 
     status, reply = routes.dispatch("POST", "/api/exit/set", {"hub_id": "h2"}, resident)
     assert (status, reply) == (400, {"code": "no_exit_hub", "params": {"hub_id": "h2"}})
@@ -161,7 +177,7 @@ def test_service_actions_carry_only_the_body():
 
 def test_starting_the_session_takes_a_replaced_binding_back():
     resident = FakeResident()
-    resident.hubs_value[0]["connection_state"] = "replaced"
+    resident.hubs_value[0]["connection"] = "replaced"
 
     status, state = routes.dispatch(
         "POST", "/api/session/start", {"hub_id": "h1"}, resident
@@ -169,7 +185,7 @@ def test_starting_the_session_takes_a_replaced_binding_back():
 
     assert status == 200
     assert resident.reconnects == ["h1"]
-    assert state["hubs"][0]["connection_state"] == "reconnecting"
+    assert state["hubs"][0]["connection"] == "connecting"
 
 
 def test_starting_the_session_names_the_hub_or_the_one_joined():
@@ -351,7 +367,12 @@ def test_a_shapeless_body_acts_as_an_empty_one():
 
 
 @pytest.mark.parametrize(
-    "path, verb", [("/api/overlay/join", "join"), ("/api/overlay/leave", "leave")]
+    "path, verb",
+    [
+        ("/api/overlay/connect", "connect"),
+        ("/api/overlay/cancel", "cancel"),
+        ("/api/overlay/disconnect", "disconnect"),
+    ],
 )
 def test_a_network_step_reaches_the_resident_and_answers_the_state(path, verb):
     resident = FakeResident()
@@ -380,34 +401,76 @@ def test_a_pick_names_the_hub_and_the_provider():
     ]
 
 
-@pytest.mark.parametrize(
-    "code, expected",
-    [
-        ("overlay_not_authorized", 403),
-        ("overlay_missing", 400),
-        ("busy", 400),
-        ("unknown_hub", 404),
-    ],
-)
-def test_a_refused_network_step_answers_its_code(code, expected):
+def test_a_network_step_on_a_hub_nobody_joined_answers_unknown_hub():
     resident = FakeResident()
-    resident.overlay_reply = {"code": code, "params": {}}
+    resident.overlay_reply = {"code": "unknown_hub", "params": {"hub_id": "h9"}}
 
     status, reply = routes.dispatch(
-        "POST", "/api/overlay/join", {"hub_id": "h1"}, resident
+        "POST", "/api/overlay/connect", {"hub_id": "h9"}, resident
     )
 
-    assert status == expected
-    assert reply == {"code": code, "params": {}}
+    assert status == 404
+    assert reply == {"code": "unknown_hub", "params": {"hub_id": "h9"}}
 
 
-def test_the_state_carries_the_terminals_of_every_hub():
+def test_the_old_network_routes_are_gone():
+    for path in ("/api/overlay/join", "/api/overlay/leave"):
+        status, reply = routes.dispatch("POST", path, {"hub_id": "h1"}, FakeResident())
+        assert (status, reply["code"]) == (404, "unknown_request")
+
+
+def test_the_state_carries_the_terminals_and_sessions_of_every_hub():
     _status, state = routes.dispatch("GET", "/api/state", None, FakeResident())
 
-    assert [(row["hub_id"], row["device_id"]) for row in state["terminals"]] == [
+    machines = state["terminals"]["machines"]
+    assert [(row["hub_id"], row["device_id"]) for row in machines] == [
         ("h1", "d_lepton"),
         ("h1", "d_muon"),
     ]
+    (session,) = state["terminals"]["sessions"]
+    assert set(session) >= {
+        "session_id",
+        "device_id",
+        "owner",
+        "is_owned",
+        "is_persistent",
+        "is_shared",
+        "attached_count",
+        "title",
+    }
+
+
+# --- the clipboard ---
+
+
+def test_a_copy_writes_the_text_to_the_clipboard_and_answers_empty():
+    resident = FakeResident()
+
+    status, reply = routes.dispatch(
+        "POST", "/api/clipboard", {"text": "git status"}, resident
+    )
+
+    assert (status, reply) == (200, {})
+    assert resident.clipboard_written == ["git status"]
+
+
+def test_a_copy_the_platform_refuses_answers_its_code():
+    resident = FakeResident()
+    resident.clipboard_write_reply = {
+        "code": "clipboard_unwritable",
+        "params": {"detail": "no display"},
+    }
+
+    status, reply = routes.dispatch("POST", "/api/clipboard", {"text": "x"}, resident)
+
+    assert status == 400
+    assert reply["code"] == "clipboard_unwritable"
+
+
+def test_a_paste_reads_the_clipboard():
+    status, reply = routes.dispatch("GET", "/api/clipboard", None, FakeResident())
+
+    assert (status, reply) == (200, {"text": "echo pasted\n"})
 
 
 # --- the terminals ---
@@ -514,7 +577,7 @@ def test_persist_and_stop_reach_the_resident_and_answer_empty():
     persisted = routes.dispatch(
         "POST",
         "/api/terminal/persist",
-        {"terminal_id": "t1", "is_persistent": True},
+        {"terminal_id": "t1", "is_persistent": True, "is_shared": True},
         resident,
     )
     stopped = routes.dispatch(
@@ -522,10 +585,13 @@ def test_persist_and_stop_reach_the_resident_and_answer_empty():
     )
 
     assert (persisted, stopped) == ((200, {}), (200, {}))
-    assert resident.terminal_calls == [("persist", "t1", True), ("stop", "h1", "k1")]
+    assert resident.terminal_calls == [
+        ("persist", "t1", True, True),
+        ("stop", "h1", "k1"),
+    ]
 
 
-@pytest.mark.parametrize("code", ["session_unknown", "session_taken"])
+@pytest.mark.parametrize("code", ["session_unknown", "session_not_owned"])
 def test_a_refused_session_step_answers_its_code(code):
     resident = FakeResident()
     resident.session_reply = {"code": code, "params": {"session_id": "k1"}}
@@ -654,3 +720,14 @@ def test_a_font_the_page_does_not_carry_is_an_unknown_request(query):
 
     assert status == 404
     assert reply["code"] == "unknown_request"
+
+
+def test_the_terminal_font_size_is_kept_and_stated():
+    resident = FakeResident()
+
+    status, state = routes.dispatch(
+        "POST", "/api/terminal/font", {"size": 15}, resident
+    )
+
+    assert status == 200
+    assert state["terminal_font_size"] == 15

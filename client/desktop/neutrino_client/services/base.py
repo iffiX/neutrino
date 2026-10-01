@@ -121,6 +121,18 @@ class ServiceTypeHandler:
         """
         return {}
 
+    def settle(self, timeout_s: float) -> dict:
+        """Wait for the step an action started, and say how it ended.
+
+        Args:
+            timeout_s: How long to wait.
+
+        Returns:
+            The step's failure ``{"code", "params"}``; empty when it
+            succeeded, or when the type runs its actions within ``act``.
+        """
+        return {}
+
     def start(self) -> None:
         """Begin any background reconcile this type keeps running."""
 

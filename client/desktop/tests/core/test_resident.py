@@ -10,7 +10,11 @@ sessions it changed and the welcome's own write restarts none, the exit
 hub chosen and followed with the tools moved in one activation, the
 disabled check per hub, a start that turns nothing on and clears
 what an unclean exit left, and a shutdown that runs its order once, logs a
-line a step, and lets no step hold up the rest.
+line a step, and lets no step hold up the rest. The state document's jobs:
+a refresh set per hub and cleared by its answer, a leave and a service
+press shown before the work, a duplicate press dropped and never answered
+as ``busy``, a failure kept on the entry until the next press or a refresh,
+the notice a forgotten binding leaves, and the clipboard written.
 """
 
 import json
@@ -253,7 +257,9 @@ def two_hubs(config_path):
         config_path,
         bindings=[dict(BINDING, gateway_url=HOME_URL), dict(OFFICE_BINDING)],
     )
-    resident = ClientResident(log=discard, platform=FakeClientPlatform())
+    resident = ClientResident(
+        log=discard, platform=FakeClientPlatform(), start_thread=run_inline
+    )
     yield resident
     resident.shutdown()
 
@@ -307,15 +313,20 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
     assert home == {
         "hub_id": "h1",
         "hub_name": "home",
-        "hub_software": "neutrino_hub/0.3.0",
         "binding_id": "c1",
-        "name": "box",
         "gateway_url": HOME_URL,
-        "connection_state": "connected",
-        "is_disabled": False,
-        "is_exit": True,
+        "software": "neutrino_hub/0.3.0",
+        "connection": "connected",
         "last_error": None,
-        "overlay": None,
+        "is_exit": True,
+        "overlay": {
+            "network": "",
+            "networks": [],
+            "state": "off",
+            "address": "",
+            "error": None,
+        },
+        "jobs": {"is_refreshing": False, "overlay_job": "", "is_leaving": False},
     }
     assert (office["hub_id"], office["gateway_url"], office["is_exit"]) == (
         "h2",
@@ -341,9 +352,9 @@ def test_a_hub_that_is_down_subtracts_only_its_own_entries(two_hubs_up):
     office._drop_socket()
 
     assert resident.service_entries() == with_hub(HUB_SERVICES, "h1")
-    assert [row["connection_state"] for row in resident.hubs()] == [
+    assert [row["connection"] for row in resident.hubs()] == [
         "connected",
-        "reconnecting",
+        "connecting",
     ]
 
 
@@ -385,7 +396,7 @@ def test_leaving_one_hub_stops_only_its_session_and_releases_only_its_hub(
     assert posted == [("/api/channel/leave", {"id": "c2", "token": "tok2"})]
     assert list(sessions_of(resident)) == ["c1"]
     assert resident._sessions["c1"] is home
-    assert home.connection_state() == "connected"
+    assert home.connection() == "connected"
     assert scripts.sockets_of("office.lan")[0].is_closed is True
     assert scripts.sockets_of("hub.lan")[0].is_closed is False
     assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
@@ -538,7 +549,10 @@ def test_disabled_releases_only_that_hubs_entries(two_hubs_up):
     assert released == []
     for service_type in ("ai", "file", "port", "rdp"):
         assert resident._services[service_type].released_hubs == ["h2"]
-    assert [row["is_disabled"] for row in resident.hubs()] == [False, True]
+    assert [row["connection"] for row in resident.hubs()] == [
+        "connected",
+        "disabled",
+    ]
     assert resident.service_action(
         "port", {"hub_id": "h2", "id": "svc_tcp", "is_enabled": True}
     ) == {"code": "client_disabled", "params": {}}
@@ -796,7 +810,7 @@ def test_a_rewrite_of_the_file_restarts_only_the_sessions_it_changed(
     assert list(sessions_of(resident)) == ["c1", "c2", "c3"]
     assert resident._sessions["c1"] is home
     assert resident._sessions["c2"] is not office
-    assert home.connection_state() == "connected"
+    assert home.connection() == "connected"
     assert scripts.sockets_of("office.lan")[0].is_closed is True
     assert resident._services["file"].released_hubs == ["h2"]
     assert resident._sessions["c2"].binding()["token"] == "rotated"
@@ -1231,73 +1245,102 @@ def test_a_hub_row_carries_its_networks_row_and_no_secret(overlay_resident):
 
     (row,) = resident.hubs()
 
-    assert row["overlay"]["provider"] == "easytier"
-    assert row["overlay"]["network"] == "home"
+    assert row["overlay"]["network"] == "easytier"
+    assert row["overlay"]["networks"] == [{"provider": "easytier", "network": "home"}]
     assert row["overlay"]["state"] == "off"
+    assert row["jobs"]["overlay_job"] == ""
     assert "s3cret" not in json.dumps(row)  # scan: allow
 
 
-def test_join_and_leave_reach_the_hubs_network(overlay_resident):
+def test_connect_and_disconnect_reach_the_hubs_network(overlay_resident):
     resident, driver = overlay_resident
 
-    assert resident.join_overlay("h1") == {}
-    wait_until(lambda: driver.steps == [("join", "home")])
+    assert resident.connect_overlay("h1") == {}
     wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
+    assert driver.steps == [("join", "home")]
     assert resident.hubs()[0]["overlay"]["address"] == "10.144.144.5"
+    wait_until(lambda: enrollment.bindings()[0]["is_overlay_on"] is True)
+    assert enrollment.bindings()[0]["is_overlay_on"] is True
 
-    assert resident.leave_overlay("c1") == {}
-    wait_until(lambda: len(driver.steps) == 2)
+    assert resident.disconnect_overlay("c1") == {}
+    wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "off")
     assert driver.steps[-1] == ("leave", "home")
+    wait_until(lambda: enrollment.bindings()[0]["is_overlay_on"] is False)
+    assert enrollment.bindings()[0]["is_overlay_on"] is False
 
 
-def test_join_and_leave_keep_the_wish_on_the_binding(overlay_resident):
+def test_a_second_connect_while_one_runs_is_dropped_and_never_busy(
+    overlay_resident,
+):
     resident, driver = overlay_resident
+    held = []
+    resident._overlay._start_thread = held.append
 
-    resident.join_overlay("h1")
-    assert enrollment.bindings()[0]["is_overlay_wanted"] is True
-    wait_until(lambda: driver.steps == [("join", "home")])
+    assert resident.connect_overlay("h1") == {}
+    assert resident.hubs()[0]["jobs"]["overlay_job"] == "connecting"
+    assert resident.connect_overlay("h1") == {}
 
-    resident.leave_overlay("h1")
-    assert enrollment.bindings()[0]["is_overlay_wanted"] is False
+    assert len(held) == 1
+    held[0]()
+    assert driver.steps == [("join", "home")]
+
+
+def test_a_cancel_reaches_a_connect_in_progress(overlay_resident):
+    resident, driver = overlay_resident
+    held = []
+    resident._overlay._start_thread = held.append
+    resident.connect_overlay("h1")
+
+    assert resident.cancel_overlay("h1") == {}
+    assert resident.hubs()[0]["jobs"]["overlay_job"] == "disconnecting"
+    held[1]()
+
+    assert resident.hubs()[0]["overlay"]["state"] == "off"
+    assert ("leave", "home") in driver.steps
 
 
 def test_a_pick_keeps_the_provider_on_the_binding(overlay_resident):
     resident, _driver = overlay_resident
 
     assert resident.pick_overlay("h1", "easytier") == {}
-    assert resident.pick_overlay("h1", "netbird")["code"] == "overlay_missing"
+    assert resident.pick_overlay("h1", "netbird") == {}
     assert resident.pick_overlay("h9", "easytier")["code"] == "unknown_hub"
 
     assert enrollment.bindings()[0]["overlay_pick"] == "easytier"
 
 
-def test_a_joined_network_has_its_hub_connect_through_it_first(overlay_resident):
+def test_a_network_that_is_on_has_its_hub_connect_through_it_first(
+    overlay_resident,
+):
     resident, _driver = overlay_resident
     session = resident._sessions["c1"]
     hosts = []
     session.reconnect_through = hosts.append
 
-    resident._overlay_joined(dict(EASYTIER_OVERLAY, hub_address="10.144.144.1/24"))
+    resident._overlay_route("h1", ["10.144.144.1"])
+    resident._overlay_route("c1", [])
 
-    assert hosts == [["10.144.144.1"]]
+    assert hosts == [["10.144.144.1"], []]
 
 
-def test_joining_the_network_of_a_hub_nobody_joined_is_unknown_hub(
+def test_a_press_on_the_network_of_a_hub_nobody_joined_is_unknown_hub(
     overlay_resident,
 ):
     resident, _driver = overlay_resident
 
-    assert resident.join_overlay("h9") == {
-        "code": "unknown_hub",
-        "params": {"hub_id": "h9"},
-    }
+    for press in (
+        resident.connect_overlay,
+        resident.cancel_overlay,
+        resident.disconnect_overlay,
+    ):
+        assert press("h9") == {"code": "unknown_hub", "params": {"hub_id": "h9"}}
 
 
 def test_leaving_a_hub_leaves_its_network_when_no_other_hub_names_it(
     overlay_resident,
 ):
     resident, driver = overlay_resident
-    resident.join_overlay("h1")
+    resident.connect_overlay("h1")
     wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
 
     resident.disconnect("h1")
@@ -1308,10 +1351,32 @@ def test_leaving_a_hub_leaves_its_network_when_no_other_hub_names_it(
 
 def test_the_terminals_of_every_hub_are_stamped_with_it(two_hubs_up):
     resident, _scripts = two_hubs_up
-    lepton = {"device_id": "d1", "name": "lepton", "is_online": True}
+    lepton = {
+        "device_id": "d1",
+        "name": "lepton",
+        "is_online": True,
+        "sessions": [
+            {
+                "session_id": "s1",
+                "owner": "hub",
+                "is_owned": False,
+                "is_shared": True,
+                "attached_count": 1,
+            }
+        ],
+    }
     resident._sessions["c1"]._take_state(dict(HOME_STATE, terminals=[lepton]))
 
-    assert resident.terminal_entries() == [dict(lepton, hub_id="h1", sessions=[])]
+    assert resident.terminal_entries() == [
+        {"device_id": "d1", "name": "lepton", "is_online": True, "hub_id": "h1"}
+    ]
+    (row,) = resident.terminal_sessions()
+    assert (row["hub_id"], row["device_id"], row["owner"], row["is_shared"]) == (
+        "h1",
+        "d1",
+        "hub",
+        True,
+    )
 
 
 def offered(resident) -> None:
@@ -1372,8 +1437,8 @@ def test_persist_names_the_terminals_session_and_stop_names_the_hub(two_hubs_up)
     session = resident._sessions["c1"]
     asked = []
 
-    def persist(session_id, is_persistent):
-        asked.append(("persist", session_id, is_persistent))
+    def persist(session_id, is_persistent, is_shared):
+        asked.append(("persist", session_id, is_persistent, is_shared))
 
     def stop(session_id):
         asked.append(("stop", session_id))
@@ -1384,14 +1449,19 @@ def test_persist_names_the_terminals_session_and_stop_names_the_hub(two_hubs_up)
     session.persist_shell = persist
     session.stop_shell_session = stop
 
-    assert resident.persist_terminal(outcome["terminal_id"], True) == {}
-    assert resident.persist_terminal("nobody", True)["code"] == "unknown_terminal"
+    assert resident.persist_terminal(outcome["terminal_id"], True, True) == {}
+    assert (
+        resident.persist_terminal("nobody", True, False)["code"] == "unknown_terminal"
+    )
     assert resident.stop_terminal_session("h1", "kept-9") == {
         "code": "session_unknown",
         "params": {"session_id": "kept-9"},
     }
     assert resident.stop_terminal_session("h9", "kept-9")["code"] == "unknown_hub"
-    assert asked == [("persist", outcome["session_id"], True), ("stop", "kept-9")]
+    assert asked == [
+        ("persist", outcome["session_id"], True, True),
+        ("stop", "kept-9"),
+    ]
 
 
 def test_a_machine_the_hub_does_not_offer_opens_nothing(two_hubs_up):
@@ -1461,3 +1531,230 @@ def test_a_machine_the_hub_does_not_offer_opens_no_window_terminal(two_hubs_up):
     assert resident.open_window_terminal("h1", "d9", 80, 24)["code"] == (
         "unknown_terminal"
     )
+
+
+# --- the jobs in the state document ---
+
+
+class SlowHandler(ServiceTypeHandler):
+    """A handler whose action waits until the test lets it finish.
+
+    Attributes:
+        acted: Every body it was handed.
+        answer: What the action ends with.
+    """
+
+    service_type = "port"
+
+    def __init__(self):
+        self.acted = []
+        self.answer = {}
+        self.release_it = threading.Event()
+
+    def act(self, *, entries, body):
+        self.acted.append(dict(body))
+        self.release_it.wait(timeout=5)
+        return dict(self.answer)
+
+    def release_hub(self, hub_id: str):
+        return 0
+
+
+def entry(resident, hub_id: str, entry_id: str) -> dict:
+    return next(
+        row
+        for row in resident.entry_rows()
+        if row["hub_id"] == hub_id and row["id"] == entry_id
+    )
+
+
+def test_a_press_writes_its_job_before_the_work_and_clears_it_after(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    handler = SlowHandler()
+    resident._services["port"] = handler
+    held = []
+    resident._start_thread = held.append
+
+    assert (
+        resident.service_action(
+            "port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True}
+        )
+        == {}
+    )
+    assert entry(resident, "h1", "svc_tcp")["job"] == "forwarding"
+    assert handler.acted == []
+
+    handler.release_it.set()
+    held[0]()
+    assert entry(resident, "h1", "svc_tcp")["job"] == ""
+    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
+
+
+def test_a_second_press_while_the_job_runs_is_dropped(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    handler = SlowHandler()
+    resident._services["port"] = handler
+    held = []
+    resident._start_thread = held.append
+    body = {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True}
+
+    resident.service_action("port", body)
+    assert resident.service_action("port", body) == {}
+
+    assert len(held) == 1
+
+
+def test_a_failed_job_is_the_entrys_error_until_a_refresh(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    handler = SlowHandler()
+    handler.answer = {"code": "forward_failed", "params": {"detail": "in use"}}
+    handler.release_it.set()
+    resident._services["port"] = handler
+
+    resident.service_action(
+        "port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": True}
+    )
+
+    assert entry(resident, "h1", "svc_tcp")["last_error"] == {
+        "code": "forward_failed",
+        "params": {"detail": "in use"},
+    }
+    resident.refresh()
+    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
+
+
+def test_a_lane_that_answers_busy_never_reaches_the_page(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    handler = SlowHandler()
+    handler.answer = {"code": "busy", "params": {"step": "switching"}}
+    handler.release_it.set()
+    resident._services["port"] = handler
+
+    assert (
+        resident.service_action(
+            "port", {"hub_id": "h1", "id": "svc_tcp", "is_enabled": False}
+        )
+        == {}
+    )
+    assert entry(resident, "h1", "svc_tcp")["last_error"] is None
+
+
+def test_a_mount_on_its_way_is_the_entrys_job(two_hubs_up):
+    resident, _scripts = two_hubs_up
+
+    class Mounting(ServiceTypeHandler):
+        service_type = "file"
+
+        def state(self):
+            return {
+                "mounts": [
+                    {
+                        "record_id": "r1",
+                        "hub_id": "h1",
+                        "entry_id": "share_media",
+                        "state": "queued",
+                    }
+                ]
+            }
+
+    resident._services["file"] = Mounting()
+
+    assert entry(resident, "h1", "share_media")["job"] == "mounting"
+
+
+def test_a_refresh_sets_each_hub_refreshing_and_clears_its_errors(two_hubs_up):
+    resident, scripts = two_hubs_up
+    home = resident._sessions["c1"]
+    home._last_error = {"code": "hub_reply_unreadable", "params": {}}
+
+    resident.refresh()
+
+    assert [row["jobs"]["is_refreshing"] for row in resident.hubs()] == [True, True]
+    assert resident.hubs()[0]["last_error"] is None
+    (made,) = scripts.sockets_of("hub.lan")
+    assert made.sent[-1]["is_refresh"] is True
+
+    home._dispatch(made, "text", json.dumps(dict(HOME_STATE, hash="s9")))
+    assert [row["jobs"]["is_refreshing"] for row in resident.hubs()] == [False, True]
+
+
+def test_a_refresh_while_a_hub_refreshes_is_dropped(two_hubs_up):
+    resident, scripts = two_hubs_up
+    resident.refresh()
+    (made,) = scripts.sockets_of("hub.lan")
+    sent = len(made.sent)
+
+    resident.refresh()
+
+    assert len(made.sent) == sent
+
+
+def test_a_disabled_hub_does_not_refresh(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    office = resident._sessions["c2"]
+    office._dispatch(
+        ScriptedSocket([]), "text", json.dumps(dict(OFFICE_STATE, is_disabled=True))
+    )
+
+    resident.refresh()
+
+    assert [row["jobs"]["is_refreshing"] for row in resident.hubs()] == [True, False]
+
+
+def test_a_leave_is_shown_before_the_hub_is_left(two_hubs_up, monkeypatch):
+    resident, _scripts = two_hubs_up
+    monkeypatch.setattr(
+        channel.GatewayHttpChannel, "post", lambda self, path, payload: {}
+    )
+    held = []
+    resident._start_thread = held.append
+
+    resident.leave("h2")
+    resident.leave("h2")
+
+    assert len(held) == 1
+    assert [row["jobs"]["is_leaving"] for row in resident.hubs()] == [False, True]
+    held[0]()
+    assert [row["hub_id"] for row in resident.hubs()] == ["h1"]
+
+
+def test_leaving_a_hub_nobody_joined_is_a_key_error(two_hubs_up):
+    resident, _scripts = two_hubs_up
+
+    with pytest.raises(KeyError):
+        resident.leave("h9")
+
+
+def test_a_forgotten_binding_leaves_a_notice(two_hubs_up, monkeypatch):
+    resident, _scripts = two_hubs_up
+    monkeypatch.setattr(resident_module, "CLIENT_NOTICE_S", 0.05)
+    office = resident._sessions["c2"]
+
+    office._unbind({"code": "binding_unknown", "params": {}})
+
+    assert resident.notices() == [
+        {"code": "binding_unknown", "params": {"hub": "office"}}
+    ]
+    assert [row["hub_id"] for row in resident.hubs()] == ["h1"]
+    wait_until(lambda: resident.notices() == [])
+    assert resident.notices() == []
+
+
+def test_the_clipboard_is_written_through_the_platform(two_hubs):
+    written = []
+    two_hubs.platform.write_clipboard = written.append
+
+    assert two_hubs.write_clipboard("ls -la") == {}
+    assert written == ["ls -la"]
+
+
+def test_a_clipboard_the_platform_cannot_write_is_a_code(two_hubs):
+    def refuse(text):
+        raise OSError("no display")
+
+    two_hubs.platform.write_clipboard = refuse
+
+    assert two_hubs.write_clipboard("x") == {
+        "code": "clipboard_unwritable",
+        "params": {"detail": "no display"},
+    }

@@ -204,7 +204,9 @@ def socket_of(monkeypatch, frames, *, connect_error=None) -> SocketScript:
     return script
 
 
-def session_for(binding=None, listener=None, log=discard) -> ClientHubSession:
+def session_for(
+    binding=None, listener=None, log=discard, **options
+) -> ClientHubSession:
     """A session over one binding, its callbacks on the listener."""
     listener = listener if listener is not None else Listener()
     return ClientHubSession(
@@ -216,6 +218,7 @@ def session_for(binding=None, listener=None, log=discard) -> ClientHubSession:
         on_services=listener.on_services,
         on_disabled=listener.on_disabled,
         on_unbound=listener.on_unbound,
+        **options,
     )
 
 
@@ -359,7 +362,7 @@ def test_a_welcome_of_another_role_is_unreachable(bound, monkeypatch):
 
     assert session.last_error()["code"] == "hub_unreachable"
     assert script.made[0].is_closed is True
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "down"
 
 
 @pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
@@ -374,7 +377,7 @@ def test_a_refused_first_frame_naming_the_protocol_keeps_the_binding(
 
     delays = [session.run_once() for _ in range(5)]
 
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "down"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error() == {
         "code": code,
@@ -420,7 +423,7 @@ def test_a_refused_first_frame_of_another_code_keeps_the_binding(
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "down"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error() == {"code": "ticket_spent", "params": {"id": "c1"}}
     assert listener.events == []
@@ -435,7 +438,7 @@ def test_a_welcome_after_a_refusal_clears_the_error(bound, monkeypatch):
     connected(session, socket_of(monkeypatch, [WELCOME]))
 
     assert session.last_error() is None
-    assert session.connection_state() == "connected"
+    assert session.connection() == "connected"
 
 
 def test_a_refused_frame_carries_its_code_on_the_exception(bound, monkeypatch):
@@ -532,8 +535,9 @@ def test_disabled_is_told_once_and_keeps_the_binding(bound, monkeypatch, config_
     take(session, made, dict(STATE, is_disabled=True))
 
     assert session.is_disabled() is True
+    assert session.connection() == "disabled"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
-    assert session.last_error() == {"code": "client_disabled", "params": {}}
+    assert session.last_error() is None
     assert listener.names() == ["disabled"]
 
 
@@ -751,7 +755,7 @@ def test_persist_and_stop_name_the_session_on_the_agent_module(bound, monkeypatc
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
     def persist():
-        return session.persist_shell(SESSION_ID, True)
+        return session.persist_shell(SESSION_ID, True, False)
 
     def stop():
         return session.stop_shell_session(SESSION_ID)
@@ -768,6 +772,7 @@ def test_persist_and_stop_name_the_session_on_the_agent_module(bound, monkeypatc
             "verb": "persist",
             "session_id": SESSION_ID,
             "is_persistent": True,
+            "is_shared": False,
             "module": "agent",
         },
         {
@@ -926,7 +931,7 @@ def test_a_broken_wire_backs_off_and_keeps_the_binding(bound, monkeypatch):
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [5, 10, 20]
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "down"
     assert session.last_error()["code"] == "hub_unreachable"
 
 
@@ -938,7 +943,7 @@ def test_a_replaced_socket_waits_for_a_person(bound, monkeypatch, config_path):
     session.run_once()
     delay = session.run_once()
 
-    assert session.connection_state() == "replaced"
+    assert session.connection() == "replaced"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error() is None
     assert listener.events == []
@@ -954,7 +959,7 @@ def test_a_person_takes_a_replaced_binding_back(bound, monkeypatch):
 
     session.reconnect()
 
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "connecting"
     assert session._news.is_set()
     session.run_once()
     assert len(script.made) == 2
@@ -978,7 +983,7 @@ def test_a_refusal_the_binding_survives_asks_again_a_minute_later(
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "down"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error()["code"] == code
     assert listener.events == []
@@ -997,7 +1002,7 @@ def test_a_hub_that_does_not_speak_this_protocol_never_unbinds(
 
     delays = [session.run_once() for _ in range(5)]
 
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "down"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error() == {
         "code": code,
@@ -1055,7 +1060,7 @@ def test_a_refusal_on_a_live_socket_keeps_the_binding_and_records_its_code(
     delays = [session.run_once() for _ in range(3)]
 
     assert delays == [CLIENT_BACKOFF_MAX_S] * 3
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "down"
     assert len(json.loads(config_path.read_text())["bindings"]) == 1
     assert session.last_error() == {"code": code, "params": params}
     assert "unbound" not in listener.names()
@@ -1300,7 +1305,7 @@ def test_the_names_fingerprint_mismatch_is_skipped_without_alarm(
     assert script.hosts == ["10.9.9.9", "192.0.2.1"]
     assert client is script.made[1]
     assert session.last_error() is None
-    assert session.connection_state() == "connected"
+    assert session.connection() == "connected"
     assert (
         "https://10.9.9.9:8443 answers to the hub's name and is not this hub" in lines
     )
@@ -1402,7 +1407,7 @@ def test_news_ends_the_wait_before_the_network_is_looked_at(
 ):
     session, _lines = bound_everywhere
     asked = sources(monkeypatch, "10.0.0.5")
-    session.reconnect_soon()
+    session._news.set()
 
     session._wait_out(CLIENT_BACKOFF_MAX_S)
 
@@ -1441,7 +1446,7 @@ def test_a_live_socket_follows_the_name_to_a_stored_address(
     assert f"moving to {LAN_URL}" in lines
     assert session._news.is_set()
     assert session.last_error() is None
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "connecting"
 
 
 @pytest.mark.parametrize("resolved", ["", "10.9.9.9", "100.64.0.1"])
@@ -1462,7 +1467,7 @@ def test_a_live_socket_stays_when_the_name_is_elsewhere(
     session._follow_name(client)
 
     assert script.made[0].is_closed is False
-    assert session.connection_state() == "connected"
+    assert session.connection() == "connected"
 
 
 def test_a_socket_closed_from_here_is_no_failure(bound, monkeypatch):
@@ -1495,7 +1500,7 @@ def test_stop_closes_the_socket_and_ends_the_loop(bound, monkeypatch):
     session.stop()
 
     assert script.made[0].is_closed is True
-    assert session.connection_state() == "reconnecting"
+    assert session.connection() == "connecting"
     assert not session._thread.is_alive()
 
 
@@ -1594,9 +1599,9 @@ def test_every_change_the_page_draws_is_announced(bound, monkeypatch):
 
     session.run_once()
 
-    # The welcome, the state, the socket's end and the backoff after it each
-    # announce once.
-    assert listener.changes == 4
+    # The welcome, the state and the socket's end each announce once; a
+    # lost socket goes back to connecting with nothing more to draw.
+    assert listener.changes == 3
     assert script.made[0].is_closed is True
 
 
@@ -1660,8 +1665,24 @@ KEPT = {
     "account": "alice",
     "started_at": 1759300000,
     "title": "vim notes.md",
-    "is_attached": False,
+    "owner": "client:c1",
+    "is_owned": True,
+    "is_attached": True,
+    "attached_count": 2,
     "is_persistent": True,
+    "is_shared": True,
+}
+# A kept session as the session holds it.
+KEPT_ROW = {
+    "session_id": SESSION_ID,
+    "device_id": "d1",
+    "owner": "client:c1",
+    "is_owned": True,
+    "is_persistent": True,
+    "is_shared": True,
+    "attached_count": 2,
+    "title": "vim notes.md",
+    "started_at": 1759300000,
 }
 TERMINALS = [
     {
@@ -1728,28 +1749,14 @@ def test_the_overlay_secret_never_reaches_the_log(monkeypatch, config_path):
     assert lines and not any("KEY-1" in line for line in lines)
 
 
-def test_the_wish_is_written_onto_the_binding(bound, config_path):
+def test_the_networks_state_and_engine_are_written_onto_the_binding(bound, config_path):
     session, _listener = bound
 
-    session.set_overlay_wish(True, "easytier")
+    session.set_overlay_choice(True, "easytier")
 
-    assert session.overlay_wish() == (True, "easytier")
+    assert session.overlay_choice() == (True, "easytier")
     stored = stored_binding(config_path)
-    assert (stored["is_overlay_wanted"], stored["overlay_pick"]) == (True, "easytier")
-
-
-def test_the_channel_is_lost_from_the_start_until_welcomed_and_again_after(
-    bound, monkeypatch
-):
-    session, _listener = bound
-    assert session.lost_since() is not None
-
-    made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    assert session.lost_since() is None
-
-    before = time.monotonic()
-    session._end_socket(made)
-    assert session.lost_since() >= before
+    assert (stored["is_overlay_on"], stored["overlay_pick"]) == (True, "easytier")
 
 
 def test_a_switch_reconnects_through_that_networks_address_first(
@@ -1771,16 +1778,69 @@ def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch
     take(session, made, dict(STATE, terminals=TERMINALS))
 
     assert session.terminal_entries() == [
-        {
-            "device_id": "d1",
-            "name": "lepton",
-            "is_online": True,
-            "sessions": [KEPT, dict(KEPT, session_id="s2")],
-        },
-        {"device_id": "d2", "name": "d2", "is_online": False, "sessions": []},
+        {"device_id": "d1", "name": "lepton", "is_online": True},
+        {"device_id": "d2", "name": "d2", "is_online": False},
+    ]
+    assert session.terminal_sessions() == [
+        KEPT_ROW,
+        dict(KEPT_ROW, session_id="s2"),
     ]
     session._end_socket(made)
     assert session.terminal_entries() == []
+    assert session.terminal_sessions() == []
+
+
+def test_the_terminals_as_two_lists_read_the_same(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    terminals = {
+        "machines": [{"device_id": "d1", "name": "lepton", "is_online": True}],
+        "sessions": [dict(KEPT, device_id="d1"), {"session_id": "no machine"}],
+    }
+
+    take(session, made, dict(STATE, terminals=terminals))
+
+    assert session.terminal_entries() == [
+        {"device_id": "d1", "name": "lepton", "is_online": True}
+    ]
+    assert session.terminal_sessions() == [KEPT_ROW]
+
+
+def test_a_session_from_an_older_hub_counts_its_attachment(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    older = {
+        "session_id": "s9",
+        "account": "alice",
+        "started_at": 1,
+        "title": "",
+        "is_attached": True,
+        "is_persistent": False,
+    }
+    terminals = [
+        {"device_id": "d1", "name": "lepton", "is_online": True, "sessions": [older]}
+    ]
+
+    take(session, made, dict(STATE, terminals=terminals))
+
+    row = session.terminal_sessions()[0]
+    assert (row["attached_count"], row["owner"], row["is_owned"]) == (1, "", False)
+    assert row["is_shared"] is False
+
+
+def test_the_flags_set_show_at_once_until_the_next_state(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    take(session, made, dict(STATE, terminals=TERMINALS))
+
+    session.note_session_flags(SESSION_ID, False, False)
+    assert (
+        session.terminal_sessions()[0]["is_persistent"],
+        session.terminal_sessions()[0]["is_shared"],
+    ) == (False, False)
+
+    take(session, made, dict(STATE, hash="h2", terminals=TERMINALS))
+    assert session.terminal_sessions()[0]["is_shared"] is True
 
 
 def test_a_state_without_terminals_holds_none(bound, monkeypatch):
@@ -1791,3 +1851,178 @@ def test_a_state_without_terminals_holds_none(bound, monkeypatch):
     take(session, made, dict(STATE))
 
     assert session.terminal_entries() == []
+
+
+# --- the five connection states ---
+
+
+def test_a_session_starts_connecting():
+    session = session_for()
+
+    assert session.connection() == "connecting"
+
+
+def test_a_round_that_ends_in_a_code_is_down_and_the_next_round_connecting(
+    bound, monkeypatch
+):
+    session, _listener = bound
+    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
+    session.run_once()
+    assert session.connection() == "down"
+
+    seen = []
+
+    def round_seen():
+        seen.append(session.connection())
+        raise GatewayUnreachable("still")
+
+    monkeypatch.setattr(session, "_connect_round", round_seen)
+    session.run_once()
+
+    assert seen == ["connecting"]
+    assert session.connection() == "down"
+
+
+def test_a_lost_socket_is_connecting_with_no_error_line(bound, monkeypatch):
+    session, _listener = bound
+    socket_of(monkeypatch, [WELCOME, GatewayUnreachable("wire cut")])
+
+    delay = session.run_once()
+
+    assert delay == CLIENT_BACKOFF_MIN_S
+    assert session.connection() == "connecting"
+    assert session.last_error() is None
+
+
+def test_a_disabled_hub_is_disabled_and_enabled_again_is_connected(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    take(session, made, dict(STATE, is_disabled=True))
+    assert session.connection() == "disabled"
+    take(session, made, dict(STATE, hash="h2", is_disabled=False))
+    assert session.connection() == "connected"
+
+
+def test_every_connection_state_is_named():
+    assert session_module.CONNECTION_STATES == (
+        "connected",
+        "connecting",
+        "down",
+        "replaced",
+        "disabled",
+    )
+
+
+# --- the refresh ---
+
+
+def test_a_refresh_of_a_connected_hub_asks_for_the_whole_state(bound, monkeypatch):
+    session, listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    session._last_error = {"code": "hub_reply_unreadable", "params": {}}
+    changes = listener.changes
+
+    assert session.refresh() is True
+
+    assert session.is_refreshing() is True
+    assert session.last_error() is None
+    assert made.sent[-1]["type"] == "report"
+    assert made.sent[-1]["is_refresh"] is True
+    assert listener.changes == changes + 1
+
+
+def test_a_plain_report_carries_no_refresh(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    assert "is_refresh" not in made.sent[-1]
+
+
+def test_a_state_ends_the_refresh(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    session.refresh()
+
+    take(session, made, dict(STATE))
+
+    assert session.is_refreshing() is False
+
+
+def test_a_second_refresh_while_one_runs_is_not_taken(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    session.refresh()
+    sent = len(made.sent)
+
+    assert session.refresh() is False
+    assert len(made.sent) == sent
+
+
+def test_a_refresh_of_a_down_hub_starts_a_round_now_at_the_floor(bound, monkeypatch):
+    session, _listener = bound
+    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
+    session.run_once()
+    session.run_once()
+    session._news.clear()
+    assert session._backoff_s > CLIENT_BACKOFF_MIN_S
+
+    assert session.refresh() is True
+
+    assert session._backoff_s == CLIENT_BACKOFF_MIN_S
+    assert session._news.is_set()
+    assert session.last_error() is None
+    assert session.is_refreshing() is True
+
+
+def test_a_round_that_ends_in_a_code_ends_the_refresh(bound, monkeypatch):
+    session, _listener = bound
+    socket_of(monkeypatch, [], connect_error=GatewayUnreachable("down"))
+    session.refresh()
+
+    session.run_once()
+
+    assert session.is_refreshing() is False
+    assert session.connection() == "down"
+    assert session.last_error()["code"] == "hub_unreachable"
+
+
+def test_a_refresh_that_reaches_a_hub_asks_its_first_report_for_the_whole_state(
+    bound, monkeypatch
+):
+    session, _listener = bound
+    script = socket_of(monkeypatch, [WELCOME])
+    session.refresh()
+
+    made = connected(session, script)
+
+    reports = [frame for frame in made.sent if frame.get("type") == "report"]
+    assert reports[0]["is_refresh"] is True
+
+
+def test_a_refresh_nothing_answers_ends_by_itself(monkeypatch, config_path):
+    bind(config_path)
+    listener = Listener()
+    session = session_for(listener=listener, refresh_timeout_s=0.05)
+
+    assert session.refresh() is True
+    deadline = time.monotonic() + 5
+    while session.is_refreshing() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert session.is_refreshing() is False
+
+
+@pytest.mark.parametrize("state", ["replaced", "disabled"])
+def test_a_replaced_or_disabled_hub_does_not_refresh(bound, monkeypatch, state):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    if state == "replaced":
+        session._is_replaced = True
+    else:
+        take(session, made, dict(STATE, is_disabled=True))
+    sent = len(made.sent)
+
+    assert session.refresh() is False
+    assert session.is_refreshing() is False
+    assert len(made.sent) == sent

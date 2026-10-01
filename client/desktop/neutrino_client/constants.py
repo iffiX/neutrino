@@ -13,6 +13,11 @@ CLIENT_DEFAULT_LANGUAGE = "en"
 # own scheme, and anything else reads as the default.
 CLIENT_THEMES = ("system", "dark", "light")
 CLIENT_DEFAULT_THEME = "dark"
+# The terminal's font size in pixels: the default and the range Ctrl+plus and
+# Ctrl+minus move it in.
+CLIENT_TERMINAL_FONT_SIZE = 13
+CLIENT_TERMINAL_FONT_SIZE_MIN = 8
+CLIENT_TERMINAL_FONT_SIZE_MAX = 32
 
 # The protocol number this build speaks. The name has no package prefix:
 # one number has one name in every package.
@@ -53,6 +58,10 @@ CLIENT_IDLE_POLL_INTERVAL_S = 2
 CLIENT_REQUEST_TIMEOUT_S = 10
 CLIENT_BACKOFF_MIN_S = 5
 CLIENT_BACKOFF_MAX_S = 60
+# How long a refresh waits for a hub's answer before it ends by itself.
+CLIENT_REFRESH_TIMEOUT_S = 10
+# How long a notice the page shows above the hubs stays.
+CLIENT_NOTICE_S = 60
 # How long a connection round waits between an address that did not answer
 # and the next one. A whole round failing is what backs off.
 CLIENT_ROTATE_DELAY_S = 1
@@ -221,11 +230,12 @@ CLIENT_EASYTIER_CONFIG_SUFFIX = ".toml"
 # management server; a status is local.
 CLIENT_OVERLAY_JOIN_TIMEOUT_S = 60
 CLIENT_OVERLAY_STATUS_TIMEOUT_S = 10
-# How often each network's daemon is asked where this machine stands.
+# How often each network that is on is asked whether it still stands.
 CLIENT_OVERLAY_POLL_INTERVAL_S = 15
-# How long a hub's channel stays lost before the client moves to the next of
-# that hub's virtual networks it has material for.
-CLIENT_OVERLAY_FAILOVER_S = 30
+# One connect: the engine up, an address, and the hub's channel through the
+# network, all within this; and how often a connect looks again.
+CLIENT_OVERLAY_CONNECT_TIMEOUT_S = 60
+CLIENT_OVERLAY_CONNECT_POLL_S = 1
 
 # The EasyTier daemon: a long-running process of this package, root on Linux
 # and macOS and SYSTEM on Windows, the only thing that runs easytier-core. It

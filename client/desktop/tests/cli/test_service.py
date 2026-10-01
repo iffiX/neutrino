@@ -650,7 +650,7 @@ def test_ai_apply_names_a_hub_nobody_joined(stack, capsys):
 
 
 def test_ai_apply_words_a_hub_that_cannot_be_the_exit(stack, capsys):
-    stack.hubs_value.append(dict(OFFICE_ROW, connection_state="reconnecting"))
+    stack.hubs_value.append(dict(OFFICE_ROW, connection="connecting"))
 
     assert ai_apply(hub="office") == 1
 

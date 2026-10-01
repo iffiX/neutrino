@@ -78,7 +78,7 @@ def _status_from_resident(state: dict) -> int:
     is_clean = True
     cells = []
     for hub in hubs:
-        connection = str(hub.get("connection_state", ""))
+        connection = str(hub.get("connection", ""))
         cells.append(
             (
                 str(hub.get("hub_name", "")),
@@ -122,7 +122,7 @@ def _why(hub: dict) -> str:
     Returns:
         The wording after a colon, empty when there is nothing to add.
     """
-    if hub.get("connection_state") == CONNECTION_REPLACED:
+    if hub.get("connection") == CONNECTION_REPLACED:
         return f": {wording.word_state(CONNECTION_REPLACED)}"
     error = hub.get("last_error")
     if not isinstance(error, dict) or not error.get("code"):
