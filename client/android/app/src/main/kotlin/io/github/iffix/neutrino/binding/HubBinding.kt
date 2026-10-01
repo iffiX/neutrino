@@ -16,7 +16,8 @@ import kotlinx.serialization.Serializable
  * @property fingerprint The pinned SHA-256 of the hub's certificate.
  * @property token The secret every hello carries.
  * @property overlays What this phone joins the hub's virtual networks with, preferred first.
- * @property isOverlayWanted Whether the person wants this phone on the hub's virtual network.
+ * @property isOverlayOn Whether this phone was on the hub's virtual network when last seen; a start
+ *   then connects it once.
  * @property overlayChoice The provider the person picked, empty for the hub's first.
  */
 @Serializable
@@ -30,7 +31,7 @@ data class HubBinding(
     val fingerprint: String,
     val token: String,
     val overlays: List<ChannelOverlay> = emptyList(),
-    @SerialName("is_overlay_wanted") val isOverlayWanted: Boolean = false,
+    @SerialName("is_overlay_on") val isOverlayOn: Boolean = false,
     @SerialName("overlay_choice") val overlayChoice: String = "",
 ) {
     /** Every address the binding holds: the hub's list, and the one that last answered when it is not in it. */
@@ -45,8 +46,9 @@ data class HubBinding(
      * The addresses one connection round tries, in order.
      *
      * @param nameUrl The address the hub's name resolves to on this network, or empty.
-     * @return The name's address, the one that last answered, then the rest, each once.
+     * @param preferredUrl The hub's address on the virtual network this phone is on, or empty.
+     * @return The preferred address, the name's, the one that last answered, then the rest, each once.
      */
-    fun candidateUrls(nameUrl: String): List<String> =
-        (listOf(nameUrl, gatewayUrl) + storedUrls).filter { it.isNotEmpty() }.distinct()
+    fun candidateUrls(nameUrl: String, preferredUrl: String = ""): List<String> =
+        (listOf(preferredUrl, nameUrl, gatewayUrl) + storedUrls).filter { it.isNotEmpty() }.distinct()
 }

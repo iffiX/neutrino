@@ -1,17 +1,16 @@
 package io.github.iffix.neutrino.overlay
 
-import io.github.iffix.neutrino.CLIENT_OVERLAY_FAILOVER_S
+import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
+import io.github.iffix.neutrino.OVERLAY_PROVIDER_NETBIRD
 import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelOverlay
+import java.net.URI
+import java.net.URISyntaxException
 
-/**
- * Which of a hub's virtual networks the phone joins: the person's pick, else the hub's first,
- * and the next one once the hub's channel has been lost for [CLIENT_OVERLAY_FAILOVER_S] or the
- * one joined is no longer published.
- */
+/** Which of a hub's virtual networks a connect joins, and where the hub answers on it. */
 object OverlayChoice {
     /**
-     * The network a hub's binding prefers.
+     * The network a hub's binding names.
      *
      * @param binding The binding.
      * @return The picked network while the hub still publishes it, else the hub's first, else null.
@@ -20,32 +19,31 @@ object OverlayChoice {
         binding.overlays.firstOrNull { it.provider == binding.overlayChoice } ?: binding.overlays.firstOrNull()
 
     /**
-     * The network after one, in the hub's order and round again.
+     * The hub's channel address on one of its networks: the address of the hub's list on that
+     * host, else that host at the port the binding last answered on.
      *
      * @param binding The binding.
-     * @param provider The network joined now.
-     * @return The next other network, or null when the hub publishes no other.
+     * @param overlay The network.
+     * @return The address, or empty when the hub names no address of its own on the network.
      */
-    fun next(binding: HubBinding, provider: String): ChannelOverlay? {
-        val overlays = binding.overlays
-        val index = overlays.indexOfFirst { it.provider == provider }
-        if (index < 0) return overlays.firstOrNull()
-        return (1 until overlays.size).map { overlays[(index + it) % overlays.size] }.firstOrNull()
+    fun hubUrl(binding: HubBinding, overlay: ChannelOverlay): String {
+        val host = if (overlay.provider == OVERLAY_PROVIDER_NETBIRD) overlay.fqdn else overlay.hubAddress
+        if (host.isEmpty()) return ""
+        binding.storedUrls.firstOrNull { hostOf(it) == host }?.let { return it }
+        val port = portOf(binding.gatewayUrl)
+        val bracketed = if (':' in host) "[$host]" else host
+        return "https://$bracketed:$port"
     }
 
-    /**
-     * What should run for one binding now.
-     *
-     * @param binding The binding.
-     * @param running The provider running for it now, or null.
-     * @param channelDownForMillis How long its channel has been lost, or null while it is up.
-     * @return The provider to run, or null for none.
-     */
-    fun decide(binding: HubBinding, running: String?, channelDownForMillis: Long?): String? {
-        if (!binding.isOverlayWanted || binding.overlays.isEmpty()) return null
-        if (running == null) return preferred(binding)?.provider
-        if (binding.overlays.none { it.provider == running }) return preferred(binding)?.provider
-        val isLost = channelDownForMillis != null && channelDownForMillis > CLIENT_OVERLAY_FAILOVER_S * 1000
-        return if (isLost) next(binding, running)?.provider ?: running else running
+    private fun hostOf(url: String): String = try {
+        URI(url).host.orEmpty().removePrefix("[").removeSuffix("]")
+    } catch (_: URISyntaxException) {
+        ""
+    }
+
+    private fun portOf(url: String): Int = try {
+        URI(url).port.takeIf { it > 0 } ?: CLIENT_HTTPS_DEFAULT_PORT
+    } catch (_: URISyntaxException) {
+        CLIENT_HTTPS_DEFAULT_PORT
     }
 }

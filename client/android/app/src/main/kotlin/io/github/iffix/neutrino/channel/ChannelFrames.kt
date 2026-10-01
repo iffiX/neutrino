@@ -58,11 +58,13 @@ object ChannelFrames {
      *
      * @param stateHash The hash of the last state taken, empty before the first.
      * @param machine This phone.
+     * @param isRefresh Whether a person pressed refresh, which asks the hub for its whole state whatever its hash.
      * @return The frame.
      */
-    fun report(stateHash: String, machine: ClientMachine): JsonObject = buildJsonObject {
+    fun report(stateHash: String, machine: ClientMachine, isRefresh: Boolean = false): JsonObject = buildJsonObject {
         put("type", REPORT)
         put("state_hash", stateHash)
+        put("is_refresh", isRefresh)
         putJsonObject("machine") {
             put("hostname", machine.hostname)
             putJsonObject("platform") { machine.platform.forEach { (name, value) -> put(name, value) } }

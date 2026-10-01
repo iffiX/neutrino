@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.sp
  * @param isCommit Whether it wears the glow of the one action a section commits with.
  * @param isWide Whether it fills the width.
  * @param isDone Whether it shows the green of an action just done, like a copy.
+ * @param isBusy Whether it is the indicator of its running job: a spinner before the label.
+ * @param isArmed Whether a destructive action waits for its second press: a red fill.
  */
 @Composable
 fun NeutrinoButton(
@@ -47,10 +49,13 @@ fun NeutrinoButton(
     isCommit: Boolean = false,
     isWide: Boolean = false,
     isDone: Boolean = false,
+    isBusy: Boolean = false,
+    isArmed: Boolean = false,
 ) {
     val palette = NeutrinoTheme.palette
     val shape = RoundedCornerShape(6.dp)
     val (border, background, content) = when {
+        isArmed -> Triple(palette.error, palette.error, palette.bg)
         isDone -> Triple(palette.ok, palette.elevated, palette.ok)
         tier == ButtonTier.PRIMARY -> Triple(palette.accent, palette.accentWash, palette.accent)
         tier == ButtonTier.DANGER -> Triple(palette.error, Color.Transparent, palette.error)
@@ -64,7 +69,7 @@ fun NeutrinoButton(
     if (isWide) shaped = shaped.fillMaxWidth()
     Row(
         modifier = shaped
-            .alpha(if (isEnabled) 1f else 0.45f)
+            .alpha(if (isEnabled || isBusy) 1f else 0.45f)
             .clip(shape)
             .background(background)
             .border(1.dp, border, shape)
@@ -73,7 +78,11 @@ fun NeutrinoButton(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) IconGlyph(icon, content, size = 14.dp)
+        if (isBusy) {
+            StatusDot(DotTone.SPIN, size = 12.dp)
+        } else if (icon != null) {
+            IconGlyph(icon, content, size = 14.dp)
+        }
         BasicText(
             text = label,
             style = NeutrinoTheme.buttonLabel.copy(color = content, fontSize = if (isSmall) 12.sp else 13.sp),

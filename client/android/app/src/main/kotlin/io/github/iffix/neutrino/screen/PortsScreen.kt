@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.CopyButton
-import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.FeatureRow
 import io.github.iffix.neutrino.design.NeutrinoTheme
 
@@ -15,19 +14,20 @@ import io.github.iffix.neutrino.design.NeutrinoTheme
  *
  * @param hubs Every hub joined.
  * @param onCopy What copying an address does.
- * @param onJoin What pressing Join a hub does.
  */
 @Composable
-fun PortsScreen(hubs: List<HubView>, onCopy: (String) -> Unit, onJoin: () -> Unit) {
-    ServiceList(hubs, "port", "ui.empty_ports", onJoin) { hub, entry, hasDivider ->
+fun PortsScreen(hubs: List<HubView>, onCopy: (String) -> Unit) {
+    val words = NeutrinoTheme.words
+    ServiceList(hubs, "port", "ui.empty_ports") { hub, entry, hasDivider ->
         val host = entry.text("host")
         val address = "$host:${entry.number("port") ?: ""}"
         FeatureRow(
-            marker = if (entry.isHealthy == false) DotTone.BAD else DotTone.OK,
+            marker = entryTone(hub, entry),
             hasDivider = hasDivider,
-            trailing = { CopyButton { onCopy(address) } },
+            actions = { CopyButton(isEnabled = !hub.jobs.isRefreshing) { onCopy(address) } },
         ) {
             BasicText(entry.title, style = NeutrinoTheme.rowTitle)
+            if (entry.isHealthy == false) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
             BasicText(address, style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
         }
@@ -37,7 +37,7 @@ fun PortsScreen(hubs: List<HubView>, onCopy: (String) -> Unit, onJoin: () -> Uni
 @Preview(widthDp = 400, heightDp = 600)
 @Composable
 private fun PortsScreenPreview() {
-    PreviewHubs.Frame(
-        mapOf("ui.machine_provided_by" to "由 {hub}:{device} 提供", "ui.copy" to "复制", "ui.reconnecting" to "正在重新连接 hub"),
-    ) { PortsScreen(PreviewHubs.all, onCopy = {}, onJoin = {}) }
+    PreviewHubs.Frame(mapOf("ui.machine_provided_by" to "由 {hub}:{device} 提供", "ui.copy" to "复制")) {
+        PortsScreen(PreviewHubs.all, onCopy = {})
+    }
 }

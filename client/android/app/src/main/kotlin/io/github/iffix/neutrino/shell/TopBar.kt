@@ -10,12 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -24,17 +24,19 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.iffix.neutrino.design.AppIcon
+import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.design.StatusDot
 
 /**
  * The bar over every screen: a back arrow for a screen reached from another, the title, and the
- * virtual network chip.
+ * refresh button, a spinner and disabled while any hub refreshes.
  *
  * @param title The open screen's title.
- * @param overlayValue What the chip says after its key: this phone's address, or not joined.
+ * @param isRefreshing Whether any hub refreshes.
+ * @param onRefresh What pressing refresh does.
  * @param onBack What the back arrow does, or null for a tab's own screen.
  * @param modifier Placement.
  * @param isWide Whether the bar sits beside the sidebar, which pads it wider.
@@ -42,7 +44,8 @@ import io.github.iffix.neutrino.design.NeutrinoTheme
 @Composable
 fun TopBar(
     title: String,
-    overlayValue: String,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     isWide: Boolean = false,
@@ -81,26 +84,23 @@ fun TopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        Row(
+        val refresh = words.word(if (isRefreshing) "ui.job.refreshing" else "ui.refresh")
+        val shape = RoundedCornerShape(6.dp)
+        Box(
             modifier = Modifier
-                .widthIn(max = 220.dp)
-                .clip(RoundedCornerShape(50))
-                .background(palette.surface)
-                .border(1.dp, palette.border, RoundedCornerShape(50))
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .size(34.dp)
+                .clip(shape)
+                .border(1.dp, palette.borderStrong, shape)
+                .semantics { contentDescription = refresh }
+                .clickable(enabled = !isRefreshing, role = Role.Button, onClick = onRefresh)
+                .alpha(if (isRefreshing) 0.8f else 1f),
+            contentAlignment = Alignment.Center,
         ) {
-            BasicText(
-                words.word("ui.overlay"),
-                style = NeutrinoTheme.mono.copy(color = palette.textFaint, fontSize = 10.sp, letterSpacing = 0.8.sp),
-            )
-            BasicText(
-                overlayValue,
-                style = NeutrinoTheme.mono.copy(color = palette.text),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (isRefreshing) {
+                StatusDot(DotTone.SPIN, size = 14.dp)
+            } else {
+                IconGlyph(AppIcon.REFRESH, palette.textMuted, size = 16.dp)
+            }
         }
     }
 }

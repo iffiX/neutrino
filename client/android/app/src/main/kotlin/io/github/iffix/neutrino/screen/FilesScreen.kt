@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -25,47 +26,77 @@ import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.AppIcon
+import io.github.iffix.neutrino.design.ArmedButton
 import io.github.iffix.neutrino.design.Badge
 import io.github.iffix.neutrino.design.ButtonTier
-import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.FeatureRow
 import io.github.iffix.neutrino.design.InputField
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PickerField
-import io.github.iffix.neutrino.design.StatusDot
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
 import kotlinx.coroutines.launch
 
 /**
  * The shares the joined hubs publish, each a place in the system's Files: the password is asked
- * once, here, and kept in the Keystore when the person says so.
+ * once, here, and kept in the Keystore when the person says so; Forget password arms and removes it.
  *
  * @param hubs Every hub joined.
  * @param hasLogin Whether a share has a login already, by its root id.
  * @param onLogin What giving a login does: it is tried on the server, then kept; the refusal when it fails.
+ * @param onForget What the second press on Forget password does, with the share's root id.
  * @param onOpen What opening a share in Files does, with its root id.
- * @param onJoin What pressing Join a hub does.
  */
 @Composable
 fun FilesScreen(
     hubs: List<HubView>,
     hasLogin: (String) -> Boolean,
     onLogin: suspend (ShareRoot, ShareLogin, Boolean) -> ChannelResult<Unit>,
+    onForget: (String) -> Unit,
     onOpen: (String) -> Unit,
-    onJoin: () -> Unit,
 ) {
     val words = NeutrinoTheme.words
     var asking by remember { mutableStateOf("") }
-    ServiceList(hubs, "file", "ui.empty_files", onJoin) { hub, entry, hasDivider ->
+    var forgets by remember { mutableIntStateOf(0) }
+    ServiceList(hubs, "file", "ui.empty_files") { hub, entry, hasDivider ->
         val root = ShareRoot.of(hub, entry) ?: return@ServiceList
-        val isKept = hasLogin(root.key)
-        FeatureRow(marker = if (entry.isHealthy == false) DotTone.BAD else DotTone.OK, hasDivider = hasDivider) {
+        val isKept = forgets >= 0 && hasLogin(root.key)
+        val isUsable = entry.isHealthy != false && !hub.jobs.isRefreshing
+        FeatureRow(
+            marker = entryTone(hub, entry),
+            hasDivider = hasDivider,
+            actions = if (asking == root.key) {
+                null
+            } else {
+                {
+                    NeutrinoButton(
+                        words.word("ui.open_in_files"),
+                        { if (isKept) onOpen(root.key) else asking = root.key },
+                        icon = AppIcon.FOLDER,
+                        isSmall = true,
+                        isEnabled = isUsable,
+                    )
+                    if (isKept) {
+                        ArmedButton(
+                            key = "forget-${root.key}",
+                            label = words.word("ui.forget_password"),
+                            armedLabel = words.word("ui.forget_password_arm"),
+                            onAct = {
+                                onForget(root.key)
+                                forgets += 1
+                            },
+                            isEnabled = !hub.jobs.isRefreshing,
+                        )
+                    }
+                }
+            },
+        ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 BasicText(entry.title, style = NeutrinoTheme.rowTitle)
                 if (!isKept) Badge(words.word("ui.password_not_saved"), icon = AppIcon.LOCK)
             }
+            if (entry.isHealthy == false) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
             BasicText("smb://${root.host}/${root.share}", style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, root.host), style = NeutrinoTheme.note)
             if (asking == root.key) {
@@ -73,15 +104,6 @@ fun FilesScreen(
                     asking = ""
                     onOpen(root.key)
                 }) { asking = "" }
-            } else {
-                Row(modifier = Modifier.padding(top = 8.dp)) {
-                    NeutrinoButton(
-                        words.word("ui.open_in_files"),
-                        { if (isKept) onOpen(root.key) else asking = root.key },
-                        icon = AppIcon.FOLDER,
-                        isSmall = true,
-                    )
-                }
             }
         }
     }
@@ -161,13 +183,13 @@ private fun LoginForm(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             NeutrinoButton(
-                words.word("ui.port_connect"),
+                words.word(if (isTrying) "ui.job.connecting" else "ui.port_connect"),
                 { connect() },
                 tier = ButtonTier.PRIMARY,
                 isEnabled = password.isNotEmpty() && user.isNotEmpty() && !isTrying,
+                isBusy = isTrying,
             )
-            NeutrinoButton(words.word("ui.cancel"), onCancel, tier = ButtonTier.GHOST)
-            if (isTrying) StatusDot(DotTone.SPIN)
+            NeutrinoButton(words.word("ui.cancel"), onCancel, tier = ButtonTier.GHOST, isEnabled = !isTrying)
         }
         refusal?.let {
             BasicText(words.refusal(it.code, it.wordParams), style = NeutrinoTheme.note.copy(color = palette.error))
@@ -179,8 +201,12 @@ private fun LoginForm(
 @Composable
 private fun FilesScreenPreview() {
     PreviewHubs.Frame(mapOf("ui.open_in_files" to "在“文件”中打开", "ui.password_not_saved" to "未存密码")) {
-        FilesScreen(PreviewHubs.all, hasLogin = {
-            false
-        }, onLogin = { _, _, _ -> ChannelResult.Ok(Unit) }, onOpen = {}, onJoin = {})
+        FilesScreen(
+            PreviewHubs.all,
+            hasLogin = { false },
+            onLogin = { _, _, _ -> ChannelResult.Ok(Unit) },
+            onForget = {},
+            onOpen = {},
+        )
     }
 }

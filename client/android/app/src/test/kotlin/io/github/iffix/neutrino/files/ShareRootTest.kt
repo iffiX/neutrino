@@ -43,7 +43,7 @@ class ShareRootTest {
     @Test
     fun onlyConnectedHubsPublishRoots() {
         val file = entry("""{"protocol":"smb","host":"h","share":"s"}""")
-        val down = hub.copy(connection = HubConnection.RECONNECTING, services = listOf(file))
+        val down = hub.copy(connection = HubConnection.DOWN, services = listOf(file))
         assertEquals(1, ShareRoot.all(listOf(hub.copy(services = listOf(file)), down)).size)
     }
 }

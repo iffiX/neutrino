@@ -7,48 +7,50 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class OverlayChoiceTest {
-    private val netbird = ChannelOverlay(provider = "netbird", setupKey = "k")
-    private val easytier =
-        ChannelOverlay(provider = "easytier", networkName = "n", networkSecret = "s", peer = "tcp://p:1")
-    private val both = Samples.binding.copy(overlays = listOf(netbird, easytier), isOverlayWanted = true)
+    private val netbird = ChannelOverlay(provider = "netbird", setupKey = "k", fqdn = "hub.netbird.cloud")
+    private val easytier = ChannelOverlay(
+        provider = "easytier",
+        networkName = "n",
+        networkSecret = "s",
+        peer = "tcp://p:1",
+        hubAddress = "10.126.126.1",
+    )
+    private val both = Samples.binding.copy(overlays = listOf(netbird, easytier))
 
     @Test
-    fun withTwoNetworksTheFirstIsJoined() {
-        assertEquals("netbird", OverlayChoice.decide(both, running = null, channelDownForMillis = null))
+    fun withNoPickTheHubsFirstIsJoined() {
+        assertEquals(netbird, OverlayChoice.preferred(both))
     }
 
     @Test
-    fun thePickedNetworkIsPreferred() {
-        assertEquals("easytier", OverlayChoice.decide(both.copy(overlayChoice = "easytier"), null, null))
-    }
-
-    @Test
-    fun aChannelLostForThirtySecondsMovesToTheNext() {
-        assertEquals("netbird", OverlayChoice.decide(both, "netbird", 30_000))
-        assertEquals("easytier", OverlayChoice.decide(both, "netbird", 30_001))
-        assertEquals("netbird", OverlayChoice.decide(both, "easytier", 45_000))
-    }
-
-    @Test
-    fun aNetworkNoLongerPublishedIsLeftForThePreferred() {
-        val onlyEasyTier = both.copy(overlays = listOf(easytier))
-        assertEquals("easytier", OverlayChoice.decide(onlyEasyTier, "netbird", null))
-    }
-
-    @Test
-    fun withOneNetworkNothingMoves() {
-        val one = both.copy(overlays = listOf(netbird))
-        assertEquals("netbird", OverlayChoice.decide(one, "netbird", 120_000))
-    }
-
-    @Test
-    fun noWishOrNoNetworkRunsNothing() {
-        assertNull(OverlayChoice.decide(both.copy(isOverlayWanted = false), "netbird", null))
-        assertNull(OverlayChoice.decide(both.copy(overlays = emptyList()), null, null))
+    fun thePickedNetworkIsJoined() {
+        assertEquals(easytier, OverlayChoice.preferred(both.copy(overlayChoice = "easytier")))
     }
 
     @Test
     fun aPickTheHubNoLongerPublishesFallsBackToTheFirst() {
         assertEquals(netbird, OverlayChoice.preferred(both.copy(overlayChoice = "wireguard")))
+    }
+
+    @Test
+    fun noNetworkIsNothing() {
+        assertNull(OverlayChoice.preferred(both.copy(overlays = emptyList())))
+    }
+
+    @Test
+    fun theHubsAddressOnANetworkTakesThePortItLastAnsweredOn() {
+        assertEquals("https://hub.netbird.cloud:8443", OverlayChoice.hubUrl(both, netbird))
+        assertEquals("https://10.126.126.1:8443", OverlayChoice.hubUrl(both, easytier))
+    }
+
+    @Test
+    fun anAddressTheHubListsOnThatHostIsTakenAsItIs() {
+        val listed = both.copy(gatewayUrls = both.gatewayUrls + "https://10.126.126.1:9443")
+        assertEquals("https://10.126.126.1:9443", OverlayChoice.hubUrl(listed, easytier))
+    }
+
+    @Test
+    fun aNetworkThatNamesNoHubAddressHasNone() {
+        assertEquals("", OverlayChoice.hubUrl(both, easytier.copy(hubAddress = "")))
     }
 }

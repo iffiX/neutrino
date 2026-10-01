@@ -46,7 +46,9 @@ class MainActivity : ComponentActivity() {
         }
         val identity =
             "${application.deviceName} · android/${application.architecture} · client ${BuildConfig.VERSION_NAME}"
-        val hubs by application.connections.views.collectAsStateWithLifecycle(emptyList())
+        val hubs by application.hubs.collectAsStateWithLifecycle()
+        val notices by application.connections.notices.collectAsStateWithLifecycle()
+        val join by application.connections.join.collectAsStateWithLifecycle()
         val context = LocalContext.current
         val actions =
             remember(context) {
@@ -54,11 +56,11 @@ class MainActivity : ComponentActivity() {
                     context,
                     application.connections,
                     application.overlays,
+                    application.remoteDesktops,
                     application.shares,
                     application.shareLogins,
                 )
             }
-        val overlayStatus by application.overlays.status.collectAsStateWithLifecycle()
         NeutrinoTheme(palette, words) {
             AppShell(
                 identity = identity,
@@ -66,9 +68,11 @@ class MainActivity : ComponentActivity() {
                 settings = settings,
                 onSaveSettings = application.settingsStore::save,
                 hubs = hubs,
+                notices = notices,
+                join = join,
                 actions = actions,
-                overlayStatus = overlayStatus,
                 terminalTabs = application.terminalTabs,
+                desktops = application.remoteDesktops,
                 remoteDesktopCore = application.remoteDesktopCore,
             )
         }

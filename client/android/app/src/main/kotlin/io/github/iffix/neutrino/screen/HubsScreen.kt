@@ -1,190 +1,272 @@
 package io.github.iffix.neutrino.screen
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.CLIENT_PERSON_CODES
 import io.github.iffix.neutrino.channel.HubConnection
+import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.channel.HubView
-import io.github.iffix.neutrino.design.AppIcon
+import io.github.iffix.neutrino.design.ArmedButton
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.DotTone
+import io.github.iffix.neutrino.design.ErrorLine
 import io.github.iffix.neutrino.design.FeatureRow
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
-import io.github.iffix.neutrino.design.PlaceholderFrame
-import io.github.iffix.neutrino.design.ScreenColumn
-import io.github.iffix.neutrino.design.SurfaceCard
-import kotlinx.coroutines.launch
+import io.github.iffix.neutrino.design.PickerField
+import io.github.iffix.neutrino.design.ReasonLine
+import io.github.iffix.neutrino.design.ScreenList
+import io.github.iffix.neutrino.design.StatusDot
+import io.github.iffix.neutrino.design.cardRows
+import io.github.iffix.neutrino.design.gap
+import io.github.iffix.neutrino.overlay.OverlayJob
+import io.github.iffix.neutrino.overlay.OverlayState
 
 /**
- * The hubs this phone has joined, each with where its socket stands and the way to leave it,
- * and the way to join another.
+ * The hubs this phone has joined, one row each with its state, its virtual network line and its
+ * actions, then the row that opens the Join page.
  *
  * @param hubs Every hub joined.
- * @param onJoin What pressing Join a hub does.
- * @param onLeave What confirming a leave does, with the binding's id.
+ * @param notices The hubs that no longer know this phone, for a minute after their row went.
+ * @param onJoin What pressing the join row does.
+ * @param onLeave What the second press on Leave does, with the binding's id.
  * @param onReconnect What pressing Reconnect does, with the binding's id.
- * @param overlayLine What a hub row shows under its lines for its virtual network, or nothing.
+ * @param onOverlayConnect What pressing Connect on a hub's network does, with the binding's id.
+ * @param onOverlayCancel What pressing Cancel does, with the binding's id.
+ * @param onOverlayDisconnect What pressing Disconnect does, with the binding's id.
+ * @param onOverlayPick What picking a network does, with the binding's id and the provider.
  */
 @Composable
 fun HubsScreen(
     hubs: List<HubView>,
+    notices: List<HubNotice>,
     onJoin: () -> Unit,
-    onLeave: suspend (String) -> ChannelResult<Unit>,
+    onLeave: (String) -> Unit,
     onReconnect: (String) -> Unit,
-    overlayLine: @Composable (HubView) -> Unit = {},
+    onOverlayConnect: (String) -> Unit,
+    onOverlayCancel: (String) -> Unit,
+    onOverlayDisconnect: (String) -> Unit,
+    onOverlayPick: (String, String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
-    ScreenColumn {
-        if (hubs.isEmpty()) {
-            PlaceholderFrame(
-                line = words.word("ui.no_hubs"),
-                hint = words.word("ui.join_hint"),
-                action = {
-                    NeutrinoButton(words.word("ui.add_hub"), onJoin, tier = ButtonTier.PRIMARY, icon = AppIcon.PLUS)
-                },
-            )
-            return@ScreenColumn
+    val busyNetwork = hubs.firstOrNull { it.overlay.state != OverlayState.OFF }
+    ScreenList {
+        if (notices.isNotEmpty()) {
+            cardRows(notices, key = { "notice-${it.hubTitle}-${it.refusal.code}" }) { notice, hasDivider ->
+                FeatureRow(marker = DotTone.BAD, hasDivider = hasDivider) {
+                    BasicText(words.word("ui.hub_forgot", mapOf("hub" to notice.hubTitle)), style = NeutrinoTheme.body)
+                    ErrorLine(notice.refusal)
+                }
+            }
+            gap()
         }
-        SurfaceCard {
-            hubs.forEachIndexed { index, hub ->
-                HubRow(hub, index < hubs.lastIndex, onLeave, onReconnect, overlayLine)
+        if (hubs.isEmpty()) {
+            cardRows(listOf("none"), key = { it }) { _, _ ->
+                FeatureRow(hasDivider = false) { BasicText(words.word("ui.no_hubs"), style = NeutrinoTheme.body) }
+            }
+        } else {
+            cardRows(hubs, key = { it.binding.id }) { hub, hasDivider ->
+                HubRow(
+                    hub = hub,
+                    otherNetwork = busyNetwork?.takeIf { it.binding.id != hub.binding.id },
+                    hasDivider = hasDivider,
+                    onLeave = onLeave,
+                    onReconnect = onReconnect,
+                    onOverlayConnect = onOverlayConnect,
+                    onOverlayCancel = onOverlayCancel,
+                    onOverlayDisconnect = onOverlayDisconnect,
+                    onOverlayPick = onOverlayPick,
+                )
             }
         }
-        NeutrinoButton(words.word("ui.add_hub"), onJoin, icon = AppIcon.PLUS, isWide = true)
+        gap()
+        cardRows(listOf("join"), key = { it }) { _, _ ->
+            FeatureRow(onClick = onJoin, hasDivider = false, hasChevron = true) {
+                BasicText(words.word("ui.add_hub"), style = NeutrinoTheme.rowTitle)
+                BasicText(words.word("ui.join_hint"), style = NeutrinoTheme.note)
+            }
+        }
     }
+}
+
+/**
+ * The status dot of a hub row, by the client page's dot table.
+ *
+ * @param hub The hub.
+ * @return The tone.
+ */
+fun hubTone(hub: HubView): DotTone = when {
+    hub.jobs.isAnyRunning || hub.connection == HubConnection.CONNECTING -> DotTone.PULSE
+    hub.connection == HubConnection.CONNECTED -> DotTone.OK
+    hub.connection == HubConnection.DOWN && hub.lastError?.code in CLIENT_PERSON_CODES -> DotTone.BAD
+    !hub.hasConnected && hub.connection != HubConnection.DISABLED -> DotTone.OFF
+    else -> DotTone.WAIT
+}
+
+/**
+ * The state word of a hub row: the running job's word, else the connection's.
+ *
+ * @param hub The hub.
+ * @return The catalog key.
+ */
+fun hubStateKey(hub: HubView): String = when {
+    hub.jobs.isLeaving -> "ui.job.leaving"
+    hub.jobs.isRefreshing -> "ui.job.refreshing"
+    else -> "ui.state.${hub.connection.wireName}"
 }
 
 @Composable
 private fun HubRow(
     hub: HubView,
+    otherNetwork: HubView?,
     hasDivider: Boolean,
-    onLeave: suspend (String) -> ChannelResult<Unit>,
+    onLeave: (String) -> Unit,
     onReconnect: (String) -> Unit,
-    overlayLine: @Composable (HubView) -> Unit,
+    onOverlayConnect: (String) -> Unit,
+    onOverlayCancel: (String) -> Unit,
+    onOverlayDisconnect: (String) -> Unit,
+    onOverlayPick: (String, String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
-    val palette = NeutrinoTheme.palette
-    val scope = rememberCoroutineScope()
-    var isAsking by remember { mutableStateOf(false) }
-    var isLeaving by remember { mutableStateOf(false) }
-    var leaveError by remember { mutableStateOf<ChannelResult.Refused?>(null) }
-    val title = hub.binding.title
+    val id = hub.binding.id
+    val networks = hub.binding.overlays
+    val line = hub.overlay
+    val chosen = line.network.takeIf { line.state != OverlayState.OFF }
+        ?: networks.firstOrNull { it.provider == hub.binding.overlayChoice }?.provider
+        ?: networks.firstOrNull()?.provider.orEmpty()
+    val networkReason = when {
+        line.state != OverlayState.OFF -> null
+
+        hub.isDisabled -> words.word("ui.reason_hub_disabled")
+
+        networks.isEmpty() -> words.refusal("overlay_missing")
+
+        otherNetwork != null -> words.refusal(
+            "overlay_other_network",
+            mapOf("network" to (networks.firstOrNull { it.provider == chosen }?.title ?: chosen)),
+        )
+
+        else -> null
+    }
     FeatureRow(
-        marker = when (hub.connection) {
-            HubConnection.CONNECTED -> DotTone.OK
-            HubConnection.REPLACED, HubConnection.UNBOUND -> DotTone.OFF
-            else -> DotTone.WAIT
-        },
+        marker = hubTone(hub),
         hasDivider = hasDivider,
-        trailing = if (isAsking) {
-            null
-        } else {
-            {
-                NeutrinoButton(words.word("ui.disconnect"), {
-                    isAsking = true
-                }, tier = ButtonTier.DANGER, isSmall = true)
+        actions = {
+            if (networks.size >= 2) {
+                PickerField(
+                    options = networks.map { it.provider to it.title },
+                    selected = chosen,
+                    onSelect = { onOverlayPick(id, it) },
+                    head = words.word("ui.overlay_count", mapOf("count" to networks.size)),
+                    isEnabled = line.state == OverlayState.OFF && !hub.isDisabled,
+                    isWide = false,
+                )
             }
+            when {
+                line.state == OverlayState.CONNECTING -> NeutrinoButton(
+                    words.word("ui.cancel"),
+                    { onOverlayCancel(id) },
+                    isSmall = true,
+                    isBusy = true,
+                    isEnabled = !hub.isDisabled,
+                )
+
+                line.job == OverlayJob.DISCONNECTING -> NeutrinoButton(
+                    words.word("ui.job.disconnecting"),
+                    {},
+                    isSmall = true,
+                    isBusy = true,
+                    isEnabled = false,
+                )
+
+                line.state == OverlayState.ON -> NeutrinoButton(
+                    words.word("ui.network_disconnect"),
+                    { onOverlayDisconnect(id) },
+                    isSmall = true,
+                    isEnabled = !hub.isDisabled,
+                )
+
+                else -> NeutrinoButton(
+                    words.word("ui.network_connect"),
+                    { onOverlayConnect(id) },
+                    isSmall = true,
+                    isEnabled = networkReason == null,
+                )
+            }
+            if (hub.connection == HubConnection.REPLACED) {
+                NeutrinoButton(words.word("ui.reconnect"), { onReconnect(id) }, isSmall = true)
+            }
+            ArmedButton(
+                key = "leave-$id",
+                label = words.word(if (hub.jobs.isLeaving) "ui.job.leaving" else "ui.disconnect"),
+                armedLabel = words.word("ui.leave_arm"),
+                onAct = { onLeave(id) },
+                isBusy = hub.jobs.isLeaving,
+            )
         },
     ) {
-        BasicText(title, style = NeutrinoTheme.rowTitle)
-        BasicText(words.word(stateKey(hub)), style = NeutrinoTheme.note)
+        BasicText(hub.binding.title, style = NeutrinoTheme.rowTitle)
+        BasicText(words.word(hubStateKey(hub)), style = NeutrinoTheme.note)
         val software = if (hub.software.isEmpty()) {
             ""
         } else {
-            " · " +
-                words.word("ui.hub_software", mapOf("software" to hub.software))
+            " · " + words.word("ui.hub_software", mapOf("software" to hub.software))
         }
-        BasicText(hub.binding.gatewayUrl + software, style = NeutrinoTheme.mono)
-        val error = leaveError ?: hub.lastError?.takeIf { !hub.isConnected || hub.isDisabled }
-        if (error != null) {
-            BasicText(
-                words.refusal(error.code, error.wordParams),
-                style = NeutrinoTheme.note.copy(color = palette.warn),
+        BasicText(hub.connectedAddress.ifEmpty { hub.binding.gatewayUrl } + software, style = NeutrinoTheme.mono)
+        ErrorLine(hub.jobError ?: hub.lastError?.takeIf { !hub.jobs.isRefreshing })
+        Row(
+            modifier = Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StatusDot(
+                when (line.state) {
+                    OverlayState.ON -> if (line.job == OverlayJob.NONE) DotTone.OK else DotTone.PULSE
+                    OverlayState.CONNECTING -> DotTone.PULSE
+                    OverlayState.OFF -> DotTone.OFF
+                },
             )
+            val state = words.word("ui.overlay.${line.state.wireName}", mapOf("address" to line.address))
+            val engine = if (networks.size == 1) " · " + networks.first().title else ""
+            BasicText(words.word("ui.overlay") + " · " + state + engine, style = NeutrinoTheme.note)
         }
-        if (hub.connection == HubConnection.REPLACED) {
-            Row(modifier = Modifier.padding(top = 8.dp)) {
-                NeutrinoButton(words.word("ui.reconnect"), { onReconnect(hub.binding.id) }, isSmall = true)
-            }
-        }
-        overlayLine(hub)
-        if (isAsking) {
-            val shape = RoundedCornerShape(10.dp)
-            Column(
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .fillMaxWidth()
-                    .clip(shape)
-                    .background(palette.errorWash)
-                    .border(1.dp, palette.error, shape)
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                BasicText(
-                    words.word("ui.leave_confirm", mapOf("hub" to title)),
-                    style = NeutrinoTheme.body.copy(color = palette.text),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NeutrinoButton(
-                        words.word("ui.disconnect"),
-                        {
-                            isLeaving = true
-                            scope.launch {
-                                val answer = onLeave(hub.binding.id)
-                                isLeaving = false
-                                isAsking = false
-                                leaveError = answer as? ChannelResult.Refused
-                            }
-                        },
-                        tier = ButtonTier.DANGER,
-                        isSmall = true,
-                        isEnabled = !isLeaving,
-                    )
-                    NeutrinoButton(words.word("ui.cancel"), {
-                        isAsking = false
-                    }, tier = ButtonTier.GHOST, isSmall = true)
-                }
-            }
-        }
+        ErrorLine(line.error)
+        ReasonLine(networkReason ?: words.word("ui.reason_hub_disabled").takeIf { hub.isDisabled })
     }
 }
 
-private fun stateKey(hub: HubView): String = when {
-    hub.isDisabled -> "ui.disabled"
-    hub.connection == HubConnection.CONNECTED -> "ui.connected"
-    hub.connection == HubConnection.REPLACED -> "state.replaced"
-    hub.connection == HubConnection.CONNECTING -> "ui.not_reached"
-    else -> "ui.reconnecting"
-}
-
-@Preview(widthDp = 400, heightDp = 600)
+@Preview(widthDp = 400, heightDp = 700)
 @Composable
 private fun HubsScreenPreview() {
     PreviewHubs.Frame(
         mapOf(
-            "ui.connected" to "已连接",
-            "ui.reconnecting" to "正在重新连接 hub",
+            "ui.state.connected" to "已连接",
+            "ui.state.down" to "未连上",
             "ui.hub_software" to "运行 {software}",
             "ui.disconnect" to "离开",
             "ui.add_hub" to "加入 hub",
+            "ui.network_connect" to "连接",
+            "ui.overlay" to "虚拟网",
+            "ui.overlay.off" to "未连接",
         ),
-    ) { HubsScreen(PreviewHubs.all, onJoin = {}, onLeave = { ChannelResult.Ok(Unit) }, onReconnect = {}) }
+    ) {
+        HubsScreen(
+            PreviewHubs.all,
+            emptyList(),
+            onJoin = {},
+            onLeave = {},
+            onReconnect = {},
+            onOverlayConnect = {},
+            onOverlayCancel = {},
+            onOverlayDisconnect = {},
+            onOverlayPick = { _, _ -> },
+        )
+    }
 }

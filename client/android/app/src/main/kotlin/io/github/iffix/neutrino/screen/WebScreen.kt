@@ -1,44 +1,49 @@
 package io.github.iffix.neutrino.screen
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.channel.HubView
-import io.github.iffix.neutrino.design.Badge
-import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.FeatureRow
+import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import java.net.URI
 import java.net.URISyntaxException
 
 /**
- * The web services the joined hubs publish: a press opens one in the browser; one that only a
- * desktop can reach is greyed with its badge.
+ * The web services the joined hubs publish: Open shows one in the browser; one only a desktop
+ * can reach says so and has no button.
  *
  * @param hubs Every hub joined.
- * @param onOpen What pressing an entry does, with its address.
- * @param onJoin What pressing Join a hub does.
+ * @param onOpen What pressing Open does, with the address.
  */
 @Composable
-fun WebScreen(hubs: List<HubView>, onOpen: (String) -> Unit, onJoin: () -> Unit) {
+fun WebScreen(hubs: List<HubView>, onOpen: (String) -> Unit) {
     val words = NeutrinoTheme.words
-    ServiceList(hubs, "web", "ui.empty_web", onJoin) { hub, entry, hasDivider ->
+    ServiceList(hubs, "web", "ui.empty_web") { hub, entry, hasDivider ->
         val url = entry.text("url")
         val isLocalOnly = entry.flag("is_local_only")
+        val isHealthy = entry.isHealthy != false
         FeatureRow(
-            marker = if (isLocalOnly) DotTone.OFF else DotTone.OK,
-            onClick = if (isLocalOnly) null else ({ onOpen(url) }),
-            isGreyed = isLocalOnly,
+            marker = entryTone(hub, entry),
             hasDivider = hasDivider,
-            hasChevron = !isLocalOnly,
+            actions = if (isLocalOnly) {
+                null
+            } else {
+                {
+                    NeutrinoButton(
+                        words.word("ui.open"),
+                        { onOpen(url) },
+                        isSmall = true,
+                        isEnabled = isHealthy && !hub.jobs.isRefreshing,
+                    )
+                }
+            },
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText(entry.title, style = NeutrinoTheme.rowTitle)
-                if (isLocalOnly) Badge(words.word("ui.desktop_only"))
+            BasicText(entry.title, style = NeutrinoTheme.rowTitle)
+            when {
+                isLocalOnly -> BasicText(words.word("ui.desktop_only"), style = NeutrinoTheme.note)
+                !isHealthy -> BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
             }
             BasicText(url, style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, hostOf(url)), style = NeutrinoTheme.note)
@@ -59,7 +64,7 @@ private fun WebScreenPreview() {
         mapOf(
             "ui.machine_provided_by" to "由 {hub}:{device} 提供",
             "ui.desktop_only" to "仅桌面",
-            "ui.reconnecting" to "正在重新连接 hub",
+            "ui.open" to "打开",
         ),
-    ) { WebScreen(PreviewHubs.all, onOpen = {}, onJoin = {}) }
+    ) { WebScreen(PreviewHubs.all, onOpen = {}) }
 }

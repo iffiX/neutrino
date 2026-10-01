@@ -3,7 +3,11 @@ package io.github.iffix.neutrino.channel
 import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.FakeSecretSealer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -13,6 +17,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class HubConnectionsTest {
     @get:Rule
     val folder = TemporaryFolder()
@@ -104,5 +109,53 @@ class HubConnectionsTest {
         store.put(Samples.binding)
         assertEquals("hub_unreachable", (connections.leave("b1") as ChannelResult.Refused).code)
         assertEquals(Samples.binding, store.get("b1"))
+    }
+
+    @Test
+    fun aLeaveIsAJobOnTheRowAndAFailureIsItsErrorLine() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val gated = object : HubTransport by transport {
+            override suspend fun post(
+                baseUrl: String,
+                path: String,
+                fingerprint: String,
+                body: JsonObject,
+            ): ChannelResult<JsonObject> {
+                gate.await()
+                return transport.post(baseUrl, path, fingerprint, body)
+            }
+        }
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        val connections = HubConnections(store, gated, Samples.machine, { null }, backgroundScope)
+        store.put(Samples.binding)
+        connections.start()
+        runCurrent()
+        connections.startLeave("b1")
+        runCurrent()
+        assertEquals(true, connections.views.first().single().jobs.isLeaving)
+        connections.startLeave("b1")
+        gate.complete(Unit)
+        runCurrent()
+        val row = connections.views.first().single()
+        assertEquals(false, row.jobs.isLeaving)
+        assertEquals("hub_unreachable", row.jobError?.code)
+        assertEquals(Samples.binding.storedUrls.size, transport.posts.count { it.second == "/api/channel/leave" })
+        connections.refresh()
+        assertNull(connections.views.first().single().jobError)
+    }
+
+    @Test
+    fun aJoinIsAJobThatEndsInTheBindingOrTheCode() = runTest {
+        val (connections, _) = connections()
+        connections.startJoin("not a link")
+        runCurrent()
+        assertEquals("link_unreadable", connections.join.value.refusal?.code)
+        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = joined()
+        connections.startJoin(Samples.link(Samples.clientPayload))
+        assertEquals(true, connections.join.value.isJoining)
+        runCurrent()
+        assertEquals("b9", connections.join.value.joinedId)
+        connections.clearJoin()
+        assertEquals(HubJoin(), connections.join.value)
     }
 }

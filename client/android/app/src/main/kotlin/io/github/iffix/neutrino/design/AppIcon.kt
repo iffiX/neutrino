@@ -79,4 +79,5 @@ enum class AppIcon(val paths: List<String>) {
             "M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1",
         ),
     ),
+    REFRESH(listOf("M20 12a8 8 0 1 1-2.34-5.66L20 8.5", "M20 3.5v5h-5")),
 }

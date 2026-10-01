@@ -14,40 +14,55 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * A row's status marker: a dot in its tone, or the amber spinner of a step in flight.
+ * A row's status marker: a dot in its tone, pulsing while something runs, or the amber spinner
+ * a button shows while its job runs.
  *
  * @param tone The tone.
  * @param modifier Placement.
+ * @param size The spinner's edge.
  */
 @Composable
-fun StatusDot(tone: DotTone, modifier: Modifier = Modifier) {
+fun StatusDot(tone: DotTone, modifier: Modifier = Modifier, size: Dp = 10.dp) {
     val palette = NeutrinoTheme.palette
-    if (tone == DotTone.SPIN) {
-        val turn by rememberInfiniteTransition(label = "spin").animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
-            label = "turn",
-        )
-        Canvas(modifier = modifier.size(10.dp)) {
-            val stroke = Stroke(width = 2.dp.toPx())
-            val arcSize = Size(size.width - stroke.width, size.height - stroke.width)
-            val topLeft = Offset(stroke.width / 2, stroke.width / 2)
-            drawArc(palette.border, 0f, 360f, false, topLeft, arcSize, style = stroke)
-            drawArc(palette.signalWarn, turn, 90f, false, topLeft, arcSize, style = stroke)
+    when (tone) {
+        DotTone.SPIN -> {
+            val turn by rememberInfiniteTransition(label = "spin").animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
+                label = "turn",
+            )
+            Canvas(modifier = modifier.size(size)) {
+                val stroke = Stroke(width = 2.dp.toPx())
+                val arcSize = Size(this.size.width - stroke.width, this.size.height - stroke.width)
+                val topLeft = Offset(stroke.width / 2, stroke.width / 2)
+                drawArc(palette.border, 0f, 360f, false, topLeft, arcSize, style = stroke)
+                drawArc(palette.signalWarn, turn, 90f, false, topLeft, arcSize, style = stroke)
+            }
         }
-        return
-    }
-    val color = when (tone) {
-        DotTone.OK -> palette.signalOk
-        DotTone.WAIT -> palette.signalWarn
-        DotTone.BAD -> palette.signalError
-        else -> palette.textMuted
-    }
-    Canvas(modifier = modifier.size(8.dp)) {
-        drawCircle(color)
+
+        DotTone.PULSE -> {
+            val glow by rememberInfiniteTransition(label = "pulse").animateFloat(
+                initialValue = 1f,
+                targetValue = 0.3f,
+                animationSpec = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Reverse),
+                label = "alpha",
+            )
+            Canvas(modifier = modifier.size(8.dp)) { drawCircle(palette.signalWarn.copy(alpha = glow)) }
+        }
+
+        else -> {
+            val color = when (tone) {
+                DotTone.OK -> palette.signalOk
+                DotTone.WAIT -> palette.signalWarn
+                DotTone.BAD -> palette.signalError
+                else -> palette.textMuted
+            }
+            Canvas(modifier = modifier.size(8.dp)) { drawCircle(color) }
+        }
     }
 }

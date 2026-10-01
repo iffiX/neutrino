@@ -1,19 +1,22 @@
 package io.github.iffix.neutrino.design
 
-/** The four tones a status marker takes, and the spinner of a step in flight. */
+/** The tones a status marker takes. */
 enum class DotTone {
-    /** On, running, answering. */
+    /** Green: connected, on, healthy. */
     OK,
 
-    /** Degraded, or waiting on something. */
+    /** Amber and still: not connected with nothing for a person to do, disabled, unhealthy. */
     WAIT,
 
-    /** Not started, nothing to report. */
+    /** Grey: never reached, off. */
     OFF,
 
-    /** Failed, stopped, unreachable. */
+    /** Red: a code a person has to act on. */
     BAD,
 
-    /** A step in flight: joining, leaving, connecting. */
+    /** Amber and pulsing: connecting, or a job running on the row. */
+    PULSE,
+
+    /** The amber spinner a button shows while its job runs. */
     SPIN,
 }

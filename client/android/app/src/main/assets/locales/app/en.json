@@ -1,8 +1,13 @@
 {
   "code": {
+    "overlay_engine_stopped": "the virtual network stopped",
+    "overlay_hub_unreachable": "the hub did not answer through the virtual network within 60 seconds",
+    "overlay_no_address": "the virtual network gave no address within 60 seconds",
+    "overlay_withdrawn": "the hub no longer publishes this virtual network",
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
     "rdp_login_failed": "The machine refused the access password.",
+    "session_not_owned": "only the client that opened this session can change it",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
@@ -21,24 +26,65 @@
     "core_patch": "Patch",
     "core_source": "Source 1.4.9",
     "desktop_only": "Desktop only",
+    "forget_password": "Forget password",
+    "forget_password_arm": "Press again to forget",
     "gateway_address": "Gateway address",
+    "hub_forgot": "{hub} no longer knows this phone, so its row was removed.",
+    "job": {
+      "connecting": "Connecting…",
+      "disconnecting": "Disconnecting…",
+      "forwarding": "Forwarding…",
+      "joining": "Joining…",
+      "leaving": "Leaving…",
+      "mounting": "Mounting…",
+      "opening": "Opening…",
+      "refreshing": "Refreshing…",
+      "switching": "Switching tools…",
+      "unmounting": "Unmounting…"
+    },
     "join_hint": "Scan the QR code, or paste the link.",
-    "joining": "Joining…",
     "key_hide": "Hide the key",
     "key_show": "Show the key",
-    "leave_confirm": "Leave {hub}? This phone forgets its link and its key.",
+    "leave_arm": "Press again to leave",
+    "network_connect": "Connect",
+    "network_disconnect": "Disconnect",
     "open_in_files": "Open in Files",
     "or": "or",
+    "overlay": {
+      "connecting": "Connecting…",
+      "off": "Not connected",
+      "on": "Connected · {address}"
+    },
     "overlay_count": "This hub publishes {count} virtual networks",
     "password_not_saved": "Password not saved",
     "paste": "Paste",
+    "qr": "QR",
     "rdp_disconnect": "Disconnect",
     "rdp_keyboard": "Keyboard",
+    "reason_hub_disabled": "The hub has switched this client off.",
+    "reason_hub_down": "The hub is not connected.",
+    "reason_machine_offline": "The machine is offline.",
+    "reason_pick_machine": "Pick a machine first.",
+    "reason_viewer_open": "A viewer is open.",
     "remember": "Remember",
     "scan_hint": "Point the camera at the QR code on the hub's Clients page",
     "share_login_needed": "Give this share's password on the Files screen first.",
+    "source": "Source",
+    "state": {
+      "connected": "Connected",
+      "connecting": "Connecting…",
+      "disabled": "Disabled by the hub",
+      "down": "Not connected",
+      "replaced": "Replaced by another client"
+    },
+    "terminal_badge_kept": "kept",
+    "terminal_badge_shared": "shared",
+    "terminal_clear": "Clear",
     "terminal_detached": "Detached; it attaches again once the hub answers.",
-    "terminal_end": "End",
-    "terminal_end_confirm": "End the persistent session on {name}? Its shell exits on that machine."
+    "terminal_end_arm": "Press again to end",
+    "terminal_expand": "Show the machines and the tabs",
+    "terminal_opened_by": "Opened by {owner}",
+    "terminal_select_all": "Select all",
+    "terminal_shared": "Shared"
   }
 }

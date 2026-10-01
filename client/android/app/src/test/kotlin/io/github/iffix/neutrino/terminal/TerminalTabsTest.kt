@@ -1,10 +1,14 @@
 package io.github.iffix.neutrino.terminal
 
-import io.github.iffix.neutrino.FakeSharedPreferences
 import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.channel.ChannelInbound
 import io.github.iffix.neutrino.channel.ChannelStreamRegistry
+import io.github.iffix.neutrino.channel.ChannelTerminal
+import io.github.iffix.neutrino.channel.ChannelTerminalSession
 import io.github.iffix.neutrino.channel.FakeChannelSocket
+import io.github.iffix.neutrino.channel.HubConnection
+import io.github.iffix.neutrino.channel.HubView
+import io.github.iffix.neutrino.channel.Samples
 import java.nio.ByteBuffer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -22,12 +26,20 @@ import org.junit.Test
 class TerminalTabsTest {
     private val socket = FakeChannelSocket()
     private val registry = ChannelStreamRegistry(socket)
-    private val preferences = FakeSharedPreferences()
     private val opener = StreamOpener { kind, args, hasBytes -> registry.open(kind, args, hasBytes) }
 
-    private fun TestScope.tabs() = TerminalTabs(preferences, { opener }, backgroundScope)
+    private fun TestScope.tabs() = TerminalTabs({ opener }, backgroundScope)
 
     private fun opens(kind: String) = socket.sent("open").filter { it["kind"]!!.jsonPrimitive.content == kind }
+
+    private fun hub(vararg sessions: ChannelTerminalSession) = HubView(
+        Samples.binding,
+        connection = HubConnection.CONNECTED,
+        terminals = listOf(ChannelTerminal("d1", "Argon", true, sessions.toList())),
+    )
+
+    private fun closeStream(id: Int, code: String = "") =
+        registry.takeClose(ChannelInbound.Close(id, code, JsonObject(emptyMap())))
 
     @Test
     fun aNewTabOpensItsShellAtTheFirstSizeWithItsSessionId() = runTest {
@@ -41,6 +53,7 @@ class TerminalTabsTest {
         assertEquals(24, open["rows"]!!.jsonPrimitive.int)
         assertEquals(emptyList<String>(), GoldenSchema.problems(JsonObject(open - "type"), "ChannelOpen"))
         assertEquals(TerminalPhase.OPEN, tabs.tabs.value.single().phase)
+        assertEquals(id, tabs.active.value)
     }
 
     @Test
@@ -67,43 +80,67 @@ class TerminalTabsTest {
     }
 
     @Test
-    fun theSwitchSendsPersistAndKeepsTheSessionForTheNextStart() = runTest {
+    fun theSwitchesSendPersistWithBothFlagsAndShowTheValuesAtOnce() = runTest {
         val tabs = tabs()
         val id = tabs.create("b1", "d1", "Argon")
         tabs.sized(id, 80, 24)
-        tabs.setPersistent(id, true)
+        tabs.persist(id, isPersistent = true, isShared = false)
         val persist = opens("command").single()
         assertEquals("persist", persist["verb"]!!.jsonPrimitive.content)
-        assertEquals(true, persist["is_persistent"]!!.jsonPrimitive.boolean)
         assertEquals(id, persist["session_id"]!!.jsonPrimitive.content)
+        assertEquals(true, persist["is_persistent"]!!.jsonPrimitive.boolean)
+        assertEquals(false, persist["is_shared"]!!.jsonPrimitive.boolean)
         assertEquals(null, persist["device_id"])
-        val again = TerminalTabs(preferences, { opener }, backgroundScope)
-        assertEquals(listOf(id), again.tabs.value.map { it.sessionId })
-        assertEquals(TerminalPhase.DETACHED, again.tabs.value.single().phase)
+        assertEquals(true, tabs.tabs.value.single().isPersistent)
     }
 
     @Test
-    fun aKeptSessionAttachesAgainResumed() = runTest {
-        val first = tabs()
-        val id = first.create("b1", "d1", "Argon")
-        first.sized(id, 80, 24)
-        first.setPersistent(id, true)
-        val again = TerminalTabs(preferences, { opener }, backgroundScope)
-        again.sized(id, 80, 24)
-        assertEquals(true, opens("shell").last()["is_resumed"]!!.jsonPrimitive.boolean)
+    fun aTabThisPhoneDidNotOpenSendsNoPersist() = runTest {
+        val tabs = tabs()
+        tabs.take(listOf(hub(ChannelTerminalSession("s9", owner = "hub", isOwned = false, isShared = true))))
+        tabs.sized("s9", 80, 24)
+        tabs.persist("s9", isPersistent = true, isShared = true)
+        assertTrue(opens("command").isEmpty())
+        assertEquals(false, tabs.tabs.value.single().canPersist)
     }
 
     @Test
-    fun closingAKeptTabEndsItsSession() = runTest {
+    fun aListedSessionGetsATabThatAttachesResumedWhenShown() = runTest {
+        val tabs = tabs()
+        tabs.take(listOf(hub(ChannelTerminalSession("s1", isOwned = true, isPersistent = true))))
+        assertEquals("s1", tabs.active.value)
+        assertEquals(TerminalPhase.DETACHED, tabs.tabs.value.single().phase)
+        assertTrue(opens("shell").isEmpty())
+        tabs.sized("s1", 80, 24)
+        assertEquals(true, opens("shell").single()["is_resumed"]!!.jsonPrimitive.boolean)
+        assertEquals(TerminalPhase.OPEN, tabs.tabs.value.single().phase)
+    }
+
+    @Test
+    fun closingAKeptTabEndsItsSessionAndTheTabGoesOnceTheMachineAgrees() = runTest {
         val tabs = tabs()
         val id = tabs.create("b1", "d1", "Argon")
         tabs.sized(id, 80, 24)
-        tabs.setPersistent(id, true)
+        tabs.persist(id, isPersistent = true, isShared = false)
         tabs.close(id)
         val stop = opens("command").last()
         assertEquals("stop_session", stop["verb"]!!.jsonPrimitive.content)
         assertEquals(id, stop["session_id"]!!.jsonPrimitive.content)
-        assertEquals(null, stop["device_id"])
+        assertEquals(1, tabs.tabs.value.size)
+        closeStream(stop["stream"]!!.jsonPrimitive.int)
+        runCurrent()
+        assertTrue(tabs.tabs.value.isEmpty())
+    }
+
+    @Test
+    fun aClosedPlainTabStaysClosed() = runTest {
+        val tabs = tabs()
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        tabs.close(id)
+        assertTrue(tabs.tabs.value.isEmpty())
+        assertTrue(opens("command").isEmpty())
+        tabs.take(listOf(hub(ChannelTerminalSession(id, isOwned = true))))
         assertTrue(tabs.tabs.value.isEmpty())
     }
 
@@ -112,7 +149,7 @@ class TerminalTabsTest {
         val tabs = tabs()
         val id = tabs.create("b1", "d1", "Argon")
         tabs.sized(id, 80, 24)
-        registry.takeClose(ChannelInbound.Close(1, "session_unknown", JsonObject(emptyMap())))
+        closeStream(1, "session_unknown")
         runCurrent()
         assertEquals(TerminalPhase.ENDED, tabs.tabs.value.single().phase)
         assertEquals("session_unknown", tabs.tabs.value.single().note?.code)
@@ -120,7 +157,7 @@ class TerminalTabsTest {
 
     @Test
     fun aHubThatIsNotConnectedLeavesTheTabDetached() = runTest {
-        val tabs = TerminalTabs(preferences, { null }, backgroundScope)
+        val tabs = TerminalTabs({ null }, backgroundScope)
         val id = tabs.create("b1", "d1", "Argon")
         tabs.sized(id, 80, 24)
         assertEquals(TerminalPhase.DETACHED, tabs.tabs.value.single().phase)

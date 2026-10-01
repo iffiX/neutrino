@@ -1,8 +1,13 @@
 {
   "code": {
+    "overlay_engine_stopped": "虚拟网已停止",
+    "overlay_hub_unreachable": "60 秒内无法经虚拟网连上 hub",
+    "overlay_no_address": "60 秒内虚拟网没有分配地址",
+    "overlay_withdrawn": "hub 已不再发布这个虚拟网",
     "rdp_closed": "连接已结束：{reason}",
     "rdp_core_missing": "这个版本还没有远程桌面核心，显示不了画面。",
     "rdp_login_failed": "对方机器拒绝了访问密码。",
+    "session_not_owned": "只有打开这个会话的客户端才能更改它",
     "verb_unknown": "hub 不认识这个命令，请先更新 hub"
   },
   "ui": {
@@ -21,24 +26,65 @@
     "core_patch": "补丁",
     "core_source": "源码 1.4.9",
     "desktop_only": "仅桌面",
+    "forget_password": "忘掉密码",
+    "forget_password_arm": "再按一次以忘掉",
     "gateway_address": "网关地址",
+    "hub_forgot": "{hub} 已不再认识本机，它的一行已移除。",
+    "job": {
+      "connecting": "连接中…",
+      "disconnecting": "断开中…",
+      "forwarding": "转发中…",
+      "joining": "加入中…",
+      "leaving": "离开中…",
+      "mounting": "挂载中…",
+      "opening": "打开中…",
+      "refreshing": "刷新中…",
+      "switching": "切换工具中…",
+      "unmounting": "卸载中…"
+    },
     "join_hint": "扫描二维码，或粘贴链接。",
-    "joining": "正在加入…",
     "key_hide": "隐藏密钥",
     "key_show": "显示密钥",
-    "leave_confirm": "离开 {hub}？本机会忘掉它的链接和密钥。",
+    "leave_arm": "再按一次以离开",
+    "network_connect": "连接",
+    "network_disconnect": "断开",
     "open_in_files": "在“文件”中打开",
     "or": "或",
+    "overlay": {
+      "connecting": "连接中…",
+      "off": "未连接",
+      "on": "已连接 · {address}"
+    },
     "overlay_count": "此 hub 发布了 {count} 个虚拟网",
     "password_not_saved": "未存密码",
     "paste": "粘贴",
+    "qr": "二维码",
     "rdp_disconnect": "断开",
     "rdp_keyboard": "键盘",
+    "reason_hub_disabled": "hub 已把本机停用。",
+    "reason_hub_down": "hub 未连上。",
+    "reason_machine_offline": "机器离线。",
+    "reason_pick_machine": "请先选一台机器。",
+    "reason_viewer_open": "查看器已打开。",
     "remember": "记住",
     "scan_hint": "对准 hub 客户端页面上的二维码",
     "share_login_needed": "请先在文件页输入这个共享的密码。",
+    "source": "源码",
+    "state": {
+      "connected": "已连接",
+      "connecting": "连接中…",
+      "disabled": "已被 hub 停用",
+      "down": "未连上",
+      "replaced": "已被另一个客户端取代"
+    },
+    "terminal_badge_kept": "持久",
+    "terminal_badge_shared": "共享",
+    "terminal_clear": "清屏",
     "terminal_detached": "已断开，hub 恢复后会重新连上。",
-    "terminal_end": "结束",
-    "terminal_end_confirm": "结束 {name} 上的持久会话？shell 会在那台机器上退出。"
+    "terminal_end_arm": "再按一次以结束",
+    "terminal_expand": "显示机器和标签",
+    "terminal_opened_by": "由 {owner} 打开",
+    "terminal_select_all": "全选",
+    "terminal_shared": "共享"
   }
 }

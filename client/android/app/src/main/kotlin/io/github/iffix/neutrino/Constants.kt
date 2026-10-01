@@ -12,8 +12,11 @@ val CLIENT_THEMES: List<String> = listOf("system", "dark", "light")
 /** The palette a fresh install draws in. */
 const val CLIENT_DEFAULT_THEME = "system"
 
-/** Past this width, in dp, a landscape window shows the sidebar instead of the bottom bar. */
-const val CLIENT_SIDEBAR_MIN_WIDTH_DP = 880
+/** From this width, in dp, a window wider than it is tall shows the sidebar instead of the bottom bar. */
+const val CLIENT_SIDEBAR_MIN_WIDTH_DP = 720
+
+/** The height of the bottom bar, in dp, above the system's navigation bar. */
+const val CLIENT_BOTTOM_BAR_HEIGHT_DP = 56
 
 /** The file the language and the theme are kept in. */
 const val CLIENT_SETTINGS_FILE_NAME = "client_settings"
@@ -36,14 +39,17 @@ const val ICON_VIEWBOX = 24f
 /** The width of an icon's stroke, in units of [ICON_VIEWBOX]. */
 const val ICON_STROKE_WIDTH = 1.6f
 
-/** The cores the app carries, as name, version and licence, for the About screen. */
+/** The cores the app carries, as name, version and licence, for the About section. */
 val CLIENT_CARRIED_CORES: List<Triple<String, String, String>> = listOf(
     Triple("NetBird", "0.78.1", "BSD-3-Clause"),
     Triple("EasyTier", "2.6.4", "LGPL-3.0"),
     Triple(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0"),
 )
 
-/** The carried core whose source and patch the About screen links. */
+/** The app's source. */
+const val CLIENT_SOURCE_URL = "https://github.com/iffiX/neutrino"
+
+/** The carried core whose source and patch the About section links. */
 const val CLIENT_RUSTDESK_CORE = "RustDesk"
 
 /** RustDesk's source at the tag the app's core is built from. */
@@ -55,6 +61,9 @@ const val CLIENT_RUSTDESK_PATCH_URL =
 
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
 const val PROTOCOL = 3
+
+/** The tag of every line the app writes to the system log. */
+const val CLIENT_LOG_TAG = "neutrino"
 
 /** The role this app joins a hub as. */
 const val CLIENT_ROLE = "client"
@@ -104,6 +113,15 @@ const val CLIENT_BACKOFF_MAX_S = 60L
 /** The pause between an address that did not answer and the next of the round. */
 const val CLIENT_ROTATE_DELAY_S = 1L
 
+/** How long a refresh waits for a hub's state frame or a code before it ends. */
+const val CLIENT_REFRESH_TIMEOUT_S = 10L
+
+/** How long the notice of a hub that no longer knows this phone stays on the Hubs page. */
+const val CLIENT_NOTICE_SHOWN_S = 60L
+
+/** How long an armed destructive button waits for its second press. */
+const val CLIENT_ARM_MILLIS = 5000L
+
 /** How often an idle session looks again: one another socket replaced, or the hub forgot. */
 const val CLIENT_IDLE_POLL_INTERVAL_S = 2L
 
@@ -134,6 +152,10 @@ const val CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 /** The refusals the hub answers a protocol number it does not speak with. */
 val CLIENT_PROTOCOL_REFUSAL_CODES: List<String> = listOf("protocol_too_old", "protocol_too_new")
 
+/** The codes a person has to act on, drawn with a red dot. */
+val CLIENT_PERSON_CODES: List<String> =
+    listOf("hub_untrusted", "binding_unknown", "protocol_too_old", "protocol_too_new")
+
 /** A stream for one published entry's material. */
 const val CLIENT_STREAM_KIND_SERVICE = "service"
 
@@ -162,7 +184,7 @@ val CLIENT_HUB_CODES: List<String> = listOf(
     "rdp_not_shared",
     "role_mismatch",
     "service_unknown",
-    "session_taken",
+    "session_not_owned",
     "session_unknown",
     "shell_unknown",
     "vault_locked",
@@ -220,11 +242,11 @@ const val CLIENT_COPIED_SHOWN_MILLIS = 1500L
 /** How many characters of a masked key stay readable. */
 const val CLIENT_KEY_SHOWN_PREFIX = 6
 
-/** How long a hub's channel may be lost before the phone moves to the hub's next network. */
-const val CLIENT_OVERLAY_FAILOVER_S = 30L
+/** How long one connect to a virtual network may take: the engine's address and the channel through it. */
+const val OVERLAY_CONNECT_TIMEOUT_S = 60L
 
-/** How often the overlay controller looks at the channels again while nothing changes. */
-const val OVERLAY_CHECK_INTERVAL_S = 5L
+/** How long a disconnect waits for the engine to say it stopped. */
+const val OVERLAY_STOP_TIMEOUT_S = 10L
 
 /** The name of the one manual EasyTier instance the app runs. */
 const val OVERLAY_EASYTIER_INSTANCE = "neutrino"
@@ -259,14 +281,11 @@ const val CLIENT_SHARE_LOGINS_FILE_NAME = "shares.sealed"
 /** How long connecting to a share's server and each request may take. */
 const val CLIENT_SHARE_TIMEOUT_S = 10L
 
-/** The preferences file the kept terminal sessions are listed in. */
-const val CLIENT_TERMINAL_FILE_NAME = "terminals"
-
-/** The key of the kept terminal sessions in [CLIENT_TERMINAL_FILE_NAME]. */
-const val CLIENT_TERMINAL_SESSIONS_KEY = "sessions"
-
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
+
+/** Below this height, in dp, the Terminals page keeps its machines and tabs in one line, as with the keyboard shown. */
+const val CLIENT_TERMINAL_SHORT_HEIGHT_DP = 480
 
 /** The page the terminals are drawn in. */
 const val CLIENT_TERMINAL_PAGE = "file:///android_asset/terminal/index.html"
@@ -274,11 +293,20 @@ const val CLIENT_TERMINAL_PAGE = "file:///android_asset/terminal/index.html"
 /** What the extra-keys row's Ctrl key sends: nothing, it holds Ctrl for the next key. */
 const val TERMINAL_KEY_CTRL = "ctrl"
 
-/** What the extra-keys row's Paste key sends: the clipboard's text. */
-const val TERMINAL_KEY_PASTE = "paste"
-
 /** The name the terminal page reaches the app by. */
 const val CLIENT_TERMINAL_BRIDGE = "NeutrinoBridge"
+
+/** The analysis frame the QR scanner asks the camera for. */
+const val SCAN_ANALYSIS_WIDTH = 1920
+
+/** The analysis frame's height. */
+const val SCAN_ANALYSIS_HEIGHT = 1080
+
+/** The side of the centred square decoded, and drawn as the guide, over the frame's shorter side. */
+const val SCAN_REGION_FRACTION = 0.7f
+
+/** The vibration of a decoded code where the phone has no confirm haptic. */
+const val SCAN_VIBRATION_MILLIS = 50L
 
 /** RustDesk's mouse event type in the low three bits of a mask: the pointer moved. */
 const val RDP_MOUSE_MOVE = 0

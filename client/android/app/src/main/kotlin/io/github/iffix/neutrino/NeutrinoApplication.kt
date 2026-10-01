@@ -5,13 +5,14 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
-import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.Settings
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.KeystoreSecretSealer
+import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ClientMachine
 import io.github.iffix.neutrino.channel.HubConnections
+import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.channel.OkHttpHubTransport
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
@@ -20,6 +21,7 @@ import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.remotedesktop.MissingRemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import io.github.iffix.neutrino.remotedesktop.RustDeskNative
 import io.github.iffix.neutrino.remotedesktop.RustDeskRemoteDesktopCore
 import io.github.iffix.neutrino.settings.ClientSettingsStore
@@ -35,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -72,14 +75,37 @@ class NeutrinoApplication : Application() {
 
     /** One session per hub joined. */
     val connections: HubConnections by lazy {
-        HubConnections(bindingStore, OkHttpHubTransport(), machine, ::resolveHubName, scope)
+        HubConnections(bindingStore, OkHttpHubTransport(), machine, ::resolveHubName, scope) { bindingId ->
+            overlays.forget(bindingId)
+            remoteDesktops.forget(bindingId)
+        }
     }
 
-    /** The wish to be on a hub's virtual network, and the one network the VPN runs. */
+    /** Each hub's virtual network, and the one network the VPN runs. */
     val overlays: OverlayController by lazy {
-        OverlayController(bindingStore, ServiceOverlayLauncher(this), SystemClock::elapsedRealtime) { bindingId ->
-            connections.session(bindingId)?.networkChanged()
+        OverlayController(bindingStore, ServiceOverlayLauncher(this), scope) { bindingId, url ->
+            connections.session(bindingId)?.preferAddress(url)
         }
+    }
+
+    /** The one state document every screen draws: each hub with its virtual network and its jobs. */
+    val hubs: StateFlow<List<HubView>> by lazy {
+        combine(connections.views, overlays.lines) { views, lines ->
+            views.map { view ->
+                val line = lines[view.binding.id] ?: view.overlay
+                view.copy(overlay = line, jobs = view.jobs.copy(overlayJob = line.job))
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+    }
+
+    /** The remote desktop Connects and the one viewer open. */
+    val remoteDesktops: RemoteDesktopSessions by lazy {
+        RemoteDesktopSessions(
+            material = { bindingId, entryId ->
+                connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
+            },
+            scope = scope,
+        )
     }
 
     /** Every share the connected hubs publish, as roots of the system's Files. */
@@ -101,7 +127,6 @@ class NeutrinoApplication : Application() {
     /** Every terminal tab. */
     val terminalTabs: TerminalTabs by lazy {
         TerminalTabs(
-            preferences = getSharedPreferences(CLIENT_TERMINAL_FILE_NAME, Context.MODE_PRIVATE),
             opener = { bindingId ->
                 connections.session(bindingId)?.takeIf { it.view.value.isConnected }?.let { session ->
                     StreamOpener { kind, args, hasBytes -> session.openStream(kind, args, hasBytes) }
@@ -131,7 +156,8 @@ class NeutrinoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         connections.start()
-        overlays.start(scope, connections.views)
+        overlays.start(connections.views)
+        terminalTabs.follow(connections.views)
         scope.launch {
             shareRoots.collect {
                 contentResolver.notifyChange(DocumentsContract.buildRootsUri(CLIENT_FILES_AUTHORITY), null)

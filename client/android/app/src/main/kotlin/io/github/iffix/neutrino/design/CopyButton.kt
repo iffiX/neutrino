@@ -12,10 +12,11 @@ import kotlinx.coroutines.delay
 /**
  * A copy button that confirms in place: green and `Copied` for a moment.
  *
+ * @param isEnabled Whether it takes presses.
  * @param onCopy What copying does.
  */
 @Composable
-fun CopyButton(onCopy: () -> Unit) {
+fun CopyButton(isEnabled: Boolean = true, onCopy: () -> Unit) {
     val words = NeutrinoTheme.words
     var isDone by remember { mutableStateOf(false) }
     LaunchedEffect(isDone) {
@@ -31,6 +32,7 @@ fun CopyButton(onCopy: () -> Unit) {
             isDone = true
         },
         isSmall = true,
+        isEnabled = isEnabled,
         isDone = isDone,
     )
 }

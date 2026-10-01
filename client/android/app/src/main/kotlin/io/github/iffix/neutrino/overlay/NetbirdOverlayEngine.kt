@@ -32,6 +32,9 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
     @Volatile
     private var client: io.netbird.gomobile.android.Client? = null
 
+    @Volatile
+    private var isStopped = false
+
     override fun start(
         overlay: ChannelOverlay,
         tun: TunBuilder,
@@ -41,6 +44,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
     }
 
     override fun stop() {
+        isStopped = true
         client?.stop()
     }
 
@@ -75,6 +79,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
                 done.get()?.let { throw it }
                 registered.writeText(keyDigest)
             }
+            if (isStopped) return
             val address = StringBuilder()
             val running = Android.newClient(
                 Build.VERSION.SDK_INT.toLong(),
@@ -86,6 +91,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
             )
             running.setConnectionListener(Listener(address, report))
             client = running
+            if (isStopped) return
             running.runWithoutLogin(Files(dir, config), DNSList(), Ready(), Android.newEnvList())
             report(OverlayPhase.OFF, "", null)
         } catch (error: Exception) {
@@ -178,7 +184,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
 
         override fun onConnecting() = report(OverlayPhase.JOINING, "", null)
 
-        override fun onDisconnected() = report(OverlayPhase.OFF, "", null)
+        override fun onDisconnected() = report(OverlayPhase.JOINING, "", null)
 
         override fun onDisconnecting() = report(OverlayPhase.LEAVING, "", null)
 

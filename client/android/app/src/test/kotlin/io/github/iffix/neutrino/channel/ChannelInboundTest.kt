@@ -31,10 +31,10 @@ class ChannelInboundTest {
     }
 
     @Test
-    fun aShellSessionReadsEveryFieldTheGoldenNames() {
+    fun aTerminalSessionReadsEveryFieldTheGoldenNames() {
         assertEquals(
-            GoldenSchema.properties("ChannelShellSession"),
-            names(ChannelShellSession.serializer().descriptor),
+            GoldenSchema.properties("ChannelTerminalSession"),
+            names(ChannelTerminalSession.serializer().descriptor),
         )
     }
 

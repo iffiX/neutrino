@@ -1,56 +1,99 @@
 package io.github.iffix.neutrino.terminal
 
-import android.content.SharedPreferences
-import androidx.core.content.edit
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_COMMAND
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SHELL
 import io.github.iffix.neutrino.CLIENT_STREAM_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_TERMINAL_KEPT_BYTES
-import io.github.iffix.neutrino.CLIENT_TERMINAL_SESSIONS_KEY
 import io.github.iffix.neutrino.channel.ChannelFrames
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelStream
+import io.github.iffix.neutrino.channel.HubView
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 
 /**
- * Every terminal tab of the app, outliving the screen that draws them: each tab's shell stream,
- * the last output it wrote so a new view can draw it again, and the kept sessions, restored
- * detached on the next start.
+ * Every terminal tab of the app, outliving the screen that draws them: the tabs follow the
+ * session lists of the connected hubs, and each tab keeps its shell stream and its last output
+ * so a new view can draw it again.
  *
- * A shell is opened with a session id this phone makes; a kept one is attached again with
- * `is_resumed`. `persist` and `stop_session` name only the session.
+ * A new shell is opened with a session id this phone makes; a listed one is attached with
+ * `is_resumed`, its kept output first. `persist` and `stop_session` name only the session.
  *
- * @param preferences Where the kept sessions are listed.
  * @param opener The stream opener of one hub, by binding id, or null while it is not connected.
- * @param scope Where the shells' readers run.
+ * @param scope Where the shells' readers and the lists' follower run.
  */
-class TerminalTabs(
-    private val preferences: SharedPreferences,
-    private val opener: (String) -> StreamOpener?,
-    private val scope: CoroutineScope,
-) {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val current = MutableStateFlow(restore())
+class TerminalTabs(private val opener: (String) -> StreamOpener?, private val scope: CoroutineScope) {
+    private val current = MutableStateFlow<List<TerminalTab>>(emptyList())
+    private val selected = MutableStateFlow("")
+    private val machine = MutableStateFlow<Pair<String, String>?>(null)
     private val streams = mutableMapOf<String, ChannelStream>()
     private val outputs = mutableMapOf<String, ByteArrayOutputStream>()
     private val sizes = mutableMapOf<String, Pair<Int, Int>>()
+    private val dismissed = mutableSetOf<String>()
     private var sink: ((String, ByteArray) -> Unit)? = null
 
-    /** Every tab, in the order opened. */
+    /** Every tab, in the order made. */
     val tabs: StateFlow<List<TerminalTab>> = current.asStateFlow()
 
+    /** The tab shown, empty for none. */
+    val active: StateFlow<String> = selected.asStateFlow()
+
+    /** The machine a new terminal opens on, as binding id and device id, or null for none picked. */
+    val picked: StateFlow<Pair<String, String>?> = machine.asStateFlow()
+
     /**
-     * Make a tab for a new shell; its shell opens at the first size the view reports.
+     * Follow the hubs' session lists from now on.
+     *
+     * @param hubs Every hub's view.
+     */
+    fun follow(hubs: Flow<List<HubView>>) {
+        scope.launch { hubs.collect { take(it) } }
+    }
+
+    /**
+     * Take one round of the hubs' session lists.
+     *
+     * @param hubs Every hub's view.
+     */
+    fun take(hubs: List<HubView>) {
+        val (listings, listedHubs) = TerminalSessionMerge.listed(hubs)
+        val gone = synchronized(dismissed) {
+            val listedIds = listings.map { it.session.sessionId }.toSet()
+            dismissed.retainAll { id -> id in listedIds }
+            dismissed.toSet()
+        }
+        current.update { TerminalSessionMerge.merge(it, listings, listedHubs, gone) }
+        settleActive()
+    }
+
+    /**
+     * Pick the machine a new terminal opens on.
+     *
+     * @param bindingId The hub.
+     * @param deviceId The machine.
+     */
+    fun pick(bindingId: String, deviceId: String) {
+        machine.value = bindingId to deviceId
+    }
+
+    /**
+     * Show one tab; its stream attaches at the first size its view reports.
+     *
+     * @param sessionId The tab.
+     */
+    fun select(sessionId: String) {
+        if (tab(sessionId) != null) selected.value = sessionId
+    }
+
+    /**
+     * Make a tab for a new shell and show it; its shell opens at the first size the view reports.
      *
      * @param bindingId The hub.
      * @param deviceId The machine.
@@ -60,6 +103,7 @@ class TerminalTabs(
     fun create(bindingId: String, deviceId: String, name: String): String {
         val tab = TerminalTab(UUID.randomUUID().toString(), bindingId, deviceId, name, phase = TerminalPhase.CONNECTING)
         current.update { it + tab }
+        selected.value = tab.sessionId
         return tab.sessionId
     }
 
@@ -110,29 +154,39 @@ class TerminalTabs(
     }
 
     /**
-     * Keep, or stop keeping, a tab's shell when its stream closes.
+     * Set whether a tab's session outlives every window and whether others list it; the tab
+     * shows the new values at once, and the next state frame confirms them.
      *
      * @param sessionId The tab.
-     * @param isPersistent The wish.
+     * @param isPersistent Whether the session outlives every window.
+     * @param isShared Whether every client with terminal rights on the machine lists it.
      */
-    fun setPersistent(sessionId: String, isPersistent: Boolean) {
-        val tab = tab(sessionId) ?: return
-        change(sessionId) { it.copy(isPersistent = isPersistent) }
-        command(tab, "persist", "session_id" to sessionId, "is_persistent" to isPersistent)
+    fun persist(sessionId: String, isPersistent: Boolean, isShared: Boolean) {
+        val tab = tab(sessionId)?.takeIf { it.canPersist } ?: return
+        change(sessionId) { it.copy(isPersistent = isPersistent, isShared = isShared, note = null) }
+        command(
+            tab,
+            "persist",
+            "session_id" to sessionId,
+            "is_persistent" to isPersistent,
+            "is_shared" to isShared,
+        )
     }
 
     /**
-     * Close a tab: a kept shell is ended on its machine, any other closes with its stream.
+     * Close a tab: an ended tab goes, a persistent or shared session is ended on its machine
+     * with `stop_session` and its tab goes once the machine agrees, and any other closes with
+     * its stream.
      *
      * @param sessionId The tab.
      */
     fun close(sessionId: String) {
         val tab = tab(sessionId) ?: return
-        if (tab.isPersistent) command(tab, "stop_session", "session_id" to sessionId)
-        synchronized(streams) { streams.remove(sessionId) }?.close()
-        synchronized(outputs) { outputs.remove(sessionId) }
-        current.update { list -> list.filterNot { it.sessionId == sessionId } }
-        keep()
+        if (tab.phase != TerminalPhase.ENDED && tab.isKept) {
+            stopSession(tab)
+        } else {
+            remove(sessionId)
+        }
     }
 
     /**
@@ -145,6 +199,42 @@ class TerminalTabs(
             sink = onOutput
             if (onOutput != null) outputs.forEach { (id, bytes) -> onOutput(id, bytes.toByteArray()) }
         }
+    }
+
+    private fun stopSession(tab: TerminalTab) {
+        val hub = opener(tab.bindingId)
+        if (hub == null) {
+            change(tab.sessionId) { it.copy(note = ChannelResult.refused("hub_unreachable")) }
+            return
+        }
+        val args = ChannelFrames.args("module" to "agent", "verb" to "stop_session", "session_id" to tab.sessionId)
+        when (val opened = hub.open(CLIENT_STREAM_KIND_COMMAND, args, false)) {
+            is ChannelResult.Refused -> change(tab.sessionId) { it.copy(note = opened) }
+
+            is ChannelResult.Ok -> scope.launch {
+                when (val result = opened.value.awaitClose(CLIENT_STREAM_TIMEOUT_S * 1000)) {
+                    is ChannelResult.Refused -> change(tab.sessionId) { it.copy(note = result) }
+                    is ChannelResult.Ok -> remove(tab.sessionId)
+                }
+            }
+        }
+    }
+
+    private fun remove(sessionId: String) {
+        synchronized(dismissed) { dismissed += sessionId }
+        synchronized(streams) { streams.remove(sessionId) }?.close()
+        synchronized(outputs) { outputs.remove(sessionId) }
+        val before = current.value.indexOfFirst { it.sessionId == sessionId }
+        current.update { list -> list.filterNot { it.sessionId == sessionId } }
+        if (selected.value == sessionId) {
+            val left = current.value
+            selected.value = left.getOrNull(before.coerceAtMost(left.lastIndex))?.sessionId.orEmpty()
+        }
+    }
+
+    private fun settleActive() {
+        val list = current.value
+        if (list.none { it.sessionId == selected.value }) selected.value = list.firstOrNull()?.sessionId.orEmpty()
     }
 
     private fun attach(tab: TerminalTab, cols: Int, rows: Int) {
@@ -163,6 +253,7 @@ class TerminalTabs(
             "session_id" to tab.sessionId,
             "is_resumed" to isResumed,
         )
+        change(tab.sessionId) { it.copy(phase = TerminalPhase.CONNECTING) }
         when (val opened = hub.open(CLIENT_STREAM_KIND_SHELL, args, true)) {
             is ChannelResult.Refused -> change(tab.sessionId) { it.copy(phase = TerminalPhase.DETACHED, note = opened) }
 
@@ -201,7 +292,7 @@ class TerminalTabs(
                 result is ChannelResult.Refused -> tab.copy(phase = TerminalPhase.DETACHED, note = result)
 
                 else -> tab.copy(
-                    phase = if (tab.isPersistent) TerminalPhase.DETACHED else TerminalPhase.ENDED,
+                    phase = if (tab.isKept) TerminalPhase.DETACHED else TerminalPhase.ENDED,
                     note = null,
                 )
             }
@@ -222,24 +313,5 @@ class TerminalTabs(
 
     private fun change(sessionId: String, transform: (TerminalTab) -> TerminalTab) {
         current.update { list -> list.map { if (it.sessionId == sessionId) transform(it) else it } }
-        keep()
-    }
-
-    private fun keep() {
-        val kept = current.value.filter { it.isPersistent }
-        preferences.edit {
-            putString(CLIENT_TERMINAL_SESSIONS_KEY, json.encodeToString(ListSerializer(TerminalTab.serializer()), kept))
-        }
-    }
-
-    private fun restore(): List<TerminalTab> {
-        val text = preferences.getString(CLIENT_TERMINAL_SESSIONS_KEY, null) ?: return emptyList()
-        return try {
-            json.decodeFromString(ListSerializer(TerminalTab.serializer()), text)
-        } catch (_: SerializationException) {
-            emptyList()
-        } catch (_: IllegalArgumentException) {
-            emptyList()
-        }
     }
 }

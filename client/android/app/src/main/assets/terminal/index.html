@@ -9,7 +9,21 @@
   @font-face { font-family: "MesloLGS NF"; src: url("vendor/MesloLGSNF-Bold.ttf"); font-weight: 700; }
   html, body { height: 100%; margin: 0; overflow: hidden; background: transparent; }
   .pane { position: fixed; inset: 0; padding: 6px; box-sizing: border-box; }
-  .pane[hidden] { display: none; }
+  .pane[hidden], .bar[hidden], .menu[hidden] { display: none; }
+  .xterm-viewport { scrollbar-width: none; }
+  .xterm-viewport::-webkit-scrollbar { display: none; }
+  .bar { position: absolute; right: 2px; width: 3px; border-radius: 2px; background: var(--bar, #888); opacity: 0.7; }
+  .menu {
+    position: fixed; z-index: 10; min-width: 140px; padding: 4px; box-sizing: border-box;
+    background: var(--menu-ground, #111); border: 1px solid var(--menu-border, #333); border-radius: 8px;
+    box-shadow: 0 6px 18px var(--menu-shadow, rgba(0, 0, 0, 0.4));
+  }
+  .menu button {
+    display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--menu-text, #eee); font: 13px ui-monospace, monospace; text-align: left;
+  }
+  .menu button:active { background: var(--menu-lift, #222); color: var(--menu-accent, #0cf); }
+  .menu button:disabled { color: var(--menu-faint, #666); }
 </style>
 <script src="vendor/xterm.js"></script>
 <script src="vendor/addon-fit.js"></script>
