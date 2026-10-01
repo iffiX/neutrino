@@ -264,6 +264,7 @@
   "ui.samba.password_failure": "Password not set: {failures}",
   "ui.samba.password_failure_item": "{name}: {reason}",
   "ui.samba.share_add": "Add share",
+  "ui.samba.share_browse": "Browse…",
   "ui.samba.share_comment": "Comment",
   "ui.samba.share_copy_title": "Copy the address",
   "ui.samba.share_name": "Name",

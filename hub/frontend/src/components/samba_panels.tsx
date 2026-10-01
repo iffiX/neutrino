@@ -3,6 +3,7 @@ import { ApiError } from "../api_client";
 import { copyText } from "../copy_text";
 
 import { ApplyBar } from "./apply_bar";
+import { DirectoryPickerModal } from "./directory_picker_modal";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
@@ -274,6 +275,7 @@ export function SambaPanels({
         {shares.map((share, index) => (
           <ShareEditor
             key={index}
+            deviceId={deviceId}
             share={share}
             userNames={users}
             isSystemServer={isSystemServer}
@@ -370,6 +372,8 @@ export function SambaPanels({
 }
 
 interface ShareEditorProps {
+  /** The machine the share is on, whose directories Browse… lists. */
+  deviceId: string;
   share: SambaShare;
   userNames: string[];
   /** Whether the system's own SMB server serves it, which grants a share
@@ -384,6 +388,7 @@ interface ShareEditorProps {
 }
 
 function ShareEditor({
+  deviceId,
   share,
   userNames,
   isSystemServer,
@@ -393,6 +398,7 @@ function ShareEditor({
   onRemove,
 }: ShareEditorProps) {
   const [isCopied, setIsCopied] = useState(false);
+  const [isBrowsing, setIsBrowsing] = useState(false);
   const isPathRefused =
     isWindows &&
     share.path !== "" &&
@@ -455,22 +461,43 @@ function ShareEditor({
         </label>
         <label className="field">
           <span className="field_label">{t("ui.samba.share_path")}</span>
-          <input
-            className="input"
-            placeholder={
-              isWindows
-                ? SHARE_PATH_PLACEHOLDER_WINDOWS
-                : SHARE_PATH_PLACEHOLDER
-            }
-            value={share.path}
-            onChange={(event) => onChange({ path: event.target.value })}
-          />
+          <span className="samba_path_row">
+            <input
+              className="input"
+              placeholder={
+                isWindows
+                  ? SHARE_PATH_PLACEHOLDER_WINDOWS
+                  : SHARE_PATH_PLACEHOLDER
+              }
+              value={share.path}
+              onChange={(event) => onChange({ path: event.target.value })}
+            />
+            <button
+              type="button"
+              className="button button--small"
+              onClick={() => setIsBrowsing(true)}
+            >
+              <Icon name="folder" size={13} />
+              {t("ui.samba.share_browse")}
+            </button>
+          </span>
           {isPathRefused && (
             <span className="field_error">
               {t("ui.samba.share_path_drive")}
             </span>
           )}
         </label>
+        {isBrowsing && (
+          <DirectoryPickerModal
+            deviceId={deviceId}
+            startPath={share.path}
+            onPick={(path) => {
+              setIsBrowsing(false);
+              onChange({ path });
+            }}
+            onCancel={() => setIsBrowsing(false)}
+          />
+        )}
         <label className="field">
           <span className="field_label">{t("ui.samba.share_comment")}</span>
           <input

@@ -264,6 +264,7 @@
   "ui.samba.password_failure": "密码未设置：{failures}",
   "ui.samba.password_failure_item": "{name}：{reason}",
   "ui.samba.share_add": "添加共享",
+  "ui.samba.share_browse": "浏览…",
   "ui.samba.share_comment": "备注",
   "ui.samba.share_copy_title": "复制地址",
   "ui.samba.share_name": "名称",

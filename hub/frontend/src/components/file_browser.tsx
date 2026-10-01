@@ -24,7 +24,9 @@ import "./file_browser.css";
  * root rather than at a home directory; a Windows machine's root is its
  * drives, and its paths use the separator the listing names. Every
  * operation acts at once and the listing is read again after it, so what is
- * on screen is what is on the machine.
+ * on screen is what is on the machine. Given `onPickDirectory`, it picks a
+ * directory instead: files are greyed, nothing is changed, and the foot
+ * chooses the directory open.
  */
 
 // The codes the files API refuses with, and the sentence each is worded as. A
@@ -46,9 +48,22 @@ const POSIX_SEPARATOR = "/";
 interface FileBrowserProps {
   /** The machine whose files these are. */
   deviceId: string;
+  /** Picks a directory instead of managing files: called with the path of
+   * the directory open when Choose this folder is pressed. */
+  onPickDirectory?: (path: string) => void;
+  /** Called by the foot's Cancel while picking. */
+  onCancel?: () => void;
+  /** Where a pick starts; the root when empty or when it cannot be read. */
+  startPath?: string;
 }
 
-export function FileBrowser({ deviceId }: FileBrowserProps) {
+export function FileBrowser({
+  deviceId,
+  onPickDirectory,
+  onCancel,
+  startPath = "",
+}: FileBrowserProps) {
+  const isPicking = onPickDirectory !== undefined;
   // Redrawn when the panel's language changes.
   useLanguage();
   const [listing, setListing] = useState<DeviceFileListView | null>(null);
@@ -65,7 +80,7 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
     // A refresh after an upload or a delete keeps the current list mounted, so
     // the view does not swap to the loading placeholder and lose its scroll
     // position; only real navigation does.
-    async (path: string, isRefresh = false) => {
+    async (path: string, isRefresh = false): Promise<boolean> => {
       if (!isRefresh) {
         setIsLoading(true);
       }
@@ -79,8 +94,10 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
           path,
         });
         setListing(result);
+        return true;
       } catch (cause: unknown) {
         setError(describeFileError(cause));
+        return false;
       } finally {
         setIsLoading(false);
       }
@@ -95,21 +112,28 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
     `files.path.${deviceId}`,
     ROOT_PATH,
   );
-  const startPath = useRef(rememberedPath);
+  const firstPath = useRef(
+    isPicking ? startPath.trim() || ROOT_PATH : rememberedPath,
+  );
 
   useEffect(() => {
     setListing(null);
-    void load(startPath.current);
-  }, [load]);
+    const first = firstPath.current;
+    void load(first).then((isRead) => {
+      if (!isRead && isPicking && first !== ROOT_PATH) {
+        void load(ROOT_PATH);
+      }
+    });
+  }, [load, isPicking]);
 
   const path = listing?.path ?? ROOT_PATH;
   const separator = listing?.separator ?? POSIX_SEPARATOR;
   const isDriveList = path === ROOT_PATH && separator !== POSIX_SEPARATOR;
   useEffect(() => {
-    if (listing !== null) {
+    if (listing !== null && !isPicking) {
       rememberPath(listing.path);
     }
-  }, [listing, rememberPath]);
+  }, [listing, rememberPath, isPicking]);
   const crumbs = toCrumbs(path, separator);
 
   const handleOpen = (entry: DeviceFileEntry) => {
@@ -284,36 +308,38 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
             </Fragment>
           ))}
         </div>
-        <div className="file_browser_tools">
-          <button
-            type="button"
-            className="button button--small"
-            disabled={isDriveList}
-            onClick={() => setNewFolderName("")}
-          >
-            <Icon name="plus" size={13} />
-            {t("ui.files.new_folder")}
-          </button>
-          <button
-            type="button"
-            className="button button--small"
-            disabled={isDriveList || uploadStatus !== null}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Icon name="upload" size={13} />
-            {t("ui.files.upload")}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            hidden
-            onChange={(event) => {
-              void handleUploadPicked(event.target.files);
-              event.target.value = "";
-            }}
-          />
-        </div>
+        {!isPicking && (
+          <div className="file_browser_tools">
+            <button
+              type="button"
+              className="button button--small"
+              disabled={isDriveList}
+              onClick={() => setNewFolderName("")}
+            >
+              <Icon name="plus" size={13} />
+              {t("ui.files.new_folder")}
+            </button>
+            <button
+              type="button"
+              className="button button--small"
+              disabled={isDriveList || uploadStatus !== null}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Icon name="upload" size={13} />
+              {t("ui.files.upload")}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                void handleUploadPicked(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {error !== null && (
@@ -367,7 +393,14 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
           <div className="file_browser_placeholder">{t("ui.files.empty")}</div>
         ) : (
           listing.entries.map((entry) => (
-            <div key={entry.name} className="file_browser_row">
+            <div
+              key={entry.name}
+              className={`file_browser_row ${
+                isPicking && !entry.is_dir && !entry.is_link
+                  ? "file_browser_row--muted"
+                  : ""
+              }`}
+            >
               <span
                 className={`file_browser_icon ${entry.is_dir || entry.is_link ? "file_browser_icon--dir" : ""}`}
               >
@@ -408,7 +441,7 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
               <span className="file_browser_time">
                 {formatModified(entry.modified_at)}
               </span>
-              {!isDriveList && (
+              {!isDriveList && !isPicking && (
                 <RowMenu items={rowItems(entry)}>
                   <span className="file_browser_actions">
                     {!entry.is_link && (
@@ -460,11 +493,31 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
         )}
       </div>
 
-      <div className="file_browser_status">
-        {deleteName !== null
-          ? t("ui.files.deleting", { name: deleteName })
-          : t("ui.files.root")}
-      </div>
+      {isPicking ? (
+        <div className="file_browser_pick_foot">
+          <span className="file_browser_pick_path">
+            {isDriveList ? t("ui.files.pick_drive") : path}
+          </span>
+          <button type="button" className="button" onClick={onCancel}>
+            {t("ui.confirm.cancel")}
+          </button>
+          <button
+            type="button"
+            className="button button--primary"
+            disabled={listing === null || isDriveList}
+            onClick={() => onPickDirectory(path)}
+          >
+            <Icon name="check" size={14} />
+            {t("ui.files.pick_choose")}
+          </button>
+        </div>
+      ) : (
+        <div className="file_browser_status">
+          {deleteName !== null
+            ? t("ui.files.deleting", { name: deleteName })
+            : t("ui.files.root")}
+        </div>
+      )}
     </div>
   );
 }
