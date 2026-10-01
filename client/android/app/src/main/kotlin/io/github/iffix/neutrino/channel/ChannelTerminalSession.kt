@@ -14,6 +14,7 @@ import kotlinx.serialization.Serializable
  * @property startedAt When it started, in unix seconds.
  * @property title What the shell last set as its title.
  * @property owner Who opened it: `hub` for the panel, `client:<id>` for a client.
+ * @property ownerName The opener's name: the hub's name, the owning client's name, else the stamp.
  * @property isOwned Whether this phone opened it.
  * @property isAttached Whether a window shows it now.
  * @property isPersistent Whether it outlives every window.
@@ -29,6 +30,7 @@ data class ChannelTerminalSession(
     @SerialName("started_at") val startedAt: Long = 0,
     val title: String = "",
     val owner: String = "",
+    @SerialName("owner_name") val ownerName: String = "",
     @SerialName("is_owned") val isOwned: Boolean = false,
     @SerialName("is_attached") val isAttached: Boolean = false,
     @SerialName("is_persistent") val isPersistent: Boolean = false,

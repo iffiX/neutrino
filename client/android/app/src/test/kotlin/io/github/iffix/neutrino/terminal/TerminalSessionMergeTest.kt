@@ -20,6 +20,7 @@ class TerminalSessionMergeTest {
     private val shared = ChannelTerminalSession(
         sessionId = "s2",
         owner = "hub",
+        ownerName = "Neutrino",
         isOwned = false,
         isShared = true,
         attachedCount = 2,
@@ -48,6 +49,7 @@ class TerminalSessionMergeTest {
         assertEquals(true, second.isPersistent)
         assertEquals(false, tabs[2].isOwned)
         assertEquals("hub", tabs[2].owner)
+        assertEquals("Neutrino", tabs[2].ownerName)
         assertEquals(2, tabs[2].attachedCount)
     }
 

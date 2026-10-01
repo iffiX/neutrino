@@ -47,6 +47,7 @@ object TerminalSessionMerge {
                 listing != null -> tab.copy(
                     title = listing.session.title,
                     owner = listing.session.owner,
+                    ownerName = listing.session.ownerName,
                     isOwned = listing.session.isOwned,
                     isPersistent = listing.session.isPersistent,
                     isShared = listing.session.isShared,
@@ -71,6 +72,7 @@ object TerminalSessionMerge {
                     name = listing.machineName,
                     title = listing.session.title,
                     owner = listing.session.owner,
+                    ownerName = listing.session.ownerName,
                     isOwned = listing.session.isOwned,
                     isPersistent = listing.session.isPersistent,
                     isShared = listing.session.isShared,

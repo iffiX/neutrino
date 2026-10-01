@@ -418,7 +418,16 @@ private fun StatusLine(tab: TerminalTab?, onPersist: (TerminalTab, Boolean, Bool
         }
         if (tab != null) {
             ErrorLine(tab.note)
-            ReasonLine(words.word("ui.reason.not_owned", mapOf("owner" to tab.owner)).takeIf { !tab.isOwned })
+            ReasonLine(
+                words.word(
+                    "ui.reason.not_owned",
+                    mapOf(
+                        "owner" to tab.ownerName.ifEmpty {
+                            tab.owner
+                        },
+                    ),
+                ).takeIf { !tab.isOwned },
+            )
         }
     }
 }
