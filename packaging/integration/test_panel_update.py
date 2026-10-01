@@ -112,7 +112,12 @@ def rolled_back(updated, package):
     import os
 
     staged = f"{UPDATE_DIR}/{os.path.basename(package)}"
-    port = int(machine_state.run([HUB_PYTHON, "-c", machine_state.PANEL_PORT_SCRIPT]))
+    _, _, port_text = (
+        machine_state.run([HUB_PYTHON, "-c", machine_state.PANEL_PORT_SCRIPT])
+        .strip()
+        .partition(" ")
+    )
+    port = int(port_text)
     snippet = f"""
 from pathlib import Path
 from neutrino_hub import HUB_VERSION
