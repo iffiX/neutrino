@@ -140,7 +140,10 @@ fun AppShell(
                         popEnterTransition = { EnterTransition.None },
                         popExitTransition = { ExitTransition.None },
                     ) {
-                        val toJoin = { navigation.navigate(AppScreen.JOIN.route) }
+                        val toJoin = {
+                            actions.clearJoin()
+                            navigation.navigate(AppScreen.JOIN.route)
+                        }
                         composable(AppScreen.HUBS.route) {
                             HubsScreen(
                                 hubs,
