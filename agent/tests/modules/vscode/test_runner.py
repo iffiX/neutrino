@@ -36,6 +36,7 @@ class FakeApplier:
         self.calls: list = []
         self.error = None
         self.running = True
+        self.logs: list = []
 
     def apply(self, config):
         self.calls.append(("apply", config.instances[0].account))
@@ -64,6 +65,9 @@ class FakeApplier:
 
     def units(self):
         return ["neutrino_vscode@ann.service"]
+
+    def log_paths(self, config):
+        return list(self.logs)
 
 
 class Platform(AgentPlatform):
@@ -168,3 +172,33 @@ def test_each_system_gets_its_own_applier():
     assert windows.cli_path == "C:\\ProgramData\\Neutrino\\vscode\\code.exe"
     with pytest.raises(PlatformUnsupportedError):
         vscode_applier_for(Platform("freebsd"))
+
+
+def test_the_log_is_the_units_journal_where_there_are_units(runner, monkeypatch):
+    import neutrino_agent.modules.base as base_module
+
+    calls = []
+
+    def units_journal(units, lines):
+        calls.append(units)
+        return ["started"]
+
+    monkeypatch.setattr(base_module, "units_journal", units_journal)
+
+    assert runner.journal_text(50) == ["started"]
+    assert calls == [["neutrino_vscode@ann.service"]]
+
+
+def test_the_log_is_each_instance_s_file_tail_where_there_are_none(runner, tmp_path):
+    ann = tmp_path / "vscode_ann.log"
+    ann.write_text("a1\na2\na3\n", encoding="utf-8")
+    bob = tmp_path / "vscode_bob.log"
+    bob.write_text("b1\n", encoding="utf-8")
+    runner.applier.logs = [
+        ("ann", str(ann)),
+        ("bob", str(bob)),
+        ("cat", str(tmp_path / "absent.log")),
+    ]
+
+    assert runner.journal_text(200) == ["ann: a1", "ann: a2", "ann: a3", "bob: b1"]
+    assert runner.journal_text(4) == ["ann: a3", "bob: b1"]

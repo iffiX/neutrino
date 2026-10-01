@@ -343,7 +343,7 @@ class RdpShareHost:
             return ""
         try:
             return self._platform.account_home(account)
-        except (KeyError, PlatformUnsupportedError):
+        except (KeyError, OSError, PlatformUnsupportedError):
             return ""
 
     def _state(self, is_shared: bool) -> str:

@@ -53,6 +53,7 @@ NOT_ON_LINUX = {"smb_server", "hub_packages"}
 
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {
+    "agent_log_path": "",
     "agent_data_dir": "",
     "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",
@@ -107,7 +108,7 @@ def test_windows_and_macos_install_nothing_and_step_down_to_nobody():
         assert "packages" not in platform_class.capabilities
         assert "system_packages" not in platform_class.capabilities
         assert "run_as" not in platform_class.capabilities
-    assert "accounts" not in WindowsPlatform.capabilities
+    assert "accounts" in WindowsPlatform.capabilities
     assert "accounts" in DarwinPlatform.capabilities
 
 

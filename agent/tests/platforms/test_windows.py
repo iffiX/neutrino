@@ -345,3 +345,103 @@ def test_the_control_channel_is_the_agents_named_pipe():
 @pytest.mark.parametrize("answer, is_elevated", [(1, True), (0, False)])
 def test_elevation_is_what_is_user_an_admin_says(answer, is_elevated):
     assert WindowsPlatform(shell32=FakeShell32(answer)).is_elevated() is is_elevated
+
+
+class FakePowerShell:
+    """PowerShell, recorded, answering one document or raising."""
+
+    def __init__(self, answer=None, error=None):
+        self.runs: list = []
+        self._answer = answer or {}
+        self._error = error
+
+    def __call__(self, script, document):
+        self.runs.append((script, document))
+        if self._error is not None:
+            raise self._error
+        return dict(self._answer)
+
+
+def test_the_accounts_are_the_enabled_people_without_the_builtin_or_share_ones():
+    powershell = FakePowerShell(
+        {
+            "users": [
+                {"name": "zoe", "description": ""},
+                {"name": "Administrator", "description": "Built-in account"},
+                {"name": "DefaultAccount", "description": ""},
+                {"name": "WDAGUtilityAccount", "description": ""},
+                {"name": "Guest", "description": ""},
+                {"name": "media", "description": "neutrino:"},
+                {"name": "hanha", "description": "Hanha's account"},
+            ]
+        }
+    )
+
+    accounts = WindowsPlatform(powershell=powershell).human_accounts()
+
+    assert accounts == ["hanha", "zoe"]
+    ((script, _document),) = powershell.runs
+    assert "Get-LocalUser" in script and "$_.Enabled" in script
+    assert "accounts" in WindowsPlatform.capabilities
+
+
+def test_one_account_printed_bare_is_still_read():
+    powershell = FakePowerShell({"users": {"name": "hanha", "description": ""}})
+
+    assert WindowsPlatform(powershell=powershell).human_accounts() == ["hanha"]
+
+
+def test_a_powershell_that_fails_reads_as_no_accounts():
+    powershell = FakePowerShell(error=OSError("powershell exited 1"))
+
+    assert WindowsPlatform(powershell=powershell).human_accounts() == []
+
+
+def test_the_accounts_are_read_once_per_thirty_seconds(monkeypatch):
+    powershell = FakePowerShell({"users": [{"name": "hanha", "description": ""}]})
+    now = [100.0]
+    monkeypatch.setattr(windows_module.time, "monotonic", lambda: now[0])
+    platform = WindowsPlatform(powershell=powershell)
+
+    platform.human_accounts()
+    now[0] += 29
+    platform.human_accounts()
+    assert len(powershell.runs) == 1
+    now[0] += 2
+    platform.human_accounts()
+    assert len(powershell.runs) == 2
+
+
+def test_an_account_home_is_its_profile_directory():
+    powershell = FakePowerShell({"is_present": True, "home": "C:\\Users\\hanha"})
+
+    home = WindowsPlatform(powershell=powershell).account_home("hanha")
+
+    assert home == "C:\\Users\\hanha"
+    ((script, document),) = powershell.runs
+    assert "Win32_UserProfile" in script
+    assert document == {"name": "hanha"}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [{"is_present": False, "home": ""}, {"is_present": True, "home": ""}],
+)
+def test_an_account_with_no_profile_has_no_home(answer):
+    platform = WindowsPlatform(powershell=FakePowerShell(answer))
+
+    with pytest.raises(KeyError):
+        platform.account_home("ghost")
+
+
+def test_an_account_home_powershell_cannot_give_is_an_os_error():
+    powershell = FakePowerShell(error=subprocess.TimeoutExpired("powershell", 120))
+
+    with pytest.raises(OSError):
+        WindowsPlatform(powershell=powershell).account_home("hanha")
+
+
+def test_the_agent_s_log_is_agent_log_under_the_data_root(monkeypatch):
+    monkeypatch.setenv("ProgramData", "D:\\Data")
+
+    assert WindowsPlatform().agent_log_path() == "D:\\Data\\Neutrino\\agent\\agent.log"

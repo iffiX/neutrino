@@ -2,9 +2,10 @@
 
 What these pin: each instance is a LaunchDaemon whose plist names the
 account in ``UserName`` and runs the CLI with its host, port and token
-file; the token belongs to the account, mode 0600; a changed plist or a job
-launchd does not hold is loaded again; an instance no longer named is
-unloaded and its files deleted; and a state reads launchd's own word.
+file, its output in the account's log file; the token and the log belong to
+the account, mode 0600; a changed plist or a job launchd does not hold is
+loaded again; an instance no longer named is unloaded and its files
+deleted; and a state reads launchd's own word.
 """
 
 import os
@@ -68,6 +69,7 @@ def applier(launchd, tmp_path):
         lookup_account=lookup,
         chown=lambda path, uid, gid: owners.append((uid, gid)),
         launchd_dir=str(tmp_path / "LaunchDaemons"),
+        log_dir=str(tmp_path / "Logs"),
     )
     held.owners = owners
     return held
@@ -93,9 +95,13 @@ def test_an_instance_is_a_launch_daemon_of_its_account(applier, launchd, tmp_pat
         str(token),
     ]
     assert plist["RunAtLoad"] is True and plist["KeepAlive"] is True
+    log = tmp_path / "Logs" / "vscode_ann.log"
+    assert plist["StandardOutPath"] == str(log)
+    assert plist["StandardErrorPath"] == str(log)
     assert token.read_text() == "t-ann"
     assert stat.S_IMODE(os.stat(token).st_mode) == 0o600
-    assert applier.owners == [(501, 20)]
+    assert stat.S_IMODE(os.stat(log).st_mode) == 0o600
+    assert applier.owners == [(501, 20), (501, 20)]
     assert ["launchctl", "bootstrap", "system", str(plist_path)] in launchd.calls
     assert notes == ["started the server of ann"]
 
@@ -130,6 +136,25 @@ def test_an_instance_no_longer_named_is_unloaded_and_forgotten(
 
     assert ["launchctl", "bootout", f"system/{LABEL}"] in launchd.calls
     assert os.listdir(tmp_path / "LaunchDaemons") == []
+    assert os.listdir(tmp_path / "Logs") == []
+
+
+def test_an_apply_keeps_what_the_log_holds(applier, tmp_path):
+    applier.apply(CONFIG)
+    log = tmp_path / "Logs" / "vscode_ann.log"
+    log.write_text("listening\n")
+
+    applier.apply(CONFIG)
+
+    assert log.read_text() == "listening\n"
+
+
+def test_the_log_paths_name_each_instance_with_or_without_a_config(applier, tmp_path):
+    applier.apply(CONFIG)
+    expected = [("ann", str(tmp_path / "Logs" / "vscode_ann.log"))]
+
+    assert applier.log_paths(CONFIG) == expected
+    assert applier.log_paths(None) == expected
 
 
 def test_the_states_read_launchd_and_the_plists_without_a_config(applier, launchd):

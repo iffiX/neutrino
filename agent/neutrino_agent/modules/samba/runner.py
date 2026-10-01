@@ -372,6 +372,19 @@ class SambaNativeServerRunner(ModuleRunner):
             "fence": dict(status.get("fence") or {}),
         }
 
+    def journal_text(self, lines: int) -> list:
+        """The server's own log, then the agent's lines about the module.
+
+        Args:
+            lines: How many lines to return at most.
+
+        Returns:
+            The server's latest lines followed by the agent's, oldest
+            first within each.
+        """
+        held = self._applier.read_server_log(lines) + self._agent_log_lines(lines)
+        return held[-lines:]
+
     def command(self, verb: str, args: dict, on_line=None) -> dict:
         """Run one of the file share's verbs.
 

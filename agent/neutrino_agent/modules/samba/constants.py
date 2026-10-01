@@ -33,6 +33,8 @@ SAMBA_WINDOWS_MARKER = "neutrino:"
 # subnets, by its name and the title the firewall shows.
 SAMBA_WINDOWS_FENCE_RULE = "neutrino_smb_fence"
 SAMBA_WINDOWS_FENCE_TITLE = "Neutrino file share fence"
+# The event log the SMB server writes its own events to.
+SAMBA_WINDOWS_SERVER_LOG = "Microsoft-Windows-SMBServer/Operational"
 # The rights that keep a share account off the console and off RDP.
 SAMBA_WINDOWS_DENIED_RIGHTS = (
     "SeDenyInteractiveLogonRight",
@@ -56,6 +58,17 @@ SAMBA_DARWIN_SHARE_PREFIX = "neutrino_"
 SAMBA_DARWIN_ACCOUNT_NAME = "neutrino file share"
 # The group macOS limits SMB to, where the system has one.
 SAMBA_DARWIN_ACCESS_GROUP = "com.apple.access_smb"
+# What the unified log holds of smbd over the last quarter hour.
+SAMBA_DARWIN_SERVER_LOG_COMMAND = (
+    "log",
+    "show",
+    "--predicate",
+    'process == "smbd"',
+    "--last",
+    "15m",
+    "--style",
+    "compact",
+)
 # The pf anchor the fence lives in; /etc/pf.conf evaluates com.apple/*.
 SAMBA_DARWIN_PF_ANCHOR = "com.apple/neutrino_smb"
 # The fence's rules, kept under the work root and loaded again at start.

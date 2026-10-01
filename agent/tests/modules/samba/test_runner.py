@@ -414,6 +414,9 @@ class FakeNativeApplier:
     def reload_fence(self):
         self.calls.append(("reload_fence",))
 
+    def read_server_log(self, lines):
+        return ["10:00 1001 A client connected.", "10:05 1002 A client left."]
+
 
 class NativeServerPlatform(RecordingPlatform):
     """A system that carries its own SMB server, the way Windows does."""
@@ -424,9 +427,13 @@ class NativeServerPlatform(RecordingPlatform):
     def __init__(self):
         super().__init__()
         self.applier = FakeNativeApplier()
+        self.log_path = ""
 
     def smb_server_applier(self):
         return self.applier
+
+    def agent_log_path(self):
+        return self.log_path
 
 
 WINDOWS_CONFIG = {
@@ -588,3 +595,23 @@ def test_the_details_have_the_linux_shape_and_the_fence(native):
     }
     assert details["global"] == {}
     assert details["fence"]["is_present"] is True
+
+
+def test_the_native_log_is_the_server_s_then_the_agent_s_lines(native, tmp_path):
+    log = tmp_path / "agent.log"
+    log.write_text(
+        "11:00 samba: created share media\n11:01 vscode: unchanged\n",
+        encoding="utf-8",
+    )
+    native._platform.log_path = str(log)
+
+    outcome = native.command("journal", {"lines": 10})
+
+    assert outcome["output"].splitlines() == [
+        "10:00 1001 A client connected.",
+        "10:05 1002 A client left.",
+        "11:00 samba: created share media",
+    ]
+    assert native.command("journal", {"lines": 1})["output"] == (
+        "11:00 samba: created share media"
+    )

@@ -2,8 +2,10 @@
 
 Each instance is a LaunchDaemon whose plist names the account in
 ``UserName``, so root's launchd starts the CLI as that account with no
-password. The token file belongs to the account, mode 0600. A plist or a
-token that changed is loaded again, which restarts the server.
+password, its output appended to the account's file under
+``/Library/Logs/Neutrino``. The token file and the log file belong to the
+account, mode 0600. A plist or a token that changed is loaded again, which
+restarts the server.
 
 Not pure: writes under ``/Library`` and drives launchd.
 """
@@ -22,9 +24,12 @@ from neutrino_agent.modules.subprocess_run import run as run_command
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,
+    VSCODE_DARWIN_LOG_DIR,
+    VSCODE_DARWIN_LOG_PREFIX,
     VSCODE_DIR_NAME,
     VSCODE_LAUNCHD_DIR,
     VSCODE_LAUNCHD_PREFIX,
+    VSCODE_LOG_SUFFIX,
     VSCODE_SERVE_ARGUMENTS,
     VSCODE_TOKEN_DIR_NAME,
 )
@@ -40,7 +45,14 @@ TOKEN_SUFFIX = ".token"
 
 
 def render_plist(
-    *, label: str, account: str, cli_path: str, host: str, port: int, token_path: str
+    *,
+    label: str,
+    account: str,
+    cli_path: str,
+    host: str,
+    port: int,
+    token_path: str,
+    log_path: str,
 ) -> bytes:
     """One instance's LaunchDaemon.
 
@@ -51,6 +63,7 @@ def render_plist(
         host: The address it listens on.
         port: The port.
         token_path: The account's token file.
+        log_path: The file its output and its errors are appended to.
 
     Returns:
         The plist, as XML.
@@ -69,6 +82,8 @@ def render_plist(
                 "--connection-token-file",
                 token_path,
             ],
+            "StandardOutPath": log_path,
+            "StandardErrorPath": log_path,
             "RunAtLoad": True,
             "KeepAlive": True,
         }
@@ -98,6 +113,7 @@ class VscodeDarwinApplier:
         lookup_account=None,
         chown=None,
         launchd_dir: str = VSCODE_LAUNCHD_DIR,
+        log_dir: str = VSCODE_DARWIN_LOG_DIR,
     ):
         """
         Args:
@@ -110,6 +126,7 @@ class VscodeDarwinApplier:
             chown: Changes a file's owner as :func:`os.chown` does; None is
                 that.
             launchd_dir: Where the plists are written.
+            log_dir: Where the instances' log files are.
         """
         self.cli_dir = os.path.join(root, VSCODE_DIR_NAME)
         self._token_dir = os.path.join(self.cli_dir, VSCODE_TOKEN_DIR_NAME)
@@ -119,6 +136,7 @@ class VscodeDarwinApplier:
         )
         self._chown = chown if chown is not None else os.chown
         self._launchd_dir = launchd_dir
+        self._log_dir = log_dir
 
     @property
     def cli_path(self) -> str:
@@ -149,6 +167,7 @@ class VscodeDarwinApplier:
                     "account_unknown", {"account": instance.account}
                 ) from None
         os.makedirs(self._token_dir, mode=0o755, exist_ok=True)
+        os.makedirs(self._log_dir, mode=0o755, exist_ok=True)
         notes = []
         wanted = {instance.account for instance in config.instances}
         for account in self._held_accounts():
@@ -160,6 +179,8 @@ class VscodeDarwinApplier:
             is_changed = write_if_changed(token_path, instance.token, 0o600)
             uid, gid = owners[instance.account]
             self._chown(token_path, uid, gid)
+            log_path = self.log_path(instance.account)
+            self._prepare_log(log_path, uid, gid)
             label = VSCODE_LAUNCHD_PREFIX + instance.account
             plist = render_plist(
                 label=label,
@@ -168,6 +189,7 @@ class VscodeDarwinApplier:
                 host=config.host,
                 port=instance.port,
                 token_path=token_path,
+                log_path=log_path,
             )
             is_changed |= write_if_changed(
                 self._plist_path(instance.account), plist.decode("utf-8"), 0o644
@@ -231,6 +253,35 @@ class VscodeDarwinApplier:
         """No journal: launchd keeps none."""
         return []
 
+    def log_path(self, account: str) -> str:
+        """The file one account's server writes its output to.
+
+        Args:
+            account: The account.
+
+        Returns:
+            ``/Library/Logs/Neutrino/vscode_<account>.log``.
+        """
+        return os.path.join(
+            self._log_dir, VSCODE_DARWIN_LOG_PREFIX + account + VSCODE_LOG_SUFFIX
+        )
+
+    def log_paths(self, config: "VscodeConfig | None") -> list:
+        """Each instance's log file.
+
+        Args:
+            config: The applied configuration; None reads the instances
+                from their plists.
+
+        Returns:
+            ``[(account, path)]``, in the instances' order.
+        """
+        if config is not None:
+            accounts = [item.account for item in config.instances]
+        else:
+            accounts = self._held_accounts()
+        return [(account, self.log_path(account)) for account in accounts]
+
     def _held_accounts(self) -> list:
         try:
             names = os.listdir(self._launchd_dir)
@@ -249,6 +300,13 @@ class VscodeDarwinApplier:
             return int(arguments[arguments.index("--port") + 1])
         except (OSError, ValueError, IndexError, plistlib.InvalidFileException):
             return 0
+
+    def _prepare_log(self, path: str, uid: int, gid: int) -> None:
+        """Make one log file the account's own, mode 0600, keeping what it holds."""
+        with open(path, "a", encoding="utf-8"):
+            pass
+        os.chmod(path, 0o600)
+        self._chown(path, uid, gid)
 
     def _is_loaded(self, label: str) -> bool:
         return self._run(
@@ -272,6 +330,7 @@ class VscodeDarwinApplier:
         for path in (
             self._plist_path(account),
             os.path.join(self._token_dir, account + TOKEN_SUFFIX),
+            self.log_path(account),
         ):
             with contextlib.suppress(OSError):
                 os.unlink(path)

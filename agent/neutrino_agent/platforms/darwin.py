@@ -23,6 +23,7 @@ import time
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_SOCKET_PATH_DARWIN,
+    AGENT_DARWIN_LOG_PATH,
     AGENT_DATA_DIR_DARWIN,
     AGENT_LAUNCHD_LABEL,
     AGENT_LAUNCHD_PLIST_PATH,
@@ -155,6 +156,14 @@ class DarwinPlatform(AgentPlatform):
             The absolute directory path.
         """
         return AGENT_DATA_DIR_DARWIN
+
+    def agent_log_path(self) -> str:
+        """The file the agent's LaunchDaemon writes its output to.
+
+        Returns:
+            ``/Library/Logs/neutrino_agent.log``.
+        """
+        return AGENT_DARWIN_LOG_PATH
 
     def human_accounts(self) -> list:
         """The accounts that are people: uid at the floor or above, a name

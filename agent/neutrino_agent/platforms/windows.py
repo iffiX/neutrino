@@ -2,10 +2,10 @@
 
 The agent runs as the ``neutrino_agent`` service under LocalSystem and keeps
 its state under ``%ProgramData%``. Metrics come from kernel32 through
-ctypes, the interfaces from one PowerShell call, the machine id from the
-registry. The file share module drives Windows' own SMB server. Windows
-has no account this agent steps down to and no package it installs, so
-those capabilities are not advertised.
+ctypes, the interfaces and the accounts from PowerShell, the machine id
+from the registry. The file share module drives Windows' own SMB server.
+Windows has no account this agent steps down to and no package it
+installs, so those capabilities are not advertised.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -25,10 +25,13 @@ from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
     AGENT_WINDOWS_DATA_SUBDIR,
+    AGENT_WINDOWS_LOG_NAME,
     AGENT_WINDOWS_PROGRAM_DATA_DEFAULT,
     AGENT_WINDOWS_SERVICE_NAME,
 )
 from neutrino_agent.core.metrics import HostMetrics
+from neutrino_agent.modules.powershell_run import listed, run_powershell
+from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_MARKER
 from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.base import AgentPlatform
@@ -75,6 +78,32 @@ WINDOWS_INTERFACES_TIMEOUT_S = 20
 # second or more to start, and a report goes up every few seconds.
 WINDOWS_INTERFACES_TTL_S = 30.0
 
+# Every enabled local account with its description.
+WINDOWS_ACCOUNTS_SCRIPT = """
+$users = @()
+foreach ($user in @(Get-LocalUser | Where-Object { $_.Enabled })) {
+  $users += @{name = "$($user.Name)"; description = "$($user.Description)"}
+}
+@{users = $users} | ConvertTo-Json -Compress -Depth 3
+"""
+# One account's profile directory, empty when it has signed in nowhere yet.
+WINDOWS_ACCOUNT_HOME_SCRIPT = """
+$user = Get-LocalUser -Name $d.name -ErrorAction SilentlyContinue
+$home_path = ''
+if ($user) {
+  $sid = $user.SID.Value
+  $held = Get-CimInstance Win32_UserProfile -Filter "SID = '$sid'"
+  $home_path = "$($held.LocalPath)"
+}
+@{is_present = [bool]$user; home = $home_path} | ConvertTo-Json -Compress
+"""
+# The accounts Windows makes for itself, by their lower-case names.
+WINDOWS_BUILTIN_ACCOUNTS = frozenset(
+    {"administrator", "guest", "defaultaccount", "wdagutilityaccount"}
+)
+# How long one reading of the accounts is believed.
+WINDOWS_ACCOUNTS_TTL_S = 30.0
+
 # Where Windows keeps the id it gave this installation.
 WINDOWS_MACHINE_GUID_KEY = "SOFTWARE\\Microsoft\\Cryptography"
 WINDOWS_MACHINE_GUID_VALUE = "MachineGuid"
@@ -111,6 +140,7 @@ class WindowsPlatform(AgentPlatform):
     os_name = "windows"
     capabilities = frozenset(
         {
+            "accounts",
             "control_socket",
             "agent_service",
             "power",
@@ -122,18 +152,23 @@ class WindowsPlatform(AgentPlatform):
         }
     )
 
-    def __init__(self, *, kernel32=None, shell32=None):
+    def __init__(self, *, kernel32=None, shell32=None, powershell=None):
         """
         Args:
             kernel32: The bound kernel32; None binds the real one on first
                 use.
             shell32: The bound shell32; None binds the real one on first
                 use.
+            powershell: Called with ``(script, document)``; returns the JSON
+                object the script printed. None runs PowerShell.
         """
         self._shell32 = shell32
+        self._powershell = powershell if powershell is not None else run_powershell
         self._metrics_reader = WindowsHostMetricsReader(kernel32=kernel32)
         self._interfaces: list = []
         self._interfaces_at: "float | None" = None
+        self._accounts: list = []
+        self._accounts_at: "float | None" = None
 
     def agent_data_dir(self) -> str:
         """Where the agent keeps its own state: ``%ProgramData%\\Neutrino\\agent``.
@@ -150,6 +185,56 @@ class WindowsPlatform(AgentPlatform):
             The absolute directory path.
         """
         return windows_data_dir()
+
+    def agent_log_path(self) -> str:
+        """The service's log: ``agent.log`` under the data root.
+
+        Returns:
+            The absolute file path.
+        """
+        return ntpath.join(windows_data_dir(), AGENT_WINDOWS_LOG_NAME)
+
+    def human_accounts(self) -> list:
+        """The enabled local accounts that are people, read at most every 30 s.
+
+        The accounts Windows makes for itself and the ones the file share
+        made, whose description starts with its marker, are left out.
+
+        Returns:
+            Account names, sorted; empty when PowerShell cannot answer.
+        """
+        now = time.monotonic()
+        if (
+            self._accounts_at is not None
+            and now - self._accounts_at < WINDOWS_ACCOUNTS_TTL_S
+        ):
+            return list(self._accounts)
+        self._accounts = self._read_accounts()
+        self._accounts_at = now
+        return list(self._accounts)
+
+    def account_home(self, account: str) -> str:
+        """One account's profile directory, as Windows records it.
+
+        Args:
+            account: The account.
+
+        Returns:
+            The absolute profile path.
+
+        Raises:
+            KeyError: When the machine has no such account, or the account
+                has no profile yet.
+            OSError: When PowerShell cannot answer.
+        """
+        try:
+            read = self._powershell(WINDOWS_ACCOUNT_HOME_SCRIPT, {"name": account})
+        except subprocess.SubprocessError as error:
+            raise OSError(f"powershell did not answer: {error}") from error
+        home = str(read.get("home", "") or "")
+        if not read.get("is_present") or not home:
+            raise KeyError(account)
+        return home
 
     def control_socket_path(self) -> str:
         """The named pipe the control channel serves on.
@@ -292,6 +377,25 @@ class WindowsPlatform(AgentPlatform):
             return bool(shell32.IsUserAnAdmin())
         except (OSError, AttributeError):
             return False
+
+    def _read_accounts(self) -> list:
+        """Run PowerShell once and keep the accounts that are people."""
+        try:
+            read = self._powershell(WINDOWS_ACCOUNTS_SCRIPT, {})
+        except (OSError, subprocess.SubprocessError):
+            return []
+        accounts = set()
+        for entry in listed(read.get("users")):
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name", "") or "")
+            description = str(entry.get("description", "") or "")
+            if not name or name.lower() in WINDOWS_BUILTIN_ACCOUNTS:
+                continue
+            if description.startswith(SAMBA_WINDOWS_MARKER):
+                continue
+            accounts.add(name)
+        return sorted(accounts)
 
     def _read_interfaces(self) -> list:
         """Run PowerShell once and join adapters to their addresses."""

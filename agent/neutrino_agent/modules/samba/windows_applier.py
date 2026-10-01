@@ -32,6 +32,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_FOLDER_CHANGE,
     SAMBA_WINDOWS_FOLDER_READ,
     SAMBA_WINDOWS_MARKER,
+    SAMBA_WINDOWS_SERVER_LOG,
     SAMBA_WINDOWS_SHARE_CHANGE,
     SAMBA_WINDOWS_SHARE_OWNER,
     SAMBA_WINDOWS_SHARE_READ,
@@ -202,6 +203,20 @@ if ($d.is_removed) {
   Remove-NetFirewallRule -Name $d.rule_name -ErrorAction SilentlyContinue
 }
 '{}'
+"""
+
+# The server's latest events, oldest first: time, event id and the first
+# line of the message.
+SERVER_LOG_SCRIPT = """
+$events = @(Get-WinEvent -LogName $d.log_name -MaxEvents $d.lines -ErrorAction SilentlyContinue)
+$lines = @()
+for ($k = $events.Count - 1; $k -ge 0; $k--) {
+  $e = $events[$k]
+  $first = @("$($e.Message)" -split '\r?\n' | Where-Object { $_.Trim() })
+  $text = if ($first.Count -gt 0) { $first[0].Trim() } else { '' }
+  $lines += "$($e.TimeCreated.ToString('s')) $($e.Id) $text".TrimEnd()
+}
+@{lines = $lines} | ConvertTo-Json -Compress -Depth 3
 """
 
 # Sets one listed account's password and lets it sign in over the network.
@@ -458,6 +473,25 @@ class SambaWindowsApplier:
 
     def reload_fence(self) -> None:
         """Nothing to load: the firewall keeps the rule across a restart."""
+
+    def read_server_log(self, lines: int) -> list:
+        """The SMB server's latest events from its event log, oldest first.
+
+        Args:
+            lines: How many events to read at most.
+
+        Returns:
+            One line per event, ``<time> <event id> <message>``; empty when
+            PowerShell cannot answer.
+        """
+        try:
+            read = self._powershell(
+                SERVER_LOG_SCRIPT,
+                {"log_name": SAMBA_WINDOWS_SERVER_LOG, "lines": int(lines)},
+            )
+        except (OSError, subprocess.SubprocessError, ModuleApplyError):
+            return []
+        return [str(line) for line in listed(read.get("lines")) if str(line).strip()]
 
     def set_password(self, name: str, password: str) -> None:
         """Set one of the module's accounts' password and enable it.

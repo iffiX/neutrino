@@ -16,6 +16,10 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 AGENT_WINDOWS_SERVICE_NAME = "neutrino_agent"
 AGENT_LAUNCHD_LABEL = "com.neutrino.agent"
 AGENT_LAUNCHD_PLIST_PATH = "/Library/LaunchDaemons/com.neutrino.agent.plist"
+# The agent's own log where no journal keeps it: a file under the data root
+# on Windows, and the file the LaunchDaemon's output goes to on macOS.
+AGENT_WINDOWS_LOG_NAME = "agent.log"
+AGENT_DARWIN_LOG_PATH = "/Library/Logs/neutrino_agent.log"
 
 # The protocol number this build speaks. The name has no package prefix:
 # one number has one name in every package.
@@ -67,8 +71,10 @@ AGENT_MODULE_OUTPUT_LIMIT_BYTES = 16 * 1024
 AGENT_COMMAND_MODULE = "agent"
 AGENT_MODULE_VERB_VALIDATE = "validate"
 AGENT_MODULE_VERB_JOURNAL = "journal"
-# How many lines of a module's units' journal one read returns at most.
+# How many lines of a module's log one read returns at most.
 AGENT_MODULE_JOURNAL_LINES = 200
+# How much of the end of a log file one read looks at.
+AGENT_MODULE_LOG_TAIL_BYTES = 256 * 1024
 
 # What the hub's state may want a module to be. The agent makes each
 # mentioned module's actual state equal its want.

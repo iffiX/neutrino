@@ -12,7 +12,7 @@ at every apply and again when the agent starts, since pf forgets it at boot.
 password set here is visible in the process list while the command runs.
 
 Not pure: runs launchctl, sharing, sysadminctl, dscl, pwpolicy, chmod,
-pfctl and lsof.
+pfctl, lsof and log.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -36,6 +36,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_HOME,
     SAMBA_DARWIN_PF_ANCHOR,
     SAMBA_DARWIN_PF_TABLE,
+    SAMBA_DARWIN_SERVER_LOG_COMMAND,
     SAMBA_DARWIN_SHARE_PREFIX,
     SAMBA_DARWIN_SHELL,
     SAMBA_DARWIN_SMBD_PLIST,
@@ -239,6 +240,29 @@ class SambaDarwinApplier:
         self._run(["pwpolicy", "-u", name, "-sethashtypes", SMB_NT_HASH, "on"])
         self._run(["dscl", ".", "-passwd", f"/Users/{name}", password])
         self._run(["pwpolicy", "-u", name, "-enableuser"], is_checked=False)
+
+    def read_server_log(self, lines: int) -> list:
+        """What the unified log holds of smbd over the last 15 minutes.
+
+        Args:
+            lines: How many lines to return at most.
+
+        Returns:
+            The latest lines, oldest first, without ``log``'s header; empty
+            when ``log`` cannot answer.
+        """
+        try:
+            result = self._run(list(SAMBA_DARWIN_SERVER_LOG_COMMAND), is_checked=False)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if not result.is_success:
+            return []
+        held = [
+            line
+            for line in result.stdout.splitlines()
+            if line.strip() and not line.startswith("Timestamp")
+        ]
+        return held[-lines:] if lines > 0 else []
 
     def reload_fence(self) -> None:
         """Load the kept fence into pf again, as the agent does at start.

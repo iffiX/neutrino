@@ -253,6 +253,17 @@ class VscodeLinuxApplier:
         """Every instance's unit, for the journal."""
         return [instance_unit(account) for account in self._held_accounts()]
 
+    def log_paths(self, config: "VscodeConfig | None") -> list:
+        """No log file: the journal keeps each unit's output.
+
+        Args:
+            config: The applied configuration.
+
+        Returns:
+            Empty.
+        """
+        return []
+
     def _held_accounts(self) -> list:
         """The accounts an environment file names a server for."""
         try:

@@ -384,3 +384,35 @@ def test_a_status_the_tools_cannot_give_reads_as_no_server(tmp_path, monkeypatch
     applier = SambaDarwinApplier(rules_path=str(tmp_path / "rules"), run=missing)
 
     assert applier.read_status({}) == {"is_present": False, "is_running": False}
+
+
+LOG_SHOW_OUTPUT = (
+    "Timestamp               Ty Process[PID:TID]\n"
+    "2026-10-02 10:00:00.1 Df smbd[812:1] connection from 192.168.1.20\n"
+    "2026-10-02 10:00:05.2 Df smbd[812:1] session closed\n"
+)
+
+
+def test_the_server_log_is_what_the_unified_log_holds_of_smbd(applier, tools):
+    tools.answers[("log", "show")] = LOG_SHOW_OUTPUT
+
+    assert applier.read_server_log(1) == [
+        "2026-10-02 10:00:05.2 Df smbd[812:1] session closed"
+    ]
+    assert applier.read_server_log(10)[0].endswith("connection from 192.168.1.20")
+    assert tools.ran("log", "show")[0] == [
+        "log",
+        "show",
+        "--predicate",
+        'process == "smbd"',
+        "--last",
+        "15m",
+        "--style",
+        "compact",
+    ]
+
+
+def test_a_log_that_cannot_answer_is_no_lines(applier, tools):
+    tools.failing.add(("log", "show"))
+
+    assert applier.read_server_log(10) == []

@@ -263,9 +263,9 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Metrics | `/proc`, `/sys`, `nvidia-smi` | kernel32 `GetSystemTimes`, `GlobalMemoryStatusEx`, `GetTickCount64`; the system drive | `host_statistics`, `vm_stat`, `sysctl`; `/` |
 | Interfaces | `ip -j addr` | one PowerShell call joining `Get-NetAdapter` to `Get-NetIPAddress`, read at most every 30 seconds | `ifconfig -a` |
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
-| Accounts | uid 1000 and above with a login shell | refused | `dscl`, uid 501 and above, home under `/Users` |
+| Accounts | uid 1000 and above with a login shell | the enabled local accounts from `Get-LocalUser`, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own, read at most every 30 seconds; the home is the profile `Win32_UserProfile` names | `dscl`, uid 501 and above, home under `/Users` |
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
-| Refused | nothing | accounts, stepping down, packages, the `kill` verb, but not `persist` or `stop_session` | stepping down, packages |
+| Refused | nothing | stepping down, packages, the `kill` verb, but not `persist` or `stop_session` | stepping down, packages |
 | Shell stream | the login shell on a pseudo-terminal | PowerShell on a pseudo console, in a job that kills it on close | `zsh -il` on a pseudo-terminal |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
 | RustDesk | `/usr/lib/neutrino_agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
@@ -308,6 +308,20 @@ module a system cannot run is left out on that system.
 | ZFS storage | yes | no | no |
 | VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | Apple silicon |
 | Remote desktop (RustDesk, AnyDesk, TeamViewer) | yes | yes | yes |
+
+A module's log, the answer to its `journal` verb, is the journal of its
+systemd units on Linux. Windows and macOS run no module under a unit, so
+each module there reads its own sources. The file share reads the SMB
+server's latest events from `Microsoft-Windows-SMBServer/Operational` on
+Windows, or what the unified log holds of `smbd` over the last 15 minutes on
+macOS. After them come the agent's own log lines that name the module, from
+`agent.log` under the state root on Windows and
+`/Library/Logs/neutrino_agent.log` on macOS. VS Code reads the end of each
+instance's log file. On Windows the task runs the CLI through `cmd.exe`,
+which appends its output to `<account>.log` beside the CLI; on macOS the
+LaunchDaemon's `StandardOutPath` and `StandardErrorPath` name
+`/Library/Logs/Neutrino/vscode_<account>.log`. Every log comes oldest line
+first, at most the number of lines the verb asked for.
 
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants. The seat reads the

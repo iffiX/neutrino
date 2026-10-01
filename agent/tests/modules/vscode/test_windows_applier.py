@@ -2,7 +2,10 @@
 
 What these pin: one script registers a task per instance, signed in with the
 account's login, started at boot with no time limit and a limited token; the
-login and the token travel in the script's document; the task's description
+task runs the CLI through ``cmd.exe`` with its output appended to the
+account's log file, reachable by the account, SYSTEM and the administrators
+alone; the login and the token travel in the script's document; the task's
+description
 carries a digest that moves when what it runs or its login changes; a
 refused login comes back as ``credential_invalid``, and a task whose last
 start could not sign in reads it too.
@@ -17,6 +20,7 @@ from neutrino_agent.modules.vscode.windows_applier import (
     STATUS_SCRIPT,
     WITHDRAW_SCRIPT,
     VscodeWindowsApplier,
+    task_arguments,
 )
 
 ROOT = "C:\\ProgramData\\Neutrino"
@@ -50,18 +54,22 @@ def test_an_instance_is_a_task_signed_in_with_its_login():
     assert applier.apply(CONFIG) == ["registered"]
 
     ((script, document),) = powershell.runs
-    assert document["program"] == "C:\\ProgramData\\Neutrino\\vscode\\code.exe"
+    assert document["program"] == "cmd.exe"
     assert document["tasks"] == ["neutrino_vscode_hanha"]
     (instance,) = document["instances"]
+    cli = "C:\\ProgramData\\Neutrino\\vscode\\code.exe"
     token_file = "C:\\ProgramData\\Neutrino\\vscode\\tokens\\hanha.token"
+    log_file = "C:\\ProgramData\\Neutrino\\vscode\\hanha.log"
     assert instance["account"] == "hanha"
     assert instance["password"] == "pw"
     assert instance["token"] == "t-1"
     assert instance["token_file"] == token_file
+    assert instance["log_file"] == log_file
     assert instance["arguments"] == (
-        "serve-web --accept-server-license-terms --host 192.168.1.9 --port 8000 "
-        f"--connection-token-file {token_file}"
+        f'/s /c "{cli} serve-web --accept-server-license-terms --host 192.168.1.9 '
+        f'--port 8000 --connection-token-file {token_file} >> {log_file} 2>&1"'
     )
+    assert '"$($i.account):M"' in APPLY_SCRIPT
     assert instance["description"].startswith("neutrino:")
     assert "pw" not in instance["description"]
     assert "-User $i.account -Password $i.password -RunLevel Limited" in APPLY_SCRIPT
@@ -87,6 +95,33 @@ def test_the_digest_moves_with_the_login_and_the_port():
     assert description() == description()
     assert description(password="new") != description()
     assert description(port=8001) != description()
+
+
+def test_a_path_with_spaces_is_quoted_inside_the_command():
+    arguments = task_arguments(
+        "C:\\Program Data\\vscode\\code.exe",
+        ["serve-web", "--port", "8000"],
+        "C:\\Program Data\\vscode\\ann.log",
+    )
+
+    assert arguments == (
+        '/s /c ""C:\\Program Data\\vscode\\code.exe" serve-web --port 8000 '
+        '>> "C:\\Program Data\\vscode\\ann.log" 2>&1"'
+    )
+
+
+def test_the_log_paths_name_each_instance_with_or_without_a_config():
+    read = {"tasks": [{"name": "neutrino_vscode_ann", "state": "Running"}]}
+    applier = VscodeWindowsApplier(
+        root=ROOT, powershell=FakePowerShell({STATUS_SCRIPT: read})
+    )
+
+    assert applier.log_paths(CONFIG) == [
+        ("hanha", "C:\\ProgramData\\Neutrino\\vscode\\hanha.log")
+    ]
+    assert applier.log_paths(None) == [
+        ("ann", "C:\\ProgramData\\Neutrino\\vscode\\ann.log")
+    ]
 
 
 def test_a_refused_login_is_credential_invalid():
