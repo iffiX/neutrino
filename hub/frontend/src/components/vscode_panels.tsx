@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
@@ -8,6 +8,7 @@ import { VaultPicker } from "./vault_picker";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
   VscodeConfigUpdate,
@@ -63,16 +64,10 @@ export function VscodePanels({
       ],
     },
   );
-  const [draft, setDraft] = useState<VscodeDraft | null>(null);
+  const saved = resource.data;
+  const { draft, setDraft, isDirty, reset } = useDraft(saved, draftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const saved = resource.data;
-  useEffect(() => {
-    if (saved !== null) {
-      setDraft(draftOf(saved));
-    }
-  }, [saved]);
 
   if (resource.error !== null && saved === null) {
     return <ErrorPanel message={resource.error} onRetry={resource.reload} />;
@@ -81,7 +76,6 @@ export function VscodePanels({
     return <div className="skeleton" style={{ height: 240 }} />;
   }
 
-  const isDirty = JSON.stringify(draft) !== JSON.stringify(draftOf(saved));
   const reported = new Map(
     saved.instances.map((instance) => [instance.account, instance]),
   );
@@ -228,7 +222,7 @@ export function VscodePanels({
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
           onReset={() => {
-            setDraft(draftOf(saved));
+            reset();
             setError(null);
           }}
           onApply={() => void apply()}

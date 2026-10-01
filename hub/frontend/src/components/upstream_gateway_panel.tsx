@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { isIpv4Address } from "../ipv4_address";
+import { useDraft } from "../use_draft";
 import type { InterfaceView, NetworkView } from "../api_types";
 
 import "./upstream_gateway_panel.css";
@@ -34,21 +35,18 @@ export function UpstreamGatewayPanel({
   useLanguage();
   const joined =
     network.interfaces.find((entry) => entry.settings.role === "lan") ?? null;
-  const applied = joined?.settings.lan.upstream_gateway ?? "";
-  const [gateway, setGateway] = useState(applied);
+  const gatewayDraft = useDraft(joined, upstreamOf);
+  const gateway = gatewayDraft.draft ?? "";
+  const setGateway = gatewayDraft.setDraft;
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    setGateway(applied);
-  }, [applied]);
 
   if (joined === null) {
     return null;
   }
 
-  const isDirty = gateway !== applied;
+  const isDirty = gatewayDraft.isDirty;
   const isValid = isIpv4Address(gateway);
 
   const apply = async () => {
@@ -111,7 +109,7 @@ export function UpstreamGatewayPanel({
         hint={t("ui.network.apply_upstream_hint")}
         error={error}
         notice={notice}
-        onReset={() => setGateway(applied)}
+        onReset={gatewayDraft.reset}
         onApply={() => void apply()}
       />
     </section>
@@ -119,6 +117,11 @@ export function UpstreamGatewayPanel({
 }
 
 /** The port and what it holds, all of it read from the machine. */
+/** What the field starts from: the joined interface's gateway as saved. */
+function upstreamOf(entry: InterfaceView): string {
+  return entry.settings.lan.upstream_gateway ?? "";
+}
+
 function JoinedSummary({ entry }: { entry: InterfaceView }) {
   // Redrawn when the panel's language changes.
   useLanguage();

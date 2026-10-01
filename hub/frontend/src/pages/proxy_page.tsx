@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
 import { DeadExitsNotice } from "../components/dead_exits_notice";
@@ -14,6 +14,7 @@ import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
 import type { ProxyTone } from "../proxy_status";
 import { useApiResource } from "../use_api_resource";
+import { useDraft } from "../use_draft";
 import { useLiveStats } from "../use_live_stats";
 import type {
   DnsServer,
@@ -56,19 +57,19 @@ const BADGE_TONES: Record<ProxyTone, string> = {
   offline: "badge--error",
 };
 
-const GROUP_FIELDS: Record<GroupName, (keyof ProxySettings)[]> = {
-  route: [
-    "is_proxy_enabled",
-    "is_overlay_proxy_enabled",
-    "is_local_proxy_enabled",
-    "is_direct_fallback_enabled",
-    "is_geoip_split_enabled",
-    "direct_domains",
-    "direct_ips",
-    "remote_dns",
-    "direct_dns",
-  ],
-};
+/** The route group's fields, as the form holds them. */
+type ProxyRouteDraft = Pick<
+  ProxySettings,
+  | "is_proxy_enabled"
+  | "is_overlay_proxy_enabled"
+  | "is_local_proxy_enabled"
+  | "is_direct_fallback_enabled"
+  | "is_geoip_split_enabled"
+  | "direct_domains"
+  | "direct_ips"
+  | "remote_dns"
+  | "direct_dns"
+>;
 
 export function ProxyPage() {
   // Redrawn when the panel's language changes.
@@ -79,33 +80,20 @@ export function ProxyPage() {
   const network = useApiResource<NetworkView>("/hub/network");
   const { latestFrame } = useLiveStats();
 
-  const [draft, setDraft] = useState<ProxyView | null>(null);
+  const saved = resource.data;
+  const {
+    draft,
+    setDraft,
+    isDirty,
+    reset: resetDraft,
+  } = useDraft(saved, routeDraftOf);
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
   const [notice, setNotice] = useState<Partial<Record<GroupName, string>>>({});
   const [errors, setErrors] = useState<Partial<Record<GroupName, string>>>({});
 
-  useEffect(() => {
-    if (resource.data !== null) {
-      setDraft(resource.data);
-    }
-  }, [resource.data]);
-
-  const updateDraft = (patch: Partial<ProxyView>) => {
+  const updateDraft = (patch: Partial<ProxyRouteDraft>) => {
     setNotice({});
-    setDraft((current) =>
-      current === null ? current : { ...current, ...patch },
-    );
-  };
-
-  /** Whether a group's fields differ from what the gateway last returned. */
-  const isGroupDirty = (group: GroupName): boolean => {
-    if (draft === null || resource.data === null) {
-      return false;
-    }
-    return GROUP_FIELDS[group].some(
-      (field) =>
-        JSON.stringify(draft[field]) !== JSON.stringify(resource.data![field]),
-    );
+    setDraft((current) => ({ ...current, ...patch }));
   };
 
   /**
@@ -115,23 +103,20 @@ export function ProxyPage() {
    * returned, so applying one box never writes another box's unsaved edits.
    */
   const applyGroup = async (group: GroupName) => {
-    if (draft === null || resource.data === null) {
+    if (draft === null || saved === null) {
       return;
     }
     setBusyGroup(group);
     setErrors({});
     setNotice({});
     try {
-      const payload = { ...resource.data };
-      for (const field of GROUP_FIELDS[group]) {
-        Object.assign(payload, { [field]: draft[field] });
-      }
-      const saved = await apiPost<ProxyView>("/hub/proxy/set", payload);
+      const stored = await apiPost<ProxyView>("/hub/proxy/set", {
+        ...saved,
+        ...draft,
+      });
       const result = await apiPost<ApplyResult>("/hub/proxy/apply");
-      resource.setData(saved);
-      setDraft((current) =>
-        current === null ? saved : { ...current, ...saved },
-      );
+      resource.setData(stored);
+      setDraft(routeDraftOf(stored));
       if (!result.is_applied) {
         setErrors({ [group]: result.message });
         return;
@@ -144,23 +129,10 @@ export function ProxyPage() {
     }
   };
 
-  const resetGroup = (group: GroupName) => {
-    if (resource.data === null) {
-      return;
-    }
-    const saved = resource.data;
+  const resetGroup = () => {
     setNotice({});
     setErrors({});
-    setDraft((current) => {
-      if (current === null) {
-        return current;
-      }
-      const next = { ...current };
-      for (const field of GROUP_FIELDS[group]) {
-        Object.assign(next, { [field]: saved[field] });
-      }
-      return next;
-    });
+    resetDraft();
   };
 
   const updateDns = (
@@ -168,11 +140,10 @@ export function ProxyPage() {
     patch: Partial<DnsServer>,
   ) => {
     setNotice({});
-    setDraft((current) =>
-      current === null
-        ? current
-        : { ...current, [key]: { ...current[key], ...patch } },
-    );
+    setDraft((current) => ({
+      ...current,
+      [key]: { ...current[key], ...patch },
+    }));
   };
 
   if (resource.error !== null && resource.data === null) {
@@ -184,7 +155,7 @@ export function ProxyPage() {
     );
   }
 
-  if (draft === null) {
+  if (draft === null || saved === null) {
     return (
       <div className="page">
         <h1>{t("ui.proxy.title")}</h1>
@@ -221,7 +192,7 @@ export function ProxyPage() {
       <NodesPanel onNodesChanged={resource.reload} />
 
       <section
-        className={`settings_group ${isGroupDirty("route") ? "settings_group--dirty" : ""}`}
+        className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
           <h2>{t("ui.proxy.route_title")}</h2>
@@ -297,7 +268,7 @@ export function ProxyPage() {
                 <span>{t("ui.proxy.geoip_flow_exit")}</span>
               </div>
               <GeodataPanel
-                geodata={draft.geodata}
+                geodata={saved.geodata}
                 onUpdated={resource.reload}
               />
             </div>
@@ -404,31 +375,34 @@ export function ProxyPage() {
         </section>
 
         <ApplyBar
-          isDirty={isGroupDirty("route")}
+          isDirty={isDirty}
           isBusy={busyGroup === "route"}
           label={t("ui.proxy.apply_route")}
           hint={t("ui.proxy.apply_route_hint")}
           warning={t("ui.proxy.warning_restart")}
           error={errors.route ?? null}
           notice={notice.route ?? null}
-          onReset={() => resetGroup("route")}
+          onReset={resetGroup}
           onApply={() => void applyGroup("route")}
         />
       </section>
 
-      <SocksPortsPanel
-        applied={resource.data ?? draft}
-        onApplied={(saved) => {
-          resource.setData(saved);
-          // Only this box's own field: the rest of the page may hold edits
-          // nobody has applied yet.
-          setDraft((current) =>
-            current === null
-              ? saved
-              : { ...current, socks_ports: saved.socks_ports },
-          );
-        }}
-      />
+      <SocksPortsPanel applied={saved} onApplied={resource.setData} />
     </div>
   );
+}
+
+/** What the route group starts from: its fields as saved. */
+function routeDraftOf(view: ProxyView): ProxyRouteDraft {
+  return {
+    is_proxy_enabled: view.is_proxy_enabled,
+    is_overlay_proxy_enabled: view.is_overlay_proxy_enabled,
+    is_local_proxy_enabled: view.is_local_proxy_enabled,
+    is_direct_fallback_enabled: view.is_direct_fallback_enabled,
+    is_geoip_split_enabled: view.is_geoip_split_enabled,
+    direct_domains: view.direct_domains,
+    direct_ips: view.direct_ips,
+    remote_dns: view.remote_dns,
+    direct_dns: view.direct_dns,
+  };
 }

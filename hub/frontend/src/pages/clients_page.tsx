@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ClientPermissionDrawer } from "../components/client_permission_drawer";
 import type {
@@ -69,7 +69,6 @@ export function ClientsPage() {
   const devicesResource = useApiResource<DevicesResponse>(DEVICES_PATH);
   const confirm = useConfirm();
 
-  const [clients, setClients] = useState<ClientView[]>([]);
   const [isNaming, setIsNaming] = useState(false);
   const [name, setName] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -81,11 +80,7 @@ export function ClientsPage() {
   // Whose permissions the drawer edits: a client's id, or the default's.
   const [permissionOf, setPermissionOf] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (resource.data !== null) {
-      setClients(resource.data.clients);
-    }
-  }, [resource.data]);
+  const clients = resource.data?.clients ?? [];
 
   const handleCreateLink = async () => {
     const wanted = name.trim();

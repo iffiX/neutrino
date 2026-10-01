@@ -26,6 +26,7 @@ import {
 } from "../i18n";
 import { THEMES, asTheme, getThemeChoice, setThemeChoice } from "../theme";
 import { useApiResource } from "../use_api_resource";
+import { useDraft } from "../use_draft";
 import { stripAnsi } from "../strip_ansi";
 import { useTaskStream } from "../use_task_stream";
 import { PasswordField } from "../components/password_field";
@@ -509,19 +510,16 @@ function HubNamePanel() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<PanelSettings>("/hub/setting");
-  const [name, setName] = useState<string | null>(null);
+  const {
+    draft: name,
+    setDraft: setName,
+    isDirty,
+    reset,
+  } = useDraft(resource.data, hubNameOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (resource.data !== null) {
-      setName(resource.data.hub_name);
-    }
-  }, [resource.data]);
-
-  const applied = resource.data?.hub_name ?? null;
   const trimmed = (name ?? "").trim();
-  const isDirty = name !== null && applied !== null && name !== applied;
 
   const apply = async () => {
     if (resource.data === null) {
@@ -535,6 +533,7 @@ function HubNamePanel() {
         hub_name: trimmed,
       });
       resource.setData(saved);
+      setName(saved.hub_name);
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -576,12 +575,17 @@ function HubNamePanel() {
           label={t("ui.settings.hub_name_apply")}
           hint={t("ui.settings.hub_name_apply_hint")}
           error={error}
-          onReset={() => setName(applied)}
+          onReset={reset}
           onApply={() => void apply()}
         />
       </div>
     </section>
   );
+}
+
+/** What the hub name field starts from: the name as saved. */
+function hubNameOf(settings: PanelSettings): string {
+  return settings.hub_name;
 }
 
 /**

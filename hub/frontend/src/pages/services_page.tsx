@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
@@ -133,17 +133,10 @@ export function ServicesPage() {
   const resource = useApiResource<ServicesResponse>("/hub/service", {
     invalidateOn: INVALIDATE_ON,
   });
-  const [services, setServices] = useState<PublishedService[]>([]);
   const [isDeclaring, setIsDeclaring] = useState(false);
-
-  useEffect(() => {
-    if (resource.data !== null) {
-      setServices(resource.data.services);
-    }
-  }, [resource.data]);
+  const services = resource.data?.services ?? [];
 
   const handleChanged = (next: PublishedService[]) => {
-    setServices(next);
     resource.setData({ services: next });
   };
 
