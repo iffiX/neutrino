@@ -10,11 +10,11 @@ title: 客户端
 
 1. 在客户端页点**新建客户端链接**（New client link）。
 1. 填一个名称，写明这是谁的程序，例如 `alice-laptop`。
-1. 点**创建链接**（Create link），再点**复制**（Copy）。
+1. 点**创建链接**（Create link）。通知里显示链接和**复制**（Copy）按钮，旁边是同一条链接的二维码。
 
-![新建的客户端链接和复制按钮](/guide/zh/clients_link_qr.webp)
+![新建的客户端链接、复制按钮和二维码](/guide/zh/clients_link_qr.webp)
 
-链接五分钟内有效，只能用一次。对方把它粘贴进客户端窗口，或者在终端里用它运行 `nclient join`。安装和加入的步骤在[桌面客户端](../client/desktop.md)和 [Android 应用](../client/android.md)里。
+链接五分钟内有效，只能用一次。手机上，对方用应用扫这个二维码。电脑上，对方把链接粘贴进客户端窗口，或者在终端里用它运行 `nclient join`。安装和加入的步骤在[桌面客户端](../client/desktop.md)和 [Android 应用](../client/android.md)里。
 
 同一台电脑再次加入时，回到它原来那一行，名称换成新链接里的名称。页面标题旁的标记写在线台数，例如 **3 个中有 2 个在线**。
 

@@ -1,3 +1,12 @@
+.device_enrollment_notice {
+  flex-wrap: wrap;
+}
+
+.device_enrollment_notice .notice_body {
+  flex: 1;
+  min-width: 240px;
+}
+
 .device_enrollment_link {
   display: flex;
   gap: var(--space-2);

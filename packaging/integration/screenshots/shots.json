@@ -464,9 +464,9 @@
       "viewport": "desktop",
       "url": "/clients",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".qr_code",
       "state": "Any hub.",
-      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link and Copy showing."
+      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link, Copy and the QR code showing."
     },
     {
       "file": "clients_link_qr.png",
@@ -476,9 +476,9 @@
       "viewport": "desktop",
       "url": "/clients",
       "element": "viewport",
-      "wait_for": ".page",
+      "wait_for": ".qr_code",
       "state": "Any hub.",
-      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link and Copy showing."
+      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link, Copy and the QR code showing."
     },
     {
       "file": "services_list.png",

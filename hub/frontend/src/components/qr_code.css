@@ -1,0 +1,15 @@
+.qr_code {
+  display: block;
+  flex: none;
+  width: 168px;
+  height: 168px;
+  border-radius: var(--radius-sm);
+}
+
+.qr_code_light {
+  fill: #fff;
+}
+
+.qr_code_dark {
+  fill: #000;
+}

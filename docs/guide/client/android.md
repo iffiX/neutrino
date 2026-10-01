@@ -37,13 +37,13 @@ If the digest differs, delete the apk. The release workflow checks the same dige
 
 ## Join a hub
 
-Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for the phone, and select **Create link**. The notice shows the link as text with **Copy**, and the link works for five minutes. The panel draws no QR code of it. Send the link to the phone, or make a QR code of it with a tool of your own.
+Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for the phone, and select **Create link**. The notice shows the link with **Copy** and a QR code of the same link beside them. The link works for five minutes.
 
 To join:
 
 1. In the app, on the **Hubs** screen, select **Join a hub**.
 1. Select **Allow the camera**, and allow it in the Android prompt.
-1. Point the camera at a QR code that holds the link. The app joins as soon as it reads the code.
+1. Point the camera at the QR code on the hub's **Clients** page. The app joins as soon as it reads the code.
 
 ![The QR scanner on the Join a hub screen](/guide/en/app_join_scan.webp)
 

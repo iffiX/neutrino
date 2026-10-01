@@ -273,6 +273,7 @@ export function ClientsPage() {
           expiresInS={enrollment.view.expires_in_s}
           title={t("ui.clients.enrollment_title", { name: enrollment.name })}
           hint={t("ui.clients.enrollment_hint")}
+          hasQrCode
           onDismiss={() => setEnrollment(null)}
         />
       )}
