@@ -26,15 +26,16 @@ The document has these parts:
 
 | Part | Holds |
 | --- | --- |
-| `hubs[]` | `id`, `name`, `gateway_url`, `software`, `connection`, `last_error`, `is_exit`, `overlay`, `jobs` |
+| `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `last_error`, `is_exit`, `overlay`, `jobs` |
 | `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state`, `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving` |
-| `entries[]` | one per published service: `hub`, `device`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`, `job` |
+| `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job` and `last_error` |
 | `mounts[]` | the desktop's mount records, one per share mounted or being mounted |
 | `terminals` | `machines[]` and `sessions[]`, as the hub sends them |
-| `settings` | `language`, `theme` |
+| `notices[]` | page-wide notices with a code, such as `binding_unknown`, each shown for one minute |
+| `language`, `theme`, `terminal_font_size` | the client's own settings, at the top level |
 
-`entries[].job` and `hubs[].jobs` are the only places a running action is
+`services[].job` and `hubs[].jobs` are the only places a running action is
 recorded. A button reads its own job from there and from nowhere else.
 
 ## The layout
@@ -321,7 +322,9 @@ A tab shows these badges after its label: `kept` for a persistent session,
 | **Shared** | the tab is open and `is_owned` | sends `persist` with `is_shared`; every client with terminal rights on the machine lists the session |
 
 A tab that is not owned shows both switches disabled and the reason line
-`Opened by <owner>`. Every window shows the values from the last state frame,
+`Opened by <owner>`, where the name is the row's `owner_name` (the hub's
+name, or the owning client's name) and the raw `owner` stamp when that is
+empty. Every window shows the values from the last state frame,
 so the owner's flip reaches the other windows with the next frame; in the
 owner's window the flip shows the new value at once.
 
@@ -350,6 +353,7 @@ attaches receives the kept output first, then the live stream.
 | With the keyboard shown, the chips card and the tab strip collapse into one line (the machine, the tab, an expand arrow), and the terminal takes the rest and refits its rows. | The terminal is the page's reason; the chrome is not. |
 | The terminal's viewport scrolls by touch and shows a thin bar; the view follows output only at the bottom. | History on a phone is reached by the finger, and a bar says there is some. |
 | A long press opens the same menu as the desktop's right click, with **Copy** and **Paste** through the system clipboard. | The phone's clipboard is the system's. |
+| In a landscape window under 480 dp tall, the chips card and the tab strip collapse as they do under the keyboard, and the expand arrow brings them back. | A short window has room for the terminal or for the chrome, and the terminal is the page's reason. |
 
 ## The Remote desktops page
 
@@ -389,6 +393,7 @@ section. Leaving a hub is on the Hubs page and nowhere else.
 | remote desktop | the viewer process | the viewer page |
 | terminal input | right-click menu, shortcuts, middle click | the key row, long press |
 | frame | sidebar, tray | bottom bar in portrait; a sidebar in landscape when at least 720 px wide |
+| virtual networks | one per hub, several hubs at once | one at a time: **Connect** on a second hub is disabled with the reason `overlay_other_network` while another hub's network is not off |
 
 Everything else is the same: the pages and their order, the words, the state
 machines, the badges, the dots and the reasons on disabled buttons.
