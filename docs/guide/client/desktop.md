@@ -211,13 +211,13 @@ The **Persistent** switch is at the end of the line under the shell. When it is 
 
 A kept session shows as a tab with a grey dot. Select that tab to attach, and the shell's recent output appears first. The **×** on a persistent tab reads **End session?** after one press, and a second press ends the shell on the machine. [Terminals](../agent/terminals.md) covers the same sessions in the panel.
 
-| Code                | Meaning                                                            |
-| ------------------- | ------------------------------------------------------------------ |
-| `permission_denied` | the hub's **Clients** page does not let this client open terminals |
-| `agent_offline`     | the machine is not connected to its hub                            |
-| `unknown_terminal`  | the hub offers no terminal on that machine                         |
+| Code                | Meaning                                                                  |
+| ------------------- | ------------------------------------------------------------------------ |
+| `permission_denied` | the hub's **Clients** page does not let this client open terminals       |
+| `agent_offline`     | the machine is not connected to its hub                                  |
+| `unknown_terminal`  | the hub offers no terminal on that machine                               |
 | `session_not_owned` | another viewer opened the session, so its switches are not this client's |
-| `session_unknown`   | the machine no longer keeps the session                            |
+| `session_unknown`   | the machine no longer keeps the session                                  |
 
 ## Remote desktops
 
