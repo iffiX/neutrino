@@ -50,7 +50,7 @@ def main() -> int:
         _npm(["ci"])
     _npm(["run", "check"])
     for base in arguments.base or ["/"]:
-        print(f"building the site for {base}")
+        print(f"building the site for {base}", flush=True)
         _npm(["run", "build"], {DOCS_BASE_ENV: base})
     return 0
 

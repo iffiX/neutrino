@@ -3,6 +3,10 @@ name: release
 # A tag builds everything and opens a draft; the notes are written by a person.
 # workflow_dispatch builds the same packages and attaches them as artifacts
 # without touching releases, which is how the pipeline is tried out.
+#
+# Each job sets up its host, then runs one script under packaging/build and
+# checks what it built with packaging/ci/check.py; both run the same way on a
+# workstation of the same kind.
 on:
   push:
     tags: ["v*"]
@@ -38,16 +42,16 @@ jobs:
           cache: npm
           cache-dependency-path: hub/frontend/package-lock.json
 
-      # The panel is gitignored, and build_hub.py refuses to
-      # package a hub without it. Vite writes straight into the package.
+      # The panel is gitignored, and build_hub.py refuses to package a hub
+      # without it. Vite writes straight into the package.
       - run: npm ci
         working-directory: hub/frontend
 
       - run: npm run build
         working-directory: hub/frontend
 
-      # The hub is built inside debian:12, which for arm64 means running that
-      # container under emulation on an x86-64 runner.
+      # The hub is built inside its family's container, which for arm64
+      # means running that container under emulation on an x86-64 runner.
       - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
 
@@ -61,6 +65,8 @@ jobs:
           ${{ startsWith(github.ref, 'refs/tags/')
               && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
               || '' }}
+
+      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
 
       - uses: actions/upload-artifact@v7
         with:
@@ -81,10 +87,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The agent's packages carry an interpreter and unpack the RustDesk
-      # host for their machine, so each is built in a container of its
-      # family — and for arm64 that container runs under emulation on an
-      # x86-64 runner.
+      # Each package is built in a container of its family, and for arm64
+      # that container runs under emulation on an x86-64 runner.
       - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
 
@@ -92,6 +96,8 @@ jobs:
           python3 packaging/build/build_agent.py
           --architecture ${{ matrix.architecture }}
           --output-dir dist
+
+      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
 
       - uses: actions/upload-artifact@v7
         with:
@@ -109,8 +115,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The interpreter the agent is compiled against; build_agent_windows.py refuses
-      # any other minor.
+      # The interpreter the agent is compiled against; the build refuses any
+      # other minor.
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
@@ -120,60 +126,8 @@ jobs:
 
       - run: python packaging/build/build_agent_windows.py --output-dir dist --architecture x64
 
-      # Installed and removed here: whether both services run, whether the
-      # compiled agent answers, and whether removing it takes both away.
-      - name: Install it, check its services, remove it
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
-          $msi = (Get-ChildItem dist\*.msi)[0].FullName
-          $log = "$env:RUNNER_TEMP\install.log"
-          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i',$msi,'/quiet','/norestart','/l*v',$log
-          Write-Host "msiexec /i exited $($p.ExitCode)"
-          Select-String -Path $log -Pattern 'RustDesk|return value 3' | ForEach-Object { $_.Line } | Select-Object -Last 40
-          Get-ChildItem "$env:ProgramFiles\Neutrino Agent" | Select-Object Name, Length | Format-Table -AutoSize
-          Get-ChildItem "$env:ProgramFiles\RustDesk" -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table -AutoSize
-          $state = ''
-          foreach ($i in 1..24) {
-            $state = sc.exe query RustDesk | Select-String 'STATE'
-            if ("$state" -match 'RUNNING') { break }
-            Start-Sleep -Seconds 5
-          }
-          Write-Host "RustDesk after wait: $state"
-          if ("$state" -notmatch 'RUNNING') {
-            Write-Host 'Running the installer by hand for comparison'
-            $exe = (Get-ChildItem "$env:ProgramFiles\Neutrino Agent" -Filter 'rustdesk*.exe')[0].FullName
-            $q = Start-Process $exe -Wait -PassThru -ArgumentList '--silent-install'
-            Write-Host "rustdesk --silent-install by hand exited $($q.ExitCode)"
-            Start-Sleep -Seconds 20
-            Get-ChildItem "$env:ProgramFiles\RustDesk" -ErrorAction SilentlyContinue | Select-Object Name | Format-Table -AutoSize
-            Write-Host "RustDesk by hand: $(sc.exe query RustDesk | Select-String 'STATE')"
-          }
-          foreach ($service in 'neutrino_agent', 'RustDesk') {
-            $state = sc.exe query $service | Select-String 'STATE'
-            Write-Host "$service $state"
-            if ("$state" -notmatch 'RUNNING') { throw "$service is not running" }
-          }
-          $nagent = "$env:ProgramFiles\Neutrino Agent\nagent.exe"
-          $version = & $nagent --version
-          if ($LASTEXITCODE -ne 0) { throw "nagent --version exited $LASTEXITCODE" }
-          Write-Host "nagent $version"
-          $log = "$env:RUNNER_TEMP\remove.log"
-          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/x',$msi,'/quiet','/norestart','/l*v',$log
-          Write-Host "msiexec /x exited $($p.ExitCode)"
-          Select-String -Path $log -Pattern 'UninstallRustDesk|return value 3' | ForEach-Object { $_.Line } | Select-Object -Last 12
-          foreach ($service in 'neutrino_agent', 'RustDesk') {
-            foreach ($i in 1..24) {
-              sc.exe query $service | Out-Null
-              if ($LASTEXITCODE -eq 1060) { break }
-              Start-Sleep -Seconds 5
-            }
-            Write-Host "$service after removal: sc query exited $LASTEXITCODE"
-            if ($LASTEXITCODE -ne 1060) { throw "$service outlived the uninstaller" }
-          }
-          if (Test-Path "$env:ProgramFiles\RustDesk") { Get-ChildItem "$env:ProgramFiles\RustDesk" | Select-Object Name | Format-Table -AutoSize }
-          exit 0
+      - run: python packaging/ci/check.py agent_windows dist/*.msi
+        shell: bash
 
       - uses: actions/upload-artifact@v7
         with:
@@ -194,23 +148,7 @@ jobs:
 
       - run: python3 packaging/build/build_agent_macos.py --output-dir dist --architecture arm64
 
-      - name: Install it, check its job, remove it
-        run: |
-          set -e
-          sudo installer -pkg dist/*.pkg -target /
-          sudo launchctl print system/com.neutrino.agent | grep 'state = running'
-          /usr/local/bin/nagent --version
-          sudo launchctl bootout system/com.neutrino.agent
-          sudo launchctl bootout system/com.carriez.RustDesk_service || true
-          sudo rm -rf "/Library/Application Support/Neutrino/agent" \
-            /Applications/RustDesk.app /usr/local/bin/nagent \
-            /Library/LaunchDaemons/com.neutrino.agent.plist \
-            /Library/LaunchDaemons/com.carriez.RustDesk_service.plist \
-            /Library/LaunchAgents/com.carriez.RustDesk_server.plist
-          sudo pkgutil --forget com.neutrino.agent
-          if sudo launchctl print system/com.neutrino.agent; then
-            echo "the agent's job outlived its removal"; exit 1
-          fi
+      - run: python3 packaging/ci/check.py agent_macos dist/*.pkg
 
       - uses: actions/upload-artifact@v7
         with:
@@ -240,6 +178,8 @@ jobs:
           --architecture ${{ matrix.architecture }}
           --output-dir dist
 
+      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+
       - uses: actions/upload-artifact@v7
         with:
           name: client_${{ matrix.architecture }}
@@ -256,8 +196,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The interpreter the client is compiled against; build_client_windows.py refuses
-      # any other minor.
+      # The interpreter the client is compiled against; the build refuses any
+      # other minor.
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
@@ -282,43 +222,8 @@ jobs:
 
       - run: python packaging/build/build_client_windows.py --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
 
-      # The installer is what ships, so it is run here rather than only
-      # compiled: whether the compiled client answers, whether the entry
-      # lands on PATH, and whether uninstalling takes the prefix whole.
-      - name: Install it, use it, remove it
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
-          $msi = (Get-ChildItem dist\*.msi)[0].FullName
-          $log = "$env:RUNNER_TEMP\client_install.log"
-          $p = Start-Process msiexec -Wait -PassThru -ArgumentList '/i',$msi,'/quiet','/norestart','/l*v',$log
-          Write-Host "msiexec /i exited $($p.ExitCode)"
-          $nclient = "$env:ProgramFiles\Neutrino Client\nclient.exe"
-          if ($p.ExitCode -ne 0 -or -not (Test-Path $nclient)) {
-            Select-String -Path $log -Pattern 'return value 3|Error 19|NeutrinoClientEasytier' | ForEach-Object { $_.Line } | Select-Object -Last 25
-            Get-WinEvent -LogName System -MaxEvents 200 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'Neutrino' } | Select-Object -First 6 | ForEach-Object { "event $($_.Id): $($_.Message)" }
-            Get-WinEvent -LogName Application -MaxEvents 200 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'nclient' } | Select-Object -First 4 | ForEach-Object { "app event $($_.Id): $($_.Message)" }
-            throw "the client did not install"
-          }
-          $version = & $nclient --version
-          if ($LASTEXITCODE -ne 0) { throw "nclient --version exited $LASTEXITCODE" }
-          Write-Host "nclient $version"
-          # Unbound, status says so and exits 1.
-          & $nclient status
-          if ($LASTEXITCODE -ne 1) { throw "nclient status exited $LASTEXITCODE, expected 1" }
-          $path = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
-          if ($path -notlike '*Neutrino Client*') { throw 'the install is not on PATH' }
-          if (-not (Test-Path "$env:ProgramFiles\Neutrino Client\bin\packet.dll")) { throw 'no packet.dll beside easytier-core.exe' }
-          # The EasyTier daemon runs as a service and answers on its pipe.
-          $deadline = (Get-Date).AddSeconds(30)
-          while ((Get-Service NeutrinoClientEasytier).Status -ne 'Running' -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
-          if ((Get-Service NeutrinoClientEasytier).Status -ne 'Running') { throw 'the EasyTier daemon is not running' }
-          if (-not (Test-Path '\\.\pipe\neutrino_client_easytier')) { throw 'the EasyTier daemon has no pipe' }
-          Start-Process msiexec -Wait -ArgumentList '/x',$msi,'/quiet','/norestart'
-          if (Test-Path "$env:ProgramFiles\Neutrino Client") { throw 'the prefix outlived the uninstaller' }
-          if (Get-Service NeutrinoClientEasytier -ErrorAction SilentlyContinue) { throw 'the EasyTier daemon outlived the uninstaller' }
-          exit 0
+      - run: python packaging/ci/check.py client_windows dist/*.msi
+        shell: bash
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -340,13 +245,7 @@ jobs:
 
       - run: python3 packaging/build/build_client_macos.py --output-dir dist --architecture arm64
 
-      - name: Install it, use it
-        run: |
-          set -e
-          sudo installer -pkg dist/*.pkg -target /
-          /usr/local/bin/nclient --version
-          # Unbound, status says so and exits 1.
-          if /usr/local/bin/nclient status; then echo "expected exit 1"; exit 1; fi
+      - run: python3 packaging/ci/check.py client_macos dist/*.pkg
 
       - uses: actions/upload-artifact@v7
         with:
@@ -354,9 +253,6 @@ jobs:
           path: dist/*.pkg
           if-no-files-found: error
 
-  # One source archive: this tree at the commit, with the source of what the
-  # packages carry under copyleft beside it, at the tags the binaries were
-  # built from.
   # The Android app: the release build on a tag, signed with the project's
   # key and checked against its certificate; the debug build otherwise. The
   # arm64-v8a apk is the one published; the x86_64 apk of the same build is
@@ -377,56 +273,54 @@ jobs:
 
       - uses: android-actions/setup-android@v4
 
-      # The NetBird, EasyTier and RustDesk libraries the app carries, built from their
-      # pinned sources and kept while the scripts that pin them are unchanged.
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "1.26.7"
+      # The NetBird, EasyTier and RustDesk libraries the app carries, kept under the
+      # name the cores cache gives them: the core, its pinned commit, the ABI.
+      - name: Name the cores
+        id: cores_key
+        run: echo "key=$(python3 packaging/build/build_client_android.py --cache-key)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the phone cores
         id: cores
         uses: actions/cache@v6
         with:
-          path: |
-            client/android/app/libs
-            client/android/app/src/main/jniLibs
-          key: android-cores-${{ hashFiles('packaging/build/build_core_netbird.py', 'packaging/build/build_core_easytier.py', 'packaging/build/build_core_easytier.patch', 'packaging/mobile_rustdesk.py', 'packaging/mobile_rustdesk.patch') }}
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.cores_key.outputs.key }}
 
       # The JNI side of the RustDesk core is compiled with the app.
       - name: Install the NDK and CMake the app builds with
         run: sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
 
-      - name: Build the phone cores
+      - uses: actions/setup-go@v7
+        if: steps.cores.outputs.cache-hit != 'true'
+        with:
+          go-version: "1.26.7"
+
+      - name: Install what building the cores needs
         if: steps.cores.outputs.cache-hit != 'true'
         run: |
           sdkmanager "ndk;27.2.12479018"
-          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.2.12479018"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
           go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20260816165457-f98cc9b3c733
           go install golang.org/x/mobile/cmd/gobind@v0.0.0-20260816165457-f98cc9b3c733
           export PATH="$(go env GOPATH)/bin:${PATH}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           gomobile init
           cargo install cargo-ndk --locked
-          python3 packaging/build/build_core_netbird.py
-          python3 packaging/build/build_core_easytier.py
           sudo apt-get install -y nasm
-          python3 packaging/mobile_rustdesk.py
+
+      - name: Put the RustDesk core into the app
+        run: python3 packaging/mobile_rustdesk.py
 
       - name: Build the apk
-        working-directory: client/android
         env:
           ANDROID_KEYSTORE_B64: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_B64 || '' }}
           ANDROID_KEYSTORE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
           ANDROID_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_PASSWORD || '' }}
           ANDROID_KEY_ALIAS: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_ALIAS || '' }}
-        run: |
-          if [ "${GITHUB_REF_TYPE}" = tag ]; then variant=release; else variant=debug; fi
-          ./gradlew --no-daemon "assemble${variant^}"
-          rm -rf app/build/signing
-          version="$(sed -n 's/^neutrinoVersion=//p' gradle.properties)"
-          mkdir -p ../../dist
-          cp "app/build/outputs/apk/${variant}/app-arm64-v8a-${variant}.apk" \
-            "../../dist/neutrino-client-${version}-android.apk"
-          cp "app/build/outputs/apk/${variant}/app-x86_64-${variant}.apk" ../../emulator.apk
+        run: >
+          python3 packaging/build/build_client_android.py
+          --variant ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'debug' }}
+          --output-dir dist
 
       - name: Check the release signature
         if: startsWith(github.ref, 'refs/tags/')
@@ -451,11 +345,7 @@ jobs:
           arch: x86_64
           target: google_apis
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: |
-            adb install -r emulator.apk
-            adb shell am start -W -n io.github.iffix.neutrino/.MainActivity
-            sleep 10
-            adb shell pidof io.github.iffix.neutrino
+          script: python3 packaging/ci/check.py client_android dist/neutrino-client-*-android-x86_64.apk
 
       - uses: actions/upload-artifact@v7
         with:
@@ -463,6 +353,9 @@ jobs:
           path: dist/*-android.apk
           if-no-files-found: error
 
+  # One source archive: this tree at the commit, with the source of what the
+  # packages carry under copyleft beside it, at the tags the binaries were
+  # built from.
   sources:
     name: source archive
     runs-on: ubuntu-24.04

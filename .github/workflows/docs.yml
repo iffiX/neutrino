@@ -8,6 +8,7 @@ on:
       - "images/icons/**"
       - "images/web/**"
       - "packaging/integration/screenshots/**"
+      - "packaging/build/build_docs.py"
       - ".github/workflows/docs.yml"
   push:
     tags: ["v*"]
@@ -33,8 +34,6 @@ jobs:
           node-version-file: docs/guide/.nvmrc
           cache: npm
           cache-dependency-path: docs/guide/package-lock.json
-      - run: npm ci
-      - run: npm run check
       - name: Read Pages configuration
         id: pages
         if: >-
@@ -42,15 +41,13 @@ jobs:
           && startsWith(github.ref, 'refs/tags/v')
           && vars.DOCS_PAGES_ENABLED == 'true'
         uses: actions/configure-pages@v5
-      - name: Build website
-        run: npm run build
-        env:
-          NEUTRINO_DOCS_BASE: ${{ steps.pages.outputs.base_path || '/' }}
-      - name: Check repository subpath
-        if: github.event_name == 'pull_request'
-        run: npm run build
-        env:
-          NEUTRINO_DOCS_BASE: /neutrino/
+      # A pull request also builds for the repository's own subpath, the
+      # one the site is served under on GitHub Pages without a domain.
+      - name: Check and build website
+        run: >
+          python3 ../../packaging/build/build_docs.py --install
+          ${{ github.event_name == 'pull_request' && '--base /neutrino/' || '' }}
+          --base '${{ steps.pages.outputs.base_path || '/' }}'
       - name: Upload website
         if: >-
           github.event_name != 'pull_request'

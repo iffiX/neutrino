@@ -28,7 +28,7 @@ jobs:
       # nothing here contends with the runner's own resolver.
       - run: sudo apt-get install -y --no-install-recommends dnsmasq-base
 
-      - run: black --check hub agent client
+      - run: black --check hub agent client packaging
 
       # The scan reads what git would carry, so it needs the tree, not an
       # install. detect-secrets comes from the dev extra above.
@@ -70,38 +70,45 @@ jobs:
 
       - uses: android-actions/setup-android@v4
 
-      # The NetBird, EasyTier and RustDesk libraries the app carries, built from their
-      # pinned sources and kept while the scripts that pin them are unchanged.
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "1.26.7"
+      # The NetBird, EasyTier and RustDesk libraries the app carries, kept under the
+      # name the cores cache gives them: the core, its pinned commit, the ABI.
+      - name: Name the cores
+        id: cores_key
+        run: echo "key=$(python3 packaging/build/build_client_android.py --cache-key)" >> "$GITHUB_OUTPUT"
 
       - name: Cache the phone cores
         id: cores
         uses: actions/cache@v6
         with:
-          path: |
-            client/android/app/libs
-            client/android/app/src/main/jniLibs
-          key: android-cores-${{ hashFiles('packaging/build/build_core_netbird.py', 'packaging/build/build_core_easytier.py', 'packaging/build/build_core_easytier.patch', 'packaging/mobile_rustdesk.py', 'packaging/mobile_rustdesk.patch') }}
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.cores_key.outputs.key }}
 
       # The JNI side of the RustDesk core is compiled with the app.
       - name: Install the NDK and CMake the app builds with
         run: sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
 
-      - name: Build the phone cores
+      - uses: actions/setup-go@v7
+        if: steps.cores.outputs.cache-hit != 'true'
+        with:
+          go-version: "1.26.7"
+
+      - name: Install what building the cores needs
         if: steps.cores.outputs.cache-hit != 'true'
         run: |
           sdkmanager "ndk;27.2.12479018"
-          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/27.2.12479018"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
           go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20260816165457-f98cc9b3c733
           go install golang.org/x/mobile/cmd/gobind@v0.0.0-20260816165457-f98cc9b3c733
           export PATH="$(go env GOPATH)/bin:${PATH}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           gomobile init
           cargo install cargo-ndk --locked
+          sudo apt-get install -y nasm
+
+      - name: Put the cores into the app
+        run: |
           python3 packaging/build/build_core_netbird.py
           python3 packaging/build/build_core_easytier.py
-          sudo apt-get install -y nasm
           python3 packaging/mobile_rustdesk.py
 
       - run: ./gradlew --no-daemon ktlintCheck test lint
