@@ -85,6 +85,7 @@ OPEN_TOOL = "open"
 OPEN_TIMEOUT_S = 10
 
 PASTE_TOOL = "pbpaste"
+COPY_TOOL = "pbcopy"
 
 
 def _smb_refusal(output: str) -> str:
@@ -254,6 +255,27 @@ class DarwinPlatform(ClientPlatform):
         if result.returncode != 0:
             raise OSError(f"{PASTE_TOOL}: {(result.stderr or '').strip()[:200]}")
         return result.stdout or ""
+
+    def write_clipboard(self, text: str) -> None:
+        """Put text on the clipboard with ``pbcopy``.
+
+        Args:
+            text: The text.
+
+        Raises:
+            OSError: When ``pbcopy`` cannot run, fails, or takes too long.
+        """
+        try:
+            result = run_quietly(
+                [COPY_TOOL],
+                input=text,
+                timeout_s=CLIENT_CLIPBOARD_TIMEOUT_S,
+                encoding="utf-8",
+            )
+        except subprocess.SubprocessError as error:
+            raise OSError(f"{COPY_TOOL}: {error}") from error
+        if result.returncode != 0:
+            raise OSError(f"{COPY_TOOL}: {(result.stderr or '').strip()[:200]}")
 
     def raw_terminal(self) -> PosixRawTerminal:
         """Standard input in raw mode."""

@@ -414,3 +414,54 @@ def test_a_tool_that_hangs_is_an_os_error(monkeypatch):
 
     with pytest.raises(OSError):
         LinuxPlatform().read_clipboard()
+
+
+def test_a_wayland_session_is_written_with_wl_copy(monkeypatch):
+    tools = ClipboardTools({"wl-copy", "xclip"}, completed())
+    inputs = []
+
+    def run(command, **kwargs):
+        tools.commands.append(list(command))
+        inputs.append(kwargs.get("input"))
+        return tools.result
+
+    tools.run = run
+    clipboard_session(monkeypatch, tools, wayland="wayland-0", display=":0")
+
+    LinuxPlatform().write_clipboard("git log\n")
+
+    assert tools.commands == [["wl-copy", "--type", "text/plain"]]
+    assert inputs == ["git log\n"]
+
+
+def test_an_x_session_is_written_with_xclip(monkeypatch):
+    tools = ClipboardTools({"xclip"}, completed())
+    clipboard_session(monkeypatch, tools, display=":0")
+
+    LinuxPlatform().write_clipboard("ls")
+
+    assert tools.commands == [["xclip", "-selection", "clipboard", "-i"]]
+
+
+def test_a_write_the_tool_refuses_is_an_os_error(monkeypatch):
+    tools = ClipboardTools({"xclip"}, completed(returncode=1, stderr="no display"))
+    clipboard_session(monkeypatch, tools, display=":0")
+
+    with pytest.raises(OSError):
+        LinuxPlatform().write_clipboard("ls")
+
+
+def test_without_a_tool_the_clipboard_is_written_through_gtk(monkeypatch):
+    tools = ClipboardTools(set())
+    clipboard_session(monkeypatch, tools, display=":0")
+    written = []
+
+    def gtk_set(text, timeout_s):
+        written.append((text, timeout_s))
+
+    monkeypatch.setattr(linux_module, "gtk_set_clipboard_text", gtk_set)
+
+    LinuxPlatform().write_clipboard("from the terminal")
+
+    assert tools.commands == []
+    assert written == [("from the terminal", CLIENT_CLIPBOARD_TIMEOUT_S)]

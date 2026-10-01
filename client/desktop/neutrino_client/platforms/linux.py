@@ -59,6 +59,12 @@ CLIPBOARD_TOOLS = (
     ("WAYLAND_DISPLAY", ("wl-paste", "--no-newline", "--type", "text")),
     ("DISPLAY", ("xclip", "-selection", "clipboard", "-o")),
 )
+# The tools that write it, the same way round, each taking the text on its
+# standard input.
+CLIPBOARD_WRITE_TOOLS = (
+    ("WAYLAND_DISPLAY", ("wl-copy", "--type", "text/plain")),
+    ("DISPLAY", ("xclip", "-selection", "clipboard", "-i")),
+)
 
 
 class LinuxPlatform(ClientPlatform):
@@ -230,6 +236,36 @@ class LinuxPlatform(ClientPlatform):
                 return result.stdout or ""
         return gtk_clipboard_text(CLIENT_CLIPBOARD_TIMEOUT_S)
 
+    def write_clipboard(self, text: str) -> None:
+        """Put text on the clipboard of this person's session.
+
+        ``wl-copy`` on a Wayland session and ``xclip`` on an X one, when the
+        tool is installed, else GTK's own clipboard.
+
+        Args:
+            text: The text.
+
+        Raises:
+            OSError: When the tool cannot run, fails or takes too long, or
+                GTK is missing or does not answer in time.
+        """
+        for variable, tool in CLIPBOARD_WRITE_TOOLS:
+            if os.environ.get(variable) and shutil.which(tool[0]):
+                try:
+                    result = run_quietly(
+                        list(tool),
+                        input=text,
+                        timeout_s=CLIENT_CLIPBOARD_TIMEOUT_S,
+                        encoding="utf-8",
+                    )
+                except subprocess.SubprocessError as error:
+                    raise OSError(f"{tool[0]}: {error}") from error
+                if result.returncode != 0:
+                    detail = (result.stderr or "").strip()[:200]
+                    raise OSError(f"{tool[0]}: {detail}")
+                return
+        gtk_set_clipboard_text(text, CLIENT_CLIPBOARD_TIMEOUT_S)
+
     def easytier_daemon_address(self) -> str:
         """``/run/neutrino_client_easytier.sock``."""
         return CLIENT_EASYTIER_SOCKET_PATH_LINUX
@@ -292,6 +328,39 @@ def gtk_clipboard_text(timeout_s: float) -> str:
     if not done.wait(timeout_s):
         raise TimeoutError("the clipboard did not answer")
     return answer["text"]
+
+
+def gtk_set_clipboard_text(text: str, timeout_s: float) -> None:
+    """Put text on the clipboard through GTK, on GTK's own main loop.
+
+    Args:
+        text: The text.
+        timeout_s: How long the main loop is given to take it.
+
+    Raises:
+        OSError: When GTK cannot be loaded.
+        TimeoutError: When no main loop answers in time.
+    """
+    try:
+        import gi
+
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("Gdk", "3.0")
+        from gi.repository import Gdk, GLib, Gtk
+    except (ImportError, ValueError) as error:
+        raise OSError(f"no clipboard tool and no GTK here: {error}") from error
+    done = threading.Event()
+
+    def put() -> bool:
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(text, -1)
+        clipboard.store()
+        done.set()
+        return False
+
+    GLib.idle_add(put)
+    if not done.wait(timeout_s):
+        raise TimeoutError("the clipboard did not answer")
 
 
 def run_root_helper(

@@ -38,6 +38,7 @@ def test_the_base_platform_refuses_what_it_does_not_have():
         lambda: platform.detach_share(location="/p"),
         lambda: platform.is_share_attached(location="/p"),
         platform.read_clipboard,
+        lambda: platform.write_clipboard("x"),
     ):
         with pytest.raises(PlatformUnsupportedError) as caught:
             call()

@@ -368,6 +368,18 @@ class ClientPlatform:
         """
         raise PlatformUnsupportedError("no clipboard is read here")
 
+    def write_clipboard(self, text: str) -> None:
+        """Put text on this person's clipboard.
+
+        Args:
+            text: The text.
+
+        Raises:
+            PlatformUnsupportedError: Where no clipboard can be written.
+            OSError: When the clipboard cannot be written.
+        """
+        raise PlatformUnsupportedError("no clipboard is written here")
+
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float
     ) -> tuple:

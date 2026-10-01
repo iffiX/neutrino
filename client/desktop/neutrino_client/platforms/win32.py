@@ -130,6 +130,8 @@ NOTIFY_ICON_TIP_LENGTH = 128
 
 # The clipboard's text, as UTF-16.
 CF_UNICODETEXT = 13
+# Memory the clipboard takes over once it is handed the data.
+GMEM_MOVEABLE = 0x0002
 
 # The language a LANGID names: its low ten bits are the primary language,
 # and 0x04 is Chinese in every region Windows knows.
@@ -744,6 +746,12 @@ class Win32Libraries:
         self.user32.OpenClipboard.argtypes = [ctypes.c_void_p]
         self.user32.GetClipboardData.argtypes = [ctypes.c_uint]
         self.user32.GetClipboardData.restype = ctypes.c_void_p
+        self.user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+        self.user32.SetClipboardData.restype = ctypes.c_void_p
+        self.kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+        self.kernel32.GlobalAlloc.restype = ctypes.c_void_p
+        self.kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+        self.kernel32.GlobalFree.restype = ctypes.c_void_p
         self.kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
         self.kernel32.GlobalLock.restype = ctypes.c_void_p
         self.kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]

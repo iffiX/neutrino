@@ -317,6 +317,18 @@ class WindowsPlatform(ClientPlatform):
         """
         return self._win32().clipboard_text()
 
+    def write_clipboard(self, text: str) -> None:
+        """Put text on the clipboard through ``SetClipboardData``.
+
+        Args:
+            text: The text.
+
+        Raises:
+            OSError: When another program holds the clipboard or Windows
+                refuses.
+        """
+        self._win32().set_clipboard_text(text)
+
     def easytier_daemon_address(self) -> str:
         """The pipe named ``neutrino_client_easytier``."""
         return CLIENT_EASYTIER_PIPE_WINDOWS
@@ -498,6 +510,44 @@ class _WindowsApi:
                 return ctypes.wstring_at(pointer)
             finally:
                 kernel32.GlobalUnlock(handle)
+        finally:
+            user32.CloseClipboard()
+
+    def set_clipboard_text(self, text: str) -> None:
+        """Replace the clipboard's content with Unicode text.
+
+        Args:
+            text: The text.
+
+        Raises:
+            OSError: When the clipboard cannot be opened, the memory cannot
+                be had, or Windows refuses the data.
+        """
+        libraries = win32.libraries()
+        user32 = libraries.user32
+        kernel32 = libraries.kernel32
+        data = ctypes.create_unicode_buffer(text)
+        size = ctypes.sizeof(data)
+        if not user32.OpenClipboard(None):
+            raise win32.last_error()
+        try:
+            user32.EmptyClipboard()
+            handle = kernel32.GlobalAlloc(win32.GMEM_MOVEABLE, size)
+            if not handle:
+                raise win32.last_error()
+            pointer = kernel32.GlobalLock(handle)
+            if not pointer:
+                error = win32.last_error()
+                kernel32.GlobalFree(handle)
+                raise error
+            try:
+                ctypes.memmove(pointer, data, size)
+            finally:
+                kernel32.GlobalUnlock(handle)
+            if not user32.SetClipboardData(win32.CF_UNICODETEXT, handle):
+                error = win32.last_error()
+                kernel32.GlobalFree(handle)
+                raise error
         finally:
             user32.CloseClipboard()
 
