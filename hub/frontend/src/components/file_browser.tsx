@@ -21,9 +21,10 @@ import "./file_browser.css";
  * The files on one machine, browsed through its agent.
  *
  * The agent reads and writes as root, so the browser opens at the machine's
- * root rather than at a home directory. Every operation acts at once and the
- * listing is read again after it, so what is on screen is what is on the
- * machine.
+ * root rather than at a home directory; a Windows machine's root is its
+ * drives, and its paths use the separator the listing names. Every
+ * operation acts at once and the listing is read again after it, so what is
+ * on screen is what is on the machine.
  */
 
 // The codes the files API refuses with, and the sentence each is worded as. A
@@ -39,6 +40,8 @@ const FILE_ERROR_KEYS: Record<string, string> = {
 
 // Where a browse starts. The agent has the whole filesystem.
 const ROOT_PATH = "/";
+// The separator of a machine whose paths are not Windows paths.
+const POSIX_SEPARATOR = "/";
 
 interface FileBrowserProps {
   /** The machine whose files these are. */
@@ -100,16 +103,18 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
   }, [load]);
 
   const path = listing?.path ?? ROOT_PATH;
+  const separator = listing?.separator ?? POSIX_SEPARATOR;
+  const isDriveList = path === ROOT_PATH && separator !== POSIX_SEPARATOR;
   useEffect(() => {
     if (listing !== null) {
       rememberPath(listing.path);
     }
   }, [listing, rememberPath]);
-  const crumbs = toCrumbs(path);
+  const crumbs = toCrumbs(path, separator);
 
   const handleOpen = (entry: DeviceFileEntry) => {
     if (entry.is_dir || entry.is_link) {
-      void load(joinPath(path, entry.name));
+      void load(toEntryPath(path, separator, entry));
     }
   };
 
@@ -123,7 +128,7 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
       : "/agent/file/download";
     const url = `/api${apiPath(endpoint, {
       device_id: deviceId,
-      path: joinPath(path, entry.name),
+      path: toEntryPath(path, separator, entry),
     })}`;
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -174,7 +179,7 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
     try {
       await apiPost("/agent/file/directory/create", {
         device_id: deviceId,
-        path: joinPath(path, name),
+        path: joinPath(path, name, separator),
       });
       void load(path, true);
     } catch (cause: unknown) {
@@ -192,8 +197,8 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
     try {
       await apiPost("/agent/file/rename", {
         device_id: deviceId,
-        path: joinPath(path, entry.name),
-        new_path: joinPath(path, name),
+        path: toEntryPath(path, separator, entry),
+        new_path: joinPath(path, name, separator),
       });
       void load(path, true);
     } catch (cause: unknown) {
@@ -252,7 +257,7 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
     try {
       await apiPost("/agent/file/remove", {
         device_id: deviceId,
-        path: joinPath(path, entry.name),
+        path: toEntryPath(path, separator, entry),
       });
       void load(path, true);
     } catch (cause: unknown) {
@@ -266,7 +271,9 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
         <div className="file_browser_crumbs">
           {crumbs.map((crumb, index) => (
             <Fragment key={crumb.path}>
-              {index > 1 && <span className="file_browser_crumb_sep">/</span>}
+              {index > 1 && (
+                <span className="file_browser_crumb_sep">{separator}</span>
+              )}
               <button
                 type="button"
                 className="file_browser_crumb"
@@ -281,6 +288,7 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
           <button
             type="button"
             className="button button--small"
+            disabled={isDriveList}
             onClick={() => setNewFolderName("")}
           >
             <Icon name="plus" size={13} />
@@ -289,7 +297,7 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
           <button
             type="button"
             className="button button--small"
-            disabled={uploadStatus !== null}
+            disabled={isDriveList || uploadStatus !== null}
             onClick={() => fileInputRef.current?.click()}
           >
             <Icon name="upload" size={13} />
@@ -400,51 +408,53 @@ export function FileBrowser({ deviceId }: FileBrowserProps) {
               <span className="file_browser_time">
                 {formatModified(entry.modified_at)}
               </span>
-              <RowMenu items={rowItems(entry)}>
-                <span className="file_browser_actions">
-                  {!entry.is_link && (
+              {!isDriveList && (
+                <RowMenu items={rowItems(entry)}>
+                  <span className="file_browser_actions">
+                    {!entry.is_link && (
+                      <button
+                        type="button"
+                        className="file_browser_action"
+                        title={
+                          entry.is_dir
+                            ? t("ui.files.download_archive")
+                            : t("ui.files.download")
+                        }
+                        onClick={() => handleDownload(entry)}
+                      >
+                        <Icon name="download" size={13} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="file_browser_action"
-                      title={
-                        entry.is_dir
-                          ? t("ui.files.download_archive")
-                          : t("ui.files.download")
-                      }
-                      onClick={() => handleDownload(entry)}
+                      title={t("ui.files.rename")}
+                      onClick={() => startRename(entry)}
                     >
-                      <Icon name="download" size={13} />
+                      <Icon name="edit" size={13} />
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    className="file_browser_action"
-                    title={t("ui.files.rename")}
-                    onClick={() => startRename(entry)}
-                  >
-                    <Icon name="edit" size={13} />
-                  </button>
-                  {deleteName === entry.name ? (
-                    <button
-                      type="button"
-                      className="file_browser_action file_browser_action--danger"
-                      title={t("ui.files.delete_armed")}
-                      onClick={() => void handleDelete(entry)}
-                    >
-                      <Icon name="check" size={13} />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="file_browser_action file_browser_action--danger"
-                      title={t("ui.files.delete")}
-                      onClick={() => armDelete(entry)}
-                    >
-                      <Icon name="trash" size={13} />
-                    </button>
-                  )}
-                </span>
-              </RowMenu>
+                    {deleteName === entry.name ? (
+                      <button
+                        type="button"
+                        className="file_browser_action file_browser_action--danger"
+                        title={t("ui.files.delete_armed")}
+                        onClick={() => void handleDelete(entry)}
+                      >
+                        <Icon name="check" size={13} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="file_browser_action file_browser_action--danger"
+                        title={t("ui.files.delete")}
+                        onClick={() => armDelete(entry)}
+                      >
+                        <Icon name="trash" size={13} />
+                      </button>
+                    )}
+                  </span>
+                </RowMenu>
+              )}
             </div>
           ))
         )}
@@ -470,16 +480,48 @@ function describeFileError(cause: unknown): string {
   return describeError(cause);
 }
 
-function joinPath(base: string, name: string): string {
-  return base.endsWith("/") ? `${base}${name}` : `${base}/${name}`;
+function joinPath(base: string, name: string, separator: string): string {
+  return base.endsWith(separator)
+    ? `${base}${name}`
+    : `${base}${separator}${name}`;
 }
 
-function toCrumbs(path: string): { label: string; path: string }[] {
-  const crumbs = [{ label: "/", path: ROOT_PATH }];
-  const parts = path.split("/").filter((part) => part.length > 0);
+/** An entry's path as the machine wrote it, or joined when it named none. */
+function toEntryPath(
+  base: string,
+  separator: string,
+  entry: DeviceFileEntry,
+): string {
+  return entry.path || joinPath(base, entry.name, separator);
+}
+
+/**
+ * The crumbs from the root to a path. On a Windows machine the root is the
+ * drive list and the first part is a drive, such as `C:` for `C:\`.
+ */
+function toCrumbs(
+  path: string,
+  separator: string,
+): { label: string; path: string }[] {
+  if (separator === POSIX_SEPARATOR) {
+    const crumbs = [{ label: ROOT_PATH, path: ROOT_PATH }];
+    let current = "";
+    for (const part of path.split(separator).filter(Boolean)) {
+      current += `${separator}${part}`;
+      crumbs.push({ label: part, path: current });
+    }
+    return crumbs;
+  }
+  const crumbs = [{ label: t("ui.files.drives"), path: ROOT_PATH }];
+  if (path === ROOT_PATH) {
+    return crumbs;
+  }
   let current = "";
-  for (const part of parts) {
-    current += `/${part}`;
+  for (const part of path.split(separator).filter(Boolean)) {
+    current =
+      current === ""
+        ? `${part}${separator}`
+        : joinPath(current, part, separator);
     crumbs.push({ label: part, path: current });
   }
   return crumbs;

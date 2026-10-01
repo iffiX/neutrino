@@ -87,6 +87,7 @@
   "ui.files.deleting": "Deleting {name} cannot be undone; the red check confirms it.",
   "ui.files.download": "Download",
   "ui.files.download_archive": "Download as tar.gz",
+  "ui.files.drives": "Drives",
   "ui.files.empty": "Empty directory",
   "ui.files.folder_name": "folder name",
   "ui.files.loading": "Loading…",

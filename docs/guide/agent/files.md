@@ -13,7 +13,9 @@ On the **Files** page you browse a managed machine's whole filesystem as root. Y
 1. Under **Which machine**, select a machine whose agent is online.
 1. Select a folder's name to open it.
 
-The path at the top of the list is a row of buttons; select any part of it to go back to that folder. The browser opens at `/`, the machine's root. On a Windows machine, `/` is the root of the drive the agent runs from, usually `C:\`, and the browser shows that one drive.
+The path at the top of the list is a row of buttons; select any part of it to go back to that folder. The browser opens at `/`, the machine's root.
+
+On a Windows machine, the browser opens at **Drives**, with one row per drive, such as `C:`. Select a drive to open its root. The path uses `\` between folders, as Windows writes it. At **Drives**, **New folder** and **Upload** are greyed, and the rows have no buttons.
 
 The page keeps the machine and the folder you had open until you reload the panel. The **Files** button in a device's drawer on the [Devices](../hub/devices.md) page opens this page on that machine.
 

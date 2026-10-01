@@ -2,8 +2,10 @@
 
 What these pin: the seven routes' paths and shapes over scripted streams,
 each opened as ``file {op, path, ...}`` with its own ``op``, the listing
-mapped from the agent's entries with directories first, a download
-streamed as it arrives with its size only in the close, an archive as
+mapped from the agent's entries with directories first and the machine's
+separator, a Windows root as its drives, a download named in the
+machine's own path form and streamed as it arrives with its size only in
+the close, an archive as
 gzip, an upload as one multipart file pushed through the stream with its
 size in the open, a device with no channel answered 409, and the agent's
 typed codes mapped to 400 and 404.
@@ -65,6 +67,7 @@ def test_a_listing_is_the_agents_entries_directories_first(api):
         [],
         done(
             path="/srv",
+            separator="/",
             entries=[
                 {
                     "name": "b.txt",
@@ -85,9 +88,11 @@ def test_a_listing_is_the_agents_entries_directories_first(api):
     assert answer.status_code == 200
     assert answer.json() == {
         "path": "/srv",
+        "separator": "/",
         "entries": [
             {
                 "name": "a",
+                "path": "",
                 "is_dir": True,
                 "is_link": False,
                 "size_bytes": 0,
@@ -95,6 +100,7 @@ def test_a_listing_is_the_agents_entries_directories_first(api):
             },
             {
                 "name": "b.txt",
+                "path": "/srv/b.txt",
                 "is_dir": False,
                 "is_link": False,
                 "size_bytes": 5,
@@ -102,6 +108,7 @@ def test_a_listing_is_the_agents_entries_directories_first(api):
             },
             {
                 "name": "link",
+                "path": "",
                 "is_dir": False,
                 "is_link": True,
                 "size_bytes": 0,
@@ -119,6 +126,52 @@ def test_no_path_lists_the_root(api):
 
     assert client.get("/api/agent/file", params={"device_id": MAC}).status_code == 200
     assert opened(sessions)[0].args == {"op": "list", "path": "/"}
+
+
+WINDOWS = {"os": "windows", "arch": "x86_64"}
+
+
+def test_a_windows_root_is_its_drives_with_their_own_paths(served):
+    client, runtime = served
+    runtime.device_platform[MAC] = WINDOWS
+    drive = {"kind": "dir", "size": 0, "modified_at": 0, "mode": 0}
+    runtime.agent_sessions.scripts["file"] = lambda args: (
+        [],
+        done(
+            path="/",
+            separator="\\",
+            entries=[
+                dict(drive, name="D:", path="D:\\"),
+                dict(drive, name="C:", path="C:\\"),
+            ],
+        ),
+    )
+
+    answer = client.get("/api/agent/file", params={"device_id": MAC})
+
+    assert answer.json()["path"] == "/"
+    assert answer.json()["separator"] == "\\"
+    assert [(e["name"], e["path"]) for e in answer.json()["entries"]] == [
+        ("C:", "C:\\"),
+        ("D:", "D:\\"),
+    ]
+    assert opened(runtime.agent_sessions)[0].args == {"op": "list", "path": "/"}
+
+
+@pytest.mark.parametrize("platform, separator", [(WINDOWS, "\\"), ({}, "/")])
+def test_an_agent_that_names_no_separator_gets_its_platforms(
+    served, platform, separator
+):
+    client, runtime = served
+    runtime.device_platform[MAC] = platform
+    runtime.agent_sessions.scripts["file"] = lambda args: (
+        [],
+        done(path="C:\\Users", entries=[]),
+    )
+
+    answer = client.get("/api/agent/file", params={"device_id": MAC, "path": "C:\\"})
+
+    assert answer.json()["separator"] == separator
 
 
 def test_a_device_with_no_channel_answers_409(api):
@@ -196,6 +249,27 @@ def test_a_directory_download_is_an_archive_asked_for_as_its_own_op(api):
         "op": "directory_download",
         "path": "/srv/.dots",
     }
+
+
+def test_a_windows_download_is_named_by_the_last_part_of_its_path(served):
+    client, runtime = served
+    runtime.device_platform[MAC] = WINDOWS
+    runtime.agent_sessions.scripts["file"] = lambda args: (
+        [("data", b"x")],
+        done(size=1),
+    )
+
+    file_answer = client.get(
+        "/api/agent/file/download",
+        params={"device_id": MAC, "path": "C:\\Users\\ada\\a.bin"},
+    )
+    archive_answer = client.get(
+        "/api/agent/file/directory/download",
+        params={"device_id": MAC, "path": "C:\\Users\\ada\\"},
+    )
+
+    assert file_answer.headers["content-disposition"].endswith("''a.bin")
+    assert archive_answer.headers["content-disposition"].endswith("''ada.tar.gz")
 
 
 def test_a_download_of_what_is_not_there_is_404(api):

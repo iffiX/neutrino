@@ -1133,9 +1133,10 @@ class DeviceProcessKill(BaseModel):
 
 
 class DeviceFileEntryView(BaseModel):
-    """One name in a device directory listing."""
+    """One name in a device directory listing, its path in the machine's form."""
 
     name: str
+    path: str = ""
     is_dir: bool = False
     is_link: bool = False
     size_bytes: int = 0
@@ -1143,9 +1144,10 @@ class DeviceFileEntryView(BaseModel):
 
 
 class DeviceFileListView(BaseModel):
-    """One device directory, resolved and listed."""
+    """One device directory, resolved and listed, with the machine's separator."""
 
     path: str
+    separator: str = "/"
     entries: list[DeviceFileEntryView] = Field(default_factory=list)
 
 

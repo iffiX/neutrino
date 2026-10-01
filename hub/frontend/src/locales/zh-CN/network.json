@@ -87,6 +87,7 @@
   "ui.files.deleting": "删除 {name} 无法撤销，点红色的对勾确认。",
   "ui.files.download": "下载",
   "ui.files.download_archive": "打包成 tar.gz 下载",
+  "ui.files.drives": "驱动器",
   "ui.files.empty": "空目录",
   "ui.files.folder_name": "文件夹名",
   "ui.files.loading": "加载中…",

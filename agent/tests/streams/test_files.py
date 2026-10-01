@@ -19,6 +19,7 @@ import pytest
 
 from neutrino_agent.constants import AGENT_WS_CHUNK_BYTES, AGENT_WS_STREAM_CREDIT_BYTES
 from neutrino_agent.exceptions import StreamRefused
+from neutrino_agent.streams import files
 from neutrino_agent.streams.files import (
     FileDownloadStream,
     FileListStream,
@@ -104,7 +105,7 @@ def test_a_listing_names_every_entry_with_its_kind(tree):
     closed = served(FileListStream(channel, {"path": str(tree / "docs")}))
 
     assert closed["code"] == ""
-    assert set(closed["params"]) == {"path", "entries"}
+    assert set(closed["params"]) == {"path", "separator", "entries"}
     assert closed["params"]["path"] == os.path.realpath(tree / "docs")
     by_name = {entry["name"]: entry for entry in closed["params"]["entries"]}
     assert set(by_name) == {"note.txt", "deep", "link", "sub"}
@@ -134,6 +135,48 @@ def test_a_listing_of_a_missing_or_relative_or_file_path_is_refused(tree):
         FileListStream(FakeChannel(), {"path": str(tree / "docs" / "note.txt")})
     )
     assert on_file.code == "path_invalid"
+
+
+def test_a_listing_names_the_machines_separator(tree):
+    closed = served(FileListStream(FakeChannel(), {"path": str(tree / "docs")}))
+
+    assert closed["params"]["separator"] == "/"
+
+
+@pytest.fixture
+def windows(monkeypatch):
+    monkeypatch.setattr(files, "IS_WINDOWS", True)
+    monkeypatch.setattr(os, "listdrives", lambda: ["C:\\", "D:\\"], raising=False)
+
+
+@pytest.mark.parametrize("path", ["/", ""])
+def test_a_windows_listing_of_the_root_is_one_entry_per_drive(windows, path):
+    closed = served(FileListStream(FakeChannel(), {"path": path}))
+
+    assert closed["code"] == ""
+    assert closed["params"]["path"] == "/"
+    assert closed["params"]["separator"] == "\\"
+    assert [
+        (entry["name"], entry["path"], entry["kind"])
+        for entry in closed["params"]["entries"]
+    ] == [("C:", "C:\\", "dir"), ("D:", "D:\\", "dir")]
+
+
+def test_a_windows_machine_before_listdrives_probes_each_letter(monkeypatch):
+    monkeypatch.setattr(files, "IS_WINDOWS", True)
+    monkeypatch.delattr(os, "listdrives", raising=False)
+    monkeypatch.setattr(files.os.path, "exists", lambda path: path in {"C:\\"})
+
+    closed = served(FileListStream(FakeChannel(), {"path": "/"}))
+
+    assert [entry["path"] for entry in closed["params"]["entries"]] == ["C:\\"]
+
+
+def test_a_linux_listing_of_the_root_is_the_root_directory(tree):
+    closed = served(FileListStream(FakeChannel(), {"path": "/"}))
+
+    assert closed["params"]["path"] == "/"
+    assert "C:" not in {entry["name"] for entry in closed["params"]["entries"]}
 
 
 # --- download ---

@@ -931,6 +931,7 @@ export interface ClientEnrollmentView {
 
 export interface DeviceFileEntry {
   name: string;
+  path: string;
   is_dir: boolean;
   is_link: boolean;
   size_bytes: number;
@@ -939,6 +940,7 @@ export interface DeviceFileEntry {
 
 export interface DeviceFileListView {
   path: string;
+  separator: string;
   entries: DeviceFileEntry[];
 }
 

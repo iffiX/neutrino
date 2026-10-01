@@ -71,14 +71,19 @@ async def list_files(
         runtime: The shared runtime.
 
     Returns:
-        The resolved path and its entries, directories first.
+        The resolved path, the machine's separator, and the entries,
+        directories first. On Windows the root is the list of drives.
     """
     info = await _run_stream(
         runtime, device_id, {"op": CHANNEL_FILE_OP_LIST, "path": path or ROOT_PATH}
     )
     entries = [_entry_view(entry) for entry in info.get("entries") or []]
     entries.sort(key=_directories_first)
-    return DeviceFileListView(path=str(info.get("path", path)), entries=entries)
+    return DeviceFileListView(
+        path=str(info.get("path", path)),
+        separator=str(info.get("separator") or _paths(runtime, device_id).sep),
+        entries=entries,
+    )
 
 
 @router.get("/download")
@@ -99,7 +104,7 @@ async def download_file(
         runtime, device_id, {"op": CHANNEL_FILE_OP_DOWNLOAD, "path": path}
     )
     first = await _first_bytes(stream)
-    name = posixpath.basename(path) or "download"
+    name = _paths(runtime, device_id).basename(path) or "download"
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"}
     return StreamingResponse(
         _chunks(stream, first), media_type="application/octet-stream", headers=headers
@@ -127,7 +132,8 @@ async def download_dir(
         runtime, device_id, {"op": CHANNEL_FILE_OP_DIRECTORY_DOWNLOAD, "path": path}
     )
     first = await _first_bytes(stream)
-    base = posixpath.basename(path.rstrip("/")) or "archive"
+    paths = _paths(runtime, device_id)
+    base = paths.basename(paths.normpath(path)) or "archive"
     name = base.lstrip(".") or "archive"
     return StreamingResponse(
         _chunks(stream, first),
@@ -269,6 +275,7 @@ def _entry_view(entry: dict) -> DeviceFileEntryView:
     kind = str(entry.get("kind", ""))
     return DeviceFileEntryView(
         name=str(entry.get("name", "")),
+        path=str(entry.get("path", "")),
         is_dir=kind == "dir",
         is_link=kind == "link",
         size_bytes=int(entry.get("size", 0) or 0),
@@ -280,12 +287,17 @@ def _directories_first(entry: DeviceFileEntryView) -> tuple:
     return (not entry.is_dir, entry.name.lower())
 
 
-def _joined(runtime: PanelRuntime, device_id: str, directory: str, name: str) -> str:
-    """A file name joined to a directory with the device's own separator."""
+def _paths(runtime: PanelRuntime, device_id: str):
+    """The path module of the device's own form: ``ntpath`` on Windows."""
     platform = runtime.device_platform.get(device_id, {})
     if platform.get("os") == FILE_OS_WINDOWS:
-        return ntpath.join(directory, name)
-    return posixpath.join(directory, name)
+        return ntpath
+    return posixpath
+
+
+def _joined(runtime: PanelRuntime, device_id: str, directory: str, name: str) -> str:
+    """A file name joined to a directory with the device's own separator."""
+    return _paths(runtime, device_id).join(directory, name)
 
 
 async def _open(runtime: PanelRuntime, device_id: str, args: dict):
