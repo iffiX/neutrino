@@ -20,6 +20,7 @@ from fastapi import (
     Form,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -87,7 +88,7 @@ from neutrino_hub.web.constants import (
 )
 from neutrino_hub.web.channel_addresses import channel_hosts
 from neutrino_hub.web import panel_tls
-from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.dependencies import get_runtime, require_session, session_cookie
 from neutrino_hub.web.identity import hub_name, set_hub_name
 from neutrino_hub.web.models import (
     AboutView,
@@ -373,14 +374,21 @@ def probe_https() -> Response:
 
 
 @router.post("/https/enable", response_model=PanelHttpsView)
-def enable_https(runtime: PanelRuntime = Depends(get_runtime)) -> PanelHttpsView:
+def enable_https(
+    request: Request,
+    response: Response,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PanelHttpsView:
     """Send the HTTP port's browsers to the HTTPS port.
 
     A missing authority is made first. Both ports are already served, so
     nothing restarts: the next request on the HTTP port is redirected, and
-    the next session cookie is ``Secure``.
+    the next session cookie is ``Secure``. The caller's session on the
+    scheme it leaves is ended, and the page signs in again on the other.
 
     Args:
+        request: The incoming request, read for its scheme and cookie.
+        response: Response the old scheme's cookie is deleted on.
         runtime: The shared runtime, for the names the panel answers on and
             the setting the redirect reads.
 
@@ -394,21 +402,44 @@ def enable_https(runtime: PanelRuntime = Depends(get_runtime)) -> PanelHttpsView
     panel_tls.ensure_authority()
     _renew_for(runtime)
     _write_https(True, runtime)
+    _end_session(runtime, request, response)
     return _https_view(runtime)
 
 
 @router.post("/https/disable", response_model=PanelHttpsView)
-def disable_https(runtime: PanelRuntime = Depends(get_runtime)) -> PanelHttpsView:
+def disable_https(
+    request: Request,
+    response: Response,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> PanelHttpsView:
     """Serve the panel on the HTTP port again; the certificates are kept.
 
+    The caller's session on the HTTPS port is ended and its ``Secure``
+    cookie deleted, so the HTTP port's login writes a cookie of its own.
+
     Args:
+        request: The incoming request, read for its scheme and cookie.
+        response: Response the old scheme's cookie is deleted on.
         runtime: The shared runtime, for the setting the redirect reads.
 
     Returns:
         The scheme and certificates, as a read returns them.
     """
     _write_https(False, runtime)
+    _end_session(runtime, request, response)
     return _https_view(runtime)
+
+
+def _end_session(runtime: PanelRuntime, request: Request, response: Response) -> None:
+    """End the caller's session on the scheme the request came over."""
+    scheme = request.url.scheme
+    name = session_cookie(runtime, scheme)
+    token = request.cookies.get(name)
+    if token:
+        runtime.sessions.logout(token)
+    response.delete_cookie(
+        name, httponly=True, samesite="lax", secure=scheme == "https"
+    )
 
 
 @router.post("/https/authority/reset", response_model=PanelHttpsResetView)

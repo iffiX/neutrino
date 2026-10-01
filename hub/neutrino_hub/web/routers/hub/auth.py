@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from neutrino_hub.web.constants import WEB_SETTING_HTTPS
 from neutrino_hub.web.dependencies import get_runtime, session_cookie
 from neutrino_hub.web.models import LoginRequest, SessionView
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -20,6 +19,7 @@ AUTH_PANEL_STARTED_AT = datetime.now(timezone.utc).isoformat()
 def login(
     request: LoginRequest,
     response: Response,
+    http_request: Request,
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> SessionView:
     """Start a session if the password is right.
@@ -27,11 +27,13 @@ def login(
     Args:
         request: The submitted password.
         response: Response the session cookie is set on.
+        http_request: The incoming request, read for the scheme it came
+            over, which names the cookie and sets ``Secure``.
         runtime: The shared runtime.
 
     Returns:
-        Whether a session was created; the cookie is ``Secure`` while
-        HTTPS is on, as the runtime's settings say at this request. A
+        Whether a session was created; the cookie is ``Secure`` when the
+        request came over HTTPS, and named for that scheme's port. A
         lockout is explicit: the page shows a countdown, and hiding it would only punish the owner's typos while
         telling an attacker nothing they cannot measure.
     """
@@ -41,12 +43,13 @@ def login(
             is_authenticated=False,
             lockout_remaining_s=runtime.sessions.lockout_remaining_s(),
         )
+    scheme = http_request.url.scheme
     response.set_cookie(
-        session_cookie(runtime),
+        session_cookie(runtime, scheme),
         token,
         httponly=True,
         samesite="lax",
-        secure=bool(runtime.settings.get(WEB_SETTING_HTTPS, False)),
+        secure=scheme == "https",
         max_age=runtime.settings.get("session_ttl_hours", 168) * 3600,
     )
     return SessionView(is_authenticated=True)
@@ -68,7 +71,7 @@ def logout(
     Returns:
         Always unauthenticated.
     """
-    name = session_cookie(runtime)
+    name = session_cookie(runtime, request.url.scheme)
     token = request.cookies.get(name)
     if token:
         runtime.sessions.logout(token)
@@ -90,7 +93,7 @@ def session(
     Returns:
         The current authentication state.
     """
-    token = request.cookies.get(session_cookie(runtime))
+    token = request.cookies.get(session_cookie(runtime, request.url.scheme))
     return SessionView(
         is_authenticated=runtime.sessions.is_valid(token),
         lockout_remaining_s=runtime.sessions.lockout_remaining_s(),

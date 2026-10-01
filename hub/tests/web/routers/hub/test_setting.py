@@ -24,7 +24,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 
 import neutrino_hub.utils.json_file
@@ -247,6 +247,34 @@ def test_the_cookie_named_for_this_port_is_the_session(cookie_client):
     )
 
     assert response.json() == {"read": True}
+
+
+def test_a_login_over_https_sets_a_secure_cookie_named_for_the_https_port(
+    cookie_client,
+):
+    with TestClient(cookie_client.app, base_url="https://testserver") as secure:
+        response = secure.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
+
+    assert response.json()["is_authenticated"] is True
+    assert "neutrino_session_443" in response.cookies
+    assert f"neutrino_session_{PANEL_PORT}" not in response.cookies
+    assert "Secure" in response.headers["set-cookie"]
+
+
+def test_turning_https_off_ends_the_session_on_the_https_port(cookie_client):
+    runtime = cookie_client.app.dependency_overrides[get_runtime]()
+    token = runtime.sessions.login(PANEL_PASSWORD)
+    request = SimpleNamespace(
+        url=SimpleNamespace(scheme="https"), cookies={"neutrino_session_443": token}
+    )
+    response = Response()
+
+    settings_router._end_session(runtime, request, response)
+
+    assert runtime.sessions.is_valid(token) is False
+    header = response.headers["set-cookie"]
+    assert header.startswith("neutrino_session_443=")
+    assert "Max-Age=0" in header and "Secure" in header
 
 
 def test_logout_clears_the_cookie_this_port_named(cookie_client):
@@ -1585,21 +1613,22 @@ def test_a_locked_vault_turns_nothing_on(https_box, monkeypatch, tmp_path):
     assert restarts == []
 
 
-def test_the_session_cookie_is_secure_while_the_panel_speaks_https(
-    monkeypatch, tmp_path
-):
+def test_the_session_cookie_is_secure_on_the_https_port_only(monkeypatch, tmp_path):
     monkeypatch.setattr(
         web_auth, "WEB_LOGIN_LOCKOUT_STATE_PATH", tmp_path / "login_lockout.json"
     )
     runtime = CookieRuntime()
+    runtime.settings["is_https_enabled"] = True
     app = FastAPI()
     app.include_router(auth_router.router)
     app.dependency_overrides[get_runtime] = lambda: runtime
 
     with TestClient(app) as opened:
         plain = opened.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
-        runtime.settings["is_https_enabled"] = True
+    with TestClient(app, base_url="https://testserver") as opened:
         secure = opened.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
 
     assert "secure" not in plain.headers["set-cookie"].lower()
+    assert plain.headers["set-cookie"].startswith(f"neutrino_session_{PANEL_PORT}=")
     assert "secure" in secure.headers["set-cookie"].lower()
+    assert secure.headers["set-cookie"].startswith("neutrino_session_443=")

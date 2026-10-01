@@ -3,8 +3,10 @@
 from fastapi import Depends, HTTPException, Request, status
 
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
     WEB_SESSION_COOKIE_PREFIX,
+    WEB_SETTING_HTTPS_PORT,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -21,17 +23,25 @@ def get_runtime(request: Request) -> PanelRuntime:
     return request.app.state.runtime
 
 
-def session_cookie(runtime: PanelRuntime) -> str:
-    """The name of this panel's session cookie.
+def session_cookie(runtime: PanelRuntime, scheme: str = "http") -> str:
+    """The name of this panel's session cookie on one scheme.
 
     Args:
         runtime: The shared runtime.
+        scheme: ``http`` or ``https``, as the request arrived.
 
     Returns:
-        ``neutrino_session_<port>`` for the port the panel answers on, so a
-        cookie a hub on another port of this host set is not this hub's.
+        ``neutrino_session_<port>`` for the port that scheme is served on,
+        so a cookie a hub on another port of this host set is not this
+        hub's, and a ``Secure`` cookie set over HTTPS is never the one an
+        HTTP login has to overwrite, which a browser refuses.
     """
-    port = int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
+    if scheme == "https":
+        port = int(
+            runtime.settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
+        )
+    else:
+        port = int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
     return f"{WEB_SESSION_COOKIE_PREFIX}{port}"
 
 
@@ -49,7 +59,8 @@ def require_session(
         HTTPException: 401 when the session is missing or expired, which is the
             frontend's signal to show the login page.
     """
-    if not runtime.sessions.is_valid(request.cookies.get(session_cookie(runtime))):
+    name = session_cookie(runtime, request.url.scheme)
+    if not runtime.sessions.is_valid(request.cookies.get(name)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "not_authenticated", "params": {}},
