@@ -6,9 +6,11 @@ account's login: it starts at boot, runs with the account's limited token,
 has no time limit, and restarts when it stops. The task's description
 carries a digest of what it runs and with which login, so an unchanged
 instance is left running and a changed one is registered again. A task
-Windows cannot sign in reads ``credential_invalid``. The token file is
-readable by its account, SYSTEM and the administrators alone. Every
-operation is one PowerShell script, the passwords on its standard input.
+Windows cannot sign in reads ``credential_invalid``. The task runs the CLI
+through ``cmd.exe``, its output appended to the account's log file beside
+the CLI. The token file and the log file are reachable by their account,
+SYSTEM and the administrators alone. Every operation is one PowerShell
+script, the passwords on its standard input.
 
 Not pure: runs PowerShell.
 """
@@ -30,10 +32,12 @@ from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,
     VSCODE_DIR_NAME,
     VSCODE_LOGON_FAILURES,
+    VSCODE_LOG_SUFFIX,
     VSCODE_SERVE_ARGUMENTS,
     VSCODE_TASK_MARKER,
     VSCODE_TASK_PREFIX,
     VSCODE_TOKEN_DIR_NAME,
+    VSCODE_WINDOWS_SHELL,
 )
 
 # The port an instance's arguments name.
@@ -52,6 +56,12 @@ foreach ($i in @($d.instances)) {
   $code = Invoke-Icacls $i.token_file /inheritance:r /grant:r "$($i.account):R" `
     '*S-1-5-18:F' '*S-1-5-32-544:F'
   if ($code -ne 0) { throw "icacls refused the token file of $($i.account)" }
+  if (-not (Test-Path -LiteralPath $i.log_file)) {
+    [IO.File]::WriteAllText($i.log_file, '')
+  }
+  $code = Invoke-Icacls $i.log_file /inheritance:r /grant:r "$($i.account):M" `
+    '*S-1-5-18:F' '*S-1-5-32-544:F'
+  if ($code -ne 0) { throw "icacls refused the log file of $($i.account)" }
   $task = Get-ScheduledTask -TaskName $i.task -ErrorAction SilentlyContinue
   if (-not $task -or "$($task.Description)" -ne $i.description) {
     if ($task) { Stop-ScheduledTask -TaskName $i.task -ErrorAction SilentlyContinue }
@@ -80,6 +90,9 @@ foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction Sil
   if (@($d.tasks) -notcontains $task.TaskName) {
     Stop-ScheduledTask -TaskName $task.TaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $task.TaskName -Confirm:$false
+    $account = $task.TaskName.Substring($d.prefix.Length)
+    $log = Join-Path $d.log_dir "$account$($d.log_suffix)"
+    Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
     $notes += "removed $($task.TaskName)"
   }
 }
@@ -124,6 +137,22 @@ def task_name(account: str) -> str:
     return VSCODE_TASK_PREFIX + account
 
 
+def task_arguments(cli_path: str, serve_arguments: list, log_file: str) -> str:
+    """What ``cmd.exe`` is handed to run the CLI with its output in a log.
+
+    Args:
+        cli_path: Where the CLI is.
+        serve_arguments: The CLI's own arguments.
+        log_file: The file its output and its errors are appended to.
+
+    Returns:
+        ``/s /c "<cli> <arguments> >> <log> 2>&1"``.
+    """
+    command = subprocess.list2cmdline([cli_path, *serve_arguments])
+    log = subprocess.list2cmdline([log_file])
+    return f'/s /c "{command} >> {log} 2>&1"'
+
+
 def _digest(program: str, arguments: str, instance) -> str:
     """What a task runs and with which login, in 16 hex digits."""
     material = json.dumps(
@@ -157,6 +186,17 @@ class VscodeWindowsApplier:
         """Where the CLI is."""
         return ntpath.join(self.cli_dir, VSCODE_CLI_NAMES["windows"])
 
+    def log_path(self, account: str) -> str:
+        """The file one account's server writes its output to.
+
+        Args:
+            account: The account.
+
+        Returns:
+            ``<cli dir>\\<account>.log``.
+        """
+        return ntpath.join(self.cli_dir, account + VSCODE_LOG_SUFFIX)
+
     def apply(self, config: VscodeConfig) -> list:
         """Register and start one task per instance; remove the ones gone.
 
@@ -174,7 +214,9 @@ class VscodeWindowsApplier:
         instances = []
         for instance in config.instances:
             token_file = ntpath.join(self._token_dir, instance.account + ".token")
-            arguments = subprocess.list2cmdline(
+            log_file = self.log_path(instance.account)
+            arguments = task_arguments(
+                self.cli_path,
                 [
                     *VSCODE_SERVE_ARGUMENTS,
                     "--host",
@@ -183,7 +225,8 @@ class VscodeWindowsApplier:
                     str(instance.port),
                     "--connection-token-file",
                     token_file,
-                ]
+                ],
+                log_file,
             )
             instances.append(
                 {
@@ -191,16 +234,19 @@ class VscodeWindowsApplier:
                     "password": instance.password,
                     "token": instance.token,
                     "token_file": token_file,
+                    "log_file": log_file,
                     "task": task_name(instance.account),
                     "arguments": arguments,
                     "description": VSCODE_TASK_MARKER
-                    + _digest(self.cli_path, arguments, instance),
+                    + _digest(VSCODE_WINDOWS_SHELL, arguments, instance),
                 }
             )
         answer = self._powershell(
             APPLY_SCRIPT,
             {
-                "program": self.cli_path,
+                "program": VSCODE_WINDOWS_SHELL,
+                "log_dir": self.cli_dir,
+                "log_suffix": VSCODE_LOG_SUFFIX,
                 "prefix": VSCODE_TASK_PREFIX,
                 "tasks": [entry["task"] for entry in instances],
                 "instances": instances,
@@ -272,6 +318,21 @@ class VscodeWindowsApplier:
     def units(self) -> list:
         """No journal: a task keeps none."""
         return []
+
+    def log_paths(self, config: "VscodeConfig | None") -> list:
+        """Each instance's log file.
+
+        Args:
+            config: The applied configuration; None reads the instances
+                from the tasks.
+
+        Returns:
+            ``[(account, path)]``, in the instances' order.
+        """
+        return [
+            (state["account"], self.log_path(state["account"]))
+            for state in self.states(config)
+        ]
 
     def _withdraw(self, *, is_removed: bool) -> None:
         self._powershell(

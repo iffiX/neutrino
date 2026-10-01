@@ -21,6 +21,7 @@ import time
 
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.base import ModuleRunner
+from neutrino_agent.modules.log_tail import file_tail
 from neutrino_agent.modules.subprocess_run import command_detail
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.constants import (
@@ -188,6 +189,25 @@ class VscodeModuleRunner(ModuleRunner):
     def journal_units(self) -> list:
         """Every server's unit, on Linux."""
         return self._applier.units()
+
+    def journal_text(self, lines: int) -> list:
+        """Every server's output: the units' journal, or each log file's tail.
+
+        Args:
+            lines: How many lines to return at most.
+
+        Returns:
+            The lines, oldest first within each server; a log file's lines
+            start with its account's name.
+        """
+        logs = self._applier.log_paths(self._config)
+        if not logs:
+            return super().journal_text(lines)
+        share = max(1, lines // len(logs))
+        held = []
+        for account, path in logs:
+            held += [f"{account}: {line}" for line in file_tail(path, share)]
+        return held[-lines:]
 
     def details(self, resolved: dict) -> dict:
         """Each server, where it answers and whether it runs.

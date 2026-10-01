@@ -309,6 +309,20 @@ module a system cannot run is left out on that system.
 | VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | Apple silicon |
 | Remote desktop (RustDesk, AnyDesk, TeamViewer) | yes | yes | yes |
 
+A module's log, the answer to its `journal` verb, is the journal of its
+systemd units on Linux. Windows and macOS run no module under a unit, so
+each module there reads its own sources. The file share reads the SMB
+server's latest events from `Microsoft-Windows-SMBServer/Operational` on
+Windows, or what the unified log holds of `smbd` over the last 15 minutes on
+macOS. After them come the agent's own log lines that name the module, from
+`agent.log` under the state root on Windows and
+`/Library/Logs/neutrino_agent.log` on macOS. VS Code reads the end of each
+instance's log file. On Windows the task runs the CLI through `cmd.exe`,
+which appends its output to `<account>.log` beside the CLI; on macOS the
+LaunchDaemon's `StandardOutPath` and `StandardErrorPath` name
+`/Library/Logs/Neutrino/vscode_<account>.log`. Every log comes oldest line
+first, at most the number of lines the verb asked for.
+
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants. The seat reads the
 grants from the system's privacy database, and its attention is

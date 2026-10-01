@@ -29,15 +29,23 @@ VSCODE_UNIT_TEMPLATE = "neutrino_vscode@.service"
 VSCODE_UNIT_PREFIX = "neutrino_vscode@"
 VSCODE_SYSTEMD_DIR = "/etc/systemd/system"
 
-# macOS: one LaunchDaemon per account.
+# macOS: one LaunchDaemon per account, its output in its own log file.
 VSCODE_LAUNCHD_PREFIX = "com.neutrino.vscode."
 VSCODE_LAUNCHD_DIR = "/Library/LaunchDaemons"
+VSCODE_DARWIN_LOG_DIR = "/Library/Logs/Neutrino"
+VSCODE_DARWIN_LOG_PREFIX = "vscode_"
 
-# Windows: one scheduled task per account, started at boot with its login.
+# Windows: one scheduled task per account, started at boot with its login,
+# the CLI run through the command interpreter so its output is appended to
+# ``<account>.log`` beside the CLI.
 VSCODE_TASK_PREFIX = "neutrino_vscode_"
 VSCODE_TASK_MARKER = "neutrino:"
+VSCODE_WINDOWS_SHELL = "cmd.exe"
 # What a task's last result is when Windows could not sign its account in.
 VSCODE_LOGON_FAILURES = (0x8007052E,)
+
+# The end of every instance's log file.
+VSCODE_LOG_SUFFIX = ".log"
 
 # How long one reading of the instances is believed.
 VSCODE_STATUS_TTL_S = 30.0
