@@ -75,6 +75,8 @@ const LOST_POLL_COUNT = 5;
 /** Where the run writes itself down, named on the screen that warns about
  * losing the connection so somebody has read it before they need it. */
 const SETUP_LOG_PATH = "/var/log/neutrino/setup.log";
+/** The port an https:// address means when it names none. */
+const HTTPS_SCHEME_PORT = 443;
 
 /** One link on the proxy screen, as it is being filled in. */
 interface DraftLink {
@@ -116,6 +118,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
   const [upstream, setUpstream] = useState("");
   const [vlanId, setVlanId] = useState(context.defaults.lan_vlan_id);
   const [listenPort, setListenPort] = useState(context.defaults.listen_port);
+  const [httpsListenPort, setHttpsListenPort] = useState(
+    context.defaults.https_listen_port,
+  );
   const [isProxyWanted, setIsProxyWanted] = useState(false);
   const [links, setLinks] = useState<DraftLink[]>([emptyLink()]);
   const [isLocalProxied, setIsLocalProxied] = useState(false);
@@ -237,6 +242,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
       };
     }
     document.listen_port = listenPort;
+    document.https_listen_port = httpsListenPort;
     document.is_https_enabled = isHttps;
     return document;
   }, [
@@ -261,6 +267,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     isSocksDirect,
     socksDirectPort,
     listenPort,
+    httpsListenPort,
     isHttps,
   ]);
 
@@ -300,13 +307,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
     }
   }, [isRejected, state]);
 
-  const scheme = isHttps ? "https" : "http";
+  const panelUrl = panelAddress(isHttps, address, listenPort, httpsListenPort);
   if (state !== null && !isRejected) {
     return (
       <SetupRunning
         state={state}
         isLost={missedPolls > LOST_POLL_COUNT}
-        fallbackUrl={`${scheme}://${address}:${listenPort}`}
+        fallbackUrl={panelUrl}
       />
     );
   }
@@ -344,11 +351,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
     isPasswordAccepted(password, repeated, PANEL_PASSWORD_RULES) &&
     isPasswordAccepted(vaultPassphrase, vaultRepeated, VAULT_PASSPHRASE_RULES);
   const isPortsReady =
-    isServer ||
-    (lan !== "" &&
-      address !== "" &&
-      (!isRouter || (wan !== "" && wan !== lan)) &&
-      (!isSideGateway || upstream !== ""));
+    listenPort !== httpsListenPort &&
+    (isServer ||
+      (lan !== "" &&
+        address !== "" &&
+        (!isRouter || (wan !== "" && wan !== lan)) &&
+        (!isSideGateway || upstream !== "")));
 
   const actions = (
     <>
@@ -478,6 +486,14 @@ export function SetupPage({ token, context }: SetupPageProps) {
             value={listenPort}
             onChange={setListenPort}
           />
+          <PortField
+            label={t("ui.setup.https_port")}
+            value={httpsListenPort}
+            onChange={setHttpsListenPort}
+          />
+          {listenPort === httpsListenPort && (
+            <p className="field_hint">{t("ui.setup.ports_differ")}</p>
+          )}
         </div>
       )}
 
@@ -564,6 +580,14 @@ export function SetupPage({ token, context }: SetupPageProps) {
             value={listenPort}
             onChange={setListenPort}
           />
+          <PortField
+            label={t("ui.setup.https_port")}
+            value={httpsListenPort}
+            onChange={setHttpsListenPort}
+          />
+          {listenPort === httpsListenPort && (
+            <p className="field_hint">{t("ui.setup.ports_differ")}</p>
+          )}
         </div>
       )}
 
@@ -691,7 +715,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
               <div className="notice_body">
                 {t("ui.setup.interruption")}{" "}
                 {t("ui.setup.panel_will_be_at", {
-                  url: `${scheme}://${address}:${listenPort}`,
+                  url: panelUrl,
                   path: SETUP_LOG_PATH,
                 })}
               </div>
@@ -734,6 +758,10 @@ export function SetupPage({ token, context }: SetupPageProps) {
             <Row
               name={t("ui.setup.review_panel_port")}
               value={String(listenPort)}
+            />
+            <Row
+              name={t("ui.setup.review_https_port")}
+              value={String(httpsListenPort)}
             />
             <Row
               name={t("ui.setup.review_https")}
@@ -1082,6 +1110,21 @@ function PortField({
       />
     </label>
   );
+}
+
+/** Where a browser opens the panel: the HTTPS port while HTTPS is on. */
+function panelAddress(
+  isHttps: boolean,
+  address: string,
+  listenPort: number,
+  httpsListenPort: number,
+): string {
+  if (!isHttps) {
+    return `http://${address}:${listenPort}`;
+  }
+  return httpsListenPort === HTTPS_SCHEME_PORT
+    ? `https://${address}`
+    : `https://${address}:${httpsListenPort}`;
 }
 
 function Row({ name, value }: { name: string; value: string }) {

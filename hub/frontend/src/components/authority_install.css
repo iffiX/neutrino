@@ -3,6 +3,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .authority_install_download {
@@ -11,29 +12,15 @@
   gap: var(--space-2);
 }
 
-.authority_install_devices {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  width: 100%;
-}
-
-.authority_install_device summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
-  color: var(--color-text-muted);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.authority_install_device[open] summary {
-  color: var(--color-text);
+/* Six systems do not fit one row at phone width; the pills wrap. */
+.authority_install .range_switch {
+  flex-wrap: wrap;
+  max-width: 100%;
+  border-radius: var(--radius-md);
 }
 
 .authority_install_steps {
-  margin: 0 0 var(--space-2);
+  margin: 0;
   padding-left: var(--space-5);
   color: var(--color-text-muted);
   font-size: 13px;

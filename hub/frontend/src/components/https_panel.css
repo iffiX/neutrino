@@ -33,3 +33,17 @@
 .https_status_value--mono {
   font-family: var(--font-mono);
 }
+
+.https_addresses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.https_address {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}

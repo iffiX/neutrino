@@ -1,4 +1,8 @@
+import { useState } from "react";
+
 import { Icon } from "./icon";
+import { RangeSwitch } from "./range_switch";
+import type { RangeOption } from "./range_switch";
 import { t, useLanguage } from "../i18n";
 
 import "./authority_install.css";
@@ -6,9 +10,9 @@ import "./authority_install.css";
 /**
  * Installing the hub's certificate authority on the device in front of you.
  *
- * One button hands the browser the authority's file, and the steps for each
- * kind of device sit under it: the one this page is open on expanded, the
- * others folded, the way a vendor's help page lists its platforms.
+ * One tab per system, the one this page is open on chosen first and marked,
+ * and only the chosen system's steps drawn. With `href` a download button
+ * sits above the tabs; without it the page holding this draws its own.
  */
 
 /** The kinds of device the steps are written for, in the order listed. */
@@ -26,16 +30,16 @@ type AuthorityDevice = (typeof AUTHORITY_DEVICES)[number];
 /** How many steps each device's list has, each `ui.authority.<device>_<n>`. */
 const AUTHORITY_STEP_COUNTS: Record<AuthorityDevice, number> = {
   windows: 4,
-  macos: 4,
-  linux_chrome: 3,
-  linux_firefox: 3,
-  ios: 4,
-  android: 3,
+  macos: 5,
+  linux_chrome: 4,
+  linux_firefox: 4,
+  ios: 5,
+  android: 4,
 };
 
 interface AuthorityInstallProps {
   /** Where the file downloads from: the panel's route, or a blob URL. */
-  href: string;
+  href?: string;
   /** What the downloaded file is called. */
   fileName: string;
   /** Whether the download is the action this section exists for. */
@@ -50,42 +54,42 @@ export function AuthorityInstall({
   // Redrawn when the panel's language changes.
   useLanguage();
   const current = currentDevice();
+  const [device, setDevice] = useState<AuthorityDevice>(current);
 
   return (
     <div className="authority_install">
-      <a
-        className={`button ${isPrimary ? "button--primary" : ""} authority_install_download`}
-        href={href}
-        download={fileName}
-      >
-        <Icon name="download" size={14} />
-        {t("ui.authority.install")}
-      </a>
-      <div className="authority_install_devices">
-        {AUTHORITY_DEVICES.map((device) => (
-          <details
-            key={device}
-            className="authority_install_device"
-            open={device === current}
-          >
-            <summary>
-              {t(`ui.authority.device_${device}`)}
-              {device === current && (
-                <span className="badge badge--accent">
-                  {t("ui.authority.this_device")}
-                </span>
-              )}
-            </summary>
-            <ol className="authority_install_steps">
-              {stepKeys(device).map((key) => (
-                <li key={key}>{t(key, { file: fileName })}</li>
-              ))}
-            </ol>
-          </details>
+      {href !== undefined && (
+        <a
+          className={`button ${isPrimary ? "button--primary" : ""} authority_install_download`}
+          href={href}
+          download={fileName}
+        >
+          <Icon name="download" size={14} />
+          {t("ui.authority.install")}
+        </a>
+      )}
+      <RangeSwitch
+        options={deviceOptions(current)}
+        value={device}
+        onChange={setDevice}
+      />
+      <ol className="authority_install_steps">
+        {stepKeys(device).map((key) => (
+          <li key={key}>{t(key, { file: fileName })}</li>
         ))}
-      </div>
+      </ol>
     </div>
   );
+}
+
+function deviceOptions(
+  current: AuthorityDevice,
+): RangeOption<AuthorityDevice>[] {
+  return AUTHORITY_DEVICES.map((device) => ({
+    value: device,
+    label: t(`ui.authority.device_${device}`),
+    badge: device === current ? t("ui.authority.this_device") : undefined,
+  }));
 }
 
 function stepKeys(device: AuthorityDevice): string[] {
