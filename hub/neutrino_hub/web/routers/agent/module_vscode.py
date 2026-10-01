@@ -17,6 +17,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TOKEN_KEY,
 )
+from neutrino_hub.modules.devices.desired_state import vscode_agent_config
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
     VscodeConfigUpdate,
@@ -97,7 +98,9 @@ def update_settings(
     """Replace the instances.
 
     An instance's connection token is generated the first time its account
-    is saved, and sealed beside it.
+    is saved, and sealed beside it. The agent checks the instances as it
+    will receive them: each with its token opened and, on Windows, its
+    login's password.
 
     Args:
         update: The device and its instances.
@@ -132,21 +135,25 @@ def update_settings(
                 raise _refusal(CODE_UNKNOWN_CREDENTIAL, field=DEVICE_VSCODE_LOGIN_KEY)
         elif is_windows:
             raise _refusal(CODE_CREDENTIAL_MISSING, account=instance.account)
-    checked = [
-        {"account": instance.account, "port": instance.port}
-        for instance in update.instances
-    ]
-    stored = [
-        {
-            **entry,
-            DEVICE_VSCODE_LOGIN_KEY: instance.login_id,
-            DEVICE_VSCODE_TOKEN_KEY: runtime.desired_states.sealed_vscode_token(
-                context.key, instance.account
-            ),
-        }
-        for entry, instance in zip(checked, update.instances)
-    ]
-    store_config(runtime, context, {"instances": checked}, stored={"instances": stored})
+    stored = {
+        "instances": [
+            {
+                "account": instance.account,
+                "port": instance.port,
+                DEVICE_VSCODE_LOGIN_KEY: instance.login_id,
+                DEVICE_VSCODE_TOKEN_KEY: runtime.desired_states.sealed_vscode_token(
+                    context.key, instance.account
+                ),
+            }
+            for instance in update.instances
+        ]
+    }
+    sent = vscode_agent_config(
+        stored,
+        runtime.device_address.get(context.key, ""),
+        runtime.device_platform.get(context.key, {}),
+    )
+    store_config(runtime, context, sent, stored=stored)
     return device_view(runtime, context)
 
 

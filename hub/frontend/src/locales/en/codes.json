@@ -208,7 +208,7 @@
   "code.stream_unknown": "That stream is no longer open.",
   "code.theme_unknown": "This panel does not have that theme.",
   "code.ticket_spent": "That link is unknown, spent, or has expired.",
-  "code.token_missing": "The instance for {account} has no connection token; unlock the vault and apply again.",
+  "code.token_missing": "The hub sent no connection token for the instance of {account}.",
   "code.token_refused": "That token cannot be stored: {detail}",
   "code.token_value_needed": "A token needs a value.",
   "code.tool_missing": "This hub has no smbclient to list shares with; install the Samba module.",

@@ -77,6 +77,39 @@ def state_hash(desired: dict) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def vscode_agent_config(stored: dict, address: str, platform: dict) -> dict:
+    """What the agent is sent for VS Code.
+
+    Args:
+        stored: The module's file: the instances, each with its sealed token
+            and the login it runs as.
+        address: The device's address the instances listen on.
+        platform: The tuple the agent reported; only a Windows machine is
+            sent a password.
+
+    Returns:
+        ``{address, instances: [{account, port, token, password}]}``, the
+        token opened and the password taken from the instance's login.
+    """
+    is_windows = platform.get("os") == VSCODE_PASSWORD_OS
+    instances = []
+    for instance in stored.get("instances") or []:
+        if not isinstance(instance, dict):
+            continue
+        sent = {
+            "account": str(instance.get("account", "") or ""),
+            "port": instance.get("port", 0),
+            "token": _unsealed_text(
+                instance.get(DEVICE_VSCODE_TOKEN_KEY), DEVICE_VSCODE_TOKEN_AAD
+            ),
+        }
+        login_id = str(instance.get(DEVICE_VSCODE_LOGIN_KEY, "") or "")
+        if is_windows and login_id:
+            sent["password"] = _login_password(login_id)
+        instances.append(sent)
+    return {"address": address, "instances": instances}
+
+
 class DesiredStateStore:
     """Reads and writes the per-device module files under ``config/``."""
 
@@ -360,7 +393,7 @@ class DesiredStateStore:
                 config["address"] = address
                 config["secrets"] = self.gitea_secrets(key)
             elif name == DEVICE_VSCODE_MODULE:
-                config = _vscode_config(config, address, platform)
+                config = vscode_agent_config(config, address, platform)
             modules[name] = {
                 "want": entry["want"],
                 "config": config,
@@ -444,39 +477,6 @@ def _recipes(resolved: dict) -> dict:
     install = {name: value for name, value in entry.items() if name != "uninstall"}
     install["kind"] = str(resolved.get("kind", "") or "")
     return {"install": install, "uninstall": dict(entry.get("uninstall") or {})}
-
-
-def _vscode_config(stored: dict, address: str, platform: dict) -> dict:
-    """What the agent is sent for VS Code.
-
-    Args:
-        stored: The module's file: the instances, each with its sealed token
-            and the login it runs as.
-        address: The device's address the instances listen on.
-        platform: The tuple the agent reported; only a Windows machine is
-            sent a password.
-
-    Returns:
-        ``{address, instances: [{account, port, token, password}]}``, the
-        token opened and the password taken from the instance's login.
-    """
-    is_windows = platform.get("os") == VSCODE_PASSWORD_OS
-    instances = []
-    for instance in stored.get("instances") or []:
-        if not isinstance(instance, dict):
-            continue
-        sent = {
-            "account": str(instance.get("account", "") or ""),
-            "port": instance.get("port", 0),
-            "token": _unsealed_text(
-                instance.get(DEVICE_VSCODE_TOKEN_KEY), DEVICE_VSCODE_TOKEN_AAD
-            ),
-        }
-        login_id = str(instance.get(DEVICE_VSCODE_LOGIN_KEY, "") or "")
-        if is_windows and login_id:
-            sent["password"] = _login_password(login_id)
-        instances.append(sent)
-    return {"address": address, "instances": instances}
 
 
 def _unsealed_text(sealed, aad: bytes) -> str:

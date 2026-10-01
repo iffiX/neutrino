@@ -208,7 +208,7 @@
   "code.stream_unknown": "这个通道已经关闭。",
   "code.theme_unknown": "面板没有这种主题。",
   "code.ticket_spent": "这个链接无效、已用过或已过期。",
-  "code.token_missing": "{account} 的实例没有连接令牌；请解锁保管库后再应用。",
+  "code.token_missing": "hub 没有给 {account} 的实例发连接令牌。",
   "code.token_refused": "这个令牌存不下：{detail}",
   "code.token_value_needed": "令牌需要填值。",
   "code.tool_missing": "这个 hub 没有 smbclient 可用来列出共享，请安装 Samba 模块。",
