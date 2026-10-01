@@ -174,14 +174,17 @@ hub 每 20 秒发一次 ping，pong 迟到超过 20 秒就断开套接字。被�
 
 客户端的权限包含 `terminal` 时，`terminals` 列出每台受管机器，hub 自己的也在内；权限指定了机器时，只列那几台。每一项的 `sessions` 是这台机器保留的终端会话，按 `started_at` 排序，机器离线时为空：
 
-| 字段            | 内容                              |
-| --------------- | --------------------------------- |
-| `session_id`    | 打开方生成的 id，一个 uuid        |
-| `account`       | shell 运行所用的账户              |
-| `started_at`    | 打开时间，Unix 秒                 |
-| `title`         | shell 最后设置的标题，或 shell 名 |
-| `is_attached`   | 现在有没有流连着                  |
-| `is_persistent` | 流关闭后会话是否保留              |
+| 字段             | 内容                                                                         |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `session_id`     | 打开方生成的 id，一个 uuid                                                   |
+| `account`        | shell 运行所用的账户                                                         |
+| `started_at`     | 打开时间，Unix 秒                                                            |
+| `title`          | shell 最后设置的标题，或 shell 名                                            |
+| `owner`          | 谁打开的，即 hub 在 `shell` 的 open 上盖的标记                               |
+| `is_attached`    | 现在有没有流连着                                                             |
+| `is_persistent`  | 最后一个流关闭后会话是否保留                                                 |
+| `is_shared`      | 对这台机器有终端权限的客户端是否都能连上；共享的会话在最后一个流关闭后也保留 |
+| `attached_count` | 现在连着几个流                                                               |
 
 被控端的通道建立或断开时，或某台机器的会话列表变化时，hub 给每个客户端推送状态。
 
@@ -248,14 +251,14 @@ hub 每 20 秒发一次 ping，pong 迟到超过 20 秒就断开套接字。被�
 
 ### shell 与 command 流
 
-| `open`                                                                     | hub 做什么                                                                                                                                                                                 |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `{kind: shell, device_id, cols, rows, session_id, is_resumed}`             | 在那台机器上以 `session_id` 打开 shell，双向转发终端字节；机器保留着这个 id 的会话时，连到那个会话，先发最近的输出；`is_resumed: true` 只连已有会话，机器上没有时以 `session_unknown` 关闭 |
-| `{kind: command, module: agent, verb: resize, shell, cols, rows}`          | 调整客户端自己那个 `shell` 流的大小；没有这个流时返回 `shell_unknown`                                                                                                                      |
-| `{kind: command, module: agent, verb: persist, session_id, is_persistent}` | 设置流关闭后会话是否保留                                                                                                                                                                   |
-| `{kind: command, module: agent, verb: stop_session, session_id}`           | 在会话所在的机器上结束它                                                                                                                                                                   |
+| `open`                                                                                | hub 做什么                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `{kind: shell, device_id, cols, rows, session_id, is_resumed}`                        | 在那台机器上以 `session_id` 打开 shell，双向转发终端字节；机器保留着这个 id 的会话时，和已经连着的流一起连到那个会话，先发最近的输出；`is_resumed: true` 只连已有会话，机器上没有时以 `session_unknown` 关闭 |
+| `{kind: command, module: agent, verb: resize, shell, cols, rows}`                     | 调整客户端自己那个 `shell` 流的大小；没有这个流时返回 `shell_unknown`                                                                                                                                        |
+| `{kind: command, module: agent, verb: persist, session_id, is_persistent, is_shared}` | 设置最后一个流关闭后会话是否保留，以及会话是否共享；没带的那个值不变                                                                                                                                         |
+| `{kind: command, module: agent, verb: stop_session, session_id}`                      | 在会话所在的机器上结束它                                                                                                                                                                                     |
 
-一个会话同一时间只连一个流：第二个流连上时，第一个以 `session_taken` 关闭。hub 在机器上打开任何东西之前，`shell` 流可能以 `binding_unknown`、`client_disabled`、`permission_denied {kind: terminal}` 或 `agent_offline {device}` 关闭。没有哪台机器保留这个会话时，`persist` 和 `stop_session` 以 `session_unknown` 关闭。被控端重启或升级时，那台机器上的会话全部结束。
+一个会话可以同时连多个流：每个流都收到全部输出，任何一个流的输入都进 shell，shell 的大小取所有连着的窗口中最小的列数和行数。hub 在机器上打开任何东西之前，`shell` 流可能以 `binding_unknown`、`client_disabled`、`permission_denied {kind: terminal}` 或 `agent_offline {device}` 关闭。没有哪台机器保留这个会话时，`persist` 和 `stop_session` 以 `session_unknown` 关闭。被控端重启或升级时，那台机器上的会话全部结束。
 
 ## 被控端的段
 

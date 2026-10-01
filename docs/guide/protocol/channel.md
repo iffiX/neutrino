@@ -174,14 +174,17 @@ The hub sends a client its `state` on any report whose `state_hash` differs from
 
 `terminals` lists every managed machine, the hub's own among them, when the client's permission includes `terminal`, narrowed to the machines that permission names. Each entry's `sessions` is the shell sessions the machine keeps, ordered by `started_at`, and empty while the machine is offline:
 
-| Field           | Holds                                             |
-| --------------- | ------------------------------------------------- |
-| `session_id`    | the id the opener generated, a uuid               |
-| `account`       | the account the shell runs as                     |
-| `started_at`    | when it was opened, in Unix seconds               |
-| `title`         | the title the shell last set, or the shell's name |
-| `is_attached`   | whether a stream is attached now                  |
-| `is_persistent` | whether the session stays when its stream closes  |
+| Field            | Holds                                                                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `session_id`     | the id the opener generated, a uuid                                                                                                |
+| `account`        | the account the shell runs as                                                                                                      |
+| `started_at`     | when it was opened, in Unix seconds                                                                                                |
+| `title`          | the title the shell last set, or the shell's name                                                                                  |
+| `owner`          | who opened it, as the hub stamped the `shell` open                                                                                 |
+| `is_attached`    | whether a stream is attached now                                                                                                   |
+| `is_persistent`  | whether the session stays when its last stream closes                                                                              |
+| `is_shared`      | whether every client with terminal rights on the machine can attach to it; a shared session also stays when its last stream closes |
+| `attached_count` | how many streams are attached now                                                                                                  |
 
 The hub pushes every client its state when an agent's channel opens or ends, and when a machine's list of sessions changes.
 
@@ -248,14 +251,14 @@ A close with no code carries the material:
 
 ### The shell and command streams
 
-| `open`                                                                     | What the hub does                                                                                                                                                                                                                                                                |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `{kind: shell, device_id, cols, rows, session_id, is_resumed}`             | opens a shell on that machine under `session_id` and relays terminal bytes both ways; an id the machine holds attaches to that session, and its recent output comes first; `is_resumed: true` attaches only, and closes `session_unknown` when the machine holds no such session |
-| `{kind: command, module: agent, verb: resize, shell, cols, rows}`          | resizes the client's own `shell` stream; `shell_unknown` when no such stream is open                                                                                                                                                                                             |
-| `{kind: command, module: agent, verb: persist, session_id, is_persistent}` | sets whether the session stays after its stream closes                                                                                                                                                                                                                           |
-| `{kind: command, module: agent, verb: stop_session, session_id}`           | ends the session on its machine                                                                                                                                                                                                                                                  |
+| `open`                                                                                | What the hub does                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{kind: shell, device_id, cols, rows, session_id, is_resumed}`                        | opens a shell on that machine under `session_id` and relays terminal bytes both ways; an id the machine holds attaches to that session beside every stream already attached, and its recent output comes first; `is_resumed: true` attaches only, and closes `session_unknown` when the machine holds no such session |
+| `{kind: command, module: agent, verb: resize, shell, cols, rows}`                     | resizes the client's own `shell` stream; `shell_unknown` when no such stream is open                                                                                                                                                                                                                                  |
+| `{kind: command, module: agent, verb: persist, session_id, is_persistent, is_shared}` | sets whether the session stays after its last stream closes, and whether it is shared; a flag the command leaves out keeps its value                                                                                                                                                                                  |
+| `{kind: command, module: agent, verb: stop_session, session_id}`                      | ends the session on its machine                                                                                                                                                                                                                                                                                       |
 
-A session holds one stream at a time: attaching a second closes the first with `session_taken`. A `shell` stream is refused with `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` or `agent_offline {device}` before the hub opens anything on the machine. `persist` and `stop_session` close with `session_unknown` when no machine holds the session. An agent restart or update ends every session on that machine.
+Any number of streams attach to one session at once. Each receives all the output, input from any of them reaches the shell, and the shell's size is the smallest attached window's columns and rows. A `shell` stream is refused with `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` or `agent_offline {device}` before the hub opens anything on the machine. `persist` and `stop_session` close with `session_unknown` when no machine holds the session. An agent restart or update ends every session on that machine.
 
 ## The agent's sections
 
