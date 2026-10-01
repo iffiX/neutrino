@@ -405,7 +405,7 @@ class _AgentFrames:
         session.note_report_recorded()
         if is_module_change:
             runtime.published_services.schedule_refresh()
-        if is_panel_change:
+        if is_panel_change or is_session_change:
             runtime.events.publish(WEB_EVENT_DEVICE_REPORT, key)
         if is_session_change:
             await asyncio.to_thread(

@@ -392,6 +392,8 @@ def test_a_report_whose_sessions_moved_hands_every_client_its_state(api, monkeyp
         )
 
         assert pushed == ["client"]
+        # The first report, then the sessions moving, which the panel reads too.
+        assert runtime.events.published.count(("device_report", device_id)) == 2
     finally:
         socket.__exit__(None, None, None)
 

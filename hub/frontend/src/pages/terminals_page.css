@@ -68,6 +68,20 @@
   min-width: 0;
 }
 
+/* Persistent and Shared at the right of the status line, with who opened
+   the session before them when it is not this panel. */
+.terminal_panel_switches {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.terminal_panel_owner {
+  color: var(--color-text-faint);
+}
+
 /* --- One tab per open shell, in the header bar --- */
 
 .terminal_tabs {

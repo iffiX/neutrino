@@ -21,11 +21,17 @@ import "./shell_terminal.css";
  *
  * xterm.js owns the DOM inside the surface, so this is imperative and lives in
  * one effect: build the terminal, wire the socket both ways, tear both down
- * together. Whether the session outlives the socket is a `persist` message on
- * that socket, sent when the socket opens and whenever it changes.
+ * together. Whether the session outlives its sockets and whether others see
+ * it is a `persist` message on that socket, sent each time the page asks.
  */
 
 export type TerminalState = "connecting" | "open" | "closed";
+
+/** The two flags a `persist` message sets on the session. */
+export interface PersistFlags {
+  is_persistent: boolean;
+  is_shared: boolean;
+}
 
 // Lines kept above the top of the window. A terminal that keeps everything is
 // a terminal that grows without limit, and on a box being watched for hours
@@ -51,10 +57,12 @@ interface ShellTerminalProps {
   onExit?: (code: number | null) => void;
   onStateChange?: (state: TerminalState) => void;
   /**
-   * Whether the session stays on the machine when this socket closes. Left
-   * undefined, nothing is sent: the socket names no session to keep.
+   * The flags to send in a `persist` message; each new object is sent once,
+   * while the socket is open. Null or undefined sends nothing.
    */
-  isPersistent?: boolean;
+  persistFlags?: PersistFlags | null;
+  /** Called with the code of a message the hub refused on the socket. */
+  onRefused?: (code: string) => void;
   /** Called with the code the socket closed with, empty for a plain close. */
   onCloseReason?: (reason: string) => void;
 }
@@ -64,7 +72,8 @@ export function ShellTerminal({
   isVisible = true,
   onExit,
   onStateChange,
-  isPersistent,
+  persistFlags,
+  onRefused,
   onCloseReason,
 }: ShellTerminalProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -81,8 +90,8 @@ export function ShellTerminal({
   onStateChangeRef.current = onStateChange;
   const onCloseReasonRef = useRef(onCloseReason);
   onCloseReasonRef.current = onCloseReason;
-  const isPersistentRef = useRef(isPersistent);
-  isPersistentRef.current = isPersistent;
+  const onRefusedRef = useRef(onRefused);
+  onRefusedRef.current = onRefused;
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -160,9 +169,6 @@ export function ShellTerminal({
     socket.onopen = () => {
       onStateChangeRef.current?.("open");
       sendResize();
-      if (isPersistentRef.current === true) {
-        sendPersist(socket, true);
-      }
       terminal.focus();
     };
 
@@ -182,6 +188,10 @@ export function ShellTerminal({
       const message = parsed as Record<string, unknown>;
       if (message.type === "output" && typeof message.data === "string") {
         terminal.write(message.data);
+        return;
+      }
+      if (message.type === "refused" && typeof message.code === "string") {
+        onRefusedRef.current?.(message.code);
         return;
       }
       if (message.type === "exit") {
@@ -223,17 +233,19 @@ export function ShellTerminal({
     };
   }, [socketPath]);
 
-  // A change of the switch reaches a session whose socket is open; one still
-  // connecting sends it on open.
+  // A flip of either switch reaches the session through an open socket.
   useEffect(() => {
     const socket = socketRef.current;
-    if (isPersistent === undefined || socket === null) {
+    if (
+      persistFlags === undefined ||
+      persistFlags === null ||
+      socket === null ||
+      socket.readyState !== WebSocket.OPEN
+    ) {
       return;
     }
-    if (socket.readyState === WebSocket.OPEN) {
-      sendPersist(socket, isPersistent);
-    }
-  }, [isPersistent]);
+    socket.send(JSON.stringify({ type: "persist", ...persistFlags }));
+  }, [persistFlags]);
 
   // A shell already open takes the new palette where it stands.
   useEffect(() => {
@@ -260,9 +272,4 @@ export function ShellTerminal({
       ref={surfaceRef}
     />
   );
-}
-
-/** Tell the far end whether the session stays when this socket closes. */
-function sendPersist(socket: WebSocket, isPersistent: boolean) {
-  socket.send(JSON.stringify({ type: "persist", is_persistent: isPersistent }));
 }

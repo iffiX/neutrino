@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import { apiPath, apiPost, describeError } from "../api_client";
@@ -10,10 +10,11 @@ import { StatusDot } from "../components/status_dot";
 import { ToggleSwitch } from "../components/toggle_switch";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
-import { HUB_EVENT_DEVICES } from "../use_hub_events";
-import type { TerminalState } from "../components/shell_terminal";
+import { HUB_EVENT_DEVICE_REPORT, HUB_EVENT_DEVICES } from "../use_hub_events";
+import type { PersistFlags, TerminalState } from "../components/shell_terminal";
 import type { StatusTone } from "../components/status_dot";
 import type {
+  ClientListView,
   DevicesOnlineResponse,
   TerminalSessionListView,
   TerminalSessionStopRequest,
@@ -25,17 +26,14 @@ import "./terminals_page.css";
 /**
  * Shells on the machines whose agent is answering, the hub box among them.
  *
- * Every shell runs through the same agent channel, so the box this panel is
- * on is one more chip in the strip rather than a case of its own. The page's
- * lower panel carries one tab per shell in its header bar.
- *
- * Tabs stay mounted while hidden, and the page itself stays mounted while
- * other pages show — the shell hosts it beside the router outlet. Every
- * shell is a session the page names by an id it generates. The switch at the
- * panel's foot keeps the current tab's session on its machine when its socket
- * closes; it is off for a new tab. On load the strip shows every kept session
- * of the online machines in the order they were opened, and a click attaches
- * to one. The × on a kept session ends it on the second press.
+ * The tabs come from the hub's session list, which names every session of
+ * every online machine: a listed session with no tab gets one, and a tab
+ * whose session left the list reads Ended and keeps its output. The first tab
+ * attaches as the page opens, the others when first picked; a session another
+ * viewer opened and did not share is listed but never attached. Two switches
+ * set whether the current session outlives its sockets and whether other
+ * viewers see it; only the session's owner flips them. Tabs stay mounted while
+ * hidden, and the page itself stays mounted while other pages show.
  */
 
 /** The account every shell opens as, which is a name rather than a word. */
@@ -51,6 +49,13 @@ const STATE_KEYS: Record<TerminalState, string> = {
 // What moves the list of machines: an agent's channel opening or ending.
 const INVALIDATE_ON = [{ type: HUB_EVENT_DEVICES }];
 
+// What moves the session list: a machine's report naming other sessions, or
+// a machine coming or going.
+const SESSIONS_INVALIDATE_ON = [
+  { type: HUB_EVENT_DEVICE_REPORT },
+  { type: HUB_EVENT_DEVICES },
+];
+
 /** The query a page link carries to open on one machine. */
 const DEVICE_QUERY = "device";
 
@@ -60,19 +65,31 @@ const PAGE_PATH = "/terminals";
 /** Where the machines' sessions are listed and ended. */
 const SESSION_PATH = "/agent/terminal/session";
 
+/** Where the clients' names are read, to say who opened a session. */
+const CLIENT_PATH = "/hub/client";
+
+/** The prefix of the owner the hub stamps on a client's session. */
+const CLIENT_OWNER_PREFIX = "client:";
+
+/** The flags a tab shows before the machine has listed its session. */
+const NEW_FLAGS: PersistFlags = { is_persistent: false, is_shared: false };
+
 interface ShellTab {
-  id: number;
-  deviceId: string;
-  title: string;
   /** The session the tab names, generated here or read from the list. */
   sessionId: string;
-  /** Whether the session stays on its machine when the socket closes. */
-  isPersistent: boolean;
-  /** Whether the tab has a socket; a kept session attaches on its first click. */
+  deviceId: string;
+  title: string;
+  /** Whether the tab has a socket; a listed session attaches when picked. */
   isAttached: boolean;
+  /** Whether the panel may attach: its own session or a shared one. */
+  isAttachable: boolean;
   /** Whether the session is one the machine listed, attached with its kept
    * output rather than started. */
   isResumed: boolean;
+  /** Whether the machine has listed the session since the tab opened. */
+  isListed: boolean;
+  /** Whether the session left the list or its shell exited. */
+  isEnded: boolean;
 }
 
 export function TerminalsPage() {
@@ -81,19 +98,30 @@ export function TerminalsPage() {
   const resource = useApiResource<DevicesOnlineResponse>("/hub/device/online", {
     invalidateOn: INVALIDATE_ON,
   });
-  const kept = useApiResource<TerminalSessionListView>(SESSION_PATH);
+  const listing = useApiResource<TerminalSessionListView>(SESSION_PATH, {
+    invalidateOn: SESSIONS_INVALIDATE_ON,
+  });
+  const clients = useApiResource<ClientListView>(CLIENT_PATH);
   const [searchParams] = useSearchParams();
   const pathname = useLocation().pathname;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tabs, setTabs] = useState<ShellTab[]>([]);
-  const [activeId, setActiveId] = useState<number | null>(null);
-  const [states, setStates] = useState<Record<number, TerminalState>>({});
-  const [closeReasons, setCloseReasons] = useState<Record<number, string>>({});
-  const [nextId, setNextId] = useState(1);
-  // Ending a kept session takes two presses on its ×; the first only arms it.
-  const [armedId, setArmedId] = useState<number | null>(null);
-  const [stopError, setStopError] = useState<string | null>(null);
-  const isRestoredRef = useRef(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [states, setStates] = useState<Record<string, TerminalState>>({});
+  const [closeReasons, setCloseReasons] = useState<Record<string, string>>({});
+  // A flip shows at once and holds until the list reports the same values.
+  const [pendingFlags, setPendingFlags] = useState<
+    Record<string, PersistFlags>
+  >({});
+  // Each flip is a new object, which the terminal sends once.
+  const [persistRequests, setPersistRequests] = useState<
+    Record<string, PersistFlags>
+  >({});
+  // Sessions whose tab was closed while they stay listed: not reopened.
+  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  // Ending a session takes two presses on its ×; the first only arms it.
+  const [armedId, setArmedId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // The page is mounted for the whole session, so a link arriving with a
   // machine on it is a change of query rather than a first render.
@@ -104,93 +132,113 @@ export function TerminalsPage() {
     }
   }, [pathname, askedDeviceId]);
 
-  // The kept sessions become tabs once, when the page first reads them.
-  const keptSessions = kept.data?.sessions ?? null;
+  const listed = listing.data?.sessions ?? null;
+
+  // Every read of the list is merged into the tabs, and settles the flips
+  // the machine has now taken.
   useEffect(() => {
-    if (keptSessions === null || isRestoredRef.current) {
+    if (listed === null) {
       return;
     }
-    isRestoredRef.current = true;
-    const restored = keptSessions.filter((session) => session.is_persistent);
-    if (restored.length === 0) {
-      return;
+    setTabs((current) => mergeTabs(current, listed, dismissedIds));
+    setPendingFlags((current) => settledFlags(current, listed));
+  }, [listed, dismissedIds]);
+
+  const rows: Record<string, TerminalSessionView> = {};
+  for (const row of listed ?? []) {
+    rows[row.session_id] = row;
+  }
+
+  const attach = (sessionId: string) => {
+    setActiveId(sessionId);
+    setTabs((current) => withAttached(current, sessionId));
+  };
+
+  // The first tab attaches as the page opens.
+  const firstSessionId = tabs[0]?.sessionId ?? null;
+  const isActiveShown = tabs.some((tab) => tab.sessionId === activeId);
+  useEffect(() => {
+    if (!isActiveShown && firstSessionId !== null) {
+      setActiveId(firstSessionId);
+      setTabs((current) => withAttached(current, firstSessionId));
     }
-    setTabs((current) => [
-      ...restored
-        .filter((session) =>
-          current.every((tab) => tab.sessionId !== session.session_id),
-        )
-        .map((session, index) => keptTab(session, -(index + 1))),
-      ...current,
-    ]);
-  }, [keptSessions]);
+  }, [isActiveShown, firstSessionId]);
 
   const devices = resource.data?.devices ?? [];
   const selectedDevice =
     devices.find((device) => device.device_id === selectedId) ?? null;
-  const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
+  const activeTab = tabs.find((tab) => tab.sessionId === activeId) ?? null;
+  const activeRow = activeTab === null ? undefined : rows[activeTab.sessionId];
   const activeState =
     activeTab === null || !activeTab.isAttached
       ? null
-      : (states[activeTab.id] ?? "connecting");
+      : (states[activeTab.sessionId] ?? "connecting");
   const activeReason =
-    activeTab === null ? "" : (closeReasons[activeTab.id] ?? "");
+    activeTab === null ? "" : (closeReasons[activeTab.sessionId] ?? "");
+  const activeFlags =
+    activeTab === null
+      ? NEW_FLAGS
+      : shownFlags(activeTab, activeRow, pendingFlags);
+  const isActiveOwned =
+    activeTab !== null && isOwned(activeTab, activeRow) && !activeTab.isEnded;
+  const canFlip = isActiveOwned && activeState === "open";
+  const ownerName =
+    activeRow === undefined || activeRow.is_owned
+      ? ""
+      : nameOfOwner(activeRow.owner, clients.data);
 
   const openTab = () => {
     if (selectedDevice === null) {
       return;
     }
     const tab: ShellTab = {
-      id: nextId,
+      sessionId: newSessionId(),
       deviceId: selectedDevice.device_id,
       title: selectedDevice.name,
-      sessionId: newSessionId(),
-      isPersistent: false,
       isAttached: true,
+      isAttachable: true,
       isResumed: false,
+      isListed: false,
+      isEnded: false,
     };
     setTabs((current) => [...current, tab]);
-    setActiveId(tab.id);
-    setNextId((current) => current + 1);
+    setActiveId(tab.sessionId);
   };
 
-  const selectTab = (id: number) => {
-    setActiveId(id);
+  const selectTab = (sessionId: string) => {
     setArmedId(null);
-    setTabs((current) =>
-      current.map((tab) =>
-        tab.id === id ? { ...tab, isAttached: true } : tab,
-      ),
-    );
+    setNotice(null);
+    attach(sessionId);
   };
 
-  const dropTab = (id: number) => {
-    const index = tabs.findIndex((tab) => tab.id === id);
-    const remaining = tabs.filter((tab) => tab.id !== id);
+  const dropTab = (sessionId: string) => {
+    const index = tabs.findIndex((tab) => tab.sessionId === sessionId);
+    const remaining = tabs.filter((tab) => tab.sessionId !== sessionId);
     setTabs(remaining);
+    if (rows[sessionId] !== undefined) {
+      setDismissedIds((current) => [...current, sessionId]);
+    }
     // Fall back to whichever tab took its place, else the one before it.
-    setActiveId((active) =>
-      active === id
-        ? ((remaining[index] ?? remaining[index - 1])?.id ?? null)
-        : active,
-    );
-    setStates((current) => {
-      const rest = { ...current };
-      delete rest[id];
-      return rest;
-    });
+    if (activeId === sessionId) {
+      const next = remaining[index] ?? remaining[index - 1];
+      if (next !== undefined) {
+        attach(next.sessionId);
+      } else {
+        setActiveId(null);
+      }
+    }
   };
 
-  // A tab's session ends with its socket unless it is kept; a kept one is
-  // ended on its machine, after a second press.
+  // An ended tab and a plain session of this page's own close with the tab;
+  // any other session is ended on its machine, after a second press.
   const closeTab = async (tab: ShellTab) => {
-    if (!tab.isPersistent) {
-      dropTab(tab.id);
+    if (isPlainTab(tab, rows[tab.sessionId], pendingFlags)) {
+      dropTab(tab.sessionId);
       return;
     }
-    if (armedId !== tab.id) {
-      setArmedId(tab.id);
-      setStopError(null);
+    if (armedId !== tab.sessionId) {
+      setArmedId(tab.sessionId);
+      setNotice(null);
       return;
     }
     setArmedId(null);
@@ -200,24 +248,40 @@ export function TerminalsPage() {
     };
     try {
       await apiPost<TerminalSessionListView>(`${SESSION_PATH}/stop`, request);
-      dropTab(tab.id);
+      dropTab(tab.sessionId);
     } catch (cause: unknown) {
-      setStopError(describeError(cause));
+      setNotice(describeError(cause));
     }
   };
 
-  const setPersistent = (id: number, isPersistent: boolean) => {
+  const flip = (sessionId: string, flags: PersistFlags) => {
+    setNotice(null);
+    setPendingFlags((current) => ({ ...current, [sessionId]: flags }));
+    setPersistRequests((current) => ({
+      ...current,
+      [sessionId]: { ...flags },
+    }));
+  };
+
+  const noteRefused = (sessionId: string, code: string) => {
+    setPendingFlags((current) => withoutKey(current, sessionId));
+    setNotice(describeCode(code));
+  };
+
+  const noteExit = (sessionId: string) => {
     setTabs((current) =>
-      current.map((tab) => (tab.id === id ? { ...tab, isPersistent } : tab)),
+      current.map((tab) =>
+        tab.sessionId === sessionId ? { ...tab, isEnded: true } : tab,
+      ),
     );
   };
 
-  const noteState = (id: number, state: TerminalState) => {
-    setStates((current) => ({ ...current, [id]: state }));
+  const noteState = (sessionId: string, state: TerminalState) => {
+    setStates((current) => ({ ...current, [sessionId]: state }));
   };
 
-  const noteCloseReason = (id: number, reason: string) => {
-    setCloseReasons((current) => ({ ...current, [id]: reason }));
+  const noteCloseReason = (sessionId: string, reason: string) => {
+    setCloseReasons((current) => ({ ...current, [sessionId]: reason }));
   };
 
   if (resource.error !== null && devices.length === 0) {
@@ -279,43 +343,19 @@ export function TerminalsPage() {
               role="tablist"
               aria-label={t("ui.terminals.tabs_label")}
             >
-              {tabs.map((tab) => {
-                const isArmed = armedId === tab.id;
-                const closeLabel = t(
-                  !tab.isPersistent
-                    ? "ui.terminals.close"
-                    : isArmed
-                      ? "ui.terminals.end_again"
-                      : "ui.terminals.end",
-                  { title: tab.title },
-                );
-                return (
-                  <div
-                    key={tab.id}
-                    className={`terminal_tab ${tab.id === activeId ? "terminal_tab--on" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={tab.id === activeId}
-                      className="terminal_tab_label"
-                      onClick={() => selectTab(tab.id)}
-                    >
-                      <Icon name="terminal" size={13} />
-                      {tab.title}
-                    </button>
-                    <button
-                      type="button"
-                      className={`terminal_tab_close ${isArmed ? "terminal_tab_close--armed" : ""}`}
-                      onClick={() => void closeTab(tab)}
-                      title={closeLabel}
-                      aria-label={closeLabel}
-                    >
-                      <Icon name="close" size={12} />
-                    </button>
-                  </div>
-                );
-              })}
+              {tabs.map((tab) => (
+                <TerminalTab
+                  key={tab.sessionId}
+                  tab={tab}
+                  row={rows[tab.sessionId]}
+                  flags={shownFlags(tab, rows[tab.sessionId], pendingFlags)}
+                  isOn={tab.sessionId === activeId}
+                  isArmed={armedId === tab.sessionId}
+                  isPlain={isPlainTab(tab, rows[tab.sessionId], pendingFlags)}
+                  onSelect={() => selectTab(tab.sessionId)}
+                  onClose={() => void closeTab(tab)}
+                />
+              ))}
             </div>
             {activeState !== null && (
               <div className="terminal_panel_actions">
@@ -332,42 +372,74 @@ export function TerminalsPage() {
               .filter((tab) => tab.isAttached)
               .map((tab) => (
                 <ShellTerminal
-                  key={tab.id}
+                  key={tab.sessionId}
                   socketPath={apiPath("/ws/agent/terminal", {
                     device_id: tab.deviceId,
                     session_id: tab.sessionId,
                     is_resumed: tab.isResumed ? "true" : undefined,
                   })}
-                  isVisible={tab.id === activeId}
-                  isPersistent={tab.isPersistent}
-                  onExit={() => dropTab(tab.id)}
-                  onStateChange={(state) => noteState(tab.id, state)}
-                  onCloseReason={(reason) => noteCloseReason(tab.id, reason)}
+                  isVisible={tab.sessionId === activeId}
+                  persistFlags={persistRequests[tab.sessionId] ?? null}
+                  onExit={() => noteExit(tab.sessionId)}
+                  onRefused={(code) => noteRefused(tab.sessionId, code)}
+                  onStateChange={(state) => noteState(tab.sessionId, state)}
+                  onCloseReason={(reason) =>
+                    noteCloseReason(tab.sessionId, reason)
+                  }
                 />
               ))}
-            {activeTab !== null && !activeTab.isAttached && (
-              <div className="placeholder">
-                <span>{t("ui.terminals.kept")}</span>
-                <span className="faint">{t("ui.terminals.kept_hint")}</span>
-              </div>
-            )}
+            {activeTab !== null &&
+              !activeTab.isAttached &&
+              !activeTab.isEnded && (
+                <div className="placeholder">
+                  <span>{t("ui.terminals.private", { owner: ownerName })}</span>
+                  <span className="faint">
+                    {t("ui.terminals.private_hint")}
+                  </span>
+                </div>
+              )}
           </div>
 
           <div className="terminal_panel_status">
             <span className="terminal_panel_status_text">
-              {stopError !== null
-                ? stopError
-                : activeState === "closed"
-                  ? closedText(activeReason)
-                  : t("ui.terminals.keystrokes")}
+              {notice !== null
+                ? notice
+                : activeTab !== null && activeTab.isEnded
+                  ? t("ui.terminals.ended_hint")
+                  : activeState === "closed"
+                    ? closedText(activeReason)
+                    : t("ui.terminals.keystrokes")}
             </span>
             {activeTab !== null && (
-              <ToggleSwitch
-                isOn={activeTab.isPersistent}
-                label={t("ui.terminals.persistent")}
-                isDisabled={activeState !== "open"}
-                onChange={(isOn) => setPersistent(activeTab.id, isOn)}
-              />
+              <div className="terminal_panel_switches">
+                {!isActiveOwned && ownerName !== "" && (
+                  <span className="terminal_panel_owner">
+                    {t("ui.terminals.opened_by", { owner: ownerName })}
+                  </span>
+                )}
+                <ToggleSwitch
+                  isOn={activeFlags.is_persistent}
+                  label={t("ui.terminals.persistent")}
+                  isDisabled={!canFlip}
+                  onChange={(isOn) =>
+                    flip(activeTab.sessionId, {
+                      ...activeFlags,
+                      is_persistent: isOn,
+                    })
+                  }
+                />
+                <ToggleSwitch
+                  isOn={activeFlags.is_shared}
+                  label={t("ui.terminals.shared")}
+                  isDisabled={!canFlip}
+                  onChange={(isOn) =>
+                    flip(activeTab.sessionId, {
+                      ...activeFlags,
+                      is_shared: isOn,
+                    })
+                  }
+                />
+              </div>
             )}
           </div>
         </section>
@@ -376,17 +448,188 @@ export function TerminalsPage() {
   );
 }
 
-/** A kept session as a tab that attaches on its first click. */
-function keptTab(session: TerminalSessionView, id: number): ShellTab {
-  return {
-    id,
-    deviceId: session.device_id,
-    title: session.device_name,
-    sessionId: session.session_id,
-    isPersistent: true,
-    isAttached: false,
-    isResumed: true,
-  };
+interface TerminalTabProps {
+  tab: ShellTab;
+  row: TerminalSessionView | undefined;
+  flags: PersistFlags;
+  isOn: boolean;
+  isArmed: boolean;
+  /** Whether × closes the tab rather than ending the session. */
+  isPlain: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}
+
+function TerminalTab({
+  tab,
+  row,
+  flags,
+  isOn,
+  isArmed,
+  isPlain,
+  onSelect,
+  onClose,
+}: TerminalTabProps) {
+  const closeLabel = t(
+    isPlain
+      ? "ui.terminals.close"
+      : isArmed
+        ? "ui.terminals.end_again"
+        : "ui.terminals.end",
+    { title: tab.title },
+  );
+  const attachedCount = row?.attached_count ?? 0;
+  return (
+    <div className={`terminal_tab ${isOn ? "terminal_tab--on" : ""}`}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={isOn}
+        className="terminal_tab_label"
+        onClick={onSelect}
+      >
+        <Icon name="terminal" size={13} />
+        {tab.isEnded ? t("ui.terminals.ended") : tab.title}
+        {!tab.isEnded && flags.is_persistent && (
+          <span className="badge">{t("ui.terminals.badge_kept")}</span>
+        )}
+        {!tab.isEnded && flags.is_shared && (
+          <span className="badge">{t("ui.terminals.badge_shared")}</span>
+        )}
+        {!tab.isEnded && attachedCount > 1 && (
+          <span className="badge">
+            {t("ui.terminals.badge_attached", { count: attachedCount })}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className={`terminal_tab_close ${isArmed ? "terminal_tab_close--armed" : ""}`}
+        onClick={onClose}
+        title={closeLabel}
+        aria-label={closeLabel}
+      >
+        <Icon name="close" size={12} />
+      </button>
+    </div>
+  );
+}
+
+/** The tabs after one read of the list: listed sessions with no tab added at
+ * the end, and tabs whose session left the list marked ended. */
+function mergeTabs(
+  current: ShellTab[],
+  listed: TerminalSessionView[],
+  dismissedIds: string[],
+): ShellTab[] {
+  const merged = current.map((tab) => {
+    const row = listed.find((entry) => entry.session_id === tab.sessionId);
+    if (row !== undefined) {
+      return {
+        ...tab,
+        isListed: true,
+        isAttachable: row.is_owned || row.is_shared,
+      };
+    }
+    return tab.isListed && !tab.isEnded ? { ...tab, isEnded: true } : tab;
+  });
+  const held = new Set(current.map((tab) => tab.sessionId));
+  for (const row of listed) {
+    if (held.has(row.session_id) || dismissedIds.includes(row.session_id)) {
+      continue;
+    }
+    merged.push({
+      sessionId: row.session_id,
+      deviceId: row.device_id,
+      title: row.device_name,
+      isAttached: false,
+      isAttachable: row.is_owned || row.is_shared,
+      isResumed: true,
+      isListed: true,
+      isEnded: false,
+    });
+  }
+  return merged;
+}
+
+/** The flips the list does not yet report, the others dropped. */
+function settledFlags(
+  pending: Record<string, PersistFlags>,
+  listed: TerminalSessionView[],
+): Record<string, PersistFlags> {
+  const kept: Record<string, PersistFlags> = {};
+  for (const [sessionId, flags] of Object.entries(pending)) {
+    const row = listed.find((entry) => entry.session_id === sessionId);
+    const isSettled =
+      row !== undefined &&
+      row.is_persistent === flags.is_persistent &&
+      row.is_shared === flags.is_shared;
+    if (!isSettled) {
+      kept[sessionId] = flags;
+    }
+  }
+  return kept;
+}
+
+/** The flags a tab shows: a flip not yet reported, else the list's. */
+function shownFlags(
+  tab: ShellTab,
+  row: TerminalSessionView | undefined,
+  pending: Record<string, PersistFlags>,
+): PersistFlags {
+  const flipped = pending[tab.sessionId];
+  if (flipped !== undefined) {
+    return flipped;
+  }
+  if (row === undefined) {
+    return NEW_FLAGS;
+  }
+  return { is_persistent: row.is_persistent, is_shared: row.is_shared };
+}
+
+/** Whether this panel opened the tab's session; a session not listed yet is
+ * one the page itself just opened. */
+function isOwned(tab: ShellTab, row: TerminalSessionView | undefined): boolean {
+  return row === undefined ? !tab.isListed : row.is_owned;
+}
+
+/** Whether × closes the tab: an ended session, or a plain one of the page's
+ * own, which ends with its socket. */
+function isPlainTab(
+  tab: ShellTab,
+  row: TerminalSessionView | undefined,
+  pending: Record<string, PersistFlags>,
+): boolean {
+  if (tab.isEnded) {
+    return true;
+  }
+  const flags = shownFlags(tab, row, pending);
+  return isOwned(tab, row) && !flags.is_persistent && !flags.is_shared;
+}
+
+/** The tabs with one attached, when the panel may attach to its session. */
+function withAttached(tabs: ShellTab[], sessionId: string): ShellTab[] {
+  return tabs.map((tab) =>
+    tab.sessionId === sessionId && tab.isAttachable && !tab.isEnded
+      ? { ...tab, isAttached: true }
+      : tab,
+  );
+}
+
+/** Who opened a session, by the client's name where the hub stamped one. */
+function nameOfOwner(owner: string, clients: ClientListView | null): string {
+  if (!owner.startsWith(CLIENT_OWNER_PREFIX)) {
+    return owner;
+  }
+  const clientId = owner.slice(CLIENT_OWNER_PREFIX.length);
+  const client = clients?.clients.find((entry) => entry.id === clientId);
+  return client?.name ?? owner;
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string) {
+  const rest = { ...record };
+  delete rest[key];
+  return rest;
 }
 
 /** A fresh session id: a uuid4 as 32 lowercase hex characters. */
@@ -398,6 +641,12 @@ function newSessionId(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
   );
+}
+
+/** A code's word, else the code itself. */
+function describeCode(code: string): string {
+  const key = `code.${code}`;
+  return hasWord(key) ? t(key) : code;
 }
 
 /** What the foot says once a socket closed: the code's word, else the loss. */
