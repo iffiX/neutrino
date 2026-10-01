@@ -1,6 +1,8 @@
 {
   "code": {
+    "rdp_closed": "连接已结束：{reason}",
     "rdp_core_missing": "这个版本还没有远程桌面核心，显示不了画面。",
+    "rdp_login_failed": "对方机器拒绝了访问密码。",
     "verb_unknown": "hub 不认识这个命令，请先更新 hub"
   },
   "ui": {

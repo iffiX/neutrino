@@ -279,3 +279,42 @@ const val TERMINAL_KEY_PASTE = "paste"
 
 /** The name the terminal page reaches the app by. */
 const val CLIENT_TERMINAL_BRIDGE = "NeutrinoBridge"
+
+/** RustDesk's mouse event type in the low three bits of a mask: the pointer moved. */
+const val RDP_MOUSE_MOVE = 0
+
+/** RustDesk's mouse event type: a button pressed. */
+const val RDP_MOUSE_DOWN = 1
+
+/** RustDesk's mouse event type: a button released. */
+const val RDP_MOUSE_UP = 2
+
+/** RustDesk's mouse event type: the wheel turned; the event's y carries the steps. */
+const val RDP_MOUSE_WHEEL = 3
+
+/** The left button, above the type bits of a mask. */
+const val RDP_MOUSE_LEFT = 1 shl 3
+
+/** The right button, above the type bits of a mask. */
+const val RDP_MOUSE_RIGHT = 2 shl 3
+
+/** The finger travel, in pixels, of one wheel step in a two-finger scroll. */
+const val RDP_SCROLL_STEP_PX = 24f
+
+/** The change in finger spread, in pixels, that makes a two-finger gesture a pinch. */
+const val RDP_PINCH_SLOP_PX = 24f
+
+/** The largest zoom a pinch reaches, over the picture fitted to the viewer. */
+const val RDP_ZOOM_MAX = 6f
+
+/** The RustDesk core's state: logged in, frames follow. */
+const val RDP_STATE_CONNECTED = 1
+
+/** The RustDesk core's state: the machine refused the password. */
+const val RDP_STATE_LOGIN_FAILED = 2
+
+/** The RustDesk core's state: the connection ended. */
+const val RDP_STATE_CLOSED = 3
+
+/** What the viewer's hidden text field holds between keys, so Backspace has something to delete. */
+const val RDP_TYPING_SENTINEL = " "

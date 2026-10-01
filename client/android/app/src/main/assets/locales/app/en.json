@@ -1,6 +1,8 @@
 {
   "code": {
+    "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
+    "rdp_login_failed": "The machine refused the access password.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {

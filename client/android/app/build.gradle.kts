@@ -32,6 +32,7 @@ val releaseKeystore: File? =
 android {
     namespace = "io.github.iffix.neutrino"
     compileSdk = 37
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "io.github.iffix.neutrino"
@@ -67,6 +68,14 @@ android {
             reset()
             include("arm64-v8a", "x86_64")
             isUniversalApk = false
+        }
+    }
+
+    // The JNI side of the RustDesk core: a small C library that opens librustdesk.so.
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
