@@ -7,7 +7,8 @@
 #   setup_vms.sh debian 12
 #   setup_vms.sh ubuntu 22.04 mx
 #
-# Run on a libvirt host. Naming the distro and version is what pins a
+# Run on a libvirt host; run_lab.py beside it runs this and then the suite.
+# Naming the distro and version is what pins a
 # behaviour to a release: the image comes from the distribution's own cloud
 # image for exactly that version, downloaded once and reused.
 #
@@ -32,6 +33,7 @@ VERSION="${2:?usage: setup_vms.sh <distro> <version> [prefix]}"
 PREFIX="${3:-nmx}"
 LAB="${NEUTRINO_VM_LAB:-$HOME/.local/share/neutrino_vm_lab}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+SUITE="$(cd "$HERE/../integration" && pwd)"
 MEMORY_MB=3072
 CPUS=2
 
@@ -213,9 +215,9 @@ echo "the mini network:"
 echo "  $HUB      hub under test; drive it with: python3 $HERE/vm_exec.py $HUB '<command>'"
 echo "  $CLIENT   client on the served wire, asking DHCP until the hub answers"
 echo
-echo "next:"
+echo "next, or all of it with run_lab.py beside this script:"
 echo "  python3 $HERE/vm_exec.py $HUB 'mkdir -p /opt/integration'"
-echo "  for f in $HERE/*.py $HERE/*.sh $HERE/pytest.ini; do python3 $HERE/vm_exec.py $HUB push \$f /opt/integration/\$(basename \$f); done"
+echo "  for f in $SUITE/*.py $SUITE/*.sh $SUITE/pytest.ini; do python3 $HERE/vm_exec.py $HUB push \$f /opt/integration/\$(basename \$f); done"
 # The lifecycle walks reach the client over SSH with this key, and they fail
 # without it rather than passing by skipping.
 echo "  python3 $HERE/vm_exec.py $HUB push $KEY /opt/integration/id_lab"

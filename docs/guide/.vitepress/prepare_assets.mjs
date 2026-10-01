@@ -17,7 +17,7 @@ const guideSource = new URL("../../../images/guide/", import.meta.url);
 const guideTarget = new URL("guide/", publicDirectory);
 const webDirectory = new URL("../../../images/web/", import.meta.url);
 const shotTable = new URL(
-  "../../../packaging/integration/screenshots/shots.json",
+  "../../../packaging/screenshots/shots.json",
   import.meta.url,
 );
 

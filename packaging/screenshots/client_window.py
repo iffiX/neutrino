@@ -14,7 +14,7 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-REPOSITORY = pathlib.Path(__file__).resolve().parents[3]
+REPOSITORY = pathlib.Path(__file__).resolve().parents[2]
 CLIENT_SOURCE = REPOSITORY / "client" / "desktop"
 
 # The bridge the shell would inject: each request is posted to /bridge and

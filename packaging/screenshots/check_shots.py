@@ -7,7 +7,7 @@ screenshot is referenced as ``/guide/<language>/<name>.webp`` and named in
 belongs to the page under ``zh-CN/``, and an ``os`` entry to both. Pages the
 table lists as pending are skipped.
 
-Run from anywhere: ``python3 packaging/integration/screenshots/check_shots.py``.
+Run from anywhere: ``python3 packaging/screenshots/check_shots.py``.
 """
 
 import json
@@ -16,7 +16,7 @@ import re
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-REPOSITORY = HERE.parents[2]
+REPOSITORY = HERE.parents[1]
 SHOTS_FILE = HERE / "shots.json"
 GUIDE_DIR = REPOSITORY / "docs" / "guide"
 CHINESE_PREFIX = "zh-CN/"

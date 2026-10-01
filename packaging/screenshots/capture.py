@@ -34,7 +34,7 @@ from playwright.sync_api import sync_playwright
 from client_window import ClientWindowServer
 
 HERE = pathlib.Path(__file__).resolve().parent
-REPOSITORY = HERE.parents[2]
+REPOSITORY = HERE.parents[1]
 SHOTS_FILE = HERE / "shots.json"
 REDACT_FILE = HERE / "redact.json"
 REDACT_LOCAL_FILE = HERE / "redact.local.json"

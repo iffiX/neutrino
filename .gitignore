@@ -82,4 +82,4 @@ hub/neutrino_hub/data/frontend/
 packaging/integration_aws/state/
 
 # Literal strings the screenshot tool replaces that name the person capturing.
-packaging/integration/screenshots/redact.local.json
+packaging/screenshots/redact.local.json
