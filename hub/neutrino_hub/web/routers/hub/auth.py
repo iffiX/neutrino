@@ -30,9 +30,9 @@ def login(
         runtime: The shared runtime.
 
     Returns:
-        Whether a session was created; the cookie is ``Secure`` while the
-        panel speaks HTTPS. A lockout is explicit: the page shows
-        a countdown, and hiding it would only punish the owner's typos while
+        Whether a session was created; the cookie is ``Secure`` while
+        HTTPS is on, as the runtime's settings say at this request. A
+        lockout is explicit: the page shows a countdown, and hiding it would only punish the owner's typos while
         telling an attacker nothing they cannot measure.
     """
     token = runtime.sessions.login(request.password)

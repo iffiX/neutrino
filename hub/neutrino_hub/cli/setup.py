@@ -89,10 +89,14 @@ from neutrino_hub.modules.router import links
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.web.agent_tls import ensure_certificate
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
+    WEB_HTTPS_SCHEME_PORT,
     WEB_IDENTITY_FILE,
     WEB_PANEL_TLS_AUTHORITY_PATH,
+    WEB_PANEL_TLS_AUTHORITY_ROUTE,
     WEB_SETTING_HTTPS,
+    WEB_SETTING_HTTPS_PORT,
     WEB_SETUP_GRACE_S,
     WEB_SETUP_WAIT_S,
 )
@@ -115,9 +119,6 @@ from neutrino_hub.cli import wizard
 # What the panel is asked for, on loopback, once it is running.
 SETUP_LOGIN_PATH = "/api/hub/auth/login"
 SETUP_ENROLLMENT_PATH = "/api/hub/device/enrollment/create"
-# Where a browser downloads the panel's certificate authority, before it has
-# a session.
-SETUP_AUTHORITY_PATH = "/api/hub/setting/https/authority"
 SETUP_PANEL_TIMEOUT_S = 10
 # How long the panel gets to start listening before its link is given up on.
 SETUP_PANEL_WAIT_S = 30.0
@@ -549,6 +550,7 @@ def _setup(
                 _write_proxy(answers.proxy)
                 _write_panel_settings(
                     answers.listen_port,
+                    answers.https_listen_port,
                     answers.language,
                     answers.is_https_enabled,
                 )
@@ -560,7 +562,7 @@ def _setup(
             ) as error:
                 reporter.failed(command_failure_text(error))
                 return 1
-            reporter.done("vault, network, proxy and panel port")
+            reporter.done("vault, network, proxy and panel ports")
 
     # Last, because the settings file it writes into is one of the files the
     # steps above copy from its example.
@@ -569,7 +571,7 @@ def _setup(
     reporter.done("stored")
 
     panel_url = _panel_url()
-    authority = _authority(panel_url) if answers.is_https_enabled else None
+    authority = _authority(_panel_http_url()) if answers.is_https_enabled else None
     if server is not None:
         return _hand_over(server, panel_url, answers.password, reporter, authority)
     _start_panel()
@@ -589,7 +591,8 @@ def _authority(panel_url: str) -> "dict | None":
     """The certificate authority a browser installs before it opens the panel.
 
     Args:
-        panel_url: Where the panel answers, which serves the download.
+        panel_url: The panel's HTTP address, which serves the download to a
+            browser that does not trust the HTTPS port yet.
 
     Returns:
         ``url`` and ``file_name`` for the download, ``fingerprint`` as hex,
@@ -605,7 +608,7 @@ def _authority(panel_url: str) -> "dict | None":
     except (OSError, ValueError):
         name = ""
     return {
-        "url": f"{panel_url}{SETUP_AUTHORITY_PATH}",
+        "url": f"{panel_url}{WEB_PANEL_TLS_AUTHORITY_ROUTE}",
         "file_name": authority_file_name(name),
         "fingerprint": hashlib.sha256(der).hexdigest(),
         "der": base64.b64encode(der).decode("ascii"),
@@ -736,16 +739,21 @@ def _install_local_agent(password: str, reporter) -> None:
     reporter.done("installed and joined")
 
 
-def _write_panel_settings(port: int, language: str, is_https_enabled: bool) -> None:
-    """Put the panel on the port, language and scheme that were asked for.
+def _write_panel_settings(
+    port: int, https_port: int, language: str, is_https_enabled: bool
+) -> None:
+    """Put the panel on the ports, language and scheme that were asked for.
 
     Args:
-        port: What the wizard collected.
+        port: The port the panel answers HTTP on.
+        https_port: The port the panel answers HTTPS on.
         language: The language the panel is drawn in.
-        is_https_enabled: Whether the panel speaks HTTPS.
+        is_https_enabled: Whether the HTTP port sends browsers to the HTTPS
+            port.
     """
     settings = read_config("web/settings.json")
     settings["listen_port"] = port
+    settings[WEB_SETTING_HTTPS_PORT] = https_port
     settings["language"] = language
     settings[WEB_SETTING_HTTPS] = is_https_enabled
     write_config("web/settings.json", settings)
@@ -795,7 +803,7 @@ def _enrollment_link(password: str) -> tuple:
     """
     if is_dev_root_set():
         return "", "No panel is running under --dev; start one with `nhub --dev run`."
-    base = f"{_panel_scheme()}://127.0.0.1:{_configured_port()}"
+    base = _loopback_url()
     # The panel was started a moment ago and binds its socket when uvicorn is
     # ready, not when systemd returns, so the first ask is often too early.
     deadline = time.monotonic() + SETUP_PANEL_WAIT_S
@@ -849,31 +857,68 @@ def _configured_port() -> int:
     return read_config("web/settings.json").get("listen_port", WEB_DEFAULT_LISTEN_PORT)
 
 
-def _panel_scheme() -> str:
-    """``https`` when the panel's settings say it speaks HTTPS, else ``http``."""
-    return "https" if is_https_enabled() else "http"
+def _configured_https_port() -> int:
+    """The port the panel was told to serve HTTPS on."""
+    return int(
+        read_config("web/settings.json").get(
+            WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT
+        )
+    )
+
+
+def _loopback_url() -> str:
+    """The panel on loopback, on the port a browser ends up on.
+
+    Returns:
+        ``https://127.0.0.1:<https port>`` while HTTPS is on, else
+        ``http://127.0.0.1:<port>``.
+    """
+    if is_https_enabled():
+        return f"https://127.0.0.1:{_configured_https_port()}"
+    return f"http://127.0.0.1:{_configured_port()}"
 
 
 def _panel_url() -> str:
-    """Where the panel answers, as the machine in front of it would reach it.
+    """Where a browser opens the panel.
+
+    Returns:
+        ``https://<host>`` while HTTPS is on, with the HTTPS port unless it
+        is 443, else the HTTP address.
+    """
+    if not is_https_enabled():
+        return _panel_http_url()
+    port = _configured_https_port()
+    suffix = "" if port == WEB_HTTPS_SCHEME_PORT else f":{port}"
+    return f"https://{_panel_host()}{suffix}"
+
+
+def _panel_http_url() -> str:
+    """The panel's HTTP address, which serves the authority whatever the scheme.
+
+    Returns:
+        ``http://<host>:<port>``.
+    """
+    return f"http://{_panel_host()}:{_configured_port()}"
+
+
+def _panel_host() -> str:
+    """The address the machine in front of the panel reaches it at.
 
     Returns:
         The address of a network this box serves, or of an interface it
-        answers on where it serves none — which is every address a server has
-        — and the hostname when it has neither.
+        answers on where it serves none, which is every address a server
+        has, and the hostname when it has neither.
     """
-    port = _configured_port()
-    scheme = _panel_scheme()
     network = _network_config()
     for interface in network.interfaces:
         if interface.role == "lan" and interface.lan.address:
-            return f"{scheme}://{interface.lan.address}:{port}"
+            return interface.lan.address
     status = RouterLinkStatus()
     for name in network.exposed_device_names:
         address = status.link(name).ipv4_address
         if address:
-            return f"{scheme}://{address.partition('/')[0]}:{port}"
-    return f"{scheme}://{socket.gethostname()}:{port}"
+            return address.partition("/")[0]
+    return socket.gethostname()
 
 
 def _step_cliproxyapi(reporter: InstallReporter) -> str:

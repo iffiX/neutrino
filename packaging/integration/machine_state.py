@@ -229,13 +229,21 @@ def _panel_answers() -> bool:
     return probe.returncode == 0
 
 
-# Read from the panel's own settings rather than assumed: the port and the
+# Read from the panel's own settings rather than assumed: the ports and the
 # scheme are things somebody can change, and a check that hard-codes them
-# reports a moved panel as a dead one.
+# reports a moved panel as a dead one. The first prints the scheme a browser
+# ends up on and its port, the second both ports.
 PANEL_PORT_SCRIPT = (
     "import json;"
     "s=json.load(open('/etc/neutrino/hub/web/settings.json'));"
-    "print('https' if s.get('is_https_enabled') else 'http', s.get('listen_port', 8080))"
+    "h=s.get('is_https_enabled');"
+    "print('https' if h else 'http',"
+    " s.get('https_listen_port', 443) if h else s.get('listen_port', 8080))"
+)
+PANEL_PORTS_SCRIPT = (
+    "import json;"
+    "s=json.load(open('/etc/neutrino/hub/web/settings.json'));"
+    "print(s.get('listen_port', 8080), s.get('https_listen_port', 443))"
 )
 PANEL_AUTHORITY_PATH = "/etc/neutrino/hub/web/panel_tls/authority.pem"
 

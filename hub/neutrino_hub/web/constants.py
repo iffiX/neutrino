@@ -87,6 +87,11 @@ WEB_DEFAULT_THEME = "dark"
 # offers it, the unit serves on it, and an enrollment link points a device at
 # it, and three copies of it is how a device ends up sent to the wrong port.
 WEB_DEFAULT_LISTEN_PORT = 8080
+# The port the panel serves HTTPS on, beside the HTTP port, whether or not
+# HTTPS is on.
+WEB_DEFAULT_HTTPS_LISTEN_PORT = 443
+# The port an https:// address means when it names none.
+WEB_HTTPS_SCHEME_PORT = 443
 
 # The agent channel: the /api/agent routes on their own TLS port, pinned by
 # the fingerprint every enrollment link carries. The certificate is public
@@ -133,9 +138,14 @@ WEB_PANEL_TLS_LOOPBACK_NAMES = ("127.0.0.1", "localhost")
 WEB_PANEL_TLS_AUTHORITY_ORGANIZATION = "Neutrino"
 WEB_PANEL_TLS_FILE_NAME = "neutrino-{hub}-ca.crt"
 WEB_PANEL_TLS_MEDIA_TYPE = "application/x-x509-ca-cert"
-# The panel's scheme, kept in ``web/settings.json``; off until somebody turns
-# it on.
+# Whether the HTTP port sends every browser to the HTTPS port and the session
+# cookie is Secure, kept in ``web/settings.json``; off until somebody turns it
+# on. The HTTPS port's own number sits beside it.
 WEB_SETTING_HTTPS = "is_https_enabled"
+WEB_SETTING_HTTPS_PORT = "https_listen_port"
+# The one panel path the HTTP port serves while HTTPS is on: the authority a
+# browser installs before it trusts the HTTPS port.
+WEB_PANEL_TLS_AUTHORITY_ROUTE = "/api/hub/setting/https/authority"
 # The hub's own identity, ``{id, name}``: the id clients group it by and the
 # name they show. Generated when missing; deleted by ``nhub reset all``.
 WEB_IDENTITY_FILE = "web/identity.json"

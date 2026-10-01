@@ -36,7 +36,7 @@ echo "== enrollment link"
 CURL=(curl -s -f)
 if sudo grep -Eq '"is_https_enabled": *true' /etc/neutrino/hub/web/settings.json; then
     sudo cat /etc/neutrino/hub/web/panel_tls/authority.pem > /tmp/panel_authority.pem
-    PANEL="https://127.0.0.1:8080"
+    PANEL="https://127.0.0.1"
     CURL+=(--cacert /tmp/panel_authority.pem)
 fi
 COOKIES="$(mktemp)"

@@ -95,7 +95,7 @@ conventions explicit so nobody drifts.
      the package, `nhub setup`, and the panel; and what `--dev` does
      differently against a root of its own.
    - [design/protocol.md](design/protocol.md) — everything the hub speaks:
-     the two ports, how a path is grouped and named, refusals as
+     the three ports, how a path is grouped and named, refusals as
      `{code, params}`, every route, the channel's frames, sections and
      kinds, admission and versioning by protocol number.
    - [design/modules/ai.md](design/modules/ai.md) — the AI gateway's behavior:

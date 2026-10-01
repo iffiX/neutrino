@@ -87,9 +87,35 @@ def test_a_post_over_https_refuses_a_panel_the_authority_did_not_sign(
         setup._post(f"https://127.0.0.1:{port}/api/hub/auth/login", {})
 
 
-@pytest.mark.parametrize("is_https, scheme", [(False, "http"), (True, "https")])
-def test_the_printed_address_names_the_scheme(monkeypatch, is_https, scheme):
+@pytest.mark.parametrize(
+    "is_https, https_port, expected",
+    [
+        (False, 443, "http://192.168.8.1:8080"),
+        (True, 443, "https://192.168.8.1"),
+        (True, 8443, "https://192.168.8.1:8443"),
+    ],
+)
+def test_the_printed_address_is_the_port_a_browser_ends_up_on(
+    monkeypatch, is_https, https_port, expected
+):
     monkeypatch.setattr(setup, "is_https_enabled", lambda: is_https)
     monkeypatch.setattr(setup, "_configured_port", lambda: 8080)
+    monkeypatch.setattr(setup, "_configured_https_port", lambda: https_port)
+    monkeypatch.setattr(setup, "_panel_host", lambda: "192.168.8.1")
 
-    assert setup._panel_scheme() == scheme
+    assert setup._panel_url() == expected
+    assert setup._panel_http_url() == "http://192.168.8.1:8080"
+
+
+@pytest.mark.parametrize(
+    "is_https, expected",
+    [(False, "http://127.0.0.1:8080"), (True, "https://127.0.0.1:8443")],
+)
+def test_loopback_reaches_the_port_that_serves_the_panel(
+    monkeypatch, is_https, expected
+):
+    monkeypatch.setattr(setup, "is_https_enabled", lambda: is_https)
+    monkeypatch.setattr(setup, "_configured_port", lambda: 8080)
+    monkeypatch.setattr(setup, "_configured_https_port", lambda: 8443)
+
+    assert setup._loopback_url() == expected

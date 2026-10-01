@@ -42,7 +42,7 @@ if [ -z "$SG_ID" ] || [ "$SG_ID" = None ]; then
         --description "neutrino integration: this machine in, the pair between themselves" \
         --vpc-id "$VPC_ID" --query GroupId --output text)"
     # This machine: SSH, RDP for a person, and the panel to look at.
-    for port in 22 3389 "$PANEL_PORT"; do
+    for port in 22 3389 "$PANEL_PORT" "$PANEL_HTTPS_PORT"; do
         aws ec2 authorize-security-group-ingress --group-id "$SG_ID" \
             --protocol tcp --port "$port" --cidr "$MY_IP/32" >/dev/null
     done

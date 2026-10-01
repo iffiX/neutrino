@@ -2,8 +2,8 @@
 
 One process, two applications: the panel serves its API, grouped as the
 sidebar is under ``/api/hub`` and ``/api/agent``, and the built frontend on
-plain HTTP, and the agent channel serves ``/api/channel`` alone on its own
-TLS port. Both share one runtime, which is where a ticket the panel
+its HTTP port and its HTTPS port, and the agent channel serves
+``/api/channel`` alone on its own TLS port. Both share one runtime, which is where a ticket the panel
 generates is spent by the peer that joins with it.
 
 The frontend is a single-page app: any panel path that is not an API route, a
@@ -23,6 +23,7 @@ from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.web import ws
 from neutrino_hub.web.constants import WEB_CODE_BODY_INVALID, WEB_FRONTEND_DIST_DIR
+from neutrino_hub.web.https_redirect import PanelHttpsRedirectMiddleware
 from neutrino_hub.web.origin_guard import OriginGuardMiddleware
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.usage_collector import PanelUsageCollector
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.add_exception_handler(RequestValidationError, _body_invalid)
     app.add_middleware(OriginGuardMiddleware)
+    app.add_middleware(PanelHttpsRedirectMiddleware, runtime=app.state.runtime)
     _settle_gateway_key()
     _start_samplers()
 

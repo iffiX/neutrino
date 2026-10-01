@@ -44,6 +44,7 @@ NOUN_READS = frozenset(
         "/api/hub/device/online",
         "/api/hub/service/share",
         "/api/hub/network/interface/wifi/scan",
+        "/api/hub/setting/https/probe",
         "/api/agent/file/download",
         "/api/agent/file/directory/download",
     }

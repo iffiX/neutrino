@@ -29,8 +29,10 @@ from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.xray.constants import XRAY_SOCKS_PORT
 from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LANGUAGE,
     WEB_DEFAULT_LISTEN_PORT,
+    WEB_HTTPS_SCHEME_PORT,
     WEB_LANGUAGES,
 )
 from neutrino_hub.utils.constants import UTILS_SETUP_LOG_PATH
@@ -135,10 +137,13 @@ class WizardAnswers:
         vault_passphrase: The vault master passphrase, already accepted.
         network: The interface roles the chosen mode describes.
         proxy: What the proxy screen answered.
-        listen_port: The port the panel answers on. Asked whatever shape this
-            box is, because every one of them answers somewhere.
+        listen_port: The port the panel answers HTTP on. Asked whatever
+            shape this box is, because every one of them answers somewhere.
+        https_listen_port: The port the panel answers HTTPS on, asked after
+            the HTTP port.
         language: The language the panel is drawn in.
-        is_https_enabled: Whether the panel speaks HTTPS.
+        is_https_enabled: Whether the HTTP port sends browsers to the HTTPS
+            port.
     """
 
     password: str
@@ -146,6 +151,7 @@ class WizardAnswers:
     vault_passphrase: str = ""
     proxy: WizardProxy = field(default_factory=WizardProxy)
     listen_port: int = WEB_DEFAULT_LISTEN_PORT
+    https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
     is_https_enabled: bool = False
 
@@ -169,6 +175,7 @@ WIZARD_DOCUMENT_KEYS = (
     "network",
     "proxy",
     "listen_port",
+    "https_listen_port",
     "language",
     "is_https_enabled",
 )
@@ -227,12 +234,19 @@ def from_document(document: dict) -> WizardAnswers:
         planned = RouterModePlanner(port_names=ports, **keywords).plan()
     except (TypeError, ValueError) as error:
         raise WizardAborted(str(error)) from error
+    listen_port = _port_from(document.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
+    https_listen_port = _port_from(
+        document.get("https_listen_port", WEB_DEFAULT_HTTPS_LISTEN_PORT)
+    )
+    if https_listen_port == listen_port:
+        raise WizardAborted("'https_listen_port' must differ from 'listen_port'")
     return WizardAnswers(
         password=document["password"],
         vault_passphrase=document["vault_passphrase"],
         network=planned,
         proxy=_proxy_from(document.get("proxy", {}), network["mode"]),
-        listen_port=_port_from(document.get("listen_port", WEB_DEFAULT_LISTEN_PORT)),
+        listen_port=listen_port,
+        https_listen_port=https_listen_port,
         language=_language_from(document.get("language", WEB_DEFAULT_LANGUAGE)),
         is_https_enabled=_https_from(document.get("is_https_enabled", False)),
     )
@@ -409,6 +423,7 @@ class SetupWizard:
         self._upstream = ""
         self._proxy = WizardProxy()
         self._listen_port = WEB_DEFAULT_LISTEN_PORT
+        self._https_listen_port = WEB_DEFAULT_HTTPS_LISTEN_PORT
         self._language = WEB_DEFAULT_LANGUAGE
         self._is_https_enabled = False
 
@@ -446,6 +461,7 @@ class SetupWizard:
             network=self._plan(),
             proxy=self._proxy,
             listen_port=self._listen_port,
+            https_listen_port=self._https_listen_port,
             language=self._language,
             is_https_enabled=self._is_https_enabled,
         )
@@ -490,8 +506,9 @@ class SetupWizard:
             self._prompt("Press Enter to try again")
             return WIZARD_AGAIN
         print()
-        self._say("The hub makes the panel's certificates either way; the")
-        self._say("Settings page turns HTTPS on or off later.")
+        self._say("The panel serves HTTP and HTTPS either way. With HTTPS on,")
+        self._say("the HTTP port sends every browser to the HTTPS port; the")
+        self._say("Settings page turns it on or off later.")
         answer = self._yes_no("Does the panel speak HTTPS", default=False)
         if answer is None:
             return WIZARD_PREVIOUS
@@ -557,6 +574,14 @@ class SetupWizard:
         if port is None:
             return WIZARD_PREVIOUS
         self._listen_port = port
+        while True:
+            port = self._port("HTTPS port", self._https_listen_port)
+            if port is None:
+                return WIZARD_PREVIOUS
+            if port != self._listen_port:
+                break
+            self._say("The HTTPS port is a port of its own; pick another.")
+        self._https_listen_port = port
         return WIZARD_NEXT
 
     def _candidates(self) -> list:
@@ -885,6 +910,9 @@ class SetupWizard:
         else:
             self._say("  proxy          off")
         self._say(f"  language       {WIZARD_LANGUAGE_NAMES[self._language]}")
+        self._say(
+            f"  panel ports    HTTP {self._listen_port}, HTTPS {self._https_listen_port}"
+        )
         self._say(f"  HTTPS          {'on' if self._is_https_enabled else 'off'}")
         self._say("")
         if ROUTER_MODES_BY_KEY[self._mode].is_addressing_owned:
@@ -901,10 +929,7 @@ class SetupWizard:
             self._say("network might be interrupted, please reconnect when")
             self._say("interruption happens.")
             self._say("")
-            scheme = "https" if self._is_https_enabled else "http"
-            self._say(
-                f"The panel will be at {scheme}://{self._address}:{self._listen_port}"
-            )
+            self._say(f"The panel will be at {self._panel_address()}")
             self._say(f"and the run is written to {UTILS_SETUP_LOG_PATH}.")
         else:
             self._say("Saying yes here replaces the firewall and starts the")
@@ -913,6 +938,14 @@ class SetupWizard:
         if self._prompt("Start, or b to step back") == WIZARD_BACK:
             return WIZARD_PREVIOUS
         return WIZARD_NEXT
+
+    def _panel_address(self) -> str:
+        """Where a browser opens the panel, by the scheme and ports chosen."""
+        if not self._is_https_enabled:
+            return f"http://{self._address}:{self._listen_port}"
+        if self._https_listen_port == WEB_HTTPS_SCHEME_PORT:
+            return f"https://{self._address}"
+        return f"https://{self._address}:{self._https_listen_port}"
 
     def _plan(self):
         """The configuration the answers so far describe."""
@@ -1083,6 +1116,7 @@ def context() -> dict:
             "socks_proxy_port": XRAY_SOCKS_PORT,
             "socks_direct_port": XRAY_SOCKS_PORT,
             "listen_port": WEB_DEFAULT_LISTEN_PORT,
+            "https_listen_port": WEB_DEFAULT_HTTPS_LISTEN_PORT,
         },
     }
 

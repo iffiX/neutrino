@@ -38,7 +38,11 @@ from neutrino_hub.modules.hub_update.release import (
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
 from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.utils.json_file import read_config
-from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
+    WEB_DEFAULT_LISTEN_PORT,
+    WEB_SETTING_HTTPS_PORT,
+)
 
 # --- config ---
 UPDATE_NOTES_LINES = 20
@@ -164,7 +168,13 @@ def _plan_from_release(installer: HubUpdateInstaller, *, is_confirmed: bool, por
         )
     if not is_confirmed and not _asked(f"install {found.version} over {HUB_VERSION}?"):
         return STATUS_FAILED, None
-    plan = installer.prepare(found, current=HUB_VERSION, port=port, on_progress=print)
+    plan = installer.prepare(
+        found,
+        current=HUB_VERSION,
+        port=port,
+        https_port=_configured_https_port(),
+        on_progress=print,
+    )
     return STATUS_DONE, plan
 
 
@@ -185,7 +195,11 @@ def _plan_from_file(
     if not is_confirmed and not _asked(f"install {package.name} over {HUB_VERSION}?"):
         return STATUS_FAILED, None
     plan = installer.plan_for_file(
-        package, current=HUB_VERSION, port=port, on_progress=print
+        package,
+        current=HUB_VERSION,
+        port=port,
+        https_port=_configured_https_port(),
+        on_progress=print,
     )
     return STATUS_DONE, plan
 
@@ -273,6 +287,18 @@ def _configured_port() -> int:
         )
     except (FileNotFoundError, ValueError):
         return WEB_DEFAULT_LISTEN_PORT
+
+
+def _configured_https_port() -> int:
+    """The port the panel serves HTTPS on, from the settings or the default."""
+    try:
+        return int(
+            read_config(PANEL_SETTINGS_FILE).get(
+                WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT
+            )
+        )
+    except (FileNotFoundError, ValueError):
+        return WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 
 def _megabytes(size: int) -> int:

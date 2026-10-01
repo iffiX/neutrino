@@ -11,6 +11,7 @@ version per carried component.
 """
 
 import asyncio
+import base64
 import hashlib
 import io
 import json
@@ -106,6 +107,69 @@ def test_a_port_no_listener_can_take_is_refused(port_client, port):
 
     assert response.status_code == 400
     assert stored["listen_port"] == 8080
+    assert restarts == []
+
+
+def test_the_https_port_is_read_back_with_its_default(port_client):
+    opened, _, _, _ = port_client
+
+    assert opened.get("/api/hub/setting").json()["https_listen_port"] == 443
+
+
+def test_a_new_https_port_is_written_and_the_panel_moves_to_it(port_client):
+    opened, runtime, stored, restarts = port_client
+
+    response = opened.post(
+        "/api/hub/setting/set", json={"listen_port": 8080, "https_listen_port": 8444}
+    )
+
+    assert response.json()["https_listen_port"] == 8444
+    assert stored["https_listen_port"] == 8444
+    assert runtime.settings["https_listen_port"] == 8444
+    assert restarts == ["restarted"]
+
+
+def test_a_body_without_the_https_port_keeps_it(port_client):
+    opened, runtime, stored, _ = port_client
+    runtime.settings["https_listen_port"] = 8444
+    stored["https_listen_port"] = 8444
+
+    response = opened.post("/api/hub/setting/set", json={"listen_port": 9080})
+
+    assert response.json()["https_listen_port"] == 8444
+    assert stored["https_listen_port"] == 8444
+
+
+@pytest.mark.parametrize(
+    "body, value",
+    [
+        ({"listen_port": 8080, "https_listen_port": 8080}, 8080),
+        ({"listen_port": 8443, "https_listen_port": 443}, 8443),
+        ({"listen_port": 8080, "https_listen_port": 8443}, 8443),
+    ],
+)
+def test_a_port_another_listener_holds_is_refused_by_code(port_client, body, value):
+    opened, _, stored, restarts = port_client
+
+    response = opened.post("/api/hub/setting/set", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "port_already_in_use",
+        "params": {"value": value},
+    }
+    assert stored == {"listen_port": 8080}
+    assert restarts == []
+
+
+def test_an_https_port_no_listener_can_take_is_refused(port_client):
+    opened, _, _, restarts = port_client
+
+    response = opened.post(
+        "/api/hub/setting/set", json={"listen_port": 8080, "https_listen_port": 0}
+    )
+
+    assert response.json()["detail"]["code"] == "port_out_of_range"
     assert restarts == []
 
 
@@ -834,12 +898,12 @@ class _Installer:
     def is_rollback_present(self, current):
         return self.rollback_present
 
-    def prepare(self, found, *, current, port, on_progress):
+    def prepare(self, found, *, current, port, https_port, on_progress):
         on_progress("downloading")
         on_progress("100%")
         if self.prepare_failure is not None:
             raise self.prepare_failure
-        self.prepared.append((found.version, current, port))
+        self.prepared.append((found.version, current, port, https_port))
         return SimpleNamespace(to_version=found.version)
 
     def launch(self, plan):
@@ -1169,7 +1233,9 @@ def test_the_staging_task_relays_progress_and_hands_over(update_box, monkeypatch
     found = _Release("0.3.1")
 
     lines = asyncio.run(
-        _drained(settings_router._update_source(installer, found, port=8090))
+        _drained(
+            settings_router._update_source(installer, found, port=8090, https_port=8091)
+        )
     )
 
     assert lines == [
@@ -1178,7 +1244,7 @@ def test_the_staging_task_relays_progress_and_hands_over(update_box, monkeypatch
         "100%\n",
         "handing the install to systemd; the panel restarts now\n",
     ]
-    assert installer.prepared == [("0.3.1", "0.3.0", 8090)]
+    assert installer.prepared == [("0.3.1", "0.3.0", 8090, 8091)]
     assert [plan.to_version for plan in installer.launched] == ["0.3.1"]
 
 
@@ -1194,7 +1260,11 @@ def test_a_staging_that_fails_records_why_and_ends_the_task_failed(update_box):
 
     with pytest.raises(HubUpdateError):
         asyncio.run(
-            _drained(settings_router._update_source(installer, found, port=8090))
+            _drained(
+                settings_router._update_source(
+                    installer, found, port=8090, https_port=8091
+                )
+            )
         )
 
     record = installer.state.load()
@@ -1317,11 +1387,9 @@ def test_https_is_off_and_no_authority_exists_before_it_is_asked_for(https_box):
     assert view["authority_file_name"] == "neutrino-argon-ca.crt"
 
 
-def test_turning_https_on_makes_the_authority_writes_the_flag_and_restarts(
-    https_box,
-):
+def test_turning_https_on_makes_the_authority_and_restarts_nothing(https_box):
     opened = signed_in(https_box)
-    _, config_dir, restarts, _, _ = https_box
+    _, config_dir, restarts, runtime, _ = https_box
 
     view = opened.post("/api/hub/setting/https/enable").json()
 
@@ -1333,22 +1401,24 @@ def test_turning_https_on_makes_the_authority_writes_the_flag_and_restarts(
     assert view["leaf_expires_at"] > view["leaf_issued_at"]
     assert view["renewed_at"] is None
     assert stored_https(config_dir) is True
-    assert restarts == ["restarted"]
+    assert runtime.settings["is_https_enabled"] is True
+    assert restarts == []
 
 
-def test_turning_https_on_twice_restarts_once(https_box):
+def test_the_view_names_both_ports(https_box):
     opened = signed_in(https_box)
-    _, _, restarts, _, _ = https_box
-    opened.post("/api/hub/setting/https/enable")
+    _, _, _, runtime, _ = https_box
+    runtime.settings["https_listen_port"] = 8444
 
-    opened.post("/api/hub/setting/https/enable")
+    view = opened.get("/api/hub/setting/https").json()
 
-    assert restarts == ["restarted"]
+    assert view["listen_port"] == 8080
+    assert view["https_listen_port"] == 8444
 
 
 def test_turning_https_off_keeps_the_certificates(https_box):
     opened = signed_in(https_box)
-    _, config_dir, restarts, _, _ = https_box
+    _, config_dir, restarts, runtime, _ = https_box
     fingerprint = opened.post("/api/hub/setting/https/enable").json()[
         "authority_fingerprint"
     ]
@@ -1358,12 +1428,12 @@ def test_turning_https_off_keeps_the_certificates(https_box):
     assert view["is_https_enabled"] is False
     assert view["authority_fingerprint"] == fingerprint
     assert stored_https(config_dir) is False
-    assert restarts == ["restarted", "restarted"]
+    assert runtime.settings["is_https_enabled"] is False
+    assert restarts == []
 
 
-def test_a_reset_replaces_the_authority_and_the_certificate_it_signed(https_box):
+def test_a_reset_replaces_the_authority_and_returns_its_der(https_box):
     opened = signed_in(https_box)
-    _, _, restarts, _, _ = https_box
     before = opened.post("/api/hub/setting/https/enable").json()
 
     after = opened.post("/api/hub/setting/https/authority/reset").json()
@@ -1371,7 +1441,108 @@ def test_a_reset_replaces_the_authority_and_the_certificate_it_signed(https_box)
     assert after["authority_fingerprint"] != before["authority_fingerprint"]
     assert after["is_https_enabled"] is True
     assert after["renewed_at"] is not None
-    assert restarts == ["restarted"]
+    der = base64.b64decode(after["authority_der"])
+    assert hashlib.sha256(der).hexdigest() == after["authority_fingerprint"]
+
+
+def test_a_reset_over_https_is_refused_and_changes_nothing(https_box):
+    _, _, _, _, app = https_box
+    app.dependency_overrides[require_session] = lambda: None
+    with TestClient(app, base_url="https://testserver") as secure:
+        before = secure.post("/api/hub/setting/https/enable").json()
+
+        refused = secure.post("/api/hub/setting/https/authority/reset")
+        after = secure.get("/api/hub/setting/https").json()
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {"code": "https_reset_over_https", "params": {}}
+    assert after["authority_fingerprint"] == before["authority_fingerprint"]
+
+
+def test_the_probe_answers_without_a_session(https_box):
+    opened, _, _, _, _ = https_box
+
+    probe = opened.get("/api/hub/setting/https/probe")
+
+    assert probe.status_code == 204
+    assert probe.content == b""
+
+
+def redirecting(runtime) -> TestClient:
+    """A panel behind the HTTPS redirect, answering every path with its own."""
+    from neutrino_hub.web.https_redirect import PanelHttpsRedirectMiddleware
+
+    app = FastAPI()
+    app.add_middleware(PanelHttpsRedirectMiddleware, runtime=runtime)
+
+    @app.get("/{path:path}")
+    def echo(path: str) -> dict:
+        return {"path": path}
+
+    return TestClient(app, follow_redirects=False)
+
+
+@pytest.mark.parametrize(
+    "https_port, location",
+    [
+        (443, "https://192.168.100.1/devices?tab=all"),
+        (8444, "https://192.168.100.1:8444/devices?tab=all"),
+    ],
+)
+def test_http_answers_301_to_the_https_port_while_https_is_on(https_port, location):
+    runtime = HttpsRuntime()
+    runtime.settings.update(is_https_enabled=True, https_listen_port=https_port)
+    plain = redirecting(runtime)
+
+    answer = plain.get(
+        "http://192.168.100.1:8080/devices?tab=all",
+        headers={"host": "192.168.100.1:8080"},
+    )
+
+    assert answer.status_code == 301
+    assert answer.headers["location"] == location
+
+
+def test_http_serves_the_panel_while_https_is_off():
+    plain = redirecting(HttpsRuntime())
+
+    answer = plain.get("http://192.168.100.1:8080/devices")
+
+    assert answer.status_code == 200
+    assert answer.json() == {"path": "devices"}
+
+
+def test_the_https_port_is_never_redirected():
+    runtime = HttpsRuntime()
+    runtime.settings["is_https_enabled"] = True
+    secure = redirecting(runtime)
+
+    answer = secure.get("https://192.168.100.1/devices")
+
+    assert answer.status_code == 200
+
+
+def test_the_authority_still_downloads_over_http_while_https_is_on():
+    runtime = HttpsRuntime()
+    runtime.settings["is_https_enabled"] = True
+    plain = redirecting(runtime)
+
+    answer = plain.get("http://192.168.100.1:8080/api/hub/setting/https/authority")
+
+    assert answer.status_code == 200
+
+
+def test_turning_https_on_redirects_the_next_request(https_box):
+    """The redirect reads the runtime's settings, which the enable route
+    writes, so nothing restarts between the two."""
+    opened = signed_in(https_box)
+    _, _, _, runtime, _ = https_box
+    plain = redirecting(runtime)
+    assert plain.get("http://192.168.100.1:8080/").status_code == 200
+
+    opened.post("/api/hub/setting/https/enable")
+
+    assert plain.get("http://192.168.100.1:8080/").status_code == 301
 
 
 def test_the_authority_downloads_without_a_session(https_box):

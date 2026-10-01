@@ -210,7 +210,7 @@ def test_staging_downloads_the_package_and_checks_its_digest(tmp_path, roots):
     lines = []
 
     plan = installer.prepare(
-        wanted, current="0.3.0", port=8080, on_progress=lines.append
+        wanted, current="0.3.0", port=8080, https_port=8444, on_progress=lines.append
     )
 
     assert plan.package == roots[0] / "hub_update" / wanted.asset_name
@@ -235,7 +235,7 @@ def test_a_package_whose_digest_differs_is_deleted_and_refused(tmp_path, roots):
     )
 
     with pytest.raises(HubUpdateError) as refused:
-        installer.prepare(wanted, current="0.3.0", port=8080)
+        installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
     assert refused.value.code == "package_sha256_mismatch"
     assert not list((roots[0] / "hub_update").glob("*.deb"))
@@ -248,7 +248,7 @@ def test_a_download_that_breaks_leaves_nothing_behind(tmp_path, roots):
     installer = make_installer(tmp_path, checker=checker, payloads={})
 
     with pytest.raises(HubUpdateError) as refused:
-        installer.prepare(wanted, current="0.3.0", port=8080)
+        installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
     assert refused.value.code == "package_fetch_failed"
     assert not list((roots[0] / "hub_update").iterdir())
@@ -265,7 +265,7 @@ def test_a_package_already_here_that_matches_is_not_downloaded_again(tmp_path, r
     lines = []
 
     plan = installer.prepare(
-        wanted, current="0.3.0", port=8080, on_progress=lines.append
+        wanted, current="0.3.0", port=8080, https_port=8444, on_progress=lines.append
     )
 
     assert plan.package.read_bytes() == payload
@@ -287,7 +287,7 @@ def test_staging_keeps_only_the_target_and_the_rollback(tmp_path, roots):
         tmp_path, checker=checker, payloads={wanted.asset_url: payload}
     )
 
-    plan = installer.prepare(wanted, current="0.3.0", port=8080)
+    plan = installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
     assert sorted(entry.name for entry in directory.iterdir()) == [
         "neutrino-hub_0.3.0_amd64.deb",
@@ -316,7 +316,7 @@ def test_the_rollback_is_fetched_from_the_running_versions_release(tmp_path, roo
     lines = []
 
     plan = installer.prepare(
-        wanted, current="0.3.0", port=8080, on_progress=lines.append
+        wanted, current="0.3.0", port=8080, https_port=8444, on_progress=lines.append
     )
 
     assert plan.rollback.read_bytes() == old
@@ -334,7 +334,7 @@ def test_no_release_for_the_running_version_means_no_rollback(tmp_path, roots):
     lines = []
 
     plan = installer.prepare(
-        wanted, current="0.3.0", port=8080, on_progress=lines.append
+        wanted, current="0.3.0", port=8080, https_port=8444, on_progress=lines.append
     )
 
     assert plan.rollback is None
@@ -359,7 +359,7 @@ def test_a_rollback_a_release_carries_but_cannot_be_fetched_refuses(tmp_path, ro
     )
 
     with pytest.raises(HubUpdateError) as refused:
-        installer.prepare(wanted, current="0.3.0", port=8080)
+        installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
     assert refused.value.code == "rollback_fetch_failed"
     assert not (roots[0] / "hub_update" / previous.asset_name).exists()
@@ -371,7 +371,7 @@ def test_too_little_room_refuses_before_anything_is_fetched(tmp_path, roots):
     installer._disk_usage = lambda path: Usage(1, 1, 10)
 
     with pytest.raises(HubUpdateError) as refused:
-        installer.prepare(wanted, current="0.3.0", port=8080)
+        installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
     assert refused.value.code == "disk_space_short"
 
@@ -389,7 +389,7 @@ def test_the_gate_holds_for_the_panel_and_whatever_of_the_routers_is_running(
         units={"neutrino_hub_router": "active", "neutrino_hub_dnsmasq": "inactive"},
     )
 
-    plan = installer.prepare(wanted, current="0.3.0", port=8080)
+    plan = installer.prepare(wanted, current="0.3.0", port=8080, https_port=8444)
 
     assert plan.units == ("neutrino_hub_web", "neutrino_hub_router")
 
@@ -424,7 +424,7 @@ def test_a_package_file_is_linked_in_and_its_version_read_off_its_name(tmp_path,
     lines = []
 
     plan = installer.plan_for_file(
-        brought, current="0.3.0", port=8080, on_progress=lines.append
+        brought, current="0.3.0", port=8080, https_port=8444, on_progress=lines.append
     )
 
     assert plan.to_version == "0.3.1"
@@ -449,7 +449,7 @@ def test_a_package_file_on_another_filesystem_is_copied_in(
         "neutrino_hub.modules.hub_update.installer.os.link", refuse_link
     )
 
-    plan = installer.plan_for_file(brought, current="0.3.0", port=8080)
+    plan = installer.plan_for_file(brought, current="0.3.0", port=8080, https_port=8444)
 
     assert plan.package.read_bytes() == b"brought"
     assert plan.package.stat().st_ino != brought.stat().st_ino
@@ -463,7 +463,7 @@ def test_the_same_version_brought_again_has_no_rollback_and_asks_no_release(
     checker = Checker()
     installer = make_installer(tmp_path, checker=checker)
 
-    plan = installer.plan_for_file(brought, current="0.3.0", port=8080)
+    plan = installer.plan_for_file(brought, current="0.3.0", port=8080, https_port=8444)
 
     assert plan.to_version == "0.3.0"
     assert plan.rollback is None
@@ -476,7 +476,7 @@ def test_a_file_under_another_name_is_refused_with_its_own_code(tmp_path, roots)
     installer = make_installer(tmp_path, checker=Checker())
 
     with pytest.raises(HubUpdateError) as refused:
-        installer.plan_for_file(brought, current="0.3.0", port=8080)
+        installer.plan_for_file(brought, current="0.3.0", port=8080, https_port=8444)
 
     assert refused.value.code == "package_name_mismatch"
     assert refused.value.params == {"name": "hub.deb", "expected": ASSET}
@@ -487,7 +487,7 @@ def test_no_file_at_the_path_is_refused_with_its_own_code(tmp_path, roots):
     installer = make_installer(tmp_path, checker=Checker())
 
     with pytest.raises(HubUpdateError) as refused:
-        installer.plan_for_file(missing, current="0.3.0", port=8080)
+        installer.plan_for_file(missing, current="0.3.0", port=8080, https_port=8444)
 
     assert refused.value.code == "package_missing"
     assert refused.value.params == {"path": str(missing)}
@@ -504,6 +504,7 @@ def plan_in(directory: Path, *, rollback: bool = True) -> HubUpdatePlan:
         rollback=directory / "neutrino-hub_0.3.0_amd64.deb" if rollback else None,
         family="debian",
         port=8080,
+        https_port=8444,
         units=("neutrino_hub_web",),
         started_at="2026-09-20T15:00:00Z",
     )
@@ -580,6 +581,7 @@ def test_the_script_quotes_every_value_and_names_the_rollback(tmp_path):
         rollback=directory / "neutrino-hub_0.3.0_amd64.deb",
         family="debian",
         port=8080,
+        https_port=8444,
         units=("neutrino_hub_web", "neutrino_hub_router"),
         started_at="2026-09-20T15:00:00Z",
     )
@@ -619,7 +621,7 @@ def test_a_staged_plan_names_the_hubs_own_interpreter(tmp_path, roots):
     package.write_bytes(b"package")
 
     plan = make_installer(tmp_path, checker=Checker()).plan_for_file(
-        package, current="0.3.0", port=8080
+        package, current="0.3.0", port=8080, https_port=8444
     )
 
     assert plan.python == installer_module.sys.executable
@@ -631,29 +633,28 @@ def gate_of(text: str) -> str:
     return text[start : text.index("\n}\n", start) + 3]
 
 
+HTTP_URL = "http://127.0.0.1:8080/api/hub/display"
+HTTPS_URL = "https://127.0.0.1:8444/api/hub/display"
+
+
 @pytest.mark.parametrize(
     "settings, answering, tried, is_passing",
     [
-        ({"listen_port": 8080}, "http", ["http"], True),
-        ({"listen_port": 8080, "is_https_enabled": False}, "http", ["http"], True),
-        ({"listen_port": 8080, "is_https_enabled": True}, "https", ["https"], True),
+        ({"listen_port": 8080}, "http", [HTTP_URL], True),
+        ({"is_https_enabled": False}, "http", [HTTP_URL], True),
+        ({"is_https_enabled": True}, "https", [HTTPS_URL], True),
         # A rollback to a hub that only speaks HTTP, with HTTPS still on.
-        (
-            {"listen_port": 8080, "is_https_enabled": True},
-            "http",
-            ["https", "http"],
-            True,
-        ),
-        # A forward install that turned HTTPS on under an HTTP flag.
-        ({"listen_port": 8080}, "https", ["http", "https"], True),
-        ({"listen_port": 8080}, "none", ["http", "https"], False),
+        ({"is_https_enabled": True}, "http", [HTTPS_URL, HTTP_URL], True),
+        ({"listen_port": 8080}, "https", [HTTP_URL, HTTPS_URL], True),
+        ({"listen_port": 8080}, "none", [HTTP_URL, HTTPS_URL], False),
     ],
 )
-def test_the_gate_tries_the_configured_scheme_then_the_other(
+def test_the_gate_tries_the_configured_port_then_the_other(
     tmp_path, monkeypatch, settings, answering, tried, is_passing
 ):
-    """The scheme is read each time the gate probes, tried first, and the
-    other one second, so a panel on either scheme passes."""
+    """The scheme is read each time the gate probes: HTTPS on its own port
+    while it is on, HTTP on the panel port otherwise, and the other second,
+    so a panel on either passes."""
     settings_path = tmp_path / "settings.json"
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
     authority = tmp_path / "authority.pem"
@@ -678,8 +679,8 @@ def test_the_gate_tries_the_configured_scheme_then_the_other(
     text = render_script(plan_in(tmp_path, rollback=False), directory=tmp_path)
     harness = (
         gate_of(text)
-        + "UNITS=''; PORT=8080; HEALTH_PATH=/api/hub/display; GATE_TIMEOUT=1; "
-        + f"POLL=1; LOG={tmp_path / 'log'}; gate 0.3.1\n"
+        + "UNITS=''; PORT=8080; HTTPS_PORT=8444; HEALTH_PATH=/api/hub/display; "
+        + f"GATE_TIMEOUT=1; POLL=1; LOG={tmp_path / 'log'}; gate 0.3.1\n"
     )
 
     result = subprocess.run(
@@ -691,8 +692,13 @@ def test_the_gate_tries_the_configured_scheme_then_the_other(
 
     assert (result.returncode == 0) is is_passing, result.stderr
     arguments = calls.read_text().split("\n")
-    urls = [word for word in arguments if "://127.0.0.1:8080" in word]
-    assert urls[: len(tried)] == [
-        f"{scheme}://127.0.0.1:8080/api/hub/display" for scheme in tried
-    ]
+    urls = [word for word in arguments if "://127.0.0.1:" in word]
+    assert urls[: len(tried)] == tried
     assert arguments[arguments.index("--cacert") + 1] == str(authority)
+
+
+def test_the_script_names_both_panel_ports(tmp_path):
+    text = render_script(plan_in(tmp_path, rollback=False), directory=tmp_path)
+
+    assert "\nPORT=8080\n" in text
+    assert "\nHTTPS_PORT=8444\n" in text
