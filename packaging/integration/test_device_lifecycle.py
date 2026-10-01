@@ -21,7 +21,9 @@ from pathlib import Path
 
 import pytest
 
+import machine_state
 import test_mode_matrix as matrix
+from test_panel_update import HUB_PYTHON
 
 ID_LAB = Path(__file__).resolve().parent / "id_lab"
 LIFECYCLE_LAN = "192.168.93.1"
@@ -312,7 +314,21 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
     # A protocol outside the hub's range is turned away at the door, on both
     # sides of it, and the binding is untouched: only a hub that has
     # forgotten this machine unbinds it.
-    for number, advice in ((0, "update this agent"), (2, "update the hub")):
+    spoken, accepted = (
+        int(word)
+        for word in machine_state.run(
+            [
+                HUB_PYTHON,
+                "-c",
+                "from neutrino_hub.modules.channel.constants import PROTOCOL, PROTOCOL_MIN; "
+                "print(PROTOCOL, PROTOCOL_MIN)",
+            ]
+        ).split()
+    )
+    for number, advice in (
+        (accepted - 1, "update this agent"),
+        (spoken + 1, "update the hub"),
+    ):
         patched = patch_protocol(host, number)
         assert f"PROTOCOL = {number}" in patched.stdout, patched.stdout + patched.stderr
         told = wait_for(
@@ -323,8 +339,8 @@ def test_the_lifecycle_walks_every_transition(panel, stranger):
         assert advice in told, told
         assert "joined no gateway" not in told, told
 
-    restored = patch_protocol(host, 1)
-    assert "PROTOCOL = 1" in restored.stdout, restored.stdout + restored.stderr
+    restored = patch_protocol(host, spoken)
+    assert f"PROTOCOL = {spoken}" in restored.stdout, restored.stdout + restored.stderr
     wait_for(
         "the agent speaking the hub's protocol again",
         lambda: (device_by_id(panel, device_id) or {}).get("is_agent_online"),
