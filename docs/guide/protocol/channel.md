@@ -4,13 +4,13 @@ title: The channel
 
 # The channel
 
-The channel is the one WebSocket a hub serves every program it manages: a device agent on a Linux machine, or a person's client. A client written outside this repository speaks the same words as `neutrino_client`, and this page is that whole vocabulary: the enrolment link, the certificate pin, the two HTTP endpoints, the socket's eight frames, the stream layer, the two documents a client exchanges, the five service types it consumes, and the codes a hub sends it away with.
+The channel is the one WebSocket a hub keeps with each machine it manages, at protocol 3 from Neutrino 0.5.0. Two roles use it: `agent`, the service on a managed machine, and `client`, a person's desktop client or phone app. This page is the vocabulary a program written outside this repository speaks: the link, the pin, the two HTTP endpoints, the frames, the streams, the documents each role exchanges, and the codes.
 
 ## The port and the pin
 
-A hub listens on two ports. The panel port, 8080 by default, is plain HTTP behind a session cookie and serves the browser. The channel is on the agent port, 8443 by default, which serves `/api/channel` over TLS and nothing else.
+The channel is on the agent port, 8443 by default, which serves `/api/channel` over TLS and nothing else. The panel port is separate, and turning the panel's HTTPS on or off leaves the channel as it is.
 
-The certificate on that port is self-signed and lasts ten years, so its fingerprint is the entire identity of the hub.
+The certificate on the agent port is self-signed and valid for ten years, so its fingerprint is the hub's whole identity.
 
 | Rule                                   | Value                                                                             |
 | -------------------------------------- | --------------------------------------------------------------------------------- |
@@ -18,88 +18,86 @@ The certificate on that port is self-signed and lasts ten years, so its fingerpr
 | When it is checked                     | after every TLS handshake, before any request bytes leave the machine             |
 | Chain and hostname verification        | off                                                                               |
 | TLS floor                              | 1.2                                                                               |
-| A mismatch                             | the socket closes and the enrolment stops, with no move to the next address       |
-| An `https` address with no fingerprint | no connection at all                                                              |
-
-A wrong certificate at a link's address is an impersonation, which is why a mismatch ends the enrolment instead of moving on quietly.
+| A mismatch on a link's address         | the socket closes and the enrolment stops, with no move to the next address       |
+| An `https` address with no fingerprint | no connection                                                                     |
 
 ## The enrolment link
 
-A person makes the link on the hub's **Clients** page and pastes it into the program. [The Clients page](../hub/clients.md) has the steps. It is `neutrino://enroll/<payload>`, where the payload is base64url over one JSON object:
+A person creates the link on the hub's **Clients** page for a client and on **Devices** for an agent. [Clients](../hub/clients.md) has the steps for a client link. [Devices](../hub/devices.md) has them for an agent link. The link is `neutrino://enroll/<payload>`, where the payload is base64url over one JSON object:
 
 ```json
 {
-  "urls": ["https://192.168.100.1:8443", "https://10.8.0.1:8443"],
+  "urls": ["https://192.168.100.1:8443", "https://100.92.14.7:8443"],
   "token": "sB1nYt9Qk2_pL0wV7xR4cZ8f",
   "fp": "<sha256-hex>",
-  "role": "client"
+  "role": "client",
+  "overlays": [
+    {
+      "provider": "netbird",
+      "setup_key": "...",
+      "management_url": "",
+      "fqdn": "hub.netbird.cloud"
+    }
+  ]
 }
 ```
 
-| Field   | Holds                                                                                                                                    |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `urls`  | every address the hub is exposed at on the agent port; one of them is on the joining machine's network, so a program tries them in order |
-| `token` | the enrolment ticket, valid for five minutes and spent once                                                                              |
-| `fp`    | the fingerprint to pin                                                                                                                   |
-| `role`  | `client` for a link from the Clients page, `agent` for one from the Devices page                                                         |
+| Field      | Holds                                                                                                                                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `urls`     | every address the hub is exposed at on the agent port; a program tries them in order, since one of them is on the joining machine's network                                                               |
+| `token`    | the enrolment ticket, valid for five minutes and spent once                                                                                                                                               |
+| `fp`       | the fingerprint to pin                                                                                                                                                                                    |
+| `role`     | `client` or `agent`                                                                                                                                                                                       |
+| `overlays` | a client link only: the same list as the client state's `overlays`, taken for the default permission when the link is created; empty when that permission leaves out `overlay` or no overlay has material |
 
-A program of the client role rejects a link whose `role` is `agent` with `link_not_for_client`. The base64url alphabet has no character a shell splits or a URL escapes, so the link pastes anywhere unquoted, and its `=` padding is optional: a decoder re-pads before decoding.
-
-Making a link replaces whatever ticket was out, so one invitation is open at a time, and a hub restart forgets every ticket.
+A client rejects an agent link with `link_not_for_client`, and an agent rejects a client link with `link_not_for_agent`; each code's `params` names the link's `role`. The base64url alphabet holds no character a shell splits or a URL escapes, so the link pastes unquoted.
 
 ## Joining and leaving
 
-A binding starts at `POST /api/channel/join` and ends at `POST /api/channel/leave`, both plain JSON on the pinned connection.
+| Endpoint                  | Body                                                             | Returns                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `POST /api/channel/join`  | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`: the binding id and a secret every later `hello` carries                                           |
+| `POST /api/channel/leave` | `{id, token}`                                                    | `{}`; a device's row stays on **Devices** and loses its token, a client's row is deleted with its AI gateway key |
 
-The join body has seven fields:
+`machine_id` and `platform` describe the machine itself, and each role reads them from a different place:
 
-| Field        | Holds                                                                                                     |
-| ------------ | --------------------------------------------------------------------------------------------------------- |
-| `ticket`     | the `token` from the link                                                                                 |
-| `role`       | `client`                                                                                                  |
-| `protocol`   | the protocol number this build speaks, `1` in every 0.3.0 package                                         |
-| `machine_id` | a uuid4 hex string this installation generates once and keeps                                             |
-| `name`       | the computer's hostname, which the Clients page shows                                                     |
-| `software`   | the program and its version, such as `neutrino_client/0.3.0`                                              |
-| `platform`   | `{os, family, arch}`: `linux`, `windows` or `darwin`, the Linux distribution family, and the architecture |
+| Field        | An agent sends                                                                                                                                                                                                                                           | A client sends                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `machine_id` | `/etc/machine-id`, else `/var/lib/dbus/machine-id`, else empty                                                                                                                                                                                           | a uuid4 hex string generated once per installation and kept |
+| `platform`   | `{os, family, arch, version}`: `linux`, `windows` or `darwin`; `debian`, `rhel` or empty; `amd64`, `arm64` or `armhf`; and the glibc version on Linux (`2.36`), the build number on Windows (`26100`), the product version on macOS (`15.3.1`), or empty | `{os, family, arch}`, with `family` empty off Linux         |
 
-The reply is `{id, token}`. The `id` is the binding id the hub generated when the link was made, and the `token` is a 192-bit secret that goes into every later `hello`. A program keeps both in a file only its own person can read.
+The hub compares an agent's `version` with a module's floor, and a module whose floor the machine is below reads as one the system cannot run. An agent that sends no `version` is not ruled out.
 
-Admission on `protocol` runs before anything else, so a rejected number spends no ticket. The ticket then leaves the hub's store in the same step that fetches it, so two programs racing one link cannot both join.
+A client joining again from an installation the hub already has a row for lands on that row, keeping its key, its switch and its last report.
 
-| Status | `detail`                                      | When                                                              |
-| ------ | --------------------------------------------- | ----------------------------------------------------------------- |
-| 409    | `protocol_too_old`, params `{peer, hub, min}` | the number is below the hub's `PROTOCOL_MIN`                      |
-| 409    | `protocol_too_new`, params `{peer, hub, min}` | the number is above the hub's `PROTOCOL`                          |
-| 409    | `role_mismatch`, params `{role}`              | the ticket was made for the other role                            |
-| 401    | `ticket_spent`                                | the ticket is unknown, expired, already spent, or its row is gone |
+| Status | `detail`                                      | When                                                |
+| ------ | --------------------------------------------- | --------------------------------------------------- |
+| 409    | `protocol_too_old`, params `{peer, hub, min}` | the number is below the hub's `PROTOCOL_MIN`        |
+| 409    | `protocol_too_new`, params `{peer, hub, min}` | the number is above the hub's `PROTOCOL`            |
+| 409    | `role_mismatch`, params `{role}`              | the ticket was made for the other role              |
+| 401    | `ticket_spent`                                | the ticket is unknown, expired or already spent     |
+| 401    | `binding_unknown`                             | `leave` named an id and token that match no binding |
 
-An HTTP error's body is `{"detail": {"code": "...", "params": {}}}`, the same pair every refusal on the channel uses.
-
-`POST /api/channel/leave` takes `{id, token}` and returns `{}`. The hub then removes the binding and revokes that client's gateway key, and the program deletes its own copy. A pair naming no binding is rejected with 401 `binding_unknown`.
+The protocol check runs before the ticket is read, so a rejected number spends no ticket. An HTTP error's body is `{"detail": {"code": "...", "params": {}}}`.
 
 ## The socket
 
-The socket is `wss://<hub-address>:8443/api/channel/socket`, where the address is the one the join succeeded at. It opens a fresh pinned connection, with the fingerprint checked again. A text frame is one JSON object whose `type` is one of the eight words; a binary frame is a big-endian `u32` stream id, then the bytes of that stream.
-
-The hub pings every 20 seconds and drops a socket whose pong is more than 20 seconds late. `neutrino_client` treats 45 seconds of silence as a dead socket and reconnects with a backoff of 5 to 60 seconds.
+The socket is `wss://<hub-address>:8443/api/channel/socket`, where `<hub-address>` is the address the join succeeded at, on a fresh pinned connection. A text frame is one JSON object whose `type` is one of the frame names; a binary frame is a big-endian `u32` stream id followed by that stream's bytes.
 
 ### The handshake
 
-The first frame each way is an identity card, and both cards have one shape. `hello` goes up within ten seconds of the socket opening, and `welcome` or `refused` comes down.
+The first frame each way is an identity card of one shape. `hello` goes up within ten seconds of the socket opening, and `welcome` or `refused` comes down.
 
-| Field      | `hello` (up)                        | `welcome` (down)     |
-| ---------- | ----------------------------------- | -------------------- |
-| `protocol` | the number this build speaks        | the hub's number     |
-| `role`     | `client`                            | `hub`                |
-| `id`       | the binding id                      | the hub's own id     |
-| `name`     | the binding's name, or the hostname | the hub's name       |
-| `software` | `neutrino_client/0.3.0`             | `neutrino_hub/0.3.0` |
-| `token`    | the binding token                   | absent               |
+| Field      | `hello` (up)                                      | `welcome` (down)                 |
+| ---------- | ------------------------------------------------- | -------------------------------- |
+| `protocol` | the number this build speaks, `3`                 | the hub's number, `3`            |
+| `role`     | `agent` or `client`                               | `hub`                            |
+| `id`       | the binding id                                    | the hub's own id, a uuid         |
+| `name`     | the hostname, or the binding's name               | the hub's name from **Settings** |
+| `software` | `neutrino_agent/0.5.0` or `neutrino_client/0.5.0` | `neutrino_hub/0.5.0`             |
+| `token`    | the binding token                                 | absent                           |
 
-The hub's `id` is a uuid generated at its setup and the `name` is what a person typed on its Settings page. A program joined to several hubs groups them by `id` and labels them by `name`, because the name changes and the id does not.
-
-A rejected `hello` gets `refused {code, params}` and then close 4000. The handshake has no state hash; the first report has it.
+A client joined to several hubs groups them by the hub's `id` and labels them by its `name`. A rejected `hello` gets `refused {code, params}` and close 4000; `hello_invalid` marks a first frame that is late, binary, of another type, or unreadable.
 
 ### The frames
 
@@ -115,75 +113,79 @@ A rejected `hello` gets `refused {code, params}` and then close 4000. The handsh
 | `credit`  | both      | `{stream, bytes}`: the sender can send that many more |
 | binary    | both      | `<u32 stream id><bytes>`                              |
 
+The hub pings every 20 seconds and drops a socket whose pong is more than 20 seconds late. Agents and clients treat 45 seconds of silence as a dead socket and reconnect with a backoff from 5 to 60 seconds.
+
 ## The stream layer
 
-Everything beyond the two documents is a stream: its `open` is the request, its `close` is the reply, and `kind` is the whole method vocabulary.
+Every action is a stream: its `open` is the request, its `close` is the reply, and `kind` names the method.
 
-| Concern       | Rule                                                                                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ids           | the hub opens streams with even ids and the peer with odd ids from 1 upward, each side counting on its own, so the two never collide                          |
-| Bytes         | a binary frame is the stream id and then the bytes; a stream's text output is one line per frame                                                              |
-| Credit        | `credit {stream, bytes}` grants the sender that many more bytes, and a receiver grants as it consumes; the hub's window is 1 MiB and its largest frame 64 KiB |
-| Result        | `close {stream, code, params}` ends a stream from either side; an empty `code` makes `params` the result, and a code makes the close a refusal                |
-| One close     | a stream one side closed gets no close back                                                                                                                   |
-| Unknown kinds | a stream whose `kind` a program has no handler for is closed with `kind_unknown`                                                                              |
+| Concern       | Rule                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Ids           | the hub opens streams with even ids from 0 and the peer with odd ids from 1, so the two never collide                                   |
+| Bytes         | a binary frame carries one stream's bytes; a stream's text output is one line per frame                                                 |
+| Credit        | `credit {stream, bytes}` grants that many more bytes; the window is 1 MiB and the largest frame 64 KiB                                  |
+| Result        | `close {stream, code, params}` ends a stream from either side; an empty `code` makes `params` the result, and a code makes it a refusal |
+| One close     | a stream one side closed gets no close back                                                                                             |
+| Unknown kinds | a kind a program has no handler for is closed with `kind_unknown`, and an unknown verb on a `command` stream with `verb_unknown`        |
 
-A client opens one kind, `service`, and the hub opens none to a client. The other kinds (`shell`, `file`, `command`, `package`, `log`, `desktop`) run between the hub and a device agent.
+## The client's state
 
-## The two documents
+The hub sends a client its `state` on any report whose `state_hash` differs from the hub's, and whenever the hub's own changes.
 
-A client's half of the channel is two documents under one hash: `state` down, and `report` up.
+| Section       | Holds                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `hash`        | an opaque string the client names back in every report                                                           |
+| `is_disabled` | `true` after **Disable** on **Clients**: the lists are empty and every action is rejected with `client_disabled` |
+| `services`    | the published entries this client is allowed, resolved for the address its socket came from                      |
+| `urls`        | every address the hub serves the channel on, which the client keeps for its next reconnect                       |
+| `overlays`    | what the client joins each of the hub's overlays with, the preferred first                                       |
+| `terminals`   | the managed machines the client is allowed to open a shell on, each `{device_id, name, is_online, sessions}`     |
 
-### The state
+### Overlays
+
+`overlays` holds one object per running overlay that has material, NetBird first. It is empty when the box runs no overlay, the client is switched off, the client's permission leaves out `overlay`, or the hub's vault is locked.
 
 ```json
-{
-  "type": "state",
-  "hash": "<state-hash>",
-  "is_disabled": false,
-  "services": [
-    {
-      "id": "samba_4b1c8f0d_media",
-      "type": "file",
-      "title": "media",
-      "payload": {
-        "protocol": "smb",
-        "host": "192.168.100.24",
-        "share": "media"
-      },
-      "is_healthy": true,
-      "source": "module",
-      "description": "published by the samba module on 192.168.100.24",
-      "description_code": "samba_module",
-      "description_params": { "host": "192.168.100.24" }
-    }
-  ]
-}
+[
+  {
+    "provider": "netbird",
+    "setup_key": "...",
+    "management_url": "",
+    "fqdn": "hub.netbird.cloud"
+  },
+  {
+    "provider": "easytier",
+    "mode": "manual",
+    "network_name": "...",
+    "network_secret": "...",
+    "peer": "tcp://203.0.113.7:11010",
+    "hub_address": "10.0.0.1"
+  }
+]
 ```
 
-| Field         | Holds                                                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `hash`        | an opaque string the program keeps and names back in every report                                                   |
-| `is_disabled` | `true` after **Disable** on the Clients page: the list is empty and every action is rejected with `client_disabled` |
-| `services`    | the published list, resolved for the address this socket came from                                                  |
+| Provider and mode     | Fields                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `netbird`             | `setup_key`, the reusable key; `management_url`, empty for NetBird's own plane; `fqdn`, the hub's name on the overlay                                               |
+| `easytier`, `manual`  | `network_name`, `network_secret`; `peer`, `tcp://<join-host>:11010`; `hub_address`, the hub's address on the network without its prefix length <!-- scan: allow --> |
+| `easytier`, `console` | `config_server`, the console address with its account token; `is_secure_mode`; `hub_address`                                                                        |
 
-Each entry is `{id, type, title, payload, is_healthy, source, description, description_code, description_params}`:
+### Terminals and sessions
 
-| Field                | Holds                                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | what a `service` stream names                                                                                                               |
-| `type`               | `web`, `port`, `ai`, `file` or `rdp`                                                                                                        |
-| `title`              | the name a person reads                                                                                                                     |
-| `payload`            | the type's own fields, in the next section                                                                                                  |
-| `is_healthy`         | what the last probe measured, `null` where nothing probed it                                                                                |
-| `source`             | `module` for a module on a device, `declared` for a person's own entry, `device` for a machine's desktop                                    |
-| `description`        | the English provenance line                                                                                                                 |
-| `description_code`   | the same provenance as a code a program words itself: `ai_gateway`, `container`, `declared`, `device_share`, `gitea_module`, `samba_module` |
-| `description_params` | the values that sentence names                                                                                                              |
+`terminals` lists every managed machine, the hub's own among them, when the client's permission includes `terminal`, narrowed to the machines that permission names. Each entry's `sessions` is the shell sessions the machine keeps, ordered by `started_at`, and empty while the machine is offline:
 
-The hub sends one state on a connection's first report whose `state_hash` differs from its own, and after that whenever its own list changes. A program that reconnects from another network gets other hosts in the payloads, because the hub resolves every entry for the address the socket arrived from.
+| Field           | Holds                                             |
+| --------------- | ------------------------------------------------- |
+| `session_id`    | the id the opener generated, a uuid               |
+| `account`       | the account the shell runs as                     |
+| `started_at`    | when it was opened, in Unix seconds               |
+| `title`         | the title the shell last set, or the shell's name |
+| `is_attached`   | whether a stream is attached now                  |
+| `is_persistent` | whether the session stays when its stream closes  |
 
-### The report
+The hub pushes every client its state when an agent's channel opens or ends, and when a machine's list of sessions changes.
+
+## The client's report
 
 ```json
 {
@@ -196,80 +198,111 @@ The hub sends one state on a connection's first report whose `state_hash` differ
 }
 ```
 
-A report goes up as soon as the welcome is in, every 30 seconds after that, and once more whenever a state has been applied. `state_hash` is the hash of the state held, empty before the first one.
+A report goes up after the welcome, every 30 seconds after that, and after each state is applied. `state_hash` is empty before the first state.
 
-## The five service types
+## The service entries
 
-The `type` of an entry decides its payload and the button a person gets.
+Each entry of `services` is `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}`.
 
-| `type` | `payload`                           | What a client does with it                                                                                |
-| ------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `web`  | `{url}`                             | opens the address in the browser                                                                          |
-| `port` | `{host, port}`                      | relays that address to a port on this computer's loopback                                                 |
-| `ai`   | `{endpoint, protocol, models}`      | points a person's AI tools at the gateway; `protocol` is `openai` and `models` is what the gateway serves |
-| `file` | `{protocol, host, share}`           | mounts the share; `protocol` is `smb`                                                                     |
-| `rdp`  | `{protocol, host, port, attention}` | opens a RustDesk viewer at that address; `protocol` is `rustdesk` and `port` is 21118                     |
+| `type` | `payload`                                                                           |
+| ------ | ----------------------------------------------------------------------------------- |
+| `web`  | `{url, is_local_only}`; `is_local_only` is present and true on a VS Code entry only |
+| `port` | `{host, port}`                                                                      |
+| `ai`   | `{endpoint, protocol, models}`, `protocol` being `openai`                           |
+| `file` | `{protocol, host, share}`, `protocol` being `smb`                                   |
+| `rdp`  | `{protocol, host, port, attention}`, `protocol` being `rustdesk`                    |
 
-`attention` on an `rdp` entry is what somebody has to do at the sharing machine before a viewer sees anything: `rdp_nobody_seated` while no account is at the screen, `rdp_screen_not_allowed` while a Wayland session has not granted screen capture, and empty where a viewer gets the desktop.
+An entry with `is_local_only` opens only through a port forwarded to the client's own `127.0.0.1`, so a phone shows it as desktop only. `attention` on an `rdp` entry is what somebody must do at the sharing machine first: `rdp_nobody_seated`, `rdp_screen_not_allowed`, or empty.
 
-## The service stream
+| Field                | Holds                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `is_healthy`         | the last probe's result, `null` where nothing probed it                                                                                                 |
+| `source`             | `module`, `declared` or `device`                                                                                                                        |
+| `description_code`   | the provenance as a code a program words itself: `ai_gateway`, `container`, `declared`, `device_share`, `gitea_module`, `samba_module`, `vscode_module` |
+| `description_params` | the values that sentence names; `vscode_module` takes `{host, account}`                                                                                 |
+| `device_name`        | the name of the machine providing the entry, empty when no machine on the record of the hub provides it                                                 |
 
-An `rdp` and an `ai` entry take material the published list holds none of. The program opens a stream of kind `service` naming the entry, and the close is that material:
+## The streams a client opens
 
-```json
-{ "type": "open", "stream": 1, "kind": "service", "id": "rdp_4f21c0" }
-```
+### The service stream
 
-| Entry's `type`        | The close's `params`                                                                                        |
-| --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `rdp`                 | `{host, port, password}`: the address as it resolves now, and the seat password unsealed for this one close |
-| `ai`                  | `{base_url, api_key, model}`: the gateway, this client's own key, and the default model                     |
-| `web`, `port`, `file` | empty; the entry's payload is the whole material                                                            |
+`open {kind: service, id}` asks for what one entry takes from the hub. The checks run in this order, and the first that fails gives the close its code:
 
-A close with a code is a refusal, and the stream ends there:
+| `code`              | Given when                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `binding_unknown`   | no client row has this socket's binding id                                         |
+| `client_disabled`   | the client is switched off on **Clients**                                          |
+| `service_unknown`   | the id names no entry in the list resolved for this client                         |
+| `permission_denied` | the entry's type, or the machine providing it, is outside this client's permission |
+| `rdp_not_shared`    | the entry's machine stopped sharing its desktop                                    |
+| `vault_locked`      | the hub's vault is locked, so the AI key or the VS Code token cannot be opened     |
 
-| Code              | `params`       | Means                                                      |
-| ----------------- | -------------- | ---------------------------------------------------------- |
-| `service_unknown` | `{service_id}` | no entry with that id in the list resolved for this client |
-| `rdp_not_shared`  | `{service_id}` | the machine stopped sharing its desktop                    |
-| `client_disabled` |                | the client is switched off on the Clients page             |
-| `vault_locked`    |                | the hub's vault is locked, so no secret can be unsealed    |
-| `binding_unknown` |                | the hub holds no such client                               |
+A close with no code carries the material:
+
+| Entry                                         | The close's `params`                                                                                                    |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `rdp`                                         | `{host, port, password}`: the address as it resolves now and the seat password                                          |
+| `ai`                                          | `{base_url, api_key, model}`: the gateway, this client's own key, and the first model the gateway serves                |
+| `web` with `description_code` `vscode_module` | `{token}`; the client forwards the entry's port to its own `127.0.0.1` and opens `http://127.0.0.1:<port>/?tkn=<token>` |
+| other `web`, `port`, `file`                   | empty; the payload is all the client needs                                                                              |
+
+### The shell and command streams
+
+| `open`                                                                     | What the hub does                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{kind: shell, device_id, cols, rows, session_id, is_resumed}`             | opens a shell on that machine under `session_id` and relays terminal bytes both ways; an id the machine holds attaches to that session, and its recent output comes first; `is_resumed: true` attaches only, and closes `session_unknown` when the machine holds no such session |
+| `{kind: command, module: agent, verb: resize, shell, cols, rows}`          | resizes the client's own `shell` stream; `shell_unknown` when no such stream is open                                                                                                                                                                                             |
+| `{kind: command, module: agent, verb: persist, session_id, is_persistent}` | sets whether the session stays after its stream closes                                                                                                                                                                                                                           |
+| `{kind: command, module: agent, verb: stop_session, session_id}`           | ends the session on its machine                                                                                                                                                                                                                                                  |
+
+A session holds one stream at a time: attaching a second closes the first with `session_taken`. A `shell` stream is refused with `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` or `agent_offline {device}` before the hub opens anything on the machine. `persist` and `stop_session` close with `session_unknown` when no machine holds the session. An agent restart or update ends every session on that machine.
+
+## The agent's sections
+
+An agent's documents carry these sections; the `modules` entries come from the hub's manifests, resolved for the agent's `platform`.
+
+| Section   | `state` to an agent                            | `report` from an agent                                                    |
+| --------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
+| `machine` |                                                | `{hostname, platform, accounts, metrics, sessions}`                       |
+| `network` |                                                | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses}]}` |
+| `modules` | `{<name>: {want, config, install, uninstall}}` | `{<name>: {state, is_active, code, params, details}}`                     |
+| `desktop` | `{seat_password}`                              | `{is_shared, account, share_id, port, attention, connected_count}`        |
+| `urls`    | every address the hub serves the channel on    |                                                                           |
+| `error`   |                                                | `{code, params}`: the agent's most recent failure worth showing           |
+
+An agent reports every 5 seconds. The hub opens `shell`, `file` and `command` streams to it, and the agent opens `log` and `package` streams to the hub.
 
 ## Refusals and the binding
 
-A refusal is `{code, params}` wherever it appears: as `detail` on an HTTP error, as a `refused` frame at the handshake, and as the code on a stream's close.
+A refusal is `{code, params}` wherever it appears: `detail` on an HTTP error, a `refused` frame, or the code on a stream's close. A refusal keeps the binding; the program records it and sends `hello` again a minute later.
 
-| Code               | Where                      | What it does to the binding                                     |
-| ------------------ | -------------------------- | --------------------------------------------------------------- |
-| `protocol_too_old` | `join`, `hello`            | keeps it; record the code and send `hello` again a minute later |
-| `protocol_too_new` | `join`, `hello`            | keeps it, the same way                                          |
-| `ticket_spent`     | `join`                     | nothing is bound yet; the person makes a fresh link             |
-| `role_mismatch`    | `join`, `hello`            | keeps it                                                        |
-| `binding_unknown`  | `hello`, `leave`, a stream | unbinds: delete the binding and join again with a new link      |
-| `kind_unknown`     | a stream                   | keeps it                                                        |
+| Code                           | Where                      | Effect on the binding                                         |
+| ------------------------------ | -------------------------- | ------------------------------------------------------------- |
+| `protocol_too_old`             | `join`, `hello`            | kept                                                          |
+| `protocol_too_new`             | `join`, `hello`            | kept                                                          |
+| `role_mismatch`                | `join`, `hello`            | kept                                                          |
+| `hello_invalid`                | `hello`                    | kept                                                          |
+| `ticket_spent`                 | `join`                     | nothing is bound yet; a person creates a fresh link           |
+| `binding_unknown`              | `hello`, `leave`, a stream | removed: the program deletes its binding and needs a new link |
+| `kind_unknown`, `verb_unknown` | a stream                   | kept                                                          |
 
-`binding_unknown` is the one refusal that unbinds, because it says the row was deleted on the panel, and only the hub holding the pinned certificate can say it.
+`binding_unknown` is the one refusal that unbinds, because it means the row was removed on the panel, and only the hub holding the pinned certificate can send it.
 
-| Close code | Meaning                                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 4000       | `refused`; the `refused` frame before it says why                                                                                                 |
-| 4010       | `replaced`: a second socket opened for the same binding and this one is closed. Reconnecting is a person's action, such as the window's reconnect |
+| Close code | Meaning                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| 4000       | `refused`; the `refused` frame before it carries the code                                                 |
+| 4010       | `replaced`: a second socket opened for the same binding; the program reconnects only on a person's action |
 
 ## Protocol numbers
 
-Compatibility between a hub and a program is one integer each build declares, `PROTOCOL`, and package versions take no part in it. A hub also has `PROTOCOL_MIN`, the oldest number it still accepts, and admits a peer whose number is within `PROTOCOL_MIN` to `PROTOCOL`.
-
-Reading is tolerant and writing is strict: an unknown field is ignored, an unknown kind is closed with `kind_unknown`, and a program sends only what its own number defines.
-
-| Rule                                                                                       | Effect on the number                                                              |
-| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| Adding a kind, a field or a code                                                           | unchanged, and a patch release can add them                                       |
-| Removing anything, or changing its meaning                                                 | one higher                                                                        |
-| Changing the link, the ticket, the pin, or the words `hello`, `state`, `report` and `open` | one higher                                                                        |
-| A number one higher                                                                        | a new minor version before 1.0, a new major after it                              |
-| `PROTOCOL_MIN`                                                                             | rises only when a new minor opens, at most to the number the previous minor spoke |
+Each build declares one integer, `PROTOCOL`, and package versions take no part in admission. The hub also holds `PROTOCOL_MIN` and admits a peer whose number is within `PROTOCOL_MIN` to `PROTOCOL`.
 
 | `PROTOCOL` | First minor |
 | ---------- | ----------- |
 | 1          | 0.3.0       |
+| 2          | 0.4.0       |
+| 3          | 0.5.0       |
+
+`PROTOCOL_MIN` is 3 from 0.5.0. Protocol 3 renamed the link's and the client state's `overlay`, one object or null, to `overlays`, a list. A 0.3 or 0.4 agent or client is rejected with `protocol_too_old` and does not update itself from a 0.5.0 hub. The hub's own update reinstalls the box's own agent; every other machine takes the 0.5.0 package from **Devices** or by hand.
+
+Reading is tolerant and writing is strict. An unknown field is ignored, an unknown kind closes with `kind_unknown`, and a program sends only what its own number defines. Adding a kind, a field or a code keeps the number; removing anything, changing its meaning, or changing the link, the ticket, the pin or the words `hello`, `state`, `report` and `open` raises it by one.

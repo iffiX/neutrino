@@ -60,6 +60,14 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
+    text: "Commands",
+    items: [
+      { text: "nhub commands", link: "/commands/nhub" },
+      { text: "nagent commands", link: "/commands/nagent" },
+      { text: "nclient commands", link: "/commands/nclient" },
+    ],
+  },
+  {
     text: "Reference",
     items: [
       { text: "Supported platforms", link: "/reference/platforms" },
@@ -117,6 +125,14 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "桌面客户端", link: "/zh-CN/client/desktop" },
       { text: "Android 应用", link: "/zh-CN/client/android" },
+    ],
+  },
+  {
+    text: "命令",
+    items: [
+      { text: "nhub 命令", link: "/zh-CN/commands/nhub" },
+      { text: "nagent 命令", link: "/zh-CN/commands/nagent" },
+      { text: "nclient 命令", link: "/zh-CN/commands/nclient" },
     ],
   },
   {
