@@ -3,47 +3,40 @@ layout: home
 title: 微子
 hero:
   name: 微子
-  text: 家里一台常开的 hub，管住你的每台机器。
-  tagline: 网络、虚拟网、代理和 AI 网关在一台机器上。被控端提供共享、git、容器、存储和桌面；客户端把它们变成窗口里的按钮。
+  text: 用一台 hub 管理你自己的机器
+  tagline: hub 装在一台常开的机器上，被控端装在它管理的每台机器上，客户端装在每个人的电脑或手机上。
   image:
     src: /neutrino_512.png
-    alt: Neutrino
+    alt: 微子
   actions:
     - theme: brand
-      text: 安装 hub
-      link: /zh-CN/hub/install
-    - theme: alt
       text: 快速上手
       link: /zh-CN/quick-start
     - theme: alt
-      text: 面板
-      link: /zh-CN/hub/network
+      text: 安装 hub
+      link: /zh-CN/hub/install
+    - theme: alt
+      text: 概述
+      link: /zh-CN/overview
 features:
-  - title: 网络
-    details: 选这台机器的形态，给网口分角色，决定面板在哪些网络上应答。
-    link: /zh-CN/hub/network
-  - title: 虚拟网
-    details: 接进 NetBird 或 EasyTier，在外面进家里的局域网。
-    link: /zh-CN/hub/overlay-netbird
-  - title: 代理
-    details: 出口节点从分享链接导入；哪台设备去哪个目标走哪个出口，在这一页决定。
-    link: /zh-CN/hub/proxy
-  - title: AI
-    details: 订阅账号和 API 密钥挂在一个网关地址后面，每台电脑有自己的密钥。
-    link: /zh-CN/hub/ai
-  - title: 设备
-    details: 一条链接或一组 SSH 凭据就能接入一台机器；接入后能重启、唤醒、开 shell、进桌面。
-    link: /zh-CN/hub/devices
+  - title: 开始
+    details: hub、被控端和客户端在你的网络里各在哪里；从零搭起一台 hub，管理一台机器，挂上一个共享。
+    link: /zh-CN/overview
+  - title: Hub
+    details: 在一台 Linux 机器上装好 hub，再设置网络、虚拟网、代理、AI 网关、设备、客户端、服务、凭据和设置。
+    link: /zh-CN/hub/install
+  - title: 被控端
+    details: 在 hub 管理的 Linux、Windows 或 Mac 机器上开终端、管文件、装模块，模块包括共享、Gitea、容器、ZFS 和 VS Code。
+    link: /zh-CN/agent/terminals
   - title: 客户端
-    details: 给一个人发一条链接，启用、停用或删除这个人的客户端。
-    link: /zh-CN/hub/clients
-  - title: 服务
-    details: 看模块发布了什么，手动声明一个网页、端口或共享。
-    link: /zh-CN/hub/services
-  - title: 凭据
-    details: SSH 密钥、登录信息和令牌保存一次，之后在各处引用。
-    link: /zh-CN/hub/credentials
-  - title: 设置
-    details: 改密码和语言，下载和恢复配置存档，看三个组件的版本。
-    link: /zh-CN/hub/settings
+    details: Linux、Windows 和 macOS 上的桌面客户端，以及 Android 应用。
+    link: /zh-CN/client/desktop
+  - title: 命令
+    details: nhub、nagent 和 nclient 的每个子命令。
+    link: /zh-CN/commands/nhub
+  - title: 参考
+    details: 每个包支持的系统，按现象排查的故障，以及协议 3 下的通道。
+    link: /zh-CN/reference/platforms
 ---
+
+微子（Neutrino）用一台常开的 Linux 机器管理一个人或一个家庭的所有机器。这台机器上的 hub 决定网络形态，加入 NetBird 或 EasyTier，把选定的流量交给出口节点。hub 还提供一个 AI 网关和一个在浏览器里打开的面板。Linux、Windows 和 Mac 上的被控端提供共享、git、容器、存储和 VS Code；电脑和 Android 手机上的客户端用一个按钮打开其中每一项。

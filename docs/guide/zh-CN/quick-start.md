@@ -4,146 +4,122 @@ title: 快速上手
 
 # 快速上手
 
-快速上手只走一条最短的路。hub 选服务器形态；第二台 Linux 机器用链接接入，做被控端；一台 Linux 电脑装客户端；最后发布一个共享并挂上。走完之后，一个共享出现在客户端的家目录下。服务器形态不改机器上的任何地址，也不让任何设备经它上网。
+大约半小时后，你手上会有一套能用的环境：一台 Linux 机器以服务器形态运行 hub，第二台 Linux 机器归 hub 管理，那台机器上的一个目录经桌面客户端挂到你的笔记本上。
 
 ## 你需要什么
 
-- hub 装在一台常开的 64 位 Linux 机器上，这台机器带 systemd，能出网。树莓派、刷过系统的电视盒子或旧笔记本都行。本页叫它 `home-hub`。
-- 第二台 Linux 机器做被控端，本页叫它 `studio`。
-- 一台装桌面环境的 Linux 电脑跑客户端，本页叫它 `laptop`。
-- 三台机器在同一个网里，三个包同一个版本，都从 [Releases](https://github.com/iffiX/neutrino/releases) 下载。
+- 一台装 hub 的 Linux 机器，本页叫它 `home-hub`。它是 x86-64，系统是 Debian 12 及以上或 Ubuntu 22.04 及以上，能访问互联网，你有它的 root 权限。
+- 第二台同类的 Linux 机器装被控端，本页叫它 `studio`。
+- 一台带桌面环境的 Linux 电脑装客户端，本页叫它 `laptop`。
+- 0.5.0 版的三个安装包，从 [Releases](https://github.com/iffiX/neutrino/releases) 下载：`neutrino-hub_0.5.0_amd64.deb`、`neutrino-agent_0.5.0_amd64.deb` 和 `neutrino-client_0.5.0_amd64.deb`。
 
-## 装 hub 并初始化
+三台机器在同一个局域网里。服务器形态保留 `home-hub` 的所有地址，你网络里的其他部分保持原样。
 
-### 安装包并启动向导
+## 安装 hub
 
-1. 在 `home-hub` 上安装包。
+1. 在 `home-hub` 上安装包：
 
    ```bash
-   sudo apt install ./neutrino-hub_0.3.0_amd64.deb
+   sudo apt install ./neutrino-hub_0.5.0_amd64.deb
    ```
 
-   `apt` 会一并装上依赖；`dpkg -i` 不会，用它装了的话运行 `sudo apt -f install` 完成安装。下面的被控端和客户端同理。
-
-1. 启动向导。
+1. 启动初始化向导：
 
    ```bash
    sudo nhub setup
    ```
 
-   终端打印一个带一次性令牌的地址；这台机器有浏览器时，向导在浏览器里打开。
+   终端为这台机器的每个网口打印一个地址，地址末尾带一次性令牌。
 
-1. 在浏览器里点 **开始配置这台机器**（Set this box up）。
+1. 在 `laptop` 的浏览器里打开其中一个地址，连同令牌一起。
 
-![向导的欢迎页](/guide/zh/setup_welcome.webp)
+## 回答初始化向导
 
-### 回答六屏问题
+每个问题屏底部都有**下一步**（Next），选它进入下一屏。你在最后一屏确认之后，向导才写入这台机器。
 
-1. **语言**（Language）：选简体中文，点 **下一步**（Next）。
-1. **面板密码，以及保险库口令**（A password for the panel, a passphrase for the vault）：填一个面板密码和一个保险库主口令。
-1. **这台机器做什么？**（What is this machine for?）：选 **服务器**（Server）。
+1. 选择 **Set this box up**。这一屏还是英文。
+1. 在**语言**（Language）屏，选择**简体中文**。
+1. 在**面板密码，以及保险库口令**（A password for the panel, a passphrase for the vault）屏，在**面板密码**（Panel password）里填至少 8 个字符，在**再输一次**（Again）里再填一遍。
+1. 在同一屏的**保险库主口令**（Vault master passphrase）里，填至少 16 个字符，包含小写、大写、数字和符号，在它的**再输一次**里再填一遍。
+1. **面板使用 HTTPS**（HTTPS for the panel）保持关闭。
+1. 在**这台机器做什么？**（What is this machine for?）屏，选择**服务器**（Server）。
+1. 在**用哪些网口？**（Which ports?）屏，**面板监听端口**（Panel answers on port）保持 `8080`。
+1. 在**通过代理出网**（Going out through a proxy）屏，**在这里设置**（Set it up here）保持关闭。
+1. 在**就绪**（Ready）屏，确认 **HTTPS** 一行是**关闭**（off），然后选择**开始配置这台机器**（Set this box up）。
 
-   ![形态屏，服务器已选中](/guide/zh/setup_shape.webp)
-
-1. **用哪些网口？**（Which ports?）：面板端口保持 8080。
-1. **通过代理出网**（Going out through a proxy）：不勾选，直接下一步。
-1. **就绪**（Ready）：核对一遍，确认。
-
-   ![就绪屏](/guide/zh/setup_review.webp)
-
-1. 等步骤列表跑完，点 **打开面板**（Open the panel）。
-
-![初始化完成](/guide/zh/setup_done.webp)
+屏幕上逐项执行各个步骤，从检查软件包到安装本机被控端，完成后标题变成**这台机器已是网关**（This box is a gateway）。
 
 ::: warning
-保险库主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。这个口令在机器上没有备份，记在面板之外的地方。
+保险库主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。把它记在这台机器以外的地方。
 :::
 
-## 登录看一眼
+## 登录面板
 
-1. 在浏览器里打开 `http://<hub-address>:8080`，其中 `<hub-address>` 是 `home-hub` 的地址。
+1. 在**这台机器已是网关**屏，选择**打开面板**（Open the panel）。
+1. 在**面板密码**里填你设的密码，选择**登录**（Sign in）。
 
-   ![登录页](/guide/zh/login.webp)
+面板打开**总览**（Dashboard）页。侧栏分两组：**Hub** 和**被控端**（Agent）。
 
-1. 在 **面板密码**（Panel password）里填第二屏设的密码，点 **登录**（Sign in）。
+## 把 studio 加为受管机器
 
-登录后是 **总览**（Dashboard）页。侧栏分两组：**Hub** 组十页，**被控端**（Agent）组六页。
-
-![总览页](/guide/zh/dashboard.webp)
-
-## 接入第二台机器
-
-1. 打开 **设备**（Devices）页。`home-hub` 自己已经在 **已管理的设备**（Managed devices）里，因为初始化时装了它自己的被控端。
-1. 点 **用链接添加**（Add by link）。
-
-   ![加入链接](/guide/zh/devices_enroll_link.webp)
-
-1. 点通知里的 **复制**（Copy）。链接五分钟内有效。
-1. 在 `studio` 上安装被控端。
+1. 在 `studio` 上安装被控端：
 
    ```bash
-   sudo apt install ./neutrino-agent_0.3.0_amd64.deb
+   sudo apt install ./neutrino-agent_0.5.0_amd64.deb
    ```
 
-1. 在 `studio` 上用刚复制的链接接入。
+1. 在面板的 **Hub** 组里，打开**设备**（Devices）。
+1. 选择**用链接添加**（Add by link）。通知里显示一条链接，五分钟内有效。
+1. 选择**复制**（Copy）。
+1. 在 `studio` 上运行下面的命令，把 `<enroll-link>` 换成刚复制的链接：
 
    ```bash
-   sudo nagent join 'neutrino://enroll/PLACEHOLDER_LINK'
+   sudo nagent join '<enroll-link>'
    ```
 
-   命令返回后几秒内，`studio` 出现在 **已管理的设备** 里。
+`studio` 出现在**已管理的设备**（Managed devices）里，旁边是 `home-hub`。`home-hub` 的被控端由向导装好。
 
-![两台已管理的设备](/guide/zh/devices_managed.webp)
+## 让客户端加入 hub
 
-## 装客户端
-
-1. 在面板里打开 **客户端**（Clients）页，点 **新建客户端链接**（New client link）。
-
-   ![新建客户端链接](/guide/zh/clients_create_link.webp)
-
-1. 名称填 `laptop`，点 **创建链接**（Create link），然后点 **复制**。
-1. 在 `laptop` 上安装客户端。
+1. 在 `laptop` 上安装客户端：
 
    ```bash
-   sudo apt install ./neutrino-client_0.3.0_amd64.deb
+   sudo apt install ./neutrino-client_0.5.0_amd64.deb
    ```
 
-1. 以你自己的账户打开窗口。
+1. 在面板里打开**客户端**（Clients），选择**新建客户端链接**（New client link）。
+1. 名称填 `laptop`，选择**创建链接**（Create link）。
+1. 选择**复制**。链接五分钟内有效。
+1. 在 `laptop` 上以你自己的账户运行 `nclient gui`，不加 `sudo`。**微子·客户端**（Neutrino client）窗口打开，停在**中枢**（Hubs）页。
+1. 在**加入 hub**（Join a hub）下，把链接粘进输入框，选择**加入**（Join）。
 
-   ```bash
-   nclient gui
-   ```
+新出现的 hub 一行显示**已连接**（Connected），下面是 hub 的地址和“运行 neutrino_hub/0.5.0”。
 
-   窗口标题是 **微子·客户端**（Neutrino client），状态卡写着 **未连接**（Not connected）。
+## 在 studio 上安装共享模块
 
-   ![未连接的窗口](/guide/zh/client_disconnected.webp)
+1. 在面板的**被控端**组里，打开**模块**（Modules）。
+1. 在页面顶部的机器里选择 `studio`。
+1. 选择 **File share** 标签页。没有这个标签页时，选择标签旁的 **+**，勾选 **File share**。
+1. 选择**安装**（Install），等标签上不再显示**安装中**（installing）。
+1. 选择**配置**（Configure）。按钮下方展开**共享**（Shares）和**用户**（Users）两节。
 
-1. 把链接粘进输入框，点 **连接**（Connect）。
+## 添加用户和共享
 
-状态卡变成 **已连接**（Connected），带 hub 的版本号；下面是五个面板：网页、端口、AI、文件、远程桌面。
+1. 在**用户**里，新用户名填 `alex`，旁边的输入框填一个密码。
+1. 选择**添加用户**（Add user）。
+1. 选择**应用用户**（Apply users）。`alex` 这一行显示**就绪**（ready）。
+1. 在**共享**里，选择**添加共享**（Add share）。
+1. **名称**（Name）填 `media`，**路径**（Path）填 `/srv/media`。
+1. 选择**应用共享**（Apply shares）。
 
-![已连接的窗口](/guide/zh/client_connected.webp)
+被控端在 `studio` 上创建 `/srv/media`，并以 `media` 的名字发布给每个客户端。
 
-::: tip
-`nclient` 以你的账户运行，前面不加 sudo。以 root 运行时它返回 `root_refused`。
-:::
+## 在笔记本上挂载共享
 
-## 发布一个共享并挂载
+1. 在客户端窗口里打开**文件**（Files）。`media` 条目旁边是 `studio` 的地址。
+1. 在 `media` 条目上选择**配置**（Config）。
+1. **共享用户名**（Share username）填 `alex`，**共享密码**（Share password）填它的密码。
+1. **挂载路径**（Mount path）保持默认，即家目录下的 `nas/media`。
+1. 选择**挂载**（Mount）。
 
-1. 在面板里打开 **Samba** 页，在 **已启用的设备**（Enabled devices）里勾选 `home-hub`，点 **应用设备**（Apply devices）。
-1. 在确认框里点 **应用设备**。安装完成后，页面下方出现这台机器的 Samba 面板。
-1. 在 **用户**（Users）里点 **添加用户**（Add user），用户名填 `alex`，密码任填一个，点 **应用用户**（Apply users）。
-1. 在 **共享**（Shares）里点 **添加共享**（Add share），名称填 `media`，路径填一个目录，点 **应用共享**（Apply shares）。
-1. 打开 **服务**（Services）页。`media` 在 **文件**（Files）组里，来源写着由 `home-hub` 上的 samba 模块发布。
-
-   ![服务页](/guide/zh/services_list.webp)
-
-1. 在 `laptop` 的客户端窗口里，在 **文件** 面板的 `media` 条目上点 **配置**（Config）。
-
-   ![挂载配置](/guide/zh/client_files_config.webp)
-
-1. **共享用户名**（Share username）填 `alex`，**共享密码**（Share password）填它的密码，**挂载路径**（Mount path）保持默认，点 **挂载**（Mount）。
-
-按钮变成 **卸载**（Unmount），共享在 `~/nas/media`。
-
-![已挂载的共享](/guide/zh/client_files_mounted.webp)
+按钮变成**卸载**（Unmount），`laptop` 上的 `~/nas/media` 里就是 `studio` 上 `/srv/media` 的文件。

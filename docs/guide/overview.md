@@ -4,61 +4,63 @@ title: Overview
 
 # Overview
 
-Neutrino is a control plane for one person's machines. A hub runs on one always-on Linux box. An agent runs on each Linux machine the hub manages, and a client on each computer a person sits at. This page places each layer, separates the providers from the consumers, and follows a service from the hub to a button in a window.
+Neutrino splits your machines by role. One hub runs the network and publishes services, agents host those services, and clients use them. This page places each role on your network and follows a service from the machine that hosts it to a button in the client.
 
-## Four layers on one machine
+## The hub's layers
 
-The hub box has four layers, in the order of the table. Each layer needs only the layers before it.
+The hub box stacks its layers in the order of the table. Each layer needs only the layers before it, and the last three work in server mode.
 
-| Layer         | What it is                                                                                                                                                 | Who needs it                                          |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Network model | The box's shape. A server keeps the network as it is, a side gateway forwards for hosts that name it, and a router serves networks of its own.             | everyone; server mode is enough for every other layer |
-| Overlay       | A private network across the internet, on NetBird or EasyTier, through which the box and the LAN behind it are reachable from outside.                     | anyone who leaves the building                        |
-| Proxy         | The proxy engine, xray, on the box: exit nodes, SOCKS ports and split routing. It serves the box itself and, in the routing shapes, the devices behind it. | anyone with an exit node                              |
-| AI gateway    | One endpoint on the box in front of API providers and subscription accounts, with a key per client and usage per key.                                      | anyone with several machines running AI tools         |
+| Layer         | What it is                                                                                                                                                                                            | When it is off                                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Network shape | Where the box is in your network. **Server** routes nothing, **Side gateway** forwards for hosts that name it as their gateway, and **Router** routes between its uplinks and the networks it serves. | Every box has one; server keeps the box's network as it is. |
+| Overlay       | A private network across the internet on NetBird, EasyTier, or both at once. Machines outside reach the box and the LAN behind it over that network.                                                  | Only machines on your own network reach the box.            |
+| Proxy         | One xray process with exit nodes imported from share links. It diverts the box's own traffic and its SOCKS ports, and in the routing shapes the devices behind it.                                    | Every connection leaves through the box's own uplink.       |
+| AI gateway    | One endpoint, port 8317 by default, in front of API keys and subscription accounts, with a key and a usage count per client.                                                                          | Each AI tool keeps its own configuration.                   |
 
 ![The hub at the centre, reached over the overlay, driving agents, the AI gateway, storage and services](/guide/architecture.svg)
 
-A server-mode hub keeps every address the machine had, so the first layer is the one choice that touches the rest of your network. [The Network page](./hub/network.md) describes the shapes.
+Only the router shape takes over the box's interfaces and serves networks of its own. Server and side gateway leave every address and every connection on the box as they are. [Network](./hub/network.md) describes each shape and how to change it.
+
+With both overlay engines on, the hub keeps their networks apart. It rejects an engine whose network overlaps the other one or the box's own with `overlay_subnet_overlap`. It deletes a default route that an overlay pushes and shows `overlay_default_route_refused` on the page. [Overlay](./hub/overlay.md) covers each engine.
 
 ## Providers and consumers
 
-Every module runs under an agent, on the machine that has the disk or the GPU. Samba shares are on the machine with the drives, and Gitea on the one that keeps the repositories. Containers run on the one with the GPU, and a desktop is shared wherever a person is signed in. A client consumes what those machines provide: it mounts a share, opens a link, forwards a port and connects to a desktop. The hub's own machine runs an agent too, so it provides a module as one device among the others; the one service the hub provides by itself is the AI gateway.
+Every module runs under an agent, on the machine that has what the module needs: the drives for the file share, the repositories for Gitea, the GPU for containers. A Linux machine runs every module. A Windows machine or a Mac runs the file share on the system's SMB server, VS Code and a shared desktop. [Supported platforms](./reference/platforms.md) has the full table.
 
-The panel's sidebar draws the split: the **Hub** group is the box, and the **Agent** group is what the box drives on a machine running the agent.
+A client consumes what those machines provide. It opens a page, forwards a port, points AI tools at the gateway, mounts a share, connects to a desktop and opens a shell. `nhub setup` installs an agent on the hub's own box, so that box hosts modules as one managed machine among the others. The AI gateway is the one service the hub provides itself.
 
-## From the hub to a button
+The panel's sidebar follows the same split. Its **Hub** group, from **Dashboard** to **Settings**, acts on the box. Its **Agent** group, **Terminals**, **Files** and **Modules**, acts on one managed machine at a time.
 
-A service reaches a client window from a module, from a declaration, or from the machine itself. A module the hub configures on a device publishes its own entries: the Samba module publishes its shares, the Gitea module its address, a container its published host ports. The **Services** page publishes what you declare by hand: a web address, a TCP port, an SMB share on a server the hub does not manage. A machine reports its own shared desktop while `sudo nagent rdp start` is running on it.
+## From a machine to a button
 
-Each entry has a kind, and the client draws one panel per kind:
+A service reaches a client from a module, from a declaration, or from the machine itself:
 
-| Kind            | Published by                                   | The client's button        |
-| --------------- | ---------------------------------------------- | -------------------------- |
-| Web             | the Gitea module, or a declaration             | **Open**                   |
-| Ports           | a container's published port, or a declaration | **Connect**                |
-| AI              | the AI gateway                                 | **Config**, then **Apply** |
-| Files           | the Samba module, or a declaration             | **Config**, then **Mount** |
-| Remote desktops | the machine's own agent                        | **Connect**                |
+- A module publishes its own entries. The file share publishes each share, Gitea its address, VS Code each instance, and a container each host port it publishes.
+- The **Services** page publishes what you declare by hand: a web address, a TCP port, or an SMB share on a server the hub does not manage.
+- A machine reports its own shared desktop while `sudo nagent rdp start` is running on it.
 
-![The Services page with the Web, Ports, AI and Files groups](/guide/en/services_list.webp)
+Each entry has a kind, and the client draws one panel per kind with a button for each entry:
 
-![The client window connected, with the five panels](/guide/en/client_connected.webp)
+| Panel               | Published by                                         | The client's button                                                                                  |
+| ------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Web**             | Gitea, VS Code, or a declared address                | **Open**, or **Open locally** for a VS Code instance, which the client first forwards to `127.0.0.1` |
+| **Ports**           | a container's published port, or a declared TCP port | **Connect**, which forwards the port to `127.0.0.1`                                                  |
+| **AI**              | the AI gateway                                       | **Config**, and the switch **The AI tools use this gateway**                                         |
+| **Files**           | the file share module, or a declared SMB share       | **Config**, then **Mount**                                                                           |
+| **Remote desktops** | the machine's own agent                              | **Connect**                                                                                          |
 
-The Services page groups Web, Ports, AI and Files; a shared desktop appears on clients and in the device's drawer.
+The **Terminals** panel lists the managed machines this client can open a shell on, and **New terminal** opens one. The hub sends each client only the kinds and machines that its permissions on the **Clients** page allow. [Services](./hub/services.md) lists every entry the hub publishes, and [Desktop client](./client/desktop.md) shows each panel.
 
-## Three packages, one tag
+## The packages and protocol 3
 
-| Package           | Runs on                             | Runs as                          |
-| ----------------- | ----------------------------------- | -------------------------------- |
-| `neutrino-hub`    | one Linux box, x86-64 or ARM64      | root, as the panel and its units |
-| `neutrino-agent`  | every Linux machine the hub manages | root, headless                   |
-| `neutrino-client` | Linux, Windows and macOS            | a person's session               |
+One release tag publishes the hub, agent and client packages together:
 
-One tag releases the three packages together, and what has to match between them is the protocol number each build speaks, not its version. A hub admits an agent or a client whose number is between its own `PROTOCOL_MIN` and `PROTOCOL`, and rejects anything outside that range with `protocol_too_old` or `protocol_too_new`, after which the peer keeps its binding and tries again a minute later. The number moves only on a new minor version, and `config/` has no migrations, so [the Settings page](./hub/settings.md) gives the order: hub first, then agents, then clients. [The channel](./protocol/channel.md) holds the numbers and the rules that move them.
+| Package           | Runs on                                                                  | Runs as                                                |
+| ----------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `neutrino-hub`    | one Linux box, x86-64 or ARM64                                           | root, as the panel and its units                       |
+| `neutrino-agent`  | each managed machine: Linux, Windows 10 or 11, or macOS on Apple silicon | a root service, LocalSystem on Windows, with no window |
+| `neutrino-client` | a person's Linux, Windows or macOS computer                              | that person's own account                              |
 
-## The panel and this site
+The Android app is a separate apk of the same release. What has to match between all of them is the protocol number each build speaks, and every 0.5.0 package speaks protocol 3. A 0.5.0 hub accepts peers from its `PROTOCOL_MIN` to its `PROTOCOL`, both 3, and rejects any other with `protocol_too_old` or `protocol_too_new`. The rejected peer keeps its binding and connects again a minute later. An agent inside the range updates itself when the hub names a newer version.
 
-The panel has two page groups, and this site follows them. The **Hub** group (Dashboard, Network, Overlay, Proxy, AI, Devices, Clients, Services, Credentials, Settings) is the box itself. The **Agent** group (Terminals, Files, Modules) acts on one managed machine at a time. Both groups are under **Hub** in this site's sidebar, in the panel's order, because both are driven from the panel. Modules has one page per module here: Samba, Gitea, Containers and ZFS. The client's window has a group of its own, one page per panel plus the tray.
-
-![The Dashboard with live traffic, active exits and DNS queries](/guide/en/dashboard.webp)
+An agent or client from 0.3 or 0.4 speaks protocol 1 or 2, so a 0.5.0 hub rejects it with `protocol_too_old`. Such a peer does not update itself. The hub's update reinstalls the agent on its own box, and you reinstall every other one. [Settings](./hub/settings.md) gives the upgrade order, hub first, and [The channel](./protocol/channel.md) holds the rules that move the number.

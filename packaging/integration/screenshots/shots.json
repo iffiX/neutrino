@@ -57,10 +57,7 @@
     "hub/settings.md",
     "hub/terminals.md",
     "hub/zfs.md",
-    "index.md",
-    "overview.md",
     "protocol/channel.md",
-    "quick-start.md",
     "reference/platforms.md",
     "reference/troubleshooting.md"
   ],
