@@ -82,7 +82,7 @@
   "ui.setup.step_python_env": "准备 Python 环境",
   "ui.setup.step_xray_core": "安装 xray-core 和地理数据",
   "ui.setup.step_config_files": "从示例准备 config/",
-  "ui.setup.step_agent_tls": "生成代理通道证书",
+  "ui.setup.step_agent_tls": "生成被控端通道证书",
   "ui.setup.step_systemd_units": "安装 systemd 单元",
   "ui.setup.step_interfaces": "应用网口角色",
   "ui.setup.step_render_all": "渲染并应用配置",

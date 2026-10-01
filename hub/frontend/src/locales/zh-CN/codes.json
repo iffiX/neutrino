@@ -12,7 +12,7 @@
   "code.agent_package_fetch_failed": "hub 无法获取这个平台的被控端安装包。",
   "code.agent_package_missing": "hub 没有这台机器所在平台的被控端安装包。",
   "code.agent_package_sha256_mismatch": "hub 取回的文件与清单里固定的被控端安装包不一致。",
-  "code.agent_tls_missing": "代理通道还没有可固定的证书。",
+  "code.agent_tls_missing": "被控端通道还没有可固定的证书。",
   "code.apply_failed": "这台机器应用不了：{detail}",
   "code.backup_corrupt": "这份备份已损坏，什么都没有恢复。",
   "code.backup_too_large": "备份最大 {limit} 字节。",
