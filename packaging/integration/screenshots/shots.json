@@ -36,25 +36,14 @@
     "commands/nagent.md",
     "commands/nclient.md",
     "commands/nhub.md",
-    "hub/ai.md",
     "hub/cli.md",
-    "hub/clients.md",
     "hub/containers.md",
-    "hub/credentials.md",
-    "hub/dashboard.md",
-    "hub/devices.md",
     "hub/files.md",
     "hub/gitea.md",
-    "hub/install.md",
     "hub/modules.md",
-    "hub/network.md",
     "hub/overlay-easytier.md",
     "hub/overlay-netbird.md",
-    "hub/overlay.md",
-    "hub/proxy.md",
     "hub/samba.md",
-    "hub/services.md",
-    "hub/settings.md",
     "hub/terminals.md",
     "hub/zfs.md",
     "protocol/channel.md",
@@ -435,6 +424,30 @@
       "state": "A Linux, a Windows and a Mac device enrolled and online."
     },
     {
+      "file": "devices_enroll_link.png",
+      "language": "en",
+      "page": "hub/devices.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/devices",
+      "element": "viewport",
+      "wait_for": ".page",
+      "state": "Any hub.",
+      "manual": "Select Add by link and leave the notice with the link showing."
+    },
+    {
+      "file": "devices_enroll_link.png",
+      "language": "zh",
+      "page": "hub/devices.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/devices",
+      "element": "viewport",
+      "wait_for": ".page",
+      "state": "Any hub.",
+      "manual": "Select Add by link and leave the notice with the link showing."
+    },
+    {
       "file": "devices_install_ssh.png",
       "language": "en",
       "page": "hub/devices.md",
@@ -492,7 +505,7 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "Any hub.",
-      "manual": "Select Create link, fill the dialog, and leave the link with its QR code showing."
+      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link and Copy showing."
     },
     {
       "file": "clients_link_qr.png",
@@ -504,7 +517,7 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "Any hub.",
-      "manual": "Select Create link, fill the dialog, and leave the link with its QR code showing."
+      "manual": "Select New client link, fill the dialog, select Create link, and leave the notice with the link and Copy showing."
     },
     {
       "file": "services_list.png",
@@ -527,6 +540,30 @@
       "element": "viewport",
       "wait_for": ".page",
       "state": "Web, Ports, AI and Files entries, at least one declared by hand."
+    },
+    {
+      "file": "services_add.png",
+      "language": "en",
+      "page": "hub/services.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/services",
+      "element": "viewport",
+      "wait_for": ".page",
+      "state": "Any hub.",
+      "manual": "Open the form that declares an entry by hand, with a web address typed in."
+    },
+    {
+      "file": "services_add.png",
+      "language": "zh",
+      "page": "hub/services.md",
+      "source": "panel",
+      "viewport": "desktop",
+      "url": "/services",
+      "element": "viewport",
+      "wait_for": ".page",
+      "state": "Any hub.",
+      "manual": "Open the form that declares an entry by hand, with a web address typed in."
     },
     {
       "file": "credentials.png",
@@ -943,22 +980,6 @@
       "source": "app",
       "viewport": "app",
       "state": "A terminal session with the key row showing."
-    },
-    {
-      "file": "app_desktop.png",
-      "language": "en",
-      "page": "client/android.md",
-      "source": "app",
-      "viewport": "app",
-      "state": "A remote desktop connected."
-    },
-    {
-      "file": "app_desktop.png",
-      "language": "zh",
-      "page": "client/android.md",
-      "source": "app",
-      "viewport": "app",
-      "state": "A remote desktop connected."
     },
     {
       "file": "os_mac_keychain_trust.png",
@@ -967,6 +988,30 @@
       "source": "os",
       "viewport": "os",
       "state": "macOS Keychain Access, the hub's authority opened, Trust set to Always Trust."
+    },
+    {
+      "file": "win_msi_installer.png",
+      "language": "os",
+      "page": "client/desktop.md",
+      "source": "os",
+      "viewport": "os",
+      "state": "The client's Windows installer on the page with the PATH box."
+    },
+    {
+      "file": "win_explorer_mapped.png",
+      "language": "os",
+      "page": "client/desktop.md",
+      "source": "os",
+      "viewport": "os",
+      "state": "File Explorer on Windows showing a share the client mapped to a drive letter."
+    },
+    {
+      "file": "win_tray_flyout.png",
+      "language": "os",
+      "page": "client/desktop.md",
+      "source": "os",
+      "viewport": "os",
+      "state": "The client's tray menu open in the Windows taskbar corner."
     }
   ]
 }

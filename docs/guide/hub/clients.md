@@ -4,37 +4,58 @@ title: Clients
 
 # Clients
 
-A client link is how a person's computer joins the hub. On the **Clients** page you make the link, and later switch that client off or delete it. This page also names what each button in the person's window does.
+A client is the program on one person's computer or phone that uses what the hub publishes. On the **Clients** page you admit each one with a link, choose what it can use, and switch it off or remove it.
 
-## What a client is
+## Make a client link
 
-A client is one program on one computer, run by one person from a normal account; it consumes what the hub publishes and hosts nothing. The client runs on Linux, Windows and macOS, and rejects root with `root_refused`. A computer that joins this hub again lands on the row it already had, under the name the new link carries.
+1. On **Clients**, select **New client link**.
+1. Type a name that says whose program it is, such as `alice-laptop`.
+1. Select **Create link**, then select **Copy**.
 
-## Links, enable, disable and delete
+![The new client link with its Copy button](/guide/en/clients_link_qr.webp)
 
-1. Select **New client link**.
-1. Type a name, such as the computer's own name, and select **Create link**.
+The link works for five minutes and is used once. The person pastes it into the client window, or runs `nclient join` with it in a terminal. Installing and joining are on [Desktop client](../client/desktop.md) and [Android app](../client/android.md).
 
-![The new client link form](/guide/en/clients_create_link.webp)
+A computer that joins again returns to the row it already had, under the name in the new link. The page badge reads how many clients are online, as **2 of 3 online**.
 
-The link is valid for five minutes, and the person pastes it into the window as [the client's install page](../client/install.md) shows.
+## The client list
 
-![The clients table with platform, version and status](/guide/en/clients_table.webp)
+Each row shows the client's **Name**, **Hostname**, **Platform**, **Version**, **Status** and **Last seen**. A **disabled** chip marks a client that is switched off, and an **own permissions** chip marks one that does not follow the default.
 
-The table shows each client's **Name**, **Hostname**, **Platform**, **Status**, **Version** and **Last seen**. **Disable** switches a client off. Its window then reads **Switched off by the hub** with every button greyed, until you select **Enable**. **Delete** revokes the client's gateway key and drops the client from the hub. The program on that computer joins again only with a new link.
+## Permissions
 
-## Permissions and agent filters
+**Default permissions**, at the top of the page, sets what every client without permissions of its own can use. **Permissions** on a row opens one client's drawer, where **Follow the default** is on until you turn it off.
 
-**Default permissions** at the top of the page sets what every client without permissions of its own may use; **Permissions** on a row sets one client's own, or turns **Follow the default** back on. Each kind has a switch: web pages, ports, the AI gateway, files, remote desktops, terminals and the virtual network.
+Each kind has its own switch:
 
-Beside every switch but **Virtual network**, a filter reads **All agents** until you narrow it. Select it and tick the managed devices whose entries that kind may reach; a client then sees only the web pages, files or terminals those devices provide. The hub's own services belong to the hub's own device, and a declared service belongs to the device at its address. Select **Apply permissions** to push the new list to the clients.
+| Kind                | What the client gets                              |
+| ------------------- | ------------------------------------------------- |
+| **Virtual network** | joins the hub's overlay networks as a peer        |
+| **Web pages**       | the web entries, opened in a browser              |
+| **Ports**           | TCP ports forwarded to the computer's `127.0.0.1` |
+| **AI gateway**      | its own key and the gateway's address             |
+| **Files**           | SMB shares to mount                               |
+| **Terminals**       | shells on managed machines                        |
+| **Remote desktops** | the desktops machines share                       |
 
-Deleting a device on the **Devices** page takes it out of every filter. A kind whose filter named only that device is switched off.
+After changing switches, select **Apply permissions**. The hub sends the new list to that client, or to every client that follows the default.
+
+## Device filters
+
+Beside every switch but **Virtual network**, a filter reads **All agents**. To narrow a kind:
+
+1. Select the filter beside the kind.
+1. Tick the managed devices whose entries the client can reach.
+1. Select **Apply permissions**.
+
+With no device ticked, the kind reaches every device. The hub's own services count as the hub box's device, and a declared service counts as the device at its address. Forgetting a device on [Devices](./devices.md) takes it out of every filter, and a kind whose filter named only that device is switched off.
 
 ## Each client's AI key
 
-A client that joins is handed a gateway key named after it, listed under **Access** on [the AI page](./ai.md). The key arrives with each poll reply, so it is never typed by hand, and usage is metered per key. Revoking the key there makes the hub generate a new key and send it to the client at once.
+A client that joins gets a gateway key named `client/` followed by its name. The hub sends the key with the client's state, so nobody types it, and usage is counted per key under **Access** on [AI](./ai.md). **Revoke** there cuts the client off at once, and the hub gives it a new key.
 
-## On the client's side
+## Disable or delete a client
 
-The window shows a status card and the five panels, one per kind; [the window page](../client/window.md) names every part of it.
+**Disable** switches a client off. The hub revokes its gateway key, and its window reads **Switched off by the hub** with every entry greyed. **Enable** switches it back on with a new key.
+
+**Delete** revokes the client's key and removes its row. The program on that computer loses the hub and joins again only with a new link.

@@ -4,32 +4,60 @@ title: Credentials
 
 # Credentials
 
-SSH keys, logins and tokens are written once on the **Credentials** page and read by the pages that sign in with them. This page covers what the **Credentials** page holds, how the vault seals it, and what a lost passphrase costs.
+The **Credentials** page stores SSH keys, logins and tokens in the hub's vault, once each. Every page that signs in somewhere picks a stored entry from a list.
 
-## SSH keys, logins and tokens
+![The Credentials page with SSH keys, logins and tokens](/guide/en/credentials.webp)
 
-| Kind         | What it holds                                               | Added with                                                     |
-| ------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
-| **SSH keys** | a private key, and its passphrase when the key is encrypted | **Add key**, the whole key pasted with its BEGIN and END lines |
-| **Logins**   | a username and password pair, or a bare password            | **Add login**                                                  |
-| **Tokens**   | a single secret value under a name                          | **Add token**                                                  |
+## Keys, logins and tokens
 
-![The Credentials page with keys, logins and tokens](/guide/en/credentials.webp)
+| Section      | What an entry holds                                         | Added with    |
+| ------------ | ----------------------------------------------------------- | ------------- |
+| **SSH keys** | a private key, and its passphrase when the key is encrypted | **Add key**   |
+| **Logins**   | a username and password pair, or a bare password            | **Add login** |
+| **Tokens**   | one secret value under a name                               | **Add token** |
 
-Every entry is write-only: the page shows names and kinds, and a value is never shown again after it is saved. The hub rejects a public key with `key_is_public`, because it needs the matching private key. It rejects an encrypted key without its passphrase with `key_passphrase_needed`.
+To add an entry:
+
+1. Select **Add key**, **Add login** or **Add token**.
+1. Fill **Name** and the value: **Private key**, **Username** and **Password**, or **Value**.
+1. If the key is encrypted, fill **Key passphrase**.
+1. Select **Save key**, **Save login** or **Save token**.
+
+Paste the whole private key, with its BEGIN and END lines. The hub rejects a public key with `key_is_public`, and an encrypted key without its passphrase with `key_passphrase_needed`. After saving, the page shows the name, the date added and where the entry is used; the value is not shown again. To change a value, delete the entry and add it again.
 
 ## Who uses them
 
-You pick a credential on the page that signs in with it. **Install agent** on [the Devices page](./devices.md) picks an SSH key or a login for the machine, and a login for `sudo` there. A provider on [the AI page](./ai.md) is keyed with a token, and a proxy node with a token where its link has one. The delete confirmation counts what loses the entry. A device or a provider that loses its credential needs a new one, and a node that loses its token is disabled.
+| Where                                   | Kind it picks                                 |
+| --------------------------------------- | --------------------------------------------- |
+| **Install agent** on **Devices**        | an SSH key or a login, and a login for `sudo` |
+| A VS Code instance on a Windows machine | the Windows login of the account it runs as   |
+| A provider on **AI**                    | a token, as the provider's API key            |
+| An exit node on **Proxy**               | a token, where the node's link has one        |
+
+A VS Code instance on Windows needs the account's login because Windows starts the instance with that username and password. When Windows rejects the login, the instance reports `credential_invalid`; update the stored login and apply again. Setting up the instance is on [VS Code](../agent/modules/vscode.md).
+
+Each row counts its users, as **2 devices** or **1 provider**, and **Delete** opens a confirmation with the same count. A device or a provider that loses its entry needs a new one, and an exit node that loses its token is disabled.
 
 ## The vault
 
-The vault is the file under `config/` that holds every value. A data key encrypts the values together with their names and kinds. The data key is itself sealed under the master passphrase set on the wizard's second screen. A backup of `config/` therefore holds ciphertext, and a restore of it requires the same passphrase.
+Every value is in `config/credentials/vault.json`. One data key encrypts the values together with their names and kinds. The data key is stored wrapped under the master passphrase you set during `nhub setup`. A backup of `config/` holds only ciphertext, and restoring it requires the passphrase it was taken under.
 
-## Rekey and a lost passphrase
+The box keeps a working copy of the data key outside `config/`, so the hub reads the vault without the passphrase. Without that copy the vault is locked, and anything that needs a stored entry returns `vault_locked`.
 
-`sudo nhub vault rekey` wraps the data key under a new passphrase, and nothing sealed is re-encrypted. An archive downloaded before the rekey still opens with the passphrase it was taken under.
+## Change the passphrase
 
-::: danger
-The passphrase is the one key to the vault. A lost passphrase means the vault's contents are gone, and every credential and AI account is entered again.
+Run the rekey command on the hub box, and type the new passphrase twice:
+
+```bash
+sudo nhub vault rekey
+```
+
+The command wraps the same data key under the new passphrase, and nothing sealed is encrypted again. `--stdin` reads the new passphrase from standard input. A backup taken before the rekey still opens with the passphrase it was taken under.
+
+## A lost passphrase
+
+The running box reads the vault with its working copy of the data key. `sudo nhub vault rekey` therefore sets a new passphrase even when the old one is lost. Back up `config/` again after the rekey.
+
+::: warning
+A backup opens only with the passphrase it was taken under. With that passphrase lost, the keys, logins and tokens in that backup are gone, and each one is entered again on the restored box.
 :::

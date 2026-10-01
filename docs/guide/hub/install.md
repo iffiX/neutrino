@@ -4,97 +4,135 @@ title: Install the hub
 
 # Install the hub
 
-Installing the hub is one package and one run of `sudo nhub setup`. When the wizard finishes, the panel is at `http://<hub>:8080`, where `<hub>` is the address of the box, and you sign in. The shape installed here is server mode, which keeps every address the box has.
+At the end of this page the hub package is on your always-on Linux box, and you are signed in to its panel. Between the two, `sudo nhub setup` shows six question screens and runs its steps. The panel then listens on the port you chose, `8080` unless you change it.
 
 ## Before you start
 
 The box must meet these conditions:
 
-- It stays on, and it runs one of the supported systems: Debian 12 or newer, Ubuntu 22.04 or newer, Raspberry Pi OS 64-bit, Fedora 41 or newer, the RHEL 9 family, or Arch. [Supported platforms](../reference/platforms.md) has the full matrix.
+- It runs Debian 12 or newer, Ubuntu 22.04 or newer, Raspberry Pi OS 64-bit, Fedora, the RHEL 9 family, or Arch on x86-64.
 - You have root on it.
-- It has internet access, because the setup fetches packages.
+- It reaches the internet, because setup fetches xray-core, its geodata and the AI gateway.
 
-The other shapes, side gateway and router, take over the box's interfaces; [the Network page](./network.md) describes them.
+[Supported platforms](../reference/platforms.md) lists every file of the release and the system each one installs on.
 
 ## Install the package
+
+Download the file for your system from the [releases page](https://github.com/iffiX/neutrino/releases), then install it with the system's package manager:
 
 ::: code-group
 
 ```bash [Debian, Ubuntu, Raspberry Pi OS]
-sudo apt install ./neutrino-hub_0.3.0_amd64.deb
+sudo apt install ./neutrino-hub_0.5.0_amd64.deb
 ```
 
 ```bash [Fedora]
-sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.5.0-1.x86_64.rpm
 ```
 
 ```bash [RHEL, AlmaLinux, Rocky]
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-0.5.0-1.x86_64.rpm
 ```
 
 ```bash [Arch, EndeavourOS, Manjaro]
-sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst
 ```
 
 :::
 
-`apt` and `dnf` install the dependencies with the package.
+On ARM64 the file is `neutrino-hub_0.5.0_arm64.deb` or `neutrino-hub-0.5.0-1.aarch64.rpm`; the Arch package is x86-64 only. The RHEL family runs `epel-release` as a line of its own, because fail2ban, arp-scan and vnstat come from EPEL. The package includes its own Python under `/opt/neutrino/python`.
 
 ::: warning
-Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies. If you already did, run `sudo apt -f install` (Debian family) or `sudo dnf install <the packages it named>` (Fedora family) to finish the install.
+Install with `apt`, `dnf` or `pacman`. `dpkg -i` and `rpm -i` install none of the dependencies; after one of them, run `sudo apt -f install` on the Debian family to finish.
 :::
 
-On ARM64 the file is `neutrino-hub_0.3.0_arm64.deb` or `neutrino-hub-0.3.0-1.aarch64.rpm`. The package includes its own Python under `/opt/neutrino/python`. On the RHEL family, fail2ban, arp-scan and vnstat come from EPEL.
+## Start the wizard
 
-## Start the setup wizard
-
-1. Run `sudo nhub setup`. The command prints an address holding a one-time token and, where the box has a browser, opens the wizard there.
-1. Open the printed address in a browser on the same network.
+1. Run `sudo nhub setup`. The terminal prints one address per network the box is on, each with a one-time token. Where the box has a browser, the first address opens there.
+1. Open a printed address in a browser on any machine that reaches the box.
 1. Select **Set this box up**.
 
-![The setup wizard's welcome screen](/guide/en/setup_welcome.webp)
+The token is good for this run only. A page opened without it reads **This box is waiting to be set up**. To answer in the terminal instead, press Enter at **Continue in terminal (will close server)**; the same screens then run there, in English.
 
-To answer in the terminal instead, press Enter at its prompt; the same screens then run in the terminal, in English.
+## Answer the wizard
 
-## Answer the six screens
+**Next** moves on, **Back** returns, and nothing is written until the last screen.
 
-**Next** moves to the following screen, **Back** returns to the previous one, and nothing is written until the last screen is confirmed.
+### Language
 
-1. On **Language**, pick the language the panel is drawn in.
-1. On **A password for the panel, a passphrase for the vault**, type a **Panel password** and a **Vault master passphrase**. The password signs you in; the passphrase seals every credential the box holds, and a restore from backup requires it again.
-   ![The secrets screen](/guide/en/setup_secrets.webp)
-1. On **What is this machine for?**, pick **Server**.
-   ![The shape screen with Server picked](/guide/en/setup_shape.webp)
-1. On **Which ports?**, keep **Panel answers on port** at `8080`. In server mode every interface keeps its address, and the panel listens on every interface.
-   ![The ports screen in server mode](/guide/en/setup_ports.webp)
-1. On **Going out through a proxy**, leave **Set it up here** off. You can set up a proxy later on [the Proxy page](./proxy.md).
-   ![The proxy screen, skipped](/guide/en/setup_proxy.webp)
-1. On **Ready**, read the summary and confirm it.
-   ![The review screen](/guide/en/setup_review.webp)
+Pick **English** or **简体中文** under **Language**. The panel is drawn in this language; the terminal stays English.
 
-::: warning
-The vault opens only with its passphrase. A lost passphrase means every credential and AI account is entered again after a reset.
-:::
+### Passwords and HTTPS
 
-## Open the panel
+![The secrets screen with the HTTPS switch](/guide/en/setup_secrets.webp)
 
-The steps run on the screen, from checking packages to installing this machine's own agent, and end with **This box is a gateway**. The page then moves to the panel by itself; **Open the panel** does the same.
+1. Type the **Panel password** twice. It has at least 8 characters, and it signs you in to the panel.
+1. Type the **Vault master passphrase** twice. It has at least 16 characters with a lowercase letter, an uppercase letter, a digit and a symbol.
+1. Optional: turn on **HTTPS for the panel**.
 
-![The done screen](/guide/en/setup_done.webp)
+The passphrase seals every credential the box holds, and restoring a backup requires it again. The hub makes the panel's certificates whether HTTPS is on or off, and [Settings](./settings.md) switches HTTPS later.
 
-1. Open `http://<hub>:8080`.
-   ![The sign-in page](/guide/en/login.webp)
-1. Type the panel password and select **Sign in**.
+### Shape
 
-The last setup step installed this machine's own agent, so **Devices** already lists the box under **Managed devices**.
+![The shape screen with Server picked](/guide/en/setup_shape.webp)
 
-![Managed devices with the hub's own machine](/guide/en/devices_managed.webp)
+**What is this machine for?** lists the shapes this machine has enough ports for:
 
-## After the first sign-in
+| Shape              | What it does                                       |
+| ------------------ | -------------------------------------------------- |
+| **Server**         | Routes nothing; answers where it is reached.       |
+| **Side gateway**   | Forwards for hosts that name it as their gateway.  |
+| **Router**         | Routes between uplinks and the networks it serves. |
+| **One-arm router** | Routes on one wire: untagged out, tagged VLAN in.  |
 
-| Goal                                       | Page                                                                                   |
-| ------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Change the shape to side gateway or router | [Network](./network.md)                                                                |
-| Reach the box and the LAN from outside     | [Overlay: NetBird](./overlay-netbird.md) or [Overlay: EasyTier](./overlay-easytier.md) |
-| Send traffic through an exit node          | [Proxy](./proxy.md)                                                                    |
+Server and side gateway keep every address on the machine. Router and one-arm router take the interfaces over. [Network](./network.md) describes each shape and changes it later.
+
+### Ports
+
+**Which ports?** shows the fields the chosen shape needs. Every shape has **Panel answers on port**.
+
+| Shape          | Fields                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| Server         | none beyond the panel port; every port keeps its address and answers                                   |
+| Side gateway   | **Port on that network**, **This box's address**, **Prefix length**, **That network's own router**     |
+| Router         | **Out to the internet**, **In to your devices**, **This box's address**, **Prefix length**             |
+| One-arm router | **The one port, out and in**, **VLAN tag for your devices**, **This box's address**, **Prefix length** |
+
+A router sets only its first uplink and its first served network here.
+
+### Proxy
+
+**Going out through a proxy** is optional, and [Proxy](./proxy.md) holds the same settings later. To set it up now, turn on **Set it up here** and paste each `ss://` or `vless://` link under **Exit node links**.
+
+| Field                                                 | Shape            | What it sets                              |
+| ----------------------------------------------------- | ---------------- | ----------------------------------------- |
+| **SOCKS port applications point at**                  | Server           | a SOCKS port that leaves through the exit |
+| **Also publish a SOCKS port that bypasses the proxy** | the other shapes | a second SOCKS port that leaves directly  |
+| **Send this box's own traffic through it**            | every shape      | the box's own connections go to the exit  |
+
+### Ready
+
+**Ready** lists the shape, the language, the ports, the panel port, **HTTPS** on or off, and the proxy. Read it and select **Set this box up**. For a router or a one-arm router, a warning names the panel's new address and the log file, `/var/log/neutrino/setup.log`. The network can drop while the interfaces change; refresh the page to reconnect.
+
+## Watch the steps
+
+The screen reads **Making it so** and lists each step as it runs, from **Checking the packages the hub needs** to **Installing this machine's agent**. **Generating the panel's certificates** makes the hub's own certificate authority and the panel's certificate, on every run. The terminal shows the same steps.
+
+![The finished screen offering the certificate](/guide/en/setup_done.webp)
+
+When the title reads **This box is a gateway**, the next action depends on the HTTPS answer:
+
+- With HTTPS off, the page moves to the panel by itself after a few seconds. **Open the panel** goes there at once.
+- With HTTPS on, the page shows **Install the certificate on this device** with an **Install certificate** button. Under it are the steps for Windows, macOS, Linux, iPhone and iPad, and Android, with your device's steps open. Install the authority, check its fingerprint against the **SHA-256** line, then select **Open the panel**.
+
+The terminal prints the panel's address, and with HTTPS on, the authority's download address and fingerprint.
+
+## Sign in
+
+![The sign-in page](/guide/en/login.webp)
+
+1. Open the panel's address, `http://` or `https://` followed by the box's address and the panel port.
+1. Type the **Panel password** and select **Sign in**.
+
+The panel opens on the [Dashboard](./dashboard.md). After repeated wrong passwords, the sign-in page reads **Locked after repeated failures.**, and `sudo nhub unlock` on the box clears the lock.

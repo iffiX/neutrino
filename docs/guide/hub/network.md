@@ -4,41 +4,46 @@ title: Network
 
 # Network
 
-The **Network** page sets the box's shape, the role of each interface and the networks the panel is reachable on. Read this page to learn what each shape does to your network before you change it. The page's sections, in order:
+On the **Network** page you choose what the box is to your network and decide where the box answers. In router mode the page also sets each interface's role, and DHCP and DNS on the networks the box serves. Each section has its own apply bar and changes only what it shows.
 
-| Section             | What it sets                                                  |
-| ------------------- | ------------------------------------------------------------- |
-| **Mode**            | the box's shape                                               |
-| **Topology**        | the role and address of each interface, in the routing shapes |
-| **Fixed addresses** | the devices that always get one address                       |
-| **Known networks**  | the networks a WAN radio joins                                |
-| **Exposure**        | the networks the box accepts connections on                   |
-| **Panel port**      | the port the panel listens on                                 |
+| Section              | Shown in             | What it sets                                        |
+| -------------------- | -------------------- | --------------------------------------------------- |
+| **Mode**             | every mode           | the box's shape                                     |
+| **Upstream gateway** | side gateway         | the router the box forwards to                      |
+| **Topology**         | router               | a drawing of the interfaces and the devices on them |
+| the interface tabs   | router               | each interface's role and addresses                 |
+| **Fixed addresses**  | router, with a LAN   | the devices that always get one address             |
+| **Known networks**   | router, with a radio | the wireless networks a WAN radio joins             |
+| **Routing behavior** | router               | how uplinks and served networks behave together     |
+| **Exposure**         | every mode           | the networks the box accepts connections on         |
+| **Panel port**       | every mode           | the port the panel listens on                       |
 
-## The shapes
-
-The setup wizard's **What is this machine for?** screen offers four shapes. The page's **Mode** section shows three, because a one-arm router is stored as a router.
-
-| Shape          | What it does                                       | What it takes over                                  | Ports needed |
-| -------------- | -------------------------------------------------- | --------------------------------------------------- | ------------ |
-| Server         | Routes nothing; answers where it is reached.       | nothing; every address stays as the machine set it  | 1            |
-| Side gateway   | Forwards for hosts that name it as their gateway.  | nothing addressed; the hosts point at it themselves | 1            |
-| Router         | Routes between uplinks and the networks it serves. | the interface roles and the addresses on them       | 2            |
-| One-arm router | Routes on one wire: untagged out, tagged VLAN in.  | as a router, on one wired trunk                     | 1 wired      |
+## Choose the shape
 
 ![The Mode section with the three shapes](/guide/en/network_modes.webp)
 
-![The wizard's shape screen](/guide/en/setup_shape.webp)
+| Shape            | What it does                                       | Addresses on the machine     |
+| ---------------- | -------------------------------------------------- | ---------------------------- |
+| **Server**       | Routes nothing; answers where it is reached.       | kept as the machine set them |
+| **Side gateway** | Forwards for hosts that name it as their gateway.  | kept as the machine set them |
+| **Router**       | Routes between uplinks and the networks it serves. | taken over by the hub        |
 
-Only the router shape takes over addressing. The wizard lists only the shapes the machine has enough ports for. **Apply mode** rewrites the interface roles and reloads the firewall.
+The setup wizard also offers a one-arm router, which routes on one wired trunk: untagged out, tagged VLAN in. The panel stores it as **Router**, with the trunk in the **Split** role.
 
-::: danger
-A one-arm router needs a switch that passes VLAN tags. On a plain switch the configuration looks right and every tagged packet is dropped.
-:::
+To change the shape:
+
+1. Under **Mode**, select the shape. The current one has the **active** badge.
+1. Select **Apply mode**. The hub rewrites the interface roles and reloads the firewall.
+
+Entering router mode hands the interfaces to the hub, and a DHCP uplink can come back with a new address. Leaving router mode hands them back to the machine's own network manager, and the served networks end. In both cases the apply bar warns before you apply. Leaving side gateway mode cuts off the hosts that named the box as their gateway.
+
+## Upstream gateway
+
+In side gateway mode, devices reach the proxy by naming this box as their gateway, and the network's own router keeps handing out leases. **Upstream gateway** holds that router's address, where the box sends what it forwards. **Apply upstream gateway** rewrites the default route and reloads the firewall.
 
 ## Interface roles
 
-In the routing shapes each interface has a **Role**:
+In router mode, each interface has a tab, and its **Role** is one of these:
 
 | Role         | Meaning                      |
 | ------------ | ---------------------------- |
@@ -47,51 +52,61 @@ In the routing shapes each interface has a **Role**:
 | **Split**    | A trunk sliced into VLANs    |
 | **Disabled** | Left alone                   |
 
-A WAN interface takes its **Address** by **DHCP** from the upstream network, or a **Static** address with a **Gateway**. A LAN interface has a **Gateway address** and a **Prefix length**; the served network is `192.168.8.0/24` with the box at `192.168.8.1` unless you change it, a range the upstream router is unlikely to use. A split trunk has one **untagged** main interface, named after the trunk, and one VLAN interface per tag. Select **Apply to** the trunk first; each VLAN interface then has a tab of its own.
+A WAN interface takes its address by **DHCP** from the upstream network, or by **Static** with an **Address**, a **Prefix length** and a **Gateway**. Under **Priority**, **Automatic** lets the gateway rank the uplinks, and **Prefer this one** puts this one first. **Backup only** keeps it for when no other uplink is left, and **Clone MAC** replaces its hardware address.
 
-::: warning
-Changing a served network reassigns its address and reissues every lease on it; the panel says so before applying.
-:::
+A LAN interface has a **Gateway address** and a **Prefix length**; the first served network is `192.168.8.0/24` with the box at `192.168.8.1` unless you change it. Select **Apply to** followed by the interface's name to apply one tab.
 
-A side gateway adds one field, **Upstream gateway**, which holds the address of the router on the network the box forwards for. **Routing behavior** holds two switches for the routing shapes, **Networks reach each other** and **Spread traffic across uplinks**.
+A **Split** trunk has its untagged traffic on the main interface, and one more interface per VLAN tag under **VLANs**. Each VLAN gets a tab of its own after you apply the trunk.
+
+**Routing behavior** holds two switches for the whole gateway. **Spread traffic across uplinks** spreads connections across separate upstream lines. **Networks reach each other** lets devices on one served network reach devices on another. **Apply routing behavior** reloads the firewall and rebuilds the uplink routes.
 
 ## DHCP and DNS
 
-On each served network, the box gives its DHCP clients its own address as their gateway and their resolver. The **DHCP** panel of a LAN interface has the switch **Allocate address on this network**, a **Range start** and **Range end**, and a **Lease time**. The lease time is in dnsmasq form, `12h` for example. The pool runs from host `.100` to `.200` unless you change it, and the box's own address must lie outside it.
+On each served network the box gives its DHCP clients its own address as their gateway and resolver. The **DHCP** part of a LAN tab has these fields:
 
-With the switch on, the box assigns addresses on the network. The box serves DNS on the network whether or not the switch is on, and on every served network the name `hub.neutrino.internal` resolves to the box's address on that network. In server mode the box serves no network, so it runs neither DHCP nor DNS.
+| Field                                | Meaning                                                                                |
+| ------------------------------------ | -------------------------------------------------------------------------------------- |
+| **Allocate address on this network** | whether the network hands out addresses                                                |
+| **Range start**, **Range end**       | the pool, `.100` to `.200` unless you change it; the box's own address lies outside it |
+| **Lease time**                       | a dnsmasq duration such as `12h`, `30m` or `1d`; `12h` by default                      |
 
-**Fixed addresses**, under the interface card, binds a MAC address to one address in a network that assigns addresses. Select **Add address**, type the MAC (or pick a discovered device from the list), the address and an optional name, then select **Apply fixed addresses**. A device that holds a dynamic lease moves to its fixed address at its next renewal, and the name resolves on every served network.
+The box answers DNS on every served network whether or not DHCP is on. On each of them, the name `hub.neutrino.internal` resolves to the box's address on that network. A server-mode box serves no network, so it runs neither DHCP nor DNS for others.
+
+**Fixed addresses** binds a MAC address to one address in a network that hands out addresses:
+
+1. Under **Fixed addresses**, select **Add address**.
+1. Type the **MAC address**, or pick a discovered device from the list.
+1. Type the **Address** and, optionally, a **Name**.
+1. Select **Apply fixed addresses**.
+
+A device holding a dynamic lease moves to its fixed address at its next renewal, and its name resolves on every served network.
 
 ## Wireless
 
-A radio in the WAN role joins a network; a radio in the LAN role publishes one.
+A radio in the WAN role joins a network, and a radio in the LAN role publishes one.
 
-**Known networks** lists the networks a WAN radio joins. The radio prefers the one highest in the list. Networks read from the machine's own configuration are marked **Read from this machine's** source; one whose key was kept where the hub could not read it is marked **needs a passphrase**, and picking it from **Scan for networks** opens a field for the passphrase. **Join** on a scanned network sets the interface to WAN, and **Forget** deletes the passphrase.
+To join a network, select **Scan for networks** on the radio's tab, pick the network, type its passphrase and select **Join**. Joining sets the interface to WAN.
 
-A LAN radio has an **Access point** panel with a **Network name**, a **Passphrase** and a **Band**. The passphrase is 8 to 63 characters, WPA2 only, and the band is 2.4 GHz or 5 GHz. A trunk cannot be a radio, because 802.1Q tags are not transmitted over a radio.
+**Known networks** lists the networks a WAN radio joins, preferring the one highest in the list. A network marked **needs a passphrase** has a key the hub cannot read; pick it from a scan to type one. **Forget** deletes the passphrase.
 
-## Exposure and the panel port
+A LAN radio has an **Access point** with a **Network name**, a **Passphrase** and a **Band**. The passphrase has 8 to 63 characters, WPA2 only, and the band is 2.4 GHz or 5 GHz. A card with no access-point mode cannot take the LAN role.
 
-**Exposure** is the list of networks on which the box accepts connections to its own services: the panel, SSH, DNS, the shares. A SOCKS port and the overlay's listener are reachable on the same networks.
+## Exposure
 
-1. Under **Exposure**, tick each network the box is reachable on.
-1. Select **Apply exposure**. The panel reloads the firewall input chain and reports **Applied to the firewall.**
+**Exposure** lists the networks on which the box accepts connections to its own services: the panel, SSH, DNS and the shares. Each enabled overlay is one more entry, marked **overlay**. A SOCKS port and an overlay's peer port are reachable on the same networks.
+
+1. Under **Exposure**, tick each network the box answers on.
+1. Select **Apply exposure**. The page reports **Applied to the firewall.**
 
 ![The Exposure section](/guide/en/network_exposure.webp)
 
-An exposed uplink accepts connections from the internet on every port the box listens on. The panel shows a warning before it applies such an exposure. Removing an uplink from the list stops the box answering on that wire; what the overlay forwards through the box into that wire's network is unchanged. The panel's own port is under **Panel port**:
+The apply bar warns before each kind of loss. An exposed uplink accepts connections from the internet on every port the box listens on. A network you untick stops reaching the box, and the warning counts the managed devices that reach the hub through it. Traffic the box forwards between networks is unaffected.
+
+## Panel port
+
+**Panel port** is the TCP port the panel listens on, on every exposed interface:
 
 1. Under **Panel port**, type the new **Port**.
-1. Select **Apply panel port**. The panel restarts on the new port and the browser follows it; when the new address is unreachable from where you are, the page reads **No answer at** that address.
+1. Select **Apply panel port**.
 
-## Changing the shape
-
-A shape is chosen at setup, and changing it is a reset:
-
-```bash
-sudo nhub reset all
-sudo nhub setup
-```
-
-`nhub reset all` hands the network back first, then replaces `config/` with the examples, removes every key and token the box collected, and stops the services; `/etc/neutrino/agent` stays, because it belongs to the agent package. Every interface keeps its address through the reset, so the session that ran it keeps its connection. [The Settings page](./settings.md) has a backup to take first.
+The panel restarts on the new port, and the page reads **Moving to** the new address, where you sign in again. When that address is unreachable from where you are, the page reads **No answer at** that address. Whether the panel speaks HTTP or HTTPS is set on [Settings](./settings.md).

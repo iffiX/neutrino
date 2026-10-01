@@ -4,18 +4,19 @@ title: AI
 
 # AI
 
-Your subscriptions and API keys sit behind one gateway address on the hub: CLIProxyAPI on port 8317. On the **AI** page you add them, and the hub issues each client a key of its own.
+The hub runs an AI gateway, CLIProxyAPI, that puts your API keys and subscription accounts behind one endpoint on port 8317. On the **AI** page you add providers and accounts once, and every client gets a key of its own to reach them.
 
-## Providers
+## Add a provider
 
-A provider is an endpoint the gateway forwards to, keyed with a stored token. The list is the serving order: the first enabled provider answers first.
+A provider is an API endpoint the gateway forwards to, keyed with a token stored on the [Credentials](./credentials.md) page. Store the token there first.
 
-1. In the panel, open **AI**.
 1. Under **Providers**, select **Add provider**.
-1. Fill **Name**, pick the **Kind**, and set the **Base URL** for a relay or leave it empty for the service's default.
-1. Pick the **API token** from the tokens stored on [the Credentials page](./credentials.md).
-1. Under **Model aliases**, type one model per line, real name first. Add `= alias` after a name where the tools are to see it under another name.
-1. Select **Save provider**, then **Apply providers**.
+1. Type a **Name** and pick the **Kind**.
+1. Optional: set the **Base URL** for a relay; empty uses the service's default.
+1. Pick the **API token**.
+1. Under **Model aliases**, type one model per line, real name first. Add `= alias` after a name for tools to see it under the alias.
+1. Select **Save provider**.
+1. Select **Apply providers**. The gateway restarts, and requests in flight fail.
 
 ![The providers list](/guide/en/ai_providers.webp)
 
@@ -26,50 +27,47 @@ A provider is an endpoint the gateway forwards to, keyed with a stored token. Th
 | **Gemini**            | `generateContent`   |
 | **OpenAI-compatible** | `/chat/completions` |
 
-The kind is the protocol the endpoint speaks, whatever models are behind it. A relay's `/anthropic` endpoint is **Anthropic**. Applying restarts the gateway, and requests in flight fail.
+The kind is the protocol the endpoint speaks, whoever's models are behind it; a relay's `/anthropic` endpoint is **Anthropic**. Devices are told to ask for the first model of a provider. The model names across all providers are the list every machine's tools pick from.
 
-## Subscription accounts
+The list is the serving order among providers: drag a row to move it, and the first enabled provider answers first. A row that reads **Needs a token before it can serve** has no token. **Edit** and **Delete** act on one provider; deleting keeps its token stored.
 
-You sign in to a subscription once, and the gateway serves that account and the API providers as one pool.
+## Sign in to a subscription
+
+A subscription account serves the same models as the providers, and the gateway rotates between them as one pool.
 
 1. Under **Accounts**, select **Sign in** and pick the subscription.
-1. Open the address the panel shows in a browser and enter the code there; for a redirect sign-in, the browser ends on a page that does not load, and its address goes into **Address bar or code**.
+1. Open the address the panel shows. For a code sign-in, enter the code there. For a redirect sign-in, sign in, then copy the address of the page that does not load into **Address bar or code**.
 1. Select **Finish sign-in**.
 
-![The accounts list with a signed-in subscription](/guide/en/ai_accounts.webp)
+The panel shows how long the code stays valid, and **Expired** after that. An account row shows its successful and failed requests; **Delete** stops it serving at once.
 
-The code's remaining lifetime is shown as **Expires in** followed by the time left. A gateway with no subscription sign-in reads **This gateway offers no subscription sign-in.**
-
-## Access: the endpoint and the keys
-
-**Access** shows the **Endpoint**, `http://<hub>:8317` unless the port was changed, where `<hub>` is the box's address. The keys under it are named after the clients they were handed to: a client that joins gets a key of its own, listed as the client's name.
-
-1. Select **Generate key** for a machine that runs no client.
-1. Name it after what uses it. The key is shown once, with **Paste it into the tool beside the endpoint above.**
+## Share the endpoint and keys
 
 ![The Access section with the endpoint and the keys](/guide/en/ai_keys.webp)
 
-**Revoke** cuts off whatever holds the key at once. When the key belongs to a client, the hub generates a new key and sends it to that client.
+**Access** shows the **Endpoint**, the box's address on the gateway port. Each client that joins gets a key named `client/` followed by the client's name. For a machine that runs no client:
 
-## Usage and journal
+1. Select **Generate key**.
+1. Name the key after what uses it, such as `laptop`, and select **Generate**.
+1. Copy the key. The panel shows it once, with **Paste it into the tool beside the endpoint above.**
 
-**Activity** shows today's requests and tokens. The usage grid shows the last 30 days by provider and by key. **Usage unavailable** means the gateway is not reporting usage yet. **Journal** shows the gateway's last log lines.
+Each row shows when the key was last used. **Revoke** cuts off whatever holds the key at once. A revoked client key is replaced, and the hub sends the new key to that client.
 
-![The usage grid](/guide/en/ai_usage.webp)
+The client's own AI panel points its tools at the endpoint; [Desktop client](../client/desktop.md) covers it.
 
-## Gateway port
+## Read usage
 
-**Gateway port** is the TCP port the gateway listens on. **Apply gateway port** restarts the gateway on the new port. Every machine pointed at the old port stops reaching the gateway until its endpoint is changed too.
+**Activity** shows the models the gateway serves, today's requests and tokens, and **Journal**, the gateway's last log lines. Select a model name to copy it.
 
-## On the client
+Under it, the grid shows the last 30 days by **Providers** or by **Keys**. **Usage unavailable** means the gateway is not reporting usage yet.
 
-The client's **AI** panel has one entry, with an **Enabled** switch, **Config** and **Apply**.
+## Change the gateway port
 
-![The AI panel in the client window](/guide/en/client_ai_panel.webp)
+**Gateway port** is the TCP port the gateway listens on, 8317 by default.
 
-1. Select **Config**. The **AI tool configuration** dialog lists **Claude Code**, **Codex** and **Gemini**, with a model picker per slot that offers **gateway default**.
-   ![The AI tool configuration dialog](/guide/en/client_ai_config.webp)
-1. Pick the models and select **Save**. The choice is staged; the machine is unchanged.
-1. Switch **Enabled** on and select **Apply**.
+1. Type the new **Port**.
+1. Select **Apply gateway port**. The gateway restarts on the new port.
 
-The line beside the switch reads **the tools point at the hub**. Switching **Enabled** off and applying again restores each tool's previous configuration, and the line reads **the tools are as they were**. [The client's AI page](../client/ai.md) has the terminal form.
+::: warning
+Every machine pointed at the old port loses the gateway until its endpoint changes too. Apply each client's AI panel again, and type the new endpoint into every tool set up by hand.
+:::

@@ -4,27 +4,43 @@ title: Services
 
 # Services
 
-This page follows a row on the **Services** page from its source to its button in a client window. It ends with declaring a row by hand. The badge on the page reads the healthy count against the total, **3 of 4 healthy** for example.
+A service is one entry the hub publishes to clients: a web page, a port, the AI gateway, a share or a shared desktop. The **Services** page lists the entries the hub found on its own and lets you declare more by hand.
+
+![The Services page with its Web, Ports, AI and Files groups](/guide/en/services_list.webp)
 
 ## Kinds and buttons
 
-| Kind            | Group on the page | Where it comes from                            | The client's button        |
-| --------------- | ----------------- | ---------------------------------------------- | -------------------------- |
-| Web             | **Web**           | the Gitea module, or a declaration             | **Open**                   |
-| Ports           | **Ports**         | a container's published port, or a declaration | **Connect**                |
-| AI              | **AI**            | the hub's AI gateway                           | **Config**, then **Apply** |
-| Files           | **Files**         | the Samba module, or a declaration             | **Config**, then **Mount** |
-| Remote desktops | none              | a machine sharing its own desktop              | **Connect**                |
+The page shows four groups. A shared desktop is the fifth kind, and it appears in the machine's drawer on the **Devices** page and in the clients.
 
-![The Services page with its four groups](/guide/en/services_list.webp)
+| Kind           | Group on the page | Comes from                                     | Button in the desktop client |
+| -------------- | ----------------- | ---------------------------------------------- | ---------------------------- |
+| Web            | **Web**           | Gitea, VS Code, or a declaration               | **Open**                     |
+| Port           | **Ports**         | a container's published port, or a declaration | **Connect**                  |
+| AI             | **AI**            | the hub's AI gateway                           | **Config**                   |
+| File           | **Files**         | the file share module, or a declaration        | **Mount**                    |
+| Remote desktop | none              | a machine running `nagent rdp start`           | **Connect**                  |
 
-![The client window with the five panels](/guide/en/client_connected.webp)
-
-The page has four groups; a shared desktop is listed on clients and in the machine's drawer only. A row shows whether the source is **serving** or **not serving** and whether the hub finds it **reachable** or **unreachable**. A chip reads **module** when a module published the row and **declared** when a declaration did.
+A client sees only the kinds and devices its permissions allow, as set on [Clients](./clients.md). How each button behaves is on [Desktop client](../client/desktop.md).
 
 ## Discovered entries
 
-A module the hub configures on a device publishes without a declaration. The Samba module publishes each share as **published by the samba module on** that host. The Gitea module publishes its address, and a container publishes each host port it exposes. The hub's AI gateway publishes its endpoint. A machine publishes its desktop while `sudo nagent rdp start` is running on it; the entry disappears when the share stops.
+A module the hub configures on a managed machine publishes its entries with no declaration. Each row says where it came from:
+
+| Row description                                | Source                                         |
+| ---------------------------------------------- | ---------------------------------------------- |
+| **published by the samba module on** the host  | each share of the file share module            |
+| **published by the gitea module on** the host  | the Gitea module's address                     |
+| **published by the vscode module on** the host | one VS Code instance, for the account it names |
+| **published by container** and the image       | each host port a container publishes           |
+| **published by the AI gateway**                | the hub's AI gateway                           |
+
+These rows have the **module** chip and follow the module's configuration on that machine.
+
+## Local-only entries
+
+A VS Code entry is local-only, marked `is_local_only` in what the hub sends: a browser opens it at the computer's own `127.0.0.1`. This page lists it under **Web** like any other row.
+
+In the desktop client the entry's button reads **Open locally**. The client forwards the instance's port to its own `127.0.0.1`, fetches the instance's token from the hub, and opens the forwarded address in the browser. The Android app shows the entry greyed with a **Desktop only** chip. Setting up an instance is on [VS Code](../agent/modules/vscode.md).
 
 ## Declare a service by hand
 
@@ -32,38 +48,25 @@ A declaration publishes something the hub does not manage: a web page, a TCP por
 
 1. Select **Declare service**.
 1. Fill **Name** and pick the **Kind**: **Web**, **Port** or **File**.
-1. Fill **Host** and **Port**; a web kind adds a scheme and a path, and a file kind takes `445` when the port is left blank.
-1. For a file kind, type a share name, or select **Scan host** to list the server's shares; each listed share is published as its own row.
+1. Fill **Host** and **Port**.
+1. If the kind is **Web**, pick the **Scheme** and fill the **Path**.
+1. If the kind is **File**, select **Scan host** to list the server's shares, or type each name under **Shares**.
+1. Optional: fill **Description**.
 1. Select **Declare**.
 
-![The declare service form](/guide/en/services_add.webp)
+![The New declared service form](/guide/en/services_add.webp)
 
-A host of `127.0.0.1`, `0.0.0.0`, `::1` or `localhost` means the hub itself, and each machine receives it as the address it reaches the hub on. **Test** probes a declared row, and **Delete** removes the declaration with every row it published; the machine it points at is untouched.
+A file service with no port uses 445, and each share becomes its own row. A host of `127.0.0.1`, `localhost` or `0.0.0.0` means the hub itself. Each client receives it as the address it reaches the hub on.
 
-## Each kind in the client
+**Delete** on a declared row removes the declaration and every row it published. The machine it points at is untouched.
 
-| Panel               | What the button does                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Web**             | **Open** opens the link in the default browser.                                                                |
-| **Ports**           | **Connect** relays the port to `127.0.0.1` on the computer; **Disconnect** closes the relay.                   |
-| **AI**              | **Config** picks the models per tool, **Apply** points the tools at the gateway or restores them.              |
-| **Files**           | **Config** takes the share's login and a path or drive letter, **Mount** attaches it, **Unmount** detaches it. |
-| **Remote desktops** | **Connect** opens the RustDesk viewer on that desktop.                                                         |
+## Health
 
-![The Ports panel forwarding a port](/guide/en/client_port_forwarding.webp)
+The badge beside the title counts healthy rows against all rows, as **3 of 4 healthy**. Each row has a status dot and a state word:
 
-![The Files panel's config form](/guide/en/client_files_config.webp)
+| Source       | State words                                                    |
+| ------------ | -------------------------------------------------------------- |
+| **module**   | **serving**, **not serving**                                   |
+| **declared** | **reachable**, **unreachable**, **checking…**, **not checked** |
 
-![The Files panel with the share mounted](/guide/en/client_files_mounted.webp)
-
-An unreachable row is greyed in the client and reads **not reachable now**. Each panel has a page of its own under **Client** in the sidebar.
-
-## What the agent provides
-
-The **Agent** group acts on one managed machine at a time, and a module it installs on that machine publishes into the groups on this page:
-
-| Page                        | What it does on a machine                                               |
-| --------------------------- | ----------------------------------------------------------------------- |
-| [Terminals](./terminals.md) | opens a root shell, in tabs                                             |
-| [Files](./files.md)         | browses, uploads, downloads and moves files                             |
-| [Modules](./modules.md)     | installs, starts, stops and configures Samba, Gitea, containers and ZFS |
+The hub checks a declared row by connecting to it. It opens a TCP connection to a port, sends a GET to a web page, and reads a file server's share list. **Test** checks the row again now. A share the server hides from anonymous listing reads as healthy, with a line saying the name is not verified. In a client, an unhealthy entry is greyed and reads **not reachable now**.

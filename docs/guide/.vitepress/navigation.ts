@@ -21,7 +21,9 @@ export const sidebarEn: DefaultTheme.SidebarItem[] = [
     text: "Hub",
     items: [
       { text: "Install the hub", link: "/hub/install" },
+      { text: "Dashboard", link: "/hub/dashboard" },
       { text: "Network", link: "/hub/network" },
+      { text: "Overlay", link: "/hub/overlay" },
       { text: "Proxy", link: "/hub/proxy" },
       { text: "AI", link: "/hub/ai" },
       { text: "Devices", link: "/hub/devices" },
@@ -53,7 +55,9 @@ export const sidebarZh: DefaultTheme.SidebarItem[] = [
     text: "Hub",
     items: [
       { text: "安装 hub", link: "/zh-CN/hub/install" },
+      { text: "总览", link: "/zh-CN/hub/dashboard" },
       { text: "网络", link: "/zh-CN/hub/network" },
+      { text: "虚拟网", link: "/zh-CN/hub/overlay" },
       { text: "代理", link: "/zh-CN/hub/proxy" },
       { text: "AI", link: "/zh-CN/hub/ai" },
       { text: "设备", link: "/zh-CN/hub/devices" },
