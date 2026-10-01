@@ -62,6 +62,11 @@ AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_module_cache"
 AGENT_MODULE_FETCH_TIMEOUT_S = 300
 AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
 AGENT_MODULE_KEY_DIGEST_CHARS = 16
+AGENT_MODULE_FETCH_CHUNK_BYTES = 64 * 1024
+# A download's progress line is written every this many percent, or after
+# this many seconds when the percent moves slower or the size is unknown.
+AGENT_MODULE_PROGRESS_PERCENT_STEP = 5
+AGENT_MODULE_PROGRESS_INTERVAL_S = 2.0
 AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 
 # The hub's own agent packages, which are not third-party modules: the hub's

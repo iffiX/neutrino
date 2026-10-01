@@ -153,6 +153,9 @@ const TAG_TONES: Record<string, StripTab["tagTone"]> = {
 /** The states in which the software is on the machine. */
 const PRESENT_STATES = ["installed", "stopped", "running"];
 
+/** The states whose tab turns a spinner beside its word. */
+const BUSY_STATES = ["installing", "uninstalling"];
+
 /** The four presses, each the route it writes with. */
 type ModuleAction = "install" | "start" | "stop" | "uninstall";
 
@@ -492,7 +495,13 @@ export function ModulesPage() {
                       ) : journalText.trim().length > 0 ? (
                         journalText
                       ) : (
-                        <span className="faint">{t("ui.journal.empty")}</span>
+                        <span className="faint">
+                          {t(
+                            hasNoInstances(activeRow)
+                              ? "ui.modules.no_instances"
+                              : "ui.journal.empty",
+                          )}
+                        </span>
                       )
                     ) : (
                       <span className="faint">
@@ -681,7 +690,14 @@ function toTab(row: DeviceModuleView): StripTab {
     tag: t(key ?? STATE_NEVER_REPORTED_KEY),
     tagTone: TAG_TONES[row.state],
     dotTone: dotTone(row),
+    isBusy: BUSY_STATES.includes(row.state),
   };
+}
+
+/** Whether the module runs as one unit per instance and has none yet. */
+function hasNoInstances(row: DeviceModuleView): boolean {
+  const instances = row.details.instances;
+  return Array.isArray(instances) && instances.length === 0;
 }
 
 function dotTone(row: DeviceModuleView): StatusTone {

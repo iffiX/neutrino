@@ -117,10 +117,12 @@ class StubModules:
         self.path = path
         self.asked: list = []
 
-    def artifact(self, *, name, manifest, platform):
+    def artifact(self, *, name, manifest, platform, on_progress=None):
         from types import SimpleNamespace
 
         self.asked.append((name, dict(platform)))
+        if on_progress is not None:
+            on_progress(f"hub: downloading {name}, 1.0 / 1.0 MB")
         return SimpleNamespace(path=self.path)
 
 
@@ -725,6 +727,41 @@ def test_a_package_stream_naming_a_module_is_served_from_the_module_cache(api):
 
         assert close["params"] == {"sha256": hashlib.sha256(expected).hexdigest()}
         assert runtime.agent_modules.asked == [("samba", PLATFORM)]
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_module_download_and_its_sending_are_lines_of_the_modules_task(api):
+    client, runtime = api
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+        socket.send_json(
+            {"type": "open", "stream": 1, "kind": "log", "module": "samba"}
+        )
+        socket.receive_json()
+        label = channel_serve.module_task_label(device_id, "samba")
+        assert wait_until(lambda: runtime.tasks.running(label) is not None)
+        expected = runtime.package_path.read_bytes()
+
+        socket.send_json(
+            {"type": "open", "stream": 3, "kind": "package", "module": "samba"}
+        )
+        socket.receive_json()
+        socket.send_json({"type": "credit", "stream": 3, "bytes": len(expected)})
+        received = b""
+        while len(received) < len(expected):
+            received += socket.receive_bytes()[4:]
+        socket.receive_json()
+
+        task = runtime.tasks.running(label)
+        assert wait_until(lambda: len(task.buffer) == 2)
+        assert task.buffer == [
+            "hub: downloading samba, 1.0 / 1.0 MB\n",
+            "hub: sending 0.1 MB to box\n",
+        ]
     finally:
         socket.__exit__(None, None, None)
 

@@ -1,4 +1,5 @@
 import { Icon } from "./icon";
+import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import type { IconName } from "./icon";
 import type { StatusTone } from "./status_dot";
@@ -21,6 +22,8 @@ export interface StripTab {
   tag?: string;
   tagTone?: "accent" | "secondary" | "warn" | "error";
   dotTone?: StatusTone;
+  /** Whether a step is in flight: a spinner beside the pill. */
+  isBusy?: boolean;
 }
 
 interface TabStripProps {
@@ -58,6 +61,7 @@ export function TabStrip({ label, tabs, selected, onSelect }: TabStripProps) {
                 {tab.tag}
               </span>
             )}
+            {tab.isBusy === true && <Spinner size={11} />}
             {tab.dotTone !== undefined && <StatusDot tone={tab.dotTone} />}
           </button>
         );

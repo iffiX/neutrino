@@ -14,6 +14,7 @@ import codecs
 import functools
 import hashlib
 import json
+import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -32,6 +33,7 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.channel.sessions import ChannelSession, ChannelStream
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import service_material
+from neutrino_hub.modules.devices.agent_module_cache import format_megabytes
 from neutrino_hub.modules.devices.agent_package import platform_family
 from neutrino_hub.modules.devices.agent_reports import (
     record_hello,
@@ -47,6 +49,8 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_METRICS,
     WEB_TASK_LABEL_MODULE,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 # What a report has to change before the panel refetches the device list.
 # Metrics are not among them: every report carries them, and they ride
@@ -156,11 +160,28 @@ async def serve_package_stream(
     """
     module = str(stream.args.get("module", "") or "")
     platform = dict(runtime.device_platform.get(session.key, {}))
+    on_progress = None
+    if module:
+        on_progress = functools.partial(
+            _publish_module_line_from_thread,
+            asyncio.get_running_loop(),
+            runtime,
+            module_task_label(session.key, module),
+        )
     try:
-        path = await asyncio.to_thread(_package_path, runtime, module, platform)
+        path = await asyncio.to_thread(
+            _package_path, runtime, module, platform, on_progress
+        )
     except AgentArtifactFetchError as error:
         await stream.close(error.code, error.params)
         return
+    if module:
+        size = await asyncio.to_thread(_file_size, path)
+        publish_module_line(
+            runtime,
+            module_task_label(session.key, module),
+            f"hub: sending {format_megabytes(size)} MB to {session.name}",
+        )
     digest = hashlib.sha256()
     try:
         with path.open("rb") as handle:
@@ -202,6 +223,21 @@ async def serve_log_stream(
 def module_task_label(device_id: str, module: str) -> str:
     """The label a module's install or uninstall task runs under."""
     return WEB_TASK_LABEL_MODULE.format(device_id=device_id, module=module)
+
+
+def publish_module_line(runtime, label: str, line: str) -> None:
+    """Add one ``hub:`` line to a module's running task, or log it.
+
+    Args:
+        runtime: The shared runtime.
+        label: The task's label, from :func:`module_task_label`.
+        line: The line, without its newline.
+    """
+    task = runtime.tasks.running(label)
+    if task is None:
+        LOGGER.info("%s", line)
+        return
+    task.publish(line + "\n")
 
 
 async def _log_lines(stream: ChannelStream):
@@ -257,7 +293,20 @@ def decode_frame(text: "str | None") -> "dict | None":
     return decoded if isinstance(decoded, dict) else None
 
 
-def _package_path(runtime, module: str, platform: dict):
+def _publish_module_line_from_thread(loop, runtime, label: str, line: str) -> None:
+    """Hand one task line from a worker thread to the event loop."""
+    loop.call_soon_threadsafe(publish_module_line, runtime, label, line)
+
+
+def _file_size(path) -> int:
+    """A file's size in bytes, 0 when it cannot be read."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _package_path(runtime, module: str, platform: dict, on_progress=None):
     """Where the package a ``package`` stream asks for is on this hub.
 
     Raises:
@@ -272,7 +321,7 @@ def _package_path(runtime, module: str, platform: dict):
     if manifest is None:
         raise AgentArtifactFetchError("module_unknown", name=module)
     return runtime.agent_modules.artifact(
-        name=module, manifest=manifest, platform=platform
+        name=module, manifest=manifest, platform=platform, on_progress=on_progress
     ).path
 
 

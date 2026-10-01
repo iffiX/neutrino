@@ -220,6 +220,7 @@
   "ui.modules.failed": "The last step failed.",
   "ui.modules.failed_code": "The last step failed: {code}.",
   "ui.modules.install": "Install",
+  "ui.modules.no_instances": "No instances yet; add one in Configure.",
   "ui.modules.no_pick": "No machine picked",
   "ui.modules.no_pick_hint": "Pick a machine above to see its modules.",
   "ui.modules.no_tabs": "No module tabs yet; add one with +.",

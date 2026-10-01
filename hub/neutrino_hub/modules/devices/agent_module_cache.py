@@ -20,7 +20,9 @@ import json
 import re
 import shutil
 import threading
+import time
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,10 +31,13 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_PACKAGE_MAGIC,
     AGENT_MODULE_BROWSER_HEADERS,
     AGENT_MODULE_CACHE_DIR,
+    AGENT_MODULE_FETCH_CHUNK_BYTES,
     AGENT_MODULE_FETCH_LIMIT_BYTES,
     AGENT_MODULE_FETCH_TIMEOUT_S,
     AGENT_MODULE_GITHUB_API,
     AGENT_MODULE_KEY_DIGEST_CHARS,
+    AGENT_MODULE_PROGRESS_INTERVAL_S,
+    AGENT_MODULE_PROGRESS_PERCENT_STEP,
 )
 
 
@@ -51,6 +56,38 @@ class AgentModuleArtifact:
     path: Path
     digest: str
     package_kind: str
+
+
+def read_in_chunks(response, progress: "AgentModuleFetchProgress | None") -> bytes:
+    """A response's body, read in 64 KB chunks up to one byte past the limit.
+
+    Args:
+        response: What ``urlopen`` answered; its ``Content-Length`` header,
+            when present, is the total ``progress`` is told.
+        progress: Told the byte count after each chunk and once at the end;
+            None tells nobody.
+
+    Returns:
+        The bytes read.
+    """
+    try:
+        total = int(response.headers.get("Content-Length", "") or 0)
+    except (AttributeError, ValueError):
+        total = 0
+    chunks = []
+    received = 0
+    ceiling = AGENT_MODULE_FETCH_LIMIT_BYTES + 1
+    while received < ceiling:
+        chunk = response.read(min(AGENT_MODULE_FETCH_CHUNK_BYTES, ceiling - received))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        received += len(chunk)
+        if progress is not None:
+            progress.note(received, total)
+    if progress is not None:
+        progress.note(received, total, is_done=True)
+    return b"".join(chunks)
 
 
 def platform_keys(platform: dict) -> list:
@@ -153,6 +190,96 @@ def looks_like_package(content: bytes, package_kind: str) -> bool:
     return any(content.startswith(prefix) for prefix in magic)
 
 
+def format_megabytes(size: int) -> str:
+    """A byte count in megabytes with one decimal, as progress lines show it.
+
+    Args:
+        size: The count in bytes.
+
+    Returns:
+        Such as ``12.9``.
+    """
+    return f"{size / (1024 * 1024):.1f}"
+
+
+def artifact_title(name: str, manifest: dict) -> str:
+    """What progress lines call a module's artifact: its title and version.
+
+    Args:
+        name: The module name, used when the manifest names no title.
+        manifest: Its manifest.
+
+    Returns:
+        Such as ``VS Code 1.140.0``.
+    """
+    title = str(manifest.get("title", "") or name)
+    version = str(manifest.get("version", "") or "")
+    return f"{title} {version}" if version else title
+
+
+class AgentModuleFetchProgress:
+    """Turns a download's running byte count into ``hub: downloading`` lines.
+
+    A line is written for the first chunk, then each time the share received
+    moves by :data:`AGENT_MODULE_PROGRESS_PERCENT_STEP` percent or
+    :data:`AGENT_MODULE_PROGRESS_INTERVAL_S` seconds pass, and for the last.
+    """
+
+    def __init__(
+        self,
+        *,
+        title: str,
+        source: str,
+        on_line: Callable[[str], None],
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        """
+        Args:
+            title: The artifact's title and version, from
+                :func:`artifact_title`.
+            source: Where it comes from, such as ``Microsoft``; empty leaves
+                the ``from`` part out.
+            on_line: Called with each line.
+            clock: Seconds, monotonic; injected by tests.
+        """
+        self._title = title
+        self._source = source
+        self._on_line = on_line
+        self._clock = clock
+        self._last_at: "float | None" = None
+        self._last_percent = 0
+
+    def note(self, received: int, total: int, *, is_done: bool = False) -> None:
+        """Take the byte count after one chunk, writing a line when one is due.
+
+        Args:
+            received: Bytes received so far.
+            total: The size the server announced; 0 when it announced none.
+            is_done: Whether the download has ended.
+        """
+        now = self._clock()
+        percent = received * 100 // total if total > 0 else 0
+        is_due = (
+            is_done
+            or self._last_at is None
+            or now - self._last_at >= AGENT_MODULE_PROGRESS_INTERVAL_S
+            or percent - self._last_percent >= AGENT_MODULE_PROGRESS_PERCENT_STEP
+        )
+        if not is_due:
+            return
+        self._last_at = now
+        self._last_percent = percent
+        self._on_line(self._line(received, total))
+
+    def _line(self, received: int, total: int) -> str:
+        """One progress line for this byte count."""
+        amount = format_megabytes(received)
+        if total > 0:
+            amount = f"{amount} / {format_megabytes(total)}"
+        origin = f" from {self._source}" if self._source else ""
+        return f"hub: downloading {self._title}{origin}, {amount} MB"
+
+
 class AgentModuleCache:
     """Resolves a module to bytes, fetching each artifact exactly once."""
 
@@ -184,7 +311,12 @@ class AgentModuleCache:
         return self._key(name=name, platform_key=platform_key, entry=entry)
 
     def artifact(
-        self, *, name: str, manifest: dict, platform: dict
+        self,
+        *,
+        name: str,
+        manifest: dict,
+        platform: dict,
+        on_progress: "Callable[[str], None] | None" = None,
     ) -> AgentModuleArtifact:
         """The module's bytes for this platform, fetched if they are not held.
 
@@ -196,6 +328,9 @@ class AgentModuleCache:
             name: The module name.
             manifest: Its manifest.
             platform: The tuple the agent reported.
+            on_progress: Called on this thread with each ``hub:`` line: the
+                download's progress, or that the artifact is in the cache.
+                None writes no line.
 
         Returns:
             The artifact.
@@ -213,12 +348,22 @@ class AgentModuleCache:
         key = self._key(name=name, platform_key=platform_key, entry=entry)
         path = self._root / key
 
+        title = artifact_title(name, manifest)
         with self._lock_for(key):
             held = self._read_held(path)
             if held is None:
-                content = self._fetch(entry)
+                progress = None
+                if on_progress is not None:
+                    progress = AgentModuleFetchProgress(
+                        title=title,
+                        source=str(manifest.get("source", "") or ""),
+                        on_line=on_progress,
+                    )
+                content = self._fetch(entry, progress=progress)
                 self._write(path, content)
                 held = hashlib.sha256(content).hexdigest()
+            elif on_progress is not None:
+                on_progress(f"hub: {title} is in the cache")
             return AgentModuleArtifact(
                 key=key,
                 path=path,
@@ -331,11 +476,14 @@ class AgentModuleCache:
                 "module_cache_unwritable", detail=str(error)[:200]
             ) from error
 
-    def _fetch(self, entry: dict) -> bytes:
+    def _fetch(
+        self, entry: dict, *, progress: "AgentModuleFetchProgress | None" = None
+    ) -> bytes:
         """Get one module's bytes.
 
         Args:
             entry: The manifest's entry for this platform.
+            progress: Told the byte count after each chunk; None tells nobody.
 
         Returns:
             The package.
@@ -354,7 +502,7 @@ class AgentModuleCache:
             )
         if not url:
             raise AgentArtifactFetchError("no_download_named")
-        content = self._fetch_plain(url)
+        content = self._fetch_plain(url, progress=progress)
         if len(content) > AGENT_MODULE_FETCH_LIMIT_BYTES:
             raise AgentArtifactFetchError(
                 "module_fetch_too_large",
@@ -375,14 +523,17 @@ class AgentModuleCache:
         return content
 
     @staticmethod
-    def _fetch_plain(url: str) -> bytes:
-        """Fetch directly, with ordinary browser headers.
+    def _fetch_plain(
+        url: str, *, progress: "AgentModuleFetchProgress | None" = None
+    ) -> bytes:
+        """Fetch directly, with ordinary browser headers, in 64 KB chunks.
 
         Args:
             url: What the manifest names.
+            progress: Told the byte count after each chunk; None tells nobody.
 
         Returns:
-            The body.
+            The body, at most one byte past the fetch limit.
 
         Raises:
             AgentArtifactFetchError: ``module_fetch_failed``.
@@ -392,7 +543,7 @@ class AgentModuleCache:
             with urllib.request.urlopen(
                 request, timeout=AGENT_MODULE_FETCH_TIMEOUT_S
             ) as response:
-                return response.read(AGENT_MODULE_FETCH_LIMIT_BYTES + 1)
+                return read_in_chunks(response, progress)
         except OSError as error:
             raise AgentArtifactFetchError(
                 "module_fetch_failed", detail=str(error)[:200]

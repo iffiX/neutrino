@@ -220,6 +220,7 @@
   "ui.modules.failed": "上一步失败了。",
   "ui.modules.failed_code": "上一步失败了：{code}。",
   "ui.modules.install": "安装",
+  "ui.modules.no_instances": "还没有实例；在「配置」里添加一个。",
   "ui.modules.no_pick": "还没有选机器",
   "ui.modules.no_pick_hint": "在上面选一台机器来查看它的模块。",
   "ui.modules.no_tabs": "还没有模块标签；用 + 添加。",
