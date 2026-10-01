@@ -1,4 +1,4 @@
-# Runs on the Windows box. Everything build_msi.py needs and nothing else:
+# Runs on the Windows box. Everything build_client_windows.py needs and nothing else:
 # the Python the client is compiled against, the .NET SDK that hosts WiX,
 # and WiX itself at the version the release workflow pins. The compiler
 # fetches its own C toolchain. Each step is skipped when its result is

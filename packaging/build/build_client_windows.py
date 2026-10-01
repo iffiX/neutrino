@@ -1,7 +1,10 @@
 """Build the client's Windows installer.
 
-    python client/desktop/packaging/build_msi.py --output-dir dist/ --architecture x64 \
+    python packaging/build/build_client_windows.py --output-dir dist/ --architecture x64 \
         --packet-dll build/packet_stub/packet.dll
+
+Runs on: Windows of the architecture being built, with Python 3.13 and
+WiX 6.
 
 The installer carries the client compiled: Nuitka turns the package, the
 interpreter it runs on and the window's Python side into ``nclient.exe`` for
@@ -20,9 +23,9 @@ daemon, ``nclient.exe easytier-daemon --service`` as SYSTEM, which runs
 EasyTier's core as its child only while a network or a console is
 configured. Beside EasyTier's core and CLI ride wintun.dll and a stand-in
 packet.dll: the core does not start without a Packet.dll to load, Npcap's
-may not be carried, and the stand-in, built from ``packet_stub.c`` beside
-this file with MSVC before this script runs, exports the functions the core
-imports and answers failure from each. The build refuses to package without
+may not be carried, and the stand-in, built from
+``client/desktop/packaging/packet_stub.c`` with MSVC before this script
+runs, exports the functions the core imports and answers failure from each. The build refuses to package without
 it. The installer puts a Start menu shortcut down
 and asks two questions: whether the command belongs on PATH, and, when it is
 taking the client away again, whether the person's own configuration goes
@@ -60,9 +63,9 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import bundled  # noqa: E402
 import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
@@ -564,6 +567,7 @@ def main() -> int:
         help="the stand-in packet.dll built from packet_stub.c",
     )
     arguments = parser.parse_args()
+    _check_tools(arguments.stage_only)
 
     version = payload.version()
     machine = WINDOWS_MACHINES[payload.machine_name(arguments.architecture)]
@@ -989,6 +993,24 @@ def _fetch_bootstrapper() -> bytes:
             "a bootstrapper is"
         )
     return content
+
+
+def _check_tools(is_stage_only: bool) -> None:
+    """Refuse to start on a machine that cannot finish the build.
+
+    Args:
+        is_stage_only: Whether the build stops before wix.
+
+    Raises:
+        SystemExit: When this is not Windows, or WiX is missing.
+    """
+    if sys.platform != "win32":
+        raise SystemExit(f"{Path(__file__).name} runs on Windows; this is {sys.platform}")
+    if not is_stage_only and shutil.which("wix") is None:
+        raise SystemExit(
+            "WiX 6 is needed and wix is not on the path: "
+            "dotnet tool install --global wix --version 6.0.2"
+        )
 
 
 if __name__ == "__main__":

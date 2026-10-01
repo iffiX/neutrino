@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-import build_pkg
+import build_agent_macos
 
 
 @pytest.fixture
@@ -37,17 +37,19 @@ def laid_out(tmp_path, monkeypatch):
         (app / "RustDesk").write_bytes(b"")
         return dest_dir / "RustDesk.app"
 
-    monkeypatch.setattr(build_pkg, "_check_build_machine", lambda machine: None)
+    monkeypatch.setattr(build_agent_macos, "_check_build_machine", lambda machine: None)
     monkeypatch.setattr(
-        build_pkg, "_make_build_environment", lambda venv: Path("python3")
+        build_agent_macos, "_make_build_environment", lambda venv: Path("python3")
     )
     monkeypatch.setattr(
-        build_pkg.nuitka_build, "compile_standalone", compile_standalone
+        build_agent_macos.nuitka_build, "compile_standalone", compile_standalone
     )
-    monkeypatch.setattr(build_pkg.rustdesk_assets, "stage_darwin_app", stage_darwin_app)
-    monkeypatch.setattr(build_pkg.pkg_build, "sign_ad_hoc", signed.append)
+    monkeypatch.setattr(
+        build_agent_macos.rustdesk_assets, "stage_darwin_app", stage_darwin_app
+    )
+    monkeypatch.setattr(build_agent_macos.pkg_build, "sign_ad_hoc", signed.append)
 
-    staged = build_pkg._lay_out(tmp_path, "9.9.9", "arm64")
+    staged = build_agent_macos._lay_out(tmp_path, "9.9.9", "arm64")
     return staged, signed
 
 
@@ -145,18 +147,18 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
 
 
 def test_the_package_is_named_the_way_the_release_publishes_it():
-    assert build_pkg.pkg_name("0.4.0", "arm64") == (
+    assert build_agent_macos.pkg_name("0.4.0", "arm64") == (
         "neutrino-agent-0.4.0-macos-arm64.pkg"
     )
-    assert build_pkg.macos_machine("arm64") == "arm64"
+    assert build_agent_macos.macos_machine("arm64") == "arm64"
     with pytest.raises(SystemExit):
-        build_pkg.macos_machine("amd64")
+        build_agent_macos.macos_machine("amd64")
 
 
 def test_the_build_refuses_anything_but_a_mac(monkeypatch):
-    monkeypatch.setattr(build_pkg.sys, "platform", "linux")
+    monkeypatch.setattr(build_agent_macos.sys, "platform", "linux")
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg._check_build_machine("arm64")
+        build_agent_macos._check_build_machine("arm64")
 
     assert "Mac" in str(refused.value)

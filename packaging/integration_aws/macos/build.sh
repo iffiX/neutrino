@@ -10,5 +10,5 @@ mkdir -p "$DIST"
 rm -f "$DIST"/*.pkg
 
 cd "$SRC"
-python3.13 client/desktop/packaging/build_pkg.py --output-dir "$DIST" --architecture arm64
+python3.13 packaging/build/build_client_macos.py --output-dir "$DIST" --architecture arm64
 ls -la "$DIST"

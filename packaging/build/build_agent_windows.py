@@ -1,6 +1,8 @@
 """Build the agent's Windows installer.
 
-    python agent/packaging/build_msi.py --output-dir dist/ --architecture x64
+    python packaging/build/build_agent_windows.py --output-dir dist/ --architecture x64
+
+Runs on: Windows on x86-64, with Python 3.13 and WiX 6.
 
 The installer carries the agent compiled: Nuitka turns the package and the
 interpreter it runs on into ``nagent.exe``, a console program, with the
@@ -29,8 +31,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "agent" / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
@@ -169,6 +171,7 @@ def main() -> int:
         help="write and check the payload, then stop before wix",
     )
     arguments = parser.parse_args()
+    _check_tools(arguments.stage_only)
 
     version = payload.version()
     machine = windows_machine(arguments.architecture)
@@ -420,6 +423,24 @@ def _stage_licenses(installed: Path) -> None:
                 f"the package carries {name} and there is none at {source}"
             )
         shutil.copyfile(source, destination / name)
+
+
+def _check_tools(is_stage_only: bool) -> None:
+    """Refuse to start on a machine that cannot finish the build.
+
+    Args:
+        is_stage_only: Whether the build stops before wix.
+
+    Raises:
+        SystemExit: When this is not Windows, or WiX is missing.
+    """
+    if sys.platform != "win32":
+        raise SystemExit(f"{Path(__file__).name} runs on Windows; this is {sys.platform}")
+    if not is_stage_only and shutil.which("wix") is None:
+        raise SystemExit(
+            "WiX 6 is needed and wix is not on the path: "
+            "dotnet tool install --global wix --version 6.0.2"
+        )
 
 
 if __name__ == "__main__":

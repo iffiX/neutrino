@@ -83,7 +83,7 @@ jobs:
           path: |
             client/android/app/libs
             client/android/app/src/main/jniLibs
-          key: android-cores-${{ hashFiles('packaging/mobile_netbird.py', 'packaging/mobile_easytier.py', 'packaging/mobile_easytier.patch', 'packaging/mobile_rustdesk.py', 'packaging/mobile_rustdesk.patch') }}
+          key: android-cores-${{ hashFiles('packaging/build/build_core_netbird.py', 'packaging/build/build_core_easytier.py', 'packaging/build/build_core_easytier.patch', 'packaging/mobile_rustdesk.py', 'packaging/mobile_rustdesk.patch') }}
 
       # The JNI side of the RustDesk core is compiled with the app.
       - name: Install the NDK and CMake the app builds with
@@ -99,8 +99,8 @@ jobs:
           export PATH="$(go env GOPATH)/bin:${PATH}"
           gomobile init
           cargo install cargo-ndk --locked
-          python3 packaging/mobile_netbird.py
-          python3 packaging/mobile_easytier.py
+          python3 packaging/build/build_core_netbird.py
+          python3 packaging/build/build_core_easytier.py
           sudo apt-get install -y nasm
           python3 packaging/mobile_rustdesk.py
 

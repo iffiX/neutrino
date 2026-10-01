@@ -1,6 +1,9 @@
 """Build the client's macOS installer.
 
-    python3 client/desktop/packaging/build_pkg.py --output-dir dist/
+    python3 packaging/build/build_client_macos.py --output-dir dist/
+
+Runs on: macOS on Apple silicon, with Python 3.13 and the Xcode command
+line tools.
 
 The installer carries the client compiled into an app bundle: Nuitka turns
 the package, the interpreter it runs on and the window's Python side into
@@ -37,9 +40,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import bundled  # noqa: E402
 import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
@@ -175,6 +178,7 @@ def main() -> int:
         help="write and check the package root, then stop before pkgbuild",
     )
     arguments = parser.parse_args()
+    _check_tools(arguments.stage_only)
 
     version = payload.version()
     machine = macos_machine(arguments.architecture)
@@ -457,6 +461,25 @@ def _stage_licenses(destination: Path) -> None:
                 f"the package carries {name} and there is none at {source}"
             )
         shutil.copyfile(source, destination / name)
+
+
+def _check_tools(is_stage_only: bool) -> None:
+    """Refuse to start on a machine that cannot finish the build.
+
+    Args:
+        is_stage_only: Whether the build stops before pkgbuild.
+
+    Raises:
+        SystemExit: When this is not a Mac, or a tool is missing.
+    """
+    if sys.platform != "darwin":
+        raise SystemExit(f"{Path(__file__).name} runs on macOS; this is {sys.platform}")
+    tools = ("codesign", "hdiutil") + (() if is_stage_only else ("pkgbuild", "productbuild"))
+    for tool in tools:
+        if shutil.which(tool) is None:
+            raise SystemExit(
+                f"{tool} is needed and is not on the path: xcode-select --install"
+            )
 
 
 if __name__ == "__main__":

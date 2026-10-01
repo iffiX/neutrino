@@ -23,6 +23,6 @@ foreach ($origin in @('https://github.com/', 'https://objects.githubusercontent.
 
 Set-Location $src
 Write-Host "== building x64"
-python client\desktop\packaging\build_msi.py --output-dir $dist --architecture x64 --packet-dll C:\neutrino\packet.dll
-if ($LASTEXITCODE -ne 0) { throw "build_msi.py failed" }
+python packaging\build\build_client_windows.py --output-dir $dist --architecture x64 --packet-dll C:\neutrino\packet.dll
+if ($LASTEXITCODE -ne 0) { throw "build_client_windows.py failed" }
 Get-ChildItem $dist | Format-Table Name, Length

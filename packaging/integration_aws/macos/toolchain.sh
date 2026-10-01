@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs on the Mac. What build_pkg.py needs beyond what Amazon's image already
+# Runs on the Mac. What build_client_macos.py needs beyond what Amazon's image already
 # carries: the image has the command line tools, so pkgbuild, productbuild,
 # codesign and the C compiler Nuitka links with are there, and Homebrew. What
 # it lacks is the Python the client is compiled against.

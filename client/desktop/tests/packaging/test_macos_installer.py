@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-import build_pkg
+import build_client_macos
 import bundled
 from shared import nuitka_build
 import payload
@@ -23,28 +23,28 @@ from shared import pkg_build
 
 def darwin_build_machine(monkeypatch, *, machine="arm64", version=(3, 13, 7)):
     """Make this look like the Mac the build runs on."""
-    monkeypatch.setattr(build_pkg.sys, "platform", "darwin")
-    monkeypatch.setattr(build_pkg.sys, "version_info", version + ("final", 0))
-    monkeypatch.setattr(build_pkg.platform, "machine", lambda: machine)
+    monkeypatch.setattr(build_client_macos.sys, "platform", "darwin")
+    monkeypatch.setattr(build_client_macos.sys, "version_info", version + ("final", 0))
+    monkeypatch.setattr(build_client_macos.platform, "machine", lambda: machine)
 
 
 def test_the_package_is_named_for_apple_silicon_alone():
-    assert build_pkg.MACOS_MACHINES == {"aarch64": "arm64"}
-    assert build_pkg.macos_machine("arm64") == "arm64"
-    assert build_pkg.macos_machine("aarch64") == "arm64"
+    assert build_client_macos.MACOS_MACHINES == {"aarch64": "arm64"}
+    assert build_client_macos.macos_machine("arm64") == "arm64"
+    assert build_client_macos.macos_machine("aarch64") == "arm64"
     assert payload.PACKAGE_NAME == "neutrino-client"
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg.macos_machine("amd64")
+        build_client_macos.macos_machine("amd64")
     assert "amd64" in str(refused.value)
 
 
 def test_the_build_refuses_anything_but_a_mac(monkeypatch):
     darwin_build_machine(monkeypatch)
-    monkeypatch.setattr(build_pkg.sys, "platform", "linux")
+    monkeypatch.setattr(build_client_macos.sys, "platform", "linux")
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg._check_build_machine("arm64")
+        build_client_macos._check_build_machine("arm64")
 
     assert "Mac" in str(refused.value)
 
@@ -54,7 +54,7 @@ def test_the_build_refuses_another_interpreter_than_the_pinned_one(monkeypatch):
     darwin_build_machine(monkeypatch, version=(3, 12, 4))
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg._check_build_machine("arm64")
+        build_client_macos._check_build_machine("arm64")
 
     assert "3.13" in str(refused.value)
 
@@ -64,7 +64,7 @@ def test_the_build_refuses_a_machine_this_is_not(monkeypatch):
     darwin_build_machine(monkeypatch, machine="x86_64")
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg._check_build_machine("arm64")
+        build_client_macos._check_build_machine("arm64")
 
     assert "arm64" in str(refused.value)
 
@@ -72,7 +72,7 @@ def test_the_build_refuses_a_machine_this_is_not(monkeypatch):
 def test_an_apple_silicon_mac_of_the_pinned_python_is_accepted(monkeypatch):
     darwin_build_machine(monkeypatch)
 
-    build_pkg._check_build_machine("arm64")
+    build_client_macos._check_build_machine("arm64")
 
 
 def test_the_compile_is_an_app_bundle_with_the_bindings_named(monkeypatch, tmp_path):
@@ -89,11 +89,13 @@ def test_the_compile_is_an_app_bundle_with_the_bindings_named(monkeypatch, tmp_p
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(nuitka_build.subprocess, "run", fake_run)
-    monkeypatch.setattr(build_pkg.icons, "write_icns", lambda path: path)
+    monkeypatch.setattr(build_client_macos.icons, "write_icns", lambda path: path)
     tree = tmp_path / "tree"
     (tree / "neutrino_client" / "cli").mkdir(parents=True)
 
-    app = build_pkg._compile(Path("python3"), tree, tmp_path / "build", "9.9.9")
+    app = build_client_macos._compile(
+        Path("python3"), tree, tmp_path / "build", "9.9.9"
+    )
 
     command, environment = commands[0]
     assert app == tmp_path / "build" / "entry.app"
@@ -117,11 +119,11 @@ def test_a_compile_that_writes_no_bundle_is_refused(monkeypatch, tmp_path):
         "run",
         lambda command, **kwargs: subprocess.CompletedProcess(command, 0),
     )
-    monkeypatch.setattr(build_pkg.icons, "write_icns", lambda path: path)
+    monkeypatch.setattr(build_client_macos.icons, "write_icns", lambda path: path)
     (tmp_path / "build").mkdir()
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg._compile(Path("python3"), tmp_path, tmp_path / "build", "1")
+        build_client_macos._compile(Path("python3"), tmp_path, tmp_path / "build", "1")
 
     assert "app bundle" in str(refused.value)
 
@@ -132,10 +134,10 @@ def test_a_bundle_without_the_binary_is_refused(monkeypatch, tmp_path):
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(nuitka_build.subprocess, "run", fake_run)
-    monkeypatch.setattr(build_pkg.icons, "write_icns", lambda path: path)
+    monkeypatch.setattr(build_client_macos.icons, "write_icns", lambda path: path)
 
     with pytest.raises(SystemExit) as refused:
-        build_pkg._compile(Path("python3"), tmp_path, tmp_path / "build", "1")
+        build_client_macos._compile(Path("python3"), tmp_path, tmp_path / "build", "1")
 
     assert "nclient" in str(refused.value)
 
@@ -152,11 +154,13 @@ def test_the_build_environment_holds_the_compiler_and_the_pinned_wheels(
     def stage_wheels(python, target, wheels, **kwargs):
         staged.append((python, target, wheels))
 
-    monkeypatch.setattr(build_pkg.payload, "run", run)
-    monkeypatch.setattr(build_pkg.payload, "stage_wheels", stage_wheels)
-    monkeypatch.setattr(build_pkg.sys, "executable", "/opt/python3.13/bin/python3")
+    monkeypatch.setattr(build_client_macos.payload, "run", run)
+    monkeypatch.setattr(build_client_macos.payload, "stage_wheels", stage_wheels)
+    monkeypatch.setattr(
+        build_client_macos.sys, "executable", "/opt/python3.13/bin/python3"
+    )
 
-    python = build_pkg._make_build_environment(tmp_path / "venv")
+    python = build_client_macos._make_build_environment(tmp_path / "venv")
 
     assert python == tmp_path / "venv" / "bin" / "python3"
     assert commands == [
@@ -167,7 +171,7 @@ def test_the_build_environment_holds_the_compiler_and_the_pinned_wheels(
         (
             python,
             tmp_path / "venv" / "lib" / "python3.13" / "site-packages",
-            build_pkg.MACOS_WHEELS,
+            build_client_macos.MACOS_WHEELS,
         )
     ]
 
@@ -199,12 +203,14 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     def sign(app):
         order.append(("sign", app))
 
-    monkeypatch.setattr(build_pkg, "_make_build_environment", make_environment)
-    monkeypatch.setattr(build_pkg, "_compile", compile_app)
-    monkeypatch.setattr(build_pkg.bundled, "stage_darwin_binaries", stage_binaries)
-    monkeypatch.setattr(build_pkg.pkg_build, "sign_ad_hoc", sign)
+    monkeypatch.setattr(build_client_macos, "_make_build_environment", make_environment)
+    monkeypatch.setattr(build_client_macos, "_compile", compile_app)
+    monkeypatch.setattr(
+        build_client_macos.bundled, "stage_darwin_binaries", stage_binaries
+    )
+    monkeypatch.setattr(build_client_macos.pkg_build, "sign_ad_hoc", sign)
 
-    staged = build_pkg._lay_out(tmp_path, "9.9.9", "arm64")
+    staged = build_client_macos._lay_out(tmp_path, "9.9.9", "arm64")
 
     app = tmp_path / "root" / "Applications" / "Neutrino Client.app"
     assert staged == {
@@ -315,7 +321,7 @@ def test_a_mac_without_the_tools_is_told_what_to_install(monkeypatch, tmp_path):
 
 def test_the_installer_registers_no_login_item_and_the_client_no_service():
     """The client runs when the person opens it, not with the session."""
-    source = Path(build_pkg.__file__).read_text(encoding="utf-8")
+    source = Path(build_client_macos.__file__).read_text(encoding="utf-8")
 
     assert "LaunchAgents" not in source
     assert "gui --hidden" not in source
@@ -325,7 +331,7 @@ def daemon(tmp_path, label) -> dict:
     """One LaunchDaemon the build writes, read back."""
     import plistlib
 
-    build_pkg.write_daemons(tmp_path)
+    build_client_macos.write_daemons(tmp_path)
     path = tmp_path / "Library" / "LaunchDaemons" / f"{label}.plist"
     return plistlib.loads(path.read_bytes())
 
@@ -360,33 +366,33 @@ def test_the_easytier_job_is_the_clients_own_daemon_kept_running(tmp_path):
 
 
 def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path):
-    assert 'launchctl bootout "system/$label"' in build_pkg.PREINSTALL
-    assert "chmod 700" in build_pkg.POSTINSTALL
-    assert "chown root:wheel" in build_pkg.POSTINSTALL
-    assert "launchctl bootstrap system" in build_pkg.POSTINSTALL
+    assert 'launchctl bootout "system/$label"' in build_client_macos.PREINSTALL
+    assert "chmod 700" in build_client_macos.POSTINSTALL
+    assert "chown root:wheel" in build_client_macos.POSTINSTALL
+    assert "launchctl bootstrap system" in build_client_macos.POSTINSTALL
     assert (
         '"/Library/Application Support/Neutrino Client/easytier"'
-        in build_pkg.POSTINSTALL
+        in build_client_macos.POSTINSTALL
     )
-    for script in (build_pkg.PREINSTALL, build_pkg.POSTINSTALL):
+    for script in (build_client_macos.PREINSTALL, build_client_macos.POSTINSTALL):
         assert script.startswith("#!/bin/sh\n") and script.endswith("exit 0\n")
 
 
 def test_the_build_pins_what_the_other_platforms_pin():
-    assert build_pkg.BUILD_PYTHON_VERSION == (3, 13)
-    assert not hasattr(build_pkg, "NUITKA_VERSION")
+    assert build_client_macos.BUILD_PYTHON_VERSION == (3, 13)
+    assert not hasattr(build_client_macos, "NUITKA_VERSION")
     assert not hasattr(payload, "NUITKA_VERSION")
     assert nuitka_build.NUITKA_VERSION == "4.2.1"
-    assert build_pkg.CLIENT_BINARY_NAME == payload.CLIENT_BINARY_NAME
-    assert build_pkg.APP_BUNDLE_NAME == "Neutrino Client.app"
-    assert build_pkg.PACKAGE_IDENTIFIER == "com.neutrino.client"
+    assert build_client_macos.CLIENT_BINARY_NAME == payload.CLIENT_BINARY_NAME
+    assert build_client_macos.APP_BUNDLE_NAME == "Neutrino Client.app"
+    assert build_client_macos.PACKAGE_IDENTIFIER == "com.neutrino.client"
 
 
 def test_the_macos_wheels_are_pinned_to_the_file_at_one_version():
     names = []
-    for name, version, url, digest in build_pkg.MACOS_WHEELS:
+    for name, version, url, digest in build_client_macos.MACOS_WHEELS:
         names.append(name)
-        assert version == build_pkg.PYOBJC_VERSION
+        assert version == build_client_macos.PYOBJC_VERSION
         assert url.startswith("https://files.pythonhosted.org/")
         assert "cp313-cp313-macosx" in url
         assert url.endswith("universal2.whl")
@@ -398,11 +404,11 @@ def test_the_macos_wheels_are_pinned_to_the_file_at_one_version():
 
 def test_the_compile_names_every_package_the_shell_imports():
     for name in ("objc", "Foundation", "AppKit", "WebKit"):
-        assert name in build_pkg.PYOBJC_PACKAGES
+        assert name in build_client_macos.PYOBJC_PACKAGES
 
 
 def test_the_licences_travel_inside_the_bundle(tmp_path):
-    build_pkg._stage_licenses(tmp_path / "licenses")
+    build_client_macos._stage_licenses(tmp_path / "licenses")
 
     assert sorted(path.name for path in (tmp_path / "licenses").iterdir()) == [
         "cc_switch.txt",

@@ -1,23 +1,26 @@
 """EasyTier's Android libraries, built from their pinned source for the phone app.
 
-    python3 packaging/mobile_easytier.py
+    python3 packaging/build/build_core_easytier.py
+
+Runs on: Linux on x86-64, or any host that names its own ``PROTOC``. With the
+libraries already in the cores cache it needs nothing else; building them
+needs rustup, ``cargo-ndk``, ``patch``, ``ANDROID_NDK_HOME``, and a host
+libclang for bindgen: the system's, or the directory ``LIBCLANG_PATH`` names.
+``protoc`` is the pinned release below unless ``PROTOC`` names one. The
+toolchain is the one upstream's ``rust-toolchain.toml`` names; its two Android
+targets are added when missing.
 
 EasyTier publishes no library for phones, so the app carries its
 ``easytier-android-jni`` binding compiled here with ``cargo ndk``, for the two
 machines the app ships (arm64-v8a for phones, x86_64 for the emulator). The
 source archive is checked against its SHA-256 and the commit its header names
-before anything is built. ``mobile_easytier.patch`` beside this file is then
-applied: it links the C interface (``easytier-ffi``) into the JNI library, so
-the app loads one library, and adds the calls that start and stop a console's
-web client. The result is ``client/android/app/src/main/jniLibs/<abi>/
-libeasytier_android_jni.so``.
-
-Needs rustup, ``cargo-ndk``, ``ANDROID_NDK_HOME``, and a host libclang for
-bindgen: the system's, or the directory ``LIBCLANG_PATH`` names. ``protoc``
-is the pinned release below, fetched on a Linux x86-64 host, unless
-``PROTOC`` names one. The
-toolchain is the one upstream's ``rust-toolchain.toml`` names; its two Android
-targets are added when missing.
+before anything is built. ``build_core_easytier.patch`` beside this file is
+then applied: it links the C interface (``easytier-ffi``) into the JNI
+library, so the app loads one library, and adds the calls that start and stop
+a console's web client. Each machine's library is cached under
+``~/.cache/neutrino/cores/easytier-<commit>-<abi>/`` and copied to
+``client/android/app/src/main/jniLibs/<abi>/libeasytier_android_jni.so``.
+``--cache-key`` prints the cache names and builds nothing.
 
 Not pure: downloads, unpacks and compiles.
 """
@@ -35,10 +38,12 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import cores_cache  # noqa: E402
 
 # --- the pinned source ---
-# The same archive build_release.py puts in the release's third_party/.
+# The same archive build_sources.py puts in the release's third_party/.
 EASYTIER_MOBILE_TAG = "v2.6.4"
 EASYTIER_MOBILE_COMMIT = "8428a89d2dabc94c97d370ec607c6ca142473626"  # scan: allow
 EASYTIER_MOBILE_ARCHIVE_URL = (
@@ -68,7 +73,7 @@ EASYTIER_MOBILE_ABIS = {
 }
 EASYTIER_MOBILE_ANDROID_API = "26"
 EASYTIER_MOBILE_LIBRARY = "libeasytier_android_jni.so"
-EASYTIER_MOBILE_PATCH = REPO_ROOT / "packaging" / "mobile_easytier.patch"
+EASYTIER_MOBILE_PATCH = Path(__file__).resolve().parent / "build_core_easytier.patch"
 EASYTIER_MOBILE_OUTPUT = (
     REPO_ROOT / "client" / "android" / "app" / "src" / "main" / "jniLibs"
 )
@@ -147,13 +152,8 @@ def build(source: Path, output: Path, protoc: str) -> None:
         protoc: The protobuf compiler's path.
 
     Raises:
-        SystemExit: When a tool is missing or a build fails.
+        SystemExit: When a build fails.
     """
-    for tool in ("rustup", "cargo"):
-        if shutil.which(tool) is None:
-            raise SystemExit(f"{tool} is not on the path")
-    if not os.environ.get("ANDROID_NDK_HOME"):
-        raise SystemExit("ANDROID_NDK_HOME is not set")
     target_dir = source.parent / "target"
     environment = dict(os.environ, PROTOC=protoc, CARGO_TARGET_DIR=str(target_dir))
     _run(["rustup", "target", "add", *EASYTIER_MOBILE_ABIS.values()], source)
@@ -180,7 +180,7 @@ def _run(command: list, cwd: Path, environment: "dict | None" = None) -> None:
 
 
 def main() -> int:
-    """Build the libraries.
+    """Build the libraries, or take them from the cache, and copy them into the app.
 
     Returns:
         The process exit status.
@@ -194,18 +194,55 @@ def main() -> int:
     parser.add_argument(
         "--work-dir", default="", help="where the source is unpacked; a temporary one"
     )
-    arguments = parser.parse_args()
-    started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="mobile_easytier_") as scratch:
-        work_dir = Path(arguments.work_dir or scratch)
-        work_dir.mkdir(parents=True, exist_ok=True)
-        source = fetch_source(work_dir)
-        build(source, Path(arguments.output).resolve(), fetch_protoc(work_dir))
-    print(
-        f"easytier {EASYTIER_MOBILE_TAG} ({EASYTIER_MOBILE_COMMIT[:12]}) "
-        f"built in {time.monotonic() - started:.0f}s: {arguments.output}"
+    parser.add_argument(
+        "--rebuild", action="store_true", help="build even when the cache has them"
     )
+    parser.add_argument(
+        "--cache-key", action="store_true", help="print the cache names and stop"
+    )
+    arguments = parser.parse_args()
+    if arguments.cache_key:
+        for abi in EASYTIER_MOBILE_ABIS:
+            print(cores_cache.cache_key("easytier", EASYTIER_MOBILE_COMMIT, abi))
+        return 0
+    cached = {
+        abi: cores_cache.cache_dir("easytier", EASYTIER_MOBILE_COMMIT, abi)
+        for abi in EASYTIER_MOBILE_ABIS
+    }
+    if arguments.rebuild or not all(map(cores_cache.is_cached, cached.values())):
+        _check_tools()
+        started = time.monotonic()
+        with tempfile.TemporaryDirectory(prefix="build_core_easytier_") as scratch:
+            work_dir = Path(arguments.work_dir or scratch)
+            work_dir.mkdir(parents=True, exist_ok=True)
+            source = fetch_source(work_dir)
+            built = Path(scratch) / "built"
+            build(source, built, fetch_protoc(work_dir))
+            for abi, directory in cached.items():
+                cores_cache.store(built / abi, directory)
+        print(
+            f"easytier {EASYTIER_MOBILE_TAG} ({EASYTIER_MOBILE_COMMIT[:12]}) "
+            f"built in {time.monotonic() - started:.0f}s"
+        )
+    else:
+        print(f"easytier {EASYTIER_MOBILE_TAG} from the cache")
+    output = Path(arguments.output).resolve()
+    for abi, directory in cached.items():
+        cores_cache.install(directory, output / abi)
     return 0
+
+
+def _check_tools() -> None:
+    """Refuse to build without the tools the build runs.
+
+    Raises:
+        SystemExit: When a tool or ``ANDROID_NDK_HOME`` is missing.
+    """
+    for tool in ("rustup", "cargo", "cargo-ndk", "patch"):
+        if shutil.which(tool) is None:
+            raise SystemExit(f"{tool} is needed to build EasyTier and is not on the path")
+    if not os.environ.get("ANDROID_NDK_HOME"):
+        raise SystemExit("ANDROID_NDK_HOME is needed to build EasyTier and is not set")
 
 
 if __name__ == "__main__":

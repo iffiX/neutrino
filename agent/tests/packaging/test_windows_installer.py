@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-import build_msi
+import build_agent_windows
 import payload
 from shared import wix_build
 
@@ -34,7 +34,9 @@ def document():
         "binary": "C:\\build\\nagent.exe",
         "rustdesk": "C:\\build\\rustdesk\\rustdesk-1.4.9-x86_64.exe",
     }
-    source = build_msi.wix_source(staged, "9.9.9", "iffiX <someone@example.com>")
+    source = build_agent_windows.wix_source(
+        staged, "9.9.9", "iffiX <someone@example.com>"
+    )
     return source, xml.etree.ElementTree.fromstring(source)
 
 
@@ -48,8 +50,8 @@ def test_the_installer_has_a_product_identity_of_its_own(document):
     source, root = document
 
     package = root.find(WXS + "Package")
-    assert package.get("UpgradeCode") == build_msi.UPGRADE_CODE
-    assert build_msi.UPGRADE_CODE != CLIENT_UPGRADE_CODE
+    assert package.get("UpgradeCode") == build_agent_windows.UPGRADE_CODE
+    assert build_agent_windows.UPGRADE_CODE != CLIENT_UPGRADE_CODE
     assert package.get("Name") == "Neutrino Agent"
     assert package.get("Version") == "9.9.9"
     assert package.get("Manufacturer") == "iffiX <someone@example.com>"
@@ -154,12 +156,12 @@ def test_the_agent_is_on_the_machines_path(document):
 
 
 def test_the_installer_is_named_the_way_the_release_publishes_it():
-    assert build_msi.msi_name("0.4.0", "amd64") == (
+    assert build_agent_windows.msi_name("0.4.0", "amd64") == (
         "neutrino-agent-0.4.0-windows-amd64.msi"
     )
-    assert build_msi.windows_machine("x64") == "amd64"
+    assert build_agent_windows.windows_machine("x64") == "amd64"
     with pytest.raises(SystemExit):
-        build_msi.windows_machine("arm64")
+        build_agent_windows.windows_machine("arm64")
 
 
 def test_the_payload_keeps_the_agents_binary_for_the_service_component(
@@ -180,18 +182,20 @@ def test_the_payload_keeps_the_agents_binary_for_the_service_component(
         (dest_dir / name).write_bytes(b"MZ")
         return dest_dir / name
 
-    monkeypatch.setattr(build_msi, "_check_build_machine", lambda machine: None)
     monkeypatch.setattr(
-        build_msi, "_make_build_environment", lambda venv: Path("python")
+        build_agent_windows, "_check_build_machine", lambda machine: None
     )
     monkeypatch.setattr(
-        build_msi.nuitka_build, "compile_standalone", compile_standalone
+        build_agent_windows, "_make_build_environment", lambda venv: Path("python")
     )
     monkeypatch.setattr(
-        build_msi.rustdesk_assets, "stage_windows_exe", stage_windows_exe
+        build_agent_windows.nuitka_build, "compile_standalone", compile_standalone
+    )
+    monkeypatch.setattr(
+        build_agent_windows.rustdesk_assets, "stage_windows_exe", stage_windows_exe
     )
 
-    staged = build_msi._lay_out(tmp_path, "9.9.9", "amd64")
+    staged = build_agent_windows._lay_out(tmp_path, "9.9.9", "amd64")
 
     assert (staged["payload"] / "python313.dll").is_file()
     assert not (staged["payload"] / "nagent.exe").exists()
@@ -208,7 +212,7 @@ def test_the_payload_keeps_the_agents_binary_for_the_service_component(
 
 
 def test_only_the_util_extension_is_loaded():
-    source = Path(build_msi.__file__).read_text(encoding="utf-8")
+    source = Path(build_agent_windows.__file__).read_text(encoding="utf-8")
 
     assert "extensions=(wix_build.WIX_UTIL_EXTENSION,)" in source
     assert wix_build.WIX_UTIL_EXTENSION.startswith("WixToolset.Util.wixext/")

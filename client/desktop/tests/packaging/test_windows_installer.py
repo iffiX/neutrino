@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-import build_msi
+import build_client_windows
 from shared import nuitka_build
 import payload
 from shared import wix_build
@@ -41,16 +41,16 @@ def source():
         "icon": "C:\\build\\neutrino_client.ico",
         "license": "C:\\build\\license.rtf",
     }
-    return build_msi._wix_source(
+    return build_client_windows._wix_source(
         staged, "9.9.9", "iffiX <someone@example.com>", "amd64"
     )
 
 
 def test_the_installer_has_a_product_identity_of_its_own(source):
-    assert build_msi.UPGRADE_CODE != AGENT_UPGRADE_CODE
-    assert len(build_msi.UPGRADE_CODE) == 36
-    assert build_msi.UPGRADE_CODE.count("-") == 4
-    assert f'UpgradeCode="{build_msi.UPGRADE_CODE}"' in source
+    assert build_client_windows.UPGRADE_CODE != AGENT_UPGRADE_CODE
+    assert len(build_client_windows.UPGRADE_CODE) == 36
+    assert build_client_windows.UPGRADE_CODE.count("-") == 4
+    assert f'UpgradeCode="{build_client_windows.UPGRADE_CODE}"' in source
     assert 'Name="Neutrino Client"' in source
     assert 'Version="9.9.9"' in source
 
@@ -172,7 +172,10 @@ def test_a_running_resident_is_closed_before_its_files_are_replaced(source):
     # A resident from the shortcut wears one image, one from a terminal the
     # other; both hold the files.
     assert sorted(close.get("Target") for close in closes) == sorted(
-        [build_msi.CLIENT_WINDOWED_BINARY_NAME, build_msi.CLIENT_BINARY_NAME]
+        [
+            build_client_windows.CLIENT_WINDOWED_BINARY_NAME,
+            build_client_windows.CLIENT_BINARY_NAME,
+        ]
     )
     assert all(close.get("RebootPrompt") == "no" for close in closes)
 
@@ -198,8 +201,8 @@ def test_a_running_resident_is_asked_to_quit_before_anything_ends_it(source):
 def test_the_quit_opens_no_console_window_over_the_wizard(source):
     """A custom action has no console, and a console program it starts opens
     one; the windowed program opens nothing."""
-    assert build_msi.QUIT_COMMAND == '"[INSTALLFOLDER]nclientw.exe" quit'
-    assert "powershell" not in build_msi.QUIT_COMMAND.lower()
+    assert build_client_windows.QUIT_COMMAND == '"[INSTALLFOLDER]nclientw.exe" quit'
+    assert "powershell" not in build_client_windows.QUIT_COMMAND.lower()
 
 
 def test_the_two_programs_are_the_two_subsystems():
@@ -208,12 +211,12 @@ def test_the_two_programs_are_the_two_subsystems():
     inherited handles when AttachConsole fails), and a console one started
     from a shortcut opens a window. The same split python.exe and pythonw.exe
     make."""
-    assert build_msi.CLIENT_BINARY_NAME == "nclient.exe"
-    assert build_msi.CLIENT_WINDOWED_BINARY_NAME == "nclientw.exe"
-    source = inspect.getsource(build_msi._compile)
+    assert build_client_windows.CLIENT_BINARY_NAME == "nclient.exe"
+    assert build_client_windows.CLIENT_WINDOWED_BINARY_NAME == "nclientw.exe"
+    source = inspect.getsource(build_client_windows._compile)
     assert '"force"' in source
     assert '"disable"' in source
-    assert "attach" not in inspect.getsource(build_msi._compile_one)
+    assert "attach" not in inspect.getsource(build_client_windows._compile_one)
 
 
 def test_the_quit_runs_before_the_close_that_ends_what_did_not_answer(source):
@@ -249,16 +252,16 @@ def test_an_uninstall_keeps_the_persons_own_configuration_unless_asked(source):
         if custom.get("Action") == "RemoveClientConfig"
     ]
     assert len(removals) == 1
-    assert removals[0].get("Condition") == build_msi.CONFIG_GOES_CONDITION
-    assert 'REMOVE~="ALL"' in build_msi.CONFIG_GOES_CONDITION
+    assert removals[0].get("Condition") == build_client_windows.CONFIG_GOES_CONDITION
+    assert 'REMOVE~="ALL"' in build_client_windows.CONFIG_GOES_CONDITION
 
 
 def test_a_kept_configuration_is_the_one_value_rather_than_a_true_reading():
     """A property set to "0" is a non-empty string, which the installer reads
     as true, so `NOT ISCONFIGKEPT` would take a configuration that was asked
     to stay."""
-    assert 'ISCONFIGKEPT <> "1"' in build_msi.CONFIG_GOES_CONDITION
-    assert "NOT ISCONFIGKEPT" not in build_msi.CONFIG_GOES_CONDITION
+    assert 'ISCONFIGKEPT <> "1"' in build_client_windows.CONFIG_GOES_CONDITION
+    assert "NOT ISCONFIGKEPT" not in build_client_windows.CONFIG_GOES_CONDITION
 
 
 def test_the_person_is_asked_before_their_configuration_goes(source):
@@ -273,8 +276,11 @@ def test_the_person_is_asked_before_their_configuration_goes(source):
         if control.get("Type") == "CheckBox"
     ]
     assert [box.get("Property") for box in boxes] == ["ISCONFIGKEPT"]
-    assert build_msi.CLIENT_CONFIG_DIR_NAME in build_msi.REMOVE_CONFIG_COMMAND
-    assert "AppDataFolder" in build_msi.REMOVE_CONFIG_COMMAND
+    assert (
+        build_client_windows.CLIENT_CONFIG_DIR_NAME
+        in build_client_windows.REMOVE_CONFIG_COMMAND
+    )
+    assert "AppDataFolder" in build_client_windows.REMOVE_CONFIG_COMMAND
 
 
 def test_the_removal_runs_with_no_account_and_is_handed_the_path(source):
@@ -298,7 +304,7 @@ def test_the_removal_runs_with_no_account_and_is_handed_the_path(source):
 def test_the_build_loads_the_extensions_those_elements_come_from():
     assert wix_build.WIX_UTIL_EXTENSION == "WixToolset.Util.wixext/6.0.2"
     assert wix_build.WIX_UI_EXTENSION == "WixToolset.UI.wixext/6.0.2"
-    assert "wix extension add" in build_msi.__doc__
+    assert "wix extension add" in build_client_windows.__doc__
 
 
 def test_the_prefix_goes_whole_including_what_the_install_never_laid_down(source):
@@ -324,7 +330,7 @@ def test_the_installer_registers_no_autostart(source):
     """The client runs when the person opens it, not with the session."""
     assert r"Software\Microsoft\Windows\CurrentVersion\Run" not in source
     assert "gui --hidden" not in source
-    assert not hasattr(build_msi, "RUN_ENTRY_VALUE")
+    assert not hasattr(build_client_windows, "RUN_ENTRY_VALUE")
 
 
 def test_the_install_goes_on_the_path_when_it_is_asked_for(source):
@@ -372,8 +378,8 @@ def test_a_silent_install_can_decline_the_path_entry_too(source):
 
     assert len(levels) == 1
     assert levels[0].get("Value") == "0"
-    assert levels[0].get("Condition") == build_msi.PATH_DECLINED_CONDITION
-    assert 'ISPATHADDED <> "1"' in build_msi.PATH_DECLINED_CONDITION
+    assert levels[0].get("Condition") == build_client_windows.PATH_DECLINED_CONDITION
+    assert 'ISPATHADDED <> "1"' in build_client_windows.PATH_DECLINED_CONDITION
 
 
 def test_the_person_is_asked_before_the_path_changes(source):
@@ -401,7 +407,7 @@ def test_the_start_menu_shortcut_opens_the_window(source):
 
 
 def test_the_bootstrapper_runs_only_where_the_runtime_key_is_absent(source):
-    assert build_msi.WEBVIEW2_REGISTRY_KEY in source
+    assert build_client_windows.WEBVIEW2_REGISTRY_KEY in source
     assert 'Condition="NOT WEBVIEW2INSTALLED AND NOT REMOVE"' in source
     assert 'ExeCommand="/silent /install"' in source
 
@@ -413,28 +419,32 @@ def test_a_publisher_with_an_address_stays_a_name(source):
 
 def test_the_package_is_named_for_the_platform_it_installs_on():
     assert wix_build.MSI_PLATFORMS == {"amd64": "x64", "arm64": "arm64"}
-    assert build_msi.WINDOWS_MACHINES["x86_64"] == "amd64"
+    assert build_client_windows.WINDOWS_MACHINES["x86_64"] == "amd64"
     assert payload.PACKAGE_NAME == "neutrino-client"
 
 
 def test_the_build_refuses_another_interpreter_than_the_pinned_one(monkeypatch):
     """What runs the script is what the client is compiled against."""
-    monkeypatch.setattr(build_msi.sys, "version_info", (3, 12, 4, "final", 0))
+    monkeypatch.setattr(
+        build_client_windows.sys, "version_info", (3, 12, 4, "final", 0)
+    )
 
     with pytest.raises(SystemExit) as refused:
-        build_msi._check_build_machine("amd64")
+        build_client_windows._check_build_machine("amd64")
 
     assert "3.13" in str(refused.value)
 
 
 def test_the_build_refuses_a_machine_this_is_not(monkeypatch):
     """The compile is native: an arm64 installer comes off an arm64 box."""
-    monkeypatch.setattr(build_msi.sys, "version_info", (3, 13, 7, "final", 0))
-    monkeypatch.setattr(build_msi.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(
+        build_client_windows.sys, "version_info", (3, 13, 7, "final", 0)
+    )
+    monkeypatch.setattr(build_client_windows.platform, "machine", lambda: "AMD64")
 
-    build_msi._check_build_machine("amd64")
+    build_client_windows._check_build_machine("amd64")
     with pytest.raises(SystemExit) as refused:
-        build_msi._check_build_machine("arm64")
+        build_client_windows._check_build_machine("arm64")
 
     assert "arm64" in str(refused.value)
 
@@ -456,11 +466,13 @@ def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(nuitka_build.subprocess, "run", fake_run)
-    monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
+    monkeypatch.setattr(build_client_windows.icons, "write_ico", lambda path: path)
     tree = tmp_path / "tree"
     (tree / "neutrino_client" / "cli").mkdir(parents=True)
 
-    dist = build_msi._compile(Path("python.exe"), tree, tmp_path / "build", "9.9.9")
+    dist = build_client_windows._compile(
+        Path("python.exe"), tree, tmp_path / "build", "9.9.9"
+    )
 
     assert dist == tmp_path / "build" / "console" / "entry.dist"
     assert (dist / "nclient.exe").read_bytes() == b"MZnclient.exe"
@@ -471,7 +483,7 @@ def test_the_compile_names_what_a_scanner_would_otherwise_find(monkeypatch, tmp_
         assert "--standalone" in command
         assert "--include-package=neutrino_client" in command
         assert "--include-package=webview" in command
-        for backend in build_msi.NUITKA_EXCLUDED_BACKENDS:
+        for backend in build_client_windows.NUITKA_EXCLUDED_BACKENDS:
             assert f"--nofollow-import-to={backend}" in command
         assert "--product-version=9.9.9" in command
         assert command[-1] == str(tree / "neutrino_client" / "cli" / "entry.py")
@@ -489,16 +501,18 @@ def test_a_compile_that_writes_no_binary_is_refused(monkeypatch, tmp_path):
         "run",
         lambda command, **kwargs: subprocess.CompletedProcess(command, 0),
     )
-    monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
+    monkeypatch.setattr(build_client_windows.icons, "write_ico", lambda path: path)
 
     with pytest.raises(SystemExit) as refused:
-        build_msi._compile(Path("python.exe"), tmp_path, tmp_path / "build", "1")
+        build_client_windows._compile(
+            Path("python.exe"), tmp_path, tmp_path / "build", "1"
+        )
 
-    assert build_msi.CLIENT_BINARY_NAME in str(refused.value)
+    assert build_client_windows.CLIENT_BINARY_NAME in str(refused.value)
 
 
 def test_the_licences_travel_beside_the_payload(tmp_path):
-    build_msi._stage_licenses(tmp_path)
+    build_client_windows._stage_licenses(tmp_path)
 
     carried = tmp_path / "licenses"
     assert sorted(path.name for path in carried.iterdir()) == [
@@ -531,7 +545,9 @@ def test_the_build_refuses_to_package_without_the_stand_in(tmp_path, given):
         packet_dll.write_text("not a library")
 
     with pytest.raises(SystemExit) as refused:
-        build_msi._lay_out(tmp_path, "9.9.9", "amd64", "x64", packet_dll=packet_dll)
+        build_client_windows._lay_out(
+            tmp_path, "9.9.9", "amd64", "x64", packet_dll=packet_dll
+        )
 
     assert "packet" in str(refused.value).lower()
     assert not (tmp_path / "payload").exists()
@@ -549,23 +565,29 @@ def test_the_stand_in_lands_beside_the_core(monkeypatch, tmp_path):
         (installed / "bin").mkdir()
         (installed / "bin" / "easytier-core.exe").write_bytes(b"MZ")
 
-    monkeypatch.setattr(build_msi, "_check_build_machine", lambda machine: None)
     monkeypatch.setattr(
-        build_msi, "_make_build_environment", lambda venv, machine: Path("py")
+        build_client_windows, "_check_build_machine", lambda machine: None
     )
     monkeypatch.setattr(
-        build_msi, "_compile", lambda python, tree, build, version: compiled
+        build_client_windows,
+        "_make_build_environment",
+        lambda venv, machine: Path("py"),
     )
     monkeypatch.setattr(
-        build_msi.bundled, "stage_windows_binaries", stage_windows_binaries
+        build_client_windows, "_compile", lambda python, tree, build, version: compiled
     )
-    monkeypatch.setattr(build_msi, "_fetch_bootstrapper", lambda: b"MZ")
-    monkeypatch.setattr(build_msi.icons, "write_ico", lambda path: path)
     monkeypatch.setattr(
-        build_msi.wix_build, "write_license_rtf", lambda source, target: target
+        build_client_windows.bundled, "stage_windows_binaries", stage_windows_binaries
+    )
+    monkeypatch.setattr(build_client_windows, "_fetch_bootstrapper", lambda: b"MZ")
+    monkeypatch.setattr(build_client_windows.icons, "write_ico", lambda path: path)
+    monkeypatch.setattr(
+        build_client_windows.wix_build,
+        "write_license_rtf",
+        lambda source, target: target,
     )
 
-    staged = build_msi._lay_out(
+    staged = build_client_windows._lay_out(
         tmp_path / "root", "9.9.9", "amd64", "x64", packet_dll=packet_dll
     )
 
@@ -576,7 +598,7 @@ def test_the_stand_in_lands_beside_the_core(monkeypatch, tmp_path):
 
 def test_the_stand_in_exports_what_the_core_imports():
     """The eleven functions easytier-core loads from Packet.dll, each exported."""
-    source = (Path(build_msi.__file__).parent / "packet_stub.c").read_text(
+    source = (Path(payload.__file__).parent / "packet_stub.c").read_text(
         encoding="utf-8"
     )
     exported = re.findall(
@@ -602,7 +624,7 @@ def test_the_stand_in_exports_what_the_core_imports():
 
 def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
     workflow = (
-        Path(build_msi.__file__).resolve().parents[3]
+        Path(payload.__file__).resolve().parents[3]
         / ".github"
         / "workflows"
         / "release.yml"
@@ -611,7 +633,7 @@ def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
 
     assert "ilammy/msvc-dev-cmd" in job
     compile_at = job.index("cl /nologo /O2 /LD client/desktop/packaging/packet_stub.c")
-    build_at = job.index("python client/desktop/packaging/build_msi.py")
+    build_at = job.index("python packaging/build/build_client_windows.py")
     assert compile_at < build_at
     assert "--packet-dll build/packet_stub/packet.dll" in job
 
@@ -619,17 +641,17 @@ def test_the_release_builds_the_stand_in_with_msvc_before_the_installer():
 def test_the_payload_carries_no_wrapper_script_and_no_interpreter_of_its_own():
     """The binary is the command; a .cmd beside a carried python.exe was
     the shape before."""
-    assert not hasattr(build_msi, "CONSOLE_WRAPPER_NAME")
-    assert not hasattr(build_msi, "WINDOWS_PYTHON_URL")
-    assert build_msi.BUILD_PYTHON_VERSION == (3, 13)
-    assert build_msi.CLIENT_BINARY_NAME == "nclient.exe"
+    assert not hasattr(build_client_windows, "CONSOLE_WRAPPER_NAME")
+    assert not hasattr(build_client_windows, "WINDOWS_PYTHON_URL")
+    assert build_client_windows.BUILD_PYTHON_VERSION == (3, 13)
+    assert build_client_windows.CLIENT_BINARY_NAME == "nclient.exe"
 
 
 def test_the_windows_wheels_are_pinned_to_the_file():
-    for _name, _version, url, digest in build_msi.WINDOWS_WHEELS:
+    for _name, _version, url, digest in build_client_windows.WINDOWS_WHEELS:
         assert url.startswith("https://files.pythonhosted.org/")
         assert len(digest) == 64
     for machine in ("amd64", "arm64"):
-        _name, _version, url, digest = build_msi.WINDOWS_CFFI[machine]
+        _name, _version, url, digest = build_client_windows.WINDOWS_CFFI[machine]
         assert machine in url
         assert len(digest) == 64
