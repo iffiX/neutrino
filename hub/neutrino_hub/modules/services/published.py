@@ -300,14 +300,23 @@ class PublishedServiceCache:
             status.get("details") if isinstance(status.get("details"), dict) else {}
         )
         if name == "samba":
-            shares = self._desired_states.read(key, "samba").get("shares", [])
+            config = self._desired_states.read(key, "samba")
+            shares = [
+                share
+                for share in config.get("shares", [])
+                if isinstance(share, dict) and share.get("name")
+            ]
+            users = [str(user) for user in config.get("users") or []]
             return {
                 "is_healthy": bool(details.get("is_active")),
-                "share_names": [
-                    str(share.get("name", ""))
+                "share_names": [str(share["name"]) for share in shares],
+                "share_users": {
+                    str(share["name"]): [
+                        str(user) for user in share.get("valid_users") or []
+                    ]
+                    or users
                     for share in shares
-                    if isinstance(share, dict) and share.get("name")
-                ],
+                },
             }
         if name == "gitea":
             url = str(details.get("url", "") or "")

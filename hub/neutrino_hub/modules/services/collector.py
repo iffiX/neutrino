@@ -98,7 +98,9 @@ class ServiceListCollector:
             device_modules: One entry per device hosting modules:
                 ``{"device_id", "host", "samba", "gitea", "podman",
                 "vscode"}`` where each module is None when the device does
-                not serve it, else ``samba: {"is_healthy", "share_names"}``,
+                not serve it, else ``samba: {"is_healthy", "share_names",
+                "share_users"}``, ``share_users`` mapping a share's name to
+                the accounts that can open it,
                 ``gitea: {"is_healthy", "url"}``,
                 ``vscode: {"is_healthy", "instances": [{"account", "port"}]}``
                 and
@@ -304,6 +306,9 @@ class ServiceListCollector:
                             "protocol": SERVICES_FILE_PROTOCOL,
                             "host": host,
                             "share": name,
+                            "users": list(
+                                (samba.get("share_users") or {}).get(name, [])
+                            ),
                         },
                         is_healthy=bool(samba.get("is_healthy")),
                         description=SERVICES_SAMBA_DESCRIPTION.format(host=host),
@@ -324,6 +329,7 @@ class ServiceListCollector:
                             "protocol": SERVICES_FILE_PROTOCOL,
                             "host": record.host,
                             "share": share.name,
+                            "users": [],
                         },
                         is_healthy=is_healthy,
                         description=record.description,

@@ -152,6 +152,7 @@ def test_each_form_kind_lands_as_its_own_type(box):
         "protocol": "smb",
         "host": "192.168.100.7",
         "share": "media",
+        "users": [],
     }
     assert all(entry["source"] == "declared" for entry in entries)
     assert by_type["port"]["description"] == "the forge box"

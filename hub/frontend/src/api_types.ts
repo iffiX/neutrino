@@ -1131,6 +1131,7 @@ export interface PublishedServicePayload {
   protocol?: string;
   models?: string[];
   share?: string;
+  users?: string[];
 }
 
 /**

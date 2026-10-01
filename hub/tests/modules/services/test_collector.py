@@ -127,8 +127,25 @@ def test_a_devices_samba_publishes_one_file_entry_per_share_at_its_address():
         "protocol": "smb",
         "host": DEVICE_HOST,
         "share": "media",
+        "users": [],
     }
     assert entry["source"] == "module"
+
+
+def test_a_file_entry_names_the_accounts_that_can_open_its_share():
+    entries = collect(
+        device_modules=[
+            hosting(
+                samba={
+                    "is_healthy": True,
+                    "share_names": ["media", "backup"],
+                    "share_users": {"media": ["alice"], "backup": ["alice", "bob"]},
+                }
+            )
+        ]
+    )
+
+    assert [e["payload"]["users"] for e in entries] == [["alice"], ["alice", "bob"]]
 
 
 def test_a_device_with_no_address_publishes_nothing_reachable():
@@ -235,6 +252,7 @@ def test_declared_records_map_onto_the_types_with_their_probe_health():
     assert by_id["p1"]["payload"] == {"host": "10.0.0.5", "port": 9000}
     assert by_id["p1"]["is_healthy"] is False
     assert by_id["f1_media"]["payload"]["share"] == "media"
+    assert by_id["f1_media"]["payload"]["users"] == []
     assert by_id["f1_media"]["record_id"] == "f1"
     assert by_id["f1_backup"]["record_id"] == "f1"
     assert by_id["w1"]["detail_code"] is None

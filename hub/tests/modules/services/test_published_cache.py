@@ -133,6 +133,30 @@ def test_a_devices_samba_share_is_published_at_the_devices_address(box):
     assert len(fingerprint) == 16
 
 
+def test_a_share_names_its_own_users_or_else_every_user_of_the_module(box):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "running")
+    store.write(
+        DEVICE,
+        "samba",
+        {
+            "shares": [
+                {"name": "media", "path": "/srv/media", "valid_users": ["bob"]},
+                {"name": "backup", "path": "/srv/backup", "valid_users": []},
+            ],
+            "users": ["alice", "bob"],
+        },
+    )
+    sessions = StubSessions({DEVICE: report(samba={"is_active": True})})
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    users = {e["payload"]["share"]: e["payload"]["users"] for e in entries}
+    assert users == {"media": ["bob"], "backup": ["alice", "bob"]}
+
+
 def test_a_module_that_is_installed_but_switched_off_publishes_nothing(box):
     DesiredStateStore().write(
         DEVICE, "samba", {"shares": [{"name": "media", "path": "/srv"}], "users": []}

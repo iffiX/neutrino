@@ -209,10 +209,10 @@ Each entry of `services` is `{id, type, title, payload, is_healthy, source, desc
 | `web`  | `{url, is_local_only}`; `is_local_only` is present and true on a VS Code entry only |
 | `port` | `{host, port}`                                                                      |
 | `ai`   | `{endpoint, protocol, models}`, `protocol` being `openai`                           |
-| `file` | `{protocol, host, share}`, `protocol` being `smb`                                   |
+| `file` | `{protocol, host, share, users}`, `protocol` being `smb`                            |
 | `rdp`  | `{protocol, host, port, attention}`, `protocol` being `rustdesk`                    |
 
-An entry with `is_local_only` opens only through a port forwarded to the client's own `127.0.0.1`, so a phone shows it as desktop only. `attention` on an `rdp` entry is what somebody must do at the sharing machine first: `rdp_nobody_seated`, `rdp_screen_not_allowed`, or empty.
+An entry with `is_local_only` opens only through a port forwarded to the client's own `127.0.0.1`, so a phone shows it as desktop only. `attention` on an `rdp` entry is what somebody must do at the sharing machine first: `rdp_nobody_seated`, `rdp_screen_not_allowed`, or empty. `users` on a `file` entry lists the accounts that can open the share, so a phone offers the user name and asks only for the password. It is empty on a declared share, and a hub before 0.5.0 sends none.
 
 | Field                | Holds                                                                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |

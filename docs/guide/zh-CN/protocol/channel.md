@@ -209,10 +209,10 @@ hub 每 20 秒发一次 ping，pong 迟到超过 20 秒就断开套接字。被�
 | `web`  | `{url, is_local_only}`；只有 VS Code 的条目带 `is_local_only` 且为真 |
 | `port` | `{host, port}`                                                       |
 | `ai`   | `{endpoint, protocol, models}`，`protocol` 是 `openai`               |
-| `file` | `{protocol, host, share}`，`protocol` 是 `smb`                       |
+| `file` | `{protocol, host, share, users}`，`protocol` 是 `smb`                |
 | `rdp`  | `{protocol, host, port, attention}`，`protocol` 是 `rustdesk`        |
 
-带 `is_local_only` 的条目只能通过转发到客户端本机 `127.0.0.1` 的端口打开，所以手机上显示为仅桌面可用。`rdp` 条目的 `attention` 写明共享桌面的那台机器前要先做什么：`rdp_nobody_seated`、`rdp_screen_not_allowed`，或为空。
+带 `is_local_only` 的条目只能通过转发到客户端本机 `127.0.0.1` 的端口打开，所以手机上显示为仅桌面可用。`rdp` 条目的 `attention` 写明共享桌面的那台机器前要先做什么：`rdp_nobody_seated`、`rdp_screen_not_allowed`，或为空。`file` 条目的 `users` 列出能打开这个共享的账户，手机据此给出用户名，只让人输密码。手动声明的共享这一项为空，0.5.0 之前的 hub 不发这一项。
 
 | 字段                 | 内容                                                                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |

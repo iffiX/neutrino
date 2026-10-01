@@ -983,7 +983,7 @@ what the entry's `payload` names:
 | `web` | `{url, is_local_only}`, `is_local_only` present and true only on a VS Code instance | a device's Gitea module reports a URL, a device's VS Code module runs an instance, or an `http` record is declared |
 | `port` | `{host, port}` | a device's Podman container publishes a host port, or a `generic_tcp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
-| `file` | `{protocol, host, share}`, `protocol` being `smb` | a device's Samba module reports the share, or a `samba` record is declared |
+| `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
 | `rdp` | `{protocol, host, port, attention}`, `protocol` being `rustdesk` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way |
 
 The five types are closed, `SERVICES_TYPES` in
