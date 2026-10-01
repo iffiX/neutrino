@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
+import { KeptSecretRow } from "./kept_secret_row";
 import { OverlayPeers } from "./overlay_peers";
 import type { OverlayPeerRow } from "./overlay_peers";
 import { OverlayTopology } from "./overlay_topology";
-import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiGet, apiPost, describeError } from "../api_client";
@@ -84,12 +84,7 @@ const EASYTIER_PEER_PORT = 11010;
 /** How often the peer table is read; peers connect and drop on their own. */
 const PEER_RELOAD_MS = 5000;
 
-interface EasyTierSectionProps {
-  /** Whether the hub runs EasyTier now. */
-  isEnabled: boolean;
-}
-
-export function EasyTierSection({ isEnabled }: EasyTierSectionProps) {
+export function EasyTierSection() {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<EasyTierView>("/hub/overlay/easytier");
@@ -154,16 +149,7 @@ export function EasyTierSection({ isEnabled }: EasyTierSectionProps) {
         </div>
       </div>
 
-      {!isEnabled && (
-        <div className="notice">
-          <Icon name="blocked" size={15} />
-          <div className="notice_body">
-            {t("ui.overlay.engine_off", { title: EASYTIER_PRODUCT_NAME })}
-          </div>
-        </div>
-      )}
-
-      {isEnabled && !view.is_installed && (
+      {!view.is_installed && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{t("ui.overlay.engine_absent")}</div>
@@ -265,6 +251,8 @@ function SettingsPanel({ view, onApplied }: SettingsPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [draft, setDraft] = useState<EasyTierDraft>(() => storedDraft(view));
+  // Moves on every apply and reset, and the secret rows remount on it.
+  const [revision, setRevision] = useState(0);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -328,6 +316,7 @@ function SettingsPanel({ view, onApplied }: SettingsPanelProps) {
         isConsoleForgotten: false,
         networkSecret: "",
       }));
+      setRevision((current) => current + 1);
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -378,9 +367,19 @@ function SettingsPanel({ view, onApplied }: SettingsPanelProps) {
       </div>
 
       {isConsole ? (
-        <ConsoleFields view={view} draft={draft} onChange={change} />
+        <ConsoleFields
+          view={view}
+          draft={draft}
+          revision={revision}
+          onChange={change}
+        />
       ) : (
-        <ManualFields view={view} draft={draft} onChange={change} />
+        <ManualFields
+          view={view}
+          draft={draft}
+          revision={revision}
+          onChange={change}
+        />
       )}
 
       <ApplyBar
@@ -390,7 +389,10 @@ function SettingsPanel({ view, onApplied }: SettingsPanelProps) {
         hint={t("ui.overlay.apply_settings_hint")}
         warning={settingsWarning(view, draft)}
         error={error}
-        onReset={() => setDraft(storedDraft(view))}
+        onReset={() => {
+          setDraft(storedDraft(view));
+          setRevision((current) => current + 1);
+        }}
         onApply={() => void apply()}
       />
     </section>
@@ -414,45 +416,32 @@ function settingsWarning(
 interface FieldsProps {
   view: EasyTierView;
   draft: EasyTierDraft;
+  /** Remounts the secret rows when it moves. */
+  revision: number;
   onChange: (patch: Partial<EasyTierDraft>) => void;
 }
 
 /** The console's address, kept sealed, and whether it runs in secure mode. */
-function ConsoleFields({ view, draft, onChange }: FieldsProps) {
+function ConsoleFields({ view, draft, revision, onChange }: FieldsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const isKept = view.has_config_server && !draft.isConsoleForgotten;
   return (
     <>
       <h3 className="easytier_subtitle">{t("ui.overlay.console_title")}</h3>
-      <div className="easytier_fact easytier_config_server">
-        <span className="field_label">
-          {t("ui.overlay.config_server_label")}
-        </span>
-        <span className="easytier_fact_value">
-          {isKept
-            ? t("ui.overlay.setup_key_kept")
-            : t("ui.overlay.setup_key_missing")}
-        </span>
-        <PasswordInput
-          value={draft.configServer}
-          onChange={(value) =>
-            onChange({ configServer: value, isConsoleForgotten: false })
-          }
-          placeholder={t("ui.overlay.config_server_placeholder")}
-        />
-        {isKept && (
-          <button
-            type="button"
-            className="button button--small button--danger"
-            onClick={() =>
-              onChange({ configServer: "", isConsoleForgotten: true })
-            }
-          >
-            {t("ui.overlay.setup_key_forget")}
-          </button>
-        )}
-      </div>
+      <KeptSecretRow
+        key={revision}
+        label={t("ui.overlay.config_server_label")}
+        isKept={isKept}
+        value={draft.configServer}
+        onChange={(value) =>
+          onChange({ configServer: value, isConsoleForgotten: false })
+        }
+        placeholder={t("ui.overlay.config_server_placeholder")}
+        onForget={() =>
+          onChange({ configServer: "", isConsoleForgotten: true })
+        }
+      />
       <p className="field_hint">{t("ui.overlay.config_server_hint")}</p>
       <ToggleSwitch
         isOn={draft.isSecureMode}
@@ -465,7 +454,7 @@ function ConsoleFields({ view, draft, onChange }: FieldsProps) {
 }
 
 /** The network, the peers dialled at start, and the networks exported. */
-function ManualFields({ view, draft, onChange }: FieldsProps) {
+function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [typedPeer, setTypedPeer] = useState("");
@@ -514,18 +503,6 @@ function ManualFields({ view, draft, onChange }: FieldsProps) {
           />
         </label>
         <label className="field">
-          <span className="field_label">{t("ui.overlay.network_secret")}</span>
-          <PasswordInput
-            value={draft.networkSecret}
-            onChange={(value) => onChange({ networkSecret: value })}
-            placeholder={
-              view.is_secret_set
-                ? t("ui.overlay.secret_kept")
-                : t("ui.overlay.secret_placeholder")
-            }
-          />
-        </label>
-        <label className="field">
           <span className="field_label">{t("ui.overlay.own_address")}</span>
           <input
             className="input"
@@ -536,6 +513,14 @@ function ManualFields({ view, draft, onChange }: FieldsProps) {
           />
         </label>
       </div>
+      <KeptSecretRow
+        key={revision}
+        label={t("ui.overlay.network_secret")}
+        isKept={view.is_secret_set}
+        value={draft.networkSecret}
+        onChange={(value) => onChange({ networkSecret: value })}
+        placeholder={t("ui.overlay.secret_placeholder")}
+      />
 
       <h3 className="easytier_subtitle">{t("ui.overlay.bootstrap_title")}</h3>
       <p className="field_hint">{t("ui.overlay.bootstrap_hint")}</p>

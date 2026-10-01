@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Picker } from "./picker";
 import {
   cacheShareOf,
   formatBucketLabel,
@@ -151,40 +152,39 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
       </div>
 
       <div className="usage_table_foot">
-        <label className="usage_table_control">
+        <div className="usage_table_control">
           <span className="faint">{t("ui.usage.sort")}</span>
-          <select
-            className="select"
+          <Picker
+            className="usage_table_sort"
+            options={SORT_KEYS.map((option) => ({
+              id: option,
+              name: t(SORT_LABEL_KEYS[option]),
+            }))}
             value={sortKey}
-            onChange={(event) => {
-              setSortKey(event.target.value as SortKey);
+            onChange={(id) => {
+              setSortKey(id as SortKey);
               setPage(0);
             }}
-          >
-            {SORT_KEYS.map((option) => (
-              <option key={option} value={option}>
-                {t(SORT_LABEL_KEYS[option])}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="usage_table_control">
+            label={t("ui.usage.sort")}
+            isLabelHidden
+          />
+        </div>
+        <div className="usage_table_control">
           <span className="faint">{t("ui.usage.size")}</span>
-          <select
-            className="select"
-            value={pageSize}
-            onChange={(event) => {
-              setPageSize(Number(event.target.value));
+          <Picker
+            options={PAGE_SIZES.map((option) => ({
+              id: String(option),
+              name: String(option),
+            }))}
+            value={String(pageSize)}
+            onChange={(id) => {
+              setPageSize(Number(id));
               setPage(0);
             }}
-          >
-            {PAGE_SIZES.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+            label={t("ui.usage.size")}
+            isLabelHidden
+          />
+        </div>
         <div className="usage_table_pager">
           <button
             type="button"

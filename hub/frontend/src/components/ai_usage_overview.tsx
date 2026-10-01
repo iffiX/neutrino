@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
+import { Picker } from "./picker";
 import { RangeSwitch } from "./range_switch";
 import { Sparkline } from "./sparkline";
 import { UsageGrid } from "./usage_grid";
@@ -60,18 +61,20 @@ export function AiUsageOverview() {
             value={range}
             onChange={setRange}
           />
-          <select
-            className="select ai_usage_key_select"
+          <Picker
+            className="ai_usage_key_select"
+            options={[
+              { id: "", name: t("ui.usage.all_keys") },
+              ...(data?.keys ?? []).map((key) => ({
+                id: key.key_id,
+                name: key.name,
+              })),
+            ]}
             value={keyId}
-            onChange={(event) => setKeyId(event.target.value)}
-          >
-            <option value="">{t("ui.usage.all_keys")}</option>
-            {(data?.keys ?? []).map((key) => (
-              <option key={key.key_id} value={key.key_id}>
-                {key.name}
-              </option>
-            ))}
-          </select>
+            onChange={setKeyId}
+            label={t("ui.usage.header_key")}
+            isLabelHidden
+          />
         </div>
       </div>
 

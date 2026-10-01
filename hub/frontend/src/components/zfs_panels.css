@@ -28,6 +28,7 @@
 }
 
 .zfs_replace_select {
+  flex: 1;
   max-width: 340px;
 }
 
