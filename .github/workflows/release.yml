@@ -308,9 +308,6 @@ jobs:
           cargo install cargo-ndk --locked
           sudo apt-get install -y nasm
 
-      - name: Put the RustDesk core into the app
-        run: python3 packaging/mobile_rustdesk.py
-
       - name: Build the apk
         env:
           ANDROID_KEYSTORE_B64: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_B64 || '' }}

@@ -4,7 +4,7 @@ import android.view.Surface
 
 /**
  * The RustDesk core's C interface, reached through `libneutrino_rustdesk.so` (`src/main/cpp`).
- * `librustdesk.so` is built by `packaging/mobile_rustdesk.py`; a build without it has [isLoaded]
+ * `librustdesk.so` is built by `packaging/build/build_core_rustdesk.py`; a build without it has [isLoaded]
  * false.
  */
 object RustDeskNative {

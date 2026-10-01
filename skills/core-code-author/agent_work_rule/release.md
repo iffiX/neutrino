@@ -251,7 +251,7 @@ sentence when a tool it needs is missing.
 | `build_agent_macos.py`, `build_client_macos.py` | the two `.pkg` | macOS on Apple silicon with Python 3.13 |
 | `build_client_android.py` | the `.apk`, with its cores | Linux or macOS with JDK 17 and the Android SDK |
 | `build_client_ios.py` | nothing yet: it prints the `xcodebuild` steps | macOS with Xcode |
-| `build_core_netbird.py`, `build_core_easytier.py` | one core the phones carry | Linux |
+| `build_core_netbird.py`, `build_core_easytier.py`, `build_core_rustdesk.py` | one core the phones carry | Linux |
 | `build_sources.py`, `build_checksums.py` | the source archive, `SHA256SUMS` over a directory | anywhere |
 
 ```bash
@@ -268,8 +268,10 @@ runs, checks that it works, and removes it again; the workflow runs it after
 every build.
 
 The cores the phone apps carry are cached under
-`~/.cache/neutrino/cores/<core>-<commit>-<abi>/`, and the workflow's cache
-uses the same name, so a core is built once per pinned commit.
+`~/.cache/neutrino/cores/<core>-<commit>-<abi>-<recipe>/`, the recipe being
+eight hex digits of the digest of the core's script and patch, and the
+workflow's cache uses the same names, so a core is built once per pinned
+commit and recipe.
 
 The hub and the agent are built in containers of the target family, because
 each carries an interpreter compiled against that family's C libraries, so

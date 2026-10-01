@@ -13,14 +13,14 @@ class ConstantsTest {
     @Test
     fun theAboutScreenNamesTheCoresTheBuildScriptsPin() {
         val versions = CLIENT_CARRIED_CORES.associate { (name, version, _) -> name to version }
-        assertEquals(pinnedTag("mobile_netbird.py", "NETBIRD_MOBILE_TAG"), versions["NetBird"])
-        assertEquals(pinnedTag("mobile_easytier.py", "EASYTIER_MOBILE_TAG"), versions["EasyTier"])
-        assertEquals(pinnedTag("mobile_rustdesk.py", "RUSTDESK_MOBILE_TAG"), versions[CLIENT_RUSTDESK_CORE])
+        assertEquals(pinnedTag("build/build_core_netbird.py", "NETBIRD_MOBILE_TAG"), versions["NetBird"])
+        assertEquals(pinnedTag("build/build_core_easytier.py", "EASYTIER_MOBILE_TAG"), versions["EasyTier"])
+        assertEquals(pinnedTag("build/build_core_rustdesk.py", "RUSTDESK_MOBILE_TAG"), versions[CLIENT_RUSTDESK_CORE])
     }
 
     @Test
     fun theRustDeskSourceLinkNamesThePinnedTag() {
-        val tag = pinnedTag("mobile_rustdesk.py", "RUSTDESK_MOBILE_TAG")
+        val tag = pinnedTag("build/build_core_rustdesk.py", "RUSTDESK_MOBILE_TAG")
         assertEquals("https://github.com/rustdesk/rustdesk/tree/$tag", CLIENT_RUSTDESK_SOURCE_URL)
     }
 

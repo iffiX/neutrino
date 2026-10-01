@@ -8,7 +8,7 @@ local.properties
 *.iml
 captures/
 
-# The cores packaging/mobile_netbird.py and packaging/mobile_easytier.py
-# build from their pinned sources; never committed.
+# The cores packaging/build/build_core_netbird.py, build_core_easytier.py and
+# build_core_rustdesk.py build from their pinned sources; never committed.
 app/libs/
 app/src/main/jniLibs/

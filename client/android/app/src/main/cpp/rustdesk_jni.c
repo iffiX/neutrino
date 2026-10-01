@@ -1,5 +1,5 @@
 // The JNI side of RustDeskNative: opens librustdesk.so, which System.loadLibrary has already
-// loaded, and forwards each call to the C interface packaging/mobile_rustdesk.patch adds.
+// loaded, and forwards each call to the C interface packaging/build/build_core_rustdesk.patch adds.
 
 #include <android/native_window_jni.h>
 #include <dlfcn.h>

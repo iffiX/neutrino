@@ -12,7 +12,8 @@ here: ``gomobile bind`` over ``client/android`` of the pinned release, for
 the two machines the app ships (arm64-v8a for phones, x86_64 for the
 emulator). The source archive is checked against its SHA-256 and the commit
 its header names before anything is built. The result is cached under
-``~/.cache/neutrino/cores/netbird-<commit>-arm64-v8a+x86_64/`` and copied to
+``~/.cache/neutrino/cores/netbird-<commit>-arm64-v8a+x86_64-<recipe>/``, the
+recipe being the digest of this file, and copied to
 ``client/android/app/libs/netbird.aar``. ``--cache-key`` prints that cache
 name and builds nothing.
 
@@ -67,6 +68,7 @@ NETBIRD_MOBILE_GO_TOOLCHAIN = "go1.26.7"
 NETBIRD_MOBILE_LIBRARY = "netbird.aar"
 # The one library holds both machines, so it is cached under both.
 NETBIRD_MOBILE_ABIS = "arm64-v8a+x86_64"
+NETBIRD_MOBILE_RECIPE = cores_cache.recipe(Path(__file__).resolve())
 NETBIRD_MOBILE_OUTPUT = REPO_ROOT / "client" / "android" / "app" / "libs"
 
 
@@ -159,10 +161,17 @@ def main() -> int:
     arguments = parser.parse_args()
     if arguments.cache_key:
         print(
-            cores_cache.cache_key("netbird", NETBIRD_MOBILE_COMMIT, NETBIRD_MOBILE_ABIS)
+            cores_cache.cache_key(
+                "netbird",
+                NETBIRD_MOBILE_COMMIT,
+                NETBIRD_MOBILE_ABIS,
+                NETBIRD_MOBILE_RECIPE,
+            )
         )
         return 0
-    cached = cores_cache.cache_dir("netbird", NETBIRD_MOBILE_COMMIT, NETBIRD_MOBILE_ABIS)
+    cached = cores_cache.cache_dir(
+        "netbird", NETBIRD_MOBILE_COMMIT, NETBIRD_MOBILE_ABIS, NETBIRD_MOBILE_RECIPE
+    )
     if arguments.rebuild or not cores_cache.is_cached(cached):
         _check_tools()
         started = time.monotonic()

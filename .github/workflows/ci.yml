@@ -109,7 +109,7 @@ jobs:
         run: |
           python3 packaging/build/build_core_netbird.py
           python3 packaging/build/build_core_easytier.py
-          python3 packaging/mobile_rustdesk.py
+          python3 packaging/build/build_core_rustdesk.py
 
       - run: ./gradlew --no-daemon ktlintCheck test lint
         working-directory: client/android

@@ -18,7 +18,8 @@ before anything is built. ``build_core_easytier.patch`` beside this file is
 then applied: it links the C interface (``easytier-ffi``) into the JNI
 library, so the app loads one library, and adds the calls that start and stop
 a console's web client. Each machine's library is cached under
-``~/.cache/neutrino/cores/easytier-<commit>-<abi>/`` and copied to
+``~/.cache/neutrino/cores/easytier-<commit>-<abi>-<recipe>/``, the recipe
+being the digest of this file and the patch, and copied to
 ``client/android/app/src/main/jniLibs/<abi>/libeasytier_android_jni.so``.
 ``--cache-key`` prints the cache names and builds nothing.
 
@@ -74,6 +75,9 @@ EASYTIER_MOBILE_ABIS = {
 EASYTIER_MOBILE_ANDROID_API = "26"
 EASYTIER_MOBILE_LIBRARY = "libeasytier_android_jni.so"
 EASYTIER_MOBILE_PATCH = Path(__file__).resolve().parent / "build_core_easytier.patch"
+EASYTIER_MOBILE_RECIPE = cores_cache.recipe(
+    Path(__file__).resolve(), EASYTIER_MOBILE_PATCH
+)
 EASYTIER_MOBILE_OUTPUT = (
     REPO_ROOT / "client" / "android" / "app" / "src" / "main" / "jniLibs"
 )
@@ -203,10 +207,16 @@ def main() -> int:
     arguments = parser.parse_args()
     if arguments.cache_key:
         for abi in EASYTIER_MOBILE_ABIS:
-            print(cores_cache.cache_key("easytier", EASYTIER_MOBILE_COMMIT, abi))
+            print(
+                cores_cache.cache_key(
+                    "easytier", EASYTIER_MOBILE_COMMIT, abi, EASYTIER_MOBILE_RECIPE
+                )
+            )
         return 0
     cached = {
-        abi: cores_cache.cache_dir("easytier", EASYTIER_MOBILE_COMMIT, abi)
+        abi: cores_cache.cache_dir(
+            "easytier", EASYTIER_MOBILE_COMMIT, abi, EASYTIER_MOBILE_RECIPE
+        )
         for abi in EASYTIER_MOBILE_ABIS
     }
     if arguments.rebuild or not all(map(cores_cache.is_cached, cached.values())):

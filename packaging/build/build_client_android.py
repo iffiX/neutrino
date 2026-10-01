@@ -3,9 +3,10 @@
     python3 packaging/build/build_client_android.py --variant debug --output-dir dist/
 
 Runs on: Linux or macOS with JDK 17 and the Android SDK, ``ANDROID_HOME``
-naming it. The NetBird and EasyTier cores come from the cores cache, or are
-built when it does not have them, which needs what
-``build_core_netbird.py`` and ``build_core_easytier.py`` name.
+naming it. The NetBird, EasyTier and RustDesk cores come from the cores
+cache, or are built when it does not have them, which needs what
+``build_core_netbird.py``, ``build_core_easytier.py`` and
+``build_core_rustdesk.py`` name.
 
 Then ``gradlew assembleDebug`` or ``assembleRelease`` runs in
 ``client/android``. A release build is signed when the four variables
@@ -32,7 +33,11 @@ BUILD_DIR = Path(__file__).resolve().parent
 ANDROID_DIR = REPO_ROOT / "client" / "android"
 
 # The scripts that put each core into the app, in the order they run.
-CORE_SCRIPTS = ("build_core_netbird.py", "build_core_easytier.py")
+CORE_SCRIPTS = (
+    "build_core_netbird.py",
+    "build_core_easytier.py",
+    "build_core_rustdesk.py",
+)
 
 # The four variables the Gradle build signs a release with.
 SIGNING_VARIABLES = (

@@ -51,7 +51,7 @@ const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tre
 
 /** The patch the app's RustDesk core is built with, at the app's release tag `v{version}`. */
 const val CLIENT_RUSTDESK_PATCH_URL =
-    "https://github.com/iffiX/neutrino/blob/v{version}/packaging/mobile_rustdesk.patch"
+    "https://github.com/iffiX/neutrino/blob/v{version}/packaging/build/build_core_rustdesk.patch"
 
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
 const val PROTOCOL = 3

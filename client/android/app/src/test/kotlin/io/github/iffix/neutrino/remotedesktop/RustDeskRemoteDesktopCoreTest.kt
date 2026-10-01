@@ -47,7 +47,7 @@ class RustDeskRemoteDesktopCoreTest {
 
     @Test
     fun theStatesAreTheOnesThePatchExports() {
-        val patch = RepositoryFiles.text("packaging/mobile_rustdesk.patch")
+        val patch = RepositoryFiles.text("packaging/build/build_core_rustdesk.patch")
         for ((name, value) in listOf(
             "ND_STATE_CONNECTED" to RDP_STATE_CONNECTED,
             "ND_STATE_LOGIN_FAILED" to RDP_STATE_LOGIN_FAILED,

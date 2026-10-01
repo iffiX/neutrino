@@ -1,23 +1,29 @@
 """RustDesk's Android library, built from its pinned source for the phone app.
 
-    python3 packaging/mobile_rustdesk.py
+    python3 packaging/build/build_core_rustdesk.py
+
+Runs on: Linux on x86-64. With the libraries already in the cores cache it
+needs nothing else; building them needs what the last paragraph names.
 
 RustDesk publishes no library for a host without Flutter, so the app carries
 the RustDesk crate compiled here with ``cargo ndk``, for the two machines the
 app ships (arm64-v8a for phones, with the hardware codecs; x86_64 for the
 emulator, without). The source archive and its ``hbb_common`` submodule are
 checked against their SHA-256 and the commits their headers name before
-anything is built. ``mobile_rustdesk.patch`` beside this file is then applied:
+anything is built. ``build_core_rustdesk.patch`` beside this file is then applied:
 it adds a small C interface (``src/native_ffi.rs``) behind a ``native``
 feature, which also drops the Dart bridge the Flutter build generates. The
 codec libraries are built with vcpkg at the commit RustDesk pins, with
 RustDesk's own overlay ports, as ``flutter/build_android_deps.sh`` does. The
-result is ``client/android/app/src/main/jniLibs/<abi>/librustdesk.so`` with
-the NDK's ``libc++_shared.so`` beside it.
+two libraries of each machine, ``librustdesk.so`` and the NDK's
+``libc++_shared.so``, are cached under
+``~/.cache/neutrino/cores/rustdesk-<commit>-<abi>-<recipe>/``, the recipe
+being the digest of this file and the patch, and copied to
+``client/android/app/src/main/jniLibs/<abi>/``. ``--cache-key`` prints the
+cache names and builds nothing.
 
-Everything fetched and built is kept under ``~/.cache/neutrino/rustdesk``:
-the NDK, vcpkg and its installed libraries, the Cargo build, and the two
-finished libraries by source commit and patch, so a second run copies them.
+What building fetches and keeps between runs, the NDK, vcpkg and its
+installed libraries and the Cargo build, is under ``~/.cache/neutrino/rustdesk``.
 
 Needs rustup and ``cargo-ndk``, ``nasm``, ``unzip``, ``patch`` and a host
 libclang for bindgen: the system's, or the directory ``LIBCLANG_PATH``
@@ -38,7 +44,9 @@ import time
 import urllib.request
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import cores_cache  # noqa: E402
 
 # --- the pinned source ---
 RUSTDESK_MOBILE_TAG = "1.4.9"
@@ -100,7 +108,10 @@ RUSTDESK_MOBILE_ANDROID_API = "21"
 RUSTDESK_MOBILE_CRATE_LIBRARY = "liblibrustdesk.so"
 RUSTDESK_MOBILE_LIBRARY = "librustdesk.so"
 RUSTDESK_MOBILE_CXX_LIBRARY = "libc++_shared.so"
-RUSTDESK_MOBILE_PATCH = REPO_ROOT / "packaging" / "mobile_rustdesk.patch"
+RUSTDESK_MOBILE_PATCH = Path(__file__).resolve().parent / "build_core_rustdesk.patch"
+RUSTDESK_MOBILE_RECIPE = cores_cache.recipe(
+    Path(__file__).resolve(), RUSTDESK_MOBILE_PATCH
+)
 RUSTDESK_MOBILE_CACHE = Path.home() / ".cache" / "neutrino" / "rustdesk"
 RUSTDESK_MOBILE_OUTPUT = (
     REPO_ROOT / "client" / "android" / "app" / "src" / "main" / "jniLibs"
@@ -286,10 +297,14 @@ def build_crate(source: Path, ndk: Path, vcpkg: Path, output: Path) -> None:
 
 
 def _check_tools() -> None:
-    """Fail early when a tool the build runs is missing."""
+    """Refuse to build without the tools the build runs.
+
+    Raises:
+        SystemExit: When one is missing.
+    """
     for tool in ("rustup", "cargo", "cargo-ndk", "nasm", "unzip", "patch"):
         if shutil.which(tool) is None:
-            raise SystemExit(f"{tool} is not on the path")
+            raise SystemExit(f"{tool} is needed to build RustDesk and is not on the path")
 
 
 def _run(command: list, cwd: Path, environment: "dict | None" = None) -> None:
@@ -301,7 +316,7 @@ def _run(command: list, cwd: Path, environment: "dict | None" = None) -> None:
 
 
 def main() -> int:
-    """Build the libraries, or copy them from the cache.
+    """Build the libraries, or take them from the cache, and copy them into the app.
 
     Returns:
         The process exit status.
@@ -312,29 +327,49 @@ def main() -> int:
         default=str(RUSTDESK_MOBILE_OUTPUT),
         help="the jniLibs directory to fill",
     )
+    parser.add_argument(
+        "--rebuild", action="store_true", help="build even when the cache has them"
+    )
+    parser.add_argument(
+        "--cache-key", action="store_true", help="print the cache names and stop"
+    )
     arguments = parser.parse_args()
-    started = time.monotonic()
-    output = Path(arguments.output).resolve()
-    patch_key = hashlib.sha256(RUSTDESK_MOBILE_PATCH.read_bytes()).hexdigest()[:12]
-    built = RUSTDESK_MOBILE_CACHE / f"out-{RUSTDESK_MOBILE_COMMIT[:12]}-{patch_key}"
-    if not (built / ".complete").exists():
+    if arguments.cache_key:
+        for abi in RUSTDESK_MOBILE_ABIS:
+            print(
+                cores_cache.cache_key(
+                    "rustdesk", RUSTDESK_MOBILE_COMMIT, abi, RUSTDESK_MOBILE_RECIPE
+                )
+            )
+        return 0
+    cached = {
+        abi: cores_cache.cache_dir(
+            "rustdesk", RUSTDESK_MOBILE_COMMIT, abi, RUSTDESK_MOBILE_RECIPE
+        )
+        for abi in RUSTDESK_MOBILE_ABIS
+    }
+    if arguments.rebuild or not all(map(cores_cache.is_cached, cached.values())):
         _check_tools()
+        started = time.monotonic()
+        patch_key = hashlib.sha256(RUSTDESK_MOBILE_PATCH.read_bytes()).hexdigest()[:12]
         source = fetch_source(patch_key)
         ndk = fetch_ndk()
         vcpkg = build_vcpkg_ports(source, ndk)
+        built = RUSTDESK_MOBILE_CACHE / "built"
         if built.exists():
             shutil.rmtree(built)
         build_crate(source, ndk, vcpkg, built)
-        (built / ".complete").touch()
-    for abi in RUSTDESK_MOBILE_ABIS:
-        destination = output / abi
-        destination.mkdir(parents=True, exist_ok=True)
-        for library in (RUSTDESK_MOBILE_LIBRARY, RUSTDESK_MOBILE_CXX_LIBRARY):
-            shutil.copy2(built / abi / library, destination / library)
-    print(
-        f"rustdesk {RUSTDESK_MOBILE_TAG} ({RUSTDESK_MOBILE_COMMIT[:12]}) "
-        f"built in {time.monotonic() - started:.0f}s: {output}"
-    )
+        for abi, directory in cached.items():
+            cores_cache.store(built / abi, directory)
+        print(
+            f"rustdesk {RUSTDESK_MOBILE_TAG} ({RUSTDESK_MOBILE_COMMIT[:12]}) "
+            f"built in {time.monotonic() - started:.0f}s"
+        )
+    else:
+        print(f"rustdesk {RUSTDESK_MOBILE_TAG} from the cache")
+    output = Path(arguments.output).resolve()
+    for abi, directory in cached.items():
+        cores_cache.install(directory, output / abi)
     return 0
 
 

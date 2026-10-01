@@ -1,5 +1,5 @@
 RustDesk 1.4.9 for the Neutrino Android app: a C interface to one remote
-desktop session, for a host with no Dart. Applied by mobile_rustdesk.py with
+desktop session, for a host with no Dart. Applied by build_core_rustdesk.py with
 `patch -p1` at the root of the source tree.
 
 Cargo.toml: the `native` feature, which turns `flutter` on. The client,

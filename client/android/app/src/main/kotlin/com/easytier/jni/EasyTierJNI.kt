@@ -1,7 +1,7 @@
 package com.easytier.jni
 
 /**
- * EasyTier's JNI binding, `libeasytier_android_jni.so` built by `packaging/mobile_easytier.py`.
+ * EasyTier's JNI binding, `libeasytier_android_jni.so` built by `packaging/build/build_core_easytier.py`.
  *
  * The package and the names are the ones the library's exported symbols spell, so they are
  * upstream's, not this app's.

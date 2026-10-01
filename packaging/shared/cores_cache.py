@@ -1,46 +1,73 @@
 """The cache of the cores the phone apps carry, built once per pinned commit.
 
-Each core lands in ``~/.cache/neutrino/cores/<core>-<commit>-<abi>/``: the
-core's name, the upstream commit its source archive names, and the Android
-ABI the files are for. The same name is the key the workflows give
-actions/cache, so a machine and a runner hold the same thing under the same
-name, and a new pin is a new directory.
+Each core lands in
+``~/.cache/neutrino/cores/<core>-<commit>-<abi>-<recipe>/``: the core's name,
+the upstream commit its source archive names, the Android ABI the files are
+for, and eight hex digits of the SHA-256 over the script that builds it and
+its patch. The same names make the key the workflows give actions/cache, so
+a machine and a runner hold the same thing under the same name, and a new
+pin or a changed recipe is a new directory.
 
 Not pure: reads and writes the cache directory.
 """
 
+import hashlib
 import shutil
 from pathlib import Path
 
 CORES_CACHE_DIR = Path.home() / ".cache" / "neutrino" / "cores"
 
 
-def cache_key(core: str, commit: str, abi: str) -> str:
+# How many hex digits of the recipe's digest a cache name carries.
+RECIPE_DIGITS = 8
+
+
+def recipe(*paths: Path) -> str:
+    """The short digest of what builds a core: its script and its patch.
+
+    Args:
+        *paths: The files, in a fixed order.
+
+    Returns:
+        :data:`RECIPE_DIGITS` hex digits of the SHA-256 over their bytes.
+
+    Raises:
+        FileNotFoundError: When one of them is missing.
+    """
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:RECIPE_DIGITS]
+
+
+def cache_key(core: str, commit: str, abi: str, recipe_digest: str) -> str:
     """The name one core's files are cached under.
 
     Args:
-        core: The core, ``netbird`` or ``easytier``.
+        core: The core, ``netbird``, ``easytier`` or ``rustdesk``.
         commit: The upstream commit the pinned source names.
         abi: The Android ABI the files are for.
+        recipe_digest: What :func:`recipe` returned for the core's script.
 
     Returns:
-        ``<core>-<commit>-<abi>``.
+        ``<core>-<commit>-<abi>-<recipe>``.
     """
-    return f"{core}-{commit}-{abi}"
+    return f"{core}-{commit}-{abi}-{recipe_digest}"
 
 
-def cache_dir(core: str, commit: str, abi: str) -> Path:
+def cache_dir(core: str, commit: str, abi: str, recipe_digest: str) -> Path:
     """The directory one core's files are cached in.
 
     Args:
-        core: The core, ``netbird`` or ``easytier``.
+        core: The core, ``netbird``, ``easytier`` or ``rustdesk``.
         commit: The upstream commit the pinned source names.
         abi: The Android ABI the files are for.
+        recipe_digest: What :func:`recipe` returned for the core's script.
 
     Returns:
         The directory, which exists only once the core is cached.
     """
-    return CORES_CACHE_DIR / cache_key(core, commit, abi)
+    return CORES_CACHE_DIR / cache_key(core, commit, abi, recipe_digest)
 
 
 def is_cached(directory: Path) -> bool:
