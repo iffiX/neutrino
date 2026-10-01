@@ -208,7 +208,7 @@ def _clean_session(entry, device_id: str) -> "dict | None":
             names its own.
 
     Returns:
-        ``{session_id, device_id, owner, is_owned, is_persistent,
+        ``{session_id, device_id, owner, owner_name, is_owned, is_persistent,
         is_shared, attached_count, title, started_at}``; None for an entry
         without a session id or a machine.
     """
@@ -225,6 +225,8 @@ def _clean_session(entry, device_id: str) -> "dict | None":
         "session_id": str(entry["session_id"]),
         "device_id": device_id,
         "owner": str(entry.get("owner", "") or ""),
+        "owner_name": str(entry.get("owner_name", "") or "")
+        or str(entry.get("owner", "") or ""),
         "is_owned": entry.get("is_owned") is True,
         "is_persistent": entry.get("is_persistent") is True,
         "is_shared": entry.get("is_shared") is True,

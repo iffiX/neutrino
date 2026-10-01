@@ -1666,6 +1666,7 @@ KEPT = {
     "started_at": 1759300000,
     "title": "vim notes.md",
     "owner": "client:c1",
+    "owner_name": "box",
     "is_owned": True,
     "is_attached": True,
     "attached_count": 2,
@@ -1677,6 +1678,7 @@ KEPT_ROW = {
     "session_id": SESSION_ID,
     "device_id": "d1",
     "owner": "client:c1",
+    "owner_name": "box",
     "is_owned": True,
     "is_persistent": True,
     "is_shared": True,
@@ -1825,6 +1827,7 @@ def test_a_session_from_an_older_hub_counts_its_attachment(bound, monkeypatch):
 
     row = session.terminal_sessions()[0]
     assert (row["attached_count"], row["owner"], row["is_owned"]) == (1, "", False)
+    assert row["owner_name"] == ""
     assert row["is_shared"] is False
 
 
@@ -2026,3 +2029,17 @@ def test_a_replaced_or_disabled_hub_does_not_refresh(bound, monkeypatch, state):
     assert session.refresh() is False
     assert session.is_refreshing() is False
     assert len(made.sent) == sent
+
+
+def test_a_session_without_an_owner_name_is_named_by_its_stamp(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    nameless = dict(KEPT)
+    del nameless["owner_name"]
+    terminals = [
+        {"device_id": "d1", "name": "lepton", "is_online": True, "sessions": [nameless]}
+    ]
+
+    take(session, made, dict(STATE, terminals=terminals))
+
+    assert session.terminal_sessions()[0]["owner_name"] == "client:c1"

@@ -1014,7 +1014,9 @@ def test_a_tab_shows_its_badges():
 def test_the_two_switches_act_only_for_the_owner_of_an_open_tab():
     status = body_of("statusLine")
     assert "const isEnabled = isOpen && flags.is_owned;" in status
-    assert "t('ui.reason.not_owned', { owner: flags.owner })" in status
+    assert "t('ui.reason.not_owned', { owner: flags.owner_name || flags.owner })" in (
+        status
+    )
     assert (
         "t('ui.terminal_persistent')" in status and "t('ui.terminal_shared')" in status
     )

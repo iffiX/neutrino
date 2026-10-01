@@ -1061,7 +1061,8 @@ function sessionRow(tab) {
 function tabFlags(tab) {
   const row = sessionRow(tab);
   if (row) return row;
-  return Object.assign({ is_owned: true, owner: '', attached_count: 1 }, tab.flags);
+  return Object.assign(
+    { is_owned: true, owner: '', owner_name: '', attached_count: 1 }, tab.flags);
 }
 
 function drawTerminals(state) {
@@ -1217,7 +1218,7 @@ function statusLine(tab) {
   const switches = document.createElement('div');
   switches.className = 'term_switches';
   if (!flags.is_owned) {
-    switches.appendChild(reasonLine(t('ui.reason.not_owned', { owner: flags.owner })));
+    switches.appendChild(reasonLine(t('ui.reason.not_owned', { owner: flags.owner_name || flags.owner })));
   }
   switches.appendChild(flagSwitch(t('ui.terminal_persistent'), !!flags.is_persistent,
     isEnabled, () => askPersist(tab, !flags.is_persistent, !!flags.is_shared)));
