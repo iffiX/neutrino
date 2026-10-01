@@ -318,3 +318,6 @@ const val RDP_STATE_CLOSED = 3
 
 /** What the viewer's hidden text field holds between keys, so Backspace has something to delete. */
 const val RDP_TYPING_SENTINEL = " "
+
+/** How long the hidden text field grows before it is emptied, while no word is being composed. */
+const val RDP_TYPING_KEPT_CHARS = 64

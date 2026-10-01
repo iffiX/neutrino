@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.iffix.neutrino.RDP_PINCH_SLOP_PX
+import io.github.iffix.neutrino.RDP_TYPING_KEPT_CHARS
 import io.github.iffix.neutrino.RDP_TYPING_SENTINEL
 import io.github.iffix.neutrino.design.AppIcon
 import io.github.iffix.neutrino.design.ButtonTier
@@ -277,14 +278,16 @@ fun RemoteDesktopViewer(target: RemoteDesktopTarget, core: RemoteDesktopCore, on
             BasicTextField(
                 value = typing,
                 onValueChange = { next ->
-                    when {
-                        next.text.length < RDP_TYPING_SENTINEL.length -> pressKey(RemoteDesktopKey.BACKSPACE)
-
-                        next.text.startsWith(RDP_TYPING_SENTINEL) -> next.text.removePrefix(RDP_TYPING_SENTINEL)
-                            .takeIf { it.isNotEmpty() }
-                            ?.let(onTyped)
+                    val edit = RemoteDesktopTyping.between(typing.text, next.text)
+                    repeat(edit.backspaces) { pressKey(RemoteDesktopKey.BACKSPACE) }
+                    if (edit.text.isNotEmpty()) onTyped(edit.text)
+                    val isSettled = next.composition == null &&
+                        (next.text.isEmpty() || next.text.length > RDP_TYPING_KEPT_CHARS)
+                    typing = if (isSettled) {
+                        TextFieldValue(RDP_TYPING_SENTINEL, TextRange(RDP_TYPING_SENTINEL.length))
+                    } else {
+                        next
                     }
-                    typing = TextFieldValue(RDP_TYPING_SENTINEL, TextRange(RDP_TYPING_SENTINEL.length))
                 },
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
                 modifier = Modifier.size(1.dp).alpha(0f).focusRequester(focus),
