@@ -4,23 +4,28 @@ title: Settings
 
 # Settings
 
-The **Settings** page runs the panel itself: whether it speaks HTTPS, its password, language and theme, the configuration backup, and updates of the hub. The commands that reset the box from a terminal are at the end of this page.
+The **Settings** page runs the panel itself: its HTTPS, its password, language and theme, the configuration backup, and updates of the hub. The commands that reset the box from a terminal are at the end of this page.
 
 ## HTTPS
 
-The panel speaks HTTP or HTTPS on its one port. Under HTTPS, the panel's certificate is signed by a certificate authority this hub makes for itself. A browser that has installed that authority opens the panel with no warning.
+The panel listens on two ports: HTTP on the panel port, `8080` unless you change it, and HTTPS on the HTTPS port, `443` unless you change it. Both ports serve the panel whether HTTPS is on or off, and both are set under **Panel ports** on [Network](./network.md#panel-ports). The HTTPS port serves a certificate signed by a certificate authority this hub makes for itself, and a browser that has installed that authority opens it with no warning.
 
-`nhub setup` has a switch for HTTPS and makes the authority either way. The **HTTPS** section switches the scheme later, and it offers the authority to install whether HTTPS is on or off.
+**Enable HTTPS** makes the HTTP port send every browser to the HTTPS address, and marks the session cookie `Secure`, from the next request on. The order on each device is: install the authority, restart the browser, then enable HTTPS.
 
 ### Install the authority
 
-Install the authority on each device before you turn HTTPS on, and the first HTTPS page loads with no warning. Under **HTTPS**, select **Install certificate**. The browser downloads `neutrino-<hub>-ca.crt`, where `<hub>` is this hub's name, and the steps for the device in front of you open beneath the button.
+Before you start, open the panel at its `http://` address on the device you are setting up. Then install the authority:
+
+1. Under **HTTPS**, select **Install certificate**. The browser downloads `neutrino-<hub>-ca.crt`, where `<hub>` is this hub's name.
+1. In the row of systems, select yours. The one this page is open on is already selected and marked **this device**.
+1. Follow the steps under the row.
+1. Close the browser and open it again.
 
 | System          | Steps after the download                                                                                                                                    |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows         | Open the file, choose **Install Certificate** and **Local Machine**, place it in **Trusted Root Certification Authorities**, then restart the browser.      |
+| Windows         | Open the file, choose **Install Certificate** and **Local Machine**, and place it in **Trusted Root Certification Authorities**.                            |
 | macOS           | Open the file to add it to the login keychain. In Keychain Access, open the Neutrino authority and set **When using this certificate** to **Always Trust**. |
-| Linux, Chrome   | Open `chrome://certificate-manager`, import the file under **Custom** as trusted for websites, then restart Chrome.                                         |
+| Linux, Chrome   | Open `chrome://certificate-manager`, then **Custom** > **Trusted certificates** > **Import**, and pick the file.                                            |
 | Linux, Firefox  | Open **Settings** > **Privacy & Security** > **View Certificates**, import the file on **Authorities**, and tick **Trust this CA to identify websites**.    |
 | Android         | Open **Settings** > **Security** > **Encryption & credentials** > **Install a certificate** > **CA certificate**, then pick the file.                       |
 | iPhone and iPad | Download the file in Safari, install the profile under **Settings**, then turn on full trust in **General** > **About** > **Certificate Trust Settings**.   |
@@ -29,11 +34,18 @@ On macOS, you confirm the trust setting with your password when you close the ce
 
 ![The Keychain Access trust dialog set to Always Trust](/guide/os/os_mac_keychain_trust.webp)
 
+A Chrome that was told to proceed past a certificate warning keeps showing **Not secure** for the panel until it restarts, even after the import.
+
 ### Turn HTTPS on
 
-- Under **HTTPS**, select **Turn HTTPS on**.
+Open the panel's `http://` address after the browser restarts. The **HTTPS** section fetches a test address from the HTTPS port, and the line beside its buttons reports the result:
 
-The panel restarts on HTTPS at the same host and port, and the page moves to the `https://` address within eight seconds. **Turn HTTPS off** moves it back to HTTP the same way.
+| Line                                                   | What it means                                                    |
+| ------------------------------------------------------ | ---------------------------------------------------------------- |
+| **This browser trusts the certificate.**               | **Enable HTTPS** is available                                    |
+| **Install the certificate, then restart the browser.** | the browser rejected the certificate; **Enable HTTPS** is greyed |
+
+Select **Enable HTTPS**. The page moves to the `https://` address, and from then on the HTTP port sends every browser there. **Disable HTTPS** moves the page back to the `http://` address, where you sign in again: the browser sends the `Secure` session cookie over HTTPS only.
 
 ![The HTTPS section with HTTPS on and its status lines](/guide/en/settings_https_on.webp)
 
@@ -41,21 +53,28 @@ The certificate names the box's private and overlay addresses, `127.0.0.1`, `loc
 
 ### Read the status lines
 
-| Line                       | What it shows                                                    |
-| -------------------------- | ---------------------------------------------------------------- |
-| **Scheme**                 | HTTP or HTTPS                                                    |
-| **Authority SHA-256**      | the authority's fingerprint, to compare with what a device shows |
-| **Authority created**      | when the authority was made                                      |
-| **Certificate names**      | every address and name the panel's certificate covers            |
-| **Certificate issued**     | when the current certificate was signed                          |
-| **Certificate expires**    | when it runs out                                                 |
-| **Last automatic renewal** | the last time the hub signed a new certificate by itself         |
+| Line                       | What it shows                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------- |
+| **Addresses**              | the `http://` and `https://` addresses of this host, the one in use marked **current** |
+| **Authority SHA-256**      | the authority's fingerprint, to compare with what a device shows                       |
+| **Authority created**      | when the authority was made                                                            |
+| **Certificate names**      | every address and name the panel's certificate covers                                  |
+| **Certificate issued**     | when the current certificate was signed                                                |
+| **Certificate expires**    | when it runs out                                                                       |
+| **Last automatic renewal** | the last time the hub signed a new certificate by itself                               |
 
 The hub signs a new certificate when the box's addresses change and 30 days before the old one expires. A browser that trusts the authority accepts each new certificate.
 
 ### Regenerate the authority
 
-**Regenerate certificate** replaces the authority and the certificate after a confirmation. Every browser that installed the old authority warns again until it installs the new one. The authority is part of `config/`, so a restored backup keeps the one browsers already trust.
+**Regenerate certificate** replaces the authority and the certificate. Every browser that installed the old authority warns again until it installs the new one. On an `https://` page the button is greyed, with **Turn HTTPS off first to regenerate the certificate.** beside it.
+
+1. If HTTPS is on, select **Disable HTTPS**. The page moves to the `http://` address; sign in again there.
+1. Select **Regenerate certificate**, then confirm. The browser downloads the new authority at once.
+1. Install the new authority as in [Install the authority](#install-the-authority), and restart the browser.
+1. Select **Enable HTTPS**.
+
+The authority is part of `config/`, so a restored backup keeps the one browsers already trust.
 
 ## Hub name, password, language and theme
 

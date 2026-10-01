@@ -56,18 +56,21 @@ def pytest_addoption(parser) -> None:
 
 
 def panel_default_url() -> str:
-    """The panel on loopback, by the scheme and port the box's settings say.
+    """The panel on loopback, on the port the box's settings send a browser to.
 
     Returns:
-        ``http://127.0.0.1:8080`` when the settings cannot be read.
+        ``https://127.0.0.1:<https_listen_port>`` while HTTPS is on, else
+        ``http://127.0.0.1:<listen_port>``; ``http://127.0.0.1:8080`` when the
+        settings cannot be read.
     """
     try:
         with open(PANEL_SETTINGS_PATH, encoding="utf-8") as stream:
             settings = json.load(stream)
     except (OSError, ValueError):
         settings = {}
-    scheme = "https" if settings.get("is_https_enabled") else "http"
-    return f"{scheme}://127.0.0.1:{settings.get('listen_port', 8080)}"
+    if settings.get("is_https_enabled"):
+        return f"https://127.0.0.1:{settings.get('https_listen_port', 443)}"
+    return f"http://127.0.0.1:{settings.get('listen_port', 8080)}"
 
 
 @pytest.fixture(scope="session")

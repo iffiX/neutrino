@@ -1205,7 +1205,12 @@ export interface RestoreResult {
 /** The panel's own settings. */
 /** The panel's scheme and the certificates behind it. */
 export interface PanelHttpsView {
+  /** Whether the HTTP port sends every browser to the HTTPS port. */
   is_https_enabled: boolean;
+  /** The port the panel answers HTTP on. */
+  listen_port: number;
+  /** The port the panel answers HTTPS on, whatever the scheme setting. */
+  https_listen_port: number;
   has_authority: boolean;
   /** SHA-256 of the authority's DER, as hex; empty without one. */
   authority_fingerprint: string;
@@ -1220,8 +1225,17 @@ export interface PanelHttpsView {
   renewed_at: string | null;
 }
 
+/** The certificates after the authority was made again. */
+export interface PanelHttpsResetView extends PanelHttpsView {
+  /** The new authority's DER in base64, downloaded at once. */
+  authority_der: string;
+}
+
 export interface PanelSettings {
+  /** The port the panel answers HTTP on. */
   listen_port: number;
+  /** The port the panel answers HTTPS on. Left out of a write, it stays. */
+  https_listen_port: number;
   /** The language the panel is drawn in. Left out of a write, it stays. */
   language: string;
   /** The palette the panel is drawn in. Left out of a write, it stays. */

@@ -43,28 +43,36 @@ phase() {
 ran() { [ "$1" -eq 0 ] || FAILURES=$((FAILURES + 1)); }
 
 # Turn the panel's HTTPS on or off through its own Settings route, and wait
-# for it to answer by the new scheme. The first argument is the scheme wanted.
+# for the HTTP port to redirect or serve. The first argument is the scheme
+# wanted; both ports come from the box's settings.
 PANEL_AUTHORITY=/etc/neutrino/hub/web/panel_tls/authority.pem
 panel_scheme() {
-    local wanted="$1" current verb jar
+    local wanted="$1" current verb jar base status ports http_port https_port
     current=$(python3 -c "import json; s=json.load(open('/etc/neutrino/hub/web/settings.json')); print('https' if s.get('is_https_enabled') else 'http')")
     [ "$current" = "$wanted" ] && return 0
+    ports=$(python3 -c "import json; s=json.load(open('/etc/neutrino/hub/web/settings.json')); print(s.get('listen_port', 8080), s.get('https_listen_port', 443))")
+    http_port=${ports% *}
+    https_port=${ports#* }
+    base="http://127.0.0.1:$http_port"
+    [ "$current" = https ] && base="https://127.0.0.1:$https_port"
     verb=enable
     [ "$wanted" = http ] && verb=disable
     jar=$(mktemp)
     curl -s -f --cacert "$PANEL_AUTHORITY" -c "$jar" -X POST \
-        "$current://127.0.0.1:8080/api/hub/auth/login" \
+        "$base/api/hub/auth/login" \
         -H 'content-type: application/json' \
         -d "{\"password\":\"$PASSWORD\"}" -o /dev/null || return 1
     curl -s -f --cacert "$PANEL_AUTHORITY" -b "$jar" -X POST \
-        "$current://127.0.0.1:8080/api/hub/setting/https/$verb" -o /dev/null || return 1
+        "$base/api/hub/setting/https/$verb" -o /dev/null || return 1
     rm -f "$jar"
     for _ in $(seq 1 60); do
+        status=$(curl -s -o /dev/null -w '%{http_code}' \
+            "http://127.0.0.1:$http_port/api/hub/display")
+        [ "$wanted" = https ] && [ "$status" = 301 ] && return 0
+        [ "$wanted" = http ] && [ "$status" = 200 ] && return 0
         sleep 1
-        curl -s -f --cacert "$PANEL_AUTHORITY" -o /dev/null \
-            "$wanted://127.0.0.1:8080/api/hub/display" && return 0
     done
-    echo "  the panel never answered over $wanted"
+    echo "  the HTTP port never answered as $wanted wants"
     return 1
 }
 

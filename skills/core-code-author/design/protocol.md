@@ -6,35 +6,44 @@ and one set of rules cover both, and this page is their only record. An
 endpoint, a frame, a kind or a code absent from this page does not exist.
 Adding one is an edit here in the same change.
 
-## Two ports, two audiences
+## Three ports, two audiences
 
-The hub listens on two ports because its two audiences verify it differently.
-A browser trusts a password on a local network; an agent or a client trusts a
-pinned certificate on any network.
+The hub listens for two audiences, which verify it differently. A browser
+trusts a password on a local network, and reaches the panel on two ports, one
+per scheme; an agent or a client trusts a pinned certificate on any network.
 
 | Port | Transport | Serves | Authenticated by |
 | --- | --- | --- | --- |
-| `listen_port`, default 8080 | HTTP, or TLS with the hub's own certificate once `is_https_enabled` is on | the panel: its page, every `/api/hub` and `/api/agent` route, every `/ws` socket | the session cookie |
+| `listen_port`, default 8080 | HTTP | the panel: its page, every `/api/hub` and `/api/agent` route, every `/ws` socket; while `is_https_enabled` is on, a 301 to the HTTPS port for every path but the authority's download | the session cookie |
+| `https_listen_port`, default 443 | TLS with the hub's own certificate, whatever `is_https_enabled` says | the same panel | the session cookie |
 | `agent_listen_port`, default 8443 | TLS, pinned by fingerprint | `/api/channel` and nothing else | the ticket at `join`, then the token in `hello` |
 
-Both are uvicorn servers in the one `nhub run --only-web` process, with one
-shared runtime. That runtime is where a ticket generated on the panel port is
-spent on the agent port. The panel app does not include the channel routes,
-so the channel has no plaintext form.
+All three are uvicorn servers in the one `nhub run --only-web` process, with
+one shared runtime. That runtime is where a ticket generated on a panel port
+is spent on the agent port. The panel app does not include the channel
+routes, so the channel has no plaintext form. A panel port change through
+`POST /api/hub/setting/set` restarts the process; a port that is the other
+panel port or the agent port is refused 400 `port_already_in_use {value}`.
 
-### The panel port
+### The panel ports
 
-The session cookie is named after the port, `neutrino_session_<port>`, so two
-hubs on one host keep separate sessions. The login page reads
-`/api/hub/setup`, `/api/hub/auth` and `/api/hub/display` before a session
-exists, so those prefixes take no session dependency, and neither does
-`GET /api/hub/setting/https/authority`, which a browser downloads before it
-trusts the panel. Every other route on this port requires the session, and
-every state-changing route checks the `Origin` header against the panel's
-own.
+The session cookie is named after the HTTP port, `neutrino_session_<port>`,
+so two hubs on one host keep separate sessions, and one session holds on both
+ports. The login page reads `/api/hub/setup`, `/api/hub/auth` and
+`/api/hub/display` before a session exists, so those prefixes take no session
+dependency, and neither do `GET /api/hub/setting/https/authority`, which a
+browser downloads before it trusts the panel, and
+`GET /api/hub/setting/https/probe`, which a page on HTTP fetches from the
+HTTPS port to learn whether this browser trusts the certificate. Every other
+route requires the session, and every state-changing route checks the
+`Origin` header against the panel's own.
 
-`is_https_enabled` in `config/web/settings.json` decides the scheme, and it
-is false until somebody turns it on. The certificate is signed by the hub's
+`is_https_enabled` in `config/web/settings.json` is false until somebody
+turns it on, and decides two things: whether the HTTP port answers 301 to
+`https://<same host>[:<https_listen_port> when not 443]<path>`, and whether
+the session cookie is `Secure`. The running app reads it at every request,
+so turning it on or off restarts nothing; a plain websocket is closed while
+it is on. The certificate is signed by the hub's
 own certificate authority: EC P-256, valid for ten years, `CA:TRUE` with a
 path length of 0, and name constraints that permit `10.0.0.0/8`,
 `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `127.0.0.0/8` and the
@@ -54,8 +63,7 @@ when it ends in `netbird.cloud`. A public address is never in it. It and its
 key are state, `/var/lib/neutrino/panel_tls_certificate.pem` and
 `panel_tls_key.pem`, mode 0600. The address sampler issues it again when that
 name set changes or it expires within 30 days, and loads it into the live TLS
-context, so the next connection gets it without a restart. The session cookie
-is `Secure` while the panel speaks HTTPS.
+context, so the next connection gets it without a restart.
 
 ### The agent port
 
@@ -132,7 +140,7 @@ segment of a write, which is a verb.
 | A read is a GET on a path of nouns and returns a view. A write is a POST whose last segment is one verb, with every argument in the body, and it returns what the matching read returns. The methods are GET and POST. | The page replaces its state with the response and merges nothing, so it cannot hold a version of the box that the box does not. |
 | A verb comes from the verb table, an opposite is added with its pair, and paths of paired verbs have the same depth: `channel/join` and `channel/leave`, `module/install` and `module/uninstall`, `module/start` and `module/stop`. A new verb enters the table before it enters a path. | The table is closed, so the route test checks every path against it. |
 | A word with a fixed meaning inside a domain (`scrub`, `import`, `backup`) can be a noun in the middle of a path: `pool/scrub/stop`. | The domain's own word is the one a reader searches for. |
-| `/api/hub/setup`, `/api/hub/auth`, `/api/hub/display` and `GET /api/hub/setting/https/authority` take no session dependency. `GET /api/hub/display` returns `{language, theme}` in one response, and both change through `POST /api/hub/setting/set`. | The login page reads them before there is a session, and a browser installs the authority before it trusts the panel. |
+| `/api/hub/setup`, `/api/hub/auth`, `/api/hub/display`, `GET /api/hub/setting/https/authority` and `GET /api/hub/setting/https/probe` take no session dependency. `GET /api/hub/display` returns `{language, theme}` in one response, and both change through `POST /api/hub/setting/set`. | The login page reads them before there is a session, a browser installs the authority before it trusts the panel, and a page on HTTP probes the HTTPS port before it offers HTTPS. |
 | The router file is named after its page; the library package under `modules/` keeps its own name, so `modules/router` serves `/api/hub/network` and `modules/xray` serves `/api/hub/proxy`. | A page is what a person sees; a package is what the code does. |
 
 ### The verbs
@@ -273,7 +281,7 @@ TLS port.
 | `/api/hub/client` | Enrolled client sessions and the links that enrol them |
 | `/api/hub/service` | The published service list and manual declarations |
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
-| `/api/hub/setting` | The panel's own: its port, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
+| `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
 | `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, each setting what it is to have and all but `zfs` and `vscode` importing what the machine already has |
 | `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
@@ -296,9 +304,9 @@ the page's whole view.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/setup/context` | | the box as the wizard finds it |
-| `GET /api/hub/setup/state` | | each step and where it is; once done, `panel_url`, and `authority` when the answers turned HTTPS on: `{url, file_name, fingerprint, der}`, the DER in base64 so the last page downloads it while the panel starts |
+| `GET /api/hub/setup/state` | | each step and where it is; once done, `panel_url`, the `https://` address when the answers turned HTTPS on, with no port when it is 443, and `authority` then: `{url, file_name, fingerprint, der}`, `url` on the HTTP port and the DER in base64 so the last page downloads it while the panel starts |
 | `POST /api/hub/setup/link/create` | | a blank enrolment link for the box's own agent |
-| `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `is_https_enabled` among them | writes them and runs the steps |
+| `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `listen_port`, `https_listen_port` and `is_https_enabled` among them | writes them and runs the steps |
 
 #### `/api/hub/auth`
 
@@ -478,12 +486,13 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/setting` | | `SettingsView` |
-| `POST /api/hub/setting/set` | the settings, `hub_name`, `language` and `theme` among them | `SettingsView` |
-| `GET /api/hub/setting/https` | | `PanelHttpsView`: `is_https_enabled`, `has_authority`, the authority's `authority_fingerprint` and `authority_created_at`, `authority_file_name`, the served certificate's `leaf_names`, `leaf_issued_at` and `leaf_expires_at`, and `renewed_at`, the last time it was issued again since the panel started |
-| `GET /api/hub/setting/https/authority` | | no session: the authority's DER as `neutrino-<hub>-ca.crt`, `application/x-x509-ca-cert`; 404 `https_authority_missing` before there is one |
-| `POST /api/hub/setting/https/enable` | | makes a missing authority, issues the served certificate, writes `is_https_enabled: true` and restarts the panel after answering; `PanelHttpsView` |
-| `POST /api/hub/setting/https/disable` | | writes `is_https_enabled: false` and restarts the panel after answering; the certificates stay; `PanelHttpsView` |
-| `POST /api/hub/setting/https/authority/reset` | | a new authority and a certificate signed by it, served from the next connection; every browser installs the new authority; `PanelHttpsView` |
+| `POST /api/hub/setting/set` | the settings, `listen_port`, `https_listen_port`, `hub_name`, `language` and `theme` among them; an absent `https_listen_port` keeps it | `SettingsView`; a port change restarts the panel after answering; 400 `port_out_of_range {minimum, maximum, value}`, `port_already_in_use {value}` |
+| `GET /api/hub/setting/https` | | `PanelHttpsView`: `is_https_enabled`, `listen_port`, `https_listen_port`, `has_authority`, the authority's `authority_fingerprint` and `authority_created_at`, `authority_file_name`, the served certificate's `leaf_names`, `leaf_issued_at` and `leaf_expires_at`, and `renewed_at`, the last time it was issued again since the panel started |
+| `GET /api/hub/setting/https/authority` | | no session, and served by the HTTP port while HTTPS is on: the authority's DER as `neutrino-<hub>-ca.crt`, `application/x-x509-ca-cert`; 404 `https_authority_missing` before there is one |
+| `GET /api/hub/setting/https/probe` | | no session: 204 and an empty body; a page on HTTP fetches it from the HTTPS port, and a fetch that completes means the browser trusts the certificate |
+| `POST /api/hub/setting/https/enable` | | makes a missing authority, issues the served certificate and writes `is_https_enabled: true`; the HTTP port redirects from the next request, nothing restarts; `PanelHttpsView` |
+| `POST /api/hub/setting/https/disable` | | writes `is_https_enabled: false`; the HTTP port serves the panel from the next request, nothing restarts, the certificates stay; `PanelHttpsView` |
+| `POST /api/hub/setting/https/authority/reset` | | a new authority and a certificate signed by it, served from the next connection; every browser installs the new authority; `PanelHttpsResetView`, `PanelHttpsView` with `authority_der`, the new authority's DER in base64; 409 `https_reset_over_https` when the request came over HTTPS |
 | `POST /api/hub/setting/password/set` | the old and the new password | |
 | `POST /api/hub/setting/backup` | | an archive of `config/` |
 | `POST /api/hub/setting/restore` | the archive | |

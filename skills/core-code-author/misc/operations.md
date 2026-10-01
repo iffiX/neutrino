@@ -150,11 +150,12 @@ which of the three it did.
 
 ## Checking the panel's HTTPS
 
-With `is_https_enabled` on, the panel's certificate chains to the hub's own
-authority and names the address it was reached at:
+The HTTPS port, `https_listen_port` (443 by default), serves the panel's
+certificate whether `is_https_enabled` is on or off. The certificate chains to
+the hub's own authority and names the address it was reached at:
 
 ```bash
-sudo openssl s_client -connect 127.0.0.1:8080 \
+sudo openssl s_client -connect 127.0.0.1:443 \
     -CAfile /etc/neutrino/hub/web/panel_tls/authority.pem </dev/null 2>/dev/null \
     | grep -E 'subject=|Verify return code'
 sudo openssl x509 -in /var/lib/neutrino/panel_tls_certificate.pem -noout -ext subjectAltName -dates
@@ -162,9 +163,13 @@ sudo openssl x509 -in /var/lib/neutrino/panel_tls_certificate.pem -noout -ext su
 
 `Verify return code: 0 (ok)` is the chain holding. A browser that still warns
 has not installed the authority, or was given a new one by
-**Regenerate certificate**; Settings downloads the current one. A panel that
-answers plain HTTP with HTTPS on has no certificate to serve, and
-`journalctl -u neutrino_hub_web` names why, usually `vault_locked`.
+**Regenerate certificate**, or was told to proceed past a warning and has not
+restarted since; Settings downloads the current one, and with HTTPS on the HTTP
+port still serves it at `/api/hub/setting/https/authority`. While HTTPS is on,
+`curl -sI http://127.0.0.1:8080/` answers `301` with the HTTPS address in
+`location`. An HTTPS port that refuses connections has no certificate to
+serve, or its port is the HTTP port, and `journalctl -u neutrino_hub_web`
+names why, usually `vault_locked` or `port_already_in_use`.
 
 ## Updating the hub from the panel
 
@@ -178,11 +183,12 @@ package into `/var/lib/neutrino/hub_update/`, checks it against the release's
 the transient unit `neutrino_hub_update` with `update.sh` from that directory.
 The unit runs the package manager, then holds a gate of up to 180 seconds:
 `neutrino_hub_web` and whichever of `neutrino_hub_router` and
-`neutrino_hub_dnsmasq` were running must be active, `GET /api/hub/display` on
-the panel's port must answer 200, by the scheme `is_https_enabled` names at
-that moment or else by the other one, HTTPS trusting
-`/etc/neutrino/hub/web/panel_tls/authority.pem`, and `nhub --version` must
-print the target.
+`neutrino_hub_dnsmasq` were running must be active, `GET /api/hub/display`
+must answer, on `https://127.0.0.1:<https_listen_port>` while
+`is_https_enabled` is on at that moment and on
+`http://127.0.0.1:<listen_port>` otherwise, or else on the other one, HTTPS
+trusting `/etc/neutrino/hub/web/panel_tls/authority.pem`, and
+`nhub --version` must print the target.
 A gate that fails installs the previous package and holds the gate again.
 
 When `/proc/meminfo` gives less than 300 MB of `MemAvailable` as the unit

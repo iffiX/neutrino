@@ -6,7 +6,12 @@ so a rename here is a rename there.
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from neutrino_hub.web.constants import WEB_DEFAULT_LANGUAGE, WEB_DEFAULT_THEME
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
+    WEB_DEFAULT_LANGUAGE,
+    WEB_DEFAULT_LISTEN_PORT,
+    WEB_DEFAULT_THEME,
+)
 
 
 class LoginRequest(BaseModel):
@@ -1306,12 +1311,14 @@ class PasswordChangeResult(BaseModel):
 class PanelSettings(BaseModel):
     """The panel's own settings.
 
-    Three fields, and they are the ones nowhere else can hold: every other
-    service settles its port in its own tab, and the language and the theme
-    belong to the whole panel rather than to any one page.
+    The fields nowhere else can hold: every other service settles its port in
+    its own tab, and the language and the theme belong to the whole panel
+    rather than to any one page.
 
     Attributes:
-        listen_port: The TCP port the panel answers on.
+        listen_port: The TCP port the panel answers HTTP on.
+        https_listen_port: The TCP port the panel answers HTTPS on. A write
+            that leaves it out leaves it as it is.
         language: The language the panel is drawn in. A write that leaves it
             out leaves it as it is.
         theme: The palette the panel is drawn in. A write that leaves it out
@@ -1321,17 +1328,20 @@ class PanelSettings(BaseModel):
     """
 
     listen_port: int
+    https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
     theme: str = WEB_DEFAULT_THEME
     hub_name: str = ""
 
 
 class PanelHttpsView(BaseModel):
-    """The panel's scheme and the certificates behind it.
+    """The panel's scheme, its two ports and the certificates behind it.
 
     Attributes:
-        is_https_enabled: Whether ``web/settings.json`` says the panel speaks
-            HTTPS.
+        is_https_enabled: Whether the HTTP port sends every browser to the
+            HTTPS port, as ``web/settings.json`` says.
+        listen_port: The TCP port the panel answers HTTP on.
+        https_listen_port: The TCP port the panel answers HTTPS on.
         has_authority: Whether the hub has made its certificate authority.
         authority_fingerprint: The SHA-256 of the authority's DER encoding,
             64 lowercase hex characters; empty without an authority.
@@ -1345,6 +1355,8 @@ class PanelHttpsView(BaseModel):
     """
 
     is_https_enabled: bool
+    listen_port: int = WEB_DEFAULT_LISTEN_PORT
+    https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
     has_authority: bool
     authority_fingerprint: str = ""
     authority_created_at: str | None = None
@@ -1353,6 +1365,17 @@ class PanelHttpsView(BaseModel):
     leaf_issued_at: str | None = None
     leaf_expires_at: str | None = None
     renewed_at: str | None = None
+
+
+class PanelHttpsResetView(PanelHttpsView):
+    """The certificates after the authority was made again.
+
+    Attributes:
+        authority_der: The new authority's DER encoding in base64, for the
+            page to download at once.
+    """
+
+    authority_der: str
 
 
 class PanelDisplay(BaseModel):

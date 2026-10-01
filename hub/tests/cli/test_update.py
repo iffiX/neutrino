@@ -44,14 +44,14 @@ class Installer:
     def is_rollback_present(self, current):
         return False
 
-    def prepare(self, found, *, current, port, on_progress):
+    def prepare(self, found, *, current, port, https_port, on_progress):
         on_progress("downloading")
-        self.prepared.append((found.version, current, port))
+        self.prepared.append((found.version, current, port, https_port))
         return SimpleNamespace(from_version=current, to_version=found.version)
 
-    def plan_for_file(self, package, *, current, port, on_progress):
+    def plan_for_file(self, package, *, current, port, https_port, on_progress):
         on_progress(f"{package.name} is in place")
-        self.prepared.append((package.name, current, port))
+        self.prepared.append((package.name, current, port, https_port))
         return SimpleNamespace(from_version=current, to_version="0.3.1")
 
     def launch(self, plan):
@@ -69,6 +69,7 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr(update_module, "is_packaged", lambda: True)
     monkeypatch.setattr(update_module, "HUB_VERSION", "0.3.0")
     monkeypatch.setattr(update_module, "_configured_port", lambda: 8090)
+    monkeypatch.setattr(update_module, "_configured_https_port", lambda: 8091)
     monkeypatch.setattr(update_module, "UPDATE_WAIT_POLL_S", 0.01)
     monkeypatch.setattr(update_module, "UPDATE_WAIT_TIMEOUT_S", 1)
     monkeypatch.setattr(
@@ -194,7 +195,7 @@ def test_a_yes_stages_hands_over_and_waits_for_the_record(box, capsys):
 
     out = capsys.readouterr().out
     assert asked == ["install 0.3.1 over 0.3.0? [y/N] "]
-    assert installer.prepared == [("0.3.1", "0.3.0", 8090)]
+    assert installer.prepared == [("0.3.1", "0.3.0", 8090, 8091)]
     assert [plan.to_version for plan in installer.launched] == ["0.3.1"]
     assert "downloading" in out
     assert "handed to systemd as neutrino_hub_update" in out
@@ -254,7 +255,7 @@ def test_a_package_file_is_asked_about_by_name_and_staged(box, tmp_path, capsys)
     assert update_module.update(is_confirmed=False, package=brought) == 0
 
     assert asked == ["install neutrino-hub_0.3.1_amd64.deb over 0.3.0? [y/N] "]
-    assert installer.prepared == [("neutrino-hub_0.3.1_amd64.deb", "0.3.0", 8090)]
+    assert installer.prepared == [("neutrino-hub_0.3.1_amd64.deb", "0.3.0", 8090, 8091)]
     assert "is in place" in capsys.readouterr().out
 
 
@@ -278,7 +279,7 @@ def test_a_package_file_under_another_name_is_refused_with_its_code(
     brought = tmp_path / "hub.deb"
     brought.write_bytes(b"deb")
 
-    def refusing(package, *, current, port, on_progress):
+    def refusing(package, *, current, port, https_port, on_progress):
         raise HubUpdateError(
             "package_name_mismatch",
             name=package.name,
@@ -298,7 +299,7 @@ def test_a_staging_that_fails_is_reported_with_its_reason(box, capsys):
     installer, _, _ = box
     installer.checker.latest = lambda: Release("0.3.1")
 
-    def failing(found, *, current, port, on_progress):
+    def failing(found, *, current, port, https_port, on_progress):
         raise HubUpdateError("package_sha256_mismatch", name=found.asset_name)
 
     installer.prepare = failing

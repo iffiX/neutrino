@@ -314,11 +314,11 @@ reports the same.
 
 ## Two ports, one process
 
-The hub's panel port is HTTP, or HTTPS under the hub's own certificate
-authority, behind a session, and its agent port is pinned TLS serving
-`/api/channel` alone. Both are uvicorn servers in one
+The hub's panel answers HTTP on one port and HTTPS under the hub's own
+certificate authority on another, behind a session, and its agent port is
+pinned TLS serving `/api/channel` alone. All three are uvicorn servers in one
 process. The ports, the certificate, the fingerprint and the hub's own
-identity are in [protocol.md](protocol.md), "Two ports, two audiences".
+identity are in [protocol.md](protocol.md), "Three ports, two audiences".
 
 Exposure is the only control plane. The agent port listens on every exposed
 interface, WAN included, and on every exposed overlay; a served LAN that is
