@@ -6,6 +6,9 @@ thinks the proxy is in use is worse than either extreme, because traffic goes
 somewhere nobody asked for.
 """
 
+import json
+from pathlib import Path
+
 import pytest
 
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
@@ -729,3 +732,56 @@ def test_every_node_measured_down_keeps_them_all_in_the_selector():
     config = render_two_enabled_nodes({"node_hk1", "node_hk2"})
 
     assert config["routing"]["balancers"][0]["selector"] == ["node_hk1", "node_hk2"]
+
+
+# --- the rendering on each system ---------------------------------------------
+
+GOLDEN_DIR = Path(__file__).parent / "golden"
+
+
+def render_for_golden(*, is_transparent: bool) -> dict:
+    """Every scope switched on, one SOCKS port each way."""
+    settings = {
+        "is_proxy_enabled": True,
+        "is_overlay_proxy_enabled": True,
+        "is_local_proxy_enabled": True,
+        "socks_ports": [
+            {"port": 1080, "is_proxied": True},
+            {"port": 1081, "is_proxied": False},
+        ],
+        "is_geoip_split_enabled": True,
+        "direct_domains": ["geosite:cn"],
+        "direct_ips": ["geoip:cn"],
+        "remote_dns": {"address": "1.1.1.1", "port": 53},
+        "direct_dns": {"address": "223.5.5.5", "port": 53},
+    }
+    return XrayConfigRenderer(
+        node_list=resolved_nodes(),
+        routing=settings,
+        is_transparent=is_transparent,
+    ).render()
+
+
+@pytest.mark.parametrize(
+    ("is_transparent", "name"),
+    [(True, "xray_config_linux.json"), (False, "xray_config_elsewhere.json")],
+)
+def test_the_rendering_matches_its_golden(is_transparent, name):
+    golden = json.loads((GOLDEN_DIR / name).read_text(encoding="utf-8"))
+
+    assert render_for_golden(is_transparent=is_transparent) == golden
+
+
+def test_outside_linux_nothing_diverts_and_nothing_marks():
+    config = render_for_golden(is_transparent=False)
+
+    for outbound in config["outbounds"]:
+        assert "mark" not in outbound.get("streamSettings", {}).get("sockopt", {})
+    assert tags(config, "inbounds") == [
+        "api_in",
+        "dns_in",
+        PROBE_TAG,
+        "socks_1080_in",
+        "socks_1081_in",
+    ]
+    assert "tproxy_in" not in json.dumps(config["routing"])

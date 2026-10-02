@@ -1,0 +1,270 @@
+{
+  "log": {
+    "loglevel": "warning",
+    "access": "none"
+  },
+  "stats": {},
+  "api": {
+    "tag": "api",
+    "services": [
+      "StatsService",
+      "HandlerService",
+      "RoutingService"
+    ]
+  },
+  "policy": {
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+  "dns": {
+    "tag": "dns_internal",
+    "servers": [
+      {
+        "address": "223.5.5.5",
+        "port": 53,
+        "domains": [
+          "geosite:cn"
+        ],
+        "skipFallback": true
+      },
+      {
+        "address": "1.1.1.1",
+        "port": 53
+      }
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+  "inbounds": [
+    {
+      "tag": "api_in",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      }
+    },
+    {
+      "tag": "tproxy_in",
+      "listen": "127.0.0.1",
+      "port": 12345,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "network": "tcp,udp",
+        "followRedirect": true
+      },
+      "streamSettings": {
+        "sockopt": {
+          "tproxy": "tproxy"
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "routeOnly": true
+      }
+    },
+    {
+      "tag": "dns_in",
+      "listen": "127.0.0.1",
+      "port": 15353,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "1.1.1.1",
+        "port": 53,
+        "network": "tcp,udp"
+      }
+    },
+    {
+      "tag": "socks_probe_in",
+      "listen": "127.0.0.1",
+      "port": 10086,
+      "protocol": "socks",
+      "settings": {
+        "udp": false,
+        "auth": "password",
+        "accounts": [
+          {
+            "user": "node_hk1",
+            "pass": "probe"
+          }
+        ]
+      }
+    },
+    {
+      "tag": "socks_1080_in",
+      "listen": "0.0.0.0",
+      "port": 1080,
+      "protocol": "socks",
+      "settings": {
+        "udp": true,
+        "auth": "noauth"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
+    },
+    {
+      "tag": "socks_1081_in",
+      "listen": "0.0.0.0",
+      "port": 1081,
+      "protocol": "socks",
+      "settings": {
+        "udp": true,
+        "auth": "noauth"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
+      "streamSettings": {
+        "sockopt": {
+          "mark": 255
+        }
+      }
+    },
+    {
+      "tag": "node_hk1",
+      "protocol": "shadowsocks",
+      "settings": {
+        "servers": [
+          {
+            "address": "203.0.113.10",
+            "port": 5800,
+            "method": "aes-256-gcm",
+            "password": "secret"
+          }
+        ]
+      },
+      "streamSettings": {
+        "sockopt": {
+          "mark": 255,
+          "domainStrategy": "UseIP"
+        }
+      }
+    },
+    {
+      "tag": "dns_out",
+      "protocol": "dns",
+      "settings": {
+        "nonIPQuery": "drop"
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "balancers": [
+      {
+        "tag": "proxy_balance",
+        "selector": [
+          "node_hk1"
+        ],
+        "strategy": {
+          "type": "roundRobin"
+        }
+      }
+    ],
+    "rules": [
+      {
+        "type": "field",
+        "ruleTag": "rule_api",
+        "inboundTag": [
+          "api_in"
+        ],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_probe_hk1",
+        "inboundTag": [
+          "socks_probe_in"
+        ],
+        "user": [
+          "node_hk1"
+        ],
+        "outboundTag": "node_hk1"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_dns_in",
+        "inboundTag": [
+          "dns_in"
+        ],
+        "outboundTag": "dns_out"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_dns_direct",
+        "inboundTag": [
+          "dns_internal"
+        ],
+        "ip": [
+          "223.5.5.5"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_socks_direct",
+        "inboundTag": [
+          "socks_1081_in"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_split_domain",
+        "domain": [
+          "geosite:cn"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_split_ip",
+        "ip": [
+          "geoip:cn"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_balancer",
+        "inboundTag": [
+          "tproxy_in",
+          "socks_1080_in",
+          "dns_internal"
+        ],
+        "balancerTag": "proxy_balance"
+      }
+    ]
+  }
+}

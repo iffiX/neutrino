@@ -511,6 +511,7 @@ class PanelRuntime:
                 for tag, health in self.exit_controller.healths().items()
                 if health.is_down
             },
+            is_transparent=is_linux(),
         ).render()
         switcher = OverlaySwitcher()
         changes: list[str] = []

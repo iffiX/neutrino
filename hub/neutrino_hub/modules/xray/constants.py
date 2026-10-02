@@ -23,6 +23,8 @@ XRAY_BINARY = str(carried_program("xray"))
 XRAY_ASSET_ENV = "XRAY_LOCATION_ASSET"
 XRAY_ASSET_DIR = str(UTILS_GEODATA_DIR)
 XRAY_SERVICE_NAME = "neutrino_hub_xray"
+# The name the process controller knows xray by.
+XRAY_SUPERVISED_NAME = "xray"
 
 # The release the hub runs, pinned to a version and to the hash of the file
 # that version serves. A package carries it; a checkout fetches the same one,
