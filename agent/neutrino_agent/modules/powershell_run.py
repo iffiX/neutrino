@@ -44,12 +44,15 @@ POWERSHELL_REFUSAL_EXIT = 3
 POWERSHELL_TIMEOUT_S = 120
 
 
-def run_powershell(script: str, document: dict) -> dict:
+def run_powershell(
+    script: str, document: dict, *, timeout_s: int = POWERSHELL_TIMEOUT_S
+) -> dict:
     """Run one script with a JSON document on its standard input.
 
     Args:
         script: The script, without the prologue that reads the document.
         document: What the script reads as ``$d``.
+        timeout_s: How long to wait.
 
     Returns:
         The JSON object the script printed last.
@@ -71,7 +74,7 @@ def run_powershell(script: str, document: dict) -> dict:
         ],
         is_checked=False,
         input_text=json.dumps(document),
-        timeout_s=POWERSHELL_TIMEOUT_S,
+        timeout_s=timeout_s,
     )
     answer = _last_json_object(result.stdout)
     if result.exit_code == POWERSHELL_REFUSAL_EXIT and answer is not None:
