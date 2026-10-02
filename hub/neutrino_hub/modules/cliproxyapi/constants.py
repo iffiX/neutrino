@@ -2,9 +2,9 @@
 
 from neutrino_hub.utils.constants import UTILS_STATE_ROOT, UTILS_STATIC_ROOT
 
-# What the hub's package carries. The packaging pins the same version in
-# hub/packaging/venv_tree.py; this is what the panel reports and what the
-# provisioner would fetch on a machine running from a checkout.
+# What the hub's package carries, what the panel reports and what the
+# provisioner would fetch on a machine running from a checkout. The
+# packaging reads CLIPROXYAPI_ASSETS below.
 CLIPROXYAPI_VERSION = "7.2.146"
 # Carried by the hub's package, under the hub's own prefix rather than
 # /usr/local, which belongs to whoever administers the machine.
@@ -76,6 +76,34 @@ CLIPROXYAPI_DOWNLOAD_URL = (
     "https://github.com/router-for-me/CLIProxyAPI/releases/download/"
     "v{version}/CLIProxyAPI_{version}_linux_{asset_arch}.tar.gz"
 )
+# The asset each system and machine takes from that release, and its hash,
+# for every system a hub package is built for.
+CLIPROXYAPI_RELEASE_URL = (
+    "https://github.com/router-for-me/CLIProxyAPI/releases/download/"
+    "v{version}/{asset}"
+)
+CLIPROXYAPI_ASSETS = {
+    ("linux", "amd64"): (
+        "CLIProxyAPI_7.2.146_linux_amd64.tar.gz",
+        "43e112686b4a5b7b818531144cd695eeaacdd54c46dced87be6fb3967c22e149",  # scan: allow
+    ),
+    ("linux", "arm64"): (
+        "CLIProxyAPI_7.2.146_linux_aarch64.tar.gz",
+        "086ae6513aa522bbd1000f4e83e5b5223df6038bd69f1c6cad56619b84c06947",  # scan: allow
+    ),
+    ("darwin", "amd64"): (
+        "CLIProxyAPI_7.2.146_darwin_amd64.tar.gz",
+        "1985f14f3a7caa40c4f7e6959c7c993db0b735317a1e690365d4c08d631849db",  # scan: allow
+    ),
+    ("darwin", "arm64"): (
+        "CLIProxyAPI_7.2.146_darwin_aarch64.tar.gz",
+        "faf4c735b289cb88344f87fd6d745cf9a11d28a231d000173d8045910503b543",  # scan: allow
+    ),
+    ("windows", "amd64"): (
+        "CLIProxyAPI_7.2.146_windows_amd64.zip",
+        "d6816c59d155bcf3d1f5f47242770d4b13c9bf68ce310ae86873bdb0b52e5a50",  # scan: allow
+    ),
+}
 
 # The cc-switch command line, which points a machine's AI tools at this
 # gateway. It is a device module like any other — its manifest lives in

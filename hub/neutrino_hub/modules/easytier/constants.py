@@ -18,6 +18,35 @@ EASYTIER_SHA256 = {
     "arm64": "f533ec25a7ea714e09f645615012200278058525795cc3bb690ff011aec1a70f",  # scan: allow
 }
 EASYTIER_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
+# The asset each system and machine takes from the same release, and its
+# hash, for every system a hub package is built for. The Linux rows are the
+# files the two tables above name; the Windows archive carries wintun.dll
+# beside the two programs.
+EASYTIER_RELEASE_URL = (
+    "https://github.com/EasyTier/EasyTier/releases/download/v{version}/{asset}"
+)
+EASYTIER_ASSETS = {
+    ("linux", "amd64"): (
+        "easytier-linux-x86_64-v2.6.4.zip",
+        EASYTIER_SHA256["amd64"],
+    ),
+    ("linux", "arm64"): (
+        "easytier-linux-aarch64-v2.6.4.zip",
+        EASYTIER_SHA256["arm64"],
+    ),
+    ("darwin", "amd64"): (
+        "easytier-macos-x86_64-v2.6.4.zip",
+        "89fc28a6e6995259d76ce3f11775220e8a21c760e94df91a6a9db30a69b6982e",  # scan: allow
+    ),
+    ("darwin", "arm64"): (
+        "easytier-macos-aarch64-v2.6.4.zip",
+        "4be1882d1aa36d31c1d6ba0596f2cf8a097e371f8da124212324b2e0f8df7e4b",  # scan: allow
+    ),
+    ("windows", "amd64"): (
+        "easytier-windows-x86_64-v2.6.4.zip",
+        "27af91e270e554709b048bd32327fefd2dfce5062ae1e8701af7550c6f525f84",  # scan: allow
+    ),
+}
 # Only these two of the four the archive carries: the web console and its
 # embedded twin serve other machines, and this box only runs a node.
 EASYTIER_CORE_NAME = "easytier-core"

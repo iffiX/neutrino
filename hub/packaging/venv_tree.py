@@ -28,7 +28,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import zipfile
 import urllib.request
 from pathlib import Path
 
@@ -38,11 +37,14 @@ from constants import PACKAGING_GLIBC_FLOOR
 SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
 if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
+from shared import hub_assets  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 HUB_ROOT = Path(__file__).resolve().parent.parent
 AGENT_ROOT = HUB_ROOT.parent / "agent"
 PACKAGE_NAME = "neutrino-hub"
+# The system the carried programs are built for, as their pin tables key it.
+HUB_ASSETS_SYSTEM = "linux"
 
 # The one icon source; the build copies what the wheel ships from here into
 # the package tree, which the checkout does not carry.
@@ -117,11 +119,9 @@ MACHINE_NAMES = {
 
 # What the hub drives and therefore carries. Downloading these at install time
 # meant a machine that needed the network to finish installing, an unverified
-# script run as root, and no record of which version landed.
-#
-# Every one is pinned twice: to a release, and to the hash of the file that
-# release serves. A `latest` URL would make two builds of one hub version carry
-# different software, which is the thing a version number exists to deny.
+# script run as root, and no record of which version landed. Every one is
+# pinned to a release and to the hash of the file that release serves, by the
+# runtime module that drives it; packaging/shared/hub_assets.py reads them.
 VENDOR_DIR = INSTALL_PREFIX / "bin"
 
 # Not beside the binary. The databases are replaced while the machine runs, so
@@ -129,72 +129,6 @@ VENDOR_DIR = INSTALL_PREFIX / "bin"
 # where they are. The layout and its reasoning are in
 # ../../skills/core-code-author/design/files.md.
 GEODATA_DIR = Path("/var/lib/neutrino/geodata")
-
-# The pins are the runtime modules' to state: the panel reports them and a
-# checkout fetches the same files. Packaging follows rather than leads, so
-# there is one place to change when a version moves.
-XRAY_VERSION, XRAY_URL, XRAY_MACHINES, XRAY_SHA256 = _runtime(
-    "neutrino_hub.modules.xray.constants",
-    "XRAY_VERSION",
-    "XRAY_DOWNLOAD_URL",
-    "XRAY_ASSET_ARCHITECTURES",
-    "XRAY_SHA256",
-)
-CLIPROXYAPI_VERSION = _runtime(
-    "neutrino_hub.modules.cliproxyapi.constants", "CLIPROXYAPI_VERSION"
-)
-CLIPROXYAPI_URL = (
-    "https://github.com/router-for-me/CLIProxyAPI/releases/download/"
-    "v{version}/CLIProxyAPI_{version}_linux_{machine}.tar.gz"
-)
-# The release names the 64-bit ARM asset `aarch64`, where xray names its
-# `arm64-v8a`; neither follows the other.
-CLIPROXYAPI_MACHINES = {"x86_64": "amd64", "aarch64": "aarch64"}
-CLIPROXYAPI_X86_64_SHA256 = (
-    "43e112686b4a5b7b818531144cd695eeaacdd54c46dced87be6fb3967c22e149"  # scan: allow
-)
-CLIPROXYAPI_AARCH64_SHA256 = (
-    "086ae6513aa522bbd1000f4e83e5b5223df6038bd69f1c6cad56619b84c06947"  # scan: allow
-)
-CLIPROXYAPI_SHA256 = {
-    "x86_64": CLIPROXYAPI_X86_64_SHA256,
-    "aarch64": CLIPROXYAPI_AARCH64_SHA256,
-}
-# The NetBird client. Only the client travels: it is BSD-3-Clause, where the
-# management, signal and relay servers beside it in that repository are
-# AGPL-3.0 and are not carried. Its release names the machine the way this
-# project does, so the asset table is keyed by the normalized name.
-(
-    EASYTIER_VERSION,
-    EASYTIER_URL,
-    EASYTIER_MACHINES,
-    EASYTIER_SHA256,
-    EASYTIER_CORE,
-    EASYTIER_CLI,
-) = _runtime(
-    "neutrino_hub.modules.easytier.constants",
-    "EASYTIER_VERSION",
-    "EASYTIER_DOWNLOAD_URL",
-    "EASYTIER_ASSET_ARCHITECTURES",
-    "EASYTIER_SHA256",
-    "EASYTIER_CORE_NAME",
-    "EASYTIER_CLI_NAME",
-)
-NETBIRD_VERSION, NETBIRD_URL, NETBIRD_MACHINES, NETBIRD_SHA256, NETBIRD_BINARY = (
-    _runtime(
-        "neutrino_hub.modules.netbird.constants",
-        "NETBIRD_VERSION",
-        "NETBIRD_DOWNLOAD_URL",
-        "NETBIRD_ASSET_ARCHITECTURES",
-        "NETBIRD_SHA256",
-        "NETBIRD_BINARY_NAME",
-    )
-)
-
-# The permissive v2fly databases, which are what these packages may carry. A
-# running machine fetches the fuller Loyalsoldier set for its own use; that one
-# is GPL-3.0, and a package carrying it would be distributing it.
-GEODATA = _runtime("neutrino_hub.modules.xray.constants", "XRAY_GEODATA")
 
 # Where the agent packages the hub hands out live once installed, and how they
 # are addressed there. The runtime module states both: packaging seeds the
@@ -588,95 +522,13 @@ def stage_vendored(tree: Path, machine: str) -> None:
         SystemExit: If there is no build for the machine, or what arrives is
             not what was pinned.
     """
-    name = MACHINE_NAMES.get(machine, machine)
-    binaries = tree / str(VENDOR_DIR).lstrip("/")
-    binaries.mkdir(parents=True, exist_ok=True)
-
-    normalized = NORMALIZED_NAMES[name]
-    payload = _fetch(
-        XRAY_URL.format(
-            version=XRAY_VERSION,
-            asset_arch=_machine_name(XRAY_MACHINES, normalized, "xray"),
-        ),
-        XRAY_SHA256,
-        normalized,
-        "xray",
+    normalized = NORMALIZED_NAMES.get(MACHINE_NAMES.get(machine, machine))
+    if normalized is None:
+        raise SystemExit(f"the hub carries no programs for {machine}")
+    hub_assets.stage_programs(
+        tree / str(VENDOR_DIR).lstrip("/"), HUB_ASSETS_SYSTEM, normalized
     )
-    with tempfile.TemporaryDirectory() as workdir:
-        archive = Path(workdir) / "xray.zip"
-        archive.write_bytes(payload)
-        with zipfile.ZipFile(archive) as bundle:
-            # Only the binary: the geodata beside it in the release is a
-            # different set from the one these packages may carry.
-            bundle.extract("xray", workdir)
-        _install_binary(Path(workdir) / "xray", binaries / "xray")
-
-    payload = _fetch(
-        CLIPROXYAPI_URL.format(
-            version=CLIPROXYAPI_VERSION,
-            machine=_machine_name(CLIPROXYAPI_MACHINES, name, "cliproxyapi"),
-        ),
-        CLIPROXYAPI_SHA256,
-        name,
-        "cliproxyapi",
-    )
-    with tempfile.TemporaryDirectory() as workdir:
-        archive = Path(workdir) / "cliproxyapi.tar.gz"
-        archive.write_bytes(payload)
-        with tarfile.open(archive) as bundle:
-            bundle.extract("cli-proxy-api", workdir)
-        _install_binary(Path(workdir) / "cli-proxy-api", binaries / "cli-proxy-api")
-
-    payload = _fetch(
-        NETBIRD_URL.format(
-            version=NETBIRD_VERSION,
-            asset_arch=_machine_name(NETBIRD_MACHINES, normalized, "netbird"),
-        ),
-        NETBIRD_SHA256,
-        normalized,
-        "netbird",
-    )
-    with tempfile.TemporaryDirectory() as workdir:
-        archive = Path(workdir) / "netbird.tar.gz"
-        archive.write_bytes(payload)
-        with tarfile.open(archive) as bundle:
-            # Only the client: the licence files beside it in the release are
-            # carried by stage_licenses from the checkout's own directory.
-            bundle.extract(NETBIRD_BINARY, workdir)
-        _install_binary(Path(workdir) / NETBIRD_BINARY, binaries / NETBIRD_BINARY)
-
-    payload = _fetch(
-        EASYTIER_URL.format(
-            version=EASYTIER_VERSION,
-            asset_arch=_machine_name(EASYTIER_MACHINES, normalized, "easytier"),
-        ),
-        EASYTIER_SHA256,
-        normalized,
-        "easytier",
-    )
-    with tempfile.TemporaryDirectory() as workdir:
-        archive = Path(workdir) / "easytier.zip"
-        archive.write_bytes(payload)
-        with zipfile.ZipFile(archive) as bundle:
-            # Two of the four: the web console beside them is a management
-            # plane for other people's nodes, which is what this overlay
-            # exists not to need.
-            for wanted in (EASYTIER_CORE, EASYTIER_CLI):
-                member = next(
-                    name
-                    for name in bundle.namelist()
-                    if name.rsplit("/", 1)[-1] == wanted
-                )
-                extracted = Path(bundle.extract(member, workdir))
-                _install_binary(extracted, binaries / wanted)
-
-    geodata = tree / str(GEODATA_DIR).lstrip("/")
-    geodata.mkdir(parents=True, exist_ok=True)
-    for file_name, pin in GEODATA.items():
-        payload = _fetch(pin["url"], {name: pin["sha256"]}, name, file_name)
-        target = geodata / file_name
-        target.write_bytes(payload)
-        target.chmod(0o644)
+    hub_assets.stage_geodata(tree / str(GEODATA_DIR).lstrip("/"))
 
 
 def stage_licenses(tree: Path) -> None:
@@ -747,65 +599,6 @@ def _glibc_needed(path: Path) -> tuple:
         for major, minor in GLIBC_VERSION.findall(result.stdout)
     ]
     return max(found, default=())
-
-
-def _machine_name(names: dict, machine: str, what: str) -> str:
-    """What one upstream calls a machine.
-
-    Args:
-        names: That upstream's own naming.
-        machine: The normalized architecture.
-        what: The component, for the error.
-
-    Returns:
-        The name to put in the URL.
-
-    Raises:
-        SystemExit: When that upstream publishes nothing for the machine.
-    """
-    if machine not in names:
-        raise SystemExit(f"{what} publishes no build for {machine}")
-    return names[machine]
-
-
-def _fetch(url: str, hashes: dict, machine: str, what: str) -> bytes:
-    """Download one pinned file and check it against its hash.
-
-    Args:
-        url: Where it lives.
-        hashes: The pinned hashes, keyed by machine.
-        machine: The normalized architecture.
-        what: The component, for the messages.
-
-    Returns:
-        The file's bytes.
-
-    Raises:
-        SystemExit: If nothing is pinned for the machine, or what arrived is
-            not it.
-    """
-    if machine not in hashes:
-        raise SystemExit(f"no {what} hash pinned for {machine}")
-    print(f"  fetching {what} {url.rsplit('/', 1)[-1]}")
-    with urllib.request.urlopen(url, timeout=300) as response:
-        payload = response.read()
-    digest = hashlib.sha256(payload).hexdigest()
-    if digest != hashes[machine]:
-        raise SystemExit(
-            f"{what} at {url} hashes to {digest}, not the pinned {hashes[machine]}"
-        )
-    return payload
-
-
-def _install_binary(source: Path, destination: Path) -> None:
-    """Move an extracted binary into the tree, executable.
-
-    Args:
-        source: Where it was unpacked.
-        destination: Where it belongs.
-    """
-    shutil.copyfile(source, destination)
-    destination.chmod(0o755)
 
 
 def _fetch_interpreter(staged_python: Path, machine: str) -> None:

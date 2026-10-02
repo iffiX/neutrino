@@ -266,7 +266,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     # package's own data goes beside where that points.
     shutil.copytree(package / "data", contents / "MacOS" / package.name / "data")
 
-    bundled.stage_darwin_binaries(contents)
+    bundled.stage_darwin_binaries(contents, machine)
     _stage_licenses(contents / "Resources" / "licenses")
     pkg_build.sign_ad_hoc(app)
 

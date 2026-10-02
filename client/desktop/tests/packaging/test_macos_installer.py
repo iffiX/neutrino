@@ -195,8 +195,8 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         (app / "Contents" / "Info.plist").write_text("")
         return app
 
-    def stage_binaries(contents):
-        order.append("binaries")
+    def stage_binaries(contents, architecture):
+        order.append(("binaries", architecture))
         (contents / "Resources" / "bin").mkdir(parents=True)
         (contents / "Resources" / "bin" / "cc-switch").write_text("")
 
@@ -234,7 +234,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         "rustdesk.txt",
         "xterm.txt",
     ]
-    assert order == ["venv", "compile", "binaries", ("sign", app)]
+    assert order == ["venv", "compile", ("binaries", "arm64"), ("sign", app)]
     link = tmp_path / "root" / "usr" / "local" / "bin" / "nclient"
     assert link.is_symlink()
     assert Path(link.readlink()) == Path(

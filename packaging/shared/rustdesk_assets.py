@@ -41,6 +41,10 @@ RUSTDESK_ASSETS = {
         "-aarch64.dmg",
         "f7935597b247d42c8f2a2ed71176a9f5868018cd9e1a33b8096418a668c8caf0",  # scan: allow
     ),
+    ("darwin", "x86_64"): (
+        "-x86_64.dmg",
+        "fa1129a0635019f9c5841937942cc2b08be028a192f47c009edde7e53812904e",  # scan: allow
+    ),
 }
 RUSTDESK_WINDOWS_BINARY_NAME = "rustdesk.exe"
 # The app bundle the disk image carries, and its binary inside.
@@ -112,7 +116,7 @@ def stage_darwin_app(dest_dir: Path, *, machine: str = "aarch64") -> Path:
 
     Args:
         dest_dir: The directory the app bundle belongs in.
-        machine: ``aarch64``.
+        machine: ``x86_64`` or ``aarch64``.
 
     Returns:
         The app bundle written.
