@@ -49,8 +49,8 @@ EASYTIER_CONFIG_SERVER_SCHEMES = ("tcp", "udp", "ws", "wss")
 # knock on. Both are stated rather than left to the engine: a device it named
 # itself would be a device the ruleset matches by luck.
 EASYTIER_DEVICE_NAME = "easytier"
-# macOS names a tunnel utunN and nothing else, so there the engine picks
-# its own and the device is found by its address.
+# The systems where the engine names its own tunnel device, utunN on macOS;
+# the device is found by its address there.
 EASYTIER_SYSTEM_NAMED_DEVICE_OS = ("darwin",)
 EASYTIER_PEER_PORT = 11010
 # Loopback only, and the engine's own default port. Reading the node's state
