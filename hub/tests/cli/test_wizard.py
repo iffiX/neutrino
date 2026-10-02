@@ -750,3 +750,113 @@ def test_the_review_names_the_address_a_browser_ends_up_on(
     asked._is_https_enabled = is_https
 
     assert asked._panel_address() == address
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_macos_and_windows_take_a_server_alone(monkeypatch, system):
+    monkeypatch.setattr(wizard.sys, "platform", system)
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+    document = {
+        "password": "a-long-enough-password",
+        "vault_passphrase": VAULT_PASSPHRASE,
+        "network": {"mode": "router", "wan": ["enp2s0"], "lan": ["enp1s0"]},
+    }
+
+    with pytest.raises(WizardAborted, match="server"):
+        wizard.from_document(document)
+    document["network"] = {"mode": "server"}
+    assert wizard.from_document(document).network.mode == "server"
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_macos_and_windows_refuse_this_boxs_own_traffic(monkeypatch, system):
+    monkeypatch.setattr(wizard.sys, "platform", system)
+    document = {
+        "password": "a-long-enough-password",
+        "vault_passphrase": VAULT_PASSPHRASE,
+        "network": {"mode": "server"},
+        "proxy": {"links": [SHARE_LINK], "is_local": True},
+    }
+
+    with pytest.raises(WizardAborted, match="is_local"):
+        wizard.from_document(document)
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_macos_and_windows_ask_no_mode(monkeypatch, system):
+    monkeypatch.setattr(wizard.sys, "platform", system)
+    asked = wizard.SetupWizard(links=StubLinks().all_links())
+    titles = []
+    monkeypatch.setattr(
+        asked, "_frame", lambda step, total, title: titles.append(title)
+    )
+    for name in ("_ask_language", "_ask_password", "_ask_ports", "_ask_proxy"):
+        monkeypatch.setattr(asked, name, lambda: wizard.WIZARD_NEXT)
+    monkeypatch.setattr(asked, "_review", lambda: wizard.WIZARD_NEXT)
+    monkeypatch.setattr(asked, "_ask_mode", lambda: pytest.fail("no mode question"))
+    monkeypatch.setattr(asked, "_plan", lambda: None)
+
+    asked.run()
+
+    assert "What is this machine for?" not in titles
+    assert len(titles) == len(wizard.WIZARD_TITLES) - 1
+    assert asked._mode == "server"
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_macos_and_windows_offer_the_browser_a_server_alone(monkeypatch, system):
+    monkeypatch.setattr(wizard.sys, "platform", system)
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    assert [mode["key"] for mode in wizard.context()["modes"]] == ["server"]
+
+
+def test_the_proxy_screen_does_not_ask_about_this_box_outside_linux(monkeypatch):
+    monkeypatch.setattr(wizard.sys, "platform", "darwin")
+    asked = wizard.SetupWizard(links=StubLinks().all_links())
+    typed = iter(["2", SHARE_LINK, "", ""])
+    questions = []
+
+    def answer(prompt=""):
+        questions.append(prompt)
+        return next(typed)
+
+    monkeypatch.setattr("builtins.input", answer)
+
+    assert asked._ask_proxy() == wizard.WIZARD_NEXT
+    assert asked._proxy.is_enabled
+    assert not asked._proxy.is_local
+    assert not any("own traffic" in question for question in questions)
+
+
+class _TypedLines:
+    """Standard input holding these lines, then its end."""
+
+    def __init__(self, *lines: str):
+        self._lines = iter(lines)
+
+    def readline(self) -> str:
+        return next(self._lines, "")
+
+
+def test_windows_reads_the_continue_prompt_from_a_line_reader(monkeypatch):
+    import time
+
+    monkeypatch.setattr(wizard.sys, "platform", "win32")
+    monkeypatch.setattr(wizard, "_STDIN_WAITING", None)
+    monkeypatch.setattr(wizard.sys, "stdin", _TypedLines("\n"))
+
+    deadline = time.monotonic() + 5
+    wanted = False
+    while not wanted and time.monotonic() < deadline:
+        wanted = wizard._is_terminal_wanted()
+
+    assert wanted is True
+
+
+def test_windows_reads_an_ended_input_as_nobody_at_the_keyboard(monkeypatch):
+    monkeypatch.setattr(wizard.sys, "platform", "win32")
+    monkeypatch.setattr(wizard, "_STDIN_WAITING", None)
+    monkeypatch.setattr(wizard.sys, "stdin", _TypedLines())
+
+    assert wizard._is_enter_pressed() is True

@@ -11,9 +11,11 @@ Nothing here writes: it returns what was answered, and `setup` does the work.
 
 import ipaddress
 import os
+import queue
 import select
 import sys
 import textwrap
+import threading
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -26,6 +28,8 @@ from neutrino_hub.utils.passwords import (
     validate,
 )
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
+from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
+from neutrino_hub.platforms.detect import hub_os, is_linux
 from neutrino_hub.modules.xray.constants import XRAY_SOCKS_PORT
 from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.web.constants import (
@@ -96,6 +100,9 @@ WIZARD_LANGUAGE_NAMES = {"en": "English", "zh-CN": "Chinese (Simplified)"}
 WIZARD_ABORTED = "setup was aborted by user, nothing was written"
 # What a shell reports for a command somebody interrupted.
 WIZARD_STOPPED_STATUS = 130
+# The one line a reader thread is waiting for on Windows, whose console
+# cannot be polled; None while no reader is waiting.
+_STDIN_WAITING = None
 
 
 @dataclass
@@ -224,6 +231,11 @@ def from_document(document: dict) -> WizardAnswers:
     _reject_unknown(network, WIZARD_NETWORK_KEYS, "'network'")
     if "mode" not in network:
         raise WizardAborted("'network' needs a 'mode'")
+    if not is_linux() and network["mode"] != ROUTER_MODE_SERVER:
+        raise WizardAborted(
+            f"this system runs the hub as a {ROUTER_MODE_SERVER!r} alone, "
+            f"not {network['mode']!r}"
+        )
 
     keywords = {
         WIZARD_NETWORK_KEYS[key]: _as_tuple(key, value)
@@ -349,6 +361,11 @@ def _proxy_from(given, mode: str) -> WizardProxy:
     except ValueError as error:
         raise WizardAborted(str(error)) from error
     is_serving = mode != ROUTER_MODE_SERVER
+    if given.get("is_local") and not is_linux():
+        raise WizardAborted(
+            "'is_local' is Linux's; this box's own traffic cannot go through "
+            "the proxy here"
+        )
     port = given.get("socks_proxy_port", XRAY_SOCKS_PORT)
     return WizardProxy(
         is_enabled=True,
@@ -408,14 +425,14 @@ class SetupWizard:
         self._total = 1
         self._links = links
         self._names = [link.name for link in links]
-        self._modes = modes_for(
+        self._modes = _offered_modes(
             len(self._names), sum(1 for link in links if not link.is_wifi)
         )
         self._lan_vlan_id = ROUTER_MODE_DEFAULT_LAN_VLAN
         self._is_coloured = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
         self._password = ""
         self._vault_passphrase = ""
-        self._mode = ROUTER_MODE_ROUTER
+        self._mode = ROUTER_MODE_ROUTER if is_linux() else ROUTER_MODE_SERVER
         self._wan = ""
         self._lan = ""
         self._address = ROUTER_MODE_DEFAULT_LAN_ADDRESS
@@ -445,11 +462,17 @@ class SetupWizard:
             self._ask_proxy,
             self._review,
         )
+        asked = [
+            (title, screen)
+            for title, screen in zip(WIZARD_TITLES, screens)
+            if is_linux() or screen != self._ask_mode
+        ]
         index = 0
         try:
-            while index < len(screens):
-                self._frame(index + 1, len(screens))
-                index = max(0, index + screens[index]())
+            while index < len(asked):
+                title, screen = asked[index]
+                self._frame(index + 1, len(asked), title)
+                index = max(0, index + screen())
         except (EOFError, KeyboardInterrupt):
             # SystemExit rather than an exception to propagate: whoever is at
             # the keyboard stopped this, and a traceback would say otherwise.
@@ -826,10 +849,13 @@ class SetupWizard:
             proxy.is_socks_proxy_enabled = True
             proxy.socks_proxy_port = answer
 
-        answer = self._yes_no("Send this box's own traffic through it", default=False)
-        if answer is None:
-            return WIZARD_PREVIOUS
-        proxy.is_local = answer
+        if is_linux():
+            answer = self._yes_no(
+                "Send this box's own traffic through it", default=False
+            )
+            if answer is None:
+                return WIZARD_PREVIOUS
+            proxy.is_local = answer
         self._proxy = proxy
         return WIZARD_NEXT
 
@@ -961,14 +987,15 @@ class SetupWizard:
             lan_vlan_id=self._lan_vlan_id,
         ).plan()
 
-    def _frame(self, step: int, total: int) -> None:
+    def _frame(self, step: int, total: int, title: str) -> None:
         """Draw the wordmark, the step and what it asks.
 
         Args:
             step: The one-based screen being drawn.
             total: How many there are.
+            title: What the screen asks.
         """
-        _headline(f"{WIZARD_LABEL} {step}/{total}", title=WIZARD_TITLES[step - 1])
+        _headline(f"{WIZARD_LABEL} {step}/{total}", title=title)
         self._step = step
         self._total = total
 
@@ -1103,7 +1130,7 @@ def context() -> dict:
                 "is_addressing_owned": mode.is_addressing_owned,
                 "has_caution": bool(mode.caution),
             }
-            for mode in modes_for(len(links), wired_count)
+            for mode in _offered_modes(len(links), wired_count)
         ],
         "password_rules": {
             "panel": PASSWORDS_PANEL_RULES.to_dict(),
@@ -1228,6 +1255,11 @@ def _is_terminal_wanted():
         prompt being answered, and None when there is nothing left to read
         from, which is what a closed input looks like.
     """
+    if hub_os() == PLATFORM_OS_WINDOWS:
+        line = _stdin_line(0)
+        if line is None:
+            return False
+        return None if line == "" else True
     try:
         ready, _, _ = select.select([sys.stdin], [], [], 0)
     except (OSError, ValueError):
@@ -1455,6 +1487,8 @@ def _is_enter_pressed() -> bool:
         is what a pipe looks like and what stops this hanging out of a
         terminal.
     """
+    if hub_os() == PLATFORM_OS_WINDOWS:
+        return _stdin_line(WIZARD_POLL_INTERVAL_S) is not None
     try:
         ready, _, _ = select.select([sys.stdin], [], [], WIZARD_POLL_INTERVAL_S)
     except (OSError, ValueError):
@@ -1462,3 +1496,53 @@ def _is_enter_pressed() -> bool:
     if not ready:
         return False
     return sys.stdin.readline() == "" or True
+
+
+def _offered_modes(port_count: int, wired_count: int) -> tuple:
+    """The modes offered: each one this machine can be on Linux, server elsewhere.
+
+    Args:
+        port_count: How many interfaces the machine has.
+        wired_count: How many of them are wired.
+
+    Returns:
+        The modes to offer, in the order they are declared.
+    """
+    modes = modes_for(port_count, wired_count)
+    if is_linux():
+        return modes
+    return tuple(mode for mode in modes if mode.key == ROUTER_MODE_SERVER)
+
+
+def _stdin_line(timeout_s: float):
+    """The next line typed on Windows, read by a thread of its own.
+
+    Args:
+        timeout_s: How long to wait for it; 0 looks once.
+
+    Returns:
+        The line; empty when standard input has ended; None when none came.
+    """
+    global _STDIN_WAITING
+    if _STDIN_WAITING is None:
+        _STDIN_WAITING = queue.Queue(maxsize=1)
+        threading.Thread(
+            target=_read_one_line, args=(_STDIN_WAITING,), daemon=True
+        ).start()
+    try:
+        if timeout_s > 0:
+            line = _STDIN_WAITING.get(timeout=timeout_s)
+        else:
+            line = _STDIN_WAITING.get_nowait()
+    except queue.Empty:
+        return None
+    _STDIN_WAITING = None
+    return line
+
+
+def _read_one_line(box: queue.Queue) -> None:
+    """Read one line of standard input into the box; empty at its end."""
+    try:
+        box.put(sys.stdin.readline())
+    except (OSError, ValueError):
+        box.put("")

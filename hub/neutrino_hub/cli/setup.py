@@ -8,6 +8,10 @@ returns one to a fresh state and `nhub apply` makes a config change true.
 
 Every step checks the system before it acts, so a run that failed halfway
 converges rather than duplicating work.
+
+On macOS and Windows the hub is one service in server mode, and the steps
+that install units, guard SSH or take the interfaces over are Linux's; the
+table is in design/install_and_dev.md.
 """
 
 import argparse
@@ -40,11 +44,18 @@ from neutrino_hub.system.constants import (
     SYSTEM_FAIL2BAN_JAIL_PATH,
     SYSTEM_XRAY_USER,
 )
+from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_BINARY_PATH
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
 from neutrino_hub.modules.devices.agent_package import (
+    AGENT_PACKAGE_FAMILY_OF_OS,
     AGENT_PACKAGE_FAMILY_OF_PLATFORM,
     AgentPackageCache,
 )
+from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_CLI_PATH,
+    EASYTIER_CORE_PATH,
+)
+from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.ops import OverlaySwitcher
 from neutrino_hub.system.machine import (
@@ -57,7 +68,14 @@ from neutrino_hub.system.installation import (
     project_root,
     venv_python,
 )
-from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.platforms.constants import PLATFORM_LINUX_USER_RUNTIME_ROOT
+from neutrino_hub.platforms.detect import (
+    hub_os,
+    hub_platform,
+    is_linux,
+    process_controller,
+)
+from neutrino_hub.system.constants import SYSTEM_SUPERVISED_CORE
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.constants import (
     is_dev_root_set,
@@ -129,13 +147,9 @@ SETUP_BROWSER_HOST = "0.0.0.0"
 # What starting the services means. In a browser the panel is left out and
 # started last, because until then the wizard is what holds its port.
 SETUP_CORE_SERVICES = ("router", "xray", "dnsmasq", "web")
-# What opens a page on a machine that has a desktop to open one on. A box
-# without it is a box nobody is sitting at, and its setup stays in the
-# terminal rather than printing a link nothing will follow.
-SETUP_BROWSER_OPENER = "xdg-open"
-# Where a signed-in user's session bus lives; the opener steps down to reach
-# it, because setup runs as root and root has no browser session.
-SETUP_USER_RUNTIME_ROOT = Path("/run/user")
+# Where a signed-in user's session bus lives on Linux; the opener steps down
+# to reach it, because setup runs as root and root has no browser session.
+SETUP_USER_RUNTIME_ROOT = Path(PLATFORM_LINUX_USER_RUNTIME_ROOT)
 # The distribution's own unit. It ships an ExecReload, which is what a
 # newly written jail wants.
 SETUP_FAIL2BAN_UNIT = "fail2ban"
@@ -156,6 +170,15 @@ SETUP_AGENT_JOIN_TIMEOUT_S = 120
 # free, which is what the wizard falls back to when the panel's is taken.
 SETUP_BROWSER_ANY_PORT = 0
 SETUP_SERVICES_BEFORE_PANEL = ("router", "xray", "dnsmasq")
+# What the macOS and Windows package carries, which their setup checks for
+# in place of system packages.
+SETUP_CARRIED_PROGRAMS = (
+    XRAY_BINARY,
+    CLIPROXYAPI_BINARY_PATH,
+    NETBIRD_BINARY_PATH,
+    EASYTIER_CORE_PATH,
+    EASYTIER_CLI_PATH,
+)
 CONFIG_FILES = (
     "xray/nodes.json",
     "xray/routing.json",
@@ -189,8 +212,13 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
-    if os.geteuid() != 0:
-        print("error: setup must run as root (sudo nhub setup)", file=sys.stderr)
+    platform = hub_platform()
+    if not platform.is_elevated():
+        print(
+            f"error: setup must run as {platform.elevation_word} "
+            f"({platform.elevation_hint('setup')})",
+            file=sys.stderr,
+        )
         return 1
     if is_password_set():
         print(
@@ -281,10 +309,7 @@ def _browser_answers():
         return None
     # Something here may be able to open a page; where nothing can, the
     # addresses printed below are how it is reached.
-    command = _browser_command(f"http://127.0.0.1:{server.port}/?token={session.token}")
-    is_opened = command is not None
-    if command is not None:
-        _open_browser(command)
+    is_opened = _open_browser(f"http://127.0.0.1:{server.port}/?token={session.token}")
     while True:
         is_answered = wizard.offer_browser(
             urls=_reachable_urls(server.port),
@@ -305,11 +330,10 @@ def _browser_answers():
 
 
 def _browser_command(url: str) -> "list | None":
-    """The command that opens this machine's own browser, or None.
+    """The command that opens this Linux machine's own browser, or None.
 
-    Setup runs under sudo, and root has no browser session: the opener must
-    run as the person who called sudo, on their session bus, or the page
-    silently never appears. Stepping down is ``runuser``, never sudo.
+    Under sudo the opener runs as the person who called sudo, on their
+    session bus; stepping down is ``runuser``, never sudo.
 
     Args:
         url: What the browser should open.
@@ -317,49 +341,23 @@ def _browser_command(url: str) -> "list | None":
     Returns:
         An argument vector, or None when nothing here can open a page.
     """
-    if shutil.which(SETUP_BROWSER_OPENER) is None:
-        return None
-    if os.geteuid() != 0:
-        return [SETUP_BROWSER_OPENER, url]
-    account = os.environ.get("SUDO_USER", "")
-    uid = os.environ.get("SUDO_UID", "")
-    if not account or account == "root" or not uid.isdigit():
-        return None
-    runtime_dir = SETUP_USER_RUNTIME_ROOT / uid
-    if not runtime_dir.is_dir():
-        return None
-    environment = [
-        f"XDG_RUNTIME_DIR={runtime_dir}",
-        f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime_dir}/bus",
-    ]
-    for name in ("DISPLAY", "WAYLAND_DISPLAY"):
-        value = os.environ.get(name)
-        if value:
-            environment.append(f"{name}={value}")
-    return [
-        "runuser",
-        "-u",
-        account,
-        "--",
-        "env",
-        *environment,
-        SETUP_BROWSER_OPENER,
-        url,
-    ]
+    return hub_platform().browser_command(
+        url, user_runtime_root=SETUP_USER_RUNTIME_ROOT
+    )
 
 
-def _open_browser(command: list) -> None:
+def _open_browser(url: str) -> bool:
     """Open the wizard on this machine, and carry on either way.
 
     Args:
-        command: The opener to run, from :func:`_browser_command`.
+        url: What the browser should open.
+
+    Returns:
+        True when an opener was started.
     """
-    try:
-        run(command, is_checked=False, timeout_s=5)
-    except (subprocess.SubprocessError, OSError):
-        # The link is on the screen either way; an opener that refuses is not
-        # a reason to stop.
-        pass
+    if not is_linux():
+        return hub_platform().open_browser(url)
+    return hub_platform().open_browser(url, user_runtime_root=SETUP_USER_RUNTIME_ROOT)
 
 
 def _browser_server(session):
@@ -475,19 +473,24 @@ def _parsed(text: str, what: str) -> dict:
 
 
 def _skipped_steps() -> tuple:
-    """The steps a development root does not run.
+    """The steps a development root, macOS or Windows does not run.
 
     A checkout takes the interfaces over and writes the firewall exactly as a
     package does, because those are what it exists to develop. The one thing
     it does not do is install the hub as a service: `nhub --dev run` is what
-    runs the panel instead. The table is in design/install_and_dev.md.
+    runs the panel instead. Outside Linux the installer registered the one
+    service, and SSH and the interfaces are the system's. The table is in
+    design/install_and_dev.md.
 
     Returns:
-        The step functions to leave out, empty on a real install.
+        The step functions to leave out, empty on a real Linux install.
     """
-    if not is_dev_root_set():
-        return ()
-    return (_step_systemd_units, _step_enable_services, _step_start_services)
+    skipped = ()
+    if not is_linux():
+        skipped += (_step_fail2ban, _step_systemd_units, _step_interfaces)
+    if is_dev_root_set():
+        skipped += (_step_systemd_units, _step_enable_services, _step_start_services)
+    return skipped
 
 
 def _setup(
@@ -516,7 +519,8 @@ def _setup(
     # that is neither what it was nor what it was asked to be, and nobody is
     # there to see which. Every line is already going to the log as well, so
     # what happened is readable after reconnecting.
-    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
     reporter.banner("Neutrino Hub setup")
     # Before the first step rather than after the last: somebody who loses the
     # session at step nine needs to have already read where to look.
@@ -661,11 +665,12 @@ def _start_panel() -> None:
 
     A development root installs no units — `nhub --dev run` is what runs the
     panel there — so asking systemd for one is asking for a unit nobody
-    wrote.
+    wrote. On macOS and Windows this starts the hub's one service, or starts
+    it again so the panel reads the password just stored.
     """
     if is_dev_root_set():
         return
-    SystemdServiceController().control("web", "restart")
+    process_controller().restart("web")
 
 
 def _joined_devices() -> list:
@@ -706,7 +711,10 @@ def _install_local_agent(password: str, reporter) -> None:
     if is_dev_root_set():
         return
     reporter.start("Installing this machine's agent", code=SETUP_STEP_LOCAL_AGENT)
-    family = SETUP_AGENT_PACKAGE_FAMILIES.get(distribution_family(), "")
+    if is_linux():
+        family = SETUP_AGENT_PACKAGE_FAMILIES.get(distribution_family(), "")
+    else:
+        family = AGENT_PACKAGE_FAMILY_OF_OS.get(hub_os(), "")
     architecture = machine_architecture()
     cache = AgentPackageCache()
     if not family or not cache.serves(family=family, architecture=architecture):
@@ -719,15 +727,23 @@ def _install_local_agent(password: str, reporter) -> None:
         "needs; a small board takes minutes"
     )
     try:
-        package_manager.current().install(
-            (str(cache.package(family=family, architecture=architecture)),)
-        )
+        package = str(cache.package(family=family, architecture=architecture))
+        if is_linux():
+            package_manager.current().install((package,))
+        else:
+            run(
+                hub_platform().agent_install_command(package),
+                timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S,
+            )
         reporter.note("installed; joining this hub")
         link, note = _enrollment_link(password)
         if not link:
             reporter.failed(note)
             return
-        run(["nagent", "join", link, "--yes"], timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S)
+        run(
+            [hub_platform().agent_command(), "join", link, "--yes"],
+            timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S,
+        )
     except (
         subprocess.SubprocessError,
         OSError,
@@ -947,6 +963,8 @@ def _step_required_packages(reporter: InstallReporter) -> str:
         FileNotFoundError: When something the hub cannot run without is
             missing.
     """
+    if not is_linux():
+        return _carried_programs_present()
     controller = package_manager.current()
     wanted = controller.names_for(SYSTEM_RUNTIME_PACKAGES)
     if not is_packaged():
@@ -958,6 +976,23 @@ def _step_required_packages(reporter: InstallReporter) -> str:
         f"missing: {', '.join(missing)}\n"
         f"  install them first: {controller.install_command(tuple(missing))}"
     )
+
+
+def _carried_programs_present() -> str:
+    """Check the programs the macOS or Windows package carries are there.
+
+    Returns:
+        How many were found.
+
+    Raises:
+        FileNotFoundError: When one is missing.
+    """
+    missing = [str(path) for path in SETUP_CARRIED_PROGRAMS if not Path(path).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"missing: {', '.join(missing)}\n  the package carries them; reinstall it"
+        )
+    return f"{len(SETUP_CARRIED_PROGRAMS)} present"
 
 
 def _step_fail2ban(reporter: InstallReporter) -> str:
@@ -990,6 +1025,8 @@ def _step_fail2ban(reporter: InstallReporter) -> str:
 
 def _step_users_and_dirs(reporter: InstallReporter) -> str:
     is_changed = False
+    if not is_linux():
+        return _make_directories() or "present"
     if not run(["id", SYSTEM_XRAY_USER], is_checked=False).is_success:
         run(
             [
@@ -1020,6 +1057,25 @@ def _step_users_and_dirs(reporter: InstallReporter) -> str:
     for log_path in UTILS_LOG_DIR.glob("xray_*.log"):
         shutil.chown(log_path, user=SYSTEM_XRAY_USER)
     return "created user and directories" if is_changed else "present"
+
+
+def _make_directories() -> str:
+    """Make the directories setup writes into, and no account.
+
+    Returns:
+        What was done, empty when every one was there.
+    """
+    is_made = False
+    for directory in (
+        UTILS_CONFIG_DIR,
+        UTILS_GENERATED_DIR,
+        UTILS_GEODATA_DIR,
+        UTILS_LOG_DIR,
+    ):
+        if not directory.exists():
+            directory.mkdir(parents=True, exist_ok=True)
+            is_made = True
+    return "created directories" if is_made else ""
 
 
 def _step_python_env(reporter: InstallReporter) -> str:
@@ -1257,12 +1313,12 @@ def _step_interfaces(reporter: InstallReporter) -> str:
 
 
 def _step_render_all(reporter: InstallReporter) -> str:
-    render_script = UTILS_PACKAGE_ROOT / "cli" / "apply.py"
-    result = run(
-        [sys.executable, str(render_script), "--skip-apply"],
-        timeout_s=120,
-        is_checked=False,
-    )
+    if is_linux():
+        render_script = UTILS_PACKAGE_ROOT / "cli" / "apply.py"
+        command = [sys.executable, str(render_script), "--skip-apply"]
+    else:
+        command = hub_platform().hub_command("apply", "--skip-apply")
+    result = run(command, timeout_s=120, is_checked=False)
     if not result.is_success:
         raise subprocess.CalledProcessError(
             result.exit_code,
@@ -1301,9 +1357,10 @@ def _step_overlay(reporter: InstallReporter) -> str:
 
 
 def _step_enable_services(reporter: InstallReporter) -> str:
-    controller = SystemdServiceController()
+    controller = process_controller()
     enabled = []
-    for name in SETUP_CORE_SERVICES:
+    names = SETUP_CORE_SERVICES if is_linux() else SYSTEM_SUPERVISED_CORE
+    for name in names:
         status = controller.status(name)
         if not status.is_installed or status.is_enabled:
             continue
@@ -1317,7 +1374,14 @@ def _step_enable_services(reporter: InstallReporter) -> str:
 def _step_start_services(
     reporter: InstallReporter, *, names: tuple = SETUP_CORE_SERVICES
 ) -> str:
-    controller = SystemdServiceController()
+    if not is_linux():
+        # The one service serves the panel; while the browser wizard holds
+        # its port, it is started at the end instead.
+        if "web" not in names:
+            return "the hub's service starts at the end"
+        process_controller().restart("web")
+        return "started the hub's service"
+    controller = process_controller()
     started = []
     for name in names:
         status = controller.status(name)

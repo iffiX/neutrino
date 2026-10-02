@@ -283,3 +283,28 @@ def test_reset_all_forgets_the_key_sealed_under_the_data_key_it_clears(box):
     reset._reset_all()
 
     assert not (box / "cliproxyapi/management_key.sealed").exists()
+
+
+def test_macos_and_windows_stop_the_service_and_hand_back_nothing(
+    monkeypatch, box, hub_service
+):
+    hub_service.is_running = True
+    monkeypatch.setattr(reset, "stop_everything", stop_module.stop_everything)
+    monkeypatch.setattr(
+        reset, "hand_back", lambda network: pytest.fail("no network to hand back")
+    )
+
+    assert reset._reset_all() == 0
+    assert not hub_service.is_running
+
+
+def test_reset_all_forgets_the_services_children(box):
+    state = box.parent / "state"
+    (state / "services.json").write_text('{"enabled": ["xray"]}')
+    (state / "netbird").mkdir()
+    (state / "netbird/config.json").write_text("{}")
+
+    reset._reset_all()
+
+    assert not (state / "services.json").exists()
+    assert not (state / "netbird").exists()

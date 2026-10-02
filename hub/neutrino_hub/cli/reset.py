@@ -14,12 +14,11 @@ is reached over SSH until ``nhub setup`` runs again.
 """
 
 import argparse
-import os
 import subprocess
 import shutil
 import sys
 
-from neutrino_hub.cli.stop import stop, stop_everything
+from neutrino_hub.cli.stop import stop, stop_everything, stop_service
 from neutrino_hub.cli.password import (
     clear_password,
     read_new_password,
@@ -28,6 +27,7 @@ from neutrino_hub.cli.password import (
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.routes import hand_back
+from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -70,6 +70,9 @@ RESET_STATE_PATHS = (
     "panel_tls_certificate.pem",
     "panel_tls_key.pem",
     "xray_node_health.json",
+    # The children the service runs on macOS and Windows, and their start
+    # lines; the next setup enables them again.
+    "services.json",
 )
 # Directories under the state root the hub filled itself. The module cache is
 # a cache in the strict sense, so handing the box back costs the next owner a
@@ -80,7 +83,7 @@ RESET_STATE_PATHS = (
 # record of the last update, both this box's own. `agent_cache` is in neither
 # list: what the hub's own package laid there is the package manager's to
 # remove.
-RESET_STATE_DIRS = ("agent_module_cache", "cliproxyapi", "hub_update")
+RESET_STATE_DIRS = ("agent_module_cache", "cliproxyapi", "hub_update", "netbird")
 # Where every device's desired state lives, one directory per device. A
 # reset forgets them with the tokens: they describe machines the next owner
 # has not enrolled.
@@ -121,9 +124,11 @@ def main() -> int:
         print("\nNothing was reset.")
         return 2
 
-    if os.geteuid() != 0:
+    platform = hub_platform()
+    if not platform.is_elevated():
         print(
-            f"error: reset must run as root (sudo nhub reset {arguments.target})",
+            f"error: reset must run as {platform.elevation_word} "
+            f"({platform.elevation_hint(f'reset {arguments.target}')})",
             file=sys.stderr,
         )
         return 1
@@ -163,7 +168,10 @@ def _reset_all() -> int:
     # The panel and the router unit first. The panel's dnsmasq restart starts
     # the router unit again, and a running router unit applies the old
     # configuration on the next link event, taking back what is handed back.
-    stop(["web", "router"])
+    if is_linux():
+        stop(["web", "router"])
+    else:
+        stop_service()
     with router_lock():
         network = _hand_back_network()
     collected = _forget_collected() + _forget_logs()
@@ -205,6 +213,8 @@ def _hand_back_network() -> list:
     Returns:
         One line per thing stopped, empty on a machine the hub never drove.
     """
+    if not is_linux():
+        return []
     try:
         network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
     except (FileNotFoundError, ValueError):
@@ -302,7 +312,7 @@ def _restart_panel() -> str:
     Returns:
         What happened, empty when there was nothing to restart.
     """
-    controller = SystemdServiceController()
+    controller = SystemdServiceController() if is_linux() else process_controller()
     if not controller.status(RESET_PANEL_UNIT).is_installed:
         return ""
     try:
