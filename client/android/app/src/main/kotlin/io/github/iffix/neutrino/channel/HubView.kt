@@ -38,6 +38,10 @@ data class HubView(
     val isConnected: Boolean
         get() = connection == HubConnection.CONNECTED
 
+    /** Whether the hub refused the binding's ticket: nothing runs, and Leave is the one action. */
+    val isJoinRefused: Boolean
+        get() = binding.isPending && connection == HubConnection.DOWN
+
     /** Whether the hub switched this client off. */
     val isDisabled: Boolean
         get() = connection == HubConnection.DISABLED

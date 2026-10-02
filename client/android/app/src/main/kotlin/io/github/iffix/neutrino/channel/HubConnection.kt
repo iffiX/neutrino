@@ -2,6 +2,9 @@ package io.github.iffix.neutrino.channel
 
 /** Where one hub's socket stands, by the names every client uses. */
 enum class HubConnection {
+    /** The binding is kept and its ticket unspent: no address has answered yet. */
+    PENDING,
+
     /** The hub welcomed this phone and the socket is open. */
     CONNECTED,
 

@@ -7,6 +7,7 @@ import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HUB_ROLE
 import io.github.iffix.neutrino.CLIENT_IDLE_POLL_INTERVAL_S
+import io.github.iffix.neutrino.CLIENT_JOIN_PATH
 import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.CLIENT_REPORT_INTERVAL_S
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * The one socket to one hub: a connection round over the hub's addresses, the handshake, the
@@ -45,12 +47,17 @@ import kotlinx.serialization.json.JsonObject
  * refusal the binding survives waits 60 s; `binding_unknown` ends the binding; a socket another
  * replaced waits for [reconnect].
  *
+ * A binding whose ticket is unspent is `pending`: the first address that answers with the pinned
+ * certificate takes the ticket, and the hello follows there with the token it returned. A
+ * refusal of the ticket is `down` with its code, and no round runs after it.
+ *
  * @param bindingId The binding the session is for.
  * @param store Where the binding is kept and noted.
  * @param transport How the hub is reached.
  * @param machine What this phone says about itself.
  * @param resolveHubName The IPv4 address `hub.neutrino.internal` resolves to here, or null.
  * @param onUnbound Called with the binding's id and the refusal when the hub no longer knows it.
+ * @param onJoined Called with the binding's id and the hub's id for it once its ticket is spent.
  * @param clock The time in milliseconds, stamped on the view when the open socket closes.
  * @throws IllegalArgumentException When the store holds no binding with [bindingId].
  */
@@ -61,9 +68,10 @@ class HubSession(
     private val machine: ClientMachine,
     private val resolveHubName: suspend () -> String?,
     private val onUnbound: (String, ChannelResult.Refused) -> Unit,
+    private val onJoined: (String, String) -> Unit = { _, _ -> },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private val current = MutableStateFlow(HubView(binding = requireNotNull(store.get(bindingId))))
+    private val current = MutableStateFlow(requireNotNull(store.get(bindingId)).let { HubView(it, roundState(it)) })
     private val news = Channel<Unit>(Channel.CONFLATED)
     private var job: Job? = null
     private var scope: CoroutineScope? = null
@@ -72,6 +80,7 @@ class HubSession(
     private var stateHash = ""
     private var isReplaced = false
     private var isUnbound = false
+    private var isJoinRefused = false
 
     @Volatile
     private var preferredUrl = ""
@@ -133,7 +142,7 @@ class HubSession(
 
     /** The app came back to the foreground: a hub with no open socket runs a round now with the backoff at its floor. */
     fun resume() {
-        if (live != null || isReplaced || isUnbound) return
+        if (live != null || isReplaced || isUnbound || isJoinRefused) return
         backoffS = CLIENT_BACKOFF_MIN_S
         news.trySend(Unit)
     }
@@ -174,14 +183,16 @@ class HubSession(
 
     /**
      * A person pressed refresh: the error line goes, and the hub is asked again. A connected hub
-     * gets a report with `is_refresh`; a connecting or down hub gets a round now. A replaced or
-     * disabled hub takes no refresh. The refresh ends on a state frame, a code, or after 10 s.
+     * gets a report with `is_refresh`; a connecting, pending or down hub gets a round now. A
+     * replaced or disabled hub, or one whose ticket the hub refused, takes no refresh. The refresh
+     * ends on a state frame, a code, or after 10 s.
      *
      * @return Whether the hub entered refreshing, or already was.
      */
     fun refresh(): Boolean {
         val connection = current.value.connection
-        if (connection == HubConnection.REPLACED || connection == HubConnection.DISABLED || isUnbound) return false
+        val isIdle = connection == HubConnection.REPLACED || connection == HubConnection.DISABLED
+        if (isIdle || isUnbound || isJoinRefused) return false
         if (current.value.jobs.isRefreshing) return true
         current.update { it.copy(lastError = null, jobs = it.jobs.copy(isRefreshing = true)) }
         refreshTimer?.cancel()
@@ -235,9 +246,9 @@ class HubSession(
      * @return How many seconds to wait before the next.
      */
     internal suspend fun runOnce(): Long {
-        if (isReplaced || isUnbound) return CLIENT_IDLE_POLL_INTERVAL_S
-        val binding = store.get(bindingId) ?: return CLIENT_IDLE_POLL_INTERVAL_S
-        current.update { it.copy(connection = HubConnection.CONNECTING) }
+        if (isReplaced || isUnbound || isJoinRefused) return CLIENT_IDLE_POLL_INTERVAL_S
+        var binding = store.get(bindingId) ?: return CLIENT_IDLE_POLL_INTERVAL_S
+        current.update { it.copy(connection = roundState(binding)) }
         isRoundCut = false
         val only = preferredUrl.takeIf { isPreferredOnly }
         val nameUrl = if (only != null) "" else resolveHubName()?.let { nameUrlOf(binding.gatewayUrl, it) }.orEmpty()
@@ -247,6 +258,25 @@ class HubSession(
         for ((index, url) in urls.withIndex()) {
             if (index > 0) delay(CLIENT_ROTATE_DELAY_S * 1000)
             if (isRoundCut) return cutRound()
+            if (binding.isPending) {
+                when (val spent = spend(binding, url)) {
+                    is ChannelResult.Ok -> binding = spent.value
+
+                    is ChannelResult.Refused -> when (spent.code) {
+                        "hub_unreachable" -> {
+                            failure = spent
+                            continue
+                        }
+
+                        "hub_untrusted" -> {
+                            if (url != nameUrl || url in binding.storedUrls) untrusted = spent
+                            continue
+                        }
+
+                        else -> return onJoinRefused(spent)
+                    }
+                }
+            }
             val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
             dialling = events
             val socket = transport.connect(url, binding.fingerprint, events)
@@ -277,6 +307,35 @@ class HubSession(
         untrusted?.let { return onRejected(it) }
         return onUnreachable(failure ?: ChannelResult.refused("hub_unreachable", "detail" to "no address"))
     }
+
+    private suspend fun spend(binding: HubBinding, url: String): ChannelResult<HubBinding> {
+        val body = ChannelFrames.joinRequest(binding.ticket, machine)
+        val answer = when (val posted = transport.post(url, CLIENT_JOIN_PATH, binding.fingerprint, body)) {
+            is ChannelResult.Refused -> return posted
+            is ChannelResult.Ok -> posted.value
+        }
+        val id = (answer["id"] as? JsonPrimitive)?.content.orEmpty()
+        val token = (answer["token"] as? JsonPrimitive)?.content.orEmpty()
+        if (id.isEmpty() || token.isEmpty()) return ChannelResult.refused("enroll_no_token")
+        val kept = try {
+            store.update(bindingId) { it.copy(hubBindingId = id, token = token, ticket = "", gatewayUrl = url) }
+        } catch (error: IOException) {
+            return ChannelResult.refused("client_internal", "error" to (error.message ?: "IOException"))
+        } ?: return ChannelResult.refused("client_internal", "error" to "the binding is gone")
+        current.update { it.copy(binding = kept, connection = HubConnection.CONNECTING, lastError = null) }
+        onJoined(bindingId, id)
+        return ChannelResult.Ok(kept)
+    }
+
+    private fun onJoinRefused(refusal: ChannelResult.Refused): Long {
+        isJoinRefused = true
+        endRefresh()
+        current.update { it.copy(connection = HubConnection.DOWN, lastError = refusal) }
+        return CLIENT_IDLE_POLL_INTERVAL_S
+    }
+
+    private fun roundState(binding: HubBinding): HubConnection =
+        if (binding.isPending) HubConnection.PENDING else HubConnection.CONNECTING
 
     private fun cutRound(): Long {
         news.tryReceive()
@@ -487,13 +546,13 @@ class HubSession(
         val waitS = backoffS
         backoffS = minOf(backoffS * 2, CLIENT_BACKOFF_MAX_S)
         endRefresh()
-        current.update { it.copy(connection = HubConnection.DOWN, lastError = refusal) }
+        current.update { it.copy(connection = downState(), lastError = refusal) }
         return waitS
     }
 
     private fun onRejected(refusal: ChannelResult.Refused): Long {
         endRefresh()
-        current.update { it.copy(connection = HubConnection.DOWN, lastError = refusal) }
+        current.update { it.copy(connection = downState(), lastError = refusal) }
         if (refusal.code == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN) {
             isUnbound = true
             onUnbound(bindingId, refusal)
@@ -501,6 +560,9 @@ class HubSession(
         }
         return CLIENT_BACKOFF_MAX_S
     }
+
+    private fun downState(): HubConnection =
+        if (current.value.binding.isPending) HubConnection.PENDING else HubConnection.DOWN
 
     private fun unreachable(detail: String) = ChannelResult.refused("hub_unreachable", "detail" to detail)
 

@@ -47,7 +47,7 @@ object ChannelFrames {
         put("type", HELLO)
         put("protocol", PROTOCOL)
         put("role", CLIENT_ROLE)
-        put("id", binding.id)
+        put("id", binding.boundId)
         put("name", binding.name.ifEmpty { machine.hostname })
         put("software", machine.software)
         put("token", binding.token)
@@ -139,7 +139,7 @@ object ChannelFrames {
      * @return The body.
      */
     fun leaveRequest(binding: HubBinding): JsonObject = buildJsonObject {
-        put("id", binding.id)
+        put("id", binding.boundId)
         put("token", binding.token)
     }
 

@@ -51,12 +51,12 @@ import io.github.iffix.neutrino.scan.QrScanner
 
 /**
  * Joining a hub: the camera reads the QR code on the hub's Clients page, or the person pastes
- * the link; either starts the join, and Join shows it until the hub answers. Scan asks for the
+ * the link; either starts the join, and Join shows it until the binding is kept. Scan asks for the
  * camera, or reads again a code a join refused; beside the sidebar it is the header's action.
  *
  * @param join The join the app core runs.
  * @param onJoin What joining with a link's text does.
- * @param onJoined What happens once the hub is joined.
+ * @param onJoined What happens once the binding is kept.
  */
 @Composable
 fun JoinScreen(join: HubJoin, onJoin: (String) -> Unit, onJoined: () -> Unit) {
