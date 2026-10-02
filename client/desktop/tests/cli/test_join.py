@@ -1,8 +1,8 @@
 """``nclient join``: joining a hub, and every way the join is refused.
 
 The walk is the person's: a link on the command line or pasted at the
-prompt, a hub joined beside the hubs already held, and each refusal worded
-on the way out. Which process writes the binding is the point: a running
+prompt, a hub joined beside the hubs already held and stored pending with
+no hub asked, and each unusable link worded on the way out. Which process writes the binding is the point: a running
 resident is asked to join, and only a person with none enrolls here.
 Nothing here reaches a network.
 """
@@ -124,7 +124,11 @@ def test_a_fresh_join_stores_the_binding_and_hints_at_opening_the_client(
     assert wording.word_code("resident_not_running") in streams.err
     (stored,) = enrollment.bindings()
     assert stored["gateway_url"] == GATEWAY_URL
-    assert stored["token"] == "device-token"
+    assert (stored["is_pending"], stored["ticket"], stored["token"]) == (
+        True,
+        "ticket",
+        "",
+    )
 
 
 def test_a_second_hub_joins_the_first_and_asks_nothing(
@@ -141,18 +145,6 @@ def test_a_second_hub_joins_the_first_and_asks_nothing(
         OLD_GATEWAY_URL,
         GATEWAY_URL,
     ]
-
-
-def test_a_link_for_a_binding_already_held_replaces_it(
-    joined_hub, monkeypatch, config_path
-):
-    bind(config_path, url=OLD_GATEWAY_URL)
-    answer_with(monkeypatch, reply={"id": BINDING["id"], "token": "fresh-token"})
-
-    assert join_cli.main(LINK) == 0
-
-    (stored,) = enrollment.bindings()
-    assert (stored["gateway_url"], stored["token"]) == (GATEWAY_URL, "fresh-token")
 
 
 def test_an_empty_link_is_pasted_at_the_prompt(joined_hub, monkeypatch, capsys):
@@ -204,44 +196,12 @@ def test_an_unusable_link_is_worded_from_its_code(monkeypatch, capsys, link, cod
     assert enrollment.bindings() == []
 
 
-@pytest.mark.parametrize(
-    "error, code",
-    [
-        (GatewayRefused("401"), "enroll_refused"),
-        (GatewayUntrusted("pin"), "hub_untrusted"),
-        (
-            GatewayProtocolRefused(code="protocol_too_new", peer=2, hub=1, minimum=1),
-            "protocol_too_new",
-        ),
-        (
-            GatewayProtocolRefused(code="protocol_too_old", peer=1, hub=3, minimum=2),
-            "protocol_too_old",
-        ),
-    ],
-)
-def test_every_hub_refusal_is_worded_and_stores_nothing(
-    monkeypatch, capsys, error, code
-):
-    answer_with(monkeypatch, error=error)
+def test_a_join_here_asks_no_hub(monkeypatch, capsys):
+    posted = answer_with(monkeypatch, error=GatewayRefused("401"))
 
-    assert join_cli.main(LINK) == 1
+    assert join_cli.main(LINK) == 0
 
-    err = capsys.readouterr().err
-    assert err.strip() != code
-    assert enrollment.bindings() == []
-    if code == "protocol_too_new":
-        assert "protocol 2" in err and "speaks 1" in err
-    if code == "protocol_too_old":
-        assert "protocol 1" in err and "accepts 2" in err
-
-
-def test_a_refused_join_leaves_the_hubs_already_held(
-    joined_hub, monkeypatch, config_path, capsys
-):
-    bind(config_path, bindings=[dict(BINDING), dict(OFFICE_BINDING)])
-    answer_with(monkeypatch, error=GatewayRefused("401"))
-
-    assert join_cli.main(LINK) == 1
-
-    assert wording.word_code("enroll_refused") in capsys.readouterr().err
-    assert [binding["id"] for binding in enrollment.bindings()] == ["c1", "c2"]
+    assert posted == []
+    assert wording.word_state("pending") in capsys.readouterr().out
+    (stored,) = enrollment.bindings()
+    assert stored["is_pending"] is True

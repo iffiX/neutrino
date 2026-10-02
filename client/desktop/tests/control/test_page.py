@@ -56,7 +56,14 @@ DETAIL_FALLBACK_CODES = {
 MOUNT_BUSY_STATES = ("queued", "mounting", "pending")
 
 # The words of client.md, by key, in both catalogs.
-CONNECTION_STATES = ("connected", "connecting", "down", "replaced", "disabled")
+CONNECTION_STATES = (
+    "connected",
+    "connecting",
+    "down",
+    "replaced",
+    "disabled",
+    "pending",
+)
 OVERLAY_STATES = ("off", "connecting", "on")
 JOB_WORDS = (
     "refreshing",
@@ -796,7 +803,7 @@ def test_every_word_of_client_md_is_in_both_catalogs_as_written():
     assert CATALOGS["zh-CN"]["ui.overlay.on"] == "已连接 · {address}"
 
 
-def test_the_page_names_the_five_connections_and_the_three_network_states():
+def test_the_page_names_the_six_connections_and_the_three_network_states():
     listed = PAGE_JS.split("const CONNECTION_STATES = [")[1].split("];")[0]
     assert re.findall(r"'([a-z]+)'", listed) == list(CONNECTION_STATES)
     listed = PAGE_JS.split("const OVERLAY_STATES = [")[1].split("];")[0]
@@ -814,7 +821,11 @@ def test_the_hub_dot_follows_the_colour_table():
         "if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';"
         in tone
     )
-    assert "if (hub.connection === 'connecting') return 'pulse';" in tone
+    assert (
+        "if (hub.connection === 'connecting' || hub.connection === 'pending') "
+        "return 'pulse';" in tone
+    )
+    assert "if (isJoinRefused(hub)) return 'bad';" in tone
     assert "if (hub.connection === 'connected') return 'ok';" in tone
     assert "return hub.software ? 'wait' : 'off';" in tone
     listed = PAGE_JS.split("const PERSON_CODES = [")[1].split("];")[0]
@@ -884,13 +895,25 @@ def test_a_hub_row_draws_its_word_its_network_line_and_its_controls_in_order():
     row = body_of("hubRow")
     assert row.index("overlayPicker(hub)") < row.index("overlayButton(hub)")
     assert row.index("overlayButton(hub)") < row.index("t('ui.reconnect')")
-    assert row.index("t('ui.reconnect')") < row.index("leaveButton(hub)")
+    assert row.index("t('ui.reconnect')") < row.rindex("leaveButton(hub)")
     assert "if (hub.connection === 'replaced') {" in row
     assert "if (hub.is_exit) extras.push(noteLine(t('ui.hub_is_exit')));" in row
     word = body_of("hubWord")
     assert "if (jobs.is_leaving) return t('ui.job.leaving');" in word
     assert "if (jobs.is_refreshing) return t('ui.job.refreshing');" in word
     assert "return t('ui.state.' + connection);" in word
+
+
+def test_a_join_the_hub_refused_offers_only_leave():
+    assert "return hub.is_pending === true && hub.connection === 'down';" in body_of(
+        "isJoinRefused"
+    )
+    row = body_of("hubRow")
+    refused = row[row.index("if (isJoinRefused(hub)) {") :]
+    refused = refused[: refused.index("\n  }\n")]
+    assert "actions: [leaveButton(hub)]," in refused
+    assert EN_WORDS["ui.state.pending"] == "Joined; the hub has not been reached yet"
+    assert CATALOGS["zh-CN"]["ui.state.pending"] == "已加入，尚未连上 hub"
 
 
 def test_leave_arms_on_the_first_press_and_shows_its_job():

@@ -13,7 +13,11 @@ from __future__ import annotations
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import wording
 from neutrino_client.core import enrollment
-from neutrino_client.core.session import CONNECTION_CONNECTED, CONNECTION_REPLACED
+from neutrino_client.core.session import (
+    CONNECTION_CONNECTED,
+    CONNECTION_PENDING,
+    CONNECTION_REPLACED,
+)
 
 RESIDENT_RUNNING = "running"
 RESIDENT_NOT_RUNNING = "not running; open it: nclient gui"
@@ -122,8 +126,8 @@ def _why(hub: dict) -> str:
     Returns:
         The wording after a colon, empty when there is nothing to add.
     """
-    if hub.get("connection") == CONNECTION_REPLACED:
-        return f": {wording.word_state(CONNECTION_REPLACED)}"
+    if hub.get("connection") in (CONNECTION_REPLACED, CONNECTION_PENDING):
+        return f": {wording.word_state(str(hub['connection']))}"
     error = hub.get("last_error")
     if not isinstance(error, dict) or not error.get("code"):
         return ""

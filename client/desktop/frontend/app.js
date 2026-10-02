@@ -303,7 +303,9 @@ const PERSON_CODES = [
   'hub_untrusted', 'binding_unknown', 'protocol_too_old', 'protocol_too_new',
 ];
 // The five states of a hub's connection, as the resident names them.
-const CONNECTION_STATES = ['connected', 'connecting', 'down', 'replaced', 'disabled'];
+const CONNECTION_STATES = [
+  'connected', 'connecting', 'down', 'replaced', 'disabled', 'pending',
+];
 // The three states of a hub's virtual network.
 const OVERLAY_STATES = ['off', 'connecting', 'on'];
 // The name each virtual network's engine goes by.
@@ -544,7 +546,8 @@ function drawHubs(state) {
 function hubTone(hub) {
   const jobs = hub.jobs || {};
   if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';
-  if (hub.connection === 'connecting') return 'pulse';
+  if (isJoinRefused(hub)) return 'bad';
+  if (hub.connection === 'connecting' || hub.connection === 'pending') return 'pulse';
   if (hub.connection === 'connected') return 'ok';
   if (hub.connection === 'down') {
     const code = hub.last_error ? hub.last_error.code : '';
@@ -588,6 +591,16 @@ function hubRow(hub) {
     extras.push(errorLine(wordError(overlay.error)));
   }
   if (hub.last_error) extras.push(errorLine(wordError(hub.last_error)));
+  if (isJoinRefused(hub)) {
+    return rowElement({
+      tone: hubTone(hub),
+      title: hubName(hub),
+      word: hubWord(hub),
+      mono: hub.gateway_url,
+      extras: extras,
+      actions: [leaveButton(hub)],
+    });
+  }
   const actions = [];
   const networkPicker = overlayPicker(hub);
   if (networkPicker) actions.push(networkPicker);
@@ -610,6 +623,12 @@ function hubRow(hub) {
     reason: network.disabled && !jobs.is_leaving ? overlayReason(hub) : '',
     actions: actions,
   });
+}
+
+// A join whose ticket the hub refused: the row is down with the code, and
+// Leave is all it offers.
+function isJoinRefused(hub) {
+  return hub.is_pending === true && hub.connection === 'down';
 }
 
 // Leave: arms on the first press, leaves on the second, and is the row's

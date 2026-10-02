@@ -243,7 +243,16 @@ class GatewayHttpChannel:
             headers={"Content-Type": "application/json"},
         )
         if status in (401, 403):
-            raise GatewayRefused(f"hub refused this client's token ({status})")
+            detail = error_detail(data)
+            raise GatewayRefused(
+                f"hub refused this client's token ({status})",
+                code=str(detail.get("code", "") or ""),
+                params=(
+                    detail.get("params")
+                    if isinstance(detail.get("params"), dict)
+                    else {}
+                ),
+            )
         if status == 409:
             detail = error_detail(data)
             refusal = refusal_error(

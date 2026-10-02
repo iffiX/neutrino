@@ -32,6 +32,7 @@ def test_state_carries_the_persons_facts_the_hubs_and_no_token():
         "gateway_url",
         "software",
         "connection",
+        "is_pending",
         "last_error",
         "is_exit",
         "overlay",

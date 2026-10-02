@@ -59,6 +59,10 @@ CLIENT_CODE_WORDS = {
     "clipboard_unwritable": "the clipboard could not be written: {detail}",
     "web_token_missing": "the hub sent no token for this page; try again",
     "port_taken": "another entry already holds local port {port}",
+    "ticket_spent": (
+        "the hub refused this link; it was used already or has expired, "
+        "so leave this hub and join with a fresh link"
+    ),
     "mount_not_authorized": "mounting was not authorized on this machine",
     "mount_tooling_missing": "the mount tooling is missing on this machine",
     "control_peer_refused": "the running client belongs to another account",
@@ -155,6 +159,7 @@ CLIENT_STATE_WORDS = {
     "failed": "failed",
     "unknown": "waiting for the client",
     "replaced": "another client took this connection",
+    "pending": "joined; the hub has not been reached yet",
     "on": "on",
     "joining": "joining",
     "leaving": "leaving",
