@@ -702,3 +702,217 @@ def test_the_script_names_both_panel_ports(tmp_path):
 
     assert "\nPORT=8080\n" in text
     assert "\nHTTPS_PORT=8444\n" in text
+
+
+# --- macOS and Windows ---
+
+
+def system_plan(directory: Path, family: str) -> HubUpdatePlan:
+    name = {"pkg": "macos-arm64.pkg", "msi": "windows-amd64.msi"}[family]
+    return HubUpdatePlan(
+        from_version="0.5.0",
+        to_version="0.5.1",
+        package=directory / f"neutrino-hub-0.5.1-{name}",
+        rollback=directory / f"neutrino-hub-0.5.0-{name}",
+        family=family,
+        port=8080,
+        https_port=8443,
+        units=(),
+        started_at="2026-10-03T12:00:00Z",
+    )
+
+
+def test_a_mac_update_is_a_launchd_job_submitted_after_an_old_one_is_removed(
+    tmp_path, roots
+):
+    launched = []
+    installer = make_installer(tmp_path, checker=Checker(), launched=launched)
+    directory = roots[0] / "hub_update"
+
+    installer.launch(system_plan(directory, "pkg"))
+
+    script = directory / "update.sh"
+    assert script.read_text().startswith("#!/bin/sh")
+    assert [command for command, _ in launched] == [
+        ["launchctl", "remove", "neutrino_hub_update"],
+        [
+            "launchctl",
+            "submit",
+            "-l",
+            "neutrino_hub_update",
+            "--",
+            "/bin/sh",
+            str(script),
+        ],
+    ]
+    assert installer._state.load().stage == "installing"
+
+
+def test_no_earlier_job_to_remove_still_submits(tmp_path, roots):
+    submitted = []
+
+    def run_command(command, **keywords):
+        if command[1] == "remove":
+            raise subprocess.CalledProcessError(3, command)
+        submitted.append(command)
+
+    installer = make_installer(tmp_path, checker=Checker())
+    installer._run = run_command
+
+    installer.launch(system_plan(roots[0] / "hub_update", "pkg"))
+
+    assert submitted[0][:2] == ["launchctl", "submit"]
+
+
+def test_a_windows_update_is_a_powershell_started_apart_from_the_service(
+    tmp_path, roots
+):
+    started = []
+    installer = HubUpdateInstaller(
+        checker=Checker(),
+        state=HubUpdateStateFile(path=tmp_path / "state" / "hub_update" / "state.json"),
+        asset="neutrino-hub-{version}-windows-amd64.msi",
+        family="msi",
+        start_detached=started.append,
+        disk_usage=lambda path: Usage(10**12, 0, 10**12),
+    )
+    directory = roots[0] / "hub_update"
+
+    installer.launch(system_plan(directory, "msi"))
+
+    script = directory / "update.ps1"
+    assert script.read_text().startswith("# Written by neutrino_hub")
+    assert started == [
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ]
+    ]
+
+
+def test_a_windows_script_that_cannot_start_is_a_failed_record(tmp_path, roots):
+    def refusing(command):
+        raise OSError("access denied")
+
+    installer = make_installer(tmp_path, checker=Checker())
+    installer._start_detached = refusing
+
+    with pytest.raises(HubUpdateError) as refused:
+        installer.launch(system_plan(roots[0] / "hub_update", "msi"))
+
+    assert refused.value.code == "update_launch_failed"
+    assert installer._state.load().stage == "failed"
+
+
+def test_the_detached_start_falls_back_when_the_job_refuses_breakaway(monkeypatch):
+    tried = []
+
+    def popen(command, **keywords):
+        tried.append(keywords["creationflags"])
+        if keywords["creationflags"] & 0x01000000:
+            raise OSError("breakaway refused")
+
+    monkeypatch.setattr(installer_module.subprocess, "Popen", popen)
+
+    installer_module._start_detached(["powershell.exe"])
+
+    assert tried == [0x01000008, 0x00000008]
+
+
+def test_a_system_hub_holds_its_gate_on_its_one_service(tmp_path, roots):
+    installer = make_installer(
+        tmp_path, checker=Checker(), units={"neutrino_hub_router": "active"}
+    )
+    installer._family = "pkg"
+
+    assert installer._gate_units() == ()
+
+
+def test_the_install_is_read_from_launchd_on_a_mac(tmp_path, monkeypatch):
+    monkeypatch.setattr(installer_module, "launchd_job_state", lambda: "active")
+    installer = HubUpdateInstaller(
+        checker=Checker(),
+        state=HubUpdateStateFile(path=tmp_path / "state.json"),
+        family="pkg",
+    )
+
+    assert installer.is_unit_active()
+
+
+class LaunchctlResult:
+    def __init__(self, code, text):
+        self.returncode = code
+        self.stdout = text
+
+
+def test_the_launchd_job_runs_only_while_launchd_says_running(monkeypatch):
+    for result, state in (
+        (LaunchctlResult(0, "\tstate = running\n"), "active"),
+        (LaunchctlResult(0, "\tstate = not running\n"), "inactive"),
+        (LaunchctlResult(113, ""), "inactive"),
+    ):
+        monkeypatch.setattr(
+            installer_module.subprocess, "run", lambda command, **k: result
+        )
+        assert installer_module.launchd_job_state() == state
+
+
+def test_the_windows_script_runs_only_while_its_powershell_does(tmp_path):
+    pid_file = tmp_path / "update.pid"
+
+    assert installer_module.windows_script_state(pid_file) == "inactive"
+    pid_file.write_text(str(os.getpid()))
+    assert installer_module.windows_script_state(pid_file) == "inactive"
+    pid_file.write_text("not a number")
+    assert installer_module.windows_script_state(pid_file) == "inactive"
+
+
+class FakeAgentCache:
+    """Serves every family and machine, recording what it was asked."""
+
+    asked = []
+
+    def serves(self, *, family, architecture):
+        self.asked.append((family, architecture))
+        return True
+
+    def package(self, *, family, architecture):
+        return Path(f"/cache/{family}-{architecture}")
+
+
+def test_the_local_agent_is_the_systems_own_family_outside_linux(monkeypatch):
+    FakeAgentCache.asked = []
+    monkeypatch.setattr(installer_module, "AgentPackageCache", FakeAgentCache)
+    monkeypatch.setattr(installer_module, "machine_architecture", lambda: "arm64")
+    monkeypatch.setattr(installer_module, "hub_os", lambda: "darwin")
+
+    assert installer_module.local_agent_package() == "/cache/pkg-arm64"
+
+    monkeypatch.setattr(installer_module, "hub_os", lambda: "linux")
+    monkeypatch.setattr(installer_module, "distribution_family", lambda: "debian")
+
+    assert installer_module.local_agent_package() == "/cache/deb-arm64"
+    assert FakeAgentCache.asked == [("pkg", "arm64"), ("deb", "arm64")]
+
+
+def test_old_system_scripts_and_packages_are_pruned(tmp_path, roots):
+    directory = roots[0] / "hub_update"
+    directory.mkdir()
+    for name in (
+        "update.ps1",
+        "update.pid",
+        "neutrino-hub-0.4.0-windows-amd64.msi",
+        "neutrino-hub-0.4.0-macos-arm64.pkg",
+        "state.json",
+    ):
+        (directory / name).write_text("x")
+    installer = make_installer(tmp_path, checker=Checker())
+
+    installer._prune(keep=set())
+
+    assert sorted(path.name for path in directory.iterdir()) == ["state.json"]
