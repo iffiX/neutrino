@@ -47,6 +47,7 @@ from tests.conftest import (
     FakeClientPlatform,
     bind,
     discard,
+    link_for,
     with_hub,
 )
 from tests.core.test_session import ScriptedSocket
@@ -319,6 +320,7 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
         "gateway_url": HOME_URL,
         "software": "neutrino_hub/0.3.0",
         "connection": "connected",
+        "is_pending": False,
         "last_error": None,
         "is_exit": True,
         "overlay": {
@@ -1242,6 +1244,73 @@ def overlay_resident(config_path):
     )
     yield resident, driver
     resident.shutdown()
+
+
+@pytest.fixture
+def joining_resident(config_path):
+    driver = FakeOverlayDriver()
+    resident = ClientResident(
+        log=discard,
+        platform=FakeClientPlatform(),
+        overlay_drivers={"easytier": driver, "netbird": FakeOverlayDriver()},
+    )
+    resident.connect(
+        link_for(
+            {
+                "urls": [HOME_URL, "https://10.144.144.1:8443"],
+                "token": "ticket-1",
+                "overlays": [EASYTIER_OVERLAY],
+            }
+        )
+    )
+    yield resident, driver
+    resident.shutdown()
+
+
+def test_a_join_shows_its_row_at_once_pending_with_its_network(joining_resident):
+    resident, _driver = joining_resident
+
+    (row,) = resident.hubs()
+
+    assert (row["connection"], row["is_pending"]) == ("pending", True)
+    assert row["gateway_url"] == HOME_URL
+    assert row["binding_id"].startswith("pending_")
+    assert "ticket-1" not in json.dumps(resident.hubs())
+    assert row["overlay"]["networks"] == [{"provider": "easytier", "network": "home"}]
+    assert row["overlay"]["state"] == "off"
+    assert resident.connect_overlay(row["binding_id"]) == {}
+
+
+def test_a_completed_join_keeps_the_session_and_its_network(joining_resident):
+    resident, _driver = joining_resident
+    (session,) = sessions_of(resident).values()
+    pending_id = session.binding_id
+    assert resident.connect_overlay(pending_id) == {}
+    wait_until(lambda: resident.hubs()[0]["overlay"]["state"] == "on")
+    completed = dict(
+        session.binding(), id="c7", token="tok7", ticket="", is_pending=False
+    )
+
+    resident._hub_joined(session, completed)
+    resident._reconcile_bindings(enrollment.config_stamp())
+
+    assert list(sessions_of(resident).values()) == [session]
+    (row,) = resident.hubs()
+    assert (row["binding_id"], row["is_pending"]) == ("c7", False)
+    assert row["overlay"]["state"] == "on"
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c7"]
+
+
+def test_leaving_a_pending_join_tells_no_hub(joining_resident, monkeypatch):
+    resident, _driver = joining_resident
+    told = []
+    monkeypatch.setattr(enrollment, "leave", told.append)
+    (row,) = resident.hubs()
+
+    resident.disconnect(row["binding_id"])
+
+    assert resident.hubs() == [] and enrollment.bindings() == []
+    assert told == []
 
 
 def test_a_hub_row_carries_its_networks_row_and_no_secret(overlay_resident):

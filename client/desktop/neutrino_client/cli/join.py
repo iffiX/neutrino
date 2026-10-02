@@ -3,7 +3,8 @@
 A hub joined is one more hub, never a replacement: the binding joins the
 ones already held. The binding file has one writer at a time, so a running
 resident is asked to join and adopts the hub at once; with none running the
-enrollment runs here and the hint says how to open one.
+pending binding is stored here, for the resident to complete, and the hint
+says how to open one.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -43,7 +44,7 @@ def main(link: str) -> int:
 
 
 def _join_here(link: str) -> int:
-    """Enroll from this process, with no resident to do it.
+    """Store the pending binding from this process, with no resident to do it.
 
     Args:
         link: The enrollment link.
@@ -56,7 +57,7 @@ def _join_here(link: str) -> int:
     except enrollment.EnrollmentError as error:
         print(wording.word_code(error.code, error.params), file=sys.stderr)
         return 1
-    print(f"joined {binding['gateway_url']}")
+    print(f"joined {binding['gateway_url']}: {wording.word_state('pending')}")
     print(wording.word_code("resident_not_running"), file=sys.stderr)
     return 0
 

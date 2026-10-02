@@ -169,16 +169,25 @@ def test_a_mismatched_pin_keeps_the_binding_and_asks_again_a_minute_later(
     assert RecordingHandler.requests == []
 
 
-def test_a_wrong_fingerprint_link_is_refused_at_enrollment(tls_server, config_path):
+def test_a_wrong_fingerprint_spends_no_ticket(tls_server, config_path):
     url, _ = tls_server
     link = link_for({"urls": [url], "token": "ticket", "fp": WRONG_FINGERPRINT})
+    binding = enrollment.enroll(link)
 
-    with pytest.raises(enrollment.EnrollmentError) as refusal:
-        enrollment.enroll(link)
+    with pytest.raises(GatewayUntrusted):
+        enrollment.complete_join(binding, url)
 
-    assert refusal.value.code == "hub_untrusted"
     assert RecordingHandler.requests == []
-    assert enrollment.bindings() == []
+    assert enrollment.bindings() == [binding]
+
+
+def test_a_refusal_names_the_hubs_code():
+    made = canned_channel(401, b'{"detail": {"code": "ticket_spent", "params": {}}}')
+
+    with pytest.raises(GatewayRefused) as refused:
+        made.post("/api/channel/join", {})
+
+    assert (refused.value.code, refused.value.params) == ("ticket_spent", {})
 
 
 def canned_channel(status, data=b"", headers=None):

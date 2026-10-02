@@ -16,11 +16,14 @@ A ``refused`` frame ends the socket whenever it arrives, and says the same
 as one that arrives instead of the welcome: its code decides what becomes
 of the binding.
 
-The connection is one of five states: ``connected``, ``connecting`` while a
+The connection is one of six states: ``connected``, ``connecting`` while a
 round runs or a lost socket is about to be opened again, ``down`` once a
 round ended in a code and the backoff runs, ``replaced`` while another
-socket holds the binding, and ``disabled`` while the hub has this client
-switched off. A refresh is the same loop moved to now.
+socket holds the binding, ``disabled`` while the hub has this client
+switched off, and ``pending`` while a join's ticket is not spent: the
+first address that answers with the pinned certificate spends it before
+the hello, and a hub that refuses it leaves the session down for good. A
+refresh is the same loop moved to now.
 
 Errors are ``{"code", "params"}``, never an English sentence; every surface
 does its own wording.
@@ -67,6 +70,7 @@ from neutrino_client.core.channel import refusal_error
 from neutrino_client.core.streams import ClientStream, ClientStreamRegistry
 from neutrino_client.core.ws_client import WebSocketClient, close_error
 from neutrino_client.exceptions import (
+    EnrollmentError,
     GatewayRefused,
     GatewayRefusedDetail,
     GatewayUnreachable,
@@ -80,16 +84,23 @@ CONNECTION_CONNECTING = "connecting"
 CONNECTION_DOWN = "down"
 CONNECTION_REPLACED = "replaced"
 CONNECTION_DISABLED = "disabled"
+CONNECTION_PENDING = "pending"
 CONNECTION_STATES = (
     CONNECTION_CONNECTED,
     CONNECTION_CONNECTING,
     CONNECTION_DOWN,
     CONNECTION_REPLACED,
     CONNECTION_DISABLED,
+    CONNECTION_PENDING,
 )
 # The states a refresh acts on; the other two change only by a person's
 # Reconnect or by the hub.
-CONNECTION_REFRESHABLE = (CONNECTION_CONNECTED, CONNECTION_CONNECTING, CONNECTION_DOWN)
+CONNECTION_REFRESHABLE = (
+    CONNECTION_CONNECTED,
+    CONNECTION_CONNECTING,
+    CONNECTION_DOWN,
+    CONNECTION_PENDING,
+)
 
 # How long a stop waits for the loop thread to come back, its connect in
 # progress aborted.
@@ -151,6 +162,15 @@ def _refusal(message: dict) -> Exception:
 
 def _nobody(*_args) -> None:
     """Nobody listening."""
+
+
+def _adopt_join(session, binding: dict) -> None:
+    """Keep a completed join on the session that made it.
+
+    Raises:
+        OSError: When the binding file cannot be written.
+    """
+    session.adopt_join(binding)
 
 
 def clean_terminals(value) -> dict:
@@ -255,6 +275,7 @@ class ClientHubSession:
         on_services=None,
         on_disabled=None,
         on_unbound=None,
+        on_joined=None,
         refresh_timeout_s: float = CLIENT_REFRESH_TIMEOUT_S,
     ):
         """
@@ -273,6 +294,9 @@ class ClientHubSession:
                 switches this client off; None for nobody listening.
             on_unbound: Called with this session when the hub says it holds
                 no such binding; None for nobody listening.
+            on_joined: ``on_joined(session, binding)`` keeps the binding a
+                pending join completed, by :meth:`adopt_join`, raising
+                OSError when it cannot; None adopts it directly.
             refresh_timeout_s: How long a refresh waits for its answer.
         """
         self._log = log
@@ -284,6 +308,12 @@ class ClientHubSession:
         self._on_services = on_services if on_services is not None else _nobody
         self._on_disabled = on_disabled if on_disabled is not None else _nobody
         self._on_unbound = on_unbound if on_unbound is not None else _nobody
+        self._on_joined = on_joined if on_joined is not None else _adopt_join
+        # The binding's id when the session began, the same for its life,
+        # whatever id a completed join brings.
+        self._local_key = str(binding.get("id", ""))
+        # Set once the hub refused a pending join; only Leave acts then.
+        self._is_join_refused = False
         # Set whenever the loop should stop waiting: a person asked for a
         # connection now, or the session is stopping.
         self._news = threading.Event()
@@ -326,6 +356,31 @@ class ClientHubSession:
         self._is_only_preferred = False
 
     # --- what the resident reads ---
+
+    @property
+    def local_key(self) -> str:
+        """The binding's id when the session began, unchanged by a completed join."""
+        return self._local_key
+
+    def is_pending(self) -> bool:
+        """Whether the binding is a join whose ticket is not spent yet."""
+        with self._lock:
+            return self._binding.get("is_pending") is True
+
+    def adopt_join(self, binding: dict) -> None:
+        """Keep the binding a pending join completed, on disk and here.
+
+        Args:
+            binding: The completed binding.
+
+        Raises:
+            OSError: When the binding file cannot be written.
+        """
+        with self._lock:
+            pending_id = self._binding.get("id", "")
+        enrollment.replace_binding(pending_id, binding)
+        with self._lock:
+            self._binding = dict(binding)
 
     @property
     def binding_id(self) -> str:
@@ -777,7 +832,7 @@ class ClientHubSession:
             forgotten it.
         """
         with self._lock:
-            is_idle = self._is_replaced or self._is_unbound
+            is_idle = self._is_replaced or self._is_unbound or self._is_join_refused
             was_down = self._is_down
             self._is_down = False
         if is_idle:
@@ -786,6 +841,8 @@ class ClientHubSession:
             self._on_change()
         try:
             client = self._connect_round()
+        except EnrollmentError as error:
+            return self._on_join_refused(error)
         except (GatewayRefused, GatewayUntrusted) as error:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
@@ -852,7 +909,7 @@ class ClientHubSession:
             try:
                 if self._is_redirected():
                     return None
-                self._connect(client)
+                self._connect(client, url)
             except GatewayRefused:
                 if self._is_redirected():
                     return None
@@ -878,6 +935,33 @@ class ClientHubSession:
         if untrusted is not None:
             raise untrusted
         raise failure if failure is not None else GatewayUnreachable("no address")
+
+    def _join_at(self, url: str) -> None:
+        """Spend the pending join's ticket at the address that answered.
+
+        Raises:
+            EnrollmentError: When the hub refused the join.
+            GatewayUntrusted: When what answers is not the pinned hub.
+            GatewayUnreachable: When the address stops answering, or the
+                completed binding cannot be kept.
+        """
+        completed = enrollment.complete_join(self.binding(), url)
+        try:
+            self._on_joined(self, completed)
+        except OSError as error:
+            raise GatewayUnreachable(f"the join could not be kept: {error}")
+        self._log(f"joined the hub at {url}")
+
+    def _on_join_refused(self, error: EnrollmentError) -> int:
+        """Take the hub's refusal of a pending join: down, and no more rounds."""
+        with self._lock:
+            self._is_join_refused = True
+            self._is_down = True
+            self._is_refreshing = False
+            self._last_error = {"code": error.code, "params": dict(error.params)}
+        self._log(f"the hub refused the join: {error.code}")
+        self._on_change()
+        return CLIENT_IDLE_POLL_INTERVAL_S
 
     def _redirect_round(self) -> None:
         """End a round in progress, its connect aborted, and start the next one now."""
@@ -929,13 +1013,16 @@ class ClientHubSession:
             timeout_s=CLIENT_CONNECT_TIMEOUT_S,
         )
 
-    def _connect(self, client) -> None:
-        """Open the socket, say hello, take the welcome, and report once.
+    def _connect(self, client, url: str = "") -> None:
+        """Open the socket, spend a pending join's ticket, say hello, and report once.
 
         Args:
             client: The unconnected socket.
+            url: The address the socket is opened at; empty for the
+                binding's own.
 
         Raises:
+            EnrollmentError: When the hub refused a pending join.
             GatewayUntrusted: When the peer failed the fingerprint check.
             GatewayRefused: When the hub refused the hello, by a frame or by
                 its close; the protocol refusals are their own kind.
@@ -944,6 +1031,8 @@ class ClientHubSession:
         """
         client.connect()
         try:
+            if self.is_pending():
+                self._join_at(url or self.gateway_url())
             client.send_text(json.dumps(self._hello()))
             welcome = self._take_welcome(client)
             with self._lock:
@@ -1389,6 +1478,10 @@ class ClientHubSession:
         """Where the socket stands; the lock is held."""
         if self._is_replaced:
             return CONNECTION_REPLACED
+        if self._is_join_refused:
+            return CONNECTION_DOWN
+        if self._binding.get("is_pending") is True:
+            return CONNECTION_PENDING
         if self._is_welcomed:
             return CONNECTION_DISABLED if self._is_disabled else CONNECTION_CONNECTED
         return CONNECTION_DOWN if self._is_down else CONNECTION_CONNECTING

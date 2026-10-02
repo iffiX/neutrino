@@ -1,10 +1,13 @@
 """Enrollment as one person: the link, the join, and the bindings kept.
 
 The payload rides base64url so the link holds no character a shell splits
-or a URL escapes; a link whose role is not ``client`` is refused; the join
-body is the protocol's seven fields and names no MAC; the reply lands as
-one binding in a list, with every address the link carried, written
-atomically and 0600 in the person's own configuration directory; a file of
+or a URL escapes; a link whose role is not ``client`` is refused; a join
+stores a pending binding at once, with the link's ticket, its first
+address, every address and its overlays, and asks no hub; completing it
+posts the protocol's seven fields, names no MAC, and puts the hub's id and
+token in the pending binding's place, with no ticket; a refusal is typed by
+the hub's code; the file is written atomically and 0600 in the person's own
+configuration directory; a file of
 the older single-binding shape reads as no bindings, and a binding without
 the address list reads as one with none. The candidates of a connection
 round, the hub's name in a stored address's scheme and port, and the notes
@@ -160,11 +163,54 @@ def answer_with(monkeypatch, *, reply=None, error=None):
 # --- joining ---
 
 
-def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
+def pending(link=None) -> dict:
+    """A join stored from a link, nothing asked of any hub."""
+    return enrollment.enroll(
+        link
+        or link_for(
+            {"urls": ["https://hub:8443", "https://10.0.0.1:8443"], "token": "ticket"}
+        )
+    )
+
+
+def test_a_join_stores_the_binding_at_once_and_asks_no_hub(monkeypatch):
     posted = answer_with(monkeypatch, reply={"id": "c1", "token": "tok"})
-    link = link_for({"urls": ["https://hub:8443"], "token": "ticket", "fp": "ab" * 32})
+    link = link_for(
+        {
+            "urls": ["https://hub:8443", "https://10.0.0.1:8443"],
+            "token": "ticket",
+            "fp": "ab" * 32,
+            "overlays": [EASYTIER],
+        }
+    )
 
     binding = enrollment.enroll(link)
+
+    assert posted == []
+    assert binding["id"].startswith("pending_")
+    assert binding == {
+        "id": binding["id"],
+        "name": enrollment.socket.gethostname(),
+        "hub_id": "",
+        "hub_name": "",
+        "gateway_url": "https://hub:8443",
+        "gateway_urls": ["https://hub:8443", "https://10.0.0.1:8443"],
+        "fingerprint": "ab" * 32,
+        "token": "",
+        "ticket": "ticket",
+        "is_pending": True,
+        "overlays": [EASYTIER],
+        "is_overlay_on": False,
+        "overlay_pick": "",
+    }
+    assert enrollment.bindings() == [binding]
+
+
+def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
+    posted = answer_with(monkeypatch, reply={"id": "c1", "token": "tok"})
+    binding = pending()
+
+    completed = enrollment.complete_join(binding, "https://10.0.0.1:8443")
 
     path, payload = posted[0]
     assert path == CLIENT_JOIN_PATH
@@ -185,52 +231,50 @@ def test_the_join_body_is_the_protocols_seven_fields(monkeypatch):
     assert payload["software"] == f"neutrino_client/{CLIENT_VERSION}"
     assert set(payload["platform"]) == {"os", "family", "arch"}
     assert "mac_addresses" not in payload and "token" not in payload
-    assert binding == {
-        "id": "c1",
-        "name": payload["name"],
-        "hub_id": "",
-        "hub_name": "",
-        "gateway_url": "https://hub:8443",
-        "gateway_urls": ["https://hub:8443"],
-        "fingerprint": "ab" * 32,
-        "token": "tok",
-        "overlays": [],
-        "is_overlay_on": False,
-        "overlay_pick": "",
-    }
-    assert enrollment.bindings() == [binding]
-
-
-def test_the_address_that_answered_is_the_one_stored(monkeypatch):
-    calls = []
-
-    def post(self, path, payload):
-        calls.append(self._gateway_url)
-        if len(calls) == 1:
-            raise channel.GatewayUnreachable("down")
-        return {"id": "c1", "token": "tok"}
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
-
-    binding = enrollment.enroll(
-        link_for({"urls": ["http://a", "http://b"], "token": "ticket"})
+    assert completed == dict(
+        {
+            key: value
+            for key, value in binding.items()
+            if key not in ("ticket", "is_pending")
+        },
+        id="c1",
+        token="tok",
+        gateway_url="https://10.0.0.1:8443",
     )
 
-    assert calls == ["http://a", "http://b"]
-    assert binding["gateway_url"] == "http://b"
-    assert binding["gateway_urls"] == ["http://a", "http://b"]
+
+def test_a_completed_join_takes_the_pending_ones_place(config_path):
+    binding = pending()
+    enrollment.add_binding(SECOND)
+    completed = dict(binding, id="c1", token="tok", is_pending=False, ticket="")
+
+    enrollment.replace_binding(binding["id"], completed)
+
+    assert [held["id"] for held in enrollment.bindings()] == ["c1", "c2"]
+    stored = json.loads(config_path.read_text())["bindings"][0]
+    assert "ticket" not in stored and "is_pending" not in stored
 
 
-def test_the_binding_lands_0600_in_the_persons_own_directory(monkeypatch, config_path):
-    answer_with(monkeypatch, reply={"id": "c1", "token": "tok"})
+def test_a_completed_join_of_a_hub_already_held_replaces_it():
+    enrollment.add_binding(BINDING)
+    binding = pending()
 
-    enrollment.enroll(link_for({"urls": ["http://hub"], "token": "ticket"}))
+    enrollment.replace_binding(
+        binding["id"], dict(binding, id="c1", token="fresh", is_pending=False)
+    )
+
+    (held,) = enrollment.bindings()
+    assert (held["id"], held["token"]) == ("c1", "fresh")
+
+
+def test_the_binding_lands_0600_in_the_persons_own_directory(config_path):
+    pending()
 
     assert config_path.is_file()
     assert oct(config_path.stat().st_mode & 0o777) == "0o600"
     assert oct(config_path.parent.stat().st_mode & 0o777) == "0o700"
     written = json.loads(config_path.read_text())
-    assert written["bindings"][0]["token"] == "tok"
+    assert written["bindings"][0]["ticket"] == "ticket"
     assert written["exit_hub_id"] == ""
 
 
@@ -254,41 +298,47 @@ def test_the_file_is_replaced_whole_never_written_in_place(monkeypatch, config_p
     assert sorted(os.listdir(str(config_path.parent))) == ["client.json"]
 
 
-def test_a_refused_ticket_is_typed(monkeypatch):
-    answer_with(monkeypatch, error=channel.GatewayRefused("401"))
+@pytest.mark.parametrize(
+    "error, code, params",
+    [
+        (
+            channel.GatewayRefused("401", code="ticket_spent"),
+            "ticket_spent",
+            {},
+        ),
+        (channel.GatewayRefused("401"), "enroll_refused", {}),
+        (
+            channel.GatewayRefusedDetail(code="role_mismatch", params={"role": "x"}),
+            "role_mismatch",
+            {"role": "x"},
+        ),
+        (
+            channel.GatewayProtocolRefused(
+                code="protocol_too_old", peer=1, hub=2, minimum=2
+            ),
+            "protocol_too_old",
+            {"peer": 1, "hub": 2, "min": 2},
+        ),
+    ],
+)
+def test_a_refused_join_is_typed_and_leaves_the_binding_pending(
+    monkeypatch, error, code, params
+):
+    answer_with(monkeypatch, error=error)
+    binding = pending()
 
     with pytest.raises(EnrollmentError) as caught:
-        enrollment.enroll(link_for({"urls": ["http://hub"], "token": "ticket"}))
+        enrollment.complete_join(binding, "https://hub:8443")
 
-    assert caught.value.code == "enroll_refused"
-    assert enrollment.bindings() == []
-
-
-@pytest.mark.parametrize("code", ["protocol_too_old", "protocol_too_new"])
-def test_a_protocol_the_hub_does_not_speak_is_typed_with_its_numbers(monkeypatch, code):
-    answer_with(
-        monkeypatch,
-        error=channel.GatewayProtocolRefused(code=code, peer=1, hub=2, minimum=2),
-    )
-
-    with pytest.raises(EnrollmentError) as caught:
-        enrollment.enroll(link_for({"urls": ["http://hub"], "token": "ticket"}))
-
-    assert caught.value.code == code
-    assert caught.value.params == {"peer": 1, "hub": 2, "min": 2}
-    assert enrollment.bindings() == []
+    assert (caught.value.code, caught.value.params) == (code, params)
+    assert enrollment.bindings() == [binding]
 
 
-def test_no_answering_address_is_typed_naming_them_all(monkeypatch):
+def test_an_address_that_stops_answering_is_no_refusal(monkeypatch):
     answer_with(monkeypatch, error=channel.GatewayUnreachable("down"))
 
-    with pytest.raises(EnrollmentError) as caught:
-        enrollment.enroll(
-            link_for({"urls": ["http://a", "http://b"], "token": "ticket"})
-        )
-
-    assert caught.value.code == "hub_unreachable"
-    assert caught.value.params["urls"] == "http://a, http://b"
+    with pytest.raises(channel.GatewayUnreachable):
+        enrollment.complete_join(pending(), "https://hub:8443")
 
 
 @pytest.mark.parametrize("reply", [{"id": "c1"}, {"token": "tok"}, {}])
@@ -296,10 +346,30 @@ def test_a_reply_without_an_id_and_a_token_is_refused(monkeypatch, reply):
     answer_with(monkeypatch, reply=reply)
 
     with pytest.raises(EnrollmentError) as caught:
-        enrollment.enroll(link_for({"urls": ["http://hub"], "token": "ticket"}))
+        enrollment.complete_join(pending(), "https://hub:8443")
 
     assert caught.value.code == "enroll_no_token"
-    assert enrollment.bindings() == []
+
+
+def test_a_pending_binding_without_its_ticket_is_not_one(config_path):
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "bindings": [
+                    {"id": "p1", "gateway_url": "http://a", "is_pending": True},
+                    {
+                        "id": "p2",
+                        "gateway_url": "http://a",
+                        "is_pending": True,
+                        "ticket": "t",
+                    },
+                ]
+            }
+        )
+    )
+
+    assert [held["id"] for held in enrollment.bindings()] == ["p2"]
 
 
 # --- leaving ---
@@ -444,9 +514,8 @@ def test_binding_for_answers_to_the_hub_id():
     assert enrollment.binding_for("h1") == BINDING
 
 
-def test_note_hub_writes_what_the_welcome_said(monkeypatch):
-    answer_with(monkeypatch, reply={"id": "c1", "token": "tok"})
-    enrollment.enroll(link_for({"urls": ["http://hub"], "token": "ticket"}))
+def test_note_hub_writes_what_the_welcome_said():
+    enrollment.add_binding(BINDING)
 
     enrollment.note_hub("c1", "h1", "home")
     enrollment.note_hub("nobody", "h9", "nowhere")
@@ -666,12 +735,7 @@ def test_a_netbird_overlay_may_name_no_management_url_fqdn_or_address():
     assert enrollment.clean_overlay(raw) == raw
 
 
-def test_the_join_keeps_the_links_overlays_on_the_binding(monkeypatch):
-    def post(self, path, payload):
-        return {"id": "c9", "token": "tok9"}
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
-
+def test_the_join_keeps_the_links_overlays_on_the_binding():
     binding = enrollment.enroll(
         link_for({"urls": ["http://g:1"], "token": "t", "overlays": [EASYTIER]})
     )

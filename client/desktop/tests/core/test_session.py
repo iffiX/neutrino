@@ -38,6 +38,7 @@ from neutrino_client.constants import (
 from neutrino_client.core import enrollment, protocol
 from neutrino_client.core.session import ClientHubSession
 from neutrino_client.exceptions import (
+    EnrollmentError,
     GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
@@ -2034,6 +2035,7 @@ def test_every_connection_state_is_named():
         "down",
         "replaced",
         "disabled",
+        "pending",
     )
 
 
@@ -2163,3 +2165,143 @@ def test_a_session_without_an_owner_name_is_named_by_its_stamp(bound, monkeypatc
     take(session, made, dict(STATE, terminals=terminals))
 
     assert session.terminal_sessions()[0]["owner_name"] == "client:c1"
+
+
+# --- a join that has not reached its hub yet ---
+
+
+PENDING_BINDING = dict(
+    BINDING,
+    id="pending_1",
+    hub_id="",
+    hub_name="",
+    gateway_url=LAN_URL,
+    gateway_urls=[LAN_URL, OVERLAY_URL],
+    token="",
+    ticket="ticket-1",
+    is_pending=True,
+)
+
+
+@pytest.fixture
+def pending_session(config_path):
+    bind(config_path, bindings=[PENDING_BINDING])
+    lines = []
+    session = ClientHubSession(
+        binding=stored_binding(config_path),
+        hostname="box",
+        platform_tuple=PLATFORM,
+        log=lines.append,
+    )
+    return session, lines
+
+
+class JoinDesk:
+    """The hub's join, as the round reaches it: completed or refused.
+
+    Attributes:
+        asked: Every address the ticket was spent at, in order.
+        refusal: The refusal the join ends in; None completes it.
+        unreachable_at: An address that stops answering mid-join.
+        sockets: The sockets of the round, for the order of join and hello.
+    """
+
+    def __init__(self, sockets):
+        self.asked = []
+        self.refusal = None
+        self.unreachable_at = ""
+        self.sockets = sockets
+
+    def __call__(self, binding, url):
+        self.asked.append((url, [list(made.sent) for made in self.sockets.made]))
+        if url == self.unreachable_at:
+            raise GatewayUnreachable("gone")
+        if self.refusal is not None:
+            raise self.refusal
+        return enrollment._binding(
+            dict(
+                binding,
+                id="c7",
+                token="tok7",
+                gateway_url=url,
+                ticket="",
+                is_pending=False,
+            )
+        )
+
+
+def test_a_pending_join_reads_pending_until_its_ticket_is_spent(pending_session):
+    session, _lines = pending_session
+
+    assert session.connection() == "pending"
+    assert session.is_pending() is True
+    assert session.local_key == "pending_1"
+
+
+def test_the_first_address_that_answers_spends_the_ticket_before_the_hello(
+    pending_session, monkeypatch, config_path
+):
+    session, _lines = pending_session
+    script = addresses_of(monkeypatch, {"100.64.0.1": [WELCOME]})
+    desk = JoinDesk(script)
+    monkeypatch.setattr(enrollment, "complete_join", desk)
+
+    session.run_once()
+
+    assert script.hosts == ["192.0.2.1", "100.64.0.1"]
+    (asked,) = desk.asked
+    assert asked == (OVERLAY_URL, [[], []])
+    hello = script.made[-1].sent[0]
+    assert (hello["type"], hello["id"], hello["token"]) == ("hello", "c7", "tok7")
+    (stored,) = json.loads(config_path.read_text())["bindings"]
+    assert (stored["id"], stored["token"], stored["gateway_url"]) == (
+        "c7",
+        "tok7",
+        OVERLAY_URL,
+    )
+    assert "ticket" not in stored and "is_pending" not in stored
+    assert session.binding_id == "c7" and session.local_key == "pending_1"
+    assert session.is_pending() is False
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        EnrollmentError("ticket_spent"),
+        EnrollmentError("protocol_too_old", {"peer": 1, "hub": 3, "min": 2}),
+    ],
+)
+def test_a_refused_join_is_down_with_its_code_and_runs_no_more_rounds(
+    pending_session, monkeypatch, config_path, refusal
+):
+    session, _lines = pending_session
+    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
+    desk = JoinDesk(script)
+    desk.refusal = refusal
+    monkeypatch.setattr(enrollment, "complete_join", desk)
+
+    session.run_once()
+    session.run_once()
+
+    assert session.connection() == "down"
+    assert session.last_error() == {"code": refusal.code, "params": refusal.params}
+    assert script.hosts == ["192.0.2.1"]
+    assert script.made[0].sent == []
+    assert stored_binding(config_path)["is_pending"] is True
+
+
+def test_an_address_that_stops_answering_mid_join_lets_the_round_go_on(
+    pending_session, monkeypatch
+):
+    session, _lines = pending_session
+    script = addresses_of(
+        monkeypatch, {"192.0.2.1": [WELCOME], "100.64.0.1": [WELCOME]}
+    )
+    desk = JoinDesk(script)
+    desk.unreachable_at = LAN_URL
+    monkeypatch.setattr(enrollment, "complete_join", desk)
+
+    session.run_once()
+
+    assert [url for url, _sent in desk.asked] == [LAN_URL, OVERLAY_URL]
+    assert session.binding_id == "c7"

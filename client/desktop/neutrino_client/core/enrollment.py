@@ -10,9 +10,13 @@ is not ``client`` was made for a device agent and is refused.
 The bindings live in ``client.json`` in the person's own configuration
 directory, mode 0600, one per hub joined:
 ``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
-fingerprint, token, overlays, is_overlay_on, overlay_pick}],
-"exit_hub_id"}``. A file without ``bindings``
-reads as none. ``gateway_urls`` is every address the hub answers on, from the
+fingerprint, token, ticket, is_pending, overlays, is_overlay_on,
+overlay_pick}], "exit_hub_id"}``, ``ticket`` and ``is_pending`` only on a
+pending join. A file without ``bindings`` reads as none. A join stores its
+binding at once, ``is_pending`` with the link's ``ticket``, no token and an
+id of this machine's own; the session spends the ticket at the first
+address that answers, and the binding then holds the hub's id and token and
+no ticket. ``gateway_urls`` is every address the hub answers on, from the
 link and then from each ``state`` frame; ``gateway_url`` is the one that last
 answered. A binding written by 0.3.0 has no list and reads as one with none.
 ``overlays`` is how this machine joins each of the hub's virtual networks,
@@ -39,6 +43,7 @@ import json
 import os
 import socket
 import urllib.parse
+import uuid
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
@@ -57,15 +62,14 @@ from neutrino_client.exceptions import (
     EnrollmentError,
     GatewayProtocolRefused,
     GatewayRefused,
-    GatewayUnreachable,
-    GatewayUntrusted,
+    GatewayRefusedDetail,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.store import ClientServiceStore
 
 LINK_PREFIX = "neutrino://enroll/"
 # What one binding keeps: every field a string but the list of every address
-# the hub answers on, the list of overlay objects and the wish.
+# the hub answers on, the list of overlay objects and the two flags.
 BINDING_KEYS = (
     "id",
     "name",
@@ -75,6 +79,8 @@ BINDING_KEYS = (
     "gateway_urls",
     "fingerprint",
     "token",
+    "ticket",
+    "is_pending",
     "overlays",
     "is_overlay_on",
     "overlay_pick",
@@ -82,6 +88,10 @@ BINDING_KEYS = (
 BINDING_URLS_KEY = "gateway_urls"
 BINDING_OVERLAYS_KEY = "overlays"
 BINDING_OVERLAY_ON_KEY = "is_overlay_on"
+BINDING_PENDING_KEY = "is_pending"
+BINDING_TICKET_KEY = "ticket"
+# What a pending binding's own id starts with, before the hub names one.
+BINDING_PENDING_ID_PREFIX = "pending_"
 # The string fields each overlay object carries, by provider and, for
 # EasyTier, by mode. An EasyTier object that names no mode is a manual one,
 # as a hub before the console mode sends it.
@@ -262,7 +272,7 @@ def add_binding(binding: dict) -> None:
 
     Raises:
         ValueError: When the record names no ``id``, ``gateway_url`` or
-            ``token``.
+            ``token``, or ``ticket`` while pending.
         OSError: When the file cannot be written.
     """
     kept = _binding(binding)
@@ -576,63 +586,114 @@ def join_payload(ticket: str) -> dict:
 
 
 def enroll(link: str) -> dict:
-    """Join the hub the link points at.
-
-    Every address in the link is tried in turn, because only one of them is
-    on this machine's network and the link cannot know which.
+    """Store the binding of the hub the link points at, before any hub is asked.
 
     Args:
         link: The enrollment link from the hub.
 
     Returns:
-        The binding stored.
+        The binding stored: pending, with the link's ticket, its first
+        address, every address and its overlays, and an id of its own.
 
     Raises:
-        EnrollmentError: If the link is unusable, the fingerprint does not
-            match what answers, the hub does not speak this client's
-            protocol, the hub refused the ticket, the reply names no id or
-            token, or no address answered.
+        EnrollmentError: If the link is unusable.
+        OSError: When the binding file cannot be written.
     """
     gateway_urls, ticket, fingerprint, overlays = parse_link(link)
-    payload = join_payload(ticket)
-    reply = None
-    refusal = ""
-    for gateway_url in gateway_urls:
-        channel = GatewayHttpChannel(gateway_url=gateway_url, fingerprint=fingerprint)
-        try:
-            reply = channel.post(CLIENT_JOIN_PATH, payload)
-            break
-        except GatewayProtocolRefused as error:
-            raise EnrollmentError(
-                error.code,
-                {"peer": error.peer, "hub": error.hub, "min": error.minimum},
-            ) from error
-        except GatewayRefused as error:
-            raise EnrollmentError("enroll_refused") from error
-        except GatewayUntrusted as error:
-            raise EnrollmentError("hub_untrusted", {"url": gateway_url}) from error
-        except GatewayUnreachable as error:
-            refusal = str(error)
-    if reply is None:
-        raise EnrollmentError(
-            "hub_unreachable", {"detail": refusal, "urls": ", ".join(gateway_urls)}
-        )
-
     binding = _binding(
         {
-            "id": reply.get("id", ""),
-            "name": payload["name"],
-            "gateway_url": gateway_url,
+            "id": BINDING_PENDING_ID_PREFIX + uuid.uuid4().hex,
+            "name": socket.gethostname(),
+            "gateway_url": gateway_urls[0],
             "gateway_urls": gateway_urls,
             "fingerprint": fingerprint,
-            "token": reply.get("token", ""),
+            "ticket": ticket,
+            BINDING_PENDING_KEY: True,
             "overlays": overlays,
         }
     )
-    if not _is_complete(binding):
-        raise EnrollmentError("enroll_no_token")
     add_binding(binding)
     return binding
+
+
+def complete_join(binding: dict, gateway_url: str) -> dict:
+    """Spend a pending binding's ticket at one address that answered.
+
+    Args:
+        binding: The pending binding.
+        gateway_url: The address whose certificate matched the pin.
+
+    Returns:
+        The binding as the hub completed it: the hub's id and token, that
+        address, no ticket and no longer pending.
+
+    Raises:
+        EnrollmentError: When the hub refused the join: ``ticket_spent``
+            or another code it named, ``enroll_refused`` for one it did
+            not, the protocol refusals with their numbers, or
+            ``enroll_no_token`` for a reply without an id or a token.
+        GatewayUntrusted: When what answers is not the pinned hub.
+        GatewayUnreachable: When the address stops answering.
+    """
+    channel = GatewayHttpChannel(
+        gateway_url=gateway_url, fingerprint=binding["fingerprint"]
+    )
+    try:
+        reply = channel.post(CLIENT_JOIN_PATH, join_payload(binding["ticket"]))
+    except GatewayProtocolRefused as error:
+        raise EnrollmentError(
+            error.code,
+            {"peer": error.peer, "hub": error.hub, "min": error.minimum},
+        ) from error
+    except GatewayRefused as error:
+        raise EnrollmentError(error.code or "enroll_refused", error.params) from error
+    except GatewayRefusedDetail as error:
+        raise EnrollmentError(error.code, error.params) from error
+    completed = _binding(
+        dict(
+            binding,
+            id=reply.get("id", ""),
+            token=reply.get("token", ""),
+            gateway_url=gateway_url,
+            ticket="",
+            is_pending=False,
+        )
+    )
+    if not completed["id"] or not completed["token"]:
+        raise EnrollmentError("enroll_no_token")
+    return completed
+
+
+def replace_binding(binding_id: str, binding: dict) -> None:
+    """Put a completed binding where a pending one was.
+
+    A binding already held under the completed id gives way to it.
+
+    Args:
+        binding_id: The pending binding's id.
+        binding: The completed binding.
+
+    Raises:
+        ValueError: When the completed binding names no id, address or token.
+        OSError: When the file cannot be written.
+    """
+    kept = _binding(binding)
+    if not _is_complete(kept):
+        raise ValueError("a binding needs an id, a gateway_url and a token")
+    config = load_config()
+    held = config["bindings"]
+    for index, existing in enumerate(held):
+        if existing["id"] == binding_id:
+            held[index] = kept
+            break
+    else:
+        held.append(kept)
+    config["bindings"] = [
+        existing
+        for existing in held
+        if existing is kept or existing["id"] != kept["id"]
+    ]
+    save_config(config)
 
 
 def leave(binding: dict) -> None:
@@ -655,15 +716,21 @@ def leave(binding: dict) -> None:
 
 
 def _binding(raw: dict) -> dict:
-    """One binding with every kept field, each a string but the lists and the wish."""
+    """One binding with every kept field, each a string but the lists and the
+    two flags; the ticket and the pending flag only while the join is pending."""
+    flags = (BINDING_OVERLAY_ON_KEY, BINDING_PENDING_KEY)
     binding = {
         key: str(raw.get(key, "") or "")
         for key in BINDING_KEYS
-        if key not in (BINDING_URLS_KEY, BINDING_OVERLAYS_KEY, BINDING_OVERLAY_ON_KEY)
+        if key not in (BINDING_URLS_KEY, BINDING_OVERLAYS_KEY) + flags
     }
     binding[BINDING_URLS_KEY] = clean_urls(raw.get(BINDING_URLS_KEY))
     binding[BINDING_OVERLAYS_KEY] = clean_overlays(raw.get(BINDING_OVERLAYS_KEY))
-    binding[BINDING_OVERLAY_ON_KEY] = raw.get(BINDING_OVERLAY_ON_KEY) is True
+    for key in flags:
+        binding[key] = raw.get(key) is True
+    if not binding[BINDING_PENDING_KEY]:
+        binding.pop(BINDING_PENDING_KEY)
+        binding.pop(BINDING_TICKET_KEY)
     return binding
 
 
@@ -678,8 +745,12 @@ def _note(binding_id: str, **fields) -> None:
 
 
 def _is_complete(binding: dict) -> bool:
-    """Whether a binding names a hub, a token and an id."""
-    return bool(binding["id"] and binding["gateway_url"] and binding["token"])
+    """Whether a binding names a hub, an id and a token, or a ticket while pending."""
+    if binding.get(BINDING_PENDING_KEY):
+        secret = binding[BINDING_TICKET_KEY]
+    else:
+        secret = binding["token"]
+    return bool(binding["id"] and binding["gateway_url"] and secret)
 
 
 def _machine_id() -> str:

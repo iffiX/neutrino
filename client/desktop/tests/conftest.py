@@ -265,6 +265,7 @@ HUB_ROW = {
     "gateway_url": "https://hub.lan:8443",
     "software": "neutrino_hub/0.3.0",
     "connection": "connected",
+    "is_pending": False,
     "last_error": None,
     "is_exit": True,
     "overlay": dict(OVERLAY_ROW),
@@ -297,6 +298,7 @@ OFFICE_ROW = {
     "gateway_url": "https://office.lan:8443",
     "software": "neutrino_hub/0.3.0",
     "connection": "connected",
+    "is_pending": False,
     "last_error": None,
     "is_exit": False,
     "overlay": {

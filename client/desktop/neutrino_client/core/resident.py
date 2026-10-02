@@ -190,6 +190,9 @@ class ClientResident:
             start_thread if start_thread is not None else _start_daemon_thread
         )
         self._lock = threading.Lock()
+        # Held while the binding file is read against the sessions, and while
+        # a completed join is written, so neither sees the other half done.
+        self._binding_lock = threading.RLock()
         self.platform = platform if platform is not None else detect_platform()
         self._platform_tuple = platform_tuple()
         config_dir = self.platform.config_dir()
@@ -320,11 +323,13 @@ class ClientResident:
 
         Returns:
             ``[{hub_id, hub_name, binding_id, gateway_url, software,
-            connection, last_error, is_exit, overlay, jobs}]``:
-            ``connection`` is one of the session's five states, ``overlay``
-            the virtual network's ``{network, networks, state, stage,
-            is_waiting, address, error}``, and ``jobs`` ``{is_refreshing, overlay_job,
-            is_leaving}``. No token and no secret is in it.
+            connection, is_pending, last_error, is_exit, overlay, jobs}]``:
+            ``connection`` is one of the session's six states,
+            ``is_pending`` whether the join's ticket is not spent yet,
+            ``overlay`` the virtual network's ``{network, networks, state,
+            stage, stage_since, is_waiting, address, error}``, and ``jobs``
+            ``{is_refreshing, overlay_job, is_leaving}``. No token, ticket
+            or secret is in it.
         """
         exit_hub_id = self.exit_hub_id()
         with self._lock:
@@ -334,7 +339,7 @@ class ClientResident:
         for session in sessions:
             binding = session.binding()
             hub_id = binding.get("hub_id", "")
-            key = hub_id or session.binding_id
+            key = session.local_key
             rows.append(
                 {
                     "hub_id": hub_id,
@@ -343,13 +348,14 @@ class ClientResident:
                     "gateway_url": binding.get("gateway_url", ""),
                     "software": session.hub_software(),
                     "connection": session.connection(),
+                    "is_pending": binding.get("is_pending") is True,
                     "last_error": session.last_error(),
                     "is_exit": bool(hub_id) and hub_id == exit_hub_id,
                     "overlay": self._overlay.hub_row(key),
                     "jobs": {
                         "is_refreshing": session.is_refreshing(),
                         "overlay_job": self._overlay.job(key),
-                        "is_leaving": session.binding_id in leaving,
+                        "is_leaving": key in leaving,
                     },
                 }
             )
@@ -593,13 +599,17 @@ class ClientResident:
     # --- what the local page does ---
 
     def connect(self, link: str) -> None:
-        """Join the hub an enrollment link points at.
+        """Join the hub an enrollment link points at, without waiting for it.
+
+        The binding is stored pending and its session started; the session
+        spends the ticket at the first address that answers.
 
         Args:
             link: The link the person pasted.
 
         Raises:
-            EnrollmentError: If the link is unusable or the hub refuses.
+            EnrollmentError: If the link is unusable.
+            OSError: When the binding file cannot be written.
         """
         enrollment.enroll(link)
         self._reconcile_bindings(enrollment.config_stamp())
@@ -625,12 +635,13 @@ class ClientResident:
         enrollment.remove_binding(binding["id"])
         self._forget_session(session)
         self._follow_exit()
-        threading.Thread(
-            target=self._tell_hub_left,
-            args=(binding,),
-            name="client_leave",
-            daemon=True,
-        ).start()
+        if binding.get("is_pending") is not True:
+            threading.Thread(
+                target=self._tell_hub_left,
+                args=(binding,),
+                name="client_leave",
+                daemon=True,
+            ).start()
         self._log("left the hub")
 
     def leave(self, hub_id: str = "") -> None:
@@ -648,8 +659,8 @@ class ClientResident:
         """
         session = self._session_for(hub_id)
         with self._lock:
-            is_dropped = session.binding_id in self._leaving
-            self._leaving.add(session.binding_id)
+            is_dropped = session.local_key in self._leaving
+            self._leaving.add(session.local_key)
         if is_dropped:
             self._log(f"a second leave of {session.binding_id} was dropped")
             return
@@ -673,7 +684,7 @@ class ClientResident:
             if not session.refresh():
                 continue
             hub_id = session.hub_id()
-            self._overlay.clear_error(hub_id or session.binding_id)
+            self._overlay.clear_error(session.local_key)
             with self._lock:
                 for key in list(self._entry_errors):
                     if key.startswith(hub_id + "/"):
@@ -762,7 +773,7 @@ class ClientResident:
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        self._overlay.pick(session.hub_id() or session.binding_id, provider)
+        self._overlay.pick(session.local_key, provider)
         return {}
 
     def open_terminal(
@@ -1291,7 +1302,7 @@ class ClientResident:
         with self._lock:
             sessions = list(self._sessions.values())
         for session in sessions:
-            if needle in (session.hub_id(), session.binding_id):
+            if needle in (session.hub_id(), session.binding_id, session.local_key):
                 return session
         return None
 
@@ -1330,9 +1341,10 @@ class ClientResident:
             on_services=self._hub_services,
             on_disabled=self._hub_disabled,
             on_unbound=self._hub_unbound,
+            on_joined=self._hub_joined,
         )
         with self._lock:
-            self._sessions[binding["id"]] = session
+            self._sessions[session.local_key] = session
             is_started = self._is_started
         if is_started:
             session.start()
@@ -1342,13 +1354,13 @@ class ClientResident:
         """Stop one session and let go of everything its hub published."""
         hub_id = session.hub_id()
         with self._lock:
-            self._sessions.pop(session.binding_id, None)
-            self._leaving.discard(session.binding_id)
+            self._sessions.pop(session.local_key, None)
+            self._leaving.discard(session.local_key)
             for table in (self._entry_jobs, self._entry_errors):
                 for key in [key for key in table if key.startswith(hub_id + "/")]:
                     table.pop(key, None)
         session.stop()
-        self._release_hub(hub_id or session.binding_id)
+        self._release_hub(hub_id or session.binding_id, session.local_key)
         self._services["ai"].refresh(entries=self.service_entries())
         self.notify()
 
@@ -1357,8 +1369,17 @@ class ClientResident:
         self._services["ai"].refresh(entries=self.service_entries())
         self._overlay.refresh()
 
+    def _hub_joined(self, session: ClientHubSession, binding: dict) -> None:
+        """A pending join was completed: keep it where the binding file is read.
+
+        Raises:
+            OSError: When the binding file cannot be written.
+        """
+        with self._binding_lock:
+            session.adopt_join(binding)
+
     def _overlay_bindings(self) -> list:
-        """Each hub's overlay objects and choice, by hub id, for the memberships."""
+        """Each hub's overlay objects and choice, by its session's key, for the memberships."""
         with self._lock:
             sessions = list(self._sessions.values())
         rows = []
@@ -1366,7 +1387,7 @@ class ClientResident:
             is_on, pick = session.overlay_choice()
             rows.append(
                 {
-                    "hub_id": session.hub_id() or session.binding_id,
+                    "hub_id": session.local_key,
                     "overlays": session.overlays(),
                     "urls": enrollment.stored_urls(session.binding()),
                     "is_on": is_on,
@@ -1380,7 +1401,7 @@ class ClientResident:
         session = self._find_session(hub_id)
         if session is None:
             return {"code": "unknown_hub", "params": {"hub_id": hub_id}}
-        press(session.hub_id() or session.binding_id)
+        press(session.local_key)
         return {}
 
     def _overlay_route(self, hub_id: str, hosts: list, is_only: bool = False) -> None:
@@ -1406,7 +1427,7 @@ class ClientResident:
 
     def _hub_disabled(self, session: ClientHubSession) -> None:
         """A hub switched this client off: let go of what it published."""
-        self._release_hub(session.hub_id())
+        self._release_hub(session.hub_id(), session.local_key)
 
     def _hub_unbound(self, session: ClientHubSession) -> None:
         """A hub holds no such binding: drop it, and say so above the hubs."""
@@ -1449,7 +1470,7 @@ class ClientResident:
         except (KeyError, OSError) as error:
             self._log(f"could not leave the hub: {error}")
             with self._lock:
-                self._leaving.discard(session.binding_id)
+                self._leaving.discard(session.local_key)
             self.notify()
 
     def _adopt_external_binding(self) -> None:
@@ -1475,25 +1496,30 @@ class ClientResident:
         Args:
             stamp: The file's stamp, as read before the file.
         """
-        config = enrollment.load_config()
-        on_disk = {binding["id"]: binding for binding in config["bindings"]}
-        with self._lock:
-            self._binding_stamp = stamp
-            self._chosen_exit_hub_id = config["exit_hub_id"]
-            held = list(self._sessions.values())
-        dropped = []
-        for session in held:
-            fresh = on_disk.get(session.binding_id)
-            if fresh is None or not is_same_join(fresh, session.binding()):
-                self._forget_session(session)
-                dropped.append(session.binding_id)
-                self._log(f"dropped the binding {session.binding_id} written on disk")
-        with self._lock:
+        with self._binding_lock:
+            config = enrollment.load_config()
+            on_disk = {binding["id"]: binding for binding in config["bindings"]}
+            with self._lock:
+                self._binding_stamp = stamp
+                self._chosen_exit_hub_id = config["exit_hub_id"]
+                held = list(self._sessions.values())
+            stale = [
+                session
+                for session in held
+                if on_disk.get(session.binding_id) is None
+                or not is_same_join(on_disk[session.binding_id], session.binding())
+            ]
+            kept = {session.binding_id for session in held if session not in stale}
             missing = [
                 binding
                 for binding_id, binding in on_disk.items()
-                if binding_id not in self._sessions
+                if binding_id not in kept
             ]
+        dropped = []
+        for session in stale:
+            self._forget_session(session)
+            dropped.append(session.binding_id)
+            self._log(f"dropped the binding {session.binding_id} written on disk")
         for binding in missing:
             self._make_session(binding)
             self._log(f"adopted the binding {binding['id']} written on disk")
@@ -1536,11 +1562,12 @@ class ClientResident:
             except Exception as error:  # noqa: BLE001 - reported, never fatal
                 self._log(f"{service_type}: could not clear what was left: {error}")
 
-    def _release_hub(self, hub_id: str) -> None:
+    def _release_hub(self, hub_id: str, overlay_key: str) -> None:
         """Undo everything the handlers hold for one hub, in the shutdown order."""
         for service_type, _name, _word in SHUTDOWN_STEPS:
+            key = overlay_key if service_type == "overlay" else hub_id
             try:
-                self._releaser(service_type).release_hub(hub_id)
+                self._releaser(service_type).release_hub(key)
             except Exception as error:  # noqa: BLE001 - the rest must still run
                 self._log(f"{service_type}: could not release {hub_id}: {error}")
 
