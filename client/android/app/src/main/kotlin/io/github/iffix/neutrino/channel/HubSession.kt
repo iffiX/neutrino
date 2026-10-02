@@ -80,6 +80,12 @@ class HubSession(
     private var isPreferredOnly = false
 
     @Volatile
+    private var dialling: Channel<ChannelSocketEvent>? = null
+
+    @Volatile
+    private var isRoundCut = false
+
+    @Volatile
     private var live: LiveSocket? = null
 
     /** The hub as the screens read it. */
@@ -139,7 +145,8 @@ class HubSession(
      *
      * @param url The address, or empty to prefer none; a hub kept to one address with no open
      *   socket then runs a round now.
-     * @param isOnly Whether a round tries that address and no other.
+     * @param isOnly Whether a round tries that address and no other; a round busy on other
+     *   addresses then ends at once, and the next runs now.
      */
     fun preferAddress(url: String, isOnly: Boolean = false) {
         val wasOnly = isPreferredOnly
@@ -157,6 +164,10 @@ class HubSession(
         val socket = live
         if (socket != null && current.value.connectedAddress != url) {
             socket.socket.close(CLIENT_WS_CLOSE_NORMAL, "network changed")
+        }
+        if (isPreferredOnly) {
+            isRoundCut = true
+            dialling?.trySend(ChannelSocketEvent.Failed(unreachable("the round gave way to $url")))
         }
         news.trySend(Unit)
     }
@@ -227,6 +238,7 @@ class HubSession(
         if (isReplaced || isUnbound) return CLIENT_IDLE_POLL_INTERVAL_S
         val binding = store.get(bindingId) ?: return CLIENT_IDLE_POLL_INTERVAL_S
         current.update { it.copy(connection = HubConnection.CONNECTING) }
+        isRoundCut = false
         val only = preferredUrl.takeIf { isPreferredOnly }
         val nameUrl = if (only != null) "" else resolveHubName()?.let { nameUrlOf(binding.gatewayUrl, it) }.orEmpty()
         val urls = if (only != null) listOf(only) else binding.candidateUrls(nameUrl, preferredUrl)
@@ -234,9 +246,17 @@ class HubSession(
         var failure: ChannelResult.Refused? = null
         for ((index, url) in urls.withIndex()) {
             if (index > 0) delay(CLIENT_ROTATE_DELAY_S * 1000)
+            if (isRoundCut) return cutRound()
             val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
+            dialling = events
             val socket = transport.connect(url, binding.fingerprint, events)
-            when (val outcome = handshake(binding, socket, events)) {
+            val outcome = handshake(binding, socket, events)
+            dialling = null
+            if (isRoundCut && outcome !is Handshake.Welcomed) {
+                socket.close(CLIENT_WS_CLOSE_NORMAL, "")
+                return cutRound()
+            }
+            when (outcome) {
                 is Handshake.Welcomed -> return afterServing(serve(url, socket, events, outcome.welcome))
 
                 is Handshake.Rejected -> {
@@ -256,6 +276,11 @@ class HubSession(
         }
         untrusted?.let { return onRejected(it) }
         return onUnreachable(failure ?: ChannelResult.refused("hub_unreachable", "detail" to "no address"))
+    }
+
+    private fun cutRound(): Long {
+        news.tryReceive()
+        return 0
     }
 
     private suspend fun handshake(

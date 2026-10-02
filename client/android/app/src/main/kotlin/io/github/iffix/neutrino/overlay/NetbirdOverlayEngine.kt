@@ -1,6 +1,8 @@
 package io.github.iffix.neutrino.overlay
 
 import android.os.Build
+import android.util.Log
+import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.OVERLAY_NETBIRD_DEFAULT_MANAGEMENT_URL
 import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.ChannelResult
@@ -21,7 +23,8 @@ import kotlin.concurrent.thread
 
 /**
  * NetBird's client in the app: the peer registers once with the hub's setup key, then runs from
- * its kept configuration until stopped.
+ * its kept configuration until stopped. When the core says its routes or search domains changed,
+ * the TUN device is built again with the core's whole new set and handed back to the core.
  *
  * @param dir Where this hub's NetBird configuration and state live.
  * @param deviceName The name the peer registers under.
@@ -61,13 +64,14 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
             .joinToString("") { "%02x".format(it) }
         try {
             val address = StringBuilder()
+            val adapter = Tun(tun)
             val running = Android.newClient(
                 Build.VERSION.SDK_INT.toLong(),
                 deviceName,
                 version,
-                Tun(tun),
+                adapter,
                 Interfaces(),
-                Changes(),
+                Changes { thread(name = "netbird-routes") { renew(adapter, tun) } },
             )
             running.setConnectionListener(Listener(address, report))
             client = running
@@ -107,7 +111,45 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
         }
     }
 
+    private fun renew(adapter: Tun, tun: TunBuilder) = synchronized(adapter) {
+        val running = client ?: return@synchronized
+        val shape = adapter.shape ?: return@synchronized
+        val settings = try {
+            running.tunSettings
+        } catch (error: Exception) {
+            Log.w(CLIENT_LOG_TAG, "NetBird's routes could not be read: ${error.message}")
+            return@synchronized
+        }
+        val routes = NetbirdRoutes.parse(settings.routes)
+        val searchDomains = NetbirdRoutes.parse(settings.searchDomains)
+        if (routes == shape.routes && searchDomains == shape.searchDomains) return@synchronized
+        Log.i(CLIENT_LOG_TAG, "NetBird's routes changed from ${shape.routes} to $routes")
+        val fd = tun.establish(shape.address, shape.prefix, shape.mtu, routes, shape.dnsServers, searchDomains, true)
+        if (fd == null) {
+            Log.w(CLIENT_LOG_TAG, "the phone refused the rebuilt VPN interface")
+            return@synchronized
+        }
+        try {
+            running.renewTun(fd.toLong())
+            adapter.shape = shape.copy(routes = routes, searchDomains = searchDomains)
+        } catch (error: Exception) {
+            Log.w(CLIENT_LOG_TAG, "NetBird did not take the rebuilt VPN interface: ${error.message}")
+        }
+    }
+
+    private data class TunShape(
+        val address: String,
+        val prefix: Int,
+        val mtu: Int,
+        val routes: List<String>,
+        val dnsServers: List<String>,
+        val searchDomains: List<String>,
+    )
+
     private class Tun(private val tun: TunBuilder) : TunAdapter {
+        @Volatile
+        var shape: TunShape? = null
+
         override fun configureInterface(
             address: String,
             addressV6: String?,
@@ -117,15 +159,25 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
             routes: String?,
         ): Long {
             val (ip, prefix) = address.split('/').let { it[0] to (it.getOrNull(1)?.toInt() ?: 32) }
-            val fd = tun.establish(
+            val wanted = TunShape(
                 address = ip,
                 prefix = prefix,
                 mtu = mtu.toInt(),
-                routes = routes.orEmpty().split(';').filter { it.isNotBlank() },
+                routes = NetbirdRoutes.parse(routes),
                 dnsServers = listOfNotNull(dns?.takeIf { it.isNotBlank() }),
-                searchDomains = searchDomains.orEmpty().split(';').filter { it.isNotBlank() },
+                searchDomains = NetbirdRoutes.parse(searchDomains),
+            )
+            val fd = tun.establish(
+                address = wanted.address,
+                prefix = wanted.prefix,
+                mtu = wanted.mtu,
+                routes = wanted.routes,
+                dnsServers = wanted.dnsServers,
+                searchDomains = wanted.searchDomains,
                 isHandedOver = true,
             ) ?: throw IllegalStateException("the phone refused the VPN interface")
+            shape = wanted
+            Log.i(CLIENT_LOG_TAG, "NetBird's VPN interface carries ${wanted.routes}")
             return fd.toLong()
         }
 
@@ -150,8 +202,8 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
         }
     }
 
-    private class Changes : NetworkChangeListener {
-        override fun onNetworkChanged(routes: String?) = Unit
+    private class Changes(private val onChanged: () -> Unit) : NetworkChangeListener {
+        override fun onNetworkChanged(routes: String?) = onChanged()
 
         override fun setInterfaceIP(address: String?) = Unit
 

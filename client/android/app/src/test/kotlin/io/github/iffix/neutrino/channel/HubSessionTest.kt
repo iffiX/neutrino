@@ -340,6 +340,21 @@ class HubSessionTest {
     }
 
     @Test
+    fun aRoundBusyOnOtherAddressesGivesWayToTheOnlyAddressWithinASecond() = runTest {
+        val over = "https://100.88.0.1:8443"
+        val transport = FakeHubTransport { url -> if (url == over) FakeHubTransport.welcoming else emptyList() }
+        val (session, _) = session(transport)
+        session.start(backgroundScope)
+        advanceTimeBy(3_000)
+        assertEquals(listOf("https://192.168.100.1:8443"), transport.dialled.map { it.first })
+        session.preferAddress(over, isOnly = true)
+        advanceTimeBy(1_000)
+        assertEquals(listOf("https://192.168.100.1:8443", over), transport.dialled.map { it.first })
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+        assertEquals(over, session.view.value.connectedAddress)
+    }
+
+    @Test
     fun aPreferredAddressIsTriedFirst() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.silent }
         val (session, _) = session(transport)
