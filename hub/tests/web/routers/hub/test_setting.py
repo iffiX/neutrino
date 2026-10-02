@@ -1686,3 +1686,67 @@ def test_the_session_cookie_is_secure_on_the_https_port_only(monkeypatch, tmp_pa
     assert plain.headers["set-cookie"].startswith(f"neutrino_session_{PANEL_PORT}=")
     assert "secure" in secure.headers["set-cookie"].lower()
     assert secure.headers["set-cookie"].startswith(f"neutrino_session_{PANEL_PORT}=")
+
+
+# --- macOS and Windows: the panel restarts by the service exiting ---
+
+
+class _RecordingController:
+    def __init__(self):
+        self.restarted: list = []
+
+    def restart(self, name: str) -> None:
+        self.restarted.append(name)
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_restarting_the_panel_outside_linux_asks_the_controller(monkeypatch, system):
+    controller = _RecordingController()
+    monkeypatch.setattr(settings_router.sys, "platform", system)
+    monkeypatch.setattr(settings_router, "process_controller", lambda: controller)
+    monkeypatch.setattr(settings_router, "WEB_RESTART_DELAY_S", 0)
+    monkeypatch.setattr(
+        settings_router, "run", lambda *a, **k: pytest.fail("no systemctl here")
+    )
+
+    settings_router._restart_panel()
+
+    assert controller.restarted == ["web"]
+
+
+class _FinishedApply:
+    """``nhub apply`` as asyncio started it, already done."""
+
+    def __init__(self):
+        self.stdout = asyncio.StreamReader()
+        self.stdout.feed_data(b"rendered and applied\n")
+        self.stdout.feed_eof()
+
+    async def wait(self) -> int:
+        return 0
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_a_restore_outside_linux_runs_nhub_itself_and_restarts_the_service(
+    monkeypatch, system
+):
+    controller = _RecordingController()
+    started: list = []
+
+    async def fake_exec(*command, **keywords):
+        started.append((command, keywords.get("env") or {}))
+        return _FinishedApply()
+
+    monkeypatch.setattr(settings_router.sys, "platform", system)
+    monkeypatch.setattr(settings_router, "process_controller", lambda: controller)
+    monkeypatch.setattr(settings_router, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(settings_router.asyncio, "create_subprocess_exec", fake_exec)
+
+    lines = asyncio.run(_drained(settings_router._restore_apply_source()))
+
+    ((command, environment),) = started
+    assert command[-1] == "apply"
+    assert "systemd-run" not in command and "env" not in command
+    assert environment["PYTHONUNBUFFERED"] == "1"
+    assert controller.restarted == ["web"]
+    assert lines[-1].startswith("restarting the panel")

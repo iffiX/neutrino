@@ -149,3 +149,129 @@ def test_a_settings_file_without_the_https_port_gets_the_default(tmp_path, monke
     settings_file(tmp_path, monkeypatch, {"listen_port": 80})
 
     assert run._configured_https_port() == WEB_DEFAULT_HTTPS_LISTEN_PORT
+
+
+class _Controller:
+    """The supervised controller, recording what the service asked of it."""
+
+    def __init__(self):
+        self.asked: list = []
+
+    def supervise(self, start_lines):
+        self.asked.append(("supervise", sorted(start_lines)))
+
+    def shutdown(self):
+        self.asked.append(("shutdown",))
+
+
+@pytest.fixture
+def service_roots(monkeypatch, tmp_path):
+    for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT", "UTILS_STATE_ROOT"):
+        monkeypatch.setattr(run, name, tmp_path / name.lower())
+    monkeypatch.setattr(run, "CLIPROXYAPI_DIR", tmp_path / "state" / "cliproxyapi")
+    return tmp_path
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_the_service_serves_the_panel_and_supervises_the_children(
+    monkeypatch, service_roots, system
+):
+    controller = _Controller()
+    monkeypatch.setattr(run.sys, "platform", system)
+    monkeypatch.setattr(run, "process_controller", lambda: controller)
+    monkeypatch.setattr(
+        run, "_serve_panel", lambda arguments: controller.asked.append(("panel",)) or 0
+    )
+
+    assert run._supervise(argparse.Namespace()) == 0
+    assert controller.asked == [
+        ("supervise", ["cliproxyapi", "netbird", "xray"]),
+        ("panel",),
+        ("shutdown",),
+    ]
+    assert (service_roots / "utils_runtime_root").is_dir()
+
+
+def test_the_children_stop_when_the_panel_fails(monkeypatch, service_roots):
+    controller = _Controller()
+    monkeypatch.setattr(run.sys, "platform", "darwin")
+    monkeypatch.setattr(run, "process_controller", lambda: controller)
+
+    def failing(arguments):
+        raise OSError("port taken")
+
+    monkeypatch.setattr(run, "_serve_panel", failing)
+
+    with pytest.raises(OSError):
+        run._supervise(argparse.Namespace())
+    assert controller.asked[-1] == ("shutdown",)
+
+
+def test_the_proxy_core_starts_with_its_rendered_configuration_and_geodata():
+    line = run.child_start_lines()["xray"]
+
+    assert line.argv == [run.XRAY_BINARY, "run", "-config", str(run.XRAY_CONFIG_PATH)]
+    assert line.env == {run.XRAY_ASSET_ENV: str(run.XRAY_ASSET_DIR)}
+
+
+def test_the_ai_gateway_starts_in_its_own_directory():
+    line = run.child_start_lines()["cliproxyapi"]
+
+    assert line.argv[1:] == [
+        "--config",
+        str(run.UTILS_GENERATED_DIR / run.CLIPROXYAPI_GENERATED_NAME),
+    ]
+    assert line.cwd == str(run.CLIPROXYAPI_DIR)
+
+
+@pytest.mark.parametrize(
+    ("system", "address"),
+    [
+        ("darwin", "unix:///var/run/neutrino_hub/netbird.sock"),
+        ("win32", "tcp://127.0.0.1:41732"),
+    ],
+)
+def test_netbird_runs_on_the_hubs_own_address_and_log(monkeypatch, system, address):
+    from pathlib import Path
+
+    monkeypatch.setattr(run.sys, "platform", system)
+    monkeypatch.setattr(
+        "neutrino_hub.utils.constants.UTILS_RUNTIME_ROOT", Path("/var/run/neutrino_hub")
+    )
+    monkeypatch.setattr(run, "UTILS_STATE_ROOT", Path("/state"))
+    monkeypatch.setattr(run, "UTILS_LOG_ROOT", Path("/log"))
+
+    line = run.child_start_lines()["netbird"]
+
+    assert line.argv[1:] == [
+        "service",
+        "run",
+        "--config",
+        str(Path("/state/netbird/config.json")),
+        "--log-file",
+        str(Path("/log/netbird.log")),
+        "--daemon-addr",
+        address,
+    ]
+    assert line.log_name == "netbird_console"
+
+
+def test_the_only_forms_are_refused_outside_linux(monkeypatch, capsys):
+    monkeypatch.setattr(run.sys, "platform", "darwin")
+    monkeypatch.setattr(run.sys, "argv", ["nhub run", "--only-xray"])
+
+    assert run.main() == 2
+    assert "systemd unit" in capsys.readouterr().err
+
+
+def test_linux_without_only_supervises_as_it_always_did(monkeypatch):
+    started = []
+    monkeypatch.setattr(run, "_start_child", lambda name: started.append(name))
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(run, "_serve_panel", lambda arguments: 0)
+    monkeypatch.setattr(
+        run, "process_controller", lambda: pytest.fail("no controller on Linux")
+    )
+
+    assert run._supervise(argparse.Namespace()) == 0
+    assert started == ["xray", "cliproxyapi"]

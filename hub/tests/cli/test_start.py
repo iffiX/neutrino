@@ -202,3 +202,32 @@ def test_start_is_a_subcommand_beside_stop_and_run_says_what_it_is():
     assert "start" in entry.COMMANDS
     assert "stop" in entry.COMMANDS
     assert "the units" in entry.COMMANDS["run"][1]
+
+
+def test_macos_and_windows_start_the_hubs_one_service(hub_service, monkeypatch):
+    monkeypatch.setattr(start_module.sys, "argv", ["nhub start", "--yes"])
+
+    assert start_module.main() == 0
+    assert hub_service.is_running
+
+
+def test_a_running_service_is_left_as_it_is(hub_service, capsys):
+    hub_service.is_running = True
+
+    assert start_module.start_service() == 0
+    assert "already running" in capsys.readouterr().out
+
+
+def test_a_service_that_will_not_start_says_so(hub_service, capsys):
+    hub_service.is_refusing = True
+
+    assert start_module.start_service() == 1
+    assert "did not start" in capsys.readouterr().err
+
+
+def test_the_only_flags_are_linuxs(hub_service, monkeypatch, capsys):
+    monkeypatch.setattr(start_module.sys, "argv", ["nhub start", "--only-xray"])
+
+    assert start_module.main() == 2
+    assert "systemd unit" in capsys.readouterr().err
+    assert not hub_service.is_running

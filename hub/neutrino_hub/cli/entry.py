@@ -29,6 +29,11 @@ COMMANDS = {
     ),
     "start": ("neutrino_hub.cli.start", "Start the hub's units on this box"),
     "stop": ("neutrino_hub.cli.stop", "Stop what the hub runs on this box"),
+    "status": ("neutrino_hub.cli.status", "Say what the hub runs on this box"),
+    "service": (
+        "neutrino_hub.cli.service",
+        "Run the hub as the Windows service, as the service manager does",
+    ),
     "apply": ("neutrino_hub.cli.apply", "Render every config and make it true"),
     "unlock": ("neutrino_hub.cli.unlock", "Clear the login lockout and SSH bans"),
     "reset": ("neutrino_hub.cli.reset", "Return part of the box to a fresh state"),
@@ -93,21 +98,26 @@ def main() -> int:
 
     # Imported here, after --dev has moved the roots; at module level it
     # would resolve them first and make the flag a no-op.
+    from neutrino_hub.platforms.detect import hub_platform
     from neutrino_hub.utils.constants import is_dev_root_set
 
     # `run` is exempt beside scan-secrets: it is every unit's ExecStart, and
     # systemd starts the proxy core deliberately unprivileged.
+    platform = hub_platform()
     if (
-        arguments.command not in ("scan-secrets", "run")
+        arguments.command not in ("scan-secrets", "run", "status")
         and not is_dev_root_set()
-        and hasattr(os, "geteuid")
-        and os.geteuid() != 0
+        and not platform.is_elevated()
     ):
         print(
-            f"nhub {arguments.command} acts on the installed hub and needs root:",
+            f"nhub {arguments.command} acts on the installed hub and needs "
+            f"{platform.elevation_word}:",
             file=sys.stderr,
         )
-        print(f"    sudo nhub {shlex.join(sys.argv[1:])}", file=sys.stderr)
+        print(
+            f"    {platform.elevation_hint(shlex.join(sys.argv[1:]))}",
+            file=sys.stderr,
+        )
         return 2
 
     module_name, _ = COMMANDS[arguments.command]

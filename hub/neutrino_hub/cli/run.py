@@ -18,12 +18,16 @@ cannot hand a child without re-implementing what the unit already declares.
 With no ``--only`` this supervises all three itself, for a machine that has no
 units: a working copy under ``--dev``, or anyone who would rather watch them
 run than read journalctl.
+
+On macOS this is what the LaunchDaemon ``com.neutrino.hub`` starts, and on
+Windows ``nhub service run`` runs it: the panel in this process, and every
+daemon the process controller enables as a child, each with its log file.
+The ``--only`` forms are Linux's.
 """
 
 import argparse
 import asyncio
 import os
-import pwd
 import queue
 import shutil
 import signal
@@ -33,6 +37,12 @@ import threading
 import time
 
 import uvicorn
+
+# Unix's alone; dnsmasq, the one daemon that reads it, runs on Linux.
+try:
+    import pwd
+except ImportError:
+    pwd = None
 
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
@@ -57,6 +67,9 @@ from neutrino_hub.modules.router.constants import (
 )
 from neutrino_hub.modules.router.controller import RouterStateController, router_lock
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
+from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
+from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
+from neutrino_hub.system.child_supervisor import ChildStartLine
 from neutrino_hub.system.systemd_ctl import notify_ready, take_notify_address
 from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.modules.xray.constants import (
@@ -68,6 +81,9 @@ from neutrino_hub.modules.xray.constants import (
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
     UTILS_GENERATED_DIR,
+    UTILS_LOG_ROOT,
+    UTILS_RUNTIME_ROOT,
+    UTILS_STATE_ROOT,
     is_dev_root_set,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
@@ -111,6 +127,13 @@ DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
 # The driver to ask for first. nl80211 is what every current card uses; wext
 # is the twenty-year-old fallback, and naming both lets the supplicant pick.
 SUPPLICANT_DRIVERS = "nl80211,wext"
+# The servers serving now, for a stop asked from another thread.
+_SERVING: list = []
+# The hub's own NetBird daemon outside Linux: its profile under the state
+# root, its log file, and where its own output goes, which is not that file.
+NETBIRD_CONFIG_RELATIVE = ("netbird", "config.json")
+NETBIRD_LOG_NAME = "netbird.log"
+NETBIRD_CONSOLE_LOG_NAME = "netbird_console"
 
 
 def main() -> int:
@@ -151,6 +174,13 @@ def main() -> int:
         )
     arguments = parser.parse_args()
 
+    if arguments.only and not is_linux():
+        print(
+            f"error: --only-{arguments.only} names a systemd unit; the hub's "
+            "service runs every daemon here",
+            file=sys.stderr,
+        )
+        return 2
     if arguments.only == "xray":
         return _exec_xray()
     if arguments.only == "cliproxyapi":
@@ -178,6 +208,51 @@ def main() -> int:
     if arguments.only == "web":
         return _serve_panel(arguments)
     return _supervise(arguments)
+
+
+def stop_serving() -> None:
+    """Ask every server :func:`_serve_together` runs to stop."""
+    for server in list(_SERVING):
+        server.should_exit = True
+
+
+def child_start_lines() -> dict:
+    """How the service starts each daemon whose start line it knows itself.
+
+    EasyTier's is not among them: its module hands it over through the
+    process controller.
+
+    Returns:
+        Name to :class:`ChildStartLine`.
+    """
+    return {
+        "xray": ChildStartLine(
+            argv=[XRAY_BINARY, "run", "-config", str(XRAY_CONFIG_PATH)],
+            env={XRAY_ASSET_ENV: str(XRAY_ASSET_DIR)},
+        ),
+        "cliproxyapi": ChildStartLine(
+            argv=[
+                str(CLIPROXYAPI_BINARY_PATH),
+                "--config",
+                str(UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME),
+            ],
+            cwd=str(CLIPROXYAPI_DIR),
+        ),
+        "netbird": ChildStartLine(
+            argv=[
+                str(NETBIRD_BINARY_PATH),
+                "service",
+                "run",
+                "--config",
+                str(UTILS_STATE_ROOT.joinpath(*NETBIRD_CONFIG_RELATIVE)),
+                "--log-file",
+                str(UTILS_LOG_ROOT / NETBIRD_LOG_NAME),
+                "--daemon-addr",
+                hub_platform().netbird_daemon_address(),
+            ],
+            log_name=NETBIRD_CONSOLE_LOG_NAME,
+        ),
+    }
 
 
 def _is_set_up() -> bool:
@@ -498,6 +573,7 @@ async def _serve_together(servers: list) -> None:
     Args:
         servers: Configured uvicorn servers.
     """
+    _SERVING[:] = servers
     tasks = [asyncio.create_task(server.serve()) for server in servers]
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -505,6 +581,7 @@ async def _serve_together(servers: list) -> None:
         for server in servers:
             server.should_exit = True
         await asyncio.gather(*tasks, return_exceptions=True)
+        _SERVING.clear()
 
 
 def _supervise(arguments) -> int:
@@ -516,6 +593,8 @@ def _supervise(arguments) -> int:
     Returns:
         Process exit status.
     """
+    if not is_linux():
+        return _supervise_service(arguments)
     children = []
     for name in ("xray", "cliproxyapi"):
         started = _start_child(name)
@@ -530,6 +609,30 @@ def _supervise(arguments) -> int:
         return _serve_panel(arguments)
     finally:
         _stop(children)
+
+
+def _supervise_service(arguments) -> int:
+    """Serve the panel here and run every enabled daemon as a child.
+
+    Args:
+        arguments: The parsed command line.
+
+    Returns:
+        Process exit status.
+    """
+    for directory in (
+        UTILS_LOG_ROOT,
+        UTILS_RUNTIME_ROOT,
+        UTILS_STATE_ROOT.joinpath(*NETBIRD_CONFIG_RELATIVE).parent,
+        CLIPROXYAPI_DIR,
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    controller = process_controller()
+    controller.supervise(child_start_lines())
+    try:
+        return _serve_panel(arguments)
+    finally:
+        controller.shutdown()
 
 
 def _start_child(name: str):

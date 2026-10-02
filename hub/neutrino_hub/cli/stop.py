@@ -24,6 +24,9 @@ rather than the machine going down.
 
 Nothing is disabled, so everything comes back at the next boot. Removing the
 hub is the package manager's business, and undoing a setup is ``nhub reset``.
+
+On macOS and Windows it stops the hub's one service, and with it every
+daemon the service runs; the ``--only`` forms are Linux's.
 """
 
 import argparse
@@ -33,6 +36,8 @@ import sys
 from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
+from neutrino_hub.platforms.constants import PLATFORM_SERVICE_STOPPED
+from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -69,6 +74,13 @@ def main() -> int:
         )
     arguments = parser.parse_args()
 
+    if arguments.only and not is_linux():
+        print(
+            f"error: --only-{arguments.only} names a systemd unit; "
+            "nhub stop stops the hub's service here",
+            file=sys.stderr,
+        )
+        return 2
     if arguments.only in STOP_PER_INTERFACE:
         if not arguments.interface:
             print(f"error: --only-{arguments.only} needs --interface", file=sys.stderr)
@@ -85,6 +97,8 @@ def stop_everything() -> int:
     Returns:
         0 when everything is stopped, 1 when any of it refused.
     """
+    if not is_linux():
+        return stop_service()
     status = stop(list(STOP_ORDER))
     for name, interface in _configured_engines():
         status = stop_engine(name, interface) or status
@@ -123,6 +137,28 @@ def stop(names: list) -> int:
             continue
         print(f"  {name}: stopped")
     return 1 if is_failed else 0
+
+
+def stop_service() -> int:
+    """Stop the hub's one service on macOS and Windows, its children with it.
+
+    Returns:
+        0 when it is stopped, 1 when it refused.
+    """
+    platform = hub_platform()
+    if platform.service_state() == PLATFORM_SERVICE_STOPPED:
+        print("  hub service: already stopped")
+        return 0
+    try:
+        platform.stop_service()
+    except (subprocess.SubprocessError, OSError) as error:
+        print(
+            f"  hub service: did not stop: {command_failure_text(error)}",
+            file=sys.stderr,
+        )
+        return 1
+    print("  hub service: stopped")
+    return 0
 
 
 def stop_engine(name: str, interface: str) -> int:

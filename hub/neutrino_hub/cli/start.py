@@ -17,6 +17,9 @@ is the process each unit runs in the foreground.
 With no ``--only`` it starts every unit of the hub that is enabled, in the
 reverse of the order ``stop`` stops them; the routing state's pass starts the
 per-interface engines itself. A unit already running is left as it is.
+
+On macOS and Windows it starts the hub's one service, which runs every
+daemon; the ``--only`` forms are Linux's.
 """
 
 import argparse
@@ -26,6 +29,8 @@ import sys
 from neutrino_hub.cli.stop import STOP_ORDER, STOP_PER_INTERFACE
 from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
+from neutrino_hub.platforms.constants import PLATFORM_SERVICE_RUNNING
+from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.subprocess_run import command_failure_text
 
@@ -59,6 +64,17 @@ def main() -> int:
         )
     arguments = parser.parse_args()
 
+    if not is_linux():
+        if arguments.only:
+            print(
+                f"error: --only-{arguments.only} names a systemd unit; "
+                "nhub start starts the hub's service here",
+                file=sys.stderr,
+            )
+            return 2
+        if not arguments.yes and not _asked("Start the hub's service?"):
+            return 1
+        return start_service()
     if arguments.only in STOP_PER_INTERFACE and not arguments.interface:
         print(f"error: --only-{arguments.only} needs --interface", file=sys.stderr)
         return 1
@@ -105,6 +121,28 @@ def start(names: list, *, is_enabled_only: bool) -> int:
             continue
         print(f"  {name}: started")
     return 1 if is_failed else 0
+
+
+def start_service() -> int:
+    """Start the hub's one service on macOS and Windows.
+
+    Returns:
+        0 when it runs or was started, 1 when it refused.
+    """
+    platform = hub_platform()
+    if platform.service_state() == PLATFORM_SERVICE_RUNNING:
+        print("  hub service: already running")
+        return 0
+    try:
+        platform.start_service()
+    except (subprocess.SubprocessError, OSError) as error:
+        print(
+            f"  hub service: did not start: {command_failure_text(error)}",
+            file=sys.stderr,
+        )
+        return 1
+    print("  hub service: started")
+    return 0
 
 
 def start_engine(name: str, interface: str) -> int:

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
+from neutrino_hub.platforms.detect import is_linux
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.utils.subprocess_run import run
 from neutrino_hub.web.constants import (
@@ -295,7 +296,9 @@ class DnsLogReader:
             del self._forwarded_outbounds[next(iter(self._forwarded_outbounds))]
 
     def _read_records(self, *, after_cursor: str | None) -> list[dict[str, str]]:
-        """Read the unit's journal, the recent window or only past a cursor."""
+        """Read the unit's journal, the recent window or past a cursor; Linux only."""
+        if not is_linux():
+            return []
         command = ["journalctl", "-u", DNSMASQ_UNIT, "-o", "json", "--no-pager"]
         command += ["-n", str(JOURNAL_RECORD_LIMIT)]
         if after_cursor is not None:

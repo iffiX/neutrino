@@ -11,6 +11,7 @@ firewall and no DNS until somebody fixed a node.
 
 import copy
 import subprocess
+import sys
 
 import pytest
 
@@ -31,6 +32,7 @@ from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.router.steps import RouterStepResult
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from tests.conftest import FakeMsvcrt
 
 ROUTING = {
     "is_proxy_enabled": True,
@@ -514,3 +516,21 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
     assert seen[CHANNEL_ROLE_CLIENT] == [OVERLAY_NETBIRD]
     assert '"easytier"' not in seen["ruleset"]
     assert "10.0.0.0/24" not in pushed["allowed_subnets"]
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_macos_and_windows_run_no_dnsmasq(applied, monkeypatch, system):
+    panel, written, _, _ = applied
+    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    monkeypatch.setattr("sys.platform", system)
+    monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
+
+    panel.converge_network_blocking()
+
+    assert steps_of(written) == [
+        "started",
+        "reconciled",
+        "pushed states",
+        "stopped",
+        "routes checked",
+    ]
