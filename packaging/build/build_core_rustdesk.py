@@ -7,8 +7,10 @@ needs nothing else; building them needs what the last paragraph names.
 
 RustDesk publishes no library for a host without Flutter, so the app carries
 the RustDesk crate compiled here with ``cargo ndk``, for the two machines the
-app ships (arm64-v8a for phones, with the hardware codecs; x86_64 for the
-emulator, without). The source archive and its ``hbb_common`` submodule are
+app ships (arm64-v8a for phones, with MediaCodec's hardware H264 and H265
+decoders; x86_64 for the emulator, without). The phone build leaves out
+``hwcodec``: its FFmpeg software decoders come before MediaCodec in RustDesk's
+decoder choice, so with both the hardware decoders would never be used. The source archive and its ``hbb_common`` submodule are
 checked against their SHA-256 and the commits their headers name before
 anything is built. ``build_core_rustdesk.patch`` beside this file is then applied:
 it adds a small C interface (``src/native_ffi.rs``) behind a ``native``
@@ -101,7 +103,7 @@ RUSTDESK_MOBILE_VCPKG_PORTS = (
 # Per machine as the app names it: the Rust target, the vcpkg triplet, the
 # extra ports, and the crate features.
 RUSTDESK_MOBILE_ABIS = {
-    "arm64-v8a": ("aarch64-linux-android", "arm64-android", (), "native,hwcodec"),
+    "arm64-v8a": ("aarch64-linux-android", "arm64-android", (), "native,mediacodec"),
     "x86_64": ("x86_64-linux-android", "x64-android", ("mfx-dispatch",), "native"),
 }
 RUSTDESK_MOBILE_ANDROID_API = "21"
