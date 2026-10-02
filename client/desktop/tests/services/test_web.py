@@ -305,3 +305,81 @@ def test_an_entry_that_is_not_local_only_asks_the_hub_for_nothing():
 
     assert material.asked == []
     assert handler.release() == 0
+
+
+# --- an entry that opens with a token ---
+
+
+def token_entry(hub_id="h1", entry_id="cloudcli_d1_alice"):
+    return {
+        "id": entry_id,
+        "type": "web",
+        "hub_id": hub_id,
+        "title": "CloudCLI (alice)",
+        "payload": {
+            "url": "http://192.168.100.7:3001/",
+            "is_local_only": False,
+            "is_token_required": True,
+        },
+        "is_healthy": True,
+    }
+
+
+def test_a_token_entry_opens_its_own_address_with_a_fresh_token():
+    platform = FakeClientPlatform()
+    material = Material(answer={"token": "a+b/c"})
+    handler = WebServiceHandler(platform=platform, open_service=material, log=discard)
+
+    assert (
+        handler.act(
+            entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
+        )
+        == {}
+    )
+    assert (
+        handler.act(
+            entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
+        )
+        == {}
+    )
+
+    assert material.asked == [("h1", "cloudcli_d1_alice")] * 2
+    assert platform.opened_urls == ["http://192.168.100.7:3001/?tkn=a%2Bb%2Fc"] * 2
+    assert handler.state() == {"web_forwards": {}}
+
+
+def test_a_token_entry_without_a_token_writes_the_code():
+    platform = FakeClientPlatform()
+    handler = WebServiceHandler(
+        platform=platform, open_service=Material(answer={}), log=discard
+    )
+
+    assert handler.act(
+        entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
+    ) == {
+        "code": "web_token_missing",
+        "params": {},
+    }
+    assert platform.opened_urls == []
+
+
+def test_a_refused_token_writes_the_hubs_code():
+    platform = FakeClientPlatform()
+    refused = GatewayRefusedDetail(code="permission_denied", params={"kind": "web"})
+    handler = WebServiceHandler(
+        platform=platform, open_service=Material(error=refused), log=discard
+    )
+
+    outcome = handler.act(
+        entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
+    )
+
+    assert outcome["code"] == "permission_denied"
+    assert platform.opened_urls == []
+
+
+def test_the_token_joins_the_address_own_query():
+    from neutrino_client.services.web import token_url
+
+    assert token_url("http://h:3001", "t") == "http://h:3001/?tkn=t"
+    assert token_url("http://h:3001/x?a=1", "t") == "http://h:3001/x?a=1&tkn=t"

@@ -1860,3 +1860,19 @@ def test_a_clipboard_the_platform_cannot_write_is_a_code(two_hubs):
         "code": "clipboard_unwritable",
         "params": {"detail": "no display"},
     }
+
+
+def test_a_token_entry_opens_as_a_job(two_hubs_up, monkeypatch):
+    resident, _scripts = two_hubs_up
+    token_entry = {
+        "hub_id": "h1",
+        "id": "cloudcli_d1_alice",
+        "type": "web",
+        "payload": {"url": "http://h:3001/", "is_token_required": True},
+    }
+    monkeypatch.setattr(resident, "service_entries", lambda: [token_entry])
+
+    assert resident._entry_job("web", {"hub_id": "h1", "id": "cloudcli_d1_alice"}) == (
+        "h1/cloudcli_d1_alice",
+        "opening",
+    )

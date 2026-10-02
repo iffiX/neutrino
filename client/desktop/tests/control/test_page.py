@@ -1293,3 +1293,9 @@ def test_the_sidebar_carries_only_the_pages_and_no_foot():
     assert 'id="ident"' not in PAGE_HTML
     assert ".ident" not in PAGE_CSS
     assert "getElementById('ident')" not in PAGE_JS
+
+
+def test_a_token_web_entry_has_open_alone_and_shows_its_job():
+    web = body_of("drawWebEntry")
+    assert "const opening = entry.job === 'opening' ? entry.job : '';" in web
+    assert "if (isLocal) {" in web
