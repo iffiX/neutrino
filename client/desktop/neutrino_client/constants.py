@@ -232,13 +232,13 @@ CLIENT_OVERLAY_JOIN_TIMEOUT_S = 90
 CLIENT_OVERLAY_STATUS_TIMEOUT_S = 10
 # How often each network that is on is asked whether it still stands.
 CLIENT_OVERLAY_POLL_INTERVAL_S = 15
-# One connect in two stages, each with its own limit: ``login``, the engine
-# up and an address on the network; ``hub``, from the address until the
-# hub's channel is up through the hub's own address there. And how often a
-# connect looks again.
+# One connect in two stages: ``login``, the engine up and an address on the
+# network within its limit, looked at this often; ``hub``, from the address
+# until the hub's channel is up through the hub's own address there, with no
+# limit, the engine asked and the hub probed this often.
 CLIENT_OVERLAY_LOGIN_TIMEOUT_S = 90
-CLIENT_OVERLAY_HUB_TIMEOUT_S = 60
 CLIENT_OVERLAY_CONNECT_POLL_S = 1
+CLIENT_OVERLAY_HUB_PROBE_S = 2
 # The prefix every NetBird address sits in.
 CLIENT_OVERLAY_NETBIRD_NETWORK = "100.64.0.0/10"
 
