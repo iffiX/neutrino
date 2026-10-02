@@ -150,6 +150,7 @@
   "code.probe_url_invalid": "探测地址必须是 http 或 https 地址。",
   "code.process_missing": "那台机器上已经没有这个进程了。",
   "code.product_unknown": "面板不管理 {product}。",
+  "code.proxy_scope_unsupported": "{switch} 只在中枢运行于 Linux 时可用；在这个系统上，代理只有它的 SOCKS 端口。",
   "code.protocol_too_new": "对端说的是协议 {peer}，中枢说的是 {hub}。请升级中枢。",
   "code.protocol_too_old": "对端说的是协议 {peer}，中枢接受 {min} 到 {hub}。请升级对端。",
   "code.provider_kind_unknown": "面板没有名为 {kind} 的供应商类型。",

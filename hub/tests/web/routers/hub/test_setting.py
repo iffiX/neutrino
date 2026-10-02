@@ -461,6 +461,49 @@ def test_an_absent_xray_binary_is_reported_not_blank(monkeypatch):
     assert payload["xray_version"] == "not installed"
 
 
+@pytest.mark.parametrize(
+    "system, version",
+    [("linux", "6.8.0-100-generic"), ("darwin", "15.3.1"), ("windows", "10.0.26100")],
+)
+def test_the_about_names_the_system_and_its_version(monkeypatch, system, version):
+    monkeypatch.setattr(settings_router, "hub_os", lambda: system)
+    monkeypatch.setattr(
+        settings_router.platform, "release", lambda: "6.8.0-100-generic"
+    )
+    monkeypatch.setattr(
+        settings_router.platform, "mac_ver", lambda: ("15.3.1", ("", "", ""), "arm64")
+    )
+    monkeypatch.setattr(settings_router.platform, "version", lambda: "10.0.26100")
+
+    payload = about_payload(monkeypatch)
+
+    assert payload["os"] == system
+    assert payload["os_version"] == version
+    assert payload["kernel"] == "6.8.0-100-generic"
+
+
+@pytest.mark.parametrize(
+    "asset, family",
+    [
+        ("neutrino-hub_{version}_amd64.deb", "deb"),
+        ("neutrino-hub-{version}-1.x86_64.rpm", "rpm"),
+        ("neutrino-hub-{version}-1-x86_64.pkg.tar.zst", "arch"),
+        ("neutrino-hub-{version}-windows-amd64.msi", "msi"),
+        ("neutrino-hub-{version}-macos-arm64.pkg", "pkg"),
+        ("", ""),
+    ],
+)
+def test_the_release_names_the_package_family_the_build_stamped(
+    update_box, monkeypatch, asset, family
+):
+    opened, _, _ = update_box
+    monkeypatch.setattr(settings_router, "HUB_PACKAGE_ASSET", asset)
+
+    body = opened.get("/api/hub/setting/release").json()
+
+    assert body["package_family"] == family
+
+
 def test_the_hub_credits_every_component_it_carries(monkeypatch):
     """The binaries in the hub package first, at the exact tag each was
     built from; the modules a manifest licenses after them."""
@@ -994,6 +1037,8 @@ def test_a_hub_that_never_updated_reads_its_version_and_no_record(update_box):
     assert response.json() == {
         "current": "0.3.0",
         "is_packaged": True,
+        "package_family": "",
+        "log_root": str(settings_router.UTILS_LOG_ROOT),
         "update": None,
         "task_id": None,
     }

@@ -380,8 +380,13 @@ class StaticLeaseSettings(BaseModel):
 
 
 class NetworkView(BaseModel):
-    """The Network tab payload."""
+    """The Network tab payload.
 
+    ``hub_os`` is the system the hub runs on, ``linux``, ``darwin`` or
+    ``windows``; ``modes`` holds ``server`` alone outside Linux.
+    """
+
+    hub_os: str
     mode: str
     modes: list[NetworkModeView] = Field(default_factory=list)
     interfaces: list[InterfaceView]
@@ -1413,6 +1418,10 @@ class AboutView(BaseModel):
     python_version: str
     geodata_version: str
     kernel: str
+    # The system the hub runs on, the word NetworkView.hub_os uses, and its
+    # version: the macOS release, the Windows build, the kernel on Linux.
+    os: str
+    os_version: str
     uptime_s: int
     acknowledgements: list[AcknowledgementView] = Field(default_factory=list)
 
@@ -1437,11 +1446,16 @@ class HubReleaseView(BaseModel):
     """The hub's own version, and the last update of it, for the Settings tab.
 
     ``task_id`` names the staging task while one runs, so a page that opens
-    mid-update can follow it.
+    mid-update can follow it. ``package_family`` is the kind of package the
+    hub was installed from, ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``,
+    empty in a checkout; ``log_root`` is the directory the hub writes its
+    logs to.
     """
 
     current: str
     is_packaged: bool
+    package_family: str = ""
+    log_root: str = ""
     update: HubUpdateRecordView | None = None
     task_id: str | None = None
 

@@ -12,7 +12,10 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
+from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
 from neutrino_hub.modules.xray.node_config import parse_share_link
+from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX
+from neutrino_hub.platforms.detect import hub_os
 
 
 def setup_router(session) -> APIRouter:
@@ -37,7 +40,7 @@ def setup_router(session) -> APIRouter:
     def read_context(request: Request):
         if not _guard(request):
             return _denied()
-        return session.context()
+        return _context_for_system(session.context())
 
     @router.get("/state")
     def read_state(request: Request):
@@ -77,6 +80,27 @@ def setup_router(session) -> APIRouter:
         return JSONResponse(status_code=202, content=session.state())
 
     return router
+
+
+def _context_for_system(context: dict) -> dict:
+    """The wizard's facts, with the system the hub runs on.
+
+    Args:
+        context: What the terminal gathered.
+
+    Returns:
+        The same facts with ``hub_os`` added, and ``modes`` cut to ``server``
+        alone outside Linux.
+    """
+    system = hub_os()
+    served = {**context, "hub_os": system}
+    if system != PLATFORM_OS_LINUX:
+        served["modes"] = [
+            mode
+            for mode in context.get("modes", [])
+            if mode.get("key") == ROUTER_MODE_SERVER
+        ]
+    return served
 
 
 def _denied() -> JSONResponse:

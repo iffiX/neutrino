@@ -284,3 +284,21 @@ WEB_REINSTALL_POLL_S = 0.5
 # How long the returned agent has to send its first report, which is where
 # the install's own output and exit status ride up.
 WEB_REINSTALL_REPORT_TIMEOUT_S = 10.0
+
+# The kind of package the hub was installed from, read off the end of the
+# release file name the build stamped (HUB_PACKAGE_ASSET).
+WEB_PACKAGE_FAMILY_OF_SUFFIX = (
+    (".deb", "deb"),
+    (".rpm", "rpm"),
+    (".pkg.tar.zst", "arch"),
+    (".msi", "msi"),
+    (".pkg", "pkg"),
+)
+
+# The proxy's switches that exist on Linux alone; elsewhere the proxy is its
+# SOCKS ports.
+WEB_PROXY_LINUX_ONLY_SCOPES = (
+    "is_proxy_enabled",
+    "is_overlay_proxy_enabled",
+    "is_local_proxy_enabled",
+)

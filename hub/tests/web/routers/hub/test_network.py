@@ -432,14 +432,47 @@ def test_the_view_reports_which_mode_the_box_is_in(guest_box):
     assert client.get("/api/hub/network").json()["mode"] == "server"
 
 
-def test_the_view_offers_every_mode(guest_box):
+def test_the_view_offers_every_mode(guest_box, monkeypatch):
     """Switching asks for no port, so there is nothing a machine can be too
     small for: a router on one wire is a router whose port is a trunk."""
     client, _, _ = guest_box
+    monkeypatch.setattr(network_router, "hub_os", lambda: "linux")
 
     offered = [mode["key"] for mode in client.get("/api/hub/network").json()["modes"]]
 
     assert offered == ["server", "side_gateway", "router"]
+
+
+@pytest.mark.parametrize("system", ["darwin", "windows"])
+def test_outside_linux_the_view_offers_server_alone(guest_box, monkeypatch, system):
+    client, _, _ = guest_box
+    monkeypatch.setattr(network_router, "hub_os", lambda: system)
+
+    view = client.get("/api/hub/network").json()
+
+    assert view["hub_os"] == system
+    assert [mode["key"] for mode in view["modes"]] == ["server"]
+
+
+def test_on_linux_the_view_names_the_system(guest_box, monkeypatch):
+    client, _, _ = guest_box
+    monkeypatch.setattr(network_router, "hub_os", lambda: "linux")
+
+    assert client.get("/api/hub/network").json()["hub_os"] == "linux"
+
+
+@pytest.mark.parametrize("system", ["darwin", "windows"])
+def test_outside_linux_a_routing_mode_is_refused(guest_box, monkeypatch, system):
+    client, _, _ = guest_box
+    monkeypatch.setattr(network_router, "hub_os", lambda: system)
+
+    response = client.post("/api/hub/network/mode/set", json={"mode": "router"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "network_mode_unknown",
+        "params": {"mode": "router"},
+    }
 
 
 def test_a_save_cannot_change_whether_an_interface_answers(guest_box):

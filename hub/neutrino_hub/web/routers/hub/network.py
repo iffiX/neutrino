@@ -22,6 +22,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_PREFIX_LEN_MAX,
     ROUTER_PREFIX_LEN_MIN,
     ROUTER_MODE_ROUTER,
+    ROUTER_MODE_SERVER,
     ROUTER_MODE_SIDE_GATEWAY,
     ROUTER_MODES_KEYS,
     ROUTER_KEY_MGMT_NONE,
@@ -68,6 +69,8 @@ from neutrino_hub.modules.router.wifi import (
     AP_PASSPHRASE_MIN_LENGTH,
     RouterWifiAccessPoint,
 )
+from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX
+from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
@@ -179,10 +182,10 @@ async def update_mode(
         The Network tab payload.
 
     Raises:
-        HTTPException: 400 for a mode that is not one of them, 502 when
+        HTTPException: 400 for a mode this system cannot be, 502 when
             applying the new shape fails.
     """
-    if request.mode not in ROUTER_MODES_KEYS:
+    if request.mode not in _offered_mode_keys():
         raise _bad_request("network_mode_unknown", mode=request.mode)
     network = runtime.network()
     if request.mode == network.mode:
@@ -946,6 +949,7 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
         )
     plan = build_uplink_plan(network=network, status=status_reader)
     return NetworkView(
+        hub_os=hub_os(),
         mode=network.mode,
         modes=_mode_views(),
         interfaces=views,
@@ -982,13 +986,24 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
     )
 
 
+def _offered_mode_keys() -> tuple[str, ...]:
+    """The modes this system can be, in the order the panel draws them.
+
+    Returns:
+        Every mode on Linux; ``server`` alone on macOS and Windows.
+    """
+    if hub_os() == PLATFORM_OS_LINUX:
+        return ROUTER_MODES_KEYS
+    return (ROUTER_MODE_SERVER,)
+
+
 def _mode_views() -> list[NetworkModeView]:
     """The modes the panel offers, in the order it draws them.
 
-    Every one of them, whatever ports the machine has: switching asks for no
-    port, so there is nothing a machine could be too small for. A router on
-    one wire is a router whose port is a trunk, which is the interface panel's
-    business.
+    Every one this system can be, whatever ports the machine has: switching
+    asks for no port, so there is nothing a machine could be too small for. A
+    router on one wire is a router whose port is a trunk, which is the
+    interface panel's business.
 
     Returns:
         One entry per mode.
@@ -998,7 +1013,7 @@ def _mode_views() -> list[NetworkModeView]:
             key=mode.key,
             is_addressing_owned=mode.is_addressing_owned,
         )
-        for mode in (ROUTER_MODES_BY_KEY[key] for key in ROUTER_MODES_KEYS)
+        for mode in (ROUTER_MODES_BY_KEY[key] for key in _offered_mode_keys())
     ]
 
 

@@ -58,7 +58,7 @@ from neutrino_hub.modules.credentials.vault import (
     write_state_key,
 )
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
-from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_LOG_ROOT
 from neutrino_hub.utils.json_file import (
     CONFIG_WRITE_LOCK,
     read_config,
@@ -76,6 +76,7 @@ from neutrino_hub.web.constants import (
     WEB_DEFAULT_LISTEN_PORT,
     WEB_DEFAULT_THEME,
     WEB_LANGUAGES,
+    WEB_PACKAGE_FAMILY_OF_SUFFIX,
     WEB_PANEL_TLS_AUTHORITY_PATH,
     WEB_PANEL_TLS_MEDIA_TYPE,
     WEB_PANEL_TLS_SERVED_CERT_PATH,
@@ -106,7 +107,9 @@ from neutrino_hub.web.models import (
     TaskStarted,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
-from neutrino_hub import HUB_VERSION
+from neutrino_hub import HUB_PACKAGE_ASSET, HUB_VERSION
+from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS
+from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
 from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
@@ -965,9 +968,11 @@ def about() -> AboutView:
 
     Returns:
         A version string per carried component, the acknowledgements the
-        licenses of what this hub conveys oblige, plus kernel and uptime.
+        licenses of what this hub conveys oblige, plus the system, its
+        version, the kernel and uptime.
     """
     xray_version = run([XRAY_BINARY, "version"], is_checked=False).stdout
+    system = hub_os()
     return AboutView(
         xray_version=(xray_version.splitlines() or ["not installed"])[0],
         gateway_version=GATEWAY_VERSION,
@@ -975,9 +980,42 @@ def about() -> AboutView:
         python_version=sys.version.split()[0],
         geodata_version=_geodata_installed(),
         kernel=platform.release(),
+        os=system,
+        os_version=_os_version(system),
         uptime_s=int(time.time() - psutil.boot_time()),
         acknowledgements=_acknowledgements(),
     )
+
+
+def _os_version(system: str) -> str:
+    """The version of the system the hub runs on.
+
+    Args:
+        system: What :func:`hub_os` named.
+
+    Returns:
+        The macOS release, the Windows build, or the kernel release on Linux.
+    """
+    if system == PLATFORM_OS_DARWIN:
+        return platform.mac_ver()[0]
+    if system == PLATFORM_OS_WINDOWS:
+        return platform.version()
+    return platform.release()
+
+
+def _package_family(asset: str) -> str:
+    """The kind of package the hub was installed from.
+
+    Args:
+        asset: The release file name the build stamped.
+
+    Returns:
+        ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``; empty in a checkout.
+    """
+    for suffix, family in WEB_PACKAGE_FAMILY_OF_SUFFIX:
+        if asset.endswith(suffix):
+            return family
+    return ""
 
 
 @router.get("/release", response_model=HubReleaseView)
@@ -988,7 +1026,8 @@ def read_release(runtime: PanelRuntime = Depends(get_runtime)) -> HubReleaseView
         runtime: The shared runtime, for the staging task if one runs.
 
     Returns:
-        The version, whether this hub can update itself, the last update's
+        The version, whether this hub can update itself and from which kind
+        of package, where it writes its logs, the last update's
         record with a run that died marked as such, and the staging task.
     """
     installer = _update_installer()
@@ -1002,6 +1041,8 @@ def read_release(runtime: PanelRuntime = Depends(get_runtime)) -> HubReleaseView
     return HubReleaseView(
         current=HUB_VERSION,
         is_packaged=is_packaged(),
+        package_family=_package_family(HUB_PACKAGE_ASSET),
+        log_root=str(UTILS_LOG_ROOT),
         update=None if record is None else HubUpdateRecordView(**asdict(record)),
         task_id=None if running is None else running.id,
     )

@@ -9,6 +9,7 @@ and the terminal says whether it can be used.
 import pytest
 from fastapi.testclient import TestClient
 
+from neutrino_hub.web.routers.hub import setup as setup_router
 from neutrino_hub.web.setup_app import WebSetupSession, create_setup_app
 
 CONTEXT = {
@@ -40,6 +41,30 @@ def test_the_token_opens_the_questions(client, session):
 
     assert answer["modes"] == [{"key": "server"}]
     assert answer["interfaces"][0]["name"] == "eth0"
+
+
+ALL_MODES = [{"key": "server"}, {"key": "side_gateway"}, {"key": "router"}]
+
+
+@pytest.mark.parametrize(
+    "system, offered",
+    [
+        ("linux", ["server", "side_gateway", "router"]),
+        ("darwin", ["server"]),
+        ("windows", ["server"]),
+    ],
+)
+def test_the_questions_name_the_system_and_the_modes_it_can_be(
+    monkeypatch, system, offered
+):
+    monkeypatch.setattr(setup_router, "hub_os", lambda: system)
+    session = WebSetupSession(context={**CONTEXT, "modes": ALL_MODES})
+    client = TestClient(create_setup_app(session))
+
+    answer = client.get(f"/api/hub/setup/context?token={session.token}").json()
+
+    assert answer["hub_os"] == system
+    assert [mode["key"] for mode in answer["modes"]] == offered
 
 
 def test_answers_reach_the_terminal_that_is_waiting(client, session):
