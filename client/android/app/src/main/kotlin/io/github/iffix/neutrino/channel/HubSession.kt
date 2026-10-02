@@ -51,6 +51,7 @@ import kotlinx.serialization.json.JsonObject
  * @param machine What this phone says about itself.
  * @param resolveHubName The IPv4 address `hub.neutrino.internal` resolves to here, or null.
  * @param onUnbound Called with the binding's id and the refusal when the hub no longer knows it.
+ * @param clock The time in milliseconds, stamped on the view when the open socket closes.
  * @throws IllegalArgumentException When the store holds no binding with [bindingId].
  */
 class HubSession(
@@ -60,6 +61,7 @@ class HubSession(
     private val machine: ClientMachine,
     private val resolveHubName: suspend () -> String?,
     private val onUnbound: (String, ChannelResult.Refused) -> Unit,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val current = MutableStateFlow(HubView(binding = requireNotNull(store.get(bindingId))))
     private val news = Channel<Unit>(Channel.CONFLATED)
@@ -117,6 +119,13 @@ class HubSession(
     fun networkChanged() {
         backoffS = CLIENT_BACKOFF_MIN_S
         live?.socket?.close(CLIENT_WS_CLOSE_NORMAL, "network changed")
+        news.trySend(Unit)
+    }
+
+    /** The app came back to the foreground: a hub with no open socket runs a round now with the backoff at its floor. */
+    fun resume() {
+        if (live != null || isReplaced || isUnbound) return
+        backoffS = CLIENT_BACKOFF_MIN_S
         news.trySend(Unit)
     }
 
@@ -291,6 +300,7 @@ class HubSession(
                 lastError = null,
                 connectedAddress = url,
                 hasConnected = true,
+                droppedAtMillis = 0,
             )
         }
         var failure: ChannelResult.Refused? = null
@@ -349,7 +359,9 @@ class HubSession(
             live = null
             streams.endAll()
             socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-            current.update { it.copy(connection = HubConnection.CONNECTING, connectedAddress = "") }
+            current.update {
+                it.copy(connection = HubConnection.CONNECTING, connectedAddress = "", droppedAtMillis = clock())
+            }
         }
         return failure
     }

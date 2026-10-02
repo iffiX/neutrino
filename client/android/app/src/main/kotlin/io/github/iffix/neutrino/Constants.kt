@@ -113,6 +113,9 @@ const val CLIENT_REPORT_INTERVAL_S = 30L
 /** How long the open socket may stay silent before it counts as dead. */
 const val CLIENT_WS_SILENCE_TIMEOUT_S = 45L
 
+/** How often the open socket sends a WebSocket ping, so a socket the network dropped closes. */
+const val CLIENT_WS_PING_INTERVAL_S = 20L
+
 /** The first wait after a broken wire, doubled on each failure. */
 const val CLIENT_BACKOFF_MIN_S = 5L
 
@@ -233,14 +236,11 @@ const val FORWARD_CONNECT_TIMEOUT_MILLIS = 10_000
 /** The query parameter a local-only web page takes its token in. */
 const val WEB_TOKEN_PARAMETER = "tkn"
 
-/** The notification channel the forwards' foreground service posts in. */
-const val FORWARD_NOTIFICATION_CHANNEL = "forwards"
+/** The notification channel the app core's foreground service posts in. */
+const val CLIENT_CORE_NOTIFICATION_CHANNEL = "connections"
 
-/** The id of the forwards' notification. */
-const val FORWARD_NOTIFICATION_ID = 7
-
-/** The forwards' service action that stops every forward. */
-const val FORWARD_SERVICE_ACTION_STOP = "io.github.iffix.neutrino.forward.STOP"
+/** The id of the app core's notification. */
+const val CLIENT_CORE_NOTIFICATION_ID = 7
 
 /** The first id this side opens a stream at; the hub's are even. */
 const val CHANNEL_FIRST_STREAM_ID = 1
@@ -328,6 +328,9 @@ const val CLIENT_SHARE_IDLE_PROBE_S = 30L
 
 /** How long the probe of a share's held connection may take. */
 const val CLIENT_SHARE_PROBE_TIMEOUT_S = 5L
+
+/** How long a share stays listed in the system's Files after its hub's channel drops. */
+const val CLIENT_SHARE_HOLD_S = 60L
 
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024

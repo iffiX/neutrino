@@ -19,11 +19,10 @@
     "client_key": "此客户端的密钥",
     "copied": "已复制",
     "copy": "复制",
+    "core_channel": "连接",
+    "core_notice": "已连接 {count} 个 hub",
     "forget_password": "忘掉密码",
     "forget_password_arm": "再按一次以忘掉",
-    "forward_channel": "端口转发",
-    "forward_notice": "正在把 {count} 个端口转发到本机",
-    "forward_stop": "停止转发",
     "gateway_address": "网关地址",
     "hub_forgot": "{hub} 已不再认识本机，它的一行已移除。",
     "join_hint": "扫描二维码，或粘贴链接。",
@@ -43,6 +42,7 @@
     "scan_hint": "对准 hub 客户端页面上的二维码",
     "scan_press": "按“扫码”使用相机。",
     "share_login_needed": "请先在文件页输入这个共享的密码。",
+    "share_reconnecting": "正在重新连接…",
     "terminal_detached": "已断开，hub 恢复后会重新连上。",
     "terminal_expand": "显示机器和标签"
   }

@@ -204,6 +204,11 @@ class HubConnections(
         return refusal
     }
 
+    /** The app came back to the foreground: every hub with no open socket runs a round now. */
+    fun resume() {
+        sessions.value.values.forEach { it.resume() }
+    }
+
     /** The phone's network changed: every session runs a round now. */
     fun networkChanged() {
         sessions.value.values.forEach { it.networkChanged() }

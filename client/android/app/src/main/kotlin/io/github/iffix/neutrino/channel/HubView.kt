@@ -15,6 +15,7 @@ import io.github.iffix.neutrino.overlay.OverlayLine
  * @property terminals The machines this phone may open a shell on.
  * @property connectedAddress The address the open socket runs on, empty while down.
  * @property hasConnected Whether the hub welcomed this phone since the app started.
+ * @property droppedAtMillis When the open socket last closed, in the session's clock; 0 while open or before the first.
  * @property jobs The actions running on the hub.
  * @property jobError The code the last leave ended in, kept until the next press on the row or a refresh.
  * @property overlay The hub's virtual network.
@@ -28,6 +29,7 @@ data class HubView(
     val terminals: List<ChannelTerminal> = emptyList(),
     val connectedAddress: String = "",
     val hasConnected: Boolean = false,
+    val droppedAtMillis: Long = 0,
     val jobs: HubJobs = HubJobs(),
     val jobError: ChannelResult.Refused? = null,
     val overlay: OverlayLine = OverlayLine(),

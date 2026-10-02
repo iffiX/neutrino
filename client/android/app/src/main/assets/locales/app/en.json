@@ -19,11 +19,10 @@
     "client_key": "This client's key",
     "copied": "Copied",
     "copy": "Copy",
+    "core_channel": "Connections",
+    "core_notice": "Connected to {count} hubs",
     "forget_password": "Forget password",
     "forget_password_arm": "Press again to forget",
-    "forward_channel": "Port forwards",
-    "forward_notice": "Forwarding {count} ports to this phone",
-    "forward_stop": "Stop forwarding",
     "gateway_address": "Gateway address",
     "hub_forgot": "{hub} no longer knows this phone, so its row was removed.",
     "join_hint": "Scan the QR code, or paste the link.",
@@ -43,6 +42,7 @@
     "scan_hint": "Point the camera at the QR code on the hub's Clients page",
     "scan_press": "Press Scan to use the camera.",
     "share_login_needed": "Give this share's password on the Files screen first.",
+    "share_reconnecting": "Reconnecting…",
     "terminal_detached": "Detached; it attaches again once the hub answers.",
     "terminal_expand": "Show the machines and the tabs"
   }

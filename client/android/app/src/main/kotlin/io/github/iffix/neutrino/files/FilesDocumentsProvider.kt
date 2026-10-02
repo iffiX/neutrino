@@ -38,12 +38,13 @@ class FilesDocumentsProvider : DocumentsProvider() {
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val cursor = MatrixCursor(projection ?: ROOT_COLUMNS)
+        val reconnecting = words().word("ui.share_reconnecting")
         for (root in app.shareRoots.value) {
             cursor.newRow()
                 .add(Root.COLUMN_ROOT_ID, root.key)
                 .add(Root.COLUMN_DOCUMENT_ID, ShareDocumentId(root.key, "").encoded)
                 .add(Root.COLUMN_TITLE, root.title)
-                .add(Root.COLUMN_SUMMARY, root.summary)
+                .add(Root.COLUMN_SUMMARY, if (root.isReconnecting) "${root.summary} · $reconnecting" else root.summary)
                 .add(Root.COLUMN_FLAGS, Root.FLAG_SUPPORTS_CREATE or Root.FLAG_SUPPORTS_IS_CHILD)
                 .add(Root.COLUMN_ICON, R.mipmap.ic_launcher)
         }

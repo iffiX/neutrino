@@ -26,7 +26,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * The loopback forwards of the app core, by entry key `<binding>/<entry>`: a port entry's
  * Connect and Disconnect, and a local-only web entry's Open locally, which forwards, reads the
  * entry's token on the `service` stream and opens the browser on the loopback. A forward stops
- * when its hub is left, when its entry leaves the hub's state, and on [stopAll].
+ * when its hub is left, when its entry leaves the hub's state, and on [stopAll] as the app core's service ends.
  *
  * @param material What the hub hands this phone for one entry, by binding id and entry id.
  * @param scope Where the jobs run.
@@ -162,7 +162,7 @@ class PortForwards(
         current.update { rows -> rows.filterKeys { !it.startsWith("$bindingId/") } }
     }
 
-    /** Stop every forward, as from the notification. */
+    /** Stop every forward, as when the app core's service ends. */
     fun stopAll() {
         val keys = synchronized(relays) { relays.keys.toList() }
         for (key in keys) stop(key)
