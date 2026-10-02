@@ -71,3 +71,10 @@ def test_a_day_is_labelled_by_its_date(monkeypatch):
     samples = VnstatHistoryReader(interface="enp2s0").daily(day_count=7)
 
     assert samples[0].label == "2026-09-12"
+
+
+def test_elsewhere_there_is_no_history(elsewhere, monkeypatch):
+    calls = _vnstat(monkeypatch, "day", [{"date": {"year": 2026}}])
+
+    assert VnstatHistoryReader(interface="en0").daily() == []
+    assert calls == []

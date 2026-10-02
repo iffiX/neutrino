@@ -8,10 +8,17 @@ when the module downloads a binary and must pick the right one.
 A module that installs system packages declares ``<PREFIX>_PACKAGES`` the same
 way, keyed by distribution family, and a family it has no entry for is a family
 it does not run on. This is where both declarations meet the actual machine.
+On macOS and Windows the family is the system's own word, which no module's
+package table names.
 """
 
 import platform
+import re
 from pathlib import Path
+
+from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN
+from neutrino_hub.platforms.detect import hub_os, is_linux
+from neutrino_hub.utils.subprocess_run import run
 
 # Kernel names for one architecture vary by distribution and bitness; the
 # normalized name is what release downloads are keyed by.
@@ -43,6 +50,15 @@ DISTRIBUTION_FAMILIES = {
 }
 
 UNKNOWN_FAMILY = ""
+
+# Where macOS and Windows keep the id they gave this machine; the agent reads
+# the same two.
+DARWIN_MACHINE_ID_COMMAND = ("ioreg", "-rd1", "-c", "IOPlatformExpertDevice")
+DARWIN_MACHINE_ID_PATTERN = re.compile(r'"IOPlatformUUID"\s*=\s*"([^"]+)"')
+WINDOWS_MACHINE_GUID_KEY = "SOFTWARE\\Microsoft\\Cryptography"
+WINDOWS_MACHINE_GUID_VALUE = "MachineGuid"
+# Read from the 64-bit view whatever the process is.
+WINDOWS_KEY_WOW64_64KEY = 0x0100
 
 
 def machine_architecture() -> str:
@@ -79,12 +95,19 @@ def require_architecture(supported: tuple, what: str) -> None:
 
 
 def machine_id() -> str:
-    """The id systemd gave this machine.
+    """The id the system gave this machine.
 
     Returns:
         The contents of ``/etc/machine-id`` without surrounding whitespace,
-        or empty when the file is missing or empty.
+        the firmware's ``IOPlatformUUID`` on macOS, the registry's
+        ``MachineGuid`` on Windows; empty when none can be read.
     """
+    if not is_linux():
+        return (
+            _darwin_machine_id()
+            if hub_os() == PLATFORM_OS_DARWIN
+            else _windows_machine_id()
+        )
     try:
         return MACHINE_ID_PATH.read_text(encoding="utf-8").strip()
     except OSError:
@@ -98,7 +121,10 @@ def distribution_family() -> str:
         ``debian``, ``rhel``, ``arch``, ``suse``, or empty when
         ``/etc/os-release`` names something unrecognized. Empty is honest
         input for a support check rather than a guess at a package manager.
+        ``darwin`` or ``windows`` outside Linux.
     """
+    if not is_linux():
+        return hub_os()
     fields = _os_release()
     names = [fields.get("ID", "")] + fields.get("ID_LIKE", "").split()
     for name in names:
@@ -112,8 +138,13 @@ def distribution_name() -> str:
     """What the distribution calls itself, for error messages.
 
     Returns:
-        Something like ``Debian GNU/Linux 12 (bookworm)``, or ``unknown``.
+        Something like ``Debian GNU/Linux 12 (bookworm)``, ``macOS 15.1`` or
+        ``Windows 10.0.26100``, or ``unknown``.
     """
+    if hub_os() == PLATFORM_OS_DARWIN:
+        return f"macOS {platform.mac_ver()[0]}".strip()
+    if not is_linux():
+        return f"Windows {platform.version()}".strip()
     return _os_release().get("PRETTY_NAME", "") or "unknown"
 
 
@@ -157,3 +188,27 @@ def _os_release() -> dict:
         if separator:
             fields[key.strip()] = value.strip().strip('"').strip("'")
     return fields
+
+
+def _darwin_machine_id() -> str:
+    """The platform UUID the firmware reports; empty when ioreg names none."""
+    result = run(list(DARWIN_MACHINE_ID_COMMAND), is_checked=False)
+    match = DARWIN_MACHINE_ID_PATTERN.search(result.stdout)
+    return match.group(1) if match else ""
+
+
+def _windows_machine_id() -> str:
+    """The installation's ``MachineGuid``; empty when it cannot be read."""
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            WINDOWS_MACHINE_GUID_KEY,
+            0,
+            winreg.KEY_READ | WINDOWS_KEY_WOW64_64KEY,
+        ) as key:
+            value, _kind = winreg.QueryValueEx(key, WINDOWS_MACHINE_GUID_VALUE)
+    except OSError:
+        return ""
+    return str(value or "").strip()

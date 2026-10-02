@@ -85,3 +85,12 @@ def test_a_development_root_holds_every_system(monkeypatch, tmp_path, system, re
     monkeypatch.setenv(constants.UTILS_DEV_ROOT_ENV, str(tmp_path))
 
     assert constants._rooted("log") == tmp_path / relative
+
+
+def test_a_carried_program_ends_in_exe_on_windows_alone(monkeypatch):
+    monkeypatch.setattr(constants, "hub_os", lambda: "windows")
+    assert constants.carried_program("xray").name == "xray.exe"
+    monkeypatch.setattr(constants, "hub_os", lambda: "darwin")
+    assert constants.carried_program("xray").name == "xray"
+    monkeypatch.setattr(constants, "hub_os", lambda: "linux")
+    assert constants.carried_program("xray") == constants.UTILS_PROGRAM_DIR / "xray"

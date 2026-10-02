@@ -2,12 +2,14 @@
 
 xray's own counters reset whenever the service restarts, so the dashboard's
 "past traffic" view comes from vnstatd, which keeps per-interface totals across
-reboots in its own database.
+reboots in its own database. vnstat runs on Linux alone; on macOS and Windows
+every reading is empty and the panel draws no history.
 """
 
 import json
 from dataclasses import dataclass
 
+from neutrino_hub.platforms.detect import is_linux
 from neutrino_hub.utils.subprocess_run import run
 
 # vnstat's mode letter, and the key its JSON lists that mode's buckets under.
@@ -75,6 +77,8 @@ class VnstatHistoryReader:
         return self._read("m", month_count)
 
     def _read(self, mode: str, count: int) -> list[TrafficSample]:
+        if not is_linux():
+            return []
         result = run(
             ["vnstat", "--json", mode, str(count), "-i", self._interface],
             is_checked=False,

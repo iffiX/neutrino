@@ -205,3 +205,7 @@ bantime.increment = true
 bantime.multipliers = 1 2 10 120 2880
 ignoreip = 127.0.0.1/8 ::1 100.88.0.0/16
 """
+
+# The shell a Windows hub runs its system scripts in, and how long one may take.
+SYSTEM_POWERSHELL_PROGRAM = "powershell.exe"
+SYSTEM_POWERSHELL_TIMEOUT_S = 60

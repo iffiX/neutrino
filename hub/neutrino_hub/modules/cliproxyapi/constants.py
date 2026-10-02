@@ -1,6 +1,6 @@
 """Fixed values of the cliproxyapi module."""
 
-from neutrino_hub.utils.constants import UTILS_STATE_ROOT, UTILS_STATIC_ROOT
+from neutrino_hub.utils.constants import UTILS_STATE_ROOT, carried_program
 
 # What the hub's package carries. The packaging pins the same version in
 # hub/packaging/venv_tree.py; this is what the panel reports and what the
@@ -8,7 +8,7 @@ from neutrino_hub.utils.constants import UTILS_STATE_ROOT, UTILS_STATIC_ROOT
 CLIPROXYAPI_VERSION = "7.2.146"
 # Carried by the hub's package, under the hub's own prefix rather than
 # /usr/local, which belongs to whoever administers the machine.
-CLIPROXYAPI_BINARY_PATH = UTILS_STATIC_ROOT / "bin" / "cli-proxy-api"
+CLIPROXYAPI_BINARY_PATH = carried_program("cli-proxy-api")
 CLIPROXYAPI_DIR = UTILS_STATE_ROOT / "cliproxyapi"
 # Where the gateway keeps the accounts somebody signed in. State, not
 # configuration: a backup carries ``config/`` and none of this, so a restored

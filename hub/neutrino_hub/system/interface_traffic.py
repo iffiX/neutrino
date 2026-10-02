@@ -4,15 +4,26 @@ The long-term view of the same traffic comes from vnstat
 (:mod:`neutrino_hub.system.vnstat_history`); this is the reading between two
 ticks. It is taken straight out of ``/proc`` rather than by running ``ip``,
 because the dashboard asks for it once a second for every open panel and a
-subprocess per frame is a cost this number does not carry.
+subprocess per frame is a cost this number does not carry. On macOS and
+Windows the counters come from psutil, and the default route is read at
+most once per :data:`ROUTE_READ_INTERVAL_S`.
 """
 
+import time
 from pathlib import Path
 
+import psutil
+
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.link_status import system_default_routes
+from neutrino_hub.platforms.detect import is_linux
 
 PROC_NET_DEV = Path("/proc/net/dev")
 PROC_NET_ROUTE = Path("/proc/net/route")
+# How long one reading of the default route serves outside Linux.
+ROUTE_READ_INTERVAL_S = 10.0
+# The last reading there: the interface and when it was taken.
+_ROUTE_READING: dict = {"interface": "", "taken_at": None}
 
 # Both tables are big-endian hex words. A default route is the one whose
 # destination matches everything.
@@ -43,6 +54,11 @@ def interface_counters(name: str) -> tuple[int, int] | None:
     """
     if not name:
         return None
+    if not is_linux():
+        counters = psutil.net_io_counters(pernic=True).get(name)
+        if counters is None:
+            return None
+        return counters.bytes_recv, counters.bytes_sent
     try:
         table = PROC_NET_DEV.read_text(encoding="utf-8")
     except OSError:
@@ -71,6 +87,14 @@ def default_route_interface() -> str:
         The device carrying the default route, lowest metric first the way the
         kernel picks it. Empty when the box has no default route at all.
     """
+    if not is_linux():
+        taken_at = _ROUTE_READING["taken_at"]
+        now = time.monotonic()
+        if taken_at is None or now - taken_at >= ROUTE_READ_INTERVAL_S:
+            routes = system_default_routes()
+            _ROUTE_READING["interface"] = routes[0]["dev"] if routes else ""
+            _ROUTE_READING["taken_at"] = now
+        return _ROUTE_READING["interface"]
     try:
         table = PROC_NET_ROUTE.read_text(encoding="utf-8")
     except OSError:

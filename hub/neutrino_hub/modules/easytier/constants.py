@@ -1,7 +1,7 @@
 """Fixed values of the easytier module."""
 
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER_UNIT
-from neutrino_hub.utils.constants import UTILS_STATIC_ROOT
+from neutrino_hub.utils.constants import carried_program
 
 # What the hub's package carries. The packaging pins the same version in
 # hub/packaging/venv_tree.py by reading this file. Upstream publishes no
@@ -22,8 +22,8 @@ EASYTIER_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 # embedded twin serve other machines, and this box only runs a node.
 EASYTIER_CORE_NAME = "easytier-core"
 EASYTIER_CLI_NAME = "easytier-cli"
-EASYTIER_CORE_PATH = UTILS_STATIC_ROOT / "bin" / EASYTIER_CORE_NAME
-EASYTIER_CLI_PATH = UTILS_STATIC_ROOT / "bin" / EASYTIER_CLI_NAME
+EASYTIER_CORE_PATH = carried_program(EASYTIER_CORE_NAME)
+EASYTIER_CLI_PATH = carried_program(EASYTIER_CLI_NAME)
 
 EASYTIER_UNIT = OVERLAY_EASYTIER_UNIT
 EASYTIER_GENERATED_NAME = "easytier.toml"

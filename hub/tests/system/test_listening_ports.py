@@ -42,3 +42,21 @@ def test_an_address_with_colons_in_it_still_yields_its_port(monkeypatch):
 
 def test_a_box_that_cannot_be_read_refuses_nothing(monkeypatch):
     assert _reading(monkeypatch, output="").ports() == set()
+
+
+def test_elsewhere_the_sockets_come_from_psutil(elsewhere, monkeypatch):
+    from tests.conftest import FakePsutil
+
+    machine = FakePsutil()
+    machine.connections = [
+        ("tcp", "LISTEN", 1080, False, 11),
+        ("tcp", "ESTABLISHED", 50000, True, 12),
+        ("tcp", "LISTEN", 8080, False, 12),
+        ("udp", "NONE", 15353, False, 11),
+        ("udp", "NONE", 51000, True, 12),
+    ]
+    machine.process_names = {11: "xray.exe", 12: "nhub"}
+    monkeypatch.setattr(listening_ports, "psutil", machine)
+
+    assert ListeningPortReader().ports() == {1080, 8080, 15353}
+    assert ListeningPortReader().ports(ignoring="xray") == {8080}

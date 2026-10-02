@@ -55,6 +55,29 @@ UTILS_LOG_ROOT = _rooted(PLATFORM_ROOT_LOG)
 UTILS_RUNTIME_ROOT = _rooted(PLATFORM_ROOT_RUNTIME)
 
 
+# Where the package puts the programs it carries; on Windows each name ends in
+# .exe.
+UTILS_PROGRAM_DIR = UTILS_STATIC_ROOT / "bin"
+UTILS_WINDOWS_PROGRAM_SUFFIX = ".exe"
+
+
+def carried_program(name: str) -> Path:
+    """The path of one program the hub's package carries.
+
+    Args:
+        name: The program's name without a suffix, for example ``xray``.
+
+    Returns:
+        The program under :data:`UTILS_PROGRAM_DIR`, with ``.exe`` added on
+        Windows.
+
+    Raises:
+        RuntimeError: The system is none of the three.
+    """
+    suffix = UTILS_WINDOWS_PROGRAM_SUFFIX if hub_os() == PLATFORM_OS_WINDOWS else ""
+    return UTILS_PROGRAM_DIR / f"{name}{suffix}"
+
+
 def is_dev_root_set() -> bool:
     """Whether this process runs against a development root.
 

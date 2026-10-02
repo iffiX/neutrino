@@ -8,8 +8,13 @@ ruleset. The renderers stay pure so they can be tested without root.
 """
 
 import ipaddress
-import pwd
 import subprocess
+
+# Unix's alone; the proxy core's account exists on Linux alone.
+try:
+    import pwd
+except ImportError:
+    pwd = None
 
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
@@ -87,8 +92,10 @@ def lookup_xray_uid() -> int:
 
     Raises:
         RuntimeError: If the user does not exist yet. The installer creates
-            it before any ruleset is rendered.
+            it before any ruleset is rendered. Outside Linux there is none.
     """
+    if pwd is None:
+        raise RuntimeError(f"system user {XRAY_SERVICE_USER!r} exists on Linux alone")
     try:
         return pwd.getpwnam(XRAY_SERVICE_USER).pw_uid
     except KeyError as error:

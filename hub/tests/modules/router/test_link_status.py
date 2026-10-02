@@ -1,0 +1,146 @@
+"""The interfaces' state on macOS and Windows, read through psutil.
+
+What these pin: an address outside loopback is where the box is reached, a
+port is an interface with a hardware address and an IPv4 address, and the
+default route comes from ``route -n get default`` on macOS and from
+``Get-NetRoute`` on Windows, lowest metric first.
+"""
+
+import socket
+
+import pytest
+
+from tests.conftest import FakePowerShell, FakePsutil, FakeTools
+from neutrino_hub.modules.router import link_status
+from neutrino_hub.modules.router.link_status import (
+    LINK_KIND_ETHERNET,
+    LINK_WINDOWS_ROUTE_SCRIPT,
+    RouterLinkStatus,
+    admin_up_interfaces,
+    device_addresses,
+    system_default_routes,
+)
+
+ROUTE_GET_DEFAULT = """\
+   route to: default
+destination: default
+       mask: default
+    gateway: 192.168.1.1
+  interface: en0
+      flags: <UP,GATEWAY,DONE,STATIC,PRCLONING,GLOBAL>
+"""
+
+
+@pytest.fixture
+def machine(monkeypatch) -> FakePsutil:
+    held = FakePsutil()
+    held.addresses = {
+        "lo0": [(socket.AF_INET, "127.0.0.1", "255.0.0.0")],
+        "en0": [
+            (FakePsutil.AF_LINK, "02:00:5e:10:00:01", None),
+            (socket.AF_INET, "192.168.1.20", "255.255.255.0"),
+        ],
+        "utun4": [(socket.AF_INET, "100.92.10.4", "255.255.0.0")],
+        "awdl0": [(FakePsutil.AF_LINK, "6e:01:02:03:04:05", None)],
+        "Ethernet 2": [
+            (FakePsutil.AF_LINK, "02-00-5E-10-00-02", None),
+            (socket.AF_INET, "10.0.0.7", "255.255.255.0"),
+        ],
+    }
+    held.stats = {
+        "lo0": (True, 0),
+        "en0": (True, 1000),
+        "utun4": (True, 0),
+        "awdl0": (False, 0),
+        "Ethernet 2": (False, 0),
+    }
+    monkeypatch.setattr(link_status, "psutil", held)
+    return held
+
+
+def test_every_address_outside_loopback_is_where_the_box_is_reached(elsewhere, machine):
+    assert device_addresses() == {
+        "en0": "192.168.1.20/24",
+        "utun4": "100.92.10.4/16",
+        "Ethernet 2": "10.0.0.7/24",
+    }
+
+
+def test_a_port_has_a_hardware_address_and_an_ipv4_address(elsewhere, machine):
+    links = RouterLinkStatus().all_links()
+
+    assert [link.name for link in links] == ["Ethernet 2", "en0"]
+    en0 = links[1]
+    assert en0.kind == LINK_KIND_ETHERNET
+    assert en0.is_present and en0.is_up
+    assert en0.ipv4_address == "192.168.1.20/24"
+    assert en0.mac_address == "02:00:5e:10:00:01"
+    assert en0.speed_mbps == 1000
+    assert links[0].mac_address == "02:00:5e:10:00:02"
+    assert not links[0].is_up
+    assert links[0].speed_mbps is None
+
+
+def test_the_interfaces_that_are_up(elsewhere, machine):
+    assert admin_up_interfaces() == {"lo0", "en0", "utun4"}
+
+
+def test_macos_reads_its_default_route_from_route(on_darwin, monkeypatch):
+    tools = FakeTools()
+    tools.answers[("route", "-n", "get", "default")] = ROUTE_GET_DEFAULT
+    monkeypatch.setattr(link_status, "run", tools)
+
+    assert system_default_routes() == [
+        {"dev": "en0", "metric": 0, "gateway": "192.168.1.1"}
+    ]
+    assert RouterLinkStatus().default_gateway() == "192.168.1.1"
+    assert RouterLinkStatus().gateway_for("en0") == "192.168.1.1"
+
+
+def test_macos_without_a_default_route_has_none(on_darwin, monkeypatch):
+    tools = FakeTools()
+    tools.failing.add(("route",))
+    monkeypatch.setattr(link_status, "run", tools)
+
+    assert system_default_routes() == []
+    assert RouterLinkStatus().default_gateway() is None
+
+
+def test_windows_reads_its_default_routes_lowest_metric_first(on_windows, monkeypatch):
+    powershell = FakePowerShell(
+        {
+            LINK_WINDOWS_ROUTE_SCRIPT: {
+                "routes": [
+                    {"dev": "Wi-Fi", "gateway": "10.1.1.1", "metric": 55},
+                    {"dev": "Ethernet", "gateway": "192.168.1.1", "metric": 25},
+                    {"dev": "wt0", "gateway": "0.0.0.0", "metric": 5},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(link_status, "run_powershell", powershell)
+
+    assert system_default_routes() == [
+        {"dev": "wt0", "metric": 5},
+        {"dev": "Ethernet", "metric": 25, "gateway": "192.168.1.1"},
+        {"dev": "Wi-Fi", "metric": 55, "gateway": "10.1.1.1"},
+    ]
+    assert RouterLinkStatus().default_gateway() is None
+    assert RouterLinkStatus().gateway_for("Ethernet") == "192.168.1.1"
+
+
+def test_windows_with_one_route_answers_it_bare(on_windows, monkeypatch):
+    powershell = FakePowerShell(
+        {LINK_WINDOWS_ROUTE_SCRIPT: {"routes": {"dev": "Ethernet", "metric": 1}}}
+    )
+    monkeypatch.setattr(link_status, "run_powershell", powershell)
+
+    assert system_default_routes() == [{"dev": "Ethernet", "metric": 1}]
+
+
+def test_windows_that_cannot_run_powershell_has_no_route(on_windows, monkeypatch):
+    monkeypatch.setattr(
+        link_status, "run_powershell", FakePowerShell(error=OSError("absent"))
+    )
+
+    assert system_default_routes() == []
