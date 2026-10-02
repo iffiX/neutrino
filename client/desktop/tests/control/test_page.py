@@ -1208,22 +1208,17 @@ def test_the_settings_card_carries_the_language_then_the_theme_and_saves_both():
     )
 
 
-def test_about_is_the_panels_card_of_three_groups_with_no_page_of_its_own():
+def test_about_is_the_panels_card_of_two_groups_with_no_page_of_its_own():
     about = body_of("aboutSection")
     assert "header.className = 'card_header';" in about
     assert "document.createElement('h2')" in about
     groups = [
         about.index(f"t('{key}')")
-        for key in ("ui.about_this_machine", "ui.about_carried", "ui.about_sources")
+        for key in ("ui.about_this_machine", "ui.about_carried")
     ]
     assert groups == sorted(groups)
-    for key in (
-        "ui.about",
-        "ui.about_machine",
-        "ui.about_platform",
-        "ui.about_version",
-        "ui.about_licence",
-    ):
+    assert "ui.about_sources" not in about
+    for key in ("ui.about", "ui.about_machine", "ui.about_platform"):
         assert f"t('{key}')" in about
     assert "state.hostname" in about
     assert "platform.os + '/' + platform.arch" in about
@@ -1231,7 +1226,26 @@ def test_about_is_the_panels_card_of_three_groups_with_no_page_of_its_own():
     group = body_of("aboutGroup")
     assert "heading.className = 'section_label';" in group
     assert "about_key" in group and "about_value" in group
-    assert "api('/api/open_link', { url: link });" in group
+    assert "api('/api/open_link', { url: url });" in body_of("aboutLink")
+
+
+def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_word():
+    about = body_of("aboutSection")
+    assert (
+        "['Neutrino client ' + state.version, CLIENT_LICENCE, [[source, CLIENT_SOURCE]]]"
+        in about
+    )
+    assert "version ? core.name + ' ' + version : core.name" in about
+    assert "const source = t('ui.about_source_link');" in about
+    assert "text.textContent = (value || '') + (links.length ? ' — ' : '');" in (
+        body_of("aboutGroup")
+    )
+    assert "link.textContent = word;" in body_of("aboutLink")
+    for language in CLIENT_LANGUAGES:
+        assert CATALOGS[language]["ui.about_source_link"]
+        assert CATALOGS[language]["ui.about_patch_link"]
+    assert EN_WORDS["ui.about_source_link"] == "Source"
+    assert EN_WORDS["ui.about_patch_link"] == "Patch"
     value_rule = PAGE_CSS[PAGE_CSS.index(".about_value {") :]
     assert "monospace" in value_rule[: value_rule.index("}")]
     row_rule = PAGE_CSS[PAGE_CSS.index(".about_row {") :]

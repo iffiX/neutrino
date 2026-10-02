@@ -2217,10 +2217,10 @@ function drawSettings(state) {
   return page;
 }
 
-// About, as the panel's About card: a header with the title, then three
-// groups under their section labels, this machine, what the package
-// carries and where the source is; one row per fact, the label at the left
-// and the value in mono at the right, a link opening in the browser.
+// About, as the panel's About card: a header with the title, then two
+// groups under their section labels, this machine and what the package
+// carries; one row per fact, the label at the left and the value in mono at
+// the right, a carried program's row ending in its Source link.
 function aboutSection(state) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -2235,49 +2235,59 @@ function aboutSection(state) {
   const platform = state.platform || {};
   const versions = state.carried_versions || {};
   aboutGroup(about, t('ui.about_this_machine'), [
-    [t('ui.about_machine'), state.hostname],
-    [t('ui.about_platform'), platform.os + '/' + platform.arch],
-    [t('ui.about_version'), state.version],
-    [t('ui.about_licence'), CLIENT_LICENCE],
+    [t('ui.about_machine'), state.hostname, []],
+    [t('ui.about_platform'), platform.os + '/' + platform.arch, []],
   ]);
-  aboutGroup(about, t('ui.about_carried'), CARRIED.map((core) => [core.name,
-    versions[core.key] ? versions[core.key] + ' · ' + core.licence : core.licence]));
-  aboutGroup(about, t('ui.about_sources'), [['Neutrino', CLIENT_SOURCE, CLIENT_SOURCE]]
-    .concat(CARRIED.map((core) => {
-      const url = carriedSource(core, versions[core.key]);
-      return [core.name, url, url];
-    })));
+  const source = t('ui.about_source_link');
+  aboutGroup(about, t('ui.about_carried'), [
+    ['Neutrino client ' + state.version, CLIENT_LICENCE, [[source, CLIENT_SOURCE]]],
+  ].concat(CARRIED.map((core) => {
+    const version = versions[core.key];
+    return [version ? core.name + ' ' + version : core.name, core.licence,
+      [[source, carriedSource(core, version)]]];
+  })));
   card.appendChild(about);
   return card;
 }
 
 // One group of About: its section label, then a row per [label, value,
-// link], the link empty for a value that opens nothing.
+// links], each link a short word after the value that opens the browser,
+// as the panel's credits rows draw them.
 function aboutGroup(about, title, rows) {
   const heading = document.createElement('div');
   heading.className = 'section_label';
   heading.textContent = title;
   about.appendChild(heading);
-  for (const [name, value, link] of rows) {
+  for (const [name, value, links] of rows) {
     const row = document.createElement('div');
     row.className = 'about_row';
     const label = document.createElement('span');
     label.className = 'about_key';
     label.textContent = name;
-    const text = document.createElement(link ? 'a' : 'span');
+    const text = document.createElement('span');
     text.className = 'about_value';
-    text.textContent = value || '';
-    if (link) {
-      text.href = link;
-      text.onclick = (event) => {
-        event.preventDefault();
-        api('/api/open_link', { url: link });
-      };
-    }
+    text.textContent = (value || '') + (links.length ? ' — ' : '');
+    links.forEach(([word, url], index) => {
+      if (index) text.appendChild(document.createTextNode(' · '));
+      text.appendChild(aboutLink(word, url));
+    });
     row.appendChild(label);
     row.appendChild(text);
     about.appendChild(row);
   }
+}
+
+// One short link word of About, opened in the browser by the resident.
+function aboutLink(word, url) {
+  const link = document.createElement('a');
+  link.className = 'about_link';
+  link.href = url;
+  link.textContent = word;
+  link.onclick = (event) => {
+    event.preventDefault();
+    api('/api/open_link', { url: url });
+  };
+  return link;
 }
 
 // A carried program's source: at the tag of the version the package
