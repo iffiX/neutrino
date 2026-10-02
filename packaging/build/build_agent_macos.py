@@ -2,8 +2,8 @@
 
     python3 packaging/build/build_agent_macos.py --output-dir dist/
 
-Runs on: macOS on Apple silicon, with Python 3.13 and the Xcode command
-line tools.
+Runs on: macOS on Apple silicon or on Intel, the machine the package is
+for, with Python 3.13 and the Xcode command line tools.
 
 The installer carries the agent compiled: Nuitka turns the package and the
 interpreter it runs on into a standalone ``nagent`` with the libraries beside
@@ -19,7 +19,7 @@ preinstall script unloads the running jobs; the postinstall script loads
 all three, the session agent into the session at the screen when there is
 one.
 
-The standalone tree is signed ad hoc, file by file: Apple Silicon refuses
+The standalone tree is signed ad hoc, file by file: Apple silicon refuses
 native code with no signature at all. RustDesk keeps upstream's own.
 
 Needs the Xcode command line tools for ``codesign``, ``pkgbuild`` and
@@ -42,6 +42,7 @@ from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import pkg_build  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
+from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 REPO_ROOT = payload.REPO_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
@@ -71,8 +72,9 @@ RUSTDESK_BUNDLE_ID = "com.carriez.rustdesk"
 # The identity the installer records the package under.
 PACKAGE_IDENTIFIER = "com.neutrino.agent"
 
-# Apple Silicon only: it is what RustDesk is pinned for.
-MACOS_MACHINES = {"aarch64": "arm64"}
+# What each name for the machine maps to: the platform the package is named
+# for, Apple silicon and Intel.
+MACOS_MACHINES = {"aarch64": "arm64", "x86_64": "amd64"}
 
 # The first bytes of every Mach-O file, thin or universal, either order.
 MACH_O_MAGICS = (
@@ -160,7 +162,7 @@ def macos_machine(architecture: str) -> str:
             names it.
 
     Returns:
-        ``arm64``.
+        ``arm64`` or ``amd64``.
 
     Raises:
         SystemExit: When it is not a machine the agent is published for on
@@ -168,7 +170,9 @@ def macos_machine(architecture: str) -> str:
     """
     name = payload.machine_name(architecture)
     if name not in MACOS_MACHINES:
-        raise SystemExit(f"the macOS agent is published for arm64, not {architecture}")
+        raise SystemExit(
+            f"the macOS agent is published for arm64 and amd64, not {architecture}"
+        )
     return MACOS_MACHINES[name]
 
 
@@ -177,12 +181,14 @@ def pkg_name(version: str, machine: str) -> str:
 
     Args:
         version: The version being packaged.
-        machine: ``arm64``.
+        machine: ``arm64`` or ``amd64``.
 
     Returns:
         The file name.
     """
-    return f"{PACKAGE_NAME}-{version}-macos-{machine}.pkg"
+    return PACKAGING_ASSET_PATTERNS["macos_pkg"].format(
+        name=PACKAGE_NAME, version=version, architecture=machine
+    )
 
 
 def write_launchd_jobs(package_root: Path) -> None:
@@ -224,7 +230,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     Args:
         root: The working directory to build under.
         version: The version being packaged.
-        machine: ``arm64``.
+        machine: ``arm64`` or ``amd64``.
 
     Returns:
         ``{"root", "scripts"}``: the package root standing in for the
@@ -254,7 +260,8 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     link.symlink_to(INSTALL_AGENT_DIR / AGENT_BINARY_NAME)
 
     rustdesk_assets.stage_darwin_app(
-        package_root / str(INSTALL_APPLICATIONS_DIR).lstrip("/")
+        package_root / str(INSTALL_APPLICATIONS_DIR).lstrip("/"),
+        machine=payload.machine_name(machine),
     )
     write_launchd_jobs(package_root)
     scripts = pkg_build.write_scripts(
@@ -268,7 +275,7 @@ def _check_build_machine(machine: str) -> None:
     than the pinned one, or one for a machine this is not.
 
     Args:
-        machine: ``arm64``, as asked for.
+        machine: ``arm64`` or ``amd64``, as asked for.
 
     Raises:
         SystemExit: On any mismatch.

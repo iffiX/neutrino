@@ -28,15 +28,22 @@ def darwin_build_machine(monkeypatch, *, machine="arm64", version=(3, 13, 7)):
     monkeypatch.setattr(build_client_macos.platform, "machine", lambda: machine)
 
 
-def test_the_package_is_named_for_apple_silicon_alone():
-    assert build_client_macos.MACOS_MACHINES == {"aarch64": "arm64"}
+def test_the_package_is_named_for_apple_silicon_and_intel():
+    assert build_client_macos.MACOS_MACHINES == {"aarch64": "arm64", "x86_64": "amd64"}
     assert build_client_macos.macos_machine("arm64") == "arm64"
     assert build_client_macos.macos_machine("aarch64") == "arm64"
+    assert build_client_macos.macos_machine("x86_64") == "amd64"
     assert payload.PACKAGE_NAME == "neutrino-client"
 
     with pytest.raises(SystemExit) as refused:
-        build_client_macos.macos_machine("amd64")
-    assert "amd64" in str(refused.value)
+        build_client_macos.macos_machine("armhf")
+    assert "armhf" in str(refused.value)
+
+
+def test_an_intel_mac_of_the_pinned_python_builds_the_intel_package(monkeypatch):
+    darwin_build_machine(monkeypatch, machine="x86_64")
+
+    build_client_macos._check_build_machine("amd64")
 
 
 def test_the_build_refuses_anything_but_a_mac(monkeypatch):

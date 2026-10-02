@@ -324,4 +324,11 @@ def test_the_builds_read_the_naming_tables_the_packaging_owns():
     )
     assert venv_tree.PACKAGING_ASSET_PATTERNS is constants.PACKAGING_ASSET_PATTERNS
     assert set(constants.PACKAGING_ARCHITECTURE_NAMES) == {"amd64", "arm64"}
-    assert set(constants.PACKAGING_ASSET_PATTERNS) == {"deb", "rpm", "pkg"}
+    assert set(constants.PACKAGING_ASSET_PATTERNS) == {
+        "deb",
+        "rpm",
+        "pkg",
+        "msi",
+        "macos_pkg",
+    }
+    assert constants.PACKAGING_ASSET_PATTERNS["pkg"].endswith(".pkg.tar.zst")

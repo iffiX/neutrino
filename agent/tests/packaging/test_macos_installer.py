@@ -150,9 +150,43 @@ def test_the_package_is_named_the_way_the_release_publishes_it():
     assert build_agent_macos.pkg_name("0.4.0", "arm64") == (
         "neutrino-agent-0.4.0-macos-arm64.pkg"
     )
+    assert build_agent_macos.pkg_name("0.4.0", "amd64") == (
+        "neutrino-agent-0.4.0-macos-amd64.pkg"
+    )
     assert build_agent_macos.macos_machine("arm64") == "arm64"
+    assert build_agent_macos.macos_machine("x86_64") == "amd64"
     with pytest.raises(SystemExit):
-        build_agent_macos.macos_machine("amd64")
+        build_agent_macos.macos_machine("armhf")
+
+
+def test_an_intel_package_carries_the_intel_rustdesk(tmp_path, monkeypatch):
+    asked = []
+
+    def compile_standalone(python, entry, output_dir, binary_name, **kwargs):
+        dist = output_dir / "entry.dist"
+        dist.mkdir(parents=True)
+        (dist / binary_name).write_bytes(b"")
+        return dist
+
+    def stage_darwin_app(dest_dir, *, machine="aarch64"):
+        asked.append(machine)
+        return dest_dir / "RustDesk.app"
+
+    monkeypatch.setattr(build_agent_macos, "_check_build_machine", lambda machine: None)
+    monkeypatch.setattr(
+        build_agent_macos, "_make_build_environment", lambda venv: Path("python3")
+    )
+    monkeypatch.setattr(
+        build_agent_macos.nuitka_build, "compile_standalone", compile_standalone
+    )
+    monkeypatch.setattr(
+        build_agent_macos.rustdesk_assets, "stage_darwin_app", stage_darwin_app
+    )
+    monkeypatch.setattr(build_agent_macos.pkg_build, "sign_ad_hoc", lambda path: None)
+
+    build_agent_macos._lay_out(tmp_path, "9.9.9", "amd64")
+
+    assert asked == ["x86_64"]
 
 
 def test_the_build_refuses_anything_but_a_mac(monkeypatch):

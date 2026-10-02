@@ -71,6 +71,7 @@ import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import wix_build  # noqa: E402
+from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 # The service names and the portal are the client's own, named here so the
 # installer and the runtime cannot drift.
@@ -573,9 +574,9 @@ def main() -> int:
     machine = WINDOWS_MACHINES[payload.machine_name(arguments.architecture)]
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    # The OS in the name: nothing about `.msi` says Windows to a release page
-    # listing five platforms.
-    target = output_dir / f"{PACKAGE_NAME}-{version}-windows-{machine}.msi"
+    target = output_dir / PACKAGING_ASSET_PATTERNS["msi"].format(
+        name=PACKAGE_NAME, version=version, architecture=machine
+    )
 
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)

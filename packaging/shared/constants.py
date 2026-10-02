@@ -11,6 +11,8 @@ PACKAGING_ASSET_PATTERNS = {
     "deb": "{name}_{version}_{architecture}.deb",
     "rpm": "{name}-{version}-1.{architecture}.rpm",
     "pkg": "{name}-{version}-1-{architecture}.pkg.tar.zst",
+    "msi": "{name}-{version}-windows-{architecture}.msi",
+    "macos_pkg": "{name}-{version}-macos-{architecture}.pkg",
 }
 
 # The name each family gives the same machine.
