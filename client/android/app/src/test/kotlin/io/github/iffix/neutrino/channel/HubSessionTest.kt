@@ -327,6 +327,19 @@ class HubSessionTest {
     }
 
     @Test
+    fun anAddressPreferredAsTheOnlyOneIsTheOnlyOneARoundTries() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.silent }
+        val (session, _) = session(transport, nameAddress = "10.9.9.9")
+        session.preferAddress("https://100.88.0.1:8443", isOnly = true)
+        session.runOnce()
+        session.runOnce()
+        assertEquals(listOf("https://100.88.0.1:8443", "https://100.88.0.1:8443"), transport.dialled.map { it.first })
+        session.preferAddress("https://100.88.0.1:8443")
+        session.runOnce()
+        assertEquals(6, transport.dialled.size)
+    }
+
+    @Test
     fun aPreferredAddressIsTriedFirst() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.silent }
         val (session, _) = session(transport)

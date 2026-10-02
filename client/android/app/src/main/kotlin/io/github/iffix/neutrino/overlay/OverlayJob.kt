@@ -5,7 +5,7 @@ enum class OverlayJob {
     /** Nothing. */
     NONE,
 
-    /** One connect attempt runs, for at most 60 s. */
+    /** One connect attempt runs, in its `login` stage, then its `hub` stage. */
     CONNECTING,
 
     /** The engine is being stopped. */

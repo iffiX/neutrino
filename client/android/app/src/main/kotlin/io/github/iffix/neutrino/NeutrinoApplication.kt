@@ -98,7 +98,7 @@ class NeutrinoApplication : Application() {
             launcher = ServiceOverlayLauncher(this),
             scope = scope,
             probe = OverlayProbe::isReachable,
-        ) { bindingId, url -> connections.session(bindingId)?.preferAddress(url) }
+        ) { bindingId, url, isOnly -> connections.session(bindingId)?.preferAddress(url, isOnly) }
     }
 
     /** The one state document every screen draws: each hub with its virtual network and its jobs. */

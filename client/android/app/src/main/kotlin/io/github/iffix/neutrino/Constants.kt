@@ -275,8 +275,14 @@ const val CLIENT_COPIED_SHOWN_MILLIS = 1500L
 /** How many characters of a masked key stay readable. */
 const val CLIENT_KEY_SHOWN_PREFIX = 6
 
-/** How long one connect to a virtual network may take: the engine's address and the channel through it. */
-const val OVERLAY_CONNECT_TIMEOUT_S = 60L
+/** How long a connect's `login` stage may take: the engine's start, its login and its address. */
+const val OVERLAY_LOGIN_TIMEOUT_S = 90L
+
+/** How long a connect's `hub` stage may take from the address: the hub's answer and the channel through it. */
+const val OVERLAY_HUB_TIMEOUT_S = 60L
+
+/** The addresses a NetBird network gives its members, where the hub's own is looked for in its list. */
+const val OVERLAY_NETBIRD_NETWORK = "100.64.0.0/10"
 
 /** How long a disconnect waits for the engine to say it stopped. */
 const val OVERLAY_STOP_TIMEOUT_S = 10L

@@ -39,8 +39,29 @@ class OverlayChoiceTest {
 
     @Test
     fun theHubsAddressOnANetworkTakesThePortItLastAnsweredOn() {
-        assertEquals("https://hub.netbird.cloud:8443", OverlayChoice.hubUrl(both, netbird))
+        assertEquals("https://100.88.0.1:8443", OverlayChoice.hubUrl(both, netbird.copy(hubAddress = "100.88.0.1")))
         assertEquals("https://10.126.126.1:8443", OverlayChoice.hubUrl(both, easytier))
+    }
+
+    @Test
+    fun withNoHubAddressNetBirdTakesAListedAddressInsideItsNetworkBeforeTheName() {
+        assertEquals("https://100.72.4.1:8443", OverlayChoice.hubUrl(both, netbird))
+        val lanOnly = both.copy(gatewayUrls = listOf("https://192.168.100.1:8443"))
+        assertEquals("https://hub.netbird.cloud:8443", OverlayChoice.hubUrl(lanOnly, netbird))
+    }
+
+    @Test
+    fun withNoHubAddressEasyTierTakesAListedAddressInsideThePhonesNetwork() {
+        val listed = both.copy(gatewayUrls = both.gatewayUrls + "https://10.126.126.1:8443")
+        val bare = easytier.copy(hubAddress = "")
+        assertEquals("https://10.126.126.1:8443", OverlayChoice.hubUrl(listed, bare, "10.126.126.9", 24))
+        assertEquals("", OverlayChoice.hubUrl(listed, bare, "10.144.0.9", 24))
+    }
+
+    @Test
+    fun theHubAddressComesBeforeAListedAddressInsideTheNetwork() {
+        val listed = both.copy(gatewayUrls = both.gatewayUrls + "https://10.126.126.2:8443")
+        assertEquals("https://10.126.126.1:8443", OverlayChoice.hubUrl(listed, easytier, "10.126.126.9", 24))
     }
 
     @Test

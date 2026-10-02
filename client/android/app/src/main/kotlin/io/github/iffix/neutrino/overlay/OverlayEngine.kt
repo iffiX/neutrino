@@ -10,7 +10,8 @@ interface OverlayEngine {
      *
      * @param overlay What the hub hands the phone for it.
      * @param tun Where the engine gets its TUN device.
-     * @param report Called with each phase, the address once there is one, and the refusal of a failure.
+     * @param report Called with each phase, the address with its prefix length once there is one, and the
+     *   refusal of a failure.
      */
     fun start(overlay: ChannelOverlay, tun: TunBuilder, report: (OverlayPhase, String, ChannelResult.Refused?) -> Unit)
 

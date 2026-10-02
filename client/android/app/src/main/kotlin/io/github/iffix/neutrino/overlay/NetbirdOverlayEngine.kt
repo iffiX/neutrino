@@ -176,7 +176,7 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
     ) : ConnectionListener {
         override fun onAddressChanged(fqdn: String?, ip: String?) {
             address.setLength(0)
-            address.append(ip.orEmpty().substringBefore('/'))
+            address.append(ip.orEmpty())
         }
 
         override fun onConnected() = report(OverlayPhase.ON, address.toString(), null)
