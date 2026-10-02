@@ -82,7 +82,9 @@ SERVICE_RECOVERY = (
 # The package's body, inside the Package element wix_build writes around it.
 WIX_BODY = r"""
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Neutrino Agent" />
+      <Directory Id="NeutrinoProgramFolder" Name="Neutrino">
+        <Directory Id="INSTALLFOLDER" Name="agent" />
+      </Directory>
     </StandardDirectory>
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="NeutrinoDataFolder" Name="Neutrino">

@@ -161,7 +161,7 @@ class DarwinPlatform(AgentPlatform):
         """The file the agent's LaunchDaemon writes its output to.
 
         Returns:
-            ``/Library/Logs/neutrino_agent.log``.
+            ``/Library/Logs/Neutrino/agent/agent.log``.
         """
         return AGENT_DARWIN_LOG_PATH
 

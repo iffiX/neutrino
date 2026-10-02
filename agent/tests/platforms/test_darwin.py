@@ -296,4 +296,4 @@ def test_the_roots_and_the_socket_are_the_macs_own():
     assert platform.agent_data_dir() == "/Library/Application Support/Neutrino/agent"
     assert platform.agent_var_dir() == platform.agent_data_dir()
     assert platform.control_socket_path() == "/var/run/neutrino_agent/agent.sock"
-    assert platform.agent_log_path() == "/Library/Logs/neutrino_agent.log"
+    assert platform.agent_log_path() == "/Library/Logs/Neutrino/agent/agent.log"

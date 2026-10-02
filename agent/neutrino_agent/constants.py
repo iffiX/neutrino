@@ -19,7 +19,7 @@ AGENT_LAUNCHD_PLIST_PATH = "/Library/LaunchDaemons/com.neutrino.agent.plist"
 # The agent's own log where no journal keeps it: a file under the data root
 # on Windows, and the file the LaunchDaemon's output goes to on macOS.
 AGENT_WINDOWS_LOG_NAME = "agent.log"
-AGENT_DARWIN_LOG_PATH = "/Library/Logs/neutrino_agent.log"
+AGENT_DARWIN_LOG_PATH = "/Library/Logs/Neutrino/agent/agent.log"
 
 # The protocol number this build speaks. The name has no package prefix:
 # one number has one name in every package.

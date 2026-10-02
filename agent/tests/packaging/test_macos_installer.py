@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import build_agent_macos
+from neutrino_agent.constants import AGENT_DARWIN_LOG_PATH
 
 
 @pytest.fixture
@@ -94,8 +95,9 @@ def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
         "/Library/Application Support/Neutrino/agent/nagent",
         "run",
     ]
-    assert job["StandardOutPath"] == "/Library/Logs/neutrino_agent.log"
-    assert job["StandardErrorPath"] == "/Library/Logs/neutrino_agent.log"
+    assert job["StandardOutPath"] == "/Library/Logs/Neutrino/agent/agent.log"
+    assert job["StandardErrorPath"] == "/Library/Logs/Neutrino/agent/agent.log"
+    assert job["StandardOutPath"] == AGENT_DARWIN_LOG_PATH
     assert job["RunAtLoad"] is True
     assert job["KeepAlive"] is True
 
@@ -142,6 +144,9 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
         "/Library/LaunchAgents/com.carriez.RustDesk_server.plist" in postinstall
     )
     assert "stat -f %u /dev/console" in postinstall
+    assert postinstall.index('mkdir -p "/Library/Logs/Neutrino/agent"') < (
+        postinstall.index("launchctl bootstrap")
+    )
     for script in ("preinstall", "postinstall"):
         assert (scripts / script).stat().st_mode & 0o111
 

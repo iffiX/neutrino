@@ -27,8 +27,9 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_PREFIX,
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_EASYTIER_PIPE_WINDOWS,
+    CLIENT_DATA_SUBDIR_WINDOWS,
     CLIENT_EASYTIER_STATE_NAME_WINDOWS,
-    CLIENT_OVERLAY_DATA_DIR_WINDOWS,
+    CLIENT_OLD_DATA_DIR_NAME_WINDOWS,
 )
 from neutrino_client.platforms import win32
 from neutrino_client.exceptions import (
@@ -37,6 +38,7 @@ from neutrino_client.exceptions import (
 )
 from neutrino_client.platforms.base import (
     ClientPlatform,
+    move_old_data_dir,
     read_share_credentials,
     run_quietly,
     share_parts,
@@ -57,6 +59,11 @@ WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
 # mapping comes or goes.
 SHCNE_DRIVEADD = win32.SHCNE_DRIVEADD
 SHCNE_DRIVEREMOVED = win32.SHCNE_DRIVEREMOVED
+
+
+def _program_data() -> str:
+    """``%ProgramData%``, or its usual value when the variable is unset."""
+    return os.environ.get("PROGRAMDATA", "") or WINDOWS_PROGRAM_DATA_DEFAULT
 
 
 def _pipe_safe_name(account: str) -> str:
@@ -334,14 +341,16 @@ class WindowsPlatform(ClientPlatform):
         return CLIENT_EASYTIER_PIPE_WINDOWS
 
     def easytier_state_dir(self) -> str:
-        """``easytier`` under ``Neutrino Client`` in ProgramData."""
-        root = os.environ.get("PROGRAMDATA", "") or WINDOWS_PROGRAM_DATA_DEFAULT
-        return os.path.join(
-            root, CLIENT_OVERLAY_DATA_DIR_WINDOWS, CLIENT_EASYTIER_STATE_NAME_WINDOWS
-        )
+        """``easytier`` under ``Neutrino\\client`` in ProgramData."""
+        return os.path.join(self.data_dir(), CLIENT_EASYTIER_STATE_NAME_WINDOWS)
+
+    def data_dir(self) -> str:
+        """``%ProgramData%\\Neutrino\\client``."""
+        return os.path.join(_program_data(), *CLIENT_DATA_SUBDIR_WINDOWS)
 
     def secure_easytier_state_dir(self, path: str) -> None:
-        """Make the state directory, SYSTEM's and the administrators' alone.
+        """Make the state directory, SYSTEM's and the administrators' alone,
+        after moving the data directory of an older install into its place.
 
         Args:
             path: The directory.
@@ -349,6 +358,10 @@ class WindowsPlatform(ClientPlatform):
         Raises:
             OSError: When it cannot be made or its access list set.
         """
+        move_old_data_dir(
+            os.path.join(_program_data(), CLIENT_OLD_DATA_DIR_NAME_WINDOWS),
+            self.data_dir(),
+        )
         os.makedirs(path, exist_ok=True)
         self._win32().protect_directory(path, EASYTIER_STATE_SDDL)
 

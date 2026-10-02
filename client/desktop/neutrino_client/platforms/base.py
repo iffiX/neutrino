@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import signal
 import subprocess
 import time
@@ -104,6 +105,34 @@ def share_parts(share_url: str) -> "tuple[str, str]":
     trimmed = share_url.replace("\\", "/").strip("/")
     host, _, share = trimmed.partition("/")
     return host, share
+
+
+def move_old_data_dir(old: str, new: str) -> bool:
+    """Move the data directory of an older install whole into its new place.
+
+    A new place holding directories and no file is one the installer made
+    empty, and is replaced; one holding a file is kept and the old one left.
+
+    Args:
+        old: The directory the older install kept its data in.
+        new: Where the data belongs now.
+
+    Returns:
+        Whether anything was moved.
+
+    Raises:
+        OSError: When the move fails.
+    """
+    if not os.path.isdir(old):
+        return False
+    if os.path.isdir(new):
+        for _root, _directories, files in os.walk(new):
+            if files:
+                return False
+        shutil.rmtree(new)
+    os.makedirs(os.path.dirname(new), exist_ok=True)
+    shutil.move(old, new)
+    return True
 
 
 def read_share_credentials(path: str) -> "tuple[str, str]":

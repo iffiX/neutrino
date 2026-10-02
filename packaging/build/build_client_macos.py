@@ -54,12 +54,14 @@ from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 # so the installer and the runtime cannot drift.
 from neutrino_client.constants import (  # noqa: E402
     CLIENT_BUNDLED_PATHS_DARWIN,
+    CLIENT_DATA_DIR_DARWIN,
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_LAUNCHD_LABEL,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
     CLIENT_LAUNCHD_DAEMONS_DIR,
     CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
     CLIENT_NETBIRD_LAUNCHD_LABEL,
+    CLIENT_OLD_DATA_DIR_DARWIN,
 )
 
 CLIENT_ROOT = payload.CLIENT_ROOT
@@ -85,9 +87,15 @@ PACKAGE_IDENTIFIER = "com.neutrino.client"
 INSTALL_APPLICATIONS_DIR = Path("/Applications")
 INSTALL_LINK_PATH = Path("/usr/local/bin") / CLIENT_BINARY_NAME
 
-# What the install runs around the files: both daemons unloaded and NetBird
-# taken off its network before, their directories made and both loaded
-# after.
+# Where each daemon's output goes.
+LOG_DIR = "/Library/Logs/Neutrino/client"
+NETBIRD_LOG_PATH = LOG_DIR + "/netbird.log"
+EASYTIER_LOG_PATH = LOG_DIR + "/easytier.log"
+
+# What the install runs around the files: both daemons unloaded before; the
+# data directory of an install from before the one Neutrino tree moved whole
+# into its place, unless that place already holds a file, their directories
+# made and both loaded after.
 PREINSTALL = f"""#!/bin/sh
 for label in {CLIENT_NETBIRD_LAUNCHD_LABEL} {CLIENT_EASYTIER_LAUNCHD_LABEL}; do
     launchctl bootout "system/$label" >/dev/null 2>&1 || true
@@ -95,6 +103,14 @@ done
 exit 0
 """
 POSTINSTALL = f"""#!/bin/sh
+old="{CLIENT_OLD_DATA_DIR_DARWIN}"
+new="{CLIENT_DATA_DIR_DARWIN}"
+if [ -d "$old" ] && [ -z "$(find "$new" -type f 2>/dev/null | head -n 1)" ]; then
+    rm -rf "$new"
+    mkdir -p "$(dirname "$new")"
+    mv "$old" "$new"
+fi
+mkdir -p "{LOG_DIR}"
 for directory in "{os.path.dirname(CLIENT_NETBIRD_CONFIG_PATH_DARWIN)}" \\
         "{CLIENT_EASYTIER_STATE_DIR_DARWIN}"; do
     mkdir -p "$directory"
@@ -108,12 +124,9 @@ done
 exit 0
 """
 
-# Where each daemon's output goes.
-NETBIRD_LOG_PATH = "/Library/Logs/neutrino_client_netbird.log"
 # The socket every NetBird daemon on a Mac listens on; one already there
 # belongs to NetBird's own install, which the client then uses as it is.
 NETBIRD_SOCKET_PATH = "/var/run/netbird.sock"
-EASYTIER_LOG_PATH = "/Library/Logs/neutrino_client_easytier.log"
 
 # What each name for the machine maps to: the wheel's own, and the platform
 # the package is named for, Apple silicon and Intel.

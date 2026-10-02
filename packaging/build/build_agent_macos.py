@@ -9,7 +9,7 @@ The installer carries the agent compiled: Nuitka turns the package and the
 interpreter it runs on into a standalone ``nagent`` with the libraries beside
 it, under ``/Library/Application Support/Neutrino/agent``, linked into
 ``/usr/local/bin``. The ``com.neutrino.agent`` LaunchDaemon runs it as root at
-boot with ``run``, its output in ``/Library/Logs/neutrino_agent.log``.
+boot with ``run``, its output in ``/Library/Logs/Neutrino/agent``.
 
 RustDesk comes as upstream's app bundle out of its pinned disk image, under
 ``/Applications``, with the two launchd jobs its own installer would write:
@@ -60,7 +60,8 @@ INSTALL_APPLICATIONS_DIR = Path("/Applications")
 
 # The agent's own job, and where its output goes.
 AGENT_LAUNCHD_LABEL = "com.neutrino.agent"
-AGENT_LOG_PATH = "/Library/Logs/neutrino_agent.log"
+AGENT_LOG_DIR = "/Library/Logs/Neutrino/agent"
+AGENT_LOG_PATH = AGENT_LOG_DIR + "/agent.log"
 
 # RustDesk's two jobs, named the way its own installer names them: the root
 # service, and the server it runs in each session at the screen.
@@ -92,6 +93,7 @@ exit 0
 """
 
 POSTINSTALL = f"""#!/bin/sh
+mkdir -p "{AGENT_LOG_DIR}"
 launchctl bootstrap system /Library/LaunchDaemons/{RUSTDESK_SERVICE_LABEL}.plist || true
 launchctl bootstrap system /Library/LaunchDaemons/{AGENT_LAUNCHD_LABEL}.plist
 # The session server goes into the session at the screen now; later sessions

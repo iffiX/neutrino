@@ -440,10 +440,27 @@ def test_easytier_is_asked_of_the_daemons_socket_and_prompts_for_nothing():
     )
     assert (
         platform.easytier_state_dir()
-        == "/Library/Application Support/Neutrino Client/easytier"
+        == "/Library/Application Support/Neutrino/client/easytier"
     )
     assert not hasattr(darwin_module, "OSASCRIPT_TOOL")
     assert not hasattr(DarwinPlatform, "easytier_join")
+
+
+def test_the_first_start_moves_the_old_data_directory_into_the_tree(
+    monkeypatch, tmp_path
+):
+    old = tmp_path / "Neutrino Client"
+    new = tmp_path / "Neutrino" / "client"
+    (old / "netbird").mkdir(parents=True)
+    (old / "netbird" / "config.json").write_text("kept")
+    monkeypatch.setattr(darwin_module, "CLIENT_OLD_DATA_DIR_DARWIN", str(old))
+    monkeypatch.setattr(darwin_module, "CLIENT_DATA_DIR_DARWIN", str(new))
+
+    DarwinPlatform().secure_easytier_state_dir(str(new / "easytier"))
+
+    assert not old.exists()
+    assert (new / "netbird" / "config.json").read_text() == "kept"
+    assert (new / "easytier").stat().st_mode & 0o777 == 0o700
 
 
 # --- the clipboard ---

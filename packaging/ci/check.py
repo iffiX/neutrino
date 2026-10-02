@@ -42,16 +42,11 @@ import time
 from pathlib import Path
 
 # --- Windows ---
-AGENT_WINDOWS_FOLDER = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / (
-    "Neutrino Agent"
-)
+PROGRAM_FILES = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+AGENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "agent"
 AGENT_WINDOWS_SERVICES = ("neutrino_agent", "RustDesk")
-RUSTDESK_WINDOWS_FOLDER = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / (
-    "RustDesk"
-)
-CLIENT_WINDOWS_FOLDER = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / (
-    "Neutrino Client"
-)
+RUSTDESK_WINDOWS_FOLDER = PROGRAM_FILES / "RustDesk"
+CLIENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "client"
 CLIENT_WINDOWS_EASYTIER_SERVICE = "NeutrinoClientEasytier"
 CLIENT_WINDOWS_EASYTIER_PIPE = "neutrino_client_easytier"
 # What ``sc query`` exits with for a service that does not exist.
@@ -194,7 +189,7 @@ def check_client_windows(msi: Path) -> None:
     status = subprocess.run([str(nclient), "status"]).returncode
     if status != 1:
         raise SystemExit(f"nclient status exited {status}, expected 1")
-    if "Neutrino Client" not in _machine_path():
+    if "Neutrino\\client" not in _machine_path():
         raise SystemExit("the install is not on PATH")
     if not (CLIENT_WINDOWS_FOLDER / "bin" / "packet.dll").is_file():
         raise SystemExit("no packet.dll beside easytier-core.exe")

@@ -217,3 +217,14 @@ def test_only_the_util_extension_is_loaded():
     assert "extensions=(wix_build.WIX_UTIL_EXTENSION,)" in source
     assert wix_build.WIX_UTIL_EXTENSION.startswith("WixToolset.Util.wixext/")
     assert payload.PACKAGE_NAME == "neutrino-agent"
+
+
+def test_the_program_folder_is_the_agents_own_in_the_one_neutrino_tree(document):
+    """C:\\Program Files\\Neutrino\\agent, beside the hub and the client."""
+    _source, root = document
+
+    install = by_id(root, WXS + "Directory", "INSTALLFOLDER")
+    parent = by_id(root, WXS + "Directory", "NeutrinoProgramFolder")
+    assert install.get("Name") == "agent"
+    assert parent.get("Name") == "Neutrino"
+    assert install in list(parent)
