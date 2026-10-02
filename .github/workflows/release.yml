@@ -324,7 +324,7 @@ jobs:
         run: |
           apksigner="$(ls "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)"
           digest="$("${apksigner}" verify --print-certs dist/*-android.apk \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+            | sed -n -E 's/^(Signer #1|V[0-9.]+ Signer:) certificate SHA-256 digest: //p' | head -1)"
           echo "signed by ${digest}"
           test "${digest}" = "${ANDROID_RELEASE_CERT_SHA256}"
 

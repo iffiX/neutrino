@@ -31,6 +31,8 @@ Signer #1 certificate SHA-256 digest: 0e20b8b4542f329c4d3ed91632f3ea90730cb99472
 ...
 ```
 
+37 及更新的构建工具把这一行打成 `V2 Signer: certificate SHA-256 digest: …`，摘要相同。
+
 ::: warning
 摘要对不上，就删掉这个 apk。发布流程在附上文件之前，核对的也是这个摘要。
 :::

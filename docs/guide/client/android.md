@@ -31,6 +31,8 @@ Signer #1 certificate SHA-256 digest: 0e20b8b4542f329c4d3ed91632f3ea90730cb99472
 ...
 ```
 
+Build tools 37 and newer print the line as `V2 Signer: certificate SHA-256 digest: …`; the digest is the same.
+
 ::: warning
 If the digest differs, delete the apk. The release workflow checks the same digest before it attaches the file.
 :::
