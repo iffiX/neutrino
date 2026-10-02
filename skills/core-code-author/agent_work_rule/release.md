@@ -194,8 +194,10 @@ nclient join '<client link from the Clients page>'
 
 The Android app is the client on a phone. It carries the NetBird, EasyTier
 and RustDesk cores compiled from their pinned sources, and is licensed
-AGPL-3.0 by `client/android/LICENSE`. The release build is signed with the
-project's release key, and the workflow checks the signing certificate's
+AGPL-3.0 by `client/android/LICENSE`. A tag build and a `workflow_dispatch` build are
+signed with the project's release key, so a phone upgrades from one to the
+other in place; a pull request build uses the debug key. The workflow
+checks the signing certificate's
 fingerprint before it attaches the file.
 
 | File | For |

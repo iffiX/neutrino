@@ -310,17 +310,17 @@ jobs:
 
       - name: Build the apk
         env:
-          ANDROID_KEYSTORE_B64: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_B64 || '' }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
-          ANDROID_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_PASSWORD || '' }}
-          ANDROID_KEY_ALIAS: ${{ startsWith(github.ref, 'refs/tags/') && secrets.ANDROID_KEY_ALIAS || '' }}
+          ANDROID_KEYSTORE_B64: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEYSTORE_B64 || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          ANDROID_KEY_PASSWORD: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEY_PASSWORD || '' }}
+          ANDROID_KEY_ALIAS: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEY_ALIAS || '' }}
         run: >
           python3 packaging/build/build_client_android.py
-          --variant ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'debug' }}
+          --variant ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && 'release' || 'debug' }}
           --output-dir dist
 
       - name: Check the release signature
-        if: startsWith(github.ref, 'refs/tags/')
+        if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
         run: |
           apksigner="$(ls "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)"
           digest="$("${apksigner}" verify --print-certs dist/*-android.apk \
