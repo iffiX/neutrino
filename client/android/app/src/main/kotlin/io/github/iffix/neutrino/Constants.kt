@@ -290,8 +290,8 @@ const val CLIENT_TERMINAL_SHORT_HEIGHT_DP = 480
 /** The page the terminals are drawn in. */
 const val CLIENT_TERMINAL_PAGE = "file:///android_asset/terminal/index.html"
 
-/** What the extra-keys row's Ctrl key sends: nothing, it holds Ctrl for the next key. */
-const val TERMINAL_KEY_CTRL = "ctrl"
+/** The escape character a terminal's key sequences start with. */
+const val TERMINAL_ESCAPE = "\u001b"
 
 /** The name the terminal page reaches the app by. */
 const val CLIENT_TERMINAL_BRIDGE = "NeutrinoBridge"

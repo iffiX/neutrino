@@ -38,13 +38,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.iffix.neutrino.CLIENT_TERMINAL_SHORT_HEIGHT_DP
-import io.github.iffix.neutrino.TERMINAL_KEY_CTRL
 import io.github.iffix.neutrino.channel.ChannelTerminal
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.AppIcon
@@ -57,9 +57,12 @@ import io.github.iffix.neutrino.design.LocalArm
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.ReasonLine
+import io.github.iffix.neutrino.design.SelectedMark
 import io.github.iffix.neutrino.design.StatusDot
 import io.github.iffix.neutrino.design.SurfaceCard
 import io.github.iffix.neutrino.design.ToggleSwitch
+import io.github.iffix.neutrino.terminal.TerminalKey
+import io.github.iffix.neutrino.terminal.TerminalModifiers
 import io.github.iffix.neutrino.terminal.TerminalPhase
 import io.github.iffix.neutrino.terminal.TerminalTab
 import io.github.iffix.neutrino.terminal.TerminalTabs
@@ -81,7 +84,7 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     val open by tabs.tabs.collectAsStateWithLifecycle()
     val active by tabs.active.collectAsStateWithLifecycle()
     val pick by tabs.picked.collectAsStateWithLifecycle()
-    var isCtrl by remember { mutableStateOf(false) }
+    var modifiers by remember { mutableStateOf(TerminalModifiers()) }
     var isExpanded by remember { mutableStateOf(false) }
     val isKeyboard = WindowInsets.isImeVisible
     val machines = hubs.filter { it.isConnected }.flatMap { hub -> hub.terminals.map { hub to it } }
@@ -142,8 +145,8 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                         tabs,
                         open.map { it.sessionId }.toSet(),
                         active,
-                        isCtrl,
-                        onCtrlUsed = { isCtrl = false },
+                        modifiers,
+                        onModifiersUsed = { modifiers = TerminalModifiers() },
                     )
                 }
                 val isHubUp = tab != null && hubs.any { it.binding.id == tab.bindingId && it.isConnected }
@@ -153,8 +156,13 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                 StatusLine(tab) { current, isPersistent, isShared ->
                     tabs.persist(current.sessionId, isPersistent, isShared)
                 }
-                KeyRow(isCtrl, onCtrl = { isCtrl = !isCtrl }) { key ->
-                    if (active.isNotEmpty()) tabs.input(active, key.toByteArray())
+                KeyRow(modifiers) { key ->
+                    if (key.isModifier) {
+                        modifiers = modifiers.toggled(key)
+                    } else {
+                        if (active.isNotEmpty()) tabs.input(active, key.sequence(modifiers).toByteArray())
+                        modifiers = TerminalModifiers()
+                    }
                 }
             }
         }
@@ -287,7 +295,7 @@ private fun TabStrip(open: List<TerminalTab>, active: String, onPick: (String) -
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         for ((index, tab) in open.withIndex()) {
-            val isOn = tab.sessionId == active
+            val mark = SelectedMark.of(palette, tab.sessionId == active)
             val name = tabLabel(tab, index)
             val shape = RoundedCornerShape(6.dp)
             val armKey = "end-${tab.sessionId}"
@@ -295,8 +303,8 @@ private fun TabStrip(open: List<TerminalTab>, active: String, onPick: (String) -
             Row(
                 modifier = Modifier
                     .clip(shape)
-                    .background(if (isOn) palette.bg else palette.surface)
-                    .border(1.dp, if (isOn) palette.border else palette.surface, shape),
+                    .background(mark.fill)
+                    .border(1.dp, mark.border, shape),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
@@ -308,7 +316,7 @@ private fun TabStrip(open: List<TerminalTab>, active: String, onPick: (String) -
                 ) {
                     BasicText(
                         name,
-                        style = NeutrinoTheme.mono.copy(color = if (isOn) palette.accent else palette.textMuted),
+                        style = NeutrinoTheme.mono.copy(color = mark.text),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -322,7 +330,7 @@ private fun TabStrip(open: List<TerminalTab>, active: String, onPick: (String) -
                     modifier = Modifier
                         .semantics { contentDescription = label }
                         .clip(shape)
-                        .background(if (isArmed) palette.error else palette.surface.copy(alpha = 0f))
+                        .background(if (isArmed) palette.error else mark.fill)
                         .clickable(role = Role.Button) {
                             when {
                                 !isTwoPress -> onClose(tab.sessionId)
@@ -356,13 +364,13 @@ private fun TerminalPane(
     tabs: TerminalTabs,
     live: Set<String>,
     active: String,
-    isCtrl: Boolean,
-    onCtrlUsed: () -> Unit,
+    modifiers: TerminalModifiers,
+    onModifiersUsed: () -> Unit,
 ) {
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
     val context = LocalContext.current
-    val view = remember { TerminalView(context, tabs, onCtrlUsed) }
+    val view = remember { TerminalView(context, tabs, onModifiersUsed) }
     DisposableEffect(view) { onDispose { view.detach() } }
     LaunchedEffect(palette) { view.palette(palette) }
     LaunchedEffect(words) {
@@ -375,7 +383,7 @@ private fun TerminalPane(
     }
     LaunchedEffect(live) { view.panes(live) }
     LaunchedEffect(active, live) { view.show(active) }
-    LaunchedEffect(isCtrl) { view.ctrl(isCtrl) }
+    LaunchedEffect(modifiers) { view.modifiers(modifiers) }
     AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
 }
 
@@ -418,32 +426,14 @@ private fun StatusLine(tab: TerminalTab?, onPersist: (TerminalTab, Boolean, Bool
         }
         if (tab != null) {
             ErrorLine(tab.note)
-            ReasonLine(
-                words.word(
-                    "ui.reason.not_owned",
-                    mapOf(
-                        "owner" to tab.ownerName.ifEmpty {
-                            tab.owner
-                        },
-                    ),
-                ).takeIf { !tab.isOwned },
-            )
+            ReasonLine(words.word("ui.reason.not_owned", mapOf("owner" to tab.ownerLabel)).takeIf { !tab.isOwned })
         }
     }
 }
 
 @Composable
-private fun KeyRow(isCtrl: Boolean, onCtrl: () -> Unit, onKey: (String) -> Unit) {
+private fun KeyRow(modifiers: TerminalModifiers, onKey: (TerminalKey) -> Unit) {
     val palette = NeutrinoTheme.palette
-    val keys = listOf(
-        "Esc" to "\u001b",
-        "Tab" to "\t",
-        "Ctrl" to TERMINAL_KEY_CTRL,
-        "←" to "\u001b[D",
-        "↑" to "\u001b[A",
-        "↓" to "\u001b[B",
-        "→" to "\u001b[C",
-    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -452,8 +442,8 @@ private fun KeyRow(isCtrl: Boolean, onCtrl: () -> Unit, onKey: (String) -> Unit)
             .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        for ((label, key) in keys) {
-            val isHeld = key == TERMINAL_KEY_CTRL && isCtrl
+        for (key in TerminalKey.entries) {
+            val isHeld = modifiers.isHeld(key)
             val shape = RoundedCornerShape(6.dp)
             Box(
                 modifier = Modifier
@@ -461,11 +451,15 @@ private fun KeyRow(isCtrl: Boolean, onCtrl: () -> Unit, onKey: (String) -> Unit)
                     .clip(shape)
                     .background(if (isHeld) palette.accentWash else palette.surface)
                     .border(1.dp, if (isHeld) palette.accent else palette.borderStrong, shape)
-                    .clickable(role = Role.Button) { if (key == TERMINAL_KEY_CTRL) onCtrl() else onKey(key) }
+                    .semantics { selected = isHeld }
+                    .clickable(role = Role.Button) { onKey(key) }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                BasicText(label, style = NeutrinoTheme.mono.copy(color = if (isHeld) palette.accent else palette.text))
+                BasicText(
+                    key.label,
+                    style = NeutrinoTheme.mono.copy(color = if (isHeld) palette.accent else palette.text),
+                )
             }
         }
     }

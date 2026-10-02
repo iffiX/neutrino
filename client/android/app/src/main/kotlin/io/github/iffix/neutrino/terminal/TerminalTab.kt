@@ -43,4 +43,8 @@ data class TerminalTab(
     /** Whether the two switches act: the tab is open and this phone opened its session. */
     val canPersist: Boolean
         get() = phase == TerminalPhase.OPEN && isOwned
+
+    /** Who opened the session, for the reason line of a tab this phone does not own: the name, else the stamp. */
+    val ownerLabel: String
+        get() = ownerName.ifEmpty { owner }
 }
