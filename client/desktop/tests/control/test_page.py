@@ -1106,10 +1106,28 @@ def test_the_settings_card_carries_the_language_then_the_theme_and_saves_both():
     assert "page.appendChild(aboutSection(state));" in settings
 
 
-def test_about_is_plain_rows_under_the_card_with_no_page_of_its_own():
+def test_about_is_a_card_of_label_and_mono_value_rows_with_no_page_of_its_own():
     about = body_of("aboutSection")
-    for key in ("ui.about", "ui.about_version", "ui.about_licence", "ui.about_source"):
+    for key in (
+        "ui.about",
+        "ui.about_machine",
+        "ui.about_platform",
+        "ui.about_version",
+        "ui.about_licence",
+        "ui.about_source",
+    ):
         assert f"t('{key}'" in about
-    assert "card" not in about
+    assert "panelCard(t('ui.about'), false)" in about
+    assert "state.hostname" in about
+    assert "platform.os + '/' + platform.arch" in about
+    assert "about_key" in about and "about_value" in about
+    value_rule = PAGE_CSS[PAGE_CSS.index(".about_value {") :]
+    assert "monospace" in value_rule[: value_rule.index("}")]
     assert "const CLIENT_LICENCE = 'MIT';" in PAGE_JS
     assert "https://github.com/iffiX/neutrino" in PAGE_JS
+
+
+def test_the_sidebar_carries_only_the_pages_and_no_foot():
+    assert 'id="ident"' not in PAGE_HTML
+    assert ".ident" not in PAGE_CSS
+    assert "getElementById('ident')" not in PAGE_JS

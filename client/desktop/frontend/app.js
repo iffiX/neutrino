@@ -313,9 +313,6 @@ function draw(state) {
   document.title = t('ui.window.title');
   document.querySelector('h1').textContent = t('ui.window.title');
   drawRefresh(state);
-  document.getElementById('ident').textContent =
-    state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
-    ' · client ' + state.version;
   drawTabs();
   document.getElementById('page_title').textContent = tabTitle(openTab);
   dropStaleFileStages(state);
@@ -1944,7 +1941,7 @@ let settingsDraft = null;
 
 // The settings card: the language and the palette, nothing sent until
 // Save, the frame lit while the page holds a change; under it the About
-// section as plain rows.
+// card.
 function drawSettings(state) {
   const page = document.createElement('div');
   page.className = 'settings_page';
@@ -2000,15 +1997,16 @@ function drawSettings(state) {
   return page;
 }
 
-// About: the version, the licence and the source links, as plain rows.
+// About: one row per fact, the label at the left and the value in mono at
+// the right: this machine, its platform, the client's version, the licence
+// and the source links.
 function aboutSection(state) {
-  const section = document.createElement('section');
-  section.className = 'about';
-  const heading = document.createElement('div');
-  heading.className = 'panel_title';
-  heading.textContent = t('ui.about');
-  section.appendChild(heading);
+  const card = panelCard(t('ui.about'), false);
+  card.classList.add('about');
+  const platform = state.platform || {};
   const rows = [
+    [t('ui.about_machine'), state.hostname],
+    [t('ui.about_platform'), platform.os + '/' + platform.arch],
     [t('ui.about_version'), state.version],
     [t('ui.about_licence'), CLIENT_LICENCE],
   ].concat(SOURCE_LINKS.map(([name, url]) => [t('ui.about_source', { name: name }), url]));
@@ -2016,16 +2014,16 @@ function aboutSection(state) {
     const row = document.createElement('div');
     row.className = 'about_row';
     const label = document.createElement('span');
-    label.className = 'muted';
+    label.className = 'about_key';
     label.textContent = name;
     const text = document.createElement('span');
-    text.className = 'sub';
+    text.className = 'about_value';
     text.textContent = value;
     row.appendChild(label);
     row.appendChild(text);
-    section.appendChild(row);
+    card.appendChild(row);
   }
-  return section;
+  return card;
 }
 
 // --- the one picker, and the dialogs ---

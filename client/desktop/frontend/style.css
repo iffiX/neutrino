@@ -56,8 +56,6 @@ h2 { margin: 0; font-size: 16px; font-weight: 600; }
          border-bottom: 1px solid var(--color-border); }
 #tabs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
         padding: 14px 10px; }
-.ident { padding: 12px 18px; border-top: 1px solid var(--color-border);
-         overflow-wrap: anywhere; }
 /* One entry per kind, its glyph before its name; the open one is washed in
    the accent and marked by a bar along its left edge. A rule sets the
    settings entry apart below the kinds. */
@@ -254,11 +252,19 @@ button.switch.on .switch_thumb { background: var(--color-accent);
          overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .modal label, .settings label { color: var(--color-text-muted); font-size: 12px; }
 .settings { display: flex; flex-direction: column; gap: 10px; }
-/* About, under the settings card: plain rows, no card. */
+/* About, the card under the settings card, after the panel's: one row per
+   fact, the label at the left and the value in mono at the right. */
 .settings_page { display: flex; flex-direction: column; gap: 24px; }
-.about { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
-.about_row { display: flex; gap: 16px; align-items: baseline; font-size: 13px; }
-.about_row .muted { flex: none; width: 160px; }
+.about { display: flex; flex-direction: column; gap: 4px; }
+.about_row { display: flex; gap: 16px; align-items: baseline;
+             justify-content: space-between; padding: 8px 0;
+             border-bottom: 1px solid
+               color-mix(in srgb, var(--color-border) 60%, transparent); }
+.about_row:last-child { border-bottom: none; }
+.about_key { flex: none; color: var(--color-text-muted); font-size: 12px; }
+.about_value { min-width: 0; overflow-wrap: anywhere; text-align: right;
+               color: var(--color-text);
+               font-family: ui-monospace, monospace; font-size: 12.5px; }
 .settings .picker { flex: none; max-width: 360px; }
 .modal select { width: 100%; }
 .dirlist { overflow-y: auto; border: 1px solid var(--color-border);
