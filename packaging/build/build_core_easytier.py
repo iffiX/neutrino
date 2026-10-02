@@ -17,7 +17,9 @@ source archive is checked against its SHA-256 and the commit its header names
 before anything is built. ``build_core_easytier.patch`` beside this file is
 then applied: it links the C interface (``easytier-ffi``) into the JNI
 library, so the app loads one library, and adds the calls that start and stop
-a console's web client. Each machine's library is cached under
+a console's web client. A built library that is too small or does not define
+every symbol the app calls fails the build, checked with the NDK's
+``llvm-nm``. Each machine's library is cached under
 ``~/.cache/neutrino/cores/easytier-<commit>-<abi>-<recipe>/``, the recipe
 being the digest of this file and the patch, and copied to
 ``client/android/app/src/main/jniLibs/<abi>/libeasytier_android_jni.so``.
@@ -75,6 +77,30 @@ EASYTIER_MOBILE_ABIS = {
 EASYTIER_MOBILE_ANDROID_API = "26"
 EASYTIER_MOBILE_LIBRARY = "libeasytier_android_jni.so"
 EASYTIER_MOBILE_PATCH = Path(__file__).resolve().parent / "build_core_easytier.patch"
+# What a built library must define: every JNI entry point the app calls, and
+# the C interface the patch links in; and the size below which it cannot hold
+# the C interface.
+EASYTIER_MOBILE_SYMBOLS = (
+    "Java_com_easytier_jni_EasyTierJNI_collectNetworkInfos",
+    "Java_com_easytier_jni_EasyTierJNI_getLastError",
+    "Java_com_easytier_jni_EasyTierJNI_isWebClientConnected",
+    "Java_com_easytier_jni_EasyTierJNI_parseConfig",
+    "Java_com_easytier_jni_EasyTierJNI_retainNetworkInstance",
+    "Java_com_easytier_jni_EasyTierJNI_runNetworkInstance",
+    "Java_com_easytier_jni_EasyTierJNI_runWebClient",
+    "Java_com_easytier_jni_EasyTierJNI_setTunFd",
+    "Java_com_easytier_jni_EasyTierJNI_stopWebClient",
+    "collect_network_infos",
+    "get_error_msg",
+    "is_web_client_connected",
+    "parse_config",
+    "retain_network_instance",
+    "run_network_instance",
+    "run_web_client",
+    "set_tun_fd",
+    "stop_web_client",
+)
+EASYTIER_MOBILE_MIN_BYTES = 12 * 1024 * 1024
 EASYTIER_MOBILE_RECIPE = cores_cache.recipe(
     Path(__file__).resolve(), EASYTIER_MOBILE_PATCH
 )
@@ -175,6 +201,53 @@ def build(source: Path, output: Path, protoc: str) -> None:
         )
 
 
+def check_library(library: Path) -> None:
+    """Refuse a built library that lacks what the app calls.
+
+    Args:
+        library: The built ``.so``.
+
+    Raises:
+        SystemExit: When it is smaller than the floor, or does not define
+            every symbol of ``EASYTIER_MOBILE_SYMBOLS``.
+    """
+    size = library.stat().st_size
+    if size < EASYTIER_MOBILE_MIN_BYTES:
+        raise SystemExit(f"{library} is {size} bytes, below the floor")
+    listed = subprocess.run(
+        [
+            str(_llvm_nm()),
+            "--dynamic",
+            "--defined-only",
+            "--format=just-symbols",
+            str(library),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listed.returncode != 0:
+        raise SystemExit(f"llvm-nm exited {listed.returncode} on {library}")
+    missing = sorted(set(EASYTIER_MOBILE_SYMBOLS) - set(listed.stdout.split()))
+    if missing:
+        raise SystemExit(f"{library} does not define {', '.join(missing)}")
+
+
+def _llvm_nm() -> Path:
+    """The NDK's ``llvm-nm``.
+
+    Returns:
+        Its path.
+
+    Raises:
+        SystemExit: When the NDK holds none.
+    """
+    prebuilt = Path(os.environ["ANDROID_NDK_HOME"]) / "toolchains" / "llvm" / "prebuilt"
+    for tool in sorted(prebuilt.glob("*/bin/llvm-nm")):
+        return tool
+    raise SystemExit(f"no llvm-nm under {prebuilt}")
+
+
 def _run(command: list, cwd: Path, environment: "dict | None" = None) -> None:
     """Run one build step in the source tree, failing the build on an error."""
     print(" ".join(command))
@@ -228,6 +301,8 @@ def main() -> int:
             source = fetch_source(work_dir)
             built = Path(scratch) / "built"
             build(source, built, fetch_protoc(work_dir))
+            for abi in EASYTIER_MOBILE_ABIS:
+                check_library(built / abi / EASYTIER_MOBILE_LIBRARY)
             for abi, directory in cached.items():
                 cores_cache.store(built / abi, directory)
         print(
@@ -250,7 +325,9 @@ def _check_tools() -> None:
     """
     for tool in ("rustup", "cargo", "cargo-ndk", "patch"):
         if shutil.which(tool) is None:
-            raise SystemExit(f"{tool} is needed to build EasyTier and is not on the path")
+            raise SystemExit(
+                f"{tool} is needed to build EasyTier and is not on the path"
+            )
     if not os.environ.get("ANDROID_NDK_HOME"):
         raise SystemExit("ANDROID_NDK_HOME is needed to build EasyTier and is not set")
 

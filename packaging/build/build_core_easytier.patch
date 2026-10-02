@@ -23,7 +23,7 @@ diff -ruN a/easytier-contrib/easytier-android-jni/src/lib.rs b/easytier-contrib/
  // 定义 KeyValuePair 结构体
  #[repr(C)]
  #[derive(Clone, Copy)]
-@@ -26,6 +29,13 @@
+@@ -26,6 +29,14 @@
          length: usize,
      ) -> std::ffi::c_int;
      fn collect_network_infos(infos: *mut KeyValuePair, max_length: usize) -> std::ffi::c_int;
@@ -34,10 +34,11 @@ diff -ruN a/easytier-contrib/easytier-android-jni/src/lib.rs b/easytier-contrib/
 +        secure_mode: std::ffi::c_int,
 +    ) -> std::ffi::c_int;
 +    fn stop_web_client() -> std::ffi::c_int;
++    fn is_web_client_connected() -> std::ffi::c_int;
  }
  
  // 初始化 Android 日志
-@@ -317,3 +327,50 @@
+@@ -317,3 +328,59 @@
          None => ptr::null_mut(),
      }
  }
@@ -87,6 +88,15 @@ diff -ruN a/easytier-contrib/easytier-android-jni/src/lib.rs b/easytier-contrib/
 +        }
 +        result
 +    }
++}
++
++/// Whether the web client holds a session with its console.
++#[unsafe(no_mangle)]
++pub extern "system" fn Java_com_easytier_jni_EasyTierJNI_isWebClientConnected(
++    _env: JNIEnv,
++    _class: JClass,
++) -> jni::sys::jboolean {
++    unsafe { (is_web_client_connected() != 0) as jni::sys::jboolean }
 +}
 diff -ruN a/easytier-contrib/easytier-ffi/Cargo.toml b/easytier-contrib/easytier-ffi/Cargo.toml
 --- a/easytier-contrib/easytier-ffi/Cargo.toml
@@ -163,7 +173,7 @@ diff -ruN a/easytier-contrib/easytier-ffi/src/lib.rs b/easytier-contrib/easytier
  
      match INSTANCE_MANAGER.set_tun_fd(&inst_id, fd) {
          Ok(_) => 0,
-@@ -237,6 +250,66 @@
+@@ -237,6 +250,76 @@
      index as std::ffi::c_int
  }
  
@@ -211,6 +221,16 @@ diff -ruN a/easytier-contrib/easytier-ffi/src/lib.rs b/easytier-contrib/easytier
 +            set_error_msg(&format!("failed to start the web client: {}", e));
 +            -1
 +        }
++    }
++}
++
++/// Whether the web client holds a session with its console: 1 when it does, 0 when not.
++#[unsafe(no_mangle)]
++pub extern "C" fn is_web_client_connected() -> std::ffi::c_int {
++    let held = WEB_CLIENT.lock().unwrap();
++    match held.as_ref() {
++        Some(client) if client.is_connected() => 1,
++        _ => 0,
 +    }
 +}
 +
