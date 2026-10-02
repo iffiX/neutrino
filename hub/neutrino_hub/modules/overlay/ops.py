@@ -268,14 +268,7 @@ class OverlaySwitcher:
         return notes
 
     def _stand_down_supervised(self, provider: str) -> bool:
-        """Stop one engine the hub's service runs, and keep it stopped.
-
-        Args:
-            provider: The engine, by the name the process controller knows.
-
-        Returns:
-            True when it was running or enabled and is now disabled.
-        """
+        """Stop one engine the hub's service runs, and keep it stopped."""
         controller = process_controller()
         if not controller.is_active(provider) and not controller.is_enabled(provider):
             return False

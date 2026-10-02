@@ -7,6 +7,8 @@ so a step that cannot be done yet waits for the event that allows it, and the
 steps after it still run.
 
 Not pure: drives the appliers in :mod:`neutrino_hub.modules.router.routes`.
+On macOS and Windows the pass drives the system firewall instead, and
+touches no route, sysctl or nftables table.
 """
 
 import contextlib
@@ -16,9 +18,10 @@ import subprocess
 import time
 from pathlib import Path
 
+from neutrino_hub.modules.firewall.ops import converge_firewall
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.overlay.ops import overlay_devices
-from neutrino_hub.platforms.detect import hub_platform
+from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
     ROUTER_CODE_POLICY_ROUTE_MISSING,
@@ -145,6 +148,8 @@ class RouterStateController:
         routing = read_config(ROUTER_ROUTING_FILE)
         if only is not None and network.interface(only) is None:
             raise ValueError(f"{only!r} is not a configured interface")
+        if not is_linux():
+            return self._reconcile_firewall(network, routing)
         devices = overlay_devices(network)
         ruleset = RouterNftRenderer(
             network=network,
@@ -180,6 +185,19 @@ class RouterStateController:
             results += _sync_served_routes(rules, network)
         results += _converge_overlays(network)
         return results
+
+    def _reconcile_firewall(
+        self, network: RouterNetworkConfig, routing: dict
+    ) -> list[RouterStepResult]:
+        """The pass on macOS and Windows: the system firewall and the overlays."""
+        devices = overlay_devices(network)
+        results = [
+            run_step("firewall", lambda: converge_firewall(network, routing=routing))
+        ]
+        write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
+        if self._on_base_ready is not None:
+            self._on_base_ready()
+        return results + _converge_overlays(network)
 
     def _apply_interfaces(
         self, network: RouterNetworkConfig, only: str | None

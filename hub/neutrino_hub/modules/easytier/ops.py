@@ -465,16 +465,7 @@ class EasyTierConfigApplier:
         return EASYTIER_CORE_PATH.is_file()
 
     def _start_supervised(self, arguments: list) -> None:
-        """Hand the start line to the process controller and run the engine on it.
-
-        Args:
-            arguments: What :func:`render_arguments` returned.
-
-        Raises:
-            KeyError: If the controller does not run the engine.
-            OSError: If the start line cannot be kept.
-            subprocess.CalledProcessError: If the service manager refuses.
-        """
+        """Hand the start line to the process controller and run the engine on it."""
         controller = process_controller()
         controller.set_start_line(
             EASYTIER_SUPERVISED_NAME, _start_line(arguments), {}, None
@@ -485,14 +476,7 @@ class EasyTierConfigApplier:
             controller.enable(EASYTIER_SUPERVISED_NAME)
 
     def _stop_supervised(self) -> str:
-        """Stop the engine and forget its start line.
-
-        Returns:
-            A one-line summary.
-
-        Raises:
-            OSError: If the start line cannot be forgotten.
-        """
+        """Stop the engine and forget its start line."""
         if not self.is_installed:
             return "nothing to run"
         controller = process_controller()

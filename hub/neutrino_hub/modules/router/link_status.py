@@ -469,13 +469,7 @@ def system_default_routes() -> list[dict]:
 
 
 def _system_entries() -> dict[str, dict]:
-    """Every interface psutil reports, shaped as ``ip -json addr show`` entries.
-
-    Returns:
-        Interface name to an entry with ``ifname``, ``operstate``, ``flags``,
-        ``address`` for a hardware address, and ``addr_info`` holding the
-        IPv4 addresses outside loopback.
-    """
+    """Every interface psutil reports, shaped as ``ip -json addr show`` entries."""
     stats = psutil.net_if_stats()
     entries = {}
     for name, addresses in psutil.net_if_addrs().items():

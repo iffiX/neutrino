@@ -534,3 +534,25 @@ def test_macos_and_windows_run_no_dnsmasq(applied, monkeypatch, system):
         "stopped",
         "routes checked",
     ]
+
+
+def test_macos_and_windows_render_xray_without_the_transparent_inbound(
+    applied, monkeypatch, elsewhere
+):
+    panel, _, _, files = applied
+    files["xray/routing.json"] = dict(ROUTING, is_proxy_enabled=True)
+    handed = []
+
+    class Recording:
+        def apply_if_changed(self, config) -> bool:
+            handed.append(config)
+            return True
+
+    monkeypatch.setattr(runtime_module, "XrayConfigApplier", Recording)
+
+    panel.converge_network_blocking()
+
+    (config,) = handed
+    tags = [inbound["tag"] for inbound in config["inbounds"]]
+    assert "tproxy_in" not in tags
+    assert "dns_in" in tags

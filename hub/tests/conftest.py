@@ -185,6 +185,8 @@ def elsewhere(request, monkeypatch):
     from neutrino_hub.platforms import detect
 
     monkeypatch.setattr(detect.sys, "platform", request.param)
+    if request.param == "win32":
+        monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
     return request.param
 
 
@@ -202,6 +204,7 @@ def on_windows(monkeypatch):
     from neutrino_hub.platforms import detect
 
     monkeypatch.setattr(detect.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
 
 
 @pytest.fixture(autouse=True)

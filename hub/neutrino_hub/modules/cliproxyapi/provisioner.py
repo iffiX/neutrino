@@ -167,17 +167,7 @@ class CliproxyApiProvisioner:
         return ProvisionResult(is_changed=True, message="removed; logins kept")
 
     def _register(self, *, report: Callable[[str], None] | None) -> ProvisionResult:
-        """Check the carried binary, apply, and have the service run it.
-
-        Args:
-            report: Sink for progress lines, if anyone is watching.
-
-        Returns:
-            What was done.
-
-        Raises:
-            FileNotFoundError: When the package carries no binary.
-        """
+        """Check the carried binary, apply, and have the service run it."""
         if not CLIPROXYAPI_BINARY_PATH.is_file():
             raise FileNotFoundError(
                 f"missing: {CLIPROXYAPI_BINARY_PATH}; the package carries it"
