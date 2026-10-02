@@ -28,6 +28,16 @@ VSCODE_PORT_MAX = 65535
 VSCODE_UNIT_TEMPLATE = "neutrino_vscode@.service"
 VSCODE_UNIT_PREFIX = "neutrino_vscode@"
 VSCODE_SYSTEMD_DIR = "/etc/systemd/system"
+# The file watcher of a served workspace takes one inotify watch per directory
+# and one instance per window; a distribution's defaults (8192 or 65536
+# watches, 128 instances) run out on a home directory. These are the floors
+# the module raises a machine to, and the drop-in that holds them.
+VSCODE_LINUX_SYSCTL_PATH = "/etc/sysctl.d/90-neutrino-vscode.conf"
+VSCODE_LINUX_SYSCTL_FLOORS = {
+    "fs.inotify.max_user_watches": 524288,
+    "fs.inotify.max_user_instances": 512,
+}
+VSCODE_LINUX_SYSCTL_PROC_DIR = "/proc/sys"
 
 # macOS: one LaunchDaemon per account, its output in its own log file.
 VSCODE_LAUNCHD_PREFIX = "com.neutrino.vscode."

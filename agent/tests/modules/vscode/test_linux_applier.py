@@ -72,9 +72,19 @@ def applier(systemd, tmp_path):
         cli_dir="/usr/local/lib/neutrino_vscode",
         token_dir=str(tmp_path / "vscode"),
         systemd_dir=str(tmp_path / "systemd"),
+        sysctl_path=str(tmp_path / "sysctl.d" / "90-neutrino-vscode.conf"),
+        proc_dir=str(tmp_path / "proc"),
     )
     held.owners = owners
     return held
+
+
+def limits(tmp_path, watches, instances):
+    """What the kernel reports for the two inotify limits."""
+    inotify = tmp_path / "proc" / "fs" / "inotify"
+    inotify.mkdir(parents=True, exist_ok=True)
+    (inotify / "max_user_watches").write_text(f"{watches}\n")
+    (inotify / "max_user_instances").write_text(f"{instances}\n")
 
 
 def test_the_template_runs_the_cli_as_the_account_from_its_environment():
@@ -178,3 +188,49 @@ def test_stop_and_remove_act_on_every_instance(applier, systemd, tmp_path):
     applier.remove()
     assert not (tmp_path / "systemd" / "neutrino_vscode@.service").exists()
     assert applier.units() == []
+
+
+def test_low_inotify_limits_are_raised_to_the_floors(applier, systemd, tmp_path):
+    limits(tmp_path, 65536, 128)
+    (tmp_path / "sysctl.d").mkdir()
+
+    notes = applier.apply(CONFIG)
+
+    drop_in = (tmp_path / "sysctl.d" / "90-neutrino-vscode.conf").read_text()
+    assert drop_in == (
+        "fs.inotify.max_user_watches = 524288\nfs.inotify.max_user_instances = 512\n"
+    )
+    assert ["sysctl", "-p", str(tmp_path / "sysctl.d" / "90-neutrino-vscode.conf")] in (
+        systemd.calls
+    )
+    assert "raised the inotify limits" in notes
+
+
+def test_limits_already_high_enough_are_left_alone(applier, systemd, tmp_path):
+    limits(tmp_path, 1048576, 1024)
+    (tmp_path / "sysctl.d").mkdir()
+
+    applier.apply(CONFIG)
+
+    assert not (tmp_path / "sysctl.d" / "90-neutrino-vscode.conf").exists()
+    assert not any(call[0] == "sysctl" for call in systemd.calls)
+
+
+def test_only_the_limit_below_its_floor_is_raised(applier, tmp_path):
+    limits(tmp_path, 1048576, 128)
+    (tmp_path / "sysctl.d").mkdir()
+
+    applier.apply(CONFIG)
+
+    drop_in = (tmp_path / "sysctl.d" / "90-neutrino-vscode.conf").read_text()
+    assert drop_in == "fs.inotify.max_user_instances = 512\n"
+
+
+def test_remove_deletes_the_sysctl_drop_in(applier, tmp_path):
+    limits(tmp_path, 65536, 128)
+    (tmp_path / "sysctl.d").mkdir()
+    applier.apply(CONFIG)
+
+    applier.remove()
+
+    assert not (tmp_path / "sysctl.d" / "90-neutrino-vscode.conf").exists()

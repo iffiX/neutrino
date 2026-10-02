@@ -22,6 +22,9 @@ from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,
     VSCODE_LINUX_DIR,
+    VSCODE_LINUX_SYSCTL_FLOORS,
+    VSCODE_LINUX_SYSCTL_PATH,
+    VSCODE_LINUX_SYSCTL_PROC_DIR,
     VSCODE_LINUX_TOKEN_DIR,
     VSCODE_SERVE_ARGUMENTS,
     VSCODE_SYSTEMD_DIR,
@@ -124,6 +127,8 @@ class VscodeLinuxApplier:
         cli_dir: str = VSCODE_LINUX_DIR,
         token_dir: str = VSCODE_LINUX_TOKEN_DIR,
         systemd_dir: str = VSCODE_SYSTEMD_DIR,
+        sysctl_path: str = VSCODE_LINUX_SYSCTL_PATH,
+        proc_dir: str = VSCODE_LINUX_SYSCTL_PROC_DIR,
     ):
         """
         Args:
@@ -136,6 +141,8 @@ class VscodeLinuxApplier:
             cli_dir: Where the CLI is unpacked.
             token_dir: Where the environment and token files live.
             systemd_dir: Where the template unit is written.
+            sysctl_path: The drop-in that raises the inotify limits.
+            proc_dir: Where the kernel shows the limits in force.
         """
         self._run = run if run is not None else run_command
         self._lookup_account = (
@@ -145,6 +152,8 @@ class VscodeLinuxApplier:
         self.cli_dir = cli_dir
         self._token_dir = token_dir
         self._systemd_dir = systemd_dir
+        self._sysctl_path = sysctl_path
+        self._proc_dir = proc_dir
 
     @property
     def cli_path(self) -> str:
@@ -176,6 +185,8 @@ class VscodeLinuxApplier:
                 ) from None
         os.makedirs(self._token_dir, mode=0o755, exist_ok=True)
         notes = []
+        if self._raise_watch_limits():
+            notes.append("raised the inotify limits")
         is_template_new = write_if_changed(
             os.path.join(self._systemd_dir, VSCODE_UNIT_TEMPLATE),
             render_unit(self.cli_path, self._token_dir),
@@ -218,7 +229,39 @@ class VscodeLinuxApplier:
             self._retire(account)
         with contextlib.suppress(OSError):
             os.unlink(os.path.join(self._systemd_dir, VSCODE_UNIT_TEMPLATE))
+        with contextlib.suppress(OSError):
+            os.unlink(self._sysctl_path)
         self._run(["systemctl", "daemon-reload"], is_checked=False)
+
+    def _raise_watch_limits(self) -> bool:
+        """Lift the inotify limits to the module's floors, never lower them.
+
+        A limit the kernel does not report is left alone.
+
+        Returns:
+            Whether a drop-in was written and loaded.
+        """
+        wanted = {}
+        for key, floor in VSCODE_LINUX_SYSCTL_FLOORS.items():
+            current = self._read_limit(key)
+            if current is not None and current < floor:
+                wanted[key] = floor
+        if not wanted:
+            return False
+        text = "".join(f"{key} = {value}\n" for key, value in wanted.items())
+        os.makedirs(os.path.dirname(self._sysctl_path), exist_ok=True)
+        if not write_if_changed(self._sysctl_path, text, 0o644):
+            return False
+        self._run(["sysctl", "-p", self._sysctl_path], is_checked=False)
+        return True
+
+    def _read_limit(self, key: str) -> "int | None":
+        path = os.path.join(self._proc_dir, *key.split("."))
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return int(handle.read().strip())
+        except (OSError, ValueError):
+            return None
 
     def states(self, config: "VscodeConfig | None") -> list:
         """Each instance and whether its unit is active.
