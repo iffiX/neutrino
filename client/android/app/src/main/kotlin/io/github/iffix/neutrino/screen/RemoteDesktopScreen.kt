@@ -1,7 +1,12 @@
 package io.github.iffix.neutrino.screen
 
+import android.os.Build
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubView
@@ -10,11 +15,15 @@ import io.github.iffix.neutrino.design.FeatureRow
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.ReasonLine
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoice
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCodec
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
+import io.github.iffix.neutrino.shell.LocalClientActions
 
 /**
  * The desktops the machines of the joined hubs share, each with Connect: the button shows the
- * job while the address and seat password come from the hub, then the viewer opens.
+ * job while the address and seat password come from the hub, then the viewer opens. Configure,
+ * at its left, keeps the codec and the quality the next Connect asks for.
  *
  * @param hubs Every hub joined.
  * @param connecting The entries whose Connect runs, by entry key.
@@ -31,6 +40,8 @@ fun RemoteDesktopScreen(
     onConnect: (String, String, String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
+    val actions = LocalClientActions.current
+    var configuring by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     ServiceList(hubs, "rdp", "ui.empty_desktops") { hub, entry, hasDivider ->
         val key = RemoteDesktopSessions.keyOf(hub.binding.id, entry.id)
         val host = entry.text("host")
@@ -48,6 +59,12 @@ fun RemoteDesktopScreen(
             marker = entryTone(hub, entry, isBusy),
             hasDivider = hasDivider,
             actions = {
+                NeutrinoButton(
+                    label = words.word("ui.configure"),
+                    onClick = { configuring = Triple(hub.binding.id, entry.id, entry.title) },
+                    isEnabled = isHealthy && !hub.jobs.isRefreshing,
+                    isSmall = true,
+                )
                 NeutrinoButton(
                     label = words.word(if (isBusy) "ui.job.connecting" else "ui.rdp_connect"),
                     onClick = {
@@ -67,6 +84,17 @@ fun RemoteDesktopScreen(
             ErrorLine(errors[key])
             ReasonLine(reason)
         }
+    }
+    configuring?.let { (bindingId, entryId, title) ->
+        RemoteDesktopDialog(
+            title = title,
+            codecs = RemoteDesktopCodec.offered(Build.SUPPORTED_ABIS.firstOrNull().orEmpty()),
+            initial = remember(bindingId, entryId) {
+                actions?.remoteDesktopChoiceOf(bindingId, entryId) ?: RemoteDesktopChoice()
+            },
+            onSave = { actions?.configureRemoteDesktop(bindingId, entryId, it) },
+            onClose = { configuring = null },
+        )
     }
 }
 

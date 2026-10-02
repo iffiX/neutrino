@@ -10,7 +10,7 @@ interface RemoteDesktopCore {
     /**
      * Connect to a shared desktop. Every callback runs on the main thread.
      *
-     * @param target Where it answers, with its seat password.
+     * @param target Where it answers, with its seat password and the codec and quality to ask for.
      * @param onState Called with each change of the connection.
      * @param onFrameSize Called with the remote picture's width and height when they change.
      * @param onClipboard Called with text copied on the remote machine.

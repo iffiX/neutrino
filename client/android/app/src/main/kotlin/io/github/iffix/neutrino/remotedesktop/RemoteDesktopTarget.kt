@@ -12,8 +12,15 @@ import kotlinx.serialization.json.intOrNull
  * @property host The address.
  * @property port RustDesk's direct port.
  * @property password The seat password of the machine sharing it.
+ * @property choice The codec and quality the session asks for.
  */
-data class RemoteDesktopTarget(val name: String, val host: String, val port: Int, val password: String) {
+data class RemoteDesktopTarget(
+    val name: String,
+    val host: String,
+    val port: Int,
+    val password: String,
+    val choice: RemoteDesktopChoice = RemoteDesktopChoice(),
+) {
     override fun toString(): String = "RemoteDesktopTarget(name=$name, host=$host, port=$port)"
 
     companion object {

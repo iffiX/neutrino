@@ -28,6 +28,7 @@ import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.OverlayProbe
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.remotedesktop.MissingRemoteDesktopCore
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoiceStore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import io.github.iffix.neutrino.remotedesktop.RustDeskNative
@@ -88,6 +89,7 @@ class NeutrinoApplication : Application() {
         HubConnections(bindingStore, OkHttpHubTransport(), machine, ::resolveHubName, scope) { bindingId ->
             overlays.forget(bindingId)
             remoteDesktops.forget(bindingId)
+            remoteDesktopChoices.forget(bindingId)
             portForwards.forget(bindingId)
         }
     }
@@ -119,7 +121,13 @@ class NeutrinoApplication : Application() {
                 connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
             },
             scope = scope,
+            choiceOf = remoteDesktopChoices::get,
         )
+    }
+
+    /** Each shared desktop's codec and quality. */
+    val remoteDesktopChoices: RemoteDesktopChoiceStore by lazy {
+        RemoteDesktopChoiceStore(getSharedPreferences(CLIENT_SETTINGS_FILE_NAME, Context.MODE_PRIVATE))
     }
 
     /** The loopback forwards of the port entries and the local-only web entries. */

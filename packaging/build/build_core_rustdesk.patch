@@ -19,10 +19,12 @@ src/native_ffi.rs: the interface. `NativeHandler` implements the session
 callbacks (`InvokeUiSession`); every frame is drawn into the window given by
 `nd_attach_window`, and the login, the end of the connection, each frame
 size and the remote clipboard's text go to the host's callbacks. `nd_start`
-turns the peer's clipboard option on, and `nd_clipboard` sends the host's
-clipboard text to the remote machine. `nd_init`, `nd_start`,
-`nd_attach_window`, `nd_mouse`, `nd_key`, `nd_text`, `nd_clipboard` and
-`nd_close` are exported with C linkage.
+turns the peer's clipboard option on and applies the options `nd_set_option`
+kept (the image quality, and peer options such as the codec preference), and
+`nd_clipboard` sends the host's clipboard text to the remote machine.
+`nd_init`, `nd_set_option`, `nd_start`, `nd_attach_window`, `nd_mouse`,
+`nd_key`, `nd_text`, `nd_clipboard` and `nd_close` are exported with C
+linkage.
 It also implements the two Dart conversion traits for `EventToUI` that the
 generated bridge otherwise implements; no Dart stream is opened in this
 build.
@@ -104,13 +106,15 @@ build.
                  #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste"))]
 --- a/src/native_ffi.rs
 +++ b/src/native_ffi.rs
-@@ -0,0 +1,447 @@
+@@ -0,0 +1,478 @@
 +//! A C interface to one remote desktop session, for a host app with no Dart.
 +//!
 +//! The host calls `nd_init` once, `nd_start` per connection and `nd_close` to end it.
 +//! Frames are drawn straight into the window handed over by `nd_attach_window`.
 +//! The connection's progress and the remote clipboard's text come back through the callbacks
 +//! given to `nd_start`; `nd_clipboard` sends the host's clipboard text to the remote machine.
++//! `nd_set_option` keeps a session option, such as the codec preference or the image quality,
++//! that every later `nd_start` applies to the peer's configuration.
 +
 +use crate::{
 +    client::{Data, Interface},
@@ -124,6 +128,7 @@ build.
 +    rendezvous_proto::ConnType,
 +};
 +use std::{
++    collections::HashMap,
 +    ffi::{CStr, CString},
 +    os::raw::{c_char, c_int, c_void},
 +    sync::{Arc, Mutex, RwLock},
@@ -184,7 +189,11 @@ build.
 +    static ref WINDOW: Mutex<NativeWindow> = Mutex::new(NativeWindow { window: 0, size: (0, 0) });
 +    static ref SESSION: RwLock<Option<Session<NativeHandler>>> = RwLock::new(None);
 +    static ref MODIFIERS: Mutex<[bool; 4]> = Mutex::new([false; 4]);
++    static ref OPTIONS: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
 +}
++
++/// The peer option that names the image quality, kept in its own field of the peer config.
++const OPTION_IMAGE_QUALITY: &str = "image-quality";
 +
 +/// The session's link to the host: callbacks out and the window frames are drawn into.
 +#[derive(Clone, Default)]
@@ -390,6 +399,16 @@ build.
 +    CStr::from_ptr(text).to_string_lossy().into_owned()
 +}
 +
++fn apply_option(peer: &mut config::PeerConfig, name: &str, value: &str) {
++    if name == OPTION_IMAGE_QUALITY {
++        peer.image_quality = value.to_owned();
++    } else if value.is_empty() {
++        peer.options.remove(name);
++    } else {
++        peer.options.insert(name.to_owned(), value.to_owned());
++    }
++}
++
 +fn with_session(action: impl FnOnce(&Session<NativeHandler>)) {
 +    if let Some(session) = SESSION.read().unwrap().as_ref() {
 +        action(session);
@@ -440,6 +459,9 @@ build.
 +        lc.initialize(id, ConnType::DEFAULT_CONN, None, false, None, None, None);
 +        let mut peer = lc.load_config();
 +        peer.disable_clipboard.v = false;
++        for (name, value) in OPTIONS.lock().unwrap().iter() {
++            apply_option(&mut peer, name, value);
++        }
 +        lc.save_config(peer);
 +    }
 +    *slot = Some(session.clone());
@@ -448,6 +470,17 @@ build.
 +        io_loop(session, round);
 +    });
 +    0
++}
++
++/// Keep a session option for every later `nd_start`: `image-quality` (`balanced`, `low`, `best`)
++/// or a peer option such as `codec-preference` (`auto`, `vp8`, `vp9`, `av1`, `h264`, `h265`);
++/// an empty value removes a peer option. A session already running keeps what it started with.
++#[no_mangle]
++pub unsafe extern "C" fn nd_set_option(name: *const c_char, value: *const c_char) {
++    let name = text_of(name);
++    if !name.is_empty() {
++        OPTIONS.lock().unwrap().insert(name, text_of(value));
++    }
 +}
 +
 +/// Draw frames into this `ANativeWindow*`, or into nothing when it is null.

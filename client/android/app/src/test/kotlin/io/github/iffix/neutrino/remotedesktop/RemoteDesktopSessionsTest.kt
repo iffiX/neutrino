@@ -38,6 +38,17 @@ class RemoteDesktopSessionsTest {
     }
 
     @Test
+    fun theViewerOpensWithTheEntrysKeptChoice() = runTest {
+        val kept = RemoteDesktopChoice(RemoteDesktopCodec.H264, RemoteDesktopQuality.LOW)
+        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope) { key ->
+            if (key == "b1/r1") kept else RemoteDesktopChoice()
+        }
+        sessions.connect("b1", "r1", "x")
+        runCurrent()
+        assertEquals(kept, sessions.viewing.value?.second?.choice)
+    }
+
+    @Test
     fun aRefusedConnectWritesItsCodeUntilARefresh() = runTest {
         val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.refused("rdp_not_shared") }, backgroundScope)
         sessions.connect("b1", "r1", "x")

@@ -17,6 +17,7 @@ typedef struct {
 } NdCallbacks;
 
 static void (*nd_init)(const char *app_dir);
+static void (*nd_set_option)(const char *name, const char *value);
 static int (*nd_start)(const char *peer, int port, const char *password, NdCallbacks callbacks);
 static void (*nd_attach_window)(ANativeWindow *window);
 static void (*nd_mouse)(int x, int y, int mask);
@@ -84,6 +85,7 @@ Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_open(JNIEnv *env, job
     void *core = dlopen("librustdesk.so", RTLD_NOW | RTLD_NOLOAD);
     if (core == NULL) return JNI_FALSE;
     nd_init = dlsym(core, "nd_init");
+    nd_set_option = dlsym(core, "nd_set_option");
     nd_start = dlsym(core, "nd_start");
     nd_attach_window = dlsym(core, "nd_attach_window");
     nd_mouse = dlsym(core, "nd_mouse");
@@ -91,7 +93,7 @@ Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_open(JNIEnv *env, job
     nd_text = dlsym(core, "nd_text");
     nd_clipboard = dlsym(core, "nd_clipboard");
     nd_close = dlsym(core, "nd_close");
-    bool is_complete = nd_init && nd_start && nd_attach_window && nd_mouse && nd_key && nd_text
+    bool is_complete = nd_init && nd_set_option && nd_start && nd_attach_window && nd_mouse && nd_key && nd_text
                        && nd_clipboard && nd_close;
     return is_complete ? JNI_TRUE : JNI_FALSE;
 }
@@ -103,6 +105,17 @@ Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_init(JNIEnv *env, job
     const char *path = (*env)->GetStringUTFChars(env, app_dir, NULL);
     nd_init(path);
     (*env)->ReleaseStringUTFChars(env, app_dir, path);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_iffix_neutrino_remotedesktop_RustDeskNative_setOption(JNIEnv *env, jobject self,
+                                                                      jstring name, jstring value) {
+    (void) self;
+    const char *key = (*env)->GetStringUTFChars(env, name, NULL);
+    const char *text = (*env)->GetStringUTFChars(env, value, NULL);
+    nd_set_option(key, text);
+    (*env)->ReleaseStringUTFChars(env, value, text);
+    (*env)->ReleaseStringUTFChars(env, name, key);
 }
 
 JNIEXPORT jint JNICALL
