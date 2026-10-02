@@ -3,6 +3,7 @@
 [data-theme="dark"] {
   --color-bg: #070809;
   --color-surface: #0e1013;
+  --color-elevated: #15181c;
   --color-border: #1c2026;
   --color-border-strong: #2a3038;
   --color-text: #e6edf3;
@@ -23,6 +24,7 @@
 [data-theme="light"] {
   --color-bg: #e8ebf0;
   --color-surface: #f6f7f9;
+  --color-elevated: #dde2e8;
   --color-border: #cdd4dc;
   --color-border-strong: #b4bfcb;
   --color-text: #0f172a;
@@ -184,9 +186,11 @@ button.with_icon { display: inline-flex; gap: 8px; align-items: center; }
               border-radius: 12px; background: var(--color-surface); }
 .term_head { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px;
              border-bottom: 1px solid var(--color-border); }
-.term_tab { display: inline-flex; align-items: center; border: 1px solid transparent;
-            border-radius: 6px; }
-.term_tab.on { border-color: var(--color-border); background: var(--color-bg); }
+/* The active tab is marked as the panel marks a selected chip: the accent
+   as its border and text, the elevated surface as its fill. */
+.term_tab { display: inline-flex; align-items: center;
+            border: 1px solid var(--color-border); border-radius: 6px; }
+.term_tab.on { border-color: var(--color-accent); background: var(--color-elevated); }
 button.term_tab_label { display: inline-flex; gap: 8px; align-items: center;
                         padding: 5px 4px 5px 10px; border: none; background: none;
                         color: var(--color-text-muted);
