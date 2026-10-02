@@ -14,6 +14,7 @@ import {
 } from "../use_polled_resource";
 import { useTaskStream } from "../use_task_stream";
 import type {
+  HubPackageFamily,
   HubReleaseScanView,
   HubReleaseView,
   HubUpdateRecord,
@@ -43,6 +44,19 @@ const RESTART_PATIENCE_MS = 90_000;
 const RESTART_LOST_MS = 8 * 60_000;
 
 const STAGES_IN_FLIGHT = new Set(["preparing", "installing", "rolling_back"]);
+
+/** The families the system's own installer installs; the others are
+ * installed by the package manager under systemd. */
+const INSTALLER_FAMILIES: ReadonlySet<HubPackageFamily> = new Set([
+  "msi",
+  "pkg",
+]);
+
+/** The reasons worded apart for a family the system's installer installs. */
+const INSTALLER_WORDED_REASONS = new Set([
+  "package_install_failed",
+  "update_launch_failed",
+]);
 
 type ModalPhase = "ask" | "preparing" | "restarting" | "failed";
 
@@ -150,7 +164,7 @@ export function UpdatePanel() {
           </div>
 
           {record !== null && !STAGES_IN_FLIGHT.has(record.stage) && (
-            <RecordNotice record={record} />
+            <RecordNotice record={record} packageFamily={view.package_family} />
           )}
 
           {!view.is_packaged ? (
@@ -201,6 +215,8 @@ export function UpdatePanel() {
       {isModalOpen && target !== null && (
         <UpdateModal
           target={target}
+          packageFamily={view?.package_family ?? ""}
+          logRoot={view?.log_root ?? ""}
           taskId={taskId}
           onStarted={setTaskId}
           onClose={() => {
@@ -281,11 +297,19 @@ function ScanResult({ scan }: ScanResultProps) {
 
 interface RecordNoticeProps {
   record: HubUpdateRecord;
+  packageFamily: HubPackageFamily;
 }
 
-function RecordNotice({ record }: RecordNoticeProps) {
+function RecordNotice({ record, packageFamily }: RecordNoticeProps) {
+  const isInstallerWorded =
+    INSTALLER_FAMILIES.has(packageFamily) &&
+    INSTALLER_WORDED_REASONS.has(record.reason);
   const reason =
-    record.reason === "" ? "" : t(`ui.settings.update_reason.${record.reason}`);
+    record.reason === ""
+      ? ""
+      : isInstallerWorded
+        ? t(`ui.settings.update_reason_installer.${record.reason}`)
+        : t(`ui.settings.update_reason.${record.reason}`);
   const values = {
     from: record.from_version,
     to: record.to_version,
@@ -333,14 +357,24 @@ interface UpdateTarget {
 
 interface UpdateModalProps {
   target: UpdateTarget;
+  packageFamily: HubPackageFamily;
+  logRoot: string;
   taskId: string | null;
   onStarted: (taskId: string) => void;
   onClose: () => void;
 }
 
-function UpdateModal({ target, taskId, onStarted, onClose }: UpdateModalProps) {
+function UpdateModal({
+  target,
+  packageFamily,
+  logRoot,
+  taskId,
+  onStarted,
+  onClose,
+}: UpdateModalProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
+  const isInstallerFamily = INSTALLER_FAMILIES.has(packageFamily);
   const task = useTaskStream(taskId);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -448,10 +482,12 @@ function UpdateModal({ target, taskId, onStarted, onClose }: UpdateModalProps) {
         {phase === "ask" && (
           <>
             <p className="confirm_body">
-              {t("ui.settings.update_confirm_body", {
-                from: target.from,
-                version,
-              })}
+              {t(
+                isInstallerFamily
+                  ? "ui.settings.update_confirm_body_installer"
+                  : "ui.settings.update_confirm_body",
+                { from: target.from, version },
+              )}
             </p>
             {!target.isRollbackAvailable && (
               <div className="update_modal_fields">
@@ -512,9 +548,13 @@ function UpdateModal({ target, taskId, onStarted, onClose }: UpdateModalProps) {
                 <div className="notice notice--error">
                   <Icon name="alert" size={15} />
                   <div className="notice_body">
-                    {isLost
-                      ? t("ui.settings.update_lost")
-                      : t("ui.settings.update_failed")}
+                    {!isLost
+                      ? t("ui.settings.update_failed")
+                      : isInstallerFamily
+                        ? t("ui.settings.update_lost_installer", {
+                            path: logRoot,
+                          })
+                        : t("ui.settings.update_lost")}
                   </div>
                 </div>
                 <div className="confirm_foot">

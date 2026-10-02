@@ -33,6 +33,7 @@
   "ui.setup.prefix_len": "Prefix length",
   "ui.setup.upstream_gateway": "That network's own router",
   "ui.setup.proxy_lead_server": "Send this box's own traffic out through an exit node you own. Skipping is a real answer: a hub is a hub without a proxy, and the Proxy page turns one on later without any of this being redone.",
+  "ui.setup.proxy_lead_socks": "Give this box SOCKS ports that go out through an exit node you own. Skipping is a real answer: a hub is a hub without a proxy, and the Proxy page turns one on later without any of this being redone.",
   "ui.setup.proxy_lead_router": "Send your devices' traffic out through an exit node you own. Skipping is a real answer: a hub is a hub without a proxy, and the Proxy page turns one on later without any of this being redone.",
   "ui.setup.proxy_enable": "Set it up here",
   "ui.setup.links": "Exit node links",

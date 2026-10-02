@@ -33,6 +33,7 @@
   "ui.setup.prefix_len": "前缀长度",
   "ui.setup.upstream_gateway": "该网络自己的路由器",
   "ui.setup.proxy_lead_server": "让这台机器自己的流量经由你自己的出口节点出网。跳过也是一种回答：没有代理的中枢照样是中枢，之后在代理页面随时打开，不用重做这里的任何一步。",
+  "ui.setup.proxy_lead_socks": "给这台机器开 SOCKS 端口，经由你自己的出口节点出网。跳过也是一种回答：没有代理的中枢照样是中枢，之后在代理页面随时打开，不用重做这里的任何一步。",
   "ui.setup.proxy_lead_router": "让你的设备的流量经由你自己的出口节点出网。跳过也是一种回答：没有代理的中枢照样是中枢，之后在代理页面随时打开，不用重做这里的任何一步。",
   "ui.setup.proxy_enable": "在这里设置",
   "ui.setup.links": "出口节点链接",

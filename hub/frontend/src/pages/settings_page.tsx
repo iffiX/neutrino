@@ -39,6 +39,7 @@ import {
 import { usePolledResource } from "../use_polled_resource";
 import type {
   AboutInfo,
+  HubOs,
   PanelSettings,
   PasswordChangeResult,
   RestoreResult,
@@ -61,6 +62,11 @@ import "./settings_page.css";
 const ABOUT_XRAY = "xray";
 const ABOUT_CLIPROXYAPI = "CLIProxyAPI";
 const ABOUT_PYTHON = "Python";
+const ABOUT_OS_NAMES: Record<HubOs, string> = {
+  linux: "Linux",
+  darwin: "macOS",
+  windows: "Windows",
+};
 
 /** What the API answers when it is asked for a language nobody ships. */
 const LANGUAGE_UNKNOWN_CODE = "language_unknown";
@@ -305,6 +311,10 @@ export function SettingsPage() {
                 value={about.data.geodata_version}
               />
               <div className="section_label">{t("ui.settings.about_host")}</div>
+              <AboutRow
+                label={t("ui.settings.about_system")}
+                value={`${ABOUT_OS_NAMES[about.data.os]} ${about.data.os_version}`}
+              />
               <AboutRow
                 label={t("ui.settings.about_kernel")}
                 value={about.data.kernel}

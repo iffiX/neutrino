@@ -6,6 +6,8 @@
  * there is no session yet, because the password is one of the answers.
  */
 
+import type { HubOs } from "./api_types";
+
 /** One of this machine's network ports, as the box sees it right now. */
 export interface SetupInterface {
   name: string;
@@ -43,7 +45,10 @@ export interface SetupDefaults {
 
 /** The facts the questions are asked against. */
 export interface SetupContext {
+  /** The system the hub runs on. */
+  hub_os: HubOs;
   interfaces: SetupInterface[];
+  /** The modes this machine can be: `server` alone outside Linux. */
   modes: SetupMode[];
   defaults: SetupDefaults;
 }

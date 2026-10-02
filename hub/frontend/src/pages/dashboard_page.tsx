@@ -34,6 +34,7 @@ import type { TrafficScope } from "../traffic_series";
 import type {
   CliproxyApiStatusView,
   DashboardSummary,
+  NetworkView,
   TrafficHistoryRange,
   TrafficHistoryResponse,
 } from "../api_types";
@@ -87,6 +88,9 @@ export function DashboardPage() {
     apiPath("/hub/dashboard/history", { range: historyRange }),
   );
   const dnsLog = useDnsLogSocket();
+  // The DNS log is dnsmasq's, and dnsmasq runs only on a hub on Linux.
+  const network = useApiResource<NetworkView>("/hub/network");
+  const isDnsLogShown = network.data?.hub_os === "linux";
   // The same status view the top bar reads. A gateway that is absent or has
   // served nothing leaves the tile blank rather than reporting a failure.
   const ai = useApiResource<CliproxyApiStatusView>("/hub/ai/gateway", {
@@ -169,14 +173,16 @@ export function DashboardPage() {
                 })
           }
         />
-        <StatTile
-          label={t("ui.dashboard.tile_dns_queries")}
-          value={summary.data?.dns_query_count ?? 0}
-          format={formatCount}
-          icon="search"
-          tone="accent"
-          detail={t("ui.dashboard.tile_in_recent_log")}
-        />
+        {isDnsLogShown && (
+          <StatTile
+            label={t("ui.dashboard.tile_dns_queries")}
+            value={summary.data?.dns_query_count ?? 0}
+            format={formatCount}
+            icon="search"
+            tone="accent"
+            detail={t("ui.dashboard.tile_in_recent_log")}
+          />
+        )}
         <StatTile
           label={t("ui.dashboard.tile_proxy_exits")}
           value={activeExits.length}
@@ -494,21 +500,23 @@ export function DashboardPage() {
             )}
           </section>
 
-          <section className="card dashboard_dns_card">
-            <div className="card_header dashboard_dns_head">
-              <div className="card_title">
-                <h2>{t("ui.dashboard.dns_title")}</h2>
-                <span className="badge">{t("ui.dashboard.dns_order")}</span>
+          {isDnsLogShown && (
+            <section className="card dashboard_dns_card">
+              <div className="card_header dashboard_dns_head">
+                <div className="card_title">
+                  <h2>{t("ui.dashboard.dns_title")}</h2>
+                  <span className="badge">{t("ui.dashboard.dns_order")}</span>
+                </div>
+                <StatusDot
+                  tone={dnsLog.status === "open" ? "ok" : "warn"}
+                  label={t("ui.dashboard.dns_held", {
+                    count: dnsLog.entries.length,
+                  })}
+                />
               </div>
-              <StatusDot
-                tone={dnsLog.status === "open" ? "ok" : "warn"}
-                label={t("ui.dashboard.dns_held", {
-                  count: dnsLog.entries.length,
-                })}
-              />
-            </div>
-            <DnsLogList entries={dnsLog.entries} />
-          </section>
+              <DnsLogList entries={dnsLog.entries} />
+            </section>
+          )}
         </div>
       </div>
 

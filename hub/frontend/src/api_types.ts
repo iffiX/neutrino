@@ -371,9 +371,14 @@ export interface StaticLeaseSettings {
   name: string;
 }
 
+/** The system the hub runs on. */
+export type HubOs = "linux" | "darwin" | "windows";
+
 export interface NetworkView {
+  hub_os: HubOs;
   /** What this whole machine is; the page below the Mode panel follows it. */
   mode: NetworkModeKey;
+  /** The modes this system can be: `server` alone outside Linux. */
   modes: NetworkMode[];
   interfaces: InterfaceView[];
   overlays: OverlayView[];
@@ -1283,6 +1288,9 @@ export interface AboutInfo {
   python_version: string;
   geodata_version: string;
   kernel: string;
+  os: HubOs;
+  /** The macOS release, the Windows build, or the kernel release on Linux. */
+  os_version: string;
   uptime_s: number;
   acknowledgements: Acknowledgement[];
 }
@@ -1305,9 +1313,15 @@ export interface HubUpdateRecord {
   output: string;
 }
 
+/** The kind of package the hub was installed from; empty in a checkout. */
+export type HubPackageFamily = "" | "deb" | "rpm" | "arch" | "msi" | "pkg";
+
 export interface HubReleaseView {
   current: string;
   is_packaged: boolean;
+  package_family: HubPackageFamily;
+  /** The directory the hub writes its logs to. */
+  log_root: string;
   update: HubUpdateRecord | null;
   task_id: string | null;
 }
