@@ -6,7 +6,6 @@
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
     "rdp_login_failed": "The machine refused the access password.",
-    "ticket_spent": "the link is unknown, spent, or has expired; scan the hub's QR again",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
@@ -51,9 +50,6 @@
     "scan_press": "Press Scan to use the camera.",
     "share_login_needed": "Give this share's password on the Files screen first.",
     "share_reconnecting": "Reconnecting…",
-    "state": {
-      "pending": "Joined; the hub has not been reached yet"
-    },
     "terminal_detached": "Detached; it attaches again once the hub answers."
   }
 }
