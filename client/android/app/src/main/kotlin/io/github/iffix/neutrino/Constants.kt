@@ -377,8 +377,8 @@ const val SCAN_REGION_FRACTION = 0.7f
 /** The vibration of a decoded code where the phone has no confirm haptic. */
 const val SCAN_VIBRATION_MILLIS = 50L
 
-/** The machines whose RustDesk core is built with `hwcodec`, so it decodes H264 and H265 too. */
-val RDP_HWCODEC_ABIS: List<String> = listOf("arm64-v8a")
+/** The machines whose RustDesk core is built with `mediacodec`, so it decodes H264 and H265 in hardware too. */
+val RDP_MEDIACODEC_ABIS: List<String> = listOf("arm64-v8a")
 
 /** RustDesk's peer option naming the codec a session asks for. */
 const val RDP_OPTION_CODEC = "codec-preference"
