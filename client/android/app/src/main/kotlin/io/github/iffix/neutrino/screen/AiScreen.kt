@@ -1,6 +1,5 @@
 package io.github.iffix.neutrino.screen
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,9 +14,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -25,14 +21,13 @@ import io.github.iffix.neutrino.CLIENT_KEY_SHOWN_PREFIX
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.channel.HubView
-import io.github.iffix.neutrino.design.AppIcon
 import io.github.iffix.neutrino.design.CopyButton
 import io.github.iffix.neutrino.design.ErrorLine
 import io.github.iffix.neutrino.design.FeatureRow
-import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.QrCodeImage
+import io.github.iffix.neutrino.design.SecretField
 import io.github.iffix.neutrino.design.ValueField
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -40,8 +35,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * The AI gateway each joined hub publishes: its address and this phone's key to copy, and QR,
- * which draws both for another app to scan.
+ * The AI gateway each joined hub publishes: its address to copy, and this phone's key on one row
+ * with QR, which draws both under the row for another app to scan, and Copy.
  *
  * @param hubs Every hub joined.
  * @param material What the hub hands this phone for one entry: `{base_url, api_key, model}`.
@@ -78,9 +73,6 @@ private fun GatewayRow(
     FeatureRow(
         marker = entryTone(hub, entry, isBusy = answer == null),
         hasDivider = hasDivider,
-        actions = {
-            NeutrinoButton(words.word("ui.qr"), { isQrShown = !isQrShown }, isSmall = true, isEnabled = isReady)
-        },
     ) {
         BasicText(words.word("ui.module_ai_gateway"), style = NeutrinoTheme.rowTitle)
         if (entry.isHealthy == false) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
@@ -105,8 +97,8 @@ private fun GatewayRow(
                 } else {
                     key.take(CLIENT_KEY_SHOWN_PREFIX) + "•".repeat(16)
                 }
-                ValueField(words.word("ui.client_key"), shown) {
-                    RevealToggle(isKeyShown) { isKeyShown = !isKeyShown }
+                SecretField(words.word("ui.client_key"), shown, isKeyShown, onToggle = { isKeyShown = !isKeyShown }) {
+                    NeutrinoButton(words.word("ui.qr"), { isQrShown = !isQrShown }, isSmall = true, isEnabled = isReady)
                     CopyButton(isEnabled = isReady) { onCopy(key, true) }
                 }
                 if (isQrShown) {
@@ -126,20 +118,6 @@ private fun GatewayRow(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun RevealToggle(isShown: Boolean, onToggle: () -> Unit) {
-    val words = NeutrinoTheme.words
-    val label = words.word(if (isShown) "ui.key_hide" else "ui.key_show")
-    Box(
-        modifier = Modifier
-            .semantics { contentDescription = label }
-            .clickable(role = Role.Switch, onClick = onToggle)
-            .padding(6.dp),
-    ) {
-        IconGlyph(if (isShown) AppIcon.EYE_OFF else AppIcon.EYE, NeutrinoTheme.palette.textMuted, size = 16.dp)
     }
 }
 
