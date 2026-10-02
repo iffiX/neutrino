@@ -49,7 +49,7 @@ recorded. A button reads its own job from there and from nowhere else.
 | The sidebar and the bottom bar carry only the pages; the machine's name, platform and version are on the Settings page's About card and nowhere else. | A foot that repeats on every page is noise; About is where a person looks for a version. |
 | In the sidebar layout a page's own action (**New terminal** on Terminals, **Scan** on Join, which asks for the camera or scans again after a refused code) sits at the right of the page header, as the panel's `page_actions` does; the floating button at the bottom right exists only in the bottom-bar layout. | A floating button beside a sidebar covers content and reads as a leftover. |
 | In the sidebar layout the page body starts to the right of the sidebar and never under it. | Content under the sidebar is unreadable and untouchable. |
-| Every page body scrolls, except Terminals, which gives the terminal the height left under its chips and tabs. | A page squeezed to fit is a page that cannot be read; a terminal is sized to its box by design. |
+| Every page body scrolls, Terminals included: on a phone the chips and the tab bar are always drawn in full, the terminal's box is as tall as the window under the top bar less the key row, so one screen holds the terminal and its keys and the chips scroll away above it; nothing collapses behind a tap, neither in landscape nor with the keyboard shown. On a desktop the terminal takes the height left under its chips and tabs. | A page squeezed to fit is a page that cannot be read; a line that must be tapped to see the page is a trap. |
 | A page changes with no transition animation. | A fade adds time to every press and tells nothing. |
 | A rotation or a window resize keeps every page's state and every running job; an attached terminal and an open viewer stay as they are. | The state is in the core, and a page is a view of it. |
 | A page's content sits in cards with a 16 px gutter; a card is one concern, as in the panel. | The panel's reader is the client's reader. |
@@ -199,7 +199,7 @@ the picker and the button in the row. The state is `off`, `connecting` or
 | `connecting`, stage `login` | the engine reports an address | `connecting`, stage `hub`; `address` is set | a spinner and **Cancel** |
 | `connecting`, stage `hub` | the hub's port answers at the hub's address on that network and the hub's channel is up through that address | `on` | **Disconnect** |
 | `connecting`, stage `login` | the engine stops, or no address within 90 s | `off`, with error (`overlay_no_address`) | **Connect** |
-| `connecting`, stage `hub` | no channel through the network within 60 s of the address | `off`, with error (`overlay_hub_unreachable`) | **Connect** |
+| `connecting`, stage `hub` | the engine stops | `off`, with the engine's code | **Connect** |
 | `connecting` | press **Cancel** | `off` | **Connect** |
 | `on` | press **Disconnect** | `off` after the engine stops; `overlay_job` is `disconnecting` meanwhile | a spinner and `ui.job.disconnecting`, then **Connect** |
 | `on` | the hub's frame no longer lists the network | `off`, with `overlay_withdrawn` | **Connect** |
@@ -209,7 +209,7 @@ the picker and the button in the row. The state is `off`, `connecting` or
 | Rule | Reason |
 | --- | --- |
 | The client never changes the chosen engine, never retries a failed connect and never moves to another network by itself. | The person chose; a client that changes the choice cannot be reasoned with. |
-| A connect is one attempt in two stages, each with its own limit: `login` (the engine starts, logs in and gets an address) within 90 s, then `hub` (the hub answers through the network) within 60 s of the address; the reason line under the state word names the stage (`ui.stage.login`, `ui.stage.hub` with the address), and the person can cancel at any second. | A mobile network needs most of a minute for the login alone; one clock over both stages failed every phone, and a loop with no exit is what the person sees as a hang. |
+| A connect is one attempt in two stages: `login` (the engine starts, logs in and gets an address) within 90 s, then `hub` (the hub answers through the network), which has no limit: the probe runs every 2 s until the hub answers, the engine stops or the person cancels, and the reason line under the state word names the stage (`ui.stage.login`; `ui.stage.hub` with the address and the seconds waited so far). | A mobile network needs most of a minute for the login alone, and how long the tunnel to the hub takes is the engine's business; a clock that gives up while the engine is still working sends the person back to the button. |
 | The `hub` stage probes the hub's own address on that network, which the hub's material carries as `address` (its NetBird or EasyTier address), never the hub's name on the network. | The desktop runs NetBird without its DNS, so the name resolves nowhere; the address is what the tunnel carries. |
 | In the `hub` stage the channel reconnects through that address and keeps trying it until the stage ends; it does not move to another address meanwhile. | A channel that wanders back to the LAN address proves nothing about the network. |
 | Each stage's start and end is one log line with its duration. | A connect that fails on a phone is explained from the log or not at all. |
