@@ -27,9 +27,9 @@ The document has these parts:
 | Part | Holds |
 | --- | --- |
 | `hubs[]` | `hub_id`, `hub_name`, `gateway_url`, `software`, `connection`, `last_error`, `is_exit`, `overlay`, `jobs` |
-| `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state`, `address`, `error` |
+| `hubs[].overlay` | `network` (the chosen engine), `networks[]` (what the hub publishes), `state`, `stage` (empty, `login` or `hub` while connecting), `address`, `error` |
 | `hubs[].jobs` | `is_refreshing`, `overlay_job` (empty, `connecting`, `disconnecting`), `is_leaving` |
-| `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job` and `last_error` |
+| `services[]` | one per published service, with the hub's wire fields (`hub_id`, `device_id`, `module`, `kind`, `payload`, `is_healthy`, `unhealthy_code`), plus `job`, `last_error` and, for a port entry and a local-only web entry, `local_port` (the setting: `auto` or a number) and `forward` (empty, or the loopback port the forward listens on) |
 | `mounts[]` | the desktop's mount records, one per share mounted or being mounted |
 | `terminals` | `machines[]` and `sessions[]`, as the hub sends them |
 | `notices[]` | page-wide notices with a code, such as `binding_unknown`, each shown for one minute |
@@ -42,7 +42,7 @@ recorded. A button reads its own job from there and from nowhere else.
 
 | Rule | Reason |
 | --- | --- |
-| The frame is a sidebar on the left when the window is wider than it is tall and at least 720 px wide, and a bottom bar otherwise. | A phone in portrait has no room for a sidebar; a tablet, a laptop and a phone in landscape do. |
+| The frame is a sidebar on the left when the window is wider than it is tall, or at least 720 dp wide, and a bottom bar otherwise. | A phone in portrait has no room for a sidebar; a tablet, a laptop and a phone in landscape do, whatever the phone's display size setting makes of its width. |
 | The bar lists the pages in one order: **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. | One order on every client is one order to learn. |
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
 | The top bar holds the page title at the left and the refresh button at the right, and nothing else. | The refresh button is the one control that acts on every page. |
@@ -196,8 +196,10 @@ the picker and the button in the row. The state is `off`, `connecting` or
 | State | Event | Next | The button |
 | --- | --- | --- | --- |
 | `off` | press **Connect** | `connecting`, `overlay_job` is `connecting` | a spinner and **Cancel** |
-| `connecting` | the engine has an address and the hub's channel is up through the network | `on` | **Disconnect** |
-| `connecting` | the engine stops, no address within 60 s, or no channel through the network within 60 s | `off`, with error | **Connect** |
+| `connecting`, stage `login` | the engine reports an address | `connecting`, stage `hub`; `address` is set | a spinner and **Cancel** |
+| `connecting`, stage `hub` | the hub's port answers at the hub's address on that network and the hub's channel is up through that address | `on` | **Disconnect** |
+| `connecting`, stage `login` | the engine stops, or no address within 90 s | `off`, with error (`overlay_no_address`) | **Connect** |
+| `connecting`, stage `hub` | no channel through the network within 60 s of the address | `off`, with error (`overlay_hub_unreachable`) | **Connect** |
 | `connecting` | press **Cancel** | `off` | **Connect** |
 | `on` | press **Disconnect** | `off` after the engine stops; `overlay_job` is `disconnecting` meanwhile | a spinner and `ui.job.disconnecting`, then **Connect** |
 | `on` | the hub's frame no longer lists the network | `off`, with `overlay_withdrawn` | **Connect** |
@@ -207,8 +209,11 @@ the picker and the button in the row. The state is `off`, `connecting` or
 | Rule | Reason |
 | --- | --- |
 | The client never changes the chosen engine, never retries a failed connect and never moves to another network by itself. | The person chose; a client that changes the choice cannot be reasoned with. |
-| A connect is one attempt of at most 60 s, and the person can cancel it at any second of that. | A loop with no exit is what the person sees as a hang. |
-| In EasyTier's console mode the 60 s cover the registration with the console; after it the state stays `connecting` with the reason line `ui.reason.console_waiting` (registered with the console, waiting for it to assign a network) until the owner assigns one or the person cancels. | The console's owner decides when a new machine gets a network; the client cannot hurry that, and failing after a minute would read as a fault. |
+| A connect is one attempt in two stages, each with its own limit: `login` (the engine starts, logs in and gets an address) within 90 s, then `hub` (the hub answers through the network) within 60 s of the address; the reason line under the state word names the stage (`ui.stage.login`, `ui.stage.hub` with the address), and the person can cancel at any second. | A mobile network needs most of a minute for the login alone; one clock over both stages failed every phone, and a loop with no exit is what the person sees as a hang. |
+| The `hub` stage probes the hub's own address on that network, which the hub's material carries as `address` (its NetBird or EasyTier address), never the hub's name on the network. | The desktop runs NetBird without its DNS, so the name resolves nowhere; the address is what the tunnel carries. |
+| In the `hub` stage the channel reconnects through that address and keeps trying it until the stage ends; it does not move to another address meanwhile. | A channel that wanders back to the LAN address proves nothing about the network. |
+| Each stage's start and end is one log line with its duration. | A connect that fails on a phone is explained from the log or not at all. |
+| In EasyTier's console mode the `login` stage's 90 s cover the registration with the console; after it the state stays `connecting` with the reason line `ui.reason.console_waiting` (registered with the console, waiting for it to assign a network) until the owner assigns one or the person cancels. | The console's owner decides when a new machine gets a network; the client cannot hurry that, and failing after a minute would read as a fault. |
 | At start, a binding whose last state was `on` gets one connect; a failure leaves it `off` with the error and no retry. | A phone that was on the network before a reboot comes back on it; a hub that is gone does not keep the phone trying. |
 | While `on`, the hub's channel connects through the hub's address on that network first. | The network exists so the hub is reachable from outside; the channel is what proves it. |
 | The picker is disabled in `connecting` and `on`, and shows the engine's name while disabled. | Changing the engine under a running one is the switch that hangs. |
@@ -222,10 +227,20 @@ line. The controls:
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
 | **Open** | when the entry is not local-only | when the entry is healthy and the hub is not disabled | opens the URL in the system browser; no job |
-| **Open locally** | when the entry is local-only, on a desktop | the same | job `ui.job.opening`: forwards the port to the loopback, reads the token on the `service` stream, opens the browser on the loopback URL; a failure writes the code |
+| **Open locally** | when the entry is local-only | the same | job `ui.job.opening`: forwards the port to the loopback as a port entry does, reads the token on the `service` stream, opens the browser on `http://127.0.0.1:<local port>/`; a failure writes the code |
+| **Configure** | when the entry is local-only | when the entry is not forwarded | the local port dialog of the Ports page |
+| **Disconnect** | when the entry is local-only and forwarded | always | ends the forward, as on the Ports page |
 
-A phone does the same through its app core: the forward listens on the
-phone's loopback, and the browser opens there.
+A local-only entry's row is a Ports row once forwarded: the mono line adds
+`→ 127.0.0.1:<local port>`. The forward of a local-only entry rewrites each
+request's headers instead of relaying bytes: it adds the entry's token as
+the `vscode-tkn` cookie, drops the server's `Set-Cookie`, adds
+`Connection: close` so one connection carries one request, and passes a
+WebSocket upgrade through untouched after its response headers. The browser
+stores no token, so two instances on the loopback never overwrite each
+other's, and the URL carries none. A phone does the same through its app
+core: the forward listens on the phone's loopback, and the browser opens
+there.
 
 ## The Ports page
 
@@ -245,6 +260,15 @@ with the reason on the row. A phone has the same states; its forward lives in
 the app's foreground service, and the forwarded row adds **Copy** for the
 loopback address, since the phone has no shell to type it into.
 
+The local port is the client's to manage:
+
+| Rule | Reason |
+| --- | --- |
+| Every forwardable entry (a port entry, a local-only web entry) has a **Configure** button at the left of its action, a small button like the row's others; it opens a dialog with one choice, **Local port**: **Auto** (the default) or **Fixed** with a number from 1024 to 65535, and **Save** and **Cancel**. The button is disabled while the entry is forwarded, with the reason `ui.reason.disconnect_first`. | The port a tool is told to use must not change under it; changing it under a running forward is the change nobody asked for. |
+| **Auto** picks the entry's own port when no other entry holds it and it is free on the loopback, else the first free port from 20000 up; the client records the pick for the entry and gives it the same port on every later forward and after a restart. | Two instances on the same remote port must land on two local ports, and the local port of each must stay put. |
+| The client keeps one table of local ports: every entry's pick or fixed number is in it, no two entries hold one number, and a **Fixed** number another entry holds is refused in the dialog with `ui.reason.port_taken`. | One table is the only way two forwards never collide. |
+| A forwarded row always shows `→ 127.0.0.1:<local port>`, on the Web page as on the Ports page. | A port the person cannot see is a port they cannot type. |
+
 ## The AI page
 
 A row per hub's gateway: `ui.module_ai_gateway` as the title, the gateway
@@ -255,8 +279,12 @@ address as the mono line. The desktop controls:
 | **AI tools use this gateway** (a chip) | when the entry is healthy, the hub is not disabled and no switch runs | job `ui.job.switching`: points Claude Code, Codex and Gemini at this gateway with this client's key; one hub is the exit at a time, and the chip of the other hub turns off in the same push |
 | **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
 
-A phone shows the gateway address and this client's key, each with a
-**Copy** button, and a **QR** button that draws both for another app to scan.
+A phone shows the gateway address with a **Copy** button, and this client's
+key on one row: the key in a mono field with the eye toggle inside the field
+at its right end (the panel's password field), then **QR**, then **Copy**,
+in that order; on a narrow screen the field shrinks and the two buttons keep
+their size. **QR** draws the address and the key under the row for another
+app to scan.
 
 ## The Files page
 
@@ -329,8 +357,10 @@ tabs have the plain border. A tab without that mark is a defect.
 | **Persistent** | the tab is open and `is_owned` | sends `persist` with `is_persistent`; the session outlives every window |
 | **Shared** | the tab is open and `is_owned` | sends `persist` with `is_shared`; every client with terminal rights on the machine lists the session |
 
-A tab that is not owned shows both switches disabled and the reason line
-`Opened by <owner>`, where the name is the row's `owner_name` (the hub's
+A tab that is not owned shows both switches disabled, drawn with no accent:
+the track's border and the thumb in the faint text colour, the thumb's
+position still telling the value, the label in the muted text colour; and
+the reason line `Opened by <owner>`, where the name is the row's `owner_name` (the hub's
 name, or the owning client's name) and the raw `owner` stamp when that is
 empty. Every window shows the values from the last state frame,
 so the owner's flip reaches the other windows with the next frame; in the
@@ -384,14 +414,20 @@ drop. On a phone the viewer page keeps its session through a rotation.
 
 ## The Settings page
 
-Two cards. The first holds a **Language** picker, a **Theme** picker (System,
-Dark, Light), **Save** enabled while the draft differs from the saved values,
-and **Cancel** beside it. The second is **About**, the same card idiom as the
-panel's Settings page: one row per fact with the label at the left and the
-value in mono at the right, for this machine's name, its platform, the
-client's version, the licence, the source links and, on a phone, each core
-built into the app with its version and patch. There is no About page.
-Leaving a hub is on the Hubs page and nowhere else.
+Two cards, in the panel's order. The first is **About**, the panel's About
+card: a card header with the title, then three groups, each under a section
+label (the panel's `section_label`: small, uppercase, muted): **This
+machine** (the machine's name, its platform, the client's version, the
+licence), **Carried** (on a phone, each core built into the app with its
+version and licence; on a desktop, the cores the package carries), and
+**Source** (the Neutrino repository and each core's source and patch). A row
+is the label at the left in the muted colour and the value in mono at the
+right, rows parted by the panel's faint rule; a link is a value that opens
+in the browser and is drawn as the other values are. The second card holds a
+**Language** picker, a **Theme** picker (System, Dark, Light), **Save**
+enabled while the draft differs from the saved values, and **Cancel** beside
+it. There is no About page. Leaving a hub is on the Hubs page and nowhere
+else.
 
 ## Phone differences
 
@@ -404,11 +440,20 @@ Leaving a hub is on the Hubs page and nowhere else.
 | AI entry | point the tools at the gateway, configure them | copy the address and the key, show a QR |
 | remote desktop | the viewer process | the viewer page |
 | terminal input | right-click menu, shortcuts, middle click | the key row, long press |
-| frame | sidebar, tray | bottom bar in portrait; a sidebar in landscape when at least 720 px wide |
+| frame | sidebar, tray | bottom bar in portrait; a sidebar in landscape, and in portrait on a tablet at least 720 dp wide |
 | virtual networks | one per hub, several hubs at once | one at a time: **Connect** on a second hub is disabled with the reason `overlay_other_network` while another hub's network is not off |
 
 Everything else is the same: the pages and their order, the words, the state
 machines, the badges, the dots and the reasons on disabled buttons.
+
+A phone keeps its connections when the person switches apps:
+
+| Rule | Reason |
+| --- | --- |
+| While any hub is bound, the app core runs in one foreground service with one notification line; the hub channels, the share connections and the forwards live in it, and nothing closes when the app leaves the screen. | A process the system freezes answers no ping, and the hub closes the channel within a minute; a service is what the system keeps running. |
+| Returning to the foreground reconnects a dropped channel at once, with no backoff. | The person is looking; a wait they can see is a fault. |
+| A share's root stays listed in the system's Files app for 60 s after its hub's channel drops, marked as reconnecting. | A root that vanishes mid-copy fails the copy. |
+| There is no setting for this. | A connection that holds is the product, not an option. |
 
 ## An interaction this page does not cover
 
