@@ -20,6 +20,15 @@ The targets:
   --version`` answers, and removing it leaves no job. macOS.
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
   ``nclient status`` exits 1 unbound. macOS.
+- ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
+  ``neutrino_hub`` service is registered and stopped, ``nhub setup --json``
+  sets a ``server`` hub up and installs its local agent, the service runs and
+  the panel answers ``/api/hub/display``; ``nhub stop``, the hub and its
+  agent are removed, and ``install.ps1`` installs the same file again from a
+  directory up to ``nhub --version``. Windows.
+- ``hub_macos``: the same with the .pkg, its ``com.neutrino.hub`` job
+  installed and not loaded, removed by hand as the agent's is, and
+  ``install.sh``. macOS.
 - ``client_android``: the apk installs on the running emulator, its main
   activity starts and its process is alive ten seconds later. Any host with
   ``adb`` and one emulator attached.
@@ -32,14 +41,22 @@ Not pure: installs and removes packages.
 """
 
 import argparse
+import hashlib
+import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+INSTALL_SCRIPTS_DIR = REPO_ROOT / "packaging" / "install"
 
 # --- Windows ---
 PROGRAM_FILES = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
@@ -57,6 +74,9 @@ SERVICE_POLL_S = 5
 MACHINE_ENVIRONMENT_KEY = (
     r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
 )
+HUB_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "hub"
+HUB_WINDOWS_SERVICE = "neutrino_hub"
+UNINSTALL_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
 
 # --- macOS ---
 AGENT_MACOS_JOB = "system/com.neutrino.agent"
@@ -69,6 +89,23 @@ AGENT_MACOS_LEFTOVERS = (
     "/Library/LaunchAgents/com.carriez.RustDesk_server.plist",
 )
 AGENT_MACOS_PACKAGE_ID = "com.neutrino.agent"
+HUB_MACOS_JOB = "system/com.neutrino.hub"
+HUB_MACOS_COMMAND = "/usr/local/bin/nhub"
+HUB_MACOS_PLIST = Path("/Library/LaunchDaemons/com.neutrino.hub.plist")
+HUB_MACOS_LEFTOVERS = (
+    "/Library/Application Support/Neutrino/hub",
+    "/Library/Logs/Neutrino/hub",
+    HUB_MACOS_COMMAND,
+    str(HUB_MACOS_PLIST),
+)
+HUB_MACOS_PACKAGE_ID = "com.neutrino.hub"
+
+# --- the hub, on both ---
+# A server hub on the default ports with no proxy; setup installs the local
+# agent from its own cache.
+HUB_PANEL_URL = "http://127.0.0.1:8080/api/hub/display"
+HUB_PANEL_WAIT_S = 180
+HUB_PANEL_POLL_S = 5
 
 # --- Android ---
 ANDROID_ACTIVITY = "io.github.iffix.neutrino/.MainActivity"
@@ -248,6 +285,97 @@ def check_client_macos(pkg: Path) -> None:
         raise SystemExit(f"nclient status exited {status}, expected 1")
 
 
+def check_hub_windows(msi: Path) -> None:
+    """Install the hub's .msi, set it up, remove it, and install it by script.
+
+    Args:
+        msi: The installer.
+
+    Raises:
+        SystemExit: When a step fails.
+    """
+    _require_host("win32", "Windows")
+    log = Path(tempfile.gettempdir()) / "hub_install.log"
+    code = _msiexec("/i", msi, log)
+    print(f"msiexec /i exited {code}")
+    nhub = HUB_WINDOWS_FOLDER / "nhub.exe"
+    if code != 0 or not nhub.is_file():
+        _print_log(log, ("return value 3", "Error 19"), 25)
+        raise SystemExit("the hub did not install")
+    print(f"nhub {_answer([str(nhub), '--version'])}")
+    if not _service_exists(HUB_WINDOWS_SERVICE):
+        raise SystemExit("the hub's service is not registered")
+    if "RUNNING" in _service_state(HUB_WINDOWS_SERVICE):
+        raise SystemExit("the hub's service runs before setup")
+
+    _set_up_hub([str(nhub)])
+    if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
+        raise SystemExit("the hub's service is not running after setup")
+    _wait_for_panel()
+    _answer([str(nhub), "stop"])
+
+    log = Path(tempfile.gettempdir()) / "hub_remove.log"
+    print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
+    if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=False):
+        raise SystemExit("the hub's service outlived the uninstaller")
+    if nhub.exists():
+        raise SystemExit("the hub's program outlived the uninstaller")
+    _remove_windows_product("Neutrino Agent")
+
+    _run_install_script(
+        msi,
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(INSTALL_SCRIPTS_DIR / "install.ps1"),
+            "hub",
+        ],
+    )
+    print(f"nhub by install.ps1 {_answer([str(nhub), '--version'])}")
+
+
+def check_hub_macos(pkg: Path) -> None:
+    """Install the hub's .pkg, set it up, remove it, and install it by script.
+
+    Args:
+        pkg: The installer.
+
+    Raises:
+        SystemExit: When a step fails.
+    """
+    _require_host("darwin", "macOS")
+    _sudo(["installer", "-pkg", str(pkg), "-target", "/"])
+    print(f"nhub {_answer([HUB_MACOS_COMMAND, '--version'])}")
+    if not HUB_MACOS_PLIST.is_file():
+        raise SystemExit("the hub's service is not registered")
+    if _is_job_loaded(HUB_MACOS_JOB):
+        raise SystemExit("the hub's service runs before setup")
+
+    _set_up_hub(["sudo", HUB_MACOS_COMMAND])
+    job = _answer(["sudo", "launchctl", "print", HUB_MACOS_JOB])
+    if "state = running" not in job:
+        raise SystemExit(f"{HUB_MACOS_JOB} is not running after setup")
+    _wait_for_panel()
+    _sudo([HUB_MACOS_COMMAND, "stop"])
+
+    for job_name in (HUB_MACOS_JOB, AGENT_MACOS_JOB):
+        subprocess.run(["sudo", "launchctl", "bootout", job_name])
+    subprocess.run(
+        ["sudo", "launchctl", "bootout", "system/com.carriez.RustDesk_service"]
+    )
+    _sudo(["rm", "-rf", *HUB_MACOS_LEFTOVERS, *AGENT_MACOS_LEFTOVERS])
+    for package_id in (HUB_MACOS_PACKAGE_ID, AGENT_MACOS_PACKAGE_ID):
+        subprocess.run(["sudo", "pkgutil", "--forget", package_id])
+    if _is_job_loaded(HUB_MACOS_JOB):
+        raise SystemExit("the hub's job outlived its removal")
+
+    _run_install_script(pkg, ["sh", str(INSTALL_SCRIPTS_DIR / "install.sh"), "hub"])
+    print(f"nhub by install.sh {_answer([HUB_MACOS_COMMAND, '--version'])}")
+
+
 def check_client_android(apk: Path) -> None:
     """Install the apk on the attached emulator and launch it once.
 
@@ -313,6 +441,101 @@ def check_linux(package: Path) -> None:
             + (result.stderr or result.stdout).strip()[-3000:]
         )
     print(f"{command} {result.stdout.strip().splitlines()[-1]}")
+
+
+def _set_up_hub(nhub: list) -> None:
+    """Run ``nhub setup`` with the answers of a server hub.
+
+    Args:
+        nhub: The command that runs nhub, as root.
+
+    Raises:
+        SystemExit: When setup fails.
+    """
+    answers = {
+        "password": secrets.token_urlsafe(18),
+        "vault_passphrase": f"{secrets.token_urlsafe(18)}Aa1!",
+        "network": {"mode": "server"},
+    }
+    with tempfile.TemporaryDirectory() as workdir:
+        path = Path(workdir) / "answers.json"
+        path.write_text(json.dumps(answers), encoding="utf-8")
+        result = subprocess.run([*nhub, "setup", "--json", str(path)])
+    if result.returncode != 0:
+        raise SystemExit(f"nhub setup exited {result.returncode}")
+
+
+def _wait_for_panel() -> None:
+    """Wait for the panel to answer on its default port.
+
+    Raises:
+        SystemExit: When it does not answer 200 in time.
+    """
+    deadline = time.monotonic() + HUB_PANEL_WAIT_S
+    last = ""
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(HUB_PANEL_URL, timeout=5) as response:
+                if response.status == 200:
+                    print(f"{HUB_PANEL_URL} answered 200")
+                    return
+                last = str(response.status)
+        except (OSError, urllib.error.URLError) as error:
+            last = str(error)
+        time.sleep(HUB_PANEL_POLL_S)
+    raise SystemExit(f"{HUB_PANEL_URL} did not answer 200: {last}")
+
+
+def _run_install_script(package: Path, command: list) -> None:
+    """Run an install script over a directory holding the package and its
+    checksum, with no terminal, as a release serves it.
+
+    Args:
+        package: The built package.
+        command: The script's command line.
+
+    Raises:
+        SystemExit: When the script fails.
+    """
+    with tempfile.TemporaryDirectory() as workdir:
+        assets = Path(workdir)
+        shutil.copyfile(package, assets / package.name)
+        digest = hashlib.sha256(package.read_bytes()).hexdigest()
+        (assets / "SHA256SUMS").write_text(f"{digest}  {package.name}\n")
+        result = subprocess.run(
+            command,
+            env={**os.environ, "NEUTRINO_ASSET_DIR": str(assets)},
+            stdin=subprocess.DEVNULL,
+            start_new_session=sys.platform != "win32",
+        )
+    if result.returncode != 0:
+        raise SystemExit(f"{Path(command[-2]).name} exited {result.returncode}")
+
+
+def _is_job_loaded(job: str) -> bool:
+    """Whether launchd has a job loaded."""
+    result = subprocess.run(["sudo", "launchctl", "print", job], capture_output=True)
+    return result.returncode == 0
+
+
+def _remove_windows_product(name: str) -> None:
+    """Remove every installed product of one display name, by its code."""
+    import winreg
+
+    codes = []
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, UNINSTALL_KEY) as key:
+        for index in range(winreg.QueryInfoKey(key)[0]):
+            code = winreg.EnumKey(key, index)
+            with winreg.OpenKey(key, code) as product:
+                try:
+                    shown = winreg.QueryValueEx(product, "DisplayName")[0]
+                except OSError:
+                    continue
+            if shown == name:
+                codes.append(code)
+    for code in codes:
+        result = subprocess.run(["msiexec", "/x", code, "/quiet", "/norestart"])
+        print(f"msiexec /x {name} exited {result.returncode}")
 
 
 def _require_host(platform: str, name: str) -> None:
@@ -420,6 +643,8 @@ CHECKS = {
     "client_windows": check_client_windows,
     "agent_macos": check_agent_macos,
     "client_macos": check_client_macos,
+    "hub_windows": check_hub_windows,
+    "hub_macos": check_hub_macos,
     "client_android": check_client_android,
     "linux": check_linux,
 }
