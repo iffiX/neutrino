@@ -32,6 +32,9 @@ class SessionView(BaseModel):
     # This process's start moment. A page that saw one value and now sees
     # another is talking to a restarted panel.
     panel_started_at: str = ""
+    # The port the panel serves HTTPS on, where a browser still holding a
+    # ``Secure`` cookie goes to have it deleted.
+    https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 
 class DnsServerView(BaseModel):

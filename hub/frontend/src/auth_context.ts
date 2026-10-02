@@ -10,6 +10,12 @@ import type { AuthState } from "./api_types";
  * fast-refresh reload of either does not tear down the context identity.
  */
 
+/** What a login press came to: the session state, and whether the browser kept the cookie. */
+export interface LoginOutcome extends AuthState {
+  /** The password was right, yet the session did not take: the browser refused the cookie. */
+  is_cookie_refused: boolean;
+}
+
 export interface AuthContextValue {
   /** Whether the browser currently holds a valid session cookie. */
   isAuthenticated: boolean;
@@ -22,7 +28,7 @@ export interface AuthContextValue {
    * so the login page can tell a wrong password from a lockout; rejects only
    * when the gateway cannot be reached.
    */
-  login: (password: string) => Promise<AuthState>;
+  login: (password: string) => Promise<LoginOutcome>;
   /** Drop the session on both sides. */
   logout: () => Promise<void>;
 }

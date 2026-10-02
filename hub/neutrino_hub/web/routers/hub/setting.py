@@ -433,7 +433,7 @@ def disable_https(
 def _end_session(runtime: PanelRuntime, request: Request, response: Response) -> None:
     """End the caller's session on the scheme the request came over."""
     scheme = request.url.scheme
-    name = session_cookie(runtime, scheme)
+    name = session_cookie(runtime)
     token = request.cookies.get(name)
     if token:
         runtime.sessions.logout(token)

@@ -249,23 +249,30 @@ def test_the_cookie_named_for_this_port_is_the_session(cookie_client):
     assert response.json() == {"read": True}
 
 
-def test_a_login_over_https_sets_a_secure_cookie_named_for_the_https_port(
-    cookie_client,
-):
+def test_a_login_over_https_sets_the_one_cookie_secure(cookie_client):
     with TestClient(cookie_client.app, base_url="https://testserver") as secure:
         response = secure.post("/api/hub/auth/login", json={"password": PANEL_PASSWORD})
 
     assert response.json()["is_authenticated"] is True
-    assert "neutrino_session_443" in response.cookies
-    assert f"neutrino_session_{PANEL_PORT}" not in response.cookies
+    assert f"neutrino_session_{PANEL_PORT}" in response.cookies
     assert "Secure" in response.headers["set-cookie"]
 
 
-def test_turning_https_off_ends_the_session_on_the_https_port(cookie_client):
+def test_the_session_view_names_the_https_port(cookie_client):
+    runtime = cookie_client.app.dependency_overrides[get_runtime]()
+    runtime.settings["https_listen_port"] = 8444
+
+    assert (
+        cookie_client.get("/api/hub/auth/session").json()["https_listen_port"] == 8444
+    )
+
+
+def test_switching_https_ends_the_session_on_the_scheme_left(cookie_client):
     runtime = cookie_client.app.dependency_overrides[get_runtime]()
     token = runtime.sessions.login(PANEL_PASSWORD)
     request = SimpleNamespace(
-        url=SimpleNamespace(scheme="https"), cookies={"neutrino_session_443": token}
+        url=SimpleNamespace(scheme="https"),
+        cookies={f"neutrino_session_{PANEL_PORT}": token},
     )
     response = Response()
 
@@ -273,7 +280,7 @@ def test_turning_https_off_ends_the_session_on_the_https_port(cookie_client):
 
     assert runtime.sessions.is_valid(token) is False
     header = response.headers["set-cookie"]
-    assert header.startswith("neutrino_session_443=")
+    assert header.startswith(f"neutrino_session_{PANEL_PORT}=")
     assert "Max-Age=0" in header and "Secure" in header
 
 
@@ -1540,7 +1547,7 @@ def test_http_serves_the_panel_while_https_is_off():
     assert answer.json() == {"path": "devices"}
 
 
-def test_the_https_port_is_never_redirected():
+def test_the_https_port_serves_the_panel_while_https_is_on():
     runtime = HttpsRuntime()
     runtime.settings["is_https_enabled"] = True
     secure = redirecting(runtime)
@@ -1548,6 +1555,53 @@ def test_the_https_port_is_never_redirected():
     answer = secure.get("https://192.168.100.1/devices")
 
     assert answer.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "http_port, location",
+    [
+        (80, "http://192.168.100.1/devices?tab=all"),
+        (8080, "http://192.168.100.1:8080/devices?tab=all"),
+    ],
+)
+def test_the_https_port_answers_301_to_the_http_port_while_https_is_off(
+    http_port, location
+):
+    runtime = HttpsRuntime()
+    runtime.settings["listen_port"] = http_port
+    secure = redirecting(runtime)
+
+    answer = secure.get(
+        "https://192.168.100.1/devices?tab=all", headers={"host": "192.168.100.1"}
+    )
+
+    assert answer.status_code == 301
+    assert answer.headers["location"] == location
+
+
+def test_the_redirect_deletes_the_session_cookie_of_the_port_left():
+    off = redirecting(HttpsRuntime())
+    on_runtime = HttpsRuntime()
+    on_runtime.settings["is_https_enabled"] = True
+    on = redirecting(on_runtime)
+
+    from_https = off.get("https://192.168.100.1/").headers["set-cookie"]
+    from_http = on.get("http://192.168.100.1:8080/").headers["set-cookie"]
+
+    assert from_https.startswith("neutrino_session_8080=")
+    assert "Max-Age=0" in from_https and "Secure" in from_https
+    assert from_http.startswith("neutrino_session_8080=")
+    assert "Max-Age=0" in from_http and "Secure" not in from_http
+
+
+def test_the_probe_and_the_authority_are_served_on_both_ports():
+    off = redirecting(HttpsRuntime())
+
+    probe = off.get("https://192.168.100.1/api/hub/setting/https/probe")
+    authority = off.get("https://192.168.100.1/api/hub/setting/https/authority")
+
+    assert probe.status_code == 200
+    assert authority.status_code == 200
 
 
 def test_the_authority_still_downloads_over_http_while_https_is_on():
@@ -1631,4 +1685,4 @@ def test_the_session_cookie_is_secure_on_the_https_port_only(monkeypatch, tmp_pa
     assert "secure" not in plain.headers["set-cookie"].lower()
     assert plain.headers["set-cookie"].startswith(f"neutrino_session_{PANEL_PORT}=")
     assert "secure" in secure.headers["set-cookie"].lower()
-    assert secure.headers["set-cookie"].startswith("neutrino_session_443=")
+    assert secure.headers["set-cookie"].startswith(f"neutrino_session_{PANEL_PORT}=")

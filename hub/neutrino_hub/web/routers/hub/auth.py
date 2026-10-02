@@ -4,6 +4,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, Response
 
+from neutrino_hub.web.constants import (
+    WEB_DEFAULT_HTTPS_LISTEN_PORT,
+    WEB_SETTING_HTTPS_PORT,
+)
 from neutrino_hub.web.dependencies import get_runtime, session_cookie
 from neutrino_hub.web.models import LoginRequest, SessionView
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -33,7 +37,7 @@ def login(
 
     Returns:
         Whether a session was created; the cookie is ``Secure`` when the
-        request came over HTTPS, and named for that scheme's port. A
+        request came over HTTPS. A
         lockout is explicit: the page shows a countdown, and hiding it would only punish the owner's typos while
         telling an attacker nothing they cannot measure.
     """
@@ -45,7 +49,7 @@ def login(
         )
     scheme = http_request.url.scheme
     response.set_cookie(
-        session_cookie(runtime, scheme),
+        session_cookie(runtime),
         token,
         httponly=True,
         samesite="lax",
@@ -71,7 +75,7 @@ def logout(
     Returns:
         Always unauthenticated.
     """
-    name = session_cookie(runtime, request.url.scheme)
+    name = session_cookie(runtime)
     token = request.cookies.get(name)
     if token:
         runtime.sessions.logout(token)
@@ -93,9 +97,12 @@ def session(
     Returns:
         The current authentication state.
     """
-    token = request.cookies.get(session_cookie(runtime, request.url.scheme))
+    token = request.cookies.get(session_cookie(runtime))
     return SessionView(
         is_authenticated=runtime.sessions.is_valid(token),
         lockout_remaining_s=runtime.sessions.lockout_remaining_s(),
         panel_started_at=AUTH_PANEL_STARTED_AT,
+        https_listen_port=int(
+            runtime.settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
+        ),
     )

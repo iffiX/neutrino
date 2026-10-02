@@ -44,6 +44,8 @@ export interface AuthState {
   is_authenticated: boolean;
   /** This panel process's start moment; a new value is a restarted panel. */
   panel_started_at: string;
+  /** The port the panel serves HTTPS on. */
+  https_listen_port: number;
 }
 
 export interface LoginRequest {

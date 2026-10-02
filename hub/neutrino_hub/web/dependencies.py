@@ -3,10 +3,8 @@
 from fastapi import Depends, HTTPException, Request, status
 
 from neutrino_hub.web.constants import (
-    WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
     WEB_SESSION_COOKIE_PREFIX,
-    WEB_SETTING_HTTPS_PORT,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -23,25 +21,20 @@ def get_runtime(request: Request) -> PanelRuntime:
     return request.app.state.runtime
 
 
-def session_cookie(runtime: PanelRuntime, scheme: str = "http") -> str:
-    """The name of this panel's session cookie on one scheme.
+def session_cookie(runtime: PanelRuntime) -> str:
+    """The name of this panel's one session cookie.
 
     Args:
         runtime: The shared runtime.
-        scheme: ``http`` or ``https``, as the request arrived.
 
     Returns:
-        ``neutrino_session_<port>`` for the port that scheme is served on,
-        so a cookie a hub on another port of this host set is not this
-        hub's, and a ``Secure`` cookie set over HTTPS is never the one an
-        HTTP login has to overwrite, which a browser refuses.
+        ``neutrino_session_<port>`` for the panel's HTTP port, whichever
+        port the panel is on, so a cookie a hub on another port of this
+        host set is not this hub's. The cookie is ``Secure`` when it was
+        set over HTTPS, and the port the panel leaves deletes it in its
+        redirect, so a browser holds one at a time.
     """
-    if scheme == "https":
-        port = int(
-            runtime.settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
-        )
-    else:
-        port = int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
+    port = int(runtime.settings.get("listen_port", WEB_DEFAULT_LISTEN_PORT))
     return f"{WEB_SESSION_COOKIE_PREFIX}{port}"
 
 
@@ -59,8 +52,7 @@ def require_session(
         HTTPException: 401 when the session is missing or expired, which is the
             frontend's signal to show the login page.
     """
-    name = session_cookie(runtime, request.url.scheme)
-    if not runtime.sessions.is_valid(request.cookies.get(name)):
+    if not runtime.sessions.is_valid(request.cookies.get(session_cookie(runtime))):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "not_authenticated", "params": {}},

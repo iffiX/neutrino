@@ -11,6 +11,8 @@ import { useConfirm } from "../use_confirm";
 import type { PanelHttpsResetView, PanelHttpsView } from "../api_types";
 
 import "./apply_bar.css";
+import { httpOrigin, httpsOrigin } from "../origins";
+
 import "./https_panel.css";
 
 /**
@@ -31,7 +33,6 @@ const PROBE_PATH = "/api/hub/setting/https/probe";
 /** How long a probe waits before the certificate counts as untrusted. */
 const PROBE_TIMEOUT_MS = 5000;
 const AUTHORITY_MEDIA_TYPE = "application/x-x509-ca-cert";
-const HTTPS_SCHEME_PORT = 443;
 
 type Trust = "checking" | "trusted" | "untrusted";
 
@@ -362,15 +363,6 @@ function downloadAuthority(derBase64: string, fileName: string): void {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-}
-
-function httpOrigin(port: number): string {
-  return `http://${window.location.hostname}:${port}`;
-}
-
-function httpsOrigin(port: number): string {
-  const suffix = port === HTTPS_SCHEME_PORT ? "" : `:${port}`;
-  return `https://${window.location.hostname}${suffix}`;
 }
 
 /** This page's path, query and fragment, kept across a scheme change. */

@@ -66,16 +66,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const login = useCallback(async (password: string) => {
     const state = await apiPost<AuthState>("/hub/auth/login", { password });
-    if (state.is_authenticated) {
-      // A panel restarted behind the login card serves a new bundle; the
-      // page reloads onto it rather than moving on.
-      if (await probePanelIdentity()) {
-        return state;
-      }
-      setIsAuthenticated(true);
-      setError(null);
+    if (!state.is_authenticated) {
+      return { ...state, is_cookie_refused: false };
     }
-    return state;
+    // A browser still holding a Secure cookie from the HTTPS port refuses
+    // the plain one this login set; the session then reads as absent.
+    const check = await apiGet<AuthState>("/hub/auth/session");
+    if (!check.is_authenticated) {
+      return { ...check, is_cookie_refused: true };
+    }
+    // A panel restarted behind the login card serves a new bundle; the
+    // page reloads onto it rather than moving on.
+    if (await probePanelIdentity()) {
+      return { ...state, is_cookie_refused: false };
+    }
+    setIsAuthenticated(true);
+    setError(null);
+    return { ...state, is_cookie_refused: false };
   }, []);
 
   const logout = useCallback(async () => {

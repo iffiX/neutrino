@@ -9,6 +9,8 @@ import { notePanelIdentity } from "../panel_identity";
 import { useAuth } from "../use_auth";
 import type { AuthState } from "../api_types";
 
+import { httpsOrigin } from "../origins";
+
 import "./login_page.css";
 import neutrinoMark from "../images/neutrino_mark.png";
 
@@ -37,6 +39,8 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The HTTPS address that deletes a stale Secure cookie, when a login did not take.
+  const [staleOrigin, setStaleOrigin] = useState<string | null>(null);
   // Unix millis when the lockout ends, or null while login is open.
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -95,9 +99,13 @@ export function LoginPage() {
     }
     setIsSubmitting(true);
     setError(null);
+    setStaleOrigin(null);
     try {
       const state = await login(password);
-      if (!state.is_authenticated) {
+      if (state.is_cookie_refused) {
+        setStaleOrigin(httpsOrigin(state.https_listen_port));
+        setPassword("");
+      } else if (!state.is_authenticated) {
         setPassword("");
         if (state.lockout_remaining_s > 0) {
           startLockdown(state.lockout_remaining_s);
@@ -166,6 +174,18 @@ export function LoginPage() {
               <div className="notice notice--error">
                 <Icon name="alert" size={15} />
                 <div className="notice_body">{error}</div>
+              </div>
+            )}
+
+            {staleOrigin !== null && (
+              <div className="notice notice--warn">
+                <Icon name="alert" size={15} />
+                <div className="notice_body">
+                  {t("ui.login.stale_session")}{" "}
+                  <a href={`${staleOrigin}/`}>
+                    {t("ui.login.stale_session_link")}
+                  </a>
+                </div>
               </div>
             )}
 

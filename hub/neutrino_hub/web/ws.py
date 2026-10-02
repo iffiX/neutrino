@@ -334,7 +334,7 @@ async def _read_input(
 
 async def _accept(websocket: WebSocket) -> bool:
     runtime = websocket.app.state.runtime
-    token = websocket.cookies.get(session_cookie(runtime, websocket.url.scheme))
+    token = websocket.cookies.get(session_cookie(runtime))
     if not runtime.sessions.is_valid(token):
         await websocket.close(code=POLICY_VIOLATION_CODE, reason="not authenticated")
         return False

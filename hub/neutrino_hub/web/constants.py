@@ -92,6 +92,7 @@ WEB_DEFAULT_LISTEN_PORT = 8080
 WEB_DEFAULT_HTTPS_LISTEN_PORT = 443
 # The port an https:// address means when it names none.
 WEB_HTTPS_SCHEME_PORT = 443
+WEB_HTTP_SCHEME_PORT = 80
 
 # The agent channel: the /api/agent routes on their own TLS port, pinned by
 # the fingerprint every enrollment link carries. The certificate is public
@@ -146,6 +147,7 @@ WEB_SETTING_HTTPS_PORT = "https_listen_port"
 # The one panel path the HTTP port serves while HTTPS is on: the authority a
 # browser installs before it trusts the HTTPS port.
 WEB_PANEL_TLS_AUTHORITY_ROUTE = "/api/hub/setting/https/authority"
+WEB_PANEL_TLS_PROBE_ROUTE = "/api/hub/setting/https/probe"
 # The hub's own identity, ``{id, name}``: the id clients group it by and the
 # name they show. Generated when missing; deleted by ``nhub reset all``.
 WEB_IDENTITY_FILE = "web/identity.json"
