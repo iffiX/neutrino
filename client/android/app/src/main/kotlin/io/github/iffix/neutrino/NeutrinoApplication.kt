@@ -1,11 +1,13 @@
 package io.github.iffix.neutrino
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
+import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
@@ -139,7 +141,14 @@ class NeutrinoApplication : Application() {
     }
 
     /** The SMB connections the shares are read through. */
-    val shares: SmbShareClient by lazy { SmbShareClient(CLIENT_SHARE_TIMEOUT_S) }
+    val shares: SmbShareClient by lazy {
+        SmbShareClient(
+            CLIENT_SHARE_CONNECT_TIMEOUT_S,
+            CLIENT_SHARE_IO_TIMEOUT_S,
+            CLIENT_SHARE_IDLE_PROBE_S,
+            CLIENT_SHARE_PROBE_TIMEOUT_S,
+        )
+    }
 
     /** Every terminal tab. */
     val terminalTabs: TerminalTabs by lazy {
@@ -186,6 +195,7 @@ class NeutrinoApplication : Application() {
                 contentResolver.notifyChange(DocumentsContract.buildRootsUri(CLIENT_FILES_AUTHORITY), null)
             }
         }
+        registerActivityLifecycleCallbacks(ForegroundWatch())
         val connectivity = getSystemService(ConnectivityManager::class.java)
         connectivity.registerDefaultNetworkCallback(NetworkWatch())
     }
@@ -206,6 +216,29 @@ class NeutrinoApplication : Application() {
                 null
             }
         }
+    }
+
+    private inner class ForegroundWatch : ActivityLifecycleCallbacks {
+        private var started = 0
+
+        override fun onActivityStarted(activity: Activity) {
+            started += 1
+            if (started == 1) shares.markStale()
+        }
+
+        override fun onActivityStopped(activity: Activity) {
+            started -= 1
+        }
+
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+
+        override fun onActivityResumed(activity: Activity) = Unit
+
+        override fun onActivityPaused(activity: Activity) = Unit
+
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+
+        override fun onActivityDestroyed(activity: Activity) = Unit
     }
 
     private inner class NetworkWatch : ConnectivityManager.NetworkCallback() {

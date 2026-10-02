@@ -96,7 +96,7 @@ class FilesDocumentsProvider : DocumentsProvider() {
         } catch (error: IOException) {
             throw FileNotFoundException(wordOf(error))
         }
-        val size = if (isWrite) 0L else file.fileInformation.standardInformation.endOfFile
+        val size = file.size
         val storage = requireNotNull(context).getSystemService(StorageManager::class.java)
         return storage.openProxyFileDescriptor(
             ParcelFileDescriptor.parseMode(mode),
@@ -104,11 +104,11 @@ class FilesDocumentsProvider : DocumentsProvider() {
                 override fun onGetSize(): Long = size
 
                 override fun onRead(offset: Long, count: Int, data: ByteArray): Int = io {
-                    file.read(data, offset, 0, count)
+                    file.read(offset, data, count).coerceAtLeast(0)
                 }
 
                 override fun onWrite(offset: Long, count: Int, data: ByteArray): Int = io {
-                    file.write(data, offset, 0, count)
+                    file.write(offset, data, count)
                     count
                 }
 

@@ -311,8 +311,17 @@ const val CLIENT_FILES_AUTHORITY = "io.github.iffix.neutrino.files"
 /** The file the shares' kept logins are sealed in. */
 const val CLIENT_SHARE_LOGINS_FILE_NAME = "shares.sealed"
 
-/** How long connecting to a share's server and each request may take. */
-const val CLIENT_SHARE_TIMEOUT_S = 10L
+/** How long reaching a share's server may take. */
+const val CLIENT_SHARE_CONNECT_TIMEOUT_S = 5L
+
+/** How long one request to a share's server, a read or a write, may take. */
+const val CLIENT_SHARE_IO_TIMEOUT_S = 60L
+
+/** How long a share's held connection may sit unused before it is probed. */
+const val CLIENT_SHARE_IDLE_PROBE_S = 30L
+
+/** How long the probe of a share's held connection may take. */
+const val CLIENT_SHARE_PROBE_TIMEOUT_S = 5L
 
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
