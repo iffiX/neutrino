@@ -115,6 +115,7 @@ RUSTDESK_BASE_OPTIONS = (
     ("relay-server", ""),
     ("direct-access-port", str(RUSTDESK_DIRECT_PORT)),
     ("allow-auto-update", "N"),
+    ("enable-file-transfer", "Y"),
 )
 
 # What the share flow writes. Direct mode with a permanent password; the

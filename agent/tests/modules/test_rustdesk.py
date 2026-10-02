@@ -16,6 +16,7 @@ from neutrino_agent.modules import rustdesk
 from neutrino_agent.exceptions import InstallError
 from neutrino_agent.modules.rustdesk import (
     RUSTDESK_DIRECT_PORT,
+    RUSTDESK_BASE_OPTIONS,
     RUSTDESK_SHARE_OPTIONS,
     config_paths,
     render_config,
@@ -34,6 +35,13 @@ def test_direct_mode_names_no_rendezvous_or_relay_server():
     assert options["relay-server"] == ""
     assert options["direct-server"] == "Y"
     assert options["direct-access-port"] == str(RUSTDESK_DIRECT_PORT)
+
+
+def test_the_baseline_allows_file_transfer_so_an_older_share_gets_it_at_start():
+    options = dict(RUSTDESK_BASE_OPTIONS)
+
+    assert options["enable-file-transfer"] == "Y"
+    assert options["allow-auto-update"] == "N"
 
 
 def test_the_share_options_close_everything_this_hub_does_not_publish():
