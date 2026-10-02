@@ -88,6 +88,8 @@
   "state.unknown": "waiting for the client",
   "ui.about": "About",
   "ui.about_licence": "Licence",
+  "ui.about_machine": "Machine",
+  "ui.about_platform": "Platform",
   "ui.about_source": "Source of {name}",
   "ui.about_version": "Version",
   "ui.add_hub": "Join a hub",

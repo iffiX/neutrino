@@ -88,6 +88,9 @@ function wordError(e) {
 
 let lastState = null;
 let lastSerialized = '';
+// How many states the page has drawn, counted on each new one; a redraw of
+// the same state does not count.
+let stateSerial = 0;
 let pendingState = null;
 // What each AI tool points with, as the Config dialog left it; sent with
 // the next switch, and null rebuilds it from the next server state.
@@ -307,15 +310,13 @@ function marker(tone) {
 }
 
 function draw(state) {
+  if (state !== lastState) stateSerial += 1;
   lastState = state;
   setLanguage(state.language);
   setTheme(state.theme);
   document.title = t('ui.window.title');
   document.querySelector('h1').textContent = t('ui.window.title');
   drawRefresh(state);
-  document.getElementById('ident').textContent =
-    state.hostname + ' · ' + state.platform.os + '/' + state.platform.arch +
-    ' · client ' + state.version;
   drawTabs();
   document.getElementById('page_title').textContent = tabTitle(openTab);
   dropStaleFileStages(state);
@@ -961,11 +962,13 @@ async function askAiUse(hub, entry, isOn) {
 
 // Every tab, in the order it appeared: {key, hub_id, device_id, name,
 // session_id, terminal_id, term, fit, pane, state, note, isRefused, typed,
-// isSending, isListed, flags}. ``state`` is 'idle' for a listed session no
-// window of this page attached to yet, 'connecting', 'open', 'ended' once the
-// hub stopped listing the session, or 'closed' once the shell ended. The
-// panes live in one surface that outlives every redraw, so a redraw moves
-// them rather than rebuilding them and the shells keep running.
+// isSending, isListed, isDropped, droppedAt, flags}. ``state`` is 'idle' for
+// a listed session no window of this page attached to yet, or one whose hub's
+// channel dropped (``isDropped``, at the state count ``droppedAt``),
+// 'connecting', 'open', 'ended' once the hub stopped
+// listing the session, or 'closed' once the shell ended. The panes live in
+// one surface that outlives every redraw, so a redraw moves them rather than
+// rebuilding them and the shells keep running.
 const shellTabs = [];
 let activeShell = '';
 let shellCounter = 0;
@@ -1009,9 +1012,10 @@ function isLinux() {
   return !!lastState && (lastState.platform || {}).os === 'linux';
 }
 
-// The sessions the hubs list, merged into the strip: a listed session no
-// tab shows gets a tab, and a tab whose listed session is gone is ended.
-// Only a hub whose socket is up says anything about its sessions.
+// The sessions the hubs list, merged into the strip by session id: a listed
+// session no tab shows gets a tab, a tab whose hub's channel dropped attaches
+// again while its session is listed, and a tab whose listed session is gone
+// is ended. Only a hub whose socket is up says anything about its sessions.
 function mergeSessions(state) {
   const sessions = ((state.terminals || {}).sessions) || [];
   const reachable = (state.hubs || []).filter(isReachable).map((hub) => hub.hub_id);
@@ -1020,6 +1024,16 @@ function mergeSessions(state) {
     if (!tab.session_id || reachable.indexOf(tab.hub_id) < 0) continue;
     const isListedNow = listed.has(tab.hub_id + '/' + tab.session_id);
     if (isListedNow) tab.isListed = true;
+    if (tab.isDropped) {
+      if (stateSerial <= tab.droppedAt) continue;
+      tab.isDropped = false;
+      if (isListedNow) {
+        reattachShell(tab);
+      } else {
+        endTab(tab, t('ui.terminal_ended'));
+      }
+      continue;
+    }
     if (tab.isListed && !isListedNow && ['idle', 'connecting', 'open'].indexOf(tab.state) >= 0) {
       endTab(tab, t('ui.terminal_ended'));
     }
@@ -1209,6 +1223,7 @@ function statusLine(tab) {
   hint.className = 'term_hint';
   hint.textContent = !tab ? t('ui.terminal_keys')
     : tab.state === 'closed' || tab.state === 'ended' ? (tab.note || t('ui.terminal_ended'))
+    : tab.isDropped ? tab.note
     : tab.hint || t('ui.terminal_keys');
   status.appendChild(hint);
   if (!tab) return status;
@@ -1335,9 +1350,11 @@ function selectTab(tab) {
   if (tab.state === 'idle') attachShell(tab);
 }
 
-// A shell's dot: amber pulsing while it opens or waits to attach, green
-// while open, red for a refusal, grey once it ended.
+// A shell's dot: amber pulsing while it opens or waits to attach, amber
+// while its hub is away, green while open, red for a refusal, grey once it
+// ended.
 function shellTone(tab) {
+  if (tab.isDropped) return 'wait';
   if (tab.state === 'connecting') return 'pulse';
   if (tab.state === 'idle') return 'off';
   if (tab.state === 'open') return 'ok';
@@ -1384,7 +1401,7 @@ function newTab(hubId, machine, sessionId) {
     device_id: machine.device_id, name: machine.name, term: term, fit: fit,
     pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
     isSending: false, hint: '', session_id: sessionId || '', isListed: false,
-    flags: {},
+    isDropped: false, droppedAt: 0, flags: {},
   };
   shellTabs.push(tab);
   term.open(pane);
@@ -1526,11 +1543,21 @@ function openShell(hub, machine) {
 }
 
 // A listed session's tab attaches when first shown, its kept output first.
+// A tab whose hub is away waits for the hub to list its session again.
 function attachShell(tab) {
-  if (tab.state !== 'idle') return;
+  if (tab.state !== 'idle' || tab.isDropped) return;
   tab.state = 'connecting';
   redraw();
   startShell(tab);
+}
+
+// A tab whose hub came back attaches again by itself; the terminal starts
+// empty, since the attach replays the session's kept output.
+function reattachShell(tab) {
+  tab.note = '';
+  tab.isRefused = false;
+  tab.term.reset();
+  window.setTimeout(() => attachShell(tab), 0);
 }
 
 function startShell(tab) {
@@ -1539,6 +1566,10 @@ function startShell(tab) {
     hub_id: tab.hub_id, device_id: tab.device_id,
     cols: tab.term.cols, rows: tab.term.rows, session_id: tab.session_id,
   }).then((reply) => {
+    if (reply && reply.code === 'hub_unreachable' && tab.session_id) {
+      loseShell(tab, wordCode(reply.code, reply.params));
+      return;
+    }
     if (!reply || reply.code || !reply.terminal_id) {
       endShell(tab, reply && reply.code ? wordCode(reply.code, reply.params) : '', true);
       return;
@@ -1607,6 +1638,15 @@ function takeShellPiece(piece) {
   }
   const end = piece.end || {};
   if (!end.code && !tab.isListed && !isGuarded(tab)) { dropShell(tab); return; }
+  if (end.code === 'hub_unreachable' && tab.session_id) {
+    loseShell(tab, wordCode(end.code, end.params));
+    return;
+  }
+  if (end.code === 'session_unknown') {
+    endTab(tab, t('ui.terminal_ended'));
+    redraw();
+    return;
+  }
   endShell(tab, end.code ? wordCode(end.code, end.params) : t('ui.terminal_ended'),
     !!end.code);
 }
@@ -1617,6 +1657,19 @@ function endShell(tab, note, isRefused) {
   tab.note = note;
   tab.isRefused = isRefused;
   if (note) tab.term.write('\r\n' + note + '\r\n');
+  redraw();
+}
+
+// A shell whose hub's channel dropped: its tab keeps its session id and its
+// output, and waits for a later state in which the hub is back.
+function loseShell(tab, note) {
+  tab.state = 'idle';
+  tab.isDropped = true;
+  tab.droppedAt = stateSerial;
+  tab.terminal_id = '';
+  tab.note = note;
+  tab.isRefused = false;
+  tab.term.write('\r\n' + note + '\r\n');
   redraw();
 }
 
@@ -1944,7 +1997,7 @@ let settingsDraft = null;
 
 // The settings card: the language and the palette, nothing sent until
 // Save, the frame lit while the page holds a change; under it the About
-// section as plain rows.
+// card.
 function drawSettings(state) {
   const page = document.createElement('div');
   page.className = 'settings_page';
@@ -2000,15 +2053,16 @@ function drawSettings(state) {
   return page;
 }
 
-// About: the version, the licence and the source links, as plain rows.
+// About: one row per fact, the label at the left and the value in mono at
+// the right: this machine, its platform, the client's version, the licence
+// and the source links.
 function aboutSection(state) {
-  const section = document.createElement('section');
-  section.className = 'about';
-  const heading = document.createElement('div');
-  heading.className = 'panel_title';
-  heading.textContent = t('ui.about');
-  section.appendChild(heading);
+  const card = panelCard(t('ui.about'), false);
+  card.classList.add('about');
+  const platform = state.platform || {};
   const rows = [
+    [t('ui.about_machine'), state.hostname],
+    [t('ui.about_platform'), platform.os + '/' + platform.arch],
     [t('ui.about_version'), state.version],
     [t('ui.about_licence'), CLIENT_LICENCE],
   ].concat(SOURCE_LINKS.map(([name, url]) => [t('ui.about_source', { name: name }), url]));
@@ -2016,16 +2070,16 @@ function aboutSection(state) {
     const row = document.createElement('div');
     row.className = 'about_row';
     const label = document.createElement('span');
-    label.className = 'muted';
+    label.className = 'about_key';
     label.textContent = name;
     const text = document.createElement('span');
-    text.className = 'sub';
+    text.className = 'about_value';
     text.textContent = value;
     row.appendChild(label);
     row.appendChild(text);
-    section.appendChild(row);
+    card.appendChild(row);
   }
-  return section;
+  return card;
 }
 
 // --- the one picker, and the dialogs ---

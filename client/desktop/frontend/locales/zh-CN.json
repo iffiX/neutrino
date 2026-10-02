@@ -88,6 +88,8 @@
   "state.unknown": "正在等待客户端",
   "ui.about": "关于",
   "ui.about_licence": "许可证",
+  "ui.about_machine": "本机名称",
+  "ui.about_platform": "平台",
   "ui.about_source": "{name} 的源码",
   "ui.about_version": "版本",
   "ui.add_hub": "加入 hub",

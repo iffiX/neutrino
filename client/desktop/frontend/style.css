@@ -3,6 +3,7 @@
 [data-theme="dark"] {
   --color-bg: #070809;
   --color-surface: #0e1013;
+  --color-elevated: #15181c;
   --color-border: #1c2026;
   --color-border-strong: #2a3038;
   --color-text: #e6edf3;
@@ -23,6 +24,7 @@
 [data-theme="light"] {
   --color-bg: #e8ebf0;
   --color-surface: #f6f7f9;
+  --color-elevated: #dde2e8;
   --color-border: #cdd4dc;
   --color-border-strong: #b4bfcb;
   --color-text: #0f172a;
@@ -56,8 +58,6 @@ h2 { margin: 0; font-size: 16px; font-weight: 600; }
          border-bottom: 1px solid var(--color-border); }
 #tabs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
         padding: 14px 10px; }
-.ident { padding: 12px 18px; border-top: 1px solid var(--color-border);
-         overflow-wrap: anywhere; }
 /* One entry per kind, its glyph before its name; the open one is washed in
    the accent and marked by a bar along its left edge. A rule sets the
    settings entry apart below the kinds. */
@@ -186,9 +186,11 @@ button.with_icon { display: inline-flex; gap: 8px; align-items: center; }
               border-radius: 12px; background: var(--color-surface); }
 .term_head { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px;
              border-bottom: 1px solid var(--color-border); }
-.term_tab { display: inline-flex; align-items: center; border: 1px solid transparent;
-            border-radius: 6px; }
-.term_tab.on { border-color: var(--color-border); background: var(--color-bg); }
+/* The active tab is marked as the panel marks a selected chip: the accent
+   as its border and text, the elevated surface as its fill. */
+.term_tab { display: inline-flex; align-items: center;
+            border: 1px solid var(--color-border); border-radius: 6px; }
+.term_tab.on { border-color: var(--color-accent); background: var(--color-elevated); }
 button.term_tab_label { display: inline-flex; gap: 8px; align-items: center;
                         padding: 5px 4px 5px 10px; border: none; background: none;
                         color: var(--color-text-muted);
@@ -254,11 +256,19 @@ button.switch.on .switch_thumb { background: var(--color-accent);
          overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .modal label, .settings label { color: var(--color-text-muted); font-size: 12px; }
 .settings { display: flex; flex-direction: column; gap: 10px; }
-/* About, under the settings card: plain rows, no card. */
+/* About, the card under the settings card, after the panel's: one row per
+   fact, the label at the left and the value in mono at the right. */
 .settings_page { display: flex; flex-direction: column; gap: 24px; }
-.about { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
-.about_row { display: flex; gap: 16px; align-items: baseline; font-size: 13px; }
-.about_row .muted { flex: none; width: 160px; }
+.about { display: flex; flex-direction: column; gap: 4px; }
+.about_row { display: flex; gap: 16px; align-items: baseline;
+             justify-content: space-between; padding: 8px 0;
+             border-bottom: 1px solid
+               color-mix(in srgb, var(--color-border) 60%, transparent); }
+.about_row:last-child { border-bottom: none; }
+.about_key { flex: none; color: var(--color-text-muted); font-size: 12px; }
+.about_value { min-width: 0; overflow-wrap: anywhere; text-align: right;
+               color: var(--color-text);
+               font-family: ui-monospace, monospace; font-size: 12.5px; }
 .settings .picker { flex: none; max-width: 360px; }
 .modal select { width: 100%; }
 .dirlist { overflow-y: auto; border: 1px solid var(--color-border);

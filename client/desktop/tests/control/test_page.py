@@ -1002,6 +1002,59 @@ def test_the_active_listed_tab_attaches_when_the_page_opens():
     assert "if (tab.state === 'idle') attachShell(tab);" in body_of("selectTab")
 
 
+def test_a_dropped_channel_keeps_the_tab_and_its_session():
+    piece = body_of("takeShellPiece")
+    assert "if (end.code === 'hub_unreachable' && tab.session_id) {" in piece
+    assert "loseShell(tab, wordCode(end.code, end.params));" in piece
+    lose = body_of("loseShell")
+    assert "tab.state = 'idle';" in lose
+    assert "tab.isDropped = true;" in lose
+    assert "tab.droppedAt = stateSerial;" in lose
+    assert "session_id" not in lose
+    start = body_of("startShell")
+    assert "if (reply && reply.code === 'hub_unreachable' && tab.session_id) {" in start
+
+
+def test_a_dropped_tab_attaches_again_by_session_id_when_its_hub_lists_it():
+    merge = body_of("mergeSessions")
+    dropped = merge[merge.index("if (tab.isDropped) {") :]
+    dropped = dropped[: dropped.index("      continue;\n    }")]
+    assert "if (stateSerial <= tab.droppedAt) continue;" in dropped
+    assert dropped.index("isListedNow") < dropped.index("reattachShell(tab);")
+    assert "endTab(tab, t('ui.terminal_ended'));" in dropped
+    assert "if (state !== lastState) stateSerial += 1;" in body_of("draw")
+    reattach = body_of("reattachShell")
+    assert "tab.term.reset();" in reattach
+    assert "attachShell(tab)" in reattach
+
+
+def test_a_dropped_tab_never_attaches_while_its_hub_is_away():
+    assert "if (tab.state !== 'idle' || tab.isDropped) return;" in body_of(
+        "attachShell"
+    )
+    assert "if (tab.isDropped) return 'wait';" in body_of("shellTone")
+    assert ": tab.isDropped ? tab.note" in body_of("statusLine")
+
+
+def test_a_session_the_machine_no_longer_keeps_reads_ended():
+    piece = body_of("takeShellPiece")
+    gone = piece[piece.index("if (end.code === 'session_unknown') {") :]
+    assert gone.index("endTab(tab, t('ui.terminal_ended'));") < gone.index("return;")
+
+
+def test_the_active_tab_is_marked_with_the_accent_on_the_elevated_surface():
+    assert "tab.key === activeShell ? 'term_tab on' : 'term_tab'" in body_of(
+        "shellTabButton"
+    )
+    rule = PAGE_CSS[PAGE_CSS.index(".term_tab.on {") :]
+    rule = rule[: rule.index("}")]
+    assert "border-color: var(--color-accent);" in rule
+    assert "background: var(--color-elevated);" in rule
+    plain = PAGE_CSS[PAGE_CSS.index(".term_tab {") :]
+    assert "border: 1px solid var(--color-border);" in plain[: plain.index("}")]
+    assert PAGE_CSS.count("--color-elevated: #") == 2
+
+
 def test_a_tab_shows_its_badges():
     tab = body_of("shellTabButton")
     assert (
@@ -1106,10 +1159,28 @@ def test_the_settings_card_carries_the_language_then_the_theme_and_saves_both():
     assert "page.appendChild(aboutSection(state));" in settings
 
 
-def test_about_is_plain_rows_under_the_card_with_no_page_of_its_own():
+def test_about_is_a_card_of_label_and_mono_value_rows_with_no_page_of_its_own():
     about = body_of("aboutSection")
-    for key in ("ui.about", "ui.about_version", "ui.about_licence", "ui.about_source"):
+    for key in (
+        "ui.about",
+        "ui.about_machine",
+        "ui.about_platform",
+        "ui.about_version",
+        "ui.about_licence",
+        "ui.about_source",
+    ):
         assert f"t('{key}'" in about
-    assert "card" not in about
+    assert "panelCard(t('ui.about'), false)" in about
+    assert "state.hostname" in about
+    assert "platform.os + '/' + platform.arch" in about
+    assert "about_key" in about and "about_value" in about
+    value_rule = PAGE_CSS[PAGE_CSS.index(".about_value {") :]
+    assert "monospace" in value_rule[: value_rule.index("}")]
     assert "const CLIENT_LICENCE = 'MIT';" in PAGE_JS
     assert "https://github.com/iffiX/neutrino" in PAGE_JS
+
+
+def test_the_sidebar_carries_only_the_pages_and_no_foot():
+    assert 'id="ident"' not in PAGE_HTML
+    assert ".ident" not in PAGE_CSS
+    assert "getElementById('ident')" not in PAGE_JS
