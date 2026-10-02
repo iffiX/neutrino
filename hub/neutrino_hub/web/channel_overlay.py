@@ -87,11 +87,13 @@ def _netbird_material() -> "dict | None":
         setup_key = config.setup_key()
     except ValueError:
         return None
+    survey = NetbirdStatusReader().survey()
     return {
         "provider": OVERLAY_NETBIRD,
         "setup_key": setup_key,
         "management_url": config.management_url,
-        "fqdn": str(NetbirdStatusReader().survey().fqdn or ""),
+        "fqdn": str(survey.fqdn or ""),
+        "hub_address": _host(str(survey.netbird_ip or "")),
     }
 
 

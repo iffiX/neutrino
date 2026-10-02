@@ -50,7 +50,9 @@ class FakeRuntime:
 
 class FakeReader:
     def survey(self) -> NetbirdState:
-        return NetbirdState(is_installed=True, fqdn="hub.netbird.cloud")
+        return NetbirdState(
+            is_installed=True, fqdn="hub.netbird.cloud", netbird_ip="100.88.0.1/16"
+        )
 
 
 @pytest.fixture
@@ -137,6 +139,7 @@ def test_netbird_hands_its_key_its_plane_and_the_hubs_name(box):
         "setup_key": SETUP_KEY,
         "management_url": "https://nb.example.org",
         "fqdn": "hub.netbird.cloud",
+        "hub_address": "100.88.0.1",
     }
 
 

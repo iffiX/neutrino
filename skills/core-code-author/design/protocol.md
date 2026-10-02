@@ -810,7 +810,7 @@ table's order, NetBird first, which is the order the Overlay page draws and
 the order of preference. Each object has one of three shapes:
 
 ```json
-{"provider": "netbird", "setup_key": "...", "management_url": "", "fqdn": "hub.netbird.cloud"}
+{"provider": "netbird", "setup_key": "...", "management_url": "", "fqdn": "hub.netbird.cloud", "hub_address": "100.88.0.1"}
 {"provider": "easytier", "mode": "manual", "network_name": "...", "network_secret": "...", "peer": "tcp://203.0.113.7:11010", "hub_address": "10.0.0.1"}
 {"provider": "easytier", "mode": "console", "config_server": "tcp://et-web.console.easytier.net:22020/<token>", "is_secure_mode": true, "hub_address": "10.126.126.1"}
 ```
@@ -822,9 +822,11 @@ one the hub runs. In manual mode `peer` is `tcp://<join host>:11010`, the join
 host being the uplink's address first. In console mode `config_server` is the
 console address with its account token, kept sealed in
 `config/easytier/easytier.json`, and the console pushes the network itself.
-`hub_address` is the hub's own address on the EasyTier network, without its
-prefix length: the stored address in manual mode, the one the engine reports
-in console mode, empty when neither is known. An overlay is left out of the
+`hub_address` is the hub's own address on that network, without its prefix
+length, which a client probes before it counts the network as on: for
+NetBird the address the daemon reports, for EasyTier the stored address in
+manual mode and the one the engine reports in console mode, empty when none
+is known. An overlay is left out of the
 list when NetBird has no kept key, EasyTier in manual mode has no network or
 no join host, EasyTier in console mode has no console address, or the vault
 is locked; the list is empty when the box runs no overlay, the client is

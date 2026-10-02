@@ -1815,7 +1815,8 @@ class ChannelOverlay(BaseModel):
     peer: str = ""
     config_server: str = ""
     is_secure_mode: bool = False
-    # The hub's own address on the EasyTier network, empty when unknown.
+    # The hub's own address on the network, which a client probes; empty
+    # when unknown.
     hub_address: str = ""
 
 
