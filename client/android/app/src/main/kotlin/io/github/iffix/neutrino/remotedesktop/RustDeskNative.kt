@@ -26,6 +26,14 @@ object RustDeskNative {
     external fun init(appDir: String)
 
     /**
+     * Keep a session option for every later [start].
+     *
+     * @param name RustDesk's name: `image-quality`, or a peer option such as `codec-preference`.
+     * @param value Its value; empty removes a peer option.
+     */
+    external fun setOption(name: String, value: String)
+
+    /**
      * Connect straight to a machine's RustDesk.
      *
      * @param peer The machine's address.

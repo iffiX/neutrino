@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
                     application.shares,
                     application.shareLogins,
                     application.portForwards,
+                    application.remoteDesktopChoices,
                 )
             }
         NeutrinoTheme(palette, words) {

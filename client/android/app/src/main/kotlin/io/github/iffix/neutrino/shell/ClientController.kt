@@ -26,6 +26,8 @@ import io.github.iffix.neutrino.files.SmbShareClient
 import io.github.iffix.neutrino.forward.LocalPortChoice
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoice
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoiceStore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +44,7 @@ import kotlinx.serialization.json.JsonObject
  * @param shares The SMB connections.
  * @param logins The shares' logins.
  * @param forwards The loopback forwards.
+ * @param desktopChoices Each shared desktop's codec and quality.
  */
 class ClientController(
     private val context: Context,
@@ -51,6 +54,7 @@ class ClientController(
     private val shares: SmbShareClient,
     private val logins: ShareLoginStore,
     private val forwards: PortForwards,
+    private val desktopChoices: RemoteDesktopChoiceStore,
 ) : ClientActions {
     override fun join(link: String) = connections.startJoin(link)
 
@@ -149,6 +153,12 @@ class ClientController(
 
     override fun connectDesktop(bindingId: String, entryId: String, name: String) =
         desktops.connect(bindingId, entryId, name)
+
+    override fun remoteDesktopChoiceOf(bindingId: String, entryId: String): RemoteDesktopChoice =
+        desktopChoices.get(RemoteDesktopSessions.keyOf(bindingId, entryId))
+
+    override fun configureRemoteDesktop(bindingId: String, entryId: String, choice: RemoteDesktopChoice) =
+        desktopChoices.put(RemoteDesktopSessions.keyOf(bindingId, entryId), choice)
 
     override fun closeDesktop() = desktops.close()
 

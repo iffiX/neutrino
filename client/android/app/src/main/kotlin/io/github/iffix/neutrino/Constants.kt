@@ -24,6 +24,9 @@ const val CLIENT_SETTINGS_FILE_NAME = "client_settings"
 /** The local port table's key in [CLIENT_SETTINGS_FILE_NAME]. */
 const val CLIENT_SETTINGS_KEY_LOCAL_PORTS = "local_ports"
 
+/** The remote desktops' codec and quality choices' key in [CLIENT_SETTINGS_FILE_NAME]. */
+const val CLIENT_SETTINGS_KEY_RDP_CHOICES = "rdp_choices"
+
 /** The language's key in [CLIENT_SETTINGS_FILE_NAME]. */
 const val CLIENT_SETTINGS_KEY_LANGUAGE = "language"
 
@@ -373,6 +376,15 @@ const val SCAN_REGION_FRACTION = 0.7f
 
 /** The vibration of a decoded code where the phone has no confirm haptic. */
 const val SCAN_VIBRATION_MILLIS = 50L
+
+/** The machines whose RustDesk core is built with `hwcodec`, so it decodes H264 and H265 too. */
+val RDP_HWCODEC_ABIS: List<String> = listOf("arm64-v8a")
+
+/** RustDesk's peer option naming the codec a session asks for. */
+const val RDP_OPTION_CODEC = "codec-preference"
+
+/** The core's session option naming the picture quality, kept in the peer's `image_quality`. */
+const val RDP_OPTION_QUALITY = "image-quality"
 
 /** RustDesk's mouse event type in the low three bits of a mask: the pointer moved. */
 const val RDP_MOUSE_MOVE = 0

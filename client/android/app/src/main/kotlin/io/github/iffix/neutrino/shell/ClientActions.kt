@@ -5,6 +5,7 @@ import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.forward.LocalPortChoice
+import io.github.iffix.neutrino.remotedesktop.RemoteDesktopChoice
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -139,6 +140,24 @@ interface ClientActions {
      * @param name What the viewer's bar shows.
      */
     fun connectDesktop(bindingId: String, entryId: String, name: String)
+
+    /**
+     * The codec and quality kept for a shared desktop, as its Configure dialog opens on them.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @return The choice.
+     */
+    fun remoteDesktopChoiceOf(bindingId: String, entryId: String): RemoteDesktopChoice
+
+    /**
+     * Save a shared desktop's Configure dialog; the next Connect asks for it.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param choice The codec and quality.
+     */
+    fun configureRemoteDesktop(bindingId: String, entryId: String, choice: RemoteDesktopChoice)
 
     /** Close the remote desktop viewer. */
     fun closeDesktop()

@@ -53,6 +53,7 @@ class RustDeskRemoteDesktopCore(private val appDir: String) : RemoteDesktopCore 
                 main.post { if (current == session && isRunning) onClipboard(text) }
             }
         }
+        for ((name, value) in target.choice.options()) RustDeskNative.setOption(name, value)
         val started = RustDeskNative.start(target.host, target.port, target.password, callbacks)
         if (started != 0) {
             advance(

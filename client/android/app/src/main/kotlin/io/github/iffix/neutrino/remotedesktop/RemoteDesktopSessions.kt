@@ -17,10 +17,12 @@ import kotlinx.serialization.json.JsonObject
  *
  * @param material What the hub hands this phone for one entry, by binding id and entry id.
  * @param scope Where the Connect runs.
+ * @param choiceOf The codec and quality kept for an entry, by entry key.
  */
 class RemoteDesktopSessions(
     private val material: suspend (String, String) -> ChannelResult<JsonObject>,
     private val scope: CoroutineScope,
+    private val choiceOf: (String) -> RemoteDesktopChoice = { RemoteDesktopChoice() },
 ) {
     private val connectingKeys = MutableStateFlow<Set<String>>(emptySet())
     private val failures = MutableStateFlow<Map<String, ChannelResult.Refused>>(emptyMap())
@@ -36,7 +38,8 @@ class RemoteDesktopSessions(
     val viewing: StateFlow<Pair<String, RemoteDesktopTarget>?> = open.asStateFlow()
 
     /**
-     * Press Connect on an entry: its material is fetched and the viewer opens on it. A press
+     * Press Connect on an entry: its material is fetched and the viewer opens on it with the
+     * entry's kept codec and quality. A press
      * while that entry's Connect runs or a viewer is open is dropped.
      *
      * @param bindingId The hub.
@@ -54,7 +57,7 @@ class RemoteDesktopSessions(
         scope.launch {
             when (val target = RemoteDesktopTarget.of(name, material(bindingId, entryId))) {
                 is ChannelResult.Refused -> failures.update { it + (key to target) }
-                is ChannelResult.Ok -> open.value = key to target.value
+                is ChannelResult.Ok -> open.value = key to target.value.copy(choice = choiceOf(key))
             }
             connectingKeys.update { it - key }
         }
