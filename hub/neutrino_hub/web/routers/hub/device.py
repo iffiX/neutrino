@@ -18,6 +18,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_COMMAND,
 )
+from neutrino_hub.modules.clients.ai_keys import revoke_device_key
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
@@ -309,6 +310,7 @@ def forget(
     ClientRegistry().forget_device(device_id)
     runtime.forget_device(device_id)
     runtime.desired_states.forget(device_id)
+    revoke_device_key(device_id)
     channel_state.push_states(runtime, CHANNEL_ROLE_CLIENT)
     runtime.events.publish(WEB_EVENT_DEVICES)
     runtime.events.publish(WEB_EVENT_CLIENTS)

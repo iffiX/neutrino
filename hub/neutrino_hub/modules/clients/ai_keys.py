@@ -1,13 +1,21 @@
-"""The gateway key each client is handed.
+"""The gateway key each client is handed, and each CloudCLI device's.
 
 One :class:`CliproxyApiClientKey` per client, labelled ``client/<name>``:
 minted the first time the client connects with the vault unlocked, revoked
 when it is disabled or deleted, minted again when it is enabled. The key's
 id lives on the client record; the material lives sealed in the gateway's
 own config and is handed to the client as a credential frame.
+
+One more per managed device whose CloudCLI module is enabled, labelled
+``device/<name>`` and kept under the device's id in the gateway's
+``device_keys``: minted when the module's instances are saved, revoked when
+the module is withdrawn, and handed to the device in its desired state.
 """
 
-from neutrino_hub.modules.clients.constants import CLIENT_AI_KEY_LABEL_PREFIX
+from neutrino_hub.modules.clients.constants import (
+    CLIENT_AI_DEVICE_KEY_LABEL_PREFIX,
+    CLIENT_AI_KEY_LABEL_PREFIX,
+)
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.ops import (
@@ -68,6 +76,75 @@ def revoke_client_key(registry: ClientRegistry, client: Client) -> None:
             registry.set_ai_key_id(client.id, None)
     if is_changed:
         _apply()
+
+
+def ensure_device_key(device_id: str, name: str) -> "str | None":
+    """One device's key material, minting a key when it holds none.
+
+    Args:
+        device_id: The device.
+        name: What the device is called, for the key's label.
+
+    Returns:
+        The key material, or None while the vault is locked.
+    """
+    with CONFIG_WRITE_LOCK:
+        config = load_config()
+        held = config.device_keys.get(device_id)
+        if held is not None:
+            try:
+                return held.open_key()
+            except ValueError:
+                return None
+        try:
+            key = CliproxyApiClientKey.generated(
+                f"{CLIENT_AI_DEVICE_KEY_LABEL_PREFIX}{name or device_id}"
+            )
+        except ValueError:
+            return None
+        config.device_keys[device_id] = key
+        save_config(config)
+    _apply()
+    return key.open_key()
+
+
+def revoke_device_key(device_id: str) -> None:
+    """Remove one device's key from the gateway.
+
+    Args:
+        device_id: The device.
+    """
+    with CONFIG_WRITE_LOCK:
+        config = load_config()
+        if config.device_keys.pop(device_id, None) is None:
+            return
+        save_config(config)
+    _apply()
+
+
+def device_gateway(device_id: str, hub_address: str) -> dict:
+    """Where one device's AI tools reach the gateway, and with which key.
+
+    Args:
+        device_id: The device.
+        hub_address: The hub's address on the device's network.
+
+    Returns:
+        ``{gateway_url, gateway_key}``; both empty while the device holds no
+        key, its key does not open, or its network is not known.
+    """
+    held = load_config()
+    key = held.device_keys.get(device_id)
+    if key is None or not hub_address:
+        return {"gateway_url": "", "gateway_key": ""}
+    try:
+        material = key.open_key()
+    except ValueError:
+        return {"gateway_url": "", "gateway_key": ""}
+    return {
+        "gateway_url": f"http://{hub_address}:{held.listen_port}",
+        "gateway_key": material,
+    }
 
 
 def client_credential(

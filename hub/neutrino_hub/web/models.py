@@ -751,11 +751,12 @@ class CliproxyApiUsageBucket(CliproxyApiUsageTotals):
 
 
 class CliproxyApiUsageKey(CliproxyApiUsageTotals):
-    """One client key's usage over the range."""
+    """One client key's usage over the range, or one CloudCLI device's."""
 
     key_id: str
     name: str
     client_name: str | None = None
+    device_name: str | None = None
     first_seen_at: str = ""
     last_seen_at: str = ""
 
@@ -2616,3 +2617,39 @@ class ZfsShareRequest(BaseModel):
     # Empty means every configured user, current and future — the same
     # meaning the Samba module gives an empty valid_users.
     users: list[str] = Field(default_factory=list)
+
+
+# --- CloudCLI: one instance per account on a device ---
+
+
+class CloudcliInstance(BaseModel):
+    """One CloudCLI instance: the account it runs as, the port its forwarder
+    listens on, and on Windows the vault login that account signs in with."""
+
+    account: str = Field(min_length=1)
+    port: int = Field(ge=1024, le=65535)
+    login_id: str = ""
+
+
+class CloudcliInstanceView(CloudcliInstance):
+    """One instance as configured, with what the machine says of it."""
+
+    is_running: bool = False
+    # Why it does not run, typed, such as ``cloudcli_claude_missing``.
+    code: str = ""
+
+
+class CloudcliDeviceView(ModuleDeviceFields):
+    """One device's CloudCLI: the instances and the machine's accounts."""
+
+    instances: list[CloudcliInstanceView] = Field(default_factory=list)
+    # The human accounts the machine last reported, for the account field.
+    accounts: list[str] = Field(default_factory=list)
+    is_active: bool = False
+
+
+class CloudcliConfigUpdate(BaseModel):
+    """The instances being saved."""
+
+    device_id: str
+    instances: list[CloudcliInstance] = Field(default_factory=list)

@@ -75,3 +75,18 @@ def test_generating_a_key_needs_an_unlocked_vault(box, monkeypatch):
     )
     with pytest.raises(VaultLockedError):
         CliproxyApiClientKey.generated("laptop")
+
+
+def test_a_device_key_is_kept_by_device_and_counted_with_the_client_keys(box):
+    config = CliproxyApiConfig(
+        client_keys=[CliproxyApiClientKey.generated("laptop")],
+        device_keys={"dev-1": CliproxyApiClientKey.generated("device/box")},
+    )
+    save_config(config)
+
+    loaded = load_config()
+
+    assert list(loaded.device_keys) == ["dev-1"]
+    assert [key.name for key in loaded.gateway_keys()] == ["laptop", "device/box"]
+    assert loaded.device_key_material() == [config.device_keys["dev-1"].open_key()]
+    assert "key_sealed" in json.dumps(loaded.to_dict()["device_keys"])

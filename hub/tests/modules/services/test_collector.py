@@ -592,3 +592,36 @@ def test_each_vscode_instance_is_a_web_entry_opened_only_through_localhost():
     assert entry["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
     assert entry["device_id"] == DEVICE
     assert collect(device_modules=[hosting(vscode=None)]) == []
+
+
+def test_each_cloudcli_instance_is_a_web_entry_opened_with_a_token():
+    entries = collect(
+        device_modules=[
+            {
+                **hosting(),
+                "cloudcli": {
+                    "instances": [
+                        {"account": "alice", "port": 3001, "is_healthy": True},
+                        {"account": "bob", "port": 3002, "is_healthy": False},
+                    ]
+                },
+            }
+        ]
+    )
+
+    assert [entry["id"] for entry in entries] == [
+        "cloudcli_device-one_alice",
+        "cloudcli_device-one_bob",
+    ]
+    alice, bob = entries
+    assert alice["type"] == "web"
+    assert alice["title"] == "CloudCLI (alice)"
+    assert alice["payload"] == {
+        "url": f"http://{DEVICE_HOST}:3001/",
+        "is_local_only": False,
+        "is_token_required": True,
+    }
+    assert (alice["is_healthy"], bob["is_healthy"]) == (True, False)
+    assert alice["description_code"] == "cloudcli_module"
+    assert alice["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
+    assert alice["device_id"] == DEVICE

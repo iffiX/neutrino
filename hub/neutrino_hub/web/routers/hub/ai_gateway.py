@@ -37,6 +37,7 @@ from neutrino_hub.exceptions import (
 )
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web import channel_state
@@ -130,7 +131,7 @@ def usage(
     key_rows = store.key_rows(range_name)
     if key_id is not None:
         known = {row["key_id"] for row in key_rows} | {
-            key.id for key in load_config().client_keys
+            key.id for key in load_config().gateway_keys()
         }
         if key_id not in known:
             raise HTTPException(
@@ -138,6 +139,7 @@ def usage(
                 detail={"code": "unknown_key", "params": {"key": key_id}},
             )
     client_names = _client_names()
+    device_names = _device_names()
     provider_rows = store.provider_rows(range_name, key_id=key_id)
     return CliproxyApiUsageView(
         range=range_name,
@@ -149,7 +151,11 @@ def usage(
             for entry in store.series(range_name, key_id=key_id)
         ],
         keys=[
-            CliproxyApiUsageKey(**row, client_name=client_names.get(row["key_id"]))
+            CliproxyApiUsageKey(
+                **row,
+                client_name=client_names.get(row["key_id"]),
+                device_name=device_names.get(row["key_id"]),
+            )
             for row in key_rows
         ],
         providers=[
@@ -545,6 +551,16 @@ def _client_names() -> dict[str, str]:
         for client in ClientRegistry().all()
         if client.ai_key_id
     }
+
+
+def _device_names() -> dict[str, str]:
+    """Device key id to the name of the device holding it, as of now."""
+    registry = DeviceRegistry()
+    names = {}
+    for device_id, key in load_config().device_keys.items():
+        device = registry.get(device_id)
+        names[key.id] = (device.name if device is not None else "") or device_id
+    return names
 
 
 def _usage_provider(record, row: dict) -> CliproxyApiUsageProvider:

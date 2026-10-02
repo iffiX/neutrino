@@ -360,6 +360,7 @@ def test_a_module_with_no_build_for_the_platform_is_refused(api, tmp_path):
 # the picker lets a person choose there.
 SUPPORTED_OFF_LINUX = {
     "anydesk": (True, True),
+    "cloudcli": (True, True),
     "gitea": (False, False),
     "podman": (False, False),
     "samba": (True, True),

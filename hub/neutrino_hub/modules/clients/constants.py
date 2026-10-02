@@ -7,6 +7,8 @@ CLIENT_TOKEN_BYTES = 24
 
 # The gateway key label every client's key carries: the prefix, then its name.
 CLIENT_AI_KEY_LABEL_PREFIX = "client/"
+# The gateway key of a device whose CloudCLI module is enabled.
+CLIENT_AI_DEVICE_KEY_LABEL_PREFIX = "device/"
 
 # What an rdp entry's id starts with in the published list.
 CLIENT_RDP_SERVICE_PREFIX = "rdp_"
