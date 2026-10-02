@@ -264,7 +264,8 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
 
     No packaging format installs a ``.dist-info`` for the client, so
     ``importlib.metadata`` cannot answer for a packaged one; the hub compares
-    the stamped value against its own.
+    the stamped value against its own. The versions of the programs the
+    package carries are stamped beside it, for the About card.
 
     Args:
         parent: The directory the ``neutrino_client`` package belongs in.
@@ -280,9 +281,18 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
         package_dir,
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
+    import bundled  # bundled imports this module, so not at the top
+
+    carried = {
+        "netbird": bundled.NETBIRD_VERSION,
+        "easytier": bundled.EASYTIER_VERSION,
+        "rustdesk": bundled.rustdesk_assets.RUSTDESK_VERSION,
+        "cc-switch": bundled.CC_SWITCH_VERSION,
+    }
     (package_dir / "_version.py").write_text(
         '"""Written by the packaging build. Do not edit."""\n\n'
-        f'CLIENT_VERSION = "{package_version}"\n',
+        f'CLIENT_VERSION = "{package_version}"\n'
+        f"CLIENT_CARRIED_VERSIONS = {carried!r}\n",
         encoding="utf-8",
     )
     stage_gui(package_dir)

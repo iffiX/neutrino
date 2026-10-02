@@ -26,15 +26,20 @@ const MOUNT_BUSY_STATES = ['queued', 'mounting', 'pending'];
 const CLAUDE_SLOTS = ['default', 'opus', 'sonnet', 'haiku'];
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
-// The licence the client ships under and where its source and the source of
-// every program it carries are.
+// The licence the client ships under and where its source is; the programs
+// the package carries, each with the key its version is stamped under, its
+// licence, its repository and the tag a version is released under.
 const CLIENT_LICENCE = 'MIT';
-const SOURCE_LINKS = [
-  ['Neutrino', 'https://github.com/iffiX/neutrino'],
-  ['NetBird', 'https://github.com/netbirdio/netbird'],
-  ['EasyTier', 'https://github.com/EasyTier/EasyTier'],
-  ['RustDesk', 'https://github.com/rustdesk/rustdesk'],
-  ['cc-switch', 'https://github.com/SaladDay/cc-switch-cli'],
+const CLIENT_SOURCE = 'https://github.com/iffiX/neutrino';
+const CARRIED = [
+  { name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause',
+    repository: 'https://github.com/netbirdio/netbird', tag: 'v{version}' },
+  { name: 'EasyTier', key: 'easytier', licence: 'LGPL-3.0',
+    repository: 'https://github.com/EasyTier/EasyTier', tag: 'v{version}' },
+  { name: 'RustDesk', key: 'rustdesk', licence: 'AGPL-3.0',
+    repository: 'https://github.com/rustdesk/rustdesk', tag: '{version}' },
+  { name: 'cc-switch', key: 'cc-switch', licence: 'MIT',
+    repository: 'https://github.com/SaladDay/cc-switch-cli', tag: 'v{version}' },
 ];
 
 function fill(template, params) {
@@ -990,7 +995,7 @@ function openPortDialog(entry) {
       { hub_id: entry.hub_id, id: entry.id, local_port: chosen() });
     if (reply && reply.code) {
       why.textContent = reply.code === 'port_taken'
-        ? t('ui.reason.port_taken') : wordError(reply);
+        ? t('ui.reason.port_taken', { port: chosen() }) : wordError(reply);
       save.disabled = false;
       return;
     }
@@ -2126,18 +2131,18 @@ function driveLetterLine(staged, state) {
   return wrap;
 }
 
-// --- the Settings page: the window's own choices, then About ---
+// --- the Settings page: About, then the window's own choices ---
 
 // What the settings page holds before Save: {language, theme}, or null while
 // it holds what the window already uses.
 let settingsDraft = null;
 
-// The settings card: the language and the palette, nothing sent until
-// Save, the frame lit while the page holds a change; under it the About
-// card.
+// The About card, then the settings card: the language and the palette,
+// nothing sent until Save, the frame lit while the page holds a change.
 function drawSettings(state) {
   const page = document.createElement('div');
   page.className = 'settings_page';
+  page.appendChild(aboutSection(state));
   const draft = settingsDraft || { language: language, theme: theme };
   const isDirty = draft.language !== language || draft.theme !== theme;
   const card = panelCard(t('ui.settings_title'), isDirty);
@@ -2186,37 +2191,77 @@ function drawSettings(state) {
   actions.appendChild(cancel);
   card.appendChild(actions);
   page.appendChild(card);
-  page.appendChild(aboutSection(state));
   return page;
 }
 
-// About: one row per fact, the label at the left and the value in mono at
-// the right: this machine, its platform, the client's version, the licence
-// and the source links.
+// About, as the panel's About card: a header with the title, then three
+// groups under their section labels, this machine, what the package
+// carries and where the source is; one row per fact, the label at the left
+// and the value in mono at the right, a link opening in the browser.
 function aboutSection(state) {
-  const card = panelCard(t('ui.about'), false);
-  card.classList.add('about');
+  const card = document.createElement('div');
+  card.className = 'card';
+  const header = document.createElement('div');
+  header.className = 'card_header';
+  const title = document.createElement('h2');
+  title.textContent = t('ui.about');
+  header.appendChild(title);
+  card.appendChild(header);
+  const about = document.createElement('div');
+  about.className = 'about';
   const platform = state.platform || {};
-  const rows = [
+  const versions = state.carried_versions || {};
+  aboutGroup(about, t('ui.about_this_machine'), [
     [t('ui.about_machine'), state.hostname],
     [t('ui.about_platform'), platform.os + '/' + platform.arch],
     [t('ui.about_version'), state.version],
     [t('ui.about_licence'), CLIENT_LICENCE],
-  ].concat(SOURCE_LINKS.map(([name, url]) => [t('ui.about_source', { name: name }), url]));
-  for (const [name, value] of rows) {
+  ]);
+  aboutGroup(about, t('ui.about_carried'), CARRIED.map((core) => [core.name,
+    versions[core.key] ? versions[core.key] + ' · ' + core.licence : core.licence]));
+  aboutGroup(about, t('ui.about_sources'), [['Neutrino', CLIENT_SOURCE, CLIENT_SOURCE]]
+    .concat(CARRIED.map((core) => {
+      const url = carriedSource(core, versions[core.key]);
+      return [core.name, url, url];
+    })));
+  card.appendChild(about);
+  return card;
+}
+
+// One group of About: its section label, then a row per [label, value,
+// link], the link empty for a value that opens nothing.
+function aboutGroup(about, title, rows) {
+  const heading = document.createElement('div');
+  heading.className = 'section_label';
+  heading.textContent = title;
+  about.appendChild(heading);
+  for (const [name, value, link] of rows) {
     const row = document.createElement('div');
     row.className = 'about_row';
     const label = document.createElement('span');
     label.className = 'about_key';
     label.textContent = name;
-    const text = document.createElement('span');
+    const text = document.createElement(link ? 'a' : 'span');
     text.className = 'about_value';
-    text.textContent = value;
+    text.textContent = value || '';
+    if (link) {
+      text.href = link;
+      text.onclick = (event) => {
+        event.preventDefault();
+        api('/api/open_link', { url: link });
+      };
+    }
     row.appendChild(label);
     row.appendChild(text);
-    card.appendChild(row);
+    about.appendChild(row);
   }
-  return card;
+}
+
+// A carried program's source: at the tag of the version the package
+// carries, its repository when no version is stamped.
+function carriedSource(core, version) {
+  if (!version) return core.repository;
+  return core.repository + '/tree/' + fill(core.tag, { version: version });
 }
 
 // --- the one picker, and the dialogs ---

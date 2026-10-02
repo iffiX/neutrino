@@ -202,6 +202,28 @@ def test_a_local_port_setting_reaches_the_resident_and_answers_the_state():
     ]
 
 
+def test_an_about_link_opens_in_the_browser_and_nothing_but_https_does():
+    resident = FakeResident()
+
+    status, reply = routes.dispatch(
+        "POST", "/api/open_link", {"url": "https://github.com/iffiX/neutrino"}, resident
+    )
+    assert (status, reply) == (200, {})
+    for url in ("file:///etc/passwd", "http://example.com", ""):
+        status, reply = routes.dispatch(
+            "POST", "/api/open_link", {"url": url}, resident
+        )
+        assert (status, reply["code"]) == (404, "unknown_request")
+
+    assert resident.platform.opened_urls == ["https://github.com/iffiX/neutrino"]
+
+
+def test_the_state_names_the_versions_the_package_carries():
+    _status, state = routes.dispatch("GET", "/api/state", None, FakeResident())
+
+    assert isinstance(state["carried_versions"], dict)
+
+
 def test_starting_the_session_takes_a_replaced_binding_back():
     resident = FakeResident()
     resident.hubs_value[0]["connection"] = "replaced"

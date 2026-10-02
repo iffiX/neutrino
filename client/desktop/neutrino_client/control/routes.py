@@ -18,7 +18,7 @@ import threading
 import time
 import urllib.parse
 
-from neutrino_client import CLIENT_VERSION
+from neutrino_client import CLIENT_CARRIED_VERSIONS, CLIENT_VERSION
 from neutrino_client.control import page
 from neutrino_client.core.resident import end_process
 from neutrino_client.exceptions import EnrollmentError, PlatformUnsupportedError
@@ -41,16 +41,18 @@ def state_payload(resident) -> dict:
         resident: The running :class:`~neutrino_client.core.resident.ClientResident`.
 
     Returns:
-        The state document: the machine, the hubs joined as ``hubs``, each
-        with its connection, its virtual network and its jobs, the services
-        they publish as ``services``, each with its job, the machines they
-        offer a terminal on and the sessions they list as ``terminals``
-        ``{machines, sessions}``, each stamped with its ``hub_id``, the
-        notices above the hubs, then every handler's state; no token,
-        password or network secret is in it.
+        The state document: the machine, the versions of the programs the
+        package carries as ``carried_versions``, empty in a checkout, the
+        hubs joined as ``hubs``, each with its connection, its virtual
+        network and its jobs, the services they publish as ``services``,
+        each with its job, the machines they offer a terminal on and the
+        sessions they list as ``terminals`` ``{machines, sessions}``, each
+        stamped with its ``hub_id``, the notices above the hubs, then every
+        handler's state; no token, password or network secret is in it.
     """
     state = {
         "version": CLIENT_VERSION,
+        "carried_versions": dict(CLIENT_CARRIED_VERSIONS),
         "language": resident.language(),
         "theme": resident.theme(),
         "terminal_font_size": resident.terminal_font_size(),
@@ -196,6 +198,8 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
         if route == "/api/show":
             resident.request_show()
             return 200, {}
+        if route == "/api/open_link":
+            return _open_link(resident, payload)
         if route == "/api/quit":
             return _quit(resident)
         return 404, {"code": "unknown_request", "params": {}}
@@ -392,6 +396,15 @@ def _service_action(resident, service_type: str, body: dict):
     if outcome:
         return refusal_status(str(outcome.get("code", ""))), outcome
     return 200, state_payload(resident)
+
+
+def _open_link(resident, body: dict):
+    """Open an ``https`` link in the person's browser; any other is unknown."""
+    url = str(body.get("url", "") or "")
+    if urllib.parse.urlsplit(url).scheme != "https":
+        return 404, {"code": "unknown_request", "params": {}}
+    resident.platform.open_url(url)
+    return 200, {}
 
 
 def _font_piece(query: str):

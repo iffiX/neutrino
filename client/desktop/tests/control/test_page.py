@@ -974,7 +974,7 @@ def test_a_forwardable_entry_sets_its_local_port_only_while_not_forwarded():
     assert "forwardedTo(entry)" in port
     dialog = body_of("openPortDialog")
     assert "api('/api/forward/configure'" in dialog
-    assert "t('ui.reason.port_taken')" in dialog
+    assert "t('ui.reason.port_taken', { port: chosen() })" in dialog
     assert "value >= 1024 && value <= 65535" in dialog
 
 
@@ -1187,28 +1187,53 @@ def test_the_settings_card_carries_the_language_then_the_theme_and_saves_both():
     assert "send('/api/language', { language: draft.language });" in settings
     assert "send('/api/theme', { theme: draft.theme });" in settings
     assert "save.disabled = !isDirty;" in settings
-    assert "page.appendChild(aboutSection(state));" in settings
+    assert settings.index("page.appendChild(aboutSection(state));") < settings.index(
+        "page.appendChild(card);"
+    )
 
 
-def test_about_is_a_card_of_label_and_mono_value_rows_with_no_page_of_its_own():
+def test_about_is_the_panels_card_of_three_groups_with_no_page_of_its_own():
     about = body_of("aboutSection")
+    assert "header.className = 'card_header';" in about
+    assert "document.createElement('h2')" in about
+    groups = [
+        about.index(f"t('{key}')")
+        for key in ("ui.about_this_machine", "ui.about_carried", "ui.about_sources")
+    ]
+    assert groups == sorted(groups)
     for key in (
         "ui.about",
         "ui.about_machine",
         "ui.about_platform",
         "ui.about_version",
         "ui.about_licence",
-        "ui.about_source",
     ):
-        assert f"t('{key}'" in about
-    assert "panelCard(t('ui.about'), false)" in about
+        assert f"t('{key}')" in about
     assert "state.hostname" in about
     assert "platform.os + '/' + platform.arch" in about
-    assert "about_key" in about and "about_value" in about
+    assert "state.carried_versions" in about
+    group = body_of("aboutGroup")
+    assert "heading.className = 'section_label';" in group
+    assert "about_key" in group and "about_value" in group
+    assert "api('/api/open_link', { url: link });" in group
     value_rule = PAGE_CSS[PAGE_CSS.index(".about_value {") :]
     assert "monospace" in value_rule[: value_rule.index("}")]
+    row_rule = PAGE_CSS[PAGE_CSS.index(".about_row {") :]
+    assert "var(--color-border) 60%" in row_rule[: row_rule.index("}")]
+    label_rule = PAGE_CSS[PAGE_CSS.index(".section_label {") :]
+    assert "text-transform: uppercase" in label_rule[: label_rule.index("}")]
     assert "const CLIENT_LICENCE = 'MIT';" in PAGE_JS
-    assert "https://github.com/iffiX/neutrino" in PAGE_JS
+    assert "const CLIENT_SOURCE = 'https://github.com/iffiX/neutrino';" in PAGE_JS
+    for name, licence in (
+        ("NetBird", "BSD-3-Clause"),
+        ("EasyTier", "LGPL-3.0"),
+        ("RustDesk", "AGPL-3.0"),
+        ("cc-switch", "MIT"),
+    ):
+        assert f"name: '{name}'" in PAGE_JS and f"licence: '{licence}'" in PAGE_JS
+    assert "core.repository + '/tree/' + fill(core.tag, { version: version })" in (
+        body_of("carriedSource")
+    )
 
 
 def test_the_sidebar_carries_only_the_pages_and_no_foot():
