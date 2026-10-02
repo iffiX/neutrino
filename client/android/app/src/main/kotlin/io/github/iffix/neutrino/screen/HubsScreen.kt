@@ -114,6 +114,7 @@ fun HubsScreen(
 fun hubTone(hub: HubView): DotTone = when {
     hub.jobs.isAnyRunning || hub.connection == HubConnection.CONNECTING -> DotTone.PULSE
     hub.connection == HubConnection.CONNECTED -> DotTone.OK
+    hub.isJoinRefused -> DotTone.BAD
     hub.connection == HubConnection.DOWN && hub.lastError?.code in CLIENT_PERSON_CODES -> DotTone.BAD
     !hub.hasConnected && hub.connection != HubConnection.DISABLED -> DotTone.OFF
     else -> DotTone.WAIT
@@ -188,7 +189,7 @@ private fun HubRow(
         marker = hubTone(hub),
         hasDivider = hasDivider,
         actions = {
-            if (networks.size >= 2) {
+            if (networks.size >= 2 && !hub.isJoinRefused) {
                 PickerField(
                     options = networks.map { it.provider to it.title },
                     selected = chosen,
@@ -199,6 +200,8 @@ private fun HubRow(
                 )
             }
             when {
+                hub.isJoinRefused -> Unit
+
                 line.state == OverlayState.CONNECTING -> NeutrinoButton(
                     words.word("ui.network_cancel"),
                     { onOverlayCancel(id) },

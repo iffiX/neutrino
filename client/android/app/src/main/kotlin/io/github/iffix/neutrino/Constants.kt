@@ -205,6 +205,7 @@ val CLIENT_HUB_CODES: List<String> = listOf(
     "session_not_owned",
     "session_unknown",
     "shell_unknown",
+    "ticket_spent",
     "vault_locked",
     "verb_unknown",
 )

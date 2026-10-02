@@ -30,66 +30,65 @@ class HubConnectionsTest {
         return HubConnections(store, transport, Samples.machine, { null }, backgroundScope) to store
     }
 
-    private fun joined() =
-        ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("b9"), "token" to JsonPrimitive("t9"))))
-
     @Test
-    fun joiningTriesEachAddressUntilOneAnswersAndKeepsTheBinding() = runTest {
+    fun aJoinKeepsThePendingBindingAtOnceAndAsksTheHubNothing() = runTest {
         val (connections, store) = connections()
-        transport.answers["https://100.72.4.1:8443" to "/api/channel/join"] = joined()
         val binding = (connections.join(link) as ChannelResult.Ok).value
-        assertEquals(listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"), transport.posts.map { it.first })
-        assertEquals("https://100.72.4.1:8443", binding.gatewayUrl)
+        assertEquals(true, binding.isPending)
+        assertEquals("ticket-1", binding.ticket)
+        assertEquals("", binding.token)
+        assertEquals("https://192.168.100.1:8443", binding.gatewayUrl)
         assertEquals(link.urls, binding.gatewayUrls)
         assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
-        assertEquals(binding, store.get("b9"))
+        assertEquals(binding, store.get(binding.id))
+        assertEquals(emptyList<Any>(), transport.posts)
     }
 
     @Test
-    fun theJoinBodyIsTheGoldens() = runTest {
-        val (connections, _) = connections()
-        connections.join(link)
-        assertEquals(emptyList<String>(), GoldenSchema.problems(transport.posts.first().third, "ChannelJoinRequest"))
+    fun aSecondJoinWithTheSameTicketIsTheSameBinding() = runTest {
+        val (connections, store) = connections()
+        val first = (connections.join(link) as ChannelResult.Ok).value
+        assertEquals(first, (connections.join(link) as ChannelResult.Ok).value)
+        assertEquals(1, store.bindings.value.size)
     }
 
     @Test
-    fun aProtocolRefusalIsReturnedAsItIs() = runTest {
+    fun theJoinedHubsRowIsPendingWithTheLinksFirstAddressAndItsNetworks() = runTest {
         val (connections, _) = connections()
-        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
-            ChannelResult.refused("protocol_too_old", "peer" to "3")
-        assertEquals("protocol_too_old", (connections.join(link) as ChannelResult.Refused).code)
+        connections.start()
+        connections.startJoin(Samples.link(Samples.clientPayload))
+        runCurrent()
+        val row = connections.views.first().single()
+        assertEquals(HubConnection.PENDING, row.connection)
+        assertEquals("ui.state.pending", "ui.state.${row.connection.wireName}")
+        assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
+        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
     }
 
     @Test
-    fun aSpentTicketIsEnrollRefused() = runTest {
-        val (connections, _) = connections()
-        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = ChannelResult.refused("ticket_spent")
-        assertEquals("enroll_refused", (connections.join(link) as ChannelResult.Refused).code)
+    fun leavingAPendingBindingForgetsItWithoutAskingTheHub() = runTest {
+        val (connections, store) = connections()
+        val binding = (connections.join(link) as ChannelResult.Ok).value
+        assertEquals(ChannelResult.Ok(Unit), connections.leave(binding.id))
+        assertNull(store.get(binding.id))
+        assertEquals(emptyList<Any>(), transport.posts)
     }
 
     @Test
-    fun anotherCertificateStopsTheJoin() = runTest {
-        val (connections, _) = connections()
-        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
-            ChannelResult.refused("hub_untrusted", "url" to "x")
-        assertEquals("hub_untrusted", (connections.join(link) as ChannelResult.Refused).code)
-        assertEquals(1, transport.posts.size)
-    }
-
-    @Test
-    fun anAnswerWithoutATokenIsEnrollNoToken() = runTest {
-        val (connections, _) = connections()
-        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
-            ChannelResult.Ok(JsonObject(emptyMap()))
-        assertEquals("enroll_no_token", (connections.join(link) as ChannelResult.Refused).code)
-    }
-
-    @Test
-    fun noAddressAnsweringIsUnreachableNamingThem() = runTest {
-        val (connections, _) = connections()
-        val refusal = connections.join(link) as ChannelResult.Refused
-        assertEquals("hub_unreachable", refusal.code)
-        assertEquals(link.urls.joinToString(", "), refusal.wordParams["urls"])
+    fun joiningAgainDropsTheOldBinding() = runTest {
+        val welcoming = FakeHubTransport { FakeHubTransport.welcoming }
+        welcoming.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
+            ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("b1"), "token" to JsonPrimitive("t9"))))
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        val left = mutableListOf<String>()
+        val connections = HubConnections(store, welcoming, Samples.machine, { null }, backgroundScope) { left += it }
+        store.put(Samples.binding)
+        val pending = (connections.join(link) as ChannelResult.Ok).value
+        connections.start()
+        runCurrent()
+        assertEquals(listOf(pending.id), store.bindings.value.map { it.id })
+        assertEquals("b1", store.get(pending.id)?.boundId)
+        assertEquals(listOf("b1"), left)
     }
 
     @Test
@@ -146,15 +145,14 @@ class HubConnectionsTest {
 
     @Test
     fun aJoinIsAJobThatEndsInTheBindingOrTheCode() = runTest {
-        val (connections, _) = connections()
+        val (connections, store) = connections()
         connections.startJoin("not a link")
         runCurrent()
         assertEquals("link_unreadable", connections.join.value.refusal?.code)
-        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = joined()
         connections.startJoin(Samples.link(Samples.clientPayload))
         assertEquals(true, connections.join.value.isJoining)
         runCurrent()
-        assertEquals("b9", connections.join.value.joinedId)
+        assertEquals(store.bindings.value.single().id, connections.join.value.joinedId)
         connections.clearJoin()
         assertEquals(HubJoin(), connections.join.value)
     }

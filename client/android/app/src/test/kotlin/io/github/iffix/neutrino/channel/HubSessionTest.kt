@@ -1,13 +1,17 @@
 package io.github.iffix.neutrino.channel
 
+import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.FakeSecretSealer
+import io.github.iffix.neutrino.binding.HubBinding
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -23,12 +27,31 @@ class HubSessionTest {
 
     private val unbound = mutableListOf<String>()
 
-    private fun session(transport: FakeHubTransport, nameAddress: String? = null): Pair<HubSession, BindingStore> {
+    private val joined = mutableListOf<Pair<String, String>>()
+
+    private val pending = Samples.binding.copy(token = "", ticket = "ticket-1")
+
+    private fun session(
+        transport: FakeHubTransport,
+        nameAddress: String? = null,
+        binding: HubBinding = Samples.binding,
+    ): Pair<HubSession, BindingStore> {
         val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
-        store.put(Samples.binding)
-        val session = HubSession("b1", store, transport, Samples.machine, { nameAddress }, { id, _ -> unbound += id })
+        store.put(binding)
+        val session = HubSession(
+            "b1",
+            store,
+            transport,
+            Samples.machine,
+            { nameAddress },
+            { id, _ -> unbound += id },
+            { id, hubId -> joined += id to hubId },
+        )
         return session to store
     }
+
+    private fun spent(id: String = "c9", token: String = "t9") =
+        ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive(id), "token" to JsonPrimitive(token))))
 
     private fun TestScope.served(session: HubSession) = backgroundScope.async {
         session.runOnce()
@@ -361,5 +384,67 @@ class HubSessionTest {
         session.preferAddress("https://hub.netbird.cloud:8443")
         session.runOnce()
         assertEquals("https://hub.netbird.cloud:8443", transport.dialled.first().first)
+    }
+
+    @Test
+    fun aPendingBindingSpendsItsTicketAtTheFirstAddressThatAnswersThenSaysHelloThere() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        transport.answers["https://100.72.4.1:8443" to "/api/channel/join"] = spent()
+        val (session, store) = session(transport, binding = pending)
+        assertEquals(HubConnection.PENDING, session.view.value.connection)
+        served(session)
+        advanceTimeBy(1_500)
+        assertEquals(
+            listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"),
+            transport.posts.map { it.first },
+        )
+        assertEquals(emptyList<String>(), GoldenSchema.problems(transport.posts.last().third, "ChannelJoinRequest"))
+        assertEquals("ticket-1", transport.posts.last().third["ticket"]!!.jsonPrimitive.content)
+        val (address, socket, _) = transport.dialled.single()
+        assertEquals("https://100.72.4.1:8443", address)
+        assertEquals("c9", socket.sent("hello").single()["id"]!!.jsonPrimitive.content)
+        assertEquals("t9", socket.sent("hello").single()["token"]!!.jsonPrimitive.content)
+        val kept = store.get("b1")
+        assertEquals(false, kept?.isPending)
+        assertEquals("t9", kept?.token)
+        assertEquals("c9", kept?.boundId)
+        assertEquals(listOf("b1" to "c9"), joined)
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+    }
+
+    @Test
+    fun aHubReachableAtJoinTimeIsConnectedWithinTheFirstRound() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = spent()
+        val (session, _) = session(transport, binding = pending)
+        served(session)
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+    }
+
+    @Test
+    fun aPendingBindingStaysPendingWhileNoAddressAnswersAndDialsNothing() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, store) = session(transport, binding = pending)
+        assertEquals(5L, session.runOnce())
+        assertEquals(HubConnection.PENDING, session.view.value.connection)
+        assertEquals("hub_unreachable", session.view.value.lastError?.code)
+        assertEquals(emptyList<Any>(), transport.dialled)
+        assertEquals(pending, store.get("b1"))
+    }
+
+    @Test
+    fun aRefusedTicketIsDownWithItsCodeAndNoRoundRunsAfter() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = ChannelResult.refused("ticket_spent")
+        val (session, store) = session(transport, binding = pending)
+        session.runOnce()
+        assertEquals(HubConnection.DOWN, session.view.value.connection)
+        assertEquals("ticket_spent", session.view.value.lastError?.code)
+        assertEquals(true, session.view.value.isJoinRefused)
+        assertEquals(2L, session.runOnce())
+        assertEquals(false, session.refresh())
+        assertEquals(1, transport.posts.size)
+        assertEquals(emptyList<Any>(), transport.dialled)
+        assertEquals(pending, store.get("b1"))
     }
 }

@@ -23,6 +23,15 @@ class BindingStoreTest {
     }
 
     @Test
+    fun aPendingBindingKeepsItsTicketAcrossAReopenAndNotInTheClear() {
+        val pending = Samples.binding.copy(token = "", ticket = "ticket-secret")
+        store().put(pending)
+        assertEquals(pending, store().get("b1"))
+        val bytes = folder.root.resolve("bindings.sealed").readBytes()
+        assertFalse(String(bytes, Charsets.ISO_8859_1).contains("ticket-secret"))
+    }
+
+    @Test
     fun theFileHoldsNoSecretInTheClear() {
         store().put(Samples.binding)
         val bytes = folder.root.resolve("bindings.sealed").readBytes()
