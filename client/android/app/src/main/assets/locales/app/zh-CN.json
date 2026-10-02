@@ -8,9 +8,10 @@
     "verb_unknown": "hub 不认识这个命令，请先更新 hub"
   },
   "ui": {
-    "about_core": "{name} 核心",
-    "about_device": "本机",
+    "about_carried": "携带",
     "about_patch": "{name} 的补丁",
+    "about_sources": "来源",
+    "about_this_machine": "本机",
     "ai_qr_hint": "第三方聊天 app 扫这个码，就能用这个网关。",
     "ai_qr_label": "网关地址和密钥的二维码",
     "back": "返回",
