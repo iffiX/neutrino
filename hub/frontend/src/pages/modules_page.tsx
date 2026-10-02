@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import { apiPath, apiPost, describeError } from "../api_client";
+import { CloudcliPanels } from "../components/cloudcli_panels";
 import { ContainersPanels } from "../components/containers_panels";
 import { DevicePick } from "../components/device_pick";
 import { ErrorPanel } from "../components/error_panel";
@@ -108,6 +109,14 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isWindows={target.platformOs === WINDOWS_OS}
     />
   ),
+  cloudcli: (target) => (
+    <CloudcliPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+      isWindows={target.platformOs === WINDOWS_OS}
+    />
+  ),
   zfs: (target) => (
     <ZfsPanels
       deviceId={target.deviceId}
@@ -122,7 +131,7 @@ const PAGE_MODULES = Object.keys(MODULE_PANELS);
 /** The one system whose file share is Samba; the others serve with their own. */
 const LINUX_OS = "linux";
 
-/** The system that starts VS Code as an account only with its login. */
+/** The system that starts VS Code and CloudCLI as an account only with its login. */
 const WINDOWS_OS = "windows";
 
 /** The modules whose block imports what the machine already has. */

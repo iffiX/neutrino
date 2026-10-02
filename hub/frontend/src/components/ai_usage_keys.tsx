@@ -53,9 +53,12 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
               <td>
                 <div className="usage_name">{key.name}</div>
                 <span
-                  className={`usage_device ${key.client_name === null ? "usage_device--none" : ""}`}
+                  className={`usage_device ${key.client_name === null && key.device_name === null ? "usage_device--none" : ""}`}
                 >
-                  {key.client_name ?? t("ui.usage.no_client")}
+                  {key.client_name ??
+                    (key.device_name === null
+                      ? t("ui.usage.no_client")
+                      : t("ui.usage.device_row", { device: key.device_name }))}
                 </span>
               </td>
               <td className="num">
