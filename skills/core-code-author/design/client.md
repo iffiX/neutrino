@@ -418,15 +418,17 @@ drop. On a phone the viewer page keeps its session through a rotation.
 ## The Settings page
 
 Two cards, in the panel's order. The first is **About**, the panel's About
-card: a card header with the title, then three groups, each under a section
+card: a card header with the title, then two groups, each under a section
 label (the panel's `section_label`: small, uppercase, muted): **This
-machine** (the machine's name, its platform, the client's version, the
-licence), **Carried** (on a phone, each core built into the app with its
-version and licence; on a desktop, the cores the package carries), and
-**Source** (the Neutrino repository and each core's source and patch). A row
+machine** (the machine's name and its platform) and **Carried**, drawn as
+the panel's credits rows: the first row is the client itself (`Neutrino
+client <version>` at the left, `<licence> — Source` at the right), then one
+row per core the client carries (`<name> <version>` at the left, `<licence>
+— Source` at the right, with ` · Patch` after it where the client carries a
+patch), where **Source** and **Patch** are short link words that open the
+repository or the patch in the browser; no URL is ever written out. A row
 is the label at the left in the muted colour and the value in mono at the
-right, rows parted by the panel's faint rule; a link is a value that opens
-in the browser and is drawn as the other values are. The second card holds a
+right, rows parted by the panel's faint rule. The second card holds a
 **Language** picker, a **Theme** picker (System, Dark, Light), **Save**
 enabled while the draft differs from the saved values, and **Cancel** beside
 it. There is no About page. Leaving a hub is on the Hubs page and nowhere
