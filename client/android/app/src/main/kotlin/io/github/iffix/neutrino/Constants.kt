@@ -401,6 +401,9 @@ const val RDP_PINCH_SLOP_PX = 24f
 /** The largest zoom a pinch reaches, over the picture fitted to the viewer. */
 const val RDP_ZOOM_MAX = 6f
 
+/** How long the viewer's bars stay after the last touch on them, in milliseconds. */
+const val RDP_BARS_SHOWN_MILLIS = 3000L
+
 /** The RustDesk core's state: logged in, frames follow. */
 const val RDP_STATE_CONNECTED = 1
 

@@ -74,4 +74,18 @@ class RemoteDesktopViewportTest {
         assertEquals(600f, empty.drawnHeight, 0.0001f)
         assertEquals(0 to 0, empty.toFrame(400f, 300f))
     }
+
+    @Test
+    fun theKeyboardLeavesThePictureWhereItIs() {
+        val covered = fitted.coveredBy(400f)
+        assertEquals(fitted.top, covered.top, 0.0001f)
+        assertEquals(fitted.drawnHeight, covered.drawnHeight, 0.0001f)
+    }
+
+    @Test
+    fun underTheKeyboardThePictureMovesUpUntilItsBottomMeetsIt() {
+        val covered = fitted.coveredBy(400f).zoomedBy(2f, 500f, 500f).pannedBy(0f, -5000f)
+        assertEquals(1000f - 400f - covered.drawnHeight, covered.top, 0.0001f)
+        assertEquals(1000f - covered.drawnHeight, covered.coveredBy(0f).top, 0.0001f)
+    }
 }
