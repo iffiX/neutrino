@@ -11,11 +11,12 @@ not name.
 
 The memberships run on recording drivers. Pinned here: the three states
 ``off``, ``connecting`` and ``on`` and nothing else; a connect is one attempt
-in two stages, ``login`` until the engine has an address and ``hub`` until
-the hub's channel is up through the hub's own address there, each with its
-own limit, and ends ``on``, or ``off`` with the engine's code,
-``overlay_no_address`` or ``overlay_hub_unreachable``, its engine stopped,
-with no retry; a console that assigns no network keeps the connect waiting
+in two stages, ``login`` until the engine has an address, within its
+limit, and ``hub`` until the hub's channel is up through the hub's own
+address there, with no limit, each stage stamped with the second it began;
+it ends ``on``, or ``off`` with the engine's code or ``overlay_no_address``,
+its engine stopped, with no retry, or ``off`` with the engine's code when
+the engine stops during the ``hub`` stage; a console that assigns no network keeps the connect waiting
 with no limit; the ``hub`` stage probes one address, the hub's own first,
 and never another; each stage's start and end is a log line; Cancel stops a
 connect in either stage and Disconnect a network that is on; a press that
@@ -656,7 +657,6 @@ def subject_for(
     log=discard,
     clock=None,
     login_s=None,
-    hub_s=None,
     poll_s=0.01,
 ):
     steps = []
@@ -677,7 +677,7 @@ def subject_for(
         start_thread=start_thread,
         clock=clock,
         login_timeout_s=timeout_s if login_s is None else login_s,
-        hub_timeout_s=timeout_s if hub_s is None else hub_s,
+        hub_probe_s=poll_s,
         poll_s=poll_s,
     )
     return subject, engines, hubs, steps
@@ -701,6 +701,7 @@ def test_a_hub_starts_off_on_its_first_network_with_both_listed():
         ],
         "state": "off",
         "stage": "",
+        "stage_since": 0,
         "is_waiting": False,
         "address": "",
         "error": None,
@@ -771,16 +772,24 @@ def test_no_address_in_time_is_off_with_its_code_and_the_engine_stopped():
     assert hubs.routes == [("h1", [], False)]
 
 
-def test_a_hub_that_does_not_answer_through_the_network_in_time_is_off():
-    subject, _engines, hubs, steps = subject_for({"h1": [EASYTIER]})
+def test_the_hub_stage_has_no_limit():
+    clock = Clock()
+    subject, _engines, hubs, steps = subject_for(
+        {"h1": [EASYTIER]}, clock=clock, login_s=90, poll_s=0
+    )
     hubs.is_reached = False
+
+    def tick():
+        clock.now += 1
+        hubs.is_reached = clock.now >= 1000 + 3600
+
+    hubs.on_reach = tick
 
     subject.connect("h1")
 
-    assert subject.hub_row("h1")["state"] == "off"
-    assert subject.hub_row("h1")["error"]["code"] == "overlay_hub_unreachable"
-    assert steps == [("join", "easytier"), ("leave", "easytier")]
-    assert hubs.routes == [("h1", ["10.144.144.1"], True), ("h1", [], False)]
+    assert subject.hub_row("h1")["state"] == "on"
+    assert clock.now == 1000 + 3600
+    assert steps == [("join", "easytier")]
 
 
 def test_a_cancel_stops_the_connect_and_goes_off_without_an_error():
@@ -996,10 +1005,12 @@ def test_a_connect_logs_in_then_waits_for_the_hub_then_is_on():
     row = subject.hub_row("h1")
     assert (row["state"], row["stage"], row["address"]) == ("connecting", "login", "")
 
+    assert subject.hub_row("h1")["stage_since"] > 0
     engines["easytier"].address = "10.144.144.5"
     _wait_for(lambda: subject.hub_row("h1")["stage"] == "hub")
     row = subject.hub_row("h1")
     assert (row["state"], row["address"]) == ("connecting", "10.144.144.5")
+    assert row["stage_since"] >= time.time() - 5
 
     hubs.is_reached = True
     _wait_for(lambda: subject.hub_row("h1")["state"] == "on")
@@ -1015,7 +1026,7 @@ def test_a_connect_logs_in_then_waits_for_the_hub_then_is_on():
 def test_the_login_stage_has_its_own_limit():
     clock = Clock()
     subject, engines, _hubs, steps = subject_for(
-        {"h1": [NETBIRD]}, clock=clock, login_s=90, hub_s=60, poll_s=0
+        {"h1": [NETBIRD]}, clock=clock, login_s=90, poll_s=0
     )
     engines["netbird"].address = ""
     engines["netbird"].on_status = functools.partial(_advance, clock, 1)
@@ -1027,27 +1038,31 @@ def test_the_login_stage_has_its_own_limit():
     assert steps == [("join", "netbird"), ("leave", "netbird")]
 
 
-def test_the_hub_stage_has_its_own_limit_from_the_address():
-    clock = Clock()
-    subject, engines, hubs, steps = subject_for(
-        {"h1": [EASYTIER]}, clock=clock, login_s=90, hub_s=60, poll_s=0
-    )
-    engines["easytier"].address = ""
+@pytest.mark.parametrize(
+    "how, code",
+    [("stops", "overlay_engine_stopped"), ("refuses", "overlay_daemon_down")],
+)
+def test_an_engine_that_stops_during_the_hub_stage_ends_it_with_its_code(how, code):
+    subject, engines, hubs, steps = subject_for({"h1": [EASYTIER]}, poll_s=0)
     hubs.is_reached = False
+    engine = engines["easytier"]
 
-    def tick():
-        clock.now += 1
-        if clock.now == 1080:
-            engines["easytier"].address = "10.144.144.5"
+    def stop_after_a_while():
+        if len(hubs.probes) < 5:
+            return
+        if how == "stops":
+            engine.is_on = False
+        else:
+            engine.status_refusal = code
 
-    engines["easytier"].on_status = tick
-    hubs.on_reach = functools.partial(_advance, clock, 1)
+    hubs.on_reach = stop_after_a_while
 
     subject.connect("h1")
 
-    assert subject.hub_row("h1")["error"]["code"] == "overlay_hub_unreachable"
-    assert 1140 <= clock.now <= 1142
-    assert steps == [("join", "easytier"), ("leave", "easytier")]
+    row = subject.hub_row("h1")
+    assert (row["state"], row["stage"], row["error"]["code"]) == ("off", "", code)
+    assert steps == [("join", "easytier")]
+    assert hubs.routes[-1] == ("h1", [], False)
 
 
 def test_a_console_that_assigns_no_network_keeps_the_connect_waiting():

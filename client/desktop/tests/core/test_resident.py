@@ -326,6 +326,7 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
             "networks": [],
             "state": "off",
             "stage": "",
+            "stage_since": 0,
             "is_waiting": False,
             "address": "",
             "error": None,

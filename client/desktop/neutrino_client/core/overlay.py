@@ -32,7 +32,7 @@ import urllib.parse
 from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
     CLIENT_OVERLAY_CONNECT_POLL_S,
-    CLIENT_OVERLAY_HUB_TIMEOUT_S,
+    CLIENT_OVERLAY_HUB_PROBE_S,
     CLIENT_OVERLAY_JOIN_TIMEOUT_S,
     CLIENT_OVERLAY_LOGIN_TIMEOUT_S,
     CLIENT_OVERLAY_NETBIRD_NETWORK,
@@ -608,10 +608,10 @@ class OverlayMemberships:
 
     A hub names its networks in its order of preference, and the person
     chooses one engine among them while the network is off; the chosen one
-    is the first until they do. Connect is one attempt in two stages, each
-    with its own limit: ``login``, the engine up and an address on the
-    network, then ``hub``, the hub's channel up through the hub's own
-    address there. Nothing here retries, moves to another network, or
+    is the first until they do. Connect is one attempt in two stages:
+    ``login``, the engine up and an address on the network within its
+    limit, then ``hub``, with no limit, the hub's channel up through the
+    hub's own address there. Nothing here retries, moves to another network, or
     changes the choice. While a hub's network is on, the poll asks its
     engine whether it still stands, and a network the hub stops naming is
     left with ``overlay_withdrawn``.
@@ -632,7 +632,7 @@ class OverlayMemberships:
         start_thread=None,
         clock=None,
         login_timeout_s: float = CLIENT_OVERLAY_LOGIN_TIMEOUT_S,
-        hub_timeout_s: float = CLIENT_OVERLAY_HUB_TIMEOUT_S,
+        hub_probe_s: float = CLIENT_OVERLAY_HUB_PROBE_S,
         poll_s: float = CLIENT_OVERLAY_CONNECT_POLL_S,
     ):
         """
@@ -664,8 +664,8 @@ class OverlayMemberships:
             login_timeout_s: How long the ``login`` stage may take; a
                 console that registered this machine and assigned no
                 network yet waits with no limit.
-            hub_timeout_s: How long the ``hub`` stage may take, from the
-                address.
+            hub_probe_s: How often the ``hub`` stage, which has no limit,
+                asks the engine and probes the hub.
             poll_s: How often a connect looks again.
         """
         self._platform = platform
@@ -681,7 +681,7 @@ class OverlayMemberships:
         )
         self._clock = clock if clock is not None else time.monotonic
         self._login_timeout_s = login_timeout_s
-        self._hub_timeout_s = hub_timeout_s
+        self._hub_probe_s = hub_probe_s
         self._poll_s = poll_s
         self._drivers = (
             drivers
@@ -698,9 +698,10 @@ class OverlayMemberships:
         self._urls: dict = {}
         # Each joined hub's choice: {pick, is_on}.
         self._choices: dict = {}
-        # One record per hub: {state, stage, is_waiting, address, error, job,
-        # material, count, cancel}. ``material`` is the network in use while
-        # not off, and ``count`` tells a step that was overtaken apart.
+        # One record per hub: {state, stage, stage_since, is_waiting, address,
+        # error, job, material, count, cancel}. ``material`` is the network
+        # in use while not off, and ``count`` tells a step that was overtaken
+        # apart.
         self._records: dict = {}
         self._news = threading.Event()
         self._stop = threading.Event()
@@ -715,10 +716,11 @@ class OverlayMemberships:
             hub_id: The hub, by its id.
 
         Returns:
-            ``{network, networks, state, stage, is_waiting, address,
-            error}``: the provider chosen or in use, ``[{provider,
+            ``{network, networks, state, stage, stage_since, is_waiting,
+            address, error}``: the provider chosen or in use, ``[{provider,
             network}]`` for every network the hub names, the state, the
-            stage while connecting (``login`` or ``hub``, else empty),
+            stage while connecting (``login`` or ``hub``, else empty) and
+            the epoch second it began (0 for none),
             whether a console registered this machine and assigned it no
             network yet, this machine's address from the ``hub`` stage on,
             and ``{code, params}`` of the last failure while off, else
@@ -738,6 +740,7 @@ class OverlayMemberships:
             ],
             "state": record["state"],
             "stage": record["stage"],
+            "stage_since": record["stage_since"],
             "is_waiting": record["is_waiting"],
             "address": record["address"],
             "error": dict(record["error"]) if record["error"] else None,
@@ -769,6 +772,7 @@ class OverlayMemberships:
                 record.update(
                     state=OVERLAY_STATE_CONNECTING,
                     stage=OVERLAY_STAGE_LOGIN,
+                    stage_since=int(time.time()),
                     is_waiting=False,
                     job=OVERLAY_JOB_CONNECTING,
                     error=None,
@@ -950,12 +954,7 @@ class OverlayMemberships:
                 self._lost(hub_id, material, count, _refusal(error))
                 continue
             if not status["is_on"]:
-                self._lost(
-                    hub_id,
-                    material,
-                    count,
-                    {"code": "overlay_engine_stopped", "params": {}},
-                )
+                self._lost(hub_id, material, count, _engine_stopped())
                 continue
             with self._lock:
                 record = self._records.get(hub_id)
@@ -1035,7 +1034,10 @@ class OverlayMemberships:
             is_current = record is not None and record["count"] == count
             if is_current:
                 record.update(
-                    stage=OVERLAY_STAGE_HUB, is_waiting=False, address=address
+                    stage=OVERLAY_STAGE_HUB,
+                    stage_since=int(time.time()),
+                    is_waiting=False,
+                    address=address,
                 )
             urls = list(self._urls.get(hub_id) or [])
         if not is_current:
@@ -1051,6 +1053,7 @@ class OverlayMemberships:
                 record.update(
                     state=OVERLAY_STATE_ON,
                     stage="",
+                    stage_since=0,
                     address=address,
                     job="",
                     cancel=None,
@@ -1102,7 +1105,6 @@ class OverlayMemberships:
         """Stage ``hub``: whether the channel came up through the hub's address."""
         network = overlay_network(material)
         started = self._clock()
-        deadline = started + self._hub_timeout_s
         self._log(f"overlay: {network}: stage hub started at {host or 'no address'}")
         if not host:
             self._log_end("hub", network, started, "the hub names no address")
@@ -1110,31 +1112,28 @@ class OverlayMemberships:
         self._on_route(hub_id, [host], True)
         is_seen = False
         while not cancel.is_set():
+            try:
+                status = driver.status(material)
+                error = None if status["is_on"] else _engine_stopped()
+            except OverlayControlError as refusal:
+                status, error = {}, _refusal(refusal)
+            if error is not None and not cancel.is_set():
+                self._log_end("hub", network, started, error["code"])
+                self._lost(hub_id, material, count, error)
+                return False
+            if not is_seen and status.get("is_hub_seen"):
+                is_seen = True
+                elapsed = self._clock() - started
+                self._log(
+                    f"overlay: {network}: the hub's peer is connected "
+                    f"after {elapsed:.1f}s"
+                )
             if self._reaches_hub(hub_id, [host]):
                 self._log_end("hub", network, started, f"the hub answers at {host}")
                 return not cancel.is_set()
-            if not is_seen:
-                is_seen = self._is_hub_seen(driver, material)
-                if is_seen:
-                    elapsed = self._clock() - started
-                    self._log(
-                        f"overlay: {network}: the hub's peer is connected "
-                        f"after {elapsed:.1f}s"
-                    )
-            if self._clock() >= deadline:
-                self._log_end("hub", network, started, "overlay_hub_unreachable")
-                self._fail(hub_id, material, count, "overlay_hub_unreachable")
-                return False
-            cancel.wait(self._poll_s)
+            cancel.wait(self._hub_probe_s)
         self._log_end("hub", network, started, "cancelled")
         return False
-
-    def _is_hub_seen(self, driver, material: dict) -> bool:
-        """Whether the engine reports the hub's peer as connected."""
-        try:
-            return bool(driver.status(material).get("is_hub_seen"))
-        except OverlayControlError:
-            return False
 
     def _note_waiting(self, hub_id: str, count: int) -> None:
         """Mark a connect as waiting for its console to assign a network."""
@@ -1206,6 +1205,7 @@ class OverlayMemberships:
             record.update(
                 state=OVERLAY_STATE_OFF,
                 stage="",
+                stage_since=0,
                 is_waiting=False,
                 address="",
                 error=dict(error) if error else None,
@@ -1267,6 +1267,7 @@ def _off_record() -> dict:
     return {
         "state": OVERLAY_STATE_OFF,
         "stage": "",
+        "stage_since": 0,
         "is_waiting": False,
         "address": "",
         "error": None,
@@ -1280,6 +1281,11 @@ def _off_record() -> dict:
 def _refusal(error) -> dict:
     """An engine's refusal as ``{code, params}``."""
     return {"code": error.code, "params": dict(getattr(error, "params", {}) or {})}
+
+
+def _engine_stopped() -> dict:
+    """The failure of an engine that stopped by itself."""
+    return {"code": "overlay_engine_stopped", "params": {}}
 
 
 def _never(*_args) -> bool:

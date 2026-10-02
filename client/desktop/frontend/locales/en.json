@@ -198,7 +198,7 @@
   "ui.slot_haiku": "Haiku slot",
   "ui.slot_opus": "Opus slot",
   "ui.slot_sonnet": "Sonnet slot",
-  "ui.stage.hub": "Address {address}; waiting for the hub to answer through the network",
+  "ui.stage.hub": "Address {address}; waiting for the hub to answer through the network · {seconds} s",
   "ui.stage.login": "Logging in to {engine}",
   "ui.state.connected": "Connected",
   "ui.state.connecting": "Connecting…",

@@ -630,10 +630,16 @@ def test_a_refused_state_poll_renders_its_wording():
 
 
 def test_the_page_draws_from_pushed_state_and_never_polls():
-    """The resident pushes every change; the page asks once, for the first frame."""
+    """The resident pushes every change; the page asks once, for the first frame.
+
+    The one interval moves the seconds of a hub stage's reason and asks the
+    resident nothing.
+    """
     assert "window.neutrinoState = (state) =>" in PAGE_JS
     assert "bridgeReady().then(firstFrame);" in PAGE_JS
-    assert "setInterval" not in PAGE_JS
+    assert PAGE_JS.count("setInterval") == 1
+    clock = PAGE_JS[PAGE_JS.index("setInterval(") :].split("}, 1000);")[0]
+    assert "api(" not in clock and "send(" not in clock
     assert "POLL_INTERVAL" not in PAGE_JS
 
 
@@ -945,6 +951,16 @@ def test_the_join_button_shows_joining_and_a_refusal_under_the_input():
 def test_a_notice_stands_above_the_hubs():
     hubs = body_of("drawHubs")
     assert "for (const notice of state.notices || []) {" in hubs
+
+
+def test_the_hub_stage_shows_the_seconds_waited_by_the_pages_own_clock():
+    words = body_of("hubStageWords")
+    assert "Math.floor(Date.now() / 1000 - (Number(since) || 0))" in words
+    assert "t('ui.stage.hub', { address: address, seconds:" in words
+    assert "line.dataset.since = String(overlay.stage_since || 0);" in body_of("hubRow")
+    assert "document.querySelectorAll('.stage_clock')" in PAGE_JS
+    for language in CLIENT_LANGUAGES:
+        assert "{seconds}" in CATALOGS[language]["ui.stage.hub"]
 
 
 # --- the service pages ---

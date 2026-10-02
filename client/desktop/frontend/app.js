@@ -575,7 +575,15 @@ function hubRow(hub) {
   extras.push(overlayLine(hub));
   const overlay = hub.overlay || {};
   const stage = overlayStage(overlay);
-  if (stage) extras.push(reasonLine(stage));
+  if (stage) {
+    const line = reasonLine(stage);
+    if (overlay.state === 'connecting' && overlay.stage === 'hub' && !overlay.is_waiting) {
+      line.classList.add('stage_clock');
+      line.dataset.address = overlay.address || '';
+      line.dataset.since = String(overlay.stage_since || 0);
+    }
+    extras.push(line);
+  }
   if (overlay.state === 'off' && overlay.error) {
     extras.push(errorLine(wordError(overlay.error)));
   }
@@ -640,9 +648,24 @@ function overlayStage(overlay) {
   if (overlay.stage === 'login') {
     return t('ui.stage.login', { engine: OVERLAY_TITLES[overlay.network] || overlay.network });
   }
-  if (overlay.stage === 'hub') return t('ui.stage.hub', { address: overlay.address || '' });
+  if (overlay.stage === 'hub') return hubStageWords(overlay.address || '', overlay.stage_since);
   return '';
 }
+
+// The hub stage's reason: the address and the seconds waited since the
+// stage began, by this machine's clock.
+function hubStageWords(address, since) {
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - (Number(since) || 0)));
+  return t('ui.stage.hub', { address: address, seconds: since ? seconds : 0 });
+}
+
+// The seconds on every hub stage's reason move once a second, with no
+// state pushed.
+setInterval(() => {
+  for (const line of document.querySelectorAll('.stage_clock')) {
+    line.textContent = hubStageWords(line.dataset.address, line.dataset.since);
+  }
+}, 1000);
 
 // The engine picker, while the hub publishes two networks or more; it
 // picks only while the network is off, and names the engine otherwise.
