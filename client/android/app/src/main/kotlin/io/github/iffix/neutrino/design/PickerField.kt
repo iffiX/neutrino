@@ -38,7 +38,7 @@ import androidx.compose.ui.window.PopupProperties
  * @param onSelect What choosing an option does, with its value.
  * @param modifier Placement.
  * @param head A line over the list.
- * @param isEnabled Whether the field opens.
+ * @param isEnabled Whether the field opens; a disabled field is drawn in the faint and muted colours.
  * @param isWide Whether the field fills the width.
  */
 @Composable
@@ -63,7 +63,15 @@ fun PickerField(
                 .onSizeChanged { fieldSize = it }
                 .clip(shape)
                 .background(palette.bg)
-                .border(1.dp, if (isOpen) palette.accent else palette.border, shape)
+                .border(
+                    1.dp,
+                    when {
+                        !isEnabled -> palette.textFaint
+                        isOpen -> palette.accent
+                        else -> palette.border
+                    },
+                    shape,
+                )
                 .clickable(enabled = isEnabled, role = Role.DropdownList) { isOpen = !isOpen }
                 .padding(horizontal = 11.dp, vertical = 9.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -71,10 +79,10 @@ fun PickerField(
         ) {
             BasicText(
                 label,
-                style = NeutrinoTheme.mono.copy(color = palette.text),
+                style = NeutrinoTheme.mono.copy(color = if (isEnabled) palette.text else palette.textMuted),
                 modifier = Modifier.weight(1f, isWide),
             )
-            IconGlyph(AppIcon.CHEVRON_DOWN, palette.textMuted, size = 12.dp)
+            IconGlyph(AppIcon.CHEVRON_DOWN, if (isEnabled) palette.textMuted else palette.textFaint, size = 12.dp)
         }
         if (isOpen) {
             Popup(
