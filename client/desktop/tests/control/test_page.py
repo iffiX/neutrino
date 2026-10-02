@@ -959,7 +959,23 @@ def test_every_entry_is_one_row_with_its_provider_line():
 
 def test_a_local_only_web_entry_opens_through_a_forward_as_a_job():
     web = body_of("drawWebEntry")
-    assert "jobButton(isLocal ? t('ui.open_local') : t('ui.open'), entry.job)" in web
+    assert "jobButton(isLocal ? t('ui.open_local') : t('ui.open'), opening)" in web
+    assert "actions.unshift(configure);" in web
+    assert "actions.push(disconnectButton('web', entry));" in web
+    assert "forwardedTo(entry)" in web
+
+
+def test_a_forwardable_entry_sets_its_local_port_only_while_not_forwarded():
+    configure = body_of("configureButton")
+    assert "button.disabled = isForwarded || !isEntryFree(hub, entry);" in configure
+    port = body_of("drawPortEntry")
+    assert "[configure, button]" in port
+    assert "t('ui.reason.disconnect_first')" in port
+    assert "forwardedTo(entry)" in port
+    dialog = body_of("openPortDialog")
+    assert "api('/api/forward/configure'" in dialog
+    assert "t('ui.reason.port_taken')" in dialog
+    assert "value >= 1024 && value <= 65535" in dialog
 
 
 def test_a_forward_disconnects_even_while_its_entry_is_unhealthy():

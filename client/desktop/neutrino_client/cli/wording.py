@@ -58,6 +58,7 @@ CLIENT_CODE_WORDS = {
     "clipboard_unreadable": "the clipboard could not be read: {detail}",
     "clipboard_unwritable": "the clipboard could not be written: {detail}",
     "web_token_missing": "the hub sent no token for this page; try again",
+    "port_taken": "another entry already holds local port {port}",
     "mount_not_authorized": "mounting was not authorized on this machine",
     "mount_tooling_missing": "the mount tooling is missing on this machine",
     "control_peer_refused": "the running client belongs to another account",

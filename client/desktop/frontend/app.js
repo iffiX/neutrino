@@ -853,23 +853,35 @@ function serviceAction(type, body) {
   return send('/api/services/' + type, body);
 }
 
+// A web entry: Open, or for a local-only one Configure, Open locally and,
+// while forwarded, Disconnect, with the loopback port on the mono line.
 function drawWebEntry(card, state, hub, entry) {
   const payload = entry.payload || {};
   const isLocal = payload.is_local_only === true;
-  const open = jobButton(isLocal ? t('ui.open_local') : t('ui.open'), entry.job);
-  if (!entry.job) {
+  const isOn = isLocal && !!entry.forward;
+  const opening = entry.job === 'opening' ? entry.job : '';
+  const open = jobButton(isLocal ? t('ui.open_local') : t('ui.open'), opening);
+  if (!opening) {
     open.disabled = !entry.is_healthy || !isEntryFree(hub, entry);
     open.onclick = () => serviceAction('web', { hub_id: entry.hub_id, id: entry.id });
   }
-  const reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
-  card.appendChild(entryRow(hub, entry, payload.url || '', '', [open], reason));
+  let reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
+  const actions = [open];
+  if (isLocal) {
+    const configure = configureButton(hub, entry, isOn);
+    actions.unshift(configure);
+    if (isOn || entry.job === 'disconnecting') {
+      actions.push(disconnectButton('web', entry));
+    }
+    if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
+  }
+  card.appendChild(entryRow(hub, entry, (payload.url || '') + forwardedTo(entry), '',
+    actions, reason));
 }
 
 function drawPortEntry(card, state, hub, entry) {
   const payload = entry.payload || {};
-  const forward = (state.forwards || {})[serviceKey(entry)] || {};
-  const isOn = !!forward.is_active;
-  const local = isOn ? ' → ' + t('ui.forwarding_to', { port: forward.local_port }) : '';
+  const isOn = !!entry.forward;
   const button = jobButton(isOn ? t('ui.port_disconnect') : t('ui.port_connect'),
     entry.job, isOn ? 'danger' : '');
   if (!entry.job) {
@@ -877,10 +889,121 @@ function drawPortEntry(card, state, hub, entry) {
     button.onclick = () => serviceAction('port',
       { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn });
   }
-  const reason = button.disabled && !entryWork(hub, entry)
+  const configure = configureButton(hub, entry, isOn);
+  let reason = button.disabled && !entryWork(hub, entry)
     ? entryReason(hub, entry, !isOn) : '';
+  if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
   card.appendChild(entryRow(hub, entry,
-    (payload.host || '') + ':' + (payload.port || '') + local, '', [button], reason));
+    (payload.host || '') + ':' + (payload.port || '') + forwardedTo(entry), '',
+    [configure, button], reason));
+}
+
+// The mono line's tail of a forwarded entry: where its forward listens.
+function forwardedTo(entry) {
+  return entry.forward ? ' → ' + t('ui.forwarding_to', { port: entry.forward }) : '';
+}
+
+// The Disconnect of a forwarded local-only page: ends its forward.
+function disconnectButton(type, entry) {
+  const button = jobButton(t('ui.port_disconnect'),
+    entry.job === 'disconnecting' ? entry.job : '', 'danger');
+  if (entry.job !== 'disconnecting') {
+    button.disabled = !!entry.job;
+    button.onclick = () => serviceAction(type,
+      { hub_id: entry.hub_id, id: entry.id, is_enabled: false });
+  }
+  return button;
+}
+
+// Configure on a forwardable entry: the local port dialog, closed to an
+// entry that is forwarded.
+function configureButton(hub, entry, isForwarded) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = t('ui.configure');
+  button.disabled = isForwarded || !isEntryFree(hub, entry);
+  button.onclick = () => openPortDialog(entry);
+  return button;
+}
+
+// The local port dialog: Auto, or Fixed with a number from 1024 to 65535.
+function openPortDialog(entry) {
+  const saved = entry.local_port === undefined ? 'auto' : entry.local_port;
+  let isFixed = saved !== 'auto';
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  const modal = document.createElement('div');
+  modal.className = 'card modal';
+  const heading = document.createElement('div');
+  heading.className = 'panel_title';
+  heading.textContent = entry.title;
+  modal.appendChild(heading);
+  const label = document.createElement('label');
+  label.textContent = t('ui.local_port');
+  modal.appendChild(label);
+  const line = document.createElement('div');
+  line.className = 'row';
+  const number = document.createElement('input');
+  number.type = 'number';
+  number.min = '1024';
+  number.max = '65535';
+  number.value = isFixed ? String(saved) : '';
+  const choice = picker('local_port_' + serviceKey(entry), [
+    { value: 'auto', label: t('ui.local_port_auto') },
+    { value: 'fixed', label: t('ui.local_port_fixed') },
+  ], isFixed ? 'fixed' : 'auto', (value) => { isFixed = value === 'fixed'; check(); },
+  false);
+  choice.style.flex = 'none';
+  choice.style.minWidth = '120px';
+  line.appendChild(choice);
+  line.appendChild(number);
+  modal.appendChild(line);
+  const why = reasonLine('');
+  modal.appendChild(why);
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  actions.style.marginTop = '8px';
+  const save = document.createElement('button');
+  save.textContent = t('ui.save');
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = t('ui.cancel');
+  actions.appendChild(save);
+  actions.appendChild(cancel);
+  modal.appendChild(actions);
+
+  function chosen() {
+    return isFixed ? Number(number.value) : 'auto';
+  }
+  function check() {
+    number.disabled = !isFixed;
+    const value = chosen();
+    const isValid = !isFixed || (Number.isInteger(value) && value >= 1024 && value <= 65535);
+    why.textContent = isValid ? '' : t('ui.reason.port_range');
+    save.disabled = !isValid;
+    modal.classList.toggle('dirty', value !== saved);
+  }
+  number.oninput = check;
+  save.onclick = async () => {
+    save.disabled = true;
+    const reply = await api('/api/forward/configure',
+      { hub_id: entry.hub_id, id: entry.id, local_port: chosen() });
+    if (reply && reply.code) {
+      why.textContent = reply.code === 'port_taken'
+        ? t('ui.reason.port_taken') : wordError(reply);
+      save.disabled = false;
+      return;
+    }
+    closeDialog(overlay);
+    if (reply) { lastSerialized = JSON.stringify(reply); draw(reply); }
+  };
+  cancel.onclick = () => { closeDialog(overlay); redraw(); };
+  overlay.appendChild(modal);
+  overlay.onclick = (event) => {
+    if (event.target === overlay) { closeDialog(overlay); redraw(); }
+  };
+  check();
+  openDialog(overlay);
 }
 
 // --- the remote desktops panel: connect there ---

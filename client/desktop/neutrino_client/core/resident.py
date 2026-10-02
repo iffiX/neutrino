@@ -66,7 +66,7 @@ from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.base import service_key
 from neutrino_client.services.file import FileServiceHandler
-from neutrino_client.services.port import PortServiceHandler
+from neutrino_client.services.port import PortLocalTable, PortServiceHandler
 from neutrino_client.services.rdp import RdpViewerHandler
 from neutrino_client.services.store import ClientServiceStore
 from neutrino_client.services.web import WebServiceHandler
@@ -136,6 +136,24 @@ def is_same_join(one: dict, other: dict) -> bool:
     return all(one.get(key) == other.get(key) for key in BINDING_IDENTITY_KEYS)
 
 
+def is_forwardable(entry: dict) -> bool:
+    """Whether an entry forwards to the loopback: a port, or a local-only page.
+
+    Args:
+        entry: A published entry.
+
+    Returns:
+        True for a ``port`` entry and a ``web`` entry whose payload says
+        ``is_local_only``.
+    """
+    if entry.get("type") == "port":
+        return True
+    return (
+        entry.get("type") == "web"
+        and (entry.get("payload") or {}).get("is_local_only") is True
+    )
+
+
 def _hub_answer(call, *args) -> dict:
     """Empty when one ask of a hub went through, else its refusal as a code."""
     try:
@@ -178,6 +196,7 @@ class ClientResident:
         self._store = ClientServiceStore(
             path=os.path.join(config_dir, CLIENT_STATE_FILE_NAME)
         )
+        self._ports = PortLocalTable(store=self._store)
         # Whoever draws the state, told after every change of it; the
         # announcements of one burst are folded into one.
         self._watchers: list = []
@@ -188,9 +207,12 @@ class ClientResident:
             handler.service_type: handler
             for handler in (
                 WebServiceHandler(
-                    platform=self.platform, open_service=self.open_service, log=log
+                    platform=self.platform,
+                    open_service=self.open_service,
+                    log=log,
+                    ports=self._ports,
                 ),
-                PortServiceHandler(log=log, on_change=self.notify),
+                PortServiceHandler(log=log, on_change=self.notify, ports=self._ports),
                 AiServiceHandler(
                     store=self._store,
                     original_dir=os.path.join(config_dir, CLIENT_ORIGINAL_DIR_NAME),
@@ -351,10 +373,15 @@ class ClientResident:
         Returns:
             The entries of :meth:`service_entries`, each with ``job``, the
             step at work on it or empty, and ``last_error``, the failure the
-            last one ended in or None.
+            last one ended in or None; a port entry and a local-only web
+            entry also with ``local_port``, ``"auto"`` or the fixed number,
+            and ``forward``, the loopback port its forward listens on or
+            None.
         """
         entries = self.service_entries()
         mounts = self._services["file"].state().get("mounts") or []
+        forwards = dict(self._services["port"].state().get("forwards") or {})
+        forwards.update(self._services["web"].state().get("web_forwards") or {})
         with self._lock:
             jobs = dict(self._entry_jobs)
             errors = dict(self._entry_errors)
@@ -371,7 +398,14 @@ class ClientResident:
                 ):
                     job = JOB_MOUNTING
             error = errors.get(key)
-            rows.append(dict(entry, job=job, last_error=dict(error) if error else None))
+            row = dict(entry, job=job, last_error=dict(error) if error else None)
+            if is_forwardable(entry):
+                forward = forwards.get(key) or {}
+                row["local_port"] = self._ports.setting(key)
+                row["forward"] = (
+                    forward.get("local_port") if forward.get("is_active") else None
+                )
+            rows.append(row)
         return rows
 
     def terminal_entries(self) -> list:
@@ -1016,6 +1050,34 @@ class ClientResident:
         self._start_thread(functools.partial(self._run_entry_job, handler, key, body))
         return {}
 
+    def configure_forward(self, hub_id: str, entry_id: str, setting) -> dict:
+        """Set the local port one forwardable entry takes.
+
+        Args:
+            hub_id: The hub the entry came from.
+            entry_id: The entry's id.
+            setting: ``"auto"`` or a fixed number.
+
+        Returns:
+            Empty when kept; ``unknown_request`` for an entry that is not
+            forwardable or a setting of another shape, ``port_taken`` for a
+            number another entry holds.
+        """
+        entry = next(
+            (
+                item
+                for item in self.service_entries()
+                if item.get("hub_id") == hub_id and item.get("id") == entry_id
+            ),
+            None,
+        )
+        if entry is None or not is_forwardable(entry):
+            return {"code": "unknown_request", "params": {}}
+        outcome = self._ports.configure(service_key(hub_id, entry_id), setting)
+        if not outcome:
+            self.notify()
+        return outcome
+
     def open_service(
         self, hub_id: str, entry_id: str, timeout_s: float = CLIENT_STREAM_TIMEOUT_S
     ) -> dict:
@@ -1143,7 +1205,11 @@ class ClientResident:
                 {},
             )
             is_local = (entry.get("payload") or {}).get("is_local_only") is True
-            return key, JOB_OPENING if is_local else ""
+            if not is_local:
+                return key, ""
+            return key, (
+                JOB_DISCONNECTING if body.get("is_enabled") is False else JOB_OPENING
+            )
         if service_type == "port":
             return key, JOB_FORWARDING if body.get("is_enabled") else JOB_DISCONNECTING
         if service_type == "file":

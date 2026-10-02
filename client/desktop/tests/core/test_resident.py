@@ -19,6 +19,7 @@ the notice a forgotten binding leaves, and the clipboard written.
 
 import functools
 import json
+import socket
 import threading
 import time
 import uuid
@@ -1595,6 +1596,30 @@ def test_a_press_writes_its_job_before_the_work_and_clears_it_after(two_hubs_up)
     held[0]()
     assert entry(resident, "h1", "svc_tcp")["job"] == ""
     assert entry(resident, "h1", "svc_tcp")["last_error"] is None
+
+
+def test_a_forwardable_entry_carries_its_local_port_and_its_forward(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    probe = socket.create_server(("127.0.0.1", 0))
+    wanted = probe.getsockname()[1]
+    probe.close()
+
+    row = entry(resident, "h1", "svc_tcp")
+    assert (row["local_port"], row["forward"]) == ("auto", None)
+    assert "local_port" not in entry(resident, "h1", "svc_wiki")
+    assert resident.configure_forward("h1", "svc_tcp", wanted) == {}
+    assert resident.configure_forward("h2", "svc_tcp", wanted)["code"] == "port_taken"
+    assert resident.configure_forward("h1", "svc_wiki", 15000) == {
+        "code": "unknown_request",
+        "params": {},
+    }
+    resident._services["port"].forward(
+        hub_id="h1", entry_id="svc_tcp", host="127.0.0.1", port=1
+    )
+
+    row = entry(resident, "h1", "svc_tcp")
+    assert (row["local_port"], row["forward"]) == (wanted, wanted)
+    resident._services["port"].release()
 
 
 def test_a_second_press_while_the_job_runs_is_dropped(two_hubs_up):

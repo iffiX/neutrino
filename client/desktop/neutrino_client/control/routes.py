@@ -180,6 +180,15 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
                     _hub_id(payload), str(payload.get("provider", "") or "")
                 ),
             )
+        if route == "/api/forward/configure":
+            return _answer(
+                resident,
+                resident.configure_forward(
+                    _hub_id(payload),
+                    str(payload.get("id", "") or ""),
+                    payload.get("local_port"),
+                ),
+            )
         if route.startswith(SERVICES_PREFIX):
             return _service_action(resident, route[len(SERVICES_PREFIX) :], payload)
         if route == "/api/fs":

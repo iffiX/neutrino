@@ -177,6 +177,31 @@ def test_service_actions_carry_only_the_body():
     assert "forwards" in state
 
 
+def test_a_local_port_setting_reaches_the_resident_and_answers_the_state():
+    resident = FakeResident()
+
+    status, state = routes.dispatch(
+        "POST",
+        "/api/forward/configure",
+        {"hub_id": "h1", "id": "svc_tcp", "local_port": 15432},
+        resident,
+    )
+    assert status == 200 and "services" in state
+    resident.forward_reply = {"code": "port_taken", "params": {"port": 15432}}
+    status, reply = routes.dispatch(
+        "POST",
+        "/api/forward/configure",
+        {"hub_id": "h1", "id": "svc_web", "local_port": "auto"},
+        resident,
+    )
+
+    assert (status, reply["code"]) == (400, "port_taken")
+    assert resident.forward_settings == [
+        ("h1", "svc_tcp", 15432),
+        ("h1", "svc_web", "auto"),
+    ]
+
+
 def test_starting_the_session_takes_a_replaced_binding_back():
     resident = FakeResident()
     resident.hubs_value[0]["connection"] = "replaced"

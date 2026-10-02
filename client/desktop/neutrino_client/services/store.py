@@ -3,7 +3,7 @@
 The file is the person's own, mode 0600, under the client's configuration
 directory. It holds this installation's id, the language this person
 reads, the palette the window draws in, the terminal's font size, the AI
-tool choices and the mount
+tool choices, the local port each forwardable entry takes, and the mount
 records: the hub and entry a share came from, its host, its login name and
 where it goes. Nothing about a service standing on is here; that is the
 running client's own and starts clean.
@@ -36,6 +36,8 @@ from neutrino_client.constants import (
 
 # What one mount record keeps; a record's other fields are dropped.
 STORE_MOUNT_KEYS = ("hub_id", "entry_id", "host", "share", "username", "path")
+# The setting of a local port the client picks itself.
+STORE_LOCAL_PORT_AUTO = "auto"
 
 
 def _tool_configs(raw) -> dict:
@@ -54,6 +56,29 @@ def _tool_configs(raw) -> dict:
         for tool, values in raw.items()
         if isinstance(values, dict)
     }
+
+
+def _local_port(raw) -> "dict | None":
+    """One local port record, None for one of an unusable shape.
+
+    Args:
+        raw: What the file held for one entry under ``local_ports``.
+
+    Returns:
+        ``{"setting": "auto" or a number, "port": number}``, the port 0
+        while auto has picked none.
+    """
+    if not isinstance(raw, dict):
+        return None
+    setting = raw.get("setting")
+    port = raw.get("port")
+    if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535:
+        return None
+    if setting == STORE_LOCAL_PORT_AUTO:
+        return {"setting": setting, "port": port}
+    if isinstance(setting, int) and not isinstance(setting, bool) and setting == port:
+        return {"setting": setting, "port": port}
+    return None
 
 
 def _record(raw: dict) -> dict:
@@ -117,12 +142,19 @@ def _kept(data: dict) -> dict:
     Returns:
         ``{"machine_id": str, "language": str, "theme": str,
         "terminal_font_size": int, "ai": {"tool_configs": {...}},
-        "mounts": {id: record}}``.
+        "local_ports": {service key: record}, "mounts": {id: record}}``.
     """
     ai = data.get("ai")
     mounts = data.get("mounts")
+    local_ports = data.get("local_ports")
     ai = ai if isinstance(ai, dict) else {}
     mounts = mounts if isinstance(mounts, dict) else {}
+    local_ports = local_ports if isinstance(local_ports, dict) else {}
+    kept_ports = {}
+    for key, raw in local_ports.items():
+        record = _local_port(raw)
+        if record is not None:
+            kept_ports[str(key)] = record
     machine_id = data.get("machine_id")
     return {
         "machine_id": machine_id if isinstance(machine_id, str) else "",
@@ -130,6 +162,7 @@ def _kept(data: dict) -> dict:
         "theme": _theme(data.get("theme")),
         "terminal_font_size": _font_size(data.get("terminal_font_size")),
         "ai": {"tool_configs": _tool_configs(ai.get("tool_configs"))},
+        "local_ports": kept_ports,
         "mounts": {
             str(record_id): _record(record)
             for record_id, record in mounts.items()
@@ -250,6 +283,37 @@ class ClientServiceStore:
 
         def change(data: dict) -> None:
             data["ai"]["tool_configs"] = _tool_configs(configs)
+
+        self._mutate(change)
+
+    def local_ports(self) -> dict:
+        """The local port each forwardable entry takes.
+
+        Returns:
+            Service key to ``{"setting", "port"}``: the setting is
+            ``"auto"`` or a fixed number, and the port the one the entry
+            takes, 0 while auto has picked none.
+        """
+        return self._read()["local_ports"]
+
+    def set_local_port(self, key: str, setting, port: int) -> None:
+        """Keep one entry's local port.
+
+        Args:
+            key: The entry's service key.
+            setting: ``"auto"`` or a fixed number.
+            port: The port the entry takes; for a fixed setting, that
+                number.
+
+        Raises:
+            ValueError: When the setting and the port do not make a record.
+        """
+        record = _local_port({"setting": setting, "port": port})
+        if record is None:
+            raise ValueError(f"no local port record of {setting!r} and {port!r}")
+
+        def change(data: dict) -> None:
+            data["local_ports"][key] = record
 
         self._mutate(change)
 
