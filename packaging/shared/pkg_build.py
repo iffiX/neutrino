@@ -11,6 +11,10 @@ Needs the Xcode command line tools for ``codesign``, ``pkgbuild`` and
 Not pure: signs, writes package trees, runs pkgbuild and productbuild.
 """
 
+# PEP 604 unions below are annotations only; the agent's tests import this on
+# the Python 3.9 that older Raspbian ships.
+from __future__ import annotations
+
 import plistlib
 import shutil
 import subprocess
