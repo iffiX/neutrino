@@ -350,8 +350,8 @@ const val CLIENT_SHARE_HOLD_S = 60L
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
 
-/** Below this height, in dp, the Terminals page keeps its machines and tabs in one line, as with the keyboard shown. */
-const val CLIENT_TERMINAL_SHORT_HEIGHT_DP = 480
+/** The least height, in dp, of the terminal's card, so a short window scrolls instead of squeezing the terminal. */
+const val CLIENT_TERMINAL_CARD_MIN_HEIGHT_DP = 420
 
 /** The page the terminals are drawn in. */
 const val CLIENT_TERMINAL_PAGE = "file:///android_asset/terminal/index.html"

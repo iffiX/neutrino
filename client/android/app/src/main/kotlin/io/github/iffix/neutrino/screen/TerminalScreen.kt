@@ -11,13 +11,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,7 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.iffix.neutrino.CLIENT_TERMINAL_SHORT_HEIGHT_DP
+import io.github.iffix.neutrino.CLIENT_TERMINAL_CARD_MIN_HEIGHT_DP
 import io.github.iffix.neutrino.channel.ChannelTerminal
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.AppIcon
@@ -71,10 +69,12 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
 import io.github.iffix.neutrino.terminal.TerminalView
 
 /**
- * The terminals: a card of machine chips with New terminal, the tab strip, the terminal, the
- * status line with the two switches, and the key row. Beside the sidebar New terminal is the
- * header's action instead. With the keyboard shown the chips and the tabs collapse into one line,
- * and the terminal takes the height left and refits.
+ * The terminals: a card of machine chips with New terminal, then the terminal's card with the tab
+ * strip, the terminal, the status line with the two switches and the key row, in one scrolling
+ * column. Beside the sidebar New terminal is the header's action instead. The terminal's card is as
+ * tall as the window under the top bar, the keyboard excluded, and never under its minimum, so one
+ * screen holds it with its keys where the window allows and the page scrolls where it does not; nothing
+ * collapses behind a tap.
  *
  * @param hubs Every hub joined.
  * @param tabs Every terminal tab.
@@ -88,8 +88,6 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     val active by tabs.active.collectAsStateWithLifecycle()
     val pick by tabs.picked.collectAsStateWithLifecycle()
     var modifiers by remember { mutableStateOf(TerminalModifiers()) }
-    var isExpanded by remember { mutableStateOf(false) }
-    val isKeyboard = WindowInsets.isImeVisible
     val machines = hubs.filter { it.isConnected }.flatMap { hub -> hub.terminals.map { hub to it } }
     val picked = machines.firstOrNull { (hub, machine) -> pick == hub.binding.id to machine.deviceId }
     val tab = open.firstOrNull { it.sessionId == active }
@@ -100,16 +98,11 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     ) { picked?.let { (hub, machine) -> tabs.create(hub.binding.id, machine.deviceId, machine.name) } }
     val isNewInHeader = offerPageAction(newTerminal)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
-        val isShort = maxHeight < CLIENT_TERMINAL_SHORT_HEIGHT_DP.dp
-        val isTight = isKeyboard || isShort
-        LaunchedEffect(isTight) { if (!isTight) isExpanded = false }
-        val isCollapsed = isTight && !isExpanded
-        val isScrolled = isShort && isExpanded
-        val terminalHeight = maxHeight
+        val cardHeight = maxOf(maxHeight - 32.dp, CLIENT_TERMINAL_CARD_MIN_HEIGHT_DP.dp)
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (isScrolled) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -117,16 +110,12 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                 SurfaceCard { Sentence(words.word("ui.services_wait_join")) }
                 return@Column
             }
-            if (isCollapsed) {
-                CollapsedLine(tab, open.indexOf(tab)) { isExpanded = true }
-            } else {
-                MachinesCard(
-                    machines,
-                    picked,
-                    onPick = { hub, machine -> tabs.pick(hub.binding.id, machine.deviceId) },
-                    newTerminal = newTerminal.takeUnless { isNewInHeader },
-                )
-            }
+            MachinesCard(
+                machines,
+                picked,
+                onPick = { hub, machine -> tabs.pick(hub.binding.id, machine.deviceId) },
+                newTerminal = newTerminal.takeUnless { isNewInHeader },
+            )
             if (open.isEmpty()) {
                 SurfaceCard {
                     Sentence(words.word("ui.terminal_none"))
@@ -137,12 +126,12 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
             val shape = RoundedCornerShape(12.dp)
             Column(
                 modifier = Modifier
-                    .then(if (isScrolled) Modifier.height(terminalHeight) else Modifier.weight(1f))
+                    .height(cardHeight)
                     .clip(shape)
                     .background(palette.surface)
                     .border(1.dp, palette.border, shape),
             ) {
-                if (!isCollapsed) TabStrip(open, active, onPick = tabs::select, onClose = tabs::close)
+                TabStrip(open, active, onPick = tabs::select, onClose = tabs::close)
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -254,30 +243,6 @@ private fun MachineChip(machine: ChannelTerminal, isOn: Boolean, onPick: () -> U
     ) {
         StatusDot(if (machine.isOnline) DotTone.OK else DotTone.OFF)
         BasicText(machine.name, style = NeutrinoTheme.note.copy(color = if (isOn) palette.ok else palette.text))
-    }
-}
-
-@Composable
-private fun CollapsedLine(tab: TerminalTab?, index: Int, onExpand: () -> Unit) {
-    val words = NeutrinoTheme.words
-    val palette = NeutrinoTheme.palette
-    val expand = words.word("ui.terminal_expand")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = expand }
-            .clickable(role = Role.Button, onClick = onExpand),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BasicText(
-            if (tab == null) "" else "${tab.name} · ${tabLabel(tab, index)}",
-            style = NeutrinoTheme.mono.copy(color = palette.text),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        IconGlyph(AppIcon.CHEVRON_DOWN, palette.textMuted, size = 16.dp)
     }
 }
 

@@ -43,7 +43,6 @@
     "scan_press": "Press Scan to use the camera.",
     "share_login_needed": "Give this share's password on the Files screen first.",
     "share_reconnecting": "Reconnecting…",
-    "terminal_detached": "Detached; it attaches again once the hub answers.",
-    "terminal_expand": "Show the machines and the tabs"
+    "terminal_detached": "Detached; it attaches again once the hub answers."
   }
 }
