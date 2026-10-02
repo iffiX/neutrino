@@ -229,6 +229,17 @@ def test_every_branch_the_hub_installs_from_says_how_to_verify_and_uninstall():
             assert isinstance(removal["is_data_kept"], bool), (name, key)
 
 
+def test_a_windows_verify_that_runs_a_file_tests_the_path_first():
+    """PowerShell's ``&`` on a missing file is a non-terminating error that
+    leaves ``$LASTEXITCODE`` unset, so ``exit $LASTEXITCODE`` says installed;
+    the path has to be tested before the program is run."""
+    for name, manifest in load_module_manifests().items():
+        for key, entry in manifest.get("platforms", {}).items():
+            verify = str(entry.get("verify", "") or "")
+            if key.startswith("windows") and "& " in verify:
+                assert "Test-Path" in verify, (name, key)
+
+
 def test_the_loader_refuses_a_branch_without_a_verify_command(tmp_path, monkeypatch):
     monkeypatch.setattr(manifests_module, "MANIFESTS_DIR", tmp_path)
     write_manifest(

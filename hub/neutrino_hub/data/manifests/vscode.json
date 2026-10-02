@@ -38,7 +38,7 @@
       "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_win32_x64_cli.zip", "_url_scan": "scan: allow",
       "sha256": "ae2eb828dc2874a43e2ee840d036d2b415cebed29d22417042da145c4bdc6efe", "_sha256_scan": "scan: allow",
       "package_kind": "zip",
-      "verify": "powershell -NoProfile -Command \"& (Join-Path $env:ProgramData 'Neutrino\\vscode\\code.exe') --version; exit $LASTEXITCODE\"",
+      "verify": "powershell -NoProfile -Command \"$p = Join-Path $env:ProgramData 'Neutrino\\vscode\\code.exe'; if (-not (Test-Path $p)) { exit 1 }; & $p --version; exit $LASTEXITCODE\"",
       "uninstall": {
         "packages": [],
         "post_uninstall": [],
