@@ -86,7 +86,7 @@ BINDING_OVERLAY_ON_KEY = "is_overlay_on"
 # EasyTier, by mode. An EasyTier object that names no mode is a manual one,
 # as a hub before the console mode sends it.
 OVERLAY_FIELDS = {
-    ("netbird", ""): ("setup_key", "management_url", "fqdn"),
+    ("netbird", ""): ("setup_key", "management_url", "fqdn", "hub_address"),
     ("easytier", "manual"): ("network_name", "network_secret", "peer", "hub_address"),
     ("easytier", "console"): ("config_server", "hub_address"),
 }

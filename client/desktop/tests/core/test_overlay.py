@@ -11,17 +11,22 @@ not name.
 
 The memberships run on recording drivers. Pinned here: the three states
 ``off``, ``connecting`` and ``on`` and nothing else; a connect is one attempt
-that ends ``on`` once the engine has an address and the hub answers through
-the network, or ``off`` with the engine's code, ``overlay_no_address`` or
-``overlay_hub_unreachable`` within its time, its engine stopped, with no
-retry; Cancel stops a connect at any point and Disconnect a network that is
-on; a press that does not fit the state is dropped; the picker changes the
-engine only while off and nothing changes it by itself; a network the hub
-stops naming goes off with ``overlay_withdrawn``; an engine that stops by
-itself goes off with its code; a binding last on gets one connect at start;
-a hub's release stops the engine only when no other hub is on it.
+in two stages, ``login`` until the engine has an address and ``hub`` until
+the hub's channel is up through the hub's own address there, each with its
+own limit, and ends ``on``, or ``off`` with the engine's code,
+``overlay_no_address`` or ``overlay_hub_unreachable``, its engine stopped,
+with no retry; a console that assigns no network keeps the connect waiting
+with no limit; the ``hub`` stage probes one address, the hub's own first,
+and never another; each stage's start and end is a log line; Cancel stops a
+connect in either stage and Disconnect a network that is on; a press that
+does not fit the state is dropped; the picker changes the engine only while
+off and nothing changes it by itself; a network the hub stops naming goes
+off with ``overlay_withdrawn``; an engine that stops by itself goes off with
+its code; a binding last on gets one connect at start; a hub's release stops
+the engine only when no other hub is on it.
 """
 
+import functools
 import json
 import subprocess
 import threading
@@ -37,7 +42,7 @@ from neutrino_client.core.overlay import (
     OverlayMemberships,
     OverlayNetbirdDriver,
     netbird_management_key,
-    overlay_hub_hosts,
+    overlay_hub_host,
     overlay_key,
     overlay_network,
 )
@@ -264,12 +269,45 @@ def test_the_default_management_url_is_netbirds_own():
     assert netbird_management_key("http://nb.lan") == "http://nb.lan:80"
 
 
-def test_the_hubs_hosts_on_a_network_are_its_name_or_its_address():
-    assert overlay_hub_hosts(NETBIRD) == ["hub.nb.example"]
-    assert overlay_hub_hosts(dict(EASYTIER, hub_address="10.144.144.1/24")) == [
-        "10.144.144.1"
-    ]
-    assert overlay_hub_hosts(dict(EASYTIER, hub_address="")) == []
+def test_the_hubs_address_is_its_own_then_a_url_inside_the_network_then_its_name():
+    urls = ["https://192.168.10.1:8443", "https://100.88.92.30:8443"]
+    netbird = dict(NETBIRD, hub_address="100.88.92.31")
+
+    assert overlay_hub_host(netbird, urls) == "100.88.92.31"
+    assert overlay_hub_host(NETBIRD, urls) == "100.88.92.30"
+    assert overlay_hub_host(NETBIRD, urls[:1]) == "hub.nb.example"
+    assert overlay_hub_host(dict(NETBIRD, fqdn=""), urls[:1]) == ""
+    assert (
+        overlay_hub_host(dict(EASYTIER, hub_address="10.144.144.1/24"), urls)
+        == "10.144.144.1"
+    )
+    easytier_urls = ["https://hub.lan:8443", "https://10.144.144.9:8443"]
+    bare = dict(EASYTIER, hub_address="")
+    assert overlay_hub_host(bare, easytier_urls, "10.144.144.0/24") == "10.144.144.9"
+    assert overlay_hub_host(bare, easytier_urls, "10.200.0.0/24") == ""
+    assert overlay_hub_host(bare, easytier_urls) == ""
+
+
+def test_the_hub_is_seen_by_netbird_at_its_address_or_by_its_name(tmp_path):
+    netbird, _easytier, platform = drivers(tmp_path)
+    platform.answer(
+        "netbird",
+        "status",
+        stdout=netbird_status(
+            peers=[
+                {
+                    "fqdn": "x.nb.example",
+                    "netbirdIp": "100.88.92.30/16",
+                    "status": "Connected",
+                },
+                {"fqdn": "hub.nb.example", "status": "Connecting"},
+            ]
+        ),
+    )
+
+    assert netbird.status(dict(NETBIRD, hub_address="100.88.92.30"))["is_hub_seen"]
+    assert not netbird.status(NETBIRD)["is_hub_seen"]
+    assert netbird.status(NETBIRD)["network"] == "100.64.0.0/10"
 
 
 # --- EasyTier ---
@@ -513,15 +551,20 @@ class FakeDriver:
         self.join_refusal = ""
         self.status_refusal = ""
         self.on_join = None
+        self.on_status = None
+        self.is_waiting = False
 
     def status(self, material):
+        if self.on_status is not None:
+            self.on_status()
         if self.status_refusal:
             raise OverlayControlError(self.status_refusal)
         return {
             "is_on": self.is_on,
-            "is_waiting": False,
+            "is_waiting": self.is_waiting,
             "is_other_network": False,
             "address": self.address if self.is_on else "",
+            "network": "",
             "is_hub_seen": self.is_on,
         }
 
@@ -555,8 +598,11 @@ class Hubs:
         rows: ``{hub_id: [objects]}`` in join order.
         choices: ``{hub_id: (is_on, pick)}``.
         kept: Every ``(hub_id, is_on, pick)`` written onto a binding.
-        routes: Every ``(hub_id, hosts)`` the channel was pointed at.
+        routes: Every ``(hub_id, hosts, is_only)`` the channel was pointed
+            at.
+        probes: Every ``hosts`` the hub was asked to answer through.
         is_reached: Whether the hub's channel answers through the network.
+        urls: ``{hub_id: [urls]}`` the bindings hold.
     """
 
     def __init__(self, rows):
@@ -564,7 +610,10 @@ class Hubs:
         self.choices = {}
         self.kept = []
         self.routes = []
+        self.probes = []
         self.is_reached = True
+        self.urls = {}
+        self.on_reach = None
 
     def __call__(self):
         answer = []
@@ -574,6 +623,7 @@ class Hubs:
                 {
                     "hub_id": hub_id,
                     "overlays": list(overlays),
+                    "urls": list(self.urls.get(hub_id, [])),
                     "is_on": is_on,
                     "pick": pick,
                 }
@@ -584,10 +634,13 @@ class Hubs:
         self.kept.append((hub_id, is_on, pick))
         self.choices[hub_id] = (is_on, pick)
 
-    def route(self, hub_id, hosts):
-        self.routes.append((hub_id, list(hosts)))
+    def route(self, hub_id, hosts, is_only):
+        self.routes.append((hub_id, list(hosts), is_only))
 
     def reaches(self, hub_id, hosts):
+        self.probes.append(list(hosts))
+        if self.on_reach is not None:
+            self.on_reach()
         return self.is_reached
 
 
@@ -595,7 +648,17 @@ def run_inline(target) -> None:
     target()
 
 
-def subject_for(rows, *, start_thread=run_inline, timeout_s=0.05):
+def subject_for(
+    rows,
+    *,
+    start_thread=run_inline,
+    timeout_s=0.05,
+    log=discard,
+    clock=None,
+    login_s=None,
+    hub_s=None,
+    poll_s=0.01,
+):
     steps = []
     engines = {
         "netbird": FakeDriver("netbird", steps),
@@ -606,14 +669,16 @@ def subject_for(rows, *, start_thread=run_inline, timeout_s=0.05):
         platform=None,
         bindings_of=hubs,
         hostname="box",
-        log=discard,
+        log=log,
         on_route=hubs.route,
         reaches_hub=hubs.reaches,
         keep_choice=hubs.keep,
         drivers=engines,
         start_thread=start_thread,
-        connect_timeout_s=timeout_s,
-        poll_s=0.01,
+        clock=clock,
+        login_timeout_s=timeout_s if login_s is None else login_s,
+        hub_timeout_s=timeout_s if hub_s is None else hub_s,
+        poll_s=poll_s,
     )
     return subject, engines, hubs, steps
 
@@ -635,6 +700,8 @@ def test_a_hub_starts_off_on_its_first_network_with_both_listed():
             {"provider": "easytier", "network": "home"},
         ],
         "state": "off",
+        "stage": "",
+        "is_waiting": False,
         "address": "",
         "error": None,
     }
@@ -651,7 +718,10 @@ def test_a_connect_ends_on_with_the_address_once_the_hub_answers_through_it():
     assert (row["state"], row["address"], row["error"]) == ("on", "10.0.0.5", None)
     assert subject.job("h1") == ""
     assert steps == [("join", "netbird")]
-    assert hubs.routes == [("h1", ["hub.nb.example"])]
+    assert hubs.routes == [
+        ("h1", ["hub.nb.example"], True),
+        ("h1", ["hub.nb.example"], False),
+    ]
     assert hubs.kept == [("h1", True, "netbird")]
 
 
@@ -698,7 +768,7 @@ def test_no_address_in_time_is_off_with_its_code_and_the_engine_stopped():
     }
     assert subject.hub_row("h1")["state"] == "off"
     assert steps == [("join", "easytier"), ("leave", "easytier")]
-    assert hubs.routes == [("h1", [])]
+    assert hubs.routes == [("h1", [], False)]
 
 
 def test_a_hub_that_does_not_answer_through_the_network_in_time_is_off():
@@ -710,7 +780,7 @@ def test_a_hub_that_does_not_answer_through_the_network_in_time_is_off():
     assert subject.hub_row("h1")["state"] == "off"
     assert subject.hub_row("h1")["error"]["code"] == "overlay_hub_unreachable"
     assert steps == [("join", "easytier"), ("leave", "easytier")]
-    assert hubs.routes == [("h1", ["10.144.144.1"]), ("h1", [])]
+    assert hubs.routes == [("h1", ["10.144.144.1"], True), ("h1", [], False)]
 
 
 def test_a_cancel_stops_the_connect_and_goes_off_without_an_error():
@@ -748,7 +818,7 @@ def test_a_disconnect_stops_the_engine_and_goes_off():
 
     assert subject.hub_row("h1")["state"] == "off"
     assert steps == [("join", "netbird"), ("leave", "netbird")]
-    assert hubs.routes[-1] == ("h1", [])
+    assert hubs.routes[-1] == ("h1", [], False)
     assert hubs.kept[-1] == ("h1", False, "netbird")
 
 
@@ -912,6 +982,140 @@ def test_no_secret_reaches_a_row():
 
     assert "s3cret" not in rows and KEY not in rows  # scan: allow
     assert "etk_token1" not in rows
+
+
+def test_a_connect_logs_in_then_waits_for_the_hub_then_is_on():
+    lines = []
+    subject, engines, hubs, _steps = subject_for(
+        {"h1": [EASYTIER]}, start_thread=_thread, timeout_s=5, log=lines.append
+    )
+    engines["easytier"].address = ""
+    hubs.is_reached = False
+
+    subject.connect("h1")
+    row = subject.hub_row("h1")
+    assert (row["state"], row["stage"], row["address"]) == ("connecting", "login", "")
+
+    engines["easytier"].address = "10.144.144.5"
+    _wait_for(lambda: subject.hub_row("h1")["stage"] == "hub")
+    row = subject.hub_row("h1")
+    assert (row["state"], row["address"]) == ("connecting", "10.144.144.5")
+
+    hubs.is_reached = True
+    _wait_for(lambda: subject.hub_row("h1")["state"] == "on")
+    row = subject.hub_row("h1")
+    assert (row["stage"], row["address"]) == ("", "10.144.144.5")
+    ends = [line for line in lines if "ended after" in line]
+    assert len(ends) == 2
+    assert "stage login ended after" in ends[0] and "10.144.144.5" in ends[0]
+    assert "stage hub ended after" in ends[1]
+    assert len([line for line in lines if "started" in line]) == 2
+
+
+def test_the_login_stage_has_its_own_limit():
+    clock = Clock()
+    subject, engines, _hubs, steps = subject_for(
+        {"h1": [NETBIRD]}, clock=clock, login_s=90, hub_s=60, poll_s=0
+    )
+    engines["netbird"].address = ""
+    engines["netbird"].on_status = functools.partial(_advance, clock, 1)
+
+    subject.connect("h1")
+
+    assert subject.hub_row("h1")["error"]["code"] == "overlay_no_address"
+    assert clock.now == 1090
+    assert steps == [("join", "netbird"), ("leave", "netbird")]
+
+
+def test_the_hub_stage_has_its_own_limit_from_the_address():
+    clock = Clock()
+    subject, engines, hubs, steps = subject_for(
+        {"h1": [EASYTIER]}, clock=clock, login_s=90, hub_s=60, poll_s=0
+    )
+    engines["easytier"].address = ""
+    hubs.is_reached = False
+
+    def tick():
+        clock.now += 1
+        if clock.now == 1080:
+            engines["easytier"].address = "10.144.144.5"
+
+    engines["easytier"].on_status = tick
+    hubs.on_reach = functools.partial(_advance, clock, 1)
+
+    subject.connect("h1")
+
+    assert subject.hub_row("h1")["error"]["code"] == "overlay_hub_unreachable"
+    assert 1140 <= clock.now <= 1142
+    assert steps == [("join", "easytier"), ("leave", "easytier")]
+
+
+def test_a_console_that_assigns_no_network_keeps_the_connect_waiting():
+    lines = []
+    subject, engines, hubs, _steps = subject_for(
+        {"h1": [CONSOLE]}, start_thread=_thread, timeout_s=0.1, log=lines.append
+    )
+    engines["easytier"].address = ""
+    engines["easytier"].is_waiting = True
+
+    subject.connect("h1")
+    _wait_for(lambda: subject.hub_row("h1")["is_waiting"])
+    time.sleep(0.3)
+    row = subject.hub_row("h1")
+    assert (row["state"], row["stage"], row["error"]) == ("connecting", "login", None)
+
+    engines["easytier"].is_waiting = False
+    engines["easytier"].address = "10.126.126.4"
+    _wait_for(lambda: subject.hub_row("h1")["state"] == "on")
+    assert subject.hub_row("h1")["is_waiting"] is False
+    assert hubs.routes[0] == ("h1", ["10.126.126.1"], True)
+
+
+def test_the_hub_stage_probes_one_address_only_until_it_ends():
+    subject, _engines, hubs, _steps = subject_for(
+        {"h1": [NETBIRD]}, start_thread=_thread, timeout_s=5
+    )
+    hubs.urls["h1"] = ["https://192.168.10.1:8443", "https://100.88.92.30:8443"]
+    hubs.is_reached = False
+
+    subject.connect("h1")
+    _wait_for(lambda: len(hubs.probes) >= 3)
+    assert hubs.routes == [("h1", ["100.88.92.30"], True)]
+    hubs.is_reached = True
+    _wait_for(lambda: subject.hub_row("h1")["state"] == "on")
+
+    assert {tuple(hosts) for hosts in hubs.probes} == {("100.88.92.30",)}
+    assert hubs.routes == [
+        ("h1", ["100.88.92.30"], True),
+        ("h1", ["100.88.92.30"], False),
+    ]
+
+
+@pytest.mark.parametrize("stage", ["login", "hub"])
+def test_a_cancel_in_either_stage_goes_off_without_an_error(stage):
+    lines = []
+    subject, engines, hubs, steps = subject_for(
+        {"h1": [EASYTIER]}, start_thread=_thread, timeout_s=5, log=lines.append
+    )
+    hubs.is_reached = False
+    if stage == "login":
+        engines["easytier"].address = ""
+
+    subject.connect("h1")
+    _wait_for(lambda: subject.hub_row("h1")["stage"] == stage)
+    subject.cancel("h1")
+    _wait_for(lambda: subject.hub_row("h1")["state"] == "off")
+    _wait_for(lambda: any("cancelled" in line for line in lines))
+
+    row = subject.hub_row("h1")
+    assert (row["error"], row["stage"]) == (None, "")
+    assert ("leave", "easytier") in steps
+    assert hubs.routes[-1] == ("h1", [], False)
+    assert any(f"stage {stage} ended after" in line for line in lines)
+
+
+def _advance(clock, seconds) -> None:
+    clock.now += seconds
 
 
 def _thread(target) -> None:

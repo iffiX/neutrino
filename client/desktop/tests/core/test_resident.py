@@ -17,6 +17,7 @@ as ``busy``, a failure kept on the entry until the next press or a refresh,
 the notice a forgotten binding leaves, and the clipboard written.
 """
 
+import functools
 import json
 import threading
 import time
@@ -323,6 +324,8 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
             "network": "",
             "networks": [],
             "state": "off",
+            "stage": "",
+            "is_waiting": False,
             "address": "",
             "error": None,
         },
@@ -1315,12 +1318,16 @@ def test_a_network_that_is_on_has_its_hub_connect_through_it_first(
     resident, _driver = overlay_resident
     session = resident._sessions["c1"]
     hosts = []
-    session.reconnect_through = hosts.append
+    session.reconnect_through = functools.partial(_note_route, hosts)
 
-    resident._overlay_route("h1", ["10.144.144.1"])
+    resident._overlay_route("h1", ["10.144.144.1"], True)
     resident._overlay_route("c1", [])
 
-    assert hosts == [["10.144.144.1"], []]
+    assert hosts == [(["10.144.144.1"], True), ([], False)]
+
+
+def _note_route(seen, hosts, is_only) -> None:
+    seen.append((hosts, is_only))
 
 
 def test_a_press_on_the_network_of_a_hub_nobody_joined_is_unknown_hub(

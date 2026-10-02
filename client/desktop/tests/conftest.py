@@ -250,6 +250,8 @@ OVERLAY_ROW = {
         {"provider": "easytier", "network": "home"},
     ],
     "state": "on",
+    "stage": "",
+    "is_waiting": False,
     "address": "100.64.0.7",
     "error": None,
 }
@@ -300,6 +302,8 @@ OFFICE_ROW = {
         "network": "",
         "networks": [],
         "state": "off",
+        "stage": "",
+        "is_waiting": False,
         "address": "",
         "error": None,
     },

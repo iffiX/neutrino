@@ -300,8 +300,8 @@ class ClientResident:
             ``[{hub_id, hub_name, binding_id, gateway_url, software,
             connection, last_error, is_exit, overlay, jobs}]``:
             ``connection`` is one of the session's five states, ``overlay``
-            the virtual network's ``{network, networks, state, address,
-            error}``, and ``jobs`` ``{is_refreshing, overlay_job,
+            the virtual network's ``{network, networks, state, stage,
+            is_waiting, address, error}``, and ``jobs`` ``{is_refreshing, overlay_job,
             is_leaving}``. No token and no secret is in it.
         """
         exit_hub_id = self.exit_hub_id()
@@ -1302,6 +1302,7 @@ class ClientResident:
                 {
                     "hub_id": session.hub_id() or session.binding_id,
                     "overlays": session.overlays(),
+                    "urls": enrollment.stored_urls(session.binding()),
                     "is_on": is_on,
                     "pick": pick,
                 }
@@ -1316,14 +1317,14 @@ class ClientResident:
         press(session.hub_id() or session.binding_id)
         return {}
 
-    def _overlay_route(self, hub_id: str, hosts: list) -> None:
-        """A hub's channel connects through its hosts on the network first."""
+    def _overlay_route(self, hub_id: str, hosts: list, is_only: bool = False) -> None:
+        """A hub's channel connects through its hosts on the network first, or alone."""
         session = self._find_session(hub_id)
         if session is not None:
-            session.reconnect_through(hosts)
+            session.reconnect_through(hosts, is_only)
 
     def _overlay_reaches(self, hub_id: str, hosts: list) -> bool:
-        """Whether a hub's channel answers on its hosts on the network."""
+        """Whether a hub's channel is up through its hosts on the network."""
         session = self._find_session(hub_id)
         return session is not None and session.reaches_through(hosts)
 

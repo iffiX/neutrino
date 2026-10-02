@@ -569,6 +569,8 @@ function hubRow(hub) {
   if (hub.is_exit) extras.push(noteLine(t('ui.hub_is_exit')));
   extras.push(overlayLine(hub));
   const overlay = hub.overlay || {};
+  const stage = overlayStage(overlay);
+  if (stage) extras.push(reasonLine(stage));
   if (overlay.state === 'off' && overlay.error) {
     extras.push(errorLine(wordError(overlay.error)));
   }
@@ -623,6 +625,18 @@ function overlayLine(hub) {
   line.appendChild(document.createTextNode(
     name + ' · ' + t('ui.overlay.' + state, { address: overlay.address || '' })));
   return line;
+}
+
+// The stage a connect is in, as the line's reason: the engine logging in,
+// the console not yet assigning a network, or the hub not yet answering.
+function overlayStage(overlay) {
+  if (overlay.state !== 'connecting') return '';
+  if (overlay.is_waiting) return t('ui.reason.console_waiting');
+  if (overlay.stage === 'login') {
+    return t('ui.stage.login', { engine: OVERLAY_TITLES[overlay.network] || overlay.network });
+  }
+  if (overlay.stage === 'hub') return t('ui.stage.hub', { address: overlay.address || '' });
+  return '';
 }
 
 // The engine picker, while the hub publishes two networks or more; it

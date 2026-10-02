@@ -41,6 +41,8 @@ def test_state_carries_the_persons_facts_the_hubs_and_no_token():
         "network",
         "networks",
         "state",
+        "stage",
+        "is_waiting",
         "address",
         "error",
     }
