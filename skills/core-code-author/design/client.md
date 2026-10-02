@@ -405,6 +405,16 @@ word. The controls:
 | --- | --- | --- |
 | **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer with the seat password; on a phone opens the viewer page |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app with a back arrow and a key bar of Esc, Tab, Ctrl, Shift, Alt, Win and **Paste** |
+| **Configure** | on a phone, when the entry is healthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
+
+The phone's viewer page is built for the picture first:
+
+| Rule | Reason |
+| --- | --- |
+| The page is immersive: the system's bars are hidden and come back on an edge swipe, and the picture fills the screen. | A phone's screen is small; every bar on it is taken from the desktop. |
+| The top bar (title, back) and the key bar hide 3 s after the last touch on them and after a press of the handle; a small translucent round handle at the top right stays, and a press on it shows both again. | Bars that hide by themselves give the picture back, and the handle gives the bars back without a tap on the picture, which is a click on the remote machine. |
+| The keyboard never shrinks the picture: the picture keeps its size and the keyboard covers its lower part, the key bar sits right above the keyboard, and the two-finger drag and pinch reach what the keyboard covers. | A picture squeezed to a strip above the keyboard cannot be worked on. |
+| The hidden text field that carries typing is a plain text field: no ASCII-only keyboard type, no autocorrect, no suggestions; what the keyboard composes and commits (Latin, digits, symbols, CJK through its own composition) is sent as text, and a single key with a modifier held is sent as that key. | The person's own keyboard, in its own language, is the input; a keyboard forced into one script makes digits and other scripts a chore. |
 
 A row whose entry is unhealthy shows the code's wording on the reason line:
 `rdp_nobody_seated`, `rdp_screen_not_allowed`.
