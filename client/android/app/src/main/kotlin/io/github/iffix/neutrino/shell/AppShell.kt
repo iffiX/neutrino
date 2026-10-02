@@ -11,10 +11,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -22,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -37,7 +44,9 @@ import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.ArmState
 import io.github.iffix.neutrino.design.LocalArm
+import io.github.iffix.neutrino.design.LocalPageActionSlot
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.design.PageActionSlot
 import io.github.iffix.neutrino.design.disarmOnPress
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
@@ -56,10 +65,12 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
 
 /**
  * Every screen under one frame: the bottom bar in portrait, the sidebar in a window wider than
- * tall and at least 720 dp wide, the top bar over the open screen either way. Pages change with
- * no transition.
+ * tall and at least 720 dp wide, the top bar over the open screen either way. Beside the sidebar
+ * the open screen's body starts right of it, and its own action sits in the top bar. Pages change
+ * with no transition.
  *
- * @param identity This phone's name, platform and version, for the sidebar's foot.
+ * @param deviceName This phone's name, for the About card.
+ * @param platform This phone's platform, for the About card.
  * @param version The app's version.
  * @param settings The settings in force.
  * @param onSaveSettings What saving the settings does.
@@ -73,7 +84,8 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
  */
 @Composable
 fun AppShell(
-    identity: String,
+    deviceName: String,
+    platform: String,
     version: String,
     settings: ClientSettings,
     onSaveSettings: (ClientSettings) -> Unit,
@@ -114,85 +126,102 @@ fun AppShell(
     CompositionLocalProvider(LocalArm provides arm) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(palette.bg).disarmOnPress(arm)) {
             val isWide = maxWidth > maxHeight && maxWidth >= CLIENT_SIDEBAR_MIN_WIDTH_DP.dp
-            Row(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-                if (isWide) SideBar(current = tab, onOpen = open, identity = identity)
-                Column(modifier = Modifier.weight(1f)) {
+            val slot = remember(isWide) { PageActionSlot(isHeader = isWide) }
+            val sides = if (isWide) {
+                Modifier.windowInsetsPadding(
+                    WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal),
+                )
+            } else {
+                Modifier
+            }
+            Row(modifier = Modifier.fillMaxSize().statusBarsPadding().then(sides)) {
+                if (isWide) SideBar(current = tab, onOpen = open)
+                Column(modifier = Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
                     TopBar(
                         title = words.word(screen.titleKey),
                         isRefreshing = hubs.any { it.jobs.isRefreshing },
                         onRefresh = actions::refresh,
                         onBack = back,
                         isWide = isWide,
+                        action = slot.action,
                     )
                     val below = if (isWide) {
-                        Modifier
+                        Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
                     } else {
                         Modifier
                             .consumeWindowInsets(WindowInsets.navigationBars)
                             .consumeWindowInsets(PaddingValues(bottom = CLIENT_BOTTOM_BAR_HEIGHT_DP.dp))
                     }
-                    NavHost(
-                        navController = navigation,
-                        startDestination = AppScreen.HUBS.route,
-                        modifier = Modifier.weight(1f).then(below),
-                        enterTransition = { EnterTransition.None },
-                        exitTransition = { ExitTransition.None },
-                        popEnterTransition = { EnterTransition.None },
-                        popExitTransition = { ExitTransition.None },
-                    ) {
-                        val toJoin = {
-                            actions.clearJoin()
-                            navigation.navigate(AppScreen.JOIN.route)
-                        }
-                        composable(AppScreen.HUBS.route) {
-                            HubsScreen(
-                                hubs,
-                                notices,
-                                onJoin = toJoin,
-                                onLeave = actions::leave,
-                                onReconnect = actions::reconnect,
-                                onOverlayConnect = connectOverlay,
-                                onOverlayCancel = actions::cancelOverlay,
-                                onOverlayDisconnect = actions::disconnectOverlay,
-                                onOverlayPick = actions::pickOverlay,
-                            )
-                        }
-                        composable(AppScreen.WEB.route) { WebScreen(hubs, onOpen = actions::openUrl) }
-                        composable(AppScreen.PORTS.route) { PortsScreen(hubs, onCopy = { actions.copy(it) }) }
-                        composable(AppScreen.AI.route) {
-                            AiScreen(hubs, material = actions::serviceMaterial, onCopy = actions::copy)
-                        }
-                        composable(AppScreen.FILES.route) {
-                            FilesScreen(
-                                hubs,
-                                hasLogin = actions::hasShareLogin,
-                                onLogin = actions::giveShareLogin,
-                                onForget = actions::forgetShareLogin,
-                                onOpen = actions::openShare,
-                            )
-                        }
-                        composable(AppScreen.TERMINALS.route) { TerminalScreen(hubs, terminalTabs) }
-                        composable(AppScreen.REMOTE_DESKTOP.route) {
-                            RemoteDesktopScreen(
-                                hubs,
-                                connecting = connecting,
-                                errors = desktopErrors,
-                                viewingKey = viewing?.first,
-                                onConnect = actions::connectDesktop,
-                            )
-                        }
-                        composable(AppScreen.SETTINGS.route) {
-                            SettingsScreen(saved = settings, version = version, onSave = onSaveSettings)
-                        }
-                        composable(AppScreen.JOIN.route) {
-                            JoinScreen(
-                                join = join,
-                                onJoin = actions::join,
-                                onJoined = {
-                                    actions.clearJoin()
-                                    navigation.popBackStack()
-                                },
-                            )
+                    CompositionLocalProvider(LocalPageActionSlot provides slot) {
+                        NavHost(
+                            navController = navigation,
+                            startDestination = AppScreen.HUBS.route,
+                            modifier = Modifier.weight(1f).then(below),
+                            enterTransition = { EnterTransition.None },
+                            exitTransition = { ExitTransition.None },
+                            popEnterTransition = { EnterTransition.None },
+                            popExitTransition = { ExitTransition.None },
+                        ) {
+                            val toJoin = {
+                                actions.clearJoin()
+                                navigation.navigate(AppScreen.JOIN.route)
+                            }
+                            composable(AppScreen.HUBS.route) {
+                                HubsScreen(
+                                    hubs,
+                                    notices,
+                                    onJoin = toJoin,
+                                    onLeave = actions::leave,
+                                    onReconnect = actions::reconnect,
+                                    onOverlayConnect = connectOverlay,
+                                    onOverlayCancel = actions::cancelOverlay,
+                                    onOverlayDisconnect = actions::disconnectOverlay,
+                                    onOverlayPick = actions::pickOverlay,
+                                )
+                            }
+                            composable(AppScreen.WEB.route) { WebScreen(hubs, onOpen = actions::openUrl) }
+                            composable(AppScreen.PORTS.route) { PortsScreen(hubs, onCopy = { actions.copy(it) }) }
+                            composable(AppScreen.AI.route) {
+                                AiScreen(hubs, material = actions::serviceMaterial, onCopy = actions::copy)
+                            }
+                            composable(AppScreen.FILES.route) {
+                                FilesScreen(
+                                    hubs,
+                                    hasLogin = actions::hasShareLogin,
+                                    onLogin = actions::giveShareLogin,
+                                    onForget = actions::forgetShareLogin,
+                                    onOpen = actions::openShare,
+                                )
+                            }
+                            composable(AppScreen.TERMINALS.route) { TerminalScreen(hubs, terminalTabs) }
+                            composable(AppScreen.REMOTE_DESKTOP.route) {
+                                RemoteDesktopScreen(
+                                    hubs,
+                                    connecting = connecting,
+                                    errors = desktopErrors,
+                                    viewingKey = viewing?.first,
+                                    onConnect = actions::connectDesktop,
+                                )
+                            }
+                            composable(AppScreen.SETTINGS.route) {
+                                SettingsScreen(
+                                    saved = settings,
+                                    deviceName = deviceName,
+                                    platform = platform,
+                                    version = version,
+                                    onSave = onSaveSettings,
+                                )
+                            }
+                            composable(AppScreen.JOIN.route) {
+                                JoinScreen(
+                                    join = join,
+                                    onJoin = actions::join,
+                                    onJoined = {
+                                        actions.clearJoin()
+                                        navigation.popBackStack()
+                                    },
+                                )
+                            }
                         }
                     }
                     if (!isWide) BottomBar(current = tab, onOpen = open)

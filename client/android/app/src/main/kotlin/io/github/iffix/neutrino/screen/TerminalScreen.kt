@@ -56,11 +56,13 @@ import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.LocalArm
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.design.PageAction
 import io.github.iffix.neutrino.design.ReasonLine
 import io.github.iffix.neutrino.design.SelectedMark
 import io.github.iffix.neutrino.design.StatusDot
 import io.github.iffix.neutrino.design.SurfaceCard
 import io.github.iffix.neutrino.design.ToggleSwitch
+import io.github.iffix.neutrino.design.offerPageAction
 import io.github.iffix.neutrino.terminal.TerminalKey
 import io.github.iffix.neutrino.terminal.TerminalModifiers
 import io.github.iffix.neutrino.terminal.TerminalPhase
@@ -70,8 +72,9 @@ import io.github.iffix.neutrino.terminal.TerminalView
 
 /**
  * The terminals: a card of machine chips with New terminal, the tab strip, the terminal, the
- * status line with the two switches, and the key row. With the keyboard shown the chips and the
- * tabs collapse into one line, and the terminal takes the height left and refits.
+ * status line with the two switches, and the key row. Beside the sidebar New terminal is the
+ * header's action instead. With the keyboard shown the chips and the tabs collapse into one line,
+ * and the terminal takes the height left and refits.
  *
  * @param hubs Every hub joined.
  * @param tabs Every terminal tab.
@@ -90,6 +93,12 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     val machines = hubs.filter { it.isConnected }.flatMap { hub -> hub.terminals.map { hub to it } }
     val picked = machines.firstOrNull { (hub, machine) -> pick == hub.binding.id to machine.deviceId }
     val tab = open.firstOrNull { it.sessionId == active }
+    val newTerminal = PageAction(
+        words.word("ui.terminal_new"),
+        AppIcon.TERMINAL,
+        isEnabled = picked != null && picked.second.isOnline,
+    ) { picked?.let { (hub, machine) -> tabs.create(hub.binding.id, machine.deviceId, machine.name) } }
+    val isNewInHeader = offerPageAction(newTerminal)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
         val isShort = maxHeight < CLIENT_TERMINAL_SHORT_HEIGHT_DP.dp
         val isTight = isKeyboard || isShort
@@ -115,7 +124,7 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                     machines,
                     picked,
                     onPick = { hub, machine -> tabs.pick(hub.binding.id, machine.deviceId) },
-                    onNew = { hub, machine -> tabs.create(hub.binding.id, machine.deviceId, machine.name) },
+                    newTerminal = newTerminal.takeUnless { isNewInHeader },
                 )
             }
             if (open.isEmpty()) {
@@ -180,7 +189,7 @@ private fun MachinesCard(
     machines: List<Pair<HubView, ChannelTerminal>>,
     picked: Pair<HubView, ChannelTerminal>?,
     onPick: (HubView, ChannelTerminal) -> Unit,
-    onNew: (HubView, ChannelTerminal) -> Unit,
+    newTerminal: PageAction?,
 ) {
     val words = NeutrinoTheme.words
     SurfaceCard {
@@ -199,14 +208,16 @@ private fun MachinesCard(
                         onPick(hub, machine)
                     }
                 }
-                NeutrinoButton(
-                    words.word("ui.terminal_new"),
-                    { picked?.let { (hub, machine) -> onNew(hub, machine) } },
-                    tier = ButtonTier.PRIMARY,
-                    icon = AppIcon.TERMINAL,
-                    isSmall = true,
-                    isEnabled = picked != null && picked.second.isOnline,
-                )
+                if (newTerminal != null) {
+                    NeutrinoButton(
+                        newTerminal.label,
+                        newTerminal.onClick,
+                        tier = ButtonTier.PRIMARY,
+                        icon = newTerminal.icon,
+                        isSmall = true,
+                        isEnabled = newTerminal.isEnabled,
+                    )
+                }
             }
             if (picked != null) {
                 BasicText(

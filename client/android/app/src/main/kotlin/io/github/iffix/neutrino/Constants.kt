@@ -39,17 +39,13 @@ const val ICON_VIEWBOX = 24f
 /** The width of an icon's stroke, in units of [ICON_VIEWBOX]. */
 const val ICON_STROKE_WIDTH = 1.6f
 
-/** The cores the app carries, as name, version and licence, for the About section. */
-val CLIENT_CARRIED_CORES: List<Triple<String, String, String>> = listOf(
-    Triple("NetBird", "0.78.1", "BSD-3-Clause"),
-    Triple("EasyTier", "2.6.4", "LGPL-3.0"),
-    Triple(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0"),
-)
+/** The app's licence, for the About card. */
+const val CLIENT_LICENCE = "AGPL-3.0"
 
 /** The app's source. */
 const val CLIENT_SOURCE_URL = "https://github.com/iffiX/neutrino"
 
-/** The carried core whose source and patch the About section links. */
+/** The carried core whose source and patch the About card links. */
 const val CLIENT_RUSTDESK_CORE = "RustDesk"
 
 /** RustDesk's source at the tag the app's core is built from. */
@@ -58,6 +54,19 @@ const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tre
 /** The patch the app's RustDesk core is built with, at the app's release tag `v{version}`. */
 const val CLIENT_RUSTDESK_PATCH_URL =
     "https://github.com/iffiX/neutrino/blob/v{version}/packaging/build/build_core_rustdesk.patch"
+
+/** The cores the app carries, for the About card. */
+val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
+    CarriedCore("NetBird", "0.78.1", "BSD-3-Clause", "https://github.com/netbirdio/netbird/tree/v0.78.1"),
+    CarriedCore(
+        "EasyTier",
+        "2.6.4",
+        "LGPL-3.0",
+        "https://github.com/EasyTier/EasyTier/tree/v2.6.4",
+        "https://github.com/iffiX/neutrino/blob/v{version}/packaging/build/build_core_easytier.patch",
+    ),
+    CarriedCore(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0", CLIENT_RUSTDESK_SOURCE_URL, CLIENT_RUSTDESK_PATCH_URL),
+)
 
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
 const val PROTOCOL = 3

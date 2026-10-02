@@ -14,18 +14,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.CLIENT_CARRIED_CORES
 import io.github.iffix.neutrino.CLIENT_LANGUAGES
-import io.github.iffix.neutrino.CLIENT_RUSTDESK_CORE
-import io.github.iffix.neutrino.CLIENT_RUSTDESK_PATCH_URL
-import io.github.iffix.neutrino.CLIENT_RUSTDESK_SOURCE_URL
+import io.github.iffix.neutrino.CLIENT_LICENCE
 import io.github.iffix.neutrino.CLIENT_SOURCE_URL
 import io.github.iffix.neutrino.CLIENT_THEMES
-import io.github.iffix.neutrino.design.Badge
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoPalette
@@ -37,15 +37,24 @@ import io.github.iffix.neutrino.settings.ClientSettings
 import io.github.iffix.neutrino.words.WordCatalog
 
 /**
- * The language and the theme, staged until saved, and under the card the About section: the
- * version, the licence, the source links, and the cores the app carries with their patches.
+ * Two cards: the language and the theme, staged until saved, and About, one row per fact: this
+ * phone's name and platform, the app's version and licence, the source links, and each core the
+ * app carries with its version and patch.
  *
  * @param saved The settings in force.
+ * @param deviceName This phone's name.
+ * @param platform This phone's platform.
  * @param version The app's version.
  * @param onSave What saving the staged settings does.
  */
 @Composable
-fun SettingsScreen(saved: ClientSettings, version: String, onSave: (ClientSettings) -> Unit) {
+fun SettingsScreen(
+    saved: ClientSettings,
+    deviceName: String,
+    platform: String,
+    version: String,
+    onSave: (ClientSettings) -> Unit,
+) {
     val words = NeutrinoTheme.words
     var draft by remember(saved) { mutableStateOf(saved) }
     val isDirty = draft != saved
@@ -88,58 +97,68 @@ fun SettingsScreen(saved: ClientSettings, version: String, onSave: (ClientSettin
                 }
             }
         }
-        AboutSection(version)
+        AboutCard(deviceName, platform, version)
     }
 }
 
 @Composable
-private fun AboutSection(version: String) {
+private fun AboutCard(deviceName: String, platform: String, version: String) {
     val words = NeutrinoTheme.words
-    val palette = NeutrinoTheme.palette
-    Column(modifier = Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        BasicText(words.word("ui.about"), style = NeutrinoTheme.rowTitle)
-        BasicText(words.word("ui.window.title"), style = NeutrinoTheme.body)
-        BasicText(words.word("ui.about_build", mapOf("version" to version)), style = NeutrinoTheme.mono)
-        BasicText(words.word("ui.app_licence"), style = NeutrinoTheme.note)
-        SourceLink(words.word("ui.about_source", mapOf("name" to words.word("ui.window.title"))), CLIENT_SOURCE_URL)
-        BasicText(
-            words.word("ui.carried_cores"),
-            style = NeutrinoTheme.note,
-            modifier = Modifier.padding(top = 6.dp),
-        )
-        for ((name, coreVersion, licence) in CLIENT_CARRIED_CORES) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BasicText(name, style = NeutrinoTheme.body)
-                BasicText(
-                    coreVersion,
-                    style = NeutrinoTheme.mono.copy(color = palette.textFaint),
-                    modifier = Modifier.weight(1f),
-                )
-                Badge(licence)
-            }
-            if (name == CLIENT_RUSTDESK_CORE) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SourceLink(words.word("ui.core_source"), CLIENT_RUSTDESK_SOURCE_URL)
-                    SourceLink(words.word("ui.core_patch"), CLIENT_RUSTDESK_PATCH_URL.replace("{version}", version))
-                }
+    val rows = buildList {
+        add(AboutFact(words.word("ui.about_device"), deviceName))
+        add(AboutFact(words.word("ui.about_platform"), platform))
+        add(AboutFact(words.word("ui.about_version"), version))
+        add(AboutFact(words.word("ui.about_licence"), CLIENT_LICENCE))
+        add(AboutFact(words.word("ui.about_source", mapOf("name" to "Neutrino")), CLIENT_SOURCE_URL, isLink = true))
+        for (core in CLIENT_CARRIED_CORES) {
+            add(AboutFact(words.word("ui.about_core", mapOf("name" to core.name)), "${core.version} · ${core.licence}"))
+            add(AboutFact(words.word("ui.about_source", mapOf("name" to core.name)), core.sourceUrl, isLink = true))
+            if (core.patchUrl.isNotEmpty()) {
+                val patch = core.patchUrl.replace("{version}", version)
+                add(AboutFact(words.word("ui.about_patch", mapOf("name" to core.name)), patch, isLink = true))
             }
         }
     }
+    SurfaceCard {
+        BasicText(
+            words.word("ui.about"),
+            style = NeutrinoTheme.rowTitle,
+            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+        )
+        for ((index, fact) in rows.withIndex()) AboutRow(fact, hasDivider = index < rows.lastIndex)
+    }
 }
 
 @Composable
-private fun SourceLink(label: String, url: String) {
+private fun AboutRow(fact: AboutFact, hasDivider: Boolean) {
+    val palette = NeutrinoTheme.palette
     val uriHandler = LocalUriHandler.current
-    BasicText(
-        label,
-        style = NeutrinoTheme.note.copy(color = NeutrinoTheme.palette.accent),
-        modifier = Modifier.clickable(role = Role.Button) { uriHandler.openUri(url) },
-    )
+    var row = Modifier.fillMaxWidth()
+    if (hasDivider) {
+        row = row.drawBehind {
+            drawLine(palette.border, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+        }
+    }
+    if (fact.isLink) row = row.clickable(role = Role.Button) { uriHandler.openUri(fact.value) }
+    Row(
+        modifier = row.padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicText(fact.label, style = NeutrinoTheme.note.copy(color = palette.textMuted))
+        BasicText(
+            if (fact.isLink) fact.value.removePrefix("https://") else fact.value,
+            style = NeutrinoTheme.mono.copy(
+                color = if (fact.isLink) palette.accent else palette.text,
+                textAlign = TextAlign.End,
+            ),
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
+
+/** One row of the About card: a fact's label, and its value or the address it links. */
+private data class AboutFact(val label: String, val value: String, val isLink: Boolean = false)
 
 @Preview(widthDp = 400, heightDp = 700)
 @Composable
@@ -153,10 +172,17 @@ private fun SettingsScreenPreview() {
             "ui.cancel" to "取消",
             "ui.save" to "保存",
             "ui.about" to "关于",
-            "ui.about_build" to "{version} · Android",
+            "ui.about_device" to "本机",
+            "ui.about_version" to "版本",
         ),
     )
     NeutrinoTheme(NeutrinoPalette.dark, words) {
-        SettingsScreen(ClientSettings("zh-CN", "system"), version = "0.5.0", onSave = {})
+        SettingsScreen(
+            ClientSettings("zh-CN", "system"),
+            deviceName = "Pixel 8",
+            platform = "android/arm64 · Android 15",
+            version = "0.5.0",
+            onSave = {},
+        )
     }
 }

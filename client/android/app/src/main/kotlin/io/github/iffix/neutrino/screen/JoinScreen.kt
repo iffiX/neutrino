@@ -38,17 +38,21 @@ import androidx.core.content.ContextCompat
 import io.github.iffix.neutrino.SCAN_REGION_FRACTION
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubJoin
+import io.github.iffix.neutrino.design.AppIcon
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.ErrorLine
 import io.github.iffix.neutrino.design.InputField
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.design.PageAction
 import io.github.iffix.neutrino.design.ScreenColumn
+import io.github.iffix.neutrino.design.offerPageAction
 import io.github.iffix.neutrino.scan.QrScanner
 
 /**
  * Joining a hub: the camera reads the QR code on the hub's Clients page, or the person pastes
- * the link; either starts the join, and Join shows it until the hub answers.
+ * the link; either starts the join, and Join shows it until the hub answers. Scan asks for the
+ * camera, or reads again a code a join refused; beside the sidebar it is the header's action.
  *
  * @param join The join the app core runs.
  * @param onJoin What joining with a link's text does.
@@ -63,9 +67,30 @@ fun JoinScreen(join: HubJoin, onJoin: (String) -> Unit, onJoined: () -> Unit) {
     var ignored by remember { mutableStateOf("") }
     LaunchedEffect(join.joinedId) { if (join.joinedId != null) onJoined() }
     LaunchedEffect(join.refusal) { if (join.refusal != null && scanned.isNotEmpty()) ignored = scanned }
+    val context = LocalContext.current
+    val isPreview = LocalInspectionMode.current
+    var isAllowed by remember {
+        mutableStateOf(
+            !isPreview &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    var isRefused by remember { mutableStateOf(false) }
+    val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        isAllowed = granted
+        isRefused = !granted
+    }
+    val scan = PageAction(words.word("ui.scan"), AppIcon.CAMERA, isEnabled = !join.isJoining) {
+        if (isAllowed) ignored = "" else request.launch(Manifest.permission.CAMERA)
+    }
+    val isScanInHeader = offerPageAction(scan)
     ScreenColumn {
         CameraFrame(
+            isAllowed = isAllowed,
+            isRefused = isRefused,
             ignored = ignored,
+            scan = scan.takeUnless { isScanInHeader },
             onText = { text ->
                 scanned = text
                 onJoin(text)
@@ -108,23 +133,15 @@ fun JoinScreen(join: HubJoin, onJoin: (String) -> Unit, onJoined: () -> Unit) {
 }
 
 @Composable
-private fun CameraFrame(ignored: String, onText: (String) -> Unit) {
+private fun CameraFrame(
+    isAllowed: Boolean,
+    isRefused: Boolean,
+    ignored: String,
+    scan: PageAction?,
+    onText: (String) -> Unit,
+) {
     val words = NeutrinoTheme.words
     val palette = NeutrinoTheme.palette
-    val context = LocalContext.current
-    val isPreview = LocalInspectionMode.current
-    var isAllowed by remember {
-        mutableStateOf(
-            !isPreview &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    var isRefused by remember { mutableStateOf(false) }
-    val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        isAllowed = granted
-        isRefused = !granted
-    }
     val shape = RoundedCornerShape(14.dp)
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
@@ -145,8 +162,14 @@ private fun CameraFrame(ignored: String, onText: (String) -> Unit) {
                     style = NeutrinoTheme.note.copy(textAlign = TextAlign.Center),
                     modifier = Modifier.padding(24.dp),
                 )
+            } else if (scan != null) {
+                NeutrinoButton(words.word("ui.camera_allow"), scan.onClick, isEnabled = scan.isEnabled)
             } else {
-                NeutrinoButton(words.word("ui.camera_allow"), { request.launch(Manifest.permission.CAMERA) })
+                BasicText(
+                    words.word("ui.scan_press"),
+                    style = NeutrinoTheme.note.copy(textAlign = TextAlign.Center),
+                    modifier = Modifier.padding(24.dp),
+                )
             }
             Box(modifier = Modifier.fillMaxSize().drawBehind { drawCorners(palette.accent) })
         }

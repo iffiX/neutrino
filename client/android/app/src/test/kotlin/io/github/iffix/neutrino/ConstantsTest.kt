@@ -25,6 +25,22 @@ class ConstantsTest {
     }
 
     @Test
+    fun everyCoreLinksItsPinnedSourceAndPatch() {
+        val netbird = CLIENT_CARRIED_CORES.single { it.name == "NetBird" }
+        val easytier = CLIENT_CARRIED_CORES.single { it.name == "EasyTier" }
+        val rustdesk = CLIENT_CARRIED_CORES.single { it.name == CLIENT_RUSTDESK_CORE }
+        assertEquals("https://github.com/netbirdio/netbird/tree/v${netbird.version}", netbird.sourceUrl)
+        assertEquals("https://github.com/EasyTier/EasyTier/tree/v${easytier.version}", easytier.sourceUrl)
+        assertEquals(CLIENT_RUSTDESK_SOURCE_URL, rustdesk.sourceUrl)
+        for (core in CLIENT_CARRIED_CORES) {
+            val patch = "packaging/build/build_core_${core.name.lowercase()}.patch"
+            val hasPatch = RepositoryFiles.file(patch).exists()
+            assertEquals(core.name, hasPatch, core.patchUrl.isNotEmpty())
+            if (hasPatch) assertEquals("https://github.com/iffiX/neutrino/blob/v{version}/$patch", core.patchUrl)
+        }
+    }
+
+    @Test
     fun theDesktopTimingsAreTheSame() {
         val desktop = RepositoryFiles.text("client/desktop/neutrino_client/constants.py")
         for ((name, value) in listOf(
