@@ -3,17 +3,18 @@
 The rows render straight from the typed entries, and the platform's browser
 is what opens the payload's url. An entry whose payload says
 ``is_local_only`` opens only from localhost: its token comes down the
-``service`` stream, its address is forwarded to the loopback port the local
-port table gives it, and the browser opens the forward with no token. The
-forward hands the token to the page as its cookie on every request, so the
-browser stores none. The forwards are runtime state and end with the client.
+``service`` stream, its address is forwarded as bytes to the loopback port
+the local port table gives it, and the browser opens the forward on the
+entry's own ``.localhost`` name with the token in the address, so each
+instance keeps its own cookie. The forwards are runtime state and end with
+the client.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
-import socket
+import re
 import threading
 import urllib.parse
 
@@ -26,113 +27,39 @@ from neutrino_client.services.base import (
 )
 from neutrino_client.services.port import (
     FORWARD_BIND_HOST,
-    FORWARD_CONNECT_TIMEOUT_S,
     PortLocalTable,
     _ForwardRelay,
-    _pump,
 )
 
-# The cookie a local-only page takes its token in.
-WEB_TOKEN_COOKIE = "vscode-tkn"
-# How long a request's or a response's head may be.
-WEB_HEAD_MAX_BYTES = 65536
-WEB_HEAD_END = b"\r\n\r\n"
+# The query parameter a local-only page takes its token in.
+WEB_TOKEN_PARAMETER = "tkn"
+# The characters a slug keeps; every other one becomes a hyphen.
+WEB_SLUG_OUTSIDE = re.compile(r"[^A-Za-z0-9-]")
+# The platform whose browser resolves no ``.localhost`` name.
+WEB_NO_LOCALHOST_NAMES_OS = "darwin"
 
 
-def rewrite_request_head(head: bytes, token: str) -> bytes:
-    """A request's head with the token as its cookie and one request per connection.
+def local_url(entry_id: str, port: int, path: str, token: str, os_name: str) -> str:
+    """The address a forwarded local-only page opens on.
 
     Args:
-        head: The head as the browser sent it, up to and with the blank
-            line.
+        entry_id: The entry's id, which names the page's own host.
+        port: The loopback port the forward listens on.
+        path: The page's path; empty for the root.
         token: The entry's token.
+        os_name: The machine's system, as the platform names it.
 
     Returns:
-        The head with every ``Cookie`` header folded into one that carries
-        the token as ``vscode-tkn`` and no other ``vscode-tkn``, and
-        ``Connection: close`` in place of any ``Connection`` header unless
-        the request asks to upgrade the connection.
+        ``http://<slug>.localhost:<port><path>?tkn=<token>``, the slug the id
+        with every character outside letters, digits and hyphens a hyphen;
+        on macOS the host is ``127.0.0.1``.
     """
-    lines = head[: -len(WEB_HEAD_END)].split(b"\r\n")
-    request_line, headers = lines[0], lines[1:]
-    cookies = []
-    kept = []
-    is_upgrade = False
-    for line in headers:
-        name, _, value = line.partition(b":")
-        lowered = name.strip().lower()
-        if lowered == b"cookie":
-            cookies.extend(
-                part.strip()
-                for part in value.split(b";")
-                if part.strip() and not _is_token_cookie(part)
-            )
-            continue
-        if lowered == b"connection" and b"upgrade" in value.lower():
-            is_upgrade = True
-        kept.append(line)
-    if not is_upgrade:
-        kept = [
-            line
-            for line in kept
-            if line.partition(b":")[0].strip().lower() != b"connection"
-        ]
-        kept.append(b"Connection: close")
-    cookies.append(WEB_TOKEN_COOKIE.encode() + b"=" + token.encode())
-    kept.append(b"Cookie: " + b"; ".join(cookies))
-    return b"\r\n".join([request_line] + kept) + WEB_HEAD_END
-
-
-def rewrite_response_head(head: bytes) -> bytes:
-    """A response's head without the ``Set-Cookie`` headers that set the token.
-
-    Args:
-        head: The head as the server sent it, up to and with the blank
-            line.
-
-    Returns:
-        The head, every ``Set-Cookie`` naming ``vscode-tkn`` dropped.
-    """
-    lines = head[: -len(WEB_HEAD_END)].split(b"\r\n")
-    kept = [lines[0]]
-    for line in lines[1:]:
-        name, _, value = line.partition(b":")
-        if name.strip().lower() == b"set-cookie" and _is_token_cookie(value):
-            continue
-        kept.append(line)
-    return b"\r\n".join(kept) + WEB_HEAD_END
-
-
-def read_head(connection) -> "tuple[bytes, bytes] | None":
-    """Read one HTTP head off a socket.
-
-    Args:
-        connection: The socket.
-
-    Returns:
-        The head with its blank line, and whatever came after it in the
-        same reads; None when the socket ends first or the head runs past
-        ``WEB_HEAD_MAX_BYTES``.
-    """
-    received = b""
-    while WEB_HEAD_END not in received:
-        if len(received) > WEB_HEAD_MAX_BYTES:
-            return None
-        try:
-            data = connection.recv(WEB_HEAD_MAX_BYTES)
-        except OSError:
-            return None
-        if not data:
-            return None
-        received += data
-    cut = received.index(WEB_HEAD_END) + len(WEB_HEAD_END)
-    return received[:cut], received[cut:]
-
-
-def _is_token_cookie(text: bytes) -> bool:
-    """Whether a cookie pair or a ``Set-Cookie`` value names the token cookie."""
-    name = text.split(b";", 1)[0].partition(b"=")[0]
-    return name.strip().decode("latin-1") == WEB_TOKEN_COOKIE
+    if os_name == WEB_NO_LOCALHOST_NAMES_OS:
+        host = FORWARD_BIND_HOST
+    else:
+        host = WEB_SLUG_OUTSIDE.sub("-", entry_id) + ".localhost"
+    query = urllib.parse.urlencode({WEB_TOKEN_PARAMETER: token})
+    return f"http://{host}:{port}{path or '/'}?{query}"
 
 
 class WebServiceHandler(ServiceTypeHandler):
@@ -266,15 +193,12 @@ class WebServiceHandler(ServiceTypeHandler):
         key = service_key(hub_id, entry_id)
         with self._lock:
             relay = self._relays.get(key)
-            if relay is not None and relay.is_active:
-                relay.token = token
-            else:
+            if relay is None or not relay.is_active:
                 try:
-                    relay = _WebTokenRelay(
+                    relay = _ForwardRelay(
                         host=parts.hostname,
                         port=port,
                         local_port=self._ports.take(key, port),
-                        token=token,
                     )
                     relay.start()
                 except OSError as error:
@@ -288,74 +212,12 @@ class WebServiceHandler(ServiceTypeHandler):
                     f"to {parts.hostname}:{port}"
                 )
         self._platform.open_url(
-            f"http://{FORWARD_BIND_HOST}:{relay.local_port}{parts.path or '/'}"
+            local_url(
+                entry_id,
+                relay.local_port,
+                parts.path,
+                token,
+                self._platform.os_name,
+            )
         )
         return {}
-
-
-class _WebTokenRelay(_ForwardRelay):
-    """A loopback forward that hands the page its token as a cookie."""
-
-    def __init__(self, *, host: str, port: int, local_port: int, token: str):
-        """
-        Args:
-            host: The address the page answers on.
-            port: The page's port.
-            local_port: The loopback number to listen on.
-            token: The entry's token.
-        """
-        super().__init__(host=host, port=port, local_port=local_port)
-        self.token = token
-
-    def _serve(self, connection) -> None:
-        """Pass one request with the token, its response without it, then bytes."""
-        try:
-            upstream = socket.create_connection(
-                (self.host, self.port), timeout=FORWARD_CONNECT_TIMEOUT_S
-            )
-        except OSError:
-            connection.close()
-            return
-        upstream.settimeout(None)
-        with self._lock:
-            self._connections.add(connection)
-            self._connections.add(upstream)
-        try:
-            self._relay(connection, upstream)
-        finally:
-            with self._lock:
-                self._connections.discard(connection)
-                self._connections.discard(upstream)
-            for side in (connection, upstream):
-                try:
-                    side.close()
-                except OSError:
-                    pass
-
-    def _relay(self, connection, upstream) -> None:
-        """Rewrite the two heads, then copy both directions until they end."""
-        request = read_head(connection)
-        if request is None:
-            return
-        try:
-            upstream.sendall(rewrite_request_head(request[0], self.token) + request[1])
-        except OSError:
-            return
-        outbound = threading.Thread(
-            target=_pump, args=(connection, upstream), daemon=True
-        )
-        outbound.start()
-        response = read_head(upstream)
-        if response is not None:
-            try:
-                connection.sendall(rewrite_response_head(response[0]) + response[1])
-            except OSError:
-                response = None
-        if response is not None:
-            _pump(upstream, connection)
-        else:
-            try:
-                connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-        outbound.join()
