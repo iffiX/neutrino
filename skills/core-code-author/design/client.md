@@ -46,7 +46,9 @@ recorded. A button reads its own job from there and from nowhere else.
 | The bar lists the pages in one order: **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops**, **Settings**. | One order on every client is one order to learn. |
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
 | The top bar holds the page title at the left and the refresh button at the right, and nothing else. | The refresh button is the one control that acts on every page. |
-| The sidebar's foot shows the machine's name, its platform and the client's version. | A person with two clients open tells them apart there. |
+| The sidebar and the bottom bar carry only the pages; the machine's name, platform and version are on the Settings page's About card and nowhere else. | A foot that repeats on every page is noise; About is where a person looks for a version. |
+| In the sidebar layout a page's own action (**New terminal**, **Scan**) sits at the right of the page header, as the panel's `page_actions` does; the floating button at the bottom right exists only in the bottom-bar layout. | A floating button beside a sidebar covers content and reads as a leftover. |
+| In the sidebar layout the page body starts to the right of the sidebar and never under it. | Content under the sidebar is unreadable and untouchable. |
 | Every page body scrolls, except Terminals, which gives the terminal the height left under its chips and tabs. | A page squeezed to fit is a page that cannot be read; a terminal is sized to its box by design. |
 | A page changes with no transition animation. | A fade adds time to every press and tells nothing. |
 | A rotation or a window resize keeps every page's state and every running job; an attached terminal and an open viewer stay as they are. | The state is in the core, and a page is a view of it. |
@@ -221,8 +223,8 @@ line. The controls:
 | **Open** | when the entry is not local-only | when the entry is healthy and the hub is not disabled | opens the URL in the system browser; no job |
 | **Open locally** | when the entry is local-only, on a desktop | the same | job `ui.job.opening`: forwards the port to the loopback, reads the token on the `service` stream, opens the browser on the loopback URL; a failure writes the code |
 
-A phone shows `ui.desktop_only` as the state word of a local-only entry and
-no button.
+A phone does the same through its app core: the forward listens on the
+phone's loopback, and the browser opens there.
 
 ## The Ports page
 
@@ -238,8 +240,9 @@ provider line. On a desktop the forward is a state of the row:
 | forwarded | the entry turns unhealthy | forwarded | **Disconnect** stays enabled; the state word is `ui.unhealthy` |
 
 **Connect** is disabled while the entry is unhealthy or the hub is disabled,
-with the reason on the row. A phone shows the address with a **Copy** button
-and no forward.
+with the reason on the row. A phone has the same states; its forward lives in
+the app's foreground service, and the forwarded row adds **Copy** for the
+loopback address, since the phone has no shell to type it into.
 
 ## The AI page
 
@@ -310,9 +313,13 @@ Each has `session_id`, `device_id`, `owner`, `is_owned`, `is_persistent`,
 | a tab's session is gone from the list | the tab's label becomes `ui.terminal_ended`; the terminal keeps its last output; **×** removes the tab |
 | the page opens with listed sessions | tabs for all; the first one is active and attaches as the page opens, with its kept output replayed |
 | a tab's session reports `attached_count` | the tab shows the count as a badge when above one |
+| the hub's channel drops and comes back | a tab whose session is in the new list attaches again by itself and replays the kept output; a tab whose session is gone reads `ui.terminal_ended`; nothing stays on "not connected" after the hub is back |
 
 A tab shows these badges after its label: `kept` for a persistent session,
 `shared` for a shared one, the count of attached windows when above one.
+The active tab is marked the way the panel marks a selected chip: the
+accent as its border and text, the elevated surface as its fill; the other
+tabs have the plain border. A tab without that mark is a defect.
 
 ### The two switches
 
@@ -349,7 +356,7 @@ attaches receives the kept output first, then the live stream.
 
 | Rule | Reason |
 | --- | --- |
-| A key row sits above the keyboard: Esc, Tab, Ctrl, the four arrows; Ctrl is sticky for one key. | The system keyboard has none of them. |
+| A key row sits above the keyboard: Esc, Tab, Ctrl, Shift, Alt, the four arrows; a modifier is sticky for one key and shows pressed while held. | The system keyboard has none of them. |
 | With the keyboard shown, the chips card and the tab strip collapse into one line (the machine, the tab, an expand arrow), and the terminal takes the rest and refits its rows. | The terminal is the page's reason; the chrome is not. |
 | The terminal's viewport scrolls by touch and shows a thin bar; the view follows output only at the bottom. | History on a phone is reached by the finger, and a bar says there is some. |
 | A long press opens the same menu as the desktop's right click, with **Copy** and **Paste** through the system clipboard. | The phone's clipboard is the system's. |
@@ -363,31 +370,35 @@ word. The controls:
 | Control | Enabled | Does |
 | --- | --- | --- |
 | **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer with the seat password; on a phone opens the viewer page |
-| the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app with a back arrow |
+| the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app with a back arrow and a key bar of Esc, Tab, Ctrl, Shift, Alt, Win and **Paste** |
 
 A row whose entry is unhealthy shows the code's wording on the reason line:
 `rdp_nobody_seated`, `rdp_screen_not_allowed`.
 
 The viewer shares the clipboard both ways: text copied on the remote machine
 is on this device's clipboard, and a paste in the viewer sends this device's
-clipboard. On a phone the viewer page keeps its session through a rotation.
+clipboard. On a desktop a file dropped on the viewer is copied to the remote
+machine, which the agent's host allows. On a phone the viewer page keeps its
+session through a rotation.
 
 ## The Settings page
 
-One card: a **Language** picker, a **Theme** picker (System, Dark, Light),
-**Save** enabled while the draft differs from the saved values, **Cancel**
-beside it. Under the card, a section titled **About** lists the version, the
-licence, the source links and, on a phone, the cores built into the app with
-their patches, as plain rows. There is no About page and no card inside the
-section. Leaving a hub is on the Hubs page and nowhere else.
+Two cards. The first holds a **Language** picker, a **Theme** picker (System,
+Dark, Light), **Save** enabled while the draft differs from the saved values,
+and **Cancel** beside it. The second is **About**, the same card idiom as the
+panel's Settings page: one row per fact with the label at the left and the
+value in mono at the right, for this machine's name, its platform, the
+client's version, the licence, the source links and, on a phone, each core
+built into the app with its version and patch. There is no About page.
+Leaving a hub is on the Hubs page and nowhere else.
 
 ## Phone differences
 
 | Feature | Desktop | Phone |
 | --- | --- | --- |
 | join | paste the link | scan the QR, or paste the link |
-| port entry | forward to the loopback | copy the address |
-| local-only web entry | open through a forward | `ui.desktop_only` |
+| port entry | forward to the loopback | the same: the app core listens on `127.0.0.1:<local port>` and forwards over the `port` stream, and the row shows the loopback address with **Copy** |
+| local-only web entry | open through a forward | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
 | file entry | mount into the system | a location in the system's Files app |
 | AI entry | point the tools at the gateway, configure them | copy the address and the key, show a QR |
 | remote desktop | the viewer process | the viewer page |
