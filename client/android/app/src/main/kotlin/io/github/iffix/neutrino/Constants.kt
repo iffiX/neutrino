@@ -12,7 +12,7 @@ val CLIENT_THEMES: List<String> = listOf("system", "dark", "light")
 /** The palette a fresh install draws in. */
 const val CLIENT_DEFAULT_THEME = "system"
 
-/** From this width, in dp, a window wider than it is tall shows the sidebar instead of the bottom bar. */
+/** From this width, in dp, a window taller than it is wide shows the sidebar instead of the bottom bar. */
 const val CLIENT_SIDEBAR_MIN_WIDTH_DP = 720
 
 /** The height of the bottom bar, in dp, above the system's navigation bar. */

@@ -70,8 +70,8 @@ import io.github.iffix.neutrino.settings.ClientSettings
 import io.github.iffix.neutrino.terminal.TerminalTabs
 
 /**
- * Every screen under one frame: the bottom bar in portrait, the sidebar in a window wider than
- * tall and at least 720 dp wide, the top bar over the open screen either way. Beside the sidebar
+ * Every screen under one frame: the sidebar in a window wider than tall or at least 720 dp wide,
+ * the bottom bar otherwise, the top bar over the open screen either way. Beside the sidebar
  * the open screen's body starts right of it, and its own action sits in the top bar. Pages change
  * with no transition.
  *
@@ -142,7 +142,7 @@ fun AppShell(
     val back: (() -> Unit)? = if (screen.parent != null) ({ navigation.popBackStack() }) else null
     CompositionLocalProvider(LocalArm provides arm) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(palette.bg).disarmOnPress(arm)) {
-            val isWide = maxWidth > maxHeight && maxWidth >= CLIENT_SIDEBAR_MIN_WIDTH_DP.dp
+            val isWide = maxWidth > maxHeight || maxWidth >= CLIENT_SIDEBAR_MIN_WIDTH_DP.dp
             val slot = remember(isWide) { PageActionSlot(isHeader = isWide) }
             val sides = if (isWide) {
                 Modifier.windowInsetsPadding(
