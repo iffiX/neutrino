@@ -241,6 +241,13 @@ button.switch.on .switch_track { border-color: var(--color-accent);
         background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
 button.switch.on .switch_thumb { background: var(--color-accent);
                                  transform: translateX(12px); }
+/* A switch that cannot act draws no accent: the track's border and the
+   thumb in the faint colour, the thumb's place still the value, the label
+   muted. */
+button.switch:disabled { opacity: 1; color: var(--color-text-muted); }
+button.switch:disabled .switch_track { border-color: var(--color-text-faint);
+                                       background: var(--color-bg); }
+button.switch:disabled .switch_thumb { background: var(--color-text-faint); }
 .muted { color: var(--color-text-muted); }
 .form { display: flex; flex-direction: column; gap: 8px;
         padding: 10px 0 4px 20px; }

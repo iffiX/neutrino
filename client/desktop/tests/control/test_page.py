@@ -1096,6 +1096,21 @@ def test_the_two_switches_act_only_for_the_owner_of_an_open_tab():
     )
 
 
+def test_a_switch_that_cannot_act_draws_no_accent():
+    assert "button.switch:disabled { opacity: 1; color: var(--color-text-muted); }" in (
+        PAGE_CSS
+    )
+    disabled_track = PAGE_CSS.split("button.switch:disabled .switch_track {")[1]
+    assert disabled_track.split("}")[0].count("var(--color-text-faint)") == 1
+    disabled_thumb = PAGE_CSS.split("button.switch:disabled .switch_thumb {")[1]
+    assert "var(--color-text-faint)" in disabled_thumb.split("}")[0]
+    assert PAGE_CSS.index("button.switch:disabled .switch_thumb") > PAGE_CSS.index(
+        "button.switch.on .switch_thumb"
+    )
+    assert "button.switch:disabled .switch_thumb { background" in PAGE_CSS
+    assert "transform" not in disabled_thumb.split("}")[0]
+
+
 def test_a_plain_session_closes_and_a_kept_or_shared_one_arms():
     guarded = body_of("isGuarded")
     assert "(flags.is_persistent || flags.is_shared)" in guarded
