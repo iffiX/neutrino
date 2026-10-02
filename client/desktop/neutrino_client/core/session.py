@@ -292,6 +292,9 @@ class ClientHubSession:
         self._client: "WebSocketClient | None" = None
         # The socket a connect in progress is opening, for a stop to abort.
         self._connecting: "WebSocketClient | None" = None
+        # Set when the hosts a round tries change under it: the round in
+        # progress ends at once and the next one starts now.
+        self._redirected = threading.Event()
         # The address the live socket was opened through.
         self._connected_url = ""
         # This machine's own address on the route to the hub as last seen;
@@ -453,10 +456,8 @@ class ClientHubSession:
                 continue
             client.close()
             self._log(f"the hub answers at {url}; moving the channel there")
-            with self._lock:
-                self._backoff_s = CLIENT_BACKOFF_MIN_S
             self._drop_socket()
-            self._news.set()
+            self._redirect_round()
             break
         return False
 
@@ -506,7 +507,9 @@ class ClientHubSession:
         """Connect through the addresses on these hosts first, from the next round.
 
         A socket that is down starts that round now, its backoff at the
-        floor; a live one is kept. An empty list drops the preference.
+        floor; a live one is kept. With ``is_only``, a round in progress
+        through other addresses ends at once. An empty list drops the
+        preference.
 
         Args:
             hosts: The hub's host names or addresses on the network this
@@ -517,10 +520,13 @@ class ClientHubSession:
         with self._lock:
             self._preferred_hosts = [host for host in hosts if host]
             self._is_only_preferred = bool(is_only) and bool(self._preferred_hosts)
+            is_only = self._is_only_preferred
             is_down = not self._is_welcomed
             if is_down:
                 self._backoff_s = CLIENT_BACKOFF_MIN_S
-        if is_down:
+        if is_only:
+            self._redirect_round()
+        elif is_down:
             self._news.set()
 
     def reconnect(self) -> None:
@@ -741,6 +747,7 @@ class ClientHubSession:
         """Close the socket and end the loop, a connect in progress aborted. Idempotent."""
         self._stop.set()
         self._news.set()
+        self._redirected.set()
         with self._lock:
             connecting = self._connecting
         if connecting is not None:
@@ -783,6 +790,9 @@ class ClientHubSession:
             return self._on_rejected(error)
         except GatewayUnreachable as error:
             return self._on_unreachable(error)
+        if client is None:
+            self._log("the round was redirected; connecting again now")
+            return 0
         failure = self._serve(client)
         if failure is None:
             return CLIENT_BACKOFF_MIN_S
@@ -802,7 +812,8 @@ class ClientHubSession:
 
         Returns:
             The connected socket, its welcome taken and its first report
-            sent.
+            sent; None when the hosts to try changed under the round, which
+            then ends at once.
 
         Raises:
             GatewayUntrusted: When a stored address presented another
@@ -812,6 +823,9 @@ class ClientHubSession:
             GatewayUnreachable: When no address answered, or a stop ended
                 the round.
         """
+        self._redirected.clear()
+        if self._stop.is_set():
+            self._redirected.set()
         with self._lock:
             binding = dict(self._binding)
             preferred_hosts = list(self._preferred_hosts)
@@ -828,13 +842,21 @@ class ClientHubSession:
         untrusted: "Exception | None" = None
         failure: "Exception | None" = None
         for index, url in enumerate(candidates):
-            if index and self._stop.wait(timeout=CLIENT_ROTATE_DELAY_S):
+            if index:
+                self._redirected.wait(timeout=CLIENT_ROTATE_DELAY_S)
+            if index and self._stop.is_set():
                 break
             client = self._open_client(url)
             with self._lock:
                 self._connecting = client
             try:
+                if self._is_redirected():
+                    return None
                 self._connect(client)
+            except GatewayRefused:
+                if self._is_redirected():
+                    return None
+                raise
             except GatewayUntrusted as error:
                 if url == name_url and url not in stored:
                     self._log(f"{url} answers to the hub's name and is not this hub")
@@ -851,9 +873,25 @@ class ClientHubSession:
             finally:
                 with self._lock:
                     self._connecting = None
+            if self._is_redirected():
+                return None
         if untrusted is not None:
             raise untrusted
         raise failure if failure is not None else GatewayUnreachable("no address")
+
+    def _redirect_round(self) -> None:
+        """End a round in progress, its connect aborted, and start the next one now."""
+        with self._lock:
+            self._backoff_s = CLIENT_BACKOFF_MIN_S
+            connecting = self._connecting
+        self._redirected.set()
+        if connecting is not None:
+            connecting.abort()
+        self._news.set()
+
+    def _is_redirected(self) -> bool:
+        """Whether the round in progress was redirected, a stop aside."""
+        return self._redirected.is_set() and not self._stop.is_set()
 
     def _host_urls(self, hosts: list) -> list:
         """The hub's address on each host: a stored one, else at the gateway port."""

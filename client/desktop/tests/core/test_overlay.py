@@ -1091,6 +1091,21 @@ def test_the_hub_stage_probes_one_address_only_until_it_ends():
     ]
 
 
+def test_the_hub_stage_holds_every_round_to_the_address_before_it_probes():
+    subject, _engines, hubs, _steps = subject_for({"h1": [EASYTIER]})
+    seen = []
+    hubs.on_reach = functools.partial(_note_routes, hubs, seen)
+
+    subject.connect("h1")
+
+    assert seen[0] == [("h1", ["10.144.144.1"], True)]
+    assert subject.hub_row("h1")["state"] == "on"
+
+
+def _note_routes(hubs, seen) -> None:
+    seen.append(list(hubs.routes))
+
+
 @pytest.mark.parametrize("stage", ["login", "hub"])
 def test_a_cancel_in_either_stage_goes_off_without_an_error(stage):
     lines = []

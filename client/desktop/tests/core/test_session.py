@@ -16,6 +16,7 @@ network change starting a round at once and moving a live socket to the
 name's address.
 """
 
+import functools
 import json
 import os
 import threading
@@ -1786,6 +1787,81 @@ def test_a_round_held_to_the_networks_address_tries_no_other(
 
     assert script.hosts == ["100.88.92.30", "100.88.92.30"]
     assert session.connection() == "down"
+
+
+class RedirectScript:
+    """Every address but the network's blocks its connect until aborted.
+
+    Attributes:
+        hosts: The host of every socket opened, in order.
+    """
+
+    def __init__(self, answering: str):
+        self._answering = answering
+        self.hosts = []
+
+    def __call__(self, **kwargs):
+        host = kwargs.get("host", "")
+        self.hosts.append(host)
+        if host == self._answering:
+            return ScriptedSocket([WELCOME])
+        return BlockingSocket()
+
+
+def round_in_thread(session) -> list:
+    """Run one connection round on a thread; the list gets what it returned."""
+    ended = []
+    threading.Thread(
+        target=functools.partial(_take_round, session, ended), daemon=True
+    ).start()
+    deadline = time.monotonic() + 5
+    while session._connecting is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return ended
+
+
+@pytest.mark.parametrize("how", ["preference", "probe"])
+def test_a_round_through_other_addresses_ends_within_a_second_of_the_network(
+    bound_everywhere, monkeypatch, how
+):
+    session, _lines = bound_everywhere
+    script = RedirectScript("100.64.0.1")
+    monkeypatch.setattr(session_module, "WebSocketClient", script)
+    ended = round_in_thread(session)
+    assert script.hosts == ["192.0.2.1"]
+
+    started = time.monotonic()
+    if how == "preference":
+        session.reconnect_through(["100.64.0.1"], is_only=True)
+    else:
+        assert session.reaches_through(["100.64.0.1"]) is False
+    while not ended and time.monotonic() - started < 5:
+        time.sleep(0.01)
+
+    assert ended == [None]
+    assert time.monotonic() - started < 1
+    session.reconnect_through(["100.64.0.1"], is_only=True)
+    script.hosts.clear()
+    assert session._connect_round() is not None
+    assert script.hosts == ["100.64.0.1"]
+    assert session.reaches_through(["100.64.0.1"]) is True
+
+
+def test_a_redirected_round_starts_the_next_one_at_once(bound_everywhere, monkeypatch):
+    session, lines = bound_everywhere
+    monkeypatch.setattr(session, "_connect_round", _redirected_round)
+
+    assert session.run_once() == 0
+    assert "the round was redirected; connecting again now" in lines
+    assert session.last_error() is None
+
+
+def _redirected_round():
+    return None
+
+
+def _take_round(session, ended) -> None:
+    ended.append(session._connect_round())
 
 
 def test_the_channel_moves_to_the_networks_address_once_its_port_answers(
