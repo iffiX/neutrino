@@ -73,7 +73,7 @@ To join a second hub, create a link in that hub's panel and paste it into the sa
 
 ## Hubs
 
-The window, titled **Neutrino client**, has a sidebar with **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, then **Settings** under a rule. The sidebar's foot names this computer, its platform and the client's version. The **↻** button at the top right reports to every connected hub and reconnects every hub whose channel is down.
+The window, titled **Neutrino client**, has a sidebar with **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, then **Settings** under a rule. The **↻** button at the top right reports to every connected hub and reconnects every hub whose channel is down.
 
 ### Row states
 
@@ -209,7 +209,7 @@ To paste, press the right mouse button on the shell, or press Ctrl+Shift+V, or C
 
 The **Persistent** switch is at the end of the line under the shell. When it is on, the machine keeps the session while no window is attached, for example after the client quits.
 
-A kept session shows as a tab with a grey dot. Select that tab to attach, and the shell's recent output appears first. The **×** on a persistent tab reads **End session?** after one press, and a second press ends the shell on the machine. [Terminals](../agent/terminals.md) covers the same sessions in the panel.
+A kept session shows as a tab with a grey dot. Select that tab to attach, and the shell's recent output appears first. When a hub's channel drops and comes back, each tab whose session the machine still keeps attaches again by itself. A tab whose session is gone reads **Ended**. The **×** on a persistent tab reads **End session?** after one press, and a second press ends the shell on the machine. [Terminals](../agent/terminals.md) covers the same sessions in the panel.
 
 | Code                | Meaning                                                                  |
 | ------------------- | ------------------------------------------------------------------------ |
@@ -227,6 +227,8 @@ The **Remote desktops** page opens another machine's screen in the RustDesk view
 
 The button reads **connecting…**, the viewer opens on that desktop, and the row reads **viewer open**. The hub sets the seat password and hands it to the viewer with that one press. The viewer connects straight to port 21118 of that machine.
 
+Text copied on either machine pastes on the other. To copy a file to the remote machine, choose **Transfer file** in the viewer's toolbar and drop the file on the remote side of that window.
+
 | What you see                                             | Cause                                                    |
 | -------------------------------------------------------- | -------------------------------------------------------- |
 | the page reads **no remote desktop is shared right now** | no machine is sharing, or the sharing machine is offline |
@@ -242,6 +244,8 @@ The button reads **connecting…**, the viewer opens on that desktop, and the ro
 1. Select **Save**.
 
 The language and theme belong to this window; the panel keeps its own.
+
+The **About** card under the settings lists this computer's name, its platform, the client's version, the licence and the source links.
 
 ## The tray
 
