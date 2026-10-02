@@ -9,8 +9,6 @@
     "verb_unknown": "hub 不认识这个命令，请先更新 hub"
   },
   "ui": {
-    "about_patch_link": "补丁",
-    "about_source_link": "源码",
     "ai_qr_hint": "第三方聊天 app 扫这个码，就能用这个网关。",
     "ai_qr_label": "网关地址和密钥的二维码",
     "back": "返回",

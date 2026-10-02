@@ -9,8 +9,6 @@
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
-    "about_patch_link": "Patch",
-    "about_source_link": "Source",
     "ai_qr_hint": "A chat app that scans this code can use this gateway.",
     "ai_qr_label": "QR code of the gateway address and the key",
     "back": "Back",
