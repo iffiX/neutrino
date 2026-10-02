@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from neutrino_hub.utils.constants import UTILS_LOG_ROOT, UTILS_STATE_ROOT
+
 # Units the panel shows and controls. The key is what the panel displays; the
 # value is the systemd unit behind it.
 # The units without which this is not a gateway. Traffic does not move if any
@@ -36,6 +38,32 @@ SYSTEM_OPTIONAL_UNITS = {
 }
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
+
+# What the one service runs as its own children on macOS and Windows, by the
+# names the panel uses. The panel itself runs inside the service.
+SYSTEM_SUPERVISED_WEB = "web"
+SYSTEM_SUPERVISED_NAMES = ("web", "xray", "cliproxyapi", "netbird", "easytier")
+# The daemons the service runs whether or not a module enabled them.
+SYSTEM_SUPERVISED_CORE = ("xray", "cliproxyapi")
+# Which children the service runs and the start lines it was handed.
+SYSTEM_SERVICES_STATE_PATH = UTILS_STATE_ROOT / "services.json"
+SYSTEM_CHILD_LOG_DIR = UTILS_LOG_ROOT
+SYSTEM_CHILD_LOG_SUFFIX = ".log"
+SYSTEM_CHILD_LOG_MAX_BYTES = 8 * 1024 * 1024
+SYSTEM_CHILD_LOG_BACKUP_COUNT = 3
+# A child that ends is started again after a wait that doubles from the
+# least to the most; one that ran the stable time first waits the least.
+SYSTEM_CHILD_RESTART_MIN_S = 1.0
+SYSTEM_CHILD_RESTART_MAX_S = 60.0
+SYSTEM_CHILD_STABLE_S = 60.0
+SYSTEM_CHILD_STOP_TIMEOUT_S = 10
+SYSTEM_CHILD_TICK_S = 0.5
+# Restarting the panel there is the service exiting with this status after
+# the delay, and the service manager starting it again.
+SYSTEM_RESTART_EXIT_STATUS = 75
+SYSTEM_RESTART_DELAY_S = 2.0
+# How many log lines a journal answers by default.
+SYSTEM_JOURNAL_LINES = 100
 
 # What `systemctl is-active` prints for the states a caller acts on. A unit
 # systemd is restarting after a failure reads as activating.
@@ -154,6 +182,8 @@ SYSTEM_VENV_DIR_NAME = ".venv"
 SYSTEM_XRAY_USER = "xray"
 
 SYSTEM_SYSTEMD_DIR = Path("/etc/systemd/system")
+# The drop-in a start line set through the controller is written to.
+SYSTEM_START_LINE_DROPIN_NAME = "arguments.conf"
 
 # Where the installer writes fail2ban's policy, and the policy itself: five
 # free failures, then bans that stretch from 30 seconds to a day — the same

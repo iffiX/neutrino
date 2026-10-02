@@ -68,3 +68,17 @@ def test_the_separator_keeps_a_command_from_being_read_as_options(monkeypatch):
     wrapped = outside_sandbox(["apt-get", "-q", "update"])
 
     assert wrapped[wrapped.index("--") + 1] == "apt-get"
+
+
+def test_macos_and_windows_run_the_command_directly(monkeypatch):
+    """No unit narrows the hub there, so there is no sandbox to leave."""
+    monkeypatch.setenv(sandbox.SANDBOX_UNIT_MARKER, "b8f0b4c0")
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: f"/usr/bin/{name}")
+    for system in ("darwin", "win32"):
+        monkeypatch.setattr("neutrino_hub.platforms.detect.sys.platform", system)
+
+        assert outside_sandbox(["installer", "-pkg", "a.pkg"]) == [
+            "installer",
+            "-pkg",
+            "a.pkg",
+        ]

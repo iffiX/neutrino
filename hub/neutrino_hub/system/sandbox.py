@@ -22,6 +22,8 @@ the few call sites that install rather than being a hole in `run`.
 import os
 import shutil
 
+from neutrino_hub.platforms.detect import is_linux
+
 # Wait for it, and pass its streams straight through, so a caller cannot tell
 # this from having run the command itself. `--collect` drops the unit's record
 # afterwards, which is what keeps a box that installs often from filling up
@@ -47,8 +49,8 @@ def outside_sandbox(command: list) -> list:
 
     Returns:
         It wrapped in a transient unit, or unchanged where there is no
-        sandbox to leave: a working copy run from a shell, or a machine
-        whose systemd offers no ``systemd-run``.
+        sandbox to leave: a working copy run from a shell, a machine whose
+        systemd offers no ``systemd-run``, macOS or Windows.
     """
     if not is_sandboxed():
         return list(command)
@@ -60,8 +62,10 @@ def is_sandboxed() -> bool:
 
     Returns:
         True when systemd started this process and ``systemd-run`` is there
-        to start another.
+        to start another; False on macOS and Windows, which have no sandbox.
     """
-    return bool(os.environ.get(SANDBOX_UNIT_MARKER)) and bool(
-        shutil.which("systemd-run")
+    return (
+        is_linux()
+        and bool(os.environ.get(SANDBOX_UNIT_MARKER))
+        and bool(shutil.which("systemd-run"))
     )

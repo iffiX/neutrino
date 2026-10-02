@@ -10,7 +10,6 @@ Not pure: drives the appliers in :mod:`neutrino_hub.modules.router.routes`.
 """
 
 import contextlib
-import fcntl
 import json
 import os
 import subprocess
@@ -19,6 +18,7 @@ from pathlib import Path
 
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.overlay.ops import overlay_devices
+from neutrino_hub.platforms.detect import hub_platform
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
     ROUTER_CODE_POLICY_ROUTE_MISSING,
@@ -65,21 +65,18 @@ def router_lock(*, path: Path | None = None, timeout_s: float = ROUTER_LOCK_TIME
     """
     path = path or ROUTER_LOCK_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
+    platform = hub_platform()
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         deadline = time.monotonic() + timeout_s
-        while True:
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(f"another apply holds {path}")
-                time.sleep(ROUTER_LOCK_POLL_S)
+        while not platform.try_lock(descriptor):
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"another apply holds {path}")
+            time.sleep(ROUTER_LOCK_POLL_S)
         try:
             yield
         finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            platform.unlock(descriptor)
     finally:
         os.close(descriptor)
 

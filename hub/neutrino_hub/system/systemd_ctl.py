@@ -7,19 +7,47 @@ class, so the set of units either can touch is exactly
 
 import os
 import socket
-from dataclasses import dataclass
 
+from neutrino_hub.utils.json_file import write_generated
 from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.system.constants import (
+    SYSTEM_JOURNAL_LINES,
     SYSTEM_MANAGED_UNITS,
     SYSTEM_NOTIFY_READY,
     SYSTEM_NOTIFY_SOCKET_ENV,
+    SYSTEM_START_LINE_DROPIN_NAME,
+    SYSTEM_SYSTEMD_DIR,
     SYSTEM_UNIT_STATE_FAILED,
     SYSTEM_UNIT_STATE_INACTIVE,
 )
+from neutrino_hub.system.process_control import (
+    ALLOWED_ACTIONS,
+    ProcessController,
+    ServiceStatus,
+)
 
-ALLOWED_ACTIONS = ("start", "stop", "restart", "enable", "disable")
+
+def start_line_dropin(argv, env: dict, cwd) -> str:
+    """The unit drop-in that starts a unit with this argument vector.
+
+    Args:
+        argv: The argument vector, the program first.
+        env: Variables the unit's environment adds.
+        cwd: The directory it starts in; None keeps the unit's.
+
+    Returns:
+        The drop-in's text: an empty ``ExecStart=`` clearing the unit's own,
+        then the full start line, every word quoted for systemd.
+    """
+    lines = ["[Service]"]
+    for key, value in sorted((env or {}).items()):
+        lines.append(f"Environment={_systemd_quoted(f'{key}={value}')}")
+    if cwd:
+        lines.append(f"WorkingDirectory={cwd}")
+    words = " ".join(_systemd_quoted(str(word)) for word in argv)
+    lines += ["ExecStart=", f"ExecStart={words}"]
+    return "\n".join(lines) + "\n"
 
 
 def unit_state(unit: str) -> str:
@@ -88,26 +116,18 @@ def notify_ready(address: str) -> bool:
     return True
 
 
-@dataclass
-class ServiceStatus:
-    """State of one managed unit.
-
-    Attributes:
-        name: Panel-facing name, for example ``xray``.
-        unit: The systemd unit behind it.
-        is_installed: Whether systemd knows the unit at all.
-        is_active: Whether it is running now.
-        is_enabled: Whether it starts at boot.
-    """
-
-    name: str
-    unit: str
-    is_installed: bool
-    is_active: bool
-    is_enabled: bool
+def _systemd_quoted(word: str) -> str:
+    """One command line word as systemd reads it back unchanged."""
+    escaped = (
+        word.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("%", "%%")
+        .replace("$", "$$")
+    )
+    return f'"{escaped}"'
 
 
-class SystemdServiceController:
+class SystemdServiceController(ProcessController):
     """Reads and changes the state of the managed units."""
 
     def status(self, name: str) -> ServiceStatus:
@@ -191,7 +211,7 @@ class SystemdServiceController:
             )
         run(["systemctl", action, self._unit_for(name)])
 
-    def journal(self, name: str, *, line_count: int = 100) -> str:
+    def journal(self, name: str, *, line_count: int = SYSTEM_JOURNAL_LINES) -> str:
         """Read the tail of a unit's journal.
 
         Args:
@@ -220,13 +240,38 @@ class SystemdServiceController:
         )
         return result.stdout or result.stderr
 
-    def daemon_reload(self) -> None:
+    def reload(self) -> None:
         """Reload unit files after installing or editing one.
 
         Raises:
             subprocess.CalledProcessError: If systemd fails to reload.
         """
         run(["systemctl", "daemon-reload"])
+
+    def set_start_line(self, name: str, argv, env: dict, cwd) -> None:
+        """Write one unit's start line as a drop-in, and reload.
+
+        Args:
+            name: Panel-facing service name.
+            argv: The argument vector, the program first; None removes the
+                drop-in and the unit's own start line holds again.
+            env: Variables the unit's environment adds.
+            cwd: The directory it starts in; None keeps the unit's.
+
+        Raises:
+            KeyError: If the name is not a managed unit.
+            OSError: If the drop-in cannot be written.
+            subprocess.CalledProcessError: If systemd fails to reload.
+        """
+        unit = self._unit_for(name)
+        path = SYSTEM_SYSTEMD_DIR / f"{unit}.d" / SYSTEM_START_LINE_DROPIN_NAME
+        if argv is None:
+            if not path.is_file():
+                return
+            path.unlink()
+        else:
+            write_generated(path, start_line_dropin(argv, env, cwd), mode=0o644)
+        self.reload()
 
     def _unit_for(self, name: str) -> str:
         try:
