@@ -153,18 +153,14 @@ class OverlayControllerTest {
     }
 
     @Test
-    fun aNetworkTheConsoleAssignsStartsAFreshSixtySeconds() = runTest {
+    fun aNetworkTheConsoleAssignsStartsTheHubStage() = runTest {
         val controller = controller()
         controller.connect("b1")
         controller.engineSays(OverlayPhase.WAITING)
         advanceTimeBy(300_000)
         controller.engineSays(OverlayPhase.ON, "10.144.0.7/24")
         assertFalse(controller.lines.value["b1"]?.isWaiting == true)
-        advanceTimeBy(59_999)
-        assertEquals(OverlayState.CONNECTING, controller.state())
-        advanceTimeBy(2)
-        assertEquals(OverlayState.OFF, controller.state())
-        assertEquals("overlay_hub_unreachable", controller.lines.value["b1"]?.error?.code)
+        assertEquals(OverlayStage.HUB, controller.stage())
     }
 
     @Test
@@ -181,14 +177,43 @@ class OverlayControllerTest {
     }
 
     @Test
-    fun noChannelThroughTheNetworkWithinSixtySecondsIsOffWithTheCode() = runTest {
+    fun theHubStageHasNoDeadline() = runTest {
         val controller = controller()
+        isHubAnswering = false
         controller.connect("b1")
         controller.engineSays(OverlayPhase.ON, "100.72.4.9")
-        advanceTimeBy(60_001)
+        advanceTimeBy(600_000)
+        assertEquals(OverlayState.CONNECTING, controller.state())
+        assertEquals(OverlayStage.HUB, controller.stage())
+        assertNull(controller.lines.value["b1"]?.error)
+        assertEquals(0, stops)
+        assertTrue(probes.size > 250)
+    }
+
+    @Test
+    fun theEngineStoppingInTheHubStageEndsItWithItsCode() = runTest {
+        val controller = controller()
+        isHubAnswering = false
+        controller.connect("b1")
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9")
+        advanceTimeBy(120_000)
+        controller.engineSays(OverlayPhase.FAILED, code = "overlay_join_failed")
         assertEquals(OverlayState.OFF, controller.state())
-        assertEquals("overlay_hub_unreachable", controller.lines.value["b1"]?.error?.code)
-        assertEquals(listOf(Triple("b1", overUrl, true), Triple("b1", "", false)), preferred)
+        assertEquals("overlay_join_failed", controller.lines.value["b1"]?.error?.code)
+        assertEquals(Triple("b1", "", false), preferred.last())
+    }
+
+    @Test
+    fun theHubStageCarriesWhenItStarted() = runTest {
+        var now = 1_000L
+        store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        store.put(Samples.binding.copy(overlays = listOf(netbird)))
+        val controller = OverlayController(store, launcher, backgroundScope, { false }, { now }) { _, _, _ -> }
+        controller.connect("b1")
+        assertEquals(1_000L, controller.lines.value["b1"]?.stageStartedAtMillis)
+        now = 7_000L
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9")
+        assertEquals(7_000L, controller.lines.value["b1"]?.stageStartedAtMillis)
     }
 
     @Test
@@ -292,18 +317,15 @@ class OverlayControllerTest {
     }
 
     @Test
-    fun theHubStageHasItsOwnSixtySecondsAfterALongLogin() = runTest {
+    fun anAddressAfterALongLoginEndsTheLoginLimit() = runTest {
         val controller = controller()
         isHubAnswering = false
         controller.connect("b1")
         advanceTimeBy(85_000)
         controller.engineSays(OverlayPhase.ON, "100.72.4.9/16")
-        advanceTimeBy(59_999)
+        advanceTimeBy(10_000)
         assertEquals(OverlayState.CONNECTING, controller.state())
         assertEquals(OverlayStage.HUB, controller.stage())
-        advanceTimeBy(2)
-        assertEquals(OverlayState.OFF, controller.state())
-        assertEquals("overlay_hub_unreachable", controller.lines.value["b1"]?.error?.code)
     }
 
     @Test

@@ -8,7 +8,7 @@ enum class OverlayStage {
     /** The engine starts, logs in and gets an address; at most 90 s, or no limit once a console holds the phone. */
     LOGIN,
 
-    /** The hub answers at its address on the network and the channel runs through it; at most 60 s from the address. */
+    /** The hub answers at its address on the network and the channel runs through it; no limit. */
     HUB,
     ;
 

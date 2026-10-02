@@ -2,7 +2,6 @@ package io.github.iffix.neutrino.overlay
 
 import android.util.Log
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
-import io.github.iffix.neutrino.OVERLAY_HUB_TIMEOUT_S
 import io.github.iffix.neutrino.OVERLAY_LOGIN_TIMEOUT_S
 import io.github.iffix.neutrino.OVERLAY_PROBE_INTERVAL_MILLIS
 import io.github.iffix.neutrino.OVERLAY_STOP_TIMEOUT_S
@@ -27,10 +26,10 @@ import kotlinx.coroutines.launch
 
 /**
  * Each hub's virtual network as three states, `off`, `connecting` and `on`, driven only by a
- * person's press. A connect is one attempt in two stages, each with its own limit: `login`, the
- * engine's start, login and address, within 90 s; then `hub`, within 60 s of the address, where
- * the hub's own address on the network is probed and, once it answers, the hub's channel runs
- * through that address and no other until the channel is up there, which is `on`. A console
+ * person's press. A connect is one attempt in two stages: `login`, the engine's start, login and
+ * address, within 90 s; then `hub`, with no limit, where the hub's own address on the network is
+ * probed every 2 s and, once it answers, the hub's channel runs through that address and no
+ * other until the channel is up there, which is `on`; the engine stopping or Cancel ends it. A console
  * that has the phone registered and has assigned no network holds the `login` stage with no
  * deadline until it assigns one, or until Cancel. Nothing retries, nothing moves to another
  * network, and nothing changes the pick. The VPN runs one network at a time. Each stage's start
@@ -104,6 +103,7 @@ class OverlayController(
                 overlay.provider,
                 job = OverlayJob.CONNECTING,
                 stage = OverlayStage.LOGIN,
+                stageStartedAtMillis = attempt.stageStartedAt,
             ),
         )
         log(attempt, "stage login started")
@@ -249,9 +249,18 @@ class OverlayController(
         } else {
             ""
         }
-        put(attempt.bindingId, line.copy(address = address, isWaiting = false, stage = OverlayStage.HUB))
+        put(
+            attempt.bindingId,
+            line.copy(
+                address = address,
+                isWaiting = false,
+                stage = OverlayStage.HUB,
+                stageStartedAtMillis = attempt.stageStartedAt,
+            ),
+        )
         log(attempt, "stage hub started: probing ${attempt.hubUrl.ifEmpty { "no address of the hub" }}")
-        restartTimer(OVERLAY_HUB_TIMEOUT_S) { expired(attempt.bindingId) }
+        timer?.cancel()
+        timer = null
         ask(attempt)
     }
 
@@ -289,9 +298,8 @@ class OverlayController(
     private fun expired(bindingId: String) = synchronized(lock) {
         if (active?.bindingId != bindingId) return@synchronized
         val line = line(bindingId)
-        if (line.state != OverlayState.CONNECTING) return@synchronized
-        val code = if (line.stage == OverlayStage.HUB) "overlay_hub_unreachable" else "overlay_no_address"
-        end(bindingId, ChannelResult.refused(code))
+        if (line.state != OverlayState.CONNECTING || line.stage != OverlayStage.LOGIN) return@synchronized
+        end(bindingId, ChannelResult.refused("overlay_no_address"))
     }
 
     private fun end(bindingId: String, error: ChannelResult.Refused?, isStopped: Boolean = false) {
