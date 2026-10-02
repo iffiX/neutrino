@@ -5,6 +5,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -28,8 +33,10 @@ import io.github.iffix.neutrino.design.StatusDot
 import io.github.iffix.neutrino.design.cardRows
 import io.github.iffix.neutrino.design.gap
 import io.github.iffix.neutrino.overlay.OverlayJob
+import io.github.iffix.neutrino.overlay.OverlayLine
 import io.github.iffix.neutrino.overlay.OverlayStage
 import io.github.iffix.neutrino.overlay.OverlayState
+import kotlinx.coroutines.delay
 
 /**
  * The hubs this phone has joined, one row each with its state, its virtual network line and its
@@ -125,6 +132,18 @@ fun hubStateKey(hub: HubView): String = when {
 }
 
 @Composable
+private fun waitedSeconds(line: OverlayLine): Long {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(line.stage, line.stageStartedAtMillis) {
+        while (line.stage == OverlayStage.HUB) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    return ((now - line.stageStartedAtMillis) / 1000).coerceAtLeast(0)
+}
+
+@Composable
 private fun HubRow(
     hub: HubView,
     otherNetwork: HubView?,
@@ -150,7 +169,7 @@ private fun HubRow(
             words.word("ui.stage.login", mapOf("engine" to ChannelOverlay(line.network).title))
 
         line.state == OverlayState.CONNECTING && line.stage == OverlayStage.HUB ->
-            words.word("ui.stage.hub", mapOf("address" to line.address))
+            words.word("ui.stage.hub", mapOf("address" to line.address, "seconds" to waitedSeconds(line)))
 
         line.state != OverlayState.OFF -> null
 

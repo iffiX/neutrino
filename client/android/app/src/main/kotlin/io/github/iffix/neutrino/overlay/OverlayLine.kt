@@ -12,6 +12,7 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * @property job What the network's button is doing.
  * @property isWaiting Whether the engine is registered with a console that has assigned no network yet.
  * @property stage Which of the connect's stages runs while [state] is [OverlayState.CONNECTING].
+ * @property stageStartedAtMillis When [stage] started, in the wall clock's milliseconds; the page counts the seconds from it.
  */
 data class OverlayLine(
     val state: OverlayState = OverlayState.OFF,
@@ -21,4 +22,5 @@ data class OverlayLine(
     val job: OverlayJob = OverlayJob.NONE,
     val isWaiting: Boolean = false,
     val stage: OverlayStage = OverlayStage.NONE,
+    val stageStartedAtMillis: Long = 0,
 )
