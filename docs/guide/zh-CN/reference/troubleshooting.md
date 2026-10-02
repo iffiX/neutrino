@@ -13,7 +13,8 @@ title: 故障排查
 | 浏览器打不开 `http://<hub>:8080`                              | 面板单元没在运行、端口改过，或这个网络不在开放范围里                       | 在 hub 上运行 `systemctl status neutrino_hub_web`，再看**网络**（Network）页的**面板端口**（Panel ports）和**开放范围**（Exposure） |
 | `http://<hub>:8080` 跳到 `https://<hub>`，然后打不开          | HTTPS 开着，HTTP 端口把浏览器转到 HTTPS 端口，而这里访问不到那个端口       | 看**网络**页**面板端口**里的 **HTTPS 端口**（HTTPS port），确认去这台机器的路上这个端口是通的                                       |
 | 改了面板端口后会话断开                                        | 面板在新端口上重启了；会话 cookie 以端口命名，即 `neutrino_session_<port>` | 在新地址上重新登录                                                                                                                  |
-| 点了**开启 HTTPS**或**关闭 HTTPS**（Disable HTTPS）后会话断开 | 每个端口各有一个会话 cookie，切换时离开的那个端口上的会话被结束            | 在页面跳到的地址上重新登录                                                                                                          |
+| 点了**开启 HTTPS**或**关闭 HTTPS**（Disable HTTPS）后会话断开 | 切换时会话被结束，离开的那个端口在把你转走时顺手删掉 cookie                | 在页面跳到的地址上重新登录                                                                                                          |
+| 关闭 HTTPS 后在 `http://` 上登录又回到登录卡                  | 浏览器还留着 HTTPS 端口的 `Secure` cookie，不肯换掉它                      | 点登录卡上的**清掉旧会话**（Clear the old session），或打开一次 `https://` 地址，它会把你送回来并删掉旧 cookie                      |
 
 ## 浏览器提示证书有问题
 

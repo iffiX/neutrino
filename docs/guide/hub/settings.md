@@ -45,7 +45,7 @@ Open the panel's `http://` address after the browser restarts. The **HTTPS** sec
 | **This browser trusts the certificate.**               | **Enable HTTPS** is available                                    |
 | **Install the certificate, then restart the browser.** | the browser rejected the certificate; **Enable HTTPS** is greyed |
 
-Select **Enable HTTPS**. The page moves to the `https://` address, and from then on the HTTP port sends every browser there. **Disable HTTPS** moves the page back to the `http://` address, where you sign in again: each port keeps a session cookie of its own, and the switch ends the one on the port you leave.
+Select **Enable HTTPS**. The page moves to the `https://` address, and from then on the HTTP port sends every browser there. **Disable HTTPS** moves the page back to the `http://` address, where you sign in again: the switch ends the session, and from then on the HTTPS port sends every browser back to `http://` and deletes the old cookie on the way.
 
 ![The HTTPS section with HTTPS on and its status lines](/guide/en/settings_https_on.webp)
 

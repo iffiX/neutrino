@@ -41,13 +41,16 @@ route requires the session, and every state-changing route checks the
 `is_https_enabled` in `config/web/settings.json` is false until somebody
 turns it on, and decides two things: whether the HTTP port answers 301 to
 `https://<same host>[:<https_listen_port> when not 443]<path>`, and which
-port the panel's own page is on. The session cookie is named for the port of
-the scheme a request came over, `neutrino_session_<port>`, and is `Secure`
-over HTTPS only, so the HTTPS port's cookie is never one an HTTP login has
-to overwrite, which a browser refuses; `enable` and `disable` end the
-caller's session on the scheme it leaves. The running app reads the setting
-at every request, so turning it on or off restarts nothing; a plain
-websocket is closed while it is on. The certificate is signed by the hub's
+port the panel is on: the other port answers 301 to it for every path but
+the authority's download and the trust probe, and closes a websocket. There
+is one session cookie, `neutrino_session_<http port>`, `Secure` when it was
+set over HTTPS; the 301 from the port the panel left deletes it, and
+`enable` and `disable` end the caller's session, so a browser holds a
+session on one port at a time and no `Secure` cookie stays to block a plain
+login, which a browser refuses to overwrite. A login whose cookie the
+browser still refused reads as no session, and the login page offers the
+HTTPS address, whose 301 removes the old cookie. The running app reads the
+setting at every request, so turning it on or off restarts nothing. The certificate is signed by the hub's
 own certificate authority: EC P-256, valid for ten years, `CA:TRUE` with a
 path length of 0, and name constraints that permit `10.0.0.0/8`,
 `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `127.0.0.0/8` and the
