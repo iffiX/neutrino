@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.forward
 
+import io.github.iffix.neutrino.FakeSharedPreferences
 import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.ChannelServiceEntry
@@ -23,6 +24,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortForwardsTest {
     private val echo = EchoServer()
+    private val table = LocalPortTable(FakeSharedPreferences())
+    private val tokens = mutableListOf<String>()
     private val noMaterial: suspend (String, String) -> ChannelResult<JsonObject> = { _, _ ->
         ChannelResult.Ok(JsonObject(emptyMap()))
     }
@@ -32,7 +35,7 @@ class PortForwardsTest {
 
     @Test
     fun connectIsAJobUntilTheLoopbackListens() = runTest {
-        val forwards = PortForwards(noMaterial, backgroundScope)
+        val forwards = PortForwards(noMaterial, backgroundScope, table)
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
         assertEquals(PortForwardJob.FORWARDING, forwards.rows.value["b1/p1"]?.job)
         runCurrent()
@@ -46,9 +49,9 @@ class PortForwardsTest {
     @Test
     fun aSecondPressWhileTheJobRunsIsDropped() = runTest {
         var made = 0
-        val forwards = PortForwards(noMaterial, backgroundScope) { host, port, local ->
+        val forwards = PortForwards(noMaterial, backgroundScope, table) { host, port, local, token ->
             made += 1
-            PortForwardRelay(host, port, local)
+            PortForwardRelay(host, port, local, token)
         }
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
@@ -59,7 +62,7 @@ class PortForwardsTest {
 
     @Test
     fun disconnectIsAJobThenTheRowGoes() = runTest {
-        val forwards = PortForwards(noMaterial, backgroundScope)
+        val forwards = PortForwards(noMaterial, backgroundScope, table)
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
         runCurrent()
         forwards.disconnect("b1", "p1")
@@ -70,7 +73,7 @@ class PortForwardsTest {
 
     @Test
     fun aFailedBindWritesForwardFailedUntilARefresh() = runTest {
-        val forwards = PortForwards(noMaterial, backgroundScope) { host, port, _ ->
+        val forwards = PortForwards(noMaterial, backgroundScope, table) { host, port, _, _ ->
             FailingRelay(host, port)
         }
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
@@ -83,7 +86,10 @@ class PortForwardsTest {
     @Test
     fun openLocallyForwardsTakesTheTokenAndOpensTheLoopback() = runTest {
         val answer = CompletableDeferred<ChannelResult<JsonObject>>()
-        val forwards = PortForwards({ _, _ -> answer.await() }, backgroundScope)
+        val forwards = PortForwards({ _, _ -> answer.await() }, backgroundScope, table) { host, port, local, token ->
+            tokens += token
+            PortForwardRelay(host, port, local, token)
+        }
         val opened = mutableListOf<String>()
         forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
         runCurrent()
@@ -91,14 +97,62 @@ class PortForwardsTest {
         answer.complete(ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("a b")))))
         runCurrent()
         val row = forwards.rows.value.getValue("b1/w1")
-        assertEquals(listOf("http://127.0.0.1:${row.localPort}/?tkn=a+b"), opened)
+        assertEquals(listOf("http://127.0.0.1:${row.localPort}/"), opened)
+        assertEquals(listOf("a b"), tokens)
         assertNull(row.job)
         forwards.stopAll()
     }
 
     @Test
+    fun openLocallyOnAForwardedEntryOpensTheBrowserAgainWithNoNewForward() = runTest {
+        val forwards = PortForwards({ _, _ ->
+            ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("t"))))
+        }, backgroundScope, table) { host, port, local, token ->
+            tokens += token
+            PortForwardRelay(host, port, local, token)
+        }
+        val opened = mutableListOf<String>()
+        forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
+        runCurrent()
+        forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
+        runCurrent()
+        assertEquals(2, opened.size)
+        assertEquals(1, tokens.size)
+        forwards.stopAll()
+    }
+
+    @Test
+    fun theConfigureDialogIsRefusedWhileTheEntryIsForwarded() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope, table)
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        runCurrent()
+        val answer = forwards.configure("b1", "p1", LocalPortChoice(isFixed = true, port = 30001))
+        assertEquals("disconnect_first", (answer as ChannelResult.Refused).code)
+        forwards.disconnect("b1", "p1")
+        runCurrent()
+        assertEquals(
+            ChannelResult.Ok(Unit),
+            forwards.configure("b1", "p1", LocalPortChoice(isFixed = true, port = 30001)),
+        )
+        assertEquals(LocalPortChoice(isFixed = true, port = 30001), forwards.localPortOf("b1", "p1"))
+    }
+
+    @Test
+    fun twoEntriesOnOnePublishedPortForwardOnTwoLocalPorts() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope, table)
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        forwards.connect("b2", "p1", "127.0.0.1", echo.port)
+        runCurrent()
+        val first = forwards.rows.value.getValue("b1/p1").localPort
+        val second = forwards.rows.value.getValue("b2/p1").localPort
+        assertTrue(first >= 20000 && second >= 20000)
+        assertTrue(first != second)
+        forwards.stopAll()
+    }
+
+    @Test
     fun openLocallyWithNoTokenWritesItsCode() = runTest {
-        val forwards = PortForwards(noMaterial, backgroundScope)
+        val forwards = PortForwards(noMaterial, backgroundScope, table)
         val opened = mutableListOf<String>()
         forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
         runCurrent()
@@ -109,7 +163,7 @@ class PortForwardsTest {
 
     @Test
     fun aForwardStopsWhenItsEntryLeavesTheState() = runTest {
-        val forwards = PortForwards(noMaterial, backgroundScope)
+        val forwards = PortForwards(noMaterial, backgroundScope, table)
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
         runCurrent()
         forwards.take(listOf(hub("b1", HubConnection.CONNECTING)))
@@ -122,7 +176,7 @@ class PortForwardsTest {
 
     @Test
     fun leavingAHubEndsItsForwards() = runTest {
-        val forwards = PortForwards(noMaterial, backgroundScope)
+        val forwards = PortForwards(noMaterial, backgroundScope, table)
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
         forwards.connect("b2", "p1", "127.0.0.1", echo.port)
         runCurrent()

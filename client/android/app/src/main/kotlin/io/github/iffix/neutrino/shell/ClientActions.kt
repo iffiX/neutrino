@@ -4,6 +4,7 @@ import android.content.Intent
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
+import io.github.iffix.neutrino.forward.LocalPortChoice
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -159,6 +160,25 @@ interface ClientActions {
      * @param entryId The entry.
      */
     fun disconnectPort(bindingId: String, entryId: String)
+
+    /**
+     * One forwardable entry's local port, as the Configure dialog opens on it.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @return Automatic or fixed, with the number held.
+     */
+    fun localPortOf(bindingId: String, entryId: String): LocalPortChoice
+
+    /**
+     * Save the Configure dialog of a forwardable entry.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param choice Automatic, or fixed with a number from 1024 to 65535.
+     * @return Ok once kept, or the refusal the dialog words as `ui.reason.<code>`.
+     */
+    fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit>
 
     /**
      * Press Open locally on a local-only web entry.

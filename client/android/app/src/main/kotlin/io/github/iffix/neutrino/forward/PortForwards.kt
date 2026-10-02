@@ -5,13 +5,11 @@ import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HTTP_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
-import io.github.iffix.neutrino.WEB_TOKEN_PARAMETER
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubView
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
-import java.net.URLEncoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,19 +22,23 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * The loopback forwards of the app core, by entry key `<binding>/<entry>`: a port entry's
- * Connect and Disconnect, and a local-only web entry's Open locally, which forwards, reads the
- * entry's token on the `service` stream and opens the browser on the loopback. A forward stops
- * when its hub is left, when its entry leaves the hub's state, and on [stopAll] as the app core's service ends.
+ * Connect and Disconnect, and a local-only web entry's Open locally, which reads the entry's
+ * token on the `service` stream, forwards with the token as the page's cookie and opens the
+ * browser on the loopback. Each forward listens on the number the local port table gives its
+ * entry. A forward stops when its hub is left, when its entry leaves the hub's state, and on
+ * [stopAll] as the app core's service ends.
  *
  * @param material What the hub hands this phone for one entry, by binding id and entry id.
  * @param scope Where the jobs run.
- * @param relayOf A relay to a published host and port, asking for a loopback number.
+ * @param table The local port of every forwardable entry.
+ * @param relayOf A relay to a published host and port, on a loopback number, with a web entry's token or empty.
  */
 class PortForwards(
     private val material: suspend (String, String) -> ChannelResult<JsonObject>,
     private val scope: CoroutineScope,
-    private val relayOf: (String, Int, Int) -> PortForwardRelay = { host, port, local ->
-        PortForwardRelay(host, port, local)
+    private val table: LocalPortTable,
+    private val relayOf: (String, Int, Int, String) -> PortForwardRelay = { host, port, local, token ->
+        PortForwardRelay(host, port, local, token)
     },
 ) {
     private val current = MutableStateFlow<Map<String, PortForwardRow>>(emptyMap())
@@ -57,7 +59,7 @@ class PortForwards(
         val key = keyOf(bindingId, entryId)
         if (!begin(key, PortForwardJob.FORWARDING)) return
         scope.launch {
-            when (val bound = forward(key, host, port)) {
+            when (val bound = forward(key, host, port, "")) {
                 is ChannelResult.Refused -> settle(key) { PortForwardRow(error = bound) }
                 is ChannelResult.Ok -> settle(key) { PortForwardRow(localPort = bound.value) }
             }
@@ -80,9 +82,10 @@ class PortForwards(
     }
 
     /**
-     * Press Open locally on a local-only web entry: its address is forwarded to the loopback, its
-     * token is read on the `service` stream, and the browser opens the loopback with the token.
-     * A press while the row's job runs is dropped.
+     * Press Open locally on a local-only web entry: its token is read on the `service` stream,
+     * its address is forwarded to the loopback with the token as the page's cookie, and the
+     * browser opens the loopback address, which carries no token. An entry already forwarded
+     * opens the browser at once. A press while the row's job runs is dropped.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
@@ -99,30 +102,58 @@ class PortForwards(
                 return@launch
             }
             val (host, port, path) = target
-            val bound = when (val forwarded = forward(key, host, port)) {
-                is ChannelResult.Refused -> {
-                    settle(key) { PortForwardRow(error = forwarded) }
-                    return@launch
-                }
-
-                is ChannelResult.Ok -> forwarded.value
+            val running = synchronized(relays) { relays[key]?.takeIf { it.isActive } }
+            if (running != null) {
+                onOpen("http://$FORWARD_BIND_HOST:${running.localPort}$path")
+                settle(key) { PortForwardRow(localPort = running.localPort) }
+                return@launch
             }
             val token = when (val answer = material(bindingId, entryId)) {
                 is ChannelResult.Refused -> {
-                    settle(key) { PortForwardRow(localPort = bound, error = answer) }
+                    settle(key) { PortForwardRow(error = answer) }
                     return@launch
                 }
 
                 is ChannelResult.Ok -> (answer.value["token"] as? JsonPrimitive)?.content.orEmpty()
             }
             if (token.isEmpty()) {
-                settle(key) { PortForwardRow(localPort = bound, error = ChannelResult.refused("web_token_missing")) }
+                settle(key) { PortForwardRow(error = ChannelResult.refused("web_token_missing")) }
                 return@launch
             }
-            val query = "$WEB_TOKEN_PARAMETER=${URLEncoder.encode(token, "UTF-8")}"
-            onOpen("http://$FORWARD_BIND_HOST:$bound$path?$query")
-            settle(key) { PortForwardRow(localPort = bound) }
+            when (val forwarded = forward(key, host, port, token)) {
+                is ChannelResult.Refused -> settle(key) { PortForwardRow(error = forwarded) }
+
+                is ChannelResult.Ok -> {
+                    onOpen("http://$FORWARD_BIND_HOST:${forwarded.value}$path")
+                    settle(key) { PortForwardRow(localPort = forwarded.value) }
+                }
+            }
         }
+    }
+
+    /**
+     * One entry's local port, as the Configure dialog opens on it.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @return Automatic or fixed, with the number held.
+     */
+    fun localPortOf(bindingId: String, entryId: String): LocalPortChoice = table.choiceOf(keyOf(bindingId, entryId))
+
+    /**
+     * Save the Configure dialog: one entry's local port, while the entry is not forwarded.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param choice Automatic, or fixed with a number from 1024 to 65535.
+     * @return Ok once kept; `disconnect_first` while the entry is forwarded; `port_taken {port}`
+     *   when another entry holds the fixed number.
+     * @throws IllegalArgumentException When a fixed number is outside 1024 to 65535.
+     */
+    fun configure(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit> {
+        val key = keyOf(bindingId, entryId)
+        if (synchronized(relays) { relays[key]?.isActive == true }) return ChannelResult.refused("disconnect_first")
+        return table.configure(key, choice)
     }
 
     /**
@@ -160,6 +191,7 @@ class PortForwards(
         val keys = synchronized(relays) { relays.keys.filter { it.startsWith("$bindingId/") } }
         for (key in keys) stop(key)
         current.update { rows -> rows.filterKeys { !it.startsWith("$bindingId/") } }
+        table.forget(bindingId)
     }
 
     /** Stop every forward, as when the app core's service ends. */
@@ -190,10 +222,10 @@ class PortForwards(
         return isStarted
     }
 
-    private fun forward(key: String, host: String, port: Int): ChannelResult<Int> {
+    private fun forward(key: String, host: String, port: Int, token: String): ChannelResult<Int> {
         synchronized(relays) { relays[key]?.takeIf { it.isActive } }?.let { return ChannelResult.Ok(it.localPort) }
-        val relay = relayOf(host, port, port)
         return try {
+            val relay = relayOf(host, port, table.portFor(key, port), token)
             val bound = relay.start()
             synchronized(relays) { relays.put(key, relay) }?.close()
             Log.i(CLIENT_LOG_TAG, "forwarding $FORWARD_BIND_HOST:$bound to $host:$port")

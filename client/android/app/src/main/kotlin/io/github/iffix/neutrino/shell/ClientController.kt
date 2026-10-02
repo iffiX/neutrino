@@ -23,6 +23,7 @@ import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
+import io.github.iffix.neutrino.forward.LocalPortChoice
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
@@ -155,6 +156,12 @@ class ClientController(
         forwards.connect(bindingId, entryId, host, port)
 
     override fun disconnectPort(bindingId: String, entryId: String) = forwards.disconnect(bindingId, entryId)
+
+    override fun localPortOf(bindingId: String, entryId: String): LocalPortChoice =
+        forwards.localPortOf(bindingId, entryId)
+
+    override fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit> =
+        forwards.configure(bindingId, entryId, choice)
 
     override fun openLocal(bindingId: String, entryId: String, url: String) =
         forwards.openLocal(bindingId, entryId, url) { address ->

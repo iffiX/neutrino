@@ -22,6 +22,7 @@ import io.github.iffix.neutrino.channel.OkHttpHubTransport
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
+import io.github.iffix.neutrino.forward.LocalPortTable
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.OverlayProbe
@@ -128,6 +129,7 @@ class NeutrinoApplication : Application() {
                 connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
             },
             scope = scope,
+            table = LocalPortTable(getSharedPreferences(CLIENT_SETTINGS_FILE_NAME, Context.MODE_PRIVATE)),
         )
     }
 

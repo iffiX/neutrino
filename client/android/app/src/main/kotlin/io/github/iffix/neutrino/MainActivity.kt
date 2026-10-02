@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -18,6 +19,7 @@ import io.github.iffix.neutrino.design.NeutrinoPalette
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.shell.AppShell
 import io.github.iffix.neutrino.shell.ClientController
+import io.github.iffix.neutrino.shell.LocalClientActions
 import io.github.iffix.neutrino.words.WordCatalog
 
 /** The one window: every screen is drawn inside it. */
@@ -63,21 +65,23 @@ class MainActivity : ComponentActivity() {
                 )
             }
         NeutrinoTheme(palette, words) {
-            AppShell(
-                deviceName = application.deviceName,
-                platform = platform,
-                version = BuildConfig.VERSION_NAME,
-                settings = settings,
-                onSaveSettings = application.settingsStore::save,
-                hubs = hubs,
-                notices = notices,
-                join = join,
-                actions = actions,
-                terminalTabs = application.terminalTabs,
-                desktops = application.remoteDesktops,
-                forwards = application.portForwards,
-                remoteDesktopCore = application.remoteDesktopCore,
-            )
+            CompositionLocalProvider(LocalClientActions provides actions) {
+                AppShell(
+                    deviceName = application.deviceName,
+                    platform = platform,
+                    version = BuildConfig.VERSION_NAME,
+                    settings = settings,
+                    onSaveSettings = application.settingsStore::save,
+                    hubs = hubs,
+                    notices = notices,
+                    join = join,
+                    actions = actions,
+                    terminalTabs = application.terminalTabs,
+                    desktops = application.remoteDesktops,
+                    forwards = application.portForwards,
+                    remoteDesktopCore = application.remoteDesktopCore,
+                )
+            }
         }
     }
 }

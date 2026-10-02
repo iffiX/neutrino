@@ -21,6 +21,9 @@ const val CLIENT_BOTTOM_BAR_HEIGHT_DP = 56
 /** The file the language and the theme are kept in. */
 const val CLIENT_SETTINGS_FILE_NAME = "client_settings"
 
+/** The local port table's key in [CLIENT_SETTINGS_FILE_NAME]. */
+const val CLIENT_SETTINGS_KEY_LOCAL_PORTS = "local_ports"
+
 /** The language's key in [CLIENT_SETTINGS_FILE_NAME]. */
 const val CLIENT_SETTINGS_KEY_LANGUAGE = "language"
 
@@ -233,8 +236,17 @@ const val FORWARD_BUFFER_BYTES = 65536
 /** How long a forwarded connection may take to reach the published port, as the desktop's relay allows. */
 const val FORWARD_CONNECT_TIMEOUT_MILLIS = 10_000
 
-/** The query parameter a local-only web page takes its token in. */
-const val WEB_TOKEN_PARAMETER = "tkn"
+/** The cookie a local-only web page takes its token in. */
+const val WEB_TOKEN_COOKIE = "vscode-tkn"
+
+/** The numbers a person may fix a local port to. */
+val FORWARD_FIXED_PORTS: IntRange = 1024..65535
+
+/** Where an automatic local port is looked for when the entry's own is taken. */
+const val FORWARD_AUTO_FIRST_PORT = 20000
+
+/** The longest request or response head a web entry's forward reads. */
+const val FORWARD_HEAD_MAX_BYTES = 65536
 
 /** The notification channel the app core's foreground service posts in. */
 const val CLIENT_CORE_NOTIFICATION_CHANNEL = "connections"

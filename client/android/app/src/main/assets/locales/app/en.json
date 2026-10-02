@@ -1,7 +1,9 @@
 {
   "code": {
+    "disconnect_first": "Disconnect first to change the local port.",
     "forward_failed": "The port could not be forwarded: {detail}",
     "overlay_wish_unsaved": "the virtual network choice could not be saved",
+    "port_taken": "Another entry holds port {port}.",
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
     "rdp_login_failed": "The machine refused the access password.",
@@ -28,6 +30,9 @@
     "join_hint": "Scan the QR code, or paste the link.",
     "key_hide": "Hide the key",
     "key_show": "Show the key",
+    "local_port": "Local port",
+    "local_port_auto": "Auto",
+    "local_port_fixed": "Fixed",
     "open_in_files": "Open in Files",
     "or": "or",
     "overlay_count": "This hub publishes {count} virtual networks",

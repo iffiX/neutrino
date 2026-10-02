@@ -1,7 +1,9 @@
 {
   "code": {
+    "disconnect_first": "先断开，才能改本地端口。",
     "forward_failed": "端口没能转发：{detail}",
     "overlay_wish_unsaved": "虚拟网的选择没能保存",
+    "port_taken": "端口 {port} 已被另一个条目占用。",
     "rdp_closed": "连接已结束：{reason}",
     "rdp_core_missing": "这个版本还没有远程桌面核心，显示不了画面。",
     "rdp_login_failed": "对方机器拒绝了访问密码。",
@@ -28,6 +30,9 @@
     "join_hint": "扫描二维码，或粘贴链接。",
     "key_hide": "隐藏密钥",
     "key_show": "显示密钥",
+    "local_port": "本地端口",
+    "local_port_auto": "自动",
+    "local_port_fixed": "指定",
     "open_in_files": "在“文件”中打开",
     "or": "或",
     "overlay_count": "此 hub 发布了 {count} 个虚拟网",
