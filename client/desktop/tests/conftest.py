@@ -250,6 +250,8 @@ OVERLAY_ROW = {
         {"provider": "easytier", "network": "home"},
     ],
     "state": "on",
+    "stage": "",
+    "is_waiting": False,
     "address": "100.64.0.7",
     "error": None,
 }
@@ -300,6 +302,8 @@ OFFICE_ROW = {
         "network": "",
         "networks": [],
         "state": "off",
+        "stage": "",
+        "is_waiting": False,
         "address": "",
         "error": None,
     },
@@ -450,6 +454,8 @@ class FakeResident:
         self.exits = []
         self.overlay_calls = []
         self.overlay_reply = {}
+        self.forward_settings = []
+        self.forward_reply = {}
         self.clipboard_reply = {"text": "echo pasted\n"}
         self.clipboard_written = []
         self.clipboard_write_reply = {}
@@ -683,6 +689,10 @@ class FakeResident:
 
     def subscribe(self, watcher) -> None:
         self.__dict__.setdefault("watchers", []).append(watcher)
+
+    def configure_forward(self, hub_id: str, entry_id: str, setting) -> dict:
+        self.forward_settings.append((hub_id, entry_id, setting))
+        return dict(self.forward_reply)
 
     def service_action(self, service_type: str, body: dict) -> dict:
         self.service_calls.append((service_type, dict(body)))

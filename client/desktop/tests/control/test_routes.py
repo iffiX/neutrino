@@ -41,6 +41,8 @@ def test_state_carries_the_persons_facts_the_hubs_and_no_token():
         "network",
         "networks",
         "state",
+        "stage",
+        "is_waiting",
         "address",
         "error",
     }
@@ -173,6 +175,53 @@ def test_service_actions_carry_only_the_body():
         )
     ]
     assert "forwards" in state
+
+
+def test_a_local_port_setting_reaches_the_resident_and_answers_the_state():
+    resident = FakeResident()
+
+    status, state = routes.dispatch(
+        "POST",
+        "/api/forward/configure",
+        {"hub_id": "h1", "id": "svc_tcp", "local_port": 15432},
+        resident,
+    )
+    assert status == 200 and "services" in state
+    resident.forward_reply = {"code": "port_taken", "params": {"port": 15432}}
+    status, reply = routes.dispatch(
+        "POST",
+        "/api/forward/configure",
+        {"hub_id": "h1", "id": "svc_web", "local_port": "auto"},
+        resident,
+    )
+
+    assert (status, reply["code"]) == (400, "port_taken")
+    assert resident.forward_settings == [
+        ("h1", "svc_tcp", 15432),
+        ("h1", "svc_web", "auto"),
+    ]
+
+
+def test_an_about_link_opens_in_the_browser_and_nothing_but_https_does():
+    resident = FakeResident()
+
+    status, reply = routes.dispatch(
+        "POST", "/api/open_link", {"url": "https://github.com/iffiX/neutrino"}, resident
+    )
+    assert (status, reply) == (200, {})
+    for url in ("file:///etc/passwd", "http://example.com", ""):
+        status, reply = routes.dispatch(
+            "POST", "/api/open_link", {"url": url}, resident
+        )
+        assert (status, reply["code"]) == (404, "unknown_request")
+
+    assert resident.platform.opened_urls == ["https://github.com/iffiX/neutrino"]
+
+
+def test_the_state_names_the_versions_the_package_carries():
+    _status, state = routes.dispatch("GET", "/api/state", None, FakeResident())
+
+    assert isinstance(state["carried_versions"], dict)
 
 
 def test_starting_the_session_takes_a_replaced_binding_back():

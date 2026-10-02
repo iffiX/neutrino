@@ -581,6 +581,7 @@ NETBIRD = {
     "setup_key": "KEY-1",  # scan: allow
     "management_url": "",
     "fqdn": "hub.netbird.cloud",
+    "hub_address": "100.88.92.30",
 }
 EASYTIER = {
     "provider": "easytier",
@@ -659,8 +660,8 @@ def test_an_unreadable_overlay_reads_as_none(raw):
     assert enrollment.clean_overlay(raw) is None
 
 
-def test_a_netbird_overlay_may_name_no_management_url_or_fqdn():
-    raw = dict(NETBIRD, fqdn="")
+def test_a_netbird_overlay_may_name_no_management_url_fqdn_or_address():
+    raw = dict(NETBIRD, fqdn="", hub_address="")
 
     assert enrollment.clean_overlay(raw) == raw
 

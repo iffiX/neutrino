@@ -317,8 +317,10 @@ class ClientHubSession:
         self._is_refreshing = False
         self._refresh_count = 0
         self._refresh_timeout_s = refresh_timeout_s
-        # The hosts of the virtual network this machine is on, tried first.
+        # The hosts of the virtual network this machine is on, tried first,
+        # or alone while the network's ``hub`` stage holds the channel there.
         self._preferred_hosts: list = []
+        self._is_only_preferred = False
 
     # --- what the resident reads ---
 
@@ -426,32 +428,36 @@ class ClientHubSession:
             self._binding["overlay_pick"] = str(pick)
 
     def reaches_through(self, hosts: list) -> bool:
-        """Whether the hub's channel answers on one of these hosts.
+        """Whether the hub's channel is up through one of these hosts.
 
-        The live socket counts when it was opened through one of them;
-        otherwise each host's address the binding holds is opened and its
-        certificate checked, and closed again before any hello.
+        A live socket opened elsewhere does not count. Each host's port is
+        then opened and its certificate checked, and closed again before any
+        hello; when one answers as this hub, the live socket is closed and
+        the next round, started now, connects through the hosts.
 
         Args:
             hosts: The hub's names or addresses on a virtual network.
 
         Returns:
-            True when one of them answers as this hub.
+            True when the live socket was opened through one of them.
         """
         with self._lock:
-            binding = dict(self._binding)
             in_use = self._connected_url if self._is_welcomed else ""
         if in_use and urllib.parse.urlsplit(in_use).hostname in hosts:
             return True
-        port = urllib.parse.urlsplit(binding.get("gateway_url", "")).port or 443
-        for host in hosts:
-            client = self._open_client(f"https://{host}:{port}")
+        for url in self._host_urls(hosts):
+            client = self._open_client(url)
             try:
                 client.connect()
             except (GatewayRefused, GatewayUnreachable, GatewayUntrusted):
                 continue
             client.close()
-            return True
+            self._log(f"the hub answers at {url}; moving the channel there")
+            with self._lock:
+                self._backoff_s = CLIENT_BACKOFF_MIN_S
+            self._drop_socket()
+            self._news.set()
+            break
         return False
 
     def terminal_entries(self) -> list:
@@ -496,7 +502,7 @@ class ClientHubSession:
 
     # --- what the resident does ---
 
-    def reconnect_through(self, hosts: list) -> None:
+    def reconnect_through(self, hosts: list, is_only: bool = False) -> None:
         """Connect through the addresses on these hosts first, from the next round.
 
         A socket that is down starts that round now, its backoff at the
@@ -505,9 +511,12 @@ class ClientHubSession:
         Args:
             hosts: The hub's host names or addresses on the network this
                 machine is on; empty entries are ignored.
+            is_only: Whether a round tries these hosts and no other
+                address.
         """
         with self._lock:
             self._preferred_hosts = [host for host in hosts if host]
+            self._is_only_preferred = bool(is_only) and bool(self._preferred_hosts)
             is_down = not self._is_welcomed
             if is_down:
                 self._backoff_s = CLIENT_BACKOFF_MIN_S
@@ -806,15 +815,16 @@ class ClientHubSession:
         with self._lock:
             binding = dict(self._binding)
             preferred_hosts = list(self._preferred_hosts)
-        name_url = enrollment.hub_name_url(binding["gateway_url"])
+            is_only = self._is_only_preferred
         stored = enrollment.stored_urls(binding)
-        candidates = enrollment.candidate_urls(binding, name_url)
-        preferred = [
-            url
-            for url in stored
-            if urllib.parse.urlsplit(url).hostname in preferred_hosts
-        ]
-        candidates = preferred + [url for url in candidates if url not in preferred]
+        preferred = self._host_urls(preferred_hosts)
+        if is_only:
+            name_url = ""
+            candidates = preferred
+        else:
+            name_url = enrollment.hub_name_url(binding["gateway_url"])
+            candidates = enrollment.candidate_urls(binding, name_url)
+            candidates = preferred + [url for url in candidates if url not in preferred]
         untrusted: "Exception | None" = None
         failure: "Exception | None" = None
         for index, url in enumerate(candidates):
@@ -844,6 +854,22 @@ class ClientHubSession:
         if untrusted is not None:
             raise untrusted
         raise failure if failure is not None else GatewayUnreachable("no address")
+
+    def _host_urls(self, hosts: list) -> list:
+        """The hub's address on each host: a stored one, else at the gateway port."""
+        with self._lock:
+            binding = dict(self._binding)
+        stored = enrollment.stored_urls(binding)
+        port = urllib.parse.urlsplit(binding.get("gateway_url", "")).port or 443
+        urls = []
+        for host in hosts:
+            known = [
+                url for url in stored if urllib.parse.urlsplit(url).hostname == host
+            ]
+            url = known[0] if known else f"https://{host}:{port}"
+            if url not in urls:
+                urls.append(url)
+        return urls
 
     def _open_client(self, gateway_url: str) -> WebSocketClient:
         """A socket for the binding at one of the hub's addresses.

@@ -1,7 +1,8 @@
 """The person's preference store: atomic, 0600, and free of secrets.
 
 What the store keeps is what somebody typed, the language, the theme, the
-tool choices and the mount records, and the one thing it makes itself: the
+tool choices, the local port of each forwardable entry and the mount
+records, and the one thing it makes itself: the
 installation's id, generated on the first read and stable after. Nothing
 about a service standing on is in it, a file an older build wrote reads
 without the keys it had, and a mount record that names no hub is dropped
@@ -109,8 +110,34 @@ def test_a_file_an_older_build_wrote_is_read_without_its_keys(tmp_path):
         "theme": "",
         "terminal_font_size": 0,
         "ai": {"tool_configs": {"claude": {"default": "m2"}}},
+        "local_ports": {},
         "mounts": {"r1": RECORD},
     }
+
+
+def test_the_local_ports_are_kept_and_one_of_another_shape_is_dropped(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "local_ports": {
+                    "h1/a": {"setting": "auto", "port": 20000},
+                    "h1/b": {"setting": 9000, "port": 9001},
+                    "h1/c": "8000",
+                }
+            }
+        )
+    )
+    store = ClientServiceStore(path=str(path))
+
+    assert store.local_ports() == {"h1/a": {"setting": "auto", "port": 20000}}
+    store.set_local_port("h1/b", 9000, 9000)
+    assert ClientServiceStore(path=str(path)).local_ports()["h1/b"] == {
+        "setting": 9000,
+        "port": 9000,
+    }
+    with pytest.raises(ValueError):
+        store.set_local_port("h1/c", 9000, 9001)
 
 
 def test_a_record_that_names_no_hub_is_read_and_dropped_on_request(store):

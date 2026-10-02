@@ -26,3 +26,8 @@ except ImportError:
         CLIENT_VERSION = version("neutrino-client")
     except PackageNotFoundError:
         CLIENT_VERSION = _checkout_version()
+
+try:  # The versions of the programs a package carries, by name.
+    from neutrino_client._version import CLIENT_CARRIED_VERSIONS
+except ImportError:
+    CLIENT_CARRIED_VERSIONS: dict = {}

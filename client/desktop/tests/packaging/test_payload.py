@@ -73,6 +73,22 @@ def test_the_client_tree_is_staged_with_its_version_stamped_in(tmp_path):
     assert 'CLIENT_VERSION = "9.9.9"' in (staged / "_version.py").read_text()
 
 
+def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path):
+    import bundled
+    from shared import rustdesk_assets
+
+    staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
+
+    stamped = {}
+    exec((staged / "_version.py").read_text(), stamped)
+    assert stamped["CLIENT_CARRIED_VERSIONS"] == {
+        "netbird": bundled.NETBIRD_VERSION,
+        "easytier": bundled.EASYTIER_VERSION,
+        "rustdesk": rustdesk_assets.RUSTDESK_VERSION,
+        "cc-switch": bundled.CC_SWITCH_VERSION,
+    }
+
+
 def test_the_staged_tree_carries_the_page_and_the_window_icon(tmp_path):
     staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
 

@@ -241,6 +241,13 @@ button.switch.on .switch_track { border-color: var(--color-accent);
         background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
 button.switch.on .switch_thumb { background: var(--color-accent);
                                  transform: translateX(12px); }
+/* A switch that cannot act draws no accent: the track's border and the
+   thumb in the faint colour, the thumb's place still the value, the label
+   muted. */
+button.switch:disabled { opacity: 1; color: var(--color-text-muted); }
+button.switch:disabled .switch_track { border-color: var(--color-text-faint);
+                                       background: var(--color-bg); }
+button.switch:disabled .switch_thumb { background: var(--color-text-faint); }
 .muted { color: var(--color-text-muted); }
 .form { display: flex; flex-direction: column; gap: 8px;
         padding: 10px 0 4px 20px; }
@@ -256,10 +263,16 @@ button.switch.on .switch_thumb { background: var(--color-accent);
          overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .modal label, .settings label { color: var(--color-text-muted); font-size: 12px; }
 .settings { display: flex; flex-direction: column; gap: 10px; }
-/* About, the card under the settings card, after the panel's: one row per
-   fact, the label at the left and the value in mono at the right. */
+/* About, the card above the settings card, after the panel's: a header with
+   the title, then groups under their section labels, one row per fact, the
+   label at the left and the value in mono at the right. */
 .settings_page { display: flex; flex-direction: column; gap: 24px; }
+.card_header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+               justify-content: space-between; margin-bottom: 16px; }
+.section_label { margin: 0; color: var(--color-text-muted); font-size: 11px;
+                 font-weight: 600; letter-spacing: .09em; text-transform: uppercase; }
 .about { display: flex; flex-direction: column; gap: 4px; }
+.about .section_label:not(:first-child) { margin-top: 12px; }
 .about_row { display: flex; gap: 16px; align-items: baseline;
              justify-content: space-between; padding: 8px 0;
              border-bottom: 1px solid
@@ -267,8 +280,9 @@ button.switch.on .switch_thumb { background: var(--color-accent);
 .about_row:last-child { border-bottom: none; }
 .about_key { flex: none; color: var(--color-text-muted); font-size: 12px; }
 .about_value { min-width: 0; overflow-wrap: anywhere; text-align: right;
-               color: var(--color-text);
+               color: var(--color-text); text-decoration: none;
                font-family: ui-monospace, monospace; font-size: 12.5px; }
+a.about_value { cursor: pointer; }
 .settings .picker { flex: none; max-width: 360px; }
 .modal select { width: 100%; }
 .dirlist { overflow-y: auto; border: 1px solid var(--color-border);

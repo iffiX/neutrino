@@ -1651,6 +1651,7 @@ NETBIRD_OVERLAY = {
     "setup_key": "KEY-1",  # scan: allow
     "management_url": "https://nb.example",
     "fqdn": "hub.netbird.cloud",
+    "hub_address": "100.88.92.30",
 }
 EASYTIER_OVERLAY = {
     "provider": "easytier",
@@ -1771,6 +1772,49 @@ def test_a_switch_reconnects_through_that_networks_address_first(
     session.run_once()
 
     assert script.hosts == ["100.64.0.1"]
+
+
+def test_a_round_held_to_the_networks_address_tries_no_other(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
+
+    session.reconnect_through(["100.88.92.30"], is_only=True)
+    session.run_once()
+    session.run_once()
+
+    assert script.hosts == ["100.88.92.30", "100.88.92.30"]
+    assert session.connection() == "down"
+
+
+def test_the_channel_moves_to_the_networks_address_once_its_port_answers(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    script = addresses_of(
+        monkeypatch, {"192.0.2.1": [WELCOME], "100.64.0.1": [WELCOME]}
+    )
+    lan = session._connect_round()
+    session.reconnect_through(["100.64.0.1"], is_only=True)
+
+    assert session.reaches_through(["100.64.0.1"]) is False
+    assert lan.is_closed and session.connection() != "connected"
+    session._connect_round()
+    assert session.reaches_through(["100.64.0.1"]) is True
+    assert script.hosts == ["192.0.2.1", "100.64.0.1", "100.64.0.1"]
+
+
+def test_a_live_socket_stays_while_the_networks_address_does_not_answer(
+    bound_everywhere, monkeypatch
+):
+    session, _lines = bound_everywhere
+    addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
+    lan = session._connect_round()
+    session.reconnect_through(["100.64.0.1"], is_only=True)
+
+    assert session.reaches_through(["100.64.0.1"]) is False
+    assert not lan.is_closed and session.connection() == "connected"
 
 
 def test_the_states_terminals_are_held_while_the_socket_is_up(bound, monkeypatch):

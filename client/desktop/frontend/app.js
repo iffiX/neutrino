@@ -26,15 +26,20 @@ const MOUNT_BUSY_STATES = ['queued', 'mounting', 'pending'];
 const CLAUDE_SLOTS = ['default', 'opus', 'sonnet', 'haiku'];
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
-// The licence the client ships under and where its source and the source of
-// every program it carries are.
+// The licence the client ships under and where its source is; the programs
+// the package carries, each with the key its version is stamped under, its
+// licence, its repository and the tag a version is released under.
 const CLIENT_LICENCE = 'MIT';
-const SOURCE_LINKS = [
-  ['Neutrino', 'https://github.com/iffiX/neutrino'],
-  ['NetBird', 'https://github.com/netbirdio/netbird'],
-  ['EasyTier', 'https://github.com/EasyTier/EasyTier'],
-  ['RustDesk', 'https://github.com/rustdesk/rustdesk'],
-  ['cc-switch', 'https://github.com/SaladDay/cc-switch-cli'],
+const CLIENT_SOURCE = 'https://github.com/iffiX/neutrino';
+const CARRIED = [
+  { name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause',
+    repository: 'https://github.com/netbirdio/netbird', tag: 'v{version}' },
+  { name: 'EasyTier', key: 'easytier', licence: 'LGPL-3.0',
+    repository: 'https://github.com/EasyTier/EasyTier', tag: 'v{version}' },
+  { name: 'RustDesk', key: 'rustdesk', licence: 'AGPL-3.0',
+    repository: 'https://github.com/rustdesk/rustdesk', tag: '{version}' },
+  { name: 'cc-switch', key: 'cc-switch', licence: 'MIT',
+    repository: 'https://github.com/SaladDay/cc-switch-cli', tag: 'v{version}' },
 ];
 
 function fill(template, params) {
@@ -569,6 +574,8 @@ function hubRow(hub) {
   if (hub.is_exit) extras.push(noteLine(t('ui.hub_is_exit')));
   extras.push(overlayLine(hub));
   const overlay = hub.overlay || {};
+  const stage = overlayStage(overlay);
+  if (stage) extras.push(reasonLine(stage));
   if (overlay.state === 'off' && overlay.error) {
     extras.push(errorLine(wordError(overlay.error)));
   }
@@ -623,6 +630,18 @@ function overlayLine(hub) {
   line.appendChild(document.createTextNode(
     name + ' · ' + t('ui.overlay.' + state, { address: overlay.address || '' })));
   return line;
+}
+
+// The stage a connect is in, as the line's reason: the engine logging in,
+// the console not yet assigning a network, or the hub not yet answering.
+function overlayStage(overlay) {
+  if (overlay.state !== 'connecting') return '';
+  if (overlay.is_waiting) return t('ui.reason.console_waiting');
+  if (overlay.stage === 'login') {
+    return t('ui.stage.login', { engine: OVERLAY_TITLES[overlay.network] || overlay.network });
+  }
+  if (overlay.stage === 'hub') return t('ui.stage.hub', { address: overlay.address || '' });
+  return '';
 }
 
 // The engine picker, while the hub publishes two networks or more; it
@@ -839,23 +858,35 @@ function serviceAction(type, body) {
   return send('/api/services/' + type, body);
 }
 
+// A web entry: Open, or for a local-only one Configure, Open locally and,
+// while forwarded, Disconnect, with the loopback port on the mono line.
 function drawWebEntry(card, state, hub, entry) {
   const payload = entry.payload || {};
   const isLocal = payload.is_local_only === true;
-  const open = jobButton(isLocal ? t('ui.open_local') : t('ui.open'), entry.job);
-  if (!entry.job) {
+  const isOn = isLocal && !!entry.forward;
+  const opening = entry.job === 'opening' ? entry.job : '';
+  const open = jobButton(isLocal ? t('ui.open_local') : t('ui.open'), opening);
+  if (!opening) {
     open.disabled = !entry.is_healthy || !isEntryFree(hub, entry);
     open.onclick = () => serviceAction('web', { hub_id: entry.hub_id, id: entry.id });
   }
-  const reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
-  card.appendChild(entryRow(hub, entry, payload.url || '', '', [open], reason));
+  let reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
+  const actions = [open];
+  if (isLocal) {
+    const configure = configureButton(hub, entry, isOn);
+    actions.unshift(configure);
+    if (isOn || entry.job === 'disconnecting') {
+      actions.push(disconnectButton('web', entry));
+    }
+    if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
+  }
+  card.appendChild(entryRow(hub, entry, (payload.url || '') + forwardedTo(entry), '',
+    actions, reason));
 }
 
 function drawPortEntry(card, state, hub, entry) {
   const payload = entry.payload || {};
-  const forward = (state.forwards || {})[serviceKey(entry)] || {};
-  const isOn = !!forward.is_active;
-  const local = isOn ? ' → ' + t('ui.forwarding_to', { port: forward.local_port }) : '';
+  const isOn = !!entry.forward;
   const button = jobButton(isOn ? t('ui.port_disconnect') : t('ui.port_connect'),
     entry.job, isOn ? 'danger' : '');
   if (!entry.job) {
@@ -863,10 +894,121 @@ function drawPortEntry(card, state, hub, entry) {
     button.onclick = () => serviceAction('port',
       { hub_id: entry.hub_id, id: entry.id, is_enabled: !isOn });
   }
-  const reason = button.disabled && !entryWork(hub, entry)
+  const configure = configureButton(hub, entry, isOn);
+  let reason = button.disabled && !entryWork(hub, entry)
     ? entryReason(hub, entry, !isOn) : '';
+  if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
   card.appendChild(entryRow(hub, entry,
-    (payload.host || '') + ':' + (payload.port || '') + local, '', [button], reason));
+    (payload.host || '') + ':' + (payload.port || '') + forwardedTo(entry), '',
+    [configure, button], reason));
+}
+
+// The mono line's tail of a forwarded entry: where its forward listens.
+function forwardedTo(entry) {
+  return entry.forward ? ' → ' + t('ui.forwarding_to', { port: entry.forward }) : '';
+}
+
+// The Disconnect of a forwarded local-only page: ends its forward.
+function disconnectButton(type, entry) {
+  const button = jobButton(t('ui.port_disconnect'),
+    entry.job === 'disconnecting' ? entry.job : '', 'danger');
+  if (entry.job !== 'disconnecting') {
+    button.disabled = !!entry.job;
+    button.onclick = () => serviceAction(type,
+      { hub_id: entry.hub_id, id: entry.id, is_enabled: false });
+  }
+  return button;
+}
+
+// Configure on a forwardable entry: the local port dialog, closed to an
+// entry that is forwarded.
+function configureButton(hub, entry, isForwarded) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = t('ui.configure');
+  button.disabled = isForwarded || !isEntryFree(hub, entry);
+  button.onclick = () => openPortDialog(entry);
+  return button;
+}
+
+// The local port dialog: Auto, or Fixed with a number from 1024 to 65535.
+function openPortDialog(entry) {
+  const saved = entry.local_port === undefined ? 'auto' : entry.local_port;
+  let isFixed = saved !== 'auto';
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  const modal = document.createElement('div');
+  modal.className = 'card modal';
+  const heading = document.createElement('div');
+  heading.className = 'panel_title';
+  heading.textContent = entry.title;
+  modal.appendChild(heading);
+  const label = document.createElement('label');
+  label.textContent = t('ui.local_port');
+  modal.appendChild(label);
+  const line = document.createElement('div');
+  line.className = 'row';
+  const number = document.createElement('input');
+  number.type = 'number';
+  number.min = '1024';
+  number.max = '65535';
+  number.value = isFixed ? String(saved) : '';
+  const choice = picker('local_port_' + serviceKey(entry), [
+    { value: 'auto', label: t('ui.local_port_auto') },
+    { value: 'fixed', label: t('ui.local_port_fixed') },
+  ], isFixed ? 'fixed' : 'auto', (value) => { isFixed = value === 'fixed'; check(); },
+  false);
+  choice.style.flex = 'none';
+  choice.style.minWidth = '120px';
+  line.appendChild(choice);
+  line.appendChild(number);
+  modal.appendChild(line);
+  const why = reasonLine('');
+  modal.appendChild(why);
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  actions.style.marginTop = '8px';
+  const save = document.createElement('button');
+  save.textContent = t('ui.save');
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = t('ui.cancel');
+  actions.appendChild(save);
+  actions.appendChild(cancel);
+  modal.appendChild(actions);
+
+  function chosen() {
+    return isFixed ? Number(number.value) : 'auto';
+  }
+  function check() {
+    number.disabled = !isFixed;
+    const value = chosen();
+    const isValid = !isFixed || (Number.isInteger(value) && value >= 1024 && value <= 65535);
+    why.textContent = isValid ? '' : t('ui.reason.port_range');
+    save.disabled = !isValid;
+    modal.classList.toggle('dirty', value !== saved);
+  }
+  number.oninput = check;
+  save.onclick = async () => {
+    save.disabled = true;
+    const reply = await api('/api/forward/configure',
+      { hub_id: entry.hub_id, id: entry.id, local_port: chosen() });
+    if (reply && reply.code) {
+      why.textContent = reply.code === 'port_taken'
+        ? t('ui.reason.port_taken', { port: chosen() }) : wordError(reply);
+      save.disabled = false;
+      return;
+    }
+    closeDialog(overlay);
+    if (reply) { lastSerialized = JSON.stringify(reply); draw(reply); }
+  };
+  cancel.onclick = () => { closeDialog(overlay); redraw(); };
+  overlay.appendChild(modal);
+  overlay.onclick = (event) => {
+    if (event.target === overlay) { closeDialog(overlay); redraw(); }
+  };
+  check();
+  openDialog(overlay);
 }
 
 // --- the remote desktops panel: connect there ---
@@ -1989,18 +2131,18 @@ function driveLetterLine(staged, state) {
   return wrap;
 }
 
-// --- the Settings page: the window's own choices, then About ---
+// --- the Settings page: About, then the window's own choices ---
 
 // What the settings page holds before Save: {language, theme}, or null while
 // it holds what the window already uses.
 let settingsDraft = null;
 
-// The settings card: the language and the palette, nothing sent until
-// Save, the frame lit while the page holds a change; under it the About
-// card.
+// The About card, then the settings card: the language and the palette,
+// nothing sent until Save, the frame lit while the page holds a change.
 function drawSettings(state) {
   const page = document.createElement('div');
   page.className = 'settings_page';
+  page.appendChild(aboutSection(state));
   const draft = settingsDraft || { language: language, theme: theme };
   const isDirty = draft.language !== language || draft.theme !== theme;
   const card = panelCard(t('ui.settings_title'), isDirty);
@@ -2049,37 +2191,77 @@ function drawSettings(state) {
   actions.appendChild(cancel);
   card.appendChild(actions);
   page.appendChild(card);
-  page.appendChild(aboutSection(state));
   return page;
 }
 
-// About: one row per fact, the label at the left and the value in mono at
-// the right: this machine, its platform, the client's version, the licence
-// and the source links.
+// About, as the panel's About card: a header with the title, then three
+// groups under their section labels, this machine, what the package
+// carries and where the source is; one row per fact, the label at the left
+// and the value in mono at the right, a link opening in the browser.
 function aboutSection(state) {
-  const card = panelCard(t('ui.about'), false);
-  card.classList.add('about');
+  const card = document.createElement('div');
+  card.className = 'card';
+  const header = document.createElement('div');
+  header.className = 'card_header';
+  const title = document.createElement('h2');
+  title.textContent = t('ui.about');
+  header.appendChild(title);
+  card.appendChild(header);
+  const about = document.createElement('div');
+  about.className = 'about';
   const platform = state.platform || {};
-  const rows = [
+  const versions = state.carried_versions || {};
+  aboutGroup(about, t('ui.about_this_machine'), [
     [t('ui.about_machine'), state.hostname],
     [t('ui.about_platform'), platform.os + '/' + platform.arch],
     [t('ui.about_version'), state.version],
     [t('ui.about_licence'), CLIENT_LICENCE],
-  ].concat(SOURCE_LINKS.map(([name, url]) => [t('ui.about_source', { name: name }), url]));
-  for (const [name, value] of rows) {
+  ]);
+  aboutGroup(about, t('ui.about_carried'), CARRIED.map((core) => [core.name,
+    versions[core.key] ? versions[core.key] + ' · ' + core.licence : core.licence]));
+  aboutGroup(about, t('ui.about_sources'), [['Neutrino', CLIENT_SOURCE, CLIENT_SOURCE]]
+    .concat(CARRIED.map((core) => {
+      const url = carriedSource(core, versions[core.key]);
+      return [core.name, url, url];
+    })));
+  card.appendChild(about);
+  return card;
+}
+
+// One group of About: its section label, then a row per [label, value,
+// link], the link empty for a value that opens nothing.
+function aboutGroup(about, title, rows) {
+  const heading = document.createElement('div');
+  heading.className = 'section_label';
+  heading.textContent = title;
+  about.appendChild(heading);
+  for (const [name, value, link] of rows) {
     const row = document.createElement('div');
     row.className = 'about_row';
     const label = document.createElement('span');
     label.className = 'about_key';
     label.textContent = name;
-    const text = document.createElement('span');
+    const text = document.createElement(link ? 'a' : 'span');
     text.className = 'about_value';
-    text.textContent = value;
+    text.textContent = value || '';
+    if (link) {
+      text.href = link;
+      text.onclick = (event) => {
+        event.preventDefault();
+        api('/api/open_link', { url: link });
+      };
+    }
     row.appendChild(label);
     row.appendChild(text);
-    card.appendChild(row);
+    about.appendChild(row);
   }
-  return card;
+}
+
+// A carried program's source: at the tag of the version the package
+// carries, its repository when no version is stamped.
+function carriedSource(core, version) {
+  if (!version) return core.repository;
+  return core.repository + '/tree/' + fill(core.tag, { version: version });
 }
 
 // --- the one picker, and the dialogs ---
