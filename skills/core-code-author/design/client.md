@@ -377,9 +377,9 @@ A row whose entry is unhealthy shows the code's wording on the reason line:
 
 The viewer shares the clipboard both ways: text copied on the remote machine
 is on this device's clipboard, and a paste in the viewer sends this device's
-clipboard. On a desktop a file dropped on the viewer is copied to the remote
-machine, which the agent's host allows. On a phone the viewer page keeps its
-session through a rotation.
+clipboard. On a desktop the viewer's **Transfer file** window copies files
+both ways, which the agent's host allows; the viewer window itself takes no
+drop. On a phone the viewer page keeps its session through a rotation.
 
 ## The Settings page
 
