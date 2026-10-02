@@ -42,7 +42,7 @@ def test_the_share_options_close_everything_this_hub_does_not_publish():
     assert options["allow-auto-update"] == "N"
     assert options["verification-method"] == "use-permanent-password"
     assert options["approve-mode"] == "password"
-    assert options["enable-file-transfer"] == "N"
+    assert options["enable-file-transfer"] == "Y"
     assert options["enable-tunnel"] == "N"
     assert options["enable-audio"] == "N"
 

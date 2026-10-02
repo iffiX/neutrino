@@ -117,8 +117,10 @@ RUSTDESK_BASE_OPTIONS = (
     ("allow-auto-update", "N"),
 )
 
-# What the share flow writes. Direct mode with a permanent password, and
-# every channel this hub does not publish turned off.
+# What the share flow writes. Direct mode with a permanent password; the
+# clipboard and file transfer stay on, since a desktop a person opens from a
+# client is theirs to copy to and from, and the channels this hub does not
+# publish are turned off.
 RUSTDESK_SHARE_OPTIONS = (
     ("custom-rendezvous-server", ""),
     ("relay-server", ""),
@@ -127,7 +129,7 @@ RUSTDESK_SHARE_OPTIONS = (
     ("allow-auto-update", "N"),
     ("verification-method", "use-permanent-password"),
     ("approve-mode", "password"),
-    ("enable-file-transfer", "N"),
+    ("enable-file-transfer", "Y"),
     ("enable-tunnel", "N"),
     ("enable-audio", "N"),
 )
