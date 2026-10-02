@@ -324,3 +324,29 @@ def test_a_second_connect_while_one_is_in_flight_is_busy(monkeypatch):
 
     held[0]()
     assert subject.state()["rdp_work"]["state"] == "idle"
+
+
+def test_a_viewer_that_ends_frees_the_entry_and_says_so(handler, monkeypatch):
+    import threading
+    import time
+
+    from neutrino_client.services import rdp as rdp_module
+
+    subject, platform, _, lines = handler
+    monkeypatch.setattr(rdp_module, "RDP_WATCH_INTERVAL_S", 0.01)
+    changed = threading.Event()
+    subject._on_change = changed.set
+    assert subject.act(entries=SERVICES, body=CONNECT_BODY) == {}
+    subject.settle(2)
+    (process,) = platform.started
+    assert subject.state()["viewers"] != {}
+    changed.clear()
+
+    process.returncode = 0
+
+    assert changed.wait(2)
+    deadline = time.monotonic() + 2
+    while subject.state()["viewers"] and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert subject.state()["viewers"] == {}
+    assert any("closed" in line for line in lines)

@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 from neutrino_client import bundled
 from neutrino_client.services.base import (
@@ -29,6 +30,9 @@ from neutrino_client.services.worker import ServiceWorker
 RDP_ACTION_CONNECT = "connect"
 RUSTDESK_DIRECT_PORT = 21118
 RDP_CLOSE_TIMEOUT_S = 5
+# How often a viewer's process is looked at for its end, which frees the entry's
+# Connect.
+RDP_WATCH_INTERVAL_S = 0.5
 
 
 def connect_peer(host: str, port: int) -> str:
@@ -178,7 +182,21 @@ class RdpViewerHandler(ServiceTypeHandler):
         with self._lock:
             self._viewers[key] = process
         self._log(f"opened the desktop viewer for {key}")
+        threading.Thread(
+            target=self._watch, args=(key, process), daemon=True, name="rdp-watch"
+        ).start()
         return {}
+
+    def _watch(self, key: str, process) -> None:
+        """Forget the viewer once its process ends, and say so."""
+        while process.poll() is None:
+            time.sleep(RDP_WATCH_INTERVAL_S)
+        with self._lock:
+            if self._viewers.get(key) is not process:
+                return
+            self._viewers.pop(key, None)
+        self._log(f"the desktop viewer for {key} closed")
+        self._on_change()
 
     def settle(self, timeout_s: float) -> dict:
         """Wait for the lane to be idle, and say how its last step ended.
