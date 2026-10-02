@@ -3,6 +3,7 @@ package io.github.iffix.neutrino.overlay
 import android.util.Log
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.OVERLAY_CONNECT_TIMEOUT_S
+import io.github.iffix.neutrino.OVERLAY_PROBE_INTERVAL_MILLIS
 import io.github.iffix.neutrino.OVERLAY_STOP_TIMEOUT_S
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
@@ -30,20 +31,24 @@ import kotlinx.coroutines.launch
  *
  * @param store The bindings, where the pick and the last state are kept.
  * @param launcher What starts and stops the VPN service.
- * @param scope Where the attempt's deadline runs.
- * @param onChannelPrefers Called with a hub and its address on the network once the engine has an
- *   address, so its channel runs through the network; with an empty address once the network is off.
+ * @param scope Where the attempt's deadline and its asks run.
+ * @param probe Whether the hub answers at an address; asked every 2 s from the engine's address on,
+ *   until the hub answers at its address on the network.
+ * @param onChannelPrefers Called with a hub and its address on the network once the hub answers
+ *   there, so its channel runs through the network; with an empty address once the network is off.
  */
 class OverlayController(
     private val store: BindingStore,
     private val launcher: OverlayLauncher,
     private val scope: CoroutineScope,
+    private val probe: suspend (String) -> Boolean,
     private val onChannelPrefers: (String, String) -> Unit,
 ) {
     private val lock = Any()
     private val current = MutableStateFlow<Map<String, OverlayLine>>(emptyMap())
     private var active: Attempt? = null
     private var timer: Job? = null
+    private var asking: Job? = null
     private var views: List<HubView> = emptyList()
 
     /** Every hub's virtual network by binding id; a hub not in the map is off with no error. */
@@ -148,10 +153,7 @@ class OverlayController(
             OverlayPhase.ON -> if (status.address.isNotEmpty()) {
                 attempt.hasAddress = true
                 put(attempt.bindingId, line.copy(address = status.address))
-                if (line.state == OverlayState.CONNECTING) {
-                    onChannelPrefers(attempt.bindingId, attempt.hubUrl)
-                    settle()
-                }
+                if (line.state == OverlayState.CONNECTING && asking == null) ask(attempt)
             }
 
             OverlayPhase.OFF, OverlayPhase.FAILED -> if (line.job == OverlayJob.DISCONNECTING) {
@@ -223,6 +225,17 @@ class OverlayController(
         keepOn(attempt.bindingId, true)
     }
 
+    private fun ask(attempt: Attempt) {
+        asking = scope.launch {
+            while (attempt.hubUrl.isNotEmpty() && !probe(attempt.hubUrl)) delay(OVERLAY_PROBE_INTERVAL_MILLIS)
+            synchronized(lock) {
+                if (active !== attempt) return@synchronized
+                onChannelPrefers(attempt.bindingId, attempt.hubUrl)
+                settle()
+            }
+        }
+    }
+
     private fun expired(bindingId: String) = synchronized(lock) {
         val attempt = active?.takeIf { it.bindingId == bindingId } ?: return@synchronized
         if (line(bindingId).state != OverlayState.CONNECTING) return@synchronized
@@ -235,6 +248,8 @@ class OverlayController(
         active = null
         timer?.cancel()
         timer = null
+        asking?.cancel()
+        asking = null
         if (!isStopped) launcher.stop()
         put(bindingId, OverlayLine(network = attempt.provider, error = error))
         keepOn(bindingId, false)
