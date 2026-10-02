@@ -207,4 +207,13 @@ interface ClientActions {
      * @param url The entry's address.
      */
     fun openLocal(bindingId: String, entryId: String, url: String)
+
+    /**
+     * Press Open on a web entry with `is_token_required`.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param url The entry's address.
+     */
+    fun openWithToken(bindingId: String, entryId: String, url: String)
 }

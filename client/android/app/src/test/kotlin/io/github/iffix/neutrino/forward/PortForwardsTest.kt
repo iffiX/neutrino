@@ -153,6 +153,50 @@ class PortForwardsTest {
     }
 
     @Test
+    fun openWithATokenIsAJobThatOpensTheEntrysOwnAddressAndForwardsNothing() = runTest {
+        val answer = CompletableDeferred<ChannelResult<JsonObject>>()
+        var made = 0
+        val forwards = PortForwards({ _, _ -> answer.await() }, backgroundScope, table) { host, port, local ->
+            made += 1
+            PortForwardRelay(host, port, local)
+        }
+        val opened = mutableListOf<String>()
+        forwards.openWithToken("b1", "cloudcli_d1_ann", "http://192.168.1.5:3001/", opened::add)
+        runCurrent()
+        assertEquals(PortForwardJob.OPENING, forwards.rows.value["b1/cloudcli_d1_ann"]?.job)
+        forwards.openWithToken("b1", "cloudcli_d1_ann", "http://192.168.1.5:3001/", opened::add)
+        answer.complete(ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("a-b_c")))))
+        runCurrent()
+        assertEquals(listOf("http://192.168.1.5:3001/?tkn=a-b_c"), opened)
+        assertNull(forwards.rows.value["b1/cloudcli_d1_ann"])
+        assertEquals(0, made)
+    }
+
+    @Test
+    fun openWithATokenThatIsRefusedOrMissingWritesTheCode() = runTest {
+        val refused = PortForwards(
+            { _, _ -> ChannelResult.refused("permission_denied", "kind" to "web") },
+            backgroundScope,
+            table,
+        )
+        val opened = mutableListOf<String>()
+        refused.openWithToken("b1", "c1", "http://h:3001/", opened::add)
+        runCurrent()
+        assertEquals("permission_denied", refused.rows.value["b1/c1"]?.error?.code)
+        val missing = PortForwards(noMaterial, backgroundScope, table)
+        missing.openWithToken("b1", "c1", "http://h:3001/", opened::add)
+        runCurrent()
+        assertEquals("web_token_missing", missing.rows.value["b1/c1"]?.error?.code)
+        assertTrue(opened.isEmpty())
+    }
+
+    @Test
+    fun aTokenJoinsTheAddressOwnQuery() {
+        assertEquals("http://h:3001/?tkn=t", PortForwards.tokenUrlOf("http://h:3001/", "t"))
+        assertEquals("http://h:3001/x?a=1&tkn=t", PortForwards.tokenUrlOf("http://h:3001/x?a=1", "t"))
+    }
+
+    @Test
     fun aForwardStopsWhenItsEntryLeavesTheState() = runTest {
         val forwards = PortForwards(noMaterial, backgroundScope, table)
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)

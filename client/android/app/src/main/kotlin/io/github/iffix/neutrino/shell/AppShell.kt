@@ -205,6 +205,7 @@ fun AppShell(
                                         askNotices()
                                         actions.openLocal(bindingId, entryId, url)
                                     },
+                                    onOpenWithToken = actions::openWithToken,
                                 )
                             }
                             composable(AppScreen.PORTS.route) {

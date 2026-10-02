@@ -28,7 +28,8 @@ import java.net.URISyntaxException
 /**
  * The web services the joined hubs publish: Open shows one in the browser, and Open locally
  * forwards a local-only one to this phone's loopback with its token and opens the loopback
- * address, the button showing the job meanwhile. A local-only row has Configure at its left for
+ * address, the button showing the job meanwhile. Open on an entry with `is_token_required` reads
+ * a fresh token and opens the entry's own address with it, as the same job, with no forward. A local-only row has Configure at its left for
  * the local port, and once forwarded it names its loopback address with Copy and Disconnect, as
  * a Ports row does.
  *
@@ -36,6 +37,8 @@ import java.net.URISyntaxException
  * @param forwards Each local-only entry's forward and job, by entry key.
  * @param onOpen What pressing Open does, with the address.
  * @param onOpenLocal What pressing Open locally does, with the binding id, the entry id and the address.
+ * @param onOpenWithToken What pressing Open on an entry with `is_token_required` does, with the
+ *   binding id, the entry id and the address.
  */
 @Composable
 fun WebScreen(
@@ -43,6 +46,7 @@ fun WebScreen(
     forwards: Map<String, PortForwardRow>,
     onOpen: (String) -> Unit,
     onOpenLocal: (String, String, String) -> Unit,
+    onOpenWithToken: (String, String, String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
     val actions = LocalClientActions.current
@@ -50,6 +54,7 @@ fun WebScreen(
     ServiceList(hubs, "web", "ui.empty_web") { hub, entry, hasDivider ->
         val url = entry.text("url")
         val isLocalOnly = entry.flag("is_local_only")
+        val isTokenRequired = entry.flag("is_token_required")
         val isHealthy = entry.isHealthy != false
         val row = forwards[PortForwards.keyOf(hub.binding.id, entry.id)] ?: PortForwardRow()
         val job = row.job
@@ -82,7 +87,13 @@ fun WebScreen(
                             else -> "ui.open"
                         },
                     ),
-                    { if (isLocalOnly) onOpenLocal(hub.binding.id, entry.id, url) else onOpen(url) },
+                    {
+                        when {
+                            isTokenRequired -> onOpenWithToken(hub.binding.id, entry.id, url)
+                            isLocalOnly -> onOpenLocal(hub.binding.id, entry.id, url)
+                            else -> onOpen(url)
+                        }
+                    },
                     isSmall = true,
                     isBusy = job == PortForwardJob.OPENING,
                     isEnabled = isHealthy && isFree,
@@ -139,5 +150,13 @@ private fun WebScreenPreview() {
             "ui.open" to "打开",
             "ui.configure" to "配置",
         ),
-    ) { WebScreen(PreviewHubs.all, emptyMap(), onOpen = {}, onOpenLocal = { _, _, _ -> }) }
+    ) {
+        WebScreen(
+            PreviewHubs.all,
+            emptyMap(),
+            onOpen = {},
+            onOpenLocal = { _, _, _ -> },
+            onOpenWithToken = { _, _, _ -> },
+        )
+    }
 }
