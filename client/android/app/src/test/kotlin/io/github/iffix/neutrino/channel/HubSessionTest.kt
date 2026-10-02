@@ -286,6 +286,60 @@ class HubSessionTest {
     }
 
     @Test
+    fun returningToTheForegroundRunsARoundNowWithTheBackoffAtItsFloor() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.silent }
+        val (session, _) = session(transport)
+        session.start(backgroundScope)
+        advanceTimeBy(20_000)
+        val before = transport.dialled.size
+        session.resume()
+        runCurrent()
+        assertEquals(before + 1, transport.dialled.size)
+        advanceTimeBy(1_100)
+        val afterRound = transport.dialled.size
+        advanceTimeBy(5_000)
+        assertTrue(transport.dialled.size > afterRound)
+    }
+
+    @Test
+    fun returningToTheForegroundLeavesAnOpenSocketAlone() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport)
+        session.start(backgroundScope)
+        runCurrent()
+        session.resume()
+        runCurrent()
+        assertEquals(1, transport.dialled.size)
+        assertEquals(HubConnection.CONNECTED, session.view.value.connection)
+    }
+
+    @Test
+    fun aSocketThatClosesStampsWhenItDropped() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
+        store.put(Samples.binding)
+        val session = HubSession("b1", store, transport, Samples.machine, { null }, { _, _ -> }, clock = { 42_000L })
+        val round = served(session)
+        assertEquals(0L, session.view.value.droppedAtMillis)
+        transport.dialled.single().third.trySend(ChannelSocketEvent.Closed(1006, ""))
+        round.await()
+        assertEquals(42_000L, session.view.value.droppedAtMillis)
+    }
+
+    @Test
+    fun anAddressPreferredAsTheOnlyOneIsTheOnlyOneARoundTries() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.silent }
+        val (session, _) = session(transport, nameAddress = "10.9.9.9")
+        session.preferAddress("https://100.88.0.1:8443", isOnly = true)
+        session.runOnce()
+        session.runOnce()
+        assertEquals(listOf("https://100.88.0.1:8443", "https://100.88.0.1:8443"), transport.dialled.map { it.first })
+        session.preferAddress("https://100.88.0.1:8443")
+        session.runOnce()
+        assertEquals(6, transport.dialled.size)
+    }
+
+    @Test
     fun aPreferredAddressIsTriedFirst() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.silent }
         val (session, _) = session(transport)

@@ -51,6 +51,7 @@ import kotlinx.serialization.json.JsonObject
  * @param machine What this phone says about itself.
  * @param resolveHubName The IPv4 address `hub.neutrino.internal` resolves to here, or null.
  * @param onUnbound Called with the binding's id and the refusal when the hub no longer knows it.
+ * @param clock The time in milliseconds, stamped on the view when the open socket closes.
  * @throws IllegalArgumentException When the store holds no binding with [bindingId].
  */
 class HubSession(
@@ -60,6 +61,7 @@ class HubSession(
     private val machine: ClientMachine,
     private val resolveHubName: suspend () -> String?,
     private val onUnbound: (String, ChannelResult.Refused) -> Unit,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val current = MutableStateFlow(HubView(binding = requireNotNull(store.get(bindingId))))
     private val news = Channel<Unit>(Channel.CONFLATED)
@@ -73,6 +75,9 @@ class HubSession(
 
     @Volatile
     private var preferredUrl = ""
+
+    @Volatile
+    private var isPreferredOnly = false
 
     @Volatile
     private var live: LiveSocket? = null
@@ -120,16 +125,34 @@ class HubSession(
         news.trySend(Unit)
     }
 
+    /** The app came back to the foreground: a hub with no open socket runs a round now with the backoff at its floor. */
+    fun resume() {
+        if (live != null || isReplaced || isUnbound) return
+        backoffS = CLIENT_BACKOFF_MIN_S
+        news.trySend(Unit)
+    }
+
     /**
-     * Try one address first in every round: the hub's address on a virtual network this phone is on.
-     * A socket open on another address is closed so a round runs through the preferred one now.
+     * Try one address first in every round, or only that address: the hub's address on a virtual
+     * network this phone is on. A socket open on another address is closed so a round runs
+     * through the preferred one now.
      *
-     * @param url The address, or empty to prefer none.
+     * @param url The address, or empty to prefer none; a hub kept to one address with no open
+     *   socket then runs a round now.
+     * @param isOnly Whether a round tries that address and no other.
      */
-    fun preferAddress(url: String) {
+    fun preferAddress(url: String, isOnly: Boolean = false) {
+        val wasOnly = isPreferredOnly
+        isPreferredOnly = isOnly && url.isNotEmpty()
         if (url == preferredUrl) return
         preferredUrl = url
-        if (url.isEmpty()) return
+        if (url.isEmpty()) {
+            if (wasOnly && live == null) {
+                backoffS = CLIENT_BACKOFF_MIN_S
+                news.trySend(Unit)
+            }
+            return
+        }
         backoffS = CLIENT_BACKOFF_MIN_S
         val socket = live
         if (socket != null && current.value.connectedAddress != url) {
@@ -204,10 +227,12 @@ class HubSession(
         if (isReplaced || isUnbound) return CLIENT_IDLE_POLL_INTERVAL_S
         val binding = store.get(bindingId) ?: return CLIENT_IDLE_POLL_INTERVAL_S
         current.update { it.copy(connection = HubConnection.CONNECTING) }
-        val nameUrl = resolveHubName()?.let { nameUrlOf(binding.gatewayUrl, it) }.orEmpty()
+        val only = preferredUrl.takeIf { isPreferredOnly }
+        val nameUrl = if (only != null) "" else resolveHubName()?.let { nameUrlOf(binding.gatewayUrl, it) }.orEmpty()
+        val urls = if (only != null) listOf(only) else binding.candidateUrls(nameUrl, preferredUrl)
         var untrusted: ChannelResult.Refused? = null
         var failure: ChannelResult.Refused? = null
-        for ((index, url) in binding.candidateUrls(nameUrl, preferredUrl).withIndex()) {
+        for ((index, url) in urls.withIndex()) {
             if (index > 0) delay(CLIENT_ROTATE_DELAY_S * 1000)
             val events = Channel<ChannelSocketEvent>(Channel.UNLIMITED)
             val socket = transport.connect(url, binding.fingerprint, events)
@@ -291,6 +316,7 @@ class HubSession(
                 lastError = null,
                 connectedAddress = url,
                 hasConnected = true,
+                droppedAtMillis = 0,
             )
         }
         var failure: ChannelResult.Refused? = null
@@ -349,7 +375,9 @@ class HubSession(
             live = null
             streams.endAll()
             socket.close(CLIENT_WS_CLOSE_NORMAL, "")
-            current.update { it.copy(connection = HubConnection.CONNECTING, connectedAddress = "") }
+            current.update {
+                it.copy(connection = HubConnection.CONNECTING, connectedAddress = "", droppedAtMillis = clock())
+            }
         }
         return failure
     }

@@ -3,6 +3,7 @@ package io.github.iffix.neutrino.channel
 import io.github.iffix.neutrino.CLIENT_CHANNEL_WS_PATH
 import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REQUEST_TIMEOUT_S
+import io.github.iffix.neutrino.CLIENT_WS_PING_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_WS_SILENCE_TIMEOUT_S
 import io.github.iffix.neutrino.HubUntrustedException
 import java.io.IOException
@@ -82,6 +83,7 @@ class OkHttpHubTransport : HubTransport {
             .connectionSpecs(listOf(spec))
             .connectTimeout(CLIENT_CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
             .readTimeout(CLIENT_WS_SILENCE_TIMEOUT_S, TimeUnit.SECONDS)
+            .pingInterval(CLIENT_WS_PING_INTERVAL_S, TimeUnit.SECONDS)
             .callTimeout(CLIENT_REQUEST_TIMEOUT_S, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
             .build()

@@ -1,4 +1,4 @@
-package io.github.iffix.neutrino.forward
+package io.github.iffix.neutrino
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -11,22 +11,19 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import io.github.iffix.neutrino.FORWARD_NOTIFICATION_CHANNEL
-import io.github.iffix.neutrino.FORWARD_NOTIFICATION_ID
-import io.github.iffix.neutrino.FORWARD_SERVICE_ACTION_STOP
-import io.github.iffix.neutrino.MainActivity
-import io.github.iffix.neutrino.NeutrinoApplication
-import io.github.iffix.neutrino.R
 import io.github.iffix.neutrino.words.WordCatalog
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
- * The started service that keeps the process, and with it the loopback forwards, alive while
- * any forward listens: a notification names how many, and its Stop ends every one. It is apart
- * from the VPN service and stops itself once no forward is left.
+ * The foreground service the app core runs in while any hub is bound: the hub channels, the
+ * share connections and the loopback forwards keep running when the app leaves the screen. Its
+ * one notification names how many hubs are connected; it stops itself once the last hub is
+ * left, and every forward stops with it.
  */
-class PortForwardService : Service() {
+class ClientCoreService : Service() {
     private var watch: Job? = null
 
     private val app: NeutrinoApplication
@@ -35,44 +32,44 @@ class PortForwardService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val count = app.portForwards.rows.value.values.count { it.isForwarded }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         } else {
             0
         }
-        ServiceCompat.startForeground(this, FORWARD_NOTIFICATION_ID, notification(count), type)
-        if (intent?.action == FORWARD_SERVICE_ACTION_STOP) app.portForwards.stopAll()
+        val count = ClientCoreHold.connectedCount(app.hubs.value)
+        ServiceCompat.startForeground(this, CLIENT_CORE_NOTIFICATION_ID, notification(count), type)
         if (watch == null) {
             watch = app.scope.launch {
-                app.portForwards.rows.collect { rows ->
-                    val forwarded = rows.values.count { it.isForwarded }
-                    if (forwarded == 0) {
-                        stopSelf()
-                    } else {
+                combine(app.bindingStore.bindings, app.hubs) { bindings, hubs ->
+                    bindings.isNotEmpty() to ClientCoreHold.connectedCount(hubs)
+                }.distinctUntilChanged().collect { (isHeld, connected) ->
+                    if (isHeld) {
                         getSystemService(NotificationManager::class.java)
-                            .notify(FORWARD_NOTIFICATION_ID, notification(forwarded))
+                            .notify(CLIENT_CORE_NOTIFICATION_ID, notification(connected))
+                    } else {
+                        stopSelf()
                     }
                 }
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onDestroy() {
         watch?.cancel()
         watch = null
+        app.portForwards.stopAll()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
     private fun notification(count: Int): Notification {
         val words = WordCatalog.load(assets, app.settingsStore.settings.value.language)
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(
-                FORWARD_NOTIFICATION_CHANNEL,
-                words.word("ui.forward_channel"),
+                CLIENT_CORE_NOTIFICATION_CHANNEL,
+                words.word("ui.core_channel"),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
@@ -82,18 +79,11 @@ class PortForwardService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = PendingIntent.getService(
-            this,
-            0,
-            Intent(this, PortForwardService::class.java).setAction(FORWARD_SERVICE_ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Builder(this, FORWARD_NOTIFICATION_CHANNEL)
+        return NotificationCompat.Builder(this, CLIENT_CORE_NOTIFICATION_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
-            .setContentTitle(words.word("ui.forward_notice", mapOf("count" to count)))
+            .setContentTitle(words.word("ui.core_notice", mapOf("count" to count)))
             .setContentIntent(open)
             .setOngoing(true)
-            .addAction(0, words.word("ui.forward_stop"), stop)
             .build()
     }
 }

@@ -26,7 +26,8 @@ class OverlayControllerTest {
     @get:Rule
     val folder = TemporaryFolder()
 
-    private val netbird = ChannelOverlay(provider = "netbird", setupKey = "k", fqdn = "hub.netbird.cloud")
+    private val netbird =
+        ChannelOverlay(provider = "netbird", setupKey = "k", fqdn = "hub.netbird.cloud", hubAddress = "100.88.0.1")
     private val easytier = ChannelOverlay(
         provider = "easytier",
         networkName = "n",
@@ -34,10 +35,10 @@ class OverlayControllerTest {
         peer = "tcp://p:1",
         hubAddress = "10.126.126.1",
     )
-    private val overUrl = "https://hub.netbird.cloud:8443"
+    private val overUrl = "https://100.88.0.1:8443"
     private val started = mutableListOf<Pair<String, String>>()
     private var stops = 0
-    private val preferred = mutableListOf<Pair<String, String>>()
+    private val preferred = mutableListOf<Triple<String, String, Boolean>>()
     private val probes = mutableListOf<String>()
     private var isHubAnswering = true
     private val launcher = object : OverlayLauncher {
@@ -59,7 +60,9 @@ class OverlayControllerTest {
             probes += url
             isHubAnswering
         }
-        return OverlayController(store, launcher, backgroundScope, probe) { id, url -> preferred += id to url }
+        return OverlayController(store, launcher, backgroundScope, probe) { id, url, isOnly ->
+            preferred += Triple(id, url, isOnly)
+        }
     }
 
     private fun views(address: String = "https://192.168.100.1:8443") = store.bindings.value.map {
@@ -67,6 +70,8 @@ class OverlayControllerTest {
     }
 
     private fun OverlayController.state(id: String = "b1") = lines.value[id]?.state ?: OverlayState.OFF
+
+    private fun OverlayController.stage(id: String = "b1") = lines.value[id]?.stage ?: OverlayStage.NONE
 
     private fun OverlayController.engineSays(phase: OverlayPhase, address: String = "", code: String? = null) =
         report(OverlayStatus("b1", "netbird", phase, address, code?.let { ChannelResult.refused(it) }))
@@ -84,16 +89,20 @@ class OverlayControllerTest {
     fun anAddressThenTheChannelThroughTheNetworkIsOn() = runTest {
         val controller = controller()
         controller.connect("b1")
-        controller.engineSays(OverlayPhase.ON, "100.72.4.9")
+        assertEquals(OverlayStage.LOGIN, controller.stage())
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9/16")
+        assertEquals(OverlayStage.HUB, controller.stage())
         runCurrent()
-        assertEquals(listOf("b1" to overUrl), preferred)
+        assertEquals(listOf(Triple("b1", overUrl, true)), preferred)
         controller.follow(store.bindings.value, views())
         assertEquals(OverlayState.CONNECTING, controller.state())
         controller.follow(store.bindings.value, views(overUrl))
         assertEquals(OverlayState.ON, controller.state())
+        assertEquals(OverlayStage.NONE, controller.stage())
         assertEquals("100.72.4.9", controller.lines.value["b1"]?.address)
         assertEquals(OverlayJob.NONE, controller.lines.value["b1"]?.job)
         assertTrue(store.get("b1")?.isOverlayOn == true)
+        assertEquals(Triple("b1", overUrl, false), preferred.last())
     }
 
     @Test
@@ -107,7 +116,7 @@ class OverlayControllerTest {
         assertTrue(preferred.isEmpty())
         isHubAnswering = true
         advanceTimeBy(2_000)
-        assertEquals(listOf("b1" to overUrl), preferred)
+        assertEquals(listOf(Triple("b1", overUrl, true)), preferred)
         controller.follow(store.bindings.value, views(overUrl))
         assertEquals(OverlayState.ON, controller.state())
         advanceTimeBy(10_000)
@@ -124,7 +133,7 @@ class OverlayControllerTest {
         controller.cancel("b1")
         advanceTimeBy(10_000)
         assertEquals(1, probes.size)
-        assertEquals(listOf("b1" to ""), preferred)
+        assertEquals(listOf(Triple("b1", "", false)), preferred)
     }
 
     @Test
@@ -149,7 +158,7 @@ class OverlayControllerTest {
         controller.connect("b1")
         controller.engineSays(OverlayPhase.WAITING)
         advanceTimeBy(300_000)
-        controller.engineSays(OverlayPhase.ON, "10.144.0.7")
+        controller.engineSays(OverlayPhase.ON, "10.144.0.7/24")
         assertFalse(controller.lines.value["b1"]?.isWaiting == true)
         advanceTimeBy(59_999)
         assertEquals(OverlayState.CONNECTING, controller.state())
@@ -159,10 +168,10 @@ class OverlayControllerTest {
     }
 
     @Test
-    fun noAddressWithinSixtySecondsIsOffWithTheCode() = runTest {
+    fun noAddressWithinNinetySecondsIsOffWithTheCode() = runTest {
         val controller = controller()
         controller.connect("b1")
-        advanceTimeBy(59_999)
+        advanceTimeBy(89_999)
         assertEquals(OverlayState.CONNECTING, controller.state())
         advanceTimeBy(2)
         assertEquals(OverlayState.OFF, controller.state())
@@ -179,7 +188,7 @@ class OverlayControllerTest {
         advanceTimeBy(60_001)
         assertEquals(OverlayState.OFF, controller.state())
         assertEquals("overlay_hub_unreachable", controller.lines.value["b1"]?.error?.code)
-        assertEquals(listOf("b1" to overUrl, "b1" to ""), preferred)
+        assertEquals(listOf(Triple("b1", overUrl, true), Triple("b1", "", false)), preferred)
     }
 
     @Test
@@ -211,6 +220,7 @@ class OverlayControllerTest {
         val controller = controller()
         controller.connect("b1")
         controller.engineSays(OverlayPhase.ON, "100.72.4.9")
+        runCurrent()
         controller.follow(store.bindings.value, views(overUrl))
         store.update("b1") { it.copy(overlays = listOf(easytier)) }
         controller.follow(store.bindings.value, views(overUrl))
@@ -225,6 +235,7 @@ class OverlayControllerTest {
         val controller = controller()
         controller.connect("b1")
         controller.engineSays(OverlayPhase.ON, "100.72.4.9")
+        runCurrent()
         controller.follow(store.bindings.value, views(overUrl))
         controller.disconnect("b1")
         assertEquals(OverlayJob.DISCONNECTING, controller.lines.value["b1"]?.job)
@@ -240,6 +251,7 @@ class OverlayControllerTest {
         val controller = controller()
         controller.connect("b1")
         controller.engineSays(OverlayPhase.ON, "100.72.4.9")
+        runCurrent()
         controller.follow(store.bindings.value, views(overUrl))
         controller.engineSays(OverlayPhase.OFF)
         assertEquals("overlay_engine_stopped", controller.lines.value["b1"]?.error?.code)
@@ -273,10 +285,89 @@ class OverlayControllerTest {
         controller.start(MutableStateFlow(views()))
         runCurrent()
         assertEquals(listOf("b2" to "netbird"), started)
-        advanceTimeBy(60_001)
+        advanceTimeBy(90_001)
         assertEquals(OverlayState.OFF, controller.state("b2"))
         assertFalse(store.get("b2")?.isOverlayOn == true)
         assertEquals(1, started.size)
+    }
+
+    @Test
+    fun theHubStageHasItsOwnSixtySecondsAfterALongLogin() = runTest {
+        val controller = controller()
+        isHubAnswering = false
+        controller.connect("b1")
+        advanceTimeBy(85_000)
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9/16")
+        advanceTimeBy(59_999)
+        assertEquals(OverlayState.CONNECTING, controller.state())
+        assertEquals(OverlayStage.HUB, controller.stage())
+        advanceTimeBy(2)
+        assertEquals(OverlayState.OFF, controller.state())
+        assertEquals("overlay_hub_unreachable", controller.lines.value["b1"]?.error?.code)
+    }
+
+    @Test
+    fun cancelInTheLoginStageIsOffWithNoError() = runTest {
+        val controller = controller()
+        controller.connect("b1")
+        advanceTimeBy(30_000)
+        controller.cancel("b1")
+        assertEquals(OverlayState.OFF, controller.state())
+        assertEquals(OverlayStage.NONE, controller.stage())
+        assertNull(controller.lines.value["b1"]?.error)
+        assertEquals(1, stops)
+    }
+
+    @Test
+    fun cancelInTheHubStageIsOffAndTheChannelIsFreedAgain() = runTest {
+        val controller = controller()
+        controller.connect("b1")
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9/16")
+        runCurrent()
+        controller.cancel("b1")
+        assertEquals(OverlayState.OFF, controller.state())
+        assertNull(controller.lines.value["b1"]?.error)
+        assertEquals(Triple("b1", "", false), preferred.last())
+        advanceTimeBy(120_000)
+        assertNull(controller.lines.value["b1"]?.error)
+    }
+
+    @Test
+    fun inTheHubStageTheChannelTriesOnlyTheHubsAddressUntilItIsOn() = runTest {
+        val controller = controller()
+        controller.connect("b1")
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9/16")
+        runCurrent()
+        assertEquals(listOf(Triple("b1", overUrl, true)), preferred)
+        controller.follow(store.bindings.value, views("https://192.168.100.1:8443"))
+        assertEquals(OverlayState.CONNECTING, controller.state())
+        assertEquals(1, preferred.size)
+        controller.follow(store.bindings.value, views(overUrl))
+        assertEquals(listOf(Triple("b1", overUrl, true), Triple("b1", overUrl, false)), preferred)
+    }
+
+    @Test
+    fun aChannelAlreadyOnTheAddressIsOnlyOnOnceTheProbeAnswers() = runTest {
+        val controller = controller()
+        isHubAnswering = false
+        controller.connect("b1")
+        controller.engineSays(OverlayPhase.ON, "100.72.4.9/16")
+        runCurrent()
+        controller.follow(store.bindings.value, views(overUrl))
+        assertEquals(OverlayState.CONNECTING, controller.state())
+        isHubAnswering = true
+        advanceTimeBy(2_001)
+        assertEquals(OverlayState.ON, controller.state())
+    }
+
+    @Test
+    fun theStageLineNamesTheHubsAddressFromTheMaterialFirst() = runTest {
+        val controller = controller()
+        controller.pick("b1", "easytier")
+        controller.connect("b1")
+        controller.report(OverlayStatus("b1", "easytier", OverlayPhase.ON, "10.126.126.7/24"))
+        runCurrent()
+        assertEquals("https://10.126.126.1:8443", probes.single())
     }
 
     @Test

@@ -43,12 +43,12 @@
         </service>
 
         <service
-            android:name=".forward.PortForwardService"
+            android:name=".ClientCoreService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Holds the loopback port forwards the person started" />
+                android:value="Holds the channels to the hubs the person joined, their file share connections and the loopback port forwards the person started" />
         </service>
 
         <provider

@@ -22,7 +22,7 @@ import io.github.iffix.neutrino.channel.OkHttpHubTransport
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
-import io.github.iffix.neutrino.forward.PortForwardService
+import io.github.iffix.neutrino.forward.LocalPortTable
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.OverlayProbe
@@ -42,13 +42,14 @@ import java.net.UnknownHostException
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -98,7 +99,7 @@ class NeutrinoApplication : Application() {
             launcher = ServiceOverlayLauncher(this),
             scope = scope,
             probe = OverlayProbe::isReachable,
-        ) { bindingId, url -> connections.session(bindingId)?.preferAddress(url) }
+        ) { bindingId, url, isOnly -> connections.session(bindingId)?.preferAddress(url, isOnly) }
     }
 
     /** The one state document every screen draws: each hub with its virtual network and its jobs. */
@@ -128,12 +129,21 @@ class NeutrinoApplication : Application() {
                 connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
             },
             scope = scope,
+            table = LocalPortTable(getSharedPreferences(CLIENT_SETTINGS_FILE_NAME, Context.MODE_PRIVATE)),
         )
     }
 
-    /** Every share the connected hubs publish, as roots of the system's Files. */
+    /** Every share the connected hubs publish, as roots of the system's Files, held a minute past a drop. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     val shareRoots: StateFlow<List<ShareRoot>> by lazy {
-        connections.views.map { ShareRoot.all(it) }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+        connections.views.transformLatest { hubs ->
+            while (true) {
+                val now = System.currentTimeMillis()
+                emit(ShareRoot.all(hubs, now))
+                val end = ShareRoot.holdEndsAt(hubs, now) ?: break
+                delay(end - now)
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, emptyList())
     }
 
     /** The shares' logins. */
@@ -189,11 +199,7 @@ class NeutrinoApplication : Application() {
         overlays.start(connections.views)
         terminalTabs.follow(connections.views)
         portForwards.follow(connections.views)
-        scope.launch {
-            portForwards.rows.map { rows -> rows.values.any { it.isForwarded } }.distinctUntilChanged().collect {
-                if (it) holdForwards()
-            }
-        }
+        scope.launch { ClientCoreHold.changes(bindingStore.bindings).collect { if (it) holdCore() } }
         scope.launch {
             shareRoots.collect {
                 contentResolver.notifyChange(DocumentsContract.buildRootsUri(CLIENT_FILES_AUTHORITY), null)
@@ -204,11 +210,11 @@ class NeutrinoApplication : Application() {
         connectivity.registerDefaultNetworkCallback(NetworkWatch())
     }
 
-    private fun holdForwards() {
+    private fun holdCore() {
         try {
-            ContextCompat.startForegroundService(this, Intent(this, PortForwardService::class.java))
+            ContextCompat.startForegroundService(this, Intent(this, ClientCoreService::class.java))
         } catch (error: IllegalStateException) {
-            Log.w(CLIENT_LOG_TAG, "the forwards' service could not start: ${error.message}")
+            Log.w(CLIENT_LOG_TAG, "the app core's service could not start: ${error.message}")
         }
     }
 
@@ -227,7 +233,10 @@ class NeutrinoApplication : Application() {
 
         override fun onActivityStarted(activity: Activity) {
             started += 1
-            if (started == 1) shares.markStale()
+            if (started != 1) return
+            shares.markStale()
+            connections.resume()
+            if (bindingStore.bindings.value.isNotEmpty()) holdCore()
         }
 
         override fun onActivityStopped(activity: Activity) {

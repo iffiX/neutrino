@@ -107,7 +107,7 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
                 try {
                     EasyTierJNI.setTunFd(instance.name, fd)
                     built = wanted
-                    report(OverlayPhase.ON, instance.address, null)
+                    report(OverlayPhase.ON, "${instance.address}/${instance.prefix}", null)
                 } catch (error: RuntimeException) {
                     report(
                         OverlayPhase.FAILED,

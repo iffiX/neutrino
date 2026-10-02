@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.files
 
+import io.github.iffix.neutrino.CLIENT_SHARE_HOLD_S
 import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.channel.HubView
 import kotlinx.serialization.json.JsonArray
@@ -14,6 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * @property share The share's name.
  * @property users The accounts the hub names for it; empty when it names none.
  * @property summary Who provides it, for the root's second line.
+ * @property isReconnecting Whether its hub's channel dropped less than a minute ago and is not back yet.
  */
 data class ShareRoot(
     val key: String,
@@ -22,6 +24,7 @@ data class ShareRoot(
     val share: String,
     val users: List<String>,
     val summary: String,
+    val isReconnecting: Boolean = false,
 ) {
     companion object {
         /**
@@ -52,12 +55,35 @@ data class ShareRoot(
         }
 
         /**
-         * Every share the connected hubs publish.
+         * Every share the connected hubs publish, and the shares of a hub whose channel dropped
+         * less than [CLIENT_SHARE_HOLD_S] ago, marked as reconnecting.
          *
          * @param hubs Every hub.
+         * @param nowMillis The time in the sessions' clock.
          * @return The roots, in the hubs' order.
          */
-        fun all(hubs: List<HubView>): List<ShareRoot> =
-            hubs.filter { it.isConnected }.flatMap { hub -> hub.servicesOf("file").mapNotNull { of(hub, it) } }
+        fun all(hubs: List<HubView>, nowMillis: Long): List<ShareRoot> = hubs.flatMap { hub ->
+            when {
+                hub.isConnected -> hub.servicesOf("file").mapNotNull { of(hub, it) }
+
+                isHeld(hub, nowMillis) ->
+                    hub.services.filter { it.type == "file" }.mapNotNull { of(hub, it)?.copy(isReconnecting = true) }
+
+                else -> emptyList()
+            }
+        }
+
+        /**
+         * When the first hold of a dropped hub's shares ends.
+         *
+         * @param hubs Every hub.
+         * @param nowMillis The time in the sessions' clock.
+         * @return The end in the same clock, or null while no hub's shares are held.
+         */
+        fun holdEndsAt(hubs: List<HubView>, nowMillis: Long): Long? =
+            hubs.filter { isHeld(it, nowMillis) }.minOfOrNull { it.droppedAtMillis + CLIENT_SHARE_HOLD_S * 1000 }
+
+        private fun isHeld(hub: HubView, nowMillis: Long): Boolean = !hub.isConnected && !hub.isDisabled &&
+            hub.droppedAtMillis > 0 && nowMillis - hub.droppedAtMillis < CLIENT_SHARE_HOLD_S * 1000
     }
 }

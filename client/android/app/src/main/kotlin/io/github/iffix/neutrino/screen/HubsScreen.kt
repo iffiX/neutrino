@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.CLIENT_PERSON_CODES
+import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.channel.HubView
@@ -27,6 +28,7 @@ import io.github.iffix.neutrino.design.StatusDot
 import io.github.iffix.neutrino.design.cardRows
 import io.github.iffix.neutrino.design.gap
 import io.github.iffix.neutrino.overlay.OverlayJob
+import io.github.iffix.neutrino.overlay.OverlayStage
 import io.github.iffix.neutrino.overlay.OverlayState
 
 /**
@@ -143,6 +145,12 @@ private fun HubRow(
         ?: networks.firstOrNull()?.provider.orEmpty()
     val networkReason = when {
         line.isWaiting -> words.word("ui.reason.console_waiting")
+
+        line.state == OverlayState.CONNECTING && line.stage == OverlayStage.LOGIN ->
+            words.word("ui.stage.login", mapOf("engine" to ChannelOverlay(line.network).title))
+
+        line.state == OverlayState.CONNECTING && line.stage == OverlayStage.HUB ->
+            words.word("ui.stage.hub", mapOf("address" to line.address))
 
         line.state != OverlayState.OFF -> null
 

@@ -21,6 +21,9 @@ const val CLIENT_BOTTOM_BAR_HEIGHT_DP = 56
 /** The file the language and the theme are kept in. */
 const val CLIENT_SETTINGS_FILE_NAME = "client_settings"
 
+/** The local port table's key in [CLIENT_SETTINGS_FILE_NAME]. */
+const val CLIENT_SETTINGS_KEY_LOCAL_PORTS = "local_ports"
+
 /** The language's key in [CLIENT_SETTINGS_FILE_NAME]. */
 const val CLIENT_SETTINGS_KEY_LANGUAGE = "language"
 
@@ -112,6 +115,9 @@ const val CLIENT_REPORT_INTERVAL_S = 30L
 
 /** How long the open socket may stay silent before it counts as dead. */
 const val CLIENT_WS_SILENCE_TIMEOUT_S = 45L
+
+/** How often the open socket sends a WebSocket ping, so a socket the network dropped closes. */
+const val CLIENT_WS_PING_INTERVAL_S = 20L
 
 /** The first wait after a broken wire, doubled on each failure. */
 const val CLIENT_BACKOFF_MIN_S = 5L
@@ -230,17 +236,23 @@ const val FORWARD_BUFFER_BYTES = 65536
 /** How long a forwarded connection may take to reach the published port, as the desktop's relay allows. */
 const val FORWARD_CONNECT_TIMEOUT_MILLIS = 10_000
 
-/** The query parameter a local-only web page takes its token in. */
-const val WEB_TOKEN_PARAMETER = "tkn"
+/** The cookie a local-only web page takes its token in. */
+const val WEB_TOKEN_COOKIE = "vscode-tkn"
 
-/** The notification channel the forwards' foreground service posts in. */
-const val FORWARD_NOTIFICATION_CHANNEL = "forwards"
+/** The numbers a person may fix a local port to. */
+val FORWARD_FIXED_PORTS: IntRange = 1024..65535
 
-/** The id of the forwards' notification. */
-const val FORWARD_NOTIFICATION_ID = 7
+/** Where an automatic local port is looked for when the entry's own is taken. */
+const val FORWARD_AUTO_FIRST_PORT = 20000
 
-/** The forwards' service action that stops every forward. */
-const val FORWARD_SERVICE_ACTION_STOP = "io.github.iffix.neutrino.forward.STOP"
+/** The longest request or response head a web entry's forward reads. */
+const val FORWARD_HEAD_MAX_BYTES = 65536
+
+/** The notification channel the app core's foreground service posts in. */
+const val CLIENT_CORE_NOTIFICATION_CHANNEL = "connections"
+
+/** The id of the app core's notification. */
+const val CLIENT_CORE_NOTIFICATION_ID = 7
 
 /** The first id this side opens a stream at; the hub's are even. */
 const val CHANNEL_FIRST_STREAM_ID = 1
@@ -275,8 +287,14 @@ const val CLIENT_COPIED_SHOWN_MILLIS = 1500L
 /** How many characters of a masked key stay readable. */
 const val CLIENT_KEY_SHOWN_PREFIX = 6
 
-/** How long one connect to a virtual network may take: the engine's address and the channel through it. */
-const val OVERLAY_CONNECT_TIMEOUT_S = 60L
+/** How long a connect's `login` stage may take: the engine's start, its login and its address. */
+const val OVERLAY_LOGIN_TIMEOUT_S = 90L
+
+/** How long a connect's `hub` stage may take from the address: the hub's answer and the channel through it. */
+const val OVERLAY_HUB_TIMEOUT_S = 60L
+
+/** The addresses a NetBird network gives its members, where the hub's own is looked for in its list. */
+const val OVERLAY_NETBIRD_NETWORK = "100.64.0.0/10"
 
 /** How long a disconnect waits for the engine to say it stopped. */
 const val OVERLAY_STOP_TIMEOUT_S = 10L
@@ -328,6 +346,9 @@ const val CLIENT_SHARE_IDLE_PROBE_S = 30L
 
 /** How long the probe of a share's held connection may take. */
 const val CLIENT_SHARE_PROBE_TIMEOUT_S = 5L
+
+/** How long a share stays listed in the system's Files after its hub's channel drops. */
+const val CLIENT_SHARE_HOLD_S = 60L
 
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
