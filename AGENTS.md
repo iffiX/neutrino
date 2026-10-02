@@ -2,13 +2,15 @@
 
 Neutrino: a personal developer infrastructure hub on one box — transparent
 proxy routing (xray), a FastAPI + React control panel, NetBird remote access,
-an AI gateway (CLIProxyAPI), and Gitea, Samba, Podman and ZFS as modules. A
-device agent under `agent/` reconciles modules on managed LAN machines.
+an AI gateway (CLIProxyAPI), and Gitea, Samba, Podman and ZFS as modules. The
+hub runs on Linux in any network mode, and in server mode also on macOS and
+Windows. A device agent under `agent/` reconciles modules on managed LAN
+machines.
 
 Ships as three packages and two apps: `neutrino_hub` (`hub/`),
 `neutrino_agent` (`agent/`) and `neutrino_client` (`client/desktop/`), and the
 Android app (`client/android/`, Kotlin) and the iOS app (`client/ios/`,
-Swift). The two apps are AGPL-3.0; the rest is MIT.
+Swift, paused since 2026-10-03). The two apps are AGPL-3.0; the rest is MIT.
 
 Every agent working here — Claude Code, Codex, Cursor, or otherwise — follows
 the standard in [`skills/core-code-author/`](skills/core-code-author/SKILL.md). This file is the
@@ -26,9 +28,9 @@ and leave this pointing at it.**
 | [coding_style/comment_style.md](skills/core-code-author/coding_style/comment_style.md) | KISS, English only, no narrated reasoning anywhere, commit message shape. |
 | [coding_style/exception_style.md](skills/core-code-author/coding_style/exception_style.md) | Python's own exceptions first; a package's own kinds live in its one `exceptions.py`; `Raises:` on every public docstring. |
 | [agent_work_rule/commit.md](skills/core-code-author/agent_work_rule/commit.md) | Only the user decides a commit happens. One answerable author, no agent `Co-Authored-By`. |
-| [design/files.md](skills/core-code-author/design/files.md) | The five roots an installed hub uses, and the one question each answers. |
-| [design/install_and_dev.md](skills/core-code-author/design/install_and_dev.md) | Who installs what: the package's dependencies, what `nhub setup` may do, and how `--dev` differs. |
-| [design/privilege.md](skills/core-code-author/design/privilege.md) | Why the panel is root, what the unit narrows, and why stepping down uses `runuser` and never `sudo`. |
+| [design/files.md](skills/core-code-author/design/files.md) | The five roots an installed hub uses on each system, the one question each answers, and the one Neutrino tree on macOS and Windows. |
+| [design/install_and_dev.md](skills/core-code-author/design/install_and_dev.md) | Who installs what: the package's dependencies, what `nhub setup` may do on each system, the one-command install scripts, and how `--dev` differs. |
+| [design/privilege.md](skills/core-code-author/design/privilege.md) | Why the panel is root, what the unit narrows, why stepping down uses `runuser` and never `sudo`, and what holds on macOS and Windows. |
 | [kill_on_sight.md](skills/core-code-author/kill_on_sight.md) | The self-check to run before you say you are done. |
 
 **Selective read — open the one your change touches:**
@@ -41,10 +43,10 @@ and leave this pointing at it.**
 | [coding_style/kotlin_style.md](skills/core-code-author/coding_style/kotlin_style.md) | Touching `client/android/`: PascalCase files, ktlint, one `Exceptions.kt`, refusals as sealed results, no `!!`. |
 | [coding_style/swift_style.md](skills/core-code-author/coding_style/swift_style.md) | Touching `client/ios/`: PascalCase files, swift-format, one `Error` enum per target, no force unwrap. |
 | [design/protocol.md](skills/core-code-author/design/protocol.md) | Adding or renaming any endpoint, frame, kind or code: the three ports, path rules and the verb table, refusals as `{code, params}`, every route, the channel, admission, versioning by protocol number. |
-| [design/modules/network.md](skills/core-code-author/design/modules/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, and why it does not build on NetworkManager. |
+| [design/modules/network.md](skills/core-code-author/design/modules/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, server mode and the system firewall on macOS and Windows, and why it does not build on NetworkManager. |
 | [design/modules/proxy.md](skills/core-code-author/design/modules/proxy.md) | Touching the proxy: the scopes and what each diverts, exit selection, where every lookup resolves, what an overlay member can do, the consequences of a dead exit. |
 | [design/modules/ai.md](skills/core-code-author/design/modules/ai.md) | Touching the AI gateway: how a request routes, the gateway-owned model namespace, what each AI panel surface owns, metering. |
-| [design/agent.md](skills/core-code-author/design/agent.md) | Touching the agent: the hub and root as its only authorities, the four module states and `want`, the desktop share, the root-only control socket, the Linux-only platform layer. |
+| [design/agent.md](skills/core-code-author/design/agent.md) | Touching the agent: the hub and root as its only authorities, the four module states and `want`, the desktop share, the root-only control socket, the platform layer for Linux, Windows and macOS, the CloudCLI module and its forwarder. |
 | [design/tests.md](skills/core-code-author/design/tests.md) | Writing or moving any test: the six blocks (agent / client / hub / android / ios / integration), the mirror rule, what each area pins, what a change owes. |
 | [design/visual.md](skills/core-code-author/design/visual.md) | Touching panel CSS: what the accent and the glow may mean, button tiers, frames. |
 | [design/ui_behavior.md](skills/core-code-author/design/ui_behavior.md) | Touching panel pages or components: which idiom a screen reuses, per-panel apply bars, effect timing, ask before inventing an interaction. |
@@ -101,6 +103,8 @@ hub/
     modules/<name>/   One feature module each: config.py / renderer.py /
                       ops.py / constants.py / provisioner.py. Pure library.
     system/           Wrappers around OS invocations.
+    platforms/        What differs between Linux, macOS and Windows: the
+                      roots, the process controller, the firewall.
     utils/            Generic helpers shared by every package.
     web/              FastAPI panel: routers/, auth, models.
     cli/              Every entry point behind `nhub`.
@@ -111,7 +115,8 @@ hub/
   frontend/           React + TypeScript source. Builds into data/frontend/.
   tests/
 agent/
-  neutrino_agent/     The device agent: Linux, root, headless. Pure standard
+  neutrino_agent/     The device agent: Linux, Windows, macOS; root,
+                      headless. Pure standard
                       library, no dependencies.
   tests/
 client/
@@ -124,10 +129,11 @@ client/
     tests/
   android/            The Android app: Gradle, Kotlin, Jetpack Compose.
                       AGPL-3.0.
-  ios/                The iOS app: Xcode, Swift, SwiftUI. AGPL-3.0.
+  ios/                The iOS app: Xcode, Swift, SwiftUI. AGPL-3.0. Paused.
 packaging/            build/ one script per release target, shared/ what
-                      they share, ci/ the post-install checks, lab/ the VM
-                      lab, integration/ the suite that runs on a box.
+                      they share, ci/ the post-install checks, install/ the
+                      one-command install scripts, lab/ the VM lab,
+                      integration/ the suite that runs on a box.
 config/               Source of truth at runtime. Real files gitignored.
                       /etc/neutrino/config once installed.
 skills/core-code-author/        This standard. The single source of truth for rules.

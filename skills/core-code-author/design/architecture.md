@@ -4,9 +4,11 @@ The load-bearing structural principles of this repo.
 
 ## The shape of the system
 
-One box runs the hub. A Linux machine the hub manages runs the agent, as
-root, headless. A person's own machine, Linux, Windows or macOS, runs the
-client in that person's session, never as root. The hub box runs its own
+One box runs the hub: a Linux machine in any network mode, or a macOS or
+Windows machine in `server` mode ([network.md](modules/network.md)). A Linux,
+Windows or macOS machine the hub manages runs the agent, as root, headless.
+A person's own machine, Linux, Windows or macOS, runs the client in that
+person's session, never as root. The hub box runs its own
 agent too, and hosts no module itself.
 
 ```
@@ -41,6 +43,13 @@ Inside the hub package the layers only reach downward:
 - `web/` — one router file per API module, models shared with the frontend
   by field name.
 - `cli/` — every entry point, one `nhub` subcommand each.
+- `platforms/`: what differs between Linux, macOS and Windows, and nothing
+  else: the five roots, the elevation check, the process controller, the
+  network facts, the firewall, opening a browser and the file lock.
+  `base.py`, `linux.py`, `darwin.py` and `windows.py` follow the agent's
+  shape, with `win32.py` and `windows_service.py` copied from the agent, since
+  the packages share no code. `detect.hub_os()` returns `linux`, `darwin` or
+  `windows`, and the panel's API uses the same word.
 
 The agent has no dependencies and listens on nothing: it keeps one socket
 open to the hub and reconnects when it drops, so it survives restarts, sleep
@@ -60,6 +69,9 @@ config/<module>/*.json  ->  render (pure library)  ->  /var/lib/neutrino/generat
                         ->  validate  ->  apply (systemctl / nft / ip)
 ```
 
+- On macOS and Windows the pipeline is the same, and apply restarts a
+  daemon through the supervisor and has no `nft` or `ip` step ("One service
+  supervises the daemons on macOS and Windows" below).
 - The web backend and `nhub apply` drive the exact same pipeline. A change
   made in the panel is a write to `config/` followed by a render+apply; there
   is no second path that edits `/etc` by hand.
@@ -94,6 +106,44 @@ modules/router/routes.py  ->  RouterRulesetApplier.apply(ruleset)   # nft -c the
 Litmus test: if you deleted systemd and nft tomorrow, every renderer should
 still import, run, and pass its tests unchanged. If it would not, an effect has
 leaked into the rendering layer.
+
+## One service supervises the daemons on macOS and Windows
+
+On Linux each daemon the hub runs is a systemd unit of its own, and that set
+of units does not change. On macOS and Windows the hub is one binary, `nhub`,
+compiled by Nuitka as the agent is, and its package registers one service:
+the LaunchDaemon `com.neutrino.hub`, run as root and starting `nhub run`, and
+the Windows service `neutrino_hub`, run as SYSTEM and starting
+`nhub service run`. That one process serves the panel and runs every daemon
+as its own child:
+
+| Child | Started as |
+| --- | --- |
+| xray | the rendered configuration, with no service account and no capabilities |
+| CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
+| NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino_hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
+| EasyTier | `easytier-core` with its rendered file and `--rpc-portal 127.0.0.1:15888` |
+
+- Every `netbird` command the hub runs names the same `--daemon-addr`, so a
+  client's NetBird on the same machine is never the one it talks to.
+- A child that exits is started again after a backoff. Stopping the service
+  stops every child; on Windows the children run in a job object that ends
+  them with it.
+- Each child's standard output and error go to `<name>.log` under the log
+  root, rotated by size ([files.md](files.md)).
+- EasyTier's start line is held by the supervisor; no drop-in file exists.
+- No code calls `systemctl` itself. The runtime hands out one process
+  controller with one set of methods (is active, show, start, stop, restart,
+  enable, disable, reload, journal): `SystemdServiceController` on Linux,
+  `SupervisedProcessController` on macOS and Windows. There, enabling a
+  daemon writes it into `state/services.json` and starts the child, and its
+  journal is the tail of its log file.
+- Restarting the panel there is the supervisor exiting; launchd's
+  `KeepAlive` and the service control manager's failure recovery start it
+  again.
+- No nftables layer exists outside Linux. The hub opens its own ports in the
+  system firewall instead ([network.md](modules/network.md), "What answers,
+  and where").
 
 ## Libraries carry the logic; `nhub` carries the execution
 
@@ -429,6 +479,9 @@ is narrowed in the nftables input chain rather than left to what the process
 binds. Do not spread root-requiring calls through the codebase: they live in the
 `neutrino_hub/system/` and `*/ops`/`apply` layers behind named operations, so
 the surface that needs privilege is small and auditable. What the unit narrows,
-and what it deliberately does not, is [privilege.md](privilege.md). If this
+and what it deliberately does not, is [privilege.md](privilege.md). On macOS
+and Windows the one service runs as root and as SYSTEM, and no input chain
+narrows what reaches the panel: it answers on every interface, behind the
+same password ([network.md](modules/network.md)). If this
 ever becomes multi-user or WAN-exposed, split the privileged helper out then —
 the apply layer is already the seam to split on.

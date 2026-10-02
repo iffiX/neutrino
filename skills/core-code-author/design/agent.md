@@ -1,9 +1,9 @@
 # The device agent
 
-The agent is the hub's presence on a managed Linux machine: one root service
-with one socket open to the hub. It hosts the modules the hub's state names,
-reports what is true, and shares the machine's desktop when told. It draws
-no window and listens on no port. Its own code is pure standard library. The
+The agent is the hub's presence on a managed Linux, Windows or macOS
+machine: one root service with one socket open to the hub. It hosts the
+modules the hub's state names, reports what is true, and shares the
+machine's desktop when told. It draws no window and listens on no port. Its own code is pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
 
@@ -29,7 +29,7 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, ZFS, VS Code and the RustDesk host. The hub says what is wanted and sends
+  Podman, ZFS, VS Code, CloudCLI and the RustDesk host. The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
   page writes one `want` per module into `config/devices/<id>/modules.json`.
   The state the agent receives names, per module, that `want`, the
@@ -231,8 +231,9 @@ manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 account's login, because LocalSystem cannot start a process as another
 account without its password; on Windows the module also opens each
 instance's port in the firewall and closes it with the instance, since the
-hub's forwards reach the server from the network. Everything else the agent
-does is root's own work.
+hub's forwards reach the server from the network. CloudCLI is reached the
+same way ("CloudCLI" below). Everything else the agent does is root's own
+work.
 
 ## The platform layer
 
@@ -308,7 +309,8 @@ module a system cannot run is left out on that system.
 | Gitea | amd64 and arm64 | no | no |
 | Containers (Podman) | yes | no | no |
 | ZFS storage | yes | no | no |
-| VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | Apple silicon |
+| VS Code | glibc 2.28 and above, amd64 and arm64 | amd64 | arm64 and amd64 |
+| CloudCLI | glibc 2.28 and above, amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | Remote desktop (RustDesk, AnyDesk, TeamViewer) | yes | yes | yes |
 
 A module's log, the answer to its `journal` verb, is the journal of its
@@ -325,11 +327,94 @@ LaunchDaemon's `StandardOutPath` and `StandardErrorPath` name
 `/Library/Logs/Neutrino/vscode_<account>.log`. Every log comes oldest line
 first, at most the number of lines the verb asked for.
 
+The hub's own machine on macOS and Windows runs the local agent
+`nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its
+shares and VS Code are that agent's modules, as on any device.
+
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants. The seat reads the
 grants from the system's privacy database, and its attention is
 `rdp_permissions_needed` until both are there; a database root cannot read
 reports the same.
+
+### CloudCLI
+
+The `cloudcli` module runs CloudCLI, the npm package `@cloudcli-ai/cloudcli`
+pinned at 1.37.3 (AGPL-3.0), once per account: a web page for AI coding
+sessions. It is an ordinary module shaped like VS Code,
+`agent/neutrino_agent/modules/cloudcli/` with its config, constants, runner,
+installer and one applier per system, and its configuration is
+`{instances: [{account, port}]}`.
+
+**It runs as the account, never as root**: a unit
+`neutrino_cloudcli@<account>.service` with `User=<account>` on Linux, a
+LaunchDaemon with `UserName` on macOS, and on Windows a scheduled task
+registered with a login the Credentials page holds, chosen per instance as
+for VS Code.
+
+**Node.js comes from the hub and stays out of the system.**
+`data/manifests/cloudcli.json`, written like `vscode.json`, pins the
+nodejs.org standalone build of Node 22 LTS for Linux, macOS and Windows on
+x64 and arm64, each with its url and the sha256 of `SHASUMS256.txt`. The hub
+fetches it into its module cache and serves it on the `package` stream. The
+agent unpacks it under its own root, `/var/lib/neutrino_agent/cloudcli/` on
+Linux and the agent's data directory on macOS and Windows: owned by root,
+read-only, one copy per machine. It is never put on `PATH`, in any shell
+profile, or under `/usr/local`.
+
+**CloudCLI is installed per account, apart from the account's own npm.** As
+the account, with that Node, the agent runs
+`npm install @cloudcli-ai/cloudcli@1.37.3 --prefix <app dir>` with
+`npm_config_cache` inside the app directory and `npm_config_userconfig`
+naming an empty file, so no `~/.npmrc` is read, `~/.npm` is untouched and
+nothing is installed globally. The app directory is
+`~/.local/share/neutrino_cloudcli/app` on Linux,
+`~/Library/Application Support/Neutrino/cloudcli/app` on macOS and
+`%LOCALAPPDATA%\Neutrino\cloudcli\app` on Windows. The install reaches
+nodejs.org, npm and GitHub; a LAN machine reaches them through the hub's
+proxy, and no mirror is configured.
+
+**The service's environment is written from scratch**: `HOST=127.0.0.1`,
+`PORT`, `ANTHROPIC_BASE_URL` (the hub's gateway), `ANTHROPIC_AUTH_TOKEN` (the
+device's gateway key, [modules/ai.md](modules/ai.md)), `OPENAI_BASE_URL`, and
+`PATH`. Nothing is inherited from a login profile or a version manager.
+
+**The `claude` CloudCLI starts is the account's own.** Before starting the
+service the agent runs `command -v claude` in the account's login shell
+(`runuser -l` on Linux, the account's shell with `-l -c` on macOS) and puts
+that directory on the service's `PATH`. An account with none reports
+`cloudcli_claude_missing {account}`. On Windows the task runs as the account
+and has its `PATH` already.
+
+**A failed install names its step**: `cloudcli_node_download_failed`,
+`cloudcli_npm_install_failed`, or `cloudcli_native_module_failed` when
+better-sqlite3, node-pty or bcrypt cannot fetch its prebuilt binary.
+
+**The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
+loopback alone. A thin HTTP forwarder of the agent's listens on the device's
+LAN and overlay addresses at the configured port. The hub generates each
+instance's password and keeps it in its vault; on CloudCLI's first start the
+agent registers the account with it through CloudCLI's register endpoint,
+the first account registered being its administrator, and the forwarder
+answers nobody before that.
+
+| A request | The forwarder |
+| --- | --- |
+| carries `?tkn=<token>` that verifies | logs in to CloudCLI with the hub's password, writes CloudCLI's login state into the browser, and redirects to the page |
+| carries `?tkn=<token>` that does not verify, has expired or was spent | 401 |
+| carries CloudCLI's login state | passes it on unchanged, WebSocket included |
+| carries neither | 401 |
+| asks for CloudCLI's register or login endpoint | 401; those are never passed on |
+
+**A token is verified on the device, with no call to the hub.** The hub
+mints one secret per instance and the module's desired state carries it
+sealed. A token is
+`base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))`, minted
+by the hub on every `service` ask with `expiry` 60 seconds ahead ([protocol.md](protocol.md), the service material). The
+forwarder checks the HMAC and the expiry itself and keeps every nonce it
+accepted until that nonce's expiry, so a token works once. No token enters
+the device's state, and minting one leaves the state's hash as it is
+([client.md](client.md), "The Web page").
 
 ## Two ports, one process
 
@@ -342,7 +427,9 @@ identity are in [protocol.md](protocol.md), "Three ports, two audiences".
 Exposure is the only control plane. The agent port listens on every exposed
 interface, WAN included, and on every exposed overlay; a served LAN that is
 not exposed gets DHCP, DNS and forwarding only. A device on such a LAN is
-enrolled after the LAN is exposed.
+enrolled after the LAN is exposed. A hub on macOS or Windows has no
+exposure, and the agent port answers on every interface there
+([network.md](modules/network.md), "Outside Linux, the system firewall").
 
 ## Joining: one ticket, five minutes, spent in one step
 

@@ -7,7 +7,8 @@ governs the tree itself.
 ## Three packages and two apps, one repository
 
 The repository ships three Python distributions and two mobile apps, and the
-split is the first thing to know about the tree: `hub/` is the appliance,
+split is the first thing to know about the tree: `hub/` is the appliance, on
+Linux in any mode and on macOS and Windows in `server` mode,
 `agent/` is what runs as root on the Linux, Windows and macOS machines the
 appliance manages, `client/desktop/` is what runs in a person's own session on
 Linux, Windows or macOS, and `client/android/` and `client/ios/` are what
@@ -25,7 +26,8 @@ agent/               The `neutrino_agent` distribution: the device agent.
 client/
   desktop/           The `neutrino_client` distribution: the tray and window.
   android/           The Android app, a Gradle project in Kotlin.
-  ios/               The iOS app, an Xcode project in Swift.
+  ios/               The iOS app, an Xcode project in Swift; paused since
+                     2026-10-03.
 packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
 docs/                memory.md, the working copy's own notes (gitignored), and
@@ -54,13 +56,18 @@ hub/
                        models, the shared PanelRuntime, the websockets.
     cli/               Every entry point behind `nhub`, one file per
                        subcommand.
+    platforms/         What differs between Linux, macOS and Windows:
+                       base.py, linux.py, darwin.py, windows.py behind one
+                       contract, detect.py, and win32.py and
+                       windows_service.py copied from the agent.
     utils/             Generic helpers with no domain: config file IO,
                        subprocess.
     exceptions.py      The package's one exception table; no kind is
                        declared anywhere else.
     data/              What ships inside the wheel: services/ the unit
                        templates, examples/ the committed *.example.json,
-                       manifests/ the device software catalog, frontend/ the
+                       manifests/ the device software catalog, one file
+                       per module, cloudcli.json among them, frontend/ the
                        built panel, resources/ the icons the build copies in
                        from images/icons/.
   frontend/          React and TypeScript source. `npm run build` writes into
@@ -90,7 +97,8 @@ agent/
     streams/         Shell and file streams multiplexed over the channel;
                      windows_shell.py runs PowerShell on a pseudo console.
     modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
-                     the RustDesk host, and the installers they share.
+                     vscode/, cloudcli/, the RustDesk host, and the
+                     installers they share.
     rdp/             Sharing this machine's desktop at the seat password the
                      hub set; one seat file per OS reads who is at the screen.
     platforms/       The OS layer: linux.py, windows.py and darwin.py behind
@@ -165,6 +173,7 @@ packaging/
                      RustDesk builders, the container runner, the cores cache.
   build/             One build_<target>.py per target: build_hub.py,
                      build_agent.py and build_client_desktop.py in containers;
+                     build_hub_windows.py, build_hub_macos.py,
                      build_agent_windows.py, build_agent_macos.py,
                      build_client_windows.py, build_client_macos.py,
                      build_client_android.py and build_client_ios.py
@@ -173,6 +182,9 @@ packaging/
                      build_docs.py.
   ci/                check.py: installs a built package where it runs and
                      checks it works.
+  install/           install.sh for macOS and Linux and install.ps1 for
+                     Windows: the one-command installers a release
+                     publishes.
   lab/               The VM lab: run_lab.py builds a hub VM and a client VM
                      with setup_vms.sh and runs the integration suite in the
                      hub; vm_exec.py drives a VM through its guest agent;
@@ -275,6 +287,7 @@ editing it should not need to know how the code is arranged.
 | --- | --- |
 | A feature the appliance offers (a VPN, a DNS blocker, a media server) | `hub/neutrino_hub/modules/<name>/`, in the standard shape |
 | A new way to drive the OS (a mount helper, a journal reader) | `hub/neutrino_hub/system/` |
+| Something the hub does differently on Linux, macOS and Windows | `hub/neutrino_hub/platforms/` |
 | A page or API for an existing module | `hub/neutrino_hub/web/routers/`, `hub/frontend/src/pages/` |
 | A helper with no domain at all | `hub/neutrino_hub/utils/` — and only if two packages already need it |
 | An entry point | `hub/neutrino_hub/cli/<name>.py` — libraries never grow a `main()` |

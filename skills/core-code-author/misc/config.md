@@ -10,6 +10,12 @@ This page is the operator's guide to those files. The engineering rules about
 *how code reads* `config/` live in
 [standard/design/architecture.md](../design/architecture.md).
 
+On an installed hub `config/` is `/etc/neutrino/hub` on Linux,
+`/Library/Application Support/Neutrino/hub/config` on macOS and
+`C:\ProgramData\Neutrino\hub\config` on Windows, and the state root holding
+`generated/` and the working vault key is beside it on each system
+([../design/files.md](../design/files.md)).
+
 ## Real files vs. `.example.json`
 
 Every configurable file ships as `config/<module>/<name>.example.json`, which is
@@ -30,7 +36,7 @@ key ever reaches git history.
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds |
 | `config/devices/<id>/vscode.json` | none | yes: each VS Code instance's connection token, sealed under the vault's data key, beside its account, its port and the vault login a Windows machine starts it with |
 | `config/ai/providers.json` | `providers.example.json` | no — keys live in the vault |
-| `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes — the AI gateway's client keys and the hub's own key, sealed |
+| `config/cliproxyapi/cliproxyapi.json` | `cliproxyapi.example.json` | yes: the AI gateway's client keys, device keys and the hub's own key, sealed |
 | `config/netbird/netbird.json` | `netbird.example.json` | yes: the reusable setup key clients join the overlay with, sealed |
 | `config/easytier/easytier.json` | `easytier.example.json` | yes: the mode, the network secret and the console address with its token, both sealed |
 | `config/credentials/vault.json` | `vault.example.json` | yes — every sealed secret |
@@ -44,7 +50,9 @@ The EasyTier engine's start line is a systemd drop-in,
 0644. In console mode it names the console address with its token. systemd
 shows every unit's start line to any local user over D-Bus, as `ps` shows any
 process's arguments, so a local account on the hub can read that token; a
-stricter mode on the file hides nothing.
+stricter mode on the file hides nothing. On macOS and Windows no drop-in
+exists: the supervising service starts EasyTier with that line, and the
+process list shows it in the same way.
 
 ## Credentials
 
@@ -86,7 +94,8 @@ nothing sealed is re-encrypted.
 
 ## First-run flow
 
-1. `sudo nhub setup` (see [../../cli.md](../../../docs/cli.md)). It prompts for the
+1. `sudo nhub setup` (see [../../cli.md](../../../docs/cli.md)), or `nhub setup` in
+   an administrator PowerShell on Windows. It prompts for the
    panel password, copies each missing `<name>.json` from its `.example.json`,
    renders everything and starts the panel.
 2. Add the proxy nodes on the panel's Proxy page, which decodes `ss://` and

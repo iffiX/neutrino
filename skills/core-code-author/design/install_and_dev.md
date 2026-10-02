@@ -10,6 +10,9 @@ another's.
 | `nhub setup` | Asks what this machine is for, writes `config/`, renders, installs the units and starts the services | Installs a system package |
 | The panel | Installs what somebody chose, and configures it | Runs before a hub is set up |
 
+On macOS and Windows the package also registers the one service and leaves
+it stopped, and `nhub setup` starts it ("The macOS and Windows hub" below).
+
 ## The package installs everything the hub cannot run without
 
 `nftables`, `dnsmasq`, `iproute2`, NetworkManager, `fail2ban`, `iw`,
@@ -55,6 +58,74 @@ answers document `nhub setup --stdin` reads, and `wizard.from_document` is
 what says whether it can be used. A browser that posts one this refuses is
 told, and asked again.
 
+## The macOS and Windows hub
+
+The hub runs on macOS and Windows in `server` mode only. Its package, a
+`.pkg` or an `.msi`, depends on nothing the system lacks and carries:
+
+- `nhub`, the hub compiled by Nuitka into one binary with
+  `neutrino_hub/data/` inside it;
+- xray, cli-proxy-api, netbird, easytier-core and easytier-cli, each pinned
+  by version and sha256 for the system and the architecture, and on Windows
+  `wintun.dll` and the `packet.dll` stand-in beside them;
+- the geodata;
+- the agent's `.pkg` or `.msi` of the same architecture, in the agent cache.
+
+The installer registers the service and does not start it. The `.pkg`'s
+postinstall creates the directories, links `/usr/local/bin/nhub` and installs
+the plist without bootstrapping it; the `.msi` registers `neutrino_hub` with
+no start at install.
+
+`nhub setup` there does less than on Linux:
+
+| Step | Linux | macOS and Windows |
+| --- | --- | --- |
+| Checking what the hub needs | the system packages | the programs the package carries are present |
+| Guarding SSH with fail2ban | writes the jail | skipped |
+| Creating service users and directories | both | directories only, no account |
+| Installing units | writes them | skipped: the installer registered the one service |
+| Applying interface roles | by the mode | skipped |
+| The network mode | asks for one of three | `server`, with no question |
+| The hub's own traffic through the proxy | asked | not asked |
+| Starting services | each unit | the one service, at the end: `launchctl bootstrap` and `kickstart`, or `sc start` |
+| The local agent | from the cache by `AGENT_PACKAGE_FAMILY_OF_PLATFORM` | from the cache by `AGENT_PACKAGE_FAMILY_OF_OS`: `installer -pkg <file> -target /` or `msiexec /i <file> /qn /norestart`, then `nagent join <link> --yes` |
+
+`nhub start`, `nhub stop` and `nhub status` drive that one service. The
+machine's shares and VS Code come from its local agent, as on any device
+([agent.md](agent.md)).
+
+## One command installs a package
+
+`packaging/install/install.sh`, for macOS and Linux, and
+`packaging/install/install.ps1`, for Windows, are release assets, listed in
+`SHA256SUMS` with the packages and fetched from
+`https://github.com/iffiX/neutrino/releases/latest/download/`:
+
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
+```
+
+```powershell
+irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
+```
+
+| Input | Effect |
+| --- | --- |
+| `hub`, `agent` or `client` | the package to install; `hub` when none is given |
+| `NEUTRINO_VERSION` | the release to install, such as `v0.5.0`; the latest when unset |
+| `NEUTRINO_ASSET_DIR` | a directory holding `SHA256SUMS` and the packages; nothing is downloaded, which is how `packaging/ci/check.py` runs the scripts |
+
+A script reads the system and the architecture (`uname -s` and `uname -m`,
+`x86_64` naming `amd64`; on Linux `/etc/os-release` picks the deb, the rpm or
+the Arch package), fetches `SHA256SUMS` and the package into a temporary
+directory and checks the package against it. A mismatch, or a system and
+architecture no package is published for, stops the script with one
+sentence. It then installs with `sudo installer -pkg`, `sudo apt install ./`,
+`sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`,
+and for the hub runs `nhub setup`. `install.ps1` checks for an administrator
+first and exits with one sentence when it is not one.
+
 ## The panel installs what somebody chose
 
 Samba, Gitea, NetBird, podman and ZFS are capabilities, not parts of a
@@ -74,6 +145,14 @@ transient unit, `neutrino_hub_update`, because the package's maintainer script
 restarts the panel that would otherwise be running it. The unit holds a
 health gate and installs the previous version's package when the new one
 does not answer. [files.md](files.md) names what the directory keeps.
+
+On macOS and Windows the install runs as the agent's self-update does: a
+detached PowerShell started with `DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB`
+on Windows, a job given to `launchctl submit` on macOS. It installs the
+`.msi` or the `.pkg`, holds the same gate (the service running,
+`/api/hub/display` answering 200 on 127.0.0.1, `nhub --version` printing the
+target), installs the kept previous package when the gate fails, reinstalls
+the local agent, and writes each turn into `state.json`.
 
 ## Development runs from a checkout, against a root of its own
 
@@ -126,7 +205,9 @@ frontend's dev server beside them, with Vite proxying the API to the same port.
 The units on a real machine start the same command one process at a time —
 `nhub run --only-web`, `--only-xray`, `--only-cliproxyapi` — so systemd keeps
 deciding who each daemon runs as and what it may reach for, and a working copy
-still runs the same code path.
+still runs the same code path. The macOS and Windows services take the
+supervising path instead, `nhub run` with no `--only` on macOS and
+`nhub service run` on Windows ([architecture.md](architecture.md)).
 
 **Deleting `hub_dev_root/` undoes the hub, not the machine.** The
 configuration, the rendered files, the databases and the panel password go
@@ -186,8 +267,9 @@ can import `gi`.
 
 The hub's package carries the Linux agent builds it was made with, in
 `/var/lib/neutrino/agent_cache/`, which is what lets it enroll a Linux device
-and answer a Linux self-update with no network of its own. A platform it
-carries none for is fetched from the release its manifest names, and a
+and answer a Linux self-update with no network of its own. The macOS and
+Windows hub packages carry the agent package of their own system and
+architecture the same way. A platform it carries none for is fetched from the release its manifest names, and a
 platform with neither is refused by name rather than served another machine's
 build. Where those files live and what an upgrade does to them is in
 [files.md](files.md).

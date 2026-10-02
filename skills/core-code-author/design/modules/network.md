@@ -35,6 +35,10 @@ nobody in that description can cross.
 | `router` | the hub's | this box *is* the router | the network stack |
 
 Three, and `config/router/network.json` stores one of exactly these three.
+Linux runs all three. macOS and Windows run `server` alone: there the hub
+owns nothing, renders no nftables table, starts no dnsmasq and writes no
+route, and the mode list it offers holds `server` and nothing else
+([protocol.md](../protocol.md), `NetworkView`).
 Router mode is wired two ways and both are supported: the ordinary one, an
 uplink port and a served port; and the **one-arm router**, a single trunk
 port going out untagged and serving on a VLAN tag of the same wire. The
@@ -232,6 +236,32 @@ whatever the order of reloads, and the mark it sets is the one that stands.
 machine was already doing before the hub arrived, and a VPS that answers on
 nothing after an install is a VPS nobody can reach.
 
+### Outside Linux, the system firewall
+
+macOS and Windows have no exposure: the panel draws no exposure section,
+and every port the hub serves answers on every interface. The hub opens
+those ports in the system's own firewall at each routing pass:
+
+| System | How | What |
+| --- | --- | --- |
+| Windows | `New-NetFirewallRule`, one rule per purpose named `neutrino_hub_<purpose>`, changed when a port changes and removed on uninstall | the panel's HTTP and HTTPS ports, the agent port, every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports | `nhub`, `xray`, `netbird`, `easytier-core` |
+
+A routing pass there looks up no `xray` account, sets no sysctl, adds no
+`ip rule` and loads no nftables table. It still writes
+`generated/router_overlay_devices.json` and still runs the NetBird inbound
+gate, and `OverlayRouteGuard` reports no conflict.
+
+The network facts come from psutil: `device_addresses()` from
+`net_if_addrs()` and `net_if_stats()`, traffic counters from
+`net_io_counters(pernic=True)`, listening ports from `net_connections()`,
+memory from `virtual_memory()`. The default route is `route -n get default`
+on macOS and `Get-NetRoute` on Windows, and the machine id is
+`IOPlatformUUID` and the registry's `MachineGuid`. An overlay's device is
+still found by its address, `utunN` on macOS and the adapter's name on
+Windows. The traffic history and the LAN scan return nothing, and the panel
+draws them empty. Linux keeps its `ip -json` path.
+
 ## Two overlays at once
 
 NetBird and EasyTier each bring an address range, the routes their peers
@@ -272,6 +302,10 @@ takes, and runs seven steps in this order:
 | 5 | xray restarts only when its text changed or it is not running. |
 | 6 | Every online device is handed its state, whose share fence follows the new set. |
 | 7 | Every client is handed its state, whose join material and addresses follow the new set. |
+
+On macOS and Windows step 2 compares the start line the supervisor holds in
+place of the drop-in, step 3 is the routing pass of "Outside Linux, the
+system firewall", and step 4 does not exist.
 
 The engines turned off stop after step 7. A client reaching the hub through
 one of them is handed the state that no longer names it while its socket
@@ -319,7 +353,7 @@ another:
 | Traffic | server | side_gateway | router | Diverted by |
 | --- | --- | --- | --- | --- |
 | Machines whose traffic this box forwards | — | yes | yes | the prerouting chain, into the TPROXY inbound |
-| This box's own traffic | yes | yes | yes | the output chain, behind `is_local_proxy_enabled` |
+| This box's own traffic, on Linux only | yes | yes | yes | the output chain, behind `is_local_proxy_enabled` |
 | Applications pointed at a SOCKS port | yes | yes | yes | the port's own `is_proxied` answer |
 | The forwarded machines' DNS | — | yes | yes | dnsmasq's only upstream, the xray DNS inbound |
 
@@ -328,7 +362,11 @@ interface holds a role, so there is no network to divert. On such a box the
 proxy is its listeners — the SOCKS ports, plus the box's own traffic when
 asked — and reporting it as "diverting" or "direct" would answer a question
 the mode never poses. What the panel reports is therefore a *scope*: off,
-unused, ports only, the forwarded network, this box, or both.
+unused, ports only, the forwarded network, this box, or both. Every scope
+but the SOCKS ports diverts through the nftables prerouting chain, which
+exists only on Linux, so on macOS and Windows the proxy is its SOCKS ports
+alone and the other switches are refused with `proxy_scope_unsupported`
+([proxy.md](proxy.md)).
 
 There is no master switch above these: each scope is its own switch, and
 off is all of them off — the honest state for finding out whether the proxy

@@ -21,6 +21,17 @@ entirely by the rendered YAML. Two kinds of credential feed it:
   OAuth in 7.2.146; Google models arrive by API key, Vertex import, or the
   antigravity flow.
 
+## A key per device as well as per client
+
+A device whose CloudCLI module is enabled has a gateway key of its own.
+`config/cliproxyapi/cliproxyapi.json` keeps `device_keys` beside
+`client_keys`, sealed the same way, and the renderer writes both lists into
+the gateway's `api-keys`. `ensure_device_key`, beside `ensure_client_key` in
+`modules/clients/ai_keys.py`, mints a device's key when the device enables
+CloudCLI, and the key is revoked when the module is withdrawn. The device's
+state carries it to CloudCLI as `ANTHROPIC_AUTH_TOKEN`
+([../agent.md](../agent.md), "CloudCLI").
+
 ## How a request routes
 
 1. **The model name picks the upstream family.** A name only one family
@@ -114,6 +125,9 @@ forever, hours 48 h, minutes 90 min. `failed` counts upstream failures only:
 a request refused before reaching a provider (bad name, bad client key) is
 never queued. Token fields are the vendor's own accounting — `input_tokens`
 includes what the cache served, so a cache share is `cache_read / input`.
+
+Usage is counted per key id, so a device key is a row of its own in the AI
+page's usage table, beside each client's.
 
 The management key that unlocks the queue is machine-generated, sealed under
 the vault's data key beside the module's config, working copy in the state

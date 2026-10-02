@@ -2,7 +2,8 @@
 
 The client is one person's window onto the hubs they joined: a tray and a
 window on Linux, Windows and macOS (`client/desktop`), an app on Android
-(`client/android`) and on iOS (`client/ios`). This page fixes the layout of
+(`client/android`) and on iOS (`client/ios`, paused since 2026-10-03,
+[release.md](../agent_work_rule/release.md)). This page fixes the layout of
 every page and the behaviour of every button as one design, and the three
 implementations follow it line by line. A difference between two clients that
 this page does not name is a defect in one of them.
@@ -236,7 +237,7 @@ line. The controls:
 
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
-| **Open** | when the entry is not local-only | when the entry is healthy and the hub is not disabled | opens the URL in the system browser; no job |
+| **Open** | when the entry is not local-only | when the entry is healthy and the hub is not disabled | opens the URL in the system browser; no job. An entry with `is_token_required` takes job `ui.job.opening`: reads `{token}` on the `service` stream, then opens `<url>?tkn=<token>` at the entry's own address; a failure writes the code |
 | **Open locally** | when the entry is local-only | the same | job `ui.job.opening`: forwards the port to the loopback as a port entry does, reads the token on the `service` stream, opens the browser on the entry's loopback URL below; a failure writes the code |
 | **Configure** | when the entry is local-only | when the entry is not forwarded | the local port dialog of the Ports page |
 | **Disconnect** | when the entry is local-only and forwarded | always | ends the forward, as on the Ports page |
@@ -254,6 +255,13 @@ why the token must reach the browser and a forward that hides it cannot
 work. On macOS the host is `127.0.0.1`, since Safari resolves no
 `.localhost` name. A phone does the same through its app core: the forward
 listens on the phone's loopback, and the browser opens there.
+
+An entry with `is_token_required`, a CloudCLI instance, is not local-only:
+the browser opens `http://<device address>:<port>/?tkn=<token>` directly, with
+no forward and no **Configure**, on the desktop and on the phone alike, and
+**Open** is its one button. The agent's forwarder trades the token for
+CloudCLI's own login ([agent.md](agent.md), "CloudCLI"). A token is spent
+once and dies after 60 seconds, so every press reads a new one.
 
 ## The Ports page
 
@@ -461,6 +469,7 @@ else.
 | join | paste the link | scan the QR, or paste the link |
 | port entry | forward to the loopback | the same: a foreground service listens on `127.0.0.1:<local port>` and relays each connection to the entry's address over a plain socket, as the desktop does, and the forwarded row shows the loopback address with **Copy** |
 | local-only web entry | open through a forward | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
+| web entry with `is_token_required` | read the token, open the browser at the device's address | the same |
 | file entry | mount into the system | a location in the system's Files app |
 | AI entry | point the tools at the gateway, configure them | copy the address and the key, show a QR |
 | remote desktop | the viewer process | the viewer page |

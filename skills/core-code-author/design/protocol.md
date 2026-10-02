@@ -233,7 +233,9 @@ returns it is, and booleans are questions in all three, `is_` and `has_`
 
 Exposure is the only control plane for what the box serves.
 `exposed_interfaces` decides where the panel port, the agent port and every
-published service listen; no route switches a service on for one network.
+published service listen; no route switches a service on for one network. A
+hub on macOS or Windows has no exposure and answers on every interface
+([network.md](modules/network.md), "Outside Linux, the system firewall").
 
 An action that needs the agent online is rejected with 409 `agent_offline`
 while the machine is away. The path does not say which actions those are.
@@ -254,7 +256,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}` |
@@ -290,7 +292,7 @@ TLS port.
 | `/api/hub/credential` | The secrets the box keeps for somebody: SSH keys, logins and tokens |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | Browsing and moving files on a device through its agent |
-| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, each setting what it is to have and all but `zfs` and `vscode` importing what the machine already has |
+| `/api/agent/module` | The modules a device hosts through its agent: observed state, install, start, stop, uninstall; under it one block per module, `samba`, `gitea`, `podman`, `zfs`, `vscode`, `cloudcli`, each setting what it is to have and all but `zfs`, `vscode` and `cloudcli` importing what the machine already has |
 | `/api/agent/terminal` | The shell sessions every online machine holds, and ending one; the shells themselves are `/ws/agent/terminal` |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 | `/api/channel` | Agents and clients on the agent port: `join` and `leave`, and `/api/channel/socket` for everything else |
@@ -310,7 +312,7 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/setup/context` | | the box as the wizard finds it |
+| `GET /api/hub/setup/context` | | `SetupContext`, the box as the wizard finds it, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux |
 | `GET /api/hub/setup/state` | | each step and where it is; once done, `panel_url`, the `https://` address when the answers turned HTTPS on, with no port when it is 443, and `authority` then: `{url, file_name, fingerprint, der}`, `url` on the HTTP port and the DER in base64 so the last page downloads it while the panel starts |
 | `POST /api/hub/setup/link/create` | | a blank enrolment link for the box's own agent |
 | `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `listen_port`, `https_listen_port` and `is_https_enabled` among them | writes them and runs the steps |
@@ -341,7 +343,7 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/network` | | `NetworkView` |
+| `GET /api/hub/network` | | `NetworkView`, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux |
 | `POST /api/hub/network/set` | the page's own settings, `{uplink_policy, is_inter_lan_allowed, exposed_interfaces, exposed_overlays, static_leases}`; absent lists leave the exposure as it is | `NetworkView` |
 | `POST /api/hub/network/mode/set` | `{mode, ...}` | replaces the whole shape; `NetworkView` |
 | `POST /api/hub/network/interface/set` | `{name, ...}` | one interface's role and settings; `NetworkView` |
@@ -377,7 +379,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/proxy` | | the view, with `geodata: {geoip_version, geosite_version, source, latest?}` |
-| `POST /api/hub/proxy/set` | routing policy | |
+| `POST /api/hub/proxy/set` | routing policy | 400 `proxy_scope_unsupported` for `is_proxy_enabled`, `is_overlay_proxy_enabled` or `is_local_proxy_enabled` switched on outside Linux |
 | `POST /api/hub/proxy/apply` | | renders and applies xray |
 | `GET /api/hub/proxy/node` | | the exit nodes |
 | `POST /api/hub/proxy/node/add` | a share link or a node | |
@@ -400,7 +402,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | `GET /api/hub/ai/gateway` | | the gateway's settings |
 | `POST /api/hub/ai/gateway/set` | its settings | |
 | `POST /api/hub/ai/gateway/apply` | | renders and applies the gateway |
-| `GET /api/hub/ai/gateway/usage` | | what it metered |
+| `GET /api/hub/ai/gateway/usage` | | what it metered, per key id: the hub's, each client's and each device's |
 | `GET /api/hub/ai/gateway/journal` | | its journal |
 | `POST /api/hub/ai/gateway/key/add` | a key's name | |
 | `POST /api/hub/ai/gateway/key/remove` | `{key_id}` | |
@@ -503,7 +505,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `POST /api/hub/setting/password/set` | the old and the new password | |
 | `POST /api/hub/setting/backup` | | an archive of `config/` |
 | `POST /api/hub/setting/restore` | the archive | |
-| `GET /api/hub/setting/about` | | versions and the credited components |
+| `GET /api/hub/setting/about` | | `AboutView`: versions, the credited components, and `os` and `os_version`, the system the hub runs on and its version |
 | `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, the record of its last update, and the staging task while one runs |
 | `POST /api/hub/setting/release/scan` | | reads the newest release from GitHub; returns `HubReleaseScanView`: the release or none published, whether it is newer or a new major, whether a rollback package can be had, and the room the update needs and has; 409 `hub_not_packaged` from a checkout |
 | `POST /api/hub/setting/release/install` | `{version}`, the release confirmed | stages the package and hands the install to the `neutrino_hub_update` unit; returns `TaskStarted`, output on `/ws/hub/task`; 409 `release_not_latest` when the newest release is no longer the one named, `release_not_newer`, `release_major`, `disk_space_short`, `update_in_progress` |
@@ -533,6 +535,19 @@ and no seal and no login id. Each instance a running module serves is
 published as one `web` entry, `vscode_<device id>_<account>`, titled
 `VS Code (<account>)`, at `http://<device>:<port>/` with `is_local_only`.
 
+The CloudCLI block, `routers/agent/module_cloudcli.py`, is shaped like
+`module_vscode.py`: the instances are `{account, port}`, with a vault login
+per instance on a Windows machine, and the payload it validates is the one
+the agent receives. Each instance's CloudCLI password is generated by the
+hub and kept in its vault. Enabling the module on a device mints that
+device's gateway key, and withdrawing it revokes the key
+([modules/ai.md](modules/ai.md)). The state carries the instances with their
+passwords opened, each instance's token secret sealed, the login's password
+for a Windows machine, the gateway's address and the device's key. No token
+enters the state. Each instance a running module serves is
+published as one `web` entry with `is_local_only: false` and
+`is_token_required: true`.
+
 #### `/api/agent/terminal`
 
 | Route | Parameters | Does |
@@ -553,7 +568,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's units' journal on the device; empty for a module that runs as no unit |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs` and `vscode` alike; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs`, `vscode` and `cloudcli` alike; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
 | `POST /api/agent/module/samba/import` | `{device_id}` | the machine's shares and users become the hub's configuration |
@@ -567,6 +582,8 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/gitea/admin/password/set` | `{device_id, username, password}` | |
 | `GET /api/agent/module/vscode` | `?device_id=` | `VscodeDeviceView`: the instances, each `{account, port, login_id, is_running, code}` with `is_running` and `code` as last reported, and the `accounts` the machine reported |
 | `POST /api/agent/module/vscode/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535 | replaces the instances, generating each account's connection token the first time; 400 `account_duplicate {account}`, `port_duplicate {port}`, `unknown_credential {field}` for a login the vault does not hold, `credential_missing {account}` for an instance of a Windows machine with no login; the agent's own refusals as 400 |
+| `GET /api/agent/module/cloudcli` | `?device_id=` | the instances as `GET /api/agent/module/vscode` gives them, and the `accounts` the machine reported |
+| `POST /api/agent/module/cloudcli/set` | `{device_id, instances: [{account, port, login_id}]}`, `port` 1024 to 65535, `login_id` for a Windows machine | replaces the instances, generating each instance's password the first time; the refusals of `vscode/set` |
 | `GET /api/agent/module/podman` | `?device_id=` | |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, ...}` | |
@@ -610,7 +627,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_netbird.py` and `overlay_easytier.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py` and `module_vscode.py`, `terminal.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_samba.py`, `module_gitea.py`, `module_podman.py`, `module_zfs.py`, `module_vscode.py` and `module_cloudcli.py`, `terminal.py` |
 | `web/routers/` | `channel.py`, on the agent port's app |
 | `web/` | `ws.py`, both socket groups |
 
@@ -1011,6 +1028,14 @@ naming the `account` or the `port`; `account_unknown {account}` for an
 account a Linux machine or a Mac does not have; and `credential_invalid
 {account}` when Windows refuses the login.
 
+The `cloudcli` module runs CloudCLI once per account
+([agent.md](agent.md), "CloudCLI"). Its recipe names the Node.js archive
+`data/manifests/cloudcli.json` pins for the platform, which the agent opens
+`package {module: cloudcli}` for. An install that fails reports the step:
+`cloudcli_node_download_failed`, `cloudcli_npm_install_failed` or
+`cloudcli_native_module_failed`; an instance whose account has no `claude`
+reports `cloudcli_claude_missing {account}`.
+
 Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the Modules page shows it
@@ -1023,7 +1048,7 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_local_only}`, `is_local_only` present and true only on a VS Code instance | a device's Gitea module reports a URL, a device's VS Code module runs an instance, or an `http` record is declared |
+| `web` | `{url, is_local_only, is_token_required}`, `is_local_only` present and true only on a VS Code instance, `is_token_required` present and true only on a CloudCLI instance, an added field that keeps `PROTOCOL` | a device's Gitea module reports a URL, a device's VS Code or CloudCLI module runs an instance, or an `http` record is declared |
 | `port` | `{host, port}` | a device's Podman container publishes a host port, or a `generic_tcp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
@@ -1048,6 +1073,7 @@ its own language:
 | `gitea_module` | `{host}` |
 | `samba_module` | `{host}` |
 | `vscode_module` | `{host, account}` |
+| `cloudcli_module` | `{host, account}` |
 
 A declared record whose person wrote a line of their own gets that line and an
 empty `description_code`, because those are already their words.
@@ -1143,6 +1169,7 @@ first that fails gives the close its code:
 | `rdp` | `{host, port, password}`: where the desktop answers, and the seat password of the machine sharing it |
 | `ai` | `{base_url, api_key, model}`: the gateway on the address this client reaches it at, this client's own key, and the first model the gateway serves |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token. The client forwards the entry's port to its own `127.0.0.1` and opens `http://127.0.0.1:<port>/?tkn=<token>` there, never the entry's address |
+| `web` with `description_code` `cloudcli_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own ([agent.md](agent.md), "CloudCLI"); it works once. The client opens `http://<device address>:<port>/?tkn=<token>` at the entry's own address, with no forward |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
 
 ### The rules the details settle

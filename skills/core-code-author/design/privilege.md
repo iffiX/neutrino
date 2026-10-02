@@ -121,6 +121,27 @@ Use `runuser -u <account> -- <command>`, as `modules/gitea/ops.py` does. A
 `sudo` appearing anywhere in the hub's own code is a bug; `sudo` in
 `modules/devices/` is different — that runs on a managed device, not here.
 
+## On macOS and Windows
+
+The hub runs as the root LaunchDaemon `com.neutrino.hub` on macOS and as the
+SYSTEM service `neutrino_hub` on Windows, as the agent does. Everything above
+about the unit is Linux's:
+
+- No unit narrows the process and no sandbox exists, so `system/sandbox.py`
+  runs its command directly.
+- Nothing steps down. `runuser` is Linux's, and the hub runs nothing as
+  another account there.
+- xray runs as a child of the supervising service
+  ([architecture.md](architecture.md)), with no `xray` account and no
+  capabilities.
+- The elevation check is `is_elevated()` of the hub's platform layer: euid 0
+  on Linux and macOS, `IsUserAnAdmin` on Windows. No code calls
+  `os.geteuid` itself.
+- A secret file is protected by the ACL or the mode of its directory
+  ([files.md](files.md), "One Neutrino tree on macOS and Windows").
+
+`sudo` stays out of the hub's code there too.
+
 ## The panel never stores this machine's sudo password
 
 It does not need one: it is root already. The sudo passwords the panel does
@@ -152,6 +173,9 @@ as it sends Gitea's secrets. The agent keeps its copy of that state in its
 data directory, which only SYSTEM and the administrators can open, and
 passes the password to PowerShell on standard input to register the task.
 Windows keeps the password with the task from then on.
+
+CloudCLI runs the same way, as the account it serves and never as root
+([agent.md](agent.md), "CloudCLI").
 
 ## Where privilege is allowed to live
 

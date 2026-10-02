@@ -15,15 +15,17 @@ new floor is written down.
 | Package | glibc | What sets it | Oldest system |
 | --- | --- | --- | --- |
 | hub `.deb`, `.rpm` | 2.34 | the cryptography and bcrypt extensions in the environment the package installs (`hub/packaging/venv_tree.py:80`) | Debian 12, Ubuntu 22.04, RHEL 9 |
+| hub `.msi` | none | the agent `.msi` it carries and installs on its own machine at setup | Windows 10 1809 |
+| hub `.pkg` | none | the agent `.pkg` it carries and installs on its own machine at setup | macOS 12.3, arm64 and amd64 |
 | agent `.deb`, `.rpm` | 2.27 | the RustDesk host binary (`agent/packaging/constants.py:8`) | Debian 12, Ubuntu 22.04, RHEL 9 |
 | agent `.msi` | none | the pseudo console the shell stream runs PowerShell on (`agent/neutrino_agent/streams/windows_shell.py:76`) | Windows 10 1809 |
-| agent `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
+| agent `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3, arm64 and amd64 |
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build/build_client_desktop.py:40`) | Debian 12, Ubuntu 22.04 |
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build/build_client_desktop.py:50`) | RHEL 9, AlmaLinux 9 |
-| client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3 on Apple silicon |
+| client `.pkg` | none | the RustDesk app, built for macOS 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 12.3, arm64 and amd64 |
 | client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`packaging/build/build_client_windows.py:41`, `packaging/build/build_client_windows.py:90`) | Windows 10 1809 |
 | client `.apk` | none | `openProxyFileDescriptor`, which the Files provider serves a share's file through, from API level 26 (`minSdk` in `client/android/`) | Android 8.0 |
-| client iOS app | none | `NSFileProviderReplicatedExtension`, the File Provider extension's base class, from iOS 16 (the deployment target in `client/ios/`) | iOS 16 |
+| client iOS app, paused | none | `NSFileProviderReplicatedExtension`, the File Provider extension's base class, from iOS 16 (the deployment target in `client/ios/`) | iOS 16 |
 
 Ubuntu 22.04 has glibc 2.35, above all four Linux floors, and the hub's `.deb`
 reaches it because the DHCP client is named `dhcpcd-base | dhcpcd5`
@@ -39,6 +41,11 @@ The client's `.rpm` reaches RHEL 9 and AlmaLinux 9 because either WebKit2 ABI
 satisfies it, and RHEL 9 has 4.0 (`client/desktop/packaging/build_rpm.py:54`).
 The introspection library on RHEL 9 is older than the bindings need, so the
 package installs its own (`client/desktop/packaging/payload.py:127`).
+
+The amd64 macOS packages are built on GitHub's `macos-15-intel` runner.
+GitHub provides its Intel macOS runners until autumn 2027, and macOS Tahoe 26
+is the last macOS for Intel Macs; whether the amd64 packages continue is
+decided then.
 
 The two phone rows are the floor each app's build declares: `minSdk 26` in
 the Gradle project and a deployment target of 16.0 in the Xcode project. The
@@ -77,6 +84,7 @@ releases a supported family provides.
 | Windows PowerShell | 5.1, with the SmbShare, NetSecurity and LocalAccounts modules, all in Windows 10 1607 | the file share on Windows | `agent/neutrino_agent/modules/samba/windows_applier.py` |
 | `sharing`, `sysadminctl`, `pwpolicy`, `dscl`, `pfctl` | macOS 12 | the file share on macOS | `agent/neutrino_agent/modules/samba/darwin_applier.py` |
 | glibc | 2.28 | the VS Code server that Microsoft's CLI downloads for `serve-web`; below it the module reads as one the machine cannot run | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/vscode.json` |
+| glibc | 2.28, VS Code's `min_version` | the Node.js build CloudCLI runs on | `min_version` of the Linux entries in `hub/neutrino_hub/data/manifests/cloudcli.json` |
 
 ## What the client's window loads
 
@@ -106,7 +114,8 @@ and leaves the RHEL-family names to the spec file.
 
 The hub and the agent compile nothing in their containers. The hub installs
 wheels and an interpreter build, the agent copies upstream binaries, and the
-floor of each is the highest version those files name.
+floor of each is the highest version those files name. The hub's `.msi` and
+`.pkg` are compiled by Nuitka on the runner, as the agent's are.
 
 ## How the floor is kept
 

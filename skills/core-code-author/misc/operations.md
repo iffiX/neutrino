@@ -148,6 +148,25 @@ which of the three it did.
 | An update of the hub itself | `journalctl -u neutrino_hub_update`, and `/var/lib/neutrino/hub_update/update.log` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
 
+## A hub on macOS or Windows
+
+The hub there is one service in `server` mode, and the checks above that read
+nftables, `ip rule` or dnsmasq are Linux's.
+
+| | macOS | Windows |
+| --- | --- | --- |
+| The service | the LaunchDaemon `com.neutrino.hub`: `sudo launchctl print system/com.neutrino.hub` | `neutrino_hub`: `sc query neutrino_hub` |
+| Start and stop | `sudo nhub start`, `sudo nhub stop` | `nhub start`, `nhub stop` in an administrator PowerShell |
+| Logs | `/Library/Logs/Neutrino/hub/<name>.log` | `C:\ProgramData\Neutrino\hub\log\<name>.log` |
+| The firewall | `/usr/libexec/ApplicationFirewall/socketfilterfw --listapps` | `Get-NetFirewallRule -Name 'neutrino_hub_*'` |
+
+`nhub start` and `nhub stop` drive the one service, and with it every daemon
+it supervises. Each supervised daemon writes a log file named after it,
+`netbird.log` for NetBird, and `nhub` and the panel read the tail of that
+file where Linux runs `journalctl -u`. An update
+records its turns in `state.json` under the state root's `hub_update/`, as on
+Linux.
+
 ## Checking the panel's HTTPS
 
 The HTTPS port, `https_listen_port` (443 by default), serves the panel's

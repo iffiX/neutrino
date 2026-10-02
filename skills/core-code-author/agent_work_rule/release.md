@@ -10,8 +10,8 @@ commit and when is in [commit.md](commit.md).
 
 ## One tag, every package, compatibility by protocol number
 
-One tag builds the hub, the agent, the desktop client and the two phone apps
-at one version. Whether an agent or a client works with a hub is decided by `PROTOCOL`, the number each
+One tag builds the hub, the agent, the desktop client and the Android app at
+one version; the iOS app is paused ("iOS app" below). Whether an agent or a client works with a hub is decided by `PROTOCOL`, the number each
 package speaks; the hub accepts every number from `PROTOCOL_MIN` to its own
 ([../design/protocol.md](../design/protocol.md), "Versioning"). A peer outside
 that range is rejected at the door with `protocol_too_old` or
@@ -90,17 +90,22 @@ platform in words, not only in the filename.
 | Debian, Ubuntu, Raspberry Pi OS | `.deb` | `.deb` | `.deb` |
 | Fedora, RHEL, AlmaLinux, Rocky | `.rpm` | `.rpm` | `.rpm` |
 | Arch, EndeavourOS, Manjaro | `.pkg.tar.zst` | none | none |
-| Windows 10 and 11 | none | `.msi` | `.msi` |
-| macOS on Apple silicon | none | `.pkg` | `.pkg` |
+| Windows 10 and 11 | `.msi`, `server` mode | `.msi` | `.msi` |
+| macOS on Apple silicon and on Intel | `.pkg`, `server` mode | `.pkg` | `.pkg` |
 | Android 8 or newer | none | none | `.apk` |
-| iOS 16 or newer | none | none | TestFlight or the App Store; `.ipa` for TrollStore |
+| iOS | none | none | paused since 2026-10-03 |
+
+`install.sh` and `install.ps1` ride with the packages and install any of the
+three by one command ([../design/install_and_dev.md](../design/install_and_dev.md)).
 
 ### Hub
 
 The hub runs on Debian, Fedora and Arch family Linux. Each package carries its
 own Python environment and touches nothing the system installed; everything
 else it needs is named in the package's dependencies, so installing the file
-installs the appliance's prerequisites with it.
+installs the appliance's prerequisites with it. On macOS and Windows the hub
+runs in `server` mode, and its package carries the hub compiled by Nuitka
+with every program it drives.
 
 There is no 32-bit ARM package. The boards that would need one have no
 prebuilt wheels for the hub's dependencies, so the environment would have to
@@ -114,6 +119,13 @@ ARM is another project.
 | `neutrino-hub-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-hub-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-hub-<version>-1-x86_64.pkg.tar.zst` | Arch, EndeavourOS, Manjaro |
+| `neutrino-hub-<version>-windows-amd64.msi` | Windows 10 1809 or newer, x86-64 |
+| `neutrino-hub-<version>-macos-arm64.pkg` | macOS 12.3 or newer on Apple silicon |
+| `neutrino-hub-<version>-macos-amd64.pkg` | macOS 12.3 or newer on Intel |
+
+```bash
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
+```
 
 ```bash
 sudo apt install ./neutrino-hub_<version>_amd64.deb      # Debian family
@@ -150,6 +162,7 @@ run the terminal and the shared desktop.
 | `neutrino-agent-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-agent-<version>-windows-amd64.msi` | Windows 10 1809 or newer, x86-64 |
 | `neutrino-agent-<version>-macos-arm64.pkg` | macOS 12.3 or newer on Apple silicon |
+| `neutrino-agent-<version>-macos-amd64.pkg` | macOS 12.3 or newer on Intel |
 
 32-bit ARM is not published, because no interpreter build is. Windows is
 x86-64 only, because RustDesk publishes no Windows ARM64 build.
@@ -179,11 +192,14 @@ window and the tray.
 | `neutrino-client-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-client-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-client-<version>-windows-amd64.msi` | Windows 10 or newer, x86-64 |
-| `neutrino-client-<version>-macos-arm64.pkg` | macOS on Apple silicon |
+| `neutrino-client-<version>-macos-arm64.pkg` | macOS 12.3 or newer on Apple silicon |
+| `neutrino-client-<version>-macos-amd64.pkg` | macOS 12.3 or newer on Intel |
 
 Windows is x86-64 only: cc-switch publishes no Windows ARM64 build, so there
-is nothing to carry for that machine. macOS is Apple silicon only, which is
-what the build runner is.
+is nothing to carry for that machine. Every macOS package is published for
+both architectures, `arm64` built on GitHub's `macos-15` runner and `amd64`
+on `macos-15-intel`; how long the Intel one lasts is in
+[../design/min_support.md](../design/min_support.md).
 
 ```bash
 sudo apt install ./neutrino-client_<version>_amd64.deb
@@ -209,17 +225,20 @@ The person installs the `.apk` on the phone, then scans the QR code on the
 
 ### iOS app
 
-The iOS app is the client on an iPhone, with the same cores and the same
-licence, by `client/ios/LICENSE`. It is distributed through TestFlight and the
-App Store outside mainland China. The release page carries one file beside
-them:
+The iOS app is paused since 2026-10-03: `client/ios/` is neither built nor
+released, and keeps its `LICENSE`. It is weighed again when the repository
+passes 300 stars, when several issues ask for an iOS app, or when somebody
+submits iOS code.
+
+### Install scripts
 
 | File | For |
 | --- | --- |
-| `neutrino-client-<version>-ios.ipa` | iOS 16 or newer, installed with TrollStore |
+| `install.sh` | macOS and Linux: `curl -fsSL <url> \| sh -s -- hub\|agent\|client` |
+| `install.ps1` | Windows: `irm <url> \| iex` in an administrator PowerShell |
 
-Until the project has an Apple developer account, the workflow builds the
-`.ipa` unsigned and uploads nothing to TestFlight.
+Both are fetched from `https://github.com/iffiX/neutrino/releases/latest/download/`
+and check every package against `SHA256SUMS`.
 
 ### Source archive
 
@@ -233,7 +252,8 @@ carry the tree alone.
 
 ## Every asset carries a checksum
 
-`SHA256SUMS` is attached alongside the packages and covers every one of them.
+`SHA256SUMS` is attached alongside the packages and covers every one of them,
+and the two install scripts.
 The hub verifies it before installing an agent on a device, so a truncated or
 tampered download fails loudly rather than half-installing.
 
@@ -250,9 +270,11 @@ sentence when a tool it needs is missing.
 | `build_agent.py` | the agent's `.deb` and `.rpm` | Linux with podman or docker |
 | `build_client_desktop.py` | the client's `.deb` and `.rpm` | Linux of the target architecture, with podman or docker |
 | `build_agent_windows.py`, `build_client_windows.py` | the two `.msi` | Windows with Python 3.13 and WiX 6 |
-| `build_agent_macos.py`, `build_client_macos.py` | the two `.pkg` | macOS on Apple silicon with Python 3.13 |
+| `build_agent_macos.py`, `build_client_macos.py` | the two `.pkg` | macOS with Python 3.13, of the architecture it builds |
+| `build_hub_windows.py` | the hub's `.msi`, compiled by Nuitka, with the programs it drives and the agent's `.msi` in its cache | Windows with Python 3.13 and WiX 6 |
+| `build_hub_macos.py` | the hub's `.pkg`, the same way | macOS with Python 3.13, of the architecture it builds |
 | `build_client_android.py` | the `.apk`, with its cores | Linux or macOS with JDK 17 and the Android SDK |
-| `build_client_ios.py` | nothing yet: it prints the `xcodebuild` steps | macOS with Xcode |
+| `build_client_ios.py` | nothing: it prints the `xcodebuild` steps; paused with the app | macOS with Xcode |
 | `build_core_netbird.py`, `build_core_easytier.py`, `build_core_rustdesk.py` | one core the phones carry | Linux |
 | `build_sources.py`, `build_checksums.py` | the source archive, `SHA256SUMS` over a directory | anywhere |
 
@@ -262,6 +284,10 @@ python3 packaging/build/build_hub.py --architecture amd64 --output-dir dist/ \
     --agent-packages dist/
 python3 packaging/build/build_checksums.py --output-dir dist/
 ```
+
+Every asset name comes from `PACKAGING_ASSET_PATTERNS` in
+`packaging/shared/constants.py`, whose `msi` and `macos_pkg` keys name the
+Windows and macOS packages; the `pkg` key stays Arch's.
 
 `--families` chooses the distribution families of the Linux builds; the agent
 and the client have no Arch package and say so rather than failing.
@@ -330,9 +356,9 @@ git push origin v0.4.0
 
 `.github/workflows/release.yml` builds the hub and the agent for both
 architectures in containers, the client's Linux packages on native runners of
-each architecture, the Windows installer, the macOS installer, the apk and the
-source archive, generates `SHA256SUMS` over all of it, and opens a draft
-release. Each job runs one `packaging/build/` script and then
+each architecture, the Windows installers, the macOS installers for both
+architectures, the apk and the source archive, generates `SHA256SUMS` over all
+of it and the two install scripts, and opens a draft release. Each job runs one `packaging/build/` script and then
 `packaging/ci/check.py` on what it built, so a broken package fails the build
 rather than the person who downloads it: every Linux package is installed in
 a fresh container of its family and its command answers `--version`; the
@@ -341,7 +367,9 @@ uninstalls again, and its macOS job installs the `.pkg` and runs `nclient`
 from it; the agent's Windows job installs its `.msi`, checks that
 `neutrino_agent` and `RustDesk` run, and uninstalls again, and its macOS job
 installs the `.pkg`, checks the LaunchDaemon runs, and removes it; the apk is
-installed and launched once in an emulator. The hub jobs wait for the agent's.
+installed and launched once in an emulator; the hub's macOS and Windows jobs
+set a hub up from the package and from the install script
+([../design/tests.md](../design/tests.md)). The hub jobs wait for the agent's.
 Fill in the changelog, check the section headings still match what shipped,
 and publish.
 

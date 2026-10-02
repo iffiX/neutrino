@@ -12,12 +12,24 @@ A scope is one source of traffic and one switch in `config/xray/routing.json`.
 Each stands alone; every one needs an enabled exit node, and with none enabled
 the panel writes all of them off.
 
-| Scope | Switch | What reaches xray | How |
-| --- | --- | --- | --- |
-| served networks | `is_proxy_enabled` | every TCP and UDP connection forwarded from a LAN interface to a public address | `prerouting` TPROXY on the LAN interfaces |
-| overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed interface of any running overlay | every running overlay's exposed interfaces join the TPROXY set, NetBird's and EasyTier's alike when both run |
-| the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray | `output` marks the packet, it hairpins through `lo`, TPROXY takes it |
-| SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port |
+| Scope | Switch | What reaches xray | How | Systems |
+| --- | --- | --- | --- | --- |
+| served networks | `is_proxy_enabled` | every TCP and UDP connection forwarded from a LAN interface to a public address | `prerouting` TPROXY on the LAN interfaces | Linux, router and side_gateway |
+| overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed interface of any running overlay | every running overlay's exposed interfaces join the TPROXY set, NetBird's and EasyTier's alike when both run | Linux, router and side_gateway |
+| the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray | `output` marks the packet, it hairpins through `lo`, TPROXY takes it | Linux |
+| SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port | every system |
+
+Outside Linux only the SOCKS scope exists. `is_proxy_enabled`,
+`is_overlay_proxy_enabled` and `is_local_proxy_enabled` switched on there are
+refused with `proxy_scope_unsupported`, and the panel draws all three
+switches greyed.
+
+On macOS and Windows the rendered xray configuration has no `tproxy_in`
+inbound and no `sockopt.mark` on any outbound, and xray runs as a child of
+the supervising service ([../architecture.md](../architecture.md)). The SOCKS
+ports, `socks_probe_in`, `api_in`, the balancer, the geodata and the exit
+measurement are the same on every system. Setup does not ask for the hub's
+own switch there.
 
 The overlay interface of EasyTier in console mode is the one holding the
 console network's address, found at run time;
@@ -132,6 +144,10 @@ that goes through an exit waits on its own answer. They take no switch into
 account. Every other lookup follows the scope its traffic is in, which is
 what the hub scope's description promises: with it on, the box's own names
 resolve at the exit.
+
+On macOS and Windows no dnsmasq runs and no socket is marked: the hub's own
+names resolve with the system's resolver, and the measurements leave like
+any other connection of the machine.
 
 An overlay member's names are its own resolver's: dnsmasq serves the served
 networks only, and the member's query to a public resolver is diverted like

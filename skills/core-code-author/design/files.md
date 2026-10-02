@@ -15,6 +15,19 @@ answers rather than to add a directory.
 | `/var/log/neutrino/` | The setup log | What happened during setup? |
 | `/run/neutrino/` | The login lockout | What is true only until the next boot? |
 
+Those are the Linux paths. The hub on macOS and Windows answers the same five
+questions at its own paths, and `_rooted()` in `utils/constants.py` reads
+them from one table per system. `NEUTRINO_DEV_ROOT` and `NEUTRINO_CONFIG_DIR`
+override them on every system.
+
+| Question | Linux | macOS | Windows |
+| --- | --- | --- | --- |
+| What did the hub's package put here? | `/opt/neutrino` | `/Library/Application Support/Neutrino/hub/app` | `C:\Program Files\Neutrino\hub` |
+| What has somebody decided? | `/etc/neutrino/hub` | `/Library/Application Support/Neutrino/hub/config` | `C:\ProgramData\Neutrino\hub\config` |
+| What has this machine accumulated? | `/var/lib/neutrino` | `/Library/Application Support/Neutrino/hub/state` | `C:\ProgramData\Neutrino\hub\state` |
+| What happened? | `/var/log/neutrino` | `/Library/Logs/Neutrino/hub` | `C:\ProgramData\Neutrino\hub\log` |
+| What is true only until the next boot? | `/run/neutrino` | `/var/run/neutrino_hub` | named pipes and `C:\ProgramData\Neutrino\hub\run` |
+
 The agent is a second package, and a machine may carry both, so it answers
 the first question from `/opt/neutrino_agent/` — its own interpreter and the
 bindings its window draws through. Not a directory under the hub's: removing
@@ -26,7 +39,40 @@ and are where they are because nothing else works: `/usr/bin/nhub` and
 `/usr/bin/nagent` because a command has to be on the path,
 `/lib/systemd/system/` because systemd reads units from there and nowhere
 else, and `/usr/share/doc/neutrino-hub/licenses/` because that is where a
-package's licences are looked for.
+package's licences are looked for. On macOS the command is the link
+`/usr/local/bin/nhub`, and on Windows the installer puts the program
+directory on `PATH`.
+
+## One Neutrino tree on macOS and Windows
+
+The hub, the agent and the client each take one directory of one tree:
+
+| | Windows | macOS |
+| --- | --- | --- |
+| Programs | `C:\Program Files\Neutrino\{hub,agent,client}` | `/Library/Application Support/Neutrino/{hub,agent,client}` |
+| Data | `C:\ProgramData\Neutrino\{hub,agent,client}` | the same directories |
+| Logs | inside each data directory | `/Library/Logs/Neutrino/{hub,agent,client}` |
+
+`/Applications/Neutrino Client.app` stays where it is. No other directory
+name joins Neutrino and a package name with a space.
+
+An upgrade from the older layout keeps everything. The installer replaces
+the program directory, the `.msi` by its major upgrade. The first start of
+the new version moves an old data directory whole into its new place and
+deletes the old one, the agent and the client each their own, and the
+`.pkg`'s postinstall does the same. Bindings, the local port table and
+EasyTier's state survive; pipe names and service names do not change. The old
+directories are `C:\Program Files\Neutrino Agent`,
+`C:\Program Files\Neutrino Client`, `C:\ProgramData\Neutrino Client` and
+`/Library/Application Support/Neutrino Client`.
+
+**A secret is protected by its directory there.** Mode 0600 means nothing on
+Windows, so the `.msi` creates `C:\ProgramData\Neutrino\hub` with the
+descriptor `D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`, SYSTEM and the
+administrators alone, as the agent's does, and the working vault key, the TLS
+private keys and the session secret inherit it. On macOS the postinstall
+creates `config` and `state` owned by root:wheel with mode 0700, and the
+`chmod 0600` on each secret holds as on Linux.
 
 ## What each operation leaves behind
 
@@ -165,6 +211,13 @@ it by its own configuration. xray's access log is switched off in the rendered
 config, its error log takes the console, and dnsmasq takes the console with
 `log-facility=-`. The panel's DNS page reads dnsmasq's journal with
 `journalctl --after-cursor`.
+
+On macOS and Windows no journal exists. The log root holds one file per
+child of the supervising service, `<name>.log`, which takes the child's
+standard output and error and is rotated by size, and `nhub` and the panel
+read the tail of that file where Linux reads the unit's journal
+([architecture.md](architecture.md)). dnsmasq does not run there, so there is
+no DNS log.
 
 ## /run/neutrino — what is true until the next boot
 
