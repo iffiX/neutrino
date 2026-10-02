@@ -69,7 +69,7 @@ The **Dashboard** opens. The sidebar has two groups, **Hub** and **Agent**.
    ```
 
 1. In the panel, under **Hub**, open **Devices**.
-1. Select **Add by link**. A notice shows a link that works for five minutes.
+1. Select **Add by link**. A notice shows a link that works for thirty minutes.
 1. Select **Copy**.
 1. On `studio`, run the following command, with `<enroll-link>` replaced by the copied link:
 
@@ -89,7 +89,7 @@ The **Dashboard** opens. The sidebar has two groups, **Hub** and **Agent**.
 
 1. In the panel, open **Clients** and select **New client link**.
 1. Type `laptop` as the name and select **Create link**.
-1. Select **Copy**. The link works for five minutes.
+1. Select **Copy**. The link works for thirty minutes.
 1. On `laptop`, run `nclient gui` as yourself, without `sudo`. The **Neutrino client** window opens on **Hubs**.
 1. Under **Join a hub**, paste the link into the field and select **Join**.
 

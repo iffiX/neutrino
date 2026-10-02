@@ -102,7 +102,7 @@ AUTH_PASSWORD = "password"  # scan: allow
 ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and paste it, short enough that a
 # forgotten link is not a standing invitation.
-ENROLLMENT_TTL_S = 5 * 60
+ENROLLMENT_TTL_S = 30 * 60
 
 
 @router.get("", response_model=DeviceListView)

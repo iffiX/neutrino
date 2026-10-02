@@ -56,7 +56,7 @@ macOS 上，安装程序把 **Neutrino Client** 放进 `/Applications`，把 `nc
 
 ## 加入 hub
 
-开始之前，先在 hub 的面板里建一条客户端链接：打开 **客户端**（Clients），选 **新建客户端链接**（New client link），填这台电脑的名字，再选 **创建链接**（Create link）。链接五分钟内有效，只能加入一台电脑。这台电脑能用哪些服务，在[客户端](../hub/clients.md)页上设置。
+开始之前，先在 hub 的面板里建一条客户端链接：打开 **客户端**（Clients），选 **新建客户端链接**（New client link），填这台电脑的名字，再选 **创建链接**（Create link）。链接三十分钟内有效，只能加入一台电脑。这台电脑能用哪些服务，在[客户端](../hub/clients.md)页上设置。
 
 加入的步骤：
 

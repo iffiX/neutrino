@@ -14,7 +14,7 @@ A client is the program on one person's computer or phone that uses what the hub
 
 ![The new client link with its Copy button and its QR code](/guide/en/clients_link_qr.webp)
 
-The link works for five minutes and is used once. On a phone, the person scans the QR code with the app. On a computer, the person pastes the link into the client window, or runs `nclient join` with it in a terminal. Installing and joining are on [Desktop client](../client/desktop.md) and [Android app](../client/android.md).
+The link works for thirty minutes and is used once. On a phone, the person scans the QR code with the app. On a computer, the person pastes the link into the client window, or runs `nclient join` with it in a terminal. Installing and joining are on [Desktop client](../client/desktop.md) and [Android app](../client/android.md).
 
 A computer that joins again returns to the row it already had, under the name in the new link. The page badge reads how many clients are online, as **2 of 3 online**.
 

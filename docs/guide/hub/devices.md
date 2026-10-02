@@ -29,7 +29,7 @@ Every enrollment needs the following:
 - You have root on it, or an administrator's account on Windows.
 - It reaches the hub's agent port, 8443 by default.
 
-An enrollment link is a `neutrino://enroll/` link that works for five minutes. **Add by link** at the top of the page makes one, and **Get link** in an unmanaged machine's drawer makes one for that row. A new link replaces the previous one.
+An enrollment link is a `neutrino://enroll/` link that works for thirty minutes. **Add by link** at the top of the page makes one, and **Get link** in an unmanaged machine's drawer makes one for that row. A new link replaces the previous one.
 
 ![The enrollment link with its Copy button](/guide/en/devices_enroll_link.webp)
 
@@ -60,7 +60,7 @@ Download the agent package for the machine from the [releases page](https://gith
 
 Within seconds the machine appears under **Managed devices**. On ARM64 the files end in `_arm64.deb` and `.aarch64.rpm`. `apt` and `dnf` install the dependencies with the package, and `dpkg -i` or `rpm -i` install none of them.
 
-`nagent join` with no link prompts for one. `--yes` replaces a binding the machine already has. The hub rejects a link that is spent, unknown or older than five minutes with `ticket_spent`.
+`nagent join` with no link prompts for one. `--yes` replaces a binding the machine already has. The hub rejects a link that is spent, unknown or older than thirty minutes with `ticket_spent`.
 
 ## Install the agent over SSH
 

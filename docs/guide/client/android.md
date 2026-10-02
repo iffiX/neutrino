@@ -39,7 +39,7 @@ If the digest differs, delete the apk. The release workflow checks the same dige
 
 ## Join a hub
 
-Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for the phone, and select **Create link**. The notice shows the link with **Copy** and a QR code of the same link beside them. The link works for five minutes.
+Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for the phone, and select **Create link**. The notice shows the link with **Copy** and a QR code of the same link beside them. The link works for thirty minutes.
 
 To join:
 

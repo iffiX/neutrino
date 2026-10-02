@@ -29,7 +29,7 @@ hub 发现的每台机器都列在**设备**（Devices）页上。Linux、Window
 - 你在这台机器上有 root 权限；Windows 上是管理员账户。
 - 机器能访问 hub 的被控端端口，默认 8443。
 
-加入链接形如 `neutrino://enroll/…`，五分钟内有效。页面顶部的**用链接添加**（Add by link）生成一条；未管理机器抽屉里的**获取链接**为那一行生成一条。新链接生成后，上一条作废。
+加入链接形如 `neutrino://enroll/…`，三十分钟内有效。页面顶部的**用链接添加**（Add by link）生成一条；未管理机器抽屉里的**获取链接**为那一行生成一条。新链接生成后，上一条作废。
 
 ![加入链接和复制按钮](/guide/zh/devices_enroll_link.webp)
 
@@ -60,7 +60,7 @@ hub 发现的每台机器都列在**设备**（Devices）页上。Linux、Window
 
 几秒之内，这台机器出现在已管理一栏。ARM64 机器的文件名以 `_arm64.deb` 或 `.aarch64.rpm` 结尾。`apt` 和 `dnf` 会连同依赖一起装；`dpkg -i` 和 `rpm -i` 一个依赖都不装。
 
-`nagent join` 不带链接时，提示你粘贴一条。机器已经绑定过 hub 时，加 `--yes` 直接替换。链接用过、无效或超过五分钟，hub 返回 `ticket_spent`。
+`nagent join` 不带链接时，提示你粘贴一条。机器已经绑定过 hub 时，加 `--yes` 直接替换。链接用过、无效或超过三十分钟，hub 返回 `ticket_spent`。
 
 ## 经 SSH 安装被控端
 

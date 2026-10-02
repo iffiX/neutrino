@@ -56,7 +56,7 @@ Every package also registers two system services for virtual networks: the NetBi
 
 ## Join a hub
 
-Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for this computer, and select **Create link**. The link works for five minutes and joins one computer. [Clients](../hub/clients.md) sets what the computer can use.
+Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for this computer, and select **Create link**. The link works for thirty minutes and joins one computer. [Clients](../hub/clients.md) sets what the computer can use.
 
 To join:
 

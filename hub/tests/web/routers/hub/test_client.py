@@ -135,7 +135,7 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
     }
     assert body["expires_at"].endswith("+00:00")
     # The page shows this number, not a difference against its own clock.
-    assert body["expires_in_s"] == 5 * 60
+    assert body["expires_in_s"] == 30 * 60
     assert rows[0] == {
         "id": rows[0]["id"],
         "name": "alice",

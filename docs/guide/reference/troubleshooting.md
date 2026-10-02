@@ -83,7 +83,7 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 | Symptom                 | Cause                                                                  | Fix                                                                  |
 | ----------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `hub_unreachable`       | port 8443 on the hub is not reachable from this computer               | check the network or the overlay, and **Exposure** on the hub        |
-| `enroll_refused`        | the link expired or was used                                           | create a fresh link on **Clients**; a link is valid for five minutes |
+| `enroll_refused`        | the link expired or was used                                           | create a fresh link on **Clients**; a link is valid for thirty minutes |
 | `link_unreadable`       | the paste was cut short                                                | copy the whole line from the hub                                     |
 | `link_not_for_client`   | the link is from **Devices**                                           | create one on **Clients**                                            |
 | `client_disabled`       | the client is switched off on **Clients**                              | select **Enable** on its row there                                   |
