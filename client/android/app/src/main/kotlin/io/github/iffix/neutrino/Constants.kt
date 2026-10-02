@@ -218,6 +218,30 @@ const val CLIENT_WS_CLOSE_NORMAL = 1000
 /** The port of an `https` address that names none. */
 const val CLIENT_HTTPS_DEFAULT_PORT = 443
 
+/** The port of an `http` address that names none. */
+const val CLIENT_HTTP_DEFAULT_PORT = 80
+
+/** The address every forward listens on. */
+const val FORWARD_BIND_HOST = "127.0.0.1"
+
+/** The most one read of a forwarded connection copies at once. */
+const val FORWARD_BUFFER_BYTES = 65536
+
+/** How long a forwarded connection may take to reach the published port, as the desktop's relay allows. */
+const val FORWARD_CONNECT_TIMEOUT_MILLIS = 10_000
+
+/** The query parameter a local-only web page takes its token in. */
+const val WEB_TOKEN_PARAMETER = "tkn"
+
+/** The notification channel the forwards' foreground service posts in. */
+const val FORWARD_NOTIFICATION_CHANNEL = "forwards"
+
+/** The id of the forwards' notification. */
+const val FORWARD_NOTIFICATION_ID = 7
+
+/** The forwards' service action that stops every forward. */
+const val FORWARD_SERVICE_ACTION_STOP = "io.github.iffix.neutrino.forward.STOP"
+
 /** The first id this side opens a stream at; the hub's are even. */
 const val CHANNEL_FIRST_STREAM_ID = 1
 

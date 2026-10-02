@@ -2,11 +2,14 @@ package io.github.iffix.neutrino
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.util.Log
+import androidx.core.content.ContextCompat
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.KeystoreSecretSealer
 import io.github.iffix.neutrino.channel.ChannelResult
@@ -17,6 +20,8 @@ import io.github.iffix.neutrino.channel.OkHttpHubTransport
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
+import io.github.iffix.neutrino.forward.PortForwardService
+import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.remotedesktop.MissingRemoteDesktopCore
@@ -38,6 +43,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -78,6 +84,7 @@ class NeutrinoApplication : Application() {
         HubConnections(bindingStore, OkHttpHubTransport(), machine, ::resolveHubName, scope) { bindingId ->
             overlays.forget(bindingId)
             remoteDesktops.forget(bindingId)
+            portForwards.forget(bindingId)
         }
     }
 
@@ -101,6 +108,16 @@ class NeutrinoApplication : Application() {
     /** The remote desktop Connects and the one viewer open. */
     val remoteDesktops: RemoteDesktopSessions by lazy {
         RemoteDesktopSessions(
+            material = { bindingId, entryId ->
+                connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
+            },
+            scope = scope,
+        )
+    }
+
+    /** The loopback forwards of the port entries and the local-only web entries. */
+    val portForwards: PortForwards by lazy {
+        PortForwards(
             material = { bindingId, entryId ->
                 connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
             },
@@ -158,6 +175,12 @@ class NeutrinoApplication : Application() {
         connections.start()
         overlays.start(connections.views)
         terminalTabs.follow(connections.views)
+        portForwards.follow(connections.views)
+        scope.launch {
+            portForwards.rows.map { rows -> rows.values.any { it.isForwarded } }.distinctUntilChanged().collect {
+                if (it) holdForwards()
+            }
+        }
         scope.launch {
             shareRoots.collect {
                 contentResolver.notifyChange(DocumentsContract.buildRootsUri(CLIENT_FILES_AUTHORITY), null)
@@ -165,6 +188,14 @@ class NeutrinoApplication : Application() {
         }
         val connectivity = getSystemService(ConnectivityManager::class.java)
         connectivity.registerDefaultNetworkCallback(NetworkWatch())
+    }
+
+    private fun holdForwards() {
+        try {
+            ContextCompat.startForegroundService(this, Intent(this, PortForwardService::class.java))
+        } catch (error: IllegalStateException) {
+            Log.w(CLIENT_LOG_TAG, "the forwards' service could not start: ${error.message}")
+        }
     }
 
     private suspend fun resolveHubName(): String? = withContext(Dispatchers.IO) {

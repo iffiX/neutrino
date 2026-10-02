@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
                     application.remoteDesktops,
                     application.shares,
                     application.shareLogins,
+                    application.portForwards,
                 )
             }
         NeutrinoTheme(palette, words) {
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
                 actions = actions,
                 terminalTabs = application.terminalTabs,
                 desktops = application.remoteDesktops,
+                forwards = application.portForwards,
                 remoteDesktopCore = application.remoteDesktopCore,
             )
         }

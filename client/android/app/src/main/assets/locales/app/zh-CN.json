@@ -1,5 +1,6 @@
 {
   "code": {
+    "forward_failed": "端口没能转发：{detail}",
     "overlay_wish_unsaved": "虚拟网的选择没能保存",
     "rdp_closed": "连接已结束：{reason}",
     "rdp_core_missing": "这个版本还没有远程桌面核心，显示不了画面。",
@@ -19,9 +20,11 @@
     "client_key": "此客户端的密钥",
     "copied": "已复制",
     "copy": "复制",
-    "desktop_only": "仅桌面",
     "forget_password": "忘掉密码",
     "forget_password_arm": "再按一次以忘掉",
+    "forward_channel": "端口转发",
+    "forward_notice": "正在把 {count} 个端口转发到本机",
+    "forward_stop": "停止转发",
     "gateway_address": "网关地址",
     "hub_forgot": "{hub} 已不再认识本机，它的一行已移除。",
     "join_hint": "扫描二维码，或粘贴链接。",

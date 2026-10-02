@@ -1,5 +1,6 @@
 {
   "code": {
+    "forward_failed": "The port could not be forwarded: {detail}",
     "overlay_wish_unsaved": "the virtual network choice could not be saved",
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
@@ -19,9 +20,11 @@
     "client_key": "This client's key",
     "copied": "Copied",
     "copy": "Copy",
-    "desktop_only": "Desktop only",
     "forget_password": "Forget password",
     "forget_password_arm": "Press again to forget",
+    "forward_channel": "Port forwards",
+    "forward_notice": "Forwarding {count} ports to this phone",
+    "forward_stop": "Stop forwarding",
     "gateway_address": "Gateway address",
     "hub_forgot": "{hub} no longer knows this phone, so its row was removed.",
     "join_hint": "Scan the QR code, or paste the link.",

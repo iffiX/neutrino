@@ -1,6 +1,9 @@
 package io.github.iffix.neutrino.shell
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
@@ -29,7 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -48,6 +53,7 @@ import io.github.iffix.neutrino.design.LocalPageActionSlot
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PageActionSlot
 import io.github.iffix.neutrino.design.disarmOnPress
+import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopViewer
@@ -80,6 +86,7 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
  * @param actions What the screens can do.
  * @param terminalTabs Every terminal tab.
  * @param desktops The remote desktop Connects and the viewer open.
+ * @param forwards The loopback forwards.
  * @param remoteDesktopCore What the remote desktop viewer draws and sends input with.
  */
 @Composable
@@ -95,6 +102,7 @@ fun AppShell(
     actions: ClientActions,
     terminalTabs: TerminalTabs,
     desktops: RemoteDesktopSessions,
+    forwards: PortForwards,
     remoteDesktopCore: RemoteDesktopCore,
 ) {
     var consentFor by remember { mutableStateOf("") }
@@ -114,6 +122,15 @@ fun AppShell(
     val connecting by desktops.connecting.collectAsStateWithLifecycle()
     val desktopErrors by desktops.errors.collectAsStateWithLifecycle()
     val viewing by desktops.viewing.collectAsStateWithLifecycle()
+    val forwardRows by forwards.rows.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val noticeAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val askNotices = {
+        val isAsked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (isAsked) noticeAsk.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
     val arm = remember { ArmState() }
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
@@ -179,8 +196,29 @@ fun AppShell(
                                     onOverlayPick = actions::pickOverlay,
                                 )
                             }
-                            composable(AppScreen.WEB.route) { WebScreen(hubs, onOpen = actions::openUrl) }
-                            composable(AppScreen.PORTS.route) { PortsScreen(hubs, onCopy = { actions.copy(it) }) }
+                            composable(AppScreen.WEB.route) {
+                                WebScreen(
+                                    hubs,
+                                    forwards = forwardRows,
+                                    onOpen = actions::openUrl,
+                                    onOpenLocal = { bindingId, entryId, url ->
+                                        askNotices()
+                                        actions.openLocal(bindingId, entryId, url)
+                                    },
+                                )
+                            }
+                            composable(AppScreen.PORTS.route) {
+                                PortsScreen(
+                                    hubs,
+                                    forwards = forwardRows,
+                                    onConnect = { bindingId, entryId, host, port ->
+                                        askNotices()
+                                        actions.connectPort(bindingId, entryId, host, port)
+                                    },
+                                    onDisconnect = actions::disconnectPort,
+                                    onCopy = { actions.copy(it) },
+                                )
+                            }
                             composable(AppScreen.AI.route) {
                                 AiScreen(hubs, material = actions::serviceMaterial, onCopy = actions::copy)
                             }

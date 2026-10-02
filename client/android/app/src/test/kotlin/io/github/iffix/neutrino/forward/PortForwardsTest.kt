@@ -1,0 +1,153 @@
+package io.github.iffix.neutrino.forward
+
+import io.github.iffix.neutrino.binding.HubBinding
+import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelServiceEntry
+import io.github.iffix.neutrino.channel.HubConnection
+import io.github.iffix.neutrino.channel.HubView
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class PortForwardsTest {
+    private val echo = EchoServer()
+    private val noMaterial: suspend (String, String) -> ChannelResult<JsonObject> = { _, _ ->
+        ChannelResult.Ok(JsonObject(emptyMap()))
+    }
+
+    @After
+    fun closeEcho() = echo.close()
+
+    @Test
+    fun connectIsAJobUntilTheLoopbackListens() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope)
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        assertEquals(PortForwardJob.FORWARDING, forwards.rows.value["b1/p1"]?.job)
+        runCurrent()
+        val row = forwards.rows.value.getValue("b1/p1")
+        assertNull(row.job)
+        assertTrue(row.isForwarded)
+        Socket("127.0.0.1", row.localPort).use { assertTrue(it.isConnected) }
+        forwards.stopAll()
+    }
+
+    @Test
+    fun aSecondPressWhileTheJobRunsIsDropped() = runTest {
+        var made = 0
+        val forwards = PortForwards(noMaterial, backgroundScope) { host, port, local ->
+            made += 1
+            PortForwardRelay(host, port, local)
+        }
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        runCurrent()
+        assertEquals(1, made)
+        forwards.stopAll()
+    }
+
+    @Test
+    fun disconnectIsAJobThenTheRowGoes() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope)
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        runCurrent()
+        forwards.disconnect("b1", "p1")
+        assertEquals(PortForwardJob.DISCONNECTING, forwards.rows.value["b1/p1"]?.job)
+        runCurrent()
+        assertNull(forwards.rows.value["b1/p1"])
+    }
+
+    @Test
+    fun aFailedBindWritesForwardFailedUntilARefresh() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope) { host, port, _ ->
+            FailingRelay(host, port)
+        }
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        runCurrent()
+        assertEquals("forward_failed", forwards.rows.value["b1/p1"]?.error?.code)
+        forwards.clearErrors()
+        assertNull(forwards.rows.value["b1/p1"])
+    }
+
+    @Test
+    fun openLocallyForwardsTakesTheTokenAndOpensTheLoopback() = runTest {
+        val answer = CompletableDeferred<ChannelResult<JsonObject>>()
+        val forwards = PortForwards({ _, _ -> answer.await() }, backgroundScope)
+        val opened = mutableListOf<String>()
+        forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
+        runCurrent()
+        assertEquals(PortForwardJob.OPENING, forwards.rows.value["b1/w1"]?.job)
+        answer.complete(ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("a b")))))
+        runCurrent()
+        val row = forwards.rows.value.getValue("b1/w1")
+        assertEquals(listOf("http://127.0.0.1:${row.localPort}/?tkn=a+b"), opened)
+        assertNull(row.job)
+        forwards.stopAll()
+    }
+
+    @Test
+    fun openLocallyWithNoTokenWritesItsCode() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope)
+        val opened = mutableListOf<String>()
+        forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
+        runCurrent()
+        assertEquals("web_token_missing", forwards.rows.value["b1/w1"]?.error?.code)
+        assertTrue(opened.isEmpty())
+        forwards.stopAll()
+    }
+
+    @Test
+    fun aForwardStopsWhenItsEntryLeavesTheState() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope)
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        runCurrent()
+        forwards.take(listOf(hub("b1", HubConnection.CONNECTING)))
+        assertTrue(forwards.rows.value.getValue("b1/p1").isForwarded)
+        forwards.take(listOf(hub("b1", HubConnection.CONNECTED, "p1")))
+        assertTrue(forwards.rows.value.getValue("b1/p1").isForwarded)
+        forwards.take(listOf(hub("b1", HubConnection.CONNECTED)))
+        assertNull(forwards.rows.value["b1/p1"])
+    }
+
+    @Test
+    fun leavingAHubEndsItsForwards() = runTest {
+        val forwards = PortForwards(noMaterial, backgroundScope)
+        forwards.connect("b1", "p1", "127.0.0.1", echo.port)
+        forwards.connect("b2", "p1", "127.0.0.1", echo.port)
+        runCurrent()
+        val port = forwards.rows.value.getValue("b1/p1").localPort
+        forwards.forget("b1")
+        assertNull(forwards.rows.value["b1/p1"])
+        assertTrue(isFree(port))
+        forwards.stopAll()
+        assertTrue(forwards.rows.value.isEmpty())
+    }
+
+    private fun hub(id: String, connection: HubConnection, vararg entries: String) = HubView(
+        binding = HubBinding(id = id, gatewayUrl = "https://10.0.0.1:8443", fingerprint = "f", token = "t"),
+        connection = connection,
+        services = entries.map { ChannelServiceEntry(id = it, type = "port", title = it) },
+    )
+
+    private fun isFree(port: Int): Boolean = try {
+        ServerSocket(port, 50, InetAddress.getByName("127.0.0.1")).close()
+        true
+    } catch (_: java.io.IOException) {
+        false
+    }
+
+    private class FailingRelay(host: String, port: Int) : PortForwardRelay(host, port, 0) {
+        override fun start(): Int = throw java.io.IOException("address in use")
+    }
+}
