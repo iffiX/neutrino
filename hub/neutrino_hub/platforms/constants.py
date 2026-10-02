@@ -1,0 +1,6 @@
+"""Names shared by the platform layer."""
+
+PLATFORM_OS_LINUX = "linux"
+PLATFORM_OS_DARWIN = "darwin"
+PLATFORM_OS_WINDOWS = "windows"
+PLATFORM_OS_KEYS = (PLATFORM_OS_LINUX, PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS)
