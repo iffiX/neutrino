@@ -19,27 +19,32 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.iffix.neutrino.CLIENT_CARRIED_CORES
 import io.github.iffix.neutrino.CLIENT_LANGUAGES
 import io.github.iffix.neutrino.CLIENT_LICENCE
 import io.github.iffix.neutrino.CLIENT_SOURCE_URL
 import io.github.iffix.neutrino.CLIENT_THEMES
 import io.github.iffix.neutrino.design.ButtonTier
+import io.github.iffix.neutrino.design.CardHeader
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoPalette
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PickerField
 import io.github.iffix.neutrino.design.ScreenColumn
+import io.github.iffix.neutrino.design.SectionLabel
 import io.github.iffix.neutrino.design.SurfaceCard
 import io.github.iffix.neutrino.settings.ClientSettings
 import io.github.iffix.neutrino.words.WordCatalog
 
 /**
- * Two cards: the language and the theme, staged until saved, and About, one row per fact: this
- * phone's name and platform, the app's version and licence, the source links, and each core the
- * app carries with its version and patch.
+ * Two cards, in the panel's order: About, the panel's About card in three groups (this phone's
+ * name and platform with the app's version and licence; each core the app carries with its version
+ * and licence; the source of the app and of each core, and each core's patch), then the language
+ * and the theme, staged until saved.
  *
  * @param saved The settings in force.
  * @param deviceName This phone's name.
@@ -59,6 +64,7 @@ fun SettingsScreen(
     var draft by remember(saved) { mutableStateOf(saved) }
     val isDirty = draft != saved
     ScreenColumn {
+        AboutCard(deviceName, platform, version)
         SurfaceCard(isDirty = isDirty) {
             Column(modifier = Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -97,21 +103,22 @@ fun SettingsScreen(
                 }
             }
         }
-        AboutCard(deviceName, platform, version)
     }
 }
 
 @Composable
 private fun AboutCard(deviceName: String, platform: String, version: String) {
     val words = NeutrinoTheme.words
-    val rows = buildList {
-        add(AboutFact(words.word("ui.about_device"), deviceName))
-        add(AboutFact(words.word("ui.about_platform"), platform))
-        add(AboutFact(words.word("ui.about_version"), version))
-        add(AboutFact(words.word("ui.about_licence"), CLIENT_LICENCE))
+    val machine = listOf(
+        AboutFact(words.word("ui.about_machine"), deviceName),
+        AboutFact(words.word("ui.about_platform"), platform),
+        AboutFact(words.word("ui.about_version"), version),
+        AboutFact(words.word("ui.about_licence"), CLIENT_LICENCE),
+    )
+    val carried = CLIENT_CARRIED_CORES.map { AboutFact(it.name, "${it.version} · ${it.licence}") }
+    val sources = buildList {
         add(AboutFact(words.word("ui.about_source", mapOf("name" to "Neutrino")), CLIENT_SOURCE_URL, isLink = true))
         for (core in CLIENT_CARRIED_CORES) {
-            add(AboutFact(words.word("ui.about_core", mapOf("name" to core.name)), "${core.version} · ${core.licence}"))
             add(AboutFact(words.word("ui.about_source", mapOf("name" to core.name)), core.sourceUrl, isLink = true))
             if (core.patchUrl.isNotEmpty()) {
                 val patch = core.patchUrl.replace("{version}", version)
@@ -119,13 +126,20 @@ private fun AboutCard(deviceName: String, platform: String, version: String) {
             }
         }
     }
+    val groups = listOf(
+        words.word("ui.about_this_machine") to machine,
+        words.word("ui.about_carried") to carried,
+        words.word("ui.about_sources") to sources,
+    )
+    val last = sources.last()
     SurfaceCard {
-        BasicText(
-            words.word("ui.about"),
-            style = NeutrinoTheme.rowTitle,
-            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-        )
-        for ((index, fact) in rows.withIndex()) AboutRow(fact, hasDivider = index < rows.lastIndex)
+        Column(modifier = Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            CardHeader(words.word("ui.about"))
+            for ((index, group) in groups.withIndex()) {
+                SectionLabel(group.first, modifier = Modifier.padding(top = if (index == 0) 0.dp else 12.dp))
+                for (fact in group.second) AboutRow(fact, hasDivider = fact !== last)
+            }
+        }
     }
 }
 
@@ -133,26 +147,26 @@ private fun AboutCard(deviceName: String, platform: String, version: String) {
 private fun AboutRow(fact: AboutFact, hasDivider: Boolean) {
     val palette = NeutrinoTheme.palette
     val uriHandler = LocalUriHandler.current
+    val rule = palette.border.copy(alpha = palette.border.alpha * 0.6f)
     var row = Modifier.fillMaxWidth()
     if (hasDivider) {
         row = row.drawBehind {
-            drawLine(palette.border, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+            drawLine(rule, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
         }
     }
     if (fact.isLink) row = row.clickable(role = Role.Button) { uriHandler.openUri(fact.value) }
     Row(
-        modifier = row.padding(vertical = 10.dp),
+        modifier = row.padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText(fact.label, style = NeutrinoTheme.note.copy(color = palette.textMuted))
+        BasicText(fact.label, style = NeutrinoTheme.note)
         BasicText(
             if (fact.isLink) fact.value.removePrefix("https://") else fact.value,
-            style = NeutrinoTheme.mono.copy(
-                color = if (fact.isLink) palette.accent else palette.text,
-                textAlign = TextAlign.End,
-            ),
+            style = NeutrinoTheme.mono.copy(color = palette.text, fontSize = 12.5.sp, textAlign = TextAlign.End),
             modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -172,7 +186,8 @@ private fun SettingsScreenPreview() {
             "ui.cancel" to "取消",
             "ui.save" to "保存",
             "ui.about" to "关于",
-            "ui.about_device" to "本机",
+            "ui.about_machine" to "本机名称",
+            "ui.about_this_machine" to "本机",
             "ui.about_version" to "版本",
         ),
     )

@@ -8,9 +8,10 @@
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
-    "about_core": "{name} core",
-    "about_device": "This device",
+    "about_carried": "Carried",
     "about_patch": "Patch of {name}",
+    "about_sources": "Source",
+    "about_this_machine": "This machine",
     "ai_qr_hint": "A chat app that scans this code can use this gateway.",
     "ai_qr_label": "QR code of the gateway address and the key",
     "back": "Back",

@@ -23,7 +23,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 
 /**
- * The panel's toggle switch a size down: a label and a track whose thumb slides on.
+ * The panel's toggle switch a size down: a label and a track whose thumb slides on. A disabled
+ * switch has no accent: the track's border and the thumb in the faint text colour, the label muted.
  *
  * @param label What it switches.
  * @param isOn Whether it is on.
@@ -41,6 +42,13 @@ fun ToggleSwitch(
 ) {
     val palette = NeutrinoTheme.palette
     val offset by animateDpAsState(if (isOn) 14.dp else 0.dp, label = "thumb")
+    val isAccented = isOn && isEnabled
+    val labelColor = if (isEnabled) palette.text else palette.textMuted
+    val edge = when {
+        !isEnabled -> palette.textFaint
+        isOn -> palette.accent
+        else -> palette.borderStrong
+    }
     Row(
         modifier = modifier
             .toggleable(value = isOn, enabled = isEnabled, role = Role.Switch, onValueChange = onChange)
@@ -48,13 +56,13 @@ fun ToggleSwitch(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText(label, style = NeutrinoTheme.fieldLabel.copy(color = palette.text))
+        BasicText(label, style = NeutrinoTheme.fieldLabel.copy(color = labelColor))
         Box(
             modifier = Modifier
                 .size(width = 32.dp, height = 18.dp)
                 .clip(RoundedCornerShape(50))
-                .background(if (isOn) palette.accentWash else palette.bg)
-                .border(1.dp, if (isOn) palette.accent else palette.borderStrong, RoundedCornerShape(50)),
+                .background(if (isAccented) palette.accentWash else palette.bg)
+                .border(1.dp, edge, RoundedCornerShape(50)),
             contentAlignment = Alignment.CenterStart,
         ) {
             Box(
@@ -62,7 +70,7 @@ fun ToggleSwitch(
                     .offset { IntOffset((3.dp + offset).roundToPx(), 0) }
                     .size(10.dp)
                     .clip(CircleShape)
-                    .background(if (isOn) palette.accent else palette.textFaint),
+                    .background(if (isAccented) palette.accent else palette.textFaint),
             )
         }
     }
