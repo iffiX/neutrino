@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -44,8 +45,7 @@ class MainActivity : ComponentActivity() {
             val style = if (isDark) SystemBarStyle.dark(bar) else SystemBarStyle.light(bar, bar)
             enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
         }
-        val identity =
-            "${application.deviceName} · android/${application.architecture} · client ${BuildConfig.VERSION_NAME}"
+        val platform = "$CLIENT_PLATFORM_OS/${application.architecture} · Android ${Build.VERSION.RELEASE}"
         val hubs by application.hubs.collectAsStateWithLifecycle()
         val notices by application.connections.notices.collectAsStateWithLifecycle()
         val join by application.connections.join.collectAsStateWithLifecycle()
@@ -59,11 +59,13 @@ class MainActivity : ComponentActivity() {
                     application.remoteDesktops,
                     application.shares,
                     application.shareLogins,
+                    application.portForwards,
                 )
             }
         NeutrinoTheme(palette, words) {
             AppShell(
-                identity = identity,
+                deviceName = application.deviceName,
+                platform = platform,
                 version = BuildConfig.VERSION_NAME,
                 settings = settings,
                 onSaveSettings = application.settingsStore::save,
@@ -73,6 +75,7 @@ class MainActivity : ComponentActivity() {
                 actions = actions,
                 terminalTabs = application.terminalTabs,
                 desktops = application.remoteDesktops,
+                forwards = application.portForwards,
                 remoteDesktopCore = application.remoteDesktopCore,
             )
         }

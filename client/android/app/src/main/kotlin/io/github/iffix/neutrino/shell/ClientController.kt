@@ -9,6 +9,7 @@ import android.net.VpnService
 import android.os.PersistableBundle
 import android.provider.DocumentsContract
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import io.github.iffix.neutrino.CLIENT_CLIP_SENSITIVE_EXTRA
 import io.github.iffix.neutrino.CLIENT_FILES_AUTHORITY
@@ -22,6 +23,7 @@ import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
+import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopSessions
 import java.io.IOException
@@ -38,6 +40,7 @@ import kotlinx.serialization.json.JsonObject
  * @param desktops The remote desktop Connects and viewer.
  * @param shares The SMB connections.
  * @param logins The shares' logins.
+ * @param forwards The loopback forwards.
  */
 class ClientController(
     private val context: Context,
@@ -46,6 +49,7 @@ class ClientController(
     private val desktops: RemoteDesktopSessions,
     private val shares: SmbShareClient,
     private val logins: ShareLoginStore,
+    private val forwards: PortForwards,
 ) : ClientActions {
     override fun join(link: String) = connections.startJoin(link)
 
@@ -60,6 +64,7 @@ class ClientController(
     override fun refresh() {
         overlays.clearErrors()
         desktops.clearErrors()
+        forwards.clearErrors()
         connections.refresh()
     }
 
@@ -145,4 +150,14 @@ class ClientController(
         desktops.connect(bindingId, entryId, name)
 
     override fun closeDesktop() = desktops.close()
+
+    override fun connectPort(bindingId: String, entryId: String, host: String, port: Int) =
+        forwards.connect(bindingId, entryId, host, port)
+
+    override fun disconnectPort(bindingId: String, entryId: String) = forwards.disconnect(bindingId, entryId)
+
+    override fun openLocal(bindingId: String, entryId: String, url: String) =
+        forwards.openLocal(bindingId, entryId, url) { address ->
+            ContextCompat.getMainExecutor(context).execute { openUrl(address) }
+        }
 }

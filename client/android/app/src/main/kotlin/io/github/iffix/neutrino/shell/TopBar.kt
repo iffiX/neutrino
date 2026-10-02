@@ -25,14 +25,18 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.design.AppIcon
+import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.IconGlyph
+import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.design.PageAction
 import io.github.iffix.neutrino.design.StatusDot
 
 /**
- * The bar over every screen: a back arrow for a screen reached from another, the title, and the
- * refresh button, a spinner and disabled while any hub refreshes.
+ * The bar over every screen: a back arrow for a screen reached from another, the title, the
+ * page's own action beside the sidebar, and the refresh button, a spinner and disabled while any
+ * hub refreshes.
  *
  * @param title The open screen's title.
  * @param isRefreshing Whether any hub refreshes.
@@ -40,6 +44,7 @@ import io.github.iffix.neutrino.design.StatusDot
  * @param onBack What the back arrow does, or null for a tab's own screen.
  * @param modifier Placement.
  * @param isWide Whether the bar sits beside the sidebar, which pads it wider.
+ * @param action The open page's own action, or null for none.
  */
 @Composable
 fun TopBar(
@@ -49,6 +54,7 @@ fun TopBar(
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     isWide: Boolean = false,
+    action: PageAction? = null,
 ) {
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
@@ -84,6 +90,16 @@ fun TopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (action != null) {
+            NeutrinoButton(
+                action.label,
+                action.onClick,
+                tier = ButtonTier.PRIMARY,
+                icon = action.icon,
+                isSmall = true,
+                isEnabled = action.isEnabled,
+            )
+        }
         val refresh = words.word(if (isRefreshing) "ui.job.refreshing" else "ui.refresh")
         val shape = RoundedCornerShape(6.dp)
         Box(

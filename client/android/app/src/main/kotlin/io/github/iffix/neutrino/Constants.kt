@@ -39,17 +39,13 @@ const val ICON_VIEWBOX = 24f
 /** The width of an icon's stroke, in units of [ICON_VIEWBOX]. */
 const val ICON_STROKE_WIDTH = 1.6f
 
-/** The cores the app carries, as name, version and licence, for the About section. */
-val CLIENT_CARRIED_CORES: List<Triple<String, String, String>> = listOf(
-    Triple("NetBird", "0.78.1", "BSD-3-Clause"),
-    Triple("EasyTier", "2.6.4", "LGPL-3.0"),
-    Triple(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0"),
-)
+/** The app's licence, for the About card. */
+const val CLIENT_LICENCE = "AGPL-3.0"
 
 /** The app's source. */
 const val CLIENT_SOURCE_URL = "https://github.com/iffiX/neutrino"
 
-/** The carried core whose source and patch the About section links. */
+/** The carried core whose source and patch the About card links. */
 const val CLIENT_RUSTDESK_CORE = "RustDesk"
 
 /** RustDesk's source at the tag the app's core is built from. */
@@ -58,6 +54,19 @@ const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tre
 /** The patch the app's RustDesk core is built with, at the app's release tag `v{version}`. */
 const val CLIENT_RUSTDESK_PATCH_URL =
     "https://github.com/iffiX/neutrino/blob/v{version}/packaging/build/build_core_rustdesk.patch"
+
+/** The cores the app carries, for the About card. */
+val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
+    CarriedCore("NetBird", "0.78.1", "BSD-3-Clause", "https://github.com/netbirdio/netbird/tree/v0.78.1"),
+    CarriedCore(
+        "EasyTier",
+        "2.6.4",
+        "LGPL-3.0",
+        "https://github.com/EasyTier/EasyTier/tree/v2.6.4",
+        "https://github.com/iffiX/neutrino/blob/v{version}/packaging/build/build_core_easytier.patch",
+    ),
+    CarriedCore(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0", CLIENT_RUSTDESK_SOURCE_URL, CLIENT_RUSTDESK_PATCH_URL),
+)
 
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
 const val PROTOCOL = 3
@@ -209,6 +218,30 @@ const val CLIENT_WS_CLOSE_NORMAL = 1000
 /** The port of an `https` address that names none. */
 const val CLIENT_HTTPS_DEFAULT_PORT = 443
 
+/** The port of an `http` address that names none. */
+const val CLIENT_HTTP_DEFAULT_PORT = 80
+
+/** The address every forward listens on. */
+const val FORWARD_BIND_HOST = "127.0.0.1"
+
+/** The most one read of a forwarded connection copies at once. */
+const val FORWARD_BUFFER_BYTES = 65536
+
+/** How long a forwarded connection may take to reach the published port, as the desktop's relay allows. */
+const val FORWARD_CONNECT_TIMEOUT_MILLIS = 10_000
+
+/** The query parameter a local-only web page takes its token in. */
+const val WEB_TOKEN_PARAMETER = "tkn"
+
+/** The notification channel the forwards' foreground service posts in. */
+const val FORWARD_NOTIFICATION_CHANNEL = "forwards"
+
+/** The id of the forwards' notification. */
+const val FORWARD_NOTIFICATION_ID = 7
+
+/** The forwards' service action that stops every forward. */
+const val FORWARD_SERVICE_ACTION_STOP = "io.github.iffix.neutrino.forward.STOP"
+
 /** The first id this side opens a stream at; the hub's are even. */
 const val CHANNEL_FIRST_STREAM_ID = 1
 
@@ -278,8 +311,17 @@ const val CLIENT_FILES_AUTHORITY = "io.github.iffix.neutrino.files"
 /** The file the shares' kept logins are sealed in. */
 const val CLIENT_SHARE_LOGINS_FILE_NAME = "shares.sealed"
 
-/** How long connecting to a share's server and each request may take. */
-const val CLIENT_SHARE_TIMEOUT_S = 10L
+/** How long reaching a share's server may take. */
+const val CLIENT_SHARE_CONNECT_TIMEOUT_S = 5L
+
+/** How long one request to a share's server, a read or a write, may take. */
+const val CLIENT_SHARE_IO_TIMEOUT_S = 60L
+
+/** How long a share's held connection may sit unused before it is probed. */
+const val CLIENT_SHARE_IDLE_PROBE_S = 30L
+
+/** How long the probe of a share's held connection may take. */
+const val CLIENT_SHARE_PROBE_TIMEOUT_S = 5L
 
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
@@ -290,8 +332,8 @@ const val CLIENT_TERMINAL_SHORT_HEIGHT_DP = 480
 /** The page the terminals are drawn in. */
 const val CLIENT_TERMINAL_PAGE = "file:///android_asset/terminal/index.html"
 
-/** What the extra-keys row's Ctrl key sends: nothing, it holds Ctrl for the next key. */
-const val TERMINAL_KEY_CTRL = "ctrl"
+/** The escape character a terminal's key sequences start with. */
+const val TERMINAL_ESCAPE = "\u001b"
 
 /** The name the terminal page reaches the app by. */
 const val CLIENT_TERMINAL_BRIDGE = "NeutrinoBridge"

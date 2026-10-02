@@ -4,39 +4,56 @@ import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.mserref.NtStatus
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
+import com.hierynomus.mssmb2.SMB2Packet
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.mssmb2.SMBApiException
+import com.hierynomus.mssmb2.messages.SMB2Echo
 import com.hierynomus.smbj.SMBClient
 import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.auth.AuthenticationContext
+import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File
 import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
+import java.io.Closeable
 import java.io.IOException
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.EnumSet
 import java.util.concurrent.TimeUnit
-import javax.net.SocketFactory
 
 /**
- * SMB over smbj, one open share per root, with every wait bounded so an unreachable server is an
- * answer, not a hang. Signing follows the server; SMB 2.0.2 to 3.1.1 are offered.
+ * SMB over smbj. Browsing runs on one held connection per root, and every file the system's
+ * Files opens gets a connection of its own, so a long copy and a listing never close each other.
+ * Connecting is bounded short so an unreachable server is an answer, not a hang, and each request
+ * is bounded long so a slow transfer is not taken for a dead server. Signing follows the server;
+ * SMB 2.0.2 to 3.1.1 are offered.
  *
- * @param timeoutSeconds How long connecting and each request may take.
+ * @param connectTimeoutSeconds How long reaching a server may take.
+ * @param ioTimeoutSeconds How long one request, a read or a write may take.
+ * @param idleProbeSeconds How long a held connection may sit unused before it is probed.
+ * @param probeTimeoutSeconds How long the probe of a held connection may take.
  */
-class SmbShareClient(private val timeoutSeconds: Long) {
-    private val client = SMBClient(
-        SmbConfig.builder()
-            .withTimeout(timeoutSeconds, TimeUnit.SECONDS)
-            .withSoTimeout(timeoutSeconds, TimeUnit.SECONDS)
-            .withSocketFactory(BoundedSocketFactory((timeoutSeconds * 1000).toInt()))
-            .build(),
+class SmbShareClient(
+    connectTimeoutSeconds: Long,
+    ioTimeoutSeconds: Long,
+    idleProbeSeconds: Long,
+    private val probeTimeoutSeconds: Long,
+) {
+    private val config = SmbConfig.builder()
+        .withTimeout(ioTimeoutSeconds, TimeUnit.SECONDS)
+        .withSoTimeout(ioTimeoutSeconds, TimeUnit.SECONDS)
+        .withSocketFactory(
+            ShareSocketFactory((connectTimeoutSeconds * 1000).toInt(), (ioTimeoutSeconds * 1000).toInt()),
+        )
+        .build()
+    private val pool = ShareConnectionPool(
+        open = ::connect,
+        probe = ::answers,
+        close = SmbLink::close,
+        isLost = ::isLost,
+        idleProbeMillis = idleProbeSeconds * 1000,
     )
-    private val shares = mutableMapOf<String, Pair<Connection, DiskShare>>()
 
     /**
      * The files and folders of one folder.
@@ -82,7 +99,8 @@ class SmbShareClient(private val timeoutSeconds: Long) {
     }
 
     /**
-     * Open a file to read or to write.
+     * Open a file to read or to write, on a connection of its own; a read or a write that fails
+     * opens it again once.
      *
      * @param root The share.
      * @param login Its login.
@@ -92,17 +110,8 @@ class SmbShareClient(private val timeoutSeconds: Long) {
      * @throws ShareUnreachableException When the server cannot be reached.
      * @throws ShareRefusedException When the server refuses.
      */
-    fun open(root: ShareRoot, login: ShareLogin, document: ShareDocumentId, isWrite: Boolean): File =
-        call(root, login) { share ->
-            share.openFile(
-                document.smbPath,
-                EnumSet.of(if (isWrite) AccessMask.GENERIC_WRITE else AccessMask.GENERIC_READ),
-                null,
-                SMB2ShareAccess.ALL,
-                if (isWrite) SMB2CreateDisposition.FILE_OVERWRITE_IF else SMB2CreateDisposition.FILE_OPEN,
-                null,
-            )
-        }
+    fun open(root: ShareRoot, login: ShareLogin, document: ShareDocumentId, isWrite: Boolean): ShareFile =
+        translated(root) { ShareFile { isAgain -> openLink(root, login, document, isWrite, isAgain) } }
 
     /**
      * Make a folder.
@@ -134,47 +143,90 @@ class SmbShareClient(private val timeoutSeconds: Long) {
      *
      * @param rootKey The share's root id.
      */
-    fun drop(rootKey: String) {
-        val (connection, _) = synchronized(shares) { shares.remove(rootKey) } ?: return
-        try {
-            connection.close()
-        } catch (_: IOException) {
-            // The connection was already gone.
-        }
+    fun drop(rootKey: String) = pool.drop(rootKey)
+
+    /** The app came back to the foreground: each held connection is probed once before its next request. */
+    fun markStale() = pool.markStale()
+
+    private fun <T> call(root: ShareRoot, login: ShareLogin, action: (DiskShare) -> T): T =
+        translated(root) { pool.call(root, login) { link -> action(link.share) } }
+
+    private fun <T> translated(root: ShareRoot, action: () -> T): T = try {
+        action()
+    } catch (error: SMBApiException) {
+        throw refusalOf(error)
+    } catch (error: ShareRefusedException) {
+        throw error
+    } catch (error: ShareUnreachableException) {
+        throw error
+    } catch (error: IOException) {
+        throw ShareUnreachableException("${root.host} does not answer", error)
+    } catch (error: SMBRuntimeException) {
+        throw ShareUnreachableException("${root.host} does not answer", error)
     }
 
-    private fun <T> call(root: ShareRoot, login: ShareLogin, action: (DiskShare) -> T): T {
-        try {
-            return action(share(root, login))
-        } catch (error: SMBApiException) {
-            if (error.status == NtStatus.STATUS_NETWORK_NAME_DELETED ||
-                error.status == NtStatus.STATUS_USER_SESSION_DELETED
-            ) {
-                drop(root.key)
-                return action(share(root, login))
-            }
-            throw refusalOf(error)
-        } catch (error: IOException) {
-            drop(root.key)
-            throw error as? ShareRefusedException ?: error as? ShareUnreachableException
-                ?: ShareUnreachableException("${root.host} does not answer", error)
-        }
-    }
-
-    private fun share(root: ShareRoot, login: ShareLogin): DiskShare {
-        synchronized(shares) { shares[root.key]?.second?.takeIf { it.isConnected } }?.let { return it }
+    private fun connect(root: ShareRoot, login: ShareLogin): SmbLink {
+        val client = SMBClient(config)
         try {
             val connection = client.connect(root.host)
             val session = connection.authenticate(AuthenticationContext(login.user, login.password.toCharArray(), ""))
             val share = session.connectShare(root.share) as? DiskShare
                 ?: throw ShareRefusedException("share_not_found", "${root.share} is not a disk share")
-            synchronized(shares) { shares[root.key] = connection to share }
-            return share
-        } catch (error: SMBApiException) {
-            throw refusalOf(error)
-        } catch (error: IOException) {
-            throw error as? ShareRefusedException ?: ShareUnreachableException("${root.host} does not answer", error)
+            return SmbLink(client, connection, share)
+        } catch (error: Exception) {
+            client.close()
+            throw error
         }
+    }
+
+    private fun openLink(
+        root: ShareRoot,
+        login: ShareLogin,
+        document: ShareDocumentId,
+        isWrite: Boolean,
+        isAgain: Boolean,
+    ): ShareFileLink {
+        val link = connect(root, login)
+        try {
+            val disposition = when {
+                !isWrite -> SMB2CreateDisposition.FILE_OPEN
+                isAgain -> SMB2CreateDisposition.FILE_OPEN_IF
+                else -> SMB2CreateDisposition.FILE_OVERWRITE_IF
+            }
+            val file = link.share.openFile(
+                document.smbPath,
+                EnumSet.of(if (isWrite) AccessMask.GENERIC_WRITE else AccessMask.GENERIC_READ),
+                null,
+                SMB2ShareAccess.ALL,
+                disposition,
+                null,
+            )
+            return SmbFileLink(link, file, if (isWrite) 0L else file.fileInformation.standardInformation.endOfFile)
+        } catch (error: Exception) {
+            link.close()
+            throw error
+        }
+    }
+
+    private fun answers(link: SmbLink): Boolean = try {
+        val connection = link.connection
+        connection.isConnected &&
+            connection.send<SMB2Packet>(SMB2Echo(connection.negotiatedProtocol.dialect))
+                .get(probeTimeoutSeconds, TimeUnit.SECONDS) != null
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun isLost(error: Exception): Boolean = when (error) {
+        is ShareRefusedException -> false
+
+        is SMBApiException ->
+            error.status == NtStatus.STATUS_NETWORK_NAME_DELETED ||
+                error.status == NtStatus.STATUS_USER_SESSION_DELETED
+
+        is SMBRuntimeException, is IOException -> true
+
+        else -> false
     }
 
     private fun refusalOf(error: SMBApiException): IOException = when (error.status) {
@@ -196,23 +248,30 @@ class SmbShareClient(private val timeoutSeconds: Long) {
         else -> ShareUnreachableException(error.message.orEmpty(), error)
     }
 
-    private class BoundedSocketFactory(private val timeoutMillis: Int) : SocketFactory() {
-        override fun createSocket(): Socket = Bounded(timeoutMillis)
-
-        override fun createSocket(host: String, port: Int): Socket =
-            Bounded(timeoutMillis).apply { connect(InetSocketAddress(host, port)) }
-
-        override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
-            createSocket(host, port)
-
-        override fun createSocket(host: InetAddress, port: Int): Socket =
-            Bounded(timeoutMillis).apply { connect(InetSocketAddress(host, port)) }
-
-        override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket =
-            createSocket(address, port)
+    private class SmbLink(val client: SMBClient, val connection: Connection, val share: DiskShare) : Closeable {
+        override fun close() {
+            try {
+                client.close()
+            } catch (_: Exception) {
+                // The connection was already gone.
+            }
+        }
     }
 
-    private class Bounded(private val timeoutMillis: Int) : Socket() {
-        override fun connect(endpoint: java.net.SocketAddress) = connect(endpoint, timeoutMillis)
+    private class SmbFileLink(private val link: SmbLink, private val file: File, override val size: Long) :
+        ShareFileLink {
+        override fun read(offset: Long, data: ByteArray, count: Int): Int = file.read(data, offset, 0, count)
+
+        override fun write(offset: Long, data: ByteArray, count: Int) {
+            file.write(data, offset, 0, count)
+        }
+
+        override fun close() {
+            try {
+                file.close()
+            } finally {
+                link.close()
+            }
+        }
     }
 }

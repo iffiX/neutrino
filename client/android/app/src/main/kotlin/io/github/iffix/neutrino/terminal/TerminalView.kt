@@ -21,10 +21,10 @@ import org.json.JSONObject
  *
  * @param context The window's context.
  * @param tabs The tabs whose output it draws and whose input it sends.
- * @param onCtrlUsed Called on the main thread once a held Ctrl was spent on a key.
+ * @param onModifiersUsed Called on the main thread once the held modifiers were spent on a typed key.
  */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
-class TerminalView(context: Context, private val tabs: TerminalTabs, private val onCtrlUsed: () -> Unit) :
+class TerminalView(context: Context, private val tabs: TerminalTabs, private val onModifiersUsed: () -> Unit) :
     WebView(context) {
     private val opened = mutableSetOf<String>()
     private val clipboard = context.getSystemService(ClipboardManager::class.java)
@@ -64,11 +64,14 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
     }
 
     /**
-     * Hold or release Ctrl for the next key.
+     * Hold the key row's modifiers for the next typed key.
      *
-     * @param isHeld Whether Ctrl is held.
+     * @param held The modifiers held.
      */
-    fun ctrl(isHeld: Boolean) = run { call("neutrino.ctrl($isHeld)") }
+    fun modifiers(held: TerminalModifiers) {
+        val json = JSONObject().put("ctrl", held.isCtrl).put("shift", held.isShift).put("alt", held.isAlt)
+        run { call("neutrino.modifiers(${JSONObject.quote(json.toString())})") }
+    }
 
     /**
      * Draw the terminals in one palette.
@@ -163,8 +166,8 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
         }
 
         @JavascriptInterface
-        fun ctrlUsed() {
-            post(onCtrlUsed)
+        fun modifiersUsed() {
+            post(onModifiersUsed)
         }
 
         @JavascriptInterface

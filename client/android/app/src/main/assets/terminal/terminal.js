@@ -13,7 +13,7 @@
   const MENU_EDGE_PX = 8;
   const panes = {};
   let active = "";
-  let isCtrl = false;
+  let held = { ctrl: false, shift: false, alt: false };
   let theme = {};
   let labels = { copy: "Copy", paste: "Paste", selectAll: "Select all", clear: "Clear" };
 
@@ -30,15 +30,21 @@
     return bytes;
   }
 
-  // A key typed while Ctrl is held on the key row becomes its control code.
-  function withCtrl(data) {
-    if (!isCtrl || data.length !== 1) return data;
-    isCtrl = false;
-    window.NeutrinoBridge.ctrlUsed();
-    const code = data.toUpperCase().charCodeAt(0);
-    if (code >= 64 && code <= 95) return String.fromCharCode(code - 64);
-    if (data === "?") return "\x7f";
-    return data;
+  // A key typed while the key row holds modifiers: Shift makes it upper case,
+  // Ctrl makes it its control code, Alt puts Escape before it. The held
+  // modifiers are spent on it.
+  function withModifiers(data) {
+    if (!(held.ctrl || held.shift || held.alt) || data.length !== 1) return data;
+    let typed = held.shift ? data.toUpperCase() : data;
+    if (held.ctrl) {
+      const code = typed.toUpperCase().charCodeAt(0);
+      if (code >= 64 && code <= 95) typed = String.fromCharCode(code - 64);
+      else if (typed === "?") typed = "\x7f";
+    }
+    if (held.alt) typed = "\x1b" + typed;
+    held = { ctrl: false, shift: false, alt: false };
+    window.NeutrinoBridge.modifiersUsed();
+    return typed;
   }
 
   // The size is read once the pane has been laid out and has stopped
@@ -214,7 +220,7 @@
       element.appendChild(bar);
       const pane = { element: element, bar: bar, term: term, fit: fit, timer: 0, sent: "" };
       new ResizeObserver(() => report(id)).observe(element);
-      term.onData((data) => window.NeutrinoBridge.input(id, toBase64(withCtrl(data))));
+      term.onData((data) => window.NeutrinoBridge.input(id, toBase64(withModifiers(data))));
       term.onScroll(() => drawBar(pane));
       term.onWriteParsed(() => drawBar(pane));
       followTouch(pane);
@@ -239,8 +245,8 @@
       pane.element.remove();
       delete panes[id];
     },
-    ctrl(isHeld) {
-      isCtrl = isHeld;
+    modifiers(json) {
+      held = JSON.parse(json);
       if (panes[active]) panes[active].term.focus();
     },
     focus() {

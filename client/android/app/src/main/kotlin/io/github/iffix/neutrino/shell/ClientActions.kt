@@ -141,4 +141,31 @@ interface ClientActions {
 
     /** Close the remote desktop viewer. */
     fun closeDesktop()
+
+    /**
+     * Press Connect on a port entry: the phone's loopback forwards to it.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param host The address the published port answers on.
+     * @param port The published port number.
+     */
+    fun connectPort(bindingId: String, entryId: String, host: String, port: Int)
+
+    /**
+     * Press Disconnect on a forwarded port entry.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     */
+    fun disconnectPort(bindingId: String, entryId: String)
+
+    /**
+     * Press Open locally on a local-only web entry.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param url The entry's address.
+     */
+    fun openLocal(bindingId: String, entryId: String, url: String)
 }

@@ -20,10 +20,18 @@ class RemoteDesktopKeyTest {
     }
 
     @Test
-    fun onlyCtrlAndAltAreHeld() {
+    fun onlyCtrlShiftAltAndWinAreHeld() {
         assertEquals(
-            setOf(RemoteDesktopKey.CTRL, RemoteDesktopKey.ALT),
+            setOf(RemoteDesktopKey.CTRL, RemoteDesktopKey.SHIFT, RemoteDesktopKey.ALT, RemoteDesktopKey.WIN),
             RemoteDesktopKey.entries.filter { it.isModifier }.toSet(),
+        )
+    }
+
+    @Test
+    fun theBarReadsInTheOrderOfTheStandard() {
+        assertEquals(
+            listOf("Esc", "Tab", "Ctrl", "Shift", "Alt", "Win"),
+            RemoteDesktopKey.entries.take(6).map { it.label },
         )
     }
 
@@ -39,7 +47,9 @@ class RemoteDesktopKeyTest {
             "VK_ESCAPE",
             "VK_TAB",
             "VK_CONTROL",
+            "VK_SHIFT",
             "VK_MENU",
+            "VK_LWIN",
             "VK_LEFT",
             "VK_UP",
             "VK_DOWN",

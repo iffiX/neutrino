@@ -32,16 +32,15 @@ import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoTheme
 
 /**
- * The landscape navigation, after the desktop client's window: the brand, one labelled tab per
- * screen with Settings apart, and this phone's identity at the foot.
+ * The landscape navigation, after the desktop client's window: the brand, and one labelled tab
+ * per screen with Settings apart.
  *
  * @param current The tab the open screen belongs to.
  * @param onOpen What pressing a tab does.
- * @param identity This phone's name, platform and version.
  * @param modifier Placement.
  */
 @Composable
-fun SideBar(current: AppScreen, onOpen: (AppScreen) -> Unit, identity: String, modifier: Modifier = Modifier) {
+fun SideBar(current: AppScreen, onOpen: (AppScreen) -> Unit, modifier: Modifier = Modifier) {
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
     Column(
@@ -88,14 +87,6 @@ fun SideBar(current: AppScreen, onOpen: (AppScreen) -> Unit, identity: String, m
                 SideTab(tab, isActive = tab == current, onOpen = onOpen)
             }
         }
-        BasicText(
-            identity,
-            style = NeutrinoTheme.mono,
-            modifier = Modifier
-                .fillMaxWidth()
-                .drawBehind { drawLine(palette.border, Offset.Zero, Offset(size.width, 0f), 1.dp.toPx()) }
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-        )
     }
 }
 
