@@ -41,6 +41,8 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
             if (isConsole) EasyTierJNI.stopWebClient() else EasyTierJNI.retainNetworkInstance(null)
         } catch (_: RuntimeException) {
             // The core had nothing running.
+        } catch (_: LinkageError) {
+            // The core never loaded.
         }
         worker?.join(OVERLAY_POLL_MILLIS * 2)
     }
@@ -61,6 +63,16 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
         } catch (error: RuntimeException) {
             val code = if (isConsole) "overlay_console_invalid" else "overlay_join_failed"
             report(OverlayPhase.FAILED, "", ChannelResult.refused(code, "detail" to (error.message ?: "")))
+            return
+        } catch (error: LinkageError) {
+            report(
+                OverlayPhase.FAILED,
+                "",
+                ChannelResult.refused(
+                    "overlay_join_failed",
+                    "detail" to (error.message ?: ""),
+                ),
+            )
             return
         }
         var built: Pair<String, List<String>>? = null

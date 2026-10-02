@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import io.github.iffix.neutrino.BuildConfig
+import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.NeutrinoApplication
 import io.github.iffix.neutrino.OVERLAY_PROVIDER_EASYTIER
 import io.github.iffix.neutrino.OVERLAY_SERVICE_ACTION_START
@@ -75,6 +77,10 @@ class OverlayVpnService : VpnService() {
         engine = created
         running = bindingId to provider
         created.start(overlay, ServiceTunBuilder()) { phase, address, refusal ->
+            Log.i(
+                CLIENT_LOG_TAG,
+                "virtual network $provider: $phase $address ${refusal?.code.orEmpty()} ${refusal?.wordParams.orEmpty()}",
+            )
             if (running == bindingId to provider) {
                 app.overlays.report(OverlayStatus(bindingId, provider, phase, address, refusal))
             }
