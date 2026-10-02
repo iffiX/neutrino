@@ -227,20 +227,23 @@ line. The controls:
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
 | **Open** | when the entry is not local-only | when the entry is healthy and the hub is not disabled | opens the URL in the system browser; no job |
-| **Open locally** | when the entry is local-only | the same | job `ui.job.opening`: forwards the port to the loopback as a port entry does, reads the token on the `service` stream, opens the browser on `http://127.0.0.1:<local port>/`; a failure writes the code |
+| **Open locally** | when the entry is local-only | the same | job `ui.job.opening`: forwards the port to the loopback as a port entry does, reads the token on the `service` stream, opens the browser on the entry's loopback URL below; a failure writes the code |
 | **Configure** | when the entry is local-only | when the entry is not forwarded | the local port dialog of the Ports page |
 | **Disconnect** | when the entry is local-only and forwarded | always | ends the forward, as on the Ports page |
 
 A local-only entry's row is a Ports row once forwarded: the mono line adds
-`→ 127.0.0.1:<local port>`. The forward of a local-only entry rewrites each
-request's headers instead of relaying bytes: it adds the entry's token as
-the `vscode-tkn` cookie, drops the server's `Set-Cookie`, adds
-`Connection: close` so one connection carries one request, and passes a
-WebSocket upgrade through untouched after its response headers. The browser
-stores no token, so two instances on the loopback never overwrite each
-other's, and the URL carries none. A phone does the same through its app
-core: the forward listens on the phone's loopback, and the browser opens
-there.
+`→ 127.0.0.1:<local port>`. The forward relays bytes, as a port entry's
+does. The browser is opened on `http://<slug>.localhost:<local port>/?tkn=<token>`,
+where `slug` is the entry's id with every character outside letters, digits
+and hyphens turned into a hyphen: a browser resolves a `.localhost` name to
+the loopback by itself, and a cookie belongs to its host, so each instance
+keeps its own `vscode-tkn` cookie and two instances never overwrite each
+other's; the distinct local port keeps their storage apart as well. VS Code
+reads that cookie in the page to authenticate its own connection, which is
+why the token must reach the browser and a forward that hides it cannot
+work. On macOS the host is `127.0.0.1`, since Safari resolves no
+`.localhost` name. A phone does the same through its app core: the forward
+listens on the phone's loopback, and the browser opens there.
 
 ## The Ports page
 
