@@ -222,3 +222,10 @@ def test_the_served_models_are_listed_by_name(monkeypatch):
 
     assert is_answered
     assert served == ["claude-opus-5", "gemini-3-pro", "gpt-5"]
+
+
+def test_elsewhere_an_apply_restarts_the_child(
+    elsewhere, installed_box, fake_controller
+):
+    assert CliproxyApiConfigApplier().apply().endswith("restarted")
+    assert fake_controller.verbs() == [("restart", "cliproxyapi")]

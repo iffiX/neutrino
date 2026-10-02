@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from neutrino_hub.utils.constants import carried_program
+from neutrino_hub.utils.constants import UTILS_STATE_ROOT, carried_program
 
 # What the hub's package carries. The packaging pins the same version in
 # hub/packaging/venv_tree.py by reading this file, so a release and a checkout
@@ -46,6 +46,15 @@ NETBIRD_VENDOR_UNIT = "netbird.service"
 NETBIRD_STATE_DIR = Path("/var/lib/netbird")
 NETBIRD_ACTIVE_PROFILE_PATH = NETBIRD_STATE_DIR / "active_profile.json"
 NETBIRD_LEGACY_CONFIG_PATH = Path("/etc/netbird/config.json")
+# On macOS and Windows the hub's own daemon keeps them beside the hub's
+# state, started with `--config` naming the single-file profile there.
+NETBIRD_HUB_STATE_DIR = UTILS_STATE_ROOT / "netbird"
+NETBIRD_HUB_CONFIG_NAME = "config.json"
+NETBIRD_ACTIVE_PROFILE_NAME = "active_profile.json"
+# The name the process controller knows the daemon by.
+NETBIRD_SUPERVISED_NAME = "netbird"
+# Where every `netbird` command names the daemon it talks to.
+NETBIRD_DAEMON_ADDRESS_FLAG = "--daemon-addr"
 NETBIRD_BLOCK_INBOUND_KEY = "BlockInbound"
 # The daemon's DNS management stays off on the hub: the box resolves at its
 # own dnsmasq, and an overlay's DNS is a member's tool for roaming through the

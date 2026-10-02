@@ -8,7 +8,9 @@ there; a checkout, which no package staged, fetches the pinned release
 instead.
 
 Joining a network stays a separate step: a network is a name and a secret,
-and both are the panel's to write.
+and both are the panel's to write. On macOS and Windows nothing is downloaded
+and no unit is written: the apply hands the carried engine's start line to the
+process controller, which runs it as a child of the hub's one service.
 """
 
 import hashlib
@@ -27,10 +29,12 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_DROPIN_DIR_NAME,
     EASYTIER_DOWNLOAD_URL,
     EASYTIER_SHA256,
+    EASYTIER_SUPERVISED_NAME,
     EASYTIER_SUPPORTED_ARCHITECTURES,
     EASYTIER_UNIT,
     EASYTIER_VERSION,
 )
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.system.provisioning import ProvisionResult, say
@@ -93,9 +97,22 @@ class EasyTierProvisioner:
         Raises:
             RuntimeError: On a machine the vendor publishes no build for.
             ValueError: If what the vendor served is not what is pinned.
+            FileNotFoundError: Outside Linux, when the package carries no
+                engine.
             subprocess.CalledProcessError: If the download or any setup step
                 fails.
         """
+        if not is_linux():
+            missing = [
+                str(path)
+                for path in (EASYTIER_CORE_PATH, EASYTIER_CLI_PATH)
+                if not path.is_file()
+            ]
+            if missing:
+                raise FileNotFoundError(
+                    f"missing: {', '.join(missing)}; the package carries them"
+                )
+            return ProvisionResult(is_changed=False, message="already provisioned")
         require_architecture(EASYTIER_SUPPORTED_ARCHITECTURES, "easytier")
         is_changed = False
         if not EASYTIER_CORE_PATH.is_file() or not EASYTIER_CLI_PATH.is_file():
@@ -150,6 +167,13 @@ class EasyTierProvisioner:
         """
         del is_data_kept
         say(report, "stopping easytier")
+        if not is_linux():
+            controller = process_controller()
+            controller.disable(EASYTIER_SUPERVISED_NAME)
+            controller.set_start_line(EASYTIER_SUPERVISED_NAME, None, {}, None)
+            return ProvisionResult(
+                is_changed=True, message="removed; the network is kept"
+            )
         run(["systemctl", "disable", "--now", EASYTIER_UNIT], is_checked=False)
         (SYSTEM_SYSTEMD_DIR / EASYTIER_UNIT).unlink(missing_ok=True)
         shutil.rmtree(SYSTEM_SYSTEMD_DIR / EASYTIER_DROPIN_DIR_NAME, ignore_errors=True)

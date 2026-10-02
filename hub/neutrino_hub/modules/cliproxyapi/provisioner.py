@@ -2,7 +2,10 @@
 
 The vendor publishes prebuilt tarballs per architecture; the binary is the
 only thing inside worth keeping. Configuration is rendered by the panel, so
-provisioning ends with an apply rather than a wizard.
+provisioning ends with an apply rather than a wizard. On macOS and Windows the
+package carries the binary, nothing is downloaded and no unit is written: the
+gateway is registered with the process controller as a child of the hub's one
+service.
 """
 
 import shutil
@@ -11,6 +14,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.installation import venv_python
 from neutrino_hub.system.units import SystemdUnitInstaller
@@ -30,6 +34,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_DIR,
     CLIPROXYAPI_DOWNLOAD_URL,
     CLIPROXYAPI_GENERATED_NAME,
+    CLIPROXYAPI_SUPERVISED_NAME,
     CLIPROXYAPI_SUPPORTED_ARCHITECTURES,
     CLIPROXYAPI_UNIT,
     CLIPROXYAPI_VERSION,
@@ -68,8 +73,12 @@ class CliproxyApiProvisioner:
 
         Raises:
             RuntimeError: On a machine the vendor publishes no binary for.
+            FileNotFoundError: Outside Linux, when the package carries no
+                binary.
             subprocess.CalledProcessError: If the download or any setup step fails.
         """
+        if not is_linux():
+            return self._register(report=report)
         is_changed = False
         applier = CliproxyApiConfigApplier()
         # Before the binary, and whether or not one has to be fetched: the
@@ -136,6 +145,13 @@ class CliproxyApiProvisioner:
             return ProvisionResult(is_changed=False, message="not installed")
 
         say(report, "stopping and disabling the AI gateway")
+        if not is_linux():
+            process_controller().disable(CLIPROXYAPI_SUPERVISED_NAME)
+            (UTILS_GENERATED_DIR / CLIPROXYAPI_GENERATED_NAME).unlink(missing_ok=True)
+            if not is_data_kept:
+                shutil.rmtree(CLIPROXYAPI_DIR, ignore_errors=True)
+                return ProvisionResult(is_changed=True, message="removed, data deleted")
+            return ProvisionResult(is_changed=True, message="removed; logins kept")
         run(["systemctl", "disable", "--now", CLIPROXYAPI_UNIT], is_checked=False)
         (SYSTEM_SYSTEMD_DIR / CLIPROXYAPI_UNIT).unlink(missing_ok=True)
         run(["systemctl", "daemon-reload"])
@@ -149,6 +165,43 @@ class CliproxyApiProvisioner:
             shutil.rmtree(CLIPROXYAPI_DIR, ignore_errors=True)
             return ProvisionResult(is_changed=True, message="removed, data deleted")
         return ProvisionResult(is_changed=True, message="removed; logins kept")
+
+    def _register(self, *, report: Callable[[str], None] | None) -> ProvisionResult:
+        """Check the carried binary, apply, and have the service run it.
+
+        Args:
+            report: Sink for progress lines, if anyone is watching.
+
+        Returns:
+            What was done.
+
+        Raises:
+            FileNotFoundError: When the package carries no binary.
+        """
+        if not CLIPROXYAPI_BINARY_PATH.is_file():
+            raise FileNotFoundError(
+                f"missing: {CLIPROXYAPI_BINARY_PATH}; the package carries it"
+            )
+        is_changed = False
+        if not CLIPROXYAPI_AUTH_DIR.is_dir():
+            say(report, f"creating {CLIPROXYAPI_DIR}")
+            CLIPROXYAPI_AUTH_DIR.mkdir(parents=True, exist_ok=True)
+            CLIPROXYAPI_DIR.chmod(0o700)
+            is_changed = True
+        say(report, "rendering the configuration")
+        CliproxyApiConfigApplier().apply()
+        controller = process_controller()
+        if not controller.is_enabled(CLIPROXYAPI_SUPERVISED_NAME):
+            controller.enable(CLIPROXYAPI_SUPERVISED_NAME)
+            is_changed = True
+        return ProvisionResult(
+            is_changed=is_changed,
+            message=(
+                f"cliproxyapi {CLIPROXYAPI_VERSION}"
+                if is_changed
+                else "already provisioned"
+            ),
+        )
 
     def _download_binary(self, architecture: str) -> None:
         with tempfile.TemporaryDirectory() as workdir:

@@ -9,6 +9,8 @@ CLIPROXYAPI_VERSION = "7.2.146"
 # Carried by the hub's package, under the hub's own prefix rather than
 # /usr/local, which belongs to whoever administers the machine.
 CLIPROXYAPI_BINARY_PATH = carried_program("cli-proxy-api")
+# The name the process controller knows the gateway by.
+CLIPROXYAPI_SUPERVISED_NAME = "cliproxyapi"
 CLIPROXYAPI_DIR = UTILS_STATE_ROOT / "cliproxyapi"
 # Where the gateway keeps the accounts somebody signed in. State, not
 # configuration: a backup carries ``config/`` and none of this, so a restored

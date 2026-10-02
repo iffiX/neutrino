@@ -12,6 +12,7 @@ import pytest
 from neutrino_hub.modules.easytier import ops as easytier_ops
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
+from neutrino_hub.modules.netbird.ops import NetbirdState
 from neutrino_hub.modules.overlay import ops
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -390,3 +391,78 @@ def test_an_overlay_turned_off_is_not_read(routed):
     conflicts = ops.OverlayRouteGuard().check(network_of(OVERLAY_EASYTIER))
 
     assert {c.provider for c in conflicts} == {OVERLAY_EASYTIER}
+
+
+# --- macOS and Windows: each engine a child of the hub's service ------------
+
+
+class NoUnits:
+    """systemd, which no test here may reach."""
+
+    def run(self, command, **kwargs):
+        raise AssertionError(f"ran {command}")
+
+
+@pytest.fixture
+def supervised(elsewhere, box, monkeypatch, fake_controller):
+    """The switcher's box, its engines run by the process controller."""
+    monkeypatch.setattr(ops, "run", NoUnits().run)
+    monkeypatch.setattr(ops, "engine_devices", lambda provider: ["utun4"])
+    monkeypatch.setattr(ops, "device_addresses", lambda: {"utun4": "100.64.0.1/16"})
+    return fake_controller
+
+
+def test_elsewhere_an_engine_running_is_asked_of_the_controller(supervised):
+    supervised.active.add("netbird")
+
+    assert switcher().start(network_of(OVERLAY_NETBIRD)) == []
+    assert ("is_active", "netbird") in supervised.calls
+
+
+def test_elsewhere_an_engine_just_started_is_waited_for_by_address(supervised):
+    assert switcher().start(network_of(OVERLAY_NETBIRD)) == ["NetBird started"]
+
+
+def test_elsewhere_the_engines_turned_off_are_disabled(supervised):
+    supervised.active.add("easytier")
+    supervised.enabled.add("easytier")
+
+    notes = switcher().stop(network_of(OVERLAY_NETBIRD))
+
+    assert notes == ["EasyTier stopped"]
+    assert supervised.verbs() == [("disable", "easytier")]
+
+
+def test_elsewhere_an_engine_already_down_is_left_alone(supervised):
+    assert switcher().stop(network_of()) == []
+    assert supervised.verbs() == []
+
+
+def test_elsewhere_netbird_rides_on_the_device_holding_its_address(
+    elsewhere, monkeypatch
+):
+    class Reader:
+        def survey(self):
+            return NetbirdState(is_installed=True, netbird_ip="100.92.10.4")
+
+    monkeypatch.setattr(ops, "NetbirdStatusReader", Reader)
+    monkeypatch.setattr(
+        ops,
+        "device_addresses",
+        lambda: {"en0": "192.168.1.20/24", "utun4": "100.92.10.4/16"},
+    )
+    monkeypatch.setattr(ops, "console_device_names", lambda: ["utun5"])
+
+    assert ops.engine_devices(OVERLAY_NETBIRD) == ["utun4"]
+    assert ops.engine_devices(OVERLAY_EASYTIER) == ["utun5"]
+    assert ops.overlay_devices(network_of(OVERLAY_NETBIRD, OVERLAY_EASYTIER)) == {
+        OVERLAY_NETBIRD: ["utun4"],
+        OVERLAY_EASYTIER: ["utun5"],
+    }
+
+
+def test_elsewhere_the_route_guard_reports_no_conflict(elsewhere, routed):
+    commands, deselected = routed
+
+    assert ops.OverlayRouteGuard().check(network_of(OVERLAY_NETBIRD)) == []
+    assert commands == [] and deselected == []

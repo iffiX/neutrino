@@ -402,3 +402,93 @@ def test_a_destination_nothing_routes_is_not_deselected(monkeypatch):
 
     assert ops.NetbirdRouteSelector().deselect("10.0.0.0/24") is False
     assert commands == [[NETBIRD, "routes", "list"]]
+
+
+# --- the hub's own daemon outside Linux -------------------------------------
+
+
+def daemon_tail(system: str) -> list:
+    """What every command ends with on this system: the hub's own daemon."""
+    from neutrino_hub.utils.constants import UTILS_RUNTIME_ROOT
+
+    if system == "darwin":
+        return ["--daemon-addr", f"unix://{UTILS_RUNTIME_ROOT / 'netbird.sock'}"]
+    return ["--daemon-addr", "tcp://127.0.0.1:41732"]
+
+
+def test_on_linux_a_command_names_no_daemon():
+    assert ops.netbird_command("status", "--json") == [NETBIRD, "status", "--json"]
+
+
+def test_elsewhere_every_command_names_the_hubs_own_daemon(elsewhere, monkeypatch):
+    commands = []
+
+    def run(cmd, **keywords):
+        commands.append(cmd)
+        return FakeResult(json.dumps(NEEDS_LOGIN))
+
+    monkeypatch.setattr(ops, "run", run)
+    tail = daemon_tail(elsewhere)
+
+    NetbirdStatusReader().survey()
+    ops.NetbirdRouteSelector().deselect("10.0.0.0/24")
+
+    assert commands == [
+        [NETBIRD, "status", "--json", *tail],
+        [NETBIRD, "routes", "list", *tail],
+    ]
+
+
+def test_elsewhere_the_inbound_gate_names_the_daemon_and_reads_beside_the_hub(
+    elsewhere, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(ops, "NETBIRD_HUB_STATE_DIR", tmp_path)
+    (tmp_path / "active_profile.json").write_text('{"name": "default"}')
+    (tmp_path / "default.json").write_text('{"BlockInbound": true}')
+    ran = []
+    monkeypatch.setattr(
+        ops, "run", lambda command, **kwargs: ran.append(command) or FakeResult("")
+    )
+    monkeypatch.setattr(
+        NetbirdStatusReader,
+        "survey",
+        lambda self: ops.NetbirdState(is_installed=True, is_enrolled=True),
+    )
+    tail = daemon_tail(elsewhere)
+
+    assert ops.NetbirdInboundGate().state() is True
+    assert ops.NetbirdInboundGate().converge(is_blocked=False) == "overlay opened"
+    assert ran == [
+        [NETBIRD, "down", *tail],
+        [NETBIRD, "up", "--block-inbound=false", "--disable-dns", *tail],
+    ]
+
+
+def test_elsewhere_the_single_file_profile_is_the_one_the_daemon_started_with(
+    elsewhere, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(ops, "NETBIRD_HUB_STATE_DIR", tmp_path)
+    (tmp_path / "config.json").write_text('{"BlockInbound": false}')
+
+    assert ops.NetbirdInboundGate().state() is False
+
+
+def test_elsewhere_a_reset_restarts_the_child(
+    elsewhere, tmp_path, monkeypatch, fake_controller
+):
+    monkeypatch.setattr(ops, "NETBIRD_HUB_STATE_DIR", tmp_path)
+    (tmp_path / "active_profile.json").write_text('{"name": "default"}')
+    (tmp_path / "default.json").write_text("{}")
+    (tmp_path / "state.json").write_text("{}")
+
+    def run(cmd, **keywords):
+        if cmd[0] == "systemctl":
+            raise AssertionError(f"ran {cmd}")
+        return FakeResult(json.dumps(NEEDS_LOGIN))
+
+    monkeypatch.setattr(ops, "run", run)
+
+    ops.NetbirdEnroller().leave()
+
+    assert fake_controller.verbs() == [("restart", "netbird")]
+    assert sorted(path.name for path in tmp_path.iterdir()) == []

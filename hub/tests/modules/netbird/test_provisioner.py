@@ -246,3 +246,48 @@ def test_the_shipped_unit_runs_the_client_the_package_carries():
     ``NETBIRD_BINARY_PATH`` and has to keep agreeing with it."""
     assert f"ExecStart={module.NETBIRD_BINARY_PATH} service run" in PACKAGED_UNIT
     assert "@PYTHON@" not in PACKAGED_UNIT
+
+
+# --- macOS and Windows --------------------------------------------------------
+
+
+def test_elsewhere_the_carried_client_is_registered_and_nothing_is_fetched(
+    elsewhere, tmp_path, monkeypatch, fake_controller
+):
+    provisioner, ran, systemd, binary = a_box(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "NETBIRD_HUB_STATE_DIR", tmp_path / "hub_state")
+
+    first = provisioner.provision()
+    second = provisioner.provision()
+
+    assert first.is_changed and not second.is_changed
+    assert ran == []
+    assert list(systemd.iterdir()) == []
+    assert fake_controller.verbs() == [("enable", "netbird")]
+    assert (tmp_path / "hub_state").is_dir()
+
+
+def test_elsewhere_a_missing_client_is_named(
+    elsewhere, tmp_path, monkeypatch, fake_controller
+):
+    provisioner, ran, _, _ = a_box(tmp_path, monkeypatch, is_binary_present=False)
+
+    with pytest.raises(FileNotFoundError, match="netbird"):
+        provisioner.provision()
+    assert ran == []
+
+
+def test_elsewhere_a_removal_leaves_and_disables_the_child(
+    elsewhere, tmp_path, monkeypatch, fake_controller
+):
+    provisioner, ran, _, binary = a_box(tmp_path, monkeypatch)
+    hub_state = tmp_path / "hub_state"
+    hub_state.mkdir()
+    monkeypatch.setattr(module, "NETBIRD_HUB_STATE_DIR", hub_state)
+
+    result = provisioner.deprovision(is_data_kept=False)
+
+    assert result.message == "removed, identity deleted"
+    assert ran[0][1:3] == ["down", "--daemon-addr"]
+    assert fake_controller.verbs() == [("disable", "netbird")]
+    assert not hub_state.exists()

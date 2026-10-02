@@ -3,7 +3,9 @@
 Converging is two acts that the caller keeps apart: the enabled engines are
 started, each given a moment to hold an address, and the engines turned off
 are stood down only when the caller says so, after it has handed every peer
-the material that no longer names them.
+the material that no longer names them. On macOS and Windows each engine
+is a child of the hub's one service, driven through the process controller
+by its key, and its device is found by the address it holds.
 """
 
 import dataclasses
@@ -17,10 +19,13 @@ from neutrino_hub.modules.easytier.ops import (
     EasyTierStatusReader,
     apply_stored_if_changed,
 )
-from neutrino_hub.modules.easytier.ops import console_device_names
+from neutrino_hub.modules.easytier.ops import console_device_names, devices_holding
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
-from neutrino_hub.modules.netbird.ops import NetbirdRouteSelector
+from neutrino_hub.modules.netbird.ops import (
+    NetbirdRouteSelector,
+    NetbirdStatusReader,
+)
 from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import (
@@ -36,6 +41,7 @@ from neutrino_hub.modules.overlay.route_check import (
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import device_addresses
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.provisioning import say
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.utils.subprocess_run import run
@@ -66,6 +72,9 @@ def overlay_devices(network: RouterNetworkConfig) -> dict:
     """
     devices = {}
     for overlay in network.enabled_overlays:
+        if not is_linux():
+            devices[overlay.provider] = engine_devices(overlay.provider)
+            continue
         if overlay.provider != OVERLAY_EASYTIER:
             continue
         if _is_easytier_console_mode():
@@ -80,9 +89,15 @@ def engine_devices(provider: str) -> list:
         provider: A key of :data:`OVERLAY_ENGINES`.
 
     Returns:
-        The device names; for EasyTier in console mode the ones holding the
-        addresses the engine reports, possibly none.
+        The device names; for EasyTier in console mode, and for every engine
+        outside Linux, the ones holding the addresses the engine reports,
+        possibly none.
     """
+    if not is_linux():
+        if provider == OVERLAY_EASYTIER:
+            return console_device_names()
+        address = NetbirdStatusReader().survey().netbird_ip
+        return devices_holding(device_addresses(), [address]) if address else []
     if provider == OVERLAY_EASYTIER and _is_easytier_console_mode():
         return console_device_names()
     return [OVERLAY_ENGINES[provider].device_name]
@@ -122,6 +137,24 @@ def is_unit_active(unit: str) -> bool:
         True when it is active.
     """
     return run(["systemctl", "is-active", "--quiet", unit], is_checked=False).is_success
+
+
+def is_engine_active(provider: str) -> bool:
+    """Whether one engine runs now.
+
+    Args:
+        provider: A key of :data:`OVERLAY_ENGINES`, which is also the name the
+            process controller knows the engine by.
+
+    Returns:
+        True when its unit is active, or outside Linux its child runs.
+
+    Raises:
+        KeyError: If the process controller does not run the engine.
+    """
+    if not is_linux():
+        return process_controller().is_active(provider)
+    return is_unit_active(OVERLAY_ENGINES[provider].unit)
 
 
 class OverlaySwitcher:
@@ -175,7 +208,7 @@ class OverlaySwitcher:
             engine = OVERLAY_ENGINES[provider]
             if not engine.is_integrated or provider not in OVERLAY_PROVISIONERS:
                 raise NotImplementedError(f"this hub does not run {engine.title} yet")
-            was_active = is_unit_active(engine.unit)
+            was_active = is_engine_active(provider)
             result = OVERLAY_PROVISIONERS[provider]().provision(report=report)
             if result.is_changed:
                 notes.append(result.message)
@@ -217,7 +250,14 @@ class OverlaySwitcher:
         enabled = set(enabled_providers(network))
         notes = []
         for key, engine in OVERLAY_ENGINES.items():
-            if key in enabled or not self._is_standing(engine.unit):
+            if key in enabled:
+                continue
+            if not is_linux():
+                if self._stand_down_supervised(key):
+                    say(report, f"stopped {key}")
+                    notes.append(f"{engine.title} stopped")
+                continue
+            if not self._is_standing(engine.unit):
                 continue
             result = run(
                 ["systemctl", "disable", "--now", engine.unit], is_checked=False
@@ -226,6 +266,21 @@ class OverlaySwitcher:
                 say(report, f"stopped {engine.unit}")
                 notes.append(f"{engine.title} stopped")
         return notes
+
+    def _stand_down_supervised(self, provider: str) -> bool:
+        """Stop one engine the hub's service runs, and keep it stopped.
+
+        Args:
+            provider: The engine, by the name the process controller knows.
+
+        Returns:
+            True when it was running or enabled and is now disabled.
+        """
+        controller = process_controller()
+        if not controller.is_active(provider) and not controller.is_enabled(provider):
+            return False
+        controller.disable(provider)
+        return True
 
     def _is_standing(self, unit: str) -> bool:
         """Whether a unit is running or would start at boot."""
@@ -272,7 +327,8 @@ class OverlayRouteGuard:
         A default route is deleted from the kernel, and NetBird is told to
         stop using it; a NetBird route overlapping another network is
         deselected. EasyTier's routes come from its console or its peers and
-        are only reported.
+        are only reported. Outside Linux the routes are not read and no
+        conflict is reported.
 
         Args:
             network: The parsed router configuration.
@@ -281,6 +337,8 @@ class OverlayRouteGuard:
             One conflict per refused route, ``is_withdrawn`` saying whether
             it was taken away.
         """
+        if not is_linux():
+            return []
         providers = enabled_providers(network)
         devices = {provider: engine_devices(provider) for provider in providers}
         routes = _kernel_routes(devices)

@@ -34,6 +34,9 @@ EASYTIER_DROPIN_DIR_NAME = f"{EASYTIER_UNIT}.d"
 EASYTIER_DROPIN_NAME = "arguments.conf"
 # The start arguments file of the 0.4.0 development builds; apply deletes it.
 EASYTIER_STALE_ARGUMENTS_NAME = "easytier.env"
+# The name the process controller knows the engine by; on macOS and
+# Windows it holds the start line in place of the drop-in.
+EASYTIER_SUPERVISED_NAME = "easytier"
 
 # How the engine learns its network: from the files this hub renders, or from
 # EasyTier's own console, which pushes the whole network configuration.
@@ -46,6 +49,9 @@ EASYTIER_CONFIG_SERVER_SCHEMES = ("tcp", "udp", "ws", "wss")
 # knock on. Both are stated rather than left to the engine: a device it named
 # itself would be a device the ruleset matches by luck.
 EASYTIER_DEVICE_NAME = "easytier"
+# macOS names a tunnel utunN and nothing else, so there the engine picks
+# its own and the device is found by its address.
+EASYTIER_SYSTEM_NAMED_DEVICE_OS = ("darwin",)
 EASYTIER_PEER_PORT = 11010
 # Loopback only, and the engine's own default port. Reading the node's state
 # goes through it; nothing else may.
