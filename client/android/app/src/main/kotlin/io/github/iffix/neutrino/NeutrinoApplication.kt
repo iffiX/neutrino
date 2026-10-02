@@ -25,6 +25,7 @@ import io.github.iffix.neutrino.files.SmbShareClient
 import io.github.iffix.neutrino.forward.PortForwardService
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
+import io.github.iffix.neutrino.overlay.OverlayProbe
 import io.github.iffix.neutrino.overlay.ServiceOverlayLauncher
 import io.github.iffix.neutrino.remotedesktop.MissingRemoteDesktopCore
 import io.github.iffix.neutrino.remotedesktop.RemoteDesktopCore
@@ -92,9 +93,12 @@ class NeutrinoApplication : Application() {
 
     /** Each hub's virtual network, and the one network the VPN runs. */
     val overlays: OverlayController by lazy {
-        OverlayController(bindingStore, ServiceOverlayLauncher(this), scope) { bindingId, url ->
-            connections.session(bindingId)?.preferAddress(url)
-        }
+        OverlayController(
+            store = bindingStore,
+            launcher = ServiceOverlayLauncher(this),
+            scope = scope,
+            probe = OverlayProbe::isReachable,
+        ) { bindingId, url -> connections.session(bindingId)?.preferAddress(url) }
     }
 
     /** The one state document every screen draws: each hub with its virtual network and its jobs. */

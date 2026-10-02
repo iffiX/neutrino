@@ -168,6 +168,7 @@
   "ui.provided_by": "由 {hub}:{device}:{module} 提供",
   "ui.rdp_connect": "连接",
   "ui.rdp_open": "查看器已打开",
+  "ui.reason.console_waiting": "本机已登记到控制台，请在控制台里把它挂载到一个网络。",
   "ui.reason.disabled": "hub 已把本机停用。",
   "ui.reason.mount_form": "先在配置里填用户名和路径。",
   "ui.reason.no_machine": "先在上面选一台机器。",

@@ -284,6 +284,12 @@ const val OVERLAY_STOP_TIMEOUT_S = 10L
 /** The name of the one manual EasyTier instance the app runs. */
 const val OVERLAY_EASYTIER_INSTANCE = "neutrino"
 
+/** How often a connect asks whether the hub answers at its address on the network. */
+const val OVERLAY_PROBE_INTERVAL_MILLIS = 2000L
+
+/** How long one such ask waits for the hub's port. */
+const val OVERLAY_PROBE_TIMEOUT_MILLIS = 3000
+
 /** How often an EasyTier engine reads its core's state. */
 const val OVERLAY_POLL_MILLIS = 1000L
 

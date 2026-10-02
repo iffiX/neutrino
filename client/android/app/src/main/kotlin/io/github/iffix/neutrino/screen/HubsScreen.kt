@@ -142,6 +142,8 @@ private fun HubRow(
         ?: networks.firstOrNull { it.provider == hub.binding.overlayChoice }?.provider
         ?: networks.firstOrNull()?.provider.orEmpty()
     val networkReason = when {
+        line.isWaiting -> words.word("ui.reason.console_waiting")
+
         line.state != OverlayState.OFF -> null
 
         hub.isDisabled -> words.word("ui.reason.disabled")

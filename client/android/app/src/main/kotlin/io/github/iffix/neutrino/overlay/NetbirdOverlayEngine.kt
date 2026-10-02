@@ -60,6 +60,17 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
         val keyDigest = MessageDigest.getInstance("SHA-256").digest(overlay.setupKey.toByteArray())
             .joinToString("") { "%02x".format(it) }
         try {
+            val address = StringBuilder()
+            val running = Android.newClient(
+                Build.VERSION.SDK_INT.toLong(),
+                deviceName,
+                version,
+                Tun(tun),
+                Interfaces(),
+                Changes(),
+            )
+            running.setConnectionListener(Listener(address, report))
+            client = running
             if (!config.exists() || !registered.exists() || registered.readText() != keyDigest) {
                 val management = overlay.managementUrl.ifEmpty { OVERLAY_NETBIRD_DEFAULT_MANAGEMENT_URL }
                 val done = CompletableFuture<Exception?>()
@@ -79,18 +90,6 @@ class NetbirdOverlayEngine(private val dir: File, private val deviceName: String
                 done.get()?.let { throw it }
                 registered.writeText(keyDigest)
             }
-            if (isStopped) return
-            val address = StringBuilder()
-            val running = Android.newClient(
-                Build.VERSION.SDK_INT.toLong(),
-                deviceName,
-                version,
-                Tun(tun),
-                Interfaces(),
-                Changes(),
-            )
-            running.setConnectionListener(Listener(address, report))
-            client = running
             if (isStopped) return
             running.runWithoutLogin(Files(dir, config), DNSList(), Ready(), Android.newEnvList())
             report(OverlayPhase.OFF, "", null)

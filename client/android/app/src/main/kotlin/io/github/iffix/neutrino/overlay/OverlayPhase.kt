@@ -8,6 +8,9 @@ enum class OverlayPhase {
     /** The engine is joining: amber. */
     JOINING,
 
+    /** Registered with a console that has assigned no network yet: amber. */
+    WAITING,
+
     /** On it, with an address: green. */
     ON,
 
