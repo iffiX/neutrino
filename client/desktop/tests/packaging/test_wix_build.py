@@ -83,6 +83,38 @@ def test_a_service_is_installed_controlled_and_permitted():
     assert next(root.iter(WXS + "Directory")).get("Name") == "Neutrino Agent"
 
 
+def test_a_service_can_be_registered_and_left_stopped():
+    """The hub's service is started by its setup, never by the install."""
+    root = _document(
+        wix_build.element(
+            "StandardDirectory",
+            {"Id": "ProgramFiles64Folder"},
+            (
+                wix_build.directory(
+                    "INSTALLFOLDER",
+                    "hub",
+                    (
+                        wix_build.service_component(
+                            component_id="HubService",
+                            source="C:\\build\\nhub.exe",
+                            service_name="neutrino_hub",
+                            display_name="Neutrino Hub",
+                            description="The hub",
+                            arguments="service run",
+                            is_started_on_install=False,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    control = next(root.iter(WXS + "ServiceControl"))
+    assert control.get("Start") is None
+    assert (control.get("Stop"), control.get("Remove")) == ("both", "uninstall")
+    assert next(root.iter(WXS + "ServiceInstall")).get("Start") == "auto"
+
+
 def test_a_deferred_custom_action_runs_as_the_system_unless_asked():
     root = _document(
         wix_build.custom_action(
