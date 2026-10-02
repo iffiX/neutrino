@@ -229,8 +229,10 @@ accounts the module names, each started by the system's own service
 manager: a systemd unit with `User=` on Linux, a LaunchDaemon with
 `UserName` on macOS, and on Windows a scheduled task registered with the
 account's login, because LocalSystem cannot start a process as another
-account without its password. Everything else the agent does is root's own
-work.
+account without its password; on Windows the module also opens each
+instance's port in the firewall and closes it with the instance, since the
+hub's forwards reach the server from the network. Everything else the agent
+does is root's own work.
 
 ## The platform layer
 

@@ -51,6 +51,9 @@ VSCODE_DARWIN_LOG_PREFIX = "vscode_"
 VSCODE_TASK_PREFIX = "neutrino_vscode_"
 VSCODE_TASK_MARKER = "neutrino:"
 VSCODE_WINDOWS_SHELL = "cmd.exe"
+# The inbound firewall rule of one instance's port, named by its account.
+VSCODE_WINDOWS_RULE_PREFIX = "neutrino_vscode_port_"
+VSCODE_WINDOWS_RULE_TITLE = "Neutrino VS Code ({account})"
 # What a task's last result is when Windows could not sign its account in.
 VSCODE_LOGON_FAILURES = (0x8007052E,)
 
