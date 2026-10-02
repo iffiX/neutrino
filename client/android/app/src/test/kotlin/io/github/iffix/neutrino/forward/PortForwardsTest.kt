@@ -25,7 +25,6 @@ import org.junit.Test
 class PortForwardsTest {
     private val echo = EchoServer()
     private val table = LocalPortTable(FakeSharedPreferences())
-    private val tokens = mutableListOf<String>()
     private val noMaterial: suspend (String, String) -> ChannelResult<JsonObject> = { _, _ ->
         ChannelResult.Ok(JsonObject(emptyMap()))
     }
@@ -49,9 +48,9 @@ class PortForwardsTest {
     @Test
     fun aSecondPressWhileTheJobRunsIsDropped() = runTest {
         var made = 0
-        val forwards = PortForwards(noMaterial, backgroundScope, table) { host, port, local, token ->
+        val forwards = PortForwards(noMaterial, backgroundScope, table) { host, port, local ->
             made += 1
-            PortForwardRelay(host, port, local, token)
+            PortForwardRelay(host, port, local)
         }
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
@@ -73,7 +72,7 @@ class PortForwardsTest {
 
     @Test
     fun aFailedBindWritesForwardFailedUntilARefresh() = runTest {
-        val forwards = PortForwards(noMaterial, backgroundScope, table) { host, port, _, _ ->
+        val forwards = PortForwards(noMaterial, backgroundScope, table) { host, port, _ ->
             FailingRelay(host, port)
         }
         forwards.connect("b1", "p1", "127.0.0.1", echo.port)
@@ -84,41 +83,33 @@ class PortForwardsTest {
     }
 
     @Test
-    fun openLocallyForwardsTakesTheTokenAndOpensTheLoopback() = runTest {
+    fun openLocallyForwardsTakesTheTokenAndOpensTheEntrysOwnLocalhostName() = runTest {
         val answer = CompletableDeferred<ChannelResult<JsonObject>>()
-        val forwards = PortForwards({ _, _ -> answer.await() }, backgroundScope, table) { host, port, local, token ->
-            tokens += token
-            PortForwardRelay(host, port, local, token)
-        }
+        val forwards = PortForwards({ _, _ -> answer.await() }, backgroundScope, table)
         val opened = mutableListOf<String>()
-        forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
+        forwards.openLocal("b1", "vscode-argon_iffi.1", "http://127.0.0.1:${echo.port}/", opened::add)
         runCurrent()
-        assertEquals(PortForwardJob.OPENING, forwards.rows.value["b1/w1"]?.job)
+        assertEquals(PortForwardJob.OPENING, forwards.rows.value["b1/vscode-argon_iffi.1"]?.job)
         answer.complete(ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("a b")))))
         runCurrent()
-        val row = forwards.rows.value.getValue("b1/w1")
-        assertEquals(listOf("http://127.0.0.1:${row.localPort}/"), opened)
-        assertEquals(listOf("a b"), tokens)
+        val row = forwards.rows.value.getValue("b1/vscode-argon_iffi.1")
+        assertEquals(listOf("http://vscode-argon-iffi-1.localhost:${row.localPort}/?tkn=a+b"), opened)
         assertNull(row.job)
+        Socket("127.0.0.1", row.localPort).use { client ->
+            client.soTimeout = 5000
+            client.getOutputStream().write("GET / HTTP/1.1\r\n\r\n".toByteArray())
+            val echoed = ByteArray(16)
+            var read = 0
+            while (read < 16) read += client.getInputStream().read(echoed, read, 16 - read)
+            assertEquals("GET / HTTP/1.1\r\n", String(echoed))
+        }
         forwards.stopAll()
     }
 
     @Test
-    fun openLocallyOnAForwardedEntryOpensTheBrowserAgainWithNoNewForward() = runTest {
-        val forwards = PortForwards({ _, _ ->
-            ChannelResult.Ok(JsonObject(mapOf("token" to JsonPrimitive("t"))))
-        }, backgroundScope, table) { host, port, local, token ->
-            tokens += token
-            PortForwardRelay(host, port, local, token)
-        }
-        val opened = mutableListOf<String>()
-        forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
-        runCurrent()
-        forwards.openLocal("b1", "w1", "http://127.0.0.1:${echo.port}/", opened::add)
-        runCurrent()
-        assertEquals(2, opened.size)
-        assertEquals(1, tokens.size)
-        forwards.stopAll()
+    fun aSlugKeepsLettersDigitsAndHyphensOnly() {
+        assertEquals("vscode-argon-iffi", PortForwards.slugOf("vscode:argon/iffi"))
+        assertEquals("Web-1", PortForwards.slugOf("Web 1"))
     }
 
     @Test
