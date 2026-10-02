@@ -10,6 +10,7 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * @property address This phone's address on the network, empty until the engine has one.
  * @property error The last failure, kept while [state] is [OverlayState.OFF] until the next press or a refresh.
  * @property job What the network's button is doing.
+ * @property isWaiting Whether the engine is registered with a console that has assigned no network yet.
  */
 data class OverlayLine(
     val state: OverlayState = OverlayState.OFF,
@@ -17,4 +18,5 @@ data class OverlayLine(
     val address: String = "",
     val error: ChannelResult.Refused? = null,
     val job: OverlayJob = OverlayJob.NONE,
+    val isWaiting: Boolean = false,
 )

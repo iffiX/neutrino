@@ -128,6 +128,37 @@ class OverlayControllerTest {
     }
 
     @Test
+    fun aConsoleThatHasThePhoneRegisteredHoldsTheConnectWithNoDeadlineUntilCancel() = runTest {
+        val controller = controller()
+        controller.connect("b1")
+        controller.engineSays(OverlayPhase.WAITING)
+        assertTrue(controller.lines.value["b1"]?.isWaiting == true)
+        advanceTimeBy(600_000)
+        assertEquals(OverlayState.CONNECTING, controller.state())
+        assertEquals(0, stops)
+        controller.cancel("b1")
+        assertEquals(OverlayState.OFF, controller.state())
+        assertNull(controller.lines.value["b1"]?.error)
+        assertFalse(controller.lines.value["b1"]?.isWaiting == true)
+        assertEquals(1, stops)
+    }
+
+    @Test
+    fun aNetworkTheConsoleAssignsStartsAFreshSixtySeconds() = runTest {
+        val controller = controller()
+        controller.connect("b1")
+        controller.engineSays(OverlayPhase.WAITING)
+        advanceTimeBy(300_000)
+        controller.engineSays(OverlayPhase.ON, "10.144.0.7")
+        assertFalse(controller.lines.value["b1"]?.isWaiting == true)
+        advanceTimeBy(59_999)
+        assertEquals(OverlayState.CONNECTING, controller.state())
+        advanceTimeBy(2)
+        assertEquals(OverlayState.OFF, controller.state())
+        assertEquals("overlay_hub_unreachable", controller.lines.value["b1"]?.error?.code)
+    }
+
+    @Test
     fun noAddressWithinSixtySecondsIsOffWithTheCode() = runTest {
         val controller = controller()
         controller.connect("b1")

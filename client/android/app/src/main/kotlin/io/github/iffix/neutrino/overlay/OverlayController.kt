@@ -26,8 +26,10 @@ import kotlinx.coroutines.launch
 /**
  * Each hub's virtual network as three states, `off`, `connecting` and `on`, driven only by a
  * person's press: a connect is one attempt of at most 60 s, ended by the engine's address and
- * the hub's channel through the network, by a failure, or by Cancel. Nothing retries, nothing
- * moves to another network, and nothing changes the pick. The VPN runs one network at a time.
+ * the hub's channel through the network, by a failure, or by Cancel. A console that has the
+ * phone registered and has assigned no network holds the attempt with no deadline until it
+ * assigns one, which starts a fresh 60 s, or until Cancel. Nothing retries, nothing moves to
+ * another network, and nothing changes the pick. The VPN runs one network at a time.
  *
  * @param store The bindings, where the pick and the last state are kept.
  * @param launcher What starts and stops the VPN service.
@@ -152,8 +154,15 @@ class OverlayController(
         when (status.phase) {
             OverlayPhase.ON -> if (status.address.isNotEmpty()) {
                 attempt.hasAddress = true
-                put(attempt.bindingId, line.copy(address = status.address))
+                put(attempt.bindingId, line.copy(address = status.address, isWaiting = false))
+                if (line.isWaiting) restartTimer(OVERLAY_CONNECT_TIMEOUT_S) { expired(attempt.bindingId) }
                 if (line.state == OverlayState.CONNECTING && asking == null) ask(attempt)
+            }
+
+            OverlayPhase.WAITING -> if (line.state == OverlayState.CONNECTING && !attempt.hasAddress) {
+                timer?.cancel()
+                timer = null
+                put(attempt.bindingId, line.copy(isWaiting = true))
             }
 
             OverlayPhase.OFF, OverlayPhase.FAILED -> if (line.job == OverlayJob.DISCONNECTING) {

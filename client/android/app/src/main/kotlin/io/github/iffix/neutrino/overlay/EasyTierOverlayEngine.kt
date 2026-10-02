@@ -12,8 +12,9 @@ import kotlin.concurrent.thread
 
 /**
  * EasyTier's core in the app: a manual network run from its TOML, or a console's web client
- * that runs the networks the console pushes; the first network with an address gets the TUN
- * device, rebuilt when the address or the routed subnets change.
+ * that runs the networks the console pushes, which says when the console has it registered and
+ * no network yet; the first network with an address gets the TUN device, rebuilt when the
+ * address or the routed subnets change.
  *
  * @param stateDir Where the web client keeps its machine id.
  * @param hostname The name this phone shows to the other members.
@@ -76,11 +77,16 @@ class EasyTierOverlayEngine(private val stateDir: File, private val hostname: St
             return
         }
         var built: Pair<String, List<String>>? = null
+        var isWaiting = false
         while (isRunning) {
             val instance = try {
                 EasyTierInstance.parse(EasyTierJNI.collectNetworkInfos()).firstOrNull { it.address.isNotEmpty() }
             } catch (_: RuntimeException) {
                 null
+            }
+            if (isConsole && instance == null && built == null && !isWaiting && EasyTierJNI.isWebClientConnected()) {
+                isWaiting = true
+                report(OverlayPhase.WAITING, "", null)
             }
             val wanted = instance?.let { it.address to it.proxyCidrs }
             if (instance != null && wanted != built) {

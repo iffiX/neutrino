@@ -82,4 +82,11 @@ object EasyTierJNI {
      * @throws RuntimeException When stopping fails.
      */
     @JvmStatic external fun stopWebClient(): Int
+
+    /**
+     * Whether the web client holds a session with its console.
+     *
+     * @return True while it does.
+     */
+    @JvmStatic external fun isWebClientConnected(): Boolean
 }
