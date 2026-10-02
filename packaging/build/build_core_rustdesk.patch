@@ -25,6 +25,18 @@ kept (the image quality, and peer options such as the codec preference), and
 `nd_init`, `nd_set_option`, `nd_start`, `nd_attach_window`, `nd_mouse`,
 `nd_key`, `nd_text`, `nd_clipboard` and `nd_close` are exported with C
 linkage.
+In a build with the `mediacodec` feature, `nd_init` starts RustDesk's check of
+the device's MediaCodec H264 and H265 decoders and logs what it found, and a
+session waits up to 2 s for that check before it connects.
+
+libs/scrap/src/common/mediacodec.rs: the MediaCodec decoder, which RustDesk's
+own Android build does not compile, made to compile and to draw. The check
+creates one H264 and one H265 decoder instead of calling a function the tree
+no longer has, logs the result, and marks itself done. A decoded frame reads
+its crop, stride, slice height and colour format from the output format,
+converts planar (I420) and semi-planar (NV12) output with the matching libyuv
+call into ARGB or ABGR, sets the frame's width and height, and logs the colour
+format once per change; an unknown colour format fails that frame.
 It also implements the two Dart conversion traits for `EventToUI` that the
 generated bridge otherwise implements; no Dart stream is opened in this
 build.
@@ -104,9 +116,272 @@ build.
                      }
                  }
                  #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste"))]
+--- a/libs/scrap/src/common/codec.rs
++++ b/libs/scrap/src/common/codec.rs
+@@ -113,9 +113,9 @@
+     #[cfg(feature = "vram")]
+     h265_vram: Option<VRamDecoder>,
+     #[cfg(feature = "mediacodec")]
+-    h264_media_codec: MediaCodecDecoder,
++    h264_media_codec: Option<MediaCodecDecoder>,
+     #[cfg(feature = "mediacodec")]
+-    h265_media_codec: MediaCodecDecoder,
++    h265_media_codec: Option<MediaCodecDecoder>,
+     format: CodecFormat,
+     valid: bool,
+     #[cfg(feature = "hwcodec")]
+--- a/libs/scrap/src/common/mediacodec.rs
++++ b/libs/scrap/src/common/mediacodec.rs
+@@ -10,7 +10,7 @@
+ use crate::ImageFormat;
+ use crate::{
+     codec::{EncoderApi, EncoderCfg},
+-    CodecFormat, I420ToABGR, I420ToARGB, ImageRgb,
++    CodecFormat, I420ToABGR, I420ToARGB, ImageRgb, NV12ToABGR, NV12ToARGB,
+ };
+ 
+ /// MediaCodec mime type name
+@@ -23,10 +23,19 @@
+ 
+ pub static H264_DECODER_SUPPORT: AtomicBool = AtomicBool::new(false);
+ pub static H265_DECODER_SUPPORT: AtomicBool = AtomicBool::new(false);
++/// Whether `check_mediacodec` has finished and the two flags above hold its answer.
++pub static DECODERS_CHECKED: AtomicBool = AtomicBool::new(false);
++
++/// MediaCodec's planar YUV 4:2:0 colour formats: I420.
++const COLOR_FORMATS_PLANAR: [i32; 2] = [19, 20];
++/// MediaCodec's semi-planar YUV 4:2:0 colour formats: NV12, Qualcomm's linear and 32m NV12,
++/// and the flexible format, which hardware decoders lay out as NV12 in a byte buffer.
++const COLOR_FORMATS_SEMI_PLANAR: [i32; 5] = [21, 39, 0x7FA30C00, 0x7FA30C04, 0x7F420888];
+ 
+ pub struct MediaCodecDecoder {
+     decoder: MediaCodec,
+     name: String,
++    color_format: i32,
+ }
+ 
+ impl Deref for MediaCodecDecoder {
+@@ -43,7 +52,7 @@
+             CodecFormat::H264 => create_media_codec(H264_MIME_TYPE, MediaCodecDirection::Decoder),
+             CodecFormat::H265 => create_media_codec(H265_MIME_TYPE, MediaCodecDirection::Decoder),
+             _ => {
+-                log::error!("Unsupported codec format: {}", format);
++                log::error!("Unsupported codec format: {:?}", format);
+                 None
+             }
+         }
+@@ -51,9 +60,7 @@
+ 
+     // rgb [in/out] fmt and stride must be set in ImageRgb
+     pub fn decode(&mut self, data: &[u8], rgb: &mut ImageRgb) -> ResultType<bool> {
+-        // take dst_stride into account please
+-        let dst_stride = rgb.stride();
+-        match self.dequeue_input_buffer(Duration::from_millis(10))? {
++        match self.decoder.dequeue_input_buffer(Duration::from_millis(10))? {
+             Some(mut input_buffer) => {
+                 let mut buf = input_buffer.buffer_mut();
+                 if data.len() > buf.len() {
+@@ -61,70 +68,132 @@
+                     bail!("The input data size is bigger than input buf");
+                 }
+                 buf.write_all(&data)?;
+-                self.queue_input_buffer(input_buffer, 0, data.len(), 0, 0)?;
++                self.decoder.queue_input_buffer(input_buffer, 0, data.len(), 0, 0)?;
+             }
+             None => {
+                 log::debug!("Failed to dequeue_input_buffer: No available input_buffer");
+             }
+         };
+ 
+-        return match self.dequeue_output_buffer(Duration::from_millis(100))? {
++        return match self.decoder.dequeue_output_buffer(Duration::from_millis(100))? {
+             Some(output_buffer) => {
+-                let res_format = self.output_format();
+-                let w = res_format
++                let res_format = self.decoder.output_format();
++                let full_w = res_format
+                     .i32("width")
+-                    .ok_or(Error::msg("Failed to dequeue_output_buffer, width is None"))?
+-                    as usize;
+-                let h = res_format.i32("height").ok_or(Error::msg(
++                    .ok_or(Error::msg("Failed to dequeue_output_buffer, width is None"))?;
++                let full_h = res_format.i32("height").ok_or(Error::msg(
+                     "Failed to dequeue_output_buffer, height is None",
+-                ))? as usize;
+-                let stride = res_format.i32("stride").ok_or(Error::msg(
+-                    "Failed to dequeue_output_buffer, stride is None",
+                 ))?;
++                let (w, h) = match (
++                    res_format.i32("crop-left"),
++                    res_format.i32("crop-top"),
++                    res_format.i32("crop-right"),
++                    res_format.i32("crop-bottom"),
++                ) {
++                    (Some(l), Some(t), Some(r), Some(b)) if r >= l && b >= t => {
++                        ((r - l + 1) as usize, (b - t + 1) as usize)
++                    }
++                    _ => (full_w as usize, full_h as usize),
++                };
++                let stride = res_format.i32("stride").filter(|s| *s > 0).unwrap_or(full_w);
++                let slice_height = res_format
++                    .i32("slice-height")
++                    .filter(|s| *s > 0)
++                    .unwrap_or(full_h);
++                let color_format = res_format.i32("color-format").unwrap_or(19);
++                if color_format != self.color_format {
++                    log::info!(
++                        "MediaCodec {} output: color format {color_format:#x}, {w}x{h}, stride {stride}, slice height {slice_height}",
++                        self.name
++                    );
++                    self.color_format = color_format;
++                }
+                 let buf = output_buffer.buffer();
++                let y_size = stride as usize * slice_height as usize;
++                let chroma_stride = stride / 2;
++                let chroma_size = chroma_stride as usize * (slice_height as usize / 2);
++                let is_planar = COLOR_FORMATS_PLANAR.contains(&color_format);
++                if !is_planar && !COLOR_FORMATS_SEMI_PLANAR.contains(&color_format) {
++                    self.decoder.release_output_buffer(output_buffer, false)?;
++                    bail!("Unsupported MediaCodec color format {color_format:#x}");
++                }
++                let needed = if is_planar {
++                    y_size + 2 * chroma_size
++                } else {
++                    y_size + stride as usize * (slice_height as usize / 2)
++                };
++                if buf.len() < needed.min(y_size + stride as usize * (h / 2)) {
++                    self.decoder.release_output_buffer(output_buffer, false)?;
++                    bail!("MediaCodec output buffer is smaller than its frame");
++                }
+                 let bps = 4;
+-                let u = buf.len() * 2 / 3;
+-                let v = buf.len() * 5 / 6;
+                 rgb.raw.resize(h * w * bps, 0);
+                 let y_ptr = buf.as_ptr();
+-                let u_ptr = buf[u..].as_ptr();
+-                let v_ptr = buf[v..].as_ptr();
+-                unsafe {
+-                    match rgb.fmt() {
+-                        ImageFormat::ARGB => {
+-                            I420ToARGB(
++                let result = unsafe {
++                    if is_planar {
++                        let u_ptr = buf[y_size..].as_ptr();
++                        let v_ptr = buf[y_size + chroma_size..].as_ptr();
++                        match rgb.fmt() {
++                            ImageFormat::ARGB => I420ToARGB(
+                                 y_ptr,
+                                 stride,
+                                 u_ptr,
+-                                stride / 2,
++                                chroma_stride,
+                                 v_ptr,
+-                                stride / 2,
++                                chroma_stride,
+                                 rgb.raw.as_mut_ptr(),
+                                 (w * bps) as _,
+                                 w as _,
+                                 h as _,
+-                            );
+-                        }
+-                        ImageFormat::ARGB => {
+-                            I420ToABGR(
++                            ),
++                            ImageFormat::ABGR => I420ToABGR(
+                                 y_ptr,
+                                 stride,
+                                 u_ptr,
+-                                stride / 2,
++                                chroma_stride,
+                                 v_ptr,
+-                                stride / 2,
++                                chroma_stride,
+                                 rgb.raw.as_mut_ptr(),
+                                 (w * bps) as _,
+                                 w as _,
+                                 h as _,
+-                            );
++                            ),
++                            _ => -1,
+                         }
+-                        _ => {
+-                            bail!("Unsupported image format");
++                    } else {
++                        let uv_ptr = buf[y_size..].as_ptr();
++                        match rgb.fmt() {
++                            ImageFormat::ARGB => NV12ToARGB(
++                                y_ptr,
++                                stride,
++                                uv_ptr,
++                                stride,
++                                rgb.raw.as_mut_ptr(),
++                                (w * bps) as _,
++                                w as _,
++                                h as _,
++                            ),
++                            ImageFormat::ABGR => NV12ToABGR(
++                                y_ptr,
++                                stride,
++                                uv_ptr,
++                                stride,
++                                rgb.raw.as_mut_ptr(),
++                                (w * bps) as _,
++                                w as _,
++                                h as _,
++                            ),
++                            _ => -1,
+                         }
+                     }
++                };
++                if result != 0 {
++                    self.decoder.release_output_buffer(output_buffer, false)?;
++                    bail!("Unsupported image format");
+                 }
+-                self.release_output_buffer(output_buffer, false)?;
++                rgb.w = w;
++                rgb.h = h;
++                self.decoder.release_output_buffer(output_buffer, false)?;
+                 Ok(true)
+             }
+             None => {
+@@ -155,17 +224,27 @@
+     return Some(MediaCodecDecoder {
+         decoder: codec,
+         name: name.to_owned(),
++        color_format: -1,
+     });
+ }
+ 
+ pub fn check_mediacodec() {
+     std::thread::spawn(move || {
+-        // check decoders
+-        let decoders = MediaCodecDecoder::new_decoders();
+-        H264_DECODER_SUPPORT.swap(decoders.h264.is_some(), Ordering::SeqCst);
+-        H265_DECODER_SUPPORT.swap(decoders.h265.is_some(), Ordering::SeqCst);
+-        decoders.h264.map(|d| d.stop());
+-        decoders.h265.map(|d| d.stop());
+-        // TODO encoders
++        let h264 = MediaCodecDecoder::new(CodecFormat::H264);
++        let h265 = MediaCodecDecoder::new(CodecFormat::H265);
++        H264_DECODER_SUPPORT.swap(h264.is_some(), Ordering::SeqCst);
++        H265_DECODER_SUPPORT.swap(h265.is_some(), Ordering::SeqCst);
++        log::info!(
++            "MediaCodec decoding on this device: H264 {}, H265 {}",
++            if h264.is_some() { "available" } else { "unavailable" },
++            if h265.is_some() { "available" } else { "unavailable" }
++        );
++        if let Some(decoder) = h264 {
++            let _ = decoder.stop();
++        }
++        if let Some(decoder) = h265 {
++            let _ = decoder.stop();
++        }
++        DECODERS_CHECKED.store(true, Ordering::SeqCst);
+     });
+ }
 --- a/src/native_ffi.rs
 +++ b/src/native_ffi.rs
-@@ -0,0 +1,478 @@
+@@ -0,0 +1,496 @@
 +//! A C interface to one remote desktop session, for a host app with no Dart.
 +//!
 +//! The host calls `nd_init` once, `nd_start` per connection and `nd_close` to end it.
@@ -415,7 +690,8 @@ build.
 +    }
 +}
 +
-+/// Set where the core keeps its configuration, and start its log. Call once.
++/// Set where the core keeps its configuration, start its log, and, in a build with
++/// `mediacodec`, start finding which hardware decoders the device has. Call once.
 +#[no_mangle]
 +pub unsafe extern "C" fn nd_init(app_dir: *const c_char) {
 +    *config::APP_DIR.write().unwrap() = text_of(app_dir);
@@ -425,6 +701,22 @@ build.
 +            .with_max_level(log::LevelFilter::Info)
 +            .with_tag("rustdesk"),
 +    );
++    #[cfg(feature = "mediacodec")]
++    scrap::mediacodec::check_mediacodec();
++    #[cfg(not(feature = "mediacodec"))]
++    log::info!("MediaCodec decoding on this device: not built into this core");
++}
++
++/// Wait up to 2 s for the hardware decoder check `nd_init` started, so the session's first
++/// options name the decoders the device has.
++fn wait_for_decoder_check() {
++    #[cfg(feature = "mediacodec")]
++    for _ in 0..200 {
++        if scrap::mediacodec::DECODERS_CHECKED.load(std::sync::atomic::Ordering::SeqCst) {
++            break;
++        }
++        std::thread::sleep(std::time::Duration::from_millis(10));
++    }
 +}
 +
 +/// Connect to `peer:port` directly with the password; returns 0, or -1 while a session runs.
@@ -466,6 +758,7 @@ build.
 +    }
 +    *slot = Some(session.clone());
 +    std::thread::spawn(move || {
++        wait_for_decoder_check();
 +        let round = session.connection_round_state.lock().unwrap().new_round();
 +        io_loop(session, round);
 +    });

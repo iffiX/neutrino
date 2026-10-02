@@ -1,6 +1,6 @@
 package io.github.iffix.neutrino.remotedesktop
 
-import io.github.iffix.neutrino.RDP_HWCODEC_ABIS
+import io.github.iffix.neutrino.RDP_MEDIACODEC_ABIS
 
 /**
  * The codec a remote desktop session asks the machine to send, as RustDesk's
@@ -22,10 +22,10 @@ enum class RemoteDesktopCodec(val coreName: String, val title: String) {
     /** libaom's AV1. */
     AV1("av1", "AV1"),
 
-    /** H.264 through FFmpeg, in a core built with `hwcodec`. */
+    /** H.264 through the device's MediaCodec decoder, in a core built with `mediacodec`. */
     H264("h264", "H264"),
 
-    /** H.265 through FFmpeg, in a core built with `hwcodec`. */
+    /** H.265 through the device's MediaCodec decoder, in a core built with `mediacodec`. */
     H265("h265", "H265"),
     ;
 
@@ -34,10 +34,10 @@ enum class RemoteDesktopCodec(val coreName: String, val title: String) {
          * The codecs the app's core decodes on one machine, Auto first.
          *
          * @param abi The machine, as Android names it, such as `arm64-v8a`.
-         * @return Auto, VP8, VP9 and AV1, then H264 and H265 where the core carries their decoders.
+         * @return Auto, VP8, VP9 and AV1, then H264 and H265 where the core is built with MediaCodec.
          */
         fun offered(abi: String): List<RemoteDesktopCodec> =
-            if (abi in RDP_HWCODEC_ABIS) entries else listOf(AUTO, VP8, VP9, AV1)
+            if (abi in RDP_MEDIACODEC_ABIS) entries else listOf(AUTO, VP8, VP9, AV1)
 
         /**
          * A codec by its core name.
