@@ -11,7 +11,6 @@
     "about_core": "{name} core",
     "about_device": "This device",
     "about_patch": "Patch of {name}",
-    "about_platform": "Platform",
     "ai_qr_hint": "A chat app that scans this code can use this gateway.",
     "ai_qr_label": "QR code of the gateway address and the key",
     "back": "Back",
