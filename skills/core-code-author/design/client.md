@@ -47,7 +47,7 @@ recorded. A button reads its own job from there and from nowhere else.
 | **Join** opens from the Hubs page and is the only page reached from another page; it has a back arrow and no bar entry. | A page reached from several places is lost from each of them. |
 | The top bar holds the page title at the left and the refresh button at the right, and nothing else. | The refresh button is the one control that acts on every page. |
 | The sidebar and the bottom bar carry only the pages; the machine's name, platform and version are on the Settings page's About card and nowhere else. | A foot that repeats on every page is noise; About is where a person looks for a version. |
-| In the sidebar layout a page's own action (**New terminal**, **Scan**) sits at the right of the page header, as the panel's `page_actions` does; the floating button at the bottom right exists only in the bottom-bar layout. | A floating button beside a sidebar covers content and reads as a leftover. |
+| In the sidebar layout a page's own action (**New terminal** on Terminals, **Scan** on Join, which asks for the camera or scans again after a refused code) sits at the right of the page header, as the panel's `page_actions` does; the floating button at the bottom right exists only in the bottom-bar layout. | A floating button beside a sidebar covers content and reads as a leftover. |
 | In the sidebar layout the page body starts to the right of the sidebar and never under it. | Content under the sidebar is unreadable and untouchable. |
 | Every page body scrolls, except Terminals, which gives the terminal the height left under its chips and tabs. | A page squeezed to fit is a page that cannot be read; a terminal is sized to its box by design. |
 | A page changes with no transition animation. | A fade adds time to every press and tells nothing. |
@@ -397,7 +397,7 @@ Leaving a hub is on the Hubs page and nowhere else.
 | Feature | Desktop | Phone |
 | --- | --- | --- |
 | join | paste the link | scan the QR, or paste the link |
-| port entry | forward to the loopback | the same: the app core listens on `127.0.0.1:<local port>` and forwards over the `port` stream, and the row shows the loopback address with **Copy** |
+| port entry | forward to the loopback | the same: a foreground service listens on `127.0.0.1:<local port>` and relays each connection to the entry's address over a plain socket, as the desktop does, and the forwarded row shows the loopback address with **Copy** |
 | local-only web entry | open through a forward | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
 | file entry | mount into the system | a location in the system's Files app |
 | AI entry | point the tools at the gateway, configure them | copy the address and the key, show a QR |

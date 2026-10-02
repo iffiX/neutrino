@@ -106,7 +106,6 @@ private fun AboutCard(deviceName: String, platform: String, version: String) {
     val words = NeutrinoTheme.words
     val rows = buildList {
         add(AboutFact(words.word("ui.about_device"), deviceName))
-        add(AboutFact(words.word("ui.about_platform"), platform))
         add(AboutFact(words.word("ui.about_version"), version))
         add(AboutFact(words.word("ui.about_licence"), CLIENT_LICENCE))
         add(AboutFact(words.word("ui.about_source", mapOf("name" to "Neutrino")), CLIENT_SOURCE_URL, isLink = true))
