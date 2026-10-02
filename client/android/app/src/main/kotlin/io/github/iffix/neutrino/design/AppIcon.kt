@@ -40,6 +40,7 @@ enum class AppIcon(val paths: List<String>) {
     CHEVRON_RIGHT(listOf("m9 6 6 6-6 6")),
     CHEVRON_LEFT(listOf("m15 6-6 6 6 6")),
     CHEVRON_DOWN(listOf("m6 9 6 6 6-6")),
+    CHEVRON_UP(listOf("m6 15 6-6 6 6")),
     CLOSE(listOf("m6 6 12 12M18 6 6 18")),
     LOCK(
         listOf(

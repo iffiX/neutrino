@@ -1,6 +1,9 @@
 package io.github.iffix.neutrino.remotedesktop
 
+import android.app.Activity
 import android.content.ClipboardManager
+import android.content.Context
+import android.content.ContextWrapper
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
@@ -12,24 +15,30 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -44,14 +53,20 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -59,28 +74,37 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import io.github.iffix.neutrino.RDP_BARS_SHOWN_MILLIS
 import io.github.iffix.neutrino.RDP_PINCH_SLOP_PX
 import io.github.iffix.neutrino.RDP_TYPING_KEPT_CHARS
 import io.github.iffix.neutrino.RDP_TYPING_SENTINEL
 import io.github.iffix.neutrino.design.AppIcon
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.DotTone
+import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.StatusDot
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 private enum class TouchStart { TAP, LONG_PRESS, DRAG, TWO_FINGERS }
 
 private enum class TwoFingerMode { UNDECIDED, PINCH, SCROLL }
 
 /**
- * The viewer over the whole window: a bar with the machine's name, Keyboard and Disconnect, the
- * remote picture below it, and a row of keys a phone keyboard lacks with Paste beside them. A
- * tap clicks, a long press right-clicks, one finger drags, a pinch zooms and moves the picture,
- * two fingers scroll. Text copied on the remote machine lands on the phone's clipboard; Paste
- * puts the phone's clipboard on the remote machine's and presses Ctrl+V there.
+ * The viewer over the whole screen, with the system's bars hidden until an edge swipe: the remote
+ * picture under a bar with the machine's name, Keyboard and Disconnect, and a row of keys a phone
+ * keyboard lacks with Paste beside them. Both bars hide [RDP_BARS_SHOWN_MILLIS] after the last
+ * touch on them; a round handle at the top right shows or hides them. The keyboard covers the
+ * picture's lower part without shrinking it, and the key bar sits right above the keyboard. A tap
+ * clicks, a long press right-clicks, one finger drags, a pinch zooms and moves the picture, two
+ * fingers scroll. Text copied on the remote machine lands on the phone's clipboard; Paste puts the
+ * phone's clipboard on the remote machine's and presses Ctrl+V there.
  *
  * @param target The desktop to show.
  * @param core What decodes the picture and sends the input.
@@ -107,7 +131,30 @@ fun RemoteDesktopViewer(
     val copied = rememberUpdatedState(onCopied)
     val keyboard = LocalSoftwareKeyboardController.current
     val isShowing = state == RemoteDesktopState.Showing
+    var isBarShown by remember { mutableStateOf(true) }
+    var barTouches by remember { mutableIntStateOf(0) }
+    val view = LocalView.current
+    val keyboardHeight = WindowInsets.ime.getBottom(LocalDensity.current)
     BackHandler(onBack = onClose)
+    DisposableEffect(view) {
+        val bars = view.context.findActivity()?.window?.let { WindowCompat.getInsetsController(it, view) }
+        bars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        bars?.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose { bars?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+    LaunchedEffect(isBarShown, barTouches) {
+        if (isBarShown) {
+            delay(RDP_BARS_SHOWN_MILLIS)
+            isBarShown = false
+        }
+    }
+    LaunchedEffect(keyboardHeight) { viewport = viewport.coveredBy(keyboardHeight.toFloat()) }
+    val onBarTouch = Modifier.pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            barTouches += 1
+        }
+    }
     DisposableEffect(target, core) {
         core.connect(
             target,
@@ -156,46 +203,12 @@ fun RemoteDesktopViewer(
             }
         }
     }
-    Column(
-        modifier = Modifier.fillMaxSize().background(
-            palette.bg,
-        ).statusBarsPadding().navigationBarsPadding().imePadding(),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicText(
-                target.name,
-                modifier = Modifier.weight(1f),
-                style = NeutrinoTheme.rowTitle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            NeutrinoButton(
-                label = words.word("ui.rdp_keyboard"),
-                onClick = {
-                    focus.requestFocus()
-                    keyboard?.show()
-                },
-                icon = AppIcon.KEYBOARD,
-                isEnabled = isShowing,
-                isSmall = true,
-            )
-            NeutrinoButton(
-                label = words.word("ui.rdp_disconnect"),
-                onClick = onClose,
-                tier = ButtonTier.DANGER,
-                isSmall = true,
-            )
-        }
+    val edges = WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Box(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .clipToBounds()
-                .background(Color.Black)
                 .onSizeChanged { size ->
                     viewport = viewport.sized(
                         size.width.toFloat(),
@@ -303,12 +316,61 @@ fun RemoteDesktopViewer(
                         next
                     }
                 },
-                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii),
+                keyboardOptions = KeyboardOptions(
+                    autoCorrectEnabled = false,
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.None,
+                ),
                 modifier = Modifier.size(1.dp).alpha(0f).focusRequester(focus),
             )
         }
-        if (isShowing) {
-            KeyBar(held, onBarKey) {
+        if (isBarShown) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .then(onBarTouch)
+                    .background(palette.bg)
+                    .windowInsetsPadding(edges)
+                    .padding(start = 12.dp, end = 60.dp, top = 8.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BasicText(
+                    target.name,
+                    modifier = Modifier.weight(1f),
+                    style = NeutrinoTheme.rowTitle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                NeutrinoButton(
+                    label = words.word("ui.rdp_keyboard"),
+                    onClick = {
+                        focus.requestFocus()
+                        keyboard?.show()
+                    },
+                    icon = AppIcon.KEYBOARD,
+                    isEnabled = isShowing,
+                    isSmall = true,
+                )
+                NeutrinoButton(
+                    label = words.word("ui.rdp_disconnect"),
+                    onClick = onClose,
+                    tier = ButtonTier.DANGER,
+                    isSmall = true,
+                )
+            }
+        }
+        BarHandle(
+            isBarShown,
+            onPress = {
+                isBarShown = !isBarShown
+                barTouches += 1
+            },
+            modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(edges).padding(top = 6.dp, end = 12.dp),
+        )
+        if (isShowing && isBarShown) {
+            KeyBar(held, onBarKey, modifier = Modifier.align(Alignment.BottomCenter).imePadding().then(onBarTouch)) {
                 val text = context.getSystemService(ClipboardManager::class.java).primaryClip
                     ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
                 if (text.isNotEmpty()) {
@@ -325,11 +387,34 @@ fun RemoteDesktopViewer(
 }
 
 @Composable
-private fun KeyBar(held: Set<RemoteDesktopKey>, onKey: (RemoteDesktopKey) -> Unit, onPaste: () -> Unit) {
+private fun BarHandle(isBarShown: Boolean, onPress: () -> Unit, modifier: Modifier = Modifier) {
+    val palette = NeutrinoTheme.palette
+    val label = NeutrinoTheme.words.word(if (isBarShown) "ui.rdp_bars_hide" else "ui.rdp_bars_show")
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(palette.surface.copy(alpha = 0.6f))
+            .border(1.dp, palette.borderStrong.copy(alpha = 0.6f), CircleShape)
+            .semantics { contentDescription = label }
+            .clickable(role = Role.Button, onClick = onPress),
+        contentAlignment = Alignment.Center,
+    ) {
+        IconGlyph(if (isBarShown) AppIcon.CHEVRON_UP else AppIcon.CHEVRON_DOWN, palette.text, size = 18.dp)
+    }
+}
+
+@Composable
+private fun KeyBar(
+    held: Set<RemoteDesktopKey>,
+    onKey: (RemoteDesktopKey) -> Unit,
+    modifier: Modifier = Modifier,
+    onPaste: () -> Unit,
+) {
     val palette = NeutrinoTheme.palette
     val words = NeutrinoTheme.words
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(palette.elevated)
             .horizontalScroll(rememberScrollState())
@@ -369,6 +454,12 @@ private fun KeyBar(held: Set<RemoteDesktopKey>, onKey: (RemoteDesktopKey) -> Uni
             BasicText(words.word("ui.paste"), style = NeutrinoTheme.mono.copy(color = palette.text))
         }
     }
+}
+
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private suspend fun AwaitPointerEventScope.touchStart(id: PointerId, origin: Offset, slop: Float): TouchStart {

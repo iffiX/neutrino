@@ -4,7 +4,8 @@ import io.github.iffix.neutrino.RDP_ZOOM_MAX
 
 /**
  * Where the remote picture sits in the viewer: fitted whole at zoom 1, larger when pinched, and
- * never moved so far that an edge leaves a gap it could fill.
+ * never moved so far that an edge leaves a gap it could fill. While the keyboard covers the
+ * viewer's lower part, the picture may move up until its bottom edge reaches the keyboard.
  *
  * @property viewWidth The viewer's width, in pixels.
  * @property viewHeight The viewer's height, in pixels.
@@ -13,6 +14,7 @@ import io.github.iffix.neutrino.RDP_ZOOM_MAX
  * @property zoom The scale over the fitted one, from 1 to [RDP_ZOOM_MAX].
  * @property left Where the picture's left edge is, in the viewer's pixels.
  * @property top Where the picture's top edge is.
+ * @property covered How much of the viewer's lower part the keyboard covers, in the viewer's pixels.
  */
 data class RemoteDesktopViewport(
     val viewWidth: Float = 0f,
@@ -22,6 +24,7 @@ data class RemoteDesktopViewport(
     val zoom: Float = 1f,
     val left: Float = 0f,
     val top: Float = 0f,
+    val covered: Float = 0f,
 ) {
     /** Viewer pixels per picture pixel. */
     val scale: Float
@@ -54,7 +57,7 @@ data class RemoteDesktopViewport(
         val isSame = viewWidth == this.viewWidth && viewHeight == this.viewHeight &&
             frameWidth == this.frameWidth && frameHeight == this.frameHeight
         if (isSame) return this
-        return RemoteDesktopViewport(viewWidth, viewHeight, frameWidth, frameHeight).clamped()
+        return RemoteDesktopViewport(viewWidth, viewHeight, frameWidth, frameHeight, covered = covered).clamped()
     }
 
     /**
@@ -85,6 +88,16 @@ data class RemoteDesktopViewport(
     fun pannedBy(dx: Float, dy: Float): RemoteDesktopViewport = copy(left = left + dx, top = top + dy).clamped()
 
     /**
+     * The same picture with another part of the viewer covered by the keyboard; the picture keeps
+     * its size and place while that place is still allowed.
+     *
+     * @param height How much of the viewer's lower part the keyboard covers, 0 for none.
+     * @return The viewport.
+     */
+    fun coveredBy(height: Float): RemoteDesktopViewport =
+        if (height == covered) this else copy(covered = height.coerceAtLeast(0f)).clamped()
+
+    /**
      * The picture pixel under a point of the viewer, kept inside the picture.
      *
      * @param x The point's x in the viewer.
@@ -99,8 +112,11 @@ data class RemoteDesktopViewport(
     }
 
     private fun clamped(): RemoteDesktopViewport =
-        copy(left = edge(left, viewWidth, drawnWidth), top = edge(top, viewHeight, drawnHeight))
+        copy(left = edge(left, viewWidth, drawnWidth, 0f), top = edge(top, viewHeight, drawnHeight, covered))
 
-    private fun edge(start: Float, view: Float, drawn: Float): Float =
-        if (drawn <= view) (view - drawn) / 2f else start.coerceIn(view - drawn, 0f)
+    private fun edge(start: Float, view: Float, drawn: Float, hidden: Float): Float {
+        val highest = if (drawn <= view) (view - drawn) / 2f else 0f
+        val lowest = minOf(highest, view - hidden - drawn)
+        return start.coerceIn(lowest, highest)
+    }
 }
