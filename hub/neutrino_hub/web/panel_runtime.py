@@ -56,7 +56,7 @@ from neutrino_hub.web.constants import (
     WEB_PROXY_SCOPE_PORTS,
     WEB_PROXY_SCOPE_UNUSED,
 )
-from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 from neutrino_hub.utils.json_file import (
     read_config,
@@ -110,7 +110,7 @@ class PanelRuntime:
         # since what follows publishes through it.
         self.events = PanelEventBus()
         self.tasks = TaskStreamRegistry(on_change=self._publish_task)
-        self.services = SystemdServiceController()
+        self.services = process_controller()
         self.listening_ports = ListeningPortReader()
         self.stats = XrayStatsClient()
         self.node_probe = XrayNodeProbe(resolver_of=self._direct_resolver)
@@ -529,7 +529,7 @@ class PanelRuntime:
             # to bind it, or the restart fails with nothing to listen on.
             results = self._router_controller().reconcile_locked(only=only)
             changes += [line for result in results for line in result.changes]
-            if install_dnsmasq(self._dnsmasq_config()):
+            if is_linux() and install_dnsmasq(self._dnsmasq_config()):
                 changes.append("dnsmasq restarted")
             # A refused xray configuration stops none of the other steps.
             try:

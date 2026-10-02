@@ -33,3 +33,30 @@ def test_run_is_never_gated(monkeypatch, capsys):
 
     assert entry.main() == 0
     assert "sudo nhub" not in capsys.readouterr().err
+
+
+def test_windows_asks_for_an_administrator_powershell(monkeypatch, capsys):
+    from neutrino_hub.platforms import windows
+
+    monkeypatch.setattr(entry.sys, "platform", "win32")
+    monkeypatch.setattr(windows.WindowsHubPlatform, "is_elevated", lambda self: False)
+    monkeypatch.setattr(constants, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(entry.sys, "argv", ["nhub", "setup"])
+
+    assert entry.main() == 2
+    output = capsys.readouterr().err
+    assert "needs an administrator" in output
+    assert "administrator PowerShell" in output
+    assert "sudo" not in output
+
+
+def test_status_is_never_gated(monkeypatch, capsys):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(constants, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(entry.sys, "argv", ["nhub", "status"])
+    module = types.ModuleType("fake_status")
+    module.main = lambda: 0
+    monkeypatch.setitem(sys.modules, "fake_status", module)
+    monkeypatch.setitem(entry.COMMANDS, "status", ("fake_status", "status"))
+
+    assert entry.main() == 0

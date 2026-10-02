@@ -36,6 +36,7 @@ from neutrino_hub.modules.hub_update.release import (
     unreachable_reason,
 )
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
+from neutrino_hub.platforms.detect import hub_platform
 from neutrino_hub.system.installation import is_packaged
 from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.web.constants import (
@@ -50,6 +51,8 @@ UPDATE_NOTES_LINES = 20
 # the rollback; the wait outlasts that.
 UPDATE_WAIT_TIMEOUT_S = 15 * 60
 UPDATE_WAIT_POLL_S = 2
+# The name of the update's log outside Linux, where no journal keeps it.
+UPDATE_LOG_NAME = "hub_update"
 PANEL_SETTINGS_FILE = "web/settings.json"
 # Exit statuses: 0 done or nothing to do, 1 refused by the person or failed,
 # 2 cannot be done from here.
@@ -214,6 +217,7 @@ def _wait(state: HubUpdateStateFile) -> int:
         0 when the new version is installed, 1 otherwise.
     """
     deadline = time.monotonic() + UPDATE_WAIT_TIMEOUT_S
+    follow = hub_platform().log_hint(UPDATE_LOG_NAME, HUB_UPDATE_UNIT)
     try:
         while time.monotonic() < deadline:
             record = state.load()
@@ -222,14 +226,14 @@ def _wait(state: HubUpdateStateFile) -> int:
             time.sleep(UPDATE_WAIT_POLL_S)
         else:
             print(
-                f"still not settled; follow it with: journalctl -u {HUB_UPDATE_UNIT}",
+                f"still not settled; follow it with: {follow}",
                 file=sys.stderr,
             )
             return STATUS_FAILED
     except KeyboardInterrupt:
         print(
             f"\nthe install goes on without this terminal; follow it with: "
-            f"journalctl -u {HUB_UPDATE_UNIT}",
+            f"{follow}",
             file=sys.stderr,
         )
         return STATUS_FAILED

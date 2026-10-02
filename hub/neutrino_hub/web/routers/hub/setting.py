@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import platform
 import asyncio
 import sys
@@ -66,6 +67,7 @@ from neutrino_hub.utils.json_file import (
 )
 from neutrino_hub.utils.passwords import PASSWORDS_PANEL_RULES, validate
 from neutrino_hub.utils.subprocess_run import run
+from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.system.sandbox import outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.web.auth import hash_password, verify_password
@@ -309,9 +311,13 @@ def _restart_panel() -> None:
 
     ``--no-block`` and a moment's wait, for the same reason everything else
     the hub asks systemd for uses them: the job stops the process making the
-    request, and waiting on it would be waiting on itself.
+    request, and waiting on it would be waiting on itself. On macOS and
+    Windows the service exits and its service manager starts it again.
     """
     time.sleep(WEB_RESTART_DELAY_S)
+    if not is_linux():
+        process_controller().restart("web")
+        return
     run(
         ["systemctl", "restart", "--no-block", SYSTEM_CORE_UNITS["web"]],
         is_checked=False,
@@ -738,10 +744,17 @@ async def _restore_apply_source():
     # child of this unit inherits its hardening.
     # Unbuffered, or a piped apply says nothing until it exits and minutes
     # of work read as a hang.
+    if is_linux():
+        command = outside_sandbox(["env", "PYTHONUNBUFFERED=1", "nhub", "apply"])
+        environment = None
+    else:
+        command = hub_platform().hub_command("apply")
+        environment = {**os.environ, "PYTHONUNBUFFERED": "1"}
     process = await asyncio.create_subprocess_exec(
-        *outside_sandbox(["env", "PYTHONUNBUFFERED=1", "nhub", "apply"]),
+        *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        env=environment,
     )
     assert process.stdout is not None
     while True:
@@ -756,6 +769,9 @@ async def _restore_apply_source():
         yield "development root: restart the panel by hand to pick up the settings\n"
         return
     yield "restarting the panel; sign in with the restored password\n"
+    if not is_linux():
+        process_controller().restart("web")
+        return
     # Detached, two seconds out: the restart must not kill the process that
     # is still streaming this line to the browser.
     await asyncio.create_subprocess_exec(

@@ -24,6 +24,7 @@ than stopping a unit on the developer's box or opening a password dialog.
 import os
 import secrets
 import subprocess
+import sys
 
 import pytest
 
@@ -144,6 +145,34 @@ def _no_test_reaches_the_machine(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", guarded_run)
     monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
+
+
+@pytest.fixture(autouse=True)
+def _one_controller_per_test(monkeypatch):
+    """Start every test with no process controller handed out yet."""
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect, "_CONTROLLER", None)
+
+
+@pytest.fixture(params=["darwin", "win32"])
+def hub_service(request, monkeypatch):
+    """The hub's one service on macOS and on Windows, its manager faked.
+
+    The test runs as that system: ``sys.platform`` says so for its length.
+    """
+    from neutrino_hub.platforms import darwin, detect, windows
+
+    if request.param == "darwin":
+        manager = FakeLaunchd()
+        monkeypatch.setattr(darwin.subprocess, "run", manager)
+    else:
+        manager = FakeServiceControlManager()
+        monkeypatch.setattr(windows.subprocess, "run", manager)
+        monkeypatch.setattr(windows, "PLATFORM_SERVICE_POLL_S", 0.001)
+        monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
+    monkeypatch.setattr(detect.sys, "platform", request.param)
+    return manager
 
 
 @pytest.fixture(autouse=True)
@@ -803,3 +832,143 @@ def validate_nft(ruleset: str) -> None:
     assert result.returncode == 0, (
         f"nft rejected the rendered ruleset:\n" f"{result.stderr.strip()}\n\n{ruleset}"
     )
+
+
+def completed(stdout: str = "", returncode: int = 0, **keywords):
+    """A finished process as ``subprocess.run`` hands it back.
+
+    Raises:
+        subprocess.CalledProcessError: When ``check`` was asked and it failed.
+    """
+    if keywords.get("check") and returncode != 0:
+        raise subprocess.CalledProcessError(returncode, [], output=stdout)
+    return subprocess.CompletedProcess([], returncode, stdout=stdout, stderr="")
+
+
+class FakeServiceControlManager:
+    """The Windows service control manager through ``sc.exe``, for the hub's
+    service; a start or a stop reads pending once before it settles."""
+
+    def __init__(self):
+        self.calls: list = []
+        self.is_running = False
+        self.is_refusing = False
+        self._pending = 0
+
+    def __call__(self, command, **keywords):
+        command = list(command)
+        self.calls.append(command)
+        if command[:2] == ["sc.exe", "query"]:
+            if self._pending:
+                number, self._pending = self._pending, 0
+            else:
+                number = 4 if self.is_running else 1
+            return completed(f"        STATE              : {number}  WORD\n")
+        if self.is_refusing:
+            return completed("[SC] StartService FAILED 1058", 1058, **keywords)
+        if command[:2] == ["sc.exe", "start"]:
+            self.is_running, self._pending = True, 2
+        elif command[:2] == ["sc.exe", "stop"]:
+            self.is_running, self._pending = False, 3
+        return completed("")
+
+
+class FakeLaunchd:
+    """launchd for the hub's job: ``print``, ``bootstrap``, ``kickstart``,
+    ``bootout``."""
+
+    def __init__(self):
+        self.calls: list = []
+        self.is_running = False
+        self.is_refusing = False
+
+    def __call__(self, command, **keywords):
+        command = list(command)
+        self.calls.append(command)
+        if command[:2] == ["launchctl", "print"]:
+            if not self.is_running:
+                return completed("", 113)
+            return completed("system/com.neutrino.hub = {\n\tstate = running\n}\n")
+        if self.is_refusing:
+            return completed("", 5, **keywords)
+        if command[:2] == ["launchctl", "kickstart"]:
+            self.is_running = True
+        elif command[:2] == ["launchctl", "bootout"]:
+            self.is_running = False
+        return completed("")
+
+
+class FakeChildProcess:
+    """One child the supervisor started, ended by the test or by a stop."""
+
+    def __init__(self, argv: list, env: dict, cwd, output: bytes, pid: int):
+        import io
+
+        self.argv = argv
+        self.env = env
+        self.cwd = cwd
+        self.pid = pid
+        self.returncode = None
+        self.is_terminated = False
+        self.stdout = io.BytesIO(output)
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.is_terminated = True
+        self.returncode = -15
+
+    def kill(self):
+        self.returncode = -9
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def end(self, status: int = 1) -> None:
+        """The child exits by itself."""
+        self.returncode = status
+
+
+class FakePopen:
+    """What the supervisor starts children with: a fake per start, kept."""
+
+    def __init__(self, output: bytes = b""):
+        self.started: list = []
+        self.is_refusing = False
+        self.output = output
+        self.creation_flags: list = []
+
+    def __call__(self, argv, env, cwd, creation_flags):
+        if self.is_refusing:
+            raise FileNotFoundError(argv[0])
+        self.creation_flags.append(creation_flags)
+        child = FakeChildProcess(
+            list(argv), dict(env), cwd, self.output, 1000 + len(self.started)
+        )
+        self.started.append(child)
+        return child
+
+    def of(self, program: str) -> list:
+        """Every child started from this program, in order."""
+        return [child for child in self.started if child.argv[0] == program]
+
+
+class FakeClock:
+    """A monotonic clock a test moves by hand."""
+
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class FakeMsvcrt:
+    """Windows' ``msvcrt`` file lock, on a system that has none."""
+
+    LK_NBLCK = 2
+    LK_UNLCK = 0
+
+    def locking(self, descriptor, mode, size):
+        return None

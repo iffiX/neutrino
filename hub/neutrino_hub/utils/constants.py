@@ -7,7 +7,18 @@ written down for the code.
 """
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+from neutrino_hub.platforms.constants import (
+    PLATFORM_OS_WINDOWS,
+    PLATFORM_ROOT_CONFIG,
+    PLATFORM_ROOT_LOG,
+    PLATFORM_ROOT_RUNTIME,
+    PLATFORM_ROOT_STATE,
+    PLATFORM_ROOT_STATIC,
+    PLATFORM_ROOTS,
+)
+from neutrino_hub.platforms.detect import hub_os
 
 # A working copy's own root, which every root below hangs under when it is
 # set. It is what `--dev` uses to put a whole appliance's filesystem inside the
@@ -16,27 +27,32 @@ from pathlib import Path
 UTILS_DEV_ROOT_ENV = "NEUTRINO_DEV_ROOT"
 
 
-def _rooted(path: str) -> Path:
+def _rooted(question: str) -> Path:
     """One of the five roots, moved under the development root when there is one.
 
     Args:
-        path: The absolute path a real machine uses.
+        question: Which root, a ``PLATFORM_ROOT_`` key of this system's table.
 
     Returns:
-        That path, or the same path inside ``NEUTRINO_DEV_ROOT``.
+        The path this system uses, or the same path inside ``NEUTRINO_DEV_ROOT``.
     """
+    system = hub_os()
+    path = PLATFORM_ROOTS[system][question]
     dev_root = os.environ.get(UTILS_DEV_ROOT_ENV)
     if not dev_root:
         return Path(path)
-    return Path(dev_root) / path.lstrip("/")
+    if system == PLATFORM_OS_WINDOWS:
+        return Path(dev_root, *PureWindowsPath(path).parts[1:])
+    return Path(dev_root, *PurePosixPath(path).parts[1:])
 
 
 # The five roots. Nothing below invents a sixth.
-UTILS_STATIC_ROOT = _rooted("/opt/neutrino")
-UTILS_CONFIG_ROOT = _rooted("/etc/neutrino")
-UTILS_STATE_ROOT = _rooted("/var/lib/neutrino")
-UTILS_LOG_ROOT = _rooted("/var/log/neutrino")
-UTILS_RUNTIME_ROOT = _rooted("/run/neutrino")
+UTILS_STATIC_ROOT = _rooted(PLATFORM_ROOT_STATIC)
+UTILS_SYSTEM_CONFIG_DIR = _rooted(PLATFORM_ROOT_CONFIG)
+UTILS_CONFIG_ROOT = UTILS_SYSTEM_CONFIG_DIR.parent
+UTILS_STATE_ROOT = _rooted(PLATFORM_ROOT_STATE)
+UTILS_LOG_ROOT = _rooted(PLATFORM_ROOT_LOG)
+UTILS_RUNTIME_ROOT = _rooted(PLATFORM_ROOT_RUNTIME)
 
 
 def is_dev_root_set() -> bool:
@@ -62,7 +78,6 @@ UTILS_EXAMPLES_DIR = UTILS_DATA_DIR / "examples"
 # checkout keeps it beside the source so development needs no setup. The
 # environment variable wins, which is what makes a second instance testable.
 UTILS_CONFIG_ENV = "NEUTRINO_CONFIG_DIR"
-UTILS_SYSTEM_CONFIG_DIR = UTILS_CONFIG_ROOT / "hub"
 UTILS_CHECKOUT_CONFIG_DIR = UTILS_PACKAGE_ROOT.parent.parent / "config"
 
 # Rendered from config/ and thrown away whenever it is rendered again, so it is

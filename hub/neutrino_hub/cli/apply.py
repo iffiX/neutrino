@@ -55,6 +55,7 @@ from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_GENERATED_DIR
+from neutrino_hub.platforms.detect import is_linux
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
@@ -170,7 +171,7 @@ def main() -> int:
     try:
         _write(artifacts, is_apply_skipped=args.skip_apply)
         if not args.skip_apply:
-            units = SystemdUnitInstaller().install()
+            units = SystemdUnitInstaller().install() if is_linux() else []
             if units:
                 print(f"units refreshed: {', '.join(units)}")
             _apply(artifacts)
@@ -313,7 +314,7 @@ def _apply(artifacts: dict) -> None:
             if result.state != ROUTER_STEP_UNCHANGED:
                 print(result.describe())
         router_failure = failure_text(results)
-    if "dnsmasq" in artifacts:
+    if "dnsmasq" in artifacts and is_linux():
         print(
             "dnsmasq restarted"
             if install_dnsmasq(artifacts["dnsmasq"])

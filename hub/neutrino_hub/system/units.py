@@ -1,4 +1,4 @@
-"""Writing the hub's own systemd units.
+"""Writing the hub's own systemd units, on Linux.
 
 The templates ship inside the package and name two things the installation
 decides: the interpreter to run, and the checkout they run from. Both are
@@ -8,7 +8,7 @@ makes the box true rather than only on a first setup.
 
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.installation import checkout_root, is_packaged, venv_python
-from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.platforms.detect import process_controller
 from neutrino_hub.utils.constants import UTILS_DATA_DIR
 
 # --- config ---
@@ -67,7 +67,7 @@ class SystemdUnitInstaller:
             destination.write_text(rendered, encoding="utf-8")
             written.append(unit_name)
         if written:
-            SystemdServiceController().daemon_reload()
+            process_controller().reload()
         return written
 
     def render(self, template: str, python_path: str) -> str:

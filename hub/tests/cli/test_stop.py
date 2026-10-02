@@ -188,3 +188,32 @@ def test_one_refusal_does_not_stop_the_rest(systemd):
 
     assert stop_module.stop(list(stop_module.STOP_ORDER)) == 1
     assert [name for name, _ in asked] == list(stop_module.STOP_ORDER)
+
+
+def test_macos_and_windows_stop_the_hubs_one_service(hub_service, monkeypatch):
+    hub_service.is_running = True
+    monkeypatch.setattr(stop_module.sys, "argv", ["nhub stop"])
+
+    assert stop_module.main() == 0
+    assert not hub_service.is_running
+
+
+def test_a_stopped_service_is_not_stopped_again(hub_service, capsys):
+    assert stop_module.stop_everything() == 0
+    assert "already stopped" in capsys.readouterr().out
+
+
+def test_a_service_that_will_not_stop_says_so(hub_service, capsys):
+    hub_service.is_running = True
+    hub_service.is_refusing = True
+
+    assert stop_module.stop_service() == 1
+    assert "did not stop" in capsys.readouterr().err
+
+
+def test_one_daemon_cannot_be_named_outside_linux(hub_service, monkeypatch, capsys):
+    hub_service.is_running = True
+    monkeypatch.setattr(stop_module.sys, "argv", ["nhub stop", "--only-web"])
+
+    assert stop_module.main() == 2
+    assert hub_service.is_running

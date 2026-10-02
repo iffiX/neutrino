@@ -335,3 +335,16 @@ def test_a_query_past_the_age_limit_is_dropped_rather_than_drawn(
 
     journal.write("forwarded lost.example to 223.5.5.5", at_s=clock.now_s)
     assert reader.follow() == []
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_macos_and_windows_have_no_journal_to_read(
+    journal, reader, monkeypatch, system
+):
+    """No dnsmasq runs there, and journalctl is Linux's."""
+    journal.write(*LOOKUP)
+    monkeypatch.setattr("sys.platform", system)
+
+    assert reader.tail() == []
+    assert reader.query_count() == 0
+    assert journal.commands == []
