@@ -1,7 +1,8 @@
 """Making the AI gateway's configuration true on the box.
 
 Not pure: writes the generated file, restarts the unit, and probes the
-running service.
+running service. On macOS and Windows the gateway is a child of the hub's one
+service, restarted through the process controller.
 """
 
 import hashlib
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import httpx
 
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.utils import constants
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
@@ -29,6 +31,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_HUB_KEY_NAME,
     CLIPROXYAPI_SERVED_FINGERPRINT_RELATIVE,
     CLIPROXYAPI_SERVED_MODELS_TTL_S,
+    CLIPROXYAPI_SUPERVISED_NAME,
     CLIPROXYAPI_UNIT,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import (
@@ -155,7 +158,10 @@ class CliproxyApiConfigApplier:
         write_served_fingerprint(rendered)
         if not self.is_installed:
             return "rendered; the service is not installed yet"
-        run(["systemctl", "restart", CLIPROXYAPI_UNIT])
+        if is_linux():
+            run(["systemctl", "restart", CLIPROXYAPI_UNIT])
+        else:
+            process_controller().restart(CLIPROXYAPI_SUPERVISED_NAME)
         return f"applied with {enabled} provider(s) and restarted"
 
     @staticmethod

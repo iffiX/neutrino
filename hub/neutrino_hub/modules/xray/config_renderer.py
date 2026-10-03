@@ -59,7 +59,8 @@ class XrayConfigRenderer:
     upstream, ``api_in`` answers the panel on loopback, and one SOCKS listener
     per published port leaves the way its entry says. ``socks_probe_in``
     carries one account per resident node, and one rule per account sends that
-    account out its own node.
+    account out its own node. Outside Linux nothing diverts and nothing marks,
+    so ``tproxy_in`` and every ``sockopt.mark`` are left out.
     """
 
     def __init__(
@@ -68,6 +69,7 @@ class XrayConfigRenderer:
         node_list: XrayNodeList,
         routing: dict,
         down_tags: frozenset | set = frozenset(),
+        is_transparent: bool = True,
     ):
         """
         Args:
@@ -76,7 +78,12 @@ class XrayConfigRenderer:
                 daemons look up, resolved at the direct resolver.
             down_tags: Outbound tags whose newest measurement failed, left
                 out of the balancer's selector.
+            is_transparent: Whether the firewall diverts into ``tproxy_in``
+                and routes by the mark xray sets, as on Linux. False renders
+                the SOCKS ports alone: no ``tproxy_in``, no ``sockopt.mark``,
+                and every diverted scope off.
         """
+        self._is_transparent = is_transparent
         # Every node whose secret resolved is resident: an outbound and a
         # probe account, whatever the scopes say, so the hub can measure it on
         # a box that proxies nothing and name the one worth switching back on.
@@ -99,12 +106,13 @@ class XrayConfigRenderer:
         has_exit = bool(self._selectable_nodes)
         # The forwarded scopes read alike here: what the firewall diverts,
         # LAN or overlay, arrives on the one transparent inbound.
-        self._is_lan_proxied = routing.get("is_proxy_enabled", True) and has_exit
+        is_diverting = has_exit and is_transparent
+        self._is_lan_proxied = routing.get("is_proxy_enabled", True) and is_diverting
         self._is_overlay_proxied = (
-            routing.get("is_overlay_proxy_enabled", False) and has_exit
+            routing.get("is_overlay_proxy_enabled", False) and is_diverting
         )
         self._is_local_proxied = (
-            routing.get("is_local_proxy_enabled", False) and has_exit
+            routing.get("is_local_proxy_enabled", False) and is_diverting
         )
         # A proxied listener with no exit would answer and send everything out
         # directly under a name that says the opposite, so it is not published
@@ -222,19 +230,10 @@ class XrayConfigRenderer:
                 "protocol": "dokodemo-door",
                 "settings": {"address": XRAY_API_LISTEN},
             },
-            {
-                "tag": XRAY_TPROXY_TAG,
-                "listen": XRAY_TPROXY_LISTEN,
-                "port": XRAY_TPROXY_PORT,
-                "protocol": "dokodemo-door",
-                "settings": {"network": "tcp,udp", "followRedirect": True},
-                "streamSettings": {"sockopt": {"tproxy": "tproxy"}},
-                "sniffing": {
-                    "enabled": True,
-                    "destOverride": ["http", "tls", "quic"],
-                    "routeOnly": True,
-                },
-            },
+        ]
+        if self._is_transparent:
+            inbounds.append(self._render_transparent_inbound())
+        inbounds += [
             {
                 "tag": XRAY_DNS_TAG,
                 "listen": XRAY_DNS_LISTEN,
@@ -265,6 +264,22 @@ class XrayConfigRenderer:
                 }
             )
         return inbounds
+
+    def _render_transparent_inbound(self) -> dict:
+        """The inbound the firewall diverts into, on Linux alone."""
+        return {
+            "tag": XRAY_TPROXY_TAG,
+            "listen": XRAY_TPROXY_LISTEN,
+            "port": XRAY_TPROXY_PORT,
+            "protocol": "dokodemo-door",
+            "settings": {"network": "tcp,udp", "followRedirect": True},
+            "streamSettings": {"sockopt": {"tproxy": "tproxy"}},
+            "sniffing": {
+                "enabled": True,
+                "destOverride": ["http", "tls", "quic"],
+                "routeOnly": True,
+            },
+        }
 
     def _render_probe_inbound(self) -> dict:
         """The loopback listener the hub measures every node through."""
@@ -305,14 +320,14 @@ class XrayConfigRenderer:
     def _render_outbounds(self) -> list[dict]:
         # xray sends a connection no rule matched to the first outbound, and a
         # node outbound may be one the person switched off.
-        outbounds: list[dict] = [
-            {
-                "tag": XRAY_DIRECT_TAG,
-                "protocol": "freedom",
-                "settings": {"domainStrategy": "UseIP"},
-                "streamSettings": {"sockopt": {"mark": XRAY_EGRESS_MARK}},
-            }
-        ]
+        direct = {
+            "tag": XRAY_DIRECT_TAG,
+            "protocol": "freedom",
+            "settings": {"domainStrategy": "UseIP"},
+        }
+        if self._is_transparent:
+            direct["streamSettings"] = {"sockopt": {"mark": XRAY_EGRESS_MARK}}
+        outbounds: list[dict] = [direct]
         outbounds += [self._render_node_outbound(node) for node in self._resident_nodes]
         if self._is_lan_proxied:
             # With the LAN scope off dnsmasq asks the direct resolver itself,
@@ -328,12 +343,10 @@ class XrayConfigRenderer:
         return outbounds
 
     def _render_node_outbound(self, node: XrayNodeConfig) -> dict:
-        stream: dict = {
-            "sockopt": {
-                "mark": XRAY_EGRESS_MARK,
-                "domainStrategy": XRAY_NODE_DOMAIN_STRATEGY,
-            }
-        }
+        sockopt: dict = {"domainStrategy": XRAY_NODE_DOMAIN_STRATEGY}
+        if self._is_transparent:
+            sockopt = {"mark": XRAY_EGRESS_MARK, **sockopt}
+        stream: dict = {"sockopt": sockopt}
         if node.protocol == SHADOWSOCKS_PROTOCOL:
             settings = {
                 "servers": [
@@ -432,7 +445,7 @@ class XrayConfigRenderer:
         # on; with that scope off it answers directly.
         if self._is_transparent_proxied:
             balanced = [XRAY_TPROXY_TAG] + balanced
-        else:
+        elif self._is_transparent:
             direct_inbounds.append(XRAY_TPROXY_TAG)
         if not self._is_lan_proxied:
             direct_inbounds.append(XRAY_DNS_TAG)

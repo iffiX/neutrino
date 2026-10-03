@@ -24,6 +24,7 @@ from neutrino_hub.cli.password import (
     read_new_password,
     store_password,
 )
+from neutrino_hub.modules.firewall.ops import hand_back_firewall
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.routes import hand_back
@@ -212,9 +213,14 @@ def _hand_back_network() -> list:
 
     Returns:
         One line per thing stopped, empty on a machine the hub never drove.
+        On macOS and Windows, one line per firewall rule or program taken
+        away.
     """
     if not is_linux():
-        return []
+        try:
+            return hand_back_firewall()
+        except (OSError, subprocess.SubprocessError) as error:
+            return [f"firewall not handed back: {command_failure_text(error)}"]
     try:
         network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
     except (FileNotFoundError, ValueError):

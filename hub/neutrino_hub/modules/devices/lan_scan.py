@@ -3,13 +3,15 @@
 Two sources are merged: an active ``arp-scan`` sweep finds devices that answer
 ARP right now, and the kernel neighbour table remembers ones seen recently. A
 device that has gone to sleep still shows up from the neighbour table, which is
-what makes the Wake-on-LAN button useful.
+what makes the Wake-on-LAN button useful. Both are Linux's; on macOS and
+Windows a scan finds nothing and the panel draws an empty list.
 """
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from neutrino_hub.platforms.detect import is_linux
 from neutrino_hub.utils.subprocess_run import run
 
 from neutrino_hub.modules.devices.constants import DEVICE_LAN_SCAN_TIMEOUT_S
@@ -66,7 +68,7 @@ def count_lan_neighbours(lan_interfaces: list[str]) -> int:
         interfaces.
     """
     served = set(lan_interfaces)
-    if not served:
+    if not served or not is_linux():
         return 0
     try:
         lines = PROC_NET_ARP.read_text(encoding="utf-8").splitlines()
@@ -116,6 +118,8 @@ class LanScanner:
             table and are marked offline. A device seen on two interfaces
             appears once, under the interface swept last.
         """
+        if not is_linux():
+            return []
         devices: dict[str, DiscoveredDevice] = {}
         for interface in self._lan_interfaces:
             for device in self._read_neighbours(interface):

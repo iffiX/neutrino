@@ -7,13 +7,22 @@ DHCP handed out, which network the radio joined and how well it hears it.
 Asked of the kernel, through `ip` and `iw`, and never of a network manager.
 A machine the hub does not address runs whatever it runs and may have no
 manager the hub knows; its ports still have to be drawn, because the panel
-shows them and offers to take them over.
+shows them and offers to take them over. On macOS and Windows the same
+answers come from psutil, and the default route from ``route`` or
+``Get-NetRoute``.
 """
 
+import ipaddress
 import json
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 
+import psutil
+
+from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN
+from neutrino_hub.platforms.detect import hub_os, is_linux
+from neutrino_hub.system.powershell_run import listed, run_powershell
 from neutrino_hub.utils.subprocess_run import run
 
 # The interface kinds the Network page is about. Everything else the kernel
@@ -42,6 +51,20 @@ LINK_MODEM_PREFIX = "ww"
 # Where the kernel publishes what it knows about each interface. Named rather
 # than written out at each use so a test can point it somewhere it may write.
 LINK_SYSFS_ROOT = Path("/sys/class/net")
+# Where macOS and Windows say which way out the machine takes.
+LINK_DARWIN_ROUTE_COMMAND = ("route", "-n", "get", "default")
+LINK_DARWIN_ROUTE_GATEWAY_KEY = "gateway"
+LINK_DARWIN_ROUTE_DEVICE_KEY = "interface"
+LINK_WINDOWS_ROUTE_SCRIPT = """
+$routes = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+  ForEach-Object {
+    @{dev = [string]$_.InterfaceAlias; gateway = [string]$_.NextHop;
+      metric = [int]$_.RouteMetric + [int]$_.InterfaceMetric}
+  })
+@{routes = $routes} | ConvertTo-Json -Compress -Depth 4
+"""
+# What Windows names as the next hop of a route with none.
+LINK_NO_GATEWAY = "0.0.0.0"
 
 
 @dataclass
@@ -213,6 +236,9 @@ class RouterLinkStatus:
             The speed, or None when the interface is down or the driver
             declines to say — a down port reports -1 rather than failing.
         """
+        if not is_linux():
+            stats = psutil.net_if_stats().get(name)
+            return stats.speed if stats is not None and stats.speed > 0 else None
         try:
             speed = int((LINK_SYSFS_ROOT / name / "speed").read_text().strip())
         except (OSError, ValueError):
@@ -306,7 +332,15 @@ class RouterLinkStatus:
             Interface name to kind. Loopback, bridges, tunnels, veth pairs and
             the overlay are left out: they are not ports anybody gives a role
             to, and nothing here has to name them one by one to exclude them.
+            On macOS and Windows every interface with a hardware address and
+            an IPv4 address outside loopback, as ethernet.
         """
+        if not is_linux():
+            return {
+                name: LINK_KIND_ETHERNET
+                for name, entry in _system_entries().items()
+                if entry.get("address") and _first_ipv4(entry)
+            }
         result = run(["ip", "-d", "-json", "link", "show"], is_checked=False)
         if not result.is_success:
             return {}
@@ -319,12 +353,16 @@ class RouterLinkStatus:
         return kinds
 
     def _addresses(self) -> dict[str, dict]:
+        if not is_linux():
+            return _system_entries()
         result = run(["ip", "-json", "addr", "show"], is_checked=False)
         if not result.is_success:
             return {}
         return {entry["ifname"]: entry for entry in json.loads(result.stdout or "[]")}
 
     def _default_routes(self) -> list[dict]:
+        if not is_linux():
+            return system_default_routes()
         result = run(["ip", "-json", "route", "show", "default"], is_checked=False)
         if not result.is_success:
             return []
@@ -342,8 +380,16 @@ def device_addresses() -> dict[str, str]:
     a port anybody plugged in, and it is still an address devices come in on.
 
     Returns:
-        Device name to address with its prefix, loopback left out.
+        Device name to address with its prefix, loopback left out. On macOS
+        and Windows an overlay's device is ``utunN`` or the adapter's name.
     """
+    if not is_linux():
+        found = {}
+        for name, entry in _system_entries().items():
+            address = _first_ipv4(entry)
+            if address:
+                found[name] = address
+        return found
     result = run(["ip", "-json", "addr", "show"], is_checked=False)
     if not result.is_success:
         return {}
@@ -365,6 +411,12 @@ def admin_up_interfaces() -> set[str]:
     Returns:
         Their names.
     """
+    if not is_linux():
+        return {
+            name
+            for name, entry in _system_entries().items()
+            if "UP" in entry.get("flags", [])
+        }
     result = run(["ip", "-json", "link", "show"], is_checked=False)
     if not result.is_success:
         return set()
@@ -373,6 +425,91 @@ def admin_up_interfaces() -> set[str]:
         for entry in json.loads(result.stdout or "[]")
         if "UP" in entry.get("flags", [])
     }
+
+
+def system_default_routes() -> list[dict]:
+    """Every default route macOS or Windows holds, lowest metric first.
+
+    Returns:
+        Entries shaped as ``ip -json route show default`` prints them:
+        ``dev``, and ``gateway`` when the route has a next hop. Empty when
+        the machine has no default route or it cannot be read.
+    """
+    if hub_os() == PLATFORM_OS_DARWIN:
+        result = run(list(LINK_DARWIN_ROUTE_COMMAND), is_checked=False)
+        if not result.is_success:
+            return []
+        fields = {}
+        for line in result.stdout.splitlines():
+            key, separator, value = line.partition(":")
+            if separator:
+                fields[key.strip()] = value.strip()
+        device = fields.get(LINK_DARWIN_ROUTE_DEVICE_KEY, "")
+        if not device:
+            return []
+        route = {"dev": device, "metric": 0}
+        if fields.get(LINK_DARWIN_ROUTE_GATEWAY_KEY):
+            route["gateway"] = fields[LINK_DARWIN_ROUTE_GATEWAY_KEY]
+        return [route]
+    try:
+        answer = run_powershell(LINK_WINDOWS_ROUTE_SCRIPT, {})
+    except OSError:
+        return []
+    routes = []
+    for entry in listed(answer.get("routes")):
+        if not isinstance(entry, dict) or not entry.get("dev"):
+            continue
+        route = {"dev": str(entry["dev"]), "metric": int(entry.get("metric") or 0)}
+        gateway = str(entry.get("gateway") or "")
+        if gateway and gateway != LINK_NO_GATEWAY:
+            route["gateway"] = gateway
+        routes.append(route)
+    routes.sort(key=lambda route: route["metric"])
+    return routes
+
+
+def _system_entries() -> dict[str, dict]:
+    """Every interface psutil reports, shaped as ``ip -json addr show`` entries."""
+    stats = psutil.net_if_stats()
+    entries = {}
+    for name, addresses in psutil.net_if_addrs().items():
+        stat = stats.get(name)
+        is_up = stat is not None and stat.isup
+        entry = {
+            "ifname": name,
+            "operstate": "UP" if is_up else "DOWN",
+            "flags": ["UP"] if is_up else [],
+            "addr_info": [],
+        }
+        for address in addresses:
+            if address.family == psutil.AF_LINK and _is_hardware(address.address):
+                entry["address"] = address.address.replace("-", ":").lower()
+            elif address.family == socket.AF_INET and address.address:
+                if ipaddress.ip_address(address.address).is_loopback:
+                    continue
+                entry["addr_info"].append(
+                    {
+                        "family": "inet",
+                        "local": address.address,
+                        "prefixlen": _prefix_length(address.netmask),
+                    }
+                )
+        entries[name] = entry
+    return entries
+
+
+def _is_hardware(address: str | None) -> bool:
+    """Whether psutil's link address is a real hardware address."""
+    digits = (address or "").replace(":", "").replace("-", "")
+    return len(digits) == 12 and digits.strip("0") != ""
+
+
+def _prefix_length(netmask: str | None) -> int:
+    """The prefix length of a dotted netmask; 32 when there is none."""
+    try:
+        return ipaddress.IPv4Network(f"0.0.0.0/{netmask}").prefixlen
+    except (ValueError, TypeError):
+        return 32
 
 
 def _first_ipv4(entry: dict) -> str | None:

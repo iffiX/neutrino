@@ -113,3 +113,10 @@ def test_the_device_list_carries_the_neighbour_through(tmp_path, monkeypatch):
 
     assert merged["192.168.100.21"].is_neighbour is True
     assert merged["192.168.100.21"].name is None
+
+
+def test_elsewhere_a_scan_finds_nothing(elsewhere, tmp_path, monkeypatch):
+    write_table(tmp_path, monkeypatch)
+
+    assert count_lan_neighbours(["enp1s0"]) == 0
+    assert LanScanner(lan_interfaces=["enp1s0"]).scan() == []

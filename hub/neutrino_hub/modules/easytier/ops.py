@@ -4,10 +4,15 @@ The engine's ``node info`` prints the running configuration with the network
 secret in it. Only the network's name is taken from that text, and nothing
 else of it leaves this module: a secret that reaches a log or a panel is a
 network anybody can join.
+
+On Linux the start line is a drop-in over the hub's unit. On macOS and
+Windows the process controller holds it, and the engine is a child of the
+hub's one service.
 """
 
 import json
 import re
+import subprocess
 import threading
 import tomllib
 from dataclasses import dataclass, field
@@ -22,7 +27,10 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_GENERATED_NAME,
     EASYTIER_INSTANCE_FIELDS,
     EASYTIER_RPC_PORTAL,
+    EASYTIER_DEVICE_NAME,
     EASYTIER_STATUS_TIMEOUT_S,
+    EASYTIER_SUPERVISED_NAME,
+    EASYTIER_SYSTEM_NAMED_DEVICE_OS,
     EASYTIER_UNIT,
 )
 from neutrino_hub.modules.easytier.provisioner import refresh_unit
@@ -32,7 +40,12 @@ from neutrino_hub.modules.easytier.renderer import (
     render_dropin,
 )
 from neutrino_hub.modules.router.link_status import device_addresses
-from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
+from neutrino_hub.platforms.detect import hub_os, is_linux, process_controller
+from neutrino_hub.system.constants import (
+    SYSTEM_SERVICES_STATE_PATH,
+    SYSTEM_SYSTEMD_DIR,
+)
+from neutrino_hub.system.process_control import read_services_state
 from neutrino_hub.utils.constants import UTILS_GENERATED_DIR, is_dev_root_set
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.utils.subprocess_run import run
@@ -343,6 +356,8 @@ class EasyTierConfigApplier:
         is_unit_owned = not is_dev_root_set()
         if not config.is_configured:
             network_path.unlink(missing_ok=True)
+            if not is_linux():
+                return self._stop_supervised()
             if is_unit_owned and dropin_path.is_file():
                 dropin_path.unlink()
                 run(["systemctl", "daemon-reload"])
@@ -358,7 +373,12 @@ class EasyTierConfigApplier:
             )
             network_path.unlink(missing_ok=True)
         else:
-            rendered = render_config(config, secret=config.secret(), hostname=hostname)
+            rendered = render_config(
+                config,
+                secret=config.secret(),
+                hostname=hostname,
+                device_name=_device_name(),
+            )
             # The network file carries the secret, so it is root-only like
             # every other rendered file that does.
             write_generated(network_path, rendered, mode=0o600)
@@ -367,6 +387,9 @@ class EasyTierConfigApplier:
             )
         if not self.is_installed:
             return "rendered; the engine is not installed yet"
+        if not is_linux():
+            self._start_supervised(arguments)
+            return f"applied the {config.mode} network and restarted"
         if is_unit_owned:
             refresh_unit()
             write_generated(
@@ -398,9 +421,12 @@ class EasyTierConfigApplier:
         if not self.is_installed:
             return True
         network_path = UTILS_GENERATED_DIR / EASYTIER_GENERATED_NAME
-        is_active = run(
-            ["systemctl", "is-active", "--quiet", EASYTIER_UNIT], is_checked=False
-        ).is_success
+        if is_linux():
+            is_active = run(
+                ["systemctl", "is-active", "--quiet", EASYTIER_UNIT], is_checked=False
+            ).is_success
+        else:
+            is_active = process_controller().is_active(EASYTIER_SUPERVISED_NAME)
         if not config.is_configured:
             return not network_path.exists() and not is_active
         if config.is_console_mode:
@@ -412,14 +438,22 @@ class EasyTierConfigApplier:
             )
         else:
             network_text = render_config(
-                config, secret=config.secret(), hostname=hostname
+                config,
+                secret=config.secret(),
+                hostname=hostname,
+                device_name=_device_name(),
             )
             arguments = render_arguments(
                 config, config_server="", config_path=str(network_path)
             )
         if _text_of(network_path) != network_text:
             return False
-        if not is_dev_root_set():
+        if not is_linux():
+            held = read_services_state(SYSTEM_SERVICES_STATE_PATH)["start_lines"]
+            line = held.get(EASYTIER_SUPERVISED_NAME) or {}
+            if line.get("argv") != _start_line(arguments):
+                return False
+        elif not is_dev_root_set():
             dropin = render_dropin(arguments, core_path=str(EASYTIER_CORE_PATH))
             if _text_of(_dropin_path()) != dropin:
                 return False
@@ -429,6 +463,41 @@ class EasyTierConfigApplier:
     def is_installed(self) -> bool:
         """Whether the engine is on the box."""
         return EASYTIER_CORE_PATH.is_file()
+
+    def _start_supervised(self, arguments: list) -> None:
+        """Hand the start line to the process controller and run the engine on it."""
+        controller = process_controller()
+        controller.set_start_line(
+            EASYTIER_SUPERVISED_NAME, _start_line(arguments), {}, None
+        )
+        if controller.is_enabled(EASYTIER_SUPERVISED_NAME):
+            controller.restart(EASYTIER_SUPERVISED_NAME)
+        else:
+            controller.enable(EASYTIER_SUPERVISED_NAME)
+
+    def _stop_supervised(self) -> str:
+        """Stop the engine and forget its start line."""
+        if not self.is_installed:
+            return "nothing to run"
+        controller = process_controller()
+        try:
+            controller.stop(EASYTIER_SUPERVISED_NAME)
+        except (RuntimeError, subprocess.SubprocessError):
+            pass
+        controller.set_start_line(EASYTIER_SUPERVISED_NAME, None, {}, None)
+        return "stopped; there is no network to run"
+
+
+def _start_line(arguments: list) -> list:
+    """The engine's whole argument vector, its own path first."""
+    return [str(EASYTIER_CORE_PATH), *arguments]
+
+
+def _device_name() -> str:
+    """The tunnel device the engine is told to make; empty where it names its own."""
+    if hub_os() in EASYTIER_SYSTEM_NAMED_DEVICE_OS:
+        return ""
+    return EASYTIER_DEVICE_NAME
 
 
 def _dropin_path():

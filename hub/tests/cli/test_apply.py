@@ -154,3 +154,15 @@ def test_an_apply_starts_the_overlays_first_and_stops_them_last(monkeypatch):
     )
 
     assert _RecordingSwitcher.calls == ["start", "router", "dnsmasq", "stop"]
+
+
+def test_elsewhere_an_apply_renders_no_ruleset(elsewhere, tmp_path, monkeypatch):
+    """No xray account and no nftables there; the routing pass still runs."""
+    _stored_easytier(tmp_path, monkeypatch, [])
+
+    def refuse():
+        raise AssertionError("looked up the xray account")
+
+    monkeypatch.setattr(apply, "lookup_xray_uid", refuse)
+
+    assert apply._render(("router",)) == {"router": ""}

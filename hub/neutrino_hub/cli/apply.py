@@ -200,8 +200,11 @@ def _render(selected: tuple[str, ...]) -> dict:
             node_list=node_list,
             routing=routing,
             down_tags=_down_tags(),
+            is_transparent=is_linux(),
         ).render()
-    if "router" in selected:
+    if "router" in selected and not is_linux():
+        artifacts["router"] = ""
+    elif "router" in selected:
         artifacts["router"] = RouterNftRenderer(
             network=network,
             routing=routing,
@@ -247,7 +250,7 @@ def _print_artifacts(artifacts: dict) -> None:
     if "xray" in artifacts:
         print(f"--- {XRAY_CONFIG_PATH} ---")
         print(json.dumps(artifacts["xray"], indent=2))
-    if "router" in artifacts:
+    if artifacts.get("router"):
         print(f"\n--- {ROUTER_NFT_PATH} ---")
         print(artifacts["router"])
     if "dnsmasq" in artifacts:

@@ -8,7 +8,9 @@ fetches the pinned release instead.
 
 Joining a network stays a separate step: it needs a setup key, and which
 management plane to trust is a decision the installer should not make
-silently.
+silently. On macOS and Windows nothing is downloaded and no unit is written:
+the carried client is registered with the process controller as a child of
+the hub's one service.
 """
 
 import hashlib
@@ -23,13 +25,17 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_BINARY_NAME,
     NETBIRD_BINARY_PATH,
     NETBIRD_DOWNLOAD_URL,
+    NETBIRD_HUB_STATE_DIR,
     NETBIRD_SHA256,
     NETBIRD_STATE_DIR,
+    NETBIRD_SUPERVISED_NAME,
     NETBIRD_SUPPORTED_ARCHITECTURES,
     NETBIRD_UNIT,
     NETBIRD_VENDOR_UNIT,
     NETBIRD_VERSION,
 )
+from neutrino_hub.modules.netbird.ops import netbird_command
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
 from neutrino_hub.system.machine import machine_architecture, require_architecture
 from neutrino_hub.system.provisioning import ProvisionResult, say
@@ -72,9 +78,13 @@ class NetbirdProvisioner:
         Raises:
             RuntimeError: On a machine the vendor publishes no binary for.
             ValueError: If what the vendor served is not what is pinned.
+            FileNotFoundError: Outside Linux, when the package carries no
+                client.
             subprocess.CalledProcessError: If the download or any setup step
                 fails.
         """
+        if not is_linux():
+            return self._register(report=report)
         require_architecture(NETBIRD_SUPPORTED_ARCHITECTURES, "netbird")
         is_changed = False
         if not NETBIRD_BINARY_PATH.is_file():
@@ -128,7 +138,16 @@ class NetbirdProvisioner:
             subprocess.CalledProcessError: If systemd refuses to reload.
         """
         say(report, "leaving the network and stopping netbird")
-        run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
+        run(netbird_command("down"), is_checked=False, timeout_s=30)
+        if not is_linux():
+            process_controller().disable(NETBIRD_SUPERVISED_NAME)
+            if not is_data_kept:
+                say(report, "deleting the peer identity")
+                shutil.rmtree(NETBIRD_HUB_STATE_DIR, ignore_errors=True)
+                return ProvisionResult(
+                    is_changed=True, message="removed, identity deleted"
+                )
+            return ProvisionResult(is_changed=True, message="removed; identity kept")
         run(["systemctl", "disable", "--now", NETBIRD_UNIT], is_checked=False)
         (SYSTEM_SYSTEMD_DIR / NETBIRD_UNIT).unlink(missing_ok=True)
         run(["systemctl", "daemon-reload"])
@@ -138,6 +157,21 @@ class NetbirdProvisioner:
             shutil.rmtree(NETBIRD_STATE_DIR, ignore_errors=True)
             return ProvisionResult(is_changed=True, message="removed, identity deleted")
         return ProvisionResult(is_changed=True, message="removed; identity kept")
+
+    def _register(self, *, report: Callable[[str], None] | None) -> ProvisionResult:
+        """Check the carried client and have the hub's service run it."""
+        if not NETBIRD_BINARY_PATH.is_file():
+            raise FileNotFoundError(
+                f"missing: {NETBIRD_BINARY_PATH}; the package carries it"
+            )
+        NETBIRD_HUB_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        NETBIRD_HUB_STATE_DIR.chmod(0o700)
+        controller = process_controller()
+        if controller.is_enabled(NETBIRD_SUPERVISED_NAME):
+            return ProvisionResult(is_changed=False, message="already provisioned")
+        say(report, "starting netbird")
+        controller.enable(NETBIRD_SUPERVISED_NAME)
+        return ProvisionResult(is_changed=True, message=f"netbird {NETBIRD_VERSION}")
 
     def _stand_vendor_down(self, *, report: Callable[[str], None] | None) -> None:
         """Stop and disable a NetBird the vendor's package installed.

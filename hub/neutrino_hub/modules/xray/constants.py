@@ -7,14 +7,14 @@ config, so they are wire-level identifiers rather than user settings.
 from neutrino_hub.utils.constants import (
     UTILS_GEODATA_DIR,
     UTILS_GENERATED_DIR,
-    UTILS_STATIC_ROOT,
+    carried_program,
 )
 
 XRAY_CONFIG_PATH = UTILS_GENERATED_DIR / "xray_config.json"
 # Carried by the hub's package rather than installed by the vendor's script,
 # so it lives under the hub's own prefix instead of /usr/local, which belongs
 # to whoever administers the machine.
-XRAY_BINARY = str(UTILS_STATIC_ROOT / "bin" / "xray")
+XRAY_BINARY = str(carried_program("xray"))
 
 # xray reads its databases from beside its own binary unless told otherwise,
 # and they are replaced while the machine runs, so it is told otherwise. Every
@@ -23,6 +23,8 @@ XRAY_BINARY = str(UTILS_STATIC_ROOT / "bin" / "xray")
 XRAY_ASSET_ENV = "XRAY_LOCATION_ASSET"
 XRAY_ASSET_DIR = str(UTILS_GEODATA_DIR)
 XRAY_SERVICE_NAME = "neutrino_hub_xray"
+# The name the process controller knows xray by.
+XRAY_SUPERVISED_NAME = "xray"
 
 # The release the hub runs, pinned to a version and to the hash of the file
 # that version serves. A package carries it; a checkout fetches the same one,

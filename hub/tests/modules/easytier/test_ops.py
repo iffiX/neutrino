@@ -390,3 +390,125 @@ def test_apply_stored_runs_the_engine_on_the_file_as_it_stands(
     ops.apply_stored(hostname="neutrino")
 
     assert commands[-1] == ["systemctl", "restart", "neutrino_hub_easytier.service"]
+
+
+# --- the start line outside Linux --------------------------------------------
+
+
+@pytest.fixture
+def supervised_box(elsewhere, applier_box, monkeypatch, tmp_path, fake_controller):
+    """The applier box on macOS or Windows: the controller holds the start line."""
+    generated, commands, core, systemd = applier_box
+    monkeypatch.setattr(ops, "SYSTEM_SERVICES_STATE_PATH", tmp_path / "services.json")
+    return generated, commands, core, systemd, fake_controller
+
+
+def test_elsewhere_the_start_line_goes_to_the_controller(supervised_box):
+    generated, commands, core, systemd, controller = supervised_box
+    config = EasyTierConfig(network_name="home")
+    config.set_secret("a-network-secret")
+
+    ops.EasyTierConfigApplier().apply(config, hostname="neutrino")
+
+    network = generated / "easytier.toml"
+    assert controller.verbs() == [
+        (
+            "set_start_line",
+            "easytier",
+            [str(core), "-c", str(network), "--rpc-portal", "127.0.0.1:15888"],
+            {},
+            None,
+        ),
+        ("enable", "easytier"),
+    ]
+    assert commands == []
+    assert not systemd.exists()
+
+
+def test_elsewhere_an_enabled_engine_is_restarted_on_its_new_line(supervised_box):
+    _, _, core, _, controller = supervised_box
+    controller.enabled.add("easytier")
+    config = EasyTierConfig(mode="console", is_secure_mode=True)
+    config.set_config_server(CONSOLE)
+
+    ops.EasyTierConfigApplier().apply(config, hostname="neutrino")
+
+    assert controller.verbs() == [
+        (
+            "set_start_line",
+            "easytier",
+            [
+                str(core),
+                "--config-server",
+                CONSOLE,
+                "--secure-mode=true",
+                "--rpc-portal",
+                "127.0.0.1:15888",
+            ],
+            {},
+            None,
+        ),
+        ("restart", "easytier"),
+    ]
+
+
+def test_elsewhere_nothing_to_run_stops_the_engine_and_forgets_its_line(
+    supervised_box,
+):
+    generated, commands, _, _, controller = supervised_box
+    generated.mkdir()
+    (generated / "easytier.toml").write_text("stale")
+
+    note = ops.EasyTierConfigApplier().apply(
+        EasyTierConfig(mode="console"), hostname="neutrino"
+    )
+
+    assert note == "stopped; there is no network to run"
+    assert list(generated.iterdir()) == []
+    assert controller.verbs() == [
+        ("stop", "easytier"),
+        ("set_start_line", "easytier", [], {}, None),
+    ]
+    assert commands == []
+
+
+def test_elsewhere_the_held_start_line_is_what_current_means(supervised_box, tmp_path):
+    generated, _, core, _, controller = supervised_box
+    config = EasyTierConfig(mode="console")
+    config.set_config_server(CONSOLE)
+    argv = [str(core), "--config-server", CONSOLE, "--rpc-portal", "127.0.0.1:15888"]
+    (tmp_path / "services.json").write_text(
+        json.dumps(
+            {"enabled": ["easytier"], "start_lines": {"easytier": {"argv": argv}}}
+        )
+    )
+    controller.active.add("easytier")
+    applier = ops.EasyTierConfigApplier()
+
+    assert applier.is_current(config, hostname="neutrino")
+    config.is_secure_mode = True
+    assert not applier.is_current(config, hostname="neutrino")
+    controller.active.clear()
+    config.is_secure_mode = False
+    assert not applier.is_current(config, hostname="neutrino")
+
+
+def test_console_devices_are_found_by_address_on_the_psutil_path(
+    elsewhere, monkeypatch
+):
+    import socket
+
+    from neutrino_hub.modules.router import link_status
+    from tests.conftest import FakePsutil
+
+    machine = FakePsutil()
+    machine.addresses = {
+        "utun5": [(socket.AF_INET, "10.144.144.3", "255.255.255.0")],
+        "en0": [(socket.AF_INET, "192.168.1.20", "255.255.255.0")],
+    }
+    monkeypatch.setattr(link_status, "psutil", machine)
+    monkeypatch.setattr(
+        ops.EasyTierStatusReader, "addresses", lambda self: ["10.144.144.3/24"]
+    )
+
+    assert ops.console_device_names() == ["utun5"]

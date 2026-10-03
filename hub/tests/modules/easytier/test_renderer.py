@@ -138,3 +138,12 @@ def test_every_word_is_quoted_the_systemd_way():
     text = render_dropin(['a b"c\\d', "50%", "$HOME"], core_path="/core")
 
     assert text.splitlines()[-1] == ('ExecStart="/core" "a b\\"c\\\\d" "50%%" "$$HOME"')
+
+
+def test_an_empty_device_name_leaves_the_name_to_the_engine():
+    config = EasyTierConfig(network_name="home")
+
+    rendered = render_config(config, secret="s", hostname="hub", device_name="")
+
+    assert "dev_name" not in rendered
+    assert 'dev_name = "easytier"' in render_config(config, secret="s", hostname="hub")

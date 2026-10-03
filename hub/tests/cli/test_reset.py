@@ -308,3 +308,22 @@ def test_reset_all_forgets_the_services_children(box):
 
     assert not (state / "services.json").exists()
     assert not (state / "netbird").exists()
+
+
+def test_macos_and_windows_hand_the_firewall_back(monkeypatch, elsewhere):
+    monkeypatch.setattr(
+        reset, "hand_back_firewall", lambda: ["firewall closed neutrino_hub_agent"]
+    )
+
+    assert reset._hand_back_network() == ["firewall closed neutrino_hub_agent"]
+
+
+def test_a_firewall_that_will_not_hand_back_is_reported(monkeypatch, elsewhere):
+    def refuse():
+        raise OSError("powershell exited 1")
+
+    monkeypatch.setattr(reset, "hand_back_firewall", refuse)
+
+    assert reset._hand_back_network() == [
+        "firewall not handed back: powershell exited 1"
+    ]

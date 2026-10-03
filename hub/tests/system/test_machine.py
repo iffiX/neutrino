@@ -65,3 +65,53 @@ def test_an_empty_machine_id_reads_as_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(machine, "MACHINE_ID_PATH", path)
 
     assert machine_id() == ""
+
+
+def test_macos_is_its_own_family_and_reads_the_firmware_id(on_darwin, monkeypatch):
+    from tests.conftest import FakeTools
+
+    tools = FakeTools()
+    tools.answers[("ioreg", "-rd1", "-c", "IOPlatformExpertDevice")] = (
+        '  "IOPlatformUUID" = "4C4C4544-0042-3510-8048-B4C04F4E4D32"\n'
+    )
+    monkeypatch.setattr(machine, "run", tools)
+
+    assert machine.distribution_family() == "darwin"
+    assert machine_id() == "4C4C4544-0042-3510-8048-B4C04F4E4D32"
+    assert machine.distribution_name().startswith("macOS")
+
+
+def test_windows_is_its_own_family_and_reads_the_registry(on_windows, monkeypatch):
+    import sys
+    import types
+
+    registry = types.SimpleNamespace(
+        HKEY_LOCAL_MACHINE="HKLM",
+        KEY_READ=0x20019,
+        opened=[],
+    )
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *details):
+            return False
+
+    def open_key(root, path, reserved, access):
+        registry.opened.append((root, path, access))
+        return Key()
+
+    registry.OpenKey = open_key
+    registry.QueryValueEx = lambda key, name: (
+        "b7f4c2d0-1111-2222-3333-444455556666",
+        1,
+    )
+    monkeypatch.setitem(sys.modules, "winreg", registry)
+
+    assert machine.distribution_family() == "windows"
+    assert machine_id() == "b7f4c2d0-1111-2222-3333-444455556666"
+    assert registry.opened == [
+        ("HKLM", "SOFTWARE\\Microsoft\\Cryptography", 0x20019 | 0x0100)
+    ]
+    assert machine.distribution_name().startswith("Windows")

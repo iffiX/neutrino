@@ -325,3 +325,74 @@ def test_the_overlay_devices_found_are_rendered_and_recorded(box, monkeypatch):
 
 def test_nothing_recorded_reads_as_no_devices_found(box):
     assert controller.rendered_overlay_devices() == {}
+
+
+# --- macOS and Windows: the system firewall, no kernel routing -------------
+
+
+@pytest.fixture
+def server_elsewhere(elsewhere, box, monkeypatch):
+    """A server on macOS or Windows; the kernel and the account refuse."""
+    files, kernel = box
+    files["router/network.json"] = {
+        "mode": "server",
+        "interfaces": [],
+        "overlays": [{"provider": "netbird", "is_enabled": True}],
+    }
+    handed = []
+
+    def refuse():
+        raise AssertionError("looked up the xray account")
+
+    def firewall(network, *, routing):
+        handed.append((network, routing))
+        return ["firewall opened neutrino_hub_panel_http"]
+
+    monkeypatch.setattr(controller, "lookup_xray_uid", refuse)
+    monkeypatch.setattr(controller, "converge_firewall", firewall)
+    monkeypatch.setattr(
+        controller, "overlay_devices", lambda network: {"netbird": ["utun4"]}
+    )
+    return kernel, handed
+
+
+def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
+    server_elsewhere, fake_controller, monkeypatch
+):
+    kernel, handed = server_elsewhere
+    gates = []
+
+    class Gate:
+        def converge(self, *, is_blocked):
+            gates.append(is_blocked)
+            return ""
+
+    monkeypatch.setattr(controller, "NetbirdInboundGate", Gate)
+    ready = []
+    results = pass_of(on_base_ready=lambda: ready.append(True)).reconcile()
+
+    assert names(results) == ["firewall", "overlay_gate NetBird"]
+    assert results[0].state == ROUTER_STEP_APPLIED
+    assert kernel.commands == []
+    assert Interfaces.calls == []
+    assert ready == [True]
+    assert gates == [False]
+    assert handed[0][1] == ROUTING
+    assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
+    assert fake_controller.calls == []
+
+
+def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
+    server_elsewhere, monkeypatch
+):
+    def refuse(network, *, routing):
+        raise OSError("powershell exited 1")
+
+    monkeypatch.setattr(controller, "converge_firewall", refuse)
+
+    results = pass_of().reconcile()
+
+    assert names(results) == ["firewall", "overlay_gate NetBird"]
+    assert results[0].state == ROUTER_STEP_FAILED
+    assert results[0].code == ROUTER_CODE_COMMAND_FAILED
+    assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}

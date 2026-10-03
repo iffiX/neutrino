@@ -49,3 +49,47 @@ def test_an_empty_journal_still_reports_the_failure(monkeypatch):
         _answering(monkeypatch, state="failed", journal="").confirm_running()
 
     assert "no reason" in str(failure.value)
+
+
+# --- outside Linux ------------------------------------------------------------
+
+
+def _refusing(command, **kwargs):
+    if command[0] in ("systemctl", "journalctl"):
+        raise AssertionError(f"ran {command}")
+    return CommandResult(command=command, exit_code=0, stdout="", stderr="")
+
+
+def test_elsewhere_the_restart_goes_through_the_controller(
+    elsewhere, fake_controller, monkeypatch
+):
+    monkeypatch.setattr(apply_module, "run", _refusing)
+
+    XrayConfigApplier().restart()
+
+    assert fake_controller.verbs() == [("restart", "xray")]
+    assert XrayConfigApplier().is_running()
+
+
+def test_elsewhere_a_child_that_died_names_its_log(
+    elsewhere, fake_controller, monkeypatch
+):
+    monkeypatch.setattr(apply_module, "run", _refusing)
+    monkeypatch.setattr(apply_module.time, "sleep", lambda seconds: None)
+    fake_controller.journals["xray"] = JOURNAL
+
+    with pytest.raises(RuntimeError) as failure:
+        XrayConfigApplier().confirm_running()
+
+    assert "address already in use" in str(failure.value)
+    assert ("journal", "xray") in fake_controller.calls
+
+
+def test_elsewhere_a_child_that_runs_is_believed(
+    elsewhere, fake_controller, monkeypatch
+):
+    monkeypatch.setattr(apply_module, "run", _refusing)
+    monkeypatch.setattr(apply_module.time, "sleep", lambda seconds: None)
+    fake_controller.active.add("xray")
+
+    XrayConfigApplier().confirm_running()

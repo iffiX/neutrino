@@ -4,6 +4,11 @@ There is nothing to render here: NetBird keeps its own state under
 ``/etc/netbird``, and the subnet routes live on the management plane, not on
 this box. What the gateway owns is joining and leaving, and telling the truth
 about what the daemon is doing.
+
+On macOS and Windows every ``netbird`` command names the hub's own daemon
+with ``--daemon-addr``, and NetBird 0.78.1 is expected to keep
+``config.json``, ``active_profile.json``, the profile ``<name>.json`` and
+``state.json`` in ``<state>/netbird/``, to be verified on the VM.
 """
 
 import ipaddress
@@ -15,11 +20,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from neutrino_hub.modules.netbird.constants import (
+    NETBIRD_ACTIVE_PROFILE_NAME,
     NETBIRD_ACTIVE_PROFILE_PATH,
     NETBIRD_BINARY_PATH,
     NETBIRD_BLOCK_INBOUND_KEY,
+    NETBIRD_DAEMON_ADDRESS_FLAG,
     NETBIRD_DISABLE_DNS_FLAG,
     NETBIRD_DISABLE_DNS_KEY,
+    NETBIRD_HUB_CONFIG_NAME,
+    NETBIRD_HUB_STATE_DIR,
     NETBIRD_INBOUND_TIMEOUT_S,
     NETBIRD_LEGACY_CONFIG_PATH,
     NETBIRD_DEREGISTER_TIMEOUT_S,
@@ -29,13 +38,58 @@ from neutrino_hub.modules.netbird.constants import (
     NETBIRD_STATE_DIR,
     NETBIRD_STATE_FILE_NAME,
     NETBIRD_STATUSES_WITHOUT_LOGIN,
+    NETBIRD_SUPERVISED_NAME,
     NETBIRD_UNIT,
 )
+from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.utils.subprocess_run import run
 
 # Long enough for the first handshake with the management plane; `netbird up`
 # returns once the engine is started or the key is rejected.
 JOIN_TIMEOUT_S = 90
+
+
+def netbird_command(*words: str) -> list:
+    """One ``netbird`` command, naming the hub's own daemon where it has one.
+
+    Args:
+        *words: What follows the program.
+
+    Returns:
+        The argument vector; outside Linux it ends with ``--daemon-addr``
+        and the address the platform gives.
+
+    Raises:
+        RuntimeError: The system is none of the three.
+    """
+    command = [str(NETBIRD_BINARY_PATH), *words]
+    address = hub_platform().netbird_daemon_address()
+    if address:
+        command += [NETBIRD_DAEMON_ADDRESS_FLAG, address]
+    return command
+
+
+def state_layout() -> tuple:
+    """Where the daemon keeps its state on this system.
+
+    Returns:
+        The state directory, the file naming the active profile, and the
+        single-file profile read when no active profile is named.
+
+    Raises:
+        RuntimeError: The system is none of the three.
+    """
+    if is_linux():
+        return (
+            NETBIRD_STATE_DIR,
+            NETBIRD_ACTIVE_PROFILE_PATH,
+            NETBIRD_LEGACY_CONFIG_PATH,
+        )
+    return (
+        NETBIRD_HUB_STATE_DIR,
+        NETBIRD_HUB_STATE_DIR / NETBIRD_ACTIVE_PROFILE_NAME,
+        NETBIRD_HUB_STATE_DIR / NETBIRD_HUB_CONFIG_NAME,
+    )
 
 
 @dataclass
@@ -106,7 +160,7 @@ class NetbirdStatusReader:
             The reshaped state; ``is_installed`` False when the binary or the
             daemon is not there to ask.
         """
-        result = run([str(NETBIRD_BINARY_PATH), "status", "--json"], is_checked=False)
+        result = run(netbird_command("status", "--json"), is_checked=False)
         if not result.is_success:
             return NetbirdState(is_installed=False)
         try:
@@ -263,14 +317,13 @@ class NetbirdInboundGate:
         status = NetbirdStatusReader().survey()
         if not status.is_installed or not status.is_enrolled:
             return ""
-        run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
+        run(netbird_command("down"), is_checked=False, timeout_s=30)
         run(
-            [
-                str(NETBIRD_BINARY_PATH),
+            netbird_command(
                 "up",
                 f"--block-inbound={'true' if is_blocked else 'false'}",
                 NETBIRD_DISABLE_DNS_FLAG,
-            ],
+            ),
             timeout_s=NETBIRD_INBOUND_TIMEOUT_S,
         )
         if not is_inbound_settled:
@@ -278,7 +331,7 @@ class NetbirdInboundGate:
         return "overlay DNS management turned off"
 
     def _state_paths(self) -> list:
-        return profile_paths() + [NETBIRD_LEGACY_CONFIG_PATH]
+        return profile_paths() + [state_layout()[2]]
 
 
 def profile_paths() -> list:
@@ -287,14 +340,18 @@ def profile_paths() -> list:
     Returns:
         The profile's path under the state directory, as a one-item list, or
         an empty list when no active profile is named.
+
+    Raises:
+        RuntimeError: The system is none of the three.
     """
+    state_dir, active_path, _ = state_layout()
     try:
-        active = json.loads(NETBIRD_ACTIVE_PROFILE_PATH.read_text())
+        active = json.loads(active_path.read_text())
         name = str(active.get("name", "") or "")
     except (OSError, ValueError):
         return []
     if name and Path(name).name == name:
-        return [NETBIRD_STATE_DIR / f"{name}.json"]
+        return [state_dir / f"{name}.json"]
     return []
 
 
@@ -327,20 +384,15 @@ class NetbirdEnroller:
         state = NetbirdStatusReader().survey()
         # Down first so a re-enrollment with a new key or plane succeeds;
         # harmless when not enrolled.
-        run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
+        run(netbird_command("down"), is_checked=False, timeout_s=30)
         is_reset = False
         if state.is_installed and state.daemon_status in NETBIRD_STATUSES_WITHOUT_LOGIN:
             self._reset_identity()
             is_reset = True
-        command = [
-            str(NETBIRD_BINARY_PATH),
-            "up",
-            "--setup-key",
-            setup_key,
-            NETBIRD_DISABLE_DNS_FLAG,
-        ]
+        words = ["up", "--setup-key", setup_key, NETBIRD_DISABLE_DNS_FLAG]
         if management_url:
-            command += ["--management-url", management_url]
+            words += ["--management-url", management_url]
+        command = netbird_command(*words)
         try:
             run(command, timeout_s=JOIN_TIMEOUT_S)
         except subprocess.CalledProcessError:
@@ -362,7 +414,7 @@ class NetbirdEnroller:
         Raises:
             subprocess.CalledProcessError: If the daemon does not come back.
         """
-        run([str(NETBIRD_BINARY_PATH), "down"], is_checked=False, timeout_s=30)
+        run(netbird_command("down"), is_checked=False, timeout_s=30)
         self._reset_identity()
 
     def _reset_identity(self) -> None:
@@ -376,16 +428,20 @@ class NetbirdEnroller:
             subprocess.CalledProcessError: If the daemon does not come back.
         """
         run(
-            [str(NETBIRD_BINARY_PATH), "deregister"],
+            netbird_command("deregister"),
             is_checked=False,
             timeout_s=NETBIRD_DEREGISTER_TIMEOUT_S,
         )
+        state_dir, active_path, _ = state_layout()
         for path in profile_paths() + [
-            NETBIRD_ACTIVE_PROFILE_PATH,
-            NETBIRD_STATE_DIR / NETBIRD_STATE_FILE_NAME,
+            active_path,
+            state_dir / NETBIRD_STATE_FILE_NAME,
         ]:
             path.unlink(missing_ok=True)
-        run(["systemctl", "restart", NETBIRD_UNIT])
+        if is_linux():
+            run(["systemctl", "restart", NETBIRD_UNIT])
+        else:
+            process_controller().restart(NETBIRD_SUPERVISED_NAME)
         deadline = time.monotonic() + NETBIRD_RESTART_SETTLE_S
         while time.monotonic() < deadline:
             if NetbirdStatusReader().survey().is_installed:
@@ -406,7 +462,7 @@ class NetbirdRouteSelector:
             True when at least one route was deselected.
         """
         result = run(
-            [str(NETBIRD_BINARY_PATH), "routes", "list"],
+            netbird_command("routes", "list"),
             is_checked=False,
             timeout_s=NETBIRD_ROUTES_TIMEOUT_S,
         )
@@ -416,7 +472,7 @@ class NetbirdRouteSelector:
         if not ids:
             return False
         result = run(
-            [str(NETBIRD_BINARY_PATH), "routes", "deselect", ",".join(ids)],
+            netbird_command("routes", "deselect", ",".join(ids)),
             is_checked=False,
             timeout_s=NETBIRD_ROUTES_TIMEOUT_S,
         )

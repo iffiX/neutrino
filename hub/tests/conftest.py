@@ -175,6 +175,38 @@ def hub_service(request, monkeypatch):
     return manager
 
 
+@pytest.fixture(params=["darwin", "win32"])
+def elsewhere(request, monkeypatch):
+    """The hub runs on macOS, then on Windows, for the test's length.
+
+    Returns:
+        ``darwin`` or ``win32``, what ``sys.platform`` says.
+    """
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect.sys, "platform", request.param)
+    if request.param == "win32":
+        monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
+    return request.param
+
+
+@pytest.fixture
+def on_darwin(monkeypatch):
+    """The hub runs on macOS for the test's length."""
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect.sys, "platform", "darwin")
+
+
+@pytest.fixture
+def on_windows(monkeypatch):
+    """The hub runs on Windows for the test's length."""
+    from neutrino_hub.platforms import detect
+
+    monkeypatch.setattr(detect.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
+
+
 @pytest.fixture(autouse=True)
 def _router_lock_in_a_test_directory(tmp_path, monkeypatch):
     """Point the routing-state lock and its record where a test may create them."""
@@ -973,3 +1005,206 @@ class FakeMsvcrt:
 
     def locking(self, descriptor, mode, size):
         return None
+
+
+class FakePsutil:
+    """psutil's network readings, answered from what a test set.
+
+    Attributes:
+        addresses: Interface name to ``(family, address, netmask)`` triples.
+        stats: Interface name to ``(is_up, speed_mbps)``.
+        counters: Interface name to ``(bytes_received, bytes_sent)``.
+        connections: ``(kind, status, port, has_remote, pid)`` per socket,
+            ``kind`` being ``tcp`` or ``udp``.
+        process_names: Pid to the program's file name.
+    """
+
+    import psutil as _psutil
+
+    AF_LINK = _psutil.AF_LINK
+    CONN_LISTEN = _psutil.CONN_LISTEN
+    Error = _psutil.Error
+
+    def __init__(self):
+        self.addresses: dict = {}
+        self.stats: dict = {}
+        self.counters: dict = {}
+        self.connections: list = []
+        self.process_names: dict = {}
+
+    def net_if_addrs(self) -> dict:
+        import collections
+
+        entry = collections.namedtuple("snicaddr", "family address netmask")
+        return {
+            name: [entry(*triple) for triple in triples]
+            for name, triples in self.addresses.items()
+        }
+
+    def net_if_stats(self) -> dict:
+        import collections
+
+        entry = collections.namedtuple("snicstats", "isup speed")
+        return {name: entry(*pair) for name, pair in self.stats.items()}
+
+    def net_io_counters(self, pernic=False) -> dict:
+        import collections
+
+        entry = collections.namedtuple("snetio", "bytes_recv bytes_sent")
+        return {name: entry(*pair) for name, pair in self.counters.items()}
+
+    def net_connections(self, kind="inet") -> list:
+        import collections
+        import socket
+
+        address = collections.namedtuple("addr", "ip port")
+        entry = collections.namedtuple("sconn", "type status laddr raddr pid")
+        found = []
+        for kind_word, status, port, has_remote, pid in self.connections:
+            found.append(
+                entry(
+                    socket.SOCK_STREAM if kind_word == "tcp" else socket.SOCK_DGRAM,
+                    status,
+                    address("0.0.0.0", port),
+                    address("192.0.2.9", 4000) if has_remote else (),
+                    pid,
+                )
+            )
+        return found
+
+    def Process(self, pid):
+        names = self.process_names
+
+        class _Process:
+            def name(self) -> str:
+                return names[pid]
+
+        return _Process()
+
+
+class FakePowerShell:
+    """Records each script and document, and answers a canned object.
+
+    Attributes:
+        runs: Every ``(script, document)`` run, in order.
+    """
+
+    def __init__(self, answers=None, error=None):
+        self.runs: list = []
+        self._answers = dict(answers or {})
+        self._error = error
+
+    def __call__(self, script, document):
+        import json
+
+        self.runs.append((script, json.loads(json.dumps(document))))
+        if self._error is not None:
+            raise self._error
+        return dict(self._answers.get(script, {}))
+
+
+class FakeTools:
+    """Every command run, recorded, answered by its first words.
+
+    Attributes:
+        calls: Each argument vector, in order.
+        answers: Output by the leading words of a command; a command no
+            entry names succeeds and prints nothing.
+        failing: Leading words of the commands that exit 1.
+    """
+
+    def __init__(self):
+        self.calls: list = []
+        self.answers: dict = {}
+        self.failing: set = set()
+
+    def __call__(self, command, *, is_checked=True, timeout_s=0, **keywords):
+        from neutrino_hub.utils.subprocess_run import CommandResult
+
+        command = [str(word) for word in command]
+        self.calls.append(command)
+        for size in (5, 4, 3, 2, 1):
+            key = tuple(command[:size])
+            if key in self.failing:
+                if is_checked:
+                    raise subprocess.CalledProcessError(1, command, "", "refused")
+                return CommandResult(command, 1, "", "refused")
+            if key in self.answers:
+                return CommandResult(command, 0, self.answers[key], "")
+        return CommandResult(command, 0, "", "")
+
+    def ran(self, *words) -> list:
+        """The recorded commands that start with these words."""
+        return [call for call in self.calls if tuple(call[: len(words)]) == words]
+
+
+class FakeProcessController:
+    """The process controller, recording each verb.
+
+    Attributes:
+        calls: ``(verb, name)`` per call, and ``("set_start_line", name,
+            argv, env, cwd)`` per start line.
+        active: The names that read as running.
+        enabled: The names that read as enabled.
+        journals: Name to the text its journal answers.
+    """
+
+    def __init__(self):
+        self.calls: list = []
+        self.active: set = set()
+        self.enabled: set = set()
+        self.journals: dict = {}
+
+    def is_active(self, name: str) -> bool:
+        self.calls.append(("is_active", name))
+        return name in self.active
+
+    def is_enabled(self, name: str) -> bool:
+        self.calls.append(("is_enabled", name))
+        return name in self.enabled
+
+    def start(self, name: str) -> None:
+        self.calls.append(("start", name))
+        self.active.add(name)
+
+    def stop(self, name: str) -> None:
+        self.calls.append(("stop", name))
+        self.active.discard(name)
+
+    def restart(self, name: str) -> None:
+        self.calls.append(("restart", name))
+        self.active.add(name)
+
+    def enable(self, name: str) -> None:
+        self.calls.append(("enable", name))
+        self.enabled.add(name)
+
+    def disable(self, name: str) -> None:
+        self.calls.append(("disable", name))
+        self.enabled.discard(name)
+
+    def reload(self) -> None:
+        self.calls.append(("reload",))
+
+    def journal(self, name: str, *, line_count: int = 100) -> str:
+        self.calls.append(("journal", name))
+        return self.journals.get(name, "")
+
+    def set_start_line(self, name, argv, env, cwd) -> None:
+        self.calls.append(("set_start_line", name, list(argv or []), env, cwd))
+
+    def verbs(self) -> list:
+        """The calls without the reads."""
+        return [
+            call for call in self.calls if call[0] not in ("is_active", "is_enabled")
+        ]
+
+
+@pytest.fixture
+def fake_controller(monkeypatch) -> FakeProcessController:
+    """The one process controller this process hands out, faked."""
+    from neutrino_hub.platforms import detect
+
+    controller = FakeProcessController()
+    monkeypatch.setattr(detect, "_CONTROLLER", controller)
+    return controller

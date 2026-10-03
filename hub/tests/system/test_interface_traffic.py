@@ -100,3 +100,37 @@ def test_neither_an_uplink_nor_a_route_names_nothing(monkeypatch, tmp_path):
     network = network_config()
 
     assert traffic_interface(network=network) == ""
+
+
+def test_elsewhere_the_counters_come_from_psutil(elsewhere, monkeypatch):
+    from tests.conftest import FakePsutil
+
+    machine = FakePsutil()
+    machine.counters = {"en0": (1200, 340)}
+    monkeypatch.setattr(interface_traffic, "psutil", machine)
+
+    assert interface_counters("en0") == (1200, 340)
+    assert interface_counters("en9") is None
+
+
+def test_elsewhere_the_default_route_is_read_once_per_interval(elsewhere, monkeypatch):
+    reads = []
+
+    def routes():
+        reads.append(1)
+        return [{"dev": "en0", "metric": 0}]
+
+    clock = [100.0]
+    monkeypatch.setattr(interface_traffic, "system_default_routes", routes)
+    monkeypatch.setattr(interface_traffic.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        interface_traffic, "_ROUTE_READING", {"interface": "", "taken_at": None}
+    )
+
+    assert default_route_interface() == "en0"
+    clock[0] += 1
+    assert default_route_interface() == "en0"
+    assert len(reads) == 1
+    clock[0] += interface_traffic.ROUTE_READ_INTERVAL_S
+    assert default_route_interface() == "en0"
+    assert len(reads) == 2

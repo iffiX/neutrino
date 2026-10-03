@@ -8,12 +8,15 @@ Validation and a successful restart are two different claims. ``xray run -test``
 builds the whole server without binding anything, and the unit is ``Type=simple``,
 so ``systemctl restart`` returns before the process has reached its first
 listener. A port something else holds passes both and leaves no proxy running.
+On macOS and Windows xray is a child of the hub's one service, restarted and
+read through the process controller.
 """
 
 import json
 import subprocess
 import time
 
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.utils.json_file import write_generated
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
@@ -27,6 +30,7 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_RESTART_LOG_LINES,
     XRAY_RESTART_SETTLE_S,
     XRAY_SERVICE_NAME,
+    XRAY_SUPERVISED_NAME,
 )
 
 
@@ -173,7 +177,11 @@ class XrayConfigApplier:
         Raises:
             subprocess.CalledProcessError: If systemd reports the restart
                 failed.
+            KeyError: If the process controller does not run xray.
         """
+        if not is_linux():
+            process_controller().restart(XRAY_SUPERVISED_NAME)
+            return
         run(["systemctl", "restart", XRAY_SERVICE_NAME])
 
     def confirm_running(self, *, settle_s: float = XRAY_RESTART_SETTLE_S) -> None:
@@ -190,6 +198,12 @@ class XrayConfigApplier:
         time.sleep(settle_s)
         if self.is_running():
             return
+        if not is_linux():
+            text = process_controller().journal(
+                XRAY_SUPERVISED_NAME, line_count=XRAY_RESTART_LOG_LINES
+            )
+            reason = " ".join(text.split()) or "no reason in its log"
+            raise RuntimeError(f"xray stopped again after the restart: {reason}")
         journal = run(
             [
                 "journalctl",
@@ -210,8 +224,11 @@ class XrayConfigApplier:
         """Whether the xray service is currently active.
 
         Returns:
-            True when systemd reports the unit active.
+            True when systemd reports the unit active, or the process
+            controller the child running.
         """
+        if not is_linux():
+            return process_controller().is_active(XRAY_SUPERVISED_NAME)
         result = run(["systemctl", "is-active", XRAY_SERVICE_NAME], is_checked=False)
         return result.stdout.strip() == "active"
 

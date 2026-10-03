@@ -195,3 +195,39 @@ def test_the_unit_name_is_one_name_everywhere():
     assert "/opt/neutrino/bin/easytier-core" in PACKAGED_UNIT
     assert "EnvironmentFile" not in PACKAGED_UNIT
     assert "$" not in PACKAGED_UNIT
+
+
+# --- macOS and Windows --------------------------------------------------------
+
+
+def test_elsewhere_the_carried_engine_is_checked_and_nothing_is_fetched(
+    elsewhere, tmp_path, monkeypatch, fake_controller
+):
+    core = tmp_path / "easytier-core.exe"
+    cli = tmp_path / "easytier-cli.exe"
+    core.write_text("")
+    cli.write_text("")
+    monkeypatch.setattr(module, "EASYTIER_CORE_PATH", core)
+    monkeypatch.setattr(module, "EASYTIER_CLI_PATH", cli)
+
+    def refuse(command, **keywords):
+        raise AssertionError(f"ran {command}")
+
+    monkeypatch.setattr(module, "run", refuse)
+
+    assert not module.EasyTierProvisioner().provision().is_changed
+    cli.unlink()
+    with pytest.raises(FileNotFoundError, match="easytier-cli"):
+        module.EasyTierProvisioner().provision()
+    assert fake_controller.verbs() == []
+
+
+def test_elsewhere_a_removal_disables_the_child_and_forgets_its_line(
+    elsewhere, fake_controller
+):
+    module.EasyTierProvisioner().deprovision()
+
+    assert fake_controller.verbs() == [
+        ("disable", "easytier"),
+        ("set_start_line", "easytier", [], {}, None),
+    ]

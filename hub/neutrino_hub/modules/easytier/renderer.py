@@ -16,13 +16,21 @@ from neutrino_hub.modules.easytier.constants import (
 )
 
 
-def render_config(config: EasyTierConfig, *, secret: str, hostname: str) -> str:
+def render_config(
+    config: EasyTierConfig,
+    *,
+    secret: str,
+    hostname: str,
+    device_name: str = EASYTIER_DEVICE_NAME,
+) -> str:
     """Render ``easytier.toml``.
 
     Args:
         config: What the panel stored.
         secret: The network secret, already opened.
         hostname: What this box is called when the configuration names none.
+        device_name: The tunnel device the engine is told to make; empty
+            leaves the name to the engine.
 
     Returns:
         The file's text.
@@ -55,7 +63,8 @@ def render_config(config: EasyTierConfig, *, secret: str, hostname: str) -> str:
         lines.append(f'cidr = "{_escaped(cidr)}"')
     lines.append("")
     lines.append("[flags]")
-    lines.append(f'dev_name = "{EASYTIER_DEVICE_NAME}"')
+    if device_name:
+        lines.append(f'dev_name = "{_escaped(device_name)}"')
     # The engine relays for every network it hears from unless it is told
     # otherwise, which would make this gateway carry strangers' traffic.
     lines.append(f'relay_network_whitelist = "{_escaped(config.network_name)}"')
