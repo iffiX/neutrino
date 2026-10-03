@@ -233,11 +233,11 @@ def test_unreadable_sources_read_as_the_defaults(monkeypatch):
     )
 
 
-PS_SAMPLE = """  PID USER             COMM             %CPU %MEM
-    1 root             /sbin/launchd     0.0  0.1
-  301 _windowserver    /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer  12.5  1.4
-  842 pat              /Applications/Google Chrome.app/Contents/MacOS/Google Chrome  30.1  4.2
-    0 root             kernel_task       5.0  0.9
+PS_SAMPLE = """  PID USER              %CPU %MEM COMM
+    1 root               0.0  0.1 /sbin/launchd
+  301 _windowserver     12.5  1.4 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer
+  842 pat               30.1  4.2 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+    0 root               5.0  0.9 kernel_task
 """
 
 IOREG_APPLE_SAMPLE = """+-o AGXAcceleratorG13X  <class AGXAcceleratorG13X, id 0x1000008b1, registered, matched, active, busy 0 (0 ms), retain 51>
@@ -354,8 +354,8 @@ def test_ps_is_read_into_the_busiest_processes():
 
 
 def test_ps_lists_no_more_than_a_report_carries():
-    lines = ["  PID USER COMM %CPU %MEM"]
-    lines += [f"{pid} pat /bin/p{pid} {pid}.0 0.1" for pid in range(1, 40)]
+    lines = ["  PID USER %CPU %MEM COMM"]
+    lines += [f"{pid} pat {pid}.0 0.1 /bin/p{pid}" for pid in range(1, 40)]
 
     processes = parse_ps("\n".join(lines))
 

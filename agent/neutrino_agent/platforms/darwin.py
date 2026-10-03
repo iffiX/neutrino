@@ -81,7 +81,7 @@ DARWIN_VM_STAT_LINE = re.compile(r'^"?([^":]+)"?:\s+(\d+)\.?$', re.MULTILINE)
 DARWIN_VM_STAT_AVAILABLE = ("Pages free", "Pages inactive", "Pages speculative")
 DARWIN_BOOTTIME_PATTERN = re.compile(r"sec\s*=\s*(\d+)")
 
-DARWIN_PS_COMMAND = ("ps", "-axo", "pid,user,comm,%cpu,%mem")
+DARWIN_PS_COMMAND = ("ps", "-axo", "pid,user,%cpu,%mem,comm")
 
 # Every graphics accelerator, without its children.
 DARWIN_IOREG_GPU_COMMAND = ("ioreg", "-r", "-c", "IOAccelerator", "-d", "1")
@@ -160,7 +160,10 @@ def parse_ifconfig(text: str) -> list:
 
 
 def parse_ps(text: str) -> "list[ProcessMetrics]":
-    """The busiest processes out of ``ps -axo pid,user,comm,%cpu,%mem``.
+    """The busiest processes out of ``ps -axo pid,user,%cpu,%mem,comm``.
+
+    The command comes last: ``ps`` cuts every column but the last to its
+    width, and a path under ``/System/Library`` is longer than that.
 
     Args:
         text: What ``ps`` printed, its header first.
@@ -176,11 +179,11 @@ def parse_ps(text: str) -> "list[ProcessMetrics]":
             continue
         try:
             pid = int(fields[0])
-            cpu_percent = float(fields[-2])
-            memory_percent = float(fields[-1])
+            cpu_percent = float(fields[2])
+            memory_percent = float(fields[3])
         except ValueError:
             continue
-        command = " ".join(fields[2:-2])
+        command = " ".join(fields[4:])
         processes.append(
             ProcessMetrics(
                 pid=pid,

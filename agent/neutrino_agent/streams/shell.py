@@ -199,6 +199,17 @@ def _sweep_session(session_id: int) -> None:
             os.kill(pid, signal.SIGKILL)
 
 
+def _take_controlling_terminal() -> None:
+    """Make the shell's own terminal its controlling terminal.
+
+    Runs in the child between ``setsid`` and ``exec``. Without it the shell
+    has no controlling terminal, so the kernel has no process group to send
+    ``SIGWINCH`` to when the hub resizes the terminal, and the shell keeps
+    the width it started with.
+    """
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+
 class PtyTerminal:
     """One process on a pseudo-terminal, as a shell session drives it."""
 
@@ -232,6 +243,7 @@ class PtyTerminal:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 start_new_session=True,
+                preexec_fn=_take_controlling_terminal,
                 cwd=login_home(),
                 env=shell_environment(),
             )

@@ -53,6 +53,16 @@ def test_output_arrives_as_bytes_and_the_exit_status_closes():
     assert channel.closed is None
 
 
+def test_the_shell_owns_its_terminal():
+    """``/dev/tty`` opens only for a process with a controlling terminal,
+    which is what carries ``SIGWINCH`` to the shell on a resize."""
+    channel = FakeChannel()
+
+    run_shell(channel, ["/bin/sh", "-c", "exec 3<>/dev/tty && echo ctty_ok"])
+
+    assert b"ctty_ok" in channel.output()
+
+
 def test_the_first_size_is_the_terminals():
     channel = FakeChannel()
 
