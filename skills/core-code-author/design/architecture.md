@@ -125,7 +125,7 @@ as its own child:
 | CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
 | NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
 | EasyTier | `easytier-core` with its rendered file and `--rpc-portal 127.0.0.1:15888` |
-| tun2socks | `tun2socks` on the hub's TUN device, pointed at xray's `socks_local_in`, while the box's own scope or the overlay scope is on and xray runs ([proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
+| tun2socks | `tun2socks` on the hub's TUN device, pointed at xray's `socks_local_in`, while the box's own scope or the overlay scope is on and xray runs; it requires xray, so it is ended before xray stops or restarts and started again once xray is back, and the routes follow it ([proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
 
 - Every `netbird` command the hub runs names the same `--daemon-addr`, so a
   client's NetBird on the same machine is never the one it talks to.
