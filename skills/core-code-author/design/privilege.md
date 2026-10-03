@@ -137,6 +137,9 @@ about the unit is Linux's:
 - The elevation check is `is_elevated()` of the hub's platform layer: euid 0
   on Linux and macOS, `IsUserAnAdmin` on Windows. No code calls
   `os.geteuid` itself.
+- The launchd jobs of the hub and the agent carry `LANG=en_US.UTF-8`.
+  launchd starts a job with no locale, under which Python decodes a
+  command's output as ASCII and the first curly quote in it is an error.
 - A secret file is protected by the ACL or the mode of its directory
   ([files.md](files.md), "One Neutrino tree on macOS and Windows").
 

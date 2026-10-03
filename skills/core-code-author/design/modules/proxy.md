@@ -32,11 +32,17 @@ with sniffing on, so the domain rules of the split apply as they do to
 and its upper twin) at the device, which win over the uplink's default route without touching
 it, and keeps a host route through the uplink's gateway for every address
 that has to stay out: every exit node's address, `direct_dns`, the
-reference host, and the servers of the running overlays. The local networks
+reference host, and the servers of the running overlays; a name among them
+is resolved by the direct resolver, and by the system's when that one has
+no answer. The local networks
 need no route, since the link's own route is longer than a half. xray's
 `direct` and node outbounds are bound to the uplink with
 `sockopt.interface`, so a connection the split sends direct never enters
-the TUN; on Linux the egress mark does that work. The device is `utun225`
+the TUN; on Linux the egress mark does that work. On macOS the hub also adds
+the uplink's default route scoped to the uplink (`route add -ifscope`): a
+socket bound to an interface is routed by that interface's own routes, and
+without the scoped default a bound outbound has no route to any address the
+halves cover. The device is `utun225`
 on macOS and the adapter `neutrino_tun` on Windows, with a /30 from the
 benchmark range of RFC 2544.
 The routes are the machine's, so with the overlay scope on alone the box's
