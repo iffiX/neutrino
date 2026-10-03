@@ -125,6 +125,7 @@ as its own child:
 | CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
 | NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
 | EasyTier | `easytier-core` with its rendered file and `--rpc-portal 127.0.0.1:15888` |
+| tun2socks | `tun2socks` on the hub's TUN device, pointed at xray's `socks_local_in`, while the box's own scope or the overlay scope is on and xray runs ([proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
 
 - Every `netbird` command the hub runs names the same `--daemon-addr`, so a
   client's NetBird on the same machine is never the one it talks to.
@@ -145,9 +146,16 @@ as its own child:
 - Restarting the panel there is the supervisor exiting; launchd's
   `KeepAlive` and the service control manager's failure recovery start it
   again.
-- No nftables layer exists outside Linux. The hub opens its own ports in the
-  system firewall instead ([network.md](modules/network.md), "What answers,
-  and where").
+- No nftables layer exists outside Linux. The hub renders its exposure into
+  the system firewall instead ([network.md](modules/network.md), "What
+  answers, and where").
+- The service runs from the install. Before the box is set up it serves the
+  setup wizard on the panel's HTTP port and nothing else; when the wizard's
+  steps finish, the process exits and the service manager starts it again as
+  the panel. On Linux the package starts `neutrino_hub_web` the same way, and
+  that unit serves the wizard until setup is done
+  ([install_and_dev.md](install_and_dev.md), "The application entry opens
+  the panel").
 
 ## Libraries carry the logic; `nhub` carries the execution
 

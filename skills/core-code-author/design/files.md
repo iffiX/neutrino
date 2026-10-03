@@ -10,10 +10,11 @@ directories under it: `hub`, `agent` and `client`. That holds on Linux,
 macOS and Windows, at the machine level and inside every user's profile. No
 other directory anywhere is named after Neutrino: not `neutrino_agent`, not
 `neutrino_client`, not `Neutrino Client`, not a module's own name beside the
-three. The one place the product name `Neutrino Client` appears is the
-application's entry a person launches, on every platform alike: the macOS
-bundle `/Applications/Neutrino Client.app`, the Windows Start menu shortcut,
-the Linux desktop entry. A package that has nothing to say for a question has
+three. The one place the product names `Neutrino Hub` and `Neutrino Client`
+appear is the application entry a person launches, on every platform alike:
+the macOS bundles `/Applications/Neutrino Hub.app` and `/Applications/Neutrino
+Client.app`, the Windows Start menu shortcuts, the Linux desktop entries. A
+package that has nothing to say for a question has
 no directory there. Names that are not directories keep the `neutrino_<package>…` form:
 sockets, pipes, systemd units, launchd labels and Windows services.
 
@@ -85,7 +86,8 @@ and the client with their own three directories.
 /opt/neutrino/
     hub/
         python/     the interpreter and the hub installed into it
-        bin/        xray, cli-proxy-api, netbird, easytier-core, easytier-cli
+        bin/        xray, cli-proxy-api, netbird, easytier-core, easytier-cli,
+                    and on macOS and Windows tun2socks
     agent/
         python/     the interpreter, the agent, and the window's bindings
     client/
@@ -134,6 +136,8 @@ testable. Details of the files themselves:
         agent_cache/        the agent packages this hub hands out
         services.json       which daemons the supervising service runs,
                             macOS and Windows only
+        setup_token         the one-time token the setup wizard is reached
+                            with, mode 0600, removed when setup finishes
         stood_down.json     which units the hub stopped so it could drive
                             the network
         xray_node_health.json

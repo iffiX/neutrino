@@ -192,7 +192,11 @@ output streams into the log at the bottom.
 
 A **modal** is for one interaction that must finish before anything else: a
 confirmation, a terminal session, a file transfer, an install consent. Anything
-that is merely detail is a drawer. Every modal closes on Escape, closing only
+that is merely detail is a drawer. A QR code in a dialog is an image, an
+`<img>` from a PNG data URL, so a long press on a phone and a right click on
+a desktop save it; it is drawn at 240 px or more, scaled with its module
+count, and in a portrait layout it sits at the bottom of the dialog,
+centred, on the desktop and on the phone alike. Every modal closes on Escape, closing only
 itself — the layer underneath stays — and one that tells the reader so must
 mean it. The exception is a modal that captures the keyboard: a terminal's
 Escape belongs to the shell, the way every established terminal works, and its
@@ -249,14 +253,26 @@ never loads behind a spinner.
 
 An empty list is a `placeholder` with two lines: what is missing, then how to
 fill it, and the button that fills it where one exists. `No nodes configured` /
-`Add one with a share link from your provider.`
+`Add one with a share link from your provider.` A list that fills by itself
+has one line, in the `No … yet` family, and no second line
+([ui_text.md](ui_text.md), "Other controls").
+
+A panel that shares a row with a taller one keeps the row's height whether
+it is full or empty, and an empty one lets its `placeholder` grow to fill
+it; the dashboard's active exits beside the two traffic charts are the
+reference. A panel that shrinks to its empty state leaves a hole where the
+page's shape was.
 
 ## Notices and errors
 
 A failure renders in place. An inline `notice--error` where an action failed, an
 `ErrorPanel` with a Retry where a load failed — never a blank page, because the
 panel is most needed exactly when the box is unwell. A failed poll keeps the
-last good value on screen and the next tick retries.
+last good value on screen and the next tick retries. A load whose request
+got no answer at all (the `fetch` itself rejected: the browser cut the
+connection when a network interface came or went) is sent once more after
+two seconds before the `ErrorPanel` shows; a response with a status is
+shown at once.
 
 The backend returns `{code, params}` and the frontend words it, from a map
 beside the component that shows it: `device_drawer.tsx` (`ACTION_ERROR_KEYS`)

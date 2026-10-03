@@ -12,24 +12,39 @@ A scope is one source of traffic and one switch in `config/xray/routing.json`.
 Each stands alone; every one needs an enabled exit node, and with none enabled
 the panel writes all of them off.
 
-| Scope | Switch | What reaches xray | How | Systems |
-| --- | --- | --- | --- | --- |
-| served networks | `is_proxy_enabled` | every TCP and UDP connection forwarded from a LAN interface to a public address | `prerouting` TPROXY on the LAN interfaces | Linux, router and side_gateway |
-| overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed interface of any running overlay | every running overlay's exposed interfaces join the TPROXY set, NetBird's and EasyTier's alike when both run | Linux, router and side_gateway |
-| the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray | `output` marks the packet, it hairpins through `lo`, TPROXY takes it | Linux |
-| SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port | every system |
+| Scope | Switch | What reaches xray | How on Linux | How on macOS and Windows | Modes |
+| --- | --- | --- | --- | --- | --- |
+| served networks | `is_proxy_enabled` | every TCP and UDP connection forwarded from a LAN interface to a public address | `prerouting` TPROXY on the LAN interfaces | no such scope | router and side_gateway; the switch is not drawn in server mode |
+| overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed interface of any running overlay | every running overlay's exposed interfaces join the TPROXY set, NetBird's and EasyTier's alike when both run | the TUN below, with forwarding on the overlay interfaces | every mode |
+| the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray | `output` marks the packet, it hairpins through `lo`, TPROXY takes it | the TUN below | every mode |
+| SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port | the same | every mode |
 
-Outside Linux only the SOCKS scope exists. `is_proxy_enabled`,
-`is_overlay_proxy_enabled` and `is_local_proxy_enabled` switched on there are
-refused with `proxy_scope_unsupported`, and the panel draws all three
-switches greyed.
+### The TUN on macOS and Windows
 
-On macOS and Windows the rendered xray configuration has no `tproxy_in`
-inbound and no `sockopt.mark` on any outbound, and xray runs as a child of
-the supervising service ([../architecture.md](../architecture.md)). The SOCKS
-ports, `socks_probe_in`, `api_in`, the balancer, the geodata and the exit
-measurement are the same on every system. Setup does not ask for the hub's
-own switch there.
+Those systems have no nftables, so the two scopes that divert the machine's
+own packets there go through a TUN device. `tun2socks` runs as a child of
+the supervising service ([../architecture.md](../architecture.md)) while
+either scope is on and xray runs. It owns one TUN device (`utun` on macOS,
+a wintun adapter on Windows) and hands every TCP connection and UDP flow
+that enters it to `socks_local_in`, a SOCKS inbound of xray's on loopback
+with sniffing on, so the domain rules of the split apply as they do to
+`tproxy_in`. The hub points the default route at the device with a better
+metric than the uplink's, and keeps a direct route for every address that
+has to stay out of it: the served and local networks, every exit node's
+address, `direct_dns`, the reference host, and the servers of the running
+overlays. Those direct routes are what the proxy's own lookups and
+measurements leave by; on Linux the egress mark does that work.
+
+With both scopes off there is no TUN device and no route. When xray stops,
+the supervisor stops `tun2socks` and withdraws the route, so the machine's
+traffic leaves direct rather than into a device nothing reads. The overlay
+scope there turns IP forwarding on for the overlay interfaces, and a member
+whose exit this box is follows the same default route into the TUN.
+
+The rendered xray configuration on those systems has no `tproxy_in`
+inbound and no `sockopt.mark` on any outbound. The SOCKS ports,
+`socks_probe_in`, `socks_local_in`, `api_in`, the balancer, the geodata and
+the exit measurement are the same on every system.
 
 The overlay interface of EasyTier in console mode is the one holding the
 console network's address, found at run time;
@@ -145,9 +160,11 @@ account. Every other lookup follows the scope its traffic is in, which is
 what the hub scope's description promises: with it on, the box's own names
 resolve at the exit.
 
-On macOS and Windows no dnsmasq runs and no socket is marked: the hub's own
-names resolve with the system's resolver, and the measurements leave like
-any other connection of the machine.
+On macOS and Windows no dnsmasq runs and no socket is marked. The hub's own
+names resolve with the system's resolver; with the hub scope on, that
+resolver's queries enter the TUN like any other packet and the split
+decides where they resolve. The measurements and the lookup of an exit's
+own name leave by the direct routes the TUN section names.
 
 An overlay member's names are its own resolver's: dnsmasq serves the served
 networks only, and the member's query to a public resolver is diverted like
@@ -179,5 +196,6 @@ address resolved nothing until the daemon restarted.
 | the panel process stops | the override xray holds stays in place; a restart of xray drops it and `roundRobin` takes over |
 | a node whose newest measurement failed at the last apply | the rendered balancer's selector leaves it out, unless every node failed, which keeps them all; this matters only between an xray restart and the hub's next override |
 | hub scope on | the hub's updates, package installs and overlay management traffic go through the exit; a dead exit takes them with it |
+| xray stops on macOS or Windows while a TUN scope is on | the supervisor stops `tun2socks` and withdraws the route; the machine's traffic leaves direct until xray is back |
 | an exit named by a hostname that `direct_dns` cannot resolve | the node is unreachable to the probe and to xray alike, and reads so on the Proxy page |
 | the geoip split on | names in `direct_domains` and addresses in `direct_ips` leave through the uplink whatever the scope |

@@ -269,7 +269,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
-| Metrics | `/proc`, `/sys`, `nvidia-smi` | kernel32 `GetSystemTimes`, `GlobalMemoryStatusEx`, `GetTickCount64`; the system drive | `host_statistics`, `vm_stat`, `sysctl`; `/` |
+| Metrics | `/proc`, `/sys`, `nvidia-smi` | kernel32 `GetSystemTimes`, `GlobalMemoryStatusEx`, `GetTickCount64` and the system drive; per-core CPU and the process table from `NtQuerySystemInformation`, sampled twice; GPUs from `nvidia-smi` where it is installed, else the PDH counters `GPU Engine` and `GPU Adapter Memory` summed per adapter; a temperature from WMI `MSAcpi_ThermalZoneTemperature` where the firmware exposes one, else none; no load average | `host_statistics`, `vm_stat`, `sysctl` and `/`; per-core CPU from `host_processor_info`; the process table from `ps -axo pid,user,comm,%cpu,%mem`; GPUs from the `PerformanceStatistics` of `ioreg -r -c IOAccelerator`; a temperature from `powermetrics --samplers smc`, which root may run |
 | Interfaces | `ip -j addr` | one PowerShell call joining `Get-NetAdapter` to `Get-NetIPAddress`, read at most every 30 seconds | `ifconfig -a` |
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
 | Accounts | uid 1000 and above with a login shell | the enabled local accounts from `Get-LocalUser`, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own, read at most every 30 seconds; the home is the profile `Win32_UserProfile` names | `dscl`, uid 501 and above, home under `/Users` |
@@ -282,7 +282,11 @@ only POSIX has is guarded, so one package imports on all three systems.
 | VS Code | the CLI in `/var/lib/neutrino/agent/vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/var/lib/neutrino/agent/vscode/tokens`, and `/etc/sysctl.d/90-neutrino-vscode.conf` when the machine's inotify watch or instance limit is under the module's floor (524288 and 512), since a served home directory runs a distribution's default out | the CLI in `%ProgramData%\Neutrino\agent\state\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token | the CLI in `/Library/Application Support/Neutrino/agent/state/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
 | Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer` |
 
-On Linux the metrics come from `/proc` and `/sys` with nothing but the
+Every system reports the same metrics document: CPU in total and per core,
+memory, the system disk, a temperature where one is readable, the load
+average where the system has one, the uptime, the GPUs and the process
+table, and a field a system cannot read is empty rather than guessed. On
+Linux the metrics come from `/proc` and `/sys` with nothing but the
 standard library; NVIDIA is the one exception, read through `nvidia-smi`
 where the driver installed it. The interfaces come from `ip -j addr`,
 skipping `lo`, and on every system a missing or all-zero MAC is recorded as
@@ -336,6 +340,11 @@ first, at most the number of lines the verb asked for.
 The hub's own machine on macOS and Windows runs the local agent
 `nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its
 shares and VS Code are that agent's modules, as on any device.
+
+A VS Code instance listens on every address of the machine, on every
+system; its token is what admits a browser, and the hub names the address a
+client opens by that client's scope ([protocol.md](protocol.md), "The
+address a caller is given").
 
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants. The seat reads the
@@ -393,6 +402,11 @@ service the agent runs `command -v claude` in the account's login shell
 that directory on the service's `PATH`. An account with none reports
 `cloudcli_claude_missing {account}`. On Windows the task runs as the account
 and has its `PATH` already.
+
+**Node's own directory leads `PATH` for npm and for the service, on every
+system.** The install scripts of the native modules call `node` by name,
+and a task or a service that inherits no profile has nothing else on its
+path that answers to it.
 
 **A failed install names its step**: `cloudcli_node_download_failed`,
 `cloudcli_npm_install_failed`, or `cloudcli_native_module_failed` when

@@ -157,11 +157,13 @@ nftables, `ip rule` or dnsmasq are Linux's.
 | --- | --- | --- |
 | The service | the LaunchDaemon `com.neutrino.hub`: `sudo launchctl print system/com.neutrino.hub` | `neutrino_hub`: `sc query neutrino_hub` |
 | Start and stop | `sudo nhub start`, `sudo nhub stop` | `nhub start`, `nhub stop` in an administrator PowerShell |
+| The panel | the `Neutrino Hub` entry in Launchpad, or `nhub open` | the `Neutrino Hub` entry in the Start menu, or `nhub open` |
 | Logs | `/Library/Logs/Neutrino/hub/<name>.log` | `C:\ProgramData\Neutrino\hub\log\<name>.log` |
-| The firewall | `/usr/libexec/ApplicationFirewall/socketfilterfw --listapps` | `Get-NetFirewallRule -Name 'neutrino_hub_*'` |
+| The firewall | `/usr/libexec/ApplicationFirewall/socketfilterfw --listapps` and `sudo pfctl -a com.apple/neutrino_hub -sr` | `Get-NetFirewallRule -Name 'neutrino_hub_*'`, each rule's `Get-NetFirewallInterfaceFilter` naming the exposed interfaces |
 
-`nhub start` and `nhub stop` drive the one service, and with it every daemon
-it supervises. Each supervised daemon writes a log file named after it,
+`nhub open` opens the panel in the default browser on every system, and
+the setup wizard while the box is not set up. `nhub start` and `nhub stop`
+drive the one service, and with it every daemon it supervises. Each supervised daemon writes a log file named after it,
 `netbird.log` for NetBird, and `nhub` and the panel read the tail of that
 file where Linux runs `journalctl -u`. An update
 records its turns in `state.json` under the state root's `hub_update/`, as on

@@ -238,14 +238,15 @@ nothing after an install is a VPS nobody can reach.
 
 ### Outside Linux, the system firewall
 
-macOS and Windows have no exposure: the panel draws no exposure section,
-and every port the hub serves answers on every interface. The hub opens
-those ports in the system's own firewall at each routing pass:
+macOS and Windows have the same exposure as Linux: one `is_exposed` per
+interface and per overlay, drawn on the same panel, with every interface
+exposed until somebody closes one. No nftables table exists there, so the
+routing pass renders the answer into the system's own firewall:
 
 | System | How | What |
 | --- | --- | --- |
-| Windows | `New-NetFirewallRule`, one rule per purpose named `neutrino_hub_<purpose>`, changed when a port changes and removed on uninstall | the panel's HTTP and HTTPS ports, the agent port, the AI gateway's port (CLIProxyAPI's `listen_port`, as `neutrino_hub_ai_gateway`), every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
-| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports | `nhub`, `xray`, `cli-proxy-api`, `netbird`, `easytier-core` |
+| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`, each scoped with `-InterfaceAlias` to the exposed interfaces; a port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes an interface that is not listed | the panel's HTTP and HTTPS ports, the agent port, the AI gateway's port (CLIProxyAPI's `listen_port`, as `neutrino_hub_ai_gateway`), every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts, which blocks those ports on every interface that is not exposed, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `cli-proxy-api`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
 A routing pass there looks up no `xray` account, sets no sysctl, adds no
 `ip rule` and loads no nftables table. It still writes
@@ -352,21 +353,21 @@ another:
 
 | Traffic | server | side_gateway | router | Diverted by |
 | --- | --- | --- | --- | --- |
-| Machines whose traffic this box forwards | — | yes | yes | the prerouting chain, into the TPROXY inbound |
-| This box's own traffic, on Linux only | yes | yes | yes | the output chain, behind `is_local_proxy_enabled` |
+| Machines on a served network | — | yes | yes | the prerouting chain, into the TPROXY inbound |
+| Overlay members whose exit this box is | yes | yes | yes | the prerouting chain on the overlay interfaces on Linux, behind `is_overlay_proxy_enabled`; the TUN on macOS and Windows |
+| This box's own traffic | yes | yes | yes | the output chain on Linux, behind `is_local_proxy_enabled`; the TUN on macOS and Windows |
 | Applications pointed at a SOCKS port | yes | yes | yes | the port's own `is_proxied` answer |
-| The forwarded machines' DNS | — | yes | yes | dnsmasq's only upstream, the xray DNS inbound |
+| The served networks' DNS | — | yes | yes | dnsmasq's only upstream, the xray DNS inbound |
 
-`server` has no row for forwarded traffic because nothing is forwarded: no
-interface holds a role, so there is no network to divert. On such a box the
-proxy is its listeners — the SOCKS ports, plus the box's own traffic when
-asked — and reporting it as "diverting" or "direct" would answer a question
-the mode never poses. What the panel reports is therefore a *scope*: off,
-unused, ports only, the forwarded network, this box, or both. Every scope
-but the SOCKS ports diverts through the nftables prerouting chain, which
-exists only on Linux, so on macOS and Windows the proxy is its SOCKS ports
-alone and the other switches are refused with `proxy_scope_unsupported`
-([proxy.md](proxy.md)).
+`server` has no row for a served network because it serves none: no
+interface holds a role, so there is no network to divert, and the panel does
+not draw that switch in server mode on any system. An overlay member that
+named this box its exit is forwarded in every mode, by the overlay's own
+rules, so that scope exists in every mode. What the panel reports is a
+*scope*: off, unused, ports only, the served networks, the overlays, this
+box, or several. On macOS and Windows the overlay scope and the box's own
+scope divert through a TUN device rather than a chain
+([proxy.md](proxy.md), "The TUN on macOS and Windows").
 
 There is no master switch above these: each scope is its own switch, and
 off is all of them off — the honest state for finding out whether the proxy

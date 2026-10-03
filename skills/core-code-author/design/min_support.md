@@ -124,7 +124,11 @@ floor of each is the highest version those files name. The hub's `.msi` and
 with no wheel for the machine fails the build instead of being compiled
 quietly against the container's glibc. Every package the hub declares has a
 cp313 wheel for x86-64 and for aarch64, the highest tag among them being
-`manylinux_2_28`.
+`manylinux_2_28`. The macOS and Windows builds pass the same flag, and the
+macOS build reads every Mach-O of the finished tree back with `otool -L`: a
+reference to `/usr/local/`, `/opt/homebrew/` or any path outside the
+system's own libraries fails the build, since a wheel linked against the
+runner's Homebrew OpenSSL loads on the runner and on nothing else.
 
 **Every finished tree is read back.** `require_glibc_floor` walks each ELF in
 the staged tree, takes the highest `GLIBC_` version any of them names, and

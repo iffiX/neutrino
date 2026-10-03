@@ -62,7 +62,7 @@ the switch does to traffic; the reader knows what they run.
 | Switch | `Whether …` | `Whether this container starts with the box.` |
 | Text field hint | what the field takes | `xray rule syntax: geoip:cn, geoip:private, 10.0.0.0/8.` |
 | Button | the verb, imperative | `Apply nodes`, `Add node`, `Forget` |
-| Empty state | what is missing, then how to fill it | `No nodes configured` / `Add one with a share link from your provider.` |
+| Empty state | what is missing, in the `No … yet` family when the list fills by itself; a second line only when the reader can do something | `No active exits yet`; `No nodes configured` / `Add one with a share link from your provider.` |
 | Error | what happened, in the terms the reader used | `port 8080 is already in use on this box` |
 
 A button says what pressing it does, never what state the system is in — and
@@ -106,7 +106,37 @@ the answer, and no `done` sentence follows it.
 **Never announce what the product does not do.** `The password stays on this
 machine; the hub is never told it` explains an implementation boundary
 nobody asked about. Security properties live in `docs/`; the surface shows
-the controls that exist and omits the reassurance.
+the controls that exist and omits the reassurance. The same rule covers a
+mode or an option: `Server: routes nothing, answers on the port it is
+reached on` tells the reader two things it does not do. `Server: serves on
+the networks it is connected to` tells them what it does.
+
+## Sentences that are deleted on sight
+
+A sentence of any of these shapes is deleted, or rewritten into one of the
+shapes above. Each reads as an assistant talking, and the reader came to a
+switch, not to a conversation.
+
+| Shape | Example | What replaces it |
+| --- | --- | --- |
+| A label with a clause about where or how | `The language the panel uses; the terminal stays English` | the label alone: `Language` |
+| A fact the reader needs for no decision | `A certificate is generated whether or not this is on` | nothing |
+| A comment on the question itself | `Skipping is also an answer` | nothing |
+| A description of the mechanism under the control | `Keys are sent straight to the machine`, `The grid fills as machines start talking to the gateway` | nothing, or the state the surface can show |
+| A reassurance or a nudge | `Do not worry, this can be changed later` | nothing |
+| What the thing does not do | `Does no routing` | what it does |
+
+A description that says what the control does stays, cut to the one
+sentence that says it; a second sentence stays only when it names a
+consequence the reader decides on. What goes is the sentence that says
+nothing about function: the mechanism, the comment, the reassurance, the
+negation. An apply bar's hint, which says what applying does (`Reloads the
+firewall and rebuilds the uplink routes.`), is such a sentence of function
+and stays.
+
+**A catalog change is reviewed as a table before it lands**: file, key, the
+text as it is, and the text it becomes or `deleted`. Both languages change in
+the same table.
 
 ## Localization
 
@@ -133,7 +163,11 @@ browser.
 **The backend returns codes, not sentences.** An error a person reads is
 composed in the frontend from an identifier the API returned; a backend that
 returns `"port 8080 is already in use on this box"` has made itself the
-translation surface, and no amount of frontend work can undo that.
+translation surface, and no amount of frontend work can undo that. A
+success is a code as well: an apply answers with the codes of what it did
+(`xray_restarted`, `devices_pushed` with a count) and the frontend words
+them, so `applied (xray restarted; desired state pushed to 1 devices)` never
+reaches a Chinese page.
 
 **A translation is not a port of the structure.** Each language follows its own
 typographic authority, exactly as `docs/` does: Google's developer

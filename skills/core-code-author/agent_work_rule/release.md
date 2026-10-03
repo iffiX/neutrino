@@ -105,7 +105,8 @@ own Python environment and touches nothing the system installed; everything
 else it needs is named in the package's dependencies, so installing the file
 installs the appliance's prerequisites with it. On macOS and Windows the hub
 runs in `server` mode, and its package carries the hub compiled by Nuitka
-with every program it drives.
+with every program it drives, `tun2socks` among them for the proxy scopes
+that divert the machine's own packets there.
 
 There is no 32-bit ARM package. The boards that would need one have no
 prebuilt wheels for the hub's dependencies, so the environment would have to

@@ -142,6 +142,15 @@ about the unit is Linux's:
 
 `sudo` stays out of the hub's code there too.
 
+## The application entry elevates once
+
+The `Neutrino Hub` entry ([install_and_dev.md](install_and_dev.md), "The
+application entry opens the panel") runs one elevated step, which starts the
+hub's service when it is stopped and does nothing else; UAC, macOS's
+administrator prompt and `pkexec` are what ask. The browser opens as the
+person who clicked, never as root, and everything the page then does goes
+through the service's own authentication.
+
 ## The panel never stores this machine's sudo password
 
 It does not need one: it is root already. The sudo passwords the panel does

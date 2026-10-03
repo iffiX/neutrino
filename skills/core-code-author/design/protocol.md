@@ -242,6 +242,11 @@ while the machine is away. The path does not say which actions those are.
 
 ## Refusals
 
+What an apply did is said the same way a refusal is: codes with params,
+never a sentence. `POST …/apply` answers `{changes: [{code, params}]}`,
+`xray_restarted` and `devices_pushed {count}` among them, and the frontend
+words each one ([ui_text.md](ui_text.md), "Localization").
+
 A refusal is `{code, params}`: `code` is an `under_score` token from a closed
 set, and `params` holds the values a sentence about it needs. It has one shape
 wherever it appears.
@@ -278,7 +283,7 @@ TLS port.
 
 | Prefix | Serves |
 | --- | --- |
-| `/api/hub/setup` | The first run's questions and the steps that answer them, served by the setup wizard before the panel starts |
+| `/api/hub/setup` | The first run's questions and the steps that answer them, served by the hub's service before the box is set up, behind the setup token |
 | `/api/hub/auth` | Signing in and out, and what the session is |
 | `/api/hub/display` | The language and the palette the panel is drawn in, read before there is a session |
 | `/api/hub/dashboard` | The summary, the traffic history, the DNS log; `/ws/hub/dashboard/stat` and `/ws/hub/dashboard/dns_log` are its live readings |
@@ -665,8 +670,23 @@ link with `link_not_for_agent`, each code's `params` naming the link's `role`.
 The base64url alphabet has no character a shell splits or a URL escapes, so
 the link pastes anywhere unquoted.
 
+A QR code carries the short form of the same link,
+`neutrino://enroll/<ticket>@<host>:<port>/<sha256-hex>`: the ticket, the
+hub's agent-port address on the network the panel was reached from, and the
+fingerprint. The `@` tells it from the long form, whose alphabet has none.
+A peer that reads it fetches the long form's object from
+`GET /api/channel/enroll?ticket=<ticket>` at that address, with the
+fingerprint pinned, and goes on as with a pasted link. The route answers
+while the ticket is alive and unspent, and spends nothing; `ticket_spent`
+otherwise. A peer that reaches no address with the short form reports
+`link_unreachable`, and the long form, which carries the overlays' join
+material, is the one to paste then. The short form is an added form and
+keeps `PROTOCOL`; `POST /api/hub/client/enrollment/create` returns it as
+`qr_link` beside `link`.
+
 | Endpoint | Body | Returns |
 | --- | --- | --- |
+| `GET /api/channel/enroll` | `?ticket=` | the long link's object for a short link's ticket, while the ticket is alive and unspent; 401 `ticket_spent` otherwise |
 | `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`; admission by `protocol` runs first and a rejected protocol spends no ticket, then the ticket is spent |
 | `POST /api/channel/leave` | `{id, token}` | the binding removed: a device's row stays with its `config/devices/<id>/` and drops its token, a client's row is deleted with its gateway key |
 | `WS /api/channel/socket` | | everything after |
@@ -1009,8 +1029,9 @@ account the module made signs in once `set_password` has set its password.
 
 The `vscode` module runs Microsoft's standalone CLI, `code serve-web`, once
 per account. Its configuration is `{address, instances: [{account, port,
-token, password}]}`: `address` is the device's address the servers listen
-on, every address when empty; `token` is the instance's connection token,
+token, password}]}`: `address` is empty, and the servers listen on every
+address, so a client reaches an instance over whichever network the hub
+names for its scope ("The address a caller is given"); `token` is the instance's connection token,
 which the hub keeps sealed and sends in the clear inside the state; and
 `password` is the account's login, sent only to a Windows machine, where a
 task that runs as an account signs in with it. Its recipe is `{kind:

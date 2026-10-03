@@ -6,12 +6,14 @@ another's.
 
 | Stage | Does | Never does |
 | --- | --- | --- |
-| The package | Installs everything the hub cannot run without, and lays the payload down | Configures anything, starts anything |
+| The package | Installs everything the hub cannot run without, lays the payload down, and starts the hub's service, which serves the setup wizard until the box is set up | Configures anything |
 | `nhub setup` | Asks what this machine is for, writes `config/`, renders, installs the units and starts the services | Installs a system package |
 | The panel | Installs what somebody chose, and configures it | Runs before a hub is set up |
 
-On macOS and Windows the package also registers the one service and leaves
-it stopped, and `nhub setup` starts it ("The macOS and Windows hub" below).
+On macOS and Windows the package registers the one service and starts it
+("The macOS and Windows hub" below). On every system the package installs an
+application entry named `Neutrino Hub`, which opens the wizard or the panel
+("The application entry opens the panel" below).
 
 ## The package installs everything the hub cannot run without
 
@@ -45,13 +47,16 @@ on any path.
 `setup` runs once. A box with a panel password is a box somebody configured,
 and `nhub reset all` is how one goes back to fresh.
 
-The questions are answered in the terminal or in a browser, and the welcome
-screen is where that is chosen. The browser is served the same questions on
-the panel's own port — the port the firewall opens to the served networks, and
-the one that will be in somebody's address bar afterwards — behind a one-time
-token the terminal prints. It follows that the panel cannot start while the
-wizard is serving, so in that path the panel is left out of "Starting
-services" and started at the very end, once the port has been given back.
+The questions are answered in the terminal or in a browser. The hub's
+service serves the browser's questions from the install on the panel's HTTP
+port, the port that is in somebody's address bar afterwards, behind a
+one-time token kept under the state root and readable by root alone; the
+application entry and `nhub open` carry the token, and the package's
+post-install and the install script print the address with it for a box
+nobody sits at. The terminal path is `nhub setup`. Whichever path starts the
+steps first holds the setup lock, and the other is refused with
+`setup_in_progress`. When the steps finish, the service process exits and
+comes back as the panel on the same port.
 
 Neither way is the source of truth for the questions: both build the same
 answers document `nhub setup --stdin` reads, and `wizard.from_document` is
@@ -71,10 +76,12 @@ The hub runs on macOS and Windows in `server` mode only. Its package, a
 - the geodata;
 - the agent's `.pkg` or `.msi` of the same architecture, in the agent cache.
 
-The installer registers the service and does not start it. The `.pkg`'s
-postinstall creates the directories, links `/usr/local/bin/nhub` and installs
-the plist without bootstrapping it; the `.msi` registers `neutrino_hub` with
-no start at install.
+The installer registers the service and starts it. The `.pkg`'s
+postinstall creates the directories, links `/usr/local/bin/nhub`, installs
+the plist and bootstraps it; the `.msi` registers `neutrino_hub` and starts
+it. Until the box is set up that service serves the wizard
+([architecture.md](architecture.md), "One service supervises the daemons on
+macOS and Windows").
 
 `nhub setup` there does less than on Linux:
 
@@ -87,12 +94,31 @@ no start at install.
 | Applying interface roles | by the mode | skipped |
 | The network mode | asks for one of three | `server`, with no question |
 | The hub's own traffic through the proxy | asked | not asked |
-| Starting services | each unit | the one service, once, after the panel password and before the local agent: `launchctl bootstrap` and `kickstart`, or `sc start`; the steps before it only write `services.json` |
+| Starting services | each unit | the service is already running; the steps before this one write `services.json`, and the service starts each child as the file names it. From the terminal path this step is a restart of the service into the panel, after the panel password and before the local agent; from the browser path the service restarts itself |
 | The local agent | from the cache by `AGENT_PACKAGE_FAMILY_OF_PLATFORM` | from the cache by `AGENT_PACKAGE_FAMILY_OF_OS`: `installer -pkg <file> -target /` or `msiexec /i <file> /qn /norestart`, then `nagent join <link> --yes` |
 
 `nhub start`, `nhub stop` and `nhub status` drive that one service. The
 machine's shares and VS Code come from its local agent, as on any device
 ([agent.md](agent.md)).
+
+## The application entry opens the panel
+
+Every hub package installs one entry named `Neutrino Hub`: the Start menu
+shortcut on Windows, `/Applications/Neutrino Hub.app` on macOS, a bundle
+holding a script and nothing else, and the desktop entry
+`neutrino-hub.desktop` on Linux. Opening it runs two steps:
+
+1. An elevated step starts the hub's service when it is not running, and
+   does nothing else. Windows asks through UAC, macOS through the
+   administrator prompt of `do shell script`, Linux through `pkexec`.
+1. The person's own session opens the default browser on
+   `http://127.0.0.1:<http port>/`, with the setup token while the box is not
+   set up.
+
+`nhub open` runs the same two steps from a terminal, and skips the first
+when it has no privilege to start the service. Before setup the address
+shows the wizard; after it, the panel. `/` is answered by the service
+according to the box's state, so there is one address to remember.
 
 ## One command installs a package
 
@@ -122,9 +148,11 @@ the Arch package), fetches `SHA256SUMS` and the package into a temporary
 directory and checks the package against it. A mismatch, or a system and
 architecture no package is published for, stops the script with one
 sentence. It then installs with `sudo installer -pkg`, `sudo apt install ./`,
-`sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`,
-and for the hub runs `nhub setup`. `install.ps1` checks for an administrator
-first and exits with one sentence when it is not one.
+`sudo dnf install`, `sudo pacman -U` or `msiexec /i <file> /qn /norestart`.
+For the hub it ends by printing the wizard's address with its token, and
+runs `nhub setup` instead when its standard input is a terminal.
+`install.ps1` checks for an administrator first and exits with one sentence
+when it is not one.
 
 ## The panel installs what somebody chose
 
