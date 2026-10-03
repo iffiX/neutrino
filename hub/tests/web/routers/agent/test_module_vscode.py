@@ -110,7 +110,7 @@ def test_a_set_is_checked_stored_with_a_token_per_account_kept_and_pushed(
         DEVICE,
         "vscode",
         {
-            "address": runtime.device_address[DEVICE],
+            "address": "",
             "instances": [
                 {
                     "account": "alice",
@@ -231,6 +231,6 @@ def test_the_agent_is_sent_each_opened_token_and_on_windows_the_password(
     }
     if has_password:
         expected["password"] = "pw-hanha"
-    assert module["config"] == {"address": "192.168.1.20", "instances": [expected]}
+    assert module["config"] == {"address": "", "instances": [expected]}
     assert module["install"]["kind"] == "vscode"
     assert module["install"]["package_kind"] == ("zip" if has_password else "tar")

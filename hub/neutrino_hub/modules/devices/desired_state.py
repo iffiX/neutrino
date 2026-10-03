@@ -90,19 +90,19 @@ def state_hash(desired: dict) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def vscode_agent_config(stored: dict, address: str, platform: dict) -> dict:
+def vscode_agent_config(stored: dict, platform: dict) -> dict:
     """What the agent is sent for VS Code.
 
     Args:
         stored: The module's file: the instances, each with its sealed token
             and the login it runs as.
-        address: The device's address the instances listen on.
         platform: The tuple the agent reported; only a Windows machine is
             sent a password.
 
     Returns:
         ``{address, instances: [{account, port, token, password}]}``, the
-        token opened and the password taken from the instance's login.
+        address empty so the instances listen on every address, the token
+        opened and the password taken from the instance's login.
     """
     is_windows = platform.get("os") == VSCODE_PASSWORD_OS
     instances = []
@@ -120,7 +120,7 @@ def vscode_agent_config(stored: dict, address: str, platform: dict) -> dict:
         if is_windows and login_id:
             sent["password"] = _login_password(login_id)
         instances.append(sent)
-    return {"address": address, "instances": instances}
+    return {"address": "", "instances": instances}
 
 
 def cloudcli_agent_config(stored: dict, platform: dict, gateway: dict) -> dict:
@@ -531,7 +531,7 @@ class DesiredStateStore:
                 config["address"] = address
                 config["secrets"] = self.gitea_secrets(key)
             elif name == DEVICE_VSCODE_MODULE:
-                config = vscode_agent_config(config, address, platform)
+                config = vscode_agent_config(config, platform)
             elif name == DEVICE_CLOUDCLI_MODULE:
                 config = cloudcli_agent_config(
                     config, platform, device_gateway(key, hub_address)

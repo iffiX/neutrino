@@ -148,11 +148,7 @@ def update_settings(
             for instance in update.instances
         ]
     }
-    sent = vscode_agent_config(
-        stored,
-        runtime.device_address.get(context.key, ""),
-        runtime.device_platform.get(context.key, {}),
-    )
+    sent = vscode_agent_config(stored, runtime.device_platform.get(context.key, {}))
     store_config(runtime, context, sent, stored=stored)
     return device_view(runtime, context)
 
