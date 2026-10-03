@@ -36,6 +36,7 @@ from neutrino_hub.web.constants import (
     WEB_PANEL_TLS_AUTHORITY_KEY_AAD,
     WEB_PANEL_TLS_AUTHORITY_KEY_PATH,
     WEB_PANEL_TLS_AUTHORITY_ORGANIZATION,
+    WEB_PANEL_TLS_COMMON_NAME_MAX_CHARS,
     WEB_PANEL_TLS_AUTHORITY_PATH,
     WEB_PANEL_TLS_AUTHORITY_VALIDITY_DAYS,
     WEB_PANEL_TLS_BACKDATE_S,
@@ -155,14 +156,14 @@ def reset_authority(
         seconds=WEB_PANEL_TLS_BACKDATE_S
     )
     key = ec.generate_private_key(ec.SECP256R1())
+    common_name = f"{WEB_PANEL_TLS_AUTHORITY_ORGANIZATION} {name or 'hub'} authority"
     subject = x509.Name(
         [
             x509.NameAttribute(
                 NameOID.ORGANIZATION_NAME, WEB_PANEL_TLS_AUTHORITY_ORGANIZATION
             ),
             x509.NameAttribute(
-                NameOID.COMMON_NAME,
-                f"{WEB_PANEL_TLS_AUTHORITY_ORGANIZATION} {name or 'hub'} authority",
+                NameOID.COMMON_NAME, common_name[:WEB_PANEL_TLS_COMMON_NAME_MAX_CHARS]
             ),
         ]
     )

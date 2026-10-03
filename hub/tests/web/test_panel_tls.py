@@ -20,6 +20,7 @@ import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509 import DNSName, IPAddress
+from cryptography.x509.oid import NameOID
 from cryptography.x509.verification import (
     PolicyBuilder,
     Store,
@@ -344,3 +345,17 @@ def served_names(served, port: int) -> list:
             der = wrapped.getpeercert(binary_form=True)
             wrapped.sendall(b"x")
     return certificate_names(x509.load_der_x509_certificate(der))
+
+
+def test_a_long_host_name_is_cut_in_the_common_name_and_kept_whole_in_the_constraints(
+    paths,
+):
+    long_name = "a" * 61 + ".example.org" + "x" * 7
+
+    assert ensure_authority(**paths, host_name=long_name)
+
+    certificate = authority(paths)
+    common_name = certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+    names = certificate.extensions.get_extension_for_class(x509.NameConstraints)
+    assert len(common_name[0].value) == 64
+    assert DNSName("a" * 61) in names.value.permitted_subtrees
