@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -107,7 +108,8 @@ fun RemoteDesktopViewer(
     var state by remember(target) { mutableStateOf<RemoteDesktopState>(RemoteDesktopState.Connecting) }
     var viewport by remember(target) { mutableStateOf(RemoteDesktopViewport()) }
     var held by remember(target) { mutableStateOf(emptySet<RemoteDesktopKey>()) }
-    val sender = remember(target, core) { RemoteDesktopInputSender(core) { keys -> held = keys } }
+    val scope = rememberCoroutineScope()
+    val sender = remember(target, core) { RemoteDesktopInputSender(core, scope) { keys -> held = keys } }
     val context = LocalContext.current
     val input = remember(sender) { RemoteDesktopInputView(context).apply { this.sender = sender } }
     val copied = rememberUpdatedState(onCopied)
@@ -124,6 +126,7 @@ fun RemoteDesktopViewer(
         onDispose { bars?.show(WindowInsetsCompat.Type.systemBars()) }
     }
     DisposableEffect(input) { onDispose { input.hideKeyboard() } }
+    DisposableEffect(sender) { onDispose { sender.close() } }
     LaunchedEffect(keyboardHeight) { viewport = viewport.coveredBy(keyboardHeight.toFloat()) }
     LaunchedEffect(isKeyboardUp) { if (!isKeyboardUp) input.releaseFocus() }
     SideEffect { input.holdFocus() }
