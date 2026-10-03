@@ -24,6 +24,7 @@ from pathlib import Path
 
 # Where launchd reads system daemons and per-session agents from.
 LAUNCH_DAEMONS_DIR = "Library/LaunchDaemons"
+LAUNCHD_LANG = "en_US.UTF-8"
 LAUNCH_AGENTS_DIR = "Library/LaunchAgents"
 
 # The first bytes of every Mach-O file, thin or universal, either order.
@@ -55,8 +56,8 @@ def write_launchd_plist(
     log_path: str = "",
     extra: dict | None = None,
 ) -> Path:
-    """Write one launchd job into the package root, started at load and
-    kept alive.
+    """Write one launchd job into the package root, started at load, kept
+    alive and given a UTF-8 locale.
 
     Args:
         package_root: The directory standing in for the filesystem root.
@@ -76,6 +77,9 @@ def write_launchd_plist(
         "ProgramArguments": list(program_arguments),
         "RunAtLoad": True,
         "KeepAlive": True,
+        # launchd starts a job with no locale, under which Python decodes
+        # command output as ASCII and a curly quote in it is an error.
+        "EnvironmentVariables": {"LANG": LAUNCHD_LANG},
     }
     if log_path:
         job["StandardOutPath"] = log_path

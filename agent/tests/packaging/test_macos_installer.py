@@ -116,6 +116,7 @@ def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
     assert job["StandardOutPath"] == AGENT_DARWIN_LOG_PATH
     assert job["RunAtLoad"] is True
     assert job["KeepAlive"] is True
+    assert job["EnvironmentVariables"] == {"LANG": "en_US.UTF-8"}
 
 
 def test_rustdesks_daemon_and_session_agent_are_its_own(laid_out):

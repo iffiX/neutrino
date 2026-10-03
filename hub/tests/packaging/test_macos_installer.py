@@ -219,6 +219,7 @@ def test_the_daemon_runs_nhub_run_into_the_hubs_log(laid_out):
     assert job["StandardOutPath"] == "/Library/Logs/Neutrino/hub/hub.log"
     assert job["RunAtLoad"] is True
     assert job["KeepAlive"] is True
+    assert job["EnvironmentVariables"] == {"LANG": "en_US.UTF-8"}
 
 
 def test_the_postinstall_makes_the_roots_and_starts_the_service(
