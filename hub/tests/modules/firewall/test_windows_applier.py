@@ -147,3 +147,17 @@ def test_powershell_that_cannot_run_is_an_os_error():
 
     with pytest.raises(OSError):
         FirewallWindowsApplier(powershell=powershell).apply(RULES)
+
+
+def test_the_ai_gateway_s_port_is_opened_and_moved_like_the_rest():
+    held_rules = held(("neutrino_hub_ai_gateway", "TCP", "8317"))
+    powershell = FakePowerShell({FIREWALL_WINDOWS_READ_SCRIPT: held_rules})
+    rule = FirewallPortRule("neutrino_hub_ai_gateway", "TCP", 9317)
+
+    notes = FirewallWindowsApplier(powershell=powershell).apply([rule])
+
+    assert notes == ["firewall moved neutrino_hub_ai_gateway to 9317"]
+    (_, _), (_, change) = powershell.runs
+    assert change["update"] == [
+        {"name": "neutrino_hub_ai_gateway", "protocol": "TCP", "port": "9317"}
+    ]

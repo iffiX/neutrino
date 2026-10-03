@@ -233,7 +233,7 @@ environment because there is nobody else to do it.
 The agent is installed by the same three stages, one package down: its
 package lays the payload, `nagent join` joins a hub, and the hub's desired
 state decides what the machine hosts. What it carries is the hub's own
-answer: an interpreter under `/opt/neutrino_agent` with the agent installed
+answer: an interpreter under `/opt/neutrino/agent` with the agent installed
 beside it, and the RustDesk host, all built for one machine. The agent draws
 no window, so it carries no bindings and depends on nothing named `python`.
 
@@ -250,8 +250,8 @@ agent.
 The client is a person's application: it runs when the person opens it, in
 their own session, never as root. Its packages carry the client compiled by
 Nuitka, with the interpreter compiled in, so none of them carries a Python
-tree and none depends on one: `nclient` on Linux under `/opt/neutrino_client`
-with the root mount helper compiled beside it at the path polkit pins,
+tree and none depends on one: `nclient` on Linux under `/opt/neutrino/client`
+with the root mount helper compiled under its `libexec` at the path polkit pins,
 `nclient.exe` from the Windows installer, `Neutrino Client.app` from the
 macOS one. Beside the binary ride the two tools it drives, cc-switch and the
 RustDesk viewer, pinned by hash.
@@ -266,7 +266,7 @@ client` runs on the checkout's interpreter, and `nclient gui` uses whatever
 can import `gi`.
 
 The hub's package carries the Linux agent builds it was made with, in
-`/var/lib/neutrino/agent_cache/`, which is what lets it enroll a Linux device
+`/var/lib/neutrino/hub/agent_cache/`, which is what lets it enroll a Linux device
 and answer a Linux self-update with no network of its own. The macOS and
 Windows hub packages carry the agent package of their own system and
 architecture the same way. A platform it carries none for is fetched from the release its manifest names, and a

@@ -1,7 +1,8 @@
 """Which firewall a routing pass drives, and what it reads to drive it.
 
-What these pin: Windows reads the panel's ports from its settings, the SOCKS
-ports from the proxy and the overlays from the network; macOS hands the
+What these pin: Windows reads the panel's ports from its settings, the AI
+gateway's port from its own, the SOCKS ports from the proxy and the overlays
+from the network; macOS hands the
 programs of the enabled overlays to its applier; a reset takes everything
 away on both.
 """
@@ -47,11 +48,11 @@ def recorder(monkeypatch):
 
 
 def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeypatch):
-    monkeypatch.setattr(
-        ops,
-        "read_config",
-        lambda name: {"listen_port": 9080, "https_listen_port": 9443},
-    )
+    stored = {
+        "web/settings.json": {"listen_port": 9080, "https_listen_port": 9443},
+        "cliproxyapi/cliproxyapi.json": {"listen_port": 9317},
+    }
+    monkeypatch.setattr(ops, "read_config", lambda name: stored[name])
 
     assert ops.converge_firewall(NETWORK, routing=ROUTING) == ["changed"]
 
@@ -60,6 +61,7 @@ def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeyp
         ("neutrino_hub_panel_http", 9080),
         ("neutrino_hub_panel_https", 9443),
         ("neutrino_hub_agent", 8443),
+        ("neutrino_hub_ai_gateway", 9317),
         ("neutrino_hub_socks_1080_tcp", 1080),
         ("neutrino_hub_socks_1080_udp", 1080),
         ("neutrino_hub_netbird_udp", 51820),
@@ -77,14 +79,18 @@ def test_windows_before_setup_opens_the_default_ports(
     ops.converge_firewall(NETWORK, routing={})
 
     ((_, rules),) = recorder.handed
-    assert [rule.port for rule in rules[:3]] == [8080, 443, 8443]
+    assert [rule.port for rule in rules[:4]] == [8080, 443, 8443, 8317]
 
 
 def test_macos_allows_the_programs_of_the_enabled_overlays(on_darwin, recorder):
     ops.converge_firewall(NETWORK, routing=ROUTING)
 
     ((verb, programs),) = recorder.handed
-    assert programs[1:] == [ops.XRAY_BINARY, str(ops.NETBIRD_BINARY_PATH)]
+    assert programs[1:] == [
+        ops.XRAY_BINARY,
+        str(ops.CLIPROXYAPI_BINARY_PATH),
+        str(ops.NETBIRD_BINARY_PATH),
+    ]
 
 
 def test_a_reset_takes_everything_away(elsewhere, recorder):
@@ -95,6 +101,7 @@ def test_a_reset_takes_everything_away(elsewhere, recorder):
     if elsewhere == "darwin":
         assert handed[0][1:] == [
             ops.XRAY_BINARY,
+            str(ops.CLIPROXYAPI_BINARY_PATH),
             str(ops.NETBIRD_BINARY_PATH),
             str(ops.EASYTIER_CORE_PATH),
         ]

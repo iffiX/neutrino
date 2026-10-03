@@ -69,7 +69,7 @@ def applier(systemd, tmp_path):
         run=systemd,
         lookup_account=lookup,
         chown=chown,
-        cli_dir="/usr/local/lib/neutrino_vscode",
+        cli_dir="/var/lib/neutrino/agent/vscode",
         token_dir=str(tmp_path / "vscode"),
         systemd_dir=str(tmp_path / "systemd"),
         sysctl_path=str(tmp_path / "sysctl.d" / "90-neutrino-vscode.conf"),

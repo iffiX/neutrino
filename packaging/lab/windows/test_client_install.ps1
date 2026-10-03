@@ -14,8 +14,8 @@ Step "install"
 $r = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', $msi, '/quiet', '/norestart', '/l*v', 'C:\out\install.log'
 Write-Output "msiexec exit $($r.ExitCode)"
 Step "what landed"
-Get-ChildItem "$env:ProgramFiles\Neutrino Client" | Select-Object Name, Length | Format-Table -AutoSize | Out-String -Width 120
-Get-ChildItem "$env:ProgramFiles\Neutrino Client\bin" | Select-Object Name, Length | Format-Table -AutoSize | Out-String -Width 120
+Get-ChildItem "$env:ProgramFiles\Neutrino\client" | Select-Object Name, Length | Format-Table -AutoSize | Out-String -Width 120
+Get-ChildItem "$env:ProgramFiles\Neutrino\client\bin" | Select-Object Name, Length | Format-Table -AutoSize | Out-String -Width 120
 Step "run entry"
 Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run | Select-Object NeutrinoClient | Format-List | Out-String
 Step "path"
@@ -25,8 +25,8 @@ Get-ChildItem "C:\ProgramData\Microsoft\Windows\Start Menu\Programs" | Where-Obj
 Step "webview2"
 Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" -ErrorAction SilentlyContinue | Select-Object pv | Out-String
 Step "nclient --version"
-& "$env:ProgramFiles\Neutrino Client\nclient.exe" --version
+& "$env:ProgramFiles\Neutrino\client\nclient.exe" --version
 Write-Output "exit $LASTEXITCODE"
 Step "nclient status (unbound, no resident)"
-& "$env:ProgramFiles\Neutrino Client\nclient.exe" status
+& "$env:ProgramFiles\Neutrino\client\nclient.exe" status
 Write-Output "exit $LASTEXITCODE"

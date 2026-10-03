@@ -157,7 +157,7 @@ def test_the_rpm_prunes_from_its_own_file_list_after_the_transaction(tmp_path, c
 
 
 def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
-    """A machine may run both, and /opt/neutrino is the hub package's."""
+    """A machine may run both, and /opt/neutrino/hub is the hub package's."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     postrm = (tmp_path / "DEBIAN/postrm").read_text()
@@ -166,6 +166,7 @@ def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
     assert "rm -rf /opt/neutrino/agent" in postrm
     assert "rm -rf /usr/lib/neutrino/agent" in postrm
     assert "rm -rf /opt/neutrino\n" not in postrm
+    assert "rm -rf /opt/neutrino/hub" not in postrm
     assert "rm -rf" not in postinst
     assert "prune_untracked /opt/neutrino\n" not in postinst
 

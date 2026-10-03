@@ -12,6 +12,7 @@ from neutrino_hub.modules.firewall.constants import (
     FIREWALL_PROTOCOL_TCP,
     FIREWALL_PROTOCOL_UDP,
     FIREWALL_PURPOSE_AGENT,
+    FIREWALL_PURPOSE_AI_GATEWAY,
     FIREWALL_PURPOSE_OVERLAY,
     FIREWALL_PURPOSE_PANEL_HTTP,
     FIREWALL_PURPOSE_PANEL_HTTPS,
@@ -41,6 +42,7 @@ def render_port_rules(
     panel_http_port: int,
     panel_https_port: int,
     agent_port: int,
+    ai_gateway_port: int,
     socks_ports: list,
     overlays: list,
 ) -> list:
@@ -50,6 +52,7 @@ def render_port_rules(
         panel_http_port: The panel's HTTP port.
         panel_https_port: The panel's HTTPS port.
         agent_port: The agent channel's port.
+        ai_gateway_port: The port CLIProxyAPI, the AI gateway, listens on.
         socks_ports: Every configured SOCKS port, each opened for TCP and UDP.
         overlays: The enabled overlays' keys; each opens its peers' port.
 
@@ -60,6 +63,7 @@ def render_port_rules(
         _rule(FIREWALL_PURPOSE_PANEL_HTTP, FIREWALL_PROTOCOL_TCP, panel_http_port),
         _rule(FIREWALL_PURPOSE_PANEL_HTTPS, FIREWALL_PROTOCOL_TCP, panel_https_port),
         _rule(FIREWALL_PURPOSE_AGENT, FIREWALL_PROTOCOL_TCP, agent_port),
+        _rule(FIREWALL_PURPOSE_AI_GATEWAY, FIREWALL_PROTOCOL_TCP, ai_gateway_port),
     ]
     for port in sorted({int(port) for port in socks_ports}):
         for protocol in (FIREWALL_PROTOCOL_TCP, FIREWALL_PROTOCOL_UDP):
@@ -82,6 +86,7 @@ def render_programs(
     *,
     hub_program: str,
     xray_program: str,
+    ai_gateway_program: str,
     overlay_programs: dict,
     overlays: list,
 ) -> list:
@@ -90,13 +95,14 @@ def render_programs(
     Args:
         hub_program: ``nhub``, which serves the panel and the agent channel.
         xray_program: xray, which serves the SOCKS ports.
+        ai_gateway_program: ``cli-proxy-api``, which serves the AI gateway.
         overlay_programs: Overlay key to the program its daemon runs.
         overlays: The enabled overlays' keys.
 
     Returns:
         The program paths, the hub first.
     """
-    programs = [hub_program, xray_program]
+    programs = [hub_program, xray_program, ai_gateway_program]
     for provider in OVERLAY_ENGINES:
         if provider in overlays and provider in overlay_programs:
             programs.append(overlay_programs[provider])

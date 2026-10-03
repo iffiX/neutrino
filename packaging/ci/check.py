@@ -14,10 +14,12 @@ The targets:
   takes both services away. Windows.
 - ``client_windows``: the .msi installs, ``nclient --version`` answers,
   ``nclient status`` exits 1 unbound, the folder is on PATH, ``packet.dll``
-  lies beside EasyTier's core, the EasyTier daemon runs and answers on its
-  pipe, and removing it takes the folder and the daemon away. Windows.
+  lies beside EasyTier's core, the EasyTier daemon runs, answers on its
+  pipe and makes its state under ``Neutrino\\client\\state``, and removing
+  it takes the folder and the daemon away. Windows.
 - ``agent_macos``: the .pkg installs, its LaunchDaemon runs, ``nagent
-  --version`` answers, and removing it leaves no job. macOS.
+  --version`` answers, its ``config`` is root's alone and its ``state`` open
+  to every account, and removing it leaves no job. macOS.
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
   ``nclient status`` exits 1 unbound. macOS.
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
@@ -64,6 +66,10 @@ AGENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "agent"
 AGENT_WINDOWS_SERVICES = ("neutrino_agent", "RustDesk")
 RUSTDESK_WINDOWS_FOLDER = PROGRAM_FILES / "RustDesk"
 CLIENT_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "client"
+PROGRAM_DATA = Path(os.environ.get("ProgramData", "C:/ProgramData"))
+CLIENT_WINDOWS_EASYTIER_STATE = (
+    PROGRAM_DATA / "Neutrino" / "client" / "state" / "easytier"
+)
 CLIENT_WINDOWS_EASYTIER_SERVICE = "NeutrinoClientEasytier"
 CLIENT_WINDOWS_EASYTIER_PIPE = "neutrino_client_easytier"
 # What ``sc query`` exits with for a service that does not exist.
@@ -80,8 +86,16 @@ UNINSTALL_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
 
 # --- macOS ---
 AGENT_MACOS_JOB = "system/com.neutrino.agent"
+# The agent's two roots the postinstall makes, and their modes: what the
+# hub decided is root's alone, what the machine accumulated is open to
+# every account for the software the hub sends.
+AGENT_MACOS_ROOT_MODES = {
+    "/Library/Application Support/Neutrino/agent/config": 0o700,
+    "/Library/Application Support/Neutrino/agent/state": 0o755,
+}
 AGENT_MACOS_LEFTOVERS = (
     "/Library/Application Support/Neutrino/agent",
+    "/Library/Logs/Neutrino/agent",
     "/Applications/RustDesk.app",
     "/usr/local/bin/nagent",
     "/Library/LaunchDaemons/com.neutrino.agent.plist",
@@ -234,6 +248,8 @@ def check_client_windows(msi: Path) -> None:
         raise SystemExit("the EasyTier daemon is not running")
     if CLIENT_WINDOWS_EASYTIER_PIPE not in os.listdir("\\\\.\\pipe\\"):
         raise SystemExit("the EasyTier daemon has no pipe")
+    if not CLIENT_WINDOWS_EASYTIER_STATE.is_dir():
+        raise SystemExit(f"no EasyTier state at {CLIENT_WINDOWS_EASYTIER_STATE}")
 
     log = Path(tempfile.gettempdir()) / "client_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
@@ -258,6 +274,10 @@ def check_agent_macos(pkg: Path) -> None:
     if "state = running" not in job:
         raise SystemExit(f"{AGENT_MACOS_JOB} is not running")
     print(f"nagent {_answer(['/usr/local/bin/nagent', '--version'])}")
+    for directory, mode in AGENT_MACOS_ROOT_MODES.items():
+        found = os.stat(directory).st_mode & 0o777
+        if found != mode:
+            raise SystemExit(f"{directory} is mode {found:o}, expected {mode:o}")
     _sudo(["launchctl", "bootout", AGENT_MACOS_JOB])
     subprocess.run(
         ["sudo", "launchctl", "bootout", "system/com.carriez.RustDesk_service"]

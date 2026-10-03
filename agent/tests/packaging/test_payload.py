@@ -191,8 +191,8 @@ def test_the_staging_path_is_taken_out_of_everything_it_was_written_into(tmp_pat
 
 
 def test_the_prefix_is_the_agent_s_own(tmp_path):
-    """Not a directory under the hub's: a machine may run both, and removing
-    the hub deletes /opt/neutrino whole."""
+    """The agent's own directory beside the hub's: a machine may run both,
+    and removing the hub deletes /opt/neutrino/hub whole."""
     assert str(payload.INSTALL_PREFIX) == "/opt/neutrino/agent"
     assert str(payload.PYTHON_DIR).startswith(str(payload.INSTALL_PREFIX))
 

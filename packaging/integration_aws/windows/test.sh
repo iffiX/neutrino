@@ -23,4 +23,4 @@ wait_client_online aws-windows
 echo "hub side passed"
 
 echo "== quit"
-ssh_win "\"C:\\Program Files\\Neutrino Client\\nclient.exe\" quit"
+ssh_win "\"C:\\Program Files\\Neutrino\\client\\nclient.exe\" quit"

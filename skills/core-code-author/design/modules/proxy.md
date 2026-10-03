@@ -120,7 +120,7 @@ With no candidate and `is_direct_fallback_enabled` on, the hub overrides the
 balancer with `direct`. With no candidate and the fallback off, the override
 stands where it is.
 
-`/var/lib/neutrino/xray_node_health.json` holds the samples, so a panel
+`/var/lib/neutrino/hub/xray_node_health.json` holds the samples, so a panel
 restart and an xray restart both keep them. After an apply restarts xray, the
 hub sets the override again within a second.
 

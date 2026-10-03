@@ -149,7 +149,7 @@ is its own line, and only on RHEL rebuilds. Fedora carries all three itself.
 
 The agent runs on the machines the hub manages, as root or LocalSystem and
 headless: it draws no window and listens on nothing. Each Linux package
-carries its own interpreter under `/opt/neutrino_agent` and the RustDesk host,
+carries its own interpreter under `/opt/neutrino/agent` and the RustDesk host,
 and depends on no distribution package named `python`. The Windows and macOS
 installers include the agent compiled with Nuitka and upstream's RustDesk, and
 run the terminal and the shared desktop.
@@ -322,7 +322,7 @@ The agent's `.msi` is built on Windows by
 RustDesk builders under `packaging/shared/` the client's use.
 
 The agent packages a hub package carries are built inside the hub's own build
-container and land under `/var/lib/neutrino/agent_cache/`, with
+container and land under `/var/lib/neutrino/hub/agent_cache/`, with
 `agent_packages.json` beside them naming every platform this release publishes
 an agent for, the file name each is published under, and its hash. The
 `.msi` and the `.pkg` are named there and left out of the hub package; a hub fetches one from

@@ -10,6 +10,7 @@ FIREWALL_RULE_PREFIX = "neutrino_hub_"
 FIREWALL_PURPOSE_PANEL_HTTP = "panel_http"
 FIREWALL_PURPOSE_PANEL_HTTPS = "panel_https"
 FIREWALL_PURPOSE_AGENT = "agent"
+FIREWALL_PURPOSE_AI_GATEWAY = "ai_gateway"
 FIREWALL_PURPOSE_SOCKS = "socks_{port}_{protocol}"
 FIREWALL_PURPOSE_OVERLAY = "{provider}_{protocol}"
 FIREWALL_PROTOCOL_TCP = "TCP"
@@ -25,6 +26,9 @@ FIREWALL_WINDOWS_DESCRIPTION = "Opened by the Neutrino hub for its own service."
 FIREWALL_PANEL_SETTINGS_FILE = "web/settings.json"
 FIREWALL_SETTING_LISTEN_PORT = "listen_port"
 FIREWALL_SETTING_AGENT_PORT = "agent_listen_port"
+# Where the AI gateway's port is stored, and its key.
+FIREWALL_GATEWAY_SETTINGS_FILE = "cliproxyapi/cliproxyapi.json"
+FIREWALL_SETTING_GATEWAY_PORT = "listen_port"
 
 # What the Windows rules the hub owns are now: name, protocol and port each.
 FIREWALL_WINDOWS_READ_SCRIPT = """

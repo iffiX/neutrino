@@ -23,7 +23,7 @@ from neutrino_agent.modules.vscode.windows_applier import (
     task_arguments,
 )
 
-ROOT = "C:\\ProgramData\\Neutrino"
+ROOT = "C:\\ProgramData\\Neutrino\\agent\\state"
 CONFIG = VscodeConfig.from_dict(
     {
         "address": "192.168.1.9",
@@ -57,9 +57,9 @@ def test_an_instance_is_a_task_signed_in_with_its_login():
     assert document["program"] == "cmd.exe"
     assert document["tasks"] == ["neutrino_vscode_hanha"]
     (instance,) = document["instances"]
-    cli = "C:\\ProgramData\\Neutrino\\vscode\\code.exe"
-    token_file = "C:\\ProgramData\\Neutrino\\vscode\\tokens\\hanha.token"
-    log_file = "C:\\ProgramData\\Neutrino\\vscode\\hanha.log"
+    cli = "C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\code.exe"
+    token_file = "C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\tokens\\hanha.token"
+    log_file = "C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\hanha.log"
     assert instance["account"] == "hanha"
     assert instance["password"] == "pw"
     assert instance["token"] == "t-1"
@@ -142,10 +142,10 @@ def test_the_log_paths_name_each_instance_with_or_without_a_config():
     )
 
     assert applier.log_paths(CONFIG) == [
-        ("hanha", "C:\\ProgramData\\Neutrino\\vscode\\hanha.log")
+        ("hanha", "C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\hanha.log")
     ]
     assert applier.log_paths(None) == [
-        ("ann", "C:\\ProgramData\\Neutrino\\vscode\\ann.log")
+        ("ann", "C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\ann.log")
     ]
 
 
@@ -209,5 +209,5 @@ def test_stop_stops_and_remove_unregisters():
         (WITHDRAW_SCRIPT, True),
     ]
     assert powershell.runs[1][1]["token_dir"] == (
-        "C:\\ProgramData\\Neutrino\\vscode\\tokens"
+        "C:\\ProgramData\\Neutrino\\agent\\state\\vscode\\tokens"
     )

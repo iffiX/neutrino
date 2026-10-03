@@ -47,7 +47,7 @@ def test_a_service_is_installed_controlled_and_permitted():
         (
             wix_build.directory(
                 "INSTALLFOLDER",
-                "Neutrino Agent",
+                "agent",
                 (
                     wix_build.service_component(
                         component_id="AgentService",
@@ -80,7 +80,7 @@ def test_a_service_is_installed_controlled_and_permitted():
         "uninstall",
     )
     assert next(root.iter(WXS + "File")).get("KeyPath") == "yes"
-    assert next(root.iter(WXS + "Directory")).get("Name") == "Neutrino Agent"
+    assert next(root.iter(WXS + "Directory")).get("Name") == "agent"
 
 
 def test_a_service_can_be_registered_and_left_stopped():
