@@ -2,7 +2,8 @@
 
 The children run in a job object that ends them with the service.
 
-Not pure: runs ``sc``, the shell's opener and the children.
+Not pure: runs ``sc``, the shell's opener, the UAC prompt and the
+children.
 """
 
 import ctypes
@@ -21,11 +22,42 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_SERVICE_STOPPED,
     PLATFORM_SERVICE_UNKNOWN,
     PLATFORM_SERVICE_WAIT_S,
+    PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK,
     PLATFORM_WINDOWS_CREATE_NO_WINDOW,
     PLATFORM_WINDOWS_SERVICE_NAME,
     PLATFORM_WINDOWS_SERVICE_STATES,
+    PLATFORM_WINDOWS_SHELL,
     PLATFORM_WINDOWS_STATE_PATTERN,
 )
+
+
+def drop_connection_reset(loop, context: dict) -> None:
+    """An event loop's exception handler that drops a connection reset by its peer.
+
+    Args:
+        loop: The event loop.
+        context: What the loop reports: ``exception``, ``message``, and the
+            ``handle`` of the callback that raised.
+    """
+    where = f"{context.get('handle', '')} {context.get('message', '')}"
+    if (
+        isinstance(context.get("exception"), ConnectionResetError)
+        and PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK in where
+    ):
+        return
+    loop.default_exception_handler(context)
+
+
+def quiet_connection_resets(loop) -> None:
+    """Install :func:`drop_connection_reset` on a loop, on Windows alone.
+
+    Args:
+        loop: The running event loop.
+    """
+    from neutrino_hub.platforms.detect import hub_os
+
+    if hub_os() == PLATFORM_OS_WINDOWS:
+        loop.set_exception_handler(drop_connection_reset)
 
 
 class WindowsHubPlatform(HubPlatform):
@@ -67,6 +99,41 @@ class WindowsHubPlatform(HubPlatform):
         """
         return f"nhub {arguments}".rstrip() + "   (in an administrator PowerShell)"
 
+    def run_elevated(self, arguments: list) -> bool:
+        """Run ``nhub`` with these arguments elevated, behind the UAC prompt, and wait.
+
+        Args:
+            arguments: What follows ``nhub``.
+
+        Returns:
+            True when it ran and exited 0; False when the person declined or
+            it failed.
+        """
+        command = self.hub_command(*arguments)
+        info = win32.ShellExecuteInfo()
+        info.cbSize = ctypes.sizeof(info)
+        info.fMask = win32.SEE_MASK_NOCLOSEPROCESS
+        info.lpVerb = win32.SHELL_VERB_RUNAS
+        info.lpFile = command[0]
+        info.lpParameters = subprocess.list2cmdline(command[1:])
+        info.nShow = win32.SW_HIDE
+        try:
+            libraries = self._bound()
+            if not libraries.shell32.ShellExecuteExW(ctypes.byref(info)):
+                return False
+        except (OSError, AttributeError):
+            return False
+        if not info.hProcess:
+            return False
+        kernel32 = libraries.kernel32
+        code = win32.DWORD(1)
+        try:
+            kernel32.WaitForSingleObject(info.hProcess, win32.INFINITE)
+            kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
+        finally:
+            kernel32.CloseHandle(info.hProcess)
+        return code.value == 0
+
     def process_controller(self):
         """The controller of the service's children.
 
@@ -92,7 +159,10 @@ class WindowsHubPlatform(HubPlatform):
         )
 
     def open_browser(self, url: str) -> bool:
-        """Open a page with the shell's own handler.
+        """Open a page with the shell's own handler, as the signed-in account.
+
+        An elevated process hands the page to the running shell, which
+        opens it unelevated.
 
         Args:
             url: The page.
@@ -101,7 +171,10 @@ class WindowsHubPlatform(HubPlatform):
             True when the shell accepted it.
         """
         try:
-            os.startfile(url)
+            if self.is_elevated():
+                subprocess.Popen([PLATFORM_WINDOWS_SHELL, url])
+            else:
+                os.startfile(url)
         except (OSError, AttributeError):
             return False
         return True

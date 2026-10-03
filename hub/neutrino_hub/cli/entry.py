@@ -29,6 +29,10 @@ COMMANDS = {
         "neutrino_hub.cli.run",
         "Run one hub process in the foreground, as the units do",
     ),
+    "open": (
+        "neutrino_hub.cli.open",
+        "Open the panel, or the setup wizard, in a browser",
+    ),
     "start": ("neutrino_hub.cli.start", "Start the hub's units on this box"),
     "stop": ("neutrino_hub.cli.stop", "Stop what the hub runs on this box"),
     "status": ("neutrino_hub.cli.status", "Say what the hub runs on this box"),
@@ -105,10 +109,11 @@ def main() -> int:
     from neutrino_hub.utils.constants import is_dev_root_set
 
     # `run` is exempt beside scan-secrets: it is every unit's ExecStart, and
-    # systemd starts the proxy core deliberately unprivileged.
+    # systemd starts the proxy core deliberately unprivileged. `open` asks
+    # for the rights it needs itself.
     platform = hub_platform()
     if (
-        arguments.command not in ("scan-secrets", "run", "status")
+        arguments.command not in ("scan-secrets", "run", "status", "open")
         and not is_dev_root_set()
         and not platform.is_elevated()
     ):

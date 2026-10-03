@@ -23,6 +23,10 @@ On macOS this is what the LaunchDaemon ``com.neutrino.hub`` starts, and on
 Windows ``nhub service run`` runs it: the panel in this process, and every
 daemon the process controller enables as a child, each with its log file.
 The ``--only`` forms are Linux's.
+
+Until the box is set up the panel's forms serve the setup wizard instead,
+and exit with ``SYSTEM_RESTART_EXIT_STATUS`` once it is, so the service
+manager starts them again as the panel.
 """
 
 import argparse
@@ -71,6 +75,7 @@ from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
+from neutrino_hub.platforms.windows import quiet_connection_resets
 from neutrino_hub.system.child_supervisor import ChildStartLine
 from neutrino_hub.system.systemd_ctl import notify_ready, take_notify_address
 from neutrino_hub.utils.subprocess_run import command_failure_text
@@ -205,10 +210,14 @@ def main() -> int:
     if not is_linux():
         _stop_on_terminate()
     if not _is_set_up():
+        if not is_dev_root_set():
+            from neutrino_hub.cli import setup
+
+            return setup.serve_until_set_up(_STOP_ASKED)
         if is_linux():
             print(
                 f"error: nothing is configured under {UTILS_CONFIG_DIR}; "
-                f"run {'nhub --dev setup' if is_dev_root_set() else 'sudo nhub setup'}",
+                "run nhub --dev setup",
                 file=sys.stderr,
             )
             return 1
@@ -221,11 +230,7 @@ def main() -> int:
 
 
 def _wait_for_setup() -> None:
-    """Sleep until ``nhub setup`` has stored the panel password.
-
-    The service on macOS and Windows starts at boot whether or not the hub
-    was set up, and idles here until it is.
-    """
+    """Sleep until ``nhub --dev setup`` has stored the panel password."""
     print(f"waiting for nhub setup under {UTILS_CONFIG_DIR}", file=sys.stderr)
     while not _is_set_up():
         if _STOP_ASKED.wait(PLATFORM_SETUP_POLL_S):
@@ -295,20 +300,12 @@ def child_start_lines() -> dict:
 
 
 def _is_set_up() -> bool:
-    """Whether there is a configuration to run against.
-
-    On Linux setup starts the units before it stores the panel password, so
-    the panel's own settings are the mark there. On macOS and Windows the
-    one service starts after the password is stored, so the stored password
-    is the mark, and a service a boot started keeps waiting through setup.
+    """Whether the box is set up, which is the panel password being stored.
 
     Returns:
-        True on Linux when the panel's settings are there; elsewhere when the
-        panel password is stored.
+        True when the panel password is stored.
     """
-    if not is_linux():
-        return is_password_set()
-    return (UTILS_CONFIG_DIR / PANEL_SETTINGS_FILE).is_file()
+    return is_password_set()
 
 
 def _exec_xray() -> int:
@@ -532,8 +529,21 @@ def _serve_panel(arguments) -> int:
                 )
             )
         )
+    _finish_first_run()
     asyncio.run(_serve_together(servers))
     return 0
+
+
+def _finish_first_run() -> None:
+    """Install this machine's agent beside the panel, when the first run left it."""
+    from neutrino_hub.web.constants import WEB_SETUP_LOCAL_AGENT_PATH
+
+    if WEB_SETUP_LOCAL_AGENT_PATH.is_file():
+        from neutrino_hub.cli import setup
+
+        threading.Thread(
+            target=setup.finish_local_agent, name="local_agent", daemon=True
+        ).start()
 
 
 def _panel_config(host: str, port: int, **tls) -> uvicorn.Config:
@@ -619,6 +629,7 @@ async def _serve_together(servers: list) -> None:
     Args:
         servers: Configured uvicorn servers.
     """
+    quiet_connection_resets(asyncio.get_running_loop())
     _SERVING[:] = servers
     if _STOP_ASKED.is_set():
         for server in servers:

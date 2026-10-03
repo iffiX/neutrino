@@ -10,11 +10,20 @@ The port is the panel's own, because that is the one the firewall opens and
 the one whoever set the box up already has in their address bar. It follows
 that the panel cannot start while this is serving, so setup starts it last and
 this steps aside first.
+
+The hub's service serves it from the install, behind the token kept in
+``setup_token`` under the state root, until the box is set up. Whichever
+process starts the steps first holds the setup lock.
+
+Not pure: reads and writes the token file and the lock file.
 """
 
+import asyncio
+import os
 import secrets
 import threading
 import time
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -23,6 +32,7 @@ from starlette.staticfiles import StaticFiles
 
 from neutrino_hub.web.constants import (
     WEB_FRONTEND_DIST_DIR,
+    WEB_SETUP_LOCK_PATH,
     WEB_SETUP_STATE_ASKING,
     WEB_SETUP_STATE_DONE,
     WEB_SETUP_STATE_FAILED,
@@ -34,8 +44,112 @@ from neutrino_hub.web.constants import (
     WEB_SETUP_START_TIMEOUT_S,
     WEB_SETUP_STOP_TIMEOUT_S,
     WEB_SETUP_TOKEN_BYTES,
+    WEB_SETUP_TOKEN_MODE,
+    WEB_SETUP_TOKEN_PATH,
 )
 from neutrino_hub.web.routers.hub.setup import setup_router
+
+
+def ensure_setup_token(path: "Path | None" = None) -> str:
+    """The token the service serves the wizard behind, made when missing.
+
+    Args:
+        path: The token file; None is :data:`WEB_SETUP_TOKEN_PATH`.
+
+    Returns:
+        The token.
+
+    Raises:
+        OSError: When the file can be neither read nor written.
+    """
+    path = path or WEB_SETUP_TOKEN_PATH
+    try:
+        token = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        token = ""
+    if token:
+        return token
+    path.parent.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_urlsafe(WEB_SETUP_TOKEN_BYTES)
+    try:
+        descriptor = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, WEB_SETUP_TOKEN_MODE
+        )
+    except FileExistsError:
+        return path.read_text(encoding="utf-8").strip()
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(token + "\n")
+    return token
+
+
+def remove_setup_token(path: "Path | None" = None) -> None:
+    """Remove the token once the box is set up.
+
+    Args:
+        path: The token file; None is :data:`WEB_SETUP_TOKEN_PATH`.
+
+    Raises:
+        OSError: When the file is there and cannot be removed.
+    """
+    (path or WEB_SETUP_TOKEN_PATH).unlink(missing_ok=True)
+
+
+class SetupLock:
+    """The lock whichever process runs the first run's steps holds.
+
+    Taken without waiting, held until :meth:`release` or the process ends.
+    """
+
+    def __init__(self, *, path: "Path | None" = None, platform=None):
+        """
+        Args:
+            path: The lock file; None is :data:`WEB_SETUP_LOCK_PATH`.
+            platform: The :class:`HubPlatform` that locks a file; None is
+                this system's.
+        """
+        self._path = Path(path or WEB_SETUP_LOCK_PATH)
+        self._platform = platform
+        self._descriptor = None
+        self._guard = threading.Lock()
+
+    def acquire(self) -> bool:
+        """Take the lock, or say another process holds it.
+
+        Returns:
+            True when this process holds it now, taken here or before.
+
+        Raises:
+            OSError: When the lock file cannot be opened or locked at all.
+        """
+        with self._guard:
+            if self._descriptor is not None:
+                return True
+            if self._platform is None:
+                from neutrino_hub.platforms.detect import hub_platform
+
+                self._platform = hub_platform()
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o600)
+            if not self._platform.try_lock(descriptor):
+                os.close(descriptor)
+                return False
+            self._descriptor = descriptor
+            return True
+
+    def release(self) -> None:
+        """Let go of the lock when this process holds it.
+
+        Raises:
+            OSError: When the lock cannot be released.
+        """
+        with self._guard:
+            if self._descriptor is None:
+                return
+            try:
+                self._platform.unlock(self._descriptor)
+            finally:
+                os.close(self._descriptor)
+                self._descriptor = None
 
 
 class WebSetupSession:
@@ -46,14 +160,21 @@ class WebSetupSession:
     every read and write takes the lock.
     """
 
-    def __init__(self, *, context: dict):
+    def __init__(
+        self, *, context: dict, token: str = "", setup_lock: "SetupLock | None" = None
+    ):
         """
         Args:
             context: The facts the questions are asked against — this
                 machine's ports, the modes they allow, the modules it could
                 install. The terminal gathers them; this only serves them.
+            token: The token the browser carries; empty makes one for this
+                run.
+            setup_lock: The lock answers take before the steps run; None
+                takes none.
         """
-        self.token = secrets.token_urlsafe(WEB_SETUP_TOKEN_BYTES)
+        self.token = token or secrets.token_urlsafe(WEB_SETUP_TOKEN_BYTES)
+        self._setup_lock = setup_lock
         self._lock = threading.Lock()
         self._context = context
         self._answered = threading.Event()
@@ -97,18 +218,31 @@ class WebSetupSession:
 
     # --- what the browser writes ---
 
-    def answer(self, document: dict) -> None:
+    def answer(self, document: dict) -> bool:
         """Hand the terminal what the browser filled in.
 
         Args:
             document: The answers document, unchecked. Whether it can be used
                 is the wizard's to say, and it says so through
                 :meth:`reject`.
+
+        Returns:
+            False when another process holds the setup lock, and the answers
+            are not taken.
+
+        Raises:
+            OSError: When the setup lock cannot be taken at all.
         """
+        if self._setup_lock is not None and not self._setup_lock.acquire():
+            return False
         with self._lock:
             self._document = document
             self._state = WEB_SETUP_STATE_RUNNING
+            self._steps = []
+            self._notes = []
+            self._message = ""
         self._answered.set()
+        return True
 
     # --- what the terminal reads and writes ---
 
@@ -136,6 +270,12 @@ class WebSetupSession:
             self._document = {}
             self._state = WEB_SETUP_STATE_REJECTED
             self._message = message
+        self._answered.clear()
+
+    def forget_answers(self) -> None:
+        """Take the next answers after a run that failed, keeping its state."""
+        with self._lock:
+            self._document = {}
         self._answered.clear()
 
     def step(
@@ -292,9 +432,16 @@ class WebSetupServer:
         is that :meth:`start` says no.
         """
         try:
-            self._server.run()
+            asyncio.run(self._serve_quietly())
         except SystemExit:
             pass
+
+    async def _serve_quietly(self) -> None:
+        """Serve, with a closed connection on Windows kept out of the log."""
+        from neutrino_hub.platforms.windows import quiet_connection_resets
+
+        quiet_connection_resets(asyncio.get_running_loop())
+        await self._server.serve()
 
 
 def create_setup_app(session: WebSetupSession) -> FastAPI:

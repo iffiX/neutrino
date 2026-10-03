@@ -15,8 +15,8 @@ import { isSetupWaiting, readSetupContext, setupToken } from "./setup_api";
  * routing outside auth, so the login card can still read the current location
  * — and hand off to the route table.
  *
- * Before there is a panel there is no session to provide: `nhub setup` serves
- * this same bundle on a one-time token while it waits for the first run to be
+ * Before there is a panel there is no session to provide: the hub's service
+ * serves this same bundle on a one-time token until the first run is
  * answered in a browser. Which of the two is serving is asked of the server
  * rather than read off the address, because a link that has lost its token is
  * exactly the case where the address says nothing — and drawing the panel's

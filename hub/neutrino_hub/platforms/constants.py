@@ -86,9 +86,20 @@ PLATFORM_LINUX_BROWSER_OPENER = "xdg-open"
 PLATFORM_LINUX_USER_RUNTIME_ROOT = "/run/user"
 PLATFORM_BROWSER_TIMEOUT_S = 5
 PLATFORM_DARWIN_BROWSER_OPENER = "open"
+# Where the signed-in account on a Mac is read from, when sudo names none.
+PLATFORM_DARWIN_CONSOLE = "/dev/console"
+# What opens a page from an elevated Windows process, as the signed-in
+# account rather than as the administrator.
+PLATFORM_WINDOWS_SHELL = "explorer.exe"
+
+# What asks the person for the rights to run nhub elevated.
+PLATFORM_LINUX_ELEVATOR = "pkexec"
+PLATFORM_DARWIN_ELEVATOR = "osascript"
 
 # A child started with no console window of its own.
 PLATFORM_WINDOWS_CREATE_NO_WINDOW = 0x08000000
+# The proactor callback that raises when a browser drops its connection.
+PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK = "_call_connection_lost"
 
 # How often the service on macOS and Windows looks for the configuration
 # before nhub setup has written it.

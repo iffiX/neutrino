@@ -271,5 +271,6 @@
   "code.overlay_default_route_refused": "{title} installed a default route; the hub takes it away and keeps its own uplink as the way out.",
   "code.overlay_route_overlap": "{title} routes {route}, which overlaps {conflict}.",
   "code.https_authority_missing": "This hub has no certificate authority yet; turning HTTPS on makes one.",
-  "code.https_reset_over_https": "Open the panel over HTTP to regenerate the certificate."
+  "code.https_reset_over_https": "Open the panel over HTTP to regenerate the certificate.",
+  "code.setup_in_progress": "This hub is already being set up."
 }

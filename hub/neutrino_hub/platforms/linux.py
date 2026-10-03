@@ -1,6 +1,6 @@
 """The hub on Linux: one systemd unit per daemon, root by euid.
 
-Not pure: runs the browser opener.
+Not pure: runs the browser opener and pkexec.
 """
 
 import os
@@ -12,6 +12,7 @@ from neutrino_hub.platforms.base import HubPlatform
 from neutrino_hub.platforms.constants import (
     PLATFORM_BROWSER_TIMEOUT_S,
     PLATFORM_LINUX_BROWSER_OPENER,
+    PLATFORM_LINUX_ELEVATOR,
     PLATFORM_LINUX_USER_RUNTIME_ROOT,
     PLATFORM_OS_LINUX,
 )
@@ -22,6 +23,27 @@ class LinuxHubPlatform(HubPlatform):
     """Linux, where systemd runs each daemon as a unit of its own."""
 
     os_name = PLATFORM_OS_LINUX
+
+    def run_elevated(self, arguments: list) -> bool:
+        """Run ``nhub`` with these arguments as root through ``pkexec``.
+
+        Args:
+            arguments: What follows ``nhub``.
+
+        Returns:
+            True when it ran and exited 0; False when pkexec is not
+            installed, the person declined, or it failed.
+        """
+        if shutil.which(PLATFORM_LINUX_ELEVATOR) is None:
+            return False
+        try:
+            result = subprocess.run(
+                [PLATFORM_LINUX_ELEVATOR, *self.hub_command(*arguments)],
+                check=False,
+            )
+        except OSError:
+            return False
+        return result.returncode == 0
 
     def process_controller(self):
         """The controller of the hub's units.

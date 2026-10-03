@@ -1,7 +1,8 @@
 """The hub's one Win32 binding: the libraries, their prototypes, the names.
 
 Copied from the agent's and cut to what the hub calls: the service
-dispatcher, the job its children run in, and the elevation check. Nothing
+dispatcher, the job its children run in, the elevation check, and starting
+``nhub`` elevated through the UAC prompt. Nothing
 binds a library at import time, so this module imports on Linux as readily
 as on Windows and the seams above it stay replaceable in tests.
 """
@@ -30,6 +31,13 @@ ERROR_CALL_NOT_IMPLEMENTED = 120
 # Job objects: every child of the service dies with the job's last handle.
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+
+# Starting a program elevated: the verb that asks UAC, the window it gets,
+# and waiting for it.
+SHELL_VERB_RUNAS = "runas"
+SW_HIDE = 0
+SEE_MASK_NOCLOSEPROCESS = 0x00000040
+INFINITE = 0xFFFFFFFF
 
 _LIBRARIES = None
 
@@ -151,6 +159,28 @@ class JobObjectExtendedLimitInformation(ctypes.Structure):
     ]
 
 
+class ShellExecuteInfo(ctypes.Structure):
+    """SHELLEXECUTEINFOW: what ShellExecuteExW starts, and the process it started."""
+
+    _fields_ = [
+        ("cbSize", DWORD),
+        ("fMask", ctypes.c_ulong),
+        ("hwnd", ctypes.c_void_p),
+        ("lpVerb", ctypes.c_wchar_p),
+        ("lpFile", ctypes.c_wchar_p),
+        ("lpParameters", ctypes.c_wchar_p),
+        ("lpDirectory", ctypes.c_wchar_p),
+        ("nShow", ctypes.c_int),
+        ("hInstApp", ctypes.c_void_p),
+        ("lpIDList", ctypes.c_void_p),
+        ("lpClass", ctypes.c_wchar_p),
+        ("hkeyClass", ctypes.c_void_p),
+        ("dwHotKey", DWORD),
+        ("hIconOrMonitor", ctypes.c_void_p),
+        ("hProcess", ctypes.c_void_p),
+    ]
+
+
 class Win32Libraries:
     """Every DLL the hub calls, with its prototypes set once.
 
@@ -185,6 +215,12 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.c_void_p,
         ]
+        self.kernel32.WaitForSingleObject.restype = DWORD
+        self.kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, DWORD]
+        self.kernel32.GetExitCodeProcess.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+        ]
 
     def _describe_advapi32(self) -> None:
         """Prototype the service calls."""
@@ -204,3 +240,5 @@ class Win32Libraries:
         """Prototype the shell32 calls."""
         self.shell32.IsUserAnAdmin.restype = ctypes.c_int
         self.shell32.IsUserAnAdmin.argtypes = []
+        self.shell32.ShellExecuteExW.restype = ctypes.c_int
+        self.shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(ShellExecuteInfo)]

@@ -191,3 +191,31 @@ def test_finishing_over_http_hands_the_page_no_authority(client, session):
     state = client.get(f"/api/hub/setup/state?token={session.token}").json()
 
     assert state["authority"] is None
+
+
+class _HeldLock:
+    """A setup lock another process holds."""
+
+    def acquire(self) -> bool:
+        return False
+
+
+def test_answers_while_another_process_runs_the_steps_are_refused():
+    session = WebSetupSession(context=CONTEXT, setup_lock=_HeldLock())
+    client = TestClient(create_setup_app(session))
+
+    reply = client.post(
+        f"/api/hub/setup/answer/set?token={session.token}", json=ANSWERS
+    )
+
+    assert reply.status_code == 409
+    assert reply.json() == {"detail": {"code": "setup_in_progress", "params": {}}}
+    assert session.state()["state"] == "asking"
+    assert session.wait(0) == {}
+
+
+def test_a_given_token_is_the_one_the_wizard_takes():
+    session = WebSetupSession(context=CONTEXT, token="kept-token")
+    client = TestClient(create_setup_app(session))
+
+    assert client.get("/api/hub/setup/context?token=kept-token").status_code == 200

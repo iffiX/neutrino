@@ -212,3 +212,144 @@ def test_children_start_with_no_console_window(monkeypatch, tmp_path):
     controller = _platform().process_controller()
 
     assert controller._supervisor._creation_flags == 0x08000000
+
+
+class _ElevatingShell32:
+    """ShellExecuteExW, answering for a prompt the person accepts or declines."""
+
+    def __init__(self, *, is_accepted: bool = True):
+        self.is_accepted = is_accepted
+        self.started = []
+
+    def IsUserAnAdmin(self) -> int:
+        return 0
+
+    def ShellExecuteExW(self, pointer) -> int:
+        info = pointer._obj
+        self.started.append(
+            (info.lpVerb, info.lpFile, info.lpParameters, info.nShow, info.fMask)
+        )
+        if not self.is_accepted:
+            return 0
+        info.hProcess = 77
+        return 1
+
+
+class _WaitingKernel32:
+    def __init__(self, exit_code: int):
+        self.exit_code = exit_code
+        self.calls = []
+
+    def WaitForSingleObject(self, handle, timeout):
+        self.calls.append(("wait", handle, timeout))
+        return 0
+
+    def GetExitCodeProcess(self, handle, pointer):
+        pointer._obj.value = self.exit_code
+        return 1
+
+    def CloseHandle(self, handle):
+        self.calls.append(("close", handle))
+        return 1
+
+
+@pytest.mark.parametrize(("exit_code", "expected"), [(0, True), (1, False)])
+def test_the_elevated_step_runs_behind_uac_and_is_waited_for(
+    monkeypatch, exit_code, expected
+):
+    shell32 = _ElevatingShell32()
+    kernel32 = _WaitingKernel32(exit_code)
+    platform = _platform(
+        libraries=types.SimpleNamespace(shell32=shell32, kernel32=kernel32)
+    )
+    monkeypatch.setattr(
+        WindowsHubPlatform,
+        "hub_command",
+        lambda self, *arguments: [
+            "C:\\Program Files\\Neutrino\\hub\\nhub.exe",
+            *arguments,
+        ],
+    )
+
+    assert platform.run_elevated(["open", "--output", "C:\\Temp\\a b"]) is expected
+    ((verb, program, parameters, show, mask),) = shell32.started
+    assert verb == "runas"
+    assert program == "C:\\Program Files\\Neutrino\\hub\\nhub.exe"
+    assert parameters == 'open --output "C:\\Temp\\a b"'
+    assert show == windows.win32.SW_HIDE
+    assert mask & windows.win32.SEE_MASK_NOCLOSEPROCESS
+    assert kernel32.calls == [("wait", 77, windows.win32.INFINITE), ("close", 77)]
+
+
+def test_a_declined_uac_prompt_is_not_a_run():
+    shell32 = _ElevatingShell32(is_accepted=False)
+    platform = _platform(
+        libraries=types.SimpleNamespace(shell32=shell32, kernel32=_WaitingKernel32(0))
+    )
+
+    assert not platform.run_elevated(["open"])
+
+
+def test_an_elevated_process_hands_the_page_to_the_shell(monkeypatch):
+    started = []
+    monkeypatch.setattr(windows.subprocess, "Popen", started.append)
+    platform = _platform(libraries=types.SimpleNamespace(shell32=_Shell32(1)))
+
+    assert platform.open_browser("http://127.0.0.1:8080/")
+    assert started == [["explorer.exe", "http://127.0.0.1:8080/"]]
+
+
+class _Loop:
+    def __init__(self):
+        self.passed = []
+        self.handler = None
+
+    def default_exception_handler(self, context):
+        self.passed.append(context)
+
+    def set_exception_handler(self, handler):
+        self.handler = handler
+
+
+def test_a_connection_the_browser_reset_is_not_logged():
+    loop = _Loop()
+    context = {
+        "message": "Exception in callback "
+        "_ProactorBasePipeTransport._call_connection_lost(None)",
+        "exception": ConnectionResetError(10054, "reset by peer"),
+        "handle": "<Handle _ProactorBasePipeTransport._call_connection_lost(None)>",
+    }
+
+    windows.drop_connection_reset(loop, context)
+
+    assert loop.passed == []
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        {"message": "elsewhere", "exception": ConnectionResetError(10054, "reset")},
+        {
+            "message": "_call_connection_lost",
+            "exception": ValueError("a fault"),
+        },
+    ],
+)
+def test_every_other_loop_exception_reaches_the_default_handler(context):
+    loop = _Loop()
+
+    windows.drop_connection_reset(loop, context)
+
+    assert loop.passed == [context]
+
+
+@pytest.mark.parametrize(
+    ("system", "is_installed"), [("win32", True), ("linux", False)]
+)
+def test_the_handler_is_installed_on_windows_alone(monkeypatch, system, is_installed):
+    loop = _Loop()
+    monkeypatch.setattr(sys, "platform", system)
+
+    windows.quiet_connection_resets(loop)
+
+    assert (loop.handler is windows.drop_connection_reset) is is_installed

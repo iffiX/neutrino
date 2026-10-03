@@ -271,5 +271,6 @@
   "code.overlay_default_route_refused": "{title} 装了一条默认路由；hub 把它删掉，出口仍是自己的上行。",
   "code.overlay_route_overlap": "{title} 的路由 {route} 和 {conflict} 重叠。",
   "code.https_authority_missing": "这个 hub 还没有证书颁发机构，开启 HTTPS 时会生成。",
-  "code.https_reset_over_https": "用 HTTP 打开面板，才能重新生成证书。"
+  "code.https_reset_over_https": "用 HTTP 打开面板，才能重新生成证书。",
+  "code.setup_in_progress": "这台 hub 已在配置中。"
 }

@@ -113,3 +113,68 @@ def test_netbird_answers_on_the_hubs_own_socket(monkeypatch):
 
 def test_the_agent_command_is_the_link_its_package_makes():
     assert DarwinHubPlatform().agent_command() == "/usr/local/bin/nagent"
+
+
+def test_the_elevated_step_asks_through_the_administrator_prompt(monkeypatch):
+    calls = []
+
+    def fake_run(command, **keywords):
+        calls.append(command)
+        return completed("")
+
+    monkeypatch.setattr(darwin.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        DarwinHubPlatform,
+        "hub_command",
+        lambda self, *arguments: ["/Library/Application Support/x/nhub", *arguments],
+    )
+
+    assert DarwinHubPlatform().run_elevated(["open", "--start-service"])
+    ((program, flag, script),) = calls
+    assert (program, flag) == ("osascript", "-e")
+    assert script == (
+        "do shell script \"'/Library/Application Support/x/nhub' open "
+        '--start-service" with administrator privileges'
+    )
+
+
+def test_a_declined_prompt_is_not_a_run(monkeypatch):
+    monkeypatch.setattr(
+        darwin.subprocess,
+        "run",
+        lambda command, **k: subprocess.CompletedProcess(command, 1, "", ""),
+    )
+
+    assert not DarwinHubPlatform().run_elevated(["open"])
+
+
+def test_root_opens_the_page_as_the_account_sudo_names(monkeypatch):
+    calls = []
+
+    def fake_run(command, **keywords):
+        calls.append((command, keywords))
+        return completed("")
+
+    account = darwin.pwd.struct_passwd(
+        ("iffi", "x", 501, 20, "", "/Users/iffi", "/bin/zsh")
+    )
+    monkeypatch.setattr(darwin.subprocess, "run", fake_run)
+    monkeypatch.setattr(DarwinHubPlatform, "is_elevated", lambda self: True)
+    monkeypatch.setenv("SUDO_UID", "501")
+    monkeypatch.setattr(darwin.pwd, "getpwuid", lambda uid: account)
+
+    assert DarwinHubPlatform().open_browser("http://127.0.0.1:8080/")
+    ((command, keywords),) = calls
+    assert command == ["open", "http://127.0.0.1:8080/"]
+    assert (keywords["user"], keywords["group"]) == (account.pw_uid, account.pw_gid)
+    assert keywords["env"]["HOME"] == "/Users/iffi"
+
+
+def test_root_with_nobody_signed_in_opens_nothing(monkeypatch):
+    monkeypatch.setattr(DarwinHubPlatform, "is_elevated", lambda self: True)
+    monkeypatch.setenv("SUDO_UID", "0")
+    monkeypatch.setattr(
+        darwin.subprocess, "run", lambda *a, **k: pytest.fail("not as root")
+    )
+
+    assert not DarwinHubPlatform().open_browser("http://127.0.0.1:8080/")

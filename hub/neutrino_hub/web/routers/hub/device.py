@@ -453,14 +453,14 @@ def create_enrollment(
         registry = DeviceRegistry()
         _require_device(registry, request.device_id)
         device_id = registry.adopt(request.device_id).id
-    link, token = _generate_enrollment_link(
+    link, token = generate_enrollment_link(
         runtime, name=request.name, device_id=device_id
     )
     runtime.events.publish(WEB_EVENT_DEVICES)
     return DeviceEnrollmentView(link=link, token=token, expires_in_s=ENROLLMENT_TTL_S)
 
 
-def _generate_enrollment_link(
+def generate_enrollment_link(
     runtime: PanelRuntime, *, name: str, device_id: "str | None"
 ) -> tuple[str, str]:
     """One ticket and the link that carries it, however the join begins.
@@ -782,7 +782,7 @@ async def install_agent(
     # A ticket, not a heartbeat token: the install walks the same enrollment
     # path a pasted link does, and a failed install leaves any live agent
     # beating exactly as it was.
-    link, _ = _generate_enrollment_link(
+    link, _ = generate_enrollment_link(
         runtime, name=device.name or "", device_id=device.id
     )
     stream = runtime.tasks.start(
