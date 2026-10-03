@@ -170,6 +170,24 @@ export function ProxyPage() {
   }
 
   const mode = network.data?.mode ?? null;
+  // Outside Linux both scopes route the whole machine through one TUN, so
+  // the two switches are one setting there.
+  const isScopeLinked =
+    network.data !== null && network.data.hub_os !== "linux";
+  const updateScope = (
+    key: "is_overlay_proxy_enabled" | "is_local_proxy_enabled",
+    isOn: boolean,
+  ) => {
+    updateDraft(
+      isScopeLinked
+        ? { is_overlay_proxy_enabled: isOn, is_local_proxy_enabled: isOn }
+        : { [key]: isOn },
+    );
+  };
+  const describeScope = (key: string) =>
+    isScopeLinked
+      ? t("ui.proxy.scope_linked_description", { description: t(key) })
+      : t(key);
   // The same describer the strip's chip uses, so the page and its thumbnail
   // are one answer rather than two. An on/off badge here used to mean "is a
   // node enabled", which a server could show as `on` beside a strip saying
@@ -215,15 +233,15 @@ export function ProxyPage() {
         )}
         <ToggleSwitch
           isOn={draft.is_overlay_proxy_enabled}
-          onChange={(isOn) => updateDraft({ is_overlay_proxy_enabled: isOn })}
+          onChange={(isOn) => updateScope("is_overlay_proxy_enabled", isOn)}
           label={t("ui.proxy.overlay_toggle")}
-          description={t("ui.proxy.overlay_toggle_description")}
+          description={describeScope("ui.proxy.overlay_toggle_description")}
         />
         <ToggleSwitch
           isOn={draft.is_local_proxy_enabled}
-          onChange={(isOn) => updateDraft({ is_local_proxy_enabled: isOn })}
+          onChange={(isOn) => updateScope("is_local_proxy_enabled", isOn)}
           label={t("ui.proxy.local_toggle")}
-          description={t("ui.proxy.local_toggle_description")}
+          description={describeScope("ui.proxy.local_toggle_description")}
         />
 
         <ToggleSwitch

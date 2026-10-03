@@ -85,6 +85,54 @@ def test_every_proxy_answer_reaches_the_routing_file(config_dir):
     ]
 
 
+def _proxy_answered(path: str, is_local: bool, monkeypatch) -> wizard.WizardProxy:
+    """The proxy answers of a server, typed in the terminal or sent by the
+    browser."""
+    if path == "browser":
+        document = {
+            "password": "a-long-enough-password",
+            "vault_passphrase": "A-vault-passphrase-16!",  # scan: allow
+            "network": {"mode": "server"},
+            "proxy": {"links": [SHARE_LINK], "is_local": is_local},
+        }
+        return wizard.from_document(document).proxy
+    asked = wizard.SetupWizard(links=[])
+    asked._mode = "server"
+    typed = iter(["2", SHARE_LINK, "", "", "y" if is_local else "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
+    assert asked._ask_proxy() == wizard.WIZARD_NEXT
+    return asked._proxy
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+@pytest.mark.parametrize("path", ["terminal", "browser"])
+@pytest.mark.parametrize("is_local", [True, False])
+def test_macos_and_windows_move_the_overlay_with_this_boxs_own_traffic(
+    config_dir, monkeypatch, system, path, is_local
+):
+    """Both scopes divert the whole machine there, so one answer sets both."""
+    from neutrino_hub.utils.json_file import read_config
+
+    monkeypatch.setattr(setup.sys, "platform", system)
+    setup._write_proxy(_proxy_answered(path, is_local, monkeypatch))
+
+    routing = read_config("xray/routing.json")
+    assert routing["is_local_proxy_enabled"] is is_local
+    assert routing["is_overlay_proxy_enabled"] is is_local
+
+
+@pytest.mark.parametrize("path", ["terminal", "browser"])
+def test_linux_leaves_the_overlay_to_the_proxy_page(config_dir, monkeypatch, path):
+    from neutrino_hub.utils.json_file import read_config
+
+    monkeypatch.setattr(setup.sys, "platform", "linux")
+    setup._write_proxy(_proxy_answered(path, True, monkeypatch))
+
+    routing = read_config("xray/routing.json")
+    assert routing["is_local_proxy_enabled"] is True
+    assert routing["is_overlay_proxy_enabled"] is False
+
+
 def test_skipping_the_proxy_empties_the_example_nodes(config_dir):
     """The example ships two nodes with placeholder keys, which xray refuses."""
     from neutrino_hub.utils.json_file import read_config
