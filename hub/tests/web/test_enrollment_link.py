@@ -240,3 +240,19 @@ def test_a_box_with_nothing_exposed_has_no_link_to_give(fingerprinted, live_addr
 
     assert answer.status_code == 400
     assert answer.json()["detail"]["code"] == "no_reachable_address"
+
+
+def test_the_short_link_takes_the_address_on_the_host_named_else_the_first():
+    urls = ["https://192.168.8.1:9443", "https://10.0.0.1:9443"]
+
+    named = devices_router.enrollment_short_link(
+        urls, "Tk_-9", FINGERPRINT, host="10.0.0.1"
+    )
+    unknown = devices_router.enrollment_short_link(
+        urls, "Tk_-9", FINGERPRINT, host="203.0.113.7"
+    )
+
+    assert named == f"neutrino://enroll/Tk_-9@10.0.0.1:9443/{FINGERPRINT}"
+    assert unknown == f"neutrino://enroll/Tk_-9@192.168.8.1:9443/{FINGERPRINT}"
+    with pytest.raises(ValueError):
+        devices_router.enrollment_short_link([], "Tk_-9", FINGERPRINT)

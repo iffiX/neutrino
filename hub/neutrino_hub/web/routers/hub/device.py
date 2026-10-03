@@ -7,6 +7,7 @@ import ipaddress
 import json
 import secrets
 import time
+import urllib.parse
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -104,6 +105,7 @@ ENROLLMENT_TOKEN_BYTES = 18
 # Long enough to walk to another machine and paste it, short enough that a
 # forgotten link is not a standing invitation.
 ENROLLMENT_TTL_S = 30 * 60
+ENROLLMENT_LINK_PREFIX = "neutrino://enroll/"
 
 
 @router.get("", response_model=DeviceListView)
@@ -520,13 +522,64 @@ def enrollment_link(
     Returns:
         The ``neutrino://enroll/`` link.
     """
-    body = {"urls": urls, "token": token, "fp": fingerprint, "role": role}
-    if role == CHANNEL_ROLE_CLIENT:
-        body["overlays"] = list(overlays or [])
+    body = enrollment_body(urls, token, fingerprint, role=role, overlays=overlays)
     # The whole payload rides base64url, whose alphabet has no character a
     # shell splits or a URL escapes — the link pastes anywhere unquoted.
     payload = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
-    return f"neutrino://enroll/{payload.rstrip('=')}"
+    return f"{ENROLLMENT_LINK_PREFIX}{payload.rstrip('=')}"
+
+
+def enrollment_body(
+    urls: list,
+    token: str,
+    fingerprint: str,
+    *,
+    role: str = CHANNEL_ROLE_AGENT,
+    overlays: "list | None" = None,
+) -> dict:
+    """The object a long link carries.
+
+    Args:
+        urls: The agent channel's URLs.
+        token: The ticket.
+        fingerprint: The certificate fingerprint the program pins.
+        role: Who the link is for, ``agent`` or ``client``.
+        overlays: The join material a client link carries.
+
+    Returns:
+        ``{urls, token, fp, role}``, with ``overlays`` for a client.
+    """
+    body = {"urls": list(urls), "token": token, "fp": fingerprint, "role": role}
+    if role == CHANNEL_ROLE_CLIENT:
+        body["overlays"] = list(overlays or [])
+    return body
+
+
+def enrollment_short_link(
+    urls: list, token: str, fingerprint: str, *, host: str = ""
+) -> str:
+    """The short link a QR code carries: the ticket, one address, the pin.
+
+    Args:
+        urls: The agent channel's URLs.
+        token: The ticket.
+        fingerprint: The certificate fingerprint the program pins.
+        host: The address the reader is likely to reach; the URL on that
+            host is used, else the first.
+
+    Returns:
+        ``neutrino://enroll/<ticket>@<host>:<port>/<fingerprint>``.
+
+    Raises:
+        ValueError: When ``urls`` is empty.
+    """
+    if not urls:
+        raise ValueError("a short link needs an address")
+    chosen = next(
+        (url for url in urls if urllib.parse.urlsplit(url).hostname == host),
+        urls[0],
+    )
+    return f"{ENROLLMENT_LINK_PREFIX}{token}@{urllib.parse.urlsplit(chosen).netloc}/{fingerprint}"
 
 
 def clear_enrollments(runtime: PanelRuntime, *, kind: "str | None") -> None:
