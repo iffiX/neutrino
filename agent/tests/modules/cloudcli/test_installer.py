@@ -11,6 +11,7 @@ and the login shell's ``claude`` is the last absolute path it printed.
 """
 
 import io
+import ntpath
 import os
 import stat
 import tarfile
@@ -184,6 +185,7 @@ def test_an_instance_runs_with_an_environment_written_from_scratch():
         upstream_port=41234,
         home="/home/ann",
         os_name="linux",
+        node_dir="/var/lib/neutrino/agent/cloudcli/n/bin",
         claude_path="/home/ann/.local/bin/claude",
     )
 
@@ -196,9 +198,31 @@ def test_an_instance_runs_with_an_environment_written_from_scratch():
         "ANTHROPIC_AUTH_TOKEN": "k",
         "OPENAI_BASE_URL": "http://10.0.0.1:8317/v1",
         "HOME": "/home/ann",
-        "PATH": "/home/ann/.local/bin:/usr/local/bin:/usr/bin:/bin",
+        "PATH": "/var/lib/neutrino/agent/cloudcli/n/bin:/home/ann/.local/bin:"
+        "/usr/local/bin:/usr/bin:/bin",
         "CLAUDE_CLI_PATH": "/home/ann/.local/bin/claude",
     }
+
+
+def test_a_windows_instance_puts_node_before_the_account_s_own_path():
+    config = CloudcliConfig.from_dict(
+        {"instances": [{"account": "ann", "port": 3001, "token_secret": "s"}]}
+    )
+
+    environment = installer.service_environment(
+        config,
+        config.instances[0],
+        upstream_port=41234,
+        home="C:\\Users\\ann",
+        os_name="windows",
+        node_dir="C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n",
+        join=ntpath.join,
+    )
+
+    assert environment["PATH"] == (
+        "C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n;%PATH%"
+    )
+    assert "HOME" not in environment
 
 
 def test_the_claude_found_is_the_last_absolute_path_printed():

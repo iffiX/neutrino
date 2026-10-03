@@ -146,7 +146,10 @@ def test_an_instance_is_installed_as_the_account_then_started(
     assert 'HOST="127.0.0.1"\n' in text
     assert 'SERVER_PORT="41234"\n' in text
     assert 'ANTHROPIC_AUTH_TOKEN="device-key"\n' in text
-    assert 'PATH="/home/ann/.local/bin:/usr/local/bin:/usr/bin:/bin"\n' in text
+    node_bin = tmp_path / "var" / "cloudcli" / NODE_DIR / "bin"
+    assert (
+        f'PATH="{node_bin}:/home/ann/.local/bin:/usr/local/bin:/usr/bin:/bin"\n' in text
+    )
     assert f'CLOUDCLI_SERVER="{app}/node_modules/@cloudcli-ai/cloudcli/' in text
     assert (tmp_path / "systemd" / "neutrino_cloudcli@.service").is_file()
     assert machine.systemctl() == [
