@@ -14,7 +14,8 @@ import "./error_panel.css";
 interface ErrorPanelProps {
   title?: string;
   message: string;
-  hint?: string;
+  /** The line under the message; null draws none. */
+  hint?: string | null;
   onRetry?: () => void;
 }
 
@@ -28,7 +29,9 @@ export function ErrorPanel({ title, message, hint, onRetry }: ErrorPanelProps) {
         <span>{title ?? t("ui.error_panel.title")}</span>
       </div>
       <p className="error_panel_message">{message}</p>
-      <p className="error_panel_hint">{hint ?? t("ui.error_panel.hint")}</p>
+      {hint !== null && (
+        <p className="error_panel_hint">{hint ?? t("ui.error_panel.hint")}</p>
+      )}
       {onRetry !== undefined && (
         <button
           type="button"

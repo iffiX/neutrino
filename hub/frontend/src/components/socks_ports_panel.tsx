@@ -2,7 +2,12 @@ import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
-import { apiPost, describeError } from "../api_client";
+import {
+  apiPost,
+  describeApplied,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useDraft } from "../use_draft";
 import type { ApplyResult, ProxyView, SocksPort } from "../api_types";
@@ -70,9 +75,9 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
       const result = await apiPost<ApplyResult>("/hub/proxy/apply");
       onApplied(saved);
       if (result.is_applied) {
-        setNotice(result.message);
+        setNotice(describeApplied(result));
       } else {
-        setError(result.message);
+        setError(describeApplyFailure(result));
       }
     } catch (cause: unknown) {
       setError(describeError(cause));

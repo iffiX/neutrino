@@ -84,7 +84,6 @@ export function AiUsageOverview() {
       {data === null && !usage.isLoading && (
         <div className="placeholder">
           <span>{t("ui.usage.unavailable")}</span>
-          <span className="faint">{t("ui.usage.unavailable_hint")}</span>
         </div>
       )}
       {data !== null && <UsageBody data={data} />}

@@ -5,7 +5,12 @@ import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiPath, apiPost, describeError } from "../api_client";
+import {
+  apiPath,
+  apiPost,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
@@ -53,7 +58,6 @@ export function GiteaPanels({
   // The form's own fields; the machine they are written to is the page's.
   const { draft, setDraft, isDirty, reset } = useDraft(saved, accessDraftOf);
   const [isBusy, setIsBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const applyAccess = async () => {
@@ -62,7 +66,6 @@ export function GiteaPanels({
     }
     setIsBusy(true);
     setError(null);
-    setNotice(null);
     try {
       await apiPost<GiteaDeviceView>(`${basePath}/set`, {
         device_id: deviceId,
@@ -73,10 +76,8 @@ export function GiteaPanels({
       });
       resource.reload();
       if (!result.is_applied) {
-        setError(result.message);
-        return;
+        setError(describeApplyFailure(result));
       }
-      setNotice(result.message);
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -180,7 +181,6 @@ export function GiteaPanels({
           hint={t("ui.gitea.access_apply_hint")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
-          notice={notice}
           onReset={reset}
           onApply={() => void applyAccess()}
         />

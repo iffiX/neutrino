@@ -5,7 +5,12 @@ import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { NodeCard } from "./node_card";
-import { apiPost, describeError } from "../api_client";
+import {
+  apiPost,
+  describeApplied,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { diffNodeDraft, isNodeChanged } from "../node_draft";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
@@ -298,7 +303,11 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
         );
       }
       const result = await apiPost<ApplyResult>("/hub/proxy/apply");
-      setApplyMessage(result.message);
+      if (result.is_applied) {
+        setApplyMessage(describeApplied(result));
+      } else {
+        setActionError(describeApplyFailure(result));
+      }
       resource.reload();
       onNodesChanged();
     } catch (cause: unknown) {

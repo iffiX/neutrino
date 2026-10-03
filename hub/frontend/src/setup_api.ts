@@ -81,7 +81,6 @@ export interface SetupAuthority {
 /** How far the run has got. */
 export interface SetupState {
   state: "asking" | "rejected" | "running" | "done" | "failed";
-  message: string;
   panel_url: string;
   /** The authority to install first; null when the panel speaks HTTP. */
   authority: SetupAuthority | null;

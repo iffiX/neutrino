@@ -775,7 +775,7 @@ def test_apply_pushes_the_state_again(box):
 
     response = client.post(f"{BLOCK_PATH}/apply", json={"device_id": LAPTOP})
 
-    assert response.json() == {"is_applied": True, "message": "pushed"}
+    assert response.json() == {"is_applied": True, "changes": [], "failures": []}
     assert [push[0] for push in runtime.agent_sessions.pushes] == [LAPTOP]
     assert (
         client.post(f"{BLOCK_PATH}/apply", json={"device_id": OFFLINE}).status_code

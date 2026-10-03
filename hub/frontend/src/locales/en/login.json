@@ -3,9 +3,9 @@
   "ui.login.password": "Panel password",
   "ui.login.locked": "Locked after repeated failures.",
   "ui.login.wrong_password": "Wrong password.",
-  "ui.login.api_unreachable": "Could not reach the gateway API: {detail}",
+  "ui.login.api_unreachable": "Could not reach the hub: {detail}",
   "ui.login.sign_in": "Sign in",
   "ui.login.signing_in": "Signing in…",
-  "ui.login.stale_session": "The browser kept a session cookie from the HTTPS port, which blocks this sign-in. Open the HTTPS address once: it sends you back here with the old cookie removed.",
+  "ui.login.stale_session": "An old session in this browser blocks this sign-in.",
   "ui.login.stale_session_link": "Clear the old session"
 }

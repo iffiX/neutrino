@@ -9,7 +9,13 @@ import { ShellTerminal } from "./shell_terminal";
 import { StatusDot } from "./status_dot";
 import { StringListEditor } from "./string_list_editor";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiGet, apiPath, apiPost, describeError } from "../api_client";
+import {
+  apiGet,
+  apiPath,
+  apiPost,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
@@ -111,7 +117,7 @@ export function ContainersPanels({
       });
       resource.reload();
       if (!result.is_applied) {
-        setMirrorsError(result.message);
+        setMirrorsError(describeApplyFailure(result));
         return;
       }
       setMirrorsNotice(t("ui.containers.applied"));
@@ -136,7 +142,7 @@ export function ContainersPanels({
       });
       resource.reload();
       if (!result.is_applied) {
-        setError(result.message);
+        setError(describeApplyFailure(result));
         return;
       }
       setNotice(t("ui.containers.applied"));
@@ -290,7 +296,6 @@ export function ContainersPanels({
         <div className="settings_group_title">
           <h2>{t("ui.containers.declared_title")}</h2>
         </div>
-        <p className="field_hint">{t("ui.containers.declared_hint")}</p>
         {containers.map((container, index) => (
           <ContainerEditor
             key={index}
@@ -650,17 +655,11 @@ function ContainerShellModal({
             }}
           />
         </div>
-        <div
-          className={
-            failedCode !== null
-              ? "container_shell_status container_shell_status--warn"
-              : "container_shell_status"
-          }
-        >
-          {failedCode !== null
-            ? t("ui.containers.shell_failed", { code: failedCode })
-            : t("ui.containers.shell_hint")}
-        </div>
+        {failedCode !== null && (
+          <div className="container_shell_status container_shell_status--warn">
+            {t("ui.containers.shell_failed", { code: failedCode })}
+          </div>
+        )}
       </div>
     </div>,
     document.body,

@@ -33,7 +33,7 @@
   "ui.authority.linux_chrome_1": "Open chrome://certificate-manager in Chrome.",
   "ui.authority.linux_chrome_2": "Choose Custom, then Trusted certificates, then Import.",
   "ui.authority.linux_chrome_3": "Pick {file}.",
-  "ui.authority.linux_chrome_4": "Restart Chrome; a Chrome told to proceed past a warning keeps warning until it restarts.",
+  "ui.authority.linux_chrome_4": "Restart Chrome.",
   "ui.authority.linux_firefox_1": "Open Settings, Privacy & Security, View Certificates.",
   "ui.authority.linux_firefox_2": "On the Authorities tab, choose Import and pick {file}.",
   "ui.authority.linux_firefox_3": "Tick Trust this CA to identify websites, then OK.",

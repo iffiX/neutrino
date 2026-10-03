@@ -39,7 +39,6 @@ export function DnsLogList({ entries }: DnsLogListProps) {
     return (
       <div className="placeholder">
         <span>{t("ui.dashboard.dns_empty")}</span>
-        <span className="faint">{t("ui.dashboard.dns_empty_hint")}</span>
       </div>
     );
   }

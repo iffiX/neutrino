@@ -8,6 +8,7 @@
  * screen no matter which page triggered the call.
  */
 
+import type { ApplyChange, ApplyResult } from "./api_types";
 import { hasWord, t } from "./i18n";
 
 const API_PREFIX = "/api";
@@ -159,21 +160,36 @@ export function describeError(error: unknown): string {
     if (error.code === "") {
       return error.message;
     }
-    const key = "code." + error.code;
-    if (hasWord(key)) {
-      return t(key, error.params);
-    }
-    const params = Object.entries(error.params)
-      .map(([name, value]) => `${name}=${value}`)
-      .join(", ");
-    return params === ""
-      ? t("ui.api.refused_bare", { code: error.code })
-      : t("ui.api.refused", { code: error.code, params });
+    return describeCode({ code: error.code, params: error.params });
   }
   if (error instanceof Error) {
     return error.message;
   }
   return t("ui.api.unknown_error");
+}
+
+/** The sentence for one `{code, params}` an answer carried. */
+export function describeCode(entry: ApplyChange): string {
+  const key = "code." + entry.code;
+  if (hasWord(key)) {
+    return t(key, entry.params);
+  }
+  const params = Object.entries(entry.params)
+    .map(([name, value]) => `${name}=${value}`)
+    .join(", ");
+  return params === ""
+    ? t("ui.api.refused_bare", { code: entry.code })
+    : t("ui.api.refused", { code: entry.code, params });
+}
+
+/** What an apply did: `Applied.`, then each change it reported. */
+export function describeApplied(result: ApplyResult): string {
+  return [t("ui.api.applied"), ...result.changes.map(describeCode)].join(" ");
+}
+
+/** Why an apply did not go through, one sentence per failure. */
+export function describeApplyFailure(result: ApplyResult): string {
+  return result.failures.map(describeCode).join(" ");
 }
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {

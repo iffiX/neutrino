@@ -70,7 +70,6 @@ export function FilesPage() {
       <DevicePick
         devices={devices}
         isLoading={resource.isLoading}
-        hint={t("ui.files.pick_hint")}
         selected={selectedId}
         onSelect={setSelectedId}
       />

@@ -77,6 +77,16 @@ def _stored(tmp_path) -> dict:
     return json.loads((tmp_path / CONFIG_RELATIVE).read_text(encoding="utf-8"))
 
 
+def test_an_apply_with_no_gateway_installed_answers_that_code(keys_client):
+    response = keys_client.post("/api/hub/ai/gateway/apply")
+
+    assert response.json() == {
+        "is_applied": True,
+        "changes": [{"code": "gateway_not_installed", "params": {}}],
+        "failures": [],
+    }
+
+
 def test_a_generated_key_is_served_whole_and_stored_sealed(keys_client, tmp_path):
     created = keys_client.post("/api/hub/ai/gateway/key/add", json={"name": "laptop"})
     assert created.status_code == 200

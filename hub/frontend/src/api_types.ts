@@ -110,9 +110,16 @@ export interface NodeCreateRequest {
   link: string;
 }
 
+/** One thing an apply did, or why it did not; the page words the code. */
+export interface ApplyChange {
+  code: string;
+  params: Record<string, string | number>;
+}
+
 export interface ApplyResult {
   is_applied: boolean;
-  message: string;
+  changes: ApplyChange[];
+  failures: ApplyChange[];
 }
 
 // --- Dashboard and live stats ---
@@ -597,7 +604,9 @@ export interface CliproxyApiStatusView {
   listen_port: number;
   client_keys: CliproxyApiKeyView[];
   is_reachable: boolean;
-  probe_message: string;
+  /** Why the probe found nothing to serve; empty when models are served. */
+  probe_code: string;
+  probe_params: Record<string, string | number>;
   /** The model names /v1/models answered with; empty when unreachable. */
   served_models?: string[];
   enabled_provider_count: number;
@@ -1050,7 +1059,8 @@ export interface DevicesResponse {
 
 export interface DeviceWolResult {
   is_sent: boolean;
-  message: string;
+  code: string;
+  params: Record<string, string | number>;
 }
 
 /**

@@ -24,6 +24,7 @@ from neutrino_hub.modules.overlay.ops import overlay_devices
 from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
+    ROUTER_CODE_NETWORK_CHANGED,
     ROUTER_CODE_POLICY_ROUTE_MISSING,
     ROUTER_LOCK_PATH,
     ROUTER_LOCK_POLL_S,
@@ -34,6 +35,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_OVERLAY_DEVICES_PATH,
     ROUTER_OVERLAY_NETBIRD,
     ROUTER_ROUTING_FILE,
+    ROUTER_STEP_CHANGE_CODES,
     ROUTER_STEP_FAILED,
     ROUTER_STEP_UNCHANGED,
     ROUTER_TRIGGER_APPLY,
@@ -271,6 +273,42 @@ def failure_text(results: list[RouterStepResult]) -> str:
         Each failed step with its detail, empty when none failed.
     """
     return "; ".join(result.describe() for result in results if result.is_failed)
+
+
+def change_codes(results: list[RouterStepResult]) -> list[dict]:
+    """The steps that changed something, as codes for the panel.
+
+    Args:
+        results: What a pass reported.
+
+    Returns:
+        One ``{code, params}`` per step that changed something; ``name`` is
+        the interface or overlay the step is about, when it names one.
+    """
+    codes = []
+    for result in results:
+        if result.is_failed or not result.changes:
+            continue
+        kind, _, subject = result.name.partition(" ")
+        code = ROUTER_STEP_CHANGE_CODES.get(kind, ROUTER_CODE_NETWORK_CHANGED)
+        codes.append({"code": code, "params": {"name": subject} if subject else {}})
+    return codes
+
+
+def failure_codes(results: list[RouterStepResult]) -> list[dict]:
+    """The failed steps, as codes for the panel.
+
+    Args:
+        results: What a pass reported.
+
+    Returns:
+        One ``{code, params}`` per failed step, the tool's words as ``detail``.
+    """
+    return [
+        {"code": result.code, "params": {"detail": result.detail}}
+        for result in results
+        if result.is_failed
+    ]
 
 
 def _load_ruleset(

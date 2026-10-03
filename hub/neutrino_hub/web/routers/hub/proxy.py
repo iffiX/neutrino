@@ -41,7 +41,9 @@ from neutrino_hub.web.constants import (
     WEB_PROXY_LINUX_ONLY_SCOPES,
 )
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.exceptions import NetworkApplyError
 from neutrino_hub.web.models import (
+    ApplyChange,
     ApplyResult,
     GeodataReleaseView,
     GeodataView,
@@ -174,12 +176,14 @@ async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
         runtime: The shared runtime.
 
     Returns:
-        Whether the apply succeeded and a message describing the outcome. A
-        failure is reported rather than raised, so the panel can show the
-        reason beside the button that caused it.
+        Whether the apply succeeded, the codes of what it changed, and the
+        codes of what failed. A failure is reported rather than raised, so
+        the panel can show the reason beside the button that caused it.
     """
     try:
-        message = await runtime.converge_network()
+        changes = await runtime.converge_network()
+    except NetworkApplyError as error:
+        return ApplyResult(is_applied=False, failures=error.failures)
     except (
         subprocess.SubprocessError,
         OSError,
@@ -187,12 +191,19 @@ async def apply(runtime: PanelRuntime = Depends(get_runtime)) -> ApplyResult:
         TimeoutError,
         ValueError,
     ) as error:
-        return ApplyResult(is_applied=False, message=command_failure_text(error))
+        return ApplyResult(
+            is_applied=False,
+            failures=[
+                ApplyChange(
+                    code="apply_failed", params={"detail": command_failure_text(error)}
+                )
+            ],
+        )
     # A restarted xray holds no override. Pinning the stored exit again here
     # puts it back within a second instead of at the next round.
     await asyncio.to_thread(runtime.exit_controller.reassert)
     runtime.exit_controller.wake()
-    return ApplyResult(is_applied=True, message=message)
+    return ApplyResult(is_applied=True, changes=changes)
 
 
 @router.post("/geodata/scan", response_model=GeodataView)

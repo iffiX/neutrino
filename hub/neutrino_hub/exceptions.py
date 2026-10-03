@@ -140,6 +140,19 @@ class AiAccountRefusedError(RuntimeError):
         self.params = params
 
 
+class NetworkApplyError(RuntimeError):
+    """Raised when a network apply ran every step and some of them failed.
+
+    Attributes:
+        failures: One ``{code, params}`` per failed step; the panel does the
+            wording.
+    """
+
+    def __init__(self, message: str, failures: list[dict]):
+        super().__init__(message)
+        self.failures = failures
+
+
 class WizardAborted(RuntimeError):
     """Raised when the wizard cannot go on.
 

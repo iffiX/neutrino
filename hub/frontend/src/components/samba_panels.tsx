@@ -9,7 +9,12 @@ import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiPath, apiPost, describeError } from "../api_client";
+import {
+  apiPath,
+  apiPost,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -116,7 +121,6 @@ export function SambaPanels({
     Record<string, string>
   >({});
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
-  const [notice, setNotice] = useState<Partial<Record<GroupName, string>>>({});
   const [errors, setErrors] = useState<Partial<Record<GroupName, string>>>({});
 
   const savedShares = resource.data?.shares ?? [];
@@ -138,13 +142,11 @@ export function SambaPanels({
       isWindows &&
       sent.some((share) => !WINDOWS_DRIVE_PATH.test(share.path))
     ) {
-      setNotice({});
       setErrors({ shares: t("ui.samba.share_path_drive") });
       return;
     }
     setBusyGroup(group);
     setErrors({});
-    setNotice({});
     try {
       await (group === "shares"
         ? apiPost<SambaDeviceView>(`${basePath}/share/set`, {
@@ -161,7 +163,7 @@ export function SambaPanels({
       status.reload();
       if (!result.is_applied) {
         resource.reload();
-        setErrors({ [group]: result.message });
+        setErrors({ [group]: describeApplyFailure(result) });
         return;
       }
       // Apply created the accounts, so the staged passwords can land now.
@@ -195,7 +197,6 @@ export function SambaPanels({
         });
         return;
       }
-      setNotice({ [group]: result.message });
     } catch (cause: unknown) {
       resource.reload();
       setErrors({ [group]: describeError(cause) });
@@ -205,7 +206,6 @@ export function SambaPanels({
   };
 
   const updateShare = (index: number, patch: Partial<SambaShare>) => {
-    setNotice({});
     setShares((current) =>
       current.map((share, at) =>
         at === index ? { ...share, ...patch } : share,
@@ -214,7 +214,6 @@ export function SambaPanels({
   };
 
   const removeUser = (name: string) => {
-    setNotice({});
     setUsers((current) => current.filter((user) => user !== name));
     setPendingPasswords(({ [name]: _, ...rest }) => rest);
     // Mirrors what the gateway will do on save, so the shares group does not
@@ -232,7 +231,6 @@ export function SambaPanels({
     if (name === "" || users.includes(name)) {
       return;
     }
-    setNotice({});
     setUsers((current) => [...current, name]);
     if (newPassword !== "") {
       setPendingPasswords((current) => ({ ...current, [name]: newPassword }));
@@ -297,7 +295,6 @@ export function SambaPanels({
           hint={t("ui.samba.shares_apply_hint")}
           blockedHint={blockedHint}
           error={errors.shares}
-          notice={notice.shares}
           onReset={sharesDraft.reset}
           onApply={() => void applyGroup("shares")}
         />
@@ -350,7 +347,6 @@ export function SambaPanels({
           hint={t("ui.samba.users_apply_hint")}
           blockedHint={blockedHint}
           error={errors.users}
-          notice={notice.users}
           onReset={() => {
             usersDraft.reset();
             setPendingPasswords({});
@@ -512,7 +508,6 @@ function ShareEditor({
         isOn={share.is_read_only}
         onChange={(isOn) => onChange({ is_read_only: isOn })}
         label={t("ui.samba.share_read_only")}
-        description={t("ui.samba.share_read_only_hint")}
       />
       <div className="field">
         <span className="field_label">{t("ui.samba.share_users")}</span>

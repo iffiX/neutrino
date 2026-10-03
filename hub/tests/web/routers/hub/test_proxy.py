@@ -14,6 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.exceptions import NetworkApplyError
 from neutrino_hub.modules.xray import geodata
 from neutrino_hub.modules.xray.constants import (
     XRAY_GEODATA_SOURCE_PACKAGE,
@@ -98,10 +99,10 @@ class FakeRuntime:
     def routing(self) -> dict:
         return dict(self.files["xray/routing.json"])
 
-    async def converge_network(self, *, only=None) -> str:
+    async def converge_network(self, *, only=None) -> list[dict]:
         if self.apply_failure is not None:
             raise self.apply_failure
-        return "applied 1 nodes"
+        return [{"code": "xray_restarted", "params": {}}]
 
 
 class _HeldPorts:
@@ -256,6 +257,7 @@ def test_an_apply_pins_the_stored_exit_again(client):
     response = opened.post("/api/hub/proxy/apply")
 
     assert response.json()["is_applied"]
+    assert response.json()["changes"] == [{"code": "xray_restarted", "params": {}}]
     assert runtime.exit_controller.reassert_count == 1
     assert runtime.exit_controller.wake_count == 1
 
@@ -263,13 +265,31 @@ def test_an_apply_pins_the_stored_exit_again(client):
 def test_an_apply_that_was_refused_leaves_the_exit_alone(client):
     """xray is running what it was running before, its override included."""
     opened, runtime = client
-    runtime.apply_failure = RuntimeError("xray rejected the rendered config")
+    runtime.apply_failure = NetworkApplyError(
+        "xray: rejected",
+        [{"code": "xray_refused", "params": {"detail": "rejected"}}],
+    )
 
     response = opened.post("/api/hub/proxy/apply")
 
     assert not response.json()["is_applied"]
+    assert response.json()["failures"] == [
+        {"code": "xray_refused", "params": {"detail": "rejected"}}
+    ]
     assert runtime.exit_controller.reassert_count == 0
     assert runtime.exit_controller.wake_count == 0
+
+
+def test_an_apply_that_failed_otherwise_answers_apply_failed(client):
+    opened, runtime = client
+    runtime.apply_failure = TimeoutError("router lock held")
+
+    response = opened.post("/api/hub/proxy/apply")
+
+    assert not response.json()["is_applied"]
+    assert response.json()["failures"] == [
+        {"code": "apply_failed", "params": {"detail": "router lock held"}}
+    ]
 
 
 def test_a_scan_answers_with_what_is_held_and_what_is_published(client):

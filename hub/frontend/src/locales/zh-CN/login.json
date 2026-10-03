@@ -3,9 +3,9 @@
   "ui.login.password": "面板密码",
   "ui.login.locked": "多次失败后已锁定。",
   "ui.login.wrong_password": "密码不对。",
-  "ui.login.api_unreachable": "无法连接网关 API：{detail}",
+  "ui.login.api_unreachable": "连不上 hub：{detail}",
   "ui.login.sign_in": "登录",
   "ui.login.signing_in": "正在登录…",
-  "ui.login.stale_session": "浏览器还留着 HTTPS 端口的会话 cookie，挡住了这次登录。打开一次 HTTPS 地址，它会把你送回来并清掉旧 cookie。",
+  "ui.login.stale_session": "浏览器里的旧会话挡住了这次登录。",
   "ui.login.stale_session_link": "清掉旧会话"
 }

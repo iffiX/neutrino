@@ -520,7 +520,7 @@ def test_the_packet_goes_to_the_served_network_and_never_the_overlay(
 
     assert result.is_sent is True
     assert sent == [(LINK_MAC, "192.168.100.255")]
-    assert "10.126.126" not in result.message
+    assert result.code == "wol_sent"
 
 
 def test_a_device_that_never_reported_a_mac_is_refused(gateway, monkeypatch):
@@ -564,7 +564,7 @@ def test_one_domain_refusing_does_not_stop_the_others(monkeypatch, sleeping):
     )
 
     assert result.is_sent is True
-    assert result.message == "magic packet sent to 192.168.101.255"
+    assert result.code == "wol_sent"
 
 
 def test_every_domain_refusing_is_the_failure_it_says(monkeypatch, sleeping):
@@ -580,8 +580,9 @@ def test_every_domain_refusing_is_the_failure_it_says(monkeypatch, sleeping):
     )
 
     assert result.is_sent is False
-    assert "192.168.100.255" in result.message
-    assert "Required key" in result.message
+    assert result.code == "wol_failed"
+    assert "192.168.100.255" in result.params["detail"]
+    assert "Required key" in result.params["detail"]
 
 
 # --- the seat password: reset, sealed, and handed down ---

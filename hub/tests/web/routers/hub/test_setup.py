@@ -87,12 +87,12 @@ def test_answers_need_the_token_too(client, session):
 
 def test_a_refused_document_sends_the_browser_back_to_the_questions(client, session):
     client.post(f"/api/hub/setup/answer/set?token={session.token}", json=ANSWERS)
-    session.reject("'network' needs a 'mode'")
+    session.reject()
 
     state = client.get(f"/api/hub/setup/state?token={session.token}").json()
 
     assert state["state"] == "rejected"
-    assert state["message"] == "'network' needs a 'mode'"
+    assert "message" not in state
     # And the wait is open again, so the next post is picked up.
     assert session.wait(0.01) == {}
 

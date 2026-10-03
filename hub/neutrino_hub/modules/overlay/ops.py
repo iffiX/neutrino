@@ -174,6 +174,8 @@ class OverlaySwitcher:
         """
         self._address_wait_s = address_wait_s
         self._address_poll_s = address_poll_s
+        # What the panel words: one ``{code, params}`` per engine change.
+        self.changes: list[dict] = []
 
     def start(
         self,
@@ -212,11 +214,13 @@ class OverlaySwitcher:
             result = OVERLAY_PROVISIONERS[provider]().provision(report=report)
             if result.is_changed:
                 notes.append(result.message)
+                self._change("overlay_updated", engine.title)
             if provider == OVERLAY_EASYTIER:
                 note = apply_stored_if_changed(hostname=socket.gethostname())
                 if note:
                     say(report, note)
                     notes.append(f"{engine.title}: {note}")
+                    self._change("overlay_updated", engine.title)
             # A development root drives no units, so nothing there is waited
             # for; design/install_and_dev.md. Outside Linux an engine the
             # hub's service is not running yet starts with the service.
@@ -228,8 +232,10 @@ class OverlaySwitcher:
             title = OVERLAY_ENGINES[provider].title
             if self._await_address(provider):
                 notes.append(f"{title} started")
+                self._change("overlay_started", title)
             else:
                 notes.append(f"{title} started without an address yet")
+                self._change("overlay_started_no_address", title)
         return notes
 
     def stop(
@@ -259,6 +265,7 @@ class OverlaySwitcher:
                 if self._stand_down_supervised(key):
                     say(report, f"stopped {key}")
                     notes.append(f"{engine.title} stopped")
+                    self._change("overlay_stopped", engine.title)
                 continue
             if not self._is_standing(engine.unit):
                 continue
@@ -268,7 +275,14 @@ class OverlaySwitcher:
             if result.is_success:
                 say(report, f"stopped {engine.unit}")
                 notes.append(f"{engine.title} stopped")
+                self._change("overlay_stopped", engine.title)
         return notes
+
+    def _change(self, code: str, title: str) -> None:
+        """Keep one change for the panel, once."""
+        change = {"code": code, "params": {"title": title}}
+        if change not in self.changes:
+            self.changes.append(change)
 
     def _stand_down_supervised(self, provider: str) -> bool:
         """Stop one engine the hub's service runs, and keep it stopped."""

@@ -26,7 +26,6 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
     return (
       <div className="placeholder">
         <span>{t("ui.usage.keys_empty")}</span>
-        <span className="faint">{t("ui.usage.keys_empty_hint")}</span>
       </div>
     );
   }

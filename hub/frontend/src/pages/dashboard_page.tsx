@@ -283,9 +283,6 @@ export function DashboardPage() {
             {trafficSeries.length === 0 ? (
               <div className="placeholder">
                 <span>{t("ui.dashboard.live_empty")}</span>
-                <span className="faint">
-                  {t("ui.dashboard.live_empty_hint")}
-                </span>
               </div>
             ) : (
               <div className="dashboard_chart">
@@ -393,15 +390,12 @@ export function DashboardPage() {
               <ErrorPanel
                 title={t("ui.dashboard.history_unavailable")}
                 message={history.error}
-                hint={t("ui.dashboard.history_unavailable_hint")}
+                hint={null}
                 onRetry={history.reload}
               />
             ) : historySeries.length === 0 ? (
               <div className="placeholder">
                 <span>{t("ui.dashboard.history_empty")}</span>
-                <span className="faint">
-                  {t("ui.dashboard.history_empty_hint")}
-                </span>
               </div>
             ) : (
               <div className="dashboard_chart dashboard_chart--history">
@@ -465,9 +459,6 @@ export function DashboardPage() {
             {activeExits.length === 0 ? (
               <div className="placeholder">
                 <span>{t("ui.dashboard.exits_empty")}</span>
-                <span className="faint">
-                  {t("ui.dashboard.exits_empty_hint")}
-                </span>
               </div>
             ) : (
               <div className="dashboard_exits">
