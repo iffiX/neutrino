@@ -460,6 +460,17 @@ class ClientPlatform:
         """
         raise PlatformUnsupportedError("no EasyTier here")
 
+    def easytier_log_dir(self) -> str:
+        """The directory the EasyTier daemon and its core write their logs in.
+
+        Returns:
+            The absolute path: the client's log root.
+
+        Raises:
+            PlatformUnsupportedError: Where the client carries no EasyTier.
+        """
+        raise PlatformUnsupportedError("no EasyTier here")
+
     def secure_easytier_state_dir(self, path: str) -> None:
         """Make the daemon's state directory, readable by its owner alone.
 

@@ -5,7 +5,8 @@ Windows service control manager runs it as SYSTEM with ``--service``. It
 makes its state directory, runs the core to match what that directory
 holds, and answers on its socket until it is stopped, when the core is
 stopped with it. Its log goes to standard error, and as a Windows service
-to ``daemon.log`` in the state directory, rotated.
+to ``daemon.log`` in the client's log root, rotated; the core's output goes
+to ``core.log`` beside it.
 """
 
 import logging
@@ -85,11 +86,11 @@ def start_daemon(platform, state_dir: str, log) -> dict:
         ``{"daemon", "supervisor", "server"}``, for :func:`stop_daemon`.
 
     Raises:
-        OSError: When the directory or the socket cannot be taken.
+        OSError: When a directory or the socket cannot be taken.
     """
     platform.secure_easytier_state_dir(state_dir)
     core_log = _file_log(
-        os.path.join(state_dir, CLIENT_EASYTIER_CORE_LOG_NAME),
+        os.path.join(_log_dir(platform), CLIENT_EASYTIER_CORE_LOG_NAME),
         "easytier_core",
         log_format=CORE_LOG_FORMAT,
     )
@@ -136,7 +137,8 @@ def _run_as_service(platform, state_dir: str) -> int:
     try:
         platform.secure_easytier_state_dir(state_dir)
         log = _file_log(
-            os.path.join(state_dir, CLIENT_EASYTIER_DAEMON_LOG_NAME), "easytier_daemon"
+            os.path.join(_log_dir(platform), CLIENT_EASYTIER_DAEMON_LOG_NAME),
+            "easytier_daemon",
         )
     except OSError as error:
         print(f"could not make {state_dir}: {error}", file=sys.stderr)
@@ -163,6 +165,13 @@ def _run_as_service(platform, state_dir: str) -> int:
         print(f"{NOT_FROM_MANAGER} ({error})", file=sys.stderr)
         return 1
     return 0
+
+
+def _log_dir(platform) -> str:
+    """The client's log root, made when it is missing."""
+    directory = platform.easytier_log_dir()
+    os.makedirs(directory, exist_ok=True)
+    return directory
 
 
 def _stream_log():

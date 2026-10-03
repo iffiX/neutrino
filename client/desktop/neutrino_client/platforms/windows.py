@@ -28,6 +28,7 @@ from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_EASYTIER_PIPE_WINDOWS,
     CLIENT_EASYTIER_STATE_NAME_WINDOWS,
+    CLIENT_LOG_SUBDIR_WINDOWS,
     CLIENT_STATE_SUBDIR_WINDOWS,
 )
 from neutrino_client.platforms import win32
@@ -350,6 +351,10 @@ class WindowsPlatform(ClientPlatform):
     def easytier_state_dir(self) -> str:
         """``easytier`` under ``Neutrino\\client\\state`` in ProgramData."""
         return os.path.join(self.state_dir(), CLIENT_EASYTIER_STATE_NAME_WINDOWS)
+
+    def easytier_log_dir(self) -> str:
+        """``%ProgramData%\\Neutrino\\client\\log``."""
+        return os.path.join(_program_data(), *CLIENT_LOG_SUBDIR_WINDOWS)
 
     def state_dir(self) -> str:
         """``%ProgramData%\\Neutrino\\client\\state``."""

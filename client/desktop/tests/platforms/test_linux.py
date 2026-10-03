@@ -308,6 +308,7 @@ def test_easytier_is_asked_of_the_daemons_socket_and_kept_in_root_state():
 
     assert platform.easytier_daemon_address() == "/run/neutrino/client/easytier.sock"
     assert platform.easytier_state_dir() == "/var/lib/neutrino/client/easytier"
+    assert platform.easytier_log_dir() == "/var/log/neutrino/client"
 
 
 def test_the_daemons_state_directory_is_its_owners_alone(tmp_path):

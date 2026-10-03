@@ -28,6 +28,7 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_LINUX,
     CLIENT_EASYTIER_STATE_DIR_LINUX,
+    CLIENT_LOG_DIR_LINUX,
     CLIENT_MOUNT_HELPER_EXIT_CODES,
     CLIENT_MOUNT_HELPER_PATH,
     CLIENT_PKEXEC_REFUSAL_EXIT_CODES,
@@ -276,6 +277,10 @@ class LinuxPlatform(ClientPlatform):
     def easytier_state_dir(self) -> str:
         """``/var/lib/neutrino/client/easytier``."""
         return CLIENT_EASYTIER_STATE_DIR_LINUX
+
+    def easytier_log_dir(self) -> str:
+        """``/var/log/neutrino/client``."""
+        return CLIENT_LOG_DIR_LINUX
 
     def _run_mount_helper(self, arguments: list, *, failure_code: str) -> None:
         """Run the mount helper and judge its exit status.

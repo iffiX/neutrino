@@ -25,6 +25,7 @@ class DaemonPlatform(ClientPlatform):
 
     def __init__(self, tmp_path):
         self.state = str(tmp_path / "state")
+        self.logs = str(tmp_path / "log" / "client")
         self.address = str(tmp_path / "easytier.sock")
         self.bound = []
 
@@ -33,6 +34,9 @@ class DaemonPlatform(ClientPlatform):
 
     def easytier_daemon_address(self):
         return self.address
+
+    def easytier_log_dir(self):
+        return self.logs
 
     def bind_child_process(self, process):
         self.bound.append(process)
@@ -83,6 +87,8 @@ def test_the_daemon_makes_its_state_for_root_alone_and_answers(tmp_path, cores):
         daemon_cli.stop_daemon(parts, discard)
 
     assert os.stat(platform.state).st_mode & 0o777 == 0o700
+    assert os.path.isfile(os.path.join(platform.logs, "core.log"))
+    assert not os.path.exists(os.path.join(platform.state, "core.log"))
     assert answer == {"networks": [], "console": None, "is_running": False}
     assert cores == []
     assert not os.path.exists(platform.address)

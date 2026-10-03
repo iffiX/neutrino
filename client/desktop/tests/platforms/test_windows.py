@@ -450,6 +450,9 @@ def test_easytier_is_asked_of_the_daemons_pipe(monkeypatch, tmp_path):
     assert subject.easytier_state_dir() == os.path.join(
         str(tmp_path / "ProgramData"), "Neutrino", "client", "state", "easytier"
     )
+    assert subject.easytier_log_dir() == os.path.join(
+        str(tmp_path / "ProgramData"), "Neutrino", "client", "log"
+    )
 
 
 def test_the_state_directory_is_system_and_the_administrators_alone(

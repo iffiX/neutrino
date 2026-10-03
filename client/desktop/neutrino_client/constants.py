@@ -260,8 +260,12 @@ CLIENT_EASYTIER_STATE_DIR_DARWIN = CLIENT_STATE_DIR_DARWIN + "/easytier"
 CLIENT_EASYTIER_STATE_NAME_WINDOWS = "easytier"
 CLIENT_EASYTIER_NETWORKS_DIR_NAME = "networks"
 CLIENT_EASYTIER_CONSOLE_FILE_NAME = "console.json"
-# The core's output and, as a Windows service, the daemon's own, beside the
-# state; one file each, kept to a size, the previous one beside it.
+# The core's output and, as a Windows service, the daemon's own, under the
+# client's log root beside NetBird's log; one file each, kept to a size, the
+# previous one beside it. On Windows the root is under %PROGRAMDATA%.
+CLIENT_LOG_DIR_LINUX = "/var/log/neutrino/client"
+CLIENT_LOG_DIR_DARWIN = "/Library/Logs/Neutrino/client"
+CLIENT_LOG_SUBDIR_WINDOWS = ("Neutrino", "client", "log")
 CLIENT_EASYTIER_CORE_LOG_NAME = "core.log"
 CLIENT_EASYTIER_DAEMON_LOG_NAME = "daemon.log"
 CLIENT_EASYTIER_LOG_KEEP_BYTES = 1024 * 1024

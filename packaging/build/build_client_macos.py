@@ -58,6 +58,7 @@ from neutrino_client.constants import (  # noqa: E402
     CLIENT_EASYTIER_LAUNCHD_LABEL,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
     CLIENT_LAUNCHD_DAEMONS_DIR,
+    CLIENT_LOG_DIR_DARWIN,
     CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
     CLIENT_NETBIRD_LAUNCHD_LABEL,
     CLIENT_STATE_DIR_DARWIN,
@@ -87,7 +88,7 @@ INSTALL_APPLICATIONS_DIR = Path("/Applications")
 INSTALL_LINK_PATH = Path("/usr/local/bin") / CLIENT_BINARY_NAME
 
 # Where each daemon's output goes.
-LOG_DIR = "/Library/Logs/Neutrino/client"
+LOG_DIR = CLIENT_LOG_DIR_DARWIN
 NETBIRD_LOG_PATH = LOG_DIR + "/netbird.log"
 EASYTIER_LOG_PATH = LOG_DIR + "/easytier.log"
 

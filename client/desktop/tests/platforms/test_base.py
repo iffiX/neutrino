@@ -381,6 +381,8 @@ def test_the_base_platform_has_no_easytier_daemon_and_binds_nothing(tmp_path):
         platform.easytier_daemon_address()
     with pytest.raises(PlatformUnsupportedError):
         platform.easytier_state_dir()
+    with pytest.raises(PlatformUnsupportedError):
+        platform.easytier_log_dir()
     assert platform.bind_child_process(object()) is None
 
 

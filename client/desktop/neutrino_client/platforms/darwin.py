@@ -31,6 +31,7 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_SOCKET_PATH_DARWIN,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
+    CLIENT_LOG_DIR_DARWIN,
 )
 from neutrino_client.exceptions import ShareAttachError
 from neutrino_client.platforms.base import (
@@ -292,6 +293,10 @@ class DarwinPlatform(ClientPlatform):
     def easytier_state_dir(self) -> str:
         """``/Library/Application Support/Neutrino/client/state/easytier``."""
         return CLIENT_EASYTIER_STATE_DIR_DARWIN
+
+    def easytier_log_dir(self) -> str:
+        """``/Library/Logs/Neutrino/client``."""
+        return CLIENT_LOG_DIR_DARWIN
 
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float

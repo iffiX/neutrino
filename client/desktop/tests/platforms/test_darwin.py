@@ -447,6 +447,7 @@ def test_easytier_is_asked_of_the_daemons_socket_and_prompts_for_nothing():
         platform.easytier_state_dir()
         == "/Library/Application Support/Neutrino/client/state/easytier"
     )
+    assert platform.easytier_log_dir() == "/Library/Logs/Neutrino/client"
     assert not hasattr(darwin_module, "OSASCRIPT_TOOL")
     assert not hasattr(DarwinPlatform, "easytier_join")
 
