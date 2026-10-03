@@ -84,6 +84,12 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 TOKEN_QUERY = 0x0008
 TOKEN_USER_CLASS = 1
 
+# Ending a process: the access it is opened with, the error opening a pid
+# no process holds answers, and the exit code it is ended with.
+PROCESS_TERMINATE = 0x0001
+ERROR_INVALID_PARAMETER = 87
+TERMINATED_EXIT_CODE = 1
+
 # Performance counters: the answer a sizing call gets, the formats asked for,
 # and the item statuses that carry a value.
 PDH_MORE_DATA = 0x800007D2

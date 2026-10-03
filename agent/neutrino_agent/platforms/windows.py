@@ -246,6 +246,7 @@ class WindowsPlatform(AgentPlatform):
             "machine_id",
             "smb_server",
             "hub_packages",
+            "process_terminate",
         }
     )
 
@@ -259,6 +260,7 @@ class WindowsPlatform(AgentPlatform):
             powershell: Called with ``(script, document)``; returns the JSON
                 object the script printed. None runs PowerShell.
         """
+        self._kernel32 = kernel32
         self._shell32 = shell32
         self._powershell = powershell if powershell is not None else run_powershell
         self._metrics_reader = WindowsHostMetricsReader(
@@ -404,6 +406,29 @@ class WindowsPlatform(AgentPlatform):
         )
         output = (completed.stdout or "") + (completed.stderr or "")
         return completed.returncode, output
+
+    def terminate_process(self, pid: int) -> None:
+        """End one process at once through ``TerminateProcess``.
+
+        Args:
+            pid: The process to end.
+
+        Raises:
+            ProcessLookupError: When no process holds the pid.
+            OSError: When the process cannot be opened or ended.
+        """
+        kernel32 = self._kernel32 or win32.libraries().kernel32
+        process = kernel32.OpenProcess(win32.PROCESS_TERMINATE, False, pid)
+        if not process:
+            error = win32.last_error()
+            if getattr(error, "winerror", None) == win32.ERROR_INVALID_PARAMETER:
+                raise ProcessLookupError(pid)
+            raise error
+        try:
+            if not kernel32.TerminateProcess(process, win32.TERMINATED_EXIT_CODE):
+                raise win32.last_error()
+        finally:
+            kernel32.CloseHandle(process)
 
     def read_host_metrics(self) -> HostMetrics:
         """One sample of the machine's health.

@@ -5,7 +5,7 @@ resolve an account's home; run a process as an account; control the agent's
 own service; power actions; read host metrics; read the network interfaces;
 read the machine id; install and remove a package of a kind; drive the SMB
 server the system carries; unpack the hub's software; find the agent's own
-log. A new platform is a new class, and nothing above this seam changes.
+log; end a process where the system has no signals. A new platform is a new class, and nothing above this seam changes.
 
 Each platform advertises the capabilities it has in ``capabilities``.
 Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
@@ -189,6 +189,18 @@ class AgentPlatform:
             PlatformUnsupportedError: When the platform has no power actions.
         """
         raise PlatformUnsupportedError("no power actions here")
+
+    def terminate_process(self, pid: int) -> None:
+        """End one process at once, on a system without signals.
+
+        Args:
+            pid: The process to end.
+
+        Raises:
+            PlatformUnsupportedError: When the platform ends processes by
+                signal instead.
+        """
+        raise PlatformUnsupportedError("processes are ended by signal here")
 
     def read_host_metrics(self):
         """One sample of the machine's health.

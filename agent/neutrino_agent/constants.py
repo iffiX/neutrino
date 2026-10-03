@@ -146,6 +146,9 @@ AGENT_SHELL_PENDING_BYTES = 1024 * 1024
 AGENT_SHELL_WINDOWS_ACCOUNT = "SYSTEM"
 # How long a signalled process may take to leave before it is killed.
 AGENT_KILL_GRACE_S = 2.0
+# The pids the kill verb never ends: the idle process and init on every
+# system, and Windows' System process.
+AGENT_KILL_PROTECTED_PIDS = frozenset({0, 1, 4})
 
 # How long a stepped-down account command may take.
 AGENT_STEP_DOWN_TIMEOUT_S = 120
