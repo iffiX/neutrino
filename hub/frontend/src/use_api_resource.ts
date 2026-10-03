@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiGet, describeError } from "./api_client";
+import { ApiError, apiGet, describeError } from "./api_client";
 import { useHubEvents } from "./use_hub_events";
 import type { HubEventMatch } from "./use_hub_events";
 
@@ -15,7 +15,13 @@ import type { HubEventMatch } from "./use_hub_events";
  * keeps its identity, so nothing keyed on it re-runs and a form seeded from it
  * is left alone. An event that fires often therefore costs a request and
  * nothing else.
+ *
+ * A load whose request got no answer at all, the fetch itself rejected, is
+ * sent once more before its error shows; an answer with a status shows at
+ * once.
  */
+
+export const UNANSWERED_RETRY_DELAY_MS = 2000;
 
 export interface ApiResourceOptions {
   /**
@@ -69,9 +75,22 @@ export function useApiResource<T>(
       return;
     }
     let isCancelled = false;
+    let retryTimer: number | undefined;
     setIsLoading(true);
 
-    apiGet<T>(path)
+    const load = (): Promise<T> =>
+      apiGet<T>(path).catch((cause: unknown) => {
+        if (isCancelled || !isUnanswered(cause)) {
+          throw cause;
+        }
+        return new Promise<T>((resolve, reject) => {
+          retryTimer = window.setTimeout(() => {
+            apiGet<T>(path).then(resolve, reject);
+          }, UNANSWERED_RETRY_DELAY_MS);
+        });
+      });
+
+    load()
       .then((value) => {
         if (isCancelled) {
           return;
@@ -97,6 +116,7 @@ export function useApiResource<T>(
 
     return () => {
       isCancelled = true;
+      window.clearTimeout(retryTimer);
     };
   }, [path, reloadNonce]);
 
@@ -112,4 +132,8 @@ export function useApiResource<T>(
   useHubEvents(options.invalidateOn ?? [], reload);
 
   return { data, error, isLoading, reload, setData: replaceData };
+}
+
+function isUnanswered(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.status === 0;
 }

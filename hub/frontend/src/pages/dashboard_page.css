@@ -84,6 +84,21 @@
   color: var(--color-text);
 }
 
+/* Alone in its column, the exits card reaches the bottom of the two charts
+   beside it, and an empty one is all placeholder. */
+.dashboard_exits_card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard_exits_card:last-child {
+  flex: 1;
+}
+
+.dashboard_exits_card > .placeholder {
+  flex: 1;
+}
+
 .dashboard_exits {
   display: flex;
   flex-wrap: wrap;
