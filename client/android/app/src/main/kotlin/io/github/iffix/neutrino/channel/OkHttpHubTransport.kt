@@ -54,6 +54,18 @@ class OkHttpHubTransport : HubTransport {
         }
     }
 
+    override suspend fun get(baseUrl: String, path: String, fingerprint: String): ChannelResult<JsonObject> =
+        withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder().url(baseUrl.trimEnd('/') + path).get().build()
+                client(fingerprint).newCall(request).execute().use { answer(it) }
+            } catch (error: IOException) {
+                refusalOf(error, baseUrl)
+            } catch (error: IllegalArgumentException) {
+                ChannelResult.refused("hub_unreachable", "detail" to (error.message ?: "bad address"))
+            }
+        }
+
     override fun connect(baseUrl: String, fingerprint: String, events: SendChannel<ChannelSocketEvent>): ChannelSocket {
         val request = Request.Builder().url(baseUrl.trimEnd('/') + CLIENT_CHANNEL_WS_PATH).build()
         val socket = client(fingerprint).newWebSocket(request, EventListener(events, baseUrl))
