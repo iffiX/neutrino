@@ -93,7 +93,7 @@ macOS and Windows").
 | Installing units | writes them | skipped: the installer registered the one service |
 | Applying interface roles | by the mode | skipped |
 | The network mode | asks for one of three | `server`, with no question |
-| The hub's own traffic through the proxy | asked | not asked |
+| The hub's own traffic through the proxy | asked | asked; it diverts through the TUN there ([modules/proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
 | Starting services | each unit | the service is already running; the steps before this one write `services.json`, and the service starts each child as the file names it. From the terminal path this step is a restart of the service into the panel, after the panel password and before the local agent; from the browser path the service restarts itself |
 | The local agent | from the cache by `AGENT_PACKAGE_FAMILY_OF_PLATFORM` | from the cache by `AGENT_PACKAGE_FAMILY_OF_OS`: `installer -pkg <file> -target /` or `msiexec /i <file> /qn /norestart`, then `nagent join <link> --yes` |
 
@@ -108,9 +108,11 @@ shortcut on Windows, `/Applications/Neutrino Hub.app` on macOS, a bundle
 holding a script and nothing else, and the desktop entry
 `neutrino-hub.desktop` on Linux. Opening it runs two steps:
 
-1. An elevated step starts the hub's service when it is not running, and
-   does nothing else. Windows asks through UAC, macOS through the
-   administrator prompt of `do shell script`, Linux through `pkexec`.
+1. An elevated step starts the hub's service when it is not running and
+   hands back the address to open, with the setup token while the box is
+   not set up; it does nothing else. Windows asks through UAC, macOS
+   through the administrator prompt of `do shell script`, Linux through
+   `pkexec`.
 1. The person's own session opens the default browser on
    `http://127.0.0.1:<http port>/`, with the setup token while the box is not
    set up.

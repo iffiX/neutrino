@@ -138,6 +138,8 @@ testable. Details of the files themselves:
                             macOS and Windows only
         setup_token         the one-time token the setup wizard is reached
                             with, mode 0600, removed when setup finishes
+        setup_local_agent   a mark the browser wizard leaves so the panel's
+                            first start installs the box's own agent
         stood_down.json     which units the hub stopped so it could drive
                             the network
         xray_node_health.json

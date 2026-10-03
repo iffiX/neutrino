@@ -677,8 +677,9 @@ fingerprint. The `@` tells it from the long form, whose alphabet has none.
 A peer that reads it fetches the long form's object from
 `GET /api/channel/enroll?ticket=<ticket>` at that address, with the
 fingerprint pinned, and goes on as with a pasted link. The route answers
-while the ticket is alive and unspent, and spends nothing; `ticket_spent`
-otherwise. A peer that reaches no address with the short form reports
+while the ticket is alive and unspent, and spends nothing; 401
+`ticket_spent` otherwise, and the same for a device ticket, which carries
+no object. A peer that reaches no address with the short form reports
 `link_unreachable`, and the long form, which carries the overlays' join
 material, is the one to paste then. The short form is an added form and
 keeps `PROTOCOL`; `POST /api/hub/client/enrollment/create` returns it as

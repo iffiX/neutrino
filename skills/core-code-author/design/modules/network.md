@@ -248,6 +248,8 @@ routing pass renders the answer into the system's own firewall:
 | Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`, each scoped with `-InterfaceAlias` to the exposed interfaces; a port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes an interface that is not listed | the panel's HTTP and HTTPS ports, the agent port, the AI gateway's port (CLIProxyAPI's `listen_port`, as `neutrino_hub_ai_gateway`), every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
 | macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts, which blocks those ports on every interface that is not exposed, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `cli-proxy-api`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
+A closed overlay's peer port is closed there as on Linux: the Windows rule
+is disabled and the pf anchor blocks it on every interface but loopback.
 A routing pass there looks up no `xray` account, sets no sysctl, adds no
 `ip rule` and loads no nftables table. It still writes
 `generated/router_overlay_devices.json` and still runs the NetBird inbound

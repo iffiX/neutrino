@@ -146,8 +146,9 @@ about the unit is Linux's:
 
 The `Neutrino Hub` entry ([install_and_dev.md](install_and_dev.md), "The
 application entry opens the panel") runs one elevated step, which starts the
-hub's service when it is stopped and does nothing else; UAC, macOS's
-administrator prompt and `pkexec` are what ask. The browser opens as the
+hub's service when it is stopped and hands back the address to open, the
+setup token included while the box is not set up, and does nothing else;
+UAC, macOS's administrator prompt and `pkexec` are what ask. The browser opens as the
 person who clicked, never as root, and everything the page then does goes
 through the service's own authentication.
 
