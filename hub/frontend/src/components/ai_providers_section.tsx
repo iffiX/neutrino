@@ -7,7 +7,7 @@ import { Icon } from "./icon";
 import { ToggleSwitch } from "./toggle_switch";
 import { Picker } from "./picker";
 import { VaultPicker } from "./vault_picker";
-import { apiPost, describeError } from "../api_client";
+import { apiPost, describeApplied, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
@@ -17,6 +17,7 @@ import type {
   AiProviderModel,
   AiProviderView,
   AiProvidersResponse,
+  ApplyResult,
 } from "../api_types";
 
 import "./ai_providers_section.css";
@@ -251,8 +252,8 @@ export function AiProvidersSection({
           provider_ids: draft.map((provider) => provider.id),
         });
       }
-      const result = await apiPost<{ message: string }>(AI_GATEWAY_APPLY_PATH);
-      setApplyNotice(result.message);
+      const result = await apiPost<ApplyResult>(AI_GATEWAY_APPLY_PATH);
+      setApplyNotice(describeApplied(result));
       resource.reload();
       onApplied();
     } catch (cause: unknown) {

@@ -9,7 +9,12 @@ import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { StatusDot } from "./status_dot";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiPath, apiPost, describeError } from "../api_client";
+import {
+  apiPath,
+  apiPost,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { formatBytes } from "../format_bytes";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -161,7 +166,7 @@ export function SambaPanels({
       status.reload();
       if (!result.is_applied) {
         resource.reload();
-        setErrors({ [group]: result.message });
+        setErrors({ [group]: describeApplyFailure(result) });
         return;
       }
       // Apply created the accounts, so the staged passwords can land now.
@@ -195,7 +200,7 @@ export function SambaPanels({
         });
         return;
       }
-      setNotice({ [group]: result.message });
+      setNotice({ [group]: t("ui.api.applied") });
     } catch (cause: unknown) {
       resource.reload();
       setErrors({ [group]: describeError(cause) });
@@ -512,7 +517,6 @@ function ShareEditor({
         isOn={share.is_read_only}
         onChange={(isOn) => onChange({ is_read_only: isOn })}
         label={t("ui.samba.share_read_only")}
-        description={t("ui.samba.share_read_only_hint")}
       />
       <div className="field">
         <span className="field_label">{t("ui.samba.share_users")}</span>

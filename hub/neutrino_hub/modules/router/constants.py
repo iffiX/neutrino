@@ -178,6 +178,21 @@ ROUTER_CODE_COMMAND_FAILED = "command_failed"
 ROUTER_CODE_POLICY_ROUTE_MISSING = "policy_route_missing"
 ROUTER_CODE_INTERFACE_DOWN = "interface_down"
 ROUTER_CODE_LEASE_PENDING = "lease_pending"
+# What a step that changed something reports to the panel, by the first word
+# of the step's name; the rest of the name is the code's ``name``.
+ROUTER_STEP_CHANGE_CODES = {
+    "forwarding": "forwarding_changed",
+    "policy_route": "policy_route_changed",
+    "ruleset": "firewall_reloaded",
+    "firewall": "firewall_reloaded",
+    "takeover": "network_taken_over",
+    "interface": "interface_applied",
+    "default_route": "default_route_changed",
+    "resolver": "resolver_changed",
+    "served_route": "served_route_changed",
+    "overlay_gate": "overlay_exposure_changed",
+}
+ROUTER_CODE_NETWORK_CHANGED = "network_changed"
 # One access point per wireless interface, so both the rendered files and the
 # systemd unit are named after the interface they serve.
 ROUTER_HOSTAPD_UNIT = "neutrino_hub_hostapd@{interface}.service"

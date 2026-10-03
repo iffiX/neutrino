@@ -33,7 +33,7 @@
   "ui.authority.linux_chrome_1": "在 Chrome 里打开 chrome://certificate-manager。",
   "ui.authority.linux_chrome_2": "依次选「自定义」→「受信任的证书」→「导入」。",
   "ui.authority.linux_chrome_3": "选中 {file}。",
-  "ui.authority.linux_chrome_4": "重启 Chrome；点过「继续访问」的 Chrome 不重启会一直报警告。",
+  "ui.authority.linux_chrome_4": "重启 Chrome。",
   "ui.authority.linux_firefox_1": "打开「设置」→「隐私与安全」→「查看证书」。",
   "ui.authority.linux_firefox_2": "在「证书颁发机构」页选择「导入」，选中 {file}。",
   "ui.authority.linux_firefox_3": "勾选「信任由此证书颁发机构来标识网站」，然后确定。",

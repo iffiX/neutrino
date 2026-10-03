@@ -376,7 +376,9 @@ def wake(
         runtime: The shared runtime.
 
     Returns:
-        Whether the packet was sent. Delivery says nothing about whether the
+        Whether the packet was sent, and the code the drawer words:
+        ``wol_sent``, ``wol_failed {detail}`` or ``no_reachable_address``.
+        Delivery says nothing about whether the
         target actually wakes: that needs Wake-on-LAN armed in its firmware and
         its NIC, which the panel cannot verify from here.
 
@@ -406,7 +408,7 @@ def wake(
             continue
         targets.append(str(subnet.broadcast_address))
     if not targets:
-        return WolResult(is_sent=False, message="no served network has an address")
+        return WolResult(is_sent=False, code="no_reachable_address")
 
     sent = []
     failures = []
@@ -418,11 +420,10 @@ def wake(
             continue
         sent.append(target)
     if not sent:
-        return WolResult(is_sent=False, message="; ".join(failures))
-    return WolResult(
-        is_sent=True,
-        message=f"magic packet sent to {', '.join(sent)}",
-    )
+        return WolResult(
+            is_sent=False, code="wol_failed", params={"detail": "; ".join(failures)}
+        )
+    return WolResult(is_sent=True, code="wol_sent")
 
 
 @router.post("/enrollment/create", response_model=DeviceEnrollmentView)

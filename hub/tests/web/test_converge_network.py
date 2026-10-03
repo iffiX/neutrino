@@ -10,8 +10,10 @@ firewall and no DNS until somebody fixed a node.
 """
 
 import copy
+import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_LEASE_PENDING,
     ROUTER_STEP_APPLIED,
     ROUTER_STEP_FAILED,
+    ROUTER_STEP_CHANGE_CODES,
     ROUTER_STEP_PENDING,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -143,6 +146,8 @@ def applied(monkeypatch):
             return list(results)
 
     class Switcher:
+        changes: list = []
+
         def start(self, network, *, report=None):
             written.append(("started", enabled_providers(network)))
             return []
@@ -203,7 +208,7 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
     monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
     panel.agent_sessions = _Sessions(["aa:bb:cc:dd:ee:ff"])
 
-    summary = panel.converge_network_blocking()
+    changes = panel.converge_network_blocking()
 
     assert steps_of(written) == [
         "started",
@@ -213,8 +218,8 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
         "stopped",
         "routes checked",
     ]
-    assert "xray restarted" in summary
-    assert "desired state pushed to 1 devices" in summary
+    assert {"code": "xray_restarted", "params": {}} in changes
+    assert {"code": "devices_pushed", "params": {"count": 1}} in changes
 
 
 def test_every_peer_is_pushed_before_an_engine_stops(applied):
@@ -263,6 +268,7 @@ def test_a_refused_xray_config_does_not_take_the_firewall_or_dns_with_it(applied
     assert ("reconciled", None) in written
     assert steps_of(written).count("installed dnsmasq") == 1
     assert "xray rejected" in str(refusal.value)
+    assert [failure["code"] for failure in refusal.value.failures] == ["xray_refused"]
 
 
 def test_a_refused_apply_leaves_the_configuration_dirty(applied):
@@ -281,6 +287,8 @@ def test_an_engine_that_will_not_start_stops_none_of_the_rest(applied, monkeypat
     monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
 
     class Switcher:
+        changes: list = []
+
         def start(self, network, *, report=None):
             raise subprocess.CalledProcessError(1, ["systemctl"], stderr="no unit")
 
@@ -319,6 +327,12 @@ def test_a_failed_routing_step_reaches_the_page_by_name(applied, monkeypatch):
         panel.converge_network_blocking()
 
     assert "interface enp1s0" in str(failure.value)
+    assert failure.value.failures == [
+        {
+            "code": ROUTER_CODE_COMMAND_FAILED,
+            "params": {"detail": "Device for nexthop is not up"},
+        }
+    ]
     assert steps_of(written).count("installed dnsmasq") == 1
 
 
@@ -363,8 +377,8 @@ def test_dnsmasq_is_restarted_only_when_its_configuration_moved(applied, monkeyp
     first = panel.converge_network_blocking()
     second = panel.converge_network_blocking()
 
-    assert "dnsmasq restarted" in first
-    assert "dnsmasq restarted" not in second
+    assert {"code": "dnsmasq_restarted", "params": {}} in first
+    assert {"code": "dnsmasq_restarted", "params": {}} not in second
 
 
 # --- the devices and the clients --------------------------------------------
@@ -378,31 +392,83 @@ def test_every_online_device_is_handed_its_state(applied, monkeypatch):
     monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
     panel.agent_sessions = _Sessions(["aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"])
 
-    summary = panel.converge_network_blocking()
+    changes = panel.converge_network_blocking()
 
     assert [key for key, _, _ in panel.agent_sessions.pushed] == [
         "aa:bb:cc:dd:ee:ff",
         "11:22:33:44:55:66",
     ]
     assert panel.agent_sessions.pushed[0][1] == "h-aa:bb:cc:dd:ee:ff"
-    assert "desired state pushed to 2 devices" in summary
+    assert {"code": "devices_pushed", "params": {"count": 2}} in changes
 
 
 def test_a_device_that_will_not_take_the_push_does_not_fail_the_converge(
     applied, monkeypatch
 ):
     """The network is applied by then; a socket that did not answer in time
-    is named in the summary rather than raised."""
+    is named in the changes rather than raised."""
     panel, written, _, _ = applied
     monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
     panel.agent_sessions = _Sessions(
         ["aa:bb:cc:dd:ee:ff"], refusing=["aa:bb:cc:dd:ee:ff"]
     )
 
-    summary = panel.converge_network_blocking()
+    changes = panel.converge_network_blocking()
 
     assert ("reconciled", None) in written
-    assert "desired state not pushed to aa:bb:cc:dd:ee:ff" in summary
+    assert {
+        "code": "devices_not_pushed",
+        "params": {"devices": "aa:bb:cc:dd:ee:ff"},
+    } in changes
+
+
+LOCALES_DIR = Path(__file__).resolve().parents[2] / "frontend/src/locales"
+
+
+def test_every_change_an_apply_answers_with_is_a_code_both_languages_word(
+    applied, monkeypatch
+):
+    """The page words the answer itself, so an apply that changed every step
+    there is answers only with codes each catalog has a sentence for."""
+    panel, _, results, _ = applied
+    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    results[:] = [
+        RouterStepResult(
+            name=f"{kind} enp1s0", state=ROUTER_STEP_APPLIED, changes=["x"]
+        )
+        for kind in ROUTER_STEP_CHANGE_CODES
+    ] + [RouterStepResult(name="unnamed", state=ROUTER_STEP_APPLIED, changes=["x"])]
+
+    class Switcher:
+        changes = [
+            {"code": code, "params": {"title": "NetBird"}}
+            for code in (
+                "overlay_updated",
+                "overlay_started",
+                "overlay_started_no_address",
+                "overlay_stopped",
+            )
+        ]
+
+        def start(self, network, *, report=None):
+            return []
+
+        def stop(self, network, *, report=None):
+            return []
+
+    monkeypatch.setattr(runtime_module, "OverlaySwitcher", Switcher)
+    panel.agent_sessions = _Sessions(["aa", "bb"], refusing=["bb"])
+
+    changes = panel.converge_network_blocking()
+
+    assert {"code": "xray_restarted", "params": {}} in changes
+    assert len(changes) == len(ROUTER_STEP_CHANGE_CODES) + 1 + 4 + 4
+    for language in sorted(path.name for path in LOCALES_DIR.iterdir()):
+        worded = set()
+        for path in (LOCALES_DIR / language).glob("*.json"):
+            worded |= set(json.loads(path.read_text(encoding="utf-8")))
+        for change in changes:
+            assert f"code.{change['code']}" in worded, (language, change)
 
 
 def test_the_nodes_measured_down_reach_the_renderer(applied, monkeypatch):

@@ -235,11 +235,9 @@ class InstallSessionReporter(InstallReporter):
         """Report the current step failed.
 
         Args:
-            message: The error text to show under the step.
+            message: The error text the terminal shows under the step.
         """
-        self._session.step(
-            self._code, WEB_SETUP_STEP_FAILED, message, params=self._params
-        )
+        self._session.step(self._code, WEB_SETUP_STEP_FAILED, params=self._params)
         super().failed(message)
 
     def blank(self) -> None:

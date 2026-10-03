@@ -4,7 +4,7 @@
     "forward_failed": "端口没能转发：{detail}",
     "overlay_wish_unsaved": "虚拟网的选择没能保存",
     "rdp_closed": "连接已结束：{reason}",
-    "rdp_core_missing": "这个版本还没有远程桌面核心，显示不了画面。",
+    "rdp_core_missing": "这个版本没有远程桌面。",
     "rdp_login_failed": "对方机器拒绝了访问密码。",
     "verb_unknown": "hub 不认识这个命令，请先更新 hub"
   },
@@ -50,6 +50,6 @@
     "scan_press": "按“扫码”使用相机。",
     "share_login_needed": "请先在文件页输入这个共享的密码。",
     "share_reconnecting": "正在重新连接…",
-    "terminal_detached": "已断开，hub 恢复后会重新连上。"
+    "terminal_detached": "已断开，正在等待 hub"
   }
 }

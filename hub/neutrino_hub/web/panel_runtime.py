@@ -21,6 +21,8 @@ from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.router.controller import (
     RouterStateController,
+    change_codes,
+    failure_codes,
     failure_text,
     rendered_overlay_devices,
     router_lock,
@@ -72,7 +74,11 @@ from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.modules.devices.agent_module_cache import AgentModuleCache
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
-from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.exceptions import (
+    AgentOfflineError,
+    NetworkApplyError,
+    StreamRefusedError,
+)
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_BINDING_UNKNOWN,
     CHANNEL_ROLE_AGENT,
@@ -446,7 +452,7 @@ class PanelRuntime:
                     return link.ipv4_address
         return None
 
-    async def converge_network(self, *, only: str | None = None) -> str:
+    async def converge_network(self, *, only: str | None = None) -> list[dict]:
         """Make everything derived from ``config/`` true, and hand it on.
 
         Every writer of the network, the proxy or an overlay calls this, so
@@ -460,13 +466,14 @@ class PanelRuntime:
                 are. Every other step still runs on the whole configuration.
 
         Returns:
-            A short description of what was applied.
+            One ``{code, params}`` per thing the apply changed.
 
         Raises:
             subprocess.CalledProcessError: If a command an apply runs fails.
-            RuntimeError: If xray or an overlay engine refused what it was
-                handed, a routing step failed, or the box is not set up yet.
-                The steps after the one that failed still ran.
+            NetworkApplyError: If xray or an overlay engine refused what it
+                was handed, or a routing step failed. The steps after the one
+                that failed still ran.
+            RuntimeError: If the box is not set up yet.
             TimeoutError: When another writer holds the router lock too long.
             ValueError: If ``only`` names no configured interface, or the
                 configuration is invalid.
@@ -474,7 +481,7 @@ class PanelRuntime:
         async with self._apply_lock:
             return await asyncio.to_thread(self.converge_network_blocking, only)
 
-    def converge_network_blocking(self, only: str | None = None) -> str:
+    def converge_network_blocking(self, only: str | None = None) -> list[dict]:
         """Run the converge step on the calling thread.
 
         Under the router lock, in this order: the enabled engines start
@@ -489,11 +496,11 @@ class PanelRuntime:
             only: Apply just this interface's role.
 
         Returns:
-            A short description of what was applied.
+            One ``{code, params}`` per thing the apply changed.
 
         Raises:
-            RuntimeError: If xray or an overlay engine refused what it was
-                handed, or a routing step failed.
+            NetworkApplyError: If xray or an overlay engine refused what it
+                was handed, or a routing step failed.
             TimeoutError: When another writer holds the router lock too long.
             ValueError: If ``only`` names no configured interface, or the
                 configuration is invalid.
@@ -514,11 +521,12 @@ class PanelRuntime:
             is_transparent=is_linux(),
         ).render()
         switcher = OverlaySwitcher()
-        changes: list[str] = []
+        changes: list[dict] = []
         failures: list[str] = []
+        failed: list[dict] = []
         with router_lock():
             try:
-                changes += switcher.start(network)
+                switcher.start(network)
             except (
                 subprocess.SubprocessError,
                 OSError,
@@ -526,33 +534,42 @@ class PanelRuntime:
                 NotImplementedError,
             ) as error:
                 failures.append(f"overlay: {command_failure_text(error)}")
+                failed.append(
+                    {
+                        "code": "overlay_failed",
+                        "params": {"detail": command_failure_text(error)},
+                    }
+                )
             # The interface must carry its new address before dnsmasq is told
             # to bind it, or the restart fails with nothing to listen on.
             results = self._router_controller().reconcile_locked(only=only)
-            changes += [line for result in results for line in result.changes]
+            changes += change_codes(results)
             if is_linux() and install_dnsmasq(self._dnsmasq_config()):
-                changes.append("dnsmasq restarted")
+                changes.append({"code": "dnsmasq_restarted", "params": {}})
             # A refused xray configuration stops none of the other steps.
             try:
                 if XrayConfigApplier().apply_if_changed(xray_config):
-                    changes.append("xray restarted")
+                    changes.append({"code": "xray_restarted", "params": {}})
             except (subprocess.SubprocessError, OSError, RuntimeError) as error:
-                failures.append(
-                    f"{command_failure_text(error)}. The firewall and DNS were "
-                    "applied without it."
+                failures.append(f"xray: {command_failure_text(error)}")
+                failed.append(
+                    {
+                        "code": "xray_refused",
+                        "params": {"detail": command_failure_text(error)},
+                    }
                 )
             changes += self._push_desired_states()
             channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
-            changes += switcher.stop(network)
+            switcher.stop(network)
             self.check_overlay_routes()
         router_failure = failure_text(results)
         if router_failure:
             failures.append(router_failure)
+            failed += failure_codes(results)
         if failures:
-            raise RuntimeError("; ".join(failures))
+            raise NetworkApplyError("; ".join(failures), failed)
         self.is_config_dirty = False
-        summary = "; ".join(changes) if changes else "nothing changed"
-        return f"applied ({summary})"
+        return switcher.changes + changes
 
     def desired_state_for(self, device) -> tuple[str, dict]:
         """What a device should host, and the hash the agent compares against.
@@ -692,7 +709,7 @@ class PanelRuntime:
         """The one pass every apply of the routing state runs."""
         return RouterStateController()
 
-    def _push_desired_states(self) -> list[str]:
+    def _push_desired_states(self) -> list[dict]:
         """Hand every online device the state the network now composes.
 
         The shares' ``allowed_subnets`` and a git server's address derive
@@ -700,9 +717,10 @@ class PanelRuntime:
         would leave its shares refusing a network that was just opened.
 
         Returns:
-            A note for the summary, empty when no device is online. A
-            device that would not take the push is named rather than
-            raised: the network is already applied by this point.
+            ``devices_pushed {count}`` and ``devices_not_pushed {devices}``,
+            each only when it has a device. A device that would not take the
+            push is named rather than raised: the network is already applied
+            by this point.
         """
         pushed = []
         refused = []
@@ -713,12 +731,17 @@ class PanelRuntime:
                 refused.append(key)
                 continue
             pushed.append(key)
-        notes = []
+        codes = []
         if pushed:
-            notes.append(f"desired state pushed to {len(pushed)} devices")
+            codes.append({"code": "devices_pushed", "params": {"count": len(pushed)}})
         if refused:
-            notes.append(f"desired state not pushed to {', '.join(refused)}")
-        return notes
+            codes.append(
+                {
+                    "code": "devices_not_pushed",
+                    "params": {"devices": ", ".join(refused)},
+                }
+            )
+        return codes
 
     def _publish_nodes(self, status) -> None:
         """Say the pinned exit moved.

@@ -350,7 +350,7 @@ def module_router(
         context = device_context(runtime, module, request.device_id)
         require_online(context)
         push_state(runtime, context.key)
-        return ApplyResult(is_applied=True, message="pushed")
+        return ApplyResult(is_applied=True)
 
     if import_config is not None:
 

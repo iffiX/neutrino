@@ -45,10 +45,11 @@ from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.models import (
+    ApplyChange,
+    ApplyResult,
     CliproxyApiAccountRequest,
     CliproxyApiAccountsView,
     CliproxyApiAccountView,
-    CliproxyApiApplyResult,
     CliproxyApiHealthBucket,
     CliproxyApiJournalView,
     CliproxyApiKeyCreate,
@@ -291,18 +292,20 @@ def update_settings(
     return _status()
 
 
-@router.post("/gateway/apply", response_model=CliproxyApiApplyResult)
-def apply() -> CliproxyApiApplyResult:
+@router.post("/gateway/apply", response_model=ApplyResult)
+def apply() -> ApplyResult:
     """Re-render the YAML from current state and restart the gateway.
 
     Returns:
-        What happened.
+        ``gateway_not_installed`` among the changes when there was nothing
+        to restart.
 
     Raises:
         HTTPException: 400 when the stored settings do not validate.
     """
+    applier = CliproxyApiConfigApplier()
     try:
-        message = CliproxyApiConfigApplier().apply()
+        applier.apply()
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -311,7 +314,11 @@ def apply() -> CliproxyApiApplyResult:
                 "params": {"detail": str(error)},
             },
         ) from error
-    return CliproxyApiApplyResult(message=message)
+    if applier.is_installed:
+        return ApplyResult(is_applied=True)
+    return ApplyResult(
+        is_applied=True, changes=[ApplyChange(code="gateway_not_installed")]
+    )
 
 
 @router.get("/gateway/account", response_model=CliproxyApiAccountsView)
@@ -494,10 +501,10 @@ def _status() -> CliproxyApiStatusView:
     service = process_controller().status("cliproxyapi")
     keys = [_key_view(key) for key in config.client_keys]
     is_reachable = False
-    probe_message = ""
+    probe: dict | None = None
     served_models: list[str] = []
     if service.is_active:
-        is_reachable, probe_message, served_models = applier.probe(
+        is_reachable, probe, served_models = applier.probe(
             port=config.listen_port, client_key=config.probe_key()
         )
     providers = AiProviderRegistry().list_records()
@@ -508,7 +515,8 @@ def _status() -> CliproxyApiStatusView:
         listen_port=config.listen_port,
         client_keys=keys,
         is_reachable=is_reachable,
-        probe_message=probe_message,
+        probe_code="" if probe is None else probe["code"],
+        probe_params={} if probe is None else probe["params"],
         served_models=served_models,
         enabled_provider_count=sum(
             1 for p in providers if p.is_enabled and p.secret_id

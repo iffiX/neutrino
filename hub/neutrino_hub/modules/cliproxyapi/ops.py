@@ -219,7 +219,7 @@ class CliproxyApiConfigApplier:
 
     def probe(
         self, *, port: int, client_key: str | None
-    ) -> tuple[bool, str, list[str]]:
+    ) -> tuple[bool, dict | None, list[str]]:
         """Ask the running gateway for its model list.
 
         Args:
@@ -227,29 +227,39 @@ class CliproxyApiConfigApplier:
             client_key: A key to authenticate with, when one exists.
 
         Returns:
-            Whether it answered, the failure or empty-list wording, and the
-            served model names.
+            Whether it answered; the failure or the empty list as
+            ``{code, params}``, None when models are served; and the served
+            model names.
         """
         if client_key is None:
-            return False, "no key to probe with; apply the gateway once", []
+            return False, {"code": "gateway_no_probe_key", "params": {}}, []
         try:
             response = httpx.get(
                 f"http://127.0.0.1:{port}/v1/models",
                 headers={"x-api-key": client_key},
                 timeout=PROBE_TIMEOUT_S,
             )
-        except httpx.HTTPError as error:
-            return False, str(error), []
+        except httpx.HTTPError:
+            return False, {"code": "gateway_unreachable", "params": {}}, []
         if not response.is_success:
-            return False, f"answered {response.status_code}", []
+            return (
+                False,
+                {
+                    "code": "gateway_probe_status",
+                    "params": {"status": response.status_code},
+                },
+                [],
+            )
         try:
             names = [entry.get("id", "") for entry in response.json().get("data", [])]
         except ValueError:
-            return False, "answered with something that is not JSON", []
+            return False, {"code": "gateway_probe_unreadable", "params": {}}, []
         # Sorted, since the gateway lists them in the order its providers
         # registered, and a person picking one reads them by name.
         served = sorted(name for name in names if name)
-        return True, "" if served else "no models served", served
+        if not served:
+            return True, {"code": "gateway_no_models", "params": {}}, served
+        return True, None, served
 
     def render_with_stored_key(self) -> str:
         """Render with the key already on the box, for a dry run.

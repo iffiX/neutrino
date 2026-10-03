@@ -224,6 +224,33 @@ def test_the_served_models_are_listed_by_name(monkeypatch):
     assert served == ["claude-opus-5", "gemini-3-pro", "gpt-5"]
 
 
+def test_a_probe_that_finds_nothing_to_serve_answers_a_code(monkeypatch):
+    class _Answer:
+        is_success = False
+        status_code = 503
+
+    monkeypatch.setattr(ops.httpx, "get", lambda *args, **kwargs: _Answer())
+    applier = ops.CliproxyApiConfigApplier()
+
+    assert applier.probe(port=8317, client_key=None) == (
+        False,
+        {"code": "gateway_no_probe_key", "params": {}},
+        [],
+    )
+    assert applier.probe(port=8317, client_key="k") == (
+        False,
+        {"code": "gateway_probe_status", "params": {"status": 503}},
+        [],
+    )
+    _Answer.is_success = True
+    _Answer.json = lambda self: {"data": []}
+    assert applier.probe(port=8317, client_key="k") == (
+        True,
+        {"code": "gateway_no_models", "params": {}},
+        [],
+    )
+
+
 def test_elsewhere_an_apply_restarts_the_child(
     elsewhere, installed_box, fake_controller
 ):

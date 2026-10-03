@@ -182,6 +182,12 @@ export function TerminalsPage() {
   const isActiveOwned =
     activeTab !== null && isOwned(activeTab, activeRow) && !activeTab.isEnded;
   const canFlip = isActiveOwned && activeState === "open";
+  const statusText =
+    notice !== null
+      ? notice
+      : activeState === "closed" && activeTab?.isEnded !== true
+        ? closedText(activeReason)
+        : null;
   const ownerName =
     activeRow === undefined || activeRow.is_owned
       ? ""
@@ -305,7 +311,6 @@ export function TerminalsPage() {
       <DevicePick
         devices={devices}
         isLoading={resource.isLoading}
-        hint={t("ui.terminals.pick_hint")}
         selected={selectedId}
         onSelect={setSelectedId}
         actions={
@@ -401,15 +406,9 @@ export function TerminalsPage() {
           </div>
 
           <div className="terminal_panel_status">
-            <span className="terminal_panel_status_text">
-              {notice !== null
-                ? notice
-                : activeTab !== null && activeTab.isEnded
-                  ? t("ui.terminals.ended_hint")
-                  : activeState === "closed"
-                    ? closedText(activeReason)
-                    : t("ui.terminals.keystrokes")}
-            </span>
+            {statusText !== null && (
+              <span className="terminal_panel_status_text">{statusText}</span>
+            )}
             {activeTab !== null && (
               <div className="terminal_panel_switches">
                 {!isActiveOwned && ownerName !== "" && (

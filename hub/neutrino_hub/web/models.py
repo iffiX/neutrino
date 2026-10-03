@@ -104,11 +104,19 @@ class NodeListView(BaseModel):
     is_dirty: bool
 
 
+class ApplyChange(BaseModel):
+    """One thing an apply did, or why it did not; the pages do the wording."""
+
+    code: str
+    params: dict = Field(default_factory=dict)
+
+
 class ApplyResult(BaseModel):
     """Outcome of applying pending configuration changes."""
 
     is_applied: bool
-    message: str
+    changes: list[ApplyChange] = Field(default_factory=list)
+    failures: list[ApplyChange] = Field(default_factory=list)
 
 
 class OutboundTrafficView(BaseModel):
@@ -717,7 +725,9 @@ class CliproxyApiStatusView(BaseModel):
     listen_port: int
     client_keys: list[CliproxyApiKeyView] = Field(default_factory=list)
     is_reachable: bool = False
-    probe_message: str = ""
+    # Why the probe found nothing to serve, as a code the page words.
+    probe_code: str = ""
+    probe_params: dict = Field(default_factory=dict)
     served_models: list[str] = Field(default_factory=list)
     enabled_provider_count: int = 0
     # Whether the stored configuration differs from what the last apply handed
@@ -825,12 +835,6 @@ class CliproxyApiSettingsUpdate(BaseModel):
     """The AI gateway's adjustable settings."""
 
     listen_port: int
-
-
-class CliproxyApiApplyResult(BaseModel):
-    """Outcome of rendering and restarting the AI gateway."""
-
-    message: str
 
 
 class CliproxyApiAccountView(BaseModel):
@@ -1229,10 +1233,11 @@ class TaskStarted(BaseModel):
 
 
 class WolResult(BaseModel):
-    """Outcome of sending a magic packet."""
+    """Outcome of sending a magic packet; the drawer words the code."""
 
     is_sent: bool
-    message: str
+    code: str
+    params: dict = Field(default_factory=dict)
 
 
 class PublishedServiceView(BaseModel):

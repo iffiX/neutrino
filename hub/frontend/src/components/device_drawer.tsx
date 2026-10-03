@@ -8,7 +8,7 @@ import { DeviceEnrollmentNotice } from "./device_enrollment_notice";
 import { InstallAgentModal } from "./install_agent_modal";
 import { RemoteDesktopPanel } from "./remote_desktop_panel";
 import { StatusDot } from "./status_dot";
-import { ApiError, apiPost, describeError } from "../api_client";
+import { ApiError, apiPost, describeCode, describeError } from "../api_client";
 import { DEVICE_ICON_NAMES, toDeviceIconName } from "../device_icon";
 import {
   DEVICE_REACH_KEYS,
@@ -52,8 +52,8 @@ const GUIDANCE_TITLE_KEYS: Record<DeviceUpgradePath, string> = {
   link: "ui.drawer.guidance_link_title",
 };
 
-const GUIDANCE_HINT_KEYS: Record<DeviceUpgradePath, string> = {
-  install: "ui.drawer.guidance_install_hint",
+const GUIDANCE_HINT_KEYS: Record<DeviceUpgradePath, string | null> = {
+  install: null,
   link: "ui.drawer.guidance_link_hint",
 };
 
@@ -102,7 +102,7 @@ interface DeviceGuidance {
   tone: string;
   icon: IconName;
   title: string;
-  hint: string;
+  hint: string | null;
   hasEnrollmentLink: boolean;
 }
 
@@ -253,7 +253,11 @@ export function DeviceDrawer({
       const result = await apiPost<DeviceWolResult>("/hub/device/wake", {
         device_id: device.id,
       });
-      setNotice(result.message);
+      if (result.is_sent) {
+        setNotice(describeCode(result));
+      } else {
+        setError(describeCode(result));
+      }
     } catch (cause: unknown) {
       setError(describeError(cause));
     }
@@ -473,7 +477,9 @@ export function DeviceDrawer({
                 <Icon name={guidance.icon} size={15} />
                 <div className="notice_body">
                   <strong>{guidance.title}</strong>
-                  <span className="muted">{guidance.hint}</span>
+                  {guidance.hint !== null && (
+                    <span className="muted">{guidance.hint}</span>
+                  )}
                   {guidance.hasEnrollmentLink && (
                     <div className="device_drawer_guidance_action">
                       <button
@@ -657,11 +663,12 @@ export function DeviceDrawer({
 function toGuidance(device: DeviceView): DeviceGuidance | null {
   const path = toDeviceUpgradePath(device);
   if (!isDeviceManaged(device)) {
+    const hintKey = GUIDANCE_HINT_KEYS[path];
     return {
       tone: "",
       icon: path === "link" ? "link" : "download",
       title: t(GUIDANCE_TITLE_KEYS[path]),
-      hint: t(GUIDANCE_HINT_KEYS[path]),
+      hint: hintKey === null ? null : t(hintKey),
       hasEnrollmentLink: path === "link",
     };
   }

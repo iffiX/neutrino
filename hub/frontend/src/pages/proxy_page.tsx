@@ -9,7 +9,12 @@ import { NodesPanel } from "../components/nodes_panel";
 import { SocksPortsPanel } from "../components/socks_ports_panel";
 import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
-import { apiPost, describeError } from "../api_client";
+import {
+  apiPost,
+  describeApplied,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
 import type { ProxyTone } from "../proxy_status";
@@ -118,10 +123,10 @@ export function ProxyPage() {
       resource.setData(stored);
       setDraft(routeDraftOf(stored));
       if (!result.is_applied) {
-        setErrors({ [group]: result.message });
+        setErrors({ [group]: describeApplyFailure(result) });
         return;
       }
-      setNotice({ [group]: result.message });
+      setNotice({ [group]: describeApplied(result) });
     } catch (cause: unknown) {
       setErrors({ [group]: describeError(cause) });
     } finally {
@@ -165,8 +170,6 @@ export function ProxyPage() {
   }
 
   const mode = network.data?.mode ?? null;
-  const isForwardingMode =
-    mode === null || mode === "router" || mode === "side_gateway";
   // Outside Linux the proxy is its SOCKS ports alone. A scope still on from
   // an earlier config can be switched off, never on.
   const isLinux = (network.data?.hub_os ?? "linux") === "linux";
@@ -205,19 +208,19 @@ export function ProxyPage() {
         {/* Who goes through the proxy: the machines this box forwards for,
             and the box itself. Two independent answers to one question, so
             they sit together rather than one being buried in the rules. */}
-        <ToggleSwitch
-          isOn={draft.is_proxy_enabled}
-          onChange={(isOn) => updateDraft({ is_proxy_enabled: isOn })}
-          isDisabled={isLinux ? !isForwardingMode : !draft.is_proxy_enabled}
-          label={t("ui.proxy.lan_toggle")}
-          description={
-            !isLinux
-              ? t("ui.proxy.lan_toggle_description_unsupported")
-              : isForwardingMode
+        {mode !== "server" && (
+          <ToggleSwitch
+            isOn={draft.is_proxy_enabled}
+            onChange={(isOn) => updateDraft({ is_proxy_enabled: isOn })}
+            isDisabled={!isLinux && !draft.is_proxy_enabled}
+            label={t("ui.proxy.lan_toggle")}
+            description={
+              isLinux
                 ? t("ui.proxy.lan_toggle_description")
-                : t("ui.proxy.lan_toggle_description_server")
-          }
-        />
+                : t("ui.proxy.lan_toggle_description_unsupported")
+            }
+          />
+        )}
         <ToggleSwitch
           isOn={draft.is_overlay_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_overlay_proxy_enabled: isOn })}

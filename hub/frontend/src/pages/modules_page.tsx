@@ -423,7 +423,6 @@ export function ModulesPage() {
       <DevicePick
         devices={devices}
         isLoading={online.isLoading}
-        hint={t("ui.modules.pick_hint")}
         selected={selectedId}
         onSelect={setSelectedId}
       />
@@ -432,7 +431,6 @@ export function ModulesPage() {
         <div className="settings_group_title">
           <h2>{t("ui.modules.tabs_title")}</h2>
         </div>
-        <p className="field_hint">{t("ui.modules.tabs_hint")}</p>
         {selectedDevice === null || deviceId === null ? (
           <div className="placeholder">
             <span>{t("ui.modules.no_pick")}</span>

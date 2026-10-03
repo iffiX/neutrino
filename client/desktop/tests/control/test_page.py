@@ -102,16 +102,16 @@ CLIENT_MD_WORDS = {
 # the type on the wire, the heading, the function drawing one entry, and the
 # line the panel carries while no hub publishes the kind.
 SERVICE_PANELS = (
-    ("web", "web", "Web", "drawWebEntry", "no web service is offered"),
-    ("ports", "port", "Ports", "drawPortEntry", "no port is offered"),
-    ("ai", "ai", "AI", "drawAiEntry", "no AI service is offered"),
-    ("files", "file", "Files", "drawFileEntry", "no share is offered"),
+    ("web", "web", "Web", "drawWebEntry", "No web services yet"),
+    ("ports", "port", "Ports", "drawPortEntry", "No ports yet"),
+    ("ai", "ai", "AI", "drawAiEntry", "No AI service yet"),
+    ("files", "file", "Files", "drawFileEntry", "No shares yet"),
     (
         "desktops",
         "rdp",
         "Remote desktops",
         "drawDesktopEntry",
-        "no remote desktop is shared right now",
+        "No shared remote desktops yet",
     ),
 )
 

@@ -67,7 +67,6 @@ function GridEmpty() {
   return (
     <div className="usage_grid_empty">
       <span>{t("ui.usage.grid_empty")}</span>
-      <span className="faint">{t("ui.usage.grid_empty_hint")}</span>
     </div>
   );
 }

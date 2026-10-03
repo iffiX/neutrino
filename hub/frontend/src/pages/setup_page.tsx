@@ -303,7 +303,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     if (isRejected) {
       setState(null);
       setIndex(SCREEN_REVIEW);
-      setError(state?.message ?? t("ui.setup.answers_refused"));
+      setError(t("ui.setup.answers_refused"));
     }
   }, [isRejected, state]);
 
@@ -333,7 +333,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
         <div className="setup_welcome">
           <h1 className="setup_welcome_title">{SETUP_BRAND_NAME}</h1>
           <p className="setup_welcome_line">{t("ui.setup.welcome_line")}</p>
-          <p className="setup_welcome_note">{t("ui.setup.welcome_note")}</p>
           <button
             type="button"
             className="button button--primary setup_begin"
@@ -405,7 +404,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
     >
       {index === SCREEN_LANGUAGE && (
         <div className="setup_body">
-          <p className="setup_lead">{t("ui.setup.language_lead")}</p>
           <Picker
             className="setup_field--narrow"
             options={LANGUAGES.map((offered) => ({
@@ -979,9 +977,7 @@ function SetupRunning({
       {state.state === "failed" && (
         <div className="notice notice--error setup_notice">
           <Icon name="alert" size={15} />
-          <div className="notice_body">
-            {state.message || t("ui.setup.step_failed")}
-          </div>
+          <div className="notice_body">{t("ui.setup.step_failed")}</div>
         </div>
       )}
     </SetupFrame>

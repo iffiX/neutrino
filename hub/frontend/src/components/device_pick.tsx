@@ -25,8 +25,6 @@ interface DevicePickProps {
   devices: DeviceOnlineView[];
   /** Whether the first list is still on its way. */
   isLoading: boolean;
-  /** What the page does on the picked machine, in one line. */
-  hint: string;
   selected: string | null;
   onSelect: (deviceId: string) => void;
   /** A page-scope action that sits at the section's far end. */
@@ -36,7 +34,6 @@ interface DevicePickProps {
 export function DevicePick({
   devices,
   isLoading,
-  hint,
   selected,
   onSelect,
   actions,
@@ -53,7 +50,6 @@ export function DevicePick({
           <div className="device_pick_actions">{actions}</div>
         )}
       </div>
-      <p className="field_hint">{hint}</p>
       {isLoading && devices.length === 0 ? (
         <div className="skeleton" style={{ height: SKELETON_HEIGHT_PX }} />
       ) : devices.length === 0 ? (

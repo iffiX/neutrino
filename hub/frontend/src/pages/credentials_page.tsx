@@ -52,7 +52,6 @@ export function CredentialsPage() {
       <header className="page_header">
         <div>
           <h1 className="page_title">{t("ui.credentials.title")}</h1>
-          <p className="page_subtitle">{t("ui.credentials.subtitle")}</p>
         </div>
       </header>
 

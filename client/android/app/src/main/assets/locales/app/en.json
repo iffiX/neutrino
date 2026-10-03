@@ -4,7 +4,7 @@
     "forward_failed": "The port could not be forwarded: {detail}",
     "overlay_wish_unsaved": "the virtual network choice could not be saved",
     "rdp_closed": "The connection ended: {reason}",
-    "rdp_core_missing": "This build carries no remote desktop core yet, so it cannot show the picture.",
+    "rdp_core_missing": "This build has no remote desktop.",
     "rdp_login_failed": "The machine refused the access password.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
@@ -50,6 +50,6 @@
     "scan_press": "Press Scan to use the camera.",
     "share_login_needed": "Give this share's password on the Files screen first.",
     "share_reconnecting": "Reconnecting…",
-    "terminal_detached": "Detached; it attaches again once the hub answers."
+    "terminal_detached": "Detached; waiting for the hub"
   }
 }

@@ -10,7 +10,7 @@ import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { StatusDot } from "../components/status_dot";
-import { apiPath, apiPost, describeError } from "../api_client";
+import { apiPath, apiPost, describeCode, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
@@ -72,6 +72,7 @@ export function AiPage() {
   });
   const view = status.data;
   const [portError, setPortError] = useState<string | null>(null);
+  const [portNotice, setPortNotice] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [port, setPort] = useState<number | null>(null);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
@@ -139,12 +140,14 @@ export function AiPage() {
   const handleApplyPort = async () => {
     setIsBusy(true);
     setPortError(null);
+    setPortNotice(null);
     try {
       status.setData(
         await apiPost<CliproxyApiStatusView>("/hub/ai/gateway/set", {
           listen_port: port,
         }),
       );
+      setPortNotice(t("ui.api.applied"));
     } catch (cause: unknown) {
       setPortError(describeError(cause));
     } finally {
@@ -159,7 +162,6 @@ export function AiPage() {
           <div className="page_title_row">
             <h1 className="page_title">{t("ui.ai.title")}</h1>
           </div>
-          <p className="page_subtitle">{t("ui.ai.subtitle")}</p>
         </div>
       </header>
 
@@ -207,11 +209,12 @@ export function AiPage() {
               </div>
             ) : (
               <p className="field_hint ai_probe">
-                {view.is_reachable
-                  ? t("ui.ai.serving", { message: view.probe_message })
-                  : view.probe_message.length > 0
-                    ? view.probe_message
-                    : t("ui.ai.waiting_probe")}
+                {view.probe_code.length > 0
+                  ? describeCode({
+                      code: view.probe_code,
+                      params: view.probe_params,
+                    })
+                  : t("ui.ai.waiting_probe")}
               </p>
             )}
           </div>
@@ -314,7 +317,6 @@ export function AiPage() {
         ) : (
           <div className="placeholder">
             <span>{t("ui.ai.usage_unavailable")}</span>
-            <span className="faint">{t("ui.ai.usage_unavailable_hint")}</span>
           </div>
         )}
 
@@ -341,7 +343,6 @@ export function AiPage() {
         <div className="settings_group_title">
           <h2>{t("ui.ai.gateway_port")}</h2>
         </div>
-        <p className="field_hint">{t("ui.ai.gateway_port_hint")}</p>
         <div className="field_grid">
           <label className="field">
             <span className="field_label">{t("ui.ai.port")}</span>
@@ -369,7 +370,11 @@ export function AiPage() {
           }
           warning={t("ui.ai.port_apply_warning")}
           error={portError}
-          onReset={() => setPort(view.listen_port)}
+          notice={portNotice}
+          onReset={() => {
+            setPort(view.listen_port);
+            setPortNotice(null);
+          }}
           onApply={() => void handleApplyPort()}
         />
       </section>

@@ -289,7 +289,6 @@ export function DevicesPage() {
         <>
           <DeviceSection
             title={t("ui.devices.managed_title")}
-            hint={t("ui.devices.managed_hint")}
             badge={t("ui.devices.managed_badge", {
               reporting: managedDevices.filter(
                 (device) => device.is_agent_online,
@@ -322,11 +321,9 @@ export function DevicesPage() {
                 ? "ui.devices.filtered_empty_title"
                 : "ui.devices.unmanaged_empty_title",
             )}
-            emptyHint={t(
-              hasUnmanaged
-                ? "ui.devices.filtered_empty_hint"
-                : "ui.devices.unmanaged_empty_hint",
-            )}
+            emptyHint={
+              hasUnmanaged ? t("ui.devices.filtered_empty_hint") : undefined
+            }
             onOpen={setSelectedId}
           />
         </>
@@ -351,11 +348,11 @@ export function DevicesPage() {
 
 interface DeviceSectionProps {
   title: string;
-  hint: string;
+  hint?: string;
   badge: string;
   devices: DeviceView[];
   emptyTitle: string;
-  emptyHint: string;
+  emptyHint?: string;
   onOpen: (deviceId: string) => void;
 }
 
@@ -374,11 +371,13 @@ function DeviceSection({
         <h2>{title}</h2>
         {devices.length > 0 && <span className="badge">{badge}</span>}
       </div>
-      <p className="field_hint">{hint}</p>
+      {hint !== undefined && <p className="field_hint">{hint}</p>}
       {devices.length === 0 ? (
         <div className="placeholder">
           <span>{emptyTitle}</span>
-          <span className="faint">{emptyHint}</span>
+          {emptyHint !== undefined && (
+            <span className="faint">{emptyHint}</span>
+          )}
         </div>
       ) : (
         <div className="devices_grid">

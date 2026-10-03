@@ -94,7 +94,6 @@ export function NetworkModePanel({
       <div className="settings_group_title">
         <h2>{t("ui.network.mode_title")}</h2>
       </div>
-      <p className="field_hint">{t("ui.network.mode_hint")}</p>
 
       <div className="mode_choices">
         {network.modes.map((mode) => (

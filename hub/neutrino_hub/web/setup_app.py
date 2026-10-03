@@ -62,7 +62,6 @@ class WebSetupSession:
         self._state = WEB_SETUP_STATE_ASKING
         self._steps: list = []
         self._notes: list = []
-        self._message = ""
         self._panel_url = ""
         self._authority: "dict | None" = None
 
@@ -83,7 +82,6 @@ class WebSetupSession:
         with self._lock:
             reply = {
                 "state": self._state,
-                "message": self._message,
                 "panel_url": self._panel_url,
                 "authority": self._authority,
                 "steps": list(self._steps),
@@ -126,16 +124,11 @@ class WebSetupSession:
         with self._lock:
             return dict(self._document)
 
-    def reject(self, message: str) -> None:
-        """Say the document cannot be used, and ask again.
-
-        Args:
-            message: What is wrong with it, in the wizard's words.
-        """
+    def reject(self) -> None:
+        """Say the document cannot be used, and ask again."""
         with self._lock:
             self._document = {}
             self._state = WEB_SETUP_STATE_REJECTED
-            self._message = message
         self._answered.clear()
 
     def step(
@@ -170,7 +163,6 @@ class WebSetupSession:
                 )
             if status == WEB_SETUP_STEP_FAILED:
                 self._state = WEB_SETUP_STATE_FAILED
-                self._message = note
 
     def note(self, text: str) -> None:
         """Record an aside the terminal printed between steps.

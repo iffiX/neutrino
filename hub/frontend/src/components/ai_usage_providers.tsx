@@ -76,7 +76,6 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
     return (
       <div className="placeholder">
         <span>{t("ui.usage.providers_empty")}</span>
-        <span className="faint">{t("ui.usage.providers_empty_hint")}</span>
       </div>
     );
   }

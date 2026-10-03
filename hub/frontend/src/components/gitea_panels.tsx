@@ -5,7 +5,12 @@ import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { PasswordInput } from "./password_input";
 import { ToggleSwitch } from "./toggle_switch";
-import { apiPath, apiPost, describeError } from "../api_client";
+import {
+  apiPath,
+  apiPost,
+  describeApplyFailure,
+  describeError,
+} from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
@@ -73,10 +78,10 @@ export function GiteaPanels({
       });
       resource.reload();
       if (!result.is_applied) {
-        setError(result.message);
+        setError(describeApplyFailure(result));
         return;
       }
-      setNotice(result.message);
+      setNotice(t("ui.api.applied"));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {

@@ -338,7 +338,7 @@ def _browser_answers():
             # The browser is the one that can fix this, so it is told — and so
             # is the terminal, which is where a run that goes wrong is read.
             print(f"\n  the browser sent answers that cannot be used: {error}")
-            session.reject(str(error))
+            session.reject()
 
 
 def _browser_command(url: str) -> "list | None":

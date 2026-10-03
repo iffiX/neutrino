@@ -86,9 +86,7 @@ function wordCode(code, params) {
 
 function wordError(e) {
   if (!e || !e.code) return '';
-  const p = e.params || {};
-  if (e.code === 'hub_unreachable' && p.detail) return p.detail;
-  return wordCode(e.code, p);
+  return wordCode(e.code, e.params);
 }
 
 let lastState = null;
@@ -1407,11 +1405,11 @@ function statusLine(tab) {
   status.className = 'term_status';
   const hint = document.createElement('span');
   hint.className = 'term_hint';
-  hint.textContent = !tab ? t('ui.terminal_keys')
+  hint.textContent = !tab ? ''
     : tab.state === 'closed' || tab.state === 'ended' ? (tab.note || t('ui.terminal_ended'))
     : tab.isDropped ? tab.note
-    : tab.hint || t('ui.terminal_keys');
-  status.appendChild(hint);
+    : tab.hint || '';
+  if (hint.textContent) status.appendChild(hint);
   if (!tab) return status;
   const flags = tabFlags(tab);
   const isOpen = tab.state === 'open';

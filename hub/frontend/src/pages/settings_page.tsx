@@ -575,7 +575,6 @@ function HubNamePanel() {
                 setName(event.target.value);
               }}
             />
-            <span className="field_hint">{t("ui.settings.hub_name_hint")}</span>
           </label>
         )}
 
@@ -659,7 +658,6 @@ function LanguagePanel() {
             setChosen(asLanguage(id));
           }}
           label={t("ui.settings.language_field")}
-          hint={t("ui.settings.language_hint")}
         />
 
         <ApplyBar

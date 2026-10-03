@@ -291,7 +291,7 @@ function AccountLoginModal({
     if (watchedState.status === "complete") {
       onSignedIn();
     } else if (watchedState.status === "failed") {
-      setFailure(sentenceFor(watchedState.message));
+      setFailure(t("ui.ai.sign_in_failed"));
     }
   }, [watchedState, onSignedIn]);
 
@@ -344,7 +344,7 @@ function AccountLoginModal({
       if (next.status === "complete") {
         onSignedIn();
       } else if (next.status === "failed") {
-        setFailure(sentenceFor(next.message));
+        setFailure(t("ui.ai.sign_in_failed"));
       }
     } catch (cause: unknown) {
       setError(wordError(cause));
@@ -403,7 +403,6 @@ function AccountLoginModal({
             </div>
           ) : login === null ? (
             <div className="ai_login_kinds">
-              <p className="field_hint">{t("ui.ai.sign_in_pick_hint")}</p>
               {kinds.map((kind) => (
                 <button
                   key={kind}
@@ -588,10 +587,6 @@ function describeAccount(account: CliproxyApiAccountView): {
 }
 
 /** A failed sign-in's own reason, or the plain sentence where it sent none. */
-function sentenceFor(message: string): string {
-  return message.length > 0 ? message : t("ui.ai.sign_in_failed");
-}
-
 /** The sentence for a failed call, from the code the API named it with. */
 function wordError(cause: unknown): string {
   if (!(cause instanceof ApiError)) {
