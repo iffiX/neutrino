@@ -27,9 +27,8 @@ from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_PREFIX,
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_EASYTIER_PIPE_WINDOWS,
-    CLIENT_DATA_SUBDIR_WINDOWS,
     CLIENT_EASYTIER_STATE_NAME_WINDOWS,
-    CLIENT_OLD_DATA_DIR_NAME_WINDOWS,
+    CLIENT_STATE_SUBDIR_WINDOWS,
 )
 from neutrino_client.platforms import win32
 from neutrino_client.exceptions import (
@@ -38,7 +37,6 @@ from neutrino_client.exceptions import (
 )
 from neutrino_client.platforms.base import (
     ClientPlatform,
-    move_old_data_dir,
     read_share_credentials,
     run_quietly,
     share_parts,
@@ -50,7 +48,9 @@ from neutrino_client.platforms.windows_console import (
 from neutrino_client.platforms.windows_identity import WindowsIdentityApi
 from neutrino_client.words import language_for_tag
 
-WINDOWS_CONFIG_DIR_NAME = "Neutrino Client"
+# This person's client directory under the roaming and the local profile
+# roots.
+WINDOWS_CLIENT_DIR_PARTS = ("Neutrino", "client")
 WINDOWS_MOUNT_TIMEOUT_S = 60
 WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
 
@@ -106,11 +106,18 @@ class WindowsPlatform(ClientPlatform):
         self._job: "int | None" = None
 
     def config_dir(self) -> str:
-        """``%APPDATA%\\Neutrino Client``."""
+        """``%APPDATA%\\Neutrino\\client``."""
         root = os.environ.get("APPDATA", "") or os.path.join(
             self.home(), "AppData", "Roaming"
         )
-        return os.path.join(root, WINDOWS_CONFIG_DIR_NAME)
+        return os.path.join(root, *WINDOWS_CLIENT_DIR_PARTS)
+
+    def log_dir(self) -> str:
+        """``%LOCALAPPDATA%\\Neutrino\\client``."""
+        root = os.environ.get("LOCALAPPDATA", "") or os.path.join(
+            self.home(), "AppData", "Local"
+        )
+        return os.path.join(root, *WINDOWS_CLIENT_DIR_PARTS)
 
     def system_language(self) -> str:
         """The language this account's Windows UI is in.
@@ -341,16 +348,15 @@ class WindowsPlatform(ClientPlatform):
         return CLIENT_EASYTIER_PIPE_WINDOWS
 
     def easytier_state_dir(self) -> str:
-        """``easytier`` under ``Neutrino\\client`` in ProgramData."""
-        return os.path.join(self.data_dir(), CLIENT_EASYTIER_STATE_NAME_WINDOWS)
+        """``easytier`` under ``Neutrino\\client\\state`` in ProgramData."""
+        return os.path.join(self.state_dir(), CLIENT_EASYTIER_STATE_NAME_WINDOWS)
 
-    def data_dir(self) -> str:
-        """``%ProgramData%\\Neutrino\\client``."""
-        return os.path.join(_program_data(), *CLIENT_DATA_SUBDIR_WINDOWS)
+    def state_dir(self) -> str:
+        """``%ProgramData%\\Neutrino\\client\\state``."""
+        return os.path.join(_program_data(), *CLIENT_STATE_SUBDIR_WINDOWS)
 
     def secure_easytier_state_dir(self, path: str) -> None:
-        """Make the state directory, SYSTEM's and the administrators' alone,
-        after moving the data directory of an older install into its place.
+        """Make the state directory, SYSTEM's and the administrators' alone.
 
         Args:
             path: The directory.
@@ -358,10 +364,6 @@ class WindowsPlatform(ClientPlatform):
         Raises:
             OSError: When it cannot be made or its access list set.
         """
-        move_old_data_dir(
-            os.path.join(_program_data(), CLIENT_OLD_DATA_DIR_NAME_WINDOWS),
-            self.data_dir(),
-        )
         os.makedirs(path, exist_ok=True)
         self._win32().protect_directory(path, EASYTIER_STATE_SDDL)
 

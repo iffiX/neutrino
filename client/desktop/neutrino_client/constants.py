@@ -101,7 +101,7 @@ CLIENT_ORIGINAL_DIR_NAME = "original"
 
 # The local control channel: a per-person socket the CLI and the window
 # reach the resident over.
-CLIENT_CONTROL_SOCKET_NAME = "neutrino_client.sock"
+CLIENT_CONTROL_SOCKET_NAME = "client.sock"
 CLIENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
 CLIENT_CONTROL_PIPE_NAME_PREFIX = "neutrino_client_"
 CLIENT_CONTROL_REQUEST_TIMEOUT_S = 5
@@ -124,7 +124,7 @@ CLIENT_WEBKITGTK_ABIS = (
 )
 
 # Where the packages install the client and the binaries it carries.
-CLIENT_INSTALL_PREFIX_LINUX = "/opt/neutrino_client"
+CLIENT_INSTALL_PREFIX_LINUX = "/opt/neutrino/client"
 CLIENT_BUNDLED_PATHS_LINUX = {
     "cc-switch": "bin/cc-switch",
     "rustdesk": "rustdesk/rustdesk",
@@ -151,7 +151,7 @@ CLIENT_BUNDLED_PATHS_DARWIN = {
 
 # The root helper a mount goes through on Linux, and the polkit action that
 # gates it.
-CLIENT_MOUNT_HELPER_PATH = "/usr/libexec/neutrino_client/mount_helper"
+CLIENT_MOUNT_HELPER_PATH = CLIENT_INSTALL_PREFIX_LINUX + "/libexec/mount_helper"
 CLIENT_MOUNT_POLKIT_ACTION = "com.neutrino.client.mount"
 # What each helper exit status means; pkexec's own 126 and 127 mean the
 # person declined or was not allowed.
@@ -206,20 +206,19 @@ CLIENT_LOG_KEEP_BYTES = 1024 * 1024
 # EasyTier daemon, which runs EasyTier's core and which the person asks over
 # its socket. Neither asks the person for an administrator.
 CLIENT_OVERLAY_PROVIDERS = ("netbird", "easytier")
-CLIENT_NETBIRD_CONFIG_PATH_LINUX = "/etc/neutrino_client/netbird/config.json"
+# What the machine accumulated for the two daemons: under /var/lib on Linux,
+# and the client's state directory of the one Neutrino tree elsewhere, under
+# /Library/Application Support on macOS and %PROGRAMDATA% on Windows.
+CLIENT_STATE_DIR_LINUX = "/var/lib/neutrino/client"
+CLIENT_NETBIRD_CONFIG_PATH_LINUX = CLIENT_STATE_DIR_LINUX + "/netbird/config.json"
 CLIENT_NETBIRD_SERVICE_LINUX = "neutrino_client_netbird.service"
 CLIENT_EASYTIER_SERVICE_LINUX = "neutrino_client_easytier.service"
-# The client's directory of the one Neutrino tree: under %PROGRAMDATA% on
-# Windows, under /Library/Application Support on macOS. The directory each
-# took before the tree is moved into it whole at the first start.
-CLIENT_DATA_SUBDIR_WINDOWS = ("Neutrino", "client")
-CLIENT_OLD_DATA_DIR_NAME_WINDOWS = "Neutrino Client"
-CLIENT_DATA_DIR_DARWIN = "/Library/Application Support/Neutrino/client"
-CLIENT_OLD_DATA_DIR_DARWIN = "/Library/Application Support/Neutrino Client"
+CLIENT_STATE_SUBDIR_WINDOWS = ("Neutrino", "client", "state")
+CLIENT_STATE_DIR_DARWIN = "/Library/Application Support/Neutrino/client/state"
 CLIENT_NETBIRD_CONFIG_NAME_WINDOWS = "netbird\\config.json"
 CLIENT_NETBIRD_SERVICE_WINDOWS = "NeutrinoClientNetbird"
 CLIENT_EASYTIER_SERVICE_WINDOWS = "NeutrinoClientEasytier"
-CLIENT_NETBIRD_CONFIG_PATH_DARWIN = CLIENT_DATA_DIR_DARWIN + "/netbird/config.json"
+CLIENT_NETBIRD_CONFIG_PATH_DARWIN = CLIENT_STATE_DIR_DARWIN + "/netbird/config.json"
 CLIENT_NETBIRD_LAUNCHD_LABEL = "com.neutrino.client.netbird"
 CLIENT_EASYTIER_LAUNCHD_LABEL = "com.neutrino.client.easytier"
 CLIENT_LAUNCHD_DAEMONS_DIR = "/Library/LaunchDaemons"
@@ -250,14 +249,14 @@ CLIENT_OVERLAY_NETBIRD_NETWORK = "100.64.0.0/10"
 # answers one JSON request per connection on a local socket every account on
 # the machine may open, the way NetBird's daemon does.
 CLIENT_EASYTIER_DAEMON_VERB = "easytier-daemon"
-CLIENT_EASYTIER_SOCKET_PATH_LINUX = "/run/neutrino_client_easytier.sock"
-CLIENT_EASYTIER_SOCKET_PATH_DARWIN = "/var/run/neutrino_client_easytier.sock"
+CLIENT_EASYTIER_SOCKET_PATH_LINUX = "/run/neutrino/client/easytier.sock"
+CLIENT_EASYTIER_SOCKET_PATH_DARWIN = "/var/run/neutrino/client/easytier.sock"
 CLIENT_EASYTIER_PIPE_WINDOWS = "\\\\.\\pipe\\neutrino_client_easytier"
 # Its state, one directory only root reads: the manual networks' files the
 # core loads, and the console it is pointed at. On Windows it is under
-# %PROGRAMDATA%\Neutrino\client.
-CLIENT_EASYTIER_STATE_DIR_LINUX = "/etc/neutrino_client/easytier"
-CLIENT_EASYTIER_STATE_DIR_DARWIN = CLIENT_DATA_DIR_DARWIN + "/easytier"
+# %PROGRAMDATA%\Neutrino\client\state.
+CLIENT_EASYTIER_STATE_DIR_LINUX = CLIENT_STATE_DIR_LINUX + "/easytier"
+CLIENT_EASYTIER_STATE_DIR_DARWIN = CLIENT_STATE_DIR_DARWIN + "/easytier"
 CLIENT_EASYTIER_STATE_NAME_WINDOWS = "easytier"
 CLIENT_EASYTIER_NETWORKS_DIR_NAME = "networks"
 CLIENT_EASYTIER_CONSOLE_FILE_NAME = "console.json"

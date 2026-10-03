@@ -347,7 +347,7 @@ class FakeClientPlatform(ClientPlatform):
     def control_socket_path(self) -> str:
         if self.socket_path:
             return self.socket_path
-        return os.path.join(os.environ["XDG_RUNTIME_DIR"], "neutrino_client.sock")
+        return os.path.join(os.environ["XDG_RUNTIME_DIR"], "neutrino", "client.sock")
 
     def read_peer_identity(self, connection) -> dict:
         if self.peer_error is not None:

@@ -105,7 +105,7 @@ class FakeSwitcher:
         return self.has_cli
 
     def find_cli(self):
-        return "/opt/neutrino_client/bin/cc-switch" if self.has_cli else None
+        return "/opt/neutrino/client/bin/cc-switch" if self.has_cli else None
 
     def is_active(self, *, base_url, api_key="", model=""):
         return self.active == (base_url, api_key, model)

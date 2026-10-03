@@ -1,7 +1,7 @@
 """The contract every platform implements.
 
 The contract names intents, not mechanisms: where this person's configuration
-lives; which language this machine is set up in; where the control socket is
+and log live; which language this machine is set up in; where the control socket is
 and who its peer is; judge a proposed mount location; attach, detach and
 query a share at a location; open a link; start a windowed program; run
 the carried overlay CLIs and say where the EasyTier daemon answers and keeps
@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import signal
 import subprocess
 import time
@@ -107,34 +106,6 @@ def share_parts(share_url: str) -> "tuple[str, str]":
     return host, share
 
 
-def move_old_data_dir(old: str, new: str) -> bool:
-    """Move the data directory of an older install whole into its new place.
-
-    A new place holding directories and no file is one the installer made
-    empty, and is replaced; one holding a file is kept and the old one left.
-
-    Args:
-        old: The directory the older install kept its data in.
-        new: Where the data belongs now.
-
-    Returns:
-        Whether anything was moved.
-
-    Raises:
-        OSError: When the move fails.
-    """
-    if not os.path.isdir(old):
-        return False
-    if os.path.isdir(new):
-        for _root, _directories, files in os.walk(new):
-            if files:
-                return False
-        shutil.rmtree(new)
-    os.makedirs(os.path.dirname(new), exist_ok=True)
-    shutil.move(old, new)
-    return True
-
-
 def read_share_credentials(path: str) -> "tuple[str, str]":
     """One credentials file's login.
 
@@ -178,6 +149,18 @@ class ClientPlatform:
             PlatformUnsupportedError: When the platform has no such place.
         """
         raise PlatformUnsupportedError("no configuration directory here")
+
+    def log_dir(self) -> str:
+        """Where this person's client writes its log.
+
+        Returns:
+            The absolute directory path: the configuration directory unless
+            the platform keeps logs apart.
+
+        Raises:
+            PlatformUnsupportedError: When the platform has no such place.
+        """
+        return self.config_dir()
 
     def home(self) -> str:
         """This person's home directory."""

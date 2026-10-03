@@ -99,8 +99,9 @@ def test_the_easytier_service_is_the_client_run_as_its_daemon(source):
     (daemon_file,) = components["EasytierDaemon"].iter(f"{WXS}File")
 
     assert netbird == (
-        'service run --config "[CommonAppDataFolder]Neutrino\\client\\netbird\\config.json"'
-        ' --log-file "[CommonAppDataFolder]Neutrino\\client\\netbird\\client.log"'
+        "service run --config "
+        '"[CommonAppDataFolder]Neutrino\\client\\state\\netbird\\config.json"'
+        ' --log-file "[CommonAppDataFolder]Neutrino\\client\\log\\netbird.log"'
     )
     assert easytier == "easytier-daemon --service"
     assert (
@@ -667,27 +668,6 @@ def test_the_client_takes_its_own_folders_of_the_one_neutrino_tree(source):
     assert directories["NeutrinoProgramFolder"].get("Name") == "Neutrino"
     assert directories["CLIENTDATAFOLDER"].get("Name") == "client"
     assert directories["CLIENTDATAFOLDER"] in list(directories["NeutrinoDataFolder"])
+    assert directories["CLIENTSTATEFOLDER"].get("Name") == "state"
+    assert directories["NETBIRDDATAFOLDER"] in list(directories["CLIENTSTATEFOLDER"])
     assert "Neutrino Client" not in [node.get("Name") for node in directories.values()]
-
-
-def test_an_old_data_folder_is_moved_before_the_folders_are_made(source):
-    """NetBird's profile is in place before its service starts on it."""
-    root = xml.etree.ElementTree.fromstring(source)
-    actions = {node.get("Id"): node for node in root.iter(f"{WXS}CustomAction")}
-    custom = {node.get("Action"): node for node in root.iter(f"{WXS}Custom")}
-
-    assert actions["SetMoveClientData"].get("Value") == (
-        build_client_windows.MOVE_DATA_COMMAND
-    )
-    assert actions["MoveClientData"].get("DllEntry") == "WixQuietExec"
-    assert actions["MoveClientData"].get("Impersonate") == "no"
-    assert custom["MoveClientData"].get("Before") == "CreateFolders"
-    assert custom["MoveClientData"].get("Condition") == "NOT REMOVE"
-    assert custom["SetMoveClientData"].get("Before") == "MoveClientData"
-    command = build_client_windows.MOVE_DATA_COMMAND
-    assert 'if exist "[CommonAppDataFolder]Neutrino Client"' in command
-    assert 'if not exist "[CommonAppDataFolder]Neutrino\\client"' in command
-    assert (
-        'move "[CommonAppDataFolder]Neutrino Client" '
-        '"[CommonAppDataFolder]Neutrino\\client"' in command
-    )

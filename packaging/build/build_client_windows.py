@@ -210,9 +210,10 @@ WEBVIEW2_BOOTSTRAPPER_MAX_BYTES = 20 * 1024 * 1024
 WEBVIEW2_CLIENT_ID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"  # scan: allow
 WEBVIEW2_REGISTRY_KEY = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_ID}"
 
-# The person's own configuration, named the way the runtime names it. The
-# installer never writes here; it only offers to take it away at the end.
-CLIENT_CONFIG_DIR_NAME = "Neutrino Client"
+# The person's own configuration and log, named the way the runtime names
+# them, under the roaming and the local profile roots. The installer never
+# writes there; it only offers to take them away at the end.
+CLIENT_CONFIG_DIR_NAME = "Neutrino\\client"
 
 # The identity of the product across every version it ever ships as. Fixed:
 # changing it makes an upgrade install beside the old one instead of over it.
@@ -235,33 +236,27 @@ CONFIG_GOES_CONDITION = 'REMOVE~="ALL" AND ISCONFIGKEPT <> "1"'
 # wants none.
 PATH_DECLINED_CONDITION = 'ISPATHADDED <> "1"'
 
-# Taking the person's configuration away, when they said to. The path is
-# expanded while the installer still runs as them; the removal itself runs
-# without an account, so the expanded path travels to it as data.
+# Taking the person's configuration and log away, when they said to. The
+# paths are expanded while the installer still runs as them; the removal
+# itself runs without an account, so the expanded paths travel to it as data.
 REMOVE_CONFIG_COMMAND = (
-    '"[SystemFolder]cmd.exe" /c ' f'rd /s /q "[AppDataFolder]{CLIENT_CONFIG_DIR_NAME}"'
+    '"[SystemFolder]cmd.exe" /c '
+    f'rd /s /q "[AppDataFolder]{CLIENT_CONFIG_DIR_NAME}" & '
+    f'rd /s /q "[LocalAppDataFolder]{CLIENT_CONFIG_DIR_NAME}"'
 )
 
 # The stand-in for Npcap's Packet.dll, as it lands beside easytier-core.exe.
 PACKET_DLL_NAME = "packet.dll"
 
 # NetBird's binary under the payload's bin and how its service runs, its
-# state under ProgramData; the EasyTier daemon is the console program run
-# with its verb, and makes its own state directory under ProgramData.
+# state and its log under the client's directories in ProgramData; the
+# EasyTier daemon is the console program run with its verb, and makes its own
+# state directory under ProgramData.
 NETBIRD_EXE = "netbird.exe"
 NETBIRD_SERVICE_ARGUMENTS = (
-    'service run --config "[CommonAppDataFolder]Neutrino\\client\\netbird\\config.json"'
-    ' --log-file "[CommonAppDataFolder]Neutrino\\client\\netbird\\client.log"'
-)
-
-# The data folder of an install from before the one Neutrino tree, moved
-# whole into its place before the folders are made and NetBird starts on it.
-MOVE_DATA_COMMAND = (
-    '"[SystemFolder]cmd.exe" /c '
-    'if exist "[CommonAppDataFolder]Neutrino Client" '
-    'if not exist "[CommonAppDataFolder]Neutrino\\client" '
-    '(md "[CommonAppDataFolder]Neutrino" 2>nul & '
-    'move "[CommonAppDataFolder]Neutrino Client" "[CommonAppDataFolder]Neutrino\\client")'
+    "service run --config "
+    '"[CommonAppDataFolder]Neutrino\\client\\state\\netbird\\config.json"'
+    ' --log-file "[CommonAppDataFolder]Neutrino\\client\\log\\netbird.log"'
 )
 EASYTIER_DAEMON_ARGUMENTS = f"{CLIENT_EASYTIER_DAEMON_VERB} --service"
 # What the service control manager does when the EasyTier daemon ends without
@@ -344,7 +339,9 @@ WIX_BODY = r"""
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="NeutrinoDataFolder" Name="Neutrino">
         <Directory Id="CLIENTDATAFOLDER" Name="client">
-          <Directory Id="NETBIRDDATAFOLDER" Name="netbird" />
+          <Directory Id="CLIENTSTATEFOLDER" Name="state">
+            <Directory Id="NETBIRDDATAFOLDER" Name="netbird" />
+          </Directory>
         </Directory>
       </Directory>
     </StandardDirectory>
@@ -435,24 +432,7 @@ WIX_BODY = r"""
                   Impersonate="no"
                   Return="ignore" />
 
-    <CustomAction Id="SetMoveClientData"
-                  Property="MoveClientData"
-                  Value="@MOVE_DATA_COMMAND@"
-                  Execute="immediate" />
-    <CustomAction Id="MoveClientData"
-                  DllEntry="WixQuietExec"
-                  BinaryRef="@UTIL_LIBRARY@"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="ignore" />
-
     <InstallExecuteSequence>
-      <Custom Action="SetMoveClientData"
-              Before="MoveClientData"
-              Condition="NOT REMOVE" />
-      <Custom Action="MoveClientData"
-              Before="CreateFolders"
-              Condition="NOT REMOVE" />
       <!-- After costing, which resolves [INSTALLFOLDER], and before the
            extension's own close, which it schedules on InstallInitialize. -->
       <Custom Action="QuitClientResident"
@@ -528,7 +508,7 @@ WIX_BODY = r"""
                  Text="Keep my configuration" />
         <Control Id="ConfigNote" Type="Text" X="34" Y="90" Width="320" Height="40"
                  NoPrefix="yes"
-                 Text="The hub this machine is joined to and the preferences of the window, under %APPDATA%\Neutrino Client. Kept, installing the client again joins the same hub without a new link." />
+                 Text="The hub this machine is joined to and the preferences of the window, under %APPDATA%\Neutrino\client. Kept, installing the client again joins the same hub without a new link." />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
                  Text="!(loc.WixUIBack)" />
@@ -744,7 +724,6 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
             "UTIL_LIBRARY": wix_build.UTIL_LIBRARY[machine],
             "QUIT_COMMAND": QUIT_COMMAND,
             "REMOVE_CONFIG_COMMAND": REMOVE_CONFIG_COMMAND,
-            "MOVE_DATA_COMMAND": MOVE_DATA_COMMAND,
             "CONFIG_GOES": CONFIG_GOES_CONDITION,
             "PATH_DECLINED": PATH_DECLINED_CONDITION,
             "NETBIRD_EXE": Path(staged["payload"]) / "bin" / NETBIRD_EXE,

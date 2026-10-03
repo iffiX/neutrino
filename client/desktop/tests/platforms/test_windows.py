@@ -142,8 +142,17 @@ def test_the_config_dir_is_under_appdata(monkeypatch):
     monkeypatch.undo()
     monkeypatch.setenv("APPDATA", "C:\\Users\\alice\\AppData\\Roaming")
 
-    assert WindowsPlatform().config_dir().endswith("Neutrino Client")
-    assert WindowsPlatform().config_dir().startswith("C:\\Users\\alice")
+    assert WindowsPlatform().config_dir() == os.path.join(
+        "C:\\Users\\alice\\AppData\\Roaming", "Neutrino", "client"
+    )
+
+
+def test_the_log_is_under_local_appdata(monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", "C:\\Users\\alice\\AppData\\Local")
+
+    assert WindowsPlatform().log_dir() == os.path.join(
+        "C:\\Users\\alice\\AppData\\Local", "Neutrino", "client"
+    )
 
 
 @pytest.mark.parametrize(
@@ -439,7 +448,7 @@ def test_easytier_is_asked_of_the_daemons_pipe(monkeypatch, tmp_path):
 
     assert subject.easytier_daemon_address() == "\\\\.\\pipe\\neutrino_client_easytier"
     assert subject.easytier_state_dir() == os.path.join(
-        str(tmp_path / "ProgramData"), "Neutrino", "client", "easytier"
+        str(tmp_path / "ProgramData"), "Neutrino", "client", "state", "easytier"
     )
 
 
@@ -458,28 +467,6 @@ def test_the_state_directory_is_system_and_the_administrators_alone(
     assert call[2].startswith("D:P")
     assert "(A;OICI;FA;;;SY)" in call[2] and "(A;OICI;FA;;;BA)" in call[2]
     assert ";BU)" not in call[2] and ";IU)" not in call[2] and ";WD)" not in call[2]
-
-
-def test_the_first_start_moves_the_old_data_directory_into_the_tree(
-    monkeypatch, tmp_path
-):
-    """NetBird's profile and EasyTier's networks survive the move whole, and
-    the old directory is gone after it."""
-    program_data = tmp_path / "ProgramData"
-    old = program_data / "Neutrino Client"
-    (old / "netbird").mkdir(parents=True)
-    (old / "netbird" / "config.json").write_text('{"PrivateKey": "kept"}')
-    (old / "easytier" / "networks").mkdir(parents=True)
-    (old / "easytier" / "networks" / "home.toml").write_text("kept")
-    monkeypatch.setenv("PROGRAMDATA", str(program_data))
-    subject = WindowsPlatform(win32=FakeDaemonWin32())
-
-    subject.secure_easytier_state_dir(subject.easytier_state_dir())
-
-    new = program_data / "Neutrino" / "client"
-    assert not old.exists()
-    assert (new / "netbird" / "config.json").read_text() == '{"PrivateKey": "kept"}'
-    assert (new / "easytier" / "networks" / "home.toml").read_text() == "kept"
 
 
 def test_every_core_joins_one_job_that_ends_with_the_daemon():

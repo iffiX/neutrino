@@ -3,8 +3,8 @@
     python3 client/desktop/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
 The same payload the .deb carries: the client compiled under
-/opt/neutrino_client with the window's bindings inside it, the mount helper
-compiled beside the path polkit pins, and the binaries the client
+/opt/neutrino/client with the window's bindings inside it, the mount helper
+compiled under its libexec at the path polkit pins, and the binaries the client
 drives. That fixes the package to one architecture and one glibc, so it is
 built in a container of the machine it is for.
 
@@ -113,7 +113,6 @@ cp -a {staged}/. %{{buildroot}}/
 %files
 {prefix}
 /usr/bin/nclient
-{helper_dir}
 /usr/share/applications/{desktop}.desktop
 /usr/share/icons/hicolor/*/apps/{desktop}.png
 /usr/share/polkit-1/actions/{action}.policy
@@ -149,6 +148,7 @@ if [ "$1" = 0 ]; then
 %postun
 if [ "$1" = 0 ]; then
     rm -rf {prefix}
+    rmdir /opt/neutrino 2>/dev/null || true
 fi
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload >/dev/null 2>&1 || true
@@ -202,7 +202,6 @@ def main() -> int:
                 packager=arguments.packager,
                 staged=staged,
                 prefix=payload.INSTALL_PREFIX,
-                helper_dir=str(Path(CLIENT_MOUNT_HELPER_PATH).parent),
                 desktop=CLIENT_DESKTOP_NAME,
                 action=CLIENT_MOUNT_POLKIT_ACTION,
                 stop=payload.STOP_RESIDENTS,

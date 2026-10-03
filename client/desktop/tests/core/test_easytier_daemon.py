@@ -21,7 +21,7 @@ from tests.conftest import discard
 
 SECRET = 's3cret "quoted"'  # scan: allow
 CONSOLE = "tcp://et-web.console.easytier.net:22020/etk_abc123"  # scan: allow
-CORE = "/opt/neutrino_client/easytier/easytier-core"
+CORE = "/opt/neutrino/client/easytier/easytier-core"
 
 
 class RecordingSupervisor:

@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/opt/neutrino_client/netbird/netbird service run --config /etc/neutrino_client/netbird/config.json --log-file console
+ExecStart=/opt/neutrino/client/netbird/netbird service run --config /var/lib/neutrino/client/netbird/config.json --log-file console
 Restart=always
 RestartSec=5
 

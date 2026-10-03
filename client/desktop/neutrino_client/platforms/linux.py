@@ -53,7 +53,10 @@ PROC_MOUNTS_ESCAPES = (
     ("\t", "\\011"),
     ("\n", "\\012"),
 )
-CONFIG_DIR_NAME = "neutrino_client"
+# This person's client directory under the configuration root, and the
+# directory its socket sits in under the runtime root.
+CONFIG_DIR_NAME = os.path.join("neutrino", "client")
+SOCKET_DIR_NAME = "neutrino"
 # The clipboard tools, each with the variable naming the session it serves.
 CLIPBOARD_TOOLS = (
     ("WAYLAND_DISPLAY", ("wl-paste", "--no-newline", "--type", "text")),
@@ -73,14 +76,14 @@ class LinuxPlatform(ClientPlatform):
     os_name = "linux"
 
     def config_dir(self) -> str:
-        """``~/.config/neutrino_client``, honoring ``XDG_CONFIG_HOME``."""
+        """``~/.config/neutrino/client``, honoring ``XDG_CONFIG_HOME``."""
         root = os.environ.get("XDG_CONFIG_HOME", "") or os.path.join(
             self.home(), ".config"
         )
         return os.path.join(root, CONFIG_DIR_NAME)
 
     def control_socket_path(self) -> str:
-        """``$XDG_RUNTIME_DIR/neutrino_client.sock``.
+        """``$XDG_RUNTIME_DIR/neutrino/client.sock``.
 
         Raises:
             ControlSocketUnavailableError: When the runtime directory is
@@ -89,7 +92,7 @@ class LinuxPlatform(ClientPlatform):
         runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "")
         if not runtime_dir:
             raise ControlSocketUnavailableError("XDG_RUNTIME_DIR is not set")
-        return os.path.join(runtime_dir, CLIENT_CONTROL_SOCKET_NAME)
+        return os.path.join(runtime_dir, SOCKET_DIR_NAME, CLIENT_CONTROL_SOCKET_NAME)
 
     def read_peer_identity(self, connection) -> dict:
         """The peer's identity, from the kernel's ``SO_PEERCRED``.
@@ -267,11 +270,11 @@ class LinuxPlatform(ClientPlatform):
         gtk_set_clipboard_text(text, CLIENT_CLIPBOARD_TIMEOUT_S)
 
     def easytier_daemon_address(self) -> str:
-        """``/run/neutrino_client_easytier.sock``."""
+        """``/run/neutrino/client/easytier.sock``."""
         return CLIENT_EASYTIER_SOCKET_PATH_LINUX
 
     def easytier_state_dir(self) -> str:
-        """``/etc/neutrino_client/easytier``."""
+        """``/var/lib/neutrino/client/easytier``."""
         return CLIENT_EASYTIER_STATE_DIR_LINUX
 
     def _run_mount_helper(self, arguments: list, *, failure_code: str) -> None:

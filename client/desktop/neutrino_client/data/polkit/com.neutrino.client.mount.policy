@@ -12,6 +12,6 @@
       <allow_inactive>no</allow_inactive>
       <allow_active>yes</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/neutrino_client/mount_helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/neutrino/client/libexec/mount_helper</annotate>
   </action>
 </policyconfig>
