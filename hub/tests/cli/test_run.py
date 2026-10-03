@@ -352,3 +352,58 @@ def test_on_linux_a_hub_not_set_up_exits_and_says_so(monkeypatch, capsys):
     monkeypatch.setattr(run.sys, "argv", ["nhub-run"])
     assert run.main() == 1
     assert "nhub setup" in capsys.readouterr().err
+
+
+@pytest.fixture
+def config_tree(monkeypatch, tmp_path):
+    """A config tree with the panel's settings, as setup leaves it mid-way."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(run, "UTILS_CONFIG_DIR", tmp_path)
+    (tmp_path / "web").mkdir()
+    settings = tmp_path / "web" / "settings.json"
+    settings.write_text(json.dumps({"admin_password_hash": "PLACEHOLDER"}))
+    return settings
+
+
+def _store_password(settings) -> None:
+    settings.write_text(json.dumps({"admin_password_hash": "stored-hash"}))
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_outside_linux_settings_without_a_password_are_not_set_up(
+    monkeypatch, config_tree, system
+):
+    monkeypatch.setattr(run.sys, "platform", system)
+
+    assert not run._is_set_up()
+
+    _store_password(config_tree)
+
+    assert run._is_set_up()
+
+
+def test_on_linux_the_panel_settings_alone_are_set_up(monkeypatch, config_tree):
+    monkeypatch.setattr(run.sys, "platform", "linux")
+
+    assert run._is_set_up()
+
+
+def test_the_service_keeps_waiting_until_the_password_is_stored(
+    monkeypatch, config_tree, outside_linux
+):
+    monkeypatch.setattr(run.sys, "platform", "win32")
+    stop = threading.Event()
+    waits = []
+
+    def wait(timeout_s):
+        waits.append(timeout_s)
+        if len(waits) == 3:
+            _store_password(config_tree)
+        return False
+
+    monkeypatch.setattr(run, "_STOP_ASKED", stop)
+    monkeypatch.setattr(stop, "wait", wait)
+    monkeypatch.setattr(run, "_supervise", lambda arguments: 0)
+
+    assert run.main() == 0
+    assert len(waits) == 3

@@ -68,6 +68,7 @@ from neutrino_hub.modules.router.constants import (
 from neutrino_hub.modules.router.controller import RouterStateController, router_lock
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
+from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.system.child_supervisor import ChildStartLine
@@ -220,7 +221,7 @@ def main() -> int:
 
 
 def _wait_for_setup() -> None:
-    """Sleep until ``nhub setup`` has written the configuration.
+    """Sleep until ``nhub setup`` has stored the panel password.
 
     The service on macOS and Windows starts at boot whether or not the hub
     was set up, and idles here until it is.
@@ -296,10 +297,17 @@ def child_start_lines() -> dict:
 def _is_set_up() -> bool:
     """Whether there is a configuration to run against.
 
+    On Linux setup starts the units before it stores the panel password, so
+    the panel's own settings are the mark there. On macOS and Windows the
+    one service starts after the password is stored, so the stored password
+    is the mark, and a service a boot started keeps waiting through setup.
+
     Returns:
-        True when the panel's own settings are there, which is the last thing
-        setup writes.
+        True on Linux when the panel's settings are there; elsewhere when the
+        panel password is stored.
     """
+    if not is_linux():
+        return is_password_set()
     return (UTILS_CONFIG_DIR / PANEL_SETTINGS_FILE).is_file()
 
 
