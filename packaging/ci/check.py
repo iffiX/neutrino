@@ -138,14 +138,17 @@ ANDROID_SETTLE_S = 10
 LINUX_INSTALLS = {
     ".deb": (
         "debian:12",
-        "apt-get -qq update && apt-get -qq install -y {package}",
+        "apt-get -qq update && apt-get -q install -y {package}",
     ),
-    ".rpm": ("fedora:41", "dnf -q -y install {package}"),
+    ".rpm": ("fedora:41", "dnf -y install {package}"),
     ".pkg.tar.zst": (
         "archlinux:latest",
         "pacman -Sy --noconfirm >/dev/null && pacman -U --noconfirm {package}",
     ),
 }
+# The sentence the hub's post-install prints, which the package manager must
+# let through for the address beside it to be seen.
+HUB_INSTALLED_SENTENCE = "Neutrino Hub installed"
 # The command each package puts on the path.
 LINUX_COMMANDS = {
     "neutrino-hub": "nhub",
@@ -445,6 +448,8 @@ def check_linux(package: Path) -> None:
     image, install = LINUX_INSTALLS[suffix]
     inside = f"/package/{package.name}"
     script = f"{install.format(package=inside)} && {command} --version"
+    if command == LINUX_COMMANDS["neutrino-hub"]:
+        script += f" && {command} open --print"
     print(f"installing {package.name} in {image}")
     result = subprocess.run(
         [
@@ -469,9 +474,17 @@ def check_linux(package: Path) -> None:
             f"the install or {command} --version failed:\n"
             + (result.stderr or result.stdout).strip()[-3000:]
         )
-    print(f"{command} {result.stdout.strip().splitlines()[-1]}")
-    if command == LINUX_COMMANDS["neutrino-hub"] and "/?token=" not in result.stdout:
-        raise SystemExit("the hub's install printed no setup wizard address")
+    if command == LINUX_COMMANDS["neutrino-hub"]:
+        address = result.stdout.strip().splitlines()[-1]
+        print(f"{command} {result.stdout.strip().splitlines()[-2]}")
+        if "/?token=" not in address:
+            raise SystemExit(
+                f"nhub open --print gave no setup wizard address: {address}"
+            )
+        if HUB_INSTALLED_SENTENCE not in result.stdout:
+            raise SystemExit("the hub's install printed no setup wizard address")
+    else:
+        print(f"{command} {result.stdout.strip().splitlines()[-1]}")
 
 
 def _set_up_hub(nhub: list) -> None:
