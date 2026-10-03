@@ -248,15 +248,17 @@ class SambaDarwinApplier:
             lines: How many lines to return at most.
 
         Returns:
-            The latest lines, oldest first, without ``log``'s header; empty
-            when ``log`` cannot answer.
+            The latest lines, oldest first, without ``log``'s header.
+
+        Raises:
+            OSError: When ``log`` cannot run or fails.
+            subprocess.SubprocessError: When ``log`` does not answer in time.
         """
-        try:
-            result = self._run(list(SAMBA_DARWIN_SERVER_LOG_COMMAND), is_checked=False)
-        except (OSError, subprocess.SubprocessError):
-            return []
+        result = self._run(list(SAMBA_DARWIN_SERVER_LOG_COMMAND), is_checked=False)
         if not result.is_success:
-            return []
+            raise OSError(
+                f"log exited {result.exit_code}: {result.stderr.strip()[-200:]}"
+            )
         held = [
             line
             for line in result.stdout.splitlines()

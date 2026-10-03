@@ -16,7 +16,11 @@ sentence, so every surface does its own wording.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import os
+import subprocess
+
 from neutrino_agent.constants import (
+    AGENT_LOG_ROTATED_SUFFIX,
     AGENT_MODULE_JOURNAL_LINES,
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
@@ -79,6 +83,8 @@ class ModuleRunner:
         self._platform = platform
         self._log = log
         self._publish = publish if publish is not None else _ignore_status
+        # The log sources a journal could not read, each warned of once.
+        self._unread_sources: set = set()
 
     def verify(self, resolved: dict) -> bool:
         """Whether the software is on this machine, by the runner's own check.
@@ -219,9 +225,60 @@ class ModuleRunner:
         return command_outcome(0, output="\n".join(self.journal_text(lines)[-lines:]))
 
     def _agent_log_lines(self, lines: int) -> list:
-        """The agent's own log lines that name this module, empty in a journal."""
+        """The agent's own log lines that name this module, empty in a journal.
+
+        The file the last rotation left is read before the current one, so
+        a rotation does not empty the box.
+        """
         path = self._platform.agent_log_path()
-        return file_tail(path, lines, needle=self.name) if path else []
+        if not path:
+            return []
+        rotated = path + AGENT_LOG_ROTATED_SUFFIX
+        held = []
+        if os.path.isfile(rotated):
+            held = self._read_source(
+                rotated, lambda: file_tail(rotated, lines, needle=self.name)
+            )
+        held += self._read_source(
+            path, lambda: file_tail(path, lines, needle=self.name)
+        )
+        return held[-lines:]
+
+    def _with_agent_lines(self, own: list, lines: int) -> list:
+        """The module's own lines, then the agent's lines that name it.
+
+        Args:
+            own: The module's own sources' lines, oldest first.
+            lines: How many lines to return at most.
+
+        Returns:
+            At most ``lines``: the agent's lines take at most half when the
+            module has lines of its own, and the module's newest fill the rest.
+        """
+        agent = self._agent_log_lines(max(1, lines // 2) if own else lines)
+        kept = max(0, lines - len(agent))
+        return (own[-kept:] if kept else []) + agent
+
+    def _read_source(self, source: str, read) -> list:
+        """One source of the module's log, read; a failure is warned of once.
+
+        Args:
+            source: What the source is, as the warning names it.
+            read: Returns the source's lines; raises when it cannot.
+
+        Returns:
+            The lines; empty when the source could not be read, after one
+            line in the agent's own log naming the module and the source.
+        """
+        try:
+            held = list(read())
+        except (OSError, subprocess.SubprocessError, ModuleApplyError) as error:
+            if source not in self._unread_sources:
+                self._unread_sources.add(source)
+                self._log(f"{self.name}: cannot read the log source {source}: {error}")
+            return []
+        self._unread_sources.discard(source)
+        return held
 
     def _validate_command(self, args: dict) -> dict:
         """Check the configuration the verb carries, typed either way."""

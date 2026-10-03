@@ -76,8 +76,13 @@ AGENT_MODULE_VERB_VALIDATE = "validate"
 AGENT_MODULE_VERB_JOURNAL = "journal"
 # How many lines of a module's log one read returns at most.
 AGENT_MODULE_JOURNAL_LINES = 200
-# How much of the end of a log file one read looks at.
+# How much of the end of a log file one read looks at, and how much a read
+# for the lines naming one module looks at: more than the agent's own log
+# holds before it is rotated.
 AGENT_MODULE_LOG_TAIL_BYTES = 256 * 1024
+AGENT_MODULE_LOG_SEARCH_BYTES = 2 * 1024 * 1024
+# The agent's log as its last rotation left it, beside the one written now.
+AGENT_LOG_ROTATED_SUFFIX = ".1"
 
 # What the hub's state may want a module to be. The agent makes each
 # mentioned module's actual state equal its want.

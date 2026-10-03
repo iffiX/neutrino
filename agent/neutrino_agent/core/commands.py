@@ -28,6 +28,7 @@ from neutrino_agent.constants import (
     AGENT_KILL_GRACE_S,
     AGENT_KILL_PROTECTED_PIDS,
     AGENT_MODULE_COMMAND_SETTLE_S,
+    AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
     AGENT_OUTPUT_LIMIT_BYTES,
 )
@@ -127,9 +128,9 @@ class DeviceOperator:
                 module answers. None refuses every module verb.
             remote_desktop: The reader the remote desktop verbs run on.
                 None reads this machine through the platform.
-            settle: Called with a timeout before a module verb runs, to
-                let a pending desired state apply first; None waits for
-                nothing.
+            settle: Called with a timeout before a module verb that acts
+                runs, to let a pending desired state apply first; None
+                waits for nothing.
             on_module_changed: Called with the module name after one of its
                 verbs succeeded, so its details are read again at once.
             shells: The shell registry the ``persist`` and ``stop_session``
@@ -182,7 +183,7 @@ class DeviceOperator:
     def _module_verb(
         self, module: str, runner, verb: str, args: dict, on_line
     ) -> CommandOutcome:
-        is_reading = verb == AGENT_MODULE_VERB_VALIDATE
+        is_reading = verb in (AGENT_MODULE_VERB_VALIDATE, AGENT_MODULE_VERB_JOURNAL)
         if (
             not is_reading
             and self._settle is not None

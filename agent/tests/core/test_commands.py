@@ -1,14 +1,15 @@
 """The commands the hub opens: the agent's own verbs, and each module's own.
 
 What these pin: a module's verb reaches its runner by the ``module`` field
-with the lines it prints handed on, ``validate`` reaches every runner
-without waiting on the state, a module this build has no runner for and a
-verb this agent does not have both refuse ``verb_unknown``, a runner that
-raises answers ``agent_internal`` and never drops the stream, the power and
-reinstall verbs keep their answers, ``resize`` reaches the shell stream it
-names, a process is ended with a term and then a kill against a real
-child and through the platform on Windows, the protected pids never, and the remote desktop verbs reach their reader with the status
-riding the result.
+with the lines it prints handed on, ``validate`` and ``journal`` reach
+every runner without waiting on the state, a module this build has no
+runner for and a verb this agent does not have both refuse
+``verb_unknown``, a runner that raises answers ``agent_internal`` and never
+drops the stream, the power and reinstall verbs keep their answers,
+``resize`` reaches the shell stream it names, a process is ended with a
+term and then a kill against a real child and through the platform on
+Windows, never one of the protected pids, and the remote desktop verbs
+reach their reader with the status riding the result.
 """
 
 import os
@@ -188,6 +189,20 @@ def test_validate_reaches_the_runner_without_waiting_on_the_state():
     assert (outcome.exit_code, outcome.code) == (0, "")
     assert settled == []
     assert changed == []
+
+
+def test_the_journal_reads_while_a_state_is_still_applying():
+    settled: list = []
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        module_runners={"samba": FakeRunner()},
+        settle=lambda timeout_s: settled.append(timeout_s) or False,
+    )
+
+    outcome = subject.run("samba", "journal", {"lines": 10})
+
+    assert (outcome.exit_code, outcome.code) == (0, "")
+    assert settled == []
 
 
 # --- the device verbs ---

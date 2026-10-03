@@ -290,6 +290,9 @@ class CloudcliModuleRunner(ModuleRunner):
     def journal_text(self, lines: int) -> list:
         """Every instance's output: the units' journal, or each log file's tail.
 
+        Where no unit keeps the output, the agent's own lines that name the
+        module follow the log files' lines.
+
         Args:
             lines: How many lines to return at most.
 
@@ -298,13 +301,14 @@ class CloudcliModuleRunner(ModuleRunner):
             start with its account's name.
         """
         logs = self._applier.log_paths(self._records.accounts())
-        if not logs:
+        if not logs and self.journal_units():
             return super().journal_text(lines)
-        share = max(1, lines // len(logs))
-        held = []
+        share = max(1, lines // len(logs)) if logs else 0
+        own = []
         for account, path in logs:
-            held += [f"{account}: {line}" for line in file_tail(path, share)]
-        return held[-lines:]
+            read = self._read_source(path, lambda path=path: file_tail(path, share))
+            own += [f"{account}: {line}" for line in read]
+        return self._with_agent_lines(own, lines)
 
     def details(self, resolved: dict) -> dict:
         """Each instance, its port and whether it answers.

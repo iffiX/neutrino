@@ -382,8 +382,10 @@ class SambaNativeServerRunner(ModuleRunner):
             The server's latest lines followed by the agent's, oldest
             first within each.
         """
-        held = self._applier.read_server_log(lines) + self._agent_log_lines(lines)
-        return held[-lines:]
+        own = self._read_source(
+            "the SMB server's events", lambda: self._applier.read_server_log(lines)
+        )
+        return self._with_agent_lines(own, lines)
 
     def command(self, verb: str, args: dict, on_line=None) -> dict:
         """Run one of the file share's verbs.

@@ -615,3 +615,33 @@ def test_the_native_log_is_the_server_s_then_the_agent_s_lines(native, tmp_path)
     assert native.command("journal", {"lines": 1})["output"] == (
         "11:00 samba: created share media"
     )
+
+
+@pytest.mark.parametrize("os_name", ["windows", "darwin"])
+def test_a_server_log_that_fails_is_warned_of_and_the_agent_s_lines_stay(
+    native, tmp_path, os_name
+):
+    log = tmp_path / "agent.log"
+    log.write_text("11:00 samba: unchanged\n", encoding="utf-8")
+    native._platform.log_path = str(log)
+    native._platform.os_name = os_name
+
+    def fail(lines):
+        raise OSError("powershell exited 1")
+
+    def write(message):
+        with open(log, "a", encoding="utf-8") as stream:
+            stream.write(f"11:01 {message}\n")
+
+    native.applier.read_server_log = fail
+    native._log = write
+
+    first = native.command("journal", {"lines": 10})["output"].splitlines()
+    second = native.command("journal", {"lines": 10})["output"].splitlines()
+
+    assert first == [
+        "11:00 samba: unchanged",
+        "11:01 samba: cannot read the log source the SMB server's events: "
+        "powershell exited 1",
+    ]
+    assert second == first
