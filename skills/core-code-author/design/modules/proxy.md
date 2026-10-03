@@ -28,8 +28,8 @@ either scope is on and xray runs. It owns one TUN device (`utun` on macOS,
 a wintun adapter on Windows) and hands every TCP connection and UDP flow
 that enters it to `socks_local_in`, a SOCKS inbound of xray's on loopback
 with sniffing on, so the domain rules of the split apply as they do to
-`tproxy_in`. The hub routes the two halves `0.0.0.0/1` and `128.0.0.0/1`
-at the device, which win over the uplink's default route without touching
+`tproxy_in`. The hub routes the two halves of the IPv4 space (`0.0.0.0/1`
+and its upper twin) at the device, which win over the uplink's default route without touching
 it, and keeps a host route through the uplink's gateway for every address
 that has to stay out: every exit node's address, `direct_dns`, the
 reference host, and the servers of the running overlays. The local networks
@@ -37,7 +37,8 @@ need no route, since the link's own route is longer than a half. xray's
 `direct` and node outbounds are bound to the uplink with
 `sockopt.interface`, so a connection the split sends direct never enters
 the TUN; on Linux the egress mark does that work. The device is `utun225`
-on macOS and the adapter `neutrino_tun` on Windows, at `198.18.0.1/30`.
+on macOS and the adapter `neutrino_tun` on Windows, with a /30 from the
+benchmark range of RFC 2544.
 The routes are the machine's, so with the overlay scope on alone the box's
 own traffic enters the TUN as well: those systems have no routing by
 source interface.
