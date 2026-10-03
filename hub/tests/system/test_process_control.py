@@ -1,12 +1,15 @@
 """The process controller of the hub's one service on macOS and Windows.
 
-Inside the service each verb acts on a child and ``services.json`` records
-what is enabled; in a ``nhub`` command, which runs no children, a verb that
-needs one acts on the service through the platform instead.
+Inside the service each verb acts on a child, ``services.json`` records
+what is enabled, and the service follows a change another process writes
+there. In a ``nhub`` command, which runs no children, starting a child
+records it; only a panel verb, or a child restart while the service runs,
+acts on the service through the platform.
 """
 
 import json
 import threading
+import time
 
 import pytest
 
@@ -89,9 +92,20 @@ def controller(tmp_path, popen, service, exits):
         log_dir=tmp_path / "log",
         exit=exits,
         restart_delay_s=0,
+        reconcile_s=3600,
     )
     yield built
-    supervisor.stop_all()
+    built.shutdown()
+
+
+def _command(tmp_path, service) -> SupervisedProcessController:
+    """The controller a ``nhub`` command holds, on the same services.json."""
+    return SupervisedProcessController(
+        supervisor=ChildProcessSupervisor(log_dir=tmp_path / "log"),
+        service=service,
+        state_path=tmp_path / "state" / "services.json",
+        log_dir=tmp_path / "log",
+    )
 
 
 def _state(tmp_path) -> dict:
@@ -236,10 +250,107 @@ def test_a_command_restarting_the_panel_restarts_the_service(controller, service
     assert service.calls == ["restart"]
 
 
-def test_a_command_starts_a_stopped_service_for_any_child(controller, service):
+@pytest.mark.parametrize("action", ["start", "restart", "enable"])
+def test_a_command_records_a_child_while_the_service_is_stopped(
+    controller, service, popen, tmp_path, action
+):
+    controller.control("cliproxyapi", action)
+
+    assert _state(tmp_path)["enabled"] == ["cliproxyapi"]
+    assert service.calls == []
+    assert popen.started == []
+
+
+def test_a_command_starting_a_child_leaves_the_running_service_alone(
+    controller, service, tmp_path
+):
+    service.state = PLATFORM_SERVICE_RUNNING
+
     controller.start("xray")
 
-    assert service.calls == ["start"]
+    assert _state(tmp_path)["enabled"] == ["xray"]
+    assert service.calls == []
+
+
+def test_a_command_restarting_a_child_of_the_running_service_restarts_it(
+    controller, service
+):
+    service.state = PLATFORM_SERVICE_RUNNING
+
+    controller.restart("cliproxyapi")
+
+    assert service.calls == ["restart"]
+
+
+def test_the_service_starts_a_child_another_process_enabled(
+    controller, service, popen, tmp_path
+):
+    controller.supervise({"xray": XRAY})
+
+    _command(tmp_path, service).enable("xray")
+    controller.reconcile()
+
+    assert [child.argv for child in popen.started] == [XRAY.argv]
+    assert controller.is_active("xray")
+
+
+def test_the_service_stops_a_child_another_process_disabled(
+    controller, service, popen, tmp_path
+):
+    controller.supervise({"xray": XRAY})
+    controller.enable("xray")
+    controller.reconcile()
+
+    _command(tmp_path, service).disable("xray")
+    controller.reconcile()
+
+    assert popen.started[0].is_terminated
+    assert not controller.is_active("xray")
+
+
+def test_a_child_started_here_without_enabling_is_left_running(controller, popen):
+    controller.supervise({"xray": XRAY})
+    controller.start("xray")
+
+    controller.reconcile()
+
+    assert controller.is_active("xray")
+
+
+def test_a_start_line_another_process_kept_is_held_and_started(
+    controller, service, popen, tmp_path
+):
+    controller.supervise({"xray": XRAY})
+    command = _command(tmp_path, service)
+
+    command.set_start_line("easytier", ["/app/bin/easytier-core"], {}, None)
+    command.enable("easytier")
+    controller.reconcile()
+
+    assert [child.argv for child in popen.started] == [["/app/bin/easytier-core"]]
+
+
+def test_the_service_follows_services_json_on_its_timer(tmp_path, popen, service):
+    supervisor = ChildProcessSupervisor(
+        log_dir=tmp_path / "log", base_env={}, start_process=popen, log=print
+    )
+    controller = SupervisedProcessController(
+        supervisor=supervisor,
+        service=service,
+        state_path=tmp_path / "state" / "services.json",
+        log_dir=tmp_path / "log",
+        reconcile_s=0.01,
+    )
+    controller.supervise({"xray": XRAY})
+    try:
+        _command(tmp_path, service).enable("xray")
+        deadline = time.monotonic() + 5
+        while not popen.started and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        controller.shutdown()
+
+    assert [child.argv for child in popen.started] == [XRAY.argv]
 
 
 def test_a_command_cannot_stop_one_child(controller, service):

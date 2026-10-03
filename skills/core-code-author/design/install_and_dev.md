@@ -87,7 +87,7 @@ no start at install.
 | Applying interface roles | by the mode | skipped |
 | The network mode | asks for one of three | `server`, with no question |
 | The hub's own traffic through the proxy | asked | not asked |
-| Starting services | each unit | the one service, at the end: `launchctl bootstrap` and `kickstart`, or `sc start` |
+| Starting services | each unit | the one service, once, after the panel password and before the local agent: `launchctl bootstrap` and `kickstart`, or `sc start`; the steps before it only write `services.json` |
 | The local agent | from the cache by `AGENT_PACKAGE_FAMILY_OF_PLATFORM` | from the cache by `AGENT_PACKAGE_FAMILY_OF_OS`: `installer -pkg <file> -target /` or `msiexec /i <file> /qn /norestart`, then `nagent join <link> --yes` |
 
 `nhub start`, `nhub stop` and `nhub status` drive that one service. The

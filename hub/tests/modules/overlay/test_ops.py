@@ -419,8 +419,24 @@ def test_elsewhere_an_engine_running_is_asked_of_the_controller(supervised):
     assert ("is_active", "netbird") in supervised.calls
 
 
-def test_elsewhere_an_engine_just_started_is_waited_for_by_address(supervised):
+def test_elsewhere_an_engine_just_started_is_waited_for_by_address(
+    supervised, monkeypatch
+):
+    readings = iter([False, True])
+    monkeypatch.setattr(ops, "is_engine_active", lambda provider: next(readings))
+
     assert switcher().start(network_of(OVERLAY_NETBIRD)) == ["NetBird started"]
+
+
+def test_elsewhere_an_engine_the_stopped_service_will_start_is_not_waited_for(
+    supervised, monkeypatch
+):
+    monkeypatch.setattr(
+        ops, "device_addresses", lambda: pytest.fail("no address is waited for")
+    )
+
+    assert switcher().start(network_of(OVERLAY_NETBIRD)) == []
+    assert FakeProvisioner.calls == ["provision"]
 
 
 def test_elsewhere_the_engines_turned_off_are_disabled(supervised):
