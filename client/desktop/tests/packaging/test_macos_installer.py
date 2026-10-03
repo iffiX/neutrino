@@ -172,7 +172,16 @@ def test_the_build_environment_holds_the_compiler_and_the_pinned_wheels(
     assert python == tmp_path / "venv" / "bin" / "python3"
     assert commands == [
         ["/opt/python3.13/bin/python3", "-m", "venv", str(tmp_path / "venv")],
-        [str(python), "-m", "pip", "install", "--quiet", "nuitka==4.2.1"],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--only-binary=:all:",
+            "--no-binary=nuitka",
+            "nuitka==4.2.1",
+        ],
     ]
     assert staged == [
         (
@@ -216,6 +225,11 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         build_client_macos.bundled, "stage_darwin_binaries", stage_binaries
     )
     monkeypatch.setattr(build_client_macos.pkg_build, "sign_ad_hoc", sign)
+    monkeypatch.setattr(
+        build_client_macos.pkg_build,
+        "require_system_links",
+        lambda directory: order.append(("links", directory)),
+    )
 
     staged = build_client_macos._lay_out(tmp_path, "9.9.9", "arm64")
 
@@ -241,7 +255,13 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         "rustdesk.txt",
         "xterm.txt",
     ]
-    assert order == ["venv", "compile", ("binaries", "arm64"), ("sign", app)]
+    assert order == [
+        "venv",
+        "compile",
+        ("binaries", "arm64"),
+        ("links", app),
+        ("sign", app),
+    ]
     link = tmp_path / "root" / "usr" / "local" / "bin" / "nclient"
     assert link.is_symlink()
     assert Path(link.readlink()) == Path(

@@ -200,7 +200,16 @@ def test_the_compile_is_two_standalone_programs_against_the_pinned_interpreter(
 
     assert commands[0] == (
         "pip",
-        [str(python), "-m", "pip", "install", "--quiet", "nuitka==4.2.1"],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--only-binary=:all:",
+            "--no-binary=nuitka",
+            "nuitka==4.2.1",
+        ],
     )
     assert len(commands) == 3
     client, helper = commands[1], commands[2]

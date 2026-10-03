@@ -20,12 +20,14 @@ overlay daemons it carries are LaunchDaemons, both kept running: NetBird's,
 and the client's own EasyTier daemon, ``nclient easytier-daemon``, which
 runs EasyTier's core only while a network or a console is configured.
 
-The bundle is signed ad hoc. Apple silicon refuses native code with no
-signature at all, and an ad hoc one is what a build with no developer
-identity can give; Gatekeeper still asks the person once on first open.
+The bundle is read back with ``otool`` and refused when a file of it loads
+a library from outside the system, then signed ad hoc. Apple silicon
+refuses native code with no signature at all, and an ad hoc one is what a
+build with no developer identity can give; Gatekeeper still asks the person
+once on first open.
 
-Needs the Xcode command line tools for ``codesign``, ``pkgbuild`` and
-``productbuild``, and ``hdiutil``, which every Mac has.
+Needs the Xcode command line tools for ``codesign``, ``otool``, ``pkgbuild``
+and ``productbuild``, and ``hdiutil``, which every Mac has.
 
 Not pure: makes a virtual environment, downloads wheels and a compiler,
 compiles, signs, writes a package tree, runs pkgbuild and productbuild.
@@ -276,6 +278,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
 
     bundled.stage_darwin_binaries(contents, machine)
     _stage_licenses(contents / "Resources" / "licenses")
+    pkg_build.require_system_links(app)
     pkg_build.sign_ad_hoc(app)
 
     link = package_root / str(INSTALL_LINK_PATH).lstrip("/")

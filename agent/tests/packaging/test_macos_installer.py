@@ -20,8 +20,10 @@ from neutrino_agent.constants import AGENT_DARWIN_LOG_PATH
 
 @pytest.fixture
 def laid_out(tmp_path, monkeypatch):
-    """The package root with the compile, the download and codesign faked."""
+    """The package root with the compile, the download, otool and codesign
+    faked."""
     signed = []
+    checked = []
 
     def compile_standalone(python, entry, output_dir, binary_name, **kwargs):
         dist = output_dir / "entry.dist"
@@ -49,9 +51,14 @@ def laid_out(tmp_path, monkeypatch):
         build_agent_macos.rustdesk_assets, "stage_darwin_app", stage_darwin_app
     )
     monkeypatch.setattr(build_agent_macos.pkg_build, "sign_ad_hoc", signed.append)
+    monkeypatch.setattr(
+        build_agent_macos.pkg_build,
+        "require_system_links",
+        lambda directory: checked.append((directory, len(signed))),
+    )
 
     staged = build_agent_macos._lay_out(tmp_path, "9.9.9", "arm64")
-    return staged, signed
+    return staged, signed, checked
 
 
 def read_plist(root: Path, directory: str, label: str) -> dict:
@@ -59,7 +66,7 @@ def read_plist(root: Path, directory: str, label: str) -> dict:
 
 
 def test_the_agent_lands_under_application_support_linked_on_the_path(laid_out):
-    staged, _signed = laid_out
+    staged, _signed, _checked = laid_out
     root = staged["root"]
 
     installed = root / "Library/Application Support/Neutrino/agent/app"
@@ -73,15 +80,22 @@ def test_the_agent_lands_under_application_support_linked_on_the_path(laid_out):
 
 
 def test_every_mach_o_file_is_signed_and_nothing_else(laid_out):
-    staged, signed = laid_out
+    staged, signed, _checked = laid_out
     installed = staged["root"] / "Library/Application Support/Neutrino/agent/app"
 
     assert sorted(path.name for path in signed) == ["libpython3.13.dylib", "nagent"]
     assert all(str(path).startswith(str(installed)) for path in signed)
 
 
+def test_the_installed_tree_is_read_back_for_its_links_before_signing(laid_out):
+    staged, _signed, checked = laid_out
+    installed = staged["root"] / "Library/Application Support/Neutrino/agent/app"
+
+    assert checked == [(installed, 0)]
+
+
 def test_rustdesk_is_the_app_under_applications(laid_out):
-    staged, _signed = laid_out
+    staged, _signed, _checked = laid_out
 
     assert (
         staged["root"] / "Applications/RustDesk.app/Contents/MacOS/RustDesk"
@@ -89,7 +103,7 @@ def test_rustdesk_is_the_app_under_applications(laid_out):
 
 
 def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
-    staged, _signed = laid_out
+    staged, _signed, _checked = laid_out
 
     job = read_plist(staged["root"], "Library/LaunchDaemons", "com.neutrino.agent")
 
@@ -105,7 +119,7 @@ def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
 
 
 def test_rustdesks_daemon_and_session_agent_are_its_own(laid_out):
-    staged, _signed = laid_out
+    staged, _signed, _checked = laid_out
     root = staged["root"]
 
     service = read_plist(root, "Library/LaunchDaemons", "com.carriez.RustDesk_service")
@@ -125,7 +139,7 @@ def test_rustdesks_daemon_and_session_agent_are_its_own(laid_out):
 
 
 def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
-    staged, _signed = laid_out
+    staged, _signed, _checked = laid_out
     scripts = staged["scripts"]
 
     preinstall = (scripts / "preinstall").read_text()

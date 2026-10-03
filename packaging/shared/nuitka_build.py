@@ -21,13 +21,26 @@ NUITKA_VERSION = "4.2.1"
 def pip_install_command(python: Path) -> list:
     """The command that installs the pinned compiler into an interpreter.
 
+    The compiler is published as source only and is pure Python; anything
+    else pip reaches for, the backend that builds it included, comes as a
+    wheel or not at all.
+
     Args:
         python: The interpreter the program is compiled against.
 
     Returns:
         The argument vector.
     """
-    return [str(python), "-m", "pip", "install", "--quiet", f"nuitka=={NUITKA_VERSION}"]
+    return [
+        str(python),
+        "-m",
+        "pip",
+        "install",
+        "--quiet",
+        "--only-binary=:all:",
+        "--no-binary=nuitka",
+        f"nuitka=={NUITKA_VERSION}",
+    ]
 
 
 def windows_options(

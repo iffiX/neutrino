@@ -19,11 +19,13 @@ preinstall script unloads the running jobs; the postinstall script loads
 all three, the session agent into the session at the screen when there is
 one.
 
-The standalone tree is signed ad hoc, file by file: Apple silicon refuses
-native code with no signature at all. RustDesk keeps upstream's own.
+The standalone tree is read back with ``otool`` and refused when a file of
+it loads a library from outside the system, then signed ad hoc, file by
+file: Apple silicon refuses native code with no signature at all. RustDesk
+keeps upstream's own.
 
-Needs the Xcode command line tools for ``codesign``, ``pkgbuild`` and
-``productbuild``, and ``hdiutil``, which every Mac has.
+Needs the Xcode command line tools for ``codesign``, ``otool``, ``pkgbuild``
+and ``productbuild``, and ``hdiutil``, which every Mac has.
 
 Not pure: makes a virtual environment, downloads a compiler and RustDesk,
 compiles, signs, writes a package tree, runs pkgbuild and productbuild.
@@ -82,14 +84,6 @@ PACKAGE_IDENTIFIER = "com.neutrino.agent"
 # What each name for the machine maps to: the platform the package is named
 # for, Apple silicon and Intel.
 MACOS_MACHINES = {"aarch64": "arm64", "x86_64": "amd64"}
-
-# The first bytes of every Mach-O file, thin or universal, either order.
-MACH_O_MAGICS = (
-    b"\xcf\xfa\xed\xfe",
-    b"\xfe\xed\xfa\xcf",
-    b"\xca\xfe\xba\xbe",
-    b"\xbe\xba\xfe\xca",
-)
 
 PREINSTALL = f"""#!/bin/sh
 # An upgrade replaces files the running jobs hold.
@@ -265,6 +259,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     installed.parent.mkdir(parents=True)
     shutil.copytree(dist, installed, symlinks=True)
     _stage_licenses(installed / "licenses")
+    pkg_build.require_system_links(installed)
     _sign_tree(installed)
 
     link = package_root / str(INSTALL_LINK_PATH).lstrip("/")
@@ -367,9 +362,8 @@ def _sign_tree(directory: Path) -> None:
     for path in sorted(directory.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
-        with open(path, "rb") as stream:
-            if stream.read(4) in MACH_O_MAGICS:
-                pkg_build.sign_ad_hoc(path)
+        if pkg_build.is_mach_o(path):
+            pkg_build.sign_ad_hoc(path)
 
 
 def _stage_licenses(destination: Path) -> None:

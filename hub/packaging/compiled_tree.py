@@ -111,7 +111,19 @@ def make_build_environment(venv: Path) -> Path:
     else:
         python = venv / "bin" / "python3"
     venv_tree.run(nuitka_build.pip_install_command(python))
-    venv_tree.run([str(python), "-m", "pip", "install", "--quiet", str(HUB_ROOT)])
+    # A dependency with no wheel for this machine would be compiled here,
+    # against whatever libraries the build machine has installed.
+    venv_tree.run(
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--only-binary=:all:",
+            str(HUB_ROOT),
+        ]
+    )
     return python
 
 

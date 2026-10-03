@@ -22,8 +22,9 @@ postinstall makes ``config`` and ``state`` root's alone and the log
 directory, and installs the plist without loading it; ``nhub setup`` starts
 the service. An upgrade over a hub whose service was loaded loads it again.
 
-Every Mach-O file is signed ad hoc: Apple silicon refuses native code with
-no signature at all.
+Every Mach-O file is read back with ``otool`` and refused when it loads a
+library from outside the system, then signed ad hoc: Apple silicon refuses
+native code with no signature at all.
 
 Not pure: makes a virtual environment, downloads a compiler and the
 programs the hub drives, compiles, signs, writes a package tree, runs
@@ -77,14 +78,6 @@ PACKAGE_IDENTIFIER = "com.neutrino.hub"
 MACOS_MACHINES = {"aarch64": "arm64", "x86_64": "amd64"}
 # The agent package family a macOS hub seeds.
 AGENT_FAMILY = "pkg"
-
-# The first bytes of every Mach-O file, thin or universal, either order.
-MACH_O_MAGICS = (
-    b"\xcf\xfa\xed\xfe",
-    b"\xfe\xed\xfa\xcf",
-    b"\xca\xfe\xba\xbe",
-    b"\xbe\xba\xfe\xca",
-)
 
 PREINSTALL = f"""#!/bin/sh
 # An upgrade replaces files the running service holds.
@@ -279,6 +272,7 @@ def _lay_out(
         machine=machine,
         url_base=url_base,
     )
+    pkg_build.require_system_links(app)
     _sign_tree(app)
 
     link = package_root / str(INSTALL_LINK_PATH).lstrip("/")
@@ -329,9 +323,8 @@ def _sign_tree(directory: Path) -> None:
     for path in sorted(directory.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
-        with open(path, "rb") as stream:
-            if stream.read(4) in MACH_O_MAGICS:
-                pkg_build.sign_ad_hoc(path)
+        if pkg_build.is_mach_o(path):
+            pkg_build.sign_ad_hoc(path)
 
 
 def _check_tools(is_stage_only: bool) -> None:
