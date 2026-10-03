@@ -456,7 +456,7 @@ export function DashboardPage() {
         </div>
 
         <div className="dashboard_column">
-          <section className="card">
+          <section className="card dashboard_exits_card">
             <div className="card_header">
               <div className="card_title">
                 <h2>{t("ui.dashboard.exits_title")}</h2>
