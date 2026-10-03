@@ -1,7 +1,7 @@
 """Fixed values of the easytier module."""
 
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER_UNIT
-from neutrino_hub.utils.constants import carried_program
+from neutrino_hub.utils.constants import UTILS_STATE_ROOT, carried_program
 
 # What the hub's package carries. The packaging pins the same version in
 # hub/packaging/venv_tree.py by reading this file. Upstream publishes no
@@ -117,3 +117,7 @@ EASYTIER_STATUS_TIMEOUT_S = 10
 # The instance fields a console in secure mode may keep from this box, by the
 # name the page shows them under.
 EASYTIER_INSTANCE_FIELDS = ("network_name", "address", "hostname")
+
+# Where the supervised engine keeps what it files under HOME (its machine id
+# for the console); the LaunchDaemon and the Windows service hand it no HOME.
+EASYTIER_HUB_HOME_DIR = UTILS_STATE_ROOT / "easytier"

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_HUB_HOME_DIR,
     EASYTIER_DROPIN_DIR_NAME,
     EASYTIER_DROPIN_NAME,
     EASYTIER_STALE_ARGUMENTS_NAME,
@@ -467,8 +468,12 @@ class EasyTierConfigApplier:
     def _start_supervised(self, arguments: list) -> None:
         """Hand the start line to the process controller and run the engine on it."""
         controller = process_controller()
+        EASYTIER_HUB_HOME_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
         controller.set_start_line(
-            EASYTIER_SUPERVISED_NAME, _start_line(arguments), {}, None
+            EASYTIER_SUPERVISED_NAME,
+            _start_line(arguments),
+            {"HOME": str(EASYTIER_HUB_HOME_DIR)},
+            None,
         )
         if controller.is_enabled(EASYTIER_SUPERVISED_NAME):
             controller.restart(EASYTIER_SUPERVISED_NAME)

@@ -400,6 +400,7 @@ def supervised_box(elsewhere, applier_box, monkeypatch, tmp_path, fake_controlle
     """The applier box on macOS or Windows: the controller holds the start line."""
     generated, commands, core, systemd = applier_box
     monkeypatch.setattr(ops, "SYSTEM_SERVICES_STATE_PATH", tmp_path / "services.json")
+    monkeypatch.setattr(ops, "EASYTIER_HUB_HOME_DIR", tmp_path / "easytier")
     return generated, commands, core, systemd, fake_controller
 
 
@@ -416,7 +417,7 @@ def test_elsewhere_the_start_line_goes_to_the_controller(supervised_box):
             "set_start_line",
             "easytier",
             [str(core), "-c", str(network), "--rpc-portal", "127.0.0.1:15888"],
-            {},
+            {"HOME": str(ops.EASYTIER_HUB_HOME_DIR)},
             None,
         ),
         ("enable", "easytier"),
@@ -445,7 +446,7 @@ def test_elsewhere_an_enabled_engine_is_restarted_on_its_new_line(supervised_box
                 "--rpc-portal",
                 "127.0.0.1:15888",
             ],
-            {},
+            {"HOME": str(ops.EASYTIER_HUB_HOME_DIR)},
             None,
         ),
         ("restart", "easytier"),
