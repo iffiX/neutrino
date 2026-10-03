@@ -173,6 +173,19 @@ async def serve_package_stream(
             _package_path, runtime, module, platform, on_progress
         )
     except AgentArtifactFetchError as error:
+        if module:
+            detail = " ".join(f"{k}={v}" for k, v in sorted(error.params.items()))
+            publish_module_line(
+                runtime,
+                module_task_label(session.key, module),
+                f"hub: the download failed: {error.code} {detail}".rstrip(),
+            )
+        LOGGER.warning(
+            "package stream for %s refused: %s %s",
+            module or "agent",
+            error.code,
+            error.params,
+        )
         await stream.close(error.code, error.params)
         return
     if module:

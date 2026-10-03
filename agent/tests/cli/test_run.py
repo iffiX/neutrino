@@ -47,8 +47,9 @@ def run_stack(tmp_path, monkeypatch):
     agents = []
     servers = []
 
-    def build_agent(*, platform):
+    def build_agent(*, platform, log=None):
         agent = FakeRunAgent(platform=platform)
+        agent.log = log
         agents.append(agent)
         return agent
 
@@ -84,3 +85,20 @@ def test_run_takes_no_flags(monkeypatch):
 
     assert entry.main() == 0
     assert passed == {"ran": True}
+
+
+def test_the_log_is_a_flushed_print_where_a_journal_reads_the_output(run_stack):
+    platform, _, _ = run_stack
+    sink = run_cli.log_sink(platform)
+    assert sink.func is print and sink.keywords == {"flush": True}
+
+
+def test_the_log_is_the_agent_log_file_on_macos(run_stack, monkeypatch, tmp_path):
+    platform, _, _ = run_stack
+    monkeypatch.setattr(platform, "os_name", "darwin", raising=False)
+    monkeypatch.setattr(
+        platform, "agent_log_path", lambda: str(tmp_path / "agent.log"), raising=False
+    )
+    sink = run_cli.log_sink(platform)
+    sink("hello from the daemon")
+    assert "hello from the daemon" in (tmp_path / "agent.log").read_text()

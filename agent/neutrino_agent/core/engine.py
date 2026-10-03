@@ -573,6 +573,7 @@ class ModuleEngine(ReconcileWorker):
         except PlatformUnsupportedError:
             return _typed(AGENT_MODULE_STATE_FAILED, "unsupported_platform")
         except Exception as error:  # noqa: BLE001 - reported, never raised
+            self._log(f"{name}: verify_failed: {str(error)[:200]}")
             return _typed(
                 AGENT_MODULE_STATE_FAILED, "verify_failed", detail=str(error)[:200]
             )
