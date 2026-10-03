@@ -70,7 +70,7 @@ def test_answers_take_the_lock_and_clear_the_last_run():
     assert session.answer({"password": "x"})
     assert taken == [True]
     state = session.state()
-    assert (state["state"], state["steps"], state["message"]) == ("running", [], "")
+    assert (state["state"], state["steps"]) == ("running", [])
 
 
 def test_after_a_failed_run_the_next_answers_are_waited_for():

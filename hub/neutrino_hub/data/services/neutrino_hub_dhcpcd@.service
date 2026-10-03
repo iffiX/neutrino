@@ -1,6 +1,6 @@
 [Unit]
 Description=Neutrino Hub lease client on %i
-Documentation=file://@REPO_ROOT@/docs/standard/design/network.md
+Documentation=file://@REPO_ROOT@/skills/core-code-author/design/modules/network.md
 # The firewall has to know about the interface before it carries anything, and
 # a radio has to have joined a network before there is anyone to ask.
 After=network-pre.target neutrino_hub_router.service neutrino_hub_supplicant@%i.service

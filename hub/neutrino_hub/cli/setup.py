@@ -330,8 +330,8 @@ def serve_until_set_up(stop) -> int:
             continue
         try:
             answers = wizard.from_document(document)
-        except WizardAborted as error:
-            session.reject(str(error))
+        except WizardAborted:
+            session.reject()
             SETUP_LOCK.release()
             continue
         reporter = InstallSessionReporter(
