@@ -34,9 +34,9 @@ GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 
 # Where the package's own environment lives, and the path its interpreter is
 # addressed by. It is staged at this path so nothing inside it has to be
-# rewritten afterwards. Its own root rather than a directory under the hub's:
-# a machine may run both, and removing the hub deletes /opt/neutrino whole.
-INSTALL_PREFIX = Path("/opt/neutrino_agent")
+# rewritten afterwards. The agent's own directory beside the hub's: a machine
+# may run both, and removing either deletes only its own.
+INSTALL_PREFIX = Path("/opt/neutrino/agent")
 PYTHON_DIR = INSTALL_PREFIX / "python"
 
 # The interpreter the Linux packages carry, pinned by hash. The same build the
@@ -94,7 +94,7 @@ RUSTDESK_ASSETS = {
 # is refused with "Installation and administrative privileges required!".
 # `current_exe` resolves symlinks, so a link from /usr into another prefix
 # does not answer it; the binary itself has to be here.
-VENDOR_PREFIX = Path("/usr/lib/neutrino_agent")
+VENDOR_PREFIX = Path("/usr/lib/neutrino/agent")
 RUSTDESK_VENDOR_DIR = VENDOR_PREFIX / "rustdesk"
 # Where the upstream package keeps the whole host: the binary, the libraries
 # it loads and the data it reads. What surrounds it there — the unit, the

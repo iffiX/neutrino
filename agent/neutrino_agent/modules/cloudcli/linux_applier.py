@@ -22,7 +22,6 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_INSTALL_TIMEOUT_S,
-    CLOUDCLI_LINUX_ETC_DIR,
     CLOUDCLI_LOOKUP_TIMEOUT_S,
     CLOUDCLI_SYSTEMD_DIR,
     CLOUDCLI_UNIT_PREFIX,
@@ -124,20 +123,20 @@ class CloudcliLinuxApplier:
         self,
         *,
         module_dir: str,
+        etc_dir: str,
         run=None,
         lookup_account=None,
-        etc_dir: str = CLOUDCLI_LINUX_ETC_DIR,
         systemd_dir: str = CLOUDCLI_SYSTEMD_DIR,
         log=print,
     ):
         """
         Args:
             module_dir: Where Node.js is unpacked.
+            etc_dir: Where the environment files and the records live.
             run: Runs one command as :func:`subprocess_run.run` does; None
                 runs it.
             lookup_account: Returns an account's ``(uid, gid, home)`` or
                 raises KeyError; None asks the account database.
-            etc_dir: Where the environment files and the records live.
             systemd_dir: Where the template unit is written.
             log: Callable used for progress messages.
         """

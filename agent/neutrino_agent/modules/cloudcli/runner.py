@@ -60,17 +60,18 @@ def cloudcli_applier_for(platform, log=print):
     if platform.os_name == "linux":
         return CloudcliLinuxApplier(
             module_dir=os.path.join(platform.agent_var_dir(), CLOUDCLI_DIR_NAME),
+            etc_dir=os.path.join(platform.agent_data_dir(), CLOUDCLI_DIR_NAME),
             log=log,
         )
     if platform.os_name == "darwin":
         return CloudcliDarwinApplier(
-            module_dir=os.path.join(platform.hub_package_root(), CLOUDCLI_DIR_NAME),
+            module_dir=os.path.join(platform.agent_var_dir(), CLOUDCLI_DIR_NAME),
             record_dir=os.path.join(platform.agent_data_dir(), CLOUDCLI_DIR_NAME),
             log=log,
         )
     if platform.os_name == "windows":
         return CloudcliWindowsApplier(
-            module_dir=ntpath.join(platform.hub_package_root(), CLOUDCLI_DIR_NAME),
+            module_dir=ntpath.join(platform.agent_var_dir(), CLOUDCLI_DIR_NAME),
             record_dir=ntpath.join(platform.agent_data_dir(), CLOUDCLI_DIR_NAME),
             account_home=platform.account_home,
         )
@@ -165,7 +166,8 @@ class CloudcliModuleRunner(ModuleRunner):
         Raises:
             ModuleApplyError: ``cloudcli_node_download_failed`` when the
                 archive is not one Node.js comes in.
-            OSError: When the module's directory cannot be written.
+            OSError: When the module's directory cannot be written or
+                opened to every account.
         """
         entry = resolved.get("entry") or {}
         unpack_node(
@@ -173,6 +175,7 @@ class CloudcliModuleRunner(ModuleRunner):
             package_kind=str(entry.get("package_kind", "")),
             root=self._applier.module_dir,
         )
+        self._platform.open_to_accounts(self._applier.module_dir)
         self._forget_states()
 
     def uninstall(self, resolved: dict) -> None:

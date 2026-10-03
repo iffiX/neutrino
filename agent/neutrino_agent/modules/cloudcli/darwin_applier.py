@@ -5,7 +5,7 @@ Each instance is a LaunchDaemon whose plist names the account in
 the server script of the account's own app directory, as that account,
 with the environment the plist holds and nothing else; the plist is
 root-only, since that environment holds the instance's secrets. Its output
-goes to the account's file under ``/Library/Logs/Neutrino``. Before an
+goes to the account's file under ``/Library/Logs/Neutrino/agent``. Before an
 instance first runs, the account installs CloudCLI into its app directory
 with that Node.js, and the ``claude`` its login shell finds leads the
 service's ``PATH``.
@@ -298,7 +298,7 @@ class CloudcliDarwinApplier:
             account: The account.
 
         Returns:
-            ``/Library/Logs/Neutrino/cloudcli_<account>.log``.
+            ``/Library/Logs/Neutrino/agent/cloudcli_<account>.log``.
         """
         return os.path.join(
             self._log_dir, CLOUDCLI_DARWIN_LOG_PREFIX + account + CLOUDCLI_LOG_SUFFIX

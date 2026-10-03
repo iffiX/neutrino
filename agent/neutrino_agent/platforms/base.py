@@ -16,6 +16,7 @@ Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import os
 import subprocess
 
 from neutrino_agent.constants import (
@@ -37,9 +38,10 @@ class AgentPlatform:
     capabilities: frozenset = frozenset()
 
     def agent_data_dir(self) -> str:
-        """Where the agent keeps its own state on this platform.
+        """Where the agent keeps what the hub decided on this platform.
 
-        The store and the credentials directory both live under this root.
+        The store, the desired state and the credentials directory live
+        under this root.
 
         Returns:
             The absolute directory path.
@@ -47,10 +49,11 @@ class AgentPlatform:
         return AGENT_DATA_DIR_POSIX
 
     def agent_var_dir(self) -> str:
-        """Where the agent keeps its own work on this platform.
+        """Where the agent keeps what this machine accumulated on this platform.
 
-        The configured marks and a package in transit both live under this
-        root.
+        The configured marks, a package in transit, the last reinstall's
+        result, and each module's software from the hub, in a directory of
+        the module's own name, live under this root.
 
         Returns:
             The absolute directory path.
@@ -274,20 +277,19 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("no system SMB server here")
 
-    def hub_package_root(self) -> str:
-        """Where software the hub sends down a package stream is unpacked.
+    def open_to_accounts(self, directory: str) -> None:
+        """Let every account read and run what is under one directory.
 
-        Every account may read and run what is under it; each module keeps
-        its own directory there.
+        The rest of the state root stays the agent's own; this is for a
+        module's software from the hub alone.
 
-        Returns:
-            The absolute directory path.
+        Args:
+            directory: An existing directory.
 
         Raises:
-            PlatformUnsupportedError: On a platform whose software comes
-                from its package manager instead.
+            OSError: When its permissions cannot be changed.
         """
-        raise PlatformUnsupportedError("no root for the hub's software here")
+        os.chmod(directory, 0o755)
 
     def remove_system_packages(self, names: list) -> str:
         """Remove packages by name with the machine's own package manager.

@@ -44,7 +44,6 @@ CONTRACT_CALLS = {
     ),
     "uninstall_package": ("packages", ("apt-get remove -y app",), {}),
     "smb_server_applier": ("smb_server", (), {}),
-    "hub_package_root": ("hub_packages", (), {}),
 }
 
 # Capabilities only a system that carries its own server has; Linux has
@@ -57,6 +56,7 @@ BASE_IMPLEMENTED = {
     "agent_data_dir": "",
     "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",
+    "open_to_accounts": "hub_packages",
 }
 
 
@@ -99,6 +99,7 @@ def test_a_platform_implements_exactly_the_capabilities_it_advertises(
 @pytest.mark.parametrize("platform_class", PLATFORM_CLASSES)
 def test_a_platform_advertises_only_capabilities_the_contract_names(platform_class):
     named = {capability for capability, _, _ in CONTRACT_CALLS.values()}
+    named |= {capability for capability in BASE_IMPLEMENTED.values() if capability}
 
     assert platform_class.capabilities <= named
 
@@ -125,12 +126,21 @@ def test_the_agent_data_root_defaults_to_the_posix_directory(monkeypatch):
     assert AGENT_STATE_PATH == "/etc/neutrino/agent/state.json"
 
 
-def test_the_agent_work_root_defaults_to_the_posix_directory(monkeypatch):
-    monkeypatch.setattr(base_module, "AGENT_VAR_DIR", "/var/lib/neutrino_agent")
+def test_the_agent_state_root_defaults_to_the_linux_directory(monkeypatch):
+    monkeypatch.setattr(base_module, "AGENT_VAR_DIR", "/var/lib/neutrino/agent")
 
-    assert AgentPlatform().agent_var_dir() == "/var/lib/neutrino_agent"
-    assert AGENT_CONFIGURED_DIR == "/var/lib/neutrino_agent/configured"
-    assert AGENT_PACKAGE_DIR == "/var/lib/neutrino_agent/packages"
+    assert AgentPlatform().agent_var_dir() == "/var/lib/neutrino/agent"
+    assert AGENT_CONFIGURED_DIR == "/var/lib/neutrino/agent/configured"
+    assert AGENT_PACKAGE_DIR == "/var/lib/neutrino/agent/packages"
+
+
+def test_a_directory_opened_to_accounts_is_mode_755(tmp_path):
+    directory = tmp_path / "vscode"
+    directory.mkdir(mode=0o700)
+
+    AgentPlatform().open_to_accounts(str(directory))
+
+    assert directory.stat().st_mode & 0o777 == 0o755
 
 
 def test_the_base_start_hint_is_empty_rather_than_another_platforms():

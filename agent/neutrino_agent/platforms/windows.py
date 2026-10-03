@@ -1,11 +1,12 @@
 """The Windows platform: presence, vitals, the service, the machine's own id.
 
 The agent runs as the ``neutrino_agent`` service under LocalSystem and keeps
-its state under ``%ProgramData%``. Metrics come from kernel32 through
-ctypes, the interfaces and the accounts from PowerShell, the machine id
-from the registry. The file share module drives Windows' own SMB server.
-Windows has no account this agent steps down to and no package it
-installs, so those capabilities are not advertised.
+its configuration, state and log under ``%ProgramData%\\Neutrino\\agent``.
+Metrics come from kernel32 through ctypes, the interfaces and the accounts
+from PowerShell, the machine id from the registry. The file share module
+drives Windows' own SMB server. Windows has no account this agent steps
+down to and no package it installs, so those capabilities are not
+advertised.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -24,10 +25,13 @@ import time
 from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
-    AGENT_WINDOWS_DATA_SUBDIR,
+    AGENT_WINDOWS_AGENT_SUBDIR,
+    AGENT_WINDOWS_CONFIG_DIR_NAME,
+    AGENT_WINDOWS_LOG_DIR_NAME,
     AGENT_WINDOWS_LOG_NAME,
     AGENT_WINDOWS_PROGRAM_DATA_DEFAULT,
     AGENT_WINDOWS_SERVICE_NAME,
+    AGENT_WINDOWS_STATE_DIR_NAME,
 )
 from neutrino_agent.core.metrics import HostMetrics
 from neutrino_agent.modules.powershell_run import listed, run_powershell
@@ -97,6 +101,13 @@ if ($user) {
 }
 @{is_present = [bool]$user; home = $home_path} | ConvertTo-Json -Compress
 """
+# One directory and everything under it readable and runnable by the Users
+# group, named by its well-known SID so no language's group name matters.
+WINDOWS_OPEN_TO_ACCOUNTS_SCRIPT = """
+$code = Invoke-Icacls $d.directory '/grant' '*S-1-5-32-545:(OI)(CI)RX'
+if ($code -ne 0) { throw "icacls exited $code" }
+@{is_open = $true} | ConvertTo-Json -Compress
+"""
 # The accounts Windows makes for itself, by their lower-case names.
 WINDOWS_BUILTIN_ACCOUNTS = frozenset(
     {"administrator", "guest", "defaultaccount", "wdagutilityaccount"}
@@ -111,14 +122,17 @@ WINDOWS_MACHINE_GUID_VALUE = "MachineGuid"
 WINDOWS_KEY_WOW64_64KEY = 0x0100
 
 
-def windows_data_dir() -> str:
-    """The agent's data root under ``%ProgramData%``.
+def windows_agent_dir(name: str) -> str:
+    """One of the agent's roots under ``%ProgramData%\\Neutrino\\agent``.
+
+    Args:
+        name: ``config``, ``state`` or ``log``.
 
     Returns:
         The absolute directory path.
     """
     program_data = os.environ.get("ProgramData") or AGENT_WINDOWS_PROGRAM_DATA_DEFAULT
-    return ntpath.join(program_data, *AGENT_WINDOWS_DATA_SUBDIR)
+    return ntpath.join(program_data, *AGENT_WINDOWS_AGENT_SUBDIR, name)
 
 
 def _mac_of(text: str) -> str:
@@ -171,28 +185,30 @@ class WindowsPlatform(AgentPlatform):
         self._accounts_at: "float | None" = None
 
     def agent_data_dir(self) -> str:
-        """Where the agent keeps its own state: ``%ProgramData%\\Neutrino\\agent``.
+        """Where the agent keeps what the hub decided: ``...\\agent\\config``.
 
         Returns:
             The absolute directory path.
         """
-        return windows_data_dir()
+        return windows_agent_dir(AGENT_WINDOWS_CONFIG_DIR_NAME)
 
     def agent_var_dir(self) -> str:
-        """Where the agent keeps its own work: the same root as its state.
+        """Where the agent keeps what the machine accumulated: ``...\\agent\\state``.
 
         Returns:
             The absolute directory path.
         """
-        return windows_data_dir()
+        return windows_agent_dir(AGENT_WINDOWS_STATE_DIR_NAME)
 
     def agent_log_path(self) -> str:
-        """The service's log: ``agent.log`` under the data root.
+        """The service's log: ``agent.log`` under ``...\\agent\\log``.
 
         Returns:
             The absolute file path.
         """
-        return ntpath.join(windows_data_dir(), AGENT_WINDOWS_LOG_NAME)
+        return ntpath.join(
+            windows_agent_dir(AGENT_WINDOWS_LOG_DIR_NAME), AGENT_WINDOWS_LOG_NAME
+        )
 
     def human_accounts(self) -> list:
         """The enabled local accounts that are people, read at most every 30 s.
@@ -350,13 +366,19 @@ class WindowsPlatform(AgentPlatform):
             return ""
         return str(value or "").strip()
 
-    def hub_package_root(self) -> str:
-        """Where the hub's software is unpacked: ``%ProgramData%\\Neutrino``.
+    def open_to_accounts(self, directory: str) -> None:
+        """Grant the Users group read and run on one directory and what it holds.
 
-        Returns:
-            The absolute directory path.
+        Args:
+            directory: An existing directory under the state root.
+
+        Raises:
+            OSError: When PowerShell or icacls fails.
         """
-        return ntpath.dirname(windows_data_dir())
+        try:
+            self._powershell(WINDOWS_OPEN_TO_ACCOUNTS_SCRIPT, {"directory": directory})
+        except subprocess.SubprocessError as error:
+            raise OSError(f"powershell did not answer: {error}") from error
 
     def smb_server_applier(self) -> SambaWindowsApplier:
         """The applier that drives Windows' own SMB server.

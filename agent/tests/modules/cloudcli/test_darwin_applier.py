@@ -118,7 +118,7 @@ def test_an_instance_is_a_root_only_launchdaemon_of_its_account(
     assert plist["UserName"] == "ann"
     assert plist["ProgramArguments"][0].endswith(f"{NODE_DIR}/bin/node")
     assert plist["ProgramArguments"][1].endswith(
-        "Library/Application Support/Neutrino/cloudcli/app/node_modules/"
+        "Library/Application Support/Neutrino/agent/cloudcli/app/node_modules/"
         "@cloudcli-ai/cloudcli/dist-server/server/index.js"
     )
     environment = plist["EnvironmentVariables"]

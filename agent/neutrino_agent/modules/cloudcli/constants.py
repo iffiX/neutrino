@@ -29,17 +29,17 @@ CLOUDCLI_NPM_PARTS = {
     "darwin": ("lib", "node_modules", "npm", "bin", "npm-cli.js"),
     "windows": ("node_modules", "npm", "bin", "npm-cli.js"),
 }
-# The module's directory under the agent's work root on Linux, and under the
-# hub package root on macOS and Windows.
+# The module's directory under the agent's state root, where Node.js is, and
+# under its configuration root, where the instances' records are.
 CLOUDCLI_DIR_NAME = "cloudcli"
 
 # Each account's own directory, under its home, by system: the app
 # directory npm installs into is ``app`` inside it, and CloudCLI keeps its
 # database beside it.
 CLOUDCLI_ACCOUNT_PARTS = {
-    "linux": (".local", "share", "neutrino_cloudcli"),
-    "darwin": ("Library", "Application Support", "Neutrino", "cloudcli"),
-    "windows": ("AppData", "Local", "Neutrino", "cloudcli"),
+    "linux": (".local", "share", "neutrino", "agent", "cloudcli"),
+    "darwin": ("Library", "Application Support", "Neutrino", "agent", "cloudcli"),
+    "windows": ("AppData", "Local", "Neutrino", "agent", "cloudcli"),
 }
 CLOUDCLI_APP_DIR_NAME = "app"
 CLOUDCLI_DATABASE_NAME = "auth.db"
@@ -105,12 +105,11 @@ CLOUDCLI_REGISTER_RETRY_S = 30.0
 CLOUDCLI_UNIT_TEMPLATE = "neutrino_cloudcli@.service"
 CLOUDCLI_UNIT_PREFIX = "neutrino_cloudcli@"
 CLOUDCLI_SYSTEMD_DIR = "/etc/systemd/system"
-CLOUDCLI_LINUX_ETC_DIR = "/etc/neutrino/cloudcli"
 
 # macOS: one LaunchDaemon per account, its output in its own log file.
 CLOUDCLI_LAUNCHD_PREFIX = "com.neutrino.cloudcli."
 CLOUDCLI_LAUNCHD_DIR = "/Library/LaunchDaemons"
-CLOUDCLI_DARWIN_LOG_DIR = "/Library/Logs/Neutrino"
+CLOUDCLI_DARWIN_LOG_DIR = "/Library/Logs/Neutrino/agent"
 CLOUDCLI_DARWIN_LOG_PREFIX = "cloudcli_"
 
 # Windows: one scheduled task per account, started at boot with its login,

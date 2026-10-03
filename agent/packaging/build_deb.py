@@ -2,7 +2,7 @@
 
     python3 agent/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
-The package carries its own interpreter under /opt/neutrino_agent, so it
+The package carries its own interpreter under /opt/neutrino/agent, so it
 names no Python at all. That fixes it to one architecture: build it in a
 container of the machine it is for, the way the hub's package is built.
 
@@ -126,11 +126,12 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$1" = remove ] || [ "$1" = purge ]; then
     rm -rf {prefix}
     rm -rf {vendor}
+    rmdir /opt/neutrino /usr/lib/neutrino 2>/dev/null || true
 fi
 
 if [ "$1" = purge ]; then
-    rm -rf /etc/neutrino/agent
-    rmdir /etc/neutrino 2>/dev/null || true
+    rm -rf /etc/neutrino/agent /var/lib/neutrino/agent
+    rmdir /etc/neutrino /var/lib/neutrino 2>/dev/null || true
 fi
 """
 

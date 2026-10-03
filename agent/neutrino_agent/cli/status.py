@@ -191,10 +191,10 @@ def _print_error(error: dict) -> None:
 def _print_reinstall() -> None:
     """The line about the reinstall this agent came from, when there is one."""
     try:
-        data_dir = detect_platform().agent_data_dir()
+        var_dir = detect_platform().agent_var_dir()
     except PlatformUnsupportedError:
         return
-    result = self_update.read_reinstall_result(data_dir)
+    result = self_update.read_reinstall_result(var_dir)
     if result:
         print(f"reinstall  {word_reinstall(result)}")
 

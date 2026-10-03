@@ -27,6 +27,7 @@ from neutrino_agent.constants import (
     AGENT_DATA_DIR_DARWIN,
     AGENT_LAUNCHD_LABEL,
     AGENT_LAUNCHD_PLIST_PATH,
+    AGENT_VAR_DIR_DARWIN,
 )
 from neutrino_agent.core.metrics import HostMetrics
 from neutrino_agent.modules.samba.constants import SAMBA_DARWIN_PF_RULES_NAME
@@ -142,7 +143,7 @@ class DarwinPlatform(AgentPlatform):
         self._metrics_reader = DarwinHostMetricsReader(libsystem=libsystem)
 
     def agent_data_dir(self) -> str:
-        """Where the agent keeps its own state on a Mac.
+        """Where the agent keeps what the hub decided on a Mac.
 
         Returns:
             The absolute directory path.
@@ -150,12 +151,12 @@ class DarwinPlatform(AgentPlatform):
         return AGENT_DATA_DIR_DARWIN
 
     def agent_var_dir(self) -> str:
-        """Where the agent keeps its own work: the same root as its state.
+        """Where the agent keeps what this Mac accumulated.
 
         Returns:
             The absolute directory path.
         """
-        return AGENT_DATA_DIR_DARWIN
+        return AGENT_VAR_DIR_DARWIN
 
     def agent_log_path(self) -> str:
         """The file the agent's LaunchDaemon writes its output to.
@@ -292,14 +293,6 @@ class DarwinPlatform(AgentPlatform):
             ``[{"name", "mac", "addresses"}]``; empty when ifconfig fails.
         """
         return parse_ifconfig(_run(["ifconfig", "-a"]))
-
-    def hub_package_root(self) -> str:
-        """Where the hub's software is unpacked, beside the agent's own state.
-
-        Returns:
-            ``/Library/Application Support/Neutrino``.
-        """
-        return os.path.dirname(AGENT_DATA_DIR_DARWIN)
 
     def smb_server_applier(self) -> SambaDarwinApplier:
         """The applier that drives macOS's own SMB server.

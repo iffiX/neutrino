@@ -5,7 +5,8 @@ its instance names, with the address, the port and the token file read from
 a per-account environment file. The token file belongs to the account, mode
 0600, so only that account and root read it.
 
-Not pure: writes under ``/etc`` and drives systemd.
+Not pure: writes under the agent's state root and ``/etc``, and drives
+systemd.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -21,11 +22,9 @@ from neutrino_agent.modules.subprocess_run import unit_state
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,
-    VSCODE_LINUX_DIR,
     VSCODE_LINUX_SYSCTL_FLOORS,
     VSCODE_LINUX_SYSCTL_PATH,
     VSCODE_LINUX_SYSCTL_PROC_DIR,
-    VSCODE_LINUX_TOKEN_DIR,
     VSCODE_SERVE_ARGUMENTS,
     VSCODE_SYSTEMD_DIR,
     VSCODE_UNIT_PREFIX,
@@ -124,8 +123,8 @@ class VscodeLinuxApplier:
         run=None,
         lookup_account=None,
         chown=None,
-        cli_dir: str = VSCODE_LINUX_DIR,
-        token_dir: str = VSCODE_LINUX_TOKEN_DIR,
+        cli_dir: str,
+        token_dir: str,
         systemd_dir: str = VSCODE_SYSTEMD_DIR,
         sysctl_path: str = VSCODE_LINUX_SYSCTL_PATH,
         proc_dir: str = VSCODE_LINUX_SYSCTL_PROC_DIR,

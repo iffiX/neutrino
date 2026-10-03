@@ -49,7 +49,7 @@ def test_the_deb_puts_the_agent_inside_the_interpreter_it_carries(tmp_path, carr
 
     package = (
         tmp_path
-        / "opt/neutrino_agent/python/lib/python3.13/site-packages/neutrino_agent"
+        / "opt/neutrino/agent/python/lib/python3.13/site-packages/neutrino_agent"
     )
     assert (package / "cli" / "entry.py").is_file()
     assert 'AGENT_VERSION = "9.9.9"' in (package / "_version.py").read_text()
@@ -62,7 +62,7 @@ def test_the_deb_entry_point_runs_the_carried_interpreter(tmp_path, carried):
     wrapper = (tmp_path / "usr/bin/nagent").read_text()
 
     assert (
-        "exec /opt/neutrino_agent/python/bin/python3 -m neutrino_agent.cli.entry"
+        "exec /opt/neutrino/agent/python/bin/python3 -m neutrino_agent.cli.entry"
         in (wrapper)
     )
     assert "/usr/bin/python3" not in wrapper
@@ -89,7 +89,7 @@ def test_the_deb_carries_both_units_and_nothing_for_a_desktop(tmp_path, carried)
 
     assert (tmp_path / "lib/systemd/system/neutrino_agent.service").is_file()
     unit = (tmp_path / "lib/systemd/system/rustdesk.service").read_text()
-    assert "ExecStart=/usr/lib/neutrino_agent/rustdesk/rustdesk --service" in unit
+    assert "ExecStart=/usr/lib/neutrino/agent/rustdesk/rustdesk --service" in unit
     assert not (tmp_path / "usr/share/applications").exists()
     assert not (tmp_path / "usr/share/icons").exists()
 
@@ -132,7 +132,7 @@ def test_the_deb_compiles_the_tree_at_the_path_it_installs_it_at(tmp_path, carri
     """Bytecode the package ships is bytecode the package replaces."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
-    assert carried == [(tmp_path / "opt/neutrino_agent/python", payload.PYTHON_DIR)]
+    assert carried == [(tmp_path / "opt/neutrino/agent/python", payload.PYTHON_DIR)]
 
 
 def test_the_deb_prunes_what_the_package_did_not_install(tmp_path, carried):
@@ -143,7 +143,7 @@ def test_the_deb_prunes_what_the_package_did_not_install(tmp_path, carried):
 
     assert payload.PRUNE_UNTRACKED in postinst
     assert "/var/lib/dpkg/info/neutrino-agent.list" in postinst
-    assert "prune_untracked /opt/neutrino_agent" in postinst
+    assert "prune_untracked /opt/neutrino/agent" in postinst
 
 
 def test_the_rpm_prunes_from_its_own_file_list_after_the_transaction(tmp_path, carried):
@@ -152,8 +152,8 @@ def test_the_rpm_prunes_from_its_own_file_list_after_the_transaction(tmp_path, c
 
     assert payload.PRUNE_UNTRACKED in spec
     assert "%posttrans" in spec
-    assert "rpm -ql neutrino-agent | prune_untracked /opt/neutrino_agent" in spec
-    assert carried == [(tmp_path / "opt/neutrino_agent/python", payload.PYTHON_DIR)]
+    assert "rpm -ql neutrino-agent | prune_untracked /opt/neutrino/agent" in spec
+    assert carried == [(tmp_path / "opt/neutrino/agent/python", payload.PYTHON_DIR)]
 
 
 def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
@@ -163,8 +163,8 @@ def test_the_deb_removes_its_own_payload_and_never_the_hub_s(tmp_path, carried):
     postrm = (tmp_path / "DEBIAN/postrm").read_text()
     postinst = (tmp_path / "DEBIAN/postinst").read_text()
 
-    assert "rm -rf /opt/neutrino_agent" in postrm
-    assert "rm -rf /usr/lib/neutrino_agent" in postrm
+    assert "rm -rf /opt/neutrino/agent" in postrm
+    assert "rm -rf /usr/lib/neutrino/agent" in postrm
     assert "rm -rf /opt/neutrino\n" not in postrm
     assert "rm -rf" not in postinst
     assert "prune_untracked /opt/neutrino\n" not in postinst
@@ -186,15 +186,15 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(tmp_path, carried):
 
     package = (
         tmp_path
-        / "opt/neutrino_agent/python/lib/python3.13/site-packages/neutrino_agent"
+        / "opt/neutrino/agent/python/lib/python3.13/site-packages/neutrino_agent"
     )
     assert 'AGENT_VERSION = "9.9.9"' in (package / "_version.py").read_text()
     assert (tmp_path / "usr/lib/systemd/system/neutrino_agent.service").is_file()
     assert (tmp_path / "usr/lib/systemd/system/rustdesk.service").is_file()
-    assert (tmp_path / "usr/lib/neutrino_agent/rustdesk/rustdesk").is_file()
+    assert (tmp_path / "usr/lib/neutrino/agent/rustdesk/rustdesk").is_file()
     assert not (tmp_path / "usr/share/applications").exists()
     wrapper = (tmp_path / "usr/bin/nagent").read_text()
-    assert "/opt/neutrino_agent/python/bin/python3" in wrapper
+    assert "/opt/neutrino/agent/python/bin/python3" in wrapper
     assert "PYTHONPATH" not in wrapper
 
 
@@ -234,15 +234,15 @@ def test_the_rpm_spec_names_the_machine_and_asks_for_no_python():
     assert "Requires:       pipewire-gstreamer" in spec
     assert "Requires:       python3" not in spec
     assert "Recommends" not in spec
-    assert "/opt/neutrino_agent" in spec
+    assert "/opt/neutrino/agent" in spec
 
 
 def test_the_rpm_owns_the_desktop_host_it_carries():
     spec = _spec()
 
-    assert "%dir /usr/lib/neutrino_agent" in spec
-    assert "/usr/lib/neutrino_agent/*" in spec
-    assert "rm -rf /usr/lib/neutrino_agent" in spec
+    assert "%dir /usr/lib/neutrino/agent" in spec
+    assert "/usr/lib/neutrino/agent/*" in spec
+    assert "rm -rf /usr/lib/neutrino/agent" in spec
     assert "/usr/bin/rustdesk" in spec
     assert "/usr/lib/systemd/system/rustdesk.service" in spec
     assert "/usr/share/doc/neutrino-agent" in spec

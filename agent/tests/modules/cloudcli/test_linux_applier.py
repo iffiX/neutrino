@@ -109,12 +109,12 @@ def applier(machine, tmp_path):
 
 
 def test_the_template_runs_node_as_the_account_from_its_environment():
-    unit = render_unit("/var/lib/neutrino_agent/cloudcli/n/bin/node", "/etc/x")
+    unit = render_unit("/var/lib/neutrino/agent/cloudcli/n/bin/node", "/etc/x")
 
     assert "User=%i\n" in unit
     assert "EnvironmentFile=/etc/x/%i.env\n" in unit
     assert (
-        "ExecStart=/var/lib/neutrino_agent/cloudcli/n/bin/node ${CLOUDCLI_SERVER}\n"
+        "ExecStart=/var/lib/neutrino/agent/cloudcli/n/bin/node ${CLOUDCLI_SERVER}\n"
         in unit
     )
 
@@ -130,7 +130,9 @@ def test_an_instance_is_installed_as_the_account_then_started(
 
     assert machine.calls[0] == ["runuser", "-l", "ann", "-c", "command -v claude"]
     install = machine.calls[1]
-    app = os.path.join(machine.home, ".local", "share", "neutrino_cloudcli", "app")
+    app = os.path.join(
+        machine.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
+    )
     assert install[:6] == ["runuser", "-u", "ann", "--", "env", "-i"]
     assert f"npm_config_cache={app}/.npm" in install
     assert f"npm_config_userconfig={app}/.npmrc" in install

@@ -88,12 +88,14 @@ def limits(tmp_path, watches, instances):
 
 
 def test_the_template_runs_the_cli_as_the_account_from_its_environment():
-    unit = render_unit("/usr/local/lib/neutrino_vscode/code", "/etc/neutrino/vscode")
+    unit = render_unit(
+        "/var/lib/neutrino/agent/vscode/code", "/var/lib/neutrino/agent/vscode/tokens"
+    )
 
     assert "User=%i\n" in unit
-    assert "EnvironmentFile=/etc/neutrino/vscode/%i.env\n" in unit
+    assert "EnvironmentFile=/var/lib/neutrino/agent/vscode/tokens/%i.env\n" in unit
     assert (
-        "ExecStart=/usr/local/lib/neutrino_vscode/code serve-web "
+        "ExecStart=/var/lib/neutrino/agent/vscode/code serve-web "
         "--accept-server-license-terms --host ${VSCODE_HOST} --port ${VSCODE_PORT} "
         "--connection-token-file ${VSCODE_TOKEN_FILE}\n"
     ) in unit
