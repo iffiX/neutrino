@@ -42,6 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hub" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import compiled_tree  # noqa: E402
+from constants import HUB_ICON_NAME  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared import wix_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
@@ -405,7 +406,7 @@ def _lay_out(
         machine=machine,
         url_base=url_base,
     )
-    icon = icons.write_ico(root / "neutrino_hub.ico")
+    icon = icons.write_ico(root / "neutrino_hub.ico", name=HUB_ICON_NAME)
     return {"payload": installed, "binary": binary, "state": state, "icon": icon}
 
 
@@ -459,7 +460,9 @@ def _check_tools(is_stage_only: bool) -> None:
         SystemExit: When this is not Windows, or WiX is missing.
     """
     if sys.platform != "win32":
-        raise SystemExit(f"{Path(__file__).name} runs on Windows; this is {sys.platform}")
+        raise SystemExit(
+            f"{Path(__file__).name} runs on Windows; this is {sys.platform}"
+        )
     if not is_stage_only and shutil.which("wix") is None:
         raise SystemExit(
             "WiX 6 is needed and wix is not on the path: "

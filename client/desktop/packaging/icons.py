@@ -16,6 +16,8 @@ import struct
 from pathlib import Path
 
 ICONS_DIR = Path(__file__).resolve().parents[3] / "images" / "icons"
+# The client's icon set; the hub's builds ask for ``neutrino_hub``.
+DEFAULT_ICON_NAME = "neutrino"
 
 # The edges each container carries, and for macOS the four-letter type that
 # names one. Sizes above what the source set holds are left out rather than
@@ -33,11 +35,14 @@ ICNS_TYPES = {
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
-def write_ico(target: Path) -> Path:
+def write_ico(target: Path, name: str = DEFAULT_ICON_NAME) -> Path:
     """Assemble the Windows icon.
 
     Args:
         target: The ``.ico`` to write.
+        name: The icon set, the stem the PNGs under ``images/icons`` share:
+            ``neutrino`` for the client's plain mark, ``neutrino_hub`` for
+            the hub's.
 
     Returns:
         The path written.
@@ -45,7 +50,11 @@ def write_ico(target: Path) -> Path:
     Raises:
         SystemExit: When the source set holds none of the edges.
     """
-    members = [(edge, _source(edge)) for edge in ICO_EDGES if _source(edge) is not None]
+    members = [
+        (edge, _source(edge, name))
+        for edge in ICO_EDGES
+        if _source(edge, name) is not None
+    ]
     if not members:
         raise SystemExit(f"no icon sources under {ICONS_DIR}")
 
@@ -74,7 +83,7 @@ def write_ico(target: Path) -> Path:
     return target
 
 
-def write_icns(target: Path) -> Path:
+def write_icns(target: Path, name: str = DEFAULT_ICON_NAME) -> Path:
     """Assemble the macOS icon.
 
     Args:
@@ -88,7 +97,7 @@ def write_icns(target: Path) -> Path:
     """
     members = b""
     for edge, kind in sorted(ICNS_TYPES.items()):
-        payload = _source(edge)
+        payload = _source(edge, name)
         if payload is None:
             continue
         members += kind + struct.pack(">I", len(payload) + 8) + payload
@@ -100,11 +109,12 @@ def write_icns(target: Path) -> Path:
     return target
 
 
-def _source(edge: int) -> "bytes | None":
+def _source(edge: int, name: str = DEFAULT_ICON_NAME) -> "bytes | None":
     """One source icon's bytes, checked to be the PNG it claims.
 
     Args:
         edge: The square edge in pixels.
+        name: The icon set's stem.
 
     Returns:
         The file's bytes, or None when the set has no icon that size.
@@ -112,7 +122,7 @@ def _source(edge: int) -> "bytes | None":
     Raises:
         SystemExit: When the file is not a PNG of that size.
     """
-    path = ICONS_DIR / f"neutrino_{edge}.png"
+    path = ICONS_DIR / f"{name}_{edge}.png"
     if not path.is_file():
         return None
     payload = path.read_bytes()

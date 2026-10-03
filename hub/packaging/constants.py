@@ -11,3 +11,7 @@ on. The names of the package files and of the machines are in
 # it sits under Ubuntu 22.04's 2.35, which is the floor the project declares.
 # The build reads every ELF in its own tree against this.
 PACKAGING_GLIBC_FLOOR = "2.34"
+
+# The hub's icon set under images/icons: the mark with the panel's accent edge
+# and glow, told apart from the client's plain mark.
+HUB_ICON_NAME = "neutrino_hub"

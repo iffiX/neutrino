@@ -46,6 +46,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hub" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import compiled_tree  # noqa: E402
+from constants import HUB_ICON_NAME  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared import pkg_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
@@ -275,7 +276,9 @@ def write_app_entry(package_root: Path, version: str) -> Path:
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text(APP_SCRIPT, encoding="utf-8")
     script.chmod(0o755)
-    icons.write_icns(contents / "Resources" / f"{APP_ICON_NAME}.icns")
+    icons.write_icns(
+        contents / "Resources" / f"{APP_ICON_NAME}.icns", name=HUB_ICON_NAME
+    )
     information = {
         "CFBundleName": APP_ENTRY_NAME,
         "CFBundleDisplayName": APP_ENTRY_NAME,

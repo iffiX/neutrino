@@ -10,3 +10,9 @@ rendered from it at the sizes packaging asks for — desktop entries want 48 and
 
 Regenerate them all from the source rather than editing one by hand; the
 originals live in `images/original/`.
+
+`neutrino_hub.png` and its sizes are the hub's application entry: the same
+mark on its square, with the square's edge in the panel's accent and a
+glow around it, the way the panel's own brand box looks. The client's
+entry keeps the plain mark. `render_hub_icons.py` draws them from
+`neutrino.png` with Pillow.

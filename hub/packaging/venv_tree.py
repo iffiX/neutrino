@@ -31,7 +31,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from constants import PACKAGING_GLIBC_FLOOR
+from constants import HUB_ICON_NAME, PACKAGING_GLIBC_FLOOR
 
 # The repository's packaging directory, for the names every package shares.
 SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
@@ -831,7 +831,7 @@ def stage_desktop_entry(tree: Path) -> None:
     """
     write(tree / f"usr/share/applications/{DESKTOP_ENTRY_NAME}.desktop", DESKTOP_ENTRY)
     for edge in DESKTOP_ICON_EDGES:
-        source = ICONS_SOURCE_DIR / f"neutrino_{edge}.png"
+        source = ICONS_SOURCE_DIR / f"{HUB_ICON_NAME}_{edge}.png"
         if not source.is_file():
             raise SystemExit(f"no {source.name} under {ICONS_SOURCE_DIR}")
         target = tree / (
