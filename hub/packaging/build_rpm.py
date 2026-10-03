@@ -31,6 +31,9 @@ from venv_tree import (
     version,
     write,
     WRAPPER,
+    DESKTOP_ENTRY_NAME,
+    FIRST_INSTALL,
+    stage_desktop_entry,
 )
 
 # RHEL family keeps units here; Debian's /lib/systemd/system is a symlink to
@@ -76,6 +79,8 @@ cp -a {payload}/. %{{buildroot}}/
 /opt/neutrino/hub
 /usr/bin/nhub
 /{unit_dir}/neutrino_hub_web.service
+/usr/share/applications/{desktop}.desktop
+/usr/share/icons/hicolor/*/apps/{desktop}.png
 %dir /var/lib/neutrino/hub
 /var/lib/neutrino/hub/geodata
 /var/lib/neutrino/hub/agent_cache
@@ -108,12 +113,7 @@ if [ "$1" -ge 2 ]; then
     # — a box nobody has set up has no panel to restart.
     systemctl try-restart neutrino_hub_web.service >/dev/null 2>&1 || true
 else
-    echo ""
-    echo "  Neutrino Hub installed. Set it up with:"
-    echo ""
-    echo "      sudo nhub setup"
-    echo ""
-fi
+{first_install}fi
 
 %preun
 if [ "$1" = 0 ]; then
@@ -193,6 +193,7 @@ def main() -> int:
             is_executable=True,
         )
         write(payload / UNIT_DIR / "neutrino_hub_web.service", panel_unit())
+        stage_desktop_entry(payload)
 
         spec = root / f"{PACKAGE_NAME}.spec"
         spec.write_text(
@@ -206,6 +207,8 @@ def main() -> int:
                 requires=" ".join(dependencies("rhel")),
                 recommends=" ".join(recommendations("rhel")),
                 prune=PRUNE_UNTRACKED,
+                desktop=DESKTOP_ENTRY_NAME,
+                first_install=FIRST_INSTALL,
             ),
             encoding="utf-8",
         )

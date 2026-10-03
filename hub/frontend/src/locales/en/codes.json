@@ -298,5 +298,6 @@
   "code.gateway_probe_unreadable": "The gateway's reply could not be read",
   "code.gateway_no_models": "The gateway serves no models",
   "code.wol_failed": "The wake packet could not be sent: {detail}",
-  "code.wol_sent": "Wake packet sent"
+  "code.wol_sent": "Wake packet sent",
+  "code.setup_in_progress": "This hub is already being set up."
 }

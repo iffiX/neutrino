@@ -287,6 +287,7 @@ class SupervisedProcessController(ProcessController):
         self._reconcile_s = reconcile_s
         self._lock = threading.RLock()
         self._is_supervising = False
+        self._is_service_held = False
         self._own_start_lines: set = set()
         self._seen_enabled: set = set()
         self._stopping = threading.Event()
@@ -295,6 +296,16 @@ class SupervisedProcessController(ProcessController):
     def is_supervising(self) -> bool:
         """Whether this process is the service running the children."""
         return self._is_supervising
+
+    def hold_service(self) -> None:
+        """Leave the one service as it is while the first run's steps run.
+
+        From here a child's ``start`` or ``restart`` in this process only
+        writes it into ``services.json``; the service starts it once it
+        supervises.
+        """
+        with self._lock:
+            self._is_service_held = True
 
     def supervise(self, start_lines: dict) -> None:
         """Become the service: hold the start lines and run every enabled child.
@@ -412,7 +423,11 @@ class SupervisedProcessController(ProcessController):
                 self._control_service(action)
             elif self._is_supervising:
                 getattr(self._supervisor, action)(name)
-            elif action == "restart" and self._is_service_running():
+            elif (
+                action == "restart"
+                and not self._is_service_held
+                and self._is_service_running()
+            ):
                 self._service.restart_service()
             elif action in ("start", "restart"):
                 self._write_enabled(name, is_enabled=True)

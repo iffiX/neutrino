@@ -15,6 +15,9 @@ Environment=PYTHONPATH=@REPO_ROOT@/hub
 ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-web
 Restart=on-failure
 RestartSec=5
+# Until setup this unit serves the setup wizard, and exits 75 when it is done
+# so it starts again as the panel.
+RestartForceExitStatus=75
 
 # Root is not negotiable here — the panel writes nftables rules, drives
 # systemd, and installs packages — so what is narrowed is what root may reach

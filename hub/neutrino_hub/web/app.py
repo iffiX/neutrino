@@ -100,7 +100,7 @@ def create_app() -> FastAPI:
         The configured application.
     """
     app = FastAPI(title="Neutrino Hub", docs_url=None, redoc_url=None)
-    app.state.runtime = _runtime()
+    app.state.runtime = shared_runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.add_exception_handler(RequestValidationError, _body_invalid)
     app.add_middleware(OriginGuardMiddleware)
@@ -123,7 +123,7 @@ def create_agent_app() -> FastAPI:
         The configured application, sharing the panel's runtime.
     """
     app = FastAPI(title="Neutrino Hub Agent Channel", docs_url=None, redoc_url=None)
-    app.state.runtime = _runtime()
+    app.state.runtime = shared_runtime()
     app.add_exception_handler(VaultLockedError, _vault_locked)
     app.add_exception_handler(RequestValidationError, _body_invalid)
     app.include_router(channel.router)
@@ -178,7 +178,7 @@ def _body_invalid(request: Request, error: RequestValidationError) -> JSONRespon
     )
 
 
-def _runtime() -> PanelRuntime:
+def shared_runtime() -> PanelRuntime:
     """The one runtime both applications hand their routes.
 
     Returns:
@@ -217,7 +217,7 @@ def _start_samplers() -> None:
     timer.
     """
     global _usage_collector
-    runtime = _runtime()
+    runtime = shared_runtime()
     if _usage_collector is None:
         _usage_collector = PanelUsageCollector(
             served_models=runtime.served_models,

@@ -1,0 +1,210 @@
+"""Open the panel in a browser, or the setup wizard before the box is set up.
+
+    nhub open                    # what the Neutrino Hub entry runs
+    sudo nhub open --print       # print the address another machine opens
+    nhub open --start-service    # the elevated step, run by nhub open itself
+
+Two steps. An elevated step starts the hub's service when it is stopped
+and says the address it answers at, with the setup token while the box is
+not set up; run without privilege, ``nhub open`` asks for it through UAC,
+the administrator prompt of ``osascript`` or ``pkexec``. Then the default
+browser opens that address as the person, never as root.
+"""
+
+import argparse
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import psutil
+
+from neutrino_hub.cli.password import is_password_set
+from neutrino_hub.platforms.detect import hub_platform, process_controller
+from neutrino_hub.system.constants import SYSTEM_SUPERVISED_WEB
+from neutrino_hub.utils.constants import is_dev_root_set
+from neutrino_hub.utils.json_file import read_config
+from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
+from neutrino_hub.web.setup_app import ensure_setup_token
+
+# --- config ---
+OPEN_LOOPBACK_HOST = "127.0.0.1"
+OPEN_SETTINGS_FILE = "web/settings.json"
+OPEN_START_SERVICE_FLAG = "--start-service"
+OPEN_OUTPUT_FLAG = "--output"
+
+
+def main() -> int:
+    """Open the panel or the wizard, or run one of the two steps alone.
+
+    Returns:
+        Process exit status: 0 once the address is opened or printed, 1 when
+        the service cannot be started, 2 for the elevated step without
+        privilege.
+    """
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument(
+        "--print",
+        dest="is_print_only",
+        action="store_true",
+        help="print the address another machine opens instead of opening it",
+    )
+    action.add_argument(
+        OPEN_START_SERVICE_FLAG,
+        dest="is_start_service",
+        action="store_true",
+        help="start the hub's service when it is stopped and print the address",
+    )
+    parser.add_argument(
+        OPEN_OUTPUT_FLAG,
+        metavar="PATH",
+        default="",
+        help=f"with {OPEN_START_SERVICE_FLAG}, write the address here",
+    )
+    arguments = parser.parse_args()
+    platform = hub_platform()
+
+    if arguments.is_start_service:
+        if not platform.is_elevated():
+            print(
+                f"error: {OPEN_START_SERVICE_FLAG} needs {platform.elevation_word}",
+                file=sys.stderr,
+            )
+            return 2
+        if not _start_service():
+            return 1
+        _say(address(OPEN_LOOPBACK_HOST), arguments.output)
+        return 0
+
+    if arguments.is_print_only:
+        if platform.is_elevated():
+            _start_service()
+            print(address(_reachable_host()))
+            return 0
+        print(f"http://{_reachable_host()}:{WEB_DEFAULT_LISTEN_PORT}/")
+        print(
+            f"run nhub open --print as {platform.elevation_word} for the "
+            "setup token",
+            file=sys.stderr,
+        )
+        return 0
+
+    if platform.is_elevated():
+        _start_service()
+        url = address(OPEN_LOOPBACK_HOST)
+    else:
+        url = _address_from_elevated_step(platform)
+    if not url:
+        url = f"http://{OPEN_LOOPBACK_HOST}:{WEB_DEFAULT_LISTEN_PORT}/"
+        print(
+            f"the hub's service was not started; run nhub open as "
+            f"{platform.elevation_word} to start it",
+            file=sys.stderr,
+        )
+    if not platform.open_browser(url):
+        print(url)
+    return 0
+
+
+def address(host: str) -> str:
+    """Where the service answers, with the setup token while the box is not set up.
+
+    Args:
+        host: The address a browser reaches this machine at.
+
+    Returns:
+        ``http://<host>:<http port>/``, and ``?token=`` the setup token
+        before setup.
+
+    Raises:
+        OSError: When the setup token can be neither read nor made.
+    """
+    url = f"http://{host}:{_configured_port()}/"
+    if is_password_set():
+        return url
+    return f"{url}?token={ensure_setup_token()}"
+
+
+def _start_service() -> bool:
+    """Start the hub's service when it is not running.
+
+    Returns:
+        False when the service manager refused; a development root runs no
+        service and is True.
+    """
+    if is_dev_root_set():
+        return True
+    controller = process_controller()
+    try:
+        if not controller.status(SYSTEM_SUPERVISED_WEB).is_active:
+            controller.control(SYSTEM_SUPERVISED_WEB, "start")
+    except (subprocess.SubprocessError, OSError, KeyError) as error:
+        print(f"error: the hub's service did not start ({error})", file=sys.stderr)
+        return False
+    return True
+
+
+def _address_from_elevated_step(platform) -> str:
+    """Run the elevated step and read back the address it wrote.
+
+    Args:
+        platform: This system's :class:`HubPlatform`.
+
+    Returns:
+        The address, empty when the step did not run.
+    """
+    descriptor, name = tempfile.mkstemp(prefix="nhub_open_")
+    os.close(descriptor)
+    path = Path(name)
+    try:
+        if not platform.run_elevated(
+            ["open", OPEN_START_SERVICE_FLAG, OPEN_OUTPUT_FLAG, str(path)]
+        ):
+            return ""
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def _say(url: str, output: str) -> None:
+    """Write the address to the file asked for, else to standard output.
+
+    Args:
+        url: The address.
+        output: The file, empty for standard output.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    if not output:
+        print(url)
+        return
+    Path(output).write_text(url + "\n", encoding="utf-8")
+
+
+def _configured_port() -> int:
+    """The panel's HTTP port, from the settings or the default."""
+    try:
+        return int(
+            read_config(OPEN_SETTINGS_FILE).get("listen_port", WEB_DEFAULT_LISTEN_PORT)
+        )
+    except (OSError, ValueError, TypeError):
+        return WEB_DEFAULT_LISTEN_PORT
+
+
+def _reachable_host() -> str:
+    """This machine's first IPv4 address that is not loopback.
+
+    Returns:
+        The address, or the hostname when no interface carries one.
+    """
+    for addresses in psutil.net_if_addrs().values():
+        for entry in addresses:
+            if entry.family == socket.AF_INET and not entry.address.startswith("127."):
+                return entry.address
+    return socket.gethostname()

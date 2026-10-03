@@ -21,6 +21,12 @@ and then this machine's agent joins the panel it serves. The order is:
     chose, the agent channel and panel certificates, rendering, enabling
     the core children, the overlay, the AI gateway, the panel password,
     starting the hub's service, this machine's agent.
+
+The hub's service serves the same questions in a browser from the install,
+through :func:`serve_until_set_up`. Whichever of it and this command starts
+the steps first holds the setup lock, and the other is refused with
+``setup_in_progress``. When the service's run finishes, the service exits
+and comes back as the panel, which installs this machine's agent.
 """
 
 import argparse
@@ -84,7 +90,10 @@ from neutrino_hub.platforms.detect import (
     is_linux,
     process_controller,
 )
-from neutrino_hub.system.constants import SYSTEM_SUPERVISED_CORE
+from neutrino_hub.system.constants import (
+    SYSTEM_RESTART_EXIT_STATUS,
+    SYSTEM_SUPERVISED_CORE,
+)
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.constants import (
     is_dev_root_set,
@@ -117,6 +126,7 @@ from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.web.agent_tls import ensure_certificate
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
+    WEB_CODE_SETUP_IN_PROGRESS,
     WEB_DEFAULT_LISTEN_PORT,
     WEB_HTTPS_SCHEME_PORT,
     WEB_IDENTITY_FILE,
@@ -125,6 +135,7 @@ from neutrino_hub.web.constants import (
     WEB_SETTING_HTTPS,
     WEB_SETTING_HTTPS_PORT,
     WEB_SETUP_GRACE_S,
+    WEB_SETUP_LOCAL_AGENT_PATH,
     WEB_SETUP_WAIT_S,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
@@ -135,7 +146,13 @@ from neutrino_hub.web.panel_tls import (
     ensure_served,
     is_https_enabled,
 )
-from neutrino_hub.web.setup_app import WebSetupServer, WebSetupSession
+from neutrino_hub.web.setup_app import (
+    SetupLock,
+    WebSetupServer,
+    WebSetupSession,
+    ensure_setup_token,
+    remove_setup_token,
+)
 
 from neutrino_hub.cli.password import is_password_set, store_password
 from neutrino_hub.modules.credentials.vault import SecretVault
@@ -189,6 +206,8 @@ SETUP_CARRIED_PROGRAMS = (
     EASYTIER_CORE_PATH,
     EASYTIER_CLI_PATH,
 )
+# The setup lock this process takes, by the browser's answers or its own.
+SETUP_LOCK = SetupLock()
 CONFIG_FILES = (
     "xray/nodes.json",
     "xray/routing.json",
@@ -265,6 +284,120 @@ def main() -> int:
     return _setup(reporter, steps, answers, server=server)
 
 
+def serve_until_set_up(stop) -> int:
+    """Serve the browser wizard from the hub's service until the box is set up.
+
+    The service runs the steps itself when the browser's answers arrive.
+    Answers it cannot use are sent back to the browser; a run that fails
+    keeps the wizard served, and the next answers run the steps again.
+
+    Args:
+        stop: A :class:`threading.Event` set when the service is asked to
+            stop.
+
+    Returns:
+        :data:`SYSTEM_RESTART_EXIT_STATUS` once the box is set up, by these
+        steps or by ``nhub setup``; 0 when stopped; 1 when the wizard
+        cannot be served.
+    """
+    try:
+        token = ensure_setup_token()
+    except OSError as error:
+        print(f"error: the setup token cannot be kept ({error})", file=sys.stderr)
+        return 1
+    session = WebSetupSession(
+        context=wizard.context(), token=token, setup_lock=SETUP_LOCK
+    )
+    server = WebSetupServer(
+        session=session, host=SETUP_BROWSER_HOST, port=_browser_port()
+    )
+    if not server.start():
+        print(
+            f"error: the setup wizard cannot listen on port {server.port}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"serving the setup wizard on port {server.port}", flush=True)
+    steps = _panel_started_last(
+        [step for step in CORE_STEPS if step[2] not in _skipped_steps()]
+    )
+    while not stop.is_set():
+        if is_password_set() and SETUP_LOCK.acquire():
+            server.stop()
+            return SYSTEM_RESTART_EXIT_STATUS
+        document = session.wait(WEB_SETUP_WAIT_S)
+        if not document:
+            continue
+        try:
+            answers = wizard.from_document(document)
+        except WizardAborted as error:
+            session.reject(str(error))
+            SETUP_LOCK.release()
+            continue
+        reporter = InstallSessionReporter(
+            session=session,
+            total_step_count=len(steps) + 2,
+            is_color_enabled=False,
+            log_path=UTILS_SETUP_LOG_PATH,
+        )
+        status = _setup(reporter, steps, answers, server=server, is_service=True)
+        if status == SYSTEM_RESTART_EXIT_STATUS:
+            return status
+        session.forget_answers()
+        SETUP_LOCK.release()
+    server.stop()
+    return 0
+
+
+def finish_local_agent() -> None:
+    """Install this machine's agent and join it, when the first run left it to the panel.
+
+    Runs in the panel's process, once it serves, and only when the service's
+    run left the mark; the mark is removed either way.
+    """
+    if not WEB_SETUP_LOCAL_AGENT_PATH.is_file():
+        return
+    reporter = InstallReporter(
+        total_step_count=1, is_color_enabled=False, log_path=UTILS_SETUP_LOG_PATH
+    )
+    try:
+        _wait_for_panel()
+        _install_local_agent("", reporter, link_of=_minted_link)
+    finally:
+        WEB_SETUP_LOCAL_AGENT_PATH.unlink(missing_ok=True)
+
+
+def _wait_for_panel() -> None:
+    """Wait, at most the panel's wait, for the panel's port to take connections."""
+    deadline = time.monotonic() + SETUP_PANEL_WAIT_S
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", _browser_port()), timeout=SETUP_PANEL_TIMEOUT_S
+            ):
+                return
+        except OSError:
+            time.sleep(SETUP_PANEL_POLL_S)
+
+
+def _minted_link() -> tuple:
+    """One enrollment link minted by the panel in this process.
+
+    Returns:
+        The link and an empty note, or an empty link and why there is none.
+    """
+    from fastapi import HTTPException
+
+    from neutrino_hub.web.app import shared_runtime
+    from neutrino_hub.web.routers.hub.device import generate_enrollment_link
+
+    try:
+        link, _ = generate_enrollment_link(shared_runtime(), name="", device_id=None)
+    except HTTPException as error:
+        return "", f"the panel cannot mint a link ({error.detail})"
+    return link, ""
+
+
 def _answers(arguments):
     """What this run was told, however it was told.
 
@@ -312,7 +445,11 @@ def _browser_answers():
     Raises:
         WizardAborted: When this machine has nothing to configure.
     """
-    session = WebSetupSession(context=wizard.context())
+    if _is_service_serving():
+        _say_where_the_service_asks()
+        wizard.welcome()
+        return None
+    session = WebSetupSession(context=wizard.context(), setup_lock=SETUP_LOCK)
     server = _browser_server(session)
     if server is None:
         # No port to answer on, so there is no page to offer. The terminal's
@@ -339,6 +476,34 @@ def _browser_answers():
             # is the terminal, which is where a run that goes wrong is read.
             print(f"\n  the browser sent answers that cannot be used: {error}")
             session.reject()
+
+
+def _is_service_serving() -> bool:
+    """Whether the hub's service runs, and so serves the wizard on the panel's port.
+
+    Returns:
+        False under a development root, which runs no service.
+    """
+    if is_dev_root_set():
+        return False
+    try:
+        return process_controller().status("web").is_active
+    except (subprocess.SubprocessError, OSError, KeyError):
+        return False
+
+
+def _say_where_the_service_asks() -> None:
+    """Print where the hub's service serves the same questions in a browser."""
+    try:
+        token = ensure_setup_token()
+    except OSError:
+        return
+    print()
+    print("  The hub's service asks the same questions in a browser at:")
+    print()
+    for url in _reachable_urls(_browser_port()):
+        print(f"    {url}/?token={token}")
+    print()
 
 
 def _browser_command(url: str) -> "list | None":
@@ -517,6 +682,7 @@ def _setup(
     answers,
     *,
     server=None,
+    is_service: bool = False,
 ) -> int:
     """Run every step, then store the password and hand the box over.
 
@@ -527,10 +693,22 @@ def _setup(
         server: The browser wizard's server when the questions were answered
             there, which has to give the panel's port back before the panel
             can start. None when they were answered anywhere else.
+        is_service: Whether this process is the hub's service, which comes
+            back as the panel by exiting.
 
     Returns:
-        Process exit status.
+        Process exit status; :data:`SYSTEM_RESTART_EXIT_STATUS` when the
+        service's run finished.
     """
+    if not SETUP_LOCK.acquire():
+        print(
+            f'error: {{"code": "{WEB_CODE_SETUP_IN_PROGRESS}"}}: the hub is '
+            "being set up from the browser wizard or another nhub setup",
+            file=sys.stderr,
+        )
+        return 1
+    if not is_linux():
+        process_controller().hold_service()
     # From here the machine is being changed, and the session watching it is
     # often held over an interface this run is about to reconfigure. A hang-up
     # from that must not end the run: a first run stopped halfway leaves a box
@@ -590,12 +768,20 @@ def _setup(
     # steps above copy from its example.
     reporter.start("Setting the panel password", code=SETUP_STEP_PANEL_PASSWORD)
     store_password(answers.password)
+    remove_setup_token()
     reporter.done("stored")
 
     panel_url = _panel_url()
     authority = _authority(_panel_http_url()) if answers.is_https_enabled else None
     if server is not None:
-        return _hand_over(server, panel_url, answers.password, reporter, authority)
+        return _hand_over(
+            server,
+            panel_url,
+            answers.password,
+            reporter,
+            authority,
+            is_service=is_service,
+        )
     if not _start_panel(reporter):
         return 1
     _install_local_agent(answers.password, reporter)
@@ -639,7 +825,13 @@ def _authority(panel_url: str) -> "dict | None":
 
 
 def _hand_over(
-    server, panel_url: str, password: str, reporter, authority: "dict | None" = None
+    server,
+    panel_url: str,
+    password: str,
+    reporter,
+    authority: "dict | None" = None,
+    *,
+    is_service: bool = False,
 ) -> int:
     """Give the port back and start the panel the browser goes on to.
 
@@ -655,9 +847,13 @@ def _hand_over(
         reporter: Where the local agent step is reported.
         authority: The authority the last page offers to install, None when
             the panel speaks HTTP.
+        is_service: Whether this process is the hub's service. It does not
+            start the panel; it leaves this machine's agent to the panel and
+            exits.
 
     Returns:
-        Process exit status.
+        Process exit status; :data:`SYSTEM_RESTART_EXIT_STATUS` for the
+        service.
     """
     server.session.finish(panel_url=panel_url, authority=authority)
     # The closing screen exists only if a poll reads the finished state, so
@@ -667,6 +863,11 @@ def _hand_over(
     server.session.wait_done_served(WEB_SETUP_GRACE_S * 3)
     time.sleep(0.3)
     server.stop()
+    if is_service:
+        if not is_dev_root_set():
+            WEB_SETUP_LOCAL_AGENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            WEB_SETUP_LOCAL_AGENT_PATH.touch()
+        return SYSTEM_RESTART_EXIT_STATUS
     if not _start_panel(reporter):
         return 1
     _install_local_agent(password, reporter)
@@ -731,7 +932,7 @@ def _joined_devices() -> list:
     ]
 
 
-def _install_local_agent(password: str, reporter) -> None:
+def _install_local_agent(password: str, reporter, *, link_of=None) -> None:
     """Put this machine's own agent on it, and join it to this hub.
 
     The hub hosts no module itself: what a device runs, it runs through an
@@ -747,6 +948,8 @@ def _install_local_agent(password: str, reporter) -> None:
     Args:
         password: The panel password, to mint the enrollment link with.
         reporter: Where the step is reported.
+        link_of: Returns the link and a note in place of asking the panel
+            with the password; None asks the panel.
     """
     # A development root installs no packages and runs no units.
     if is_dev_root_set():
@@ -777,7 +980,7 @@ def _install_local_agent(password: str, reporter) -> None:
                 timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S,
             )
         reporter.note("installed; joining this hub")
-        link, note = _enrollment_link(password)
+        link, note = link_of() if link_of else _enrollment_link(password)
         if not link:
             reporter.failed(note)
             return

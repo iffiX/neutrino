@@ -1,11 +1,13 @@
 /**
  * The wizard's own API, which exists only before there is a panel.
  *
- * `nhub setup` serves these while it waits for the questions to be answered
- * in a browser. Every call carries the one-time token the terminal printed;
- * there is no session yet, because the password is one of the answers.
+ * The hub's service serves these until the box is set up, and `nhub setup`
+ * while it waits for the questions to be answered in a browser. Every call
+ * carries the one-time setup token; there is no session yet, because the
+ * password is one of the answers.
  */
 
+import { ApiError } from "./api_client";
 import type { HubOs } from "./api_types";
 
 /** One of this machine's network ports, as the box sees it right now. */
@@ -203,8 +205,14 @@ async function call<T>(
         },
   );
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`${response.status}: ${detail}`);
+    const text = await response.text();
+    let detail: unknown = null;
+    try {
+      detail = (JSON.parse(text) as { detail?: unknown }).detail ?? null;
+    } catch {
+      detail = null;
+    }
+    throw new ApiError(response.status, `${response.status}: ${text}`, detail);
   }
   return (await response.json()) as T;
 }

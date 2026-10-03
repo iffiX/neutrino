@@ -1,8 +1,11 @@
 """The hub on macOS: the root LaunchDaemon ``com.neutrino.hub`` and its children.
 
-Not pure: runs ``launchctl``, ``open`` and the children.
+Not pure: runs ``launchctl``, ``open``, ``osascript`` and the children.
 """
 
+import os
+import pwd
+import shlex
 import subprocess
 
 from neutrino_hub.platforms.base import HubPlatform
@@ -10,6 +13,8 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_BROWSER_TIMEOUT_S,
     PLATFORM_COMMAND_TIMEOUT_S,
     PLATFORM_DARWIN_BROWSER_OPENER,
+    PLATFORM_DARWIN_CONSOLE,
+    PLATFORM_DARWIN_ELEVATOR,
     PLATFORM_DARWIN_SERVICE_PLIST,
     PLATFORM_DARWIN_SERVICE_TARGET,
     PLATFORM_DARWIN_STATE_PATTERN,
@@ -45,21 +50,56 @@ class DarwinHubPlatform(HubPlatform):
             log_dir=SYSTEM_CHILD_LOG_DIR,
         )
 
+    def run_elevated(self, arguments: list) -> bool:
+        """Run ``nhub`` with these arguments as root, behind the administrator prompt.
+
+        Args:
+            arguments: What follows ``nhub``.
+
+        Returns:
+            True when it ran and exited 0; False when the person declined or
+            it failed.
+        """
+        command = shlex.join(self.hub_command(*arguments))
+        quoted = command.replace("\\", "\\\\").replace('"', '\\"')
+        script = f'do shell script "{quoted}" with administrator privileges'
+        try:
+            result = subprocess.run(
+                [PLATFORM_DARWIN_ELEVATOR, "-e", script],
+                capture_output=True,
+                check=False,
+            )
+        except OSError:
+            return False
+        return result.returncode == 0
+
     def open_browser(self, url: str) -> bool:
-        """Open a page through LaunchServices.
+        """Open a page through LaunchServices, as the signed-in account.
 
         Args:
             url: The page.
 
         Returns:
-            True when ``open`` accepted it.
+            True when ``open`` accepted it; False as root with nobody signed
+            in.
         """
+        account = {}
+        if self.is_elevated():
+            seated = _seated_account()
+            if seated is None:
+                return False
+            account = {
+                "user": seated.pw_uid,
+                "group": seated.pw_gid,
+                "env": {"HOME": seated.pw_dir, "USER": seated.pw_name},
+            }
         try:
             result = subprocess.run(
                 [PLATFORM_DARWIN_BROWSER_OPENER, url],
                 capture_output=True,
                 timeout=PLATFORM_BROWSER_TIMEOUT_S,
                 check=False,
+                **account,
             )
         except (OSError, subprocess.SubprocessError):
             return False
@@ -157,3 +197,23 @@ class DarwinHubPlatform(HubPlatform):
         from neutrino_hub.utils.constants import UTILS_RUNTIME_ROOT
 
         return f"unix://{UTILS_RUNTIME_ROOT / PLATFORM_NETBIRD_SOCKET_NAME}"
+
+
+def _seated_account():
+    """The account root opens pages for: the one sudo names, else the console's.
+
+    Returns:
+        Its ``pwd`` entry, or None when that is root or nobody.
+    """
+    uid = os.environ.get("SUDO_UID", "")
+    if not uid.isdigit():
+        try:
+            uid = str(os.stat(PLATFORM_DARWIN_CONSOLE).st_uid)
+        except OSError:
+            return None
+    if int(uid) == 0:
+        return None
+    try:
+        return pwd.getpwuid(int(uid))
+    except KeyError:
+        return None

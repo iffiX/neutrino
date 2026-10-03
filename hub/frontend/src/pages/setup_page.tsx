@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import { describeError } from "../api_client";
 import { AuthorityInstall } from "../components/authority_install";
 import { Icon } from "../components/icon";
 import { PasswordField } from "../components/password_field";
@@ -276,7 +277,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     try {
       setState(await sendSetupAnswers(token, answers()));
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(describeError(cause));
     }
   };
 
@@ -813,8 +814,8 @@ export function SetupTokenMissing() {
   return (
     <SetupFrame title={t("ui.setup.waiting_title")}>
       <div className="setup_body">
-        <p className="setup_lead">{t("ui.setup.waiting_lead")}</p>
-        <p className="field_hint">{t("ui.setup.waiting_hint")}</p>
+        <p className="setup_lead">{t("ui.setup.token_missing_lead")}</p>
+        <p className="field_hint">{t("ui.setup.token_missing_hint")}</p>
       </div>
     </SetupFrame>
   );

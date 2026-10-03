@@ -274,6 +274,39 @@ WRAPPER = """#!/bin/sh
 exec {python}/bin/python3 -m neutrino_hub.cli.entry "$@"
 """
 
+# The application entry every Linux package installs, and the icons it is
+# drawn with, by edge.
+DESKTOP_ENTRY_NAME = "neutrino-hub"
+DESKTOP_ENTRY = """[Desktop Entry]
+Type=Application
+Name=Neutrino Hub
+Comment=Open the hub's panel
+Exec=nhub open
+Icon=neutrino-hub
+Terminal=false
+Categories=Network;
+"""
+DESKTOP_ICON_EDGES = (256, 48)
+
+# What a first install runs once the files are in place: the panel's unit
+# starts, serving the setup wizard, and its address is printed.
+FIRST_INSTALL = """systemctl enable --now neutrino_hub_web.service >/dev/null 2>&1 || true
+address="$(nhub open --print 2>/dev/null)" || address=""
+echo ""
+if [ -n "$address" ]; then
+    echo "  Neutrino Hub installed. Set it up in a browser at:"
+    echo ""
+    echo "      $address"
+else
+    echo "  Neutrino Hub installed. Set it up with:"
+    echo ""
+    echo "      sudo nhub open"
+fi
+echo ""
+echo "  Or in a terminal: sudo nhub setup"
+echo ""
+"""
+
 
 def asset_name(kind: str, version: str, machine: str) -> str:
     """The file a build of this kind writes, which is what a release carries.
@@ -785,6 +818,28 @@ def panel_unit(documentation_url: str = "https://github.com/iffiX/neutrino") -> 
             f"Documentation={documentation_url}",
         )
     )
+
+
+def stage_desktop_entry(tree: Path) -> None:
+    """Write the ``Neutrino Hub`` application entry and its icons into the tree.
+
+    Args:
+        tree: The staging directory standing in for the filesystem root.
+
+    Raises:
+        SystemExit: When an icon is not under ``images/icons``.
+    """
+    write(tree / f"usr/share/applications/{DESKTOP_ENTRY_NAME}.desktop", DESKTOP_ENTRY)
+    for edge in DESKTOP_ICON_EDGES:
+        source = ICONS_SOURCE_DIR / f"neutrino_{edge}.png"
+        if not source.is_file():
+            raise SystemExit(f"no {source.name} under {ICONS_SOURCE_DIR}")
+        target = tree / (
+            f"usr/share/icons/hicolor/{edge}x{edge}/apps/{DESKTOP_ENTRY_NAME}.png"
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        target.chmod(0o644)
 
 
 def require_built_frontend() -> None:

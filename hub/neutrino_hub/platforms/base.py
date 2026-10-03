@@ -1,10 +1,11 @@
 """The contract every platform implements.
 
 The contract names what differs between Linux, macOS and Windows and
-nothing else: whether this process may act on the installed hub, the
-controller of the daemons the hub runs, the one service on macOS and
-Windows, opening a page, a lock on a file, and the commands the hub runs
-of itself and of its agent. A new system is a new class.
+nothing else: whether this process may act on the installed hub, running
+``nhub`` elevated, the controller of the daemons the hub runs, the one
+service on macOS and Windows, opening a page, a lock on a file, and the
+commands the hub runs of itself and of its agent. A new system is a new
+class.
 """
 
 import os
@@ -51,6 +52,18 @@ class HubPlatform:
             One command line.
         """
         return f"sudo nhub {arguments}".rstrip()
+
+    def run_elevated(self, arguments: list) -> bool:
+        """Run ``nhub`` with these arguments elevated, asking the person first.
+
+        Args:
+            arguments: What follows ``nhub``.
+
+        Returns:
+            True when it ran and exited 0; False when nothing here can ask,
+            the person declined, or it failed.
+        """
+        return False
 
     def process_controller(self):
         """A controller of the daemons the hub runs.

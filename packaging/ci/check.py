@@ -23,19 +23,21 @@ The targets:
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
   ``nclient status`` exits 1 unbound. macOS.
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
-  ``neutrino_hub`` service is registered and stopped, ``nhub setup --json``
-  sets a ``server`` hub up and installs its local agent, the service runs and
-  the panel answers ``/api/hub/display``; ``nhub stop``, the hub and its
-  agent are removed, and ``install.ps1`` installs the same file again from a
-  directory up to ``nhub --version``. Windows.
+  ``neutrino_hub`` service runs and serves the setup wizard on the panel's
+  port, ``nhub setup --json`` sets a ``server`` hub up and installs its local
+  agent, the service runs and the panel answers ``/api/hub/display``;
+  ``nhub stop``, the hub and its agent are removed, and ``install.ps1``
+  installs the same file again from a directory up to ``nhub --version``.
+  Windows.
 - ``hub_macos``: the same with the .pkg, its ``com.neutrino.hub`` job
-  installed and not loaded, removed by hand as the agent's is, and
+  loaded and running, removed by hand as the agent's is, and
   ``install.sh``. macOS.
 - ``client_android``: the apk installs on the running emulator, its main
   activity starts and its process is alive ten seconds later. Any host with
   ``adb`` and one emulator attached.
 - ``linux``: a hub, agent or client .deb, .rpm or Arch package installs in a
-  fresh container of its family and its command answers ``--version``. Linux
+  fresh container of its family and its command answers ``--version``; the
+  hub's install prints the setup wizard's address with its token. Linux
   with podman or docker; another architecture needs QEMU registered with
   binfmt_misc.
 
@@ -118,6 +120,11 @@ HUB_MACOS_PACKAGE_ID = "com.neutrino.hub"
 # A server hub on the default ports with no proxy; setup installs the local
 # agent from its own cache.
 HUB_PANEL_URL = "http://127.0.0.1:8080/api/hub/display"
+# Before setup the service serves the wizard there: the page, and its API
+# refusing a request with no token.
+HUB_WIZARD_PAGE_URL = "http://127.0.0.1:8080/"
+HUB_WIZARD_API_URL = "http://127.0.0.1:8080/api/hub/setup/context"
+HUB_WIZARD_REFUSAL = 403
 HUB_PANEL_WAIT_S = 180
 HUB_PANEL_POLL_S = 5
 
@@ -325,8 +332,9 @@ def check_hub_windows(msi: Path) -> None:
     print(f"nhub {_answer([str(nhub), '--version'])}")
     if not _service_exists(HUB_WINDOWS_SERVICE):
         raise SystemExit("the hub's service is not registered")
-    if "RUNNING" in _service_state(HUB_WINDOWS_SERVICE):
-        raise SystemExit("the hub's service runs before setup")
+    if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
+        raise SystemExit("the hub's service is not running after install")
+    _wait_for_wizard()
 
     _set_up_hub([str(nhub)])
     if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
@@ -371,8 +379,9 @@ def check_hub_macos(pkg: Path) -> None:
     print(f"nhub {_answer([HUB_MACOS_COMMAND, '--version'])}")
     if not HUB_MACOS_PLIST.is_file():
         raise SystemExit("the hub's service is not registered")
-    if _is_job_loaded(HUB_MACOS_JOB):
-        raise SystemExit("the hub's service runs before setup")
+    if not _is_job_loaded(HUB_MACOS_JOB):
+        raise SystemExit("the hub's service is not loaded after install")
+    _wait_for_wizard()
 
     _set_up_hub(["sudo", HUB_MACOS_COMMAND])
     job = _answer(["sudo", "launchctl", "print", HUB_MACOS_JOB])
@@ -461,6 +470,8 @@ def check_linux(package: Path) -> None:
             + (result.stderr or result.stdout).strip()[-3000:]
         )
     print(f"{command} {result.stdout.strip().splitlines()[-1]}")
+    if command == LINUX_COMMANDS["neutrino-hub"] and "/?token=" not in result.stdout:
+        raise SystemExit("the hub's install printed no setup wizard address")
 
 
 def _set_up_hub(nhub: list) -> None:
@@ -483,6 +494,32 @@ def _set_up_hub(nhub: list) -> None:
         result = subprocess.run([*nhub, "setup", "--json", str(path)])
     if result.returncode != 0:
         raise SystemExit(f"nhub setup exited {result.returncode}")
+
+
+def _wait_for_wizard() -> None:
+    """Wait for the service to serve the setup wizard on the panel's port.
+
+    Raises:
+        SystemExit: When the page does not answer 200, or its API does not
+            refuse a request with no token, in time.
+    """
+    deadline = time.monotonic() + HUB_PANEL_WAIT_S
+    last = ""
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(HUB_WIZARD_PAGE_URL, timeout=5) as response:
+                last = f"{HUB_WIZARD_PAGE_URL} answered {response.status}"
+            urllib.request.urlopen(HUB_WIZARD_API_URL, timeout=5).close()
+            last = f"{HUB_WIZARD_API_URL} answered without the token"
+        except urllib.error.HTTPError as error:
+            if error.code == HUB_WIZARD_REFUSAL:
+                print(f"{HUB_WIZARD_PAGE_URL} serves the setup wizard")
+                return
+            last = f"{error.url} answered {error.code}"
+        except OSError as error:
+            last = str(error)
+        time.sleep(HUB_PANEL_POLL_S)
+    raise SystemExit(f"the setup wizard is not served: {last}")
 
 
 def _wait_for_panel() -> None:

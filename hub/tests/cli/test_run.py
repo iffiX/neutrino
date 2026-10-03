@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from neutrino_hub.cli import run
+from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 TLS = {"ssl_certfile": "/state/cert.pem", "ssl_keyfile": "/state/key.pem"}
@@ -310,12 +311,41 @@ def outside_linux(monkeypatch):
     monkeypatch.setattr(run.sys, "argv", ["nhub-run"])
 
 
-def test_outside_linux_the_service_waits_for_setup_instead_of_exiting(
-    monkeypatch, outside_linux
+@pytest.mark.parametrize("is_linux", [True, False])
+def test_a_service_not_set_up_serves_the_wizard_and_exits_with_its_status(
+    monkeypatch, is_linux
 ):
+    from neutrino_hub.cli import setup
+
+    stop = threading.Event()
+    asked = []
+    monkeypatch.setattr(run, "is_linux", lambda: is_linux)
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(run, "_stop_on_terminate", lambda: None)
+    monkeypatch.setattr(run, "_STOP_ASKED", stop)
+    monkeypatch.setattr(run, "_is_set_up", lambda: False)
+    monkeypatch.setattr(
+        run.sys, "argv", ["nhub-run", "--only-web"] if is_linux else ["nhub-run"]
+    )
+    monkeypatch.setattr(
+        setup, "serve_until_set_up", lambda event: asked.append(event) or 75
+    )
+    monkeypatch.setattr(
+        run, "_serve_panel", lambda arguments: pytest.fail("the panel waits")
+    )
+    monkeypatch.setattr(
+        run, "_supervise", lambda arguments: pytest.fail("the panel waits")
+    )
+
+    assert run.main() == SYSTEM_RESTART_EXIT_STATUS
+    assert asked == [stop]
+
+
+def test_a_development_root_outside_linux_waits_for_setup(monkeypatch, outside_linux):
     answers = iter([False, False, False, True])
     stop = threading.Event()
     naps = []
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: True)
     monkeypatch.setattr(run, "_STOP_ASKED", stop)
     monkeypatch.setattr(stop, "wait", lambda timeout_s: naps.append(timeout_s))
     monkeypatch.setattr(run, "_is_set_up", lambda: next(answers))
@@ -327,6 +357,7 @@ def test_outside_linux_the_service_waits_for_setup_instead_of_exiting(
 def test_a_stop_while_waiting_for_setup_ends_the_service(monkeypatch, outside_linux):
     stop = threading.Event()
     stop.set()
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: True)
     monkeypatch.setattr(run, "_STOP_ASKED", stop)
     monkeypatch.setattr(run, "_is_set_up", lambda: False)
     monkeypatch.setattr(
@@ -370,12 +401,13 @@ def test_a_stop_asked_before_the_servers_start_still_stops_them(monkeypatch):
     assert all(server.should_exit for server in servers)
 
 
-def test_on_linux_a_hub_not_set_up_exits_and_says_so(monkeypatch, capsys):
+def test_a_development_root_on_linux_not_set_up_exits_and_says_so(monkeypatch, capsys):
     monkeypatch.setattr(run, "is_linux", lambda: True)
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: True)
     monkeypatch.setattr(run, "_is_set_up", lambda: False)
     monkeypatch.setattr(run.sys, "argv", ["nhub-run"])
     assert run.main() == 1
-    assert "nhub setup" in capsys.readouterr().err
+    assert "nhub --dev setup" in capsys.readouterr().err
 
 
 @pytest.fixture
@@ -393,10 +425,8 @@ def _store_password(settings) -> None:
     settings.write_text(json.dumps({"admin_password_hash": "stored-hash"}))
 
 
-@pytest.mark.parametrize("system", ["darwin", "win32"])
-def test_outside_linux_settings_without_a_password_are_not_set_up(
-    monkeypatch, config_tree, system
-):
+@pytest.mark.parametrize("system", ["linux", "darwin", "win32"])
+def test_settings_without_a_password_are_not_set_up(monkeypatch, config_tree, system):
     monkeypatch.setattr(run.sys, "platform", system)
 
     assert not run._is_set_up()
@@ -406,16 +436,11 @@ def test_outside_linux_settings_without_a_password_are_not_set_up(
     assert run._is_set_up()
 
 
-def test_on_linux_the_panel_settings_alone_are_set_up(monkeypatch, config_tree):
-    monkeypatch.setattr(run.sys, "platform", "linux")
-
-    assert run._is_set_up()
-
-
 def test_the_service_keeps_waiting_until_the_password_is_stored(
     monkeypatch, config_tree, outside_linux
 ):
     monkeypatch.setattr(run.sys, "platform", "win32")
+    monkeypatch.setattr(run, "is_dev_root_set", lambda: True)
     stop = threading.Event()
     waits = []
 
@@ -431,3 +456,21 @@ def test_the_service_keeps_waiting_until_the_password_is_stored(
 
     assert run.main() == 0
     assert len(waits) == 3
+
+
+def test_the_panel_installs_the_local_agent_the_first_run_left_to_it(
+    monkeypatch, tmp_path
+):
+    from neutrino_hub.cli import setup
+
+    mark = tmp_path / "setup_local_agent"
+    monkeypatch.setattr("neutrino_hub.web.constants.WEB_SETUP_LOCAL_AGENT_PATH", mark)
+    finished = threading.Event()
+    monkeypatch.setattr(setup, "finish_local_agent", finished.set)
+
+    run._finish_first_run()
+    assert not finished.wait(0.2)
+
+    mark.touch()
+    run._finish_first_run()
+    assert finished.wait(5)

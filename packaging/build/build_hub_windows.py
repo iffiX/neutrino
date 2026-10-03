@@ -20,8 +20,10 @@ and the administrators alone, every agent package in the directory named
 in the manifest.
 
 The installer registers the ``neutrino_hub`` service, run as LocalSystem at
-boot with ``service run`` and recovered when it ends, and does not start
-it; ``nhub setup`` does. An upgrade starts it again.
+boot with ``service run`` and recovered when it ends, and starts it, on a
+fresh install and on an upgrade; until the box is set up it serves the
+setup wizard. The Start menu shortcut ``Neutrino Hub`` runs ``nhub.exe
+open``.
 
 Needs WiX 6 and its Util extension: ``dotnet tool install --global wix
 --version 6.0.2`` and ``wix extension add -g WixToolset.Util.wixext/6.0.2``.
@@ -44,6 +46,11 @@ from shared import hub_assets  # noqa: E402
 from shared import wix_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 import venv_tree  # noqa: E402
+
+sys.path.append(
+    str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging")
+)
+import icons  # noqa: E402
 
 PACKAGE_NAME = compiled_tree.PACKAGE_NAME
 
@@ -81,10 +88,9 @@ SERVICE_RECOVERY = (
     'RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />'
 )
 
-# What an upgrade runs once the files are in place: the install registers
-# the service stopped, and a hub that was set up before keeps running.
-START_AFTER_UPGRADE = f'"[SystemFolder]sc.exe" start {HUB_SERVICE_NAME}'
-UPGRADE_CONDITION = "WIX_UPGRADE_DETECTED AND NOT REMOVE"
+# The application entry in the Start menu.
+ENTRY_NAME = "Neutrino Hub"
+ENTRY_ARGUMENTS = "open"
 
 # The package's body, inside the Package element wix_build writes around it.
 WIX_BODY = r"""
@@ -93,6 +99,10 @@ WIX_BODY = r"""
         <Directory Id="INSTALLFOLDER" Name="hub" />
       </Directory>
     </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <Icon Id="HubIcon" SourceFile="@ICON@" />
+    <Property Id="ARPPRODUCTICON" Value="HubIcon" />
+
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="NeutrinoDataFolder" Name="Neutrino">
         <Directory Id="HUBDATAFOLDER" Name="hub">
@@ -114,6 +124,23 @@ WIX_BODY = r"""
         <RegistryValue Root="HKLM"
                        Key="Software\Neutrino\Hub"
                        Name="Path"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="HubEntryShortcut"
+                  Directory="ProgramMenuFolder"
+                  Name="@ENTRY_NAME@"
+                  Description="Open the hub's panel"
+                  Target="[INSTALLFOLDER]@BINARY@"
+                  Arguments="@ENTRY_ARGUMENTS@"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Show="minimized"
+                  Icon="HubIcon" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Neutrino\Hub"
+                       Name="Shortcut"
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
@@ -142,14 +169,6 @@ WIX_BODY = r"""
     <ComponentGroup Id="State" Directory="HUBSTATEFOLDER">
       <Files Include="@STATE@\**" />
     </ComponentGroup>
-
-    @START_AFTER_UPGRADE@
-
-    <InstallExecuteSequence>
-      <Custom Action="StartHubAfterUpgrade"
-              After="StartServices"
-              Condition="@UPGRADE_CONDITION@" />
-    </InstallExecuteSequence>
 
     <Feature Id="Main" Title="Neutrino Hub" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="Payload" />
@@ -270,8 +289,8 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
     """The installer's source with every value filled in.
 
     Args:
-        staged: What :func:`_lay_out` wrote: ``payload``, ``binary`` and
-            ``state``.
+        staged: What :func:`_lay_out` wrote: ``payload``, ``binary``,
+            ``state`` and ``icon``.
         version: The version being packaged.
         publisher: The Manufacturer field's value.
 
@@ -288,13 +307,6 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         account="LocalSystem",
         start="auto",
         permissions=(SERVICE_RECOVERY,),
-        is_started_on_install=False,
-    )
-    start_after_upgrade = wix_build.custom_action(
-        "StartHubAfterUpgrade",
-        is_failure_ignored=True,
-        Directory="INSTALLFOLDER",
-        ExeCommand=START_AFTER_UPGRADE,
     )
     body = wix_build.fill(
         WIX_BODY,
@@ -302,12 +314,13 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
             "PAYLOAD": staged["payload"],
             "STATE": staged["state"],
             "DATA_SDDL": DATA_FOLDER_SDDL,
-            "UPGRADE_CONDITION": UPGRADE_CONDITION,
+            "ICON": staged["icon"],
+            "ENTRY_NAME": ENTRY_NAME,
+            "ENTRY_ARGUMENTS": ENTRY_ARGUMENTS,
+            "BINARY": HUB_BINARY_NAME,
         },
     )
-    body = body.replace("@SERVICE_COMPONENT@", service).replace(
-        "@START_AFTER_UPGRADE@", start_after_upgrade
-    )
+    body = body.replace("@SERVICE_COMPONENT@", service)
     return wix_build.package_source(
         name="Neutrino Hub",
         manufacturer=publisher,
@@ -339,7 +352,7 @@ def _lay_out(
     Returns:
         The paths the installer's source names: the payload directory, the
         hub's own binary, kept out of the payload so the service component
-        can claim it, and the state directory's seed.
+        can claim it, the state directory's seed, and the entry's icon.
 
     Raises:
         SystemExit: When there is no stand-in packet.dll, this Python is
@@ -392,7 +405,8 @@ def _lay_out(
         machine=machine,
         url_base=url_base,
     )
-    return {"payload": installed, "binary": binary, "state": state}
+    icon = icons.write_ico(root / "neutrino_hub.ico")
+    return {"payload": installed, "binary": binary, "state": state, "icon": icon}
 
 
 def _check_packet_dll(packet_dll: "Path | None") -> None:

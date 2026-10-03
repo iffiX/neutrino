@@ -228,6 +228,17 @@ WEB_SETUP_STOP_TIMEOUT_S = 10.0
 # How long it gets to take the port before that is called a failure.
 WEB_SETUP_START_TIMEOUT_S = 10.0
 WEB_SETUP_START_POLL_S = 0.05
+# The token the hub's service serves the wizard behind until the box is set
+# up, readable by root alone.
+WEB_SETUP_TOKEN_PATH = UTILS_STATE_ROOT / "setup_token"
+WEB_SETUP_TOKEN_MODE = 0o600
+# Held by whichever process runs the first run's steps.
+WEB_SETUP_LOCK_PATH = UTILS_RUNTIME_ROOT / "setup.lock"
+# The refusal of answers while another process runs the steps.
+WEB_CODE_SETUP_IN_PROGRESS = "setup_in_progress"
+# Left by the service's first run for the panel, which installs this
+# machine's agent and joins it once it serves.
+WEB_SETUP_LOCAL_AGENT_PATH = UTILS_STATE_ROOT / "setup_local_agent"
 
 # What the proxy is actually taking, read from the applied ruleset rather than
 # from `config/`. One word per answer the status strip can give: the master

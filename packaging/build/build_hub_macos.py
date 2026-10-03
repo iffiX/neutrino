@@ -19,8 +19,12 @@ in the directory named in the manifest.
 
 The ``com.neutrino.hub`` LaunchDaemon runs ``nhub run`` as root. The
 postinstall makes ``config`` and ``state`` root's alone and the log
-directory, and installs the plist without loading it; ``nhub setup`` starts
-the service. An upgrade over a hub whose service was loaded loads it again.
+directory, loads and starts the service, which serves the setup wizard
+until the box is set up, and prints the wizard's address. An upgrade over a
+hub whose service was loaded loads it again.
+
+``/Applications/Neutrino Hub.app`` is the application entry: a bundle
+holding a script that runs ``nhub open``, and the icon.
 
 Every Mach-O file is read back with ``otool`` and refused when it loads a
 library from outside the system, then signed ad hoc: Apple silicon refuses
@@ -33,6 +37,7 @@ pkgbuild and productbuild.
 
 import argparse
 import platform
+import plistlib
 import shutil
 import sys
 import tempfile
@@ -45,6 +50,11 @@ from shared import hub_assets  # noqa: E402
 from shared import pkg_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 import venv_tree  # noqa: E402
+
+sys.path.append(
+    str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging")
+)
+import icons  # noqa: E402
 
 PACKAGE_NAME = compiled_tree.PACKAGE_NAME
 
@@ -69,6 +79,16 @@ HUB_LAUNCHD_PLIST = f"/Library/LaunchDaemons/{HUB_LAUNCHD_LABEL}.plist"
 # Left by the preinstall when the service was loaded, so the postinstall of
 # an upgrade loads it again.
 RELOAD_MARKER = INSTALL_STATE_DIR / ".reload_after_install"
+
+# The application entry: a bundle whose program is a script that opens the
+# panel, or the setup wizard before setup.
+APP_ENTRY_NAME = "Neutrino Hub"
+APP_BUNDLE_DIR = Path("/Applications") / f"{APP_ENTRY_NAME}.app"
+APP_BUNDLE_IDENTIFIER = "com.neutrino.hub.open"
+APP_ICON_NAME = "neutrino_hub"
+APP_SCRIPT = f"""#!/bin/sh
+exec "{INSTALL_LINK_PATH}" open
+"""
 
 # The identity the installer records the package under.
 PACKAGE_IDENTIFIER = "com.neutrino.hub"
@@ -101,10 +121,19 @@ if [ -f "{RELOAD_MARKER}" ]; then
     launchctl bootstrap system {HUB_LAUNCHD_PLIST} || true
     exit 0
 fi
+launchctl bootstrap system {HUB_LAUNCHD_PLIST} 2>/dev/null || true
+launchctl kickstart system/{HUB_LAUNCHD_LABEL} 2>/dev/null || true
+address="$("{INSTALL_LINK_PATH}" open --print 2>/dev/null)" || address=""
 echo ""
-echo "  Neutrino hub installed. Set it up with:"
+if [ -n "$address" ]; then
+    echo "  Neutrino Hub installed. Set it up in a browser at:"
+    echo ""
+    echo "      $address"
+else
+    echo "  Neutrino Hub installed. Open Neutrino Hub in Applications to set it up."
+fi
 echo ""
-echo "      sudo nhub setup"
+echo "  Or in a terminal: sudo nhub setup"
 echo ""
 exit 0
 """
@@ -227,6 +256,40 @@ def write_launchd_job(package_root: Path) -> Path:
     )
 
 
+def write_app_entry(package_root: Path, version: str) -> Path:
+    """Write ``Neutrino Hub.app`` into the package root.
+
+    Args:
+        package_root: The directory standing in for the filesystem root.
+        version: The version the bundle declares.
+
+    Returns:
+        The bundle written.
+
+    Raises:
+        SystemExit: When there is no icon to draw it with.
+    """
+    bundle = package_root / str(APP_BUNDLE_DIR).lstrip("/")
+    contents = bundle / "Contents"
+    script = contents / "MacOS" / APP_ENTRY_NAME
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(APP_SCRIPT, encoding="utf-8")
+    script.chmod(0o755)
+    icons.write_icns(contents / "Resources" / f"{APP_ICON_NAME}.icns")
+    information = {
+        "CFBundleName": APP_ENTRY_NAME,
+        "CFBundleDisplayName": APP_ENTRY_NAME,
+        "CFBundleIdentifier": APP_BUNDLE_IDENTIFIER,
+        "CFBundleExecutable": APP_ENTRY_NAME,
+        "CFBundleIconFile": APP_ICON_NAME,
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": version,
+        "CFBundleVersion": version,
+    }
+    (contents / "Info.plist").write_bytes(plistlib.dumps(information))
+    return bundle
+
+
 def _lay_out(
     root: Path, version: str, machine: str, *, agent_packages: Path, url_base: str
 ) -> dict:
@@ -280,6 +343,7 @@ def _lay_out(
     link.symlink_to(INSTALL_APP_DIR / HUB_BINARY_NAME)
 
     write_launchd_job(package_root)
+    pkg_build.sign_ad_hoc(write_app_entry(package_root, version))
     scripts = pkg_build.write_scripts(
         root / "scripts", preinstall=PREINSTALL, postinstall=POSTINSTALL
     )

@@ -1,9 +1,10 @@
 """The first run's questions and the steps that answer them, served by the
 setup wizard before the panel starts.
 
-Every route is behind the one-time token the terminal printed: this serves
-before there is a password to ask for, so the token is the whole of the
-access control and whoever reads the terminal is the only one who has it.
+Every route is behind the one-time token: this serves before there is a
+password to ask for, so the token is the whole of the access control, and it
+is readable by root alone. Answers that arrive while another process runs
+the steps are refused with ``setup_in_progress``.
 """
 
 import secrets
@@ -16,6 +17,7 @@ from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
 from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX
 from neutrino_hub.platforms.detect import hub_os
+from neutrino_hub.web.constants import WEB_CODE_SETUP_IN_PROGRESS
 
 
 def setup_router(session) -> APIRouter:
@@ -32,7 +34,7 @@ def setup_router(session) -> APIRouter:
     router = APIRouter(prefix="/api/hub/setup", tags=["setup"])
 
     def _guard(request: Request) -> bool:
-        """Whether this request carries the token the terminal printed."""
+        """Whether this request carries the setup token."""
         given = request.query_params.get("token", "")
         return secrets.compare_digest(given, session.token)
 
@@ -76,7 +78,11 @@ def setup_router(session) -> APIRouter:
             return JSONResponse(
                 status_code=400, content={"detail": "answers must be an object"}
             )
-        session.answer(document)
+        if not session.answer(document):
+            return JSONResponse(
+                status_code=409,
+                content={"detail": {"code": WEB_CODE_SETUP_IN_PROGRESS, "params": {}}},
+            )
         return JSONResponse(status_code=202, content=session.state())
 
     return router

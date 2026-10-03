@@ -42,6 +42,8 @@ from venv_tree import (
     version,
     write,
     WRAPPER,
+    FIRST_INSTALL,
+    stage_desktop_entry,
 )
 
 CONTROL = """Package: {name}
@@ -97,12 +99,7 @@ if [ "$1" = configure ] && [ -n "$2" ]; then
     exit 0
 fi
 
-echo ""
-echo "  Neutrino Hub installed. Set it up with:"
-echo ""
-echo "      sudo nhub setup"
-echo ""
-"""
+{first_install}"""
 
 PRERM = """#!/bin/sh
 set -e
@@ -213,6 +210,7 @@ def _lay_out(
     # Unit files are rendered at setup time by `nhub setup`, which knows
     # the paths; what ships here is the panel's own unit, already absolute.
     write(tree / "lib/systemd/system/neutrino_hub_web.service", panel_unit())
+    stage_desktop_entry(tree)
 
     size = sum(f.stat().st_size for f in tree.rglob("*") if f.is_file()) // 1024
     control = CONTROL.format(
@@ -233,7 +231,10 @@ def _lay_out(
     write(
         tree / "DEBIAN/postinst",
         POSTINST.format(
-            prune=PRUNE_UNTRACKED, package=PACKAGE_NAME, prefix=INSTALL_PREFIX
+            prune=PRUNE_UNTRACKED,
+            package=PACKAGE_NAME,
+            prefix=INSTALL_PREFIX,
+            first_install=FIRST_INSTALL,
         ),
         is_executable=True,
     )

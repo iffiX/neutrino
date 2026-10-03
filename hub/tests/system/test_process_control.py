@@ -376,3 +376,24 @@ def test_a_command_reads_an_enabled_child_as_running_with_the_service(
 
     assert status.is_installed and status.is_enabled and status.is_active
     assert not controller.status("easytier").is_active
+
+
+def test_a_held_service_is_not_restarted_for_a_child_of_the_first_run(
+    controller, service, tmp_path
+):
+    service.state = PLATFORM_SERVICE_RUNNING
+    controller.hold_service()
+
+    controller.restart("cliproxyapi")
+
+    assert _state(tmp_path)["enabled"] == ["cliproxyapi"]
+    assert service.calls == []
+
+
+def test_a_held_service_still_restarts_into_the_panel(controller, service):
+    service.state = PLATFORM_SERVICE_RUNNING
+    controller.hold_service()
+
+    controller.restart("web")
+
+    assert service.calls == ["restart"]

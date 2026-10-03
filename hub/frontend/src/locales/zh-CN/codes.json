@@ -298,5 +298,6 @@
   "code.gateway_probe_unreadable": "读不懂网关的回答",
   "code.gateway_no_models": "网关没有提供任何模型",
   "code.wol_failed": "网络唤醒没能发出：{detail}",
-  "code.wol_sent": "已发送唤醒包"
+  "code.wol_sent": "已发送唤醒包",
+  "code.setup_in_progress": "这个中枢已在配置中。"
 }
