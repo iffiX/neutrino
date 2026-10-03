@@ -49,7 +49,7 @@ from neutrino_hub.web.constants import (
 )
 
 
-def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> list:
+def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> tuple:
     """Make the system firewall answer what the hub serves where it is exposed.
 
     Args:
@@ -58,8 +58,9 @@ def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> list:
         routing: Parsed ``config/xray/routing.json``, for the SOCKS ports.
 
     Returns:
-        One line per rule, program or anchor changed; empty when nothing
-        changed.
+        The notes, one line per rule, program or anchor changed, empty when
+        nothing changed; and the refusals, one ``{rule, detail}`` per rule
+        Windows refused, always empty on macOS.
 
     Raises:
         OSError: When the firewall cannot be read or changed on Windows, or
@@ -103,7 +104,8 @@ def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> list:
         return FirewallWindowsApplier().apply(rules)
     applier = FirewallDarwinApplier()
     notes = applier.apply(_programs(overlays))
-    return notes + applier.load_anchor(render_pf_anchor(rules, interfaces=present))
+    notes += applier.load_anchor(render_pf_anchor(rules, interfaces=present))
+    return notes, []
 
 
 def reload_firewall() -> None:

@@ -45,43 +45,59 @@ $rules = @(Get-NetFirewallRule -Name ($d.prefix + '*') -ErrorAction SilentlyCont
   })
 @{rules = $rules} | ConvertTo-Json -Compress -Depth 4
 """
-# Removes, changes and creates the rules the document names, in that order. A
-# rule with no interface is kept disabled; one with interfaces is scoped to
-# them and enabled.
+# Removes, changes and creates the rules the document names, in that order.
+# Each rule is scoped to the aliases it names that Windows has an adapter by,
+# compared without case, and enabled; a rule left with none is kept disabled.
+# Answers, per rule, the aliases left out and the error a refused rule raised.
 FIREWALL_WINDOWS_CHANGE_SCRIPT = """
-foreach ($name in @($d.remove)) {
-  if ($name) { Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue }
-}
-foreach ($rule in @($d.update)) {
-  if ($rule) {
-    $aliases = @($rule.interfaces)
-    if ($aliases.Count -gt 0) {
+$known = @(Get-NetAdapter -IncludeHidden | ForEach-Object { [string]$_.Name })
+$dropped = [System.Collections.ArrayList]::new()
+$failed = [System.Collections.ArrayList]::new()
+function Set-HubRule($rule, [bool]$isNew) {
+  $wanted = @(@($rule.interfaces) | Where-Object { $_ })
+  $aliases = @($wanted | Where-Object { $known -contains $_ })
+  $unknown = @($wanted | Where-Object { $known -notcontains $_ })
+  if ($unknown.Count -gt 0) {
+    [void]$dropped.Add(@{name = [string]$rule.name; interfaces = $unknown})
+  }
+  try {
+    if ($isNew -and $aliases.Count -gt 0) {
+      New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
+        -Description $d.description -Direction Inbound -Action Allow `
+        -Protocol $rule.protocol -LocalPort $rule.port -Profile Any `
+        -InterfaceAlias $aliases | Out-Null
+    } elseif ($isNew) {
+      New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
+        -Description $d.description -Direction Inbound -Action Allow `
+        -Protocol $rule.protocol -LocalPort $rule.port -Profile Any `
+        -Enabled False | Out-Null
+    } elseif ($aliases.Count -gt 0) {
       Set-NetFirewallRule -Name $rule.name -Protocol $rule.protocol `
         -LocalPort $rule.port -InterfaceAlias $aliases -Enabled True
     } else {
       Set-NetFirewallRule -Name $rule.name -Protocol $rule.protocol `
         -LocalPort $rule.port -Enabled False
     }
+  } catch {
+    [void]$failed.Add(@{name = [string]$rule.name; error = [string]$_.Exception.Message})
   }
+}
+foreach ($name in @($d.remove)) {
+  if ($name) { Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue }
+}
+foreach ($rule in @($d.update)) {
+  if ($rule) { Set-HubRule $rule $false }
 }
 foreach ($rule in @($d.create)) {
-  if ($rule) {
-    $aliases = @($rule.interfaces)
-    if ($aliases.Count -gt 0) {
-      New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
-        -Description $d.description -Direction Inbound -Action Allow `
-        -Protocol $rule.protocol -LocalPort $rule.port -Profile Any `
-        -InterfaceAlias $aliases | Out-Null
-    } else {
-      New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
-        -Description $d.description -Direction Inbound -Action Allow `
-        -Protocol $rule.protocol -LocalPort $rule.port -Profile Any `
-        -Enabled False | Out-Null
-    }
-  }
+  if ($rule) { Set-HubRule $rule $true }
 }
-@{changed = $true} | ConvertTo-Json -Compress
+@{changed = $true; dropped = @($dropped); failed = @($failed)} |
+  ConvertTo-Json -Compress -Depth 4
 """
+# How many times one pass runs the change while an alias is left out or a
+# rule is refused, and the wait between two runs.
+FIREWALL_WINDOWS_RETRY_COUNT = 5
+FIREWALL_WINDOWS_RETRY_WAIT_S = 2.0
 
 # macOS's application firewall allows programs rather than ports.
 FIREWALL_DARWIN_TOOL = "/usr/libexec/ApplicationFirewall/socketfilterfw"
