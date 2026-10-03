@@ -880,3 +880,18 @@ def test_the_headline_rule_is_one_the_output_can_encode(monkeypatch, encoding, r
     line = buffer.getvalue().decode(encoding).strip().splitlines()[0]
     assert line.startswith(f"{wizard.WIZARD_WORDMARK} {rule}")
     assert line.endswith(" 1/5")
+
+
+def test_the_last_screen_does_not_wait_when_nobody_is_at_a_terminal(
+    monkeypatch, capsys
+):
+    def no_input(*args, **keywords):
+        raise AssertionError("waited for Enter with no terminal")
+
+    monkeypatch.setattr("builtins.input", no_input)
+
+    wizard.finish(panel_url="http://192.0.2.1:8080/", is_waiting=False)
+
+    printed = capsys.readouterr().out
+    assert "http://192.0.2.1:8080/" in printed
+    assert "Press Enter" not in printed

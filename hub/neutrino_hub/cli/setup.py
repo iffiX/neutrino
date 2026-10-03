@@ -792,6 +792,7 @@ def _setup(
         note=note,
         joined=_joined_devices,
         authority=authority,
+        is_waiting=sys.stdin.isatty(),
     )
     return 0
 
