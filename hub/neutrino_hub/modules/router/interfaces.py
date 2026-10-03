@@ -39,6 +39,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_WAN_METHOD_STATIC,
     ROUTER_WAN_METHODS,
 )
+from neutrino_hub.platforms.detect import is_linux
 
 DEFAULT_DHCP_LEASE_TIME = "12h"
 DEFAULT_AP_BAND = "bg"
@@ -858,16 +859,21 @@ class RouterNetworkConfig:
         """This interface as configured, or a fresh one with no job.
 
         A port the box has and the configuration does not still has to be
-        shown, and a port nobody has said anything about answers nothing: an
-        interface appearing on its own is not a reason to open it.
+        shown. On Linux a port nobody has said anything about answers
+        nothing: an interface appearing on its own is not a reason to open
+        it. On macOS and Windows it answers until somebody closes it.
 
         Args:
             name: Kernel interface name.
 
         Returns:
-            The stored interface, or a new roleless one.
+            The stored interface, or a new roleless one, exposed outside
+            Linux.
         """
-        return self.interface(name) or RouterInterface(name=name)
+        stored = self.interface(name)
+        if stored is not None:
+            return stored
+        return RouterInterface(name=name, is_exposed=not is_linux())
 
     def vlan_children(self, parent: str) -> list[RouterInterface]:
         """The VLANs riding on one trunk port, in configuration order.

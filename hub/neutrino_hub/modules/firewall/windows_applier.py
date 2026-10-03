@@ -1,10 +1,11 @@
 """Making Windows Firewall allow the ports the hub serves.
 
 Reads the rules named ``neutrino_hub_*``, then creates the missing ones with
-``New-NetFirewallRule``, changes the ones whose port moved with
+``New-NetFirewallRule``, changes the ones whose port or interfaces moved with
 ``Set-NetFirewallRule`` and removes the ones no purpose names any more with
-``Remove-NetFirewallRule``. A pass that finds every rule as it should be
-changes nothing.
+``Remove-NetFirewallRule``. Each rule is scoped with ``-InterfaceAlias`` to
+the interfaces it answers on, and a rule that answers on none is kept
+disabled. A pass that finds every rule as it should be changes nothing.
 
 Not pure: runs PowerShell.
 """
@@ -20,7 +21,36 @@ from neutrino_hub.system.powershell_run import listed, run_powershell
 
 def _document(rule) -> dict:
     """One rule as the script reads it."""
-    return {"name": rule.name, "protocol": rule.protocol, "port": str(rule.port)}
+    return {
+        "name": rule.name,
+        "protocol": rule.protocol,
+        "port": str(rule.port),
+        "interfaces": list(rule.interfaces),
+    }
+
+
+def _held_shape(rule) -> tuple:
+    """What a rule must look like in Windows: protocol, port, enabled, scope."""
+    return (
+        rule.protocol.upper(),
+        str(rule.port),
+        bool(rule.interfaces),
+        _scope(rule.interfaces),
+    )
+
+
+def _change_note(rule, held: tuple) -> str:
+    """One line saying how a held rule changed."""
+    if held[1] != str(rule.port):
+        return f"firewall moved {rule.name} to {rule.port}"
+    if not rule.interfaces:
+        return f"firewall disabled {rule.name}"
+    return f"firewall scoped {rule.name} to {', '.join(rule.interfaces)}"
+
+
+def _scope(interfaces) -> tuple:
+    """Interface aliases in an order two scopes can be compared in."""
+    return tuple(sorted(str(name).lower() for name in interfaces))
 
 
 class FirewallWindowsApplier:
@@ -55,7 +85,7 @@ class FirewallWindowsApplier:
         update = [
             rule
             for name, rule in wanted.items()
-            if name in held and held[name] != (rule.protocol, str(rule.port))
+            if name in held and held[name] != _held_shape(rule)
         ]
         remove = sorted(name for name in held if name not in wanted)
         if not (create or update or remove):
@@ -63,7 +93,7 @@ class FirewallWindowsApplier:
         self._change(create=create, update=update, remove=remove)
         return (
             [f"firewall opened {rule.name}" for rule in create]
-            + [f"firewall moved {rule.name} to {rule.port}" for rule in update]
+            + [_change_note(rule, held[rule.name]) for rule in update]
             + [f"firewall closed {name}" for name in remove]
         )
 
@@ -83,7 +113,7 @@ class FirewallWindowsApplier:
         return [f"firewall closed {name}" for name in held]
 
     def _held(self) -> dict:
-        """The hub's rules as Windows holds them: name to protocol and port."""
+        """The hub's rules as Windows holds them, shaped as :func:`_held_shape`."""
         answer = self._powershell(
             FIREWALL_WINDOWS_READ_SCRIPT, {"prefix": FIREWALL_RULE_PREFIX}
         )
@@ -91,9 +121,12 @@ class FirewallWindowsApplier:
         for entry in listed(answer.get("rules")):
             if not isinstance(entry, dict) or not entry.get("name"):
                 continue
+            is_enabled = bool(entry.get("is_enabled", True))
             held[str(entry["name"])] = (
                 str(entry.get("protocol") or "").upper(),
                 str(entry.get("port") or ""),
+                is_enabled,
+                _scope(listed(entry.get("interfaces"))) if is_enabled else (),
             )
         return held
 

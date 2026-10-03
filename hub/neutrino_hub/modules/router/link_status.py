@@ -332,14 +332,14 @@ class RouterLinkStatus:
             Interface name to kind. Loopback, bridges, tunnels, veth pairs and
             the overlay are left out: they are not ports anybody gives a role
             to, and nothing here has to name them one by one to exclude them.
-            On macOS and Windows every interface with a hardware address and
-            an IPv4 address outside loopback, as ethernet.
+            On macOS and Windows every interface holding an IPv4 address
+            outside loopback, as ethernet.
         """
         if not is_linux():
             return {
                 name: LINK_KIND_ETHERNET
                 for name, entry in _system_entries().items()
-                if entry.get("address") and _first_ipv4(entry)
+                if _first_ipv4(entry)
             }
         result = run(["ip", "-d", "-json", "link", "show"], is_checked=False)
         if not result.is_success:

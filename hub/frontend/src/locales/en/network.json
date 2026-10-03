@@ -287,6 +287,8 @@
   "ui.network.wifi_scan": "Scan for networks",
   "ui.network.wifi_scan_hint": "Scan for networks; joining sets this interface to WAN.",
   "ui.network.wifi_scanning": "Scanning…",
+  "ui.network.apply_exposure_hint_system": "Rewrites the hub's rules in the system firewall.",
+  "ui.network.exposure_hint_system": "The networks on which this box accepts connections to the hub's own ports: the panel, the agent channel, the AI gateway, the SOCKS ports and the overlays' peer ports.",
   "ui.overlay.add": "Add",
   "ui.overlay.address_assigning": "assigning…",
   "ui.overlay.address_label": "Overlay address",
