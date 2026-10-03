@@ -121,6 +121,7 @@ export function SambaPanels({
     Record<string, string>
   >({});
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
+  const [notice, setNotice] = useState<Partial<Record<GroupName, string>>>({});
   const [errors, setErrors] = useState<Partial<Record<GroupName, string>>>({});
 
   const savedShares = resource.data?.shares ?? [];
@@ -142,11 +143,13 @@ export function SambaPanels({
       isWindows &&
       sent.some((share) => !WINDOWS_DRIVE_PATH.test(share.path))
     ) {
+      setNotice({});
       setErrors({ shares: t("ui.samba.share_path_drive") });
       return;
     }
     setBusyGroup(group);
     setErrors({});
+    setNotice({});
     try {
       await (group === "shares"
         ? apiPost<SambaDeviceView>(`${basePath}/share/set`, {
@@ -197,6 +200,7 @@ export function SambaPanels({
         });
         return;
       }
+      setNotice({ [group]: t("ui.api.applied") });
     } catch (cause: unknown) {
       resource.reload();
       setErrors({ [group]: describeError(cause) });
@@ -206,6 +210,7 @@ export function SambaPanels({
   };
 
   const updateShare = (index: number, patch: Partial<SambaShare>) => {
+    setNotice({});
     setShares((current) =>
       current.map((share, at) =>
         at === index ? { ...share, ...patch } : share,
@@ -214,6 +219,7 @@ export function SambaPanels({
   };
 
   const removeUser = (name: string) => {
+    setNotice({});
     setUsers((current) => current.filter((user) => user !== name));
     setPendingPasswords(({ [name]: _, ...rest }) => rest);
     // Mirrors what the gateway will do on save, so the shares group does not
@@ -231,6 +237,7 @@ export function SambaPanels({
     if (name === "" || users.includes(name)) {
       return;
     }
+    setNotice({});
     setUsers((current) => [...current, name]);
     if (newPassword !== "") {
       setPendingPasswords((current) => ({ ...current, [name]: newPassword }));
@@ -295,6 +302,7 @@ export function SambaPanels({
           hint={t("ui.samba.shares_apply_hint")}
           blockedHint={blockedHint}
           error={errors.shares}
+          notice={notice.shares}
           onReset={sharesDraft.reset}
           onApply={() => void applyGroup("shares")}
         />
@@ -347,6 +355,7 @@ export function SambaPanels({
           hint={t("ui.samba.users_apply_hint")}
           blockedHint={blockedHint}
           error={errors.users}
+          notice={notice.users}
           onReset={() => {
             usersDraft.reset();
             setPendingPasswords({});

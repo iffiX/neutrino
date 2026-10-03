@@ -7,7 +7,7 @@ import { Icon } from "./icon";
 import { ToggleSwitch } from "./toggle_switch";
 import { Picker } from "./picker";
 import { VaultPicker } from "./vault_picker";
-import { apiPost, describeCode, describeError } from "../api_client";
+import { apiPost, describeApplied, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
@@ -253,11 +253,7 @@ export function AiProvidersSection({
         });
       }
       const result = await apiPost<ApplyResult>(AI_GATEWAY_APPLY_PATH);
-      setApplyNotice(
-        result.changes.length > 0
-          ? result.changes.map(describeCode).join(" ")
-          : null,
-      );
+      setApplyNotice(describeApplied(result));
       resource.reload();
       onApplied();
     } catch (cause: unknown) {

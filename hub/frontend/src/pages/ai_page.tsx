@@ -72,6 +72,7 @@ export function AiPage() {
   });
   const view = status.data;
   const [portError, setPortError] = useState<string | null>(null);
+  const [portNotice, setPortNotice] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [port, setPort] = useState<number | null>(null);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
@@ -139,12 +140,14 @@ export function AiPage() {
   const handleApplyPort = async () => {
     setIsBusy(true);
     setPortError(null);
+    setPortNotice(null);
     try {
       status.setData(
         await apiPost<CliproxyApiStatusView>("/hub/ai/gateway/set", {
           listen_port: port,
         }),
       );
+      setPortNotice(t("ui.api.applied"));
     } catch (cause: unknown) {
       setPortError(describeError(cause));
     } finally {
@@ -367,7 +370,11 @@ export function AiPage() {
           }
           warning={t("ui.ai.port_apply_warning")}
           error={portError}
-          onReset={() => setPort(view.listen_port)}
+          notice={portNotice}
+          onReset={() => {
+            setPort(view.listen_port);
+            setPortNotice(null);
+          }}
           onApply={() => void handleApplyPort()}
         />
       </section>

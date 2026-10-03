@@ -120,7 +120,7 @@ export function ContainersPanels({
         setMirrorsError(describeApplyFailure(result));
         return;
       }
-      setMirrorsNotice(t("ui.containers.applied"));
+      setMirrorsNotice(t("ui.api.applied"));
     } catch (cause: unknown) {
       setMirrorsError(describeError(cause));
     } finally {
@@ -145,7 +145,7 @@ export function ContainersPanels({
         setError(describeApplyFailure(result));
         return;
       }
-      setNotice(t("ui.containers.applied"));
+      setNotice(t("ui.api.applied"));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {

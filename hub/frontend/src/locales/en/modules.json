@@ -150,7 +150,6 @@
   "ui.cloudcli.remove": "Remove",
   "ui.cloudcli.running": "running",
   "ui.cloudcli.stopped": "not running",
-  "ui.containers.applied": "Applied.",
   "ui.containers.autostart": "Start with the box",
   "ui.containers.autostart_hint": "Whether this container starts with the machine.",
   "ui.containers.command": "Command (optional)",

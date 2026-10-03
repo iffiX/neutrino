@@ -58,6 +58,7 @@ export function GiteaPanels({
   // The form's own fields; the machine they are written to is the page's.
   const { draft, setDraft, isDirty, reset } = useDraft(saved, accessDraftOf);
   const [isBusy, setIsBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const applyAccess = async () => {
@@ -66,6 +67,7 @@ export function GiteaPanels({
     }
     setIsBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await apiPost<GiteaDeviceView>(`${basePath}/set`, {
         device_id: deviceId,
@@ -77,7 +79,9 @@ export function GiteaPanels({
       resource.reload();
       if (!result.is_applied) {
         setError(describeApplyFailure(result));
+        return;
       }
+      setNotice(t("ui.api.applied"));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -181,6 +185,7 @@ export function GiteaPanels({
           hint={t("ui.gitea.access_apply_hint")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
+          notice={notice}
           onReset={reset}
           onApply={() => void applyAccess()}
         />

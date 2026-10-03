@@ -150,7 +150,6 @@
   "ui.cloudcli.remove": "移除",
   "ui.cloudcli.running": "运行中",
   "ui.cloudcli.stopped": "未运行",
-  "ui.containers.applied": "已应用。",
   "ui.containers.autostart": "随机器启动",
   "ui.containers.autostart_hint": "这个容器是否随机器一起启动。",
   "ui.containers.command": "命令（可选）",

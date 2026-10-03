@@ -68,6 +68,7 @@ export function CloudcliPanels({
   const { draft, setDraft, isDirty, reset } = useDraft(saved, draftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   if (resource.error !== null && saved === null) {
     return <ErrorPanel message={resource.error} onRetry={resource.reload} />;
@@ -106,11 +107,13 @@ export function CloudcliPanels({
   const apply = async () => {
     setIsBusy(true);
     setError(null);
+    setNotice(null);
     const request: CloudcliConfigUpdate = { device_id: deviceId, ...draft };
     try {
       resource.setData(
         await apiPost<CloudcliDeviceView>(`${basePath}/set`, request),
       );
+      setNotice(t("ui.api.applied"));
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -225,9 +228,11 @@ export function CloudcliPanels({
           hint={t("ui.cloudcli.apply_hint")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
+          notice={notice}
           onReset={() => {
             reset();
             setError(null);
+            setNotice(null);
           }}
           onApply={() => void apply()}
         />
