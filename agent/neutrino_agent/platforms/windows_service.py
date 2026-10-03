@@ -4,11 +4,14 @@ The service control manager starts ``nagent.exe service run`` and waits for
 the process to call ``StartServiceCtrlDispatcherW``; a process that has not
 within 30 seconds is failed with error 1053. The dispatcher calls the
 service's main on a thread of its own, which registers the control handler,
-reports ``START_PENDING`` and then ``RUNNING``, and runs the agent. A stop
-or a shutdown reports ``STOP_PENDING``, runs the stop callback, reports
-``STOPPED`` and ends the process. An agent that ends by itself ends the
-process without reporting ``STOPPED``, which the manager reads as a crash
-and answers with the service's recovery actions.
+reports ``START_PENDING`` and then ``RUNNING``, and runs the agent on a
+thread of its own. A stop or a shutdown is answered at once: the handler
+reports ``STOP_PENDING``, calls the stop callback, which only asks the agent
+to end, and returns. The service's main then waits for the agent to end, at
+most ``AGENT_SERVICE_STOP_WAIT_S``, reports ``STOPPED`` and ends the
+process. An agent that ends by itself ends the process without reporting
+``STOPPED``, which the manager reads as a crash and answers with the
+service's recovery actions.
 
 Not pure: talks to the service control manager and ends the process.
 """
@@ -21,6 +24,7 @@ import ctypes
 import os
 import threading
 
+from neutrino_agent.constants import AGENT_SERVICE_STOP_WAIT_S
 from neutrino_agent.platforms import win32
 
 # How long the service control manager is told a start or a stop may take
@@ -31,25 +35,38 @@ SERVICE_WAIT_HINT_MS = 30_000
 class ServiceControlDispatcher:
     """One service in this process, as the service control manager sees it."""
 
-    def __init__(self, name: str, on_start, on_stop, *, advapi32=None, exit=None):
+    def __init__(
+        self,
+        name: str,
+        on_start,
+        on_stop,
+        *,
+        advapi32=None,
+        exit=None,
+        stop_wait_s: float = AGENT_SERVICE_STOP_WAIT_S,
+    ):
         """
         Args:
             name: The service name the manager knows.
             on_start: Called with no arguments once the service is running;
                 it runs the agent and returns only if the agent ended.
             on_stop: Called with no arguments when the manager stops the
-                service or the machine shuts down.
+                service or the machine shuts down; it asks the agent to end
+                and returns at once.
             advapi32: The bound advapi32; None binds the real one.
             exit: Ends the process with a status; None is ``os._exit``.
+            stop_wait_s: How long a stop waits for the agent to end before
+                the service reports stopped anyway.
         """
         self._name = name
         self._on_start = on_start
         self._on_stop = on_stop
         self._advapi32 = advapi32
         self._exit = exit if exit is not None else os._exit
+        self._stop_wait_s = stop_wait_s
         self._status_handle = None
         self._is_stop_asked = threading.Event()
-        self._is_stopped = threading.Event()
+        self._is_agent_ended = threading.Event()
         # The callbacks the manager holds pointers to, kept alive here.
         self._callbacks: list = []
 
@@ -90,29 +107,28 @@ class ServiceControlDispatcher:
         )
         worker.start()
         self._report(win32.SERVICE_RUNNING)
-        self._is_stopped.wait()
+        self._is_stop_asked.wait()
+        self._is_agent_ended.wait(self._stop_wait_s)
+        self._report(win32.SERVICE_STOPPED)
+        self._exit(0)
 
     def _run_agent(self) -> None:
         """Run the agent; one that ends by itself ends the process as a crash."""
         try:
             self._on_start()
         finally:
+            self._is_agent_ended.set()
             if not self._is_stop_asked.is_set():
                 self._exit(1)
 
     def _handle_control(self, control, event_type, event_data, context) -> int:
-        """Answer one control from the service control manager."""
+        """Answer one control from the service control manager at once."""
         if control in (win32.SERVICE_CONTROL_STOP, win32.SERVICE_CONTROL_SHUTDOWN):
             if self._is_stop_asked.is_set():
                 return win32.NO_ERROR
-            self._is_stop_asked.set()
             self._report(win32.SERVICE_STOP_PENDING, wait_hint_ms=SERVICE_WAIT_HINT_MS)
-            try:
-                self._on_stop()
-            finally:
-                self._report(win32.SERVICE_STOPPED)
-                self._is_stopped.set()
-                self._exit(0)
+            self._is_stop_asked.set()
+            self._on_stop()
             return win32.NO_ERROR
         if control == win32.SERVICE_CONTROL_INTERROGATE:
             return win32.NO_ERROR

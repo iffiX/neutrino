@@ -54,6 +54,31 @@ def test_stopping_waits_out_the_pending_state(manager):
     ]
 
 
+def test_a_stop_that_sc_does_not_answer_in_time_is_waited_for_by_query(manager):
+    manager.is_running = True
+    manager.is_stop_slow = True
+
+    _platform().stop_service()
+
+    assert manager.calls[-1] == ["sc.exe", "query", "neutrino_hub"]
+    assert not manager.is_running
+
+
+def test_a_service_already_stopping_is_only_waited_for(monkeypatch):
+    answers = iter(["STATE : 3  STOP_PENDING", "STATE : 1  STOPPED"])
+    calls = []
+
+    def stopping(command, **keywords):
+        calls.append(list(command))
+        return subprocess.CompletedProcess([], 0, stdout=next(answers))
+
+    monkeypatch.setattr(windows.subprocess, "run", stopping)
+
+    _platform().stop_service()
+
+    assert calls == [["sc.exe", "query", "neutrino_hub"]] * 2
+
+
 def test_a_service_that_never_stops_is_a_timeout(monkeypatch):
     def stuck(command, **keywords):
         return subprocess.CompletedProcess([], 0, stdout="STATE : 3  STOP_PENDING")

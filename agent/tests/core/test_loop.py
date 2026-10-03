@@ -1436,3 +1436,52 @@ def test_a_start_sweeps_the_package_the_last_process_left(
         agent.run_forever()
 
     assert os.listdir(packages) == []
+
+
+# --- stopping ---
+
+
+def test_a_stop_ends_the_loop_while_it_waits(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "apply_baseline", lambda: None)
+    monkeypatch.setattr(agent, "run_once", lambda: AGENT_BACKOFF_MAX_S)
+    runner = threading.Thread(target=agent.run_forever, daemon=True)
+    runner.start()
+    time.sleep(0.05)
+
+    agent.stop()
+    runner.join(timeout=2)
+
+    assert not runner.is_alive()
+
+
+def test_a_stop_closes_the_live_socket(config_path, monkeypatch):
+    agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    session = agent._open_session()
+    session.connect()
+    agent._session = session
+
+    agent.stop()
+
+    assert script.clients[0].is_closed
+
+
+def test_a_socket_opened_after_a_stop_is_closed_and_not_served(
+    config_path, monkeypatch
+):
+    agent, script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    agent.stop()
+
+    agent.run_once()
+
+    assert script.clients[0].is_closed
+    assert agent._session is None
+
+
+def test_a_loop_asked_to_stop_before_it_starts_takes_no_turn(config_path, monkeypatch):
+    agent, _ = scripted_agent(config_path, monkeypatch)
+    monkeypatch.setattr(agent._rdp, "apply_baseline", lambda: None)
+    monkeypatch.setattr(agent, "run_once", lambda: pytest.fail("no turn"))
+    agent.stop()
+
+    agent.run_forever()

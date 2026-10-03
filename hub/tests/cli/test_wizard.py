@@ -8,6 +8,8 @@ document — and the one default whose being wrong would cost somebody their
 uplink.
 """
 
+import io
+
 import pytest
 
 from neutrino_hub.cli import wizard
@@ -860,3 +862,19 @@ def test_windows_reads_an_ended_input_as_nobody_at_the_keyboard(monkeypatch):
     monkeypatch.setattr(wizard.sys, "stdin", _TypedLines())
 
     assert wizard._is_enter_pressed() is True
+
+
+@pytest.mark.parametrize(
+    ("encoding", "rule"), [("cp1252", wizard.WIZARD_RULE_FALLBACK), ("utf-8", "─")]
+)
+def test_the_headline_rule_is_one_the_output_can_encode(monkeypatch, encoding, rule):
+    buffer = io.BytesIO()
+    stream = io.TextIOWrapper(buffer, encoding=encoding)
+    monkeypatch.setattr(wizard.sys, "stdout", stream)
+
+    wizard._headline("1/5")
+    stream.flush()
+
+    line = buffer.getvalue().decode(encoding).strip().splitlines()[0]
+    assert line.startswith(f"{wizard.WIZARD_WORDMARK} {rule}")
+    assert line.endswith(" 1/5")

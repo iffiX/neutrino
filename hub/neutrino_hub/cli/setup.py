@@ -11,7 +11,16 @@ converges rather than duplicating work.
 
 On macOS and Windows the hub is one service in server mode, and the steps
 that install units, guard SSH or take the interfaces over are Linux's; the
-table is in design/install_and_dev.md.
+table is in design/install_and_dev.md. There the one service starts once,
+at the end, in every way of answering: the steps write what it runs into
+``services.json``, then the password is stored, then the service starts,
+and then this machine's agent joins the panel it serves. The order is:
+
+    checking the carried programs, directories, the Python environment and
+    xray-core (both carried), config/ from examples, writing what you
+    chose, the agent channel and panel certificates, rendering, enabling
+    the core children, the overlay, the AI gateway, the panel password,
+    starting the hub's service, this machine's agent.
 """
 
 import argparse
@@ -158,6 +167,7 @@ SETUP_FAIL2BAN_UNIT = "fail2ban"
 SETUP_STEP_WRITE_ANSWERS = "write_answers"
 SETUP_STEP_PANEL_PASSWORD = "panel_password"
 SETUP_STEP_LOCAL_AGENT = "local_agent"
+SETUP_STEP_START_SERVICE = "start_services"
 # Which agent package a family takes. The hub's package carries one of each
 # for its own machine, so this box is served without a download; a family
 # with no agent build gets none, and the step says so instead of failing the
@@ -235,10 +245,12 @@ def main() -> int:
         return 1
 
     steps = [step for step in CORE_STEPS if step[2] not in _skipped_steps()]
+    # The password and this machine's agent; outside Linux, the service too.
+    step_count = len(steps) + 3 + (0 if is_linux() or is_dev_root_set() else 1)
     is_coloured = not os.environ.get("NO_COLOR") and sys.stdout.isatty()
     if server is None:
         reporter = InstallReporter(
-            total_step_count=len(steps) + 3,
+            total_step_count=step_count,
             is_color_enabled=is_coloured,
             log_path=UTILS_SETUP_LOG_PATH,
         )
@@ -246,7 +258,7 @@ def main() -> int:
         steps = _panel_started_last(steps)
         reporter = InstallSessionReporter(
             session=server.session,
-            total_step_count=len(steps) + 3,
+            total_step_count=step_count,
             is_color_enabled=is_coloured,
             log_path=UTILS_SETUP_LOG_PATH,
         )
@@ -479,15 +491,21 @@ def _skipped_steps() -> tuple:
     package does, because those are what it exists to develop. The one thing
     it does not do is install the hub as a service: `nhub --dev run` is what
     runs the panel instead. Outside Linux the installer registered the one
-    service, and SSH and the interfaces are the system's. The table is in
-    design/install_and_dev.md.
+    service, SSH and the interfaces are the system's, and the service is
+    started once by :func:`_start_panel`, after the password. The table is
+    in design/install_and_dev.md.
 
     Returns:
         The step functions to leave out, empty on a real Linux install.
     """
     skipped = ()
     if not is_linux():
-        skipped += (_step_fail2ban, _step_systemd_units, _step_interfaces)
+        skipped += (
+            _step_fail2ban,
+            _step_systemd_units,
+            _step_interfaces,
+            _step_start_services,
+        )
     if is_dev_root_set():
         skipped += (_step_systemd_units, _step_enable_services, _step_start_services)
     return skipped
@@ -578,7 +596,8 @@ def _setup(
     authority = _authority(_panel_http_url()) if answers.is_https_enabled else None
     if server is not None:
         return _hand_over(server, panel_url, answers.password, reporter, authority)
-    _start_panel()
+    if not _start_panel(reporter):
+        return 1
     _install_local_agent(answers.password, reporter)
     link, note = _enrollment_link(answers.password)
     wizard.finish(
@@ -648,7 +667,8 @@ def _hand_over(
     server.session.wait_done_served(WEB_SETUP_GRACE_S * 3)
     time.sleep(0.3)
     server.stop()
-    _start_panel()
+    if not _start_panel(reporter):
+        return 1
     _install_local_agent(password, reporter)
     print()
     print(f"  The panel is at   {panel_url}")
@@ -660,17 +680,38 @@ def _hand_over(
     return 0
 
 
-def _start_panel() -> None:
+def _start_panel(reporter) -> bool:
     """Start the panel, where starting it is this command's job.
 
     A development root installs no units — `nhub --dev run` is what runs the
     panel there — so asking systemd for one is asking for a unit nobody
-    wrote. On macOS and Windows this starts the hub's one service, or starts
-    it again so the panel reads the password just stored.
+    wrote. On Linux the panel's unit starts again so it reads the password
+    just stored. On macOS and Windows this is the one start of the hub's
+    service, a step of its own; a service a boot already started is started
+    again.
+
+    Args:
+        reporter: Where the step is reported outside Linux.
+
+    Returns:
+        False when the hub's service could not be started.
+
+    Raises:
+        subprocess.CalledProcessError: If systemd refuses the panel's start.
     """
     if is_dev_root_set():
-        return
-    process_controller().restart("web")
+        return True
+    if is_linux():
+        process_controller().restart("web")
+        return True
+    reporter.start("Starting the hub's service", code=SETUP_STEP_START_SERVICE)
+    try:
+        process_controller().restart("web")
+    except (subprocess.SubprocessError, OSError) as error:
+        reporter.failed(command_failure_text(error))
+        return False
+    reporter.done("started the hub's service")
+    return True
 
 
 def _joined_devices() -> list:
@@ -1362,7 +1403,9 @@ def _step_enable_services(reporter: InstallReporter) -> str:
     names = SETUP_CORE_SERVICES if is_linux() else SYSTEM_SUPERVISED_CORE
     for name in names:
         status = controller.status(name)
-        if not status.is_installed or status.is_enabled:
+        # Outside Linux a child the service does not run yet reads not
+        # installed; enabling it is what puts it in services.json.
+        if status.is_enabled or (is_linux() and not status.is_installed):
             continue
         controller.control(name, "enable")
         enabled.append(name)
@@ -1374,13 +1417,6 @@ def _step_enable_services(reporter: InstallReporter) -> str:
 def _step_start_services(
     reporter: InstallReporter, *, names: tuple = SETUP_CORE_SERVICES
 ) -> str:
-    if not is_linux():
-        # The one service serves the panel; while the browser wizard holds
-        # its port, it is started at the end instead.
-        if "web" not in names:
-            return "the hub's service starts at the end"
-        process_controller().restart("web")
-        return "started the hub's service"
     controller = process_controller()
     started = []
     for name in names:

@@ -10,6 +10,7 @@ and Windows each is a child of the hub's one service
 import collections
 import json
 import os
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,7 @@ from neutrino_hub.system.constants import (
     SYSTEM_JOURNAL_LINES,
     SYSTEM_RESTART_DELAY_S,
     SYSTEM_RESTART_EXIT_STATUS,
+    SYSTEM_SERVICES_RECONCILE_S,
     SYSTEM_SUPERVISED_NAMES,
     SYSTEM_SUPERVISED_WEB,
 )
@@ -243,8 +245,12 @@ class SupervisedProcessController(ProcessController):
     """The children of the hub's one service on macOS and Windows.
 
     Inside the service, after :meth:`supervise`, each verb acts on the
-    child. In any other process, such as a ``nhub`` command, a verb that
-    needs a running child acts on the one service instead.
+    child, and ``services.json`` is read again every
+    ``SYSTEM_SERVICES_RECONCILE_S``: a child another process enabled is
+    started, one it disabled is stopped. In any other process, such as a
+    ``nhub`` command, ``start``, ``restart`` and ``enable`` of a child write
+    it into ``services.json`` and leave the starting to the service; only a
+    ``restart`` while the service runs restarts the service.
     """
 
     def __init__(
@@ -256,6 +262,7 @@ class SupervisedProcessController(ProcessController):
         log_dir: Path,
         exit=None,
         restart_delay_s: float = SYSTEM_RESTART_DELAY_S,
+        reconcile_s: float = SYSTEM_SERVICES_RECONCILE_S,
     ):
         """
         Args:
@@ -268,6 +275,8 @@ class SupervisedProcessController(ProcessController):
             exit: Ends the process with a status; None is ``os._exit``.
             restart_delay_s: How long a panel restart waits before the
                 service exits.
+            reconcile_s: How often the service reads ``services.json``
+                again.
         """
         self._supervisor = supervisor
         self._service = service
@@ -275,8 +284,12 @@ class SupervisedProcessController(ProcessController):
         self._log_dir = Path(log_dir)
         self._exit = exit if exit is not None else os._exit
         self._restart_delay_s = restart_delay_s
+        self._reconcile_s = reconcile_s
         self._lock = threading.RLock()
         self._is_supervising = False
+        self._own_start_lines: set = set()
+        self._seen_enabled: set = set()
+        self._stopping = threading.Event()
 
     @property
     def is_supervising(self) -> bool:
@@ -293,25 +306,43 @@ class SupervisedProcessController(ProcessController):
         """
         with self._lock:
             self._is_supervising = True
+            self._own_start_lines = set(start_lines)
             state = read_services_state(self._state_path)
-            for name, data in state["start_lines"].items():
-                if name in start_lines or name not in SYSTEM_SUPERVISED_NAMES:
-                    continue
-                try:
-                    self._supervisor.set_start_line(
-                        name, ChildStartLine.from_dict(data)
-                    )
-                except ValueError:
-                    continue
+            self._hold_kept_start_lines(state)
             for name, line in start_lines.items():
                 self._supervisor.set_start_line(name, line)
-            for name in state["enabled"]:
+            self._seen_enabled = self._enabled_children(state)
+            for name in sorted(self._seen_enabled):
                 if self._supervisor.start_line(name) is not None:
                     self._supervisor.start(name)
             self._supervisor.watch()
+        self._stopping.clear()
+        threading.Thread(
+            target=self._reconcile_forever, name="services_json", daemon=True
+        ).start()
+
+    def reconcile(self) -> None:
+        """Make the children what ``services.json`` says now.
+
+        A start line kept there is held; a child that came into the enabled
+        list since the last read is started, one that left it is stopped.
+        A child started or stopped in this process without a change to the
+        list is left as it is.
+        """
+        with self._lock:
+            state = read_services_state(self._state_path)
+            self._hold_kept_start_lines(state)
+            enabled = self._enabled_children(state)
+            for name in sorted(enabled - self._seen_enabled):
+                if self._supervisor.start_line(name) is not None:
+                    self._supervisor.start(name)
+            for name in sorted(self._seen_enabled - enabled):
+                self._supervisor.stop(name)
+            self._seen_enabled = enabled
 
     def shutdown(self) -> None:
         """End every child; the service is stopping."""
+        self._stopping.set()
         self._supervisor.stop_all()
 
     def status(self, name: str) -> ServiceStatus:
@@ -381,8 +412,14 @@ class SupervisedProcessController(ProcessController):
                 self._control_service(action)
             elif self._is_supervising:
                 getattr(self._supervisor, action)(name)
+            elif action == "restart" and self._is_service_running():
+                self._service.restart_service()
+            elif action in ("start", "restart"):
+                self._write_enabled(name, is_enabled=True)
             else:
-                self._control_service(action, child=name)
+                raise RuntimeError(
+                    f"{name} runs inside the hub's service; nhub stop stops it"
+                )
 
     def journal(self, name: str, *, line_count: int = SYSTEM_JOURNAL_LINES) -> str:
         """Read the tail of one child's log file.
@@ -447,20 +484,45 @@ class SupervisedProcessController(ProcessController):
                 f"expected one of {', '.join(SYSTEM_SUPERVISED_NAMES)}"
             )
 
+    def _hold_kept_start_lines(self, state: dict) -> None:
+        """Hold the start lines ``services.json`` keeps for the other children."""
+        for name in SYSTEM_SUPERVISED_NAMES:
+            if name in self._own_start_lines or name == SYSTEM_SUPERVISED_WEB:
+                continue
+            data = state["start_lines"].get(name)
+            try:
+                line = ChildStartLine.from_dict(data) if data is not None else None
+            except ValueError:
+                continue
+            if line != self._supervisor.start_line(name):
+                self._supervisor.set_start_line(name, line)
+
+    def _enabled_children(self, state: dict) -> set:
+        """The children ``services.json`` enables, the panel left out."""
+        return {
+            name
+            for name in state["enabled"]
+            if name in SYSTEM_SUPERVISED_NAMES and name != SYSTEM_SUPERVISED_WEB
+        }
+
+    def _reconcile_forever(self) -> None:
+        """Reconcile on the timer until the service stops; a failed pass is logged."""
+        while not self._stopping.wait(self._reconcile_s):
+            try:
+                self.reconcile()
+            except (OSError, ValueError, KeyError) as error:
+                print(f"services.json could not be followed: {error}", file=sys.stderr)
+
     def _is_service_running(self) -> bool:
         """Whether the service manager says the one service runs."""
         return self._service.service_state() == PLATFORM_SERVICE_RUNNING
 
-    def _control_service(self, action: str, *, child: str = "") -> None:
-        """Act on the one service for a verb no child here can answer."""
+    def _control_service(self, action: str) -> None:
+        """Act on the one service, which serves the panel."""
         if action == "stop":
             if self._is_supervising:
                 self._exit_later(0)
                 return
-            if child:
-                raise RuntimeError(
-                    f"{child} runs inside the hub's service; nhub stop stops it"
-                )
             self._service.stop_service()
             return
         if action == "restart" and self._is_supervising:

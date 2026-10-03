@@ -112,15 +112,22 @@ def test_the_service_starts_pending_then_runs_the_agent():
 @pytest.mark.parametrize(
     "control", [win32.SERVICE_CONTROL_STOP, win32.SERVICE_CONTROL_SHUTDOWN]
 )
-def test_a_stop_runs_on_stop_then_reports_stopped_and_ends(control):
+def test_a_stop_is_answered_at_once_and_stopped_is_reported_once_the_agent_ends(
+    control,
+):
     advapi32 = FakeAdvapi32()
-    order = []
     exits = Exits()
-    holding = threading.Event()
+    asked = threading.Event()
+    agent_may_end = threading.Event()
+
+    def agent():
+        asked.wait()
+        agent_may_end.wait()
+
     dispatcher = ServiceControlDispatcher(
         "neutrino_agent",
-        on_start=holding.wait,
-        on_stop=lambda: order.append(("on_stop", list(advapi32.states))),
+        on_start=agent,
+        on_stop=asked.set,
         advapi32=advapi32,
         exit=exits,
     )
@@ -128,21 +135,68 @@ def test_a_stop_runs_on_stop_then_reports_stopped_and_ends(control):
     wait_for(lambda: win32.SERVICE_RUNNING in advapi32.states)
 
     assert advapi32.handler(control, 0, None, None) == win32.NO_ERROR
+    assert asked.is_set()
+    assert advapi32.states[-1] == win32.SERVICE_STOP_PENDING
+    assert exits.statuses == []
+
+    agent_may_end.set()
     thread.join(timeout=5)
 
-    assert order == [
-        (
-            "on_stop",
-            [
-                win32.SERVICE_START_PENDING,
-                win32.SERVICE_RUNNING,
-                win32.SERVICE_STOP_PENDING,
-            ],
-        )
+    assert advapi32.states == [
+        win32.SERVICE_START_PENDING,
+        win32.SERVICE_RUNNING,
+        win32.SERVICE_STOP_PENDING,
+        win32.SERVICE_STOPPED,
     ]
-    assert advapi32.states[-1] == win32.SERVICE_STOPPED
     assert exits.statuses == [0]
     assert not thread.is_alive()
+
+
+def test_an_agent_that_does_not_end_in_time_is_reported_stopped_anyway():
+    advapi32 = FakeAdvapi32()
+    exits = Exits()
+    holding = threading.Event()
+    dispatcher = ServiceControlDispatcher(
+        "neutrino_agent",
+        on_start=holding.wait,
+        on_stop=lambda: None,
+        advapi32=advapi32,
+        exit=exits,
+        stop_wait_s=0.05,
+    )
+    thread = dispatch_in_thread(dispatcher)
+    wait_for(lambda: win32.SERVICE_RUNNING in advapi32.states)
+
+    advapi32.handler(win32.SERVICE_CONTROL_STOP, 0, None, None)
+    thread.join(timeout=5)
+
+    assert advapi32.states[-1] == win32.SERVICE_STOPPED
+    assert exits.statuses == [0]
+    holding.set()
+
+
+def test_a_second_stop_is_answered_and_asks_nothing_more():
+    advapi32 = FakeAdvapi32()
+    asked = []
+    holding = threading.Event()
+    dispatcher = ServiceControlDispatcher(
+        "neutrino_agent",
+        on_start=holding.wait,
+        on_stop=lambda: asked.append(True),
+        advapi32=advapi32,
+        exit=Exits(),
+        stop_wait_s=5,
+    )
+    dispatch_in_thread(dispatcher)
+    wait_for(lambda: win32.SERVICE_RUNNING in advapi32.states)
+
+    for _ in range(2):
+        assert (
+            advapi32.handler(win32.SERVICE_CONTROL_STOP, 0, None, None)
+            == win32.NO_ERROR
+        )
+
+    assert asked == [True]
     holding.set()
 
 

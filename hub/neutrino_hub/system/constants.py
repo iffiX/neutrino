@@ -58,6 +58,9 @@ SYSTEM_CHILD_RESTART_MAX_S = 60.0
 SYSTEM_CHILD_STABLE_S = 60.0
 SYSTEM_CHILD_STOP_TIMEOUT_S = 10
 SYSTEM_CHILD_TICK_S = 0.5
+# How often the service reads services.json again, so a child another process
+# enabled or disabled is started or stopped without a restart of the service.
+SYSTEM_SERVICES_RECONCILE_S = 3.0
 # Restarting the panel there is the service exiting with this status after
 # the delay, and the service manager starting it again.
 SYSTEM_RESTART_EXIT_STATUS = 75

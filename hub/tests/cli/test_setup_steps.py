@@ -3,7 +3,7 @@
 Linux runs every step. macOS and Windows skip the steps that guard SSH,
 install units and take the interfaces over, check the carried programs in
 place of system packages, make directories and no account, and start the
-hub's one service through the process controller.
+hub's one service once, after the password and before this machine's agent.
 """
 
 import pytest
@@ -29,17 +29,21 @@ EVERY_STEP = [
     "cliproxyapi",
 ]
 LINUX_ONLY = ("fail2ban", "systemd_units", "interfaces")
+# Outside Linux the one service starts after the table, not inside it.
+NOT_OUTSIDE_LINUX = (*LINUX_ONLY, "start_services")
 
 
 class FakeController:
     """The process controller, recording each verb."""
 
-    def __init__(self):
+    def __init__(self, *, is_installed: bool = True, refusal=None):
         self.asked: list = []
+        self.is_installed = is_installed
+        self.refusal = refusal
 
     def status(self, name):
         class Status:
-            is_installed = True
+            is_installed = self.is_installed
             is_enabled = False
 
         return Status()
@@ -52,6 +56,8 @@ class FakeController:
 
     def restart(self, name):
         self.asked.append(("restart", name))
+        if self.refusal is not None:
+            raise self.refusal
 
 
 @pytest.fixture
@@ -73,8 +79,8 @@ def _run_steps() -> list:
     ("system", "expected"),
     [
         ("linux", EVERY_STEP),
-        ("darwin", [step for step in EVERY_STEP if step not in LINUX_ONLY]),
-        ("win32", [step for step in EVERY_STEP if step not in LINUX_ONLY]),
+        ("darwin", [step for step in EVERY_STEP if step not in NOT_OUTSIDE_LINUX]),
+        ("win32", [step for step in EVERY_STEP if step not in NOT_OUTSIDE_LINUX]),
     ],
 )
 def test_the_steps_each_system_runs(monkeypatch, system, expected):
@@ -143,6 +149,17 @@ def test_the_core_children_are_enabled_through_the_controller(
     assert controller.asked == [("enable", "xray"), ("enable", "cliproxyapi")]
 
 
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_children_the_stopped_service_does_not_run_yet_are_enabled(monkeypatch, system):
+    controller = FakeController(is_installed=False)
+    monkeypatch.setattr(setup, "process_controller", lambda: controller)
+    monkeypatch.setattr(setup.sys, "platform", system)
+
+    setup._step_enable_services(FakeReporter())
+
+    assert controller.asked == [("enable", "xray"), ("enable", "cliproxyapi")]
+
+
 def test_linux_enables_its_core_units_through_the_controller(monkeypatch, controller):
     monkeypatch.setattr(setup.sys, "platform", "linux")
 
@@ -156,35 +173,99 @@ def test_linux_enables_its_core_units_through_the_controller(monkeypatch, contro
     ]
 
 
-@pytest.mark.parametrize("system", ["darwin", "win32"])
-def test_starting_services_starts_the_one_service(monkeypatch, controller, system):
-    monkeypatch.setattr(setup.sys, "platform", system)
+def test_the_panel_starts_through_the_controller(monkeypatch, controller):
+    monkeypatch.setattr(setup.sys, "platform", "linux")
+    monkeypatch.setattr(setup, "is_dev_root_set", lambda: False)
+    reporter = FakeReporter()
 
-    setup._step_start_services(FakeReporter())
-
+    assert setup._start_panel(reporter)
     assert controller.asked == [("restart", "web")]
+    assert reporter.started == []
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
-def test_with_the_browser_wizard_the_service_waits_for_the_end(
+def test_outside_linux_the_one_service_starts_as_a_step_of_its_own(
     monkeypatch, controller, system
 ):
     monkeypatch.setattr(setup.sys, "platform", system)
-
-    note = setup._step_start_services(
-        FakeReporter(), names=setup.SETUP_SERVICES_BEFORE_PANEL
-    )
-
-    assert controller.asked == []
-    assert "at the end" in note
-
-
-def test_the_panel_starts_through_the_controller(monkeypatch, controller):
     monkeypatch.setattr(setup, "is_dev_root_set", lambda: False)
+    reporter = FakeReporter()
 
-    setup._start_panel()
-
+    assert setup._start_panel(reporter)
     assert controller.asked == [("restart", "web")]
+    assert reporter.started == [("Starting the hub's service", "start_services")]
+    assert reporter.done_notes == ["started the hub's service"]
+
+
+def test_a_service_that_will_not_start_fails_its_step(monkeypatch):
+    controller = FakeController(refusal=OSError("the manager refused"))
+    monkeypatch.setattr(setup, "process_controller", lambda: controller)
+    monkeypatch.setattr(setup.sys, "platform", "win32")
+    monkeypatch.setattr(setup, "is_dev_root_set", lambda: False)
+    reporter = FakeReporter()
+
+    assert not setup._start_panel(reporter)
+    assert reporter.failures
+
+
+@pytest.mark.parametrize("system", ["darwin", "win32"])
+def test_outside_linux_the_service_starts_once_after_the_steps_and_the_password(
+    monkeypatch, system
+):
+    order: list = []
+    monkeypatch.setattr(setup.sys, "platform", system)
+    monkeypatch.setattr(setup, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(
+        setup, "store_password", lambda password: order.append("password")
+    )
+    monkeypatch.setattr(setup, "_panel_url", lambda: "http://127.0.0.1:8080")
+    monkeypatch.setattr(
+        setup, "_start_panel", lambda reporter: order.append("service") or True
+    )
+    monkeypatch.setattr(
+        setup,
+        "_install_local_agent",
+        lambda password, reporter: order.append("local_agent"),
+    )
+    monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
+    monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)
+    steps = [
+        (step_id, description, _recorder(order, step_id))
+        for step_id, description, step in setup.CORE_STEPS
+        if step not in setup._skipped_steps()
+    ]
+
+    assert setup._setup(_QuietReporter(), steps, _Answers()) == 0
+    assert order[-6:] == [
+        "enable_services",
+        "overlay",
+        "cliproxyapi",
+        "password",
+        "service",
+        "local_agent",
+    ]
+    assert order.count("service") == 1
+
+
+def _recorder(order: list, step_id: str):
+    def step(reporter):
+        order.append(step_id)
+        return ""
+
+    return step
+
+
+class _QuietReporter(FakeReporter):
+    def banner(self, text):
+        pass
+
+    def blank(self):
+        pass
+
+
+class _Answers:
+    password = "x"
+    is_https_enabled = False
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
@@ -262,7 +343,7 @@ def test_no_hang_up_signal_on_windows_is_not_a_failure(monkeypatch):
     monkeypatch.delattr(signal, "SIGHUP")
     monkeypatch.setattr(setup, "store_password", lambda password: None)
     monkeypatch.setattr(setup, "_panel_url", lambda: "http://127.0.0.1:8080")
-    monkeypatch.setattr(setup, "_start_panel", lambda: None)
+    monkeypatch.setattr(setup, "_start_panel", lambda reporter: True)
     monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
     monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
     monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)

@@ -218,8 +218,11 @@ class OverlaySwitcher:
                     say(report, note)
                     notes.append(f"{engine.title}: {note}")
             # A development root drives no units, so nothing there is waited
-            # for; design/install_and_dev.md.
-            if not was_active and not is_dev_root_set():
+            # for; design/install_and_dev.md. Outside Linux an engine the
+            # hub's service is not running yet starts with the service.
+            if was_active or is_dev_root_set():
+                continue
+            if is_linux() or is_engine_active(provider):
                 started.append(provider)
         for provider in started:
             title = OVERLAY_ENGINES[provider].title

@@ -139,7 +139,9 @@ as its own child:
   enable, disable, reload, journal): `SystemdServiceController` on Linux,
   `SupervisedProcessController` on macOS and Windows. There, enabling a
   daemon writes it into `state/services.json` and starts the child, and its
-  journal is the tail of its log file.
+  journal is the tail of its log file. A `nhub` command only writes the
+  file; the service reads it again every few seconds and starts or stops
+  the children whose entry changed.
 - Restarting the panel there is the supervisor exiting; launchd's
   `KeepAlive` and the service control manager's failure recovery start it
   again.

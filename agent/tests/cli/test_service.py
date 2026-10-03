@@ -2,9 +2,10 @@
 
 The service control manager fails a process that has not called the
 dispatcher within 30 seconds, so nothing is built before it is handed the
-process; the agent and its control channel are built in the start callback
-and the stop callback closes the channel. A process the manager did not
-start is told so. The log is ``agent.log`` under the data root.
+process; the agent and its control channel are built in the start callback.
+The stop callback only asks the agent's loop to end, and the channel closes
+once the loop has. A process the manager did not start is told so. The log
+is ``agent.log`` under the data root.
 """
 
 import pytest
@@ -46,10 +47,14 @@ def service_stack(tmp_path, monkeypatch):
     class FakeAgent:
         def __init__(self, *, log, platform):
             self.is_running = False
+            self.is_stop_asked = False
             built.append(("agent", self))
 
         def run_forever(self):
             self.is_running = True
+
+        def stop(self):
+            self.is_stop_asked = True
 
     class FakeServer:
         def __init__(self, *, agent, platform, log):
@@ -82,18 +87,49 @@ def test_the_dispatcher_is_handed_the_process_before_anything_is_built(
     assert service_stack == []
 
 
-def test_starting_builds_the_agent_and_its_channel_and_stopping_closes_it(
+def test_starting_builds_the_agent_and_its_channel_and_closes_it_once_the_loop_ends(
     service_stack,
 ):
     service_cli.main_run()
     dispatcher = FakeDispatcher.instances[0]
 
     dispatcher.on_start()
-    dispatcher.on_stop()
 
     kinds = dict(service_stack)
     assert kinds["agent"].is_running
     assert kinds["control"].is_started
+    assert kinds["control"].is_stopped
+
+
+def test_a_stop_only_asks_the_agent_to_end(service_stack, monkeypatch):
+    service_cli.main_run()
+    dispatcher = FakeDispatcher.instances[0]
+    held = {}
+
+    def run_until_stopped(agent):
+        held["agent"] = agent
+        dispatcher.on_stop()
+
+    monkeypatch.setattr(service_cli.Agent, "run_forever", run_until_stopped)
+
+    dispatcher.on_start()
+
+    kinds = dict(service_stack)
+    assert held["agent"].is_stop_asked
+    assert kinds["control"].is_stopped
+
+
+def test_a_stop_before_the_agent_is_built_keeps_the_loop_from_running(
+    service_stack,
+):
+    service_cli.main_run()
+    dispatcher = FakeDispatcher.instances[0]
+
+    dispatcher.on_stop()
+    dispatcher.on_start()
+
+    kinds = dict(service_stack)
+    assert not kinds["agent"].is_running
     assert kinds["control"].is_stopped
 
 

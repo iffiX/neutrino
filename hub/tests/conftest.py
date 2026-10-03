@@ -886,6 +886,8 @@ class FakeServiceControlManager:
         self.calls: list = []
         self.is_running = False
         self.is_refusing = False
+        # sc.exe stop timing out while the service goes on to stop.
+        self.is_stop_slow = False
         self._pending = 0
 
     def __call__(self, command, **keywords):
@@ -903,6 +905,8 @@ class FakeServiceControlManager:
             self.is_running, self._pending = True, 2
         elif command[:2] == ["sc.exe", "stop"]:
             self.is_running, self._pending = False, 3
+            if self.is_stop_slow:
+                raise subprocess.TimeoutExpired(command, keywords.get("timeout"))
         return completed("")
 
 

@@ -137,6 +137,8 @@ WEB_PANEL_TLS_PERMITTED_NETWORKS = (
 WEB_PANEL_TLS_PERMITTED_DOMAINS = ("localhost", "neutrino.internal", "netbird.cloud")
 WEB_PANEL_TLS_LOOPBACK_NAMES = ("127.0.0.1", "localhost")
 WEB_PANEL_TLS_AUTHORITY_ORGANIZATION = "Neutrino"
+# The most characters an X.509 common name holds (RFC 5280, ub-common-name).
+WEB_PANEL_TLS_COMMON_NAME_MAX_CHARS = 64
 WEB_PANEL_TLS_FILE_NAME = "neutrino-{hub}-ca.crt"
 WEB_PANEL_TLS_MEDIA_TYPE = "application/x-x509-ca-cert"
 # Whether the HTTP port sends every browser to the HTTPS port and the session

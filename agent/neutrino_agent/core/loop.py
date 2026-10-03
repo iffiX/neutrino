@@ -196,6 +196,8 @@ class Agent:
         # when its current value was first seen; the newest is the one shown.
         self._errors: dict = {}
         self._error_serial = 0
+        # Set once the process is asked to stop; the loop ends at its next turn.
+        self._is_stop_asked = threading.Event()
         self._load_connection()
 
     # --- what the control channel reads ---
@@ -328,8 +330,20 @@ class Agent:
 
     # --- the loop ---
 
+    def stop(self) -> None:
+        """Ask the loop to end: the live socket is closed and the wait cut short.
+
+        Returns at once; :meth:`run_forever` returns once its turn ends.
+        """
+        self._is_stop_asked.set()
+        with self._lock:
+            session = self._session
+        if session is not None:
+            session.close()
+        self._news.set()
+
     def run_forever(self) -> None:
-        """Hold the socket, or wait to be enrolled, until the process stops."""
+        """Hold the socket, or wait to be enrolled, until :meth:`stop` is called."""
         self._log(f"neutrino_agent {AGENT_VERSION} starting on {hostname()}")
         # A package the last process received and could not delete: the
         # one that installed this agent, or one an install was mid-way on.
@@ -337,12 +351,15 @@ class Agent:
         # The desktop host runs on every machine this package installed on,
         # and reaches the LAN and nothing else from the first start.
         self._rdp.apply_baseline()
-        while True:
+        while not self._is_stop_asked.is_set():
             # Cleared before the turn: news set during it is still standing
             # when the wait begins.
             self._news.clear()
             delay = self.run_once()
+            if self._is_stop_asked.is_set():
+                break
             self._wait_out(delay)
+        self._log("neutrino_agent stopped")
 
     def run_once(self) -> int:
         """One connection's lifetime, or one idle poll while unbound.
@@ -365,6 +382,11 @@ class Agent:
             self._session = session
             self._backoff_s = AGENT_BACKOFF_MIN_S
             self._last_error = None
+        if self._is_stop_asked.is_set():
+            session.close()
+            with self._lock:
+                self._session = None
+            return AGENT_BACKOFF_MIN_S
         self._maybe_self_update(session.hub_software)
         failure = session.serve()
         with self._lock:

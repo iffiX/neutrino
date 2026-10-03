@@ -14,6 +14,8 @@ import sys
 from neutrino_hub import HUB_VERSION
 from neutrino_hub.cli import dev_root
 from neutrino_hub.cli.dev_root import DEV_ROOT_NAME
+from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
+from neutrino_hub.platforms.detect import hub_os
 
 # Each subcommand names the module that does the work. They are imported when
 # chosen rather than up front: `nhub unlock` should not pay for the installer's
@@ -80,6 +82,7 @@ def main() -> int:
     Returns:
         The subcommand's exit status.
     """
+    _write_utf8_on_windows()
     parser = argparse.ArgumentParser(prog="nhub", description=__doc__.splitlines()[0])
     parser.add_argument("--version", action="version", version=HUB_VERSION)
     parser.add_argument(
@@ -130,6 +133,16 @@ def main() -> int:
         # person at the keyboard is the one who stopped it.
         print(f"\nnhub {arguments.command} was stopped", file=sys.stderr)
         return STOPPED_STATUS
+
+
+def _write_utf8_on_windows() -> None:
+    """On Windows, write standard output and error as UTF-8, replacing what cannot be."""
+    if hub_os() != PLATFORM_OS_WINDOWS:
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 if __name__ == "__main__":

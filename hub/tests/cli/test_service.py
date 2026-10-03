@@ -40,12 +40,6 @@ def service_stack(monkeypatch, tmp_path):
     monkeypatch.setattr(
         service_cli.run_command, "stop_serving", lambda: ran.append("stop_serving")
     )
-
-    class Controller:
-        def shutdown(self):
-            ran.append("shutdown")
-
-    monkeypatch.setattr(service_cli, "process_controller", Controller)
     monkeypatch.setattr(service_cli.sys, "argv", ["nhub service", "run"])
     saved = (service_cli.sys.stdout, service_cli.sys.stderr)
     yield ran
@@ -56,7 +50,15 @@ def test_the_service_runs_the_hub_as_nhub_run_does(service_stack, tmp_path):
     assert service_cli.main() == 0
 
     assert FakeDispatcher.instances[0].name == "neutrino_hub"
-    assert service_stack == ["run", "stop_serving", "shutdown"]
+    assert service_stack == ["run", "stop_serving"]
+
+
+def test_a_stop_only_asks_the_panel_to_end(service_stack):
+    service_cli.main()
+
+    FakeDispatcher.instances[0].on_stop()
+
+    assert service_stack == ["run", "stop_serving", "stop_serving"]
 
 
 def test_the_services_output_goes_to_the_panels_log(service_stack, tmp_path):

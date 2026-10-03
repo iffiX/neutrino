@@ -255,13 +255,18 @@ class ChildProcessSupervisor:
         self._thread.start()
 
     def stop_all(self) -> None:
-        """Stop watching and end every child. Idempotent."""
+        """Stop watching and end every child, all asked at once. Idempotent."""
         self._stopping.set()
         with self._lock:
+            processes = []
             for child in self._children.values():
                 child.is_wanted = False
                 child.restart_at = None
-                self._end(child)
+                processes.append(child.process)
+                child.process = None
+            ending = [process for process in processes if _ask_to_end(process)]
+            for process in ending:
+                _wait_ended(process)
             for logger in self._loggers.values():
                 for handler in list(logger.handlers):
                     handler.close()
@@ -365,15 +370,30 @@ class ChildProcessSupervisor:
         """End the child's process: asked first, killed when it does not end."""
         process = child.process
         child.process = None
-        if process is not None and process.poll() is None:
-            try:
-                process.terminate()
-                process.wait(timeout=SYSTEM_CHILD_STOP_TIMEOUT_S)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=SYSTEM_CHILD_STOP_TIMEOUT_S)
-            except OSError:
-                pass
+        if _ask_to_end(process):
+            _wait_ended(process)
+
+
+def _ask_to_end(process) -> bool:
+    """Ask a process that runs to end; whether it was asked."""
+    if process is None or process.poll() is not None:
+        return False
+    try:
+        process.terminate()
+    except OSError:
+        return False
+    return True
+
+
+def _wait_ended(process) -> None:
+    """Wait for an asked process to end, and kill it when it does not in time."""
+    try:
+        process.wait(timeout=SYSTEM_CHILD_STOP_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=SYSTEM_CHILD_STOP_TIMEOUT_S)
+    except OSError:
+        pass
 
 
 def _pump(stream, logger: logging.Logger) -> None:

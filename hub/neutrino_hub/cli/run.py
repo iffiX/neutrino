@@ -68,6 +68,7 @@ from neutrino_hub.modules.router.constants import (
 from neutrino_hub.modules.router.controller import RouterStateController, router_lock
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
+from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.system.child_supervisor import ChildStartLine
@@ -130,6 +131,8 @@ DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
 SUPPLICANT_DRIVERS = "nl80211,wext"
 # The servers serving now, for a stop asked from another thread.
 _SERVING: list = []
+# Set once a stop is asked, so a stop that comes before the servers start holds.
+_STOP_ASKED = threading.Event()
 # The hub's own NetBird daemon outside Linux: its profile under the state
 # root, its log file, and where its own output goes, which is not that file.
 NETBIRD_CONFIG_RELATIVE = ("netbird", "config.json")
@@ -199,6 +202,8 @@ def main() -> int:
         # Before the set-up check, which it makes itself: the unit is ordered
         # before others, and exiting 1 would restart it forever.
         return _serve_router()
+    if not is_linux():
+        _stop_on_terminate()
     if not _is_set_up():
         if is_linux():
             print(
@@ -208,24 +213,44 @@ def main() -> int:
             )
             return 1
         _wait_for_setup()
+        if _STOP_ASKED.is_set():
+            return 0
     if arguments.only == "web":
         return _serve_panel(arguments)
     return _supervise(arguments)
 
 
 def _wait_for_setup() -> None:
-    """Sleep until ``nhub setup`` has written the configuration.
+    """Sleep until ``nhub setup`` has stored the panel password.
 
     The service on macOS and Windows starts at boot whether or not the hub
     was set up, and idles here until it is.
     """
     print(f"waiting for nhub setup under {UTILS_CONFIG_DIR}", file=sys.stderr)
     while not _is_set_up():
-        time.sleep(PLATFORM_SETUP_POLL_S)
+        if _STOP_ASKED.wait(PLATFORM_SETUP_POLL_S):
+            return
+
+
+def _stop_on_terminate() -> None:
+    """Make SIGTERM a stop, which ends the panel and then every child.
+
+    launchd stops the service with SIGTERM. Only the main thread can be
+    told of a signal; the Windows service runs this on another thread and
+    is stopped through :func:`stop_serving` instead.
+    """
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, _on_terminate)
+
+
+def _on_terminate(signum, frame) -> None:
+    """Stop serving, on SIGTERM."""
+    stop_serving()
 
 
 def stop_serving() -> None:
-    """Ask every server :func:`_serve_together` runs to stop."""
+    """Ask every server :func:`_serve_together` runs to stop, now or once it starts."""
+    _STOP_ASKED.set()
     for server in list(_SERVING):
         server.should_exit = True
 
@@ -272,10 +297,17 @@ def child_start_lines() -> dict:
 def _is_set_up() -> bool:
     """Whether there is a configuration to run against.
 
+    On Linux setup starts the units before it stores the panel password, so
+    the panel's own settings are the mark there. On macOS and Windows the
+    one service starts after the password is stored, so the stored password
+    is the mark, and a service a boot started keeps waiting through setup.
+
     Returns:
-        True when the panel's own settings are there, which is the last thing
-        setup writes.
+        True on Linux when the panel's settings are there; elsewhere when the
+        panel password is stored.
     """
+    if not is_linux():
+        return is_password_set()
     return (UTILS_CONFIG_DIR / PANEL_SETTINGS_FILE).is_file()
 
 
@@ -588,6 +620,9 @@ async def _serve_together(servers: list) -> None:
         servers: Configured uvicorn servers.
     """
     _SERVING[:] = servers
+    if _STOP_ASKED.is_set():
+        for server in servers:
+            server.should_exit = True
     tasks = [asyncio.create_task(server.serve()) for server in servers]
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

@@ -182,6 +182,21 @@ def test_stop_all_ends_every_child(supervisor, popen, clock):
     assert len(popen.started) == 2
 
 
+def test_stop_all_asks_every_child_before_it_waits_for_any(supervisor, popen):
+    supervisor.set_start_line("xray", XRAY)
+    supervisor.set_start_line("netbird", ChildStartLine(argv=["/app/bin/netbird"]))
+    supervisor.start("xray")
+    supervisor.start("netbird")
+    order = []
+    for child in popen.started:
+        child.terminate = lambda child=child: order.append(("ask", child.pid))
+        child.wait = lambda timeout=None, child=child: order.append(("wait", child.pid))
+
+    supervisor.stop_all()
+
+    assert [step for step, _ in order] == ["ask", "ask", "wait", "wait"]
+
+
 def test_a_childs_output_goes_to_its_log_file(tmp_path, clock):
     popen = FakePopen(output=b"first line\nsecond line\n")
     supervisor = ChildProcessSupervisor(
