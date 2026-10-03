@@ -481,7 +481,9 @@ def check_linux(package: Path) -> None:
             raise SystemExit(
                 f"nhub open --print gave no setup wizard address: {address}"
             )
-        if HUB_INSTALLED_SENTENCE not in result.stdout:
+        # dnf prints a scriptlet's words on its standard error, pacman and apt
+        # on standard output.
+        if HUB_INSTALLED_SENTENCE not in result.stdout + result.stderr:
             raise SystemExit("the hub's install printed no setup wizard address")
     else:
         print(f"{command} {result.stdout.strip().splitlines()[-1]}")

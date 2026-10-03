@@ -159,10 +159,10 @@ def test_a_panel_answering_before_setup_is_not_the_wizard(check, monkeypatch):
         check._wait_for_wizard()
 
 
-def _fake_container_run(stdout: str, calls: list):
+def _fake_container_run(stdout: str, calls: list, stderr: str = ""):
     def run(argv, **kwargs):
         calls.append(argv)
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr=stderr)
 
     return run
 
@@ -210,3 +210,27 @@ def test_the_linux_hub_check_fails_when_the_install_hid_its_address(
     package.write_bytes(b"deb")
     with pytest.raises(SystemExit, match="printed no setup wizard address"):
         check.check_linux(package)
+
+
+def test_the_linux_hub_check_reads_dnf_scriptlet_words_from_its_error_stream(
+    check, monkeypatch, tmp_path
+):
+    calls = []
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        _fake_container_run(
+            "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
+            calls,
+            stderr=">>> Scriptlet output:\n>>>   Neutrino Hub installed. Set it up in a browser at:\n",
+        ),
+    )
+    package = tmp_path / "neutrino-hub-0.5.0-1.x86_64.rpm"
+    package.write_bytes(b"rpm")
+    check.check_linux(package)
+    assert calls[0][-1].startswith("dnf -y install ")
