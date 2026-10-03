@@ -1,8 +1,8 @@
 """Staging the environment every hub package carries.
 
 All three packagers ship the same thing — an interpreter and the hub installed
-into it under /opt/neutrino, a wrapper on the path, and the panel's unit — and
-differ only in how their distribution wants that described. What they have in
+into it under /opt/neutrino/hub, a wrapper on the path, and the panel's unit —
+and differ only in how their distribution wants that described. What they have in
 common lives here so it cannot drift three ways.
 
 The interpreter is carried rather than depended on. A package that names the
@@ -79,7 +79,7 @@ def _runtime(module_name: str, *names):
 # Where the package's own environment lives, and the path its interpreter is
 # addressed by. It is staged at this path so nothing inside it has to be
 # rewritten afterwards.
-INSTALL_PREFIX = Path("/opt/neutrino")
+INSTALL_PREFIX = Path("/opt/neutrino/hub")
 PYTHON_DIR = INSTALL_PREFIX / "python"
 
 # The interpreter the packages carry, pinned by hash.
@@ -128,7 +128,7 @@ VENDOR_DIR = INSTALL_PREFIX / "bin"
 # they are state and live with the rest of it; every path that starts xray says
 # where they are. The layout and its reasoning are in
 # ../../skills/core-code-author/design/files.md.
-GEODATA_DIR = Path("/var/lib/neutrino/geodata")
+GEODATA_DIR = Path("/var/lib/neutrino/hub/geodata")
 
 # Where the agent packages the hub hands out live once installed, and how they
 # are addressed there. The runtime module states both: packaging seeds the

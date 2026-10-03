@@ -36,7 +36,7 @@ def test_the_deb_prunes_what_the_package_did_not_install(tmp_path):
 
     assert venv_tree.PRUNE_UNTRACKED in postinst
     assert "/var/lib/dpkg/info/neutrino-hub.list" in postinst
-    assert "prune_untracked /opt/neutrino <" in postinst
+    assert "prune_untracked /opt/neutrino/hub <" in postinst
 
 
 def test_the_deb_prune_runs_before_the_upgrade_leaves_the_script(tmp_path):
@@ -46,7 +46,9 @@ def test_the_deb_prune_runs_before_the_upgrade_leaves_the_script(tmp_path):
 
     postinst = (tmp_path / "DEBIAN/postinst").read_text()
 
-    assert postinst.index("prune_untracked /opt/neutrino <") < postinst.index("exit 0")
+    assert postinst.index("prune_untracked /opt/neutrino/hub <") < postinst.index(
+        "exit 0"
+    )
 
 
 def test_the_deb_touches_no_root_but_its_own_prefix(tmp_path):
@@ -79,12 +81,12 @@ def test_the_rpm_prunes_from_its_own_file_list_after_the_transaction():
 
     assert venv_tree.PRUNE_UNTRACKED in spec
     assert "%posttrans" in spec
-    assert "rpm -ql neutrino-hub | prune_untracked /opt/neutrino" in spec
+    assert "rpm -ql neutrino-hub | prune_untracked /opt/neutrino/hub" in spec
 
 
 def test_the_rpm_leaves_the_configuration_where_a_reinstall_finds_it():
     """`purge` is the only thing that forgets, and rpm has no purge."""
     spec = _spec()
 
-    assert "rm -rf /opt/neutrino\n" in spec
+    assert "rm -rf /opt/neutrino/hub\n" in spec
     assert "rm -rf /etc/neutrino" not in spec

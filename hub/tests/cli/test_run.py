@@ -227,7 +227,7 @@ def test_the_ai_gateway_starts_in_its_own_directory():
 @pytest.mark.parametrize(
     ("system", "address"),
     [
-        ("darwin", "unix:///var/run/neutrino_hub/netbird.sock"),
+        ("darwin", "unix:///var/run/neutrino/hub/netbird.sock"),
         ("win32", "tcp://127.0.0.1:41732"),
     ],
 )
@@ -236,7 +236,7 @@ def test_netbird_runs_on_the_hubs_own_address_and_log(monkeypatch, system, addre
 
     monkeypatch.setattr(run.sys, "platform", system)
     monkeypatch.setattr(
-        "neutrino_hub.utils.constants.UTILS_RUNTIME_ROOT", Path("/var/run/neutrino_hub")
+        "neutrino_hub.utils.constants.UTILS_RUNTIME_ROOT", Path("/var/run/neutrino/hub")
     )
     monkeypatch.setattr(run, "UTILS_STATE_ROOT", Path("/state"))
     monkeypatch.setattr(run, "UTILS_LOG_ROOT", Path("/log"))

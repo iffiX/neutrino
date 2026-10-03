@@ -11,7 +11,7 @@ Type=simple
 User=root
 # The client the package carries, under the hub's own prefix rather than the
 # vendor's /usr/bin. Logs go to the journal with the rest of the box's.
-ExecStart=/opt/neutrino/bin/netbird service run --log-file console
+ExecStart=/opt/neutrino/hub/bin/netbird service run --log-file console
 Restart=always
 RestartSec=5
 

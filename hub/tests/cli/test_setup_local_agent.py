@@ -45,7 +45,9 @@ class FakeCache:
         return self._is_served
 
     def package(self, *, family: str, architecture: str) -> str:
-        return f"/var/lib/neutrino/agent_cache/neutrino-agent_0.2.0_{architecture}.deb"
+        return (
+            f"/var/lib/neutrino/hub/agent_cache/neutrino-agent_0.2.0_{architecture}.deb"
+        )
 
 
 class FakePackageManager:
@@ -84,7 +86,7 @@ def test_the_agent_comes_from_the_hubs_own_cache_and_joins_this_hub(box):
     setup._install_local_agent("panel-password", reporter)
 
     assert manager.installed == [
-        ("/var/lib/neutrino/agent_cache/neutrino-agent_0.2.0_amd64.deb",)
+        ("/var/lib/neutrino/hub/agent_cache/neutrino-agent_0.2.0_amd64.deb",)
     ]
     assert commands == [["nagent", "join", "neutrino://x", "--yes"]]
     assert reporter.done_notes == ["installed and joined"]

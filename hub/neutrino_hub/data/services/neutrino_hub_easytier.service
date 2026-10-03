@@ -12,7 +12,7 @@ User=root
 # panel's apply replaces this line with a root-only drop-in in
 # neutrino_hub_easytier.service.d/: the network file in manual mode, the
 # console address with its token in console mode.
-ExecStart=/opt/neutrino/bin/easytier-core -c /var/lib/neutrino/generated/easytier.toml --rpc-portal 127.0.0.1:15888
+ExecStart=/opt/neutrino/hub/bin/easytier-core -c /var/lib/neutrino/hub/generated/easytier.toml --rpc-portal 127.0.0.1:15888
 Restart=always
 RestartSec=5
 # A node keeps a socket per peer and per attempt; the vendor's own guidance

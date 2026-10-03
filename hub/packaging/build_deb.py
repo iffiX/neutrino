@@ -2,7 +2,7 @@
 
     python3 hub/packaging/build_deb.py --output-dir dist/
 
-The package carries its own interpreter under /opt/neutrino and touches
+The package carries its own interpreter under /opt/neutrino/hub and touches
 nothing the system installed: the hub needs thirty packages including FastAPI
 and asyncssh, and pinning a system Python to them is what
 `EXTERNALLY-MANAGED` exists to prevent.
@@ -71,9 +71,9 @@ fi
 
 install -d -m 755 /etc/neutrino
 install -d -m 700 /etc/neutrino/hub
-install -d -m 755 /var/lib/neutrino
-install -d -m 755 /var/lib/neutrino/generated
-install -d -m 755 /var/log/neutrino
+install -d -m 755 /var/lib/neutrino/hub
+install -d -m 755 /var/lib/neutrino/hub/generated
+install -d -m 755 /var/log/neutrino/hub
 
 systemctl daemon-reload || true
 
@@ -133,7 +133,8 @@ set -e
 # the units `nhub setup` wrote into /etc/systemd/system at runtime: dpkg never
 # owned those, and they name an interpreter that has just gone.
 if [ "$1" = remove ] || [ "$1" = purge ]; then
-    rm -rf /opt/neutrino
+    rm -rf /opt/neutrino/hub
+    rmdir /opt/neutrino 2>/dev/null || true
     rm -f /etc/systemd/system/neutrino_hub_*.service
     rm -f /etc/systemd/system/*.wants/neutrino_hub_*.service
 fi
@@ -141,8 +142,10 @@ fi
 systemctl daemon-reload >/dev/null 2>&1 || true
 
 if [ "$1" = purge ]; then
-    rm -rf /etc/neutrino/hub /var/lib/neutrino /var/log/neutrino /run/neutrino
-    rmdir /etc/neutrino 2>/dev/null || true
+    rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub
+    rm -rf /run/neutrino/hub
+    rmdir /etc/neutrino /var/lib/neutrino 2>/dev/null || true
+    rmdir /var/log/neutrino /run/neutrino 2>/dev/null || true
 fi
 """
 

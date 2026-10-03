@@ -5,7 +5,7 @@ self-signed certificate generated at setup is the whole identity. The
 certificate is public and lives plainly under ``config/web/agent_tls/``; the
 private key sits beside it sealed under the vault's data key, so a config
 backup carries it protected. Serving needs the key as a file, so apply and
-the web process unseal it into ``/var/lib/neutrino/agent_tls_key.pem`` — and
+the web process unseal it into ``/var/lib/neutrino/hub/agent_tls_key.pem`` — and
 a locked vault means the channel cannot start.
 """
 

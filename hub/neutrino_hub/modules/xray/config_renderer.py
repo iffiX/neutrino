@@ -147,7 +147,7 @@ class XrayConfigRenderer:
         """Render the whole configuration.
 
         Returns:
-            A JSON-ready object for ``/var/lib/neutrino/generated/xray_config.json``.
+            A JSON-ready object for ``/var/lib/neutrino/hub/generated/xray_config.json``.
         """
         return {
             "log": {"loglevel": XRAY_LOG_LEVEL, "access": XRAY_ACCESS_LOG},

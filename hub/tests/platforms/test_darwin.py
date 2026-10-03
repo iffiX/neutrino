@@ -103,11 +103,11 @@ def test_netbird_answers_on_the_hubs_own_socket(monkeypatch):
     from pathlib import Path
 
     monkeypatch.setattr(
-        "neutrino_hub.utils.constants.UTILS_RUNTIME_ROOT", Path("/var/run/neutrino_hub")
+        "neutrino_hub.utils.constants.UTILS_RUNTIME_ROOT", Path("/var/run/neutrino/hub")
     )
 
     assert DarwinHubPlatform().netbird_daemon_address() == (
-        "unix:///var/run/neutrino_hub/netbird.sock"
+        "unix:///var/run/neutrino/hub/netbird.sock"
     )
 
 

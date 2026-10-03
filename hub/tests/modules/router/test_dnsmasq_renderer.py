@@ -139,7 +139,7 @@ def test_the_query_log_goes_to_the_journal_rather_than_a_file(tmp_path):
 
     directives = without_comments(config)
     assert "log-facility=-" in directives
-    assert "/var/log/neutrino" not in directives
+    assert "/var/log/neutrino/hub" not in directives
     assert "log-queries" in directives
     assert "log-async=25" in directives
     validate_dnsmasq(config, tmp_path)

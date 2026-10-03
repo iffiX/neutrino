@@ -45,12 +45,12 @@ def test_a_packaged_unit_drops_the_lines_that_would_name_its_own_environment(
 ):
     monkeypatch.setattr(units, "is_packaged", _true)
 
-    rendered = installer.render(TEMPLATE, "/opt/neutrino/python/bin/python3")
+    rendered = installer.render(TEMPLATE, "/opt/neutrino/hub/python/bin/python3")
 
     assert "WorkingDirectory" not in rendered
     assert "PYTHONPATH" not in rendered
     assert "@REPO_ROOT@" not in rendered
-    assert "ExecStart=/opt/neutrino/python/bin/python3" in rendered
+    assert "ExecStart=/opt/neutrino/hub/python/bin/python3" in rendered
     assert rendered.endswith("\n")
 
 
@@ -124,7 +124,7 @@ def test_no_rendered_unit_keeps_a_placeholder():
         text = template.read_text(encoding="utf-8")
         for is_packaged_value in (True, False):
             units.is_packaged = lambda: is_packaged_value
-            rendered = installer.render(text, "/opt/neutrino/python/bin/python3")
+            rendered = installer.render(text, "/opt/neutrino/hub/python/bin/python3")
             left = re.findall(r"@[A-Z_]+@", rendered)
             assert not left, f"{template.name}, packaged={is_packaged_value}: {left}"
 
