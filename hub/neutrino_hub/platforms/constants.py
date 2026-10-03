@@ -85,3 +85,7 @@ PLATFORM_DARWIN_BROWSER_OPENER = "open"
 
 # A child started with no console window of its own.
 PLATFORM_WINDOWS_CREATE_NO_WINDOW = 0x08000000
+
+# How often the service on macOS and Windows looks for the configuration
+# before nhub setup has written it.
+PLATFORM_SETUP_POLL_S = 5

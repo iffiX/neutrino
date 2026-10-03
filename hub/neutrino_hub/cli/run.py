@@ -68,6 +68,7 @@ from neutrino_hub.modules.router.constants import (
 from neutrino_hub.modules.router.controller import RouterStateController, router_lock
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
+from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.system.child_supervisor import ChildStartLine
 from neutrino_hub.system.systemd_ctl import notify_ready, take_notify_address
@@ -199,15 +200,28 @@ def main() -> int:
         # before others, and exiting 1 would restart it forever.
         return _serve_router()
     if not _is_set_up():
-        print(
-            f"error: nothing is configured under {UTILS_CONFIG_DIR}; "
-            f"run {'nhub --dev setup' if is_dev_root_set() else 'sudo nhub setup'}",
-            file=sys.stderr,
-        )
-        return 1
+        if is_linux():
+            print(
+                f"error: nothing is configured under {UTILS_CONFIG_DIR}; "
+                f"run {'nhub --dev setup' if is_dev_root_set() else 'sudo nhub setup'}",
+                file=sys.stderr,
+            )
+            return 1
+        _wait_for_setup()
     if arguments.only == "web":
         return _serve_panel(arguments)
     return _supervise(arguments)
+
+
+def _wait_for_setup() -> None:
+    """Sleep until ``nhub setup`` has written the configuration.
+
+    The service on macOS and Windows starts at boot whether or not the hub
+    was set up, and idles here until it is.
+    """
+    print(f"waiting for nhub setup under {UTILS_CONFIG_DIR}", file=sys.stderr)
+    while not _is_set_up():
+        time.sleep(PLATFORM_SETUP_POLL_S)
 
 
 def stop_serving() -> None:

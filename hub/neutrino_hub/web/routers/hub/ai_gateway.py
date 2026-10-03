@@ -38,7 +38,7 @@ from neutrino_hub.exceptions import (
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.system.systemd_ctl import SystemdServiceController
+from neutrino_hub.platforms.detect import process_controller
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
@@ -185,7 +185,7 @@ def journal(
     Returns:
         The journal lines, most recent last.
     """
-    text = SystemdServiceController().journal("cliproxyapi", line_count=lines)
+    text = process_controller().journal("cliproxyapi", line_count=lines)
     return CliproxyApiJournalView(lines=text.splitlines())
 
 
@@ -491,7 +491,7 @@ def _apply_quietly() -> None:
 def _status() -> CliproxyApiStatusView:
     applier = CliproxyApiConfigApplier()
     config = load_config()
-    service = SystemdServiceController().status("cliproxyapi")
+    service = process_controller().status("cliproxyapi")
     keys = [_key_view(key) for key in config.client_keys]
     is_reachable = False
     probe_message = ""

@@ -275,3 +275,23 @@ def test_linux_without_only_supervises_as_it_always_did(monkeypatch):
 
     assert run._supervise(argparse.Namespace()) == 0
     assert started == ["xray", "cliproxyapi"]
+
+
+def test_outside_linux_the_service_waits_for_setup_instead_of_exiting(monkeypatch):
+    answers = iter([False, False, False, True])
+    naps = []
+    monkeypatch.setattr(run, "is_linux", lambda: False)
+    monkeypatch.setattr(run, "_is_set_up", lambda: next(answers))
+    monkeypatch.setattr(run.time, "sleep", naps.append)
+    monkeypatch.setattr(run, "_supervise", lambda arguments: 0)
+    monkeypatch.setattr(run.sys, "argv", ["nhub-run"])
+    assert run.main() == 0
+    assert naps == [run.PLATFORM_SETUP_POLL_S, run.PLATFORM_SETUP_POLL_S]
+
+
+def test_on_linux_a_hub_not_set_up_exits_and_says_so(monkeypatch, capsys):
+    monkeypatch.setattr(run, "is_linux", lambda: True)
+    monkeypatch.setattr(run, "_is_set_up", lambda: False)
+    monkeypatch.setattr(run.sys, "argv", ["nhub-run"])
+    assert run.main() == 1
+    assert "nhub setup" in capsys.readouterr().err
