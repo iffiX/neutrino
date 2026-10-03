@@ -68,6 +68,7 @@ enum class AppIcon(val paths: List<String>) {
             "M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8",
         ),
     ),
+    COMMAND(listOf("M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3")),
     CAMERA(
         listOf(
             "M3 8h4l2-3h6l2 3h4v11H3z",

@@ -420,9 +420,6 @@ const val RDP_PINCH_SLOP_PX = 24f
 /** The largest zoom a pinch reaches, over the picture fitted to the viewer. */
 const val RDP_ZOOM_MAX = 6f
 
-/** How long the viewer's bars stay after the last touch on them, in milliseconds. */
-const val RDP_BARS_SHOWN_MILLIS = 3000L
-
 /** The RustDesk core's state: logged in, frames follow. */
 const val RDP_STATE_CONNECTED = 1
 
@@ -431,9 +428,3 @@ const val RDP_STATE_LOGIN_FAILED = 2
 
 /** The RustDesk core's state: the connection ended. */
 const val RDP_STATE_CLOSED = 3
-
-/** What the viewer's hidden text field holds between keys, so Backspace has something to delete. */
-const val RDP_TYPING_SENTINEL = " "
-
-/** How long the hidden text field grows before it is emptied, while no word is being composed. */
-const val RDP_TYPING_KEPT_CHARS = 64

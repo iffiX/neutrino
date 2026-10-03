@@ -37,7 +37,8 @@ class RemoteDesktopKeyTest {
 
     @Test
     fun everyNameIsOneRustDeskKnows() {
-        val names = RemoteDesktopKey.entries.map { it.code } + RemoteDesktopKey.ENTER + RemoteDesktopKey.BACKSPACE
+        val names = RemoteDesktopKey.entries.map { it.code } + RemoteDesktopKey.ENTER + RemoteDesktopKey.BACKSPACE +
+            RemoteDesktopKey.DELETE
         for (name in names) assertTrue(name, name in RUSTDESK_KEY_NAMES)
     }
 
@@ -56,6 +57,7 @@ class RemoteDesktopKeyTest {
             "VK_RIGHT",
             "VK_RETURN",
             "VK_BACK",
+            "VK_DELETE",
         )
     }
 }

@@ -27,6 +27,9 @@ enum class RemoteDesktopKey(val label: String, val code: String, val isModifier:
         /** RustDesk's name for Backspace. */
         const val BACKSPACE = "VK_BACK"
 
+        /** RustDesk's name for Delete. */
+        const val DELETE = "VK_DELETE"
+
         /** RustDesk's name for the V that Ctrl turns into a paste. */
         const val PASTE = "VK_V"
 
