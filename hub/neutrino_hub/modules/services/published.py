@@ -287,7 +287,11 @@ class PublishedServiceCache:
         return devices
 
     def _hosted(self, key: str, name: str, status) -> "dict | None":
-        """One device's module as the list needs it, None while not served."""
+        """One device's module as the list needs it, None while not served.
+
+        A VS Code or CloudCLI instance is listed only while the device
+        reports it running.
+        """
         if not isinstance(status, dict):
             return None
         if status.get("state") not in CHANNEL_MODULE_CONFIGURED_WANTS:
@@ -326,6 +330,11 @@ class PublishedServiceCache:
                 and self._is_answering(url),
                 "url": url,
             }
+        running = {
+            str(instance.get("account", ""))
+            for instance in details.get("instances") or []
+            if isinstance(instance, dict) and instance.get("is_running")
+        }
         if name == "vscode":
             return {
                 "is_healthy": bool(status.get("is_active")),
@@ -338,20 +347,16 @@ class PublishedServiceCache:
                     if isinstance(instance, dict)
                     and instance.get("account")
                     and instance.get("port")
+                    and str(instance["account"]) in running
                 ],
             }
         if name == "cloudcli":
-            reported = {
-                str(instance.get("account", "")): bool(instance.get("is_running"))
-                for instance in details.get("instances") or []
-                if isinstance(instance, dict)
-            }
             return {
                 "instances": [
                     {
                         "account": str(instance["account"]),
                         "port": int(instance["port"]),
-                        "is_healthy": reported.get(str(instance["account"]), False),
+                        "is_healthy": True,
                     }
                     for instance in self._desired_states.read(key, "cloudcli").get(
                         "instances"
@@ -360,6 +365,7 @@ class PublishedServiceCache:
                     if isinstance(instance, dict)
                     and instance.get("account")
                     and instance.get("port")
+                    and str(instance["account"]) in running
                 ],
             }
         if name == "podman":

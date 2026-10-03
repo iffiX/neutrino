@@ -72,6 +72,8 @@ interface PanelTarget {
   isEditable: boolean;
   /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
   platformOs: string;
+  /** Whether the machine reports the module installing. */
+  isInstalling: boolean;
 }
 
 /** The modules this page has panels for, in tab order. */
@@ -115,6 +117,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       basePath={target.basePath}
       isEditable={target.isEditable}
       isWindows={target.platformOs === WINDOWS_OS}
+      isInstalling={target.isInstalling}
     />
   ),
   zfs: (target) => (
@@ -610,6 +613,7 @@ export function ModulesPage() {
             basePath: `/agent/module/${activeModule}`,
             isEditable: isAgentOnline,
             platformOs: selectedDevice?.platform.os ?? "",
+            isInstalling: activeRow?.state === "installing",
           })}
         </fieldset>
       )}

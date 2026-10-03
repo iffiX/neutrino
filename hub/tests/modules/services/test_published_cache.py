@@ -439,15 +439,28 @@ def test_schedules_arriving_while_one_runs_are_answered_by_one_more(box):
     assert probe.calls == 2
 
 
-def test_a_devices_vscode_instances_come_from_the_hubs_configuration(box):
+def test_a_devices_vscode_instances_come_from_the_hub_while_they_run(box):
     store = DesiredStateStore()
     store.set_want(DEVICE, "vscode", "running")
     store.write(
         DEVICE,
         "vscode",
-        {"instances": [{"account": "alice", "port": 8000}], "login_id": ""},
+        {
+            "instances": [
+                {"account": "alice", "port": 8000},
+                {"account": "bob", "port": 8001},
+            ],
+            "login_id": "",
+        },
     )
-    reported = report(vscode={})
+    reported = report(
+        vscode={
+            "instances": [
+                {"account": "alice", "is_running": True},
+                {"account": "bob", "is_running": False},
+            ]
+        }
+    )
     reported["modules"]["vscode"]["is_active"] = True
     sessions = StubSessions({DEVICE: reported})
 
@@ -464,7 +477,7 @@ def test_a_devices_vscode_instances_come_from_the_hubs_configuration(box):
     assert entry["is_healthy"] is True
 
 
-def test_a_devices_cloudcli_instances_come_from_the_hub_and_answer_as_reported(box):
+def test_a_devices_cloudcli_instances_are_listed_only_while_they_run(box):
     store = DesiredStateStore()
     store.set_want(DEVICE, "cloudcli", "running")
     store.write(
@@ -491,7 +504,22 @@ def test_a_devices_cloudcli_instances_come_from_the_hub_and_answer_as_reported(b
         StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
     ).entries()
 
-    alice, bob = entries
+    (alice,) = entries
     assert alice["id"] == "cloudcli_device-one_alice"
     assert alice["payload"]["is_token_required"] is True
-    assert (alice["is_healthy"], bob["is_healthy"]) == (True, False)
+    assert alice["is_healthy"] is True
+
+
+def test_a_cloudcli_still_installing_lists_nothing(box):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "cloudcli", "running")
+    store.write(DEVICE, "cloudcli", {"instances": [{"account": "alice", "port": 3001}]})
+    reported = report(cloudcli={"instances": []})
+    reported["modules"]["cloudcli"]["state"] = "installing"
+    sessions = StubSessions({DEVICE: reported})
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    assert entries == []
