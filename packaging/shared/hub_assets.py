@@ -1,11 +1,12 @@
 """The programs and databases a hub package carries beside the hub.
 
-xray, cli-proxy-api, netbird, easytier-core and easytier-cli, each taken out
-of its own upstream release for one system and machine and checked against
-the hash the hub's module states in its ``<MODULE>_ASSETS`` table, and the
-v2fly geodata. The Linux packages put the programs under
-``/opt/neutrino/hub/bin``, the macOS and Windows packages beside ``nhub``; on Windows ``wintun.dll``
-comes out of EasyTier's archive with them.
+xray, cli-proxy-api, netbird, easytier-core and easytier-cli, and on macOS
+and Windows tun2socks, each taken out of its own upstream release for one
+system and machine and checked against the hash the hub's module states in
+its ``<MODULE>_ASSETS`` table, and the v2fly geodata. The Linux packages put
+the programs under ``/opt/neutrino/hub/bin``, the macOS and Windows packages
+beside ``nhub``; on Windows ``wintun.dll`` comes out of EasyTier's archive
+with them, and tun2socks opens its device with that same driver.
 
 Not pure: downloads, writes files.
 """
@@ -36,7 +37,14 @@ HUB_ASSET_PROGRAMS = {
         "EASYTIER",
         ("easytier-core", "easytier-cli"),
     ),
+    "tun2socks": ("neutrino_hub.modules.tun.constants", "TUN", ("tun2socks",)),
 }
+# The programs a system's package carries only there; every other program
+# goes into every package.
+HUB_ASSET_SYSTEMS = {"tun2socks": ("darwin", "windows")}
+# The programs whose archive names the file after the system and machine;
+# the module states the name under ``<PREFIX>_ASSET_MEMBER``.
+HUB_ASSET_RENAMED = ("tun2socks",)
 # What Windows adds beside the programs: the TUN driver EasyTier's archive
 # carries.
 HUB_ASSET_WINDOWS_EXTRAS = {"easytier": ("wintun.dll",)}
@@ -83,6 +91,8 @@ def carried_names(os_name: str) -> list:
     """
     names = []
     for program, (_module, _prefix, files) in HUB_ASSET_PROGRAMS.items():
+        if not _is_carried(program, os_name):
+            continue
         names += [_on(os_name, name) for name in files]
         if os_name == "windows":
             names += list(HUB_ASSET_WINDOWS_EXTRAS.get(program, ()))
@@ -106,14 +116,23 @@ def stage_programs(binaries: Path, os_name: str, machine: str) -> list:
     """
     binaries.mkdir(parents=True, exist_ok=True)
     written = []
-    for program, (_module, _prefix, files) in HUB_ASSET_PROGRAMS.items():
+    for program, (module, prefix, files) in HUB_ASSET_PROGRAMS.items():
+        if not _is_carried(program, os_name):
+            continue
         url, digest = pinned(program, os_name, machine)
         payload = fetch(url, digest, program)
         wanted = [_on(os_name, name) for name in files]
         if os_name == "windows":
             wanted += list(HUB_ASSET_WINDOWS_EXTRAS.get(program, ()))
-        for name, content in _members(payload, url, wanted).items():
-            target = binaries / name
+        names = dict(zip(wanted, wanted))
+        if program in HUB_ASSET_RENAMED:
+            member = _runtime(module, f"{prefix}_ASSET_MEMBER")
+            (staged,) = [_on(os_name, name) for name in files]
+            names = {
+                _on(os_name, member.format(os_name=os_name, machine=machine)): staged
+            }
+        for name, content in _members(payload, url, list(names)).items():
+            target = binaries / names[name]
             target.write_bytes(content)
             target.chmod(0o755)
             written.append(target)
@@ -166,6 +185,11 @@ def fetch(url: str, digest: str, what: str) -> bytes:
             f"{what} at {url} hashes to {arrived}, not the pinned {digest}"
         )
     return payload
+
+
+def _is_carried(program: str, os_name: str) -> bool:
+    """Whether a system's package carries one program."""
+    return os_name in HUB_ASSET_SYSTEMS.get(program, (os_name,))
 
 
 def _on(os_name: str, name: str) -> str:

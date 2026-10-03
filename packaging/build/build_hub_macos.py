@@ -13,9 +13,9 @@ interpreter it runs on into a standalone ``nhub`` with the libraries and
 ``neutrino_hub/data`` beside it, under
 ``/Library/Application Support/Neutrino/hub/app``, linked into
 ``/usr/local/bin``. Beside it under ``bin`` are xray, cli-proxy-api,
-netbird, easytier-core and easytier-cli for the machine. The geodata and
-the agent's ``.pkg`` land under the state directory, every agent package
-in the directory named in the manifest.
+netbird, easytier-core, easytier-cli and tun2socks for the machine. The
+geodata and the agent's ``.pkg`` land under the state directory, every
+agent package in the directory named in the manifest.
 
 The ``com.neutrino.hub`` LaunchDaemon runs ``nhub run`` as root. The
 postinstall makes ``config`` and ``state`` root's alone and the log
