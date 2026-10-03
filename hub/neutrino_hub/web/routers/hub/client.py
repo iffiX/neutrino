@@ -10,7 +10,7 @@ import secrets
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from neutrino_hub.modules.clients.ai_keys import ensure_client_key, revoke_client_key
 from neutrino_hub.modules.clients.constants import (
@@ -27,6 +27,7 @@ from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.permissions import permitted_kinds
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.services.constants import SERVICES_TYPE_AI
+from neutrino_hub.modules.services.host_scope import scope_of
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.web import channel_overlay, channel_state
 from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
@@ -47,7 +48,9 @@ from neutrino_hub.web.routers.hub.device import (
     ENROLLMENT_TOKEN_BYTES,
     ENROLLMENT_TTL_S,
     clear_enrollments,
+    enrollment_body,
     enrollment_link,
+    enrollment_short_link,
 )
 
 router = APIRouter(
@@ -70,17 +73,22 @@ def list_clients(runtime: PanelRuntime = Depends(get_runtime)) -> ClientListView
 
 @router.post("/enrollment/create", response_model=ClientEnrollmentView)
 def create_enrollment(
-    request: ClientEnrollmentRequest, runtime: PanelRuntime = Depends(get_runtime)
+    request: ClientEnrollmentRequest,
+    http_request: Request,
+    runtime: PanelRuntime = Depends(get_runtime),
 ) -> ClientEnrollmentView:
     """Create a client and the link its program joins with, carrying the
-    overlays' join material when the default permission allows ``overlay``.
+    overlays' join material when the default permission allows ``overlay``,
+    and the short link a QR code carries, on the hub's address in the
+    network the panel was reached from.
 
     Args:
         request: The client's name.
+        http_request: The panel request, for the network it came from.
         runtime: The shared runtime, which holds the open tickets.
 
     Returns:
-        The link and when it lapses.
+        The link, the short link, and when they lapse.
 
     Raises:
         HTTPException: 400 with ``client_name_required`` when the name is
@@ -106,12 +114,18 @@ def create_enrollment(
         "name": name,
         "client_id": client_id,
         "expires_at": expires_at,
+        "link_body": enrollment_body(
+            urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT, overlays=overlays
+        ),
     }
     runtime.events.publish(WEB_EVENT_CLIENTS)
+    peer = http_request.client.host if http_request.client is not None else ""
+    scope = scope_of(peer, http_request.url.hostname or "", runtime.host_scopes())
     return ClientEnrollmentView(
         link=enrollment_link(
             urls, token, fingerprint, role=CHANNEL_ROLE_CLIENT, overlays=overlays
         ),
+        qr_link=enrollment_short_link(urls, token, fingerprint, host=scope.hub_address),
         expires_at=datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
         expires_in_s=ENROLLMENT_TTL_S,
     )

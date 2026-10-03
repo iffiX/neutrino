@@ -11,7 +11,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 
 /**
- * A client link from a hub's Clients page: `neutrino://enroll/<base64url>` over one JSON object.
+ * A client link from a hub's Clients page: `neutrino://enroll/<base64url>` over one JSON object,
+ * pasted, or fetched for the [ShortEnrollmentLink] a QR code carries.
  *
  * @property urls Every address the hub answers on, in the hub's order, without a trailing slash.
  * @property ticket The enrolment ticket, spent by the join.
@@ -40,6 +41,16 @@ data class EnrollmentLink(
             if (trimmed.isEmpty()) return ChannelResult.refused("link_missing")
             val payload = decode(trimmed.removePrefix(CLIENT_LINK_PREFIX))
                 ?: return ChannelResult.refused("link_unreadable")
+            return fromObject(payload)
+        }
+
+        /**
+         * Read the object a long link carries, or the one a short link's hub answered.
+         *
+         * @param payload The object.
+         * @return The link, or the refusal [parse] names for a link of that object.
+         */
+        fun fromObject(payload: JsonObject): ChannelResult<EnrollmentLink> {
             val urls = cleanUrls(payload["urls"])
             val ticket = (payload["token"] as? JsonPrimitive)?.content.orEmpty()
             val fingerprint = (payload["fp"] as? JsonPrimitive)?.content.orEmpty().trim().lowercase()

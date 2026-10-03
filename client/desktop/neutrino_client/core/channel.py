@@ -1,6 +1,6 @@
 """Talking to the hub with the standard library, pinned over TLS.
 
-The HTTP channel serves joining and leaving; the one live socket in
+The HTTP channel serves a short link's fetch, joining and leaving; the one live socket in
 ``ws_client`` connects the same way and carries everything else.
 
 An ``https`` hub is verified by fingerprint alone: the handshake runs with
@@ -121,6 +121,56 @@ def refusal_error(code: str, params: dict) -> "Exception | None":
     return None
 
 
+def _judge(status: int, data: bytes, path: str) -> None:
+    """Raise what an error status means; a success passes.
+
+    Args:
+        status: The reply's status code.
+        data: The reply body.
+        path: The path asked, for the message.
+
+    Raises:
+        GatewayRefused: On a 401 or 403.
+        GatewayProtocolRefused: On a 409 naming a protocol number the hub
+            does not speak.
+        GatewayRefusedDetail: On a 409 carrying another code.
+        GatewayUnreachable: On any other error status.
+    """
+    if status in (401, 403):
+        detail = error_detail(data)
+        raise GatewayRefused(
+            f"hub refused this client's token ({status})",
+            code=str(detail.get("code", "") or ""),
+            params=(
+                detail.get("params") if isinstance(detail.get("params"), dict) else {}
+            ),
+        )
+    if status == 409:
+        detail = error_detail(data)
+        refusal = refusal_error(
+            str(detail.get("code", "") or ""), detail.get("params") or {}
+        )
+        if refusal is not None:
+            raise refusal
+    if status >= 400:
+        raise GatewayUnreachable(f"hub answered {status} for {path}")
+
+
+def _parsed(data: bytes) -> dict:
+    """A reply body as JSON, an empty object for an empty body.
+
+    Raises:
+        GatewayUnreachable: When the body is not JSON.
+    """
+    text = data.decode("utf-8")
+    if not text.strip():
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as error:
+        raise GatewayUnreachable(f"hub sent invalid JSON: {error}") from error
+
+
 def _connect_tcp(host: str, port: int, timeout: float, on_socket) -> socket.socket:
     """A TCP connection to the first of the host's addresses that answers.
 
@@ -174,7 +224,7 @@ def _pinned_context() -> ssl.SSLContext:
 
 
 class GatewayHttpChannel:
-    """Posts JSON to the hub and parses its replies."""
+    """Sends JSON requests to the hub and parses its replies."""
 
     def __init__(self, *, gateway_url: str, fingerprint: str = ""):
         """
@@ -208,13 +258,30 @@ class GatewayHttpChannel:
                 error status, or unparseable reply.
         """
         _, data, _ = self._post(path, payload)
-        text = data.decode("utf-8")
-        if not text.strip():
-            return {}
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as error:
-            raise GatewayUnreachable(f"hub sent invalid JSON: {error}") from error
+        return _parsed(data)
+
+    def get(self, path: str) -> dict:
+        """Ask for a JSON document and return it.
+
+        Args:
+            path: Path below the hub URL, starting with a slash, with its
+                query.
+
+        Returns:
+            The parsed reply, or an empty object when the reply has no body.
+
+        Raises:
+            GatewayUntrusted: When the hub's certificate is not the pinned
+                one; nothing was sent.
+            GatewayRefused: On a 401 or 403.
+            GatewayProtocolRefused: On a 409 naming a protocol number.
+            GatewayRefusedDetail: On a 409 carrying another code.
+            GatewayUnreachable: On any network error, timeout, other HTTP
+                error status, or unparseable reply.
+        """
+        status, data, _ = self._request("GET", f"{self._gateway_url}{path}")
+        _judge(status, data, path)
+        return _parsed(data)
 
     def _post(self, path: str, payload: dict):
         """One POST, its status already judged.
@@ -242,26 +309,7 @@ class GatewayHttpChannel:
             body=body,
             headers={"Content-Type": "application/json"},
         )
-        if status in (401, 403):
-            detail = error_detail(data)
-            raise GatewayRefused(
-                f"hub refused this client's token ({status})",
-                code=str(detail.get("code", "") or ""),
-                params=(
-                    detail.get("params")
-                    if isinstance(detail.get("params"), dict)
-                    else {}
-                ),
-            )
-        if status == 409:
-            detail = error_detail(data)
-            refusal = refusal_error(
-                str(detail.get("code", "") or ""), detail.get("params") or {}
-            )
-            if refusal is not None:
-                raise refusal
-        if status >= 400:
-            raise GatewayUnreachable(f"hub answered {status} for {path}")
+        _judge(status, data, path)
         return status, data, headers
 
     def _request(self, method: str, url: str, *, body=None, headers=None):

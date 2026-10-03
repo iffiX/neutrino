@@ -156,4 +156,43 @@ class HubConnectionsTest {
         connections.clearJoin()
         assertEquals(HubJoin(), connections.join.value)
     }
+
+    private val shortLink = "neutrino://enroll/ticket-1@192.168.100.1:8443/${Samples.FINGERPRINT}"
+    private val enrollAt = "https://192.168.100.1:8443" to "/api/channel/enroll?ticket=ticket-1"
+
+    @Test
+    fun aScannedShortLinkFetchesTheLongLinksObjectOnThePinThenJoins() = runTest {
+        val (connections, store) = connections()
+        assertEquals(emptyList<String>(), GoldenSchema.problems(Samples.clientPayload, "ChannelEnrollView"))
+        transport.readings[enrollAt] = ChannelResult.Ok(Samples.clientPayload)
+        connections.startJoin(shortLink)
+        runCurrent()
+        val binding = store.bindings.value.single()
+        assertEquals(binding.id, connections.join.value.joinedId)
+        assertEquals(Triple(enrollAt.first, enrollAt.second, Samples.FINGERPRINT), transport.gets.single())
+        assertEquals(link.urls, binding.gatewayUrls)
+        assertEquals("ticket-1", binding.ticket)
+        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
+    }
+
+    @Test
+    fun aShortLinkWhoseAddressDoesNotAnswerIsLinkUnreachable() = runTest {
+        val (connections, store) = connections()
+        connections.startJoin(shortLink)
+        runCurrent()
+        assertEquals("link_unreachable", connections.join.value.refusal?.code)
+        assertEquals(emptyList<Any>(), store.bindings.value)
+    }
+
+    @Test
+    fun aShortLinkOnAnotherCertificateOrASpentTicketKeepsTheHubsCode() = runTest {
+        val (connections, store) = connections()
+        for (code in listOf("hub_untrusted", "ticket_spent")) {
+            transport.readings[enrollAt] = ChannelResult.refused(code)
+            connections.startJoin(shortLink)
+            runCurrent()
+            assertEquals(code, connections.join.value.refusal?.code)
+        }
+        assertEquals(emptyList<Any>(), store.bindings.value)
+    }
 }

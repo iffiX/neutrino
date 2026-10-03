@@ -1560,6 +1560,7 @@ class ClientEnrollmentView(BaseModel):
     """
 
     link: str
+    qr_link: str
     expires_at: str
     expires_in_s: int
 
@@ -1617,6 +1618,16 @@ class ChannelJoinView(BaseModel):
 
     id: str
     token: str
+
+
+class ChannelEnrollView(BaseModel):
+    """What ``GET /api/channel/enroll`` answers: a client link's object."""
+
+    urls: list[str]
+    token: str
+    fp: str
+    role: str
+    overlays: list[dict]
 
 
 class ChannelLeaveRequest(BaseModel):

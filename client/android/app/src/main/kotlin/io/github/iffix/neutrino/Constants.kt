@@ -95,6 +95,12 @@ const val CLIENT_PLATFORM_OS = "android"
 /** What a pasted link starts with. */
 const val CLIENT_LINK_PREFIX = "neutrino://enroll/"
 
+/** What tells a short link from a QR code apart: a long link's base64url alphabet has none. */
+const val CLIENT_LINK_SHORT_MARK = '@'
+
+/** The path a short link's ticket fetches the long link's object from, on the pinned agent port. */
+const val CLIENT_ENROLL_PATH = "/api/channel/enroll"
+
 /** The path a binding starts at, on the pinned agent port. */
 const val CLIENT_JOIN_PATH = "/api/channel/join"
 

@@ -10,8 +10,8 @@ import "./device_enrollment_notice.css";
  *
  * The devices page and a device's drawer mint links for agents, the clients
  * page for a person's program; each passes its own title and hint, and the
- * hint's `{minutes}` is filled with how long the link lasts. With
- * `hasQrCode` the link is also drawn as a QR code beside it.
+ * hint's `{minutes}` is filled with how long the link lasts. With `qrLink`
+ * that link is drawn as a QR code at the bottom, centred.
  */
 
 interface DeviceEnrollmentNoticeProps {
@@ -20,7 +20,8 @@ interface DeviceEnrollmentNoticeProps {
   title: string;
   /** May carry `{minutes}`, filled with the link's remaining minutes. */
   hint: string;
-  hasQrCode?: boolean;
+  /** The link the QR code carries; no QR code without it. */
+  qrLink?: string;
   onDismiss: () => void;
 }
 
@@ -29,7 +30,7 @@ export function DeviceEnrollmentNotice({
   expiresInS,
   title,
   hint,
-  hasQrCode = false,
+  qrLink = "",
   onDismiss,
 }: DeviceEnrollmentNoticeProps) {
   // Redrawn when the panel's language changes.
@@ -62,10 +63,12 @@ export function DeviceEnrollmentNotice({
             <Icon name="close" size={13} />
           </button>
         </div>
+        {qrLink !== "" && (
+          <div className="device_enrollment_qr">
+            <QrCode text={qrLink} label={t("ui.enrollment_notice.qr_code")} />
+          </div>
+        )}
       </div>
-      {hasQrCode && (
-        <QrCode text={link} label={t("ui.enrollment_notice.qr_code")} />
-      )}
     </div>
   );
 }

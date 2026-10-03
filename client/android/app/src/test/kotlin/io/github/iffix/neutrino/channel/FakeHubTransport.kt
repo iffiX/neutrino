@@ -18,6 +18,17 @@ class FakeHubTransport(private val onConnect: (String) -> List<ChannelSocketEven
     /** Every POST sent, as address, path and body. */
     val posts = mutableListOf<Triple<String, String, JsonObject>>()
 
+    /** What each GET answers, by address and path with its query. */
+    val readings = mutableMapOf<Pair<String, String>, ChannelResult<JsonObject>>()
+
+    /** Every GET sent, as address, path and pinned fingerprint. */
+    val gets = mutableListOf<Triple<String, String, String>>()
+
+    override suspend fun get(baseUrl: String, path: String, fingerprint: String): ChannelResult<JsonObject> {
+        gets += Triple(baseUrl, path, fingerprint)
+        return readings[baseUrl to path] ?: ChannelResult.refused("hub_unreachable", "detail" to "refused")
+    }
+
     override suspend fun post(
         baseUrl: String,
         path: String,

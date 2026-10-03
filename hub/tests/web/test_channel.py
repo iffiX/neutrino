@@ -1,8 +1,9 @@
-"""The channel's three routes, driven end to end through the test client.
+"""The channel's routes, driven end to end through the test client.
 
 What these pin is the door both peers must match: a join admitted by
 protocol before its ticket is spent, a ticket spent once, a ticket for the
-other role refused, a blank ticket landing on the row whose machine id
+other role refused, a short link's fetch answering while its ticket is
+unspent and spending nothing, a blank ticket landing on the row whose machine id
 matches, a client landing on the row that machine already had, a leave
 removing the binding; and the hello gate on the socket,
 where a refusal is one ``refused`` frame then close 4000, a second socket
@@ -249,6 +250,61 @@ def test_an_unknown_or_expired_ticket_is_ticket_spent(api):
     assert unknown.status_code == expired.status_code == 401
     assert expired.json()["detail"]["code"] == "ticket_spent"
     assert runtime.enrollments == {}
+
+
+LINK_BODY = {
+    "urls": ["https://192.168.100.1:8443"],
+    "token": "c1",
+    "fp": "ab" * 32,
+    "role": "client",
+    "overlays": [{"provider": "netbird", "setup_key": "key"}],
+}
+
+
+def test_a_short_links_ticket_fetches_the_long_links_object_and_spends_nothing(api):
+    client, runtime = api
+    client_id = ClientRegistry().create("alice")
+    ticket(runtime, "c1", kind="client", client_id=client_id, link_body=LINK_BODY)
+
+    first = client.get("/api/channel/enroll", params={"ticket": "c1"})
+    second = client.get("/api/channel/enroll", params={"ticket": "c1"})
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == LINK_BODY
+    assert "c1" in runtime.enrollments
+
+
+def test_the_join_after_the_fetch_still_spends_the_ticket(api):
+    client, runtime = api
+    client_id = ClientRegistry().create("alice")
+    ticket(runtime, "c1", kind="client", client_id=client_id, link_body=LINK_BODY)
+    client.get("/api/channel/enroll", params={"ticket": "c1"})
+
+    joined = client.post(
+        "/api/channel/join",
+        json=join_body(ticket="c1", role="client", software="neutrino_client/1.2.3"),
+    )
+    after = client.get("/api/channel/enroll", params={"ticket": "c1"})
+
+    assert joined.status_code == 200
+    assert after.status_code == 401
+    assert after.json()["detail"] == {"code": "ticket_spent", "params": {}}
+
+
+def test_an_unknown_expired_or_linkless_ticket_fetches_nothing(api):
+    client, runtime = api
+    ticket(
+        runtime, "old", kind="client", expires_at=time.time() - 1, link_body=LINK_BODY
+    )
+    ticket(runtime, "dev")
+
+    answers = [
+        client.get("/api/channel/enroll", params={"ticket": name})
+        for name in ("nonsense", "old", "dev")
+    ]
+
+    assert [answer.status_code for answer in answers] == [401, 401, 401]
+    assert {answer.json()["detail"]["code"] for answer in answers} == {"ticket_spent"}
 
 
 def test_a_rejected_protocol_spends_no_ticket(api):

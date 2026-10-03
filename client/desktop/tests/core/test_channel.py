@@ -6,7 +6,9 @@ wrong one is refused before a single request byte is sent, and a bound
 client connecting against the wrong certificate unbinds the way a refused
 token does. The status mappings replace ``_request`` with a canned answer:
 a 409 naming a protocol number the hub does not speak is the typed
-protocol refusal with its three numbers.
+protocol refusal with its three numbers. A short link fetches its object on
+the pin, then joins; a spent ticket, another certificate and a dead address
+are each their own code.
 """
 
 import hashlib
@@ -23,12 +25,14 @@ import pytest
 import neutrino_client.core.enrollment as enrollment
 from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
+    CLIENT_ENROLL_PATH,
     CLIENT_JOIN_PATH,
     CLIENT_LEAVE_PATH,
 )
 from neutrino_client.core.channel import GatewayHttpChannel
 from neutrino_client.core.resident import ClientResident
 from neutrino_client.exceptions import (
+    EnrollmentError,
     GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
@@ -41,15 +45,27 @@ WRONG_FINGERPRINT = "0" * 64
 
 
 class RecordingHandler(BaseHTTPRequestHandler):
-    """Answers every POST with an empty JSON object and records the path."""
+    """Answers every request with its canned body and records the path."""
 
     requests: list = []
+    # What a GET answers, the status and the body, and what a POST answers.
+    get_answer: tuple = (200, b"{}")
+    post_answer: bytes = b"{}"
+
+    def do_GET(self):
+        RecordingHandler.requests.append((self.path, b""))
+        status, answer = RecordingHandler.get_answer
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(answer)))
+        self.end_headers()
+        self.wfile.write(answer)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         RecordingHandler.requests.append((self.path, body))
-        answer = b"{}"
+        answer = RecordingHandler.post_answer
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(answer)))
@@ -97,6 +113,8 @@ def tls_server(tmp_path):
     fingerprint = hashlib.sha256(der).hexdigest()
 
     RecordingHandler.requests = []
+    RecordingHandler.get_answer = (200, b"{}")
+    RecordingHandler.post_answer = b"{}"
     server = QuietTlsServer(("127.0.0.1", 0), RecordingHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(certificate_path), str(key_path))
@@ -276,3 +294,71 @@ def test_post_a_dead_port_raises_unreachable():
 
     with pytest.raises(GatewayUnreachable):
         made.post(CLIENT_JOIN_PATH, {})
+
+
+# --- the short link ---
+
+
+def short_link(url: str, fingerprint: str, ticket: str = "c1") -> str:
+    """A short link naming the server's address."""
+    return f"neutrino://enroll/{ticket}@{url.removeprefix('https://')}/{fingerprint}"
+
+
+def test_a_short_link_fetches_the_long_links_object_then_joins(tls_server):
+    url, fingerprint = tls_server
+    body = {
+        "urls": ["https://10.0.0.1:8443", url],
+        "token": "c1",
+        "fp": fingerprint,
+        "role": "client",
+        "overlays": [],
+    }
+    RecordingHandler.get_answer = (200, json.dumps(body).encode())
+    RecordingHandler.post_answer = b'{"id": "h-c1", "token": "tok"}'
+
+    binding = enrollment.enroll(short_link(url, fingerprint))
+    enrollment.complete_join(binding, url)
+
+    assert binding["gateway_urls"] == ["https://10.0.0.1:8443", url]
+    assert (binding["ticket"], binding["fingerprint"]) == ("c1", fingerprint)
+    paths = [path for path, _ in RecordingHandler.requests]
+    assert paths == [f"{CLIENT_ENROLL_PATH}?ticket=c1", CLIENT_JOIN_PATH]
+
+
+def test_a_short_link_whose_ticket_is_spent_names_the_hubs_code(tls_server):
+    url, fingerprint = tls_server
+    RecordingHandler.get_answer = (
+        401,
+        b'{"detail": {"code": "ticket_spent", "params": {}}}',
+    )
+
+    with pytest.raises(EnrollmentError) as caught:
+        enrollment.enroll(short_link(url, fingerprint))
+
+    assert caught.value.code == "ticket_spent"
+    assert enrollment.bindings() == []
+
+
+def test_a_short_link_on_another_certificate_is_untrusted_and_asks_nothing(
+    tls_server,
+):
+    url, _ = tls_server
+
+    with pytest.raises(EnrollmentError) as caught:
+        enrollment.enroll(short_link(url, WRONG_FINGERPRINT))
+
+    assert caught.value.code == "hub_untrusted"
+    assert RecordingHandler.requests == []
+
+
+def test_a_short_link_whose_address_does_not_answer_is_link_unreachable():
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    with pytest.raises(EnrollmentError) as caught:
+        enrollment.enroll(short_link(f"https://127.0.0.1:{port}", WRONG_FINGERPRINT))
+
+    assert caught.value.code == "link_unreachable"
+    assert enrollment.bindings() == []

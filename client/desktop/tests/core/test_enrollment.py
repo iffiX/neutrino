@@ -147,6 +147,46 @@ def test_a_link_naming_no_role_is_refused():
     assert caught.value.code == "link_not_for_client"
 
 
+def test_a_short_link_splits_into_its_ticket_address_and_fingerprint():
+    parts = enrollment.parse_short_link("Tk_-9@192.168.100.1:8443/" + "AB" * 32)
+
+    assert parts == ("Tk_-9", "https://192.168.100.1:8443", "ab" * 32)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "@192.168.100.1:8443/" + "ab" * 32,
+        "t@192.168.100.1/" + "ab" * 32,
+        "t@192.168.100.1:x/" + "ab" * 32,
+        "t@192.168.100.1:8443/" + "ab" * 31,
+        "t@192.168.100.1:8443/" + "zz" * 32,
+    ],
+)
+def test_a_short_link_missing_a_part_is_unreadable(text):
+    with pytest.raises(EnrollmentError) as caught:
+        enrollment.parse_short_link(text)
+
+    assert caught.value.code == "link_unreadable"
+
+
+def test_a_short_link_is_read_as_the_object_its_hub_answers(monkeypatch):
+    asked = []
+
+    def get(self, path):
+        asked.append((self._gateway_url, self._fingerprint, path))
+        return {"urls": ["https://192.168.100.1:8443"], "token": "t", "role": "client"}
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "get", get)
+
+    parsed = parse_link("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
+
+    assert parsed == (["https://192.168.100.1:8443"], "t", "", [])
+    assert asked == [
+        ("https://192.168.100.1:8443", "ab" * 32, "/api/channel/enroll?ticket=t")
+    ]
+
+
 def answer_with(monkeypatch, *, reply=None, error=None):
     posted = []
 
