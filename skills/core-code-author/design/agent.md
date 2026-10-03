@@ -3,7 +3,9 @@
 The agent is the hub's presence on a managed Linux, Windows or macOS
 machine: one root service with one socket open to the hub. It hosts the
 modules the hub's state names, reports what is true, and shares the
-machine's desktop when told. It draws no window and listens on no port. Its own code is pure standard library. The
+machine's desktop when told. It draws no window and, apart from the
+CloudCLI forwarder ("CloudCLI" below), listens on no port. Its own code is
+pure standard library. The
 package includes the interpreter that runs it, so it installs on a machine
 with no Python and touches none the machine already has.
 
@@ -358,8 +360,10 @@ nodejs.org standalone build of Node 22 LTS for Linux, macOS and Windows on
 x64 and arm64, each with its url and the sha256 of `SHASUMS256.txt`. The hub
 fetches it into its module cache and serves it on the `package` stream. The
 agent unpacks it under its own root, `/var/lib/neutrino_agent/cloudcli/` on
-Linux and the agent's data directory on macOS and Windows: owned by root,
-read-only, one copy per machine. It is never put on `PATH`, in any shell
+Linux, `%ProgramData%\Neutrino\cloudcli` on Windows and
+`/Library/Application Support/Neutrino/cloudcli` on macOS (the root that holds
+software the hub sends; the agent's data directory is closed to the account):
+owned by root, read-only, one copy per machine. It is never put on `PATH`, in any shell
 profile, or under `/usr/local`.
 
 **CloudCLI is installed per account, apart from the account's own npm.** As
@@ -375,7 +379,7 @@ nodejs.org, npm and GitHub; a LAN machine reaches them through the hub's
 proxy, and no mirror is configured.
 
 **The service's environment is written from scratch**: `HOST=127.0.0.1`,
-`PORT`, `ANTHROPIC_BASE_URL` (the hub's gateway), `ANTHROPIC_AUTH_TOKEN` (the
+`SERVER_PORT` (CloudCLI's own name for its port), `ANTHROPIC_BASE_URL` (the hub's gateway), `ANTHROPIC_AUTH_TOKEN` (the
 device's gateway key, [modules/ai.md](modules/ai.md)), `OPENAI_BASE_URL`, and
 `PATH`. Nothing is inherited from a login profile or a version manager.
 
@@ -391,8 +395,8 @@ and has its `PATH` already.
 better-sqlite3, node-pty or bcrypt cannot fetch its prebuilt binary.
 
 **The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
-loopback alone. A thin HTTP forwarder of the agent's listens on the device's
-LAN and overlay addresses at the configured port. The hub generates each
+loopback alone. A thin HTTP forwarder of the agent's listens on every address
+of the device (`0.0.0.0`) at the configured port. The hub generates each
 instance's password and keeps it in its vault; on CloudCLI's first start the
 agent registers the account with it through CloudCLI's register endpoint,
 the first account registered being its administrator, and the forwarder
@@ -407,8 +411,10 @@ answers nobody before that.
 | asks for CloudCLI's register or login endpoint | 401; those are never passed on |
 
 **A token is verified on the device, with no call to the hub.** The hub
-mints one secret per instance and the module's desired state carries it
-sealed. A token is
+mints one secret per instance, keeps it sealed, and the module's desired
+state carries it opened, as it carries the password; the agent keeps a
+root-only record per instance (its ports, password and secret) so the
+forwarder comes back after an agent restart. A token is
 `base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))`, minted
 by the hub on every `service` ask with `expiry` 60 seconds ahead ([protocol.md](protocol.md), the service material). The
 forwarder checks the HMAC and the expiry itself and keeps every nonce it

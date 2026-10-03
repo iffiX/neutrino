@@ -64,7 +64,9 @@ deletes the old one, the agent and the client each their own, and the
 EasyTier's state survive; pipe names and service names do not change. The old
 directories are `C:\Program Files\Neutrino Agent`,
 `C:\Program Files\Neutrino Client`, `C:\ProgramData\Neutrino Client` and
-`/Library/Application Support/Neutrino Client`.
+`/Library/Application Support/Neutrino Client`. The per-user directories
+`%APPDATA%\Neutrino Client` and `~/Library/Application Support/Neutrino Client`
+keep their names.
 
 **A secret is protected by its directory there.** Mode 0600 means nothing on
 Windows, so the `.msi` creates `C:\ProgramData\Neutrino\hub` with the
@@ -217,7 +219,9 @@ child of the supervising service, `<name>.log`, which takes the child's
 standard output and error and is rotated by size, and `nhub` and the panel
 read the tail of that file where Linux reads the unit's journal
 ([architecture.md](architecture.md)). dnsmasq does not run there, so there is
-no DNS log.
+no DNS log. NetBird's own console output goes to
+`netbird_console.log`; `netbird.log` is the file the hub's start line names and
+the one `journal("netbird")` reads.
 
 ## /run/neutrino — what is true until the next boot
 

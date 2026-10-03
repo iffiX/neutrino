@@ -256,7 +256,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_duplicate {account}`, `port_duplicate {port}`, `credential_missing {account}`, `proxy_scope_unsupported {switch}` |
 | 401 | a missing session, a dead ticket, or a token that names no binding | `ticket_spent`, `binding_unknown` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `session_unknown {session_id}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `role_mismatch`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}` |
@@ -379,7 +379,7 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/proxy` | | the view, with `geodata: {geoip_version, geosite_version, source, latest?}` |
-| `POST /api/hub/proxy/set` | routing policy | 400 `proxy_scope_unsupported` for `is_proxy_enabled`, `is_overlay_proxy_enabled` or `is_local_proxy_enabled` switched on outside Linux |
+| `POST /api/hub/proxy/set` | routing policy | 400 `proxy_scope_unsupported {switch}` for `is_proxy_enabled`, `is_overlay_proxy_enabled` or `is_local_proxy_enabled` switched on outside Linux |
 | `POST /api/hub/proxy/apply` | | renders and applies xray |
 | `GET /api/hub/proxy/node` | | the exit nodes |
 | `POST /api/hub/proxy/node/add` | a share link or a node | |
@@ -506,7 +506,7 @@ has is refused 400 `permission_device_unknown {device_id}`.
 | `POST /api/hub/setting/backup` | | an archive of `config/` |
 | `POST /api/hub/setting/restore` | the archive | |
 | `GET /api/hub/setting/about` | | `AboutView`: versions, the credited components, and `os` and `os_version`, the system the hub runs on and its version |
-| `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, the record of its last update, and the staging task while one runs |
+| `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, `package_family` (`deb`, `rpm`, `arch`, `msi`, `pkg`, or empty in a checkout) and `log_root`, the record of its last update, and the staging task while one runs |
 | `POST /api/hub/setting/release/scan` | | reads the newest release from GitHub; returns `HubReleaseScanView`: the release or none published, whether it is newer or a new major, whether a rollback package can be had, and the room the update needs and has; 409 `hub_not_packaged` from a checkout |
 | `POST /api/hub/setting/release/install` | `{version}`, the release confirmed | stages the package and hands the install to the `neutrino_hub_update` unit; returns `TaskStarted`, output on `/ws/hub/task`; 409 `release_not_latest` when the newest release is no longer the one named, `release_not_newer`, `release_major`, `disk_space_short`, `update_in_progress` |
 

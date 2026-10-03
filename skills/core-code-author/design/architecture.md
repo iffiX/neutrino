@@ -45,7 +45,9 @@ Inside the hub package the layers only reach downward:
 - `cli/` — every entry point, one `nhub` subcommand each.
 - `platforms/`: what differs between Linux, macOS and Windows, and nothing
   else: the five roots, the elevation check, the process controller, the
-  network facts, the firewall, opening a browser and the file lock.
+  opening a browser and the file lock. The firewall is `modules/firewall/`,
+  a renderer and one applier per system, and the network facts outside
+  Linux come from psutil inside the `system/` modules.
   `base.py`, `linux.py`, `darwin.py` and `windows.py` follow the agent's
   shape, with `win32.py` and `windows_service.py` copied from the agent, since
   the packages share no code. `detect.hub_os()` returns `linux`, `darwin` or
