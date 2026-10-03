@@ -1,5 +1,6 @@
 """Which nhub commands demand root, and how the refusal reads."""
 
+import io
 import sys
 import types
 
@@ -60,3 +61,30 @@ def test_status_is_never_gated(monkeypatch, capsys):
     monkeypatch.setitem(entry.COMMANDS, "status", ("fake_status", "status"))
 
     assert entry.main() == 0
+
+
+def test_windows_writes_utf8_and_replaces_what_cannot_be(monkeypatch):
+    streams = [
+        io.TextIOWrapper(io.BytesIO(), encoding="cp1252"),
+        io.TextIOWrapper(io.BytesIO(), encoding="cp1252"),
+    ]
+    monkeypatch.setattr(entry.sys, "platform", "win32")
+    monkeypatch.setattr(entry.sys, "stdout", streams[0])
+    monkeypatch.setattr(entry.sys, "stderr", streams[1])
+    monkeypatch.setattr(entry.sys, "argv", ["nhub"])
+
+    entry.main()
+
+    assert [stream.encoding for stream in streams] == ["utf-8", "utf-8"]
+    assert [stream.errors for stream in streams] == ["replace", "replace"]
+
+
+def test_other_systems_keep_their_streams(monkeypatch):
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(entry.sys, "platform", "linux")
+    monkeypatch.setattr(entry.sys, "stdout", stream)
+    monkeypatch.setattr(entry.sys, "argv", ["nhub"])
+
+    entry.main()
+
+    assert stream.encoding == "cp1252"

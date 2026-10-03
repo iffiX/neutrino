@@ -56,6 +56,9 @@ from neutrino_hub.modules.router.modes import (
 # --- config ---
 WIZARD_WIDTH = 72
 WIZARD_WORDMARK = "NEUTRINO"
+# The headline's rule, and what draws it where the console cannot.
+WIZARD_RULE = "─"
+WIZARD_RULE_FALLBACK = "-"
 WIZARD_LABEL = "Config"
 # How far a screen moves the wizard when it is done. Three, not two: a screen
 # that could not be answered — a password too short — has to be asked again,
@@ -1080,11 +1083,21 @@ def _headline(right: str, *, title: str = "") -> None:
     dashes = WIZARD_WIDTH - len(WIZARD_WORDMARK) - len(right) - 2
     print()
     print()
-    print(f"{WIZARD_WORDMARK} {'─' * max(1, dashes)} {right}")
+    print(f"{WIZARD_WORDMARK} {_rule_character() * max(1, dashes)} {right}")
     print()
     if title:
         print(f"  {title}")
         print()
+
+
+def _rule_character() -> str:
+    """The headline's rule, or a plain dash where the output cannot encode it."""
+    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        WIZARD_RULE.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return WIZARD_RULE_FALLBACK
+    return WIZARD_RULE
 
 
 def context() -> dict:
