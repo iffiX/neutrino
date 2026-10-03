@@ -13,6 +13,10 @@ import java.net.URISyntaxException
  * @property fingerprint The SHA-256 of the hub's certificate, lower-case hex.
  */
 data class ShortEnrollmentLink(val ticket: String, val baseUrl: String, val fingerprint: String) {
+    /** What the short link holds, as a link: its one address, its ticket, its pin, and no overlays. */
+    val link: EnrollmentLink
+        get() = EnrollmentLink(listOf(baseUrl), ticket, fingerprint, emptyList())
+
     companion object {
         private val hex = Regex("[0-9a-f]{64}")
 

@@ -1,7 +1,6 @@
 package io.github.iffix.neutrino.channel
 
 import android.util.Log
-import io.github.iffix.neutrino.CLIENT_ENROLL_PATH
 import io.github.iffix.neutrino.CLIENT_LEAVE_PATH
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.CLIENT_NOTICE_SHOWN_S
@@ -9,7 +8,6 @@ import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
 import java.io.IOException
-import java.net.URLEncoder
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -106,39 +104,21 @@ class HubConnections(
         }
         joining.value = HubJoin(isJoining = true)
         scope.launch {
-            val answer = when (val parsed = readLink(text)) {
-                is ChannelResult.Refused -> parsed
-                is ChannelResult.Ok -> join(parsed.value)
+            val answer = if (ShortEnrollmentLink.isShort(text)) {
+                when (val parsed = ShortEnrollmentLink.parse(text)) {
+                    is ChannelResult.Refused -> parsed
+                    is ChannelResult.Ok -> join(parsed.value.link, isObjectPending = true)
+                }
+            } else {
+                when (val parsed = EnrollmentLink.parse(text)) {
+                    is ChannelResult.Refused -> parsed
+                    is ChannelResult.Ok -> join(parsed.value)
+                }
             }
             joining.value = when (answer) {
                 is ChannelResult.Ok -> HubJoin(joinedId = answer.value.id)
                 is ChannelResult.Refused -> HubJoin(refusal = answer)
             }
-        }
-    }
-
-    /**
-     * The long link a text names: the text itself, or for a short link the object its hub answers
-     * for the ticket, fetched on the pin.
-     *
-     * @param text The link's text.
-     * @return The link, or the refusal: [EnrollmentLink.parse]'s, `link_unreadable` for a broken
-     *   short link, `link_unreachable` when its address does not answer, `hub_untrusted` when
-     *   another certificate does, and the hub's own code, `ticket_spent`.
-     */
-    private suspend fun readLink(text: String): ChannelResult<EnrollmentLink> {
-        if (!ShortEnrollmentLink.isShort(text)) return EnrollmentLink.parse(text)
-        val short = when (val parsed = ShortEnrollmentLink.parse(text)) {
-            is ChannelResult.Refused -> return parsed
-            is ChannelResult.Ok -> parsed.value
-        }
-        val query = URLEncoder.encode(short.ticket, Charsets.UTF_8.name())
-        val path = "$CLIENT_ENROLL_PATH?ticket=$query"
-        return when (val fetched = transport.get(short.baseUrl, path, short.fingerprint)) {
-            is ChannelResult.Refused ->
-                if (fetched.code == "hub_unreachable") ChannelResult.refused("link_unreachable") else fetched
-
-            is ChannelResult.Ok -> EnrollmentLink.fromObject(fetched.value)
         }
     }
 
@@ -152,9 +132,11 @@ class HubConnections(
      * address that answers. A link whose ticket a binding already holds is that binding.
      *
      * @param link The link.
+     * @param isObjectPending Whether the link is a short link's: the session fetches the long
+     *   link's object before it spends the ticket.
      * @return The binding kept, or `client_internal {error}` when the file cannot be written.
      */
-    fun join(link: EnrollmentLink): ChannelResult<HubBinding> {
+    fun join(link: EnrollmentLink, isObjectPending: Boolean = false): ChannelResult<HubBinding> {
         store.bindings.value.firstOrNull { it.ticket == link.ticket }?.let { return ChannelResult.Ok(it) }
         val binding = HubBinding(
             id = UUID.randomUUID().toString().replace("-", ""),
@@ -164,6 +146,7 @@ class HubConnections(
             fingerprint = link.fingerprint,
             token = "",
             ticket = link.ticket,
+            isObjectPending = isObjectPending,
             overlays = link.overlays,
         )
         return try {
