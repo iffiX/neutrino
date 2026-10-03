@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_ANY_ADDRESS,
+    VSCODE_LOOPBACK_ADDRESS,
     VSCODE_PORT_MAX,
     VSCODE_PORT_MIN,
 )
@@ -87,6 +88,11 @@ class VscodeConfig:
         """The address the servers listen on."""
         return self.address or VSCODE_ANY_ADDRESS
 
+    @property
+    def url_host(self) -> str:
+        """The address a reported url names: the loopback for every address."""
+        return self.address or VSCODE_LOOPBACK_ADDRESS
+
     def url_of(self, instance: VscodeInstance) -> str:
         """Where one instance answers, without its token.
 
@@ -94,9 +100,10 @@ class VscodeConfig:
             instance: The instance.
 
         Returns:
-            ``http://<address>:<port>/``.
+            ``http://<address>:<port>/``, the loopback for servers on
+            every address.
         """
-        return f"http://{self.host}:{instance.port}/"
+        return f"http://{self.url_host}:{instance.port}/"
 
     def validate(self, *, os_name: str = "linux") -> None:
         """Check the configuration holds together.

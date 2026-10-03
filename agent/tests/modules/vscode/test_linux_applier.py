@@ -24,7 +24,7 @@ from neutrino_agent.modules.vscode.linux_applier import (
 
 CONFIG = VscodeConfig.from_dict(
     {
-        "address": "192.168.1.5",
+        "address": "",
         "instances": [{"account": "ann", "port": 8000, "token": "t-ann"}],
     }
 )
@@ -111,7 +111,7 @@ def test_an_instance_gets_its_token_its_environment_and_its_unit(
     assert stat.S_IMODE(os.stat(token).st_mode) == 0o600
     assert applier.owners == [("ann.token", 1000, 1000)]
     assert (tmp_path / "vscode" / "ann.env").read_text() == (
-        f"VSCODE_HOST=192.168.1.5\nVSCODE_PORT=8000\nVSCODE_TOKEN_FILE={token}\n"
+        f"VSCODE_HOST=0.0.0.0\nVSCODE_PORT=8000\nVSCODE_TOKEN_FILE={token}\n"
     )
     assert (tmp_path / "systemd" / "neutrino_vscode@.service").is_file()
     assert systemd.calls == [
@@ -171,7 +171,7 @@ def test_the_states_read_each_unit_and_the_env_files_without_a_config(applier, s
         {
             "account": "ann",
             "port": 8000,
-            "url": "http://192.168.1.5:8000/",
+            "url": "http://127.0.0.1:8000/",
             "is_running": True,
             "code": "",
         }

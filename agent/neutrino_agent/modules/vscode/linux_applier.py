@@ -274,12 +274,12 @@ class VscodeLinuxApplier:
         """
         if config is not None:
             held = [(item.account, item.port) for item in config.instances]
-            host = config.host
+            host = config.url_host
         else:
             held = [
                 (account, self._held_port(account)) for account in self._held_accounts()
             ]
-            host = VscodeConfig().host
+            host = VscodeConfig().url_host
         return [
             {
                 "account": account,
