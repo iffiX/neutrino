@@ -27,3 +27,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.device_enrollment_qr {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}

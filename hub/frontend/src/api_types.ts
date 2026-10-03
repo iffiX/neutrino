@@ -934,6 +934,7 @@ export interface ClientPermissionRequest {
 /** The link a named client joins with, and when it lapses. */
 export interface ClientEnrollmentView {
   link: string;
+  qr_link: string;
   expires_at: string;
   expires_in_s: number;
 }
