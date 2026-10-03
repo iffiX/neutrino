@@ -427,7 +427,7 @@ word. The controls:
 | Control | Enabled | Does |
 | --- | --- | --- |
 | **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer with the seat password; on a phone opens the viewer page |
-| the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app with a back arrow and a key bar of Esc, Tab, Ctrl, Shift, Alt, Win and **Paste** |
+| the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is healthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 
 The phone's viewer page is built for the picture first:
