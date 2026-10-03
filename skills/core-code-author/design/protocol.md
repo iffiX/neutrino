@@ -679,9 +679,11 @@ A peer that reads it fetches the long form's object from
 fingerprint pinned, and goes on as with a pasted link. The route answers
 while the ticket is alive and unspent, and spends nothing; 401
 `ticket_spent` otherwise, and the same for a device ticket, which carries
-no object. A peer that reaches no address with the short form reports
-`link_unreachable`, and the long form, which carries the overlays' join
-material, is the one to paste then. The short form is an added form and
+no object. A peer stores a short link's binding at once and fetches the object in
+its rounds; while no round reaches the address the binding stays pending,
+as a long link's does when no address answers. The long form carries the
+overlays' join material itself, so a peer that can reach the hub only over
+an overlay it has not joined yet needs the long form. The short form is an added form and
 keeps `PROTOCOL`; `POST /api/hub/client/enrollment/create` returns it as
 `qr_link` beside `link`.
 

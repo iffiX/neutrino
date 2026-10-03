@@ -185,19 +185,21 @@ under its mono line; the AI page sets it.
 The join row is an input for the link and a **Join** button. On a phone the
 row opens the Join page: a camera view that scans the hub's QR, and under it
 the same input. The QR carries the short link ([protocol.md](protocol.md),
-"The link and the two endpoints"): the app fetches the long link's object at
-the short link's address, with the fingerprint pinned, and then joins as it
-does from a pasted link. The button shows `ui.job.joining` while the link is
-checked and the binding written; a success adds the row in `connecting`; a
-failure writes the code (`link_unreadable`, `hub_untrusted`,
-`link_unreachable`) under the input, and `link_unreachable` says to paste
-the link instead.
+"The link and the two endpoints"): the app stores the binding at once from
+what the short link holds (the one address, the ticket, the fingerprint),
+and fetches the long link's object in the channel's rounds, with the
+fingerprint pinned, before the round that spends the ticket; the fetched
+`urls` and `overlays` are merged into the binding. The button shows
+`ui.job.joining` while the link is checked and the binding written; a
+success adds the row in `pending`; a failure writes the code
+(`link_unreadable`, `hub_untrusted`) under the input. A hub the short link's
+address does not reach yet keeps the row pending, as a long link's does.
 
 ### Joining before the hub is reached
 
 | Rule | Reason |
 | --- | --- |
-| A join (a scanned QR, a pasted link) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state word is `ui.state.pending` ("Joined; the hub has not been reached yet"), the mono line is the link's first address, and the virtual network line is live from the link's `overlays`, with its picker and **Connect**. | A phone away from home pastes the long link, which carries the network's material; it reaches the hub only through a virtual network. A scanned QR is read where the phone reaches the hub, since the short link's object is fetched from it. |
+| A join (a scanned QR, a pasted link, short or long) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state word is `ui.state.pending` ("Joined; the hub has not been reached yet"), the mono line is the link's first address, and the virtual network line is live from the link's `overlays` once the binding has them, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. A long link carries the network's material at once; a short link's binding gets it on the first round that reaches the hub's address. |
 | The channel's rounds run as for any hub. The first time an address answers with the pinned certificate, the client spends the ticket there (`POST /api/channel/join`), keeps the token, and only then sends `hello`; from then on the binding is ordinary. | The join and the first channel share one reachable address, whichever path gave it. |
 | A ticket the hub refuses (`ticket_spent`, or any refusal of the join) puts the row in `down` with that code, **Leave** as its only action, and no further rounds; the person scans again. | A dead ticket cannot be revived; a loop on it is a hang with a name. |
 | A ticket lives 30 minutes, which the Clients page says beside the QR. | A phone that has to raise a network first needs more than five minutes. |
@@ -471,7 +473,7 @@ else.
 
 | Feature | Desktop | Phone |
 | --- | --- | --- |
-| join | paste the link | scan the QR where the phone reaches the hub, or paste the link |
+| join | paste the link | scan the QR, or paste the link; either adds the hub at once |
 | port entry | forward to the loopback | the same: a foreground service listens on `127.0.0.1:<local port>` and relays each connection to the entry's address over a plain socket, as the desktop does, and the forwarded row shows the loopback address with **Copy** |
 | local-only web entry | open through a forward | the same: the app forwards, reads the token and opens the system browser on the loopback URL |
 | web entry with `is_token_required` | read the token, open the browser at the device's address | the same |
