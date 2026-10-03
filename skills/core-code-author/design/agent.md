@@ -143,7 +143,10 @@ table on every surface:
 | `absent`, `installed`, `stopped`, `running` | `installing`, `uninstalling` | `failed`, `unsupported` |
 
 `installed` is present and never configured by the hub; `stopped` and
-`running` are configured by the hub and told apart by the unit. A surface
+`running` are configured by the hub and told apart by the unit; `installing`
+also covers a module's own install that runs inside its apply or as a task
+the apply left running, and a state waiting on such a task is applied again
+every 30 seconds under the same hash until the task ends. A surface
 that meets a token outside this table shows "waiting for the agent", the word
 for a machine that has not reported. Wherever a state is drawn:
 
@@ -274,7 +277,8 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
 | Accounts | uid 1000 and above with a login shell | the enabled local accounts from `Get-LocalUser`, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own, read at most every 30 seconds; the home is the profile `Win32_UserProfile` names | `dscl`, uid 501 and above, home under `/Users` |
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
-| Refused | nothing | stepping down, packages, the `kill` verb, but not `persist` or `stop_session` | stepping down, packages |
+| Refused | nothing | stepping down, packages | stepping down, packages |
+| Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
 | Shell stream | the login shell on a pseudo-terminal | PowerShell on a pseudo console, in a job that kills it on close | `zsh -il` on a pseudo-terminal |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
 | RustDesk | `/usr/lib/neutrino/agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
@@ -325,17 +329,23 @@ module a system cannot run is left out on that system.
 
 A module's log, the answer to its `journal` verb, is the journal of its
 systemd units on Linux. Windows and macOS run no module under a unit, so
-each module there reads its own sources. The file share reads the SMB
-server's latest events from `Microsoft-Windows-SMBServer/Operational` on
-Windows, or what the unified log holds of `smbd` over the last 15 minutes on
-macOS. After them come the agent's own log lines that name the module, from
-`agent.log` under the log root on Windows and
-`/Library/Logs/Neutrino/agent/agent.log` on macOS. VS Code reads the end of each
-instance's log file. On Windows the task runs the CLI through `cmd.exe`,
-which appends its output to `<account>.log` beside the CLI; on macOS the
-LaunchDaemon's `StandardOutPath` and `StandardErrorPath` name
-`/Library/Logs/Neutrino/agent/vscode_<account>.log`. Every log comes oldest line
-first, at most the number of lines the verb asked for.
+each module there reads its own sources first and then the agent's own log
+lines that name the module, from `agent.log` under the log root (the rotated
+`agent.log.1` read before it) on Windows and
+`/Library/Logs/Neutrino/agent/agent.log` on macOS; the agent's lines take at
+most half the box, and a box is empty only while the agent has logged
+nothing about the module. The file share reads the SMB server's latest
+events from `Microsoft-Windows-SMBServer/Operational` on Windows, or what the
+unified log holds of `smbd` over the last 15 minutes on macOS. VS Code and
+CloudCLI read the end of each instance's log file: on Windows the task runs
+the CLI through `cmd.exe`, which appends its output to `<account>.log`
+beside the CLI, and a CloudCLI install still running shows
+`run\install_<account>.log`; on macOS the LaunchDaemon's `StandardOutPath`
+and `StandardErrorPath` name `/Library/Logs/Neutrino/agent/vscode_<account>.log`.
+A source that cannot be read leaves one line in the agent's log naming it,
+so the next journal shows why. `journal` answers while an apply runs; it
+does not wait for the state to settle. Every log comes oldest line first,
+at most the number of lines the verb asked for.
 
 The hub's own machine on macOS and Windows runs the local agent
 `nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its
@@ -411,6 +421,14 @@ path that answers to it.
 **A failed install names its step**: `cloudcli_node_download_failed`,
 `cloudcli_npm_install_failed`, or `cloudcli_native_module_failed` when
 better-sqlite3, node-pty or bcrypt cannot fetch its prebuilt binary.
+
+**The install's state is `installing` until it ends.** On Linux and macOS
+npm runs inside the apply; on Windows the apply starts the install task and
+leaves it running (four hours at most), reads its state on every apply, and
+starts no instance until it has ended; an ended task is judged by its
+result and by the app directory holding the package and the three native
+modules, then unregistered. The hub publishes an instance's `web` entry
+only while the device reports it running.
 
 **The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
 loopback alone. A thin HTTP forwarder of the agent's listens on every address

@@ -573,7 +573,7 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running` |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped` |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent` |
-| `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's units' journal on the device; empty for a module that runs as no unit |
+| `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
 | `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for `samba`, `gitea`, `podman`, `zfs`, `vscode` and `cloudcli` alike; 409 `agent_offline` |
 | `GET /api/agent/module/samba` | `?device_id=` | the hub's Samba configuration for the device |
 | `GET /api/agent/module/samba/status` | `?device_id=` | `SambaStatusView`: whether the unit is active, the sessions open and how full each share's disk is, as last reported |
@@ -1097,8 +1097,8 @@ its own language:
 | `device_share` | `{device}` |
 | `gitea_module` | `{host}` |
 | `samba_module` | `{host}` |
-| `vscode_module` | `{host, account}` |
-| `cloudcli_module` | `{host, account}` |
+| `vscode_module` | `{host, account}`; the entry exists only while the device reports the instance running |
+| `cloudcli_module` | `{host, account}`; the same |
 
 A declared record whose person wrote a line of their own gets that line and an
 empty `description_code`, because those are already their words.
@@ -1146,8 +1146,10 @@ value. `stop_session` ends a session, and
 Two verbs every module answers: `validate`, as `command {module: <name>,
 verb: validate, config}`, checks a configuration before it is saved; and
 `journal`, as `command {module: <name>, verb: journal, lines}`, closes with
-the tail of the module's units' journal in `output`, merged by time when the
-module runs as more than one unit. On `podman`, a `journal` naming a
+the tail of the module's log in `output`: the units' journal on Linux, merged
+by time when the module runs as more than one unit, and the module's own
+sources with the agent's lines on Windows and macOS; it answers while an
+apply runs. On `podman`, a `journal` naming a
 container is that container's; one naming none is the module's own. A terminal's first size is in its
 `open`; a later size is `open {kind: command, module: agent, verb: resize,
 shell: <id>, cols, rows}`, closed as soon as it is applied, and so is a
@@ -1165,7 +1167,7 @@ A stream that attaches to a running shell is sent its last 256 KB of output
 first, then the live output, and the terminal is resized to one row more
 and back so a full-screen program draws itself again. When the last stream
 closes, the shell ends unless it is persistent or shared; `stop_session`
-ends it, and every attached stream closes with the exit code. Windows answers both verbs although it refuses `kill`. The
+ends it, and every attached stream closes with the exit code. Every system answers both verbs. The
 sessions are the agent process's own, so an agent restart or upgrade ends
 every one.
 
