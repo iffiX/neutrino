@@ -1,7 +1,7 @@
 """The interfaces' state on macOS and Windows, read through psutil.
 
 What these pin: an address outside loopback is where the box is reached, a
-port is an interface with a hardware address and an IPv4 address, and the
+port is every interface holding an IPv4 address outside loopback, and the
 default route comes from ``route -n get default`` on macOS and from
 ``Get-NetRoute`` on Windows, lowest metric first.
 """
@@ -66,10 +66,10 @@ def test_every_address_outside_loopback_is_where_the_box_is_reached(elsewhere, m
     }
 
 
-def test_a_port_has_a_hardware_address_and_an_ipv4_address(elsewhere, machine):
+def test_a_port_is_every_interface_holding_an_ipv4_address(elsewhere, machine):
     links = RouterLinkStatus().all_links()
 
-    assert [link.name for link in links] == ["Ethernet 2", "en0"]
+    assert [link.name for link in links] == ["Ethernet 2", "en0", "utun4"]
     en0 = links[1]
     assert en0.kind == LINK_KIND_ETHERNET
     assert en0.is_present and en0.is_up

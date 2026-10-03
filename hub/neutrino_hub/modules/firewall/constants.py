@@ -3,6 +3,7 @@
 import re
 
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
+from neutrino_hub.utils.constants import UTILS_GENERATED_DIR
 
 # Every Windows rule the hub owns is named by this prefix and its purpose, so
 # the rules it made are found by name and nothing else is touched.
@@ -30,32 +31,53 @@ FIREWALL_SETTING_AGENT_PORT = "agent_listen_port"
 FIREWALL_GATEWAY_SETTINGS_FILE = "cliproxyapi/cliproxyapi.json"
 FIREWALL_SETTING_GATEWAY_PORT = "listen_port"
 
-# What the Windows rules the hub owns are now: name, protocol and port each.
+# What the Windows rules the hub owns are now: name, protocol, port, whether
+# each is enabled and the interfaces it is scoped to ("Any" when none).
 FIREWALL_WINDOWS_READ_SCRIPT = """
 $rules = @(Get-NetFirewallRule -Name ($d.prefix + '*') -ErrorAction SilentlyContinue |
   ForEach-Object {
     $filter = $_ | Get-NetFirewallPortFilter
+    $scope = $_ | Get-NetFirewallInterfaceFilter
     @{name = [string]$_.Name; protocol = [string]$filter.Protocol;
-      port = [string]$filter.LocalPort}
+      port = [string]$filter.LocalPort;
+      is_enabled = ([string]$_.Enabled -eq 'True');
+      interfaces = @($scope.InterfaceAlias | ForEach-Object { [string]$_ })}
   })
 @{rules = $rules} | ConvertTo-Json -Compress -Depth 4
 """
-# Removes, changes and creates the rules the document names, in that order.
+# Removes, changes and creates the rules the document names, in that order. A
+# rule with no interface is kept disabled; one with interfaces is scoped to
+# them and enabled.
 FIREWALL_WINDOWS_CHANGE_SCRIPT = """
 foreach ($name in @($d.remove)) {
   if ($name) { Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue }
 }
 foreach ($rule in @($d.update)) {
   if ($rule) {
-    Set-NetFirewallRule -Name $rule.name -Protocol $rule.protocol `
-      -LocalPort $rule.port
+    $aliases = @($rule.interfaces)
+    if ($aliases.Count -gt 0) {
+      Set-NetFirewallRule -Name $rule.name -Protocol $rule.protocol `
+        -LocalPort $rule.port -InterfaceAlias $aliases -Enabled True
+    } else {
+      Set-NetFirewallRule -Name $rule.name -Protocol $rule.protocol `
+        -LocalPort $rule.port -Enabled False
+    }
   }
 }
 foreach ($rule in @($d.create)) {
   if ($rule) {
-    New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
-      -Description $d.description -Direction Inbound -Action Allow `
-      -Protocol $rule.protocol -LocalPort $rule.port -Profile Any | Out-Null
+    $aliases = @($rule.interfaces)
+    if ($aliases.Count -gt 0) {
+      New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
+        -Description $d.description -Direction Inbound -Action Allow `
+        -Protocol $rule.protocol -LocalPort $rule.port -Profile Any `
+        -InterfaceAlias $aliases | Out-Null
+    } else {
+      New-NetFirewallRule -Name $rule.name -DisplayName $rule.name `
+        -Description $d.description -Direction Inbound -Action Allow `
+        -Protocol $rule.protocol -LocalPort $rule.port -Profile Any `
+        -Enabled False | Out-Null
+    }
   }
 }
 @{changed = $true} | ConvertTo-Json -Compress
@@ -66,3 +88,11 @@ FIREWALL_DARWIN_TOOL = "/usr/libexec/ApplicationFirewall/socketfilterfw"
 FIREWALL_DARWIN_LIST_LINE = re.compile(r"^\s*\d+\s*:\s*(\S.*?)\s*$")
 FIREWALL_DARWIN_ALLOWED = "Allow incoming connections"
 FIREWALL_DARWIN_BLOCKED = "Block incoming connections"
+
+# The pf sub-anchor that closes the hub's ports on the interfaces nobody
+# exposed. macOS's main ruleset evaluates every ``com.apple/*`` anchor.
+FIREWALL_DARWIN_PF_ANCHOR = "com.apple/neutrino_hub"
+# Where the anchor's rules are kept between loads: pf forgets them at boot.
+FIREWALL_DARWIN_PF_RULES_PATH = UTILS_GENERATED_DIR / "firewall_pf_anchor.conf"
+FIREWALL_DARWIN_PF_ENABLED = "Status: Enabled"
+FIREWALL_DARWIN_LOOPBACK = "lo0"

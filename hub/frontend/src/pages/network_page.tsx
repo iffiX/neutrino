@@ -693,7 +693,7 @@ export function NetworkPage() {
         </>
       )}
 
-      {network.data !== null && network.data.hub_os === "linux" && (
+      {network.data !== null && (
         <NetworkExposurePanel
           network={network.data}
           onApplied={network.setData}

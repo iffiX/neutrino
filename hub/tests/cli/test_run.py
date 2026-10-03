@@ -9,6 +9,7 @@ renewal loads the new certificate into.
 import argparse
 import asyncio
 import json
+import subprocess
 import threading
 from types import SimpleNamespace
 
@@ -171,6 +172,7 @@ def service_roots(monkeypatch, tmp_path):
     for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT", "UTILS_STATE_ROOT"):
         monkeypatch.setattr(run, name, tmp_path / name.lower())
     monkeypatch.setattr(run, "CLIPROXYAPI_DIR", tmp_path / "state" / "cliproxyapi")
+    monkeypatch.setattr(run, "reload_firewall", lambda: None)
     return tmp_path
 
 
@@ -184,14 +186,36 @@ def test_the_service_serves_the_panel_and_supervises_the_children(
     monkeypatch.setattr(
         run, "_serve_panel", lambda arguments: controller.asked.append(("panel",)) or 0
     )
+    monkeypatch.setattr(
+        run, "reload_firewall", lambda: controller.asked.append(("firewall",))
+    )
 
     assert run._supervise(argparse.Namespace()) == 0
     assert controller.asked == [
+        ("firewall",),
         ("supervise", ["cliproxyapi", "netbird", "xray"]),
         ("panel",),
         ("shutdown",),
     ]
     assert (service_roots / "utils_runtime_root").is_dir()
+
+
+def test_a_firewall_anchor_that_does_not_load_leaves_the_service_running(
+    monkeypatch, service_roots, capsys
+):
+    controller = _Controller()
+    monkeypatch.setattr(run.sys, "platform", "darwin")
+    monkeypatch.setattr(run, "process_controller", lambda: controller)
+    monkeypatch.setattr(run, "_serve_panel", lambda arguments: 0)
+
+    def refuse():
+        raise subprocess.CalledProcessError(1, ["pfctl"], "", "syntax error")
+
+    monkeypatch.setattr(run, "reload_firewall", refuse)
+
+    assert run._supervise(argparse.Namespace()) == 0
+    assert "firewall anchor not loaded" in capsys.readouterr().err
+    assert controller.asked[0][0] == "supervise"
 
 
 def test_the_children_stop_when_the_panel_fails(monkeypatch, service_roots):

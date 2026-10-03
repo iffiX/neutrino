@@ -191,8 +191,9 @@ class RouterStateController:
     ) -> list[RouterStepResult]:
         """The pass on macOS and Windows: the system firewall and the overlays."""
         devices = overlay_devices(network)
+        found = network.with_overlay_devices(devices)
         results = [
-            run_step("firewall", lambda: converge_firewall(network, routing=routing))
+            run_step("firewall", lambda: converge_firewall(found, routing=routing))
         ]
         write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
         if self._on_base_ready is not None:

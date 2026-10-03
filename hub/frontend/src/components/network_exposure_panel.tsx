@@ -21,7 +21,8 @@ import "./network_exposure_panel.css";
  *
  * One answer per network and no port list: every service binds every address
  * and settles its own port in its own tab, so the network is what is left to
- * decide. It lands in the nftables input chain.
+ * decide. On Linux it lands in the nftables input chain; on macOS and Windows
+ * in the system firewall, for the hub's own ports.
  *
  * An overlay is one of them. Joining one is joining your own network, so it
  * starts open, and closing it says first how many devices that would cut off.
@@ -73,6 +74,7 @@ export function NetworkExposurePanel({
 
   const isDirty =
     !sameSet(chosen, applied) || !sameSet(chosenOverlays, appliedOverlays);
+  const isLinux = network.hub_os === "linux";
   // A trunk carries no traffic of its own; what answers is each VLAN on it.
   const offered = network.interfaces.filter(
     (entry) => entry.settings.role !== "split",
@@ -150,7 +152,13 @@ export function NetworkExposurePanel({
       <div className="settings_group_title">
         <h2>{t("ui.network.exposure_title")}</h2>
       </div>
-      <p className="field_hint">{t("ui.network.exposure_hint")}</p>
+      <p className="field_hint">
+        {t(
+          isLinux
+            ? "ui.network.exposure_hint"
+            : "ui.network.exposure_hint_system",
+        )}
+      </p>
 
       <div className="exposure_chips">
         {offered.map((entry) => (
@@ -175,7 +183,11 @@ export function NetworkExposurePanel({
         isDirty={isDirty}
         isBusy={isBusy}
         label={t("ui.network.apply_exposure")}
-        hint={t("ui.network.apply_exposure_hint")}
+        hint={t(
+          isLinux
+            ? "ui.network.apply_exposure_hint"
+            : "ui.network.apply_exposure_hint_system",
+        )}
         warning={exposureWarning(closingNames, openedUplinks, cutOff)}
         error={error}
         notice={notice}

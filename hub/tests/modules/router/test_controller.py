@@ -378,6 +378,7 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
     assert ready == [True]
     assert gates == [False]
     assert handed[0][1] == ROUTING
+    assert handed[0][0].overlay_device_names == ["utun4"]
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
     assert fake_controller.calls == []
 

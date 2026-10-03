@@ -314,7 +314,12 @@ def _set_exposure(
         HTTPException: 400 when a named interface is neither configured nor
             present on this machine.
     """
-    present = {link.name for link in runtime.link_status().all_links()}
+    overlays = set(network.overlay_device_names)
+    present = {
+        link.name
+        for link in runtime.link_status().all_links()
+        if link.name not in overlays
+    }
     wanted = set(names)
     for name in wanted:
         if name not in present and network.interface(name) is None:
@@ -322,6 +327,12 @@ def _set_exposure(
         opened = network.interface_or_new(name)
         opened.is_exposed = True
         network.replace(opened)
+    for name in sorted(present - wanted):
+        if (
+            network.interface(name) is None
+            and network.interface_or_new(name).is_exposed
+        ):
+            network.replace(RouterInterface(name=name, is_exposed=False))
     for interface in network.interfaces:
         if interface.name not in wanted:
             interface.is_exposed = False
@@ -908,7 +919,12 @@ def _overlay_views(
 def _build_view(runtime: PanelRuntime) -> NetworkView:
     network = runtime.network()
     status_reader = runtime.link_status()
-    links = {link.name: link for link in status_reader.all_links()}
+    overlays = set(network.overlay_device_names)
+    links = {
+        link.name: link
+        for link in status_reader.all_links()
+        if link.name not in overlays
+    }
     reaching = _reaching_addresses(runtime)
 
     names = list(links)
@@ -1146,8 +1162,7 @@ def _to_interface(
     # them at once. Taking it from what is stored, not from the body, is what
     # keeps saving one interface's role from quietly reopening or closing it.
     interface = RouterInterface.from_dict(settings.model_dump())
-    stored = network.interface(settings.name)
-    interface.is_exposed = stored.is_exposed if stored else False
+    interface.is_exposed = network.interface_or_new(settings.name).is_exposed
     return interface
 
 

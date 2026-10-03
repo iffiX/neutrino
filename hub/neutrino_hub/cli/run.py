@@ -68,6 +68,7 @@ from neutrino_hub.modules.router.constants import (
 from neutrino_hub.modules.router.controller import RouterStateController, router_lock
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
+from neutrino_hub.modules.firewall.ops import reload_firewall
 from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
@@ -676,6 +677,13 @@ def _supervise_service(arguments) -> int:
         CLIPROXYAPI_DIR,
     ):
         directory.mkdir(parents=True, exist_ok=True)
+    try:
+        reload_firewall()
+    except (OSError, subprocess.SubprocessError) as error:
+        print(
+            f"warning: firewall anchor not loaded: {command_failure_text(error)}",
+            file=sys.stderr,
+        )
     controller = process_controller()
     controller.supervise(child_start_lines())
     try:

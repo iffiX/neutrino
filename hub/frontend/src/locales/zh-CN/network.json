@@ -287,6 +287,8 @@
   "ui.network.wifi_scan": "扫描网络",
   "ui.network.wifi_scan_hint": "扫描网络；加入会把这个接口设为 WAN。",
   "ui.network.wifi_scanning": "扫描中…",
+  "ui.network.apply_exposure_hint_system": "改写系统防火墙里 hub 的规则。",
+  "ui.network.exposure_hint_system": "这台机器在哪些网络上接受对 hub 自身端口的连接：面板、agent 通道、AI 网关、SOCKS 端口和虚拟网的对端端口。",
   "ui.overlay.add": "添加",
   "ui.overlay.address_assigning": "分配中…",
   "ui.overlay.address_label": "虚拟网地址",

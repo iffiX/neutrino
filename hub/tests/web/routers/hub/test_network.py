@@ -9,6 +9,8 @@ The validations are the point. Each one stands between a saved form and a
 gateway that has stopped being reachable.
 """
 
+import socket
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -19,11 +21,19 @@ from neutrino_hub.modules.router.connections import (
 )
 from neutrino_hub.modules.router.credentials import RouterCredentialReader
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
-from neutrino_hub.modules.router.link_status import LINK_KIND_WIFI
+from neutrino_hub.modules.router import link_status
+from neutrino_hub.modules.router.link_status import LINK_KIND_WIFI, RouterLinkStatus
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import network as network_router
 
-from tests.conftest import StubLinkStatus, lan_entry, link, wan_entry
+from tests.conftest import (
+    FakePowerShell,
+    FakePsutil,
+    StubLinkStatus,
+    lan_entry,
+    link,
+    wan_entry,
+)
 
 UPSTREAM_GATEWAY = "198.51.100.129"
 
@@ -1229,3 +1239,88 @@ def test_a_write_that_says_nothing_about_interfaces_leaves_the_exposure_alone(bo
 
     assert response.status_code == 200
     assert runtime.network().exposed_device_names == ["enp1s0"]
+
+
+# --- A server on Windows, its interfaces read through psutil ---------------
+
+
+@pytest.fixture
+def windows_server(on_windows, monkeypatch):
+    """A Windows hub: two configured adapters, one nobody named, and NetBird."""
+    machine = FakePsutil()
+    machine.addresses = {
+        "Loopback Pseudo-Interface 1": [(socket.AF_INET, "127.0.0.1", "255.0.0.0")],
+        "Ethernet Instance 0 2": [
+            (FakePsutil.AF_LINK, "02-00-5E-10-00-02", None),
+            (socket.AF_INET, "10.0.0.7", "255.255.255.0"),
+        ],
+        "Wi-Fi": [
+            (FakePsutil.AF_LINK, "02-00-5E-10-00-03", None),
+            (socket.AF_INET, "192.168.1.20", "255.255.255.0"),
+        ],
+        "Ethernet 3": [(socket.AF_INET, "172.16.0.2", "255.255.255.0")],
+        "wt0": [(socket.AF_INET, "100.88.38.71", "255.255.0.0")],
+    }
+    machine.stats = {name: (True, 1000) for name in machine.addresses}
+    monkeypatch.setattr(link_status, "psutil", machine)
+    monkeypatch.setattr(link_status, "run_powershell", FakePowerShell())
+    config = RouterNetworkConfig.from_dict(
+        {
+            "mode": "server",
+            "interfaces": [
+                {"name": "Ethernet Instance 0 2", "is_exposed": True},
+                {"name": "Wi-Fi", "is_exposed": False},
+            ],
+            "overlays": [{"provider": "netbird", "is_enabled": True}],
+        }
+    )
+    runtime = FakeRuntime(config, RouterLinkStatus())
+    runtime.overlay_devices = {"netbird": ["wt0"]}
+    monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
+
+    app = FastAPI()
+    app.include_router(network_router.router)
+    app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[get_runtime] = lambda: runtime
+    with TestClient(app) as client:
+        yield client, runtime
+
+
+def test_a_windows_server_lists_its_interfaces_and_whether_each_answers(
+    windows_server,
+):
+    client, _ = windows_server
+
+    view = client.get("/api/hub/network").json()
+
+    assert view["hub_os"] == "windows"
+    assert {
+        entry["settings"]["name"]: (
+            entry["settings"]["role"],
+            entry["settings"]["is_exposed"],
+            entry["link"]["ipv4_address"],
+        )
+        for entry in view["interfaces"]
+    } == {
+        "Ethernet 3": ("disabled", True, "172.16.0.2/24"),
+        "Ethernet Instance 0 2": ("disabled", True, "10.0.0.7/24"),
+        "Wi-Fi": ("disabled", False, "192.168.1.20/24"),
+    }
+    assert [(row["provider"], row["address"]) for row in view["overlays"]] == [
+        ("netbird", "100.88.38.71")
+    ]
+
+
+def test_closing_an_interface_nobody_named_stores_it_closed(windows_server):
+    client, runtime = windows_server
+
+    response = client.post(
+        "/api/hub/network/set", json=_options(exposed=["Ethernet Instance 0 2"])
+    )
+
+    assert response.status_code == 200
+    network = runtime.network()
+    assert network.interface("Ethernet 3").is_exposed is False
+    assert network.interface("wt0") is None
+    assert network.exposed_device_names == ["Ethernet Instance 0 2"]
+    assert runtime.applied == [None]
