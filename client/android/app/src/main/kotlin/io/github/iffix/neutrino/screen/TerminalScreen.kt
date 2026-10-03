@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -374,17 +375,23 @@ private fun StatusLine(tab: TerminalTab?, onPersist: (TerminalTab, Boolean, Bool
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicText(
+            val status =
                 when (tab?.phase) {
                     TerminalPhase.ENDED -> words.word("ui.terminal_ended")
                     TerminalPhase.DETACHED -> words.word("ui.terminal_detached")
-                    else -> words.word("ui.terminal_keys")
-                },
-                style = NeutrinoTheme.mono.copy(color = palette.textMuted),
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+                    else -> null
+                }
+            if (status != null) {
+                BasicText(
+                    status,
+                    style = NeutrinoTheme.mono.copy(color = palette.textMuted),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
             if (tab != null) {
                 ToggleSwitch(
                     words.word("ui.terminal_persistent"),
