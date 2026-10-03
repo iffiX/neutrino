@@ -32,6 +32,8 @@ from venv_tree import (
     version,
     write,
     WRAPPER,
+    FIRST_INSTALL,
+    stage_desktop_entry,
 )
 
 UNIT_DIR = "usr/lib/systemd/system"
@@ -75,12 +77,7 @@ post_install() {
     install -d -m 755 /var/lib/neutrino/hub
     install -d -m 755 /var/lib/neutrino/hub/generated
     install -d -m 755 /var/log/neutrino/hub
-    echo ""
-    echo "  Neutrino Hub installed. Set it up with:"
-    echo ""
-    echo "      sudo nhub setup"
-    echo ""
-}
+@FIRST_INSTALL@}
 
 post_upgrade() {
     # An upgrade can change the unit files and the software they start, and
@@ -179,8 +176,12 @@ def main() -> int:
             is_executable=True,
         )
         write(payload / UNIT_DIR / "neutrino_hub_web.service", panel_unit())
+        stage_desktop_entry(payload)
 
-        write(root / f"{PACKAGE_NAME}.install", INSTALL_SCRIPT)
+        write(
+            root / f"{PACKAGE_NAME}.install",
+            INSTALL_SCRIPT.replace("@FIRST_INSTALL@", FIRST_INSTALL),
+        )
         write(
             root / "PKGBUILD",
             PKGBUILD.format(

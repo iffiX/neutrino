@@ -6,8 +6,8 @@ hub under the hub's directory of the one Neutrino tree with its data beside
 it, the programs it drives under ``bin``, the geodata and the agent's own
 package in the state directory with the manifest naming every agent
 package, the link on the path, the LaunchDaemon running ``nhub run``, the
-postinstall making the roots and loading the job only on an upgrade, and
-the name the release publishes it under.
+postinstall making the roots and starting the job, the ``Neutrino Hub``
+application entry, and the name the release publishes it under.
 """
 
 import json
@@ -182,7 +182,10 @@ def test_no_agent_for_this_machine_stops_the_build(tmp_path, monkeypatch):
 def test_every_mach_o_file_is_signed_and_nothing_else(laid_out):
     staged, signed, _calls = laid_out
     app = staged["root"] / APP
+    entry = staged["root"] / "Applications" / "Neutrino Hub.app"
 
+    assert signed[-1] == entry
+    signed = signed[:-1]
     assert sorted(path.name for path in signed) == [
         "cli-proxy-api",
         "easytier-core",
@@ -205,7 +208,7 @@ def test_the_daemon_runs_nhub_run_into_the_hubs_log(laid_out):
     assert job["KeepAlive"] is True
 
 
-def test_the_postinstall_makes_the_roots_and_loads_nothing_on_a_fresh_install(
+def test_the_postinstall_makes_the_roots_and_starts_the_service(
     laid_out,
 ):
     staged, _signed, _calls = laid_out
@@ -219,11 +222,35 @@ def test_the_postinstall_makes_the_roots_and_loads_nothing_on_a_fresh_install(
     assert "chmod 700" in postinstall
     assert 'mkdir -p "/Library/Logs/Neutrino/hub"' in postinstall
     marker = str(build_hub_macos.RELOAD_MARKER)
-    bootstrap = postinstall.index("launchctl bootstrap")
-    assert postinstall.index(f'if [ -f "{marker}" ]') < bootstrap
-    assert "kickstart" not in postinstall
+    upgrade = postinstall.index(f'if [ -f "{marker}" ]')
+    upgrade_end = postinstall.index("fi\n", upgrade)
+    fresh = postinstall[upgrade_end:]
+    assert (
+        "launchctl bootstrap system /Library/LaunchDaemons/com.neutrino.hub.plist"
+        in (fresh)
+    )
+    assert "launchctl kickstart system/com.neutrino.hub" in fresh
+    assert '"/usr/local/bin/nhub" open --print' in fresh
+    assert "kickstart" not in postinstall[:upgrade_end]
     for script in ("preinstall", "postinstall"):
         assert (staged["scripts"] / script).stat().st_mode & 0o111
+
+
+def test_the_entry_is_a_bundle_whose_script_opens_the_panel(laid_out):
+    staged, _signed, _calls = laid_out
+    contents = staged["root"] / "Applications" / "Neutrino Hub.app" / "Contents"
+
+    information = plistlib.loads((contents / "Info.plist").read_bytes())
+    script = contents / "MacOS" / "Neutrino Hub"
+
+    assert information["CFBundleExecutable"] == "Neutrino Hub"
+    assert information["CFBundleName"] == "Neutrino Hub"
+    assert information["CFBundlePackageType"] == "APPL"
+    assert information["CFBundleShortVersionString"] == "9.9.9"
+    assert information["CFBundleIconFile"] == "neutrino_hub"
+    assert script.read_text() == '#!/bin/sh\nexec "/usr/local/bin/nhub" open\n'
+    assert script.stat().st_mode & 0o111
+    assert (contents / "Resources" / "neutrino_hub.icns").read_bytes()[:4] == b"icns"
 
 
 def test_the_preinstall_marks_a_loaded_service_for_loading_again(tmp_path):

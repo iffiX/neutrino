@@ -3,8 +3,8 @@
 wix is not run here, and neither is the compiler, so what is asserted is the
 document the build writes and the payload it lays out with the compile and
 the downloads stood in for: the hub registered as a LocalSystem service with
-``service run``, recovered when it ends and left stopped by the install,
-started again by an upgrade, the program folder and the data folder of the
+``service run``, recovered when it ends and started by the install, the
+``Neutrino Hub`` Start menu shortcut, the program folder and the data folder of the
 one Neutrino tree, the data folder closed to everyone but SYSTEM and the
 administrators, the programs with EasyTier's driver and the stand-in
 ``packet.dll`` under ``bin``, the agent's own installer in the state
@@ -36,6 +36,7 @@ def document():
         "payload": "C:\\build\\payload",
         "binary": "C:\\build\\nhub.exe",
         "state": "C:\\build\\state",
+        "icon": "C:\\build\\neutrino_hub.ico",
     }
     source = build_hub_windows.wix_source(
         staged, "9.9.9", "iffiX <someone@example.com>"
@@ -59,7 +60,7 @@ def test_the_installer_has_a_product_identity_of_its_own(document):
     assert package.get("Version") == "9.9.9"
 
 
-def test_the_hub_is_a_localsystem_service_registered_and_left_stopped(document):
+def test_the_hub_is_a_localsystem_service_registered_and_started(document):
     _source, root = document
 
     install = by_id(root, WXS + "ServiceInstall", "HubServiceInstall")
@@ -68,7 +69,7 @@ def test_the_hub_is_a_localsystem_service_registered_and_left_stopped(document):
     assert install.get("Start") == "auto"
     assert install.get("Arguments") == "service run"
     control = by_id(root, WXS + "ServiceControl", "HubServiceControl")
-    assert control.get("Start") is None
+    assert control.get("Start") == "install"
     assert (control.get("Stop"), control.get("Remove")) == ("both", "uninstall")
     assert by_id(root, WXS + "File", "HubServiceFile").get("Source") == (
         "C:\\build\\nhub.exe"
@@ -85,22 +86,24 @@ def test_the_service_is_started_again_when_it_ends(document):
         assert recovery.get(f"{failure}FailureActionType") == "restart"
 
 
-def test_an_upgrade_starts_the_service_again_and_a_fresh_install_does_not(
-    document,
-):
+def test_no_custom_action_starts_the_service_beside_its_control(document):
     _source, root = document
 
-    action = by_id(root, WXS + "CustomAction", "StartHubAfterUpgrade")
-    assert action.get("ExeCommand") == '"[SystemFolder]sc.exe" start neutrino_hub'
-    assert action.get("Impersonate") == "no"
-    assert action.get("Return") == "ignore"
-    (custom,) = [
-        node
-        for node in root.iter(WXS + "Custom")
-        if node.get("Action") == "StartHubAfterUpgrade"
-    ]
-    assert custom.get("After") == "StartServices"
-    assert custom.get("Condition") == "WIX_UPGRADE_DETECTED AND NOT REMOVE"
+    assert list(root.iter(WXS + "CustomAction")) == []
+
+
+def test_the_start_menu_entry_runs_nhub_open(document):
+    _source, root = document
+
+    shortcut = by_id(root, WXS + "Shortcut", "HubEntryShortcut")
+    assert shortcut.get("Name") == "Neutrino Hub"
+    assert shortcut.get("Directory") == "ProgramMenuFolder"
+    assert shortcut.get("Target") == "[INSTALLFOLDER]nhub.exe"
+    assert shortcut.get("Arguments") == "open"
+    assert shortcut.get("Icon") == "HubIcon"
+    assert by_id(root, WXS + "Icon", "HubIcon").get("SourceFile") == (
+        "C:\\build\\neutrino_hub.ico"
+    )
 
 
 def test_the_folders_are_the_hubs_own_in_the_one_neutrino_tree(document):

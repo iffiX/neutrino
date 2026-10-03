@@ -5,6 +5,7 @@ maintainer scripts written beside it.
 """
 
 import build_deb
+import build_pkg
 import build_rpm
 import venv_tree
 
@@ -25,6 +26,8 @@ def _spec():
         requires="systemd",
         recommends="hostapd",
         prune=venv_tree.PRUNE_UNTRACKED,
+        desktop=venv_tree.DESKTOP_ENTRY_NAME,
+        first_install=venv_tree.FIRST_INSTALL,
     )
 
 
@@ -90,3 +93,62 @@ def test_the_rpm_leaves_the_configuration_where_a_reinstall_finds_it():
 
     assert "rm -rf /opt/neutrino/hub\n" in spec
     assert "rm -rf /etc/neutrino" not in spec
+
+
+def test_a_first_install_starts_the_panel_unit_and_prints_the_wizard_address():
+    first = venv_tree.FIRST_INSTALL
+
+    assert "systemctl enable --now neutrino_hub_web.service" in first
+    assert 'address="$(nhub open --print 2>/dev/null)"' in first
+    assert "sudo nhub setup" in first
+
+
+def test_the_deb_starts_the_panel_on_a_first_install_and_not_on_an_upgrade(tmp_path):
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    postinst = (tmp_path / "DEBIAN/postinst").read_text()
+
+    assert venv_tree.FIRST_INSTALL in postinst
+    assert postinst.index("exit 0") < postinst.index(venv_tree.FIRST_INSTALL)
+
+
+def test_every_linux_package_carries_the_neutrino_hub_entry(tmp_path):
+    build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
+
+    entry = (tmp_path / "usr/share/applications/neutrino-hub.desktop").read_text()
+
+    assert "Name=Neutrino Hub\n" in entry
+    assert "Exec=nhub open\n" in entry
+    assert "Icon=neutrino-hub\n" in entry
+    assert "Categories=Network;\n" in entry
+    for edge in venv_tree.DESKTOP_ICON_EDGES:
+        icon = tmp_path / f"usr/share/icons/hicolor/{edge}x{edge}/apps/neutrino-hub.png"
+        assert icon.read_bytes().startswith(b"\x89PNG")
+    spec = _spec()
+    assert "/usr/share/applications/neutrino-hub.desktop\n" in spec
+    assert "/usr/share/icons/hicolor/*/apps/neutrino-hub.png\n" in spec
+
+
+def test_the_rpm_starts_the_panel_on_a_first_install_alone():
+    spec = _spec()
+    post = spec[spec.index("%post\n") : spec.index("%preun")]
+
+    assert post.index("else\n") < post.index(venv_tree.FIRST_INSTALL)
+
+
+def test_the_arch_package_starts_the_panel_on_a_first_install_alone():
+    script = build_pkg.INSTALL_SCRIPT.replace(
+        "@FIRST_INSTALL@", venv_tree.FIRST_INSTALL
+    )
+    install = script[script.index("post_install()") : script.index("post_upgrade()")]
+    upgrade = script[script.index("post_upgrade()") : script.index("pre_remove()")]
+
+    assert venv_tree.FIRST_INSTALL in install
+    assert "nhub open" not in upgrade
+
+
+def test_the_panel_unit_starts_again_when_the_wizard_exits_into_the_panel():
+    unit = venv_tree.panel_unit()
+
+    assert "Restart=on-failure\n" in unit
+    assert "RestartForceExitStatus=75\n" in unit

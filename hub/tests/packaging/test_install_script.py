@@ -70,7 +70,10 @@ cp "$served" "$target"
     "apt-get": RECORDER,
     "dnf": RECORDER,
     "pacman": RECORDER,
-    "nhub": RECORDER,
+    "nhub": """#!/bin/sh
+echo "nhub $*" >> "$FAKE_LOG"
+if [ -n "$FAKE_ADDRESS" ]; then echo "$FAKE_ADDRESS"; fi
+""",
 }
 
 
@@ -138,7 +141,7 @@ def stand_ins(tmp_path):
 
 
 def _installs(asked):
-    return [line for line in asked if not line.startswith(("curl", "sudo"))]
+    return [line for line in asked if not line.startswith(("curl", "sudo", "nhub"))]
 
 
 def test_the_script_is_posix_sh_and_ends_by_running_main():
@@ -219,10 +222,27 @@ def test_a_mac_installs_the_pkg_of_its_machine(stand_ins, machine, name):
     assert install.endswith(f"/{name} -target /")
 
 
-def test_the_hub_is_set_up_afterwards_or_told_how_without_a_terminal(stand_ins):
-    result, asked = stand_ins(system="Darwin", machine="arm64")
+def test_without_a_terminal_the_hub_prints_the_wizard_address(stand_ins):
+    address = "http://192.0.2.1:8080/?token=t0ken"
+    result, asked = stand_ins(
+        system="Darwin", machine="arm64", environment={"FAKE_ADDRESS": address}
+    )
 
-    assert "Set the hub up with: sudo nhub setup" in result.stdout
+    assert f"Set the hub up in a browser at: {address}" in result.stdout
+    assert "nhub open --print" in asked
+    assert not any(line.startswith("nhub setup") for line in asked)
+
+
+def test_without_an_address_the_hub_says_how_to_open_the_wizard(stand_ins):
+    result, _asked = stand_ins(system="Darwin", machine="arm64")
+
+    assert "Set the hub up with: sudo nhub open" in result.stdout
+
+
+def test_an_agent_prints_no_wizard_address(stand_ins):
+    result, asked = stand_ins("agent")
+
+    assert "Set the hub up" not in result.stdout
     assert not any(line.startswith("nhub") for line in asked)
 
 

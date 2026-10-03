@@ -155,8 +155,13 @@ main() {
     [ "$component" = hub ] || return 0
     if (: </dev/tty) 2>/dev/null; then
         $as_root nhub setup </dev/tty
+        return
+    fi
+    address=$($as_root nhub open --print 2>/dev/null) || address=""
+    if [ -n "$address" ]; then
+        echo "Set the hub up in a browser at: $address"
     else
-        echo "Set the hub up with: sudo nhub setup"
+        echo "Set the hub up with: sudo nhub open"
     fi
 }
 

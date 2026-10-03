@@ -107,3 +107,52 @@ def test_a_failing_install_script_fails_the_check(check, monkeypatch, tmp_path):
 def test_the_scripts_it_runs_are_the_ones_a_release_publishes(check):
     assert (check.INSTALL_SCRIPTS_DIR / "install.sh").is_file()
     assert (check.INSTALL_SCRIPTS_DIR / "install.ps1").is_file()
+
+
+class _Page:
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        return False
+
+    def close(self):
+        pass
+
+
+def _refused(check, url, code):
+    return check.urllib.error.HTTPError(url, code, "refused", {}, None)
+
+
+def test_the_wizard_is_the_page_and_an_api_that_refuses_without_the_token(
+    check, monkeypatch
+):
+    asked = []
+
+    def urlopen(url, timeout):
+        asked.append(url)
+        if url == check.HUB_WIZARD_API_URL:
+            raise _refused(check, url, 403)
+        return _Page()
+
+    monkeypatch.setattr(check.urllib.request, "urlopen", urlopen)
+
+    check._wait_for_wizard()
+
+    assert asked == [check.HUB_WIZARD_PAGE_URL, check.HUB_WIZARD_API_URL]
+
+
+def test_a_panel_answering_before_setup_is_not_the_wizard(check, monkeypatch):
+    def urlopen(url, timeout):
+        if url == check.HUB_WIZARD_API_URL:
+            raise _refused(check, url, 404)
+        return _Page()
+
+    monkeypatch.setattr(check.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(check, "HUB_PANEL_WAIT_S", 0.01)
+    monkeypatch.setattr(check.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(SystemExit, match="answered 404"):
+        check._wait_for_wizard()

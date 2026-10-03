@@ -102,11 +102,20 @@ function Install-Neutrino {
 
     if ($Component -ne 'hub') { return }
     $nhub = Join-Path $env:ProgramFiles 'Neutrino\hub\nhub.exe'
-    if ([Console]::IsInputRedirected) {
-        Write-Output "Set the hub up with: & '$nhub' setup"
+    if (-not [Console]::IsInputRedirected) {
+        & $nhub setup
         return
     }
-    & $nhub setup
+    try {
+        $address = & $nhub open --print 2>$null
+    } catch {
+        $address = $null
+    }
+    if ($address) {
+        Write-Output "Set the hub up in a browser at: $address"
+    } else {
+        Write-Output "Set the hub up with: & '$nhub' open"
+    }
 }
 
 Install-Neutrino @args
