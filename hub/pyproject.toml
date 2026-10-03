@@ -18,6 +18,9 @@ dependencies = [
     "pyyaml>=6.0",
     # Seals the credential vault; already present transitively via asyncssh.
     "cryptography>=43",
+    # The certificate bundle public downloads are verified against where the
+    # compiled hub's OpenSSL has no store of its own (macOS).
+    "certifi>=2024.2.2",
 ]
 
 [project.optional-dependencies]

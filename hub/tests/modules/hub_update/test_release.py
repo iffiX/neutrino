@@ -248,7 +248,7 @@ def test_the_network_read_sends_a_user_agent(monkeypatch):
         def read(self):
             return b"{}"
 
-    def urlopen(request, timeout):
+    def urlopen(request, timeout, context=None):
         seen["headers"] = dict(request.header_items())
         seen["timeout"] = timeout
         return Reply()

@@ -31,6 +31,7 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_GEODATA_VERSION_PATH,
 )
 from neutrino_hub.utils.constants import UTILS_GEODATA_DIR
+from neutrino_hub.utils.tls_trust import public_ssl_context
 
 
 @dataclass(frozen=True)
@@ -289,5 +290,7 @@ def _read(url: str) -> bytes:
     Raises:
         OSError: If it cannot be reached.
     """
-    with urllib.request.urlopen(url, timeout=XRAY_GEODATA_TIMEOUT_S) as reply:
+    with urllib.request.urlopen(
+        url, timeout=XRAY_GEODATA_TIMEOUT_S, context=public_ssl_context()
+    ) as reply:
         return reply.read()

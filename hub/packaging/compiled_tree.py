@@ -154,6 +154,7 @@ def compile_hub(
         source_root=tree,
         options=(
             *(f"--include-package={name}" for name in COMPILED_PACKAGES),
+            "--include-package-data=certifi",
             *options,
         ),
     )

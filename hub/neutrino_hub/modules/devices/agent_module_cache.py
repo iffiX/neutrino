@@ -39,6 +39,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
 )
+from neutrino_hub.utils.tls_trust import public_ssl_context
 
 
 @dataclass
@@ -541,7 +542,9 @@ class AgentModuleCache:
         request = urllib.request.Request(url, headers=AGENT_MODULE_BROWSER_HEADERS)
         try:
             with urllib.request.urlopen(
-                request, timeout=AGENT_MODULE_FETCH_TIMEOUT_S
+                request,
+                timeout=AGENT_MODULE_FETCH_TIMEOUT_S,
+                context=public_ssl_context(),
             ) as response:
                 return read_in_chunks(response, progress)
         except OSError as error:
@@ -571,7 +574,9 @@ class AgentModuleCache:
         )
         try:
             with urllib.request.urlopen(
-                request, timeout=AGENT_MODULE_FETCH_TIMEOUT_S
+                request,
+                timeout=AGENT_MODULE_FETCH_TIMEOUT_S,
+                context=public_ssl_context(),
             ) as response:
                 release = json.load(response)
         except (OSError, ValueError) as error:

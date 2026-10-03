@@ -15,6 +15,7 @@ plan and state files.
 """
 
 import ipaddress
+import socket
 import json
 import subprocess
 import threading
@@ -403,7 +404,13 @@ def _uplink(device: str) -> "dict | None":
 
 
 def _resolved(name: str, *, server: str, port: int) -> str:
-    """One name as an IPv4 address, asked of the direct resolver; empty when none."""
+    """One name as an IPv4 address; empty when no resolver has one.
+
+    The direct resolver is asked first, the system's when it has no answer:
+    an exit left without its host route would still leave by the uplink,
+    bound to it, but the route is what keeps it there when the binding
+    cannot.
+    """
     if not name:
         return ""
     try:
@@ -411,9 +418,16 @@ def _resolved(name: str, *, server: str, port: int) -> str:
     except ValueError:
         pass
     try:
-        return resolve_direct(name, server=server, port=port) or ""
+        address = resolve_direct(name, server=server, port=port) or ""
+    except OSError:
+        address = ""
+    if address:
+        return address
+    try:
+        found = socket.getaddrinfo(name, None, socket.AF_INET, socket.SOCK_STREAM)
     except OSError:
         return ""
+    return str(found[0][4][0]) if found else ""
 
 
 def _overlay_server_hosts(network: RouterNetworkConfig) -> list:

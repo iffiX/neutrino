@@ -39,6 +39,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_PACKAGES_DIR_NAME,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+from neutrino_hub.utils.tls_trust import public_ssl_context
 
 # What each format spells the same machine, mapped to the name the agent's
 # platform tuple reports.
@@ -359,7 +360,7 @@ class AgentPackageCache:
         """
         try:
             with urllib.request.urlopen(
-                url, timeout=AGENT_PACKAGE_FETCH_TIMEOUT_S
+                url, timeout=AGENT_PACKAGE_FETCH_TIMEOUT_S, context=public_ssl_context()
             ) as response:
                 content = response.read(AGENT_PACKAGE_FETCH_LIMIT_BYTES + 1)
         except OSError as error:

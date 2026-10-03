@@ -2,10 +2,11 @@
 
 ``ifconfig`` gives the utun device tun2socks opened its address, ``sysctl``
 turns IP forwarding on when the plan forwards for the overlays, and
-``route add`` adds each route in the plan's order. Taking it down deletes
-each recorded route in reverse with ``route delete`` and sets forwarding
-back to what it read before. A route onto the device that went away with it
-is already gone, which is not an error.
+``route add`` adds the uplink's scoped default route and then each route in
+the plan's order. Taking it down deletes each recorded route in reverse with
+``route delete`` and sets forwarding back to what it read before. A route
+onto the device that went away with it is already gone, which is not an
+error, and a scoped default route the system already held is left as it is.
 
 Not pure: runs ``ifconfig``, ``sysctl`` and ``route``.
 """
@@ -16,6 +17,7 @@ from neutrino_hub.modules.tun.renderer import (
     TunPlan,
     darwin_address_command,
     darwin_route_command,
+    darwin_scoped_default_route,
 )
 from neutrino_hub.utils.subprocess_run import run as run_command
 
@@ -35,8 +37,11 @@ class TunDarwinApplier:
     def bring_up(self, plan: TunPlan, *, keep=None) -> TunAppliedState:
         """Give the device its address, turn forwarding on, add the routes.
 
-        A route that cannot be added is recorded as a failure and the rest
-        are still tried. Nothing is added when the device takes no address.
+        The uplink's scoped default route goes in ahead of the plan's
+        routes, so the outbounds bound to the uplink keep a route to every
+        address while the halves are added. A route that cannot be added
+        is recorded as a failure and the rest are still tried. Nothing is
+        added when the device takes no address.
 
         Args:
             plan: The plan.
@@ -66,9 +71,15 @@ class TunDarwinApplier:
                 else:
                     state.failures.append(_failure(turned))
                 _keep(keep, state)
-        for route in plan.routes:
+        routes = list(plan.routes)
+        scoped = darwin_scoped_default_route(plan)
+        if scoped is not None:
+            routes.insert(0, scoped)
+        for route in routes:
             added = self._run(darwin_route_command("add", route), is_checked=False)
             if not added.is_success:
+                if route.is_scoped and _is_already_there(added):
+                    continue
                 state.failures.append(_failure(added))
                 continue
             state.routes.append(route)
@@ -106,6 +117,11 @@ def _keep(keep, state: TunAppliedState) -> None:
     """Hand the state to the keeper, when there is one."""
     if keep is not None:
         keep(state)
+
+
+def _is_already_there(result) -> bool:
+    """Whether ``route add`` refused because the route exists."""
+    return "exists" in (result.stderr or result.stdout or "").lower()
 
 
 def _failure(result) -> str:

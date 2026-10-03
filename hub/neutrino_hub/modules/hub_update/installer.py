@@ -104,6 +104,7 @@ from neutrino_hub.system.machine import distribution_family, machine_architectur
 from neutrino_hub.system.systemd_ctl import unit_state
 from neutrino_hub.utils import constants
 from neutrino_hub.utils.subprocess_run import run
+from neutrino_hub.utils.tls_trust import public_ssl_context
 
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 PROGRESS_STEPS = 10
@@ -1470,7 +1471,9 @@ def _open_url(url: str):
         OSError: If it cannot be reached.
     """
     request = urllib.request.Request(url, headers=HUB_UPDATE_HEADERS)
-    return urllib.request.urlopen(request, timeout=HUB_UPDATE_FETCH_TIMEOUT_S)
+    return urllib.request.urlopen(
+        request, timeout=HUB_UPDATE_FETCH_TIMEOUT_S, context=public_ssl_context()
+    )
 
 
 def _file_digest(path: Path) -> str:

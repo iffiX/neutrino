@@ -114,6 +114,10 @@ class FakeNetbirdReader:
         )
 
 
+def _no_system_answer(*args, **keywords):
+    raise OSError("no resolver")
+
+
 @pytest.fixture
 def machine(monkeypatch):
     """A macOS or Windows box with one uplink, faked; returns its setter."""
@@ -131,6 +135,7 @@ def machine(monkeypatch):
     monkeypatch.setattr(ops, "_config", lambda name: json.loads(json.dumps(NODES)))
     monkeypatch.setattr(ops, "resolve_node_secrets", resolve_secrets)
     monkeypatch.setattr(ops, "resolve_direct", resolve)
+    monkeypatch.setattr(ops.socket, "getaddrinfo", _no_system_answer)
     monkeypatch.setattr(ops, "NetbirdStatusReader", FakeNetbirdReader)
     monkeypatch.setattr(
         ops,
@@ -212,6 +217,22 @@ def test_every_name_kept_out_is_asked_of_the_direct_resolver(machine):
         "streamline-de-fra1-0.relay.netbird.io",
         "public.easytier.top",
     ]
+
+
+def test_a_name_the_direct_resolver_has_no_answer_for_is_asked_of_the_system(
+    machine, monkeypatch
+):
+    monkeypatch.setattr(ops, "resolve_direct", lambda name, *, server, port: None)
+    monkeypatch.setattr(
+        ops.socket,
+        "getaddrinfo",
+        lambda name, *a, **k: [(None, None, None, "", ("198.51.100.77", 0))],
+    )
+    network = machine("darwin", has_overlays=False)
+
+    rendered = ops.plan_tun(network, {**ROUTING, **SCOPES["hub"]})
+
+    assert "198.51.100.77/32" in [route.destination for route in rendered.routes]
 
 
 def test_a_console_named_by_its_token_alone_is_easytiers_own(machine, monkeypatch):

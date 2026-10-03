@@ -14,6 +14,7 @@ from neutrino_hub.modules.tun.renderer import (
     TunRoute,
     darwin_address_command,
     darwin_route_command,
+    darwin_scoped_default_route,
     is_tun_wanted,
     render_start_line,
     render_tun_plan,
@@ -189,3 +190,24 @@ def test_windows_names_the_next_hop_or_the_link():
             "metric": 1,
         },
     ]
+
+
+def test_the_plan_keeps_the_uplink_gateway_for_the_scoped_default():
+    rendered = plan(kept_out=["223.5.5.5"])
+
+    scoped = darwin_scoped_default_route(rendered)
+
+    assert rendered.gateway == "192.168.1.1"
+    assert scoped == TunRoute("0.0.0.0/0", "en0", "192.168.1.1", is_scoped=True)
+    assert darwin_route_command("add", scoped) == [
+        "route",
+        "-n",
+        "add",
+        "-ifscope",
+        "en0",
+        "-net",
+        "0.0.0.0/0",
+        "192.168.1.1",
+    ]
+    assert TunRoute.from_dict(scoped.to_dict()) == scoped
+    assert darwin_scoped_default_route(plan(gateway="")) is None

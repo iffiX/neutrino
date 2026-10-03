@@ -31,6 +31,8 @@ manager starts them again as the panel.
 
 import argparse
 import asyncio
+import contextlib
+import logging
 import os
 import queue
 import shutil
@@ -673,6 +675,24 @@ def _supervise(arguments) -> int:
         _stop(children)
 
 
+def _log_to_service_file() -> None:
+    """Send the service's own lines to the file the service manager keeps.
+
+    Standard output is line-buffered, since launchd and the service manager
+    hand it a file and a full buffer is the only thing that would flush it,
+    and the hub's loggers write to standard error from ``INFO`` up.
+    """
+    with contextlib.suppress(AttributeError, ValueError):
+        sys.stdout.reconfigure(line_buffering=True)
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            stream=sys.stderr,
+            format="%(levelname)s: %(name)s: %(message)s",
+        )
+
+
 def _supervise_service(arguments) -> int:
     """Serve the panel here and run every enabled daemon as a child.
 
@@ -682,6 +702,7 @@ def _supervise_service(arguments) -> int:
     Returns:
         Process exit status.
     """
+    _log_to_service_file()
     for directory in (
         UTILS_LOG_ROOT,
         UTILS_RUNTIME_ROOT,

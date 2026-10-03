@@ -35,22 +35,30 @@ class TunRoute:
         destination: The network, in CIDR form.
         device: The interface the route leaves by.
         gateway: The next hop; empty for a route onto the interface itself.
+        is_scoped: Whether the route holds only for sockets bound to its
+            interface. macOS looks a bound socket's destination up among
+            that interface's own routes, and a default route it added itself
+            is not one of them once a half route onto the TUN device covers
+            the destination; the uplink's scoped default route is what makes
+            the bound outbounds reach anything without a host route.
     """
 
     destination: str
     device: str
     gateway: str = ""
+    is_scoped: bool = False
 
     def to_dict(self) -> dict:
         """The route as the plan and state files keep it.
 
         Returns:
-            ``destination``, ``device`` and ``gateway``.
+            ``destination``, ``device``, ``gateway`` and ``is_scoped``.
         """
         return {
             "destination": self.destination,
             "device": self.device,
             "gateway": self.gateway,
+            "is_scoped": self.is_scoped,
         }
 
     @classmethod
@@ -70,6 +78,7 @@ class TunRoute:
             destination=str(data["destination"]),
             device=str(data["device"]),
             gateway=str(data.get("gateway") or ""),
+            is_scoped=bool(data.get("is_scoped", False)),
         )
 
 
@@ -84,6 +93,8 @@ class TunPlan:
         mtu: The device's MTU.
         start_argv: How tun2socks starts, the program first.
         uplink: The interface the direct routes leave by.
+        gateway: The uplink's next hop; empty when its default route has
+            none.
         routes: The routes, in the order they are added: the direct ones
             first, the two halves onto the device last.
         forwarding_devices: The interfaces IP forwarding is turned on for,
@@ -98,6 +109,7 @@ class TunPlan:
     uplink: str
     routes: tuple
     forwarding_devices: tuple = ()
+    gateway: str = ""
 
     def to_dict(self) -> dict:
         """The plan as the plan file keeps it.
@@ -112,6 +124,7 @@ class TunPlan:
             "mtu": self.mtu,
             "start_argv": list(self.start_argv),
             "uplink": self.uplink,
+            "gateway": self.gateway,
             "routes": [route.to_dict() for route in self.routes],
             "forwarding_devices": list(self.forwarding_devices),
         }
@@ -141,6 +154,7 @@ class TunPlan:
             forwarding_devices=tuple(
                 str(name) for name in data.get("forwarding_devices") or ()
             ),
+            gateway=str(data.get("gateway") or ""),
         )
 
 
@@ -247,6 +261,7 @@ def render_tun_plan(
         uplink=uplink,
         routes=tuple(routes),
         forwarding_devices=tuple(dict.fromkeys(forwarding_devices)),
+        gateway=gateway,
     )
 
 
@@ -281,16 +296,38 @@ def darwin_route_command(verb: str, route: TunRoute) -> list:
     Returns:
         The argument vector: ``-host`` for a single address, ``-net``
         otherwise, through the gateway when the route has one and onto the
-        interface when it does not.
+        interface when it does not; a scoped route carries ``-ifscope`` and
+        its interface ahead of the destination.
     """
     network = ipaddress.ip_network(route.destination, strict=False)
     if network.prefixlen == network.max_prefixlen:
         target = ["-host", str(network.network_address)]
     else:
         target = ["-net", route.destination]
+    scope = ["-ifscope", route.device] if route.is_scoped else []
     if route.gateway:
-        return ["route", "-n", verb, *target, route.gateway]
-    return ["route", "-n", verb, *target, "-interface", route.device]
+        return ["route", "-n", verb, *scope, *target, route.gateway]
+    return ["route", "-n", verb, *scope, *target, "-interface", route.device]
+
+
+def darwin_scoped_default_route(plan: TunPlan) -> TunRoute | None:
+    """The uplink's scoped default route, which macOS needs beside the halves.
+
+    Args:
+        plan: The plan.
+
+    Returns:
+        The default route scoped to the uplink through its gateway, or None
+        when the uplink has no gateway.
+    """
+    if not plan.gateway:
+        return None
+    return TunRoute(
+        destination="0.0.0.0/0",
+        device=plan.uplink,
+        gateway=plan.gateway,
+        is_scoped=True,
+    )
 
 
 def windows_route_document(route: TunRoute) -> dict:

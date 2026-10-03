@@ -73,7 +73,7 @@ def answers(monkeypatch, content: bytes):
     """Make the one release URL answer with these bytes."""
     served = []
 
-    def urlopen(url, timeout=None):
+    def urlopen(url, timeout=None, context=None):
         served.append(url)
         return io.BytesIO(content)
 

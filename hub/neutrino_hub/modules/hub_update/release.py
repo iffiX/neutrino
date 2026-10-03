@@ -34,6 +34,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_TAG_URL,
 )
 from neutrino_hub.utils.version_number import parse_version
+from neutrino_hub.utils.tls_trust import public_ssl_context
 
 VERSION_FIELD = "{version}"
 DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -303,5 +304,7 @@ def _read(url: str) -> bytes:
             ``urllib.error.HTTPError`` kind of it.
     """
     request = urllib.request.Request(url, headers=HUB_UPDATE_HEADERS)
-    with urllib.request.urlopen(request, timeout=HUB_UPDATE_FETCH_TIMEOUT_S) as reply:
+    with urllib.request.urlopen(
+        request, timeout=HUB_UPDATE_FETCH_TIMEOUT_S, context=public_ssl_context()
+    ) as reply:
         return reply.read()
