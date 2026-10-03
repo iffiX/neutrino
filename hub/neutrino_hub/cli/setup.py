@@ -1035,6 +1035,8 @@ def _write_proxy(proxy) -> None:
     routing = read_config("xray/routing.json")
     routing["is_proxy_enabled"] = proxy.is_enabled
     routing["is_local_proxy_enabled"] = proxy.is_enabled and proxy.is_local
+    if not is_linux():
+        routing["is_overlay_proxy_enabled"] = routing["is_local_proxy_enabled"]
     # Two questions, one list: a listener is a port and which way what
     # arrives there leaves, and the wizard asks about one of each kind.
     ports = []

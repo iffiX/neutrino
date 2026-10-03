@@ -483,6 +483,7 @@
   "ui.proxy.summary_total": "共 {count} 个",
   "ui.proxy.title": "代理",
   "ui.proxy.warning_restart": "会重启代理，经过它的连接都会断开。",
+  "ui.proxy.scope_linked_description": "{description}macOS 和 Windows 上这两项一起生效。",
   "ui.signal_bars.title": "信号 {percent}%",
   "ui.sparkline.empty": "无探测",
   "ui.terminals.badge_attached": "{count} 处",

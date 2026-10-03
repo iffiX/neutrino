@@ -483,6 +483,7 @@
   "ui.proxy.summary_total": "{count} total",
   "ui.proxy.title": "Proxy",
   "ui.proxy.warning_restart": "Restarts the proxy; connections through it drop.",
+  "ui.proxy.scope_linked_description": "{description} On macOS and Windows this and the other switch act together.",
   "ui.signal_bars.title": "{percent}% signal",
   "ui.sparkline.empty": "no probes",
   "ui.terminals.badge_attached": "{count} open",
