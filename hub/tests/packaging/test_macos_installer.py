@@ -70,6 +70,11 @@ def _laid_out(tmp_path, monkeypatch, agent_packages, machine):
     monkeypatch.setattr(build_hub_macos.hub_assets, "stage_programs", stage_programs)
     monkeypatch.setattr(build_hub_macos.hub_assets, "stage_geodata", stage_geodata)
     monkeypatch.setattr(build_hub_macos.pkg_build, "sign_ad_hoc", signed.append)
+    monkeypatch.setattr(
+        build_hub_macos.pkg_build,
+        "require_system_links",
+        lambda directory: staged_programs.append(("links", directory, len(signed))),
+    )
 
     staged = build_hub_macos._lay_out(
         tmp_path / "work",
@@ -192,6 +197,14 @@ def test_every_mach_o_file_is_signed_and_nothing_else(laid_out):
         "xray",
     ]
     assert all(str(path).startswith(str(app)) for path in signed)
+
+
+def test_the_whole_app_tree_is_read_back_for_its_links_before_signing(laid_out):
+    staged, _signed, calls = laid_out
+
+    assert [call for call in calls if call[0] == "links"] == [
+        ("links", staged["root"] / APP, 0)
+    ]
 
 
 def test_the_daemon_runs_nhub_run_into_the_hubs_log(laid_out):

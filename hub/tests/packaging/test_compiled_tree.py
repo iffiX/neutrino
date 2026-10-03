@@ -1,6 +1,7 @@
 """The compiled hub's staging, with the compiler stood in for.
 
-What the macOS and Windows packages share: the package copied with its
+What the macOS and Windows packages share: a build environment of its own
+that installs wheels only, the compiler excepted; the package copied with its
 version stamped and its icons, never the checkout's own stamp; the panel
 refused when it is not built; the data copied beside the compiled package;
 and the agent cache seeded with the one package of the hub's own system and
@@ -119,3 +120,28 @@ def test_the_build_python_is_the_pinned_minor(monkeypatch):
         compiled_tree.check_build_python()
 
     assert "3.13" in str(refused.value)
+
+
+def test_the_build_environment_is_its_own_and_installs_wheels_only(
+    tmp_path, monkeypatch
+):
+    commands = []
+    monkeypatch.setattr(compiled_tree.venv_tree, "run", commands.append)
+    monkeypatch.setattr(compiled_tree.sys, "executable", "/opt/python3.13/bin/python3")
+    monkeypatch.setattr(compiled_tree.sys, "platform", "darwin")
+
+    python = compiled_tree.make_build_environment(tmp_path / "venv")
+
+    assert python == tmp_path / "venv" / "bin" / "python3"
+    venv, *installs = commands
+    assert venv == ["/opt/python3.13/bin/python3", "-m", "venv", str(tmp_path / "venv")]
+    assert [command[:4] for command in installs] == [
+        [str(python), "-m", "pip", "install"]
+    ] * 2
+    assert all("--only-binary=:all:" in command for command in installs)
+    assert installs[0][-1] == "nuitka==4.2.1"
+    assert installs[0][installs[0].index("--only-binary=:all:") + 1] == (
+        "--no-binary=nuitka"
+    )
+    assert installs[1][-1] == str(compiled_tree.HUB_ROOT)
+    assert not any("--no-binary" in argument for argument in installs[1])
