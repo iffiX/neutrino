@@ -7,7 +7,9 @@ renewal loads the new certificate into.
 """
 
 import argparse
+import asyncio
 import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -277,16 +279,71 @@ def test_linux_without_only_supervises_as_it_always_did(monkeypatch):
     assert started == ["xray", "cliproxyapi"]
 
 
-def test_outside_linux_the_service_waits_for_setup_instead_of_exiting(monkeypatch):
-    answers = iter([False, False, False, True])
-    naps = []
+@pytest.fixture
+def outside_linux(monkeypatch):
     monkeypatch.setattr(run, "is_linux", lambda: False)
-    monkeypatch.setattr(run, "_is_set_up", lambda: next(answers))
-    monkeypatch.setattr(run.time, "sleep", naps.append)
-    monkeypatch.setattr(run, "_supervise", lambda arguments: 0)
+    monkeypatch.setattr(run, "_stop_on_terminate", lambda: None)
     monkeypatch.setattr(run.sys, "argv", ["nhub-run"])
+
+
+def test_outside_linux_the_service_waits_for_setup_instead_of_exiting(
+    monkeypatch, outside_linux
+):
+    answers = iter([False, False, False, True])
+    stop = threading.Event()
+    naps = []
+    monkeypatch.setattr(run, "_STOP_ASKED", stop)
+    monkeypatch.setattr(stop, "wait", lambda timeout_s: naps.append(timeout_s))
+    monkeypatch.setattr(run, "_is_set_up", lambda: next(answers))
+    monkeypatch.setattr(run, "_supervise", lambda arguments: 0)
     assert run.main() == 0
     assert naps == [run.PLATFORM_SETUP_POLL_S, run.PLATFORM_SETUP_POLL_S]
+
+
+def test_a_stop_while_waiting_for_setup_ends_the_service(monkeypatch, outside_linux):
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(run, "_STOP_ASKED", stop)
+    monkeypatch.setattr(run, "_is_set_up", lambda: False)
+    monkeypatch.setattr(
+        run, "_supervise", lambda arguments: pytest.fail("nothing is served")
+    )
+    assert run.main() == 0
+
+
+def test_outside_linux_sigterm_is_a_stop(monkeypatch):
+    installed = {}
+    stop = threading.Event()
+    monkeypatch.setattr(run, "_STOP_ASKED", stop)
+    monkeypatch.setattr(
+        run.signal,
+        "signal",
+        lambda number, handler: installed.update({number: handler}),
+    )
+
+    run._stop_on_terminate()
+    installed[run.signal.SIGTERM](run.signal.SIGTERM, None)
+
+    assert stop.is_set()
+
+
+def test_a_stop_asked_before_the_servers_start_still_stops_them(monkeypatch):
+    class Server:
+        def __init__(self):
+            self.should_exit = False
+
+        async def serve(self):
+            while not self.should_exit:
+                await asyncio.sleep(0.01)
+
+    stop = threading.Event()
+    monkeypatch.setattr(run, "_STOP_ASKED", stop)
+    run.stop_serving()
+    servers = [Server(), Server()]
+
+    asyncio.run(asyncio.wait_for(run._serve_together(servers), timeout=5))
+
+    assert all(server.should_exit for server in servers)
 
 
 def test_on_linux_a_hub_not_set_up_exits_and_says_so(monkeypatch, capsys):

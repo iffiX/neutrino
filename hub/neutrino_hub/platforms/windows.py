@@ -17,6 +17,7 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_NETBIRD_DAEMON_PORT_WINDOWS,
     PLATFORM_OS_WINDOWS,
     PLATFORM_SERVICE_POLL_S,
+    PLATFORM_SERVICE_STOP_PENDING,
     PLATFORM_SERVICE_STOPPED,
     PLATFORM_SERVICE_UNKNOWN,
     PLATFORM_SERVICE_WAIT_S,
@@ -173,21 +174,29 @@ class WindowsHubPlatform(HubPlatform):
         )
 
     def stop_service(self) -> None:
-        """Stop the hub's service, and wait for it to have stopped.
+        """Stop the hub's service, and wait until ``sc.exe query`` says stopped.
+
+        A service already stopping is only waited for. ``sc.exe stop`` is not
+        relied on to wait; one that has not answered in time is waited past.
 
         Raises:
             subprocess.CalledProcessError: When the manager refuses the stop
                 of a service that runs.
             TimeoutError: When it has not stopped in time.
         """
-        if self.service_state() == PLATFORM_SERVICE_STOPPED:
+        state = self.service_state()
+        if state == PLATFORM_SERVICE_STOPPED:
             return
-        subprocess.run(
-            ["sc.exe", "stop", PLATFORM_WINDOWS_SERVICE_NAME],
-            capture_output=True,
-            timeout=PLATFORM_COMMAND_TIMEOUT_S,
-            check=True,
-        )
+        if state != PLATFORM_SERVICE_STOP_PENDING:
+            try:
+                subprocess.run(
+                    ["sc.exe", "stop", PLATFORM_WINDOWS_SERVICE_NAME],
+                    capture_output=True,
+                    timeout=PLATFORM_COMMAND_TIMEOUT_S,
+                    check=True,
+                )
+            except subprocess.TimeoutExpired:
+                pass
         for _ in range(int(PLATFORM_SERVICE_WAIT_S / PLATFORM_SERVICE_POLL_S)):
             if self.service_state() == PLATFORM_SERVICE_STOPPED:
                 return

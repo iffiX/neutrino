@@ -130,6 +130,8 @@ DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
 SUPPLICANT_DRIVERS = "nl80211,wext"
 # The servers serving now, for a stop asked from another thread.
 _SERVING: list = []
+# Set once a stop is asked, so a stop that comes before the servers start holds.
+_STOP_ASKED = threading.Event()
 # The hub's own NetBird daemon outside Linux: its profile under the state
 # root, its log file, and where its own output goes, which is not that file.
 NETBIRD_CONFIG_RELATIVE = ("netbird", "config.json")
@@ -199,6 +201,8 @@ def main() -> int:
         # Before the set-up check, which it makes itself: the unit is ordered
         # before others, and exiting 1 would restart it forever.
         return _serve_router()
+    if not is_linux():
+        _stop_on_terminate()
     if not _is_set_up():
         if is_linux():
             print(
@@ -208,6 +212,8 @@ def main() -> int:
             )
             return 1
         _wait_for_setup()
+        if _STOP_ASKED.is_set():
+            return 0
     if arguments.only == "web":
         return _serve_panel(arguments)
     return _supervise(arguments)
@@ -221,11 +227,29 @@ def _wait_for_setup() -> None:
     """
     print(f"waiting for nhub setup under {UTILS_CONFIG_DIR}", file=sys.stderr)
     while not _is_set_up():
-        time.sleep(PLATFORM_SETUP_POLL_S)
+        if _STOP_ASKED.wait(PLATFORM_SETUP_POLL_S):
+            return
+
+
+def _stop_on_terminate() -> None:
+    """Make SIGTERM a stop, which ends the panel and then every child.
+
+    launchd stops the service with SIGTERM. Only the main thread can be
+    told of a signal; the Windows service runs this on another thread and
+    is stopped through :func:`stop_serving` instead.
+    """
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, _on_terminate)
+
+
+def _on_terminate(signum, frame) -> None:
+    """Stop serving, on SIGTERM."""
+    stop_serving()
 
 
 def stop_serving() -> None:
-    """Ask every server :func:`_serve_together` runs to stop."""
+    """Ask every server :func:`_serve_together` runs to stop, now or once it starts."""
+    _STOP_ASKED.set()
     for server in list(_SERVING):
         server.should_exit = True
 
@@ -588,6 +612,9 @@ async def _serve_together(servers: list) -> None:
         servers: Configured uvicorn servers.
     """
     _SERVING[:] = servers
+    if _STOP_ASKED.is_set():
+        for server in servers:
+            server.should_exit = True
     tasks = [asyncio.create_task(server.serve()) for server in servers]
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

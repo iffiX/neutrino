@@ -63,6 +63,10 @@ PLATFORM_COMMAND_TIMEOUT_S = 30
 # How long a stop is waited for before the start that follows it.
 PLATFORM_SERVICE_WAIT_S = 30
 PLATFORM_SERVICE_POLL_S = 0.5
+PLATFORM_SERVICE_STOP_PENDING = "stop_pending"
+# How long the Windows service, once asked to stop, waits for the panel and
+# its children to end before it reports stopped; under the 30 s wait hint.
+PLATFORM_WINDOWS_SERVICE_STOP_WAIT_S = 25
 
 # Where the hub's own NetBird daemon answers, apart from the vendor's default
 # a client's NetBird on the same machine keeps.

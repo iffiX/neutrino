@@ -5,20 +5,20 @@
 The dispatcher is handed the process first, inside the manager's 30
 seconds; the panel and its children start once the service reports running,
 as ``nhub run`` starts them. The process's own output goes to ``web.log``
-under the log root, which is the panel's journal there. A stop ends the
-panel and every child before the service reports stopped.
+under the log root, which is the panel's journal there. A stop only asks
+the panel to end, so the service control manager hears back at once; the
+panel's ending stops every child, and then the service reports stopped.
 """
 
 import argparse
 import sys
-import threading
 
 from neutrino_hub.cli import run as run_command
 from neutrino_hub.platforms.constants import (
     PLATFORM_OS_WINDOWS,
     PLATFORM_WINDOWS_SERVICE_NAME,
 )
-from neutrino_hub.platforms.detect import hub_os, process_controller
+from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.platforms.windows_service import ServiceControlDispatcher
 from neutrino_hub.system.constants import (
     SYSTEM_CHILD_LOG_MAX_BYTES,
@@ -28,8 +28,6 @@ from neutrino_hub.system.constants import (
 from neutrino_hub.utils.constants import UTILS_LOG_ROOT
 
 # --- config ---
-# How long a stop waits for the panel and its children to end.
-SERVICE_STOP_WAIT_S = 30
 SERVICE_NOT_FROM_MANAGER = (
     "nhub service run is started by the service control manager; "
     "run nhub start in an administrator PowerShell instead"
@@ -50,23 +48,8 @@ def main() -> int:
     if hub_os() != PLATFORM_OS_WINDOWS:
         print(f"error: {SERVICE_NOT_WINDOWS}", file=sys.stderr)
         return 2
-    ended = threading.Event()
-
-    def on_start() -> None:
-        _write_output_to_log()
-        try:
-            sys.argv = ["nhub run"]
-            run_command.main()
-        finally:
-            ended.set()
-
-    def on_stop() -> None:
-        run_command.stop_serving()
-        ended.wait(SERVICE_STOP_WAIT_S)
-        process_controller().shutdown()
-
     dispatcher = ServiceControlDispatcher(
-        PLATFORM_WINDOWS_SERVICE_NAME, on_start, on_stop
+        PLATFORM_WINDOWS_SERVICE_NAME, _run_hub, run_command.stop_serving
     )
     try:
         dispatcher.run()
@@ -74,6 +57,13 @@ def main() -> int:
         print(f"error: {SERVICE_NOT_FROM_MANAGER} ({error})", file=sys.stderr)
         return 1
     return 0
+
+
+def _run_hub() -> None:
+    """Run the hub as ``nhub run`` does, its output in ``web.log``."""
+    _write_output_to_log()
+    sys.argv = ["nhub run"]
+    run_command.main()
 
 
 def _write_output_to_log() -> None:
