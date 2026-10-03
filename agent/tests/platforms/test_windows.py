@@ -1,28 +1,50 @@
-"""The Windows platform: kernel32 metrics, PowerShell interfaces, sc, winreg.
+"""The Windows platform: native metrics, PowerShell interfaces, sc, winreg.
 
-Nothing here needs Windows: kernel32 and shell32 are fakes that fill the
-structures they are handed, PowerShell and ``sc`` are faked at
-``subprocess.run``, and the registry is a fake ``winreg``. What is pinned is
-what each source is turned into.
+Nothing here needs Windows: kernel32, ntdll, advapi32, pdh, gdi32 and
+shell32 are fakes that fill the structures they are handed, PowerShell and
+``sc`` are faked at ``subprocess.run`` or as the injected runner, and the
+registry is a fake ``winreg``. What is pinned is what each source is turned
+into.
 """
 
+import ctypes
 import json
 import subprocess
 
 import pytest
 
+import neutrino_agent.core.metrics as metrics_module
 import neutrino_agent.platforms.windows as windows_module
+from neutrino_agent.constants import AGENT_PROCESS_TOP_COUNT
+from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.windows import WindowsHostMetricsReader, WindowsPlatform
 
 
+@pytest.fixture(autouse=True)
+def _no_nvidia_smi(monkeypatch):
+    """The machine running the tests has no NVIDIA tool, unless a test says."""
+    monkeypatch.setattr(metrics_module.shutil, "which", lambda name: None)
+
+
 class FakeKernel32:
-    """GetSystemTimes, GlobalMemoryStatusEx and GetTickCount64, scripted."""
+    """GetSystemTimes, GlobalMemoryStatusEx, GetTickCount64 and process
+    handles, scripted."""
 
     def __init__(self):
         self.times = [(0, 0, 0)]
         self.memory = (8 * 1024**3, 2 * 1024**3)
         self.ticks_ms = 90_061_000
         self.is_failing = False
+        self.denied_pids = set()
+        self.closed = []
+
+    def OpenProcess(self, access, is_inherited, pid):
+        assert access == win32.PROCESS_QUERY_LIMITED_INFORMATION
+        return 0 if pid in self.denied_pids else 0x1000 + pid
+
+    def CloseHandle(self, handle):
+        self.closed.append(getattr(handle, "value", handle))
+        return 1
 
     def GetSystemTimes(self, idle, kernel, user):
         if self.is_failing:
@@ -95,7 +117,15 @@ def test_the_first_cpu_sample_is_zero_and_the_next_is_the_share_busy():
     assert reader.read().cpu_percent == pytest.approx(50.0)
 
 
-def test_memory_uptime_and_disk_are_read_and_nothing_else_is_claimed(monkeypatch):
+def refusing_powershell(script, document):
+    raise OSError("powershell is not here")
+
+
+def unreadable_disk(path):
+    raise OSError(path)
+
+
+def test_memory_uptime_and_disk_are_read_and_a_missing_source_is_empty(monkeypatch):
     usage = type("Usage", (), {"total": 200, "used": 50, "free": 150})()
     seen = []
 
@@ -106,14 +136,18 @@ def test_memory_uptime_and_disk_are_read_and_nothing_else_is_claimed(monkeypatch
     monkeypatch.setattr(windows_module.shutil, "disk_usage", disk_usage)
     monkeypatch.setenv("SystemDrive", "D:")
 
-    metrics = WindowsHostMetricsReader(kernel32=FakeKernel32()).read()
+    metrics = WindowsHostMetricsReader(
+        kernel32=FakeKernel32(), powershell=refusing_powershell
+    ).read()
 
     assert metrics.memory_percent == pytest.approx(75.0)
     assert metrics.uptime_s == 90_061
     assert metrics.disk_percent == pytest.approx(25.0)
     assert seen == ["D:\\"]
     assert metrics.load_average == []
+    assert metrics.cpu_core_percents == []
     assert metrics.processes == []
+    assert metrics.gpus == []
     assert metrics.temperature_c is None
 
 
@@ -126,13 +160,472 @@ def test_a_refusing_kernel32_reads_as_the_defaults(monkeypatch):
 
     monkeypatch.setattr(windows_module.shutil, "disk_usage", disk_usage)
 
-    metrics = WindowsHostMetricsReader(kernel32=kernel32).read()
+    metrics = WindowsHostMetricsReader(
+        kernel32=kernel32, powershell=refusing_powershell
+    ).read()
 
     assert (metrics.cpu_percent, metrics.memory_percent, metrics.disk_percent) == (
         0.0,
         0.0,
         0.0,
     )
+
+
+def core_times(*cores):
+    """One SystemProcessorPerformanceInformation buffer: (idle, kernel, user)
+    per core, the kernel time holding the idle time."""
+    entries = (win32.SystemProcessorPerformanceInformation * len(cores))()
+    for entry, (idle, kernel, user) in zip(entries, cores):
+        entry.IdleTime, entry.KernelTime, entry.UserTime = idle, kernel, user
+    return entries
+
+
+class ProcessTable:
+    """One SystemProcessInformation buffer, each image name inside it, as
+    the kernel lays the table out."""
+
+    def __init__(self, processes):
+        """
+        Args:
+            processes: ``(pid, image name, user+kernel time, working set)``.
+        """
+        entry_size = ctypes.sizeof(win32.SystemProcessInformation)
+        names = [name.encode("utf-16-le") for _pid, name, _time, _ws in processes]
+        strides = [(entry_size + len(name) + 7) // 8 * 8 for name in names]
+        self.buffer = ctypes.create_string_buffer(sum(strides))
+        offset = 0
+        for index, (pid, _name, times, working_set) in enumerate(processes):
+            entry = win32.SystemProcessInformation.from_buffer(self.buffer, offset)
+            is_last = index == len(processes) - 1
+            entry.NextEntryOffset = 0 if is_last else strides[index]
+            entry.UniqueProcessId = pid
+            entry.UserTime = times // 2
+            entry.KernelTime = times - times // 2
+            entry.WorkingSetSize = working_set
+            name = names[index]
+            ctypes.memmove(
+                ctypes.addressof(self.buffer) + offset + entry_size, name, len(name)
+            )
+            entry.ImageName.Length = len(name)
+            entry.ImageName.MaximumLength = len(name)
+            entry.ImageName.Buffer = (
+                ctypes.addressof(self.buffer) + offset + entry_size if name else None
+            )
+            offset += strides[index]
+
+
+class FakeNtdll:
+    """NtQuerySystemInformation answering each class from its own queue,
+    the last answer repeating."""
+
+    def __init__(self, *, cores=(), tables=()):
+        self.answers = {
+            win32.SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS: list(cores),
+            win32.SYSTEM_PROCESS_INFORMATION_CLASS: list(tables),
+        }
+        self.sizes = []
+
+    def NtQuerySystemInformation(self, info_class, buffer, size, needed):
+        queue = self.answers[info_class]
+        answer = queue.pop(0) if len(queue) > 1 else queue[0]
+        data = answer.buffer if isinstance(answer, ProcessTable) else answer
+        self.sizes.append((info_class, size))
+        needed._obj.value = ctypes.sizeof(data)
+        if size < ctypes.sizeof(data):
+            return win32.STATUS_INFO_LENGTH_MISMATCH
+        ctypes.memmove(buffer, data, ctypes.sizeof(data))
+        return 0
+
+
+class FakeAdvapi32:
+    """A process token naming an account by its SID."""
+
+    def __init__(self, accounts: dict):
+        """
+        Args:
+            accounts: Each pid to the account its token names.
+        """
+        self._sids = {}
+        self._names = {}
+        for pid, account in accounts.items():
+            sid = ctypes.create_string_buffer(f"sid-{account}".encode())
+            self._sids[0x1000 + pid] = sid
+            self._names[ctypes.addressof(sid)] = account
+        self.lookups = []
+
+    def OpenProcessToken(self, process, access, token):
+        assert access == win32.TOKEN_QUERY
+        token._obj.value = process
+        return 1
+
+    def GetTokenInformation(self, token, kind, buffer, length, size):
+        assert kind == win32.TOKEN_USER_CLASS
+        sid = self._sids.get(token.value)
+        if sid is None:
+            return 0
+        if buffer is None:
+            size._obj.value = ctypes.sizeof(win32.SidAndAttributes)
+            return 0
+        head = win32.SidAndAttributes(Sid=ctypes.addressof(sid))
+        ctypes.memmove(buffer, ctypes.byref(head), ctypes.sizeof(head))
+        return 1
+
+    def GetLengthSid(self, sid):
+        return len(f"sid-{self._names[sid]}")
+
+    def LookupAccountSidW(self, system, sid, name, name_size, domain, *rest):
+        self.lookups.append(sid)
+        name.value = self._names[sid]
+        domain.value = "NMXWIN"
+        return 1
+
+
+# What the GPU counters hold: two engines of one card busy, a video engine
+# beside them, and the software adapter's memory.
+ENGINE_ITEMS = [
+    ("pid_100_luid_0x00000000_0x0000D1B2_phys_0_eng_0_engtype_3D", 30.0),
+    ("pid_200_luid_0x00000000_0x0000D1B2_phys_0_eng_0_engtype_3D", 15.0),
+    ("pid_100_luid_0x00000000_0x0000D1B2_phys_0_eng_3_engtype_VideoDecode", 20.0),
+]
+MEMORY_ITEMS = [
+    ("luid_0x00000000_0x0000D1B2_phys_0", 512 * 1024 * 1024),
+    ("luid_0x00000000_0x0000E000_phys_0", 64 * 1024 * 1024),
+]
+
+
+class FakePdh:
+    """One query with two wildcard counters; the engines' rate is invalid
+    until the second collection, as PDH's is."""
+
+    ENGINE = 10
+    MEMORY = 11
+
+    def __init__(self, *, engines=ENGINE_ITEMS, memory=MEMORY_ITEMS):
+        self.items = {self.ENGINE: list(engines), self.MEMORY: list(memory)}
+        self.paths = []
+        self.collected = 0
+        self._held = []
+
+    def PdhOpenQueryW(self, source, user_data, query):
+        query._obj.value = 1
+        return 0
+
+    def PdhAddEnglishCounterW(self, query, path, user_data, counter):
+        self.paths.append(path)
+        counter._obj.value = self.ENGINE if "Engine" in path else self.MEMORY
+        return 0
+
+    def PdhCollectQueryData(self, query):
+        self.collected += 1
+        return 0
+
+    def PdhGetFormattedCounterArrayW(self, counter, value_format, size, count, items):
+        rows = self.items[counter.value]
+        array = (win32.PdhFmtCounterValueItem * len(rows))()
+        for item, (name, value) in zip(array, rows):
+            item.szName = name
+            if counter.value == self.ENGINE:
+                assert value_format == win32.PDH_FMT_DOUBLE
+                item.FmtValue.value.doubleValue = value
+                item.FmtValue.CStatus = 0 if self.collected > 1 else 0xC0000BC6
+            else:
+                assert value_format == win32.PDH_FMT_LARGE
+                item.FmtValue.value.largeValue = value
+        self._held.append(array)
+        if items is None:
+            size._obj.value = ctypes.sizeof(array)
+            count._obj.value = len(rows)
+            return win32.PDH_MORE_DATA
+        ctypes.memmove(items, array, ctypes.sizeof(array))
+        return 0
+
+    def PdhCloseQuery(self, query):
+        return 0
+
+
+class FakeGdi32:
+    """The graphics kernel listing a card and the software renderer."""
+
+    def __init__(self, adapters):
+        """
+        Args:
+            adapters: ``(handle, luid low part, name, type bits, dedicated
+                bytes)``.
+        """
+        self.adapters = adapters
+        self.closed = []
+
+    def D3DKMTEnumAdapters2(self, enumeration):
+        listed = enumeration._obj
+        listed.NumAdapters = len(self.adapters)
+        if listed.pAdapters:
+            infos = (win32.D3dkmtAdapterInfo * len(self.adapters)).from_address(
+                listed.pAdapters
+            )
+            for info, (handle, low, _name, _bits, _memory) in zip(infos, self.adapters):
+                info.hAdapter = handle
+                info.AdapterLuid.LowPart = low
+        return 0
+
+    def D3DKMTQueryAdapterInfo(self, query):
+        asked = query._obj
+        handle, _low, name, bits, memory = next(
+            adapter for adapter in self.adapters if adapter[0] == asked.hAdapter
+        )
+        if asked.Type == win32.KMTQAITYPE_ADAPTERTYPE:
+            ctypes.c_uint32.from_address(asked.pPrivateDriverData).value = bits
+        elif asked.Type == win32.KMTQAITYPE_ADAPTERREGISTRYINFO:
+            assert asked.PrivateDriverDataSize == 4 * 260 * 2
+            info = win32.D3dkmtAdapterRegistryInfo.from_address(
+                asked.pPrivateDriverData
+            )
+            encoded = name.encode("utf-16-le")
+            ctypes.memmove(ctypes.addressof(info.AdapterString), encoded, len(encoded))
+        elif asked.Type == win32.KMTQAITYPE_GETSEGMENTSIZE:
+            info = win32.D3dkmtSegmentSizeInfo.from_address(asked.pPrivateDriverData)
+            info.DedicatedVideoMemorySize = memory
+        else:
+            return 0xC000000D
+        return 0
+
+    def D3DKMTCloseAdapter(self, close):
+        self.closed.append(close._obj.hAdapter)
+        return 0
+
+
+GDI_ADAPTERS = [
+    (1, 0xD1B2, "NVIDIA GeForce RTX 3060", 0x3, 12 * 1024**3),
+    (2, 0xE000, "Microsoft Basic Render Driver", 0x5, 0),
+]
+
+
+class FakeThermalZones:
+    """The PowerShell runner, answering the thermal zones in tenths of K."""
+
+    def __init__(self, readings):
+        self.readings = readings
+        self.scripts = []
+
+    def __call__(self, script, document):
+        self.scripts.append(script)
+        return {"readings": self.readings}
+
+
+def windows_reader(**overrides):
+    kernel32 = FakeKernel32()
+    kernel32.times = [(100, 300, 100), (400, 800, 200)]
+    kernel32.denied_pids = {4}
+    parts = {
+        "kernel32": kernel32,
+        "ntdll": FakeNtdll(
+            cores=[
+                core_times((100, 200, 100), (200, 300, 0)),
+                core_times((150, 300, 200), (400, 500, 0)),
+            ],
+            tables=[
+                ProcessTable(
+                    [
+                        (0, "", 9_000, 8192),
+                        (4, "System", 1_000, 1024**2),
+                        (100, "Code.exe", 0, 2 * 1024**3),
+                        (200, "svchost.exe", 50, 100 * 1024**2),
+                    ]
+                ),
+                ProcessTable(
+                    [
+                        (0, "", 9_400, 8192),
+                        (4, "System", 1_060, 1024**2),
+                        (100, "Code.exe", 150, 2 * 1024**3),
+                        (200, "svchost.exe", 50, 100 * 1024**2),
+                        (300, "new.exe", 30, 1024**2),
+                    ]
+                ),
+            ],
+        ),
+        "advapi32": FakeAdvapi32({100: "pat", 200: "SYSTEM", 300: "pat"}),
+        "pdh": FakePdh(),
+        "gdi32": FakeGdi32(GDI_ADAPTERS),
+        "powershell": FakeThermalZones([3011.5, 3231.5]),
+    }
+    parts.update(overrides)
+    return WindowsHostMetricsReader(**parts), parts
+
+
+def test_every_windows_field_is_filled_from_its_native_source(monkeypatch):
+    usage = type("Usage", (), {"total": 200, "used": 50, "free": 150})()
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", lambda path: usage)
+    reader, parts = windows_reader()
+
+    first = reader.read().to_dict()
+    second = reader.read().to_dict()
+
+    assert first["cpu_core_percents"] == [0.0, 0.0]
+    assert [process["cpu_percent"] for process in first["processes"]] == [
+        0.0,
+        0.0,
+        0.0,
+    ]
+    assert first["gpus"][0]["utilization_percent"] is None
+    assert second == {
+        "cpu_percent": 50.0,
+        # Core 0 moved busy 150 of 200, core 1 none of 200.
+        "cpu_core_percents": [75.0, 0.0],
+        "memory_percent": 75.0,
+        "disk_percent": 25.0,
+        "temperature_c": 50.0,
+        "uptime_s": 90_061,
+        "load_average": [],
+        "gpus": [
+            {
+                "vendor": "nvidia",
+                "name": "NVIDIA GeForce RTX 3060",
+                # The 3D engine's two processes, the busiest engine type.
+                "utilization_percent": 45.0,
+                "memory_used_mb": 512,
+                "memory_total_mb": 12 * 1024,
+                "temperature_c": None,
+                "power_w": None,
+            }
+        ],
+        # Shares of one core against the all-core delta of 600 on two cores;
+        # the idle process is left out and the System's token is denied.
+        "processes": [
+            {
+                "pid": 100,
+                "user": "pat",
+                "name": "Code.exe",
+                "cpu_percent": 50.0,
+                "memory_percent": 25.0,
+            },
+            {
+                "pid": 4,
+                "user": "",
+                "name": "System",
+                "cpu_percent": 20.0,
+                "memory_percent": 0.0,
+            },
+            {
+                "pid": 200,
+                "user": "SYSTEM",
+                "name": "svchost.exe",
+                "cpu_percent": 0.0,
+                "memory_percent": 1.2,
+            },
+            {
+                "pid": 300,
+                "user": "pat",
+                "name": "new.exe",
+                "cpu_percent": 0.0,
+                "memory_percent": 0.0,
+            },
+        ],
+    }
+    assert parts["pdh"].paths == [
+        "\\GPU Engine(*)\\Utilization Percentage",
+        "\\GPU Adapter Memory(*)\\Dedicated Usage",
+    ]
+    assert parts["gdi32"].closed == [1, 2]
+    # One account name per SID, and one thermal reading per minute.
+    assert len(parts["advapi32"].lookups) == 2
+    assert len(parts["powershell"].scripts) == 1
+    assert "MSAcpi_ThermalZoneTemperature" in parts["powershell"].scripts[0]
+
+
+def test_the_process_table_lists_the_busiest_few(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
+    table = ProcessTable([(pid, f"p{pid}.exe", 0, pid * 1024) for pid in range(1, 40)])
+    reader, _parts = windows_reader(
+        ntdll=FakeNtdll(cores=[core_times()], tables=[table])
+    )
+
+    processes = reader.read().processes
+
+    assert len(processes) == AGENT_PROCESS_TOP_COUNT
+    assert [process.pid for process in processes][:3] == [39, 38, 37]
+
+
+def test_a_buffer_too_small_grows_to_what_the_kernel_asks(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
+    many = core_times(*[(0, 0, 0)] * 65)
+    ntdll = FakeNtdll(cores=[many], tables=[ProcessTable([(4, "System", 0, 0)])])
+    reader, _parts = windows_reader(ntdll=ntdll)
+
+    assert len(reader.read().cpu_core_percents) == 65
+    core_sizes = [
+        size
+        for info_class, size in ntdll.sizes
+        if info_class == win32.SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS
+    ]
+    assert core_sizes[0] == 64 * 48
+    assert core_sizes[1] >= 65 * 48
+
+
+def test_nvidia_smi_answers_for_the_cards_where_it_is_installed(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
+    monkeypatch.setattr(metrics_module.shutil, "which", lambda name: "nvidia-smi.exe")
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(list(command))
+        return completed("NVIDIA GeForce RTX 3060, 12, 2048, 12288, 41, 35.5\n")
+
+    monkeypatch.setattr(metrics_module.subprocess, "run", run)
+    reader, parts = windows_reader()
+
+    gpus = reader.read().gpus
+
+    assert [gpu.to_dict() for gpu in gpus] == [
+        {
+            "vendor": "nvidia",
+            "name": "NVIDIA GeForce RTX 3060",
+            "utilization_percent": 12.0,
+            "memory_used_mb": 2048,
+            "memory_total_mb": 12288,
+            "temperature_c": 41.0,
+            "power_w": 35.5,
+        }
+    ]
+    assert commands[0][0] == "nvidia-smi"
+    assert parts["pdh"].paths == []
+
+
+def test_without_the_graphics_kernel_the_cards_are_the_counters_adapters(
+    monkeypatch,
+):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
+    reader, _parts = windows_reader(gdi32=object())
+
+    gpus = reader.read().gpus
+
+    assert [(gpu.name, gpu.vendor, gpu.memory_used_mb) for gpu in gpus] == [
+        ("", "", 512),
+        ("", "", 64),
+    ]
+
+
+def test_missing_native_sources_read_as_empty_fields(monkeypatch):
+    monkeypatch.setattr(windows_module.shutil, "disk_usage", unreadable_disk)
+
+    class Refusing:
+        def NtQuerySystemInformation(self, *args):
+            return 0xC0000022
+
+        def PdhOpenQueryW(self, *args):
+            return 0xC0000BB8
+
+    reader, _parts = windows_reader(
+        ntdll=Refusing(),
+        pdh=Refusing(),
+        gdi32=object(),
+        powershell=FakeThermalZones([]),
+    )
+
+    metrics = reader.read()
+
+    assert metrics.cpu_core_percents == []
+    assert metrics.processes == []
+    assert metrics.gpus == []
+    assert metrics.temperature_c is None
 
 
 # What the PowerShell call prints on a machine with a wire, a radio with

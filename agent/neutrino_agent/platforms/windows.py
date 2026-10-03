@@ -2,11 +2,12 @@
 
 The agent runs as the ``neutrino_agent`` service under LocalSystem and keeps
 its configuration, state and log under ``%ProgramData%\\Neutrino\\agent``.
-Metrics come from kernel32 through ctypes, the interfaces and the accounts
-from PowerShell, the machine id from the registry. The file share module
-drives Windows' own SMB server. Windows has no account this agent steps
-down to and no package it installs, so those capabilities are not
-advertised.
+Metrics come from kernel32, ntdll, PDH and the graphics kernel through
+ctypes, with ``nvidia-smi`` for NVIDIA cards and PowerShell for the thermal
+zones; the interfaces and the accounts come from PowerShell, the machine id
+from the registry. The file share module drives Windows' own SMB server.
+Windows has no account this agent steps down to and no package it installs,
+so those capabilities are not advertised.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -33,7 +34,14 @@ from neutrino_agent.constants import (
     AGENT_WINDOWS_SERVICE_NAME,
     AGENT_WINDOWS_STATE_DIR_NAME,
 )
-from neutrino_agent.core.metrics import HostMetrics
+from neutrino_agent.core.metrics import (
+    GpuMetrics,
+    HostMetrics,
+    ProcessMetrics,
+    busiest_processes,
+    gpu_vendor,
+    read_nvidia_gpus,
+)
 from neutrino_agent.modules.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_MARKER
 from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
@@ -121,6 +129,41 @@ WINDOWS_MACHINE_GUID_VALUE = "MachineGuid"
 # Read from the 64-bit view whatever the process is.
 WINDOWS_KEY_WOW64_64KEY = 0x0100
 
+# The thermal zones the firmware exposes, in tenths of a kelvin; none on
+# most machines.
+WINDOWS_THERMAL_ZONES_SCRIPT = """
+$readings = @()
+try {
+  $zones = @(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature)
+  foreach ($zone in $zones) { $readings += [double]$zone.CurrentTemperature }
+} catch {}
+@{readings = $readings} | ConvertTo-Json -Compress
+"""
+WINDOWS_METRICS_POWERSHELL_TIMEOUT_S = 20
+# How long one reading of the thermal zones is believed.
+WINDOWS_TEMPERATURE_TTL_S = 60.0
+WINDOWS_KELVIN_OFFSET = 273.15
+
+# The cores one processor group holds, and where the process table's buffer
+# starts; a buffer too small grows to what the kernel asks for.
+WINDOWS_CORE_SLOTS = 64
+WINDOWS_PROCESS_BUFFER_BYTES = 512 * 1024
+WINDOWS_QUERY_ATTEMPTS = 4
+WINDOWS_QUERY_SLACK_BYTES = 64 * 1024
+WINDOWS_ACCOUNT_NAME_CHARS = 256
+
+# The GPU counters, by their English paths, and how an instance names its
+# adapter and its engine.
+WINDOWS_GPU_ENGINE_COUNTER = "\\GPU Engine(*)\\Utilization Percentage"
+WINDOWS_GPU_MEMORY_COUNTER = "\\GPU Adapter Memory(*)\\Dedicated Usage"
+WINDOWS_GPU_LUID_PATTERN = re.compile(r"luid_0x([0-9a-f]+)_0x([0-9a-f]+)", re.I)
+WINDOWS_GPU_ENGINE_TYPE_PATTERN = re.compile(r"engtype_(.*)$")
+# How long the adapters' names are believed, and how long a GPU counter
+# query that could not be opened waits before the next try.
+WINDOWS_GPU_ADAPTERS_TTL_S = 300.0
+WINDOWS_GPU_QUERY_RETRY_S = 300.0
+WINDOWS_BYTES_PER_MB = 1024 * 1024
+
 
 def windows_agent_dir(name: str) -> str:
     """One of the agent's roots under ``%ProgramData%\\Neutrino\\agent``.
@@ -146,6 +189,46 @@ def _listed(value) -> list:
     if isinstance(value, list):
         return value
     return [value] if isinstance(value, dict) else []
+
+
+def _run_metrics_powershell(script: str, document: dict) -> dict:
+    """Run one metrics script, waiting no longer than a report can."""
+    return run_powershell(
+        script, document, timeout_s=WINDOWS_METRICS_POWERSHELL_TIMEOUT_S
+    )
+
+
+def _image_name(name: "win32.UnicodeString") -> str:
+    """A process's image name, empty for the idle process."""
+    if not name.Buffer or not name.Length:
+        return ""
+    return ctypes.string_at(name.Buffer, name.Length).decode("utf-16-le", "replace")
+
+
+def _utf16_text(units) -> str:
+    """A fixed array of UTF-16 units, up to its first null."""
+    return bytes(units).decode("utf-16-le", "replace").split("\x00", 1)[0].strip()
+
+
+def _counter_luid(name: str) -> "tuple[int, int] | None":
+    """The adapter a GPU counter instance names, as its LUID's two halves."""
+    match = WINDOWS_GPU_LUID_PATTERN.search(name or "")
+    if match is None:
+        return None
+    return int(match.group(1), 16), int(match.group(2), 16)
+
+
+def _is_hardware_gpu(kind: int) -> bool:
+    """Whether an adapter's type bits say a card that renders or computes."""
+    if kind & win32.D3DKMT_ADAPTERTYPE_SOFTWARE_DEVICE:
+        return False
+    return bool(
+        kind
+        & (
+            win32.D3DKMT_ADAPTERTYPE_RENDER_SUPPORTED
+            | win32.D3DKMT_ADAPTERTYPE_COMPUTE_ONLY
+        )
+    )
 
 
 class WindowsPlatform(AgentPlatform):
@@ -178,7 +261,9 @@ class WindowsPlatform(AgentPlatform):
         """
         self._shell32 = shell32
         self._powershell = powershell if powershell is not None else run_powershell
-        self._metrics_reader = WindowsHostMetricsReader(kernel32=kernel32)
+        self._metrics_reader = WindowsHostMetricsReader(
+            kernel32=kernel32, powershell=powershell
+        )
         self._interfaces: list = []
         self._interfaces_at: "float | None" = None
         self._accounts: list = []
@@ -463,20 +548,60 @@ class WindowsPlatform(AgentPlatform):
 
 
 class WindowsHostMetricsReader:
-    """Samples host metrics through kernel32, remembering the last CPU times.
+    """Samples host metrics through kernel32, ntdll, PDH and the graphics kernel.
 
-    Processor load is a rate, so the first sample after start has nothing
-    to compare against and reports zero.
+    Processor load, of the host, of each core and of each process, is a rate
+    against the previous sample, so the first sample after start reports
+    zero; the GPU engines' load is empty until the second sample.
     """
 
-    def __init__(self, *, kernel32=None):
+    def __init__(
+        self,
+        *,
+        kernel32=None,
+        ntdll=None,
+        advapi32=None,
+        pdh=None,
+        gdi32=None,
+        powershell=None,
+    ):
         """
         Args:
             kernel32: The bound kernel32; None binds the real one on first
                 use.
+            ntdll: The bound ntdll, for the per-core times and the process
+                table; None binds the real one on first use.
+            advapi32: The bound advapi32, for a process's account; None
+                binds the real one on first use.
+            pdh: The bound pdh, for the GPU counters; None binds the real
+                one on first use.
+            gdi32: The bound gdi32, for the adapters' names and memory; None
+                binds the real one on first use.
+            powershell: Called with ``(script, document)``; returns the JSON
+                object the script printed. None runs PowerShell.
         """
         self._kernel32 = kernel32
+        self._ntdll = ntdll
+        self._advapi32 = advapi32
+        self._pdh = pdh
+        self._gdi32 = gdi32
+        self._powershell = (
+            powershell if powershell is not None else _run_metrics_powershell
+        )
         self._previous_cpu: "tuple[int, int] | None" = None
+        self._previous_cores: "dict[int, tuple[int, int]]" = {}
+        self._previous_process_times: "dict[int, int]" = {}
+        self._total_time_delta = 0
+        self._core_count = 1
+        self._memory_total_bytes = 0
+        self._process_buffer_bytes = WINDOWS_PROCESS_BUFFER_BYTES
+        self._account_names: "dict[bytes, str]" = {}
+        self._gpu_query: "tuple | None" = None
+        self._gpu_query_tried_at: "float | None" = None
+        self._adapters: "list | None" = None
+        self._adapters_at: "float | None" = None
+        self._temperature_c: "float | None" = None
+        self._temperature_at: "float | None" = None
 
     def read(self) -> HostMetrics:
         """Take one sample.
@@ -485,22 +610,31 @@ class WindowsHostMetricsReader:
             The current metrics. Any source that cannot be read contributes
             its default rather than raising.
         """
-        kernel32 = self._bound_kernel32()
+        kernel32 = self._bound("kernel32")
+        cpu_percent = self._read_cpu_percent(kernel32)
+        core_percents = self._read_core_percents()
+        memory_percent = self._read_memory_percent(kernel32)
         return HostMetrics(
-            cpu_percent=self._read_cpu_percent(kernel32),
-            memory_percent=self._read_memory_percent(kernel32),
+            cpu_percent=cpu_percent,
+            cpu_core_percents=core_percents,
+            memory_percent=memory_percent,
             disk_percent=self._read_disk_percent(),
+            temperature_c=self._read_temperature_c(),
             uptime_s=self._read_uptime_s(kernel32),
+            gpus=self._read_gpus(),
+            processes=self._read_processes(),
         )
 
-    def _bound_kernel32(self):
-        """kernel32, bound on first use; None where it cannot be."""
-        if self._kernel32 is None:
+    def _bound(self, name: str):
+        """One library, bound on first use; None where it cannot be."""
+        library = getattr(self, "_" + name)
+        if library is None:
             try:
-                self._kernel32 = win32.libraries().kernel32
+                library = getattr(win32.libraries(), name)
             except (OSError, AttributeError):
                 return None
-        return self._kernel32
+            setattr(self, "_" + name, library)
+        return library
 
     def _read_cpu_percent(self, kernel32) -> float:
         if kernel32 is None:
@@ -518,9 +652,44 @@ class WindowsHostMetricsReader:
         previous = self._previous_cpu
         self._previous_cpu = (busy, total)
         if previous is None or total <= previous[1]:
+            self._total_time_delta = 0
             return 0.0
+        # Remembered for process shares: a process's times are measured
+        # against this same all-core delta.
+        self._total_time_delta = total - previous[1]
         share = (busy - previous[0]) / (total - previous[1])
         return max(0.0, min(100.0, 100.0 * share))
+
+    def _read_core_percents(self) -> "list[float]":
+        ntdll = self._bound("ntdll")
+        if ntdll is None:
+            return []
+        entry_size = ctypes.sizeof(win32.SystemProcessorPerformanceInformation)
+        answer = self._query_system_information(
+            ntdll,
+            win32.SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS,
+            entry_size * WINDOWS_CORE_SLOTS,
+        )
+        if answer is None:
+            return []
+        buffer, length = answer
+        percents = []
+        for index in range(length // entry_size):
+            entry = win32.SystemProcessorPerformanceInformation.from_buffer(
+                buffer, index * entry_size
+            )
+            # The kernel time includes the idle time.
+            total = entry.KernelTime + entry.UserTime
+            busy = total - entry.IdleTime
+            previous = self._previous_cores.get(index)
+            self._previous_cores[index] = (busy, total)
+            if previous is None or total <= previous[1]:
+                percents.append(0.0)
+                continue
+            share = (busy - previous[0]) / (total - previous[1])
+            percents.append(max(0.0, min(100.0, 100.0 * share)))
+        self._core_count = max(1, len(percents))
+        return percents
 
     def _read_memory_percent(self, kernel32) -> float:
         if kernel32 is None:
@@ -531,6 +700,7 @@ class WindowsHostMetricsReader:
             return 0.0
         if status.ullTotalPhys <= 0:
             return 0.0
+        self._memory_total_bytes = status.ullTotalPhys
         used = status.ullTotalPhys - status.ullAvailPhys
         return 100.0 * used / status.ullTotalPhys
 
@@ -548,3 +718,374 @@ class WindowsHostMetricsReader:
         if kernel32 is None:
             return 0
         return int(kernel32.GetTickCount64()) // 1000
+
+    def _read_temperature_c(self) -> "float | None":
+        now = time.monotonic()
+        if (
+            self._temperature_at is not None
+            and now - self._temperature_at < WINDOWS_TEMPERATURE_TTL_S
+        ):
+            return self._temperature_c
+        self._temperature_at = now
+        self._temperature_c = self._read_thermal_zones()
+        return self._temperature_c
+
+    def _read_thermal_zones(self) -> "float | None":
+        try:
+            read = self._powershell(WINDOWS_THERMAL_ZONES_SCRIPT, {})
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+        readings = []
+        for value in listed(read.get("readings")):
+            try:
+                tenths_kelvin = float(value)
+            except (TypeError, ValueError):
+                continue
+            if tenths_kelvin > 0:
+                readings.append(tenths_kelvin / 10.0 - WINDOWS_KELVIN_OFFSET)
+        return max(readings) if readings else None
+
+    def _read_processes(self) -> "list[ProcessMetrics]":
+        ntdll = self._bound("ntdll")
+        if ntdll is None:
+            return []
+        answer = self._query_system_information(
+            ntdll, win32.SYSTEM_PROCESS_INFORMATION_CLASS, self._process_buffer_bytes
+        )
+        if answer is None:
+            return []
+        buffer, _length = answer
+        self._process_buffer_bytes = len(buffer)
+
+        current_times: "dict[int, int]" = {}
+        processes = []
+        entry_size = ctypes.sizeof(win32.SystemProcessInformation)
+        offset = 0
+        while offset + entry_size <= len(buffer):
+            entry = win32.SystemProcessInformation.from_buffer(buffer, offset)
+            pid = entry.UniqueProcessId or 0
+            # Pid 0 is the idle process, whose time is the machine's idleness.
+            if pid:
+                times = entry.UserTime + entry.KernelTime
+                current_times[pid] = times
+                processes.append(self._process_metrics(pid, entry, times))
+            if entry.NextEntryOffset == 0:
+                break
+            offset += entry.NextEntryOffset
+
+        # Replaced wholesale so the times of exited processes are not kept,
+        # and a recycled pid cannot inherit a dead process's total.
+        self._previous_process_times = current_times
+        chosen = busiest_processes(processes)
+        for process in chosen:
+            process.user = self._process_user(process.pid)
+        return chosen
+
+    def _process_metrics(
+        self, pid: int, entry: "win32.SystemProcessInformation", times: int
+    ) -> ProcessMetrics:
+        previous = self._previous_process_times.get(pid, times)
+        cpu_percent = 0.0
+        if self._total_time_delta > 0:
+            share = (times - previous) / self._total_time_delta
+            cpu_percent = max(0.0, 100.0 * share * self._core_count)
+        memory_percent = 0.0
+        if self._memory_total_bytes > 0:
+            memory_percent = 100.0 * entry.WorkingSetSize / self._memory_total_bytes
+        return ProcessMetrics(
+            pid=pid,
+            user="",
+            name=_image_name(entry.ImageName),
+            cpu_percent=cpu_percent,
+            memory_percent=memory_percent,
+        )
+
+    def _query_system_information(self, ntdll, info_class: int, size: int):
+        """One system information class, the buffer grown until it fits.
+
+        Returns:
+            The buffer and the length the kernel filled, or None when the
+            kernel refuses.
+        """
+        for _attempt in range(WINDOWS_QUERY_ATTEMPTS):
+            buffer = ctypes.create_string_buffer(size)
+            needed = win32.DWORD(0)
+            status = ntdll.NtQuerySystemInformation(
+                info_class, buffer, size, ctypes.byref(needed)
+            )
+            if status == 0:
+                return buffer, min(needed.value, size)
+            if status != win32.STATUS_INFO_LENGTH_MISMATCH:
+                return None
+            size = max(size * 2, needed.value + WINDOWS_QUERY_SLACK_BYTES)
+        return None
+
+    def _process_user(self, pid: int) -> str:
+        """The account a process runs as; empty when its token cannot be read."""
+        kernel32 = self._bound("kernel32")
+        advapi32 = self._bound("advapi32")
+        if kernel32 is None or advapi32 is None:
+            return ""
+        process = kernel32.OpenProcess(
+            win32.PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not process:
+            return ""
+        try:
+            token = ctypes.c_void_p()
+            if not advapi32.OpenProcessToken(
+                process, win32.TOKEN_QUERY, ctypes.byref(token)
+            ):
+                return ""
+            try:
+                return self._token_account(advapi32, token)
+            finally:
+                kernel32.CloseHandle(token)
+        finally:
+            kernel32.CloseHandle(process)
+
+    def _token_account(self, advapi32, token) -> str:
+        size = win32.DWORD(0)
+        advapi32.GetTokenInformation(
+            token, win32.TOKEN_USER_CLASS, None, 0, ctypes.byref(size)
+        )
+        if size.value < ctypes.sizeof(win32.SidAndAttributes):
+            return ""
+        buffer = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(
+            token, win32.TOKEN_USER_CLASS, buffer, size.value, ctypes.byref(size)
+        ):
+            return ""
+        sid = win32.SidAndAttributes.from_buffer(buffer).Sid
+        if not sid:
+            return ""
+        key = ctypes.string_at(sid, advapi32.GetLengthSid(sid))
+        if key not in self._account_names:
+            self._account_names[key] = self._lookup_account(advapi32, sid)
+        return self._account_names[key]
+
+    def _lookup_account(self, advapi32, sid) -> str:
+        name = ctypes.create_unicode_buffer(WINDOWS_ACCOUNT_NAME_CHARS)
+        domain = ctypes.create_unicode_buffer(WINDOWS_ACCOUNT_NAME_CHARS)
+        name_size = win32.DWORD(WINDOWS_ACCOUNT_NAME_CHARS)
+        domain_size = win32.DWORD(WINDOWS_ACCOUNT_NAME_CHARS)
+        use = win32.DWORD(0)
+        if not advapi32.LookupAccountSidW(
+            None,
+            sid,
+            name,
+            ctypes.byref(name_size),
+            domain,
+            ctypes.byref(domain_size),
+            ctypes.byref(use),
+        ):
+            return ""
+        return name.value
+
+    def _read_gpus(self) -> "list[GpuMetrics]":
+        return read_nvidia_gpus() or self._read_counter_gpus()
+
+    def _read_counter_gpus(self) -> "list[GpuMetrics]":
+        utilization, memory_used = self._read_gpu_counters()
+        adapters = self._read_adapters()
+        if adapters is None:
+            adapters = [
+                (luid, "", None) for luid in sorted(set(utilization) | set(memory_used))
+            ]
+        gpus = []
+        for luid, name, memory_total in adapters:
+            used = memory_used.get(luid)
+            gpus.append(
+                GpuMetrics(
+                    vendor=gpu_vendor(name),
+                    name=name,
+                    utilization_percent=utilization.get(luid),
+                    memory_used_mb=(
+                        used // WINDOWS_BYTES_PER_MB if used is not None else None
+                    ),
+                    memory_total_mb=(
+                        memory_total // WINDOWS_BYTES_PER_MB if memory_total else None
+                    ),
+                )
+            )
+        return gpus
+
+    def _read_gpu_counters(self) -> "tuple[dict, dict]":
+        """The engines' load and the dedicated memory in use, by adapter.
+
+        An adapter's load is its busiest engine type's, each type summed
+        over the processes using it.
+        """
+        query = self._open_gpu_query()
+        pdh = self._bound("pdh")
+        if query is None or pdh is None:
+            return {}, {}
+        handle, engine_counter, memory_counter = query
+        if pdh.PdhCollectQueryData(handle) != 0:
+            return {}, {}
+
+        engine_sums: "dict[tuple, float]" = {}
+        for name, value in self._counter_items(
+            pdh, engine_counter, win32.PDH_FMT_DOUBLE
+        ):
+            luid = _counter_luid(name)
+            engine = WINDOWS_GPU_ENGINE_TYPE_PATTERN.search(name)
+            if luid is None:
+                continue
+            key = (luid, engine.group(1) if engine else "")
+            engine_sums[key] = engine_sums.get(key, 0.0) + float(value)
+        utilization: "dict[tuple, float]" = {}
+        for (luid, _engine), total in engine_sums.items():
+            utilization[luid] = min(100.0, max(utilization.get(luid, 0.0), total))
+
+        memory_used: "dict[tuple, int]" = {}
+        for name, value in self._counter_items(
+            pdh, memory_counter, win32.PDH_FMT_LARGE
+        ):
+            luid = _counter_luid(name)
+            if luid is not None:
+                memory_used[luid] = memory_used.get(luid, 0) + int(value)
+        return utilization, memory_used
+
+    def _open_gpu_query(self) -> "tuple | None":
+        """The GPU counter query, opened once; None while it cannot be."""
+        if self._gpu_query is not None:
+            return self._gpu_query
+        now = time.monotonic()
+        if (
+            self._gpu_query_tried_at is not None
+            and now - self._gpu_query_tried_at < WINDOWS_GPU_QUERY_RETRY_S
+        ):
+            return None
+        self._gpu_query_tried_at = now
+        pdh = self._bound("pdh")
+        if pdh is None:
+            return None
+        handle = ctypes.c_void_p()
+        if pdh.PdhOpenQueryW(None, 0, ctypes.byref(handle)) != 0:
+            return None
+        counters = []
+        for path in (WINDOWS_GPU_ENGINE_COUNTER, WINDOWS_GPU_MEMORY_COUNTER):
+            counter = ctypes.c_void_p()
+            if pdh.PdhAddEnglishCounterW(handle, path, 0, ctypes.byref(counter)) != 0:
+                pdh.PdhCloseQuery(handle)
+                return None
+            counters.append(counter)
+        self._gpu_query = (handle, counters[0], counters[1])
+        return self._gpu_query
+
+    def _counter_items(self, pdh, counter, value_format: int) -> list:
+        """Every instance of one wildcard counter that carries a value.
+
+        Returns:
+            ``[(instance name, value)]``; empty when PDH refuses.
+        """
+        size = win32.DWORD(0)
+        count = win32.DWORD(0)
+        status = pdh.PdhGetFormattedCounterArrayW(
+            counter, value_format, ctypes.byref(size), ctypes.byref(count), None
+        )
+        if status != win32.PDH_MORE_DATA or size.value == 0:
+            return []
+        buffer = ctypes.create_string_buffer(size.value)
+        status = pdh.PdhGetFormattedCounterArrayW(
+            counter, value_format, ctypes.byref(size), ctypes.byref(count), buffer
+        )
+        item_size = ctypes.sizeof(win32.PdhFmtCounterValueItem)
+        if status != 0 or count.value * item_size > len(buffer):
+            return []
+        items = (win32.PdhFmtCounterValueItem * count.value).from_buffer(buffer)
+        read = []
+        for item in items:
+            if item.FmtValue.CStatus not in (
+                win32.PDH_CSTATUS_VALID_DATA,
+                win32.PDH_CSTATUS_NEW_DATA,
+            ):
+                continue
+            if value_format == win32.PDH_FMT_DOUBLE:
+                value = item.FmtValue.value.doubleValue
+            else:
+                value = item.FmtValue.value.largeValue
+            read.append((item.szName or "", value))
+        return read
+
+    def _read_adapters(self) -> "list | None":
+        """The graphics cards, read at most every five minutes."""
+        now = time.monotonic()
+        if (
+            self._adapters_at is not None
+            and now - self._adapters_at < WINDOWS_GPU_ADAPTERS_TTL_S
+        ):
+            return self._adapters
+        self._adapters = self._enumerate_adapters()
+        self._adapters_at = now
+        return self._adapters
+
+    def _enumerate_adapters(self) -> "list | None":
+        """Every card that renders or computes, from the graphics kernel.
+
+        Returns:
+            ``[(luid, name, dedicated memory bytes or None)]`` in the
+            kernel's order, or None when the kernel cannot be asked.
+        """
+        gdi32 = self._bound("gdi32")
+        if gdi32 is None or not hasattr(gdi32, "D3DKMTEnumAdapters2"):
+            return None
+        enumeration = win32.D3dkmtEnumAdapters2()
+        if gdi32.D3DKMTEnumAdapters2(ctypes.byref(enumeration)) != 0:
+            return None
+        if enumeration.NumAdapters == 0:
+            return []
+        infos = (win32.D3dkmtAdapterInfo * enumeration.NumAdapters)()
+        enumeration.pAdapters = ctypes.addressof(infos)
+        if gdi32.D3DKMTEnumAdapters2(ctypes.byref(enumeration)) != 0:
+            return None
+        adapters = []
+        for info in infos[: enumeration.NumAdapters]:
+            try:
+                adapter = self._describe_adapter(gdi32, info)
+            finally:
+                gdi32.D3DKMTCloseAdapter(
+                    ctypes.byref(win32.D3dkmtCloseAdapter(hAdapter=info.hAdapter))
+                )
+            if adapter is not None:
+                adapters.append(adapter)
+        return adapters
+
+    def _describe_adapter(self, gdi32, info: "win32.D3dkmtAdapterInfo"):
+        """One adapter's LUID, name and memory; None for a software one."""
+        kind = self._query_adapter(
+            gdi32, info.hAdapter, win32.KMTQAITYPE_ADAPTERTYPE, ctypes.c_uint32()
+        )
+        if kind is not None and not _is_hardware_gpu(kind.value):
+            return None
+        registry = self._query_adapter(
+            gdi32,
+            info.hAdapter,
+            win32.KMTQAITYPE_ADAPTERREGISTRYINFO,
+            win32.D3dkmtAdapterRegistryInfo(),
+        )
+        segments = self._query_adapter(
+            gdi32,
+            info.hAdapter,
+            win32.KMTQAITYPE_GETSEGMENTSIZE,
+            win32.D3dkmtSegmentSizeInfo(),
+        )
+        luid = (info.AdapterLuid.HighPart & 0xFFFFFFFF, info.AdapterLuid.LowPart)
+        name = _utf16_text(registry.AdapterString) if registry is not None else ""
+        memory_total = (
+            segments.DedicatedVideoMemorySize if segments is not None else None
+        )
+        return luid, name, memory_total or None
+
+    def _query_adapter(self, gdi32, adapter: int, kind: int, answer):
+        """Ask the graphics kernel one question; the answer or None."""
+        query = win32.D3dkmtQueryAdapterInfo(
+            hAdapter=adapter,
+            Type=kind,
+            pPrivateDriverData=ctypes.addressof(answer),
+            PrivateDriverDataSize=ctypes.sizeof(answer),
+        )
+        if gdi32.D3DKMTQueryAdapterInfo(ctypes.byref(query)) != 0:
+            return None
+        return answer

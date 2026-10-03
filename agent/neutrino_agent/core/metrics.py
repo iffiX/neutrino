@@ -1,16 +1,36 @@
 """The shapes a heartbeat's metrics travel in.
 
-Reading the numbers is each platform's own work — the Linux platform samples
-``/proc`` and ``/sys`` — but every platform serializes into these same
-shapes, so the hub draws one kind of device tile whatever answers.
+Reading the numbers is each platform's own work, but every platform
+serializes into these same shapes, so the hub draws one kind of device tile
+whatever answers. The readings two platforms share live here: the NVIDIA
+cards through ``nvidia-smi`` and the choice of processes a report lists.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import shutil
 import socket
+import subprocess
 from dataclasses import dataclass, field
+
+from neutrino_agent.constants import (
+    AGENT_NVIDIA_SMI_COMMAND,
+    AGENT_NVIDIA_SMI_TIMEOUT_S,
+    AGENT_PROCESS_TOP_COUNT,
+)
+
+# The words a graphics card's name or driver carries, to its vendor.
+GPU_VENDOR_WORDS = (
+    ("nvidia", "nvidia"),
+    ("geforce", "nvidia"),
+    ("radeon", "amd"),
+    ("amd", "amd"),
+    ("intel", "intel"),
+    ("apple", "apple"),
+    ("agx", "apple"),
+)
 
 
 def hostname() -> str:
@@ -25,6 +45,106 @@ def hostname() -> str:
         return "unknown"
 
 
+def read_nvidia_gpus() -> "list[GpuMetrics]":
+    """Every NVIDIA card through ``nvidia-smi``, where the driver installed it.
+
+    Returns:
+        One entry per card; empty when the tool is missing or fails.
+    """
+    if shutil.which(AGENT_NVIDIA_SMI_COMMAND[0]) is None:
+        return []
+    try:
+        result = subprocess.run(
+            AGENT_NVIDIA_SMI_COMMAND,
+            capture_output=True,
+            text=True,
+            timeout=AGENT_NVIDIA_SMI_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if result.returncode != 0:
+        return []
+    return parse_nvidia_smi(result.stdout or "")
+
+
+def parse_nvidia_smi(text: str) -> "list[GpuMetrics]":
+    """The cards out of ``nvidia-smi``'s CSV, one line per card.
+
+    Args:
+        text: What ``AGENT_NVIDIA_SMI_COMMAND`` printed.
+
+    Returns:
+        One entry per well-formed line, in its order.
+    """
+    gpus = []
+    for line in text.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 6:
+            continue
+        memory_used = _csv_number(parts[2])
+        memory_total = _csv_number(parts[3])
+        gpus.append(
+            GpuMetrics(
+                vendor="nvidia",
+                name=parts[0],
+                utilization_percent=_csv_number(parts[1]),
+                memory_used_mb=int(memory_used) if memory_used is not None else None,
+                memory_total_mb=(
+                    int(memory_total) if memory_total is not None else None
+                ),
+                temperature_c=_csv_number(parts[4]),
+                power_w=_csv_number(parts[5]),
+            )
+        )
+    return gpus
+
+
+def gpu_vendor(text: str) -> str:
+    """The vendor a card's name or driver class names.
+
+    Args:
+        text: The card's name, or its driver's class.
+
+    Returns:
+        ``nvidia``, ``amd``, ``intel`` or ``apple``; empty when the text
+        names none of them.
+    """
+    lowered = (text or "").lower()
+    for word, vendor in GPU_VENDOR_WORDS:
+        if word in lowered:
+            return vendor
+    return ""
+
+
+def busiest_processes(processes: "list[ProcessMetrics]") -> "list[ProcessMetrics]":
+    """The processes a report lists: by processor share, then memory.
+
+    Args:
+        processes: Every process sampled.
+
+    Returns:
+        At most ``AGENT_PROCESS_TOP_COUNT`` of them, the busiest first.
+    """
+    ordered = sorted(
+        processes,
+        key=_process_load,
+        reverse=True,
+    )
+    return ordered[:AGENT_PROCESS_TOP_COUNT]
+
+
+def _csv_number(text: str) -> "float | None":
+    """One ``nvidia-smi`` CSV field, None for its not-available marker."""
+    try:
+        return float(text.strip())
+    except ValueError:
+        return None
+
+
+def _process_load(process: "ProcessMetrics") -> "tuple[float, float]":
+    return process.cpu_percent, process.memory_percent
+
+
 def _rounded(value: "float | None", digits: int) -> "float | None":
     return round(value, digits) if value is not None else None
 
@@ -34,7 +154,8 @@ class GpuMetrics:
     """One graphics card's load.
 
     Attributes:
-        vendor: ``nvidia`` or ``amd``.
+        vendor: ``nvidia``, ``amd``, ``intel`` or ``apple``; empty when
+            the source names none.
         name: Marketing name when the driver reports one.
         utilization_percent: Compute load, when readable.
         memory_used_mb: Video memory in use, when readable.
@@ -74,9 +195,12 @@ class ProcessMetrics:
 
     Attributes:
         pid: Process id.
-        user: Owning account name, or the numeric uid when unresolvable.
-        name: Command name from ``/proc/<pid>/comm``.
-        cpu_percent: Share of one core since the previous sample.
+        user: Owning account name; on Linux and macOS the numeric uid when
+            unresolvable, on Windows empty when the token cannot be read.
+        name: The command's name: ``/proc/<pid>/comm`` on Linux, the image
+            name on Windows, the executable's file name on macOS.
+        cpu_percent: Share of one core since the previous sample; on macOS
+            the share ``ps`` reports.
         memory_percent: Resident share of physical memory.
     """
 
