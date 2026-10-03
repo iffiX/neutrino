@@ -70,6 +70,37 @@ def test_needs_login_reads_as_not_enrolled(monkeypatch):
     assert state.is_management_connected is False
 
 
+def test_the_servers_the_daemon_talks_to_are_read(monkeypatch):
+    """The TUN device keeps them out, so the overlay never waits on the exit."""
+    payload = {
+        **CONNECTED,
+        "signal": {"url": "https://signal.netbird.io:443", "connected": True},
+        "relays": {
+            "total": 2,
+            "available": 1,
+            "details": [
+                {"uri": "rels://streamline-de-fra1-0.relay.netbird.io:443"},
+                {"uri": "stun:stun.netbird.io:443", "available": False},
+            ],
+        },
+    }
+
+    state = survey_with(monkeypatch, payload)
+
+    assert state.server_urls == [
+        "https://api.netbird.io:443",
+        "https://signal.netbird.io:443",
+        "rels://streamline-de-fra1-0.relay.netbird.io:443",
+        "stun:stun.netbird.io:443",
+    ]
+
+
+def test_a_daemon_that_names_no_server_has_none(monkeypatch):
+    payload = {**NEEDS_LOGIN, "management": {}}
+
+    assert survey_with(monkeypatch, payload).server_urls == []
+
+
 def test_a_connected_daemon_reports_identity_and_peers(monkeypatch):
     state = survey_with(monkeypatch, CONNECTED)
 

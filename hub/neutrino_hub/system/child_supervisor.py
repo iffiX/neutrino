@@ -4,8 +4,10 @@ On macOS and Windows one process serves the panel and starts each daemon
 from the start line it holds. A child that ends is started again after a
 wait that doubles from ``SYSTEM_CHILD_RESTART_MIN_S`` to
 ``SYSTEM_CHILD_RESTART_MAX_S``; one that ran ``SYSTEM_CHILD_STABLE_S``
-first waits the least again. Each child's output goes to ``<name>.log``
-under the log directory, rotated by size.
+first waits the least again. A child that requires another runs only while
+that one runs: it is stopped before the one it requires stops, restarts or
+is found ended, and started again once that one runs. Each child's output
+goes to ``<name>.log`` under the log directory, rotated by size.
 
 Not pure: starts, watches and ends processes.
 """
@@ -122,6 +124,7 @@ class ChildProcessSupervisor:
         start_process=None,
         on_started=None,
         creation_flags: int = 0,
+        requirements: dict | None = None,
         clock=None,
         log=print,
     ):
@@ -136,6 +139,8 @@ class ChildProcessSupervisor:
             on_started: Called with each process once started; the Windows
                 platform ties it to the service's life here.
             creation_flags: Windows process creation flags; 0 elsewhere.
+            requirements: Child name to the child it runs only beside; None
+                is none.
             clock: Returns the time in seconds; None is ``time.monotonic``.
             log: Called with each progress line.
         """
@@ -144,6 +149,8 @@ class ChildProcessSupervisor:
         self._start_process = start_process or start_child_process
         self._on_started = on_started
         self._creation_flags = creation_flags
+        self._requirements = dict(requirements or {})
+        self._watcher = None
         self._clock = clock or time.monotonic
         self._log = log
         self._lock = threading.RLock()
@@ -151,6 +158,16 @@ class ChildProcessSupervisor:
         self._loggers: dict = {}
         self._stopping = threading.Event()
         self._thread = None
+
+    def set_watcher(self, watcher) -> None:
+        """Hand every ended child and every tick to one watcher.
+
+        Args:
+            watcher: Has ``child_ended(name)``, called once a child's process
+                has ended for any reason, and ``tick()``, called after each
+                tick of the watch thread; None is none.
+        """
+        self._watcher = watcher
 
     def set_start_line(self, name: str, line) -> None:
         """Hold one child's start line; None forgets it and stops the child.
@@ -164,7 +181,7 @@ class ChildProcessSupervisor:
             child.line = line
             if line is None:
                 child.is_wanted = False
-                self._end(child)
+                self._end(name)
 
     def start_line(self, name: str):
         """The start line held for one child.
@@ -182,6 +199,9 @@ class ChildProcessSupervisor:
     def start(self, name: str) -> None:
         """Run one child from now on; one already running is left as it is.
 
+        A child whose required child is not running is started once that
+        one runs.
+
         Args:
             name: The child's name.
 
@@ -195,7 +215,7 @@ class ChildProcessSupervisor:
             child.is_wanted = True
             child.wait_s = SYSTEM_CHILD_RESTART_MIN_S
             child.restart_at = None
-            if not self._is_alive(child):
+            if not self._is_alive(child) and self._is_ready(name):
                 self._start(name, child)
 
     def stop(self, name: str) -> None:
@@ -208,7 +228,7 @@ class ChildProcessSupervisor:
             child = self._child(name)
             child.is_wanted = False
             child.restart_at = None
-            self._end(child)
+            self._end(name)
 
     def restart(self, name: str) -> None:
         """Stop one child and start it again at once.
@@ -223,7 +243,7 @@ class ChildProcessSupervisor:
             child = self._child(name)
             if child.line is None:
                 raise KeyError(f"no start line is held for {name!r}")
-            self._end(child)
+            self._end(name)
             self.start(name)
 
     def is_running(self, name: str) -> bool:
@@ -240,11 +260,28 @@ class ChildProcessSupervisor:
             return child is not None and self._is_alive(child)
 
     def tick(self) -> None:
-        """Look at every child once: one that ended starts again after its wait."""
+        """Look at every child once: one that ended starts again after its wait.
+
+        A child waiting on the child it requires starts once that one runs.
+        The watcher's own tick runs after, outside the lock.
+        """
         with self._lock:
             now = self._clock()
-            for name, child in self._children.items():
+            for name, child in list(self._children.items()):
                 self._tick_one(name, child, now)
+            for name in self._requirements:
+                child = self._children.get(name)
+                if (
+                    child is not None
+                    and child.is_wanted
+                    and child.line is not None
+                    and child.restart_at is None
+                    and not self._is_alive(child)
+                    and self._is_ready(name)
+                ):
+                    self._start(name, child)
+        if self._watcher is not None:
+            self._watcher.tick()
 
     def watch(self) -> None:
         """Run :meth:`tick` on a thread of its own until :meth:`stop_all`."""
@@ -255,18 +292,33 @@ class ChildProcessSupervisor:
         self._thread.start()
 
     def stop_all(self) -> None:
-        """Stop watching and end every child, all asked at once. Idempotent."""
+        """Stop watching and end every child. Idempotent.
+
+        A child that requires another is ended first; the rest are all
+        asked at once.
+        """
         self._stopping.set()
         with self._lock:
+            for name in self._requirements:
+                child = self._children.get(name)
+                if child is not None:
+                    child.is_wanted = False
+                    child.restart_at = None
+                    self._end(name)
             processes = []
-            for child in self._children.values():
+            ended = []
+            for name, child in self._children.items():
                 child.is_wanted = False
                 child.restart_at = None
+                if child.process is not None:
+                    ended.append(name)
                 processes.append(child.process)
                 child.process = None
             ending = [process for process in processes if _ask_to_end(process)]
             for process in ending:
                 _wait_ended(process)
+            for name in ended:
+                self._tell_ended(name)
             for logger in self._loggers.values():
                 for handler in list(logger.handlers):
                     handler.close()
@@ -290,6 +342,8 @@ class ChildProcessSupervisor:
                     child.wait_s = SYSTEM_CHILD_RESTART_MIN_S
                 return
             child.process = None
+            self._end_dependents(name)
+            self._tell_ended(name)
             if not child.is_wanted:
                 return
             if now - child.started_at >= SYSTEM_CHILD_STABLE_S:
@@ -299,6 +353,8 @@ class ChildProcessSupervisor:
             child.wait_s = min(child.wait_s * 2, SYSTEM_CHILD_RESTART_MAX_S)
             return
         if child.is_wanted and child.restart_at is not None and now >= child.restart_at:
+            if not self._is_ready(name):
+                return
             child.restart_at = None
             self._start(name, child)
 
@@ -366,12 +422,44 @@ class ChildProcessSupervisor:
         """Whether the child's process has not ended."""
         return child.process is not None and child.process.poll() is None
 
-    def _end(self, child: "_Child") -> None:
-        """End the child's process: asked first, killed when it does not end."""
+    def _is_ready(self, name: str) -> bool:
+        """Whether the child this one requires runs, or it requires none."""
+        required = self._requirements.get(name)
+        if required is None:
+            return True
+        child = self._children.get(required)
+        return child is not None and self._is_alive(child)
+
+    def _end(self, name: str) -> None:
+        """End one child's process, the children requiring it first.
+
+        Each is asked first and killed when it does not end; a child that
+        requires this one stays wanted and starts again once it runs.
+        """
+        self._end_dependents(name)
+        child = self._children.get(name)
+        if child is None or child.process is None:
+            return
         process = child.process
         child.process = None
         if _ask_to_end(process):
             _wait_ended(process)
+        self._tell_ended(name)
+
+    def _end_dependents(self, name: str) -> None:
+        """End every child that requires this one, keeping it wanted."""
+        for dependent, required in self._requirements.items():
+            if required == name:
+                self._end(dependent)
+
+    def _tell_ended(self, name: str) -> None:
+        """Tell the watcher one child's process ended; a failure is logged."""
+        if self._watcher is None:
+            return
+        try:
+            self._watcher.child_ended(name)
+        except (OSError, ValueError, RuntimeError) as error:
+            self._log(f"the end of {name} could not be followed: {error}")
 
 
 def _ask_to_end(process) -> bool:

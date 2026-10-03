@@ -160,9 +160,14 @@ class _Controller:
 
     def __init__(self):
         self.asked: list = []
+        self.watcher = None
 
-    def supervise(self, start_lines):
+    def supervise(self, start_lines, *, watcher=None):
         self.asked.append(("supervise", sorted(start_lines)))
+        self.watcher = watcher
+
+    def is_active(self, name):
+        return name == "tun2socks"
 
     def shutdown(self):
         self.asked.append(("shutdown",))
@@ -174,6 +179,7 @@ def service_roots(monkeypatch, tmp_path):
         monkeypatch.setattr(run, name, tmp_path / name.lower())
     monkeypatch.setattr(run, "CLIPROXYAPI_DIR", tmp_path / "state" / "cliproxyapi")
     monkeypatch.setattr(run, "reload_firewall", lambda: None)
+    monkeypatch.setattr(run, "withdraw_tun", lambda: [])
     return tmp_path
 
 
@@ -190,15 +196,34 @@ def test_the_service_serves_the_panel_and_supervises_the_children(
     monkeypatch.setattr(
         run, "reload_firewall", lambda: controller.asked.append(("firewall",))
     )
+    monkeypatch.setattr(
+        run, "withdraw_tun", lambda: controller.asked.append(("tun_withdrawn",))
+    )
 
     assert run._supervise(argparse.Namespace()) == 0
     assert controller.asked == [
         ("firewall",),
+        ("tun_withdrawn",),
         ("supervise", ["cliproxyapi", "netbird", "xray"]),
         ("panel",),
         ("shutdown",),
     ]
     assert (service_roots / "utils_runtime_root").is_dir()
+
+
+def test_the_service_hands_every_ended_child_to_the_tun_keeper(
+    monkeypatch, service_roots
+):
+    """The keeper asks the controller whether tun2socks runs, and is told of
+    every child that ends."""
+    controller = _Controller()
+    monkeypatch.setattr(run.sys, "platform", "darwin")
+    monkeypatch.setattr(run, "process_controller", lambda: controller)
+    monkeypatch.setattr(run, "_serve_panel", lambda arguments: 0)
+
+    run._supervise(argparse.Namespace())
+
+    assert isinstance(controller.watcher, run.TunRouteKeeper)
 
 
 def test_a_firewall_anchor_that_does_not_load_leaves_the_service_running(

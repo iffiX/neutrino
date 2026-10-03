@@ -348,8 +348,13 @@ def server_elsewhere(elsewhere, box, monkeypatch):
         handed.append((network, routing))
         return ["firewall opened neutrino_hub_panel_http"]
 
+    def tun(network, routing):
+        handed.append(("tun", network.overlay_device_names, routing))
+        return []
+
     monkeypatch.setattr(controller, "lookup_xray_uid", refuse)
     monkeypatch.setattr(controller, "converge_firewall", firewall)
+    monkeypatch.setattr(controller, "converge_tun", tun)
     monkeypatch.setattr(
         controller, "overlay_devices", lambda network: {"netbird": ["utun4"]}
     )
@@ -371,7 +376,7 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
     ready = []
     results = pass_of(on_base_ready=lambda: ready.append(True)).reconcile()
 
-    assert names(results) == ["firewall", "overlay_gate NetBird"]
+    assert names(results) == ["firewall", "tun", "overlay_gate NetBird"]
     assert results[0].state == ROUTER_STEP_APPLIED
     assert kernel.commands == []
     assert Interfaces.calls == []
@@ -379,6 +384,7 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
     assert gates == [False]
     assert handed[0][1] == ROUTING
     assert handed[0][0].overlay_device_names == ["utun4"]
+    assert handed[1] == ("tun", ["utun4"], ROUTING)
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
     assert fake_controller.calls == []
 
@@ -393,7 +399,38 @@ def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
 
     results = pass_of().reconcile()
 
-    assert names(results) == ["firewall", "overlay_gate NetBird"]
+    assert names(results) == ["firewall", "tun", "overlay_gate NetBird"]
     assert results[0].state == ROUTER_STEP_FAILED
     assert results[0].code == ROUTER_CODE_COMMAND_FAILED
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
+
+
+def test_elsewhere_a_tun_route_that_failed_is_named_by_its_own_code(
+    server_elsewhere, monkeypatch
+):
+    def refuse(network, routing):
+        raise OSError("route -n add -host 203.0.113.7 192.168.1.1: File exists")
+
+    monkeypatch.setattr(controller, "converge_tun", refuse)
+
+    results = pass_of().reconcile()
+
+    assert names(results) == ["firewall", "tun", "overlay_gate NetBird"]
+    assert results[1].state == ROUTER_STEP_FAILED
+    assert results[1].code == "tun_route_failed"
+    assert "File exists" in results[1].detail
+    assert controller.failure_codes(results) == [
+        {"code": "tun_route_failed", "params": {"detail": results[1].detail}}
+    ]
+
+
+def test_elsewhere_a_tun_that_changed_says_so_in_its_own_code(
+    server_elsewhere, monkeypatch
+):
+    monkeypatch.setattr(
+        controller, "converge_tun", lambda network, routing: ["tun device up"]
+    )
+
+    results = pass_of().reconcile()
+
+    assert {"code": "tun_changed", "params": {}} in controller.change_codes(results)

@@ -73,6 +73,7 @@ from neutrino_hub.modules.router.controller import RouterStateController, router
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.firewall.ops import reload_firewall
+from neutrino_hub.modules.tun.ops import TunRouteKeeper, withdraw_tun
 from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
@@ -695,8 +696,13 @@ def _supervise_service(arguments) -> int:
             f"warning: firewall anchor not loaded: {command_failure_text(error)}",
             file=sys.stderr,
         )
+    try:
+        withdraw_tun()
+    except OSError as error:
+        print(f"warning: tun routes not withdrawn: {error}", file=sys.stderr)
     controller = process_controller()
-    controller.supervise(child_start_lines())
+    keeper = TunRouteKeeper(is_running=controller.is_active)
+    controller.supervise(child_start_lines(), watcher=keeper)
     try:
         return _serve_panel(arguments)
     finally:

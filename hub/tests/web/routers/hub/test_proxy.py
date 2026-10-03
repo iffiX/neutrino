@@ -9,6 +9,7 @@ directory.
 
 import asyncio
 import json
+import sys
 
 import pytest
 from fastapi import FastAPI
@@ -205,47 +206,24 @@ def test_saving_the_settings_answers_with_the_same_view(client):
     assert saved["geodata"] == opened.get("/api/hub/proxy").json()["geodata"]
 
 
-@pytest.mark.parametrize("system", ["darwin", "windows"])
+@pytest.mark.parametrize("system", ["linux", "darwin", "win32"])
 @pytest.mark.parametrize(
     "switch",
     ["is_proxy_enabled", "is_overlay_proxy_enabled", "is_local_proxy_enabled"],
 )
-def test_outside_linux_a_scope_other_than_socks_is_refused(
+def test_every_scope_may_be_switched_on_on_every_system(
     client, monkeypatch, system, switch
 ):
+    """macOS and Windows divert the hub's own and the overlays' traffic
+    through the TUN device; no scope is refused for the system it runs on."""
     opened, runtime = client
-    monkeypatch.setattr(proxy_router, "hub_os", lambda: system)
+    monkeypatch.setattr(sys, "platform", system)
     routing = {**ROUTING, "is_proxy_enabled": False, switch: True}
 
     response = opened.post("/api/hub/proxy/set", json=routing)
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
-        "code": "proxy_scope_unsupported",
-        "params": {"switch": switch},
-    }
-    assert runtime.files["xray/routing.json"] == ROUTING
-
-
-@pytest.mark.parametrize("system", ["darwin", "windows"])
-def test_outside_linux_the_socks_ports_alone_are_saved(client, monkeypatch, system):
-    opened, _ = client
-    monkeypatch.setattr(proxy_router, "hub_os", lambda: system)
-    routing = {**ROUTING, "is_proxy_enabled": False}
-
-    assert opened.post("/api/hub/proxy/set", json=routing).status_code == 200
-
-
-def test_on_linux_every_scope_may_be_switched_on(client, monkeypatch):
-    opened, _ = client
-    monkeypatch.setattr(proxy_router, "hub_os", lambda: "linux")
-    routing = {
-        **ROUTING,
-        "is_overlay_proxy_enabled": True,
-        "is_local_proxy_enabled": True,
-    }
-
-    assert opened.post("/api/hub/proxy/set", json=routing).status_code == 200
+    assert response.status_code == 200
+    assert runtime.files["xray/routing.json"][switch] is True
 
 
 def test_an_apply_pins_the_stored_exit_again(client):

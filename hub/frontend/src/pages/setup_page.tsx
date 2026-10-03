@@ -593,11 +593,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
       {index === SCREEN_PROXY && (
         <div className="setup_body">
           <p className="setup_lead">
-            {context.hub_os !== "linux"
-              ? t("ui.setup.proxy_lead_socks")
-              : isServer
-                ? t("ui.setup.proxy_lead_server")
-                : t("ui.setup.proxy_lead_router")}
+            {isServer
+              ? t("ui.setup.proxy_lead_server")
+              : t("ui.setup.proxy_lead_router")}
           </p>
           <ToggleSwitch
             isOn={isProxyWanted}
@@ -689,13 +687,11 @@ export function SetupPage({ token, context }: SetupPageProps) {
                   )}
                 </>
               )}
-              {context.hub_os === "linux" && (
-                <ToggleSwitch
-                  isOn={isLocalProxied}
-                  label={t("ui.setup.proxy_local")}
-                  onChange={setIsLocalProxied}
-                />
-              )}
+              <ToggleSwitch
+                isOn={isLocalProxied}
+                label={t("ui.setup.proxy_local")}
+                onChange={setIsLocalProxied}
+              />
             </>
           )}
         </div>

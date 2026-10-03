@@ -170,9 +170,6 @@ export function ProxyPage() {
   }
 
   const mode = network.data?.mode ?? null;
-  // Outside Linux the proxy is its SOCKS ports alone. A scope still on from
-  // an earlier config can be switched off, never on.
-  const isLinux = (network.data?.hub_os ?? "linux") === "linux";
   // The same describer the strip's chip uses, so the page and its thumbnail
   // are one answer rather than two. An on/off badge here used to mean "is a
   // node enabled", which a server could show as `on` beside a strip saying
@@ -212,36 +209,21 @@ export function ProxyPage() {
           <ToggleSwitch
             isOn={draft.is_proxy_enabled}
             onChange={(isOn) => updateDraft({ is_proxy_enabled: isOn })}
-            isDisabled={!isLinux && !draft.is_proxy_enabled}
             label={t("ui.proxy.lan_toggle")}
-            description={
-              isLinux
-                ? t("ui.proxy.lan_toggle_description")
-                : t("ui.proxy.lan_toggle_description_unsupported")
-            }
+            description={t("ui.proxy.lan_toggle_description")}
           />
         )}
         <ToggleSwitch
           isOn={draft.is_overlay_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_overlay_proxy_enabled: isOn })}
-          isDisabled={!isLinux && !draft.is_overlay_proxy_enabled}
           label={t("ui.proxy.overlay_toggle")}
-          description={
-            isLinux
-              ? t("ui.proxy.overlay_toggle_description")
-              : t("ui.proxy.overlay_toggle_description_unsupported")
-          }
+          description={t("ui.proxy.overlay_toggle_description")}
         />
         <ToggleSwitch
           isOn={draft.is_local_proxy_enabled}
           onChange={(isOn) => updateDraft({ is_local_proxy_enabled: isOn })}
-          isDisabled={!isLinux && !draft.is_local_proxy_enabled}
           label={t("ui.proxy.local_toggle")}
-          description={
-            isLinux
-              ? t("ui.proxy.local_toggle_description")
-              : t("ui.proxy.local_toggle_description_unsupported")
-          }
+          description={t("ui.proxy.local_toggle_description")}
         />
 
         <ToggleSwitch

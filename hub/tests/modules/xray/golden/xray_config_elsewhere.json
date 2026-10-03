@@ -76,6 +76,25 @@
       }
     },
     {
+      "tag": "socks_local_in",
+      "listen": "127.0.0.1",
+      "port": 10087,
+      "protocol": "socks",
+      "settings": {
+        "udp": true,
+        "auth": "noauth"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "routeOnly": true
+      }
+    },
+    {
       "tag": "socks_1080_in",
       "listen": "0.0.0.0",
       "port": 1080,
@@ -116,6 +135,11 @@
       "protocol": "freedom",
       "settings": {
         "domainStrategy": "UseIP"
+      },
+      "streamSettings": {
+        "sockopt": {
+          "interface": "en0"
+        }
       }
     },
     {
@@ -133,8 +157,16 @@
       },
       "streamSettings": {
         "sockopt": {
+          "interface": "en0",
           "domainStrategy": "UseIP"
         }
+      }
+    },
+    {
+      "tag": "dns_out",
+      "protocol": "dns",
+      "settings": {
+        "nonIPQuery": "drop"
       }
     },
     {
@@ -174,6 +206,35 @@
           "node_hk1"
         ],
         "outboundTag": "node_hk1"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_local_dns",
+        "inboundTag": [
+          "socks_local_in"
+        ],
+        "network": "udp",
+        "port": "53",
+        "outboundTag": "dns_out"
+      },
+      {
+        "type": "field",
+        "ruleTag": "rule_local_reserved",
+        "inboundTag": [
+          "socks_local_in"
+        ],
+        "ip": [
+          "0.0.0.0/8",
+          "10.0.0.0/8",
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "169.254.0.0/16",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "224.0.0.0/4",
+          "240.0.0.0/4"
+        ],
+        "outboundTag": "direct"
       },
       {
         "type": "field",
@@ -222,6 +283,7 @@
         "type": "field",
         "ruleTag": "rule_balancer",
         "inboundTag": [
+          "socks_local_in",
           "socks_1080_in",
           "dns_internal"
         ],

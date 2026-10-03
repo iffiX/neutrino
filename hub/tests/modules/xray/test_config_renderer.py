@@ -739,12 +739,17 @@ def test_every_node_measured_down_keeps_them_all_in_the_selector():
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
 
-def render_for_golden(*, is_transparent: bool) -> dict:
-    """Every scope switched on, one SOCKS port each way."""
+def render_for_golden(
+    *,
+    is_transparent: bool,
+    is_overlay_proxy_enabled: bool = True,
+    is_local_proxy_enabled: bool = True,
+) -> dict:
+    """Every scope switched on, one SOCKS port each way; the uplink is en0."""
     settings = {
         "is_proxy_enabled": True,
-        "is_overlay_proxy_enabled": True,
-        "is_local_proxy_enabled": True,
+        "is_overlay_proxy_enabled": is_overlay_proxy_enabled,
+        "is_local_proxy_enabled": is_local_proxy_enabled,
         "socks_ports": [
             {"port": 1080, "is_proxied": True},
             {"port": 1081, "is_proxied": False},
@@ -759,6 +764,7 @@ def render_for_golden(*, is_transparent: bool) -> dict:
         node_list=resolved_nodes(),
         routing=settings,
         is_transparent=is_transparent,
+        egress_interface="" if is_transparent else "en0",
     ).render()
 
 
@@ -772,7 +778,7 @@ def test_the_rendering_matches_its_golden(is_transparent, name):
     assert render_for_golden(is_transparent=is_transparent) == golden
 
 
-def test_outside_linux_nothing_diverts_and_nothing_marks():
+def test_outside_linux_nothing_marks_and_the_tun_scopes_arrive_on_loopback():
     config = render_for_golden(is_transparent=False)
 
     for outbound in config["outbounds"]:
@@ -781,7 +787,78 @@ def test_outside_linux_nothing_diverts_and_nothing_marks():
         "api_in",
         "dns_in",
         PROBE_TAG,
+        "socks_local_in",
         "socks_1080_in",
         "socks_1081_in",
     ]
     assert "tproxy_in" not in json.dumps(config["routing"])
+    (local,) = [
+        inbound for inbound in config["inbounds"] if inbound["tag"] == "socks_local_in"
+    ]
+    assert local["listen"] == "127.0.0.1"
+    assert local["settings"]["udp"] is True
+    assert local["sniffing"]["destOverride"] == ["http", "tls", "quic"]
+
+
+@pytest.mark.parametrize(
+    ("is_overlay_proxy_enabled", "is_local_proxy_enabled"),
+    [(True, False), (False, True)],
+    ids=["overlay alone", "hub alone"],
+)
+def test_outside_linux_either_tun_scope_alone_opens_the_local_inbound(
+    is_overlay_proxy_enabled, is_local_proxy_enabled
+):
+    config = render_for_golden(
+        is_transparent=False,
+        is_overlay_proxy_enabled=is_overlay_proxy_enabled,
+        is_local_proxy_enabled=is_local_proxy_enabled,
+    )
+
+    assert "socks_local_in" in tags(config, "inbounds")
+    (balancer,) = [
+        rule
+        for rule in config["routing"]["rules"]
+        if rule.get("ruleTag") == "rule_balancer"
+    ]
+    assert balancer["inboundTag"][0] == "socks_local_in"
+
+
+def test_outside_linux_the_local_lookups_take_the_dns_outbound_and_reserved_leave_directly():
+    rules = render_for_golden(is_transparent=False)["routing"]["rules"]
+    by_tag = {rule["ruleTag"]: rule for rule in rules}
+
+    assert by_tag["rule_local_dns"] == {
+        "type": "field",
+        "ruleTag": "rule_local_dns",
+        "inboundTag": ["socks_local_in"],
+        "network": "udp",
+        "port": "53",
+        "outboundTag": "dns_out",
+    }
+    assert by_tag["rule_local_reserved"]["outboundTag"] == "direct"
+    assert "192.168.0.0/16" in by_tag["rule_local_reserved"]["ip"]
+    order = [rule["ruleTag"] for rule in rules]
+    assert order.index("rule_local_dns") < order.index("rule_split_domain")
+    assert order.index("rule_local_reserved") < order.index("rule_balancer")
+
+
+def test_outside_linux_what_leaves_directly_is_bound_to_the_uplink():
+    """xray's own traffic stays out of the TUN device the way the mark keeps
+    it out of the output chain on Linux."""
+    config = render_for_golden(is_transparent=False)
+
+    for outbound in config["outbounds"]:
+        if outbound["protocol"] in ("freedom", "shadowsocks", "vless"):
+            assert outbound["streamSettings"]["sockopt"]["interface"] == "en0"
+
+
+def test_outside_linux_with_both_tun_scopes_off_the_proxy_is_its_socks_ports():
+    config = render_for_golden(
+        is_transparent=False,
+        is_overlay_proxy_enabled=False,
+        is_local_proxy_enabled=False,
+    )
+
+    assert "socks_local_in" not in tags(config, "inbounds")
+    assert "dns_out" not in tags(config, "outbounds")
+    assert "interface" not in json.dumps(config["outbounds"])

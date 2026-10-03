@@ -6,6 +6,8 @@ object xray consumes. Validating and restarting is :mod:`neutrino_hub.modules.xr
 
 import ipaddress
 
+from neutrino_hub.modules.router.constants import ROUTER_RESERVED_NETWORKS
+from neutrino_hub.modules.tun.renderer import is_tun_wanted
 from neutrino_hub.modules.xray.constants import (
     XRAY_ACCESS_LOG,
     XRAY_API_INBOUND_TAG,
@@ -24,6 +26,10 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_DNS_QUERY_STRATEGY,
     XRAY_DNS_TAG,
     XRAY_EGRESS_MARK,
+    XRAY_LOCAL_DNS_PORT,
+    XRAY_LOCAL_SOCKS_LISTEN,
+    XRAY_LOCAL_SOCKS_PORT,
+    XRAY_LOCAL_SOCKS_TAG,
     XRAY_LOG_LEVEL,
     XRAY_NODE_DOMAIN_STRATEGY,
     XRAY_PROBE_LISTEN,
@@ -35,6 +41,8 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_RULE_TAG_DNS_DIRECT,
     XRAY_RULE_TAG_DNS_IN,
     XRAY_RULE_TAG_INBOUND_DIRECT,
+    XRAY_RULE_TAG_LOCAL_DNS,
+    XRAY_RULE_TAG_LOCAL_RESERVED,
     XRAY_RULE_TAG_PROBE,
     XRAY_RULE_TAG_SOCKS_DIRECT,
     XRAY_RULE_TAG_SPLIT_DOMAIN,
@@ -59,8 +67,10 @@ class XrayConfigRenderer:
     upstream, ``api_in`` answers the panel on loopback, and one SOCKS listener
     per published port leaves the way its entry says. ``socks_probe_in``
     carries one account per resident node, and one rule per account sends that
-    account out its own node. Outside Linux nothing diverts and nothing marks,
-    so ``tproxy_in`` and every ``sockopt.mark`` are left out.
+    account out its own node. Outside Linux nothing marks, so ``tproxy_in``
+    and every ``sockopt.mark`` are left out; there the hub's own scope and
+    the overlay scope arrive from the TUN device at ``socks_local_in``, and
+    the outbounds that leave directly are bound to the uplink instead.
     """
 
     def __init__(
@@ -70,6 +80,7 @@ class XrayConfigRenderer:
         routing: dict,
         down_tags: frozenset | set = frozenset(),
         is_transparent: bool = True,
+        egress_interface: str = "",
     ):
         """
         Args:
@@ -80,8 +91,12 @@ class XrayConfigRenderer:
                 out of the balancer's selector.
             is_transparent: Whether the firewall diverts into ``tproxy_in``
                 and routes by the mark xray sets, as on Linux. False renders
-                the SOCKS ports alone: no ``tproxy_in``, no ``sockopt.mark``,
-                and every diverted scope off.
+                no ``tproxy_in`` and no ``sockopt.mark``, the served
+                networks' scope off, and ``socks_local_in`` for the hub's
+                own scope and the overlay scope.
+            egress_interface: The uplink the direct and node outbounds are
+                bound to while ``socks_local_in`` is rendered, so what they
+                send does not enter the TUN device; empty binds nothing.
         """
         self._is_transparent = is_transparent
         # Every node whose secret resolved is resident: an outbound and a
@@ -109,11 +124,16 @@ class XrayConfigRenderer:
         is_diverting = has_exit and is_transparent
         self._is_lan_proxied = routing.get("is_proxy_enabled", True) and is_diverting
         self._is_overlay_proxied = (
-            routing.get("is_overlay_proxy_enabled", False) and is_diverting
+            routing.get("is_overlay_proxy_enabled", False) and has_exit
         )
         self._is_local_proxied = (
-            routing.get("is_local_proxy_enabled", False) and is_diverting
+            routing.get("is_local_proxy_enabled", False) and has_exit
         )
+        # Outside Linux those two scopes reach xray from the TUN device.
+        self._is_tunneled = not is_transparent and is_tun_wanted(
+            routing, has_exit=has_exit
+        )
+        self._egress_interface = egress_interface if self._is_tunneled else ""
         # A proxied listener with no exit would answer and send everything out
         # directly under a name that says the opposite, so it is not published
         # at all in that state.
@@ -139,9 +159,14 @@ class XrayConfigRenderer:
     @property
     def _is_transparent_proxied(self) -> bool:
         """Whether what the firewall diverts goes to the balancer."""
-        return bool(
+        return self._is_transparent and bool(
             self._is_lan_proxied or self._is_overlay_proxied or self._is_local_proxied
         )
+
+    @property
+    def _is_dns_answered(self) -> bool:
+        """Whether a lookup reaches the DNS outbound: from dnsmasq or the TUN."""
+        return bool(self._is_lan_proxied or self._is_tunneled)
 
     def render(self) -> dict:
         """Render the whole configuration.
@@ -250,6 +275,8 @@ class XrayConfigRenderer:
         ]
         if self._resident_nodes:
             inbounds.append(self._render_probe_inbound())
+        if self._is_tunneled:
+            inbounds.append(self._render_local_inbound())
         # One inbound per published port, tagged by the port so a rule can name
         # exactly the listeners that leave one way.
         for entry in self._socks_ports:
@@ -274,6 +301,21 @@ class XrayConfigRenderer:
             "protocol": "dokodemo-door",
             "settings": {"network": "tcp,udp", "followRedirect": True},
             "streamSettings": {"sockopt": {"tproxy": "tproxy"}},
+            "sniffing": {
+                "enabled": True,
+                "destOverride": ["http", "tls", "quic"],
+                "routeOnly": True,
+            },
+        }
+
+    def _render_local_inbound(self) -> dict:
+        """The loopback listener tun2socks hands the TUN device's traffic to."""
+        return {
+            "tag": XRAY_LOCAL_SOCKS_TAG,
+            "listen": XRAY_LOCAL_SOCKS_LISTEN,
+            "port": XRAY_LOCAL_SOCKS_PORT,
+            "protocol": "socks",
+            "settings": {"udp": True, "auth": "noauth"},
             "sniffing": {
                 "enabled": True,
                 "destOverride": ["http", "tls", "quic"],
@@ -327,11 +369,15 @@ class XrayConfigRenderer:
         }
         if self._is_transparent:
             direct["streamSettings"] = {"sockopt": {"mark": XRAY_EGRESS_MARK}}
+        elif self._egress_interface:
+            direct["streamSettings"] = {
+                "sockopt": {"interface": self._egress_interface}
+            }
         outbounds: list[dict] = [direct]
         outbounds += [self._render_node_outbound(node) for node in self._resident_nodes]
-        if self._is_lan_proxied:
+        if self._is_dns_answered:
             # With the LAN scope off dnsmasq asks the direct resolver itself,
-            # so nothing reaches the DNS inbound and this has no caller.
+            # and with no TUN nothing else asks here, so this has no caller.
             outbounds.append(
                 {
                     "tag": XRAY_DNS_OUTBOUND_TAG,
@@ -346,6 +392,8 @@ class XrayConfigRenderer:
         sockopt: dict = {"domainStrategy": XRAY_NODE_DOMAIN_STRATEGY}
         if self._is_transparent:
             sockopt = {"mark": XRAY_EGRESS_MARK, **sockopt}
+        elif self._egress_interface:
+            sockopt = {"interface": self._egress_interface, **sockopt}
         stream: dict = {"sockopt": sockopt}
         if node.protocol == SHADOWSOCKS_PROTOCOL:
             settings = {
@@ -410,6 +458,28 @@ class XrayConfigRenderer:
                     "outboundTag": XRAY_DNS_OUTBOUND_TAG,
                 }
             )
+        if self._is_tunneled:
+            # The box's own lookups and the overlay members' enter the TUN
+            # like any other packet; the DNS outbound gives them the split
+            # dns_in gives the served networks on Linux. Reserved addresses
+            # leave directly, as the router's reserved set makes them do.
+            rules += [
+                {
+                    "type": "field",
+                    "ruleTag": XRAY_RULE_TAG_LOCAL_DNS,
+                    "inboundTag": [XRAY_LOCAL_SOCKS_TAG],
+                    "network": "udp",
+                    "port": XRAY_LOCAL_DNS_PORT,
+                    "outboundTag": XRAY_DNS_OUTBOUND_TAG,
+                },
+                {
+                    "type": "field",
+                    "ruleTag": XRAY_RULE_TAG_LOCAL_RESERVED,
+                    "inboundTag": [XRAY_LOCAL_SOCKS_TAG],
+                    "ip": list(ROUTER_RESERVED_NETWORKS),
+                    "outboundTag": XRAY_DIRECT_TAG,
+                },
+            ]
         if self._resident_nodes:
             # The direct resolver is reached directly, whatever the split
             # says about its address: the exits' names are looked up there,
@@ -447,6 +517,8 @@ class XrayConfigRenderer:
             balanced = [XRAY_TPROXY_TAG] + balanced
         elif self._is_transparent:
             direct_inbounds.append(XRAY_TPROXY_TAG)
+        if self._is_tunneled:
+            balanced = [XRAY_LOCAL_SOCKS_TAG] + balanced
         if not self._is_lan_proxied:
             direct_inbounds.append(XRAY_DNS_TAG)
         if direct_inbounds:

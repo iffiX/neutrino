@@ -307,15 +307,18 @@ class SupervisedProcessController(ProcessController):
         with self._lock:
             self._is_service_held = True
 
-    def supervise(self, start_lines: dict) -> None:
+    def supervise(self, start_lines: dict, *, watcher=None) -> None:
         """Become the service: hold the start lines and run every enabled child.
 
         Args:
             start_lines: Name to :class:`ChildStartLine` for the children
                 whose start line the service knows itself; a line kept in
                 ``services.json`` is used for the others.
+            watcher: Told of every child that ended and of every tick, as
+                the supervisor's ``set_watcher`` says; None is none.
         """
         with self._lock:
+            self._supervisor.set_watcher(watcher)
             self._is_supervising = True
             self._own_start_lines = set(start_lines)
             state = read_services_state(self._state_path)
