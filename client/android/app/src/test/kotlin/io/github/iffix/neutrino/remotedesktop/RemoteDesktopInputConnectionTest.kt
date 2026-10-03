@@ -27,10 +27,21 @@ class RemoteDesktopInputConnectionTest {
     }
 
     @Test
-    fun aCompositionLeftUnfinishedSendsNothing() {
-        connection.setComposingText("ni", 1)
-        connection.finishComposingText()
+    fun aFinishedCompositionSendsTheWordOnce() {
+        connection.setComposingText("he", 1)
+        connection.setComposingText("hello", 1)
         assertEquals(emptyList<String>(), core.calls)
+        connection.finishComposingText()
+        connection.finishComposingText()
+        assertEquals(listOf("text hello"), core.calls)
+    }
+
+    @Test
+    fun aCompositionReplacedByACommitIsNotSentAgainOnFinish() {
+        connection.setComposingText("nihao", 1)
+        connection.commitText("你好", 1)
+        connection.finishComposingText()
+        assertEquals(listOf("text 你好"), core.calls)
     }
 
     @Test
@@ -91,8 +102,8 @@ class RemoteDesktopInputConnectionTest {
     }
 
     @Test
-    fun theEditorActionSendsNothing() {
+    fun anEditorActionIsTheEnterKey() {
         connection.performEditorAction(0)
-        assertEquals(emptyList<String>(), core.calls)
+        assertEquals(listOf("key VK_RETURN down", "key VK_RETURN up"), core.calls)
     }
 }

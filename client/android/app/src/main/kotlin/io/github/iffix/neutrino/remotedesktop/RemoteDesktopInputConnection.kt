@@ -7,22 +7,33 @@ import android.view.inputmethod.BaseInputConnection
 
 /**
  * The phone keyboard's link to the viewer. Committed text is sent as text; text still being
- * composed stays in the keyboard and is sent nowhere; a delete is sent as Backspaces and Deletes;
- * Enter, Backspace, Tab and the arrows are sent as their keys.
+ * composed is sent nowhere until the keyboard finishes it, and then once as text; a commit
+ * replaces the composition; a delete is sent as Backspaces and Deletes; Enter, Backspace, Tab and
+ * the arrows are sent as their keys, and an editor action as Enter.
  *
  * @param view The view the keyboard types into.
  * @param sender Where the keys and the text go.
  */
 class RemoteDesktopInputConnection(view: View, private val sender: RemoteDesktopInputSender) :
     BaseInputConnection(view, true) {
+    private var composing: String = ""
+
     override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-        editable?.let(::empty)
+        dropComposition()
         if (!text.isNullOrEmpty()) sender.type(text.toString())
         return true
     }
 
+    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+        composing = text?.toString().orEmpty()
+        super.setComposingText(text, newCursorPosition)
+        return true
+    }
+
     override fun finishComposingText(): Boolean {
-        editable?.let(::empty)
+        val finished = composing
+        dropComposition()
+        if (finished.isNotEmpty()) sender.type(finished)
         return true
     }
 
@@ -43,7 +54,10 @@ class RemoteDesktopInputConnection(view: View, private val sender: RemoteDesktop
         return true
     }
 
-    override fun performEditorAction(editorAction: Int): Boolean = true
+    override fun performEditorAction(editorAction: Int): Boolean {
+        sender.press(RemoteDesktopKey.ENTER)
+        return true
+    }
 
     /**
      * A key pressed on the keyboard: Enter, Backspace, Delete, Tab and the arrows are sent as their
@@ -70,8 +84,11 @@ class RemoteDesktopInputConnection(view: View, private val sender: RemoteDesktop
         }
     }
 
-    private fun empty(content: Editable) {
-        removeComposingSpans(content)
-        content.clear()
+    private fun dropComposition() {
+        composing = ""
+        editable?.let { content: Editable ->
+            removeComposingSpans(content)
+            content.clear()
+        }
     }
 }
