@@ -42,7 +42,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging")
+)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import bundled  # noqa: E402
@@ -79,6 +81,10 @@ BUILD_PYTHON_VERSION = (3, 13)
 # itself is called under /Applications.
 CLIENT_BINARY_NAME = "nclient"
 APP_NAME = "Neutrino Client"
+LOCAL_NETWORK_RESOURCE = (
+    "NSLocalNetworkUsageDescription:Neutrino Client connects to hubs and"
+    " shares on your local network."
+)
 APP_BUNDLE_NAME = f"{APP_NAME}.app"
 
 # The identity the installer records the package under.
@@ -451,6 +457,9 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
         options=(
             "--include-package=neutrino_client",
             *(f"--include-package={name}" for name in PYOBJC_PACKAGES),
+            # macOS 15 asks the person before an app reaches the local
+            # network; this is the sentence its prompt carries.
+            f"--macos-app-protected-resource={LOCAL_NETWORK_RESOURCE}",
         ),
     )
 
@@ -485,7 +494,9 @@ def _check_tools(is_stage_only: bool) -> None:
     """
     if sys.platform != "darwin":
         raise SystemExit(f"{Path(__file__).name} runs on macOS; this is {sys.platform}")
-    tools = ("codesign", "hdiutil") + (() if is_stage_only else ("pkgbuild", "productbuild"))
+    tools = ("codesign", "hdiutil") + (
+        () if is_stage_only else ("pkgbuild", "productbuild")
+    )
     for tool in tools:
         if shutil.which(tool) is None:
             raise SystemExit(
