@@ -174,13 +174,13 @@ def render_start_line(*, binary: str, device: str, socks_port: int) -> list:
     """
     return [
         binary,
-        "-device",
+        "--device",
         f"tun://{device}",
-        "-proxy",
+        "--proxy",
         f"socks5://{XRAY_LOCAL_SOCKS_LISTEN}:{socks_port}",
-        "-mtu",
+        "--mtu",
         str(TUN_MTU),
-        "-loglevel",
+        "--loglevel",
         TUN_LOG_LEVEL,
     ]
 

@@ -281,7 +281,7 @@ def test_xray_is_bound_to_the_uplink_while_a_tun_scope_is_on(machine):
 def a_plan(**facts) -> TunPlan:
     given = {
         "device": "utun225",
-        "start_argv": ["/app/bin/tun2socks", "-device", "tun://utun225"],
+        "start_argv": ["/app/bin/tun2socks", "--device", "tun://utun225"],
         "uplink": "en0",
         "gateway": "192.168.1.1",
         "local_networks": ["192.168.1.20/24"],
@@ -319,7 +319,7 @@ def test_the_pass_keeps_the_plan_and_enables_tun2socks(files, monkeypatch):
         (
             "set_start_line",
             "tun2socks",
-            ["/app/bin/tun2socks", "-device", "tun://utun225"],
+            ["/app/bin/tun2socks", "--device", "tun://utun225"],
             {},
             None,
         ),

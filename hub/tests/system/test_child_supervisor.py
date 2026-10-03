@@ -286,7 +286,7 @@ def test_a_start_line_without_an_argument_vector_is_refused():
 
 # --- a child that runs only beside another -----------------------------------
 
-TUN = ChildStartLine(argv=["/app/bin/tun2socks", "-device", "tun://utun225"])
+TUN = ChildStartLine(argv=["/app/bin/tun2socks", "--device", "tun://utun225"])
 
 
 class _Watcher:

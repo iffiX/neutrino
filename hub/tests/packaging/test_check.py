@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
+from types import SimpleNamespace
 
 from neutrino_hub.cli import wizard
 from neutrino_hub.utils.passwords import (
@@ -156,3 +157,56 @@ def test_a_panel_answering_before_setup_is_not_the_wizard(check, monkeypatch):
 
     with pytest.raises(SystemExit, match="answered 404"):
         check._wait_for_wizard()
+
+
+def _fake_container_run(stdout: str, calls: list):
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    return run
+
+
+def test_the_linux_hub_check_reads_the_address_from_nhub_open(
+    check, monkeypatch, tmp_path
+):
+    calls = []
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        _fake_container_run(
+            "\n  Neutrino Hub installed. Set it up in a browser at:\n\nnhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
+            calls,
+        ),
+    )
+    package = tmp_path / "neutrino-hub-0.5.0-1.x86_64.rpm"
+    package.write_bytes(b"rpm")
+    check.check_linux(package)
+    script = calls[0][-1]
+    assert script.startswith("dnf -y install ")
+    assert script.endswith(" && nhub --version && nhub open --print")
+
+
+def test_the_linux_hub_check_fails_when_the_install_hid_its_address(
+    check, monkeypatch, tmp_path
+):
+    calls = []
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        _fake_container_run("nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n", calls),
+    )
+    package = tmp_path / "neutrino-hub_0.5.0_amd64.deb"
+    package.write_bytes(b"deb")
+    with pytest.raises(SystemExit, match="printed no setup wizard address"):
+        check.check_linux(package)

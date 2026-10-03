@@ -50,13 +50,13 @@ def plan(**facts) -> TunPlan:
 def test_tun2socks_starts_on_the_device_pointed_at_the_local_inbound(device, binary):
     assert render_start_line(binary=binary, device=device, socks_port=10087) == [
         binary,
-        "-device",
+        "--device",
         f"tun://{device}",
-        "-proxy",
+        "--proxy",
         "socks5://127.0.0.1:10087",
-        "-mtu",
+        "--mtu",
         "1500",
-        "-loglevel",
+        "--loglevel",
         "warn",
     ]
 
