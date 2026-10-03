@@ -216,6 +216,8 @@ AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino/agent/rustdesk/rustdesk"
 # How long a module command waits for a pending desired state to apply
 # before it runs against the configuration that state carries.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0
+# How often a state whose apply waits on a running install is applied again.
+AGENT_MODULE_INSTALL_RECHECK_S = 30.0
 
 # What this machine accumulated: the configured marks, a package in transit,
 # the last reinstall's result, all root-only, and the software the hub sends

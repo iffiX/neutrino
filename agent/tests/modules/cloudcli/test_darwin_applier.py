@@ -175,3 +175,19 @@ def test_the_states_and_the_logs_are_each_accounts(applier, launchd):
         "bob": {"is_running": False, "code": ""},
     }
     assert applier.log_paths(["ann"])[0][1].endswith("cloudcli_ann.log")
+
+
+def test_the_account_reads_installing_while_its_npm_runs(applier, account):
+    seen = []
+    answer = account.__call__
+
+    def run_as(entry, command, **kwargs):
+        if "install" in command:
+            seen.append(applier.installing)
+        return answer(entry, command, **kwargs)
+
+    applier._run_as = run_as
+    applier.apply(CONFIG, {"ann": 41234})
+
+    assert seen == [frozenset({"ann"})]
+    assert applier.installing == frozenset()

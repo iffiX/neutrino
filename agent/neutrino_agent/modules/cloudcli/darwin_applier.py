@@ -165,6 +165,8 @@ class CloudcliDarwinApplier:
         self._launchd_dir = launchd_dir
         self._log_dir = log_dir
         self._log = log
+        # The account whose install the running apply waits on, if any.
+        self.installing: frozenset = frozenset()
 
     @property
     def node(self) -> str:
@@ -342,40 +344,44 @@ class CloudcliDarwinApplier:
         app = installer.app_dir(home, "darwin")
         if installer.installed_version(app) == CLOUDCLI_VERSION:
             return False
-        node_bin = os.path.dirname(node)
-        environment = {
-            "HOME": home,
-            "USER": account,
-            "LOGNAME": account,
-            "PATH": f"{node_bin}:{ACCOUNT_PATH}",
-            **installer.npm_environment(app),
-        }
-        npm = installer.npm_path(os.path.dirname(node_bin), "darwin")
-        self._log(f"cloudcli: installing CloudCLI for {account}")
-        result = self._run_as(
-            entry,
-            ["/bin/sh", "-c", INSTALL_SHELL, app, node, npm]
-            + installer.npm_arguments(app),
-            environment=environment,
-            timeout_s=CLOUDCLI_INSTALL_TIMEOUT_S,
-        )
-        if not result.is_success:
-            output = (result.stdout + "\n" + result.stderr).strip()
-            self._log(f"cloudcli: npm for {account}: {output[-2000:]}")
-            raise installer.npm_failure(output, account)
-        check = self._run_as(
-            entry,
-            ["/bin/sh", "-c", CHECK_SHELL, app, node, "-e"]
-            + [installer.NATIVE_CHECK_SCRIPT],
-            environment=environment,
-            timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
-        )
-        if check.exit_code == installer.NATIVE_CHECK_EXIT:
-            raise ModuleApplyError(
-                "cloudcli_native_module_failed",
-                {"account": account, "module": check.stdout.strip()},
+        self.installing = frozenset({account})
+        try:
+            node_bin = os.path.dirname(node)
+            environment = {
+                "HOME": home,
+                "USER": account,
+                "LOGNAME": account,
+                "PATH": f"{node_bin}:{ACCOUNT_PATH}",
+                **installer.npm_environment(app),
+            }
+            npm = installer.npm_path(os.path.dirname(node_bin), "darwin")
+            self._log(f"cloudcli: installing CloudCLI for {account}")
+            result = self._run_as(
+                entry,
+                ["/bin/sh", "-c", INSTALL_SHELL, app, node, npm]
+                + installer.npm_arguments(app),
+                environment=environment,
+                timeout_s=CLOUDCLI_INSTALL_TIMEOUT_S,
             )
-        return True
+            if not result.is_success:
+                output = (result.stdout + "\n" + result.stderr).strip()
+                self._log(f"cloudcli: npm for {account}: {output[-2000:]}")
+                raise installer.npm_failure(output, account)
+            check = self._run_as(
+                entry,
+                ["/bin/sh", "-c", CHECK_SHELL, app, node, "-e"]
+                + [installer.NATIVE_CHECK_SCRIPT],
+                environment=environment,
+                timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
+            )
+            if check.exit_code == installer.NATIVE_CHECK_EXIT:
+                raise ModuleApplyError(
+                    "cloudcli_native_module_failed",
+                    {"account": account, "module": check.stdout.strip()},
+                )
+            return True
+        finally:
+            self.installing = frozenset()
 
     def _held_accounts(self) -> list:
         try:

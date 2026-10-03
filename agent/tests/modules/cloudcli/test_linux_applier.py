@@ -272,3 +272,30 @@ def test_remove_withdraws_every_instance_and_the_template(applier, machine, tmp_
 
     assert not (tmp_path / "systemd" / "neutrino_cloudcli@.service").exists()
     assert applier.units() == []
+
+
+def test_the_account_reads_installing_while_its_npm_runs(applier, machine):
+    seen = []
+    answer = machine.__call__
+
+    def run(command, **kwargs):
+        if "install" in command:
+            seen.append(applier.installing)
+        return answer(command, **kwargs)
+
+    applier._run = run
+    applier.apply(CONFIG, {"ann": 41234})
+    machine.npm_exit = 1
+    applier.apply(CONFIG, {"ann": 41234})
+
+    assert seen == [frozenset({"ann"})]
+    assert applier.installing == frozenset()
+
+
+def test_a_failed_install_reads_installing_no_more(applier, machine):
+    machine.npm_exit = 1
+
+    with pytest.raises(ModuleApplyError):
+        applier.apply(CONFIG, {"ann": 41234})
+
+    assert applier.installing == frozenset()

@@ -104,13 +104,15 @@ class ModuleRunner:
             resolved: The module as the hub resolved it.
 
         Returns:
-            ``{"is_installed", "is_active", "details"}``: the runner's own
-            presence check, its unit's word, and its live details; the
-            last two are not read for software that is not there.
+            ``{"is_installed", "is_installing", "is_active", "details"}``:
+            the runner's own presence check, whether an install of its own
+            still runs, its unit's word, and its live details; the last
+            three are not read for software that is not there.
         """
         is_installed = bool(self.verify(resolved))
         return {
             "is_installed": is_installed,
+            "is_installing": bool(self.is_installing()) if is_installed else False,
             "is_active": bool(self.is_active()) if is_installed else False,
             "details": self.details(resolved) if is_installed else {},
         }
@@ -166,6 +168,14 @@ class ModuleRunner:
         A runner with nothing to delete, or whose data is never the hub's to
         delete, leaves this as it is.
         """
+
+    def is_installing(self) -> bool:
+        """Whether an install the module's apply started still runs.
+
+        Returns:
+            False for a module whose apply installs nothing of its own.
+        """
+        return False
 
     def is_active(self) -> bool:
         """Whether the unit this module runs as is active.

@@ -18,7 +18,11 @@ import pytest
 
 import neutrino_agent.modules.cloudcli.runner as runner_module
 from neutrino_agent.core.engine import _download_refusal
-from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    ModuleApplyError,
+    ModuleInstallPending,
+    PlatformUnsupportedError,
+)
 from neutrino_agent.modules.cloudcli.darwin_applier import CloudcliDarwinApplier
 from neutrino_agent.modules.cloudcli.linux_applier import CloudcliLinuxApplier
 from neutrino_agent.modules.cloudcli.runner import (
@@ -40,6 +44,7 @@ class FakeApplier:
         self.calls: list = []
         self.running: set = set()
         self.error = None
+        self.installing = frozenset()
 
     def apply(self, config, upstream_ports):
         self.calls.append(("apply", dict(upstream_ports)))
@@ -328,3 +333,42 @@ def test_without_units_the_log_files_come_then_the_agent_s_lines(os_name, tmp_pa
     assert len(first) == 3
     assert second == first
     assert alone == first[1:]
+
+
+def test_an_install_that_runs_reads_installing_and_its_log_is_the_install_s(
+    applier, tmp_path
+):
+    lines = []
+    held = CloudcliModuleRunner(
+        platform=Platform("darwin"),
+        log=lines.append,
+        applier=applier,
+        forwarder_factory=FakeForwarder,
+        pick_port=lambda: 41000,
+    )
+    install_log = tmp_path / "install_ann.log"
+    install_log.write_text("npm http fetch GET 200\n", encoding="utf-8")
+    applier.log_paths = lambda accounts: [
+        (account, str(install_log)) for account in accounts
+    ]
+
+    def pending(config, upstream_ports):
+        applier.installing = frozenset({"ann"})
+        raise ModuleInstallPending("ann")
+
+    applier.apply = pending
+
+    for _ in range(2):
+        with pytest.raises(ModuleInstallPending):
+            held.apply(CONFIG)
+
+    assert held.is_installing() is True
+    node = tmp_path / "node"
+    node.write_text("")
+    applier.node = str(node)
+    assert held.observe({})["is_installing"] is True
+    assert lines == ["cloudcli: installing CloudCLI for ann"]
+    assert held.journal_text(10) == ["ann: npm http fetch GET 200"]
+    assert FakeForwarder.made == []
+    applier.installing = frozenset()
+    assert held.is_installing() is False

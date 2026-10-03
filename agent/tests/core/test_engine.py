@@ -10,7 +10,8 @@ output line handed on as it comes and the row transient meanwhile, a
 package's bytes asked for only by the kinds that install from bytes and
 the file deleted afterwards, the uninstall recipe's own packages and
 steps, results judged by the machine's own state, one package operation
-at a time, and that nothing in it ever retries anything.
+at a time, a module whose own install runs reading installing, and that
+nothing in it ever retries anything.
 """
 
 import os
@@ -583,6 +584,19 @@ def test_the_state_of_software_that_is_there_follows_the_unit_and_the_mark(
     assert row["state"] == state
     assert row["is_active"] is is_active_now
     assert row["code"] == ""
+
+
+@pytest.mark.parametrize("is_marked", [True, False])
+def test_an_install_of_the_module_s_own_reads_installing(tmp_path, is_marked):
+    runner = ConfigurableRunner(is_active_now=True)
+    runner.is_installing = lambda: True
+    engine = module_engine(runner, module_wanted("running"), tmp_path)
+    if is_marked:
+        engine.mark_configured("samba")
+
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["state"] == "installing"
 
 
 def test_the_mark_is_a_root_only_file_named_after_the_module(tmp_path):

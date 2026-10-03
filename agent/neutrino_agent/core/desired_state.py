@@ -22,7 +22,10 @@ The applied hash is what the hub compares against: it moves to the state's
 hash only once every mentioned module applied. A state whose apply failed
 is reported with its code under the old hash, and is tried again only when
 a state with another hash arrives; the one exception is a failure the
-socket caused, which the next state frame tries again.
+socket caused, which the next state frame tries again. A module whose apply
+waits on an install that still runs is no failure: unless another module
+failed, the state is applied again every recheck interval until the
+install has ended.
 
 Not pure: writes the state file, drives the module runners and opens
 streams.
@@ -39,6 +42,7 @@ import threading
 
 from neutrino_agent.constants import (
     AGENT_DESIRED_STATE_PATH,
+    AGENT_MODULE_INSTALL_RECHECK_S,
     AGENT_WANT_ABSENT,
     AGENT_WANT_INSTALLED,
     AGENT_WANT_RUNNING,
@@ -47,6 +51,7 @@ from neutrino_agent.constants import (
 from neutrino_agent.exceptions import (
     GatewayUnreachable,
     ModuleApplyError,
+    ModuleInstallPending,
     PlatformUnsupportedError,
 )
 from neutrino_agent.streams import STREAM_KIND_LOG, STREAM_KIND_PACKAGE
@@ -64,6 +69,9 @@ CONFIGURING_WANTS = (AGENT_WANT_RUNNING, AGENT_WANT_STOPPED)
 # The one failure the next state frame tries again: the socket went away
 # under the operation, and nothing about the machine made it fail.
 RETRIED_CODE = "hub_unreachable"
+# What an apply that waits on a running install answers inside this file;
+# it is never reported.
+PENDING_CODE = "install_pending"
 
 
 class DesiredStateStore:
@@ -160,6 +168,8 @@ class DesiredStateApplier:
         self._applied_hash = ""
         self._tried_hash = ""
         self._state_error: "dict | None" = None
+        # The state whose apply waits on a running install, applied again.
+        self._rechecked: "dict | None" = None
         self._wakeup = threading.Event()
         self._worker = threading.Thread(
             target=self._run, name="desired_state", daemon=True
@@ -229,12 +239,16 @@ class DesiredStateApplier:
         self._engine.take_state(modules)
         self._apply_desktop(document.get("desktop"))
         first_failure = None
+        is_pending = False
         for name in APPLY_ORDER:
             runner = self._runners.get(name)
             wanted = modules.get(name)
             if runner is None or wanted is None:
                 continue
             failure = self._reconcile_one(name, runner, wanted)
+            if failure and failure["code"] == PENDING_CODE:
+                is_pending = True
+                failure = None
             self._engine.record_apply(
                 name,
                 failure["code"] if failure else "",
@@ -246,8 +260,12 @@ class DesiredStateApplier:
             is_retried = first_failure is not None and (
                 first_failure["code"] == RETRIED_CODE
             )
-            self._tried_hash = "" if is_retried else state_hash
-            if first_failure is None:
+            is_rechecked = is_pending and first_failure is None
+            self._tried_hash = "" if is_retried or is_rechecked else state_hash
+            self._rechecked = dict(document) if is_rechecked else None
+            if first_failure is None and is_pending:
+                self._state_error = None
+            elif first_failure is None:
                 self._applied_hash = state_hash
                 self._state_error = None
             else:
@@ -382,6 +400,8 @@ class DesiredStateApplier:
             if want == AGENT_WANT_STOPPED:
                 runner.stop()
             self._log(f"{name}: {want}")
+        except ModuleInstallPending:
+            return {"code": PENDING_CODE, "params": {}}
         except ModuleApplyError as error:
             self._log(f"{name}: {error.code}")
             return {"code": error.code, "params": dict(error.params)}
@@ -394,8 +414,14 @@ class DesiredStateApplier:
 
     def _run(self) -> None:
         while True:
-            self._wakeup.wait()
+            with self._lock:
+                timeout_s = AGENT_MODULE_INSTALL_RECHECK_S if self._rechecked else None
+            is_woken = self._wakeup.wait(timeout_s)
             self._wakeup.clear()
+            if not is_woken:
+                with self._lock:
+                    if self._pending is None:
+                        self._pending = self._rechecked
             while True:
                 with self._lock:
                     pending = self._pending

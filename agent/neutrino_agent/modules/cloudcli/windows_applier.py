@@ -10,8 +10,11 @@ directory, its output appended to the account's log file; the script puts
 Node's directory before the account's own ``PATH``, so ``node`` and the
 ``claude`` the account installed are the ones CloudCLI finds. The script holds the instance's secrets and is reachable by its
 account, SYSTEM and the administrators alone. An account's install runs
-once as a task of its own with the same login. Every operation is one
-PowerShell script, the passwords on its standard input.
+once as a task of its own with the same login, left running: each apply
+reads the task, and while it runs the module is installing and no instance
+is started. A task that has ended is judged by its result and by the app
+directory, then unregistered. Every operation is one PowerShell script, the
+passwords on its standard input.
 
 Not pure: runs PowerShell.
 """
@@ -25,19 +28,18 @@ import json
 import ntpath
 import subprocess
 
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_INSTALL_TASK_PREFIX,
-    CLOUDCLI_INSTALL_TIMEOUT_S,
     CLOUDCLI_LOG_SUFFIX,
     CLOUDCLI_LOGON_FAILURES,
     CLOUDCLI_NODE_PARTS,
     CLOUDCLI_NPM_PARTS,
     CLOUDCLI_TASK_MARKER,
     CLOUDCLI_TASK_PREFIX,
-    CLOUDCLI_VERSION,
     CLOUDCLI_WINDOWS_NPM_PATH,
+    CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
     CLOUDCLI_WINDOWS_RULE_PREFIX,
     CLOUDCLI_WINDOWS_RULE_TITLE,
     CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME,
@@ -46,15 +48,19 @@ from neutrino_agent.modules.cloudcli.constants import (
 from neutrino_agent.modules.powershell_run import listed, run_powershell
 from neutrino_agent.modules.vscode.windows_applier import task_arguments
 
-# Room the PowerShell around an install takes beyond the install itself.
-INSTALL_SCRIPT_MARGIN_S = 120
 # What an install script exits with when npm failed; a native module's
 # failure exits with the native check's own status.
 NPM_FAILED_EXIT = 1
+# The task states of an install that has not ended.
+INSTALL_RUNNING_STATES = ("Running", "Queued")
+# What one account's install step found: CloudCLI already there, installed
+# by a task that just ended, or a task still running.
+INSTALL_READY = "ready"
+INSTALL_FINISHED = "finished"
+INSTALL_RUNNING = "running"
 
-# Writes an account's install script, runs it once as a task with the
-# account's login, waits for it, and answers its exit status and the end of
-# its output.
+# Writes an account's install script and starts it as a task with the
+# account's login, leaving it to run.
 INSTALL_SCRIPT = """
 $dir = Split-Path -Parent $d.script
 if (-not (Test-Path -LiteralPath $dir)) {
@@ -81,19 +87,18 @@ try {
   throw
 }
 Start-ScheduledTask -TaskName $d.task
-$deadline = (Get-Date).AddSeconds($d.timeout_s)
-do {
-  Start-Sleep -Seconds 3
-  $state = "$((Get-ScheduledTask -TaskName $d.task).State)"
-} while ($state -eq 'Running' -and (Get-Date) -lt $deadline)
-$result = [int64](Get-ScheduledTaskInfo -TaskName $d.task).LastTaskResult
-Stop-ScheduledTask -TaskName $d.task -ErrorAction SilentlyContinue
-Unregister-ScheduledTask -TaskName $d.task -Confirm:$false
+'{}'
+"""
+
+# Unregisters an account's ended install task, deletes its script, and
+# answers the end of its output.
+FINISH_INSTALL_SCRIPT = """
+Unregister-ScheduledTask -TaskName $d.task -Confirm:$false -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $d.script -Force -ErrorAction SilentlyContinue
 $output = ''
 if (Test-Path -LiteralPath $d.log) { $output = [IO.File]::ReadAllText($d.log) }
 if ($output.Length -gt 8000) { $output = $output.Substring($output.Length - 8000) }
-@{exit_code = $result; output = $output} | ConvertTo-Json -Compress -Depth 4
+@{output = $output} | ConvertTo-Json -Compress -Depth 4
 """
 
 # Writes each instance's script, registers the tasks that changed, starts
@@ -288,6 +293,8 @@ class CloudcliWindowsApplier:
         self._script_dir = ntpath.join(module_dir, CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME)
         self._account_home = account_home
         self._powershell = powershell if powershell is not None else run_powershell
+        # The accounts whose install task the last apply found running.
+        self.installing: frozenset = frozenset()
 
     @property
     def node(self) -> str:
@@ -308,6 +315,17 @@ class CloudcliWindowsApplier:
         """
         return ntpath.join(self.module_dir, account + CLOUDCLI_LOG_SUFFIX)
 
+    def install_log_path(self, account: str) -> str:
+        """The file one account's install task writes its output to.
+
+        Args:
+            account: The account.
+
+        Returns:
+            ``<module dir>\\run\\install_<account>.log``.
+        """
+        return ntpath.join(self._script_dir, f"install_{account}{CLOUDCLI_LOG_SUFFIX}")
+
     def apply(self, config, upstream_ports: dict) -> list:
         """Install CloudCLI for each account, register and start one task per instance, remove the rest.
 
@@ -325,6 +343,8 @@ class CloudcliWindowsApplier:
                 ``credential_invalid`` when Windows refuses an account's
                 login, and an install's ``cloudcli_npm_install_failed`` or
                 ``cloudcli_native_module_failed``.
+            ModuleInstallPending: While an account's install task runs; no
+                instance is started then.
             OSError: When PowerShell fails.
         """
         node = self.node
@@ -339,9 +359,24 @@ class CloudcliWindowsApplier:
                     "account_unknown", {"account": instance.account}
                 ) from None
         notes = []
-        for instance in config.instances:
-            if self._install_app(instance, homes[instance.account], node):
-                notes.append(f"installed CloudCLI for {instance.account}")
+        tasks = self._install_tasks()
+        running = []
+        try:
+            for instance in config.instances:
+                step = self._install_app(
+                    instance,
+                    homes[instance.account],
+                    node,
+                    tasks.get(CLOUDCLI_INSTALL_TASK_PREFIX + instance.account),
+                )
+                if step == INSTALL_RUNNING:
+                    running.append(instance.account)
+                elif step == INSTALL_FINISHED:
+                    notes.append(f"installed CloudCLI for {instance.account}")
+        finally:
+            self.installing = frozenset(running)
+        if running:
+            raise ModuleInstallPending(", ".join(running))
         instances = []
         for instance in config.instances:
             home = homes[instance.account]
@@ -450,7 +485,7 @@ class CloudcliWindowsApplier:
         return []
 
     def log_paths(self, accounts: list) -> list:
-        """Each instance's log file.
+        """Each instance's log file, or its install's while that runs.
 
         Args:
             accounts: The accounts asked about.
@@ -458,45 +493,85 @@ class CloudcliWindowsApplier:
         Returns:
             ``[(account, path)]``, in that order.
         """
-        return [(account, self.log_path(account)) for account in accounts]
+        return [
+            (
+                account,
+                (
+                    self.install_log_path(account)
+                    if account in self.installing
+                    else self.log_path(account)
+                ),
+            )
+            for account in accounts
+        ]
 
-    def _install_app(self, instance, home: str, node: str) -> bool:
-        """Install CloudCLI into the account's app directory unless it is there."""
+    def _install_tasks(self) -> dict:
+        """Each account's install task as Windows holds it, by its name."""
+        read = self._powershell(STATUS_SCRIPT, {"prefix": CLOUDCLI_INSTALL_TASK_PREFIX})
+        return {
+            str(entry.get("name", "")): entry
+            for entry in listed(read.get("tasks"))
+            if isinstance(entry, dict)
+        }
+
+    def _install_app(self, instance, home: str, node: str, task: "dict | None") -> str:
+        """Judge an account's install task, or start one when CloudCLI is not there.
+
+        Returns:
+            ``INSTALL_READY``, ``INSTALL_FINISHED`` or ``INSTALL_RUNNING``.
+
+        Raises:
+            ModuleApplyError: The step an ended install failed at.
+        """
+        account = instance.account
         app = installer.app_dir(home, "windows", join=ntpath.join)
-        if installer.installed_version(app) == CLOUDCLI_VERSION:
-            return False
+        script = ntpath.join(self._script_dir, f"install_{account}.cmd")
+        log_file = self.install_log_path(account)
+        name = CLOUDCLI_INSTALL_TASK_PREFIX + account
+        if task is not None:
+            if str(task.get("state", "")) in INSTALL_RUNNING_STATES:
+                return INSTALL_RUNNING
+            self._judge_install(task, app, name, script, log_file, account)
+            return INSTALL_FINISHED
+        if installer.is_app_ready(app):
+            return INSTALL_READY
         directory = ntpath.dirname(node)
         npm = ntpath.join(directory, *CLOUDCLI_NPM_PARTS["windows"])
-        script = ntpath.join(self._script_dir, f"install_{instance.account}.cmd")
-        log_file = ntpath.join(
-            self._script_dir, f"install_{instance.account}{CLOUDCLI_LOG_SUFFIX}"
-        )
-        answer = self._powershell(
+        self._powershell(
             INSTALL_SCRIPT,
             {
-                "account": instance.account,
+                "account": account,
                 "password": instance.password,
-                "task": CLOUDCLI_INSTALL_TASK_PREFIX + instance.account,
+                "task": name,
                 "script": script,
                 "script_text": render_install_script(app=app, node=node, npm=npm),
                 "log": log_file,
                 "program": CLOUDCLI_WINDOWS_SHELL,
                 "arguments": task_arguments(script, [], log_file),
-                "timeout_s": CLOUDCLI_INSTALL_TIMEOUT_S,
+                "timeout_s": CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
             },
-            timeout_s=CLOUDCLI_INSTALL_TIMEOUT_S + INSTALL_SCRIPT_MARGIN_S,
         )
-        exit_code = int(answer.get("exit_code", 1) or 0)
+        return INSTALL_RUNNING
+
+    def _judge_install(
+        self, task: dict, app: str, name: str, script: str, log_file: str, account: str
+    ) -> None:
+        """Unregister an ended install task and raise the step it failed at."""
+        answer = self._powershell(
+            FINISH_INSTALL_SCRIPT, {"task": name, "script": script, "log": log_file}
+        )
         output = str(answer.get("output", "") or "")
-        if exit_code == installer.NATIVE_CHECK_EXIT:
+        result = int(task.get("last_result", 0) or 0) & 0xFFFFFFFF
+        if result in CLOUDCLI_LOGON_FAILURES:
+            raise ModuleApplyError("credential_invalid", {"account": account})
+        if result == installer.NATIVE_CHECK_EXIT:
             lines = output.strip().splitlines()
             raise ModuleApplyError(
                 "cloudcli_native_module_failed",
-                {"account": instance.account, "module": lines[-1] if lines else ""},
+                {"account": account, "module": lines[-1] if lines else ""},
             )
-        if exit_code != 0:
-            raise installer.npm_failure(output, instance.account)
-        return True
+        if result != 0 or not installer.is_app_ready(app):
+            raise installer.npm_failure(output, account)
 
     def _withdraw(self, *, is_removed: bool) -> None:
         self._powershell(

@@ -383,7 +383,12 @@ def test_observe_of_a_machine_without_samba_reads_nothing(runner, monkeypatch):
 
     observed = runner.observe({})
 
-    assert observed == {"is_installed": False, "is_active": False, "details": {}}
+    assert observed == {
+        "is_installed": False,
+        "is_installing": False,
+        "is_active": False,
+        "details": {},
+    }
 
 
 class FakeNativeApplier:

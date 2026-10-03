@@ -47,8 +47,10 @@ CLOUDCLI_DATABASE_NAME = "auth.db"
 # account's configuration instead of ``~/.npmrc``.
 CLOUDCLI_NPM_CACHE_NAME = ".npm"
 CLOUDCLI_NPM_USERCONFIG_NAME = ".npmrc"
-# How long one account's install may take.
+# How long one account's install may take where the apply waits on it,
+# and how long the task that runs it on Windows, where nothing waits, may run.
 CLOUDCLI_INSTALL_TIMEOUT_S = 1800
+CLOUDCLI_WINDOWS_INSTALL_LIMIT_S = 4 * 3600
 # How long the look for an account's ``claude`` may take.
 CLOUDCLI_LOOKUP_TIMEOUT_S = 30
 # The directories a service's PATH holds after Node's and the one ``claude``
