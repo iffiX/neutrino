@@ -134,7 +134,7 @@ class CliproxyApiProvisioner:
         """Remove the software; the panel-side configuration always survives.
 
         Args:
-            is_data_kept: Keep ``/var/lib/neutrino/cliproxyapi`` — imported
+            is_data_kept: Keep ``/var/lib/neutrino/hub/cliproxyapi`` — imported
                 account logins live there. False deletes it.
             report: Sink for progress lines, if anyone is watching.
 

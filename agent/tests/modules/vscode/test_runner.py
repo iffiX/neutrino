@@ -75,7 +75,7 @@ class Platform(AgentPlatform):
         self.os_name = os_name
         self._root = root
 
-    def hub_package_root(self):
+    def agent_var_dir(self):
         return self._root
 
 
@@ -163,13 +163,16 @@ def test_stop_remove_and_the_journal_reach_the_applier(runner):
 
 
 def test_each_system_gets_its_own_applier():
-    assert isinstance(vscode_applier_for(Platform("linux")), VscodeLinuxApplier)
-    darwin = vscode_applier_for(Platform("darwin", "/Library/Application Support/N"))
+    linux = vscode_applier_for(Platform("linux", "/var/lib/neutrino/agent"))
+    assert isinstance(linux, VscodeLinuxApplier)
+    assert linux.cli_path == "/var/lib/neutrino/agent/vscode/code"
+    assert linux._token_dir == "/var/lib/neutrino/agent/vscode/tokens"
+    darwin = vscode_applier_for(Platform("darwin", "/Library/N/agent/state"))
     assert isinstance(darwin, VscodeDarwinApplier)
-    assert darwin.cli_dir == "/Library/Application Support/N/vscode"
-    windows = vscode_applier_for(Platform("windows", "C:\\ProgramData\\Neutrino"))
+    assert darwin.cli_dir == "/Library/N/agent/state/vscode"
+    windows = vscode_applier_for(Platform("windows", "C:\\N\\agent\\state"))
     assert isinstance(windows, VscodeWindowsApplier)
-    assert windows.cli_path == "C:\\ProgramData\\Neutrino\\vscode\\code.exe"
+    assert windows.cli_path == "C:\\N\\agent\\state\\vscode\\code.exe"
     with pytest.raises(PlatformUnsupportedError):
         vscode_applier_for(Platform("freebsd"))
 
@@ -202,3 +205,16 @@ def test_the_log_is_each_instance_s_file_tail_where_there_are_none(runner, tmp_p
 
     assert runner.journal_text(200) == ["ann: a1", "ann: a2", "ann: a3", "bob: b1"]
     assert runner.journal_text(4) == ["ann: a3", "bob: b1"]
+
+
+def test_an_install_opens_the_cli_directory_to_every_account(runner, tmp_path):
+    archive = tmp_path / "cli.tar.gz"
+    with tarfile.open(archive, "w:gz") as packed:
+        info = tarfile.TarInfo("code")
+        info.size = 2
+        packed.addfile(info, io.BytesIO(b"hi"))
+    (tmp_path / "vscode").mkdir(mode=0o700)
+
+    runner.install({"entry": {"package_kind": "tar"}}, str(archive))
+
+    assert (tmp_path / "vscode").stat().st_mode & 0o777 == 0o755

@@ -3,8 +3,8 @@
 Each instance is a LaunchDaemon whose plist names the account in
 ``UserName``, so root's launchd starts the CLI as that account with no
 password, its output appended to the account's file under
-``/Library/Logs/Neutrino``. The token file and the log file belong to the
-account, mode 0600. A plist or a token that changed is loaded again, which
+``/Library/Logs/Neutrino/agent``. The token file and the log file belong to
+the account, mode 0600. A plist or a token that changed is loaded again, which
 restarts the server.
 
 Not pure: writes under ``/Library`` and drives launchd.
@@ -117,8 +117,8 @@ class VscodeDarwinApplier:
     ):
         """
         Args:
-            root: The platform's root for software the hub sends; the CLI
-                and the token files live under it.
+            root: The agent's state root; the CLI and the token files live
+                under it.
             run: Runs one command as :func:`subprocess_run.run` does; None
                 runs it.
             lookup_account: Returns an account's ``(uid, gid)`` or raises
@@ -260,7 +260,7 @@ class VscodeDarwinApplier:
             account: The account.
 
         Returns:
-            ``/Library/Logs/Neutrino/vscode_<account>.log``.
+            ``/Library/Logs/Neutrino/agent/vscode_<account>.log``.
         """
         return os.path.join(
             self._log_dir, VSCODE_DARWIN_LOG_PREFIX + account + VSCODE_LOG_SUFFIX

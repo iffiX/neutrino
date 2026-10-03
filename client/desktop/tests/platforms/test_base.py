@@ -381,6 +381,8 @@ def test_the_base_platform_has_no_easytier_daemon_and_binds_nothing(tmp_path):
         platform.easytier_daemon_address()
     with pytest.raises(PlatformUnsupportedError):
         platform.easytier_state_dir()
+    with pytest.raises(PlatformUnsupportedError):
+        platform.easytier_log_dir()
     assert platform.bind_child_process(object()) is None
 
 
@@ -391,54 +393,3 @@ def test_the_state_directory_is_made_for_its_owner_alone(tmp_path):
 
     assert state.is_dir()
     assert state.stat().st_mode & 0o777 == 0o700
-
-
-# --- the move into the one Neutrino tree ---
-
-
-def test_an_old_data_directory_is_moved_whole_and_deleted(tmp_path):
-    old = tmp_path / "Neutrino Client"
-    (old / "easytier").mkdir(parents=True)
-    (old / "easytier" / "console.json").write_text("kept")
-    new = tmp_path / "Neutrino" / "client"
-
-    assert base_module.move_old_data_dir(str(old), str(new)) is True
-
-    assert not old.exists()
-    assert (new / "easytier" / "console.json").read_text() == "kept"
-
-
-def test_an_empty_new_place_the_installer_made_is_replaced(tmp_path):
-    old = tmp_path / "Neutrino Client"
-    (old / "netbird").mkdir(parents=True)
-    (old / "netbird" / "config.json").write_text("kept")
-    new = tmp_path / "Neutrino" / "client"
-    (new / "netbird").mkdir(parents=True)
-
-    assert base_module.move_old_data_dir(str(old), str(new)) is True
-
-    assert (new / "netbird" / "config.json").read_text() == "kept"
-    assert not old.exists()
-
-
-def test_a_new_place_holding_a_file_is_never_overwritten(tmp_path):
-    old = tmp_path / "Neutrino Client"
-    old.mkdir()
-    (old / "stale.json").write_text("old")
-    new = tmp_path / "Neutrino" / "client"
-    new.mkdir(parents=True)
-    (new / "current.json").write_text("new")
-
-    assert base_module.move_old_data_dir(str(old), str(new)) is False
-
-    assert (new / "current.json").read_text() == "new"
-    assert not (new / "stale.json").exists()
-    assert (old / "stale.json").read_text() == "old"
-
-
-def test_nothing_is_moved_when_no_older_install_left_a_directory(tmp_path):
-    new = tmp_path / "Neutrino" / "client"
-
-    assert base_module.move_old_data_dir(str(tmp_path / "absent"), str(new)) is False
-
-    assert not new.exists()

@@ -67,7 +67,7 @@ The certificate the panel serves is EC P-256, valid for 397 days, with
 `hub.neutrino.internal`, `localhost`, the host name, `127.0.0.1`, every
 private or CGNAT address in the channel's address set, and the NetBird name
 when it ends in `netbird.cloud`. A public address is never in it. It and its
-key are state, `/var/lib/neutrino/panel_tls_certificate.pem` and
+key are state, `/var/lib/neutrino/hub/panel_tls_certificate.pem` and
 `panel_tls_key.pem`, mode 0600. The address sampler issues it again when that
 name set changes or it expires within 30 days, and loads it into the live TLS
 context, so the next connection gets it without a restart.
@@ -89,7 +89,7 @@ Enrolling a device on a LAN begins with exposing that LAN.
 `nhub setup` writes a self-signed pair under `config/web/agent_tls/`:
 `certificate.pem` in the clear, and `key.sealed`, the private key sealed under
 the vault's data key. Serving unseals it into
-`/var/lib/neutrino/agent_tls_key.pem`, mode 0600. The key is EC P-256 and the
+`/var/lib/neutrino/hub/agent_tls_key.pem`, mode 0600. The key is EC P-256 and the
 certificate is valid for ten years. Verification is the fingerprint alone, so
 the validity window only has to outlast the box.
 
@@ -925,7 +925,7 @@ from the same facts, whoever installed the software:
 | --- | --- |
 | installed | `install.verify` succeeds; for a module the state does not name, which comes with no recipe, the runner's own check |
 | active | the unit is active |
-| configured | the root-only mark `/var/lib/neutrino_agent/configured/<module>` exists; written on the first successful apply of the hub's configuration, deleted on uninstall |
+| configured | the root-only mark `/var/lib/neutrino/agent/configured/<module>` exists; written on the first successful apply of the hub's configuration, deleted on uninstall |
 
 | `state` | Meaning |
 | --- | --- |
@@ -1017,7 +1017,7 @@ task that runs as an account signs in with it. Its recipe is `{kind:
 vscode, package_kind, verify}`, `package_kind` being `tar` for the Linux
 tarball and `zip` for the Windows and macOS archives, and the agent opens
 `package {module: vscode}` for the archive and unpacks the one `code` or
-`code.exe` inside it: to `/usr/local/lib/neutrino_vscode` on Linux, and to
+`code.exe` inside it: to `/var/lib/neutrino/agent/vscode` on Linux, and to
 `vscode` under the root the `hub_packages` capability names on Windows
 (`%ProgramData%\Neutrino`) and macOS (`/Library/Application
 Support/Neutrino`). `details` is `{instances: [{account, port, url,

@@ -19,7 +19,7 @@ AGENT_LAUNCHD_PLIST_PATH = "/Library/LaunchDaemons/com.neutrino.agent.plist"
 # How long the service, once asked to stop, waits for the agent's loop to
 # end before it reports stopped and exits; under the 30 s wait hint.
 AGENT_SERVICE_STOP_WAIT_S = 25
-# The agent's own log where no journal keeps it: a file under the data root
+# The agent's own log where no journal keeps it: a file under the log root
 # on Windows, and the file the LaunchDaemon's output goes to on macOS.
 AGENT_WINDOWS_LOG_NAME = "agent.log"
 AGENT_DARWIN_LOG_PATH = "/Library/Logs/Neutrino/agent/agent.log"
@@ -152,10 +152,10 @@ AGENT_STEP_DOWN_TIMEOUT_S = 120
 
 # The local control channel: a socket the agent serves as root. Its file is
 # 0600 under a 0700 directory, so only root reaches it.
-AGENT_CONTROL_SOCKET_PATH = "/run/neutrino_agent/agent.sock"
+AGENT_CONTROL_SOCKET_PATH = "/run/neutrino/agent/agent.sock"
 # The same channel on macOS, and on Windows a named pipe whose security
 # descriptor admits SYSTEM and the administrators alone.
-AGENT_CONTROL_SOCKET_PATH_DARWIN = "/var/run/neutrino_agent/agent.sock"
+AGENT_CONTROL_SOCKET_PATH_DARWIN = "/var/run/neutrino/agent/agent.sock"
 AGENT_CONTROL_PIPE_PREFIX = "\\\\.\\pipe\\"
 AGENT_CONTROL_PIPE_NAME = AGENT_CONTROL_PIPE_PREFIX + "neutrino_agent"
 AGENT_CONTROL_REQUEST_TIMEOUT_S = 5
@@ -170,10 +170,14 @@ AGENT_CONTROL_ACTION_TIMEOUT_S = 60
 # the defaults where nothing wires a root in.
 AGENT_DATA_DIR_POSIX = "/etc/neutrino/agent"
 # The same root on macOS, and on Windows under %ProgramData%, whose value
-# is read at run time and whose usual value stands in when it is unset.
-AGENT_DATA_DIR_DARWIN = "/Library/Application Support/Neutrino/agent"
+# is read at run time and whose usual value stands in when it is unset. On
+# Windows the agent's directory there holds the three roots by these names.
+AGENT_DATA_DIR_DARWIN = "/Library/Application Support/Neutrino/agent/config"
 AGENT_WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
-AGENT_WINDOWS_DATA_SUBDIR = ("Neutrino", "agent")
+AGENT_WINDOWS_AGENT_SUBDIR = ("Neutrino", "agent")
+AGENT_WINDOWS_CONFIG_DIR_NAME = "config"
+AGENT_WINDOWS_STATE_DIR_NAME = "state"
+AGENT_WINDOWS_LOG_DIR_NAME = "log"
 AGENT_STATE_NAME = "state.json"
 AGENT_CREDENTIALS_DIR_NAME = "credentials"
 AGENT_STATE_PATH = AGENT_DATA_DIR_POSIX + "/" + AGENT_STATE_NAME
@@ -200,16 +204,18 @@ AGENT_MODULE_DETAILS_TTL_S = 5.0
 # row reads installed while this file exists, and no order moves it. Under
 # /usr because RustDesk refuses `--password` unless its own `current_exe`
 # is there, and it resolves symlinks before it looks.
-AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino_agent/rustdesk/rustdesk"
+AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino/agent/rustdesk/rustdesk"
 # How long a module command waits for a pending desired state to apply
 # before it runs against the configuration that state carries.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0
 
-# What this machine keeps about its own work, root-only: the configured
-# marks, and a package in transit.
+# What this machine accumulated: the configured marks, a package in transit,
+# the last reinstall's result, all root-only, and the software the hub sends
+# for every account to run.
 # The directory is the platform contract's ``agent_var_dir``; this is the
-# POSIX path, which doubles as the default where nothing wires one in.
-AGENT_VAR_DIR = "/var/lib/neutrino_agent"
+# Linux path, which doubles as the default where nothing wires one in.
+AGENT_VAR_DIR = "/var/lib/neutrino/agent"
+AGENT_VAR_DIR_DARWIN = "/Library/Application Support/Neutrino/agent/state"
 # Where the mark that the hub has configured a module lives, one root-only
 # file per module. Written on the first successful apply of the hub's
 # configuration, deleted on uninstall; it tells ``installed`` from

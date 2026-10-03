@@ -7,7 +7,7 @@ for, with Python 3.13 and the Xcode command line tools.
 
 The installer carries the agent compiled: Nuitka turns the package and the
 interpreter it runs on into a standalone ``nagent`` with the libraries beside
-it, under ``/Library/Application Support/Neutrino/agent``, linked into
+it, under ``/Library/Application Support/Neutrino/agent/app``, linked into
 ``/usr/local/bin``. The ``com.neutrino.agent`` LaunchDaemon runs it as root at
 boot with ``run``, its output in ``/Library/Logs/Neutrino/agent``.
 
@@ -52,9 +52,15 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 BUILD_PYTHON_VERSION = (3, 13)
 
 AGENT_BINARY_NAME = "nagent"
-# Where the standalone agent is installed, and the link a terminal reaches
-# it through.
-INSTALL_AGENT_DIR = Path("/Library/Application Support/Neutrino/agent")
+# The agent's directory of the one Neutrino tree, where the standalone agent
+# is installed under it, the two roots beside it the runtime reads, and the
+# link a terminal reaches it through. The state root stays open to every
+# account, which runs the software the hub sends from under it; what else
+# it holds is root's own.
+INSTALL_ROOT_DIR = Path("/Library/Application Support/Neutrino/agent")
+INSTALL_AGENT_DIR = INSTALL_ROOT_DIR / "app"
+INSTALL_CONFIG_DIR = INSTALL_ROOT_DIR / "config"
+INSTALL_STATE_DIR = INSTALL_ROOT_DIR / "state"
 INSTALL_LINK_PATH = Path("/usr/local/bin") / AGENT_BINARY_NAME
 INSTALL_APPLICATIONS_DIR = Path("/Applications")
 
@@ -93,6 +99,10 @@ exit 0
 """
 
 POSTINSTALL = f"""#!/bin/sh
+mkdir -p "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
+chown root:wheel "{INSTALL_CONFIG_DIR}" "{INSTALL_STATE_DIR}"
+chmod 700 "{INSTALL_CONFIG_DIR}"
+chmod 755 "{INSTALL_STATE_DIR}"
 mkdir -p "{AGENT_LOG_DIR}"
 launchctl bootstrap system /Library/LaunchDaemons/{RUSTDESK_SERVICE_LABEL}.plist || true
 launchctl bootstrap system /Library/LaunchDaemons/{AGENT_LAUNCHD_LABEL}.plist

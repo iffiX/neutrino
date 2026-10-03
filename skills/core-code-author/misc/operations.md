@@ -131,7 +131,7 @@ setting is usually called "Wake on LAN" or "Power on by PCIe" in the BIOS.
 ## Name resolution after a reset
 
 In router mode the hub writes `/etc/resolv.conf`, and before the first write
-it copies the file it found to `/var/lib/neutrino/resolv.conf.original`.
+it copies the file it found to `/var/lib/neutrino/hub/resolv.conf.original`.
 `nhub reset all` links the file to the stub of `systemd-resolved` when that
 unit is enabled, puts the copy back when there is one, and otherwise writes
 the `direct_dns` address from `config/xray/routing.json`. The reset prints
@@ -145,7 +145,7 @@ which of the three it did.
 | Proxy | `journalctl -u neutrino_hub_xray` |
 | DNS queries | `journalctl -u neutrino_hub_dnsmasq` (also the panel's Dashboard) |
 | Control panel | `journalctl -u neutrino_hub_web` |
-| An update of the hub itself | `journalctl -u neutrino_hub_update`, and `/var/lib/neutrino/hub_update/update.log` |
+| An update of the hub itself | `journalctl -u neutrino_hub_update`, and `/var/lib/neutrino/hub/hub_update/update.log` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
 
 ## A hub on macOS or Windows
@@ -177,7 +177,7 @@ the hub's own authority and names the address it was reached at:
 sudo openssl s_client -connect 127.0.0.1:443 \
     -CAfile /etc/neutrino/hub/web/panel_tls/authority.pem </dev/null 2>/dev/null \
     | grep -E 'subject=|Verify return code'
-sudo openssl x509 -in /var/lib/neutrino/panel_tls_certificate.pem -noout -ext subjectAltName -dates
+sudo openssl x509 -in /var/lib/neutrino/hub/panel_tls_certificate.pem -noout -ext subjectAltName -dates
 ```
 
 `Verify return code: 0 (ok)` is the chain holding. A browser that still warns
@@ -197,7 +197,7 @@ terminal, and `sudo nhub update --package <file>` installs a package file
 somebody brought. That file keeps its release name, `neutrino-hub_<version>_<arch>.deb`
 for a deb, since the version is read off the name; any other name is rejected
 with `package_name_mismatch`, and a path with no file with `package_missing`. Either way the panel process only stages: it downloads the
-package into `/var/lib/neutrino/hub_update/`, checks it against the release's
+package into `/var/lib/neutrino/hub/hub_update/`, checks it against the release's
 `SHA256SUMS`, keeps the running version's own package beside it, and starts
 the transient unit `neutrino_hub_update` with `update.sh` from that directory.
 The unit runs the package manager, then holds a gate of up to 180 seconds:
@@ -215,7 +215,7 @@ starts, it stops `neutrino_hub_web` and `neutrino_hub_cliproxyapi`, where
 running, before the package manager runs, and starts them again once it has
 finished, whether the install succeeded or not. After the gate passes, a box
 with `nagent` on it reinstalls its own agent from the hub's cache,
-`/var/lib/neutrino/agent_cache/`, the file the new hub hands its own machine,
+`/var/lib/neutrino/hub/agent_cache/`, the file the new hub hands its own machine,
 as `nhub setup` does; a failure there is written to `update.log` and leaves
 the hub `installed`. That is how the hub's own agent follows a hub whose
 protocol number rose past it.
@@ -227,7 +227,7 @@ back once it is up again. A box left on neither version, which only a
 rollback that failed too can leave, is put back by hand:
 
 ```bash
-sudo apt-get install -y --reinstall --allow-downgrades /var/lib/neutrino/hub_update/neutrino-hub_<version>_amd64.deb
+sudo apt-get install -y --reinstall --allow-downgrades /var/lib/neutrino/hub/hub_update/neutrino-hub_<version>_amd64.deb
 ```
 
 A board that resets during the unpack, with nothing in the journal, is
@@ -258,15 +258,15 @@ above.
 
 ## Trying a change on an installed box
 
-A package install puts the hub under `/opt/neutrino/python/lib/python3.13/site-packages/neutrino_hub/`
-and the agent under `/opt/neutrino_agent/python/lib/python3.13/site-packages/neutrino_agent/`.
+A package install puts the hub under `/opt/neutrino/hub/python/lib/python3.13/site-packages/neutrino_hub/`
+and the agent under `/opt/neutrino/agent/python/lib/python3.13/site-packages/neutrino_agent/`.
 A `.py` copied over one of those files is not what runs until its compiled
 copy is gone: the carried interpreter loads `__pycache__/<name>.cpython-313.pyc`
 without checking the source (the packaged files are unchecked-hash pycs), so
 a pushed file whose change is missing at runtime has a stale `.pyc` beside it.
 
 ```bash
-SP=/opt/neutrino/python/lib/python3.13/site-packages/neutrino_hub
+SP=/opt/neutrino/hub/python/lib/python3.13/site-packages/neutrino_hub
 sudo cp module.py $SP/web/routers/agent/module.py
 sudo rm -f $SP/web/routers/agent/__pycache__/module.cpython-313.pyc
 sudo systemctl restart neutrino_hub_web

@@ -135,7 +135,7 @@ packaging/            build/ one script per release target, shared/ what
                       one-command install scripts, lab/ the VM lab,
                       integration/ the suite that runs on a box.
 config/               Source of truth at runtime. Real files gitignored.
-                      /etc/neutrino/config once installed.
+                      /etc/neutrino/hub once installed.
 skills/core-code-author/        This standard. The single source of truth for rules.
 skills/doc-author/              How every .md is written: the gate, the page kinds,
                       the two registers, the checklist.

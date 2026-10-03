@@ -45,10 +45,10 @@ PACKAGE_NAME = "neutrino-client"
 # A glibc version as readelf's version sections name it.
 GLIBC_VERSION = re.compile(r"GLIBC_(\d+)\.(\d+)")
 
-# Where the compiled client and everything beside it live. Its own root
-# rather than a directory under the hub's or the agent's: a machine may run
-# all three.
-INSTALL_PREFIX = Path("/opt/neutrino_client")
+# Where the compiled client and everything beside it live: the client's own
+# directory beside the hub's and the agent's, since a machine may run all
+# three.
+INSTALL_PREFIX = Path("/opt/neutrino/client")
 
 # What the compiled client and the root helper are called. The helper's
 # directory holds the path polkit pins, so the binary sits at its path and
@@ -61,8 +61,8 @@ MOUNT_HELPER_BINARY_NAME = "mount_helper"
 # own EasyTier daemon, ``nclient easytier-daemon``.
 OVERLAY_UNITS = ("neutrino_client_netbird.service", "neutrino_client_easytier.service")
 SYSTEMD_UNIT_DIR = "usr/lib/systemd/system"
-OVERLAY_ETC_DIR = "/etc/neutrino_client"
-NETBIRD_INSTALLED_BINARY = "/opt/neutrino_client/netbird/netbird"
+OVERLAY_STATE_DIR = "/var/lib/neutrino/client"
+NETBIRD_INSTALLED_BINARY = str(INSTALL_PREFIX / "netbird" / "netbird")
 
 # The interpreter the Linux client is compiled against, pinned by hash. The
 # same build the hub's and the agent's packages carry, and the same minor the
@@ -212,10 +212,12 @@ wipe_personal_state() {
     getent passwd | while IFS=: read -r account password uid gid gecos home shell; do
         [ "$uid" -ge 1000 ] 2>/dev/null || continue
         [ -n "$home" ] || continue
-        rm -rf "$home/.config/neutrino_client"
+        rm -rf "$home/.config/neutrino/client"
+        rmdir "$home/.config/neutrino" 2>/dev/null || true
     done
-    rm -rf /root/.config/neutrino_client
-    rm -f /run/user/*/neutrino_client.sock
+    rm -rf /root/.config/neutrino/client
+    rmdir /root/.config/neutrino 2>/dev/null || true
+    rm -f /run/user/*/neutrino/client.sock
 }
 """
 

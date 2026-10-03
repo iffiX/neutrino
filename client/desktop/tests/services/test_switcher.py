@@ -28,7 +28,7 @@ def _own_platform(monkeypatch):
     # a machine with no cc-switch at all still has one to name; the tests
     # of the lookup itself patch what it reads.
     monkeypatch.setattr(
-        switcher, "find_cli", lambda: "/opt/neutrino_client/bin/cc-switch"
+        switcher, "find_cli", lambda: "/opt/neutrino/client/bin/cc-switch"
     )
 
 
@@ -46,11 +46,11 @@ def wire(monkeypatch, cli):
 def test_the_carried_cli_wins_over_the_path(monkeypatch):
     monkeypatch.setattr(switcher, "find_cli", REAL_FIND_CLI)
     monkeypatch.setattr(
-        bundled, "cc_switch_path", lambda: "/opt/neutrino_client/bin/cc-switch"
+        bundled, "cc_switch_path", lambda: "/opt/neutrino/client/bin/cc-switch"
     )
     monkeypatch.setattr(switcher.shutil, "which", lambda name: "/usr/bin/cc-switch")
 
-    assert switcher.find_cli() == "/opt/neutrino_client/bin/cc-switch"
+    assert switcher.find_cli() == "/opt/neutrino/client/bin/cc-switch"
 
 
 def test_the_path_answers_when_the_bundle_is_absent(monkeypatch):

@@ -26,9 +26,11 @@ from neutrino_agent.modules.subprocess_run import command_detail
 from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.vscode.constants import (
     VSCODE_CLI_NAMES,
+    VSCODE_DIR_NAME,
     VSCODE_KIND,
     VSCODE_NAME,
     VSCODE_STATUS_TTL_S,
+    VSCODE_TOKEN_DIR_NAME,
 )
 from neutrino_agent.modules.vscode.darwin_applier import VscodeDarwinApplier
 from neutrino_agent.modules.vscode.installer import remove_cli, unpack_cli
@@ -49,11 +51,14 @@ def vscode_applier_for(platform):
         PlatformUnsupportedError: On a system with none.
     """
     if platform.os_name == "linux":
-        return VscodeLinuxApplier()
+        cli_dir = os.path.join(platform.agent_var_dir(), VSCODE_DIR_NAME)
+        return VscodeLinuxApplier(
+            cli_dir=cli_dir, token_dir=os.path.join(cli_dir, VSCODE_TOKEN_DIR_NAME)
+        )
     if platform.os_name == "darwin":
-        return VscodeDarwinApplier(root=platform.hub_package_root())
+        return VscodeDarwinApplier(root=platform.agent_var_dir())
     if platform.os_name == "windows":
-        return VscodeWindowsApplier(root=platform.hub_package_root())
+        return VscodeWindowsApplier(root=platform.agent_var_dir())
     raise PlatformUnsupportedError("no VS Code here")
 
 
@@ -106,6 +111,8 @@ class VscodeModuleRunner(ModuleRunner):
 
         Raises:
             InstallError: When the archive is not one the CLI comes in.
+            OSError: When the CLI's directory cannot be opened to every
+                account.
         """
         entry = resolved.get("entry") or {}
         unpack_cli(
@@ -114,6 +121,7 @@ class VscodeModuleRunner(ModuleRunner):
             directory=self._applier.cli_dir,
             name=VSCODE_CLI_NAMES[self._platform.os_name],
         )
+        self._platform.open_to_accounts(self._applier.cli_dir)
         self._forget_states()
 
     def uninstall(self, resolved: dict) -> None:

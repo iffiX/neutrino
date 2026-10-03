@@ -9,12 +9,9 @@ VSCODE_CLI_NAMES = {"windows": "code.exe", "linux": "code", "darwin": "code"}
 # The archive kinds a manifest entry names in ``package_kind``.
 VSCODE_PACKAGE_TAR = "tar"
 VSCODE_PACKAGE_ZIP = "zip"
-# Where the CLI lives on Linux; on Windows and macOS it is this directory's
-# name under the platform's hub package root.
-VSCODE_LINUX_DIR = "/usr/local/lib/neutrino_vscode"
+# The CLI's directory under the agent's state root, and the token files'
+# directory beside the CLI.
 VSCODE_DIR_NAME = "vscode"
-# Where the token files live on Linux; elsewhere beside the CLI.
-VSCODE_LINUX_TOKEN_DIR = "/etc/neutrino/vscode"
 VSCODE_TOKEN_DIR_NAME = "tokens"
 
 # What every instance runs after the CLI's path.
@@ -42,7 +39,7 @@ VSCODE_LINUX_SYSCTL_PROC_DIR = "/proc/sys"
 # macOS: one LaunchDaemon per account, its output in its own log file.
 VSCODE_LAUNCHD_PREFIX = "com.neutrino.vscode."
 VSCODE_LAUNCHD_DIR = "/Library/LaunchDaemons"
-VSCODE_DARWIN_LOG_DIR = "/Library/Logs/Neutrino"
+VSCODE_DARWIN_LOG_DIR = "/Library/Logs/Neutrino/agent"
 VSCODE_DARWIN_LOG_PREFIX = "vscode_"
 
 # Windows: one scheduled task per account, started at boot with its login,

@@ -7,11 +7,11 @@ import pytest
 from neutrino_hub.utils import constants
 
 LINUX_ROOTS = {
-    "static": "/opt/neutrino",
+    "static": "/opt/neutrino/hub",
     "config": "/etc/neutrino/hub",
-    "state": "/var/lib/neutrino",
-    "log": "/var/log/neutrino",
-    "runtime": "/run/neutrino",
+    "state": "/var/lib/neutrino/hub",
+    "log": "/var/log/neutrino/hub",
+    "runtime": "/run/neutrino/hub",
 }
 
 
@@ -40,7 +40,7 @@ def test_linux_config_root_is_still_etc_neutrino(monkeypatch, no_dev_root):
         ("config", "/Library/Application Support/Neutrino/hub/config"),
         ("state", "/Library/Application Support/Neutrino/hub/state"),
         ("log", "/Library/Logs/Neutrino/hub"),
-        ("runtime", "/var/run/neutrino_hub"),
+        ("runtime", "/var/run/neutrino/hub"),
     ],
 )
 def test_macos_answers_from_its_own_table(monkeypatch, no_dev_root, question, path):
@@ -70,7 +70,7 @@ def test_a_development_root_holds_linux_paths_as_before(monkeypatch, tmp_path):
     monkeypatch.setenv(constants.UTILS_DEV_ROOT_ENV, str(tmp_path))
 
     assert constants._rooted("config") == tmp_path / "etc/neutrino/hub"
-    assert constants._rooted("state") == tmp_path / "var/lib/neutrino"
+    assert constants._rooted("state") == tmp_path / "var/lib/neutrino/hub"
 
 
 @pytest.mark.parametrize(

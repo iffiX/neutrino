@@ -260,19 +260,19 @@ def test_the_compiled_programs_land_where_the_package_installs_them(tmp_path):
     payload.lay_out_compiled(
         tree,
         {"client": client, "helper": helper, "package": package},
-        pathlib.Path("/usr/libexec/neutrino_client/mount_helper"),
+        pathlib.Path("/opt/neutrino/client/libexec/mount_helper"),
     )
 
-    prefix = tree / "opt" / "neutrino_client"
+    prefix = tree / "opt" / "neutrino" / "client"
     assert (prefix / "nclient").is_file()
     assert (prefix / "gi").is_dir()
     assert (prefix / "neutrino_client" / "data" / "gui" / "index.html").is_file()
-    assert (tree / "usr/libexec/neutrino_client/mount_helper").is_file()
-    assert (tree / "usr/libexec/neutrino_client/libpython3.13.so.1.0").is_file()
+    assert (tree / "opt/neutrino/client/libexec/mount_helper").is_file()
+    assert (prefix / "libexec" / "libpython3.13.so.1.0").is_file()
     launcher = tree / "usr/bin/nclient"
     assert launcher.is_symlink()
     assert pathlib.Path(launcher.readlink()) == pathlib.Path(
-        "/opt/neutrino_client/nclient"
+        "/opt/neutrino/client/nclient"
     )
 
 
@@ -391,7 +391,7 @@ def _elf_tree(root, versions):
     Returns:
         The staging directory.
     """
-    prefix = root / "opt/neutrino_client"
+    prefix = root / "opt/neutrino/client"
     prefix.mkdir(parents=True)
     for version in versions:
         name = version.replace(".", "_")
@@ -425,7 +425,7 @@ def test_a_binary_needing_a_newer_glibc_than_the_floor_stops_the_build(
     with pytest.raises(SystemExit) as refused:
         payload.require_glibc_floor(tree)
 
-    assert "opt/neutrino_client/2_38.so" in str(refused.value)
+    assert "opt/neutrino/client/2_38.so" in str(refused.value)
     assert "GLIBC_2.38" in str(refused.value)
     assert "2_34.so" not in str(refused.value)
 

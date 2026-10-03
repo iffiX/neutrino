@@ -16,6 +16,7 @@ import stat
 
 import pytest
 
+import neutrino_agent.modules.cloudcli.runner as runner_module
 from neutrino_agent.core.engine import _download_refusal
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.cloudcli.darwin_applier import CloudcliDarwinApplier
@@ -100,11 +101,11 @@ class Platform(AgentPlatform):
         self.os_name = os_name
         self._root = root
 
-    def hub_package_root(self):
-        return self._root
+    def agent_var_dir(self):
+        return self._root + "/state"
 
     def agent_data_dir(self):
-        return self._root + "/agent"
+        return self._root + "/config"
 
 
 @pytest.fixture
@@ -249,20 +250,37 @@ def test_a_failed_download_is_the_modules_own_code(runner):
 
 
 def test_each_system_gets_its_own_applier(tmp_path):
-    linux = cloudcli_applier_for(Platform("linux"))
-    darwin = cloudcli_applier_for(
-        Platform("darwin", "/Library/Application Support/Neutrino")
-    )
-    windows = cloudcli_applier_for(Platform("windows", "C:\\ProgramData\\Neutrino"))
+    linux = cloudcli_applier_for(Platform("linux", "/agent"))
+    darwin = cloudcli_applier_for(Platform("darwin", "/Library/N/agent"))
+    windows = cloudcli_applier_for(Platform("windows", "C:\\N\\agent"))
 
     assert isinstance(linux, CloudcliLinuxApplier)
-    assert linux.module_dir == os.path.join(
-        Platform("linux").agent_var_dir(), "cloudcli"
-    )
-    assert linux.record_dir == "/etc/neutrino/cloudcli"
+    assert linux.module_dir == "/agent/state/cloudcli"
+    assert linux.record_dir == "/agent/config/cloudcli"
     assert isinstance(darwin, CloudcliDarwinApplier)
-    assert darwin.module_dir == "/Library/Application Support/Neutrino/cloudcli"
+    assert darwin.module_dir == "/Library/N/agent/state/cloudcli"
+    assert darwin.record_dir == "/Library/N/agent/config/cloudcli"
     assert isinstance(windows, CloudcliWindowsApplier)
-    assert windows.module_dir == ntpath.join("C:\\ProgramData\\Neutrino", "cloudcli")
+    assert windows.module_dir == ntpath.join("C:\\N\\agent/state", "cloudcli")
     with pytest.raises(PlatformUnsupportedError):
         cloudcli_applier_for(Platform("plan9"))
+
+
+def test_an_install_opens_the_node_directory_to_every_account(applier, monkeypatch):
+    opened = []
+
+    class OpeningPlatform(Platform):
+        def open_to_accounts(self, directory):
+            opened.append(directory)
+
+    monkeypatch.setattr(runner_module, "unpack_node", lambda path, **kwargs: path)
+    held = CloudcliModuleRunner(
+        platform=OpeningPlatform("linux"),
+        log=lambda line: None,
+        applier=applier,
+        forwarder_factory=FakeForwarder,
+    )
+
+    held.install({"entry": {"package_kind": "tar"}}, "/tmp/node.tar.gz")
+
+    assert opened == [applier.module_dir]

@@ -48,7 +48,7 @@ MACHINE_PACKAGE_HOOKS = (
 MACHINE_RESOLV_PATH = Path("/etc/resolv.conf")
 # The note a mode that took a machine over leaves behind, so a reset knows what
 # to hand back. A server or side_gateway install writes none.
-MACHINE_STOOD_DOWN_PATH = Path("/var/lib/neutrino/stood_down.json")
+MACHINE_STOOD_DOWN_PATH = Path("/var/lib/neutrino/hub/stood_down.json")
 
 
 def run(command: list) -> str:

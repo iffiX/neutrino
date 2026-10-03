@@ -109,14 +109,7 @@ def test_the_file_share_drives_the_mac_s_own_smb_server(tmp_path):
     assert "smb_server" in DarwinPlatform.capabilities
     assert isinstance(applier, SambaDarwinApplier)
     assert applier._rules_path == (
-        "/Library/Application Support/Neutrino/agent/samba_pf.conf"
-    )
-
-
-def test_the_hub_s_software_is_unpacked_beside_the_agent_s_state():
-    assert "hub_packages" in DarwinPlatform.capabilities
-    assert DarwinPlatform().hub_package_root() == (
-        "/Library/Application Support/Neutrino"
+        "/Library/Application Support/Neutrino/agent/state/samba_pf.conf"
     )
 
 
@@ -293,7 +286,12 @@ def test_no_platform_uuid_is_no_machine_id(monkeypatch):
 def test_the_roots_and_the_socket_are_the_macs_own():
     platform = DarwinPlatform()
 
-    assert platform.agent_data_dir() == "/Library/Application Support/Neutrino/agent"
-    assert platform.agent_var_dir() == platform.agent_data_dir()
-    assert platform.control_socket_path() == "/var/run/neutrino_agent/agent.sock"
+    assert platform.agent_data_dir() == (
+        "/Library/Application Support/Neutrino/agent/config"
+    )
+    assert platform.agent_var_dir() == (
+        "/Library/Application Support/Neutrino/agent/state"
+    )
+    assert "hub_packages" in DarwinPlatform.capabilities
+    assert platform.control_socket_path() == "/var/run/neutrino/agent/agent.sock"
     assert platform.agent_log_path() == "/Library/Logs/Neutrino/agent/agent.log"

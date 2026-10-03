@@ -84,7 +84,7 @@ def write_generated(path: Path, text: str, *, mode: int = 0o644) -> None:
     """Write a rendered artifact outside the repo, atomically.
 
     Args:
-        path: Absolute destination, normally under ``/var/lib/neutrino/generated/``.
+        path: Absolute destination, normally under ``/var/lib/neutrino/hub/generated/``.
         text: The rendered file contents.
         mode: Permission bits for the result.
     """

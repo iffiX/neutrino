@@ -31,12 +31,12 @@ class FakeDispatcher:
             raise self.error
 
 
-class DataPlatform(FakeControlPlatform):
-    def __init__(self, data_dir):
-        self._data_dir = data_dir
+class LogPlatform(FakeControlPlatform):
+    def __init__(self, log_path):
+        self._log_path = log_path
 
-    def agent_data_dir(self):
-        return self._data_dir
+    def agent_log_path(self):
+        return self._log_path
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def service_stack(tmp_path, monkeypatch):
             self.is_stopped = True
 
     monkeypatch.setattr(
-        service_cli, "detect_platform", lambda: DataPlatform(str(tmp_path))
+        service_cli, "detect_platform", lambda: LogPlatform(str(tmp_path / "agent.log"))
     )
     monkeypatch.setattr(service_cli, "ServiceControlDispatcher", FakeDispatcher)
     monkeypatch.setattr(service_cli, "Agent", FakeAgent)
@@ -148,10 +148,10 @@ def test_a_process_the_manager_did_not_start_is_told_so(
     assert "started by the service control manager" in capsys.readouterr().err
 
 
-def test_the_service_log_is_agent_log_under_the_data_root(tmp_path):
-    log = service_cli.service_log(str(tmp_path / "data"))
+def test_the_service_log_makes_its_directory_and_writes_the_file(tmp_path):
+    log = service_cli.service_log(str(tmp_path / "log" / "agent.log"))
 
     log("service stopping")
 
-    text = (tmp_path / "data" / "agent.log").read_text(encoding="utf-8")
+    text = (tmp_path / "log" / "agent.log").read_text(encoding="utf-8")
     assert "service stopping" in text

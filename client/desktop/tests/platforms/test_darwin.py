@@ -79,16 +79,21 @@ def test_the_config_dir_is_under_application_support(monkeypatch):
 
     assert (
         DarwinPlatform().config_dir()
-        == "/Users/alice/Library/Application Support/Neutrino Client"
+        == "/Users/alice/Library/Application Support/Neutrino/client"
     )
 
 
-def test_the_socket_lives_under_the_persons_caches(monkeypatch):
+def test_the_log_is_under_the_persons_logs(monkeypatch):
     monkeypatch.setenv("HOME", "/Users/alice")
 
-    assert (
-        DarwinPlatform().control_socket_path()
-        == "/Users/alice/Library/Caches/neutrino_client/neutrino_client.sock"
+    assert DarwinPlatform().log_dir() == "/Users/alice/Library/Logs/Neutrino/client"
+
+
+def test_the_socket_lives_in_the_persons_client_directory():
+    platform = DarwinPlatform()
+
+    assert platform.control_socket_path() == os.path.join(
+        platform.config_dir(), "client.sock"
     )
 
 
@@ -436,31 +441,15 @@ def test_easytier_is_asked_of_the_daemons_socket_and_prompts_for_nothing():
     platform = DarwinPlatform()
 
     assert (
-        platform.easytier_daemon_address() == "/var/run/neutrino_client_easytier.sock"
+        platform.easytier_daemon_address() == "/var/run/neutrino/client/easytier.sock"
     )
     assert (
         platform.easytier_state_dir()
-        == "/Library/Application Support/Neutrino/client/easytier"
+        == "/Library/Application Support/Neutrino/client/state/easytier"
     )
+    assert platform.easytier_log_dir() == "/Library/Logs/Neutrino/client"
     assert not hasattr(darwin_module, "OSASCRIPT_TOOL")
     assert not hasattr(DarwinPlatform, "easytier_join")
-
-
-def test_the_first_start_moves_the_old_data_directory_into_the_tree(
-    monkeypatch, tmp_path
-):
-    old = tmp_path / "Neutrino Client"
-    new = tmp_path / "Neutrino" / "client"
-    (old / "netbird").mkdir(parents=True)
-    (old / "netbird" / "config.json").write_text("kept")
-    monkeypatch.setattr(darwin_module, "CLIENT_OLD_DATA_DIR_DARWIN", str(old))
-    monkeypatch.setattr(darwin_module, "CLIENT_DATA_DIR_DARWIN", str(new))
-
-    DarwinPlatform().secure_easytier_state_dir(str(new / "easytier"))
-
-    assert not old.exists()
-    assert (new / "netbird" / "config.json").read_text() == "kept"
-    assert (new / "easytier").stat().st_mode & 0o777 == 0o700
 
 
 # --- the clipboard ---

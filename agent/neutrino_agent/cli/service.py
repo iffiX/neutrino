@@ -5,7 +5,7 @@ the process first, inside the manager's 30 seconds; the agent and its
 control pipe are built once the service reports running. A stop only asks
 the agent's loop to end, so the manager hears back at once; the control
 pipe closes once the loop has ended. Its log goes to ``agent.log`` under
-the agent's data root, rotated.
+the agent's log root, rotated.
 """
 
 import logging
@@ -14,7 +14,7 @@ import os
 import sys
 import threading
 
-from neutrino_agent.constants import AGENT_WINDOWS_LOG_NAME, AGENT_WINDOWS_SERVICE_NAME
+from neutrino_agent.constants import AGENT_WINDOWS_SERVICE_NAME
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.platforms.detect import detect_platform
@@ -37,7 +37,7 @@ def main_run() -> int:
         Process exit status; 1 when the process was not started as a service.
     """
     platform = detect_platform()
-    log = service_log(platform.agent_data_dir())
+    log = service_log(platform.agent_log_path())
     held: dict = {}
     is_stop_asked = threading.Event()
 
@@ -68,19 +68,19 @@ def main_run() -> int:
     return 0
 
 
-def service_log(data_dir: str):
-    """A log callable that writes to ``agent.log`` under the data root.
+def service_log(path: str):
+    """A log callable that writes to the agent's log file.
 
     Args:
-        data_dir: The agent's data root.
+        path: The log file, ``agent.log`` under the log root.
 
     Returns:
         A callable taking one message.
     """
     logger = logging.Logger("neutrino_agent.service", logging.INFO)
-    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     handler = logging.handlers.RotatingFileHandler(
-        os.path.join(data_dir, AGENT_WINDOWS_LOG_NAME),
+        path,
         maxBytes=SERVICE_LOG_MAX_BYTES,
         backupCount=SERVICE_LOG_BACKUP_COUNT,
         encoding="utf-8",

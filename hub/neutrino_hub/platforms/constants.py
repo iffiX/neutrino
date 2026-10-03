@@ -15,18 +15,18 @@ PLATFORM_ROOT_LOG = "log"
 PLATFORM_ROOT_RUNTIME = "runtime"
 PLATFORM_ROOTS = {
     PLATFORM_OS_LINUX: {
-        PLATFORM_ROOT_STATIC: "/opt/neutrino",
+        PLATFORM_ROOT_STATIC: "/opt/neutrino/hub",
         PLATFORM_ROOT_CONFIG: "/etc/neutrino/hub",
-        PLATFORM_ROOT_STATE: "/var/lib/neutrino",
-        PLATFORM_ROOT_LOG: "/var/log/neutrino",
-        PLATFORM_ROOT_RUNTIME: "/run/neutrino",
+        PLATFORM_ROOT_STATE: "/var/lib/neutrino/hub",
+        PLATFORM_ROOT_LOG: "/var/log/neutrino/hub",
+        PLATFORM_ROOT_RUNTIME: "/run/neutrino/hub",
     },
     PLATFORM_OS_DARWIN: {
         PLATFORM_ROOT_STATIC: "/Library/Application Support/Neutrino/hub/app",
         PLATFORM_ROOT_CONFIG: "/Library/Application Support/Neutrino/hub/config",
         PLATFORM_ROOT_STATE: "/Library/Application Support/Neutrino/hub/state",
         PLATFORM_ROOT_LOG: "/Library/Logs/Neutrino/hub",
-        PLATFORM_ROOT_RUNTIME: "/var/run/neutrino_hub",
+        PLATFORM_ROOT_RUNTIME: "/var/run/neutrino/hub",
     },
     PLATFORM_OS_WINDOWS: {
         PLATFORM_ROOT_STATIC: "C:\\Program Files\\Neutrino\\hub",

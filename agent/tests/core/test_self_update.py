@@ -382,7 +382,7 @@ def test_receive_package_raises_unreachable_for_a_stream_that_ended_early(tmp_pa
 def test_the_rpm_command_falls_back_to_yum_without_dnf(monkeypatch):
     monkeypatch.setattr(self_update.shutil, "which", lambda name: None)
 
-    command = self_update.install_command("rpm", "/tmp/hub.rpm", data_dir="/etc/agent")
+    command = self_update.install_command("rpm", "/tmp/hub.rpm", state_dir="/etc/agent")
 
     assert "yum reinstall -y /tmp/hub.rpm" in command[6]
     assert "yum install -y /tmp/hub.rpm" in command[6]
@@ -395,7 +395,7 @@ def test_the_rpm_command_uses_the_family_manager(monkeypatch):
         lambda name: "/usr/bin/dnf" if name == "dnf" else None,
     )
 
-    command = self_update.install_command("rpm", "/tmp/hub.rpm", data_dir="/etc/agent")
+    command = self_update.install_command("rpm", "/tmp/hub.rpm", state_dir="/etc/agent")
 
     assert command[:4] == [
         "systemd-run",
@@ -443,7 +443,7 @@ def run_unit(tmp_path, *, kind: str = "deb", package: str = "hub.deb") -> str:
     """
     bin_dir = tmp_path / "bin"
     command = self_update.install_command(
-        kind, str(tmp_path / package), data_dir=str(tmp_path)
+        kind, str(tmp_path / package), state_dir=str(tmp_path)
     )
     environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
     subprocess.run(["sh", "-c", command[-1]], capture_output=True, env=environment)
@@ -576,10 +576,10 @@ def test_windows_and_macos_name_their_own_package_kind():
 
 
 def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
-    data_dir = "C:\\ProgramData\\Neutrino\\agent"
-    package = data_dir + "\\packages\\neutrino-agent-0.4.0-windows-amd64.msi"
+    state_dir = "C:\\ProgramData\\Neutrino\\agent\\state"
+    package = state_dir + "\\packages\\neutrino-agent-0.4.0-windows-amd64.msi"
 
-    command = self_update.install_command("msi", package, data_dir=data_dir)
+    command = self_update.install_command("msi", package, state_dir=state_dir)
 
     assert command[:6] == [
         "powershell.exe",
@@ -592,9 +592,9 @@ def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
     script = command[6]
     assert "Start-Process -FilePath msiexec.exe -Wait" in script
     assert (
-        f'\'/i "{package}" /qn /norestart /l*v "{data_dir}\\reinstall.log"\'' in script
+        f'\'/i "{package}" /qn /norestart /l*v "{state_dir}\\reinstall.log"\'' in script
     )
-    assert f"'{data_dir}\\reinstall.json'" in script
+    assert f"'{state_dir}\\reinstall.json'" in script
     assert "package = 'neutrino-agent-0.4.0-windows-amd64.msi'" in script
     assert "kind = 'msi'" in script
     for field in ("started_at", "finished_at", "exit_code", "output"):
@@ -604,7 +604,7 @@ def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
 
 def test_a_quote_in_a_path_cannot_end_the_powershell_string():
     command = self_update.install_command(
-        "msi", "C:\\it's\\agent.msi", data_dir="C:\\it's"
+        "msi", "C:\\it's\\agent.msi", state_dir="C:\\it's"
     )
 
     assert "'C:\\it''s\\reinstall.json'" in command[6]
@@ -623,7 +623,7 @@ def test_the_msi_is_started_detached_and_outside_the_services_job(
     package = tmp_path / "agent.msi"
     package.write_bytes(b"msi")
 
-    self_update.run_update(str(package), kind="msi", data_dir=str(tmp_path))
+    self_update.run_update(str(package), kind="msi", state_dir=str(tmp_path))
 
     command, flags = started[0]
     assert command[0] == "powershell.exe"
@@ -646,7 +646,7 @@ def test_a_job_that_refuses_breakaway_still_starts_the_install_detached(
     package = tmp_path / "agent.msi"
     package.write_bytes(b"msi")
 
-    self_update.run_update(str(package), kind="msi", data_dir=str(tmp_path))
+    self_update.run_update(str(package), kind="msi", state_dir=str(tmp_path))
 
     assert started == [0x00000008]
 
@@ -660,7 +660,7 @@ def test_an_msi_that_cannot_be_started_is_coded_and_cleaned_up(monkeypatch, tmp_
     package.write_bytes(b"msi")
 
     with pytest.raises(SelfUpdateError) as refused:
-        self_update.run_update(str(package), kind="msi", data_dir=str(tmp_path))
+        self_update.run_update(str(package), kind="msi", state_dir=str(tmp_path))
 
     assert str(refused.value) == "agent_update_launch_failed"
     assert not package.exists()
@@ -668,7 +668,7 @@ def test_an_msi_that_cannot_be_started_is_coded_and_cleaned_up(monkeypatch, tmp_
 
 def test_the_pkg_is_installed_by_a_job_submitted_to_launchd():
     command = self_update.install_command(
-        "pkg", "/tmp/agent pkg/neutrino.pkg", data_dir="/Library/x"
+        "pkg", "/tmp/agent pkg/neutrino.pkg", state_dir="/Library/x"
     )
 
     assert command[:6] == [
@@ -697,7 +697,7 @@ def test_a_pkg_update_removes_the_job_the_last_one_left_then_submits(
     package = tmp_path / "agent.pkg"
     package.write_bytes(b"pkg")
 
-    self_update.run_update(str(package), kind="pkg", data_dir=str(tmp_path))
+    self_update.run_update(str(package), kind="pkg", state_dir=str(tmp_path))
 
     assert commands == [
         ["launchctl", "remove", "neutrino_agent_update"],

@@ -59,7 +59,7 @@ RESET_COLLECTED_PATHS = (
     # by hand.
     "cliproxyapi/management_key.sealed",
 )
-# The files under /var/lib/neutrino that `all` clears for the same reason:
+# The files under /var/lib/neutrino/hub that `all` clears for the same reason:
 # state a fresh box generates for itself, and the next owner must not inherit.
 # The vault's data key in particular — left behind, it opens whatever store
 # the next owner restores under the same wrap. The node health file is not a

@@ -190,7 +190,7 @@ ACCOUNT_ROW = {
     "label": "person@example.com",
     "modtime": "2026-09-04T17:59:47.075686814+08:00",
     "name": "claude-person.json",
-    "path": "/var/lib/neutrino/cliproxyapi/auth/claude-person.json",
+    "path": "/var/lib/neutrino/hub/cliproxyapi/auth/claude-person.json",
     "provider": "claude",
     "quota": {"signals": {}},
     "recent_requests": [{"time": "17:20-17:30", "success": 0, "failed": 0}],

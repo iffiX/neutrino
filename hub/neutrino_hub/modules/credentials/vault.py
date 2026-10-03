@@ -9,7 +9,7 @@ its AAD binding it to its id and kind, so two objects cannot be swapped.
 The data key never sits in ``config/``. The store carries it wrapped under
 the master passphrase (scrypt, then AES-256-GCM), so a backup of ``config/``
 holds no unsealed secret; the working copy is state at
-``/var/lib/neutrino/vault.key``, written by setup and by a successful
+``/var/lib/neutrino/hub/vault.key``, written by setup and by a successful
 restore. With that state file missing the vault is locked, and every
 operation that needs the key refuses with ``vault_locked``. Changing the
 passphrase re-wraps the same data key; nothing sealed is touched.

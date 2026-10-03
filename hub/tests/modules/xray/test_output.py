@@ -9,12 +9,12 @@ memory.
 
 from neutrino_hub.modules.xray.output import failure_of, warnings_of
 
-REFUSAL = """/opt/neutrino/bin/xray run -test -config /var/lib/neutrino/generated/\
+REFUSAL = """/opt/neutrino/hub/bin/xray run -test -config /var/lib/neutrino/hub/generated/\
 xray_config.candidate.json exited 23: Xray 26.3.27 (Xray, Penetrates \
 Everything.) d2758a0 (go1.26.1 linux/amd64)
 A unified platform for anti-censorship.
 2026/09/02 05:01:46.768303 [Info] infra/conf/serial: Reading config: \
-&{Name:/var/lib/neutrino/generated/xray_config.candidate.json Format:json}
+&{Name:/var/lib/neutrino/hub/generated/xray_config.candidate.json Format:json}
 2026/09/02 05:01:46.782804 [Warning] common/errors: The feature Shadowsocks \
 (with no Forward Secrecy, etc.) is deprecated, not recommended for using and \
 might be removed. Please migrate to VLESS Encryption as soon as possible.

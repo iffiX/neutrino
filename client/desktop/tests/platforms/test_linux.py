@@ -55,16 +55,17 @@ def test_the_config_dir_is_under_xdg_config_home(monkeypatch, tmp_path):
     monkeypatch.undo()
     monkeypatch.setenv("HOME", "/home/alice")
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    assert LinuxPlatform().config_dir() == "/home/alice/.config/neutrino_client"
+    assert LinuxPlatform().config_dir() == "/home/alice/.config/neutrino/client"
+    assert LinuxPlatform().log_dir() == LinuxPlatform().config_dir()
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    assert LinuxPlatform().config_dir() == str(tmp_path / "neutrino_client")
+    assert LinuxPlatform().config_dir() == str(tmp_path / "neutrino" / "client")
 
 
 def test_the_socket_lives_in_the_runtime_dir_or_nowhere(monkeypatch):
     monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
     assert (
-        LinuxPlatform().control_socket_path() == "/run/user/1000/neutrino_client.sock"
+        LinuxPlatform().control_socket_path() == "/run/user/1000/neutrino/client.sock"
     )
 
     monkeypatch.delenv("XDG_RUNTIME_DIR")
@@ -305,8 +306,9 @@ def test_without_a_pty_module_the_terminal_is_a_typed_refusal(monkeypatch):
 def test_easytier_is_asked_of_the_daemons_socket_and_kept_in_root_state():
     platform = LinuxPlatform()
 
-    assert platform.easytier_daemon_address() == "/run/neutrino_client_easytier.sock"
-    assert platform.easytier_state_dir() == "/etc/neutrino_client/easytier"
+    assert platform.easytier_daemon_address() == "/run/neutrino/client/easytier.sock"
+    assert platform.easytier_state_dir() == "/var/lib/neutrino/client/easytier"
+    assert platform.easytier_log_dir() == "/var/log/neutrino/client"
 
 
 def test_the_daemons_state_directory_is_its_owners_alone(tmp_path):

@@ -15,7 +15,7 @@ WorkingDirectory=@REPO_ROOT@
 Environment=PYTHONPATH=@REPO_ROOT@
 # The socket the panel's scan and join talk to. Ours rather than
 # /run/wpa_supplicant, which the machine's own supplicant may be holding.
-RuntimeDirectory=neutrino/wpa_supplicant
+RuntimeDirectory=neutrino/hub/wpa_supplicant
 ExecStartPre=/bin/sh -c 'command -v ip >/dev/null && ip link set %i up || true'
 ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-supplicant --interface %i
 Restart=on-failure

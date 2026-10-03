@@ -123,7 +123,7 @@ def test_removing_the_module_takes_the_read_only_tree(tmp_path):
 
 
 def test_npm_keeps_to_the_app_directory():
-    app = "/home/ann/.local/share/neutrino_cloudcli/app"
+    app = "/home/ann/.local/share/neutrino/agent/cloudcli/app"
 
     assert installer.npm_environment(app)["npm_config_cache"] == app + "/.npm"
     assert installer.npm_environment(app)["npm_config_userconfig"] == app + "/.npmrc"
@@ -191,7 +191,7 @@ def test_an_instance_runs_with_an_environment_written_from_scratch():
         "HOST": "127.0.0.1",
         "SERVER_PORT": "41234",
         "JWT_SECRET": jwt_secret("s"),
-        "DATABASE_PATH": "/home/ann/.local/share/neutrino_cloudcli/auth.db",
+        "DATABASE_PATH": "/home/ann/.local/share/neutrino/agent/cloudcli/auth.db",
         "ANTHROPIC_BASE_URL": "http://10.0.0.1:8317",
         "ANTHROPIC_AUTH_TOKEN": "k",
         "OPENAI_BASE_URL": "http://10.0.0.1:8317/v1",

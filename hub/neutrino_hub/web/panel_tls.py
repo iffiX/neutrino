@@ -5,7 +5,7 @@ names, so a browser that trusts it trusts nothing public. Its certificate
 lives plainly under ``config/web/panel_tls/`` and its key beside it sealed
 under the vault's data key, as the agent channel's does. The panel's
 certificate is state: issued for the names the panel answers on, written with
-its key under ``/var/lib/neutrino``, and issued again when those names change
+its key under ``/var/lib/neutrino/hub``, and issued again when those names change
 or it nears expiry, into the live TLS context as well.
 """
 

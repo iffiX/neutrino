@@ -58,7 +58,7 @@ def main(*, is_hidden: bool = False) -> int:
     except PlatformUnsupportedError as error:
         print(wording.word_code(error.code), file=sys.stderr)
         return 1
-    log = ResidentLog(path=os.path.join(platform.config_dir(), CLIENT_LOG_FILE_NAME))
+    log = ResidentLog(path=os.path.join(platform.log_dir(), CLIENT_LOG_FILE_NAME))
     resident = ClientResident(platform=platform, log=log)
     server = ControlServer(
         resident=resident, platform=platform, log=log, socket_path=socket_path

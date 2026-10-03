@@ -19,6 +19,6 @@ Write-Output "resident $($p.Id); before: $(Find)"
 [W]::PostMessageW([W]::Found, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
 Start-Sleep -Seconds 2
 Write-Output "after close: $(Find); resident alive $(-not $p.HasExited)"
-Start-Process "$env:ProgramFiles\Neutrino Client\nclient.exe" -ArgumentList 'gui'
+Start-Process "$env:ProgramFiles\Neutrino\client\nclient.exe" -ArgumentList 'gui'
 Start-Sleep -Seconds 4
 Write-Output "after second launch: $(Find); nclient count $((Get-Process nclient).Count)"

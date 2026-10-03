@@ -62,17 +62,19 @@ def test_the_agent_lands_under_application_support_linked_on_the_path(laid_out):
     staged, _signed = laid_out
     root = staged["root"]
 
-    installed = root / "Library/Application Support/Neutrino/agent"
+    installed = root / "Library/Application Support/Neutrino/agent/app"
     assert (installed / "nagent").is_file()
     assert (installed / "licenses" / "rustdesk.txt").is_file()
     link = root / "usr/local/bin/nagent"
     assert link.is_symlink()
-    assert str(link.readlink()) == "/Library/Application Support/Neutrino/agent/nagent"
+    assert (
+        str(link.readlink()) == "/Library/Application Support/Neutrino/agent/app/nagent"
+    )
 
 
 def test_every_mach_o_file_is_signed_and_nothing_else(laid_out):
     staged, signed = laid_out
-    installed = staged["root"] / "Library/Application Support/Neutrino/agent"
+    installed = staged["root"] / "Library/Application Support/Neutrino/agent/app"
 
     assert sorted(path.name for path in signed) == ["libpython3.13.dylib", "nagent"]
     assert all(str(path).startswith(str(installed)) for path in signed)
@@ -92,7 +94,7 @@ def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
     job = read_plist(staged["root"], "Library/LaunchDaemons", "com.neutrino.agent")
 
     assert job["ProgramArguments"] == [
-        "/Library/Application Support/Neutrino/agent/nagent",
+        "/Library/Application Support/Neutrino/agent/app/nagent",
         "run",
     ]
     assert job["StandardOutPath"] == "/Library/Logs/Neutrino/agent/agent.log"
@@ -147,6 +149,9 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
     assert postinstall.index('mkdir -p "/Library/Logs/Neutrino/agent"') < (
         postinstall.index("launchctl bootstrap")
     )
+    support = "/Library/Application Support/Neutrino/agent"
+    assert f'chmod 700 "{support}/config"' in postinstall
+    assert f'chmod 755 "{support}/state"' in postinstall
     for script in ("preinstall", "postinstall"):
         assert (scripts / script).stat().st_mode & 0o111
 

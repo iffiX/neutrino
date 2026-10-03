@@ -244,8 +244,8 @@ those ports in the system's own firewall at each routing pass:
 
 | System | How | What |
 | --- | --- | --- |
-| Windows | `New-NetFirewallRule`, one rule per purpose named `neutrino_hub_<purpose>`, changed when a port changes and removed on uninstall | the panel's HTTP and HTTPS ports, the agent port, every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
-| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports | `nhub`, `xray`, `netbird`, `easytier-core` |
+| Windows | `New-NetFirewallRule`, one rule per purpose named `neutrino_hub_<purpose>`, changed when a port changes and removed on uninstall | the panel's HTTP and HTTPS ports, the agent port, the AI gateway's port (CLIProxyAPI's `listen_port`, as `neutrino_hub_ai_gateway`), every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports | `nhub`, `xray`, `cli-proxy-api`, `netbird`, `easytier-core` |
 
 A routing pass there looks up no `xray` account, sets no sysctl, adds no
 `ip rule` and loads no nftables table. It still writes
@@ -529,7 +529,7 @@ page reads through `link_status.py` with `ip`. No part of the layer calls
 Each engine is driven the way dnsmasq already is — our configuration, our
 state, nothing of theirs:
 
-- `wpa_supplicant`: rendered config under `/var/lib/neutrino/generated/`, one
+- `wpa_supplicant`: rendered config under `/var/lib/neutrino/hub/generated/`, one
   unit per radio, on the pattern `neutrino_hub_hostapd@.service` already sets.
 - `dhcpcd`: `-f` our own config so `/etc/dhcpcd.conf` is never read — on a
   Raspberry Pi that file may hold somebody's static address — and its hooks
@@ -554,7 +554,7 @@ enables one unit, `wpa_supplicant.service`, which runs
 — no `-i` and no `-c`, so it holds no interface and no configuration and waits
 on D-Bus for a manager to name one. There is no manager to: NetworkManager is
 not a dependency. Its control sockets are in `/run/wpa_supplicant` and the
-hub's are in `/run/neutrino/wpa_supplicant`, so the two never meet.
+hub's are in `/run/neutrino/hub/wpa_supplicant`, so the two never meet.
 
 What does hold a radio is `wpa_supplicant@<interface>.service`, the templated
 unit systemd-networkd and ifupdown start per interface, and that is what

@@ -63,8 +63,8 @@ INSTALL_SCRIPT = """pre_upgrade() {
     # pacman does not own those files, and a directory the new version no
     # longer ships would stay behind over them. Cleared before the new
     # files land.
-    if [ -d /opt/neutrino ]; then
-        find /opt/neutrino -type d -name __pycache__ -prune -print0 |
+    if [ -d /opt/neutrino/hub ]; then
+        find /opt/neutrino/hub -type d -name __pycache__ -prune -print0 |
             xargs -0 -r rm -rf 2>/dev/null || true
     fi
 }
@@ -72,9 +72,9 @@ INSTALL_SCRIPT = """pre_upgrade() {
 post_install() {
     install -d -m 755 /etc/neutrino
     install -d -m 700 /etc/neutrino/hub
-    install -d -m 755 /var/lib/neutrino
-    install -d -m 755 /var/lib/neutrino/generated
-    install -d -m 755 /var/log/neutrino
+    install -d -m 755 /var/lib/neutrino/hub
+    install -d -m 755 /var/lib/neutrino/hub/generated
+    install -d -m 755 /var/log/neutrino/hub
     echo ""
     echo "  Neutrino Hub installed. Set it up with:"
     echo ""
@@ -87,9 +87,9 @@ post_upgrade() {
     # `nhub apply` is what writes them onto a box somebody already set up.
     install -d -m 755 /etc/neutrino
     install -d -m 700 /etc/neutrino/hub
-    install -d -m 755 /var/lib/neutrino
-    install -d -m 755 /var/lib/neutrino/generated
-    install -d -m 755 /var/log/neutrino
+    install -d -m 755 /var/lib/neutrino/hub
+    install -d -m 755 /var/lib/neutrino/hub/generated
+    install -d -m 755 /var/log/neutrino/hub
     nhub apply >/dev/null 2>&1 ||
         echo "  Run 'sudo nhub apply' to pick up this version."
     # The router unit is resident, so restarting it is what moves the box
@@ -127,7 +127,8 @@ post_remove() {
     # interpreter wrote while it ran, and the units `nhub setup` wrote into
     # /etc/systemd/system at runtime: pacman never owned those, and they name
     # an interpreter that has just gone.
-    rm -rf /opt/neutrino
+    rm -rf /opt/neutrino/hub
+    rmdir /opt/neutrino 2>/dev/null || true
     rm -f /etc/systemd/system/neutrino_hub_*.service
     rm -f /etc/systemd/system/*.wants/neutrino_hub_*.service
     systemctl daemon-reload >/dev/null 2>&1 || true

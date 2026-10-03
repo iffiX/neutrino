@@ -282,11 +282,19 @@ def test_the_file_share_drives_windows_own_smb_server():
     assert isinstance(WindowsPlatform().smb_server_applier(), SambaWindowsApplier)
 
 
-def test_the_hub_s_software_is_unpacked_beside_the_agent_s_state(monkeypatch):
-    monkeypatch.setenv("ProgramData", "D:\\Data")
+def test_a_directory_opened_to_accounts_grants_the_users_group_read_and_run():
+    calls = []
+
+    def powershell(script, document):
+        calls.append((script, document))
+        return {"is_open": True}
 
     assert "hub_packages" in WindowsPlatform.capabilities
-    assert WindowsPlatform().hub_package_root() == "D:\\Data\\Neutrino"
+    WindowsPlatform(powershell=powershell).open_to_accounts("D:\\state\\vscode")
+
+    script, document = calls[0]
+    assert document == {"directory": "D:\\state\\vscode"}
+    assert "'*S-1-5-32-545:(OI)(CI)RX'" in script
 
 
 @pytest.mark.parametrize(
@@ -327,15 +335,15 @@ def test_an_unreadable_registry_is_no_machine_id(monkeypatch):
     assert WindowsPlatform().read_machine_id() == ""
 
 
-def test_the_data_root_is_under_program_data(monkeypatch):
+def test_the_roots_are_under_program_data(monkeypatch):
     monkeypatch.setenv("ProgramData", "E:\\Data")
     platform = WindowsPlatform()
 
-    assert platform.agent_data_dir() == "E:\\Data\\Neutrino\\agent"
-    assert platform.agent_var_dir() == "E:\\Data\\Neutrino\\agent"
+    assert platform.agent_data_dir() == "E:\\Data\\Neutrino\\agent\\config"
+    assert platform.agent_var_dir() == "E:\\Data\\Neutrino\\agent\\state"
 
     monkeypatch.delenv("ProgramData")
-    assert platform.agent_data_dir() == "C:\\ProgramData\\Neutrino\\agent"
+    assert platform.agent_data_dir() == "C:\\ProgramData\\Neutrino\\agent\\config"
 
 
 def test_the_control_channel_is_the_agents_named_pipe():
@@ -441,7 +449,10 @@ def test_an_account_home_powershell_cannot_give_is_an_os_error():
         WindowsPlatform(powershell=powershell).account_home("hanha")
 
 
-def test_the_agent_s_log_is_agent_log_under_the_data_root(monkeypatch):
+def test_the_agent_s_log_is_agent_log_under_the_log_root(monkeypatch):
     monkeypatch.setenv("ProgramData", "D:\\Data")
 
-    assert WindowsPlatform().agent_log_path() == "D:\\Data\\Neutrino\\agent\\agent.log"
+    assert (
+        WindowsPlatform().agent_log_path()
+        == "D:\\Data\\Neutrino\\agent\\log\\agent.log"
+    )

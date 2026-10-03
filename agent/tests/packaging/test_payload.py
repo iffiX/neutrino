@@ -180,20 +180,20 @@ def test_the_staging_path_is_taken_out_of_everything_it_was_written_into(tmp_pat
     staged_python = tmp_path / "opt" / "neutrino_agent" / "python"
     (staged_python / "bin").mkdir(parents=True)
     script = staged_python / "bin" / "something"
-    script.write_text(f"#!{tmp_path}/opt/neutrino_agent/python/bin/python3\n")
+    script.write_text(f"#!{tmp_path}/opt/neutrino/agent/python/bin/python3\n")
     binary = staged_python / "bin" / "python3"
     binary.write_bytes(b"\x7fELF\x00\x01")
 
     payload.strip_build_paths(staged_python, tmp_path)
 
-    assert script.read_text() == "#!/opt/neutrino_agent/python/bin/python3\n"
+    assert script.read_text() == "#!/opt/neutrino/agent/python/bin/python3\n"
     assert binary.read_bytes() == b"\x7fELF\x00\x01"
 
 
 def test_the_prefix_is_the_agent_s_own(tmp_path):
-    """Not a directory under the hub's: a machine may run both, and removing
-    the hub deletes /opt/neutrino whole."""
-    assert str(payload.INSTALL_PREFIX) == "/opt/neutrino_agent"
+    """The agent's own directory beside the hub's: a machine may run both,
+    and removing the hub deletes /opt/neutrino/hub whole."""
+    assert str(payload.INSTALL_PREFIX) == "/opt/neutrino/agent"
     assert str(payload.PYTHON_DIR).startswith(str(payload.INSTALL_PREFIX))
 
 
@@ -224,7 +224,7 @@ def test_the_bytecode_records_the_path_the_package_installs_it_at(tmp_path):
 
     compiled = next((site_packages / "__pycache__").glob("entry.*.pyc")).read_bytes()
     assert (
-        b"/opt/neutrino_agent/python/lib/python3.13/site-packages/entry.py" in compiled
+        b"/opt/neutrino/agent/python/lib/python3.13/site-packages/entry.py" in compiled
     )
     assert str(tmp_path).encode() not in compiled
 
@@ -308,7 +308,7 @@ def _elf_tree(root, versions):
     Returns:
         The staging directory.
     """
-    prefix = root / "opt/neutrino_agent"
+    prefix = root / "opt/neutrino/agent"
     prefix.mkdir(parents=True)
     for version in versions:
         name = version.replace(".", "_")
@@ -342,7 +342,7 @@ def test_a_binary_needing_a_newer_glibc_than_the_floor_stops_the_build(
     with pytest.raises(SystemExit) as refused:
         payload.require_glibc_floor(tree)
 
-    assert "opt/neutrino_agent/2_38.so" in str(refused.value)
+    assert "opt/neutrino/agent/2_38.so" in str(refused.value)
     assert "GLIBC_2.38" in str(refused.value)
     assert "2_34.so" not in str(refused.value)
 

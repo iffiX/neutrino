@@ -74,7 +74,7 @@ const AUTHORITY_MEDIA_TYPE = "application/x-x509-ca-cert";
 const LOST_POLL_COUNT = 5;
 /** Where the run writes itself down, named on the screen that warns about
  * losing the connection so somebody has read it before they need it. */
-const SETUP_LOG_PATH = "/var/log/neutrino/setup.log";
+const SETUP_LOG_PATH = "/var/log/neutrino/hub/setup.log";
 /** The port an https:// address means when it names none. */
 const HTTPS_SCHEME_PORT = 443;
 

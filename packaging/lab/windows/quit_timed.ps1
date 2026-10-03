@@ -19,4 +19,4 @@ $t0 = Get-Date
 Write-Output "posted quit at $($t0.ToString('HH:mm:ss.fff'))"
 for ($i = 0; $i -lt 400; $i++) { Start-Sleep -Milliseconds 50; if ($p.HasExited) { break } }
 Write-Output "exited after $([math]::Round(((Get-Date) - $t0).TotalSeconds, 2))s"
-Get-Content "$env:APPDATA\Neutrino Client\client.log" -Tail 2
+Get-Content "$env:LOCALAPPDATA\Neutrino\client\client.log" -Tail 2

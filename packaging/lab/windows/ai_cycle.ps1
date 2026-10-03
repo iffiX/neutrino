@@ -1,4 +1,4 @@
-$nc = "$env:ProgramFiles\Neutrino Client\nclient.exe"
+$nc = "$env:ProgramFiles\Neutrino\client\nclient.exe"
 function Show { (& $nc service ai show 2>&1 | Out-String) -split "`n" | Select-Object -Skip 1 -First 1 }
 function WaitFor($needle, $t0) {
   for ($i = 0; $i -lt 300; $i++) {
@@ -44,4 +44,4 @@ Write-Output "== files at the end"
 Get-Content "$env:USERPROFILE\.claude\settings.json"
 Get-Content "$env:USERPROFILE\.codex\config.toml"
 Get-Content "$env:USERPROFILE\.gemini\.env"
-Get-Content "$env:APPDATA\Neutrino Client\client.log" -Tail 8
+Get-Content "$env:LOCALAPPDATA\Neutrino\client\client.log" -Tail 8

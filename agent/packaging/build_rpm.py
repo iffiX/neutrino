@@ -2,7 +2,7 @@
 
     python3 agent/packaging/build_rpm.py --output-dir dist/ --architecture x86_64
 
-The same payload the .deb carries, under /opt/neutrino_agent: its own
+The same payload the .deb carries, under /opt/neutrino/agent: its own
 interpreter. That fixes the package to one architecture, so it is built in a
 container of the machine it is for.
 
@@ -124,6 +124,7 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$1" = 0 ]; then
     rm -rf {prefix}
     rm -rf {vendor}
+    rmdir /opt/neutrino /usr/lib/neutrino 2>/dev/null || true
     echo "  Leaving /etc/neutrino/agent in place; remove it by hand if this"
     echo "  machine is not going to rejoin a hub."
 fi

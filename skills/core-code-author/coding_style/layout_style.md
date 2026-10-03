@@ -20,7 +20,7 @@ modules/xray/config_renderer.py
           def __init__(self, *, nodes, routing): ...
 neutrino_hub/cli/apply.py
       # --- config ---
-      GENERATED_DIR = "/var/lib/neutrino/generated"   # plain module constant
+      GENERATED_DIR = "/var/lib/neutrino/hub/generated"   # plain module constant
       def main() -> None:                             # the only place main() lives
           args = argparse.ArgumentParser()...
 ```

@@ -149,7 +149,7 @@ class Agent:
         # The store and the seat password live under the platform's own
         # data root, and so does the last desired state taken from the hub.
         data_dir = self._platform.agent_data_dir()
-        self._data_dir = data_dir
+        self._var_dir = var_dir
         # Where a package lands, a module's or this agent's own, until its
         # digest is checked; the marks the engine keeps live beside it.
         self._package_dir = os.path.join(var_dir, AGENT_PACKAGE_DIR_NAME)
@@ -694,7 +694,7 @@ class Agent:
             ``{"code", "params"}`` naming the exit status, or None when no
             record stands there or the install went through.
         """
-        result = self_update.read_reinstall_result(self._data_dir)
+        result = self_update.read_reinstall_result(self._var_dir)
         if result is None or result["exit_code"] == 0:
             return None
         return {
@@ -989,7 +989,7 @@ class Agent:
             self._log(f"update to {target} refused: {error}")
             return False
         try:
-            self_update.run_update(path, kind=kind, data_dir=self._data_dir)
+            self_update.run_update(path, kind=kind, state_dir=self._var_dir)
         except SelfUpdateError as error:
             with self._lock:
                 self._update_error = {"code": str(error), "params": {"target": target}}

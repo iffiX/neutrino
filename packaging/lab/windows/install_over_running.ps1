@@ -10,5 +10,5 @@ Write-Output "== what the log says about closing"
 Select-String -Path C:\out\upgrade.log -Pattern 'CloseApplication|WixCloseApplications|CLIENTWINDOWRUNNING' -ErrorAction SilentlyContinue |
   Select-Object -First 6 | ForEach-Object { $_.Line.Trim() }
 Write-Output "== installed app.js carries the drive picker"
-$js = Get-Content "$env:ProgramFiles\Neutrino Client\neutrino_client\data\gui\app.js" -Raw -ErrorAction SilentlyContinue
+$js = Get-Content "$env:ProgramFiles\Neutrino\client\neutrino_client\data\gui\app.js" -Raw -ErrorAction SilentlyContinue
 Write-Output ("driveLetterLine present: " + ($js -match 'driveLetterLine'))

@@ -25,10 +25,10 @@ NODE_LINK = "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.10:5800#matrix"  # scan: al
 LAN_ADDRESS = "192.168.90.1"
 ONE_ARM_ADDRESS = "192.168.91.1"
 ONE_ARM_TAG = 3
-DNSMASQ_CONF = Path("/var/lib/neutrino/generated/dnsmasq_neutrino.conf")
-XRAY_CONF = Path("/var/lib/neutrino/generated/xray_config.json")
+DNSMASQ_CONF = Path("/var/lib/neutrino/hub/generated/dnsmasq_neutrino.conf")
+XRAY_CONF = Path("/var/lib/neutrino/hub/generated/xray_config.json")
 LEASE_FILE = Path("/var/lib/misc/dnsmasq.leases")
-STOOD_DOWN = Path("/var/lib/neutrino/stood_down.json")
+STOOD_DOWN = Path("/var/lib/neutrino/hub/stood_down.json")
 SETTLE_LIMIT_S = 30.0
 LEASE_LIMIT_S = 180.0
 

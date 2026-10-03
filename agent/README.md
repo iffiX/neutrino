@@ -90,11 +90,14 @@ alone, observed and reported all the same.
 | `/etc/neutrino/agent/state.json`      | what the machine decided for itself                                                              |
 | `/etc/neutrino/agent/desired.json`    | the last state the hub sent                                                                      |
 | `/etc/neutrino/agent/credentials/`    | the desktop's seat password, in its own root-only file                                           |
-| `/var/lib/neutrino_agent/configured/` | one mark per module the hub has configured, which tells `installed` from `stopped` and `running` |
-| `/var/lib/neutrino_agent/packages/`   | a package coming down a `package` stream, until its digest is checked                            |
-| `/run/neutrino_agent/agent.sock`      | the control socket, 0600 under a 0700 directory, so the kernel admits root alone                 |
-| `/opt/neutrino_agent/`                | the interpreter and the agent's own code                                                         |
-| `/usr/lib/neutrino_agent/rustdesk/`   | the desktop host the package includes                                                            |
+| `/etc/neutrino/agent/cloudcli/`       | each CloudCLI instance's record and environment, root-only                                       |
+| `/var/lib/neutrino/agent/configured/` | one mark per module the hub has configured, which tells `installed` from `stopped` and `running` |
+| `/var/lib/neutrino/agent/packages/`   | a package coming down a `package` stream, until its digest is checked                            |
+| `/var/lib/neutrino/agent/vscode/`     | the VS Code CLI, read and run by every account, and each account's own token file                |
+| `/var/lib/neutrino/agent/cloudcli/`   | CloudCLI's Node.js, read and run by every account                                                |
+| `/run/neutrino/agent/agent.sock`      | the control socket, 0600 under a 0700 directory, so the kernel admits root alone                 |
+| `/opt/neutrino/agent/`                | the interpreter and the agent's own code                                                         |
+| `/usr/lib/neutrino/agent/rustdesk/`   | the desktop host the package includes                                                            |
 
 ## The package tree
 

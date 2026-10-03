@@ -444,7 +444,7 @@ def test_on_linux_the_agents_own_build_comes_first(monkeypatch):
     monkeypatch.setattr(rustdesk.sys, "platform", "linux")
 
     assert rustdesk.binary_candidates()[0] == (
-        "/usr/lib/neutrino_agent/rustdesk/rustdesk"
+        "/usr/lib/neutrino/agent/rustdesk/rustdesk"
     )
 
 

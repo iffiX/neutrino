@@ -578,7 +578,7 @@ def test_the_polkit_policy_names_the_helper_and_the_active_seat():
     assert "<allow_active>yes</allow_active>" in text
     assert (
         'key="org.freedesktop.policykit.exec.path">'
-        "/usr/libexec/neutrino_client/mount_helper<"
+        "/opt/neutrino/client/libexec/mount_helper<"
     ) in text
 
 

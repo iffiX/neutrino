@@ -67,7 +67,7 @@ def applier(powershell, tmp_path):
 
     return CloudcliWindowsApplier(
         module_dir=str(module_dir),
-        record_dir="C:\\ProgramData\\Neutrino\\agent\\cloudcli",
+        record_dir="C:\\ProgramData\\Neutrino\\agent\\config\\cloudcli",
         account_home=home,
         powershell=powershell,
     )
@@ -183,14 +183,14 @@ def test_a_task_windows_cannot_sign_in_reads_so(applier, powershell):
 
 def test_the_install_script_checks_the_native_modules_after_npm():
     text = render_install_script(
-        app="C:\\Users\\ann\\AppData\\Local\\Neutrino\\cloudcli\\app",
-        node="C:\\ProgramData\\Neutrino\\cloudcli\\n\\node.exe",
-        npm="C:\\ProgramData\\Neutrino\\cloudcli\\n\\node_modules\\npm\\bin\\npm-cli.js",
+        app="C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\cloudcli\\app",
+        node="C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n\\node.exe",
+        npm="C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n\\node_modules\\npm\\bin\\npm-cli.js",
     )
 
     lines = text.split("\r\n")
     assert (
-        'type nul > "C:\\Users\\ann\\AppData\\Local\\Neutrino\\cloudcli\\app\\.npmrc"'
+        'type nul > "C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\cloudcli\\app\\.npmrc"'
         in lines
     )
     assert any(line.endswith("|| exit /b 1") for line in lines)

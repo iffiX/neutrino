@@ -194,8 +194,8 @@ class VscodeWindowsApplier:
     def __init__(self, *, root: str, powershell=None):
         """
         Args:
-            root: The platform's root for software the hub sends; the CLI
-                and the token files live under it.
+            root: The agent's state root; the CLI and the token files live
+                under it.
             powershell: Called with ``(script, document)``; returns the JSON
                 object the script printed. None runs PowerShell.
         """

@@ -1,7 +1,7 @@
 """Where the binaries the client carries are installed.
 
 The packages put cc-switch, the RustDesk viewer and the NetBird and
-EasyTier CLIs beside the client: under ``/opt/neutrino_client`` on Linux,
+EasyTier CLIs beside the client: under ``/opt/neutrino/client`` on Linux,
 next to the package on Windows, under the app bundle's
 ``Contents/Resources`` on macOS. A checkout carries none of them, and
 asking for one there is a typed refusal.

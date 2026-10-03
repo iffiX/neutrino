@@ -37,7 +37,7 @@ POLL_INTERVAL_S = 3
 
 # The agent lives inside the interpreter its package carries; the glob is the
 # shell's, so the series in the path is never spelled here.
-AGENT_TREE = "/opt/neutrino_agent/python/lib/python3*/site-packages/neutrino_agent"
+AGENT_TREE = "/opt/neutrino/agent/python/lib/python3*/site-packages/neutrino_agent"
 # The package compiles its bytecode with unchecked hashes, deliberately, so a
 # package manager's own mtimes cannot invalidate it. An edit to a source file
 # in that tree does nothing until the bytecode beside it is gone, which is
@@ -73,7 +73,7 @@ def device_by_mac(panel, mac):
 CONTROL_STATE_SCRIPT = """
 import http.client, json, socket
 
-SOCK = "/run/neutrino_agent/agent.sock"
+SOCK = "/run/neutrino/agent/agent.sock"
 
 
 class SockConn(http.client.HTTPConnection):

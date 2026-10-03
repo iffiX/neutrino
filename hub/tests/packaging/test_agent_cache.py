@@ -103,7 +103,7 @@ def test_the_cache_resolves_every_entry_the_build_stamped(built, tmp_path):
 def test_the_cache_directory_is_the_one_the_runtime_names():
     """Packaging follows the runtime here: a directory spelled twice is a
     package that seeds one place and a panel that reads another."""
-    assert str(venv_tree.AGENT_PACKAGE_CACHE_DIR) == "/var/lib/neutrino/agent_cache"
+    assert str(venv_tree.AGENT_PACKAGE_CACHE_DIR) == "/var/lib/neutrino/hub/agent_cache"
 
 
 # --- seeding from packages a release already built ------------------------
@@ -129,7 +129,7 @@ def test_a_release_seeds_every_machine_it_built_and_builds_nothing(
         venv_tree, "run", lambda *a, **k: pytest.fail("the agent was built")
     )
     tree = tmp_path / "tree"
-    staged_python = tree / "opt/neutrino/python"
+    staged_python = tree / "opt/neutrino/hub/python"
     (staged_python / "lib/python3.13/site-packages/neutrino_hub/data").mkdir(
         parents=True
     )
@@ -178,7 +178,7 @@ def test_the_windows_and_macos_installers_enter_the_manifest_and_not_the_cache(
         venv_tree, "run", lambda *a, **k: pytest.fail("the agent was built")
     )
     tree = tmp_path / "tree"
-    staged_python = tree / "opt/neutrino/python"
+    staged_python = tree / "opt/neutrino/hub/python"
     data = staged_python / "lib/python3.13/site-packages/neutrino_hub/data"
     data.mkdir(parents=True)
 

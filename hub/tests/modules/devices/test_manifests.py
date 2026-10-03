@@ -552,9 +552,12 @@ def test_vscode_needs_glibc_2_28_on_linux_and_nothing_elsewhere():
 @pytest.mark.parametrize(
     "key, path",
     [
-        ("linux-amd64", "/usr/local/lib/neutrino_vscode/code"),
-        ("windows-amd64", "Neutrino\\vscode\\code.exe"),
-        ("darwin-arm64", "/Library/Application Support/Neutrino/vscode/code"),
+        ("linux-amd64", "/var/lib/neutrino/agent/vscode/code"),
+        ("windows-amd64", "Neutrino\\agent\\state\\vscode\\code.exe"),
+        (
+            "darwin-arm64",
+            "/Library/Application Support/Neutrino/agent/state/vscode/code",
+        ),
     ],
 )
 def test_vscode_verifies_the_cli_where_the_agent_unpacks_it(key, path):

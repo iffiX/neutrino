@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Root, because the rendered configuration under /var/lib/neutrino/generated is
+# Root, because the rendered configuration under /var/lib/neutrino/hub/generated is
 # root-only — it carries every provider key.
 User=root
 # The hub knows where its own state and rendered config live, and makes the

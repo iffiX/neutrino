@@ -3,8 +3,8 @@
 xray, cli-proxy-api, netbird, easytier-core and easytier-cli, each taken out
 of its own upstream release for one system and machine and checked against
 the hash the hub's module states in its ``<MODULE>_ASSETS`` table, and the
-v2fly geodata. The Linux packages put the programs under ``/opt/neutrino/bin``,
-the macOS and Windows packages beside ``nhub``; on Windows ``wintun.dll``
+v2fly geodata. The Linux packages put the programs under
+``/opt/neutrino/hub/bin``, the macOS and Windows packages beside ``nhub``; on Windows ``wintun.dll``
 comes out of EasyTier's archive with them.
 
 Not pure: downloads, writes files.

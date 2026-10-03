@@ -30,7 +30,7 @@ def test_the_supplicant_may_never_write_back_over_the_file():
 def test_the_control_socket_is_the_hub_s_own():
     """The machine's own supplicant may be running, and two in one directory
     is a collision that shows up as whichever started second failing."""
-    assert "DIR=/run/neutrino/wpa_supplicant" in render()
+    assert "DIR=/run/neutrino/hub/wpa_supplicant" in render()
 
 
 def test_a_radio_with_nothing_to_join_still_gets_a_working_file():

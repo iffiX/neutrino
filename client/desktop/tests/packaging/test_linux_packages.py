@@ -92,7 +92,6 @@ def spec():
         packager="somebody",
         staged="/staged",
         prefix=payload.INSTALL_PREFIX,
-        helper_dir="/usr/libexec/neutrino_client",
         desktop="neutrino_client",
         action="com.neutrino.client.mount",
         stop=payload.STOP_RESIDENTS,
@@ -103,7 +102,7 @@ def spec():
 def test_the_deb_puts_the_compiled_client_under_its_prefix(deb):
     """The binary, what it loads, and the package's own data beside where a
     compiled module's __file__ points."""
-    prefix = deb / "opt/neutrino_client"
+    prefix = deb / "opt/neutrino/client"
 
     assert (prefix / "nclient").is_file()
     assert (prefix / "libpython3.13.so.1.0").is_file()
@@ -118,7 +117,7 @@ def test_the_deb_entry_point_is_a_link_to_the_binary(deb):
     launcher = deb / "usr/bin/nclient"
 
     assert launcher.is_symlink()
-    assert os.readlink(launcher) == "/opt/neutrino_client/nclient"
+    assert os.readlink(launcher) == "/opt/neutrino/client/nclient"
 
 
 def test_the_deb_compiles_for_the_machine_and_version_it_is_for(deb, carried):
@@ -171,7 +170,7 @@ def test_the_deb_enables_the_daemons_and_stops_them_on_remove(deb):
     assert f"systemctl enable {CLIENT_NETBIRD_SERVICE_LINUX} " in postinst
     assert 'systemctl restart "$unit"' in postinst
     assert "[ -d /run/systemd/system ]" in postinst
-    assert "/opt/neutrino_client/netbird/netbird down" in on_remove
+    assert "/opt/neutrino/client/netbird/netbird down" in on_remove
     assert "systemctl disable --now" in on_remove
 
 
@@ -179,7 +178,7 @@ def test_a_purge_takes_the_daemons_configuration(deb):
     postrm = (deb / "DEBIAN/postrm").read_text()
     on_purge = postrm.split('if [ "$1" = purge ]; then')[1]
 
-    assert "rm -rf /etc/neutrino_client" in on_purge
+    assert "rm -rf /var/lib/neutrino/client" in on_purge
 
 
 def test_the_deb_conflicts_with_the_netbird_package(deb):
@@ -193,7 +192,7 @@ def test_the_deb_carries_no_overlay_helper_and_no_overlay_action(deb):
     )
 
     assert actions == ["com.neutrino.client.mount.policy"]
-    assert not (deb / "usr/libexec/neutrino_client/overlay_helper").exists()
+    assert not (deb / "opt/neutrino/client/libexec/overlay_helper").exists()
 
 
 def test_the_deb_lays_down_the_launcher_and_no_autostart(deb):
@@ -213,7 +212,7 @@ def test_the_deb_carries_both_icon_sizes_under_the_installed_name(deb):
 
 
 def test_the_deb_lays_down_the_mount_helper_and_the_policy_that_gates_it(deb):
-    helper = deb / "usr/libexec/neutrino_client/mount_helper"
+    helper = deb / "opt/neutrino/client/libexec/mount_helper"
     policy = deb / "usr/share/polkit-1/actions/com.neutrino.client.mount.policy"
 
     # The binary itself at the path the policy pins, its libraries beside
@@ -221,12 +220,12 @@ def test_the_deb_lays_down_the_mount_helper_and_the_policy_that_gates_it(deb):
     assert helper.is_file() and not helper.is_symlink()
     assert (helper.parent / "libpython3.13.so.1.0").is_file()
     assert '<action id="com.neutrino.client.mount">' in policy.read_text()
-    assert "/usr/libexec/neutrino_client/mount_helper" in policy.read_text()
+    assert "/opt/neutrino/client/libexec/mount_helper" in policy.read_text()
 
 
 def test_the_deb_carries_the_binaries_the_client_drives(deb):
-    assert (deb / "opt/neutrino_client/bin/cc-switch").is_file()
-    assert (deb / "opt/neutrino_client/rustdesk/rustdesk").is_file()
+    assert (deb / "opt/neutrino/client/bin/cc-switch").is_file()
+    assert (deb / "opt/neutrino/client/rustdesk/rustdesk").is_file()
 
 
 def test_the_deb_carries_the_licences_of_everything_in_it(deb):
@@ -311,12 +310,12 @@ def test_the_deb_keeps_every_persons_own_directory_on_remove_and_takes_it_on_pur
 
 
 def test_the_rpm_lays_the_same_payload_under_the_same_prefix(rpm):
-    prefix = rpm / "opt/neutrino_client"
+    prefix = rpm / "opt/neutrino/client"
 
     assert (prefix / "nclient").is_file()
     assert (prefix / "neutrino_client/data/gui/index.html").is_file()
-    assert os.readlink(rpm / "usr/bin/nclient") == "/opt/neutrino_client/nclient"
-    assert (rpm / "usr/libexec/neutrino_client/mount_helper").is_file()
+    assert os.readlink(rpm / "usr/bin/nclient") == "/opt/neutrino/client/nclient"
+    assert (rpm / "opt/neutrino/client/libexec/mount_helper").is_file()
     assert (
         rpm / "usr/share/polkit-1/actions/com.neutrino.client.mount.policy"
     ).is_file()
@@ -373,10 +372,11 @@ def test_the_rpm_keeps_every_persons_own_directory_on_erase(spec):
 def test_the_rpm_files_list_names_everything_the_package_lays_down(spec):
     files = spec.split("%files")[1].split("%pre")[0]
 
-    assert "/opt/neutrino_client" in files
+    assert "/opt/neutrino/client" in files
     assert "/usr/bin/nclient" in files
-    # The helper's whole directory: the binary and what it loads.
-    assert "/usr/libexec/neutrino_client\n" in files
+    # The helper's whole directory, the binary and what it loads, is under
+    # the prefix and listed with it.
+    assert "libexec" not in files
     assert "/usr/share/applications/neutrino_client.desktop" in files
     assert "/etc/xdg/autostart/neutrino_client.desktop" not in files
     assert "/usr/share/polkit-1/actions/com.neutrino.client.mount.policy" in files

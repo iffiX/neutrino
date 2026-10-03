@@ -207,7 +207,7 @@ class QuietSwitcher:
         return True
 
     def find_cli(self) -> str:
-        return "/opt/neutrino_client/bin/cc-switch"
+        return "/opt/neutrino/client/bin/cc-switch"
 
     def is_active_for(self, app: str) -> bool:
         return False

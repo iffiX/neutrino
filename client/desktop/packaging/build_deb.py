@@ -2,10 +2,10 @@
 
     python3 client/desktop/packaging/build_deb.py --output-dir dist/ --architecture amd64
 
-The package carries the client compiled under /opt/neutrino_client, the
-window's bindings inside it, the mount helper compiled beside the path
-polkit pins, and the binaries the client drives, so it names no Python at
-all.
+The package carries the client compiled under /opt/neutrino/client, the
+window's bindings inside it, the mount helper compiled under its libexec at
+the path polkit pins, and the binaries the client drives, so it names no
+Python at all.
 That fixes it to one architecture and one glibc: build it in a container of
 the machine it is for, the way the hub's package is built.
 
@@ -13,7 +13,7 @@ The client is a person's application, not a service: the package installs a
 launcher and no autostart entry. The two overlay daemons it carries are
 services: the package registers NetBird's unit and the unit of the client's
 own EasyTier daemon, ``nclient easytier-daemon``, and a purge takes their
-state under /etc/neutrino_client. It conflicts
+state under /var/lib/neutrino/client. It conflicts
 with the netbird package, which holds the same state and socket.
 
 The client's services last only as long as it runs, so the maintainer scripts
@@ -136,10 +136,12 @@ set -e
 # the prefix, and what the people on this machine kept.
 if [ "$1" = remove ] || [ "$1" = purge ]; then
     rm -rf {prefix}
+    rmdir /opt/neutrino 2>/dev/null || true
 fi
 if [ "$1" = purge ]; then
     wipe_personal_state
-    rm -rf {etc}
+    rm -rf {state}
+    rmdir /var/lib/neutrino 2>/dev/null || true
 fi
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload >/dev/null 2>&1 || true
@@ -236,7 +238,7 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         POSTRM.format(
             prefix=payload.INSTALL_PREFIX,
             wipe=payload.WIPE_PERSONAL_STATE,
-            etc=payload.OVERLAY_ETC_DIR,
+            state=payload.OVERLAY_STATE_DIR,
         ),
         is_executable=True,
     )

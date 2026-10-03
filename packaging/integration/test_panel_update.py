@@ -19,9 +19,9 @@ import pytest
 
 import machine_state
 
-UPDATE_DIR = "/var/lib/neutrino/hub_update"
+UPDATE_DIR = "/var/lib/neutrino/hub/hub_update"
 STATE_FILE = f"{UPDATE_DIR}/state.json"
-HUB_PYTHON = "/opt/neutrino/python/bin/python3"
+HUB_PYTHON = "/opt/neutrino/hub/python/bin/python3"
 # An install, a gate of three minutes, and the same again for the rollback.
 UPDATE_SETTLE_S = 10 * 60
 LIVE_UNITS = ("neutrino_hub_web", "neutrino_hub_xray", "neutrino_hub_dnsmasq")

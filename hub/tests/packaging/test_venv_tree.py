@@ -84,7 +84,7 @@ def test_the_bytecode_records_the_path_the_package_installs_it_at(tmp_path):
     venv_tree.compile_bytecode(staged_python, venv_tree.PYTHON_DIR)
 
     compiled = next((site_packages / "__pycache__").glob("entry.*.pyc")).read_bytes()
-    assert b"/opt/neutrino/python/lib/python3.13/site-packages/entry.py" in compiled
+    assert b"/opt/neutrino/hub/python/lib/python3.13/site-packages/entry.py" in compiled
     assert str(tmp_path).encode() not in compiled
 
 
@@ -158,7 +158,7 @@ def test_the_prune_removes_nothing_when_the_file_list_is_empty(tmp_path):
 
 
 def test_the_linux_package_carries_the_programs_under_its_prefix(tmp_path, monkeypatch):
-    """Every program the hub drives lands under /opt/neutrino/bin and the
+    """Every program the hub drives lands under /opt/neutrino/hub/bin and the
     databases under the state root, taken for Linux and the package's own
     machine."""
     staged = []
@@ -178,10 +178,10 @@ def test_the_linux_package_carries_the_programs_under_its_prefix(tmp_path, monke
     venv_tree.stage_vendored(tmp_path, "arm64")
 
     assert staged == [
-        (tmp_path / "opt/neutrino/bin", "linux", "amd64"),
-        (tmp_path / "var/lib/neutrino/geodata",),
-        (tmp_path / "opt/neutrino/bin", "linux", "arm64"),
-        (tmp_path / "var/lib/neutrino/geodata",),
+        (tmp_path / "opt/neutrino/hub/bin", "linux", "amd64"),
+        (tmp_path / "var/lib/neutrino/hub/geodata",),
+        (tmp_path / "opt/neutrino/hub/bin", "linux", "arm64"),
+        (tmp_path / "var/lib/neutrino/hub/geodata",),
     ]
 
 
@@ -233,7 +233,7 @@ def _elf_tree(root, versions):
     Returns:
         The staging directory.
     """
-    prefix = root / "opt/neutrino"
+    prefix = root / "opt/neutrino/hub"
     prefix.mkdir(parents=True)
     for version in versions:
         name = version.replace(".", "_")
@@ -267,7 +267,7 @@ def test_a_binary_needing_a_newer_glibc_than_the_floor_stops_the_build(
     with pytest.raises(SystemExit) as refused:
         venv_tree.require_glibc_floor(tree)
 
-    assert "opt/neutrino/2_38.so" in str(refused.value)
+    assert "opt/neutrino/hub/2_38.so" in str(refused.value)
     assert "GLIBC_2.38" in str(refused.value)
     assert "2_34.so" not in str(refused.value)
 

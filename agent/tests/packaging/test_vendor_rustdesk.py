@@ -168,7 +168,7 @@ def test_the_whole_host_directory_is_carried_and_nothing_around_it(
 
     payload.stage_rustdesk(tmp_path / "tree", "amd64", "deb")
 
-    vendor = tmp_path / "tree/usr/lib/neutrino_agent/rustdesk"
+    vendor = tmp_path / "tree/usr/lib/neutrino/agent/rustdesk"
     assert (vendor / "rustdesk").is_file()
     assert (vendor / "lib/librustdesk.so").is_file()
     assert (vendor / "data/flutter_assets/asset").is_file()
@@ -188,7 +188,7 @@ def test_the_name_on_the_path_points_at_the_carried_binary(tmp_path, downloaded)
 
     link = tmp_path / "tree/usr/bin/rustdesk"
     assert link.is_symlink()
-    assert str(link.readlink()) == "/usr/lib/neutrino_agent/rustdesk/rustdesk"
+    assert str(link.readlink()) == "/usr/lib/neutrino/agent/rustdesk/rustdesk"
 
 
 def test_a_package_carrying_no_host_fails_the_build(tmp_path, downloaded):
@@ -212,7 +212,7 @@ def test_the_rpm_is_opened_the_same_way_as_the_deb(tmp_path, downloaded):
 
     payload.stage_rustdesk(tmp_path / "tree", "x86_64", "rpm")
 
-    vendor = tmp_path / "tree/usr/lib/neutrino_agent/rustdesk"
+    vendor = tmp_path / "tree/usr/lib/neutrino/agent/rustdesk"
     assert (vendor / "rustdesk").is_file()
     assert (vendor / "lib/librustdesk.so").is_file()
     assert (tmp_path / "tree/usr/bin/rustdesk").is_symlink()

@@ -192,7 +192,7 @@ def test_removing_it_keeps_the_binaries_and_the_network(tmp_path, monkeypatch):
 def test_the_unit_name_is_one_name_everywhere():
     assert SYSTEM_OPTIONAL_UNITS["easytier"] == EASYTIER_UNIT
     assert MODULE_SPECS["easytier"].unit == EASYTIER_UNIT
-    assert "/opt/neutrino/bin/easytier-core" in PACKAGED_UNIT
+    assert "/opt/neutrino/hub/bin/easytier-core" in PACKAGED_UNIT
     assert "EnvironmentFile" not in PACKAGED_UNIT
     assert "$" not in PACKAGED_UNIT
 

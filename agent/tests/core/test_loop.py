@@ -1161,7 +1161,7 @@ def installer(monkeypatch) -> list:
     monkeypatch.setattr(
         loop_module.self_update,
         "run_update",
-        lambda path, kind, data_dir: installed.append((path, kind)),
+        lambda path, kind, state_dir: installed.append((path, kind)),
     )
     return installed
 

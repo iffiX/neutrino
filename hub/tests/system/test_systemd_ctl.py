@@ -90,15 +90,20 @@ def test_the_journal_is_journalctl_on_the_unit(systemctl):
 
 def test_a_start_line_is_the_drop_in_easytier_wrote(systemctl, monkeypatch, tmp_path):
     monkeypatch.setattr(systemd_ctl, "SYSTEM_SYSTEMD_DIR", tmp_path)
-    arguments = ["-c", "/var/lib/neutrino/generated/easytier.toml", "--rpc-portal", "x"]
+    arguments = [
+        "-c",
+        "/var/lib/neutrino/hub/generated/easytier.toml",
+        "--rpc-portal",
+        "x",
+    ]
 
     SystemdServiceController().set_start_line(
-        "easytier", ["/opt/neutrino/bin/easytier-core", *arguments], {}, None
+        "easytier", ["/opt/neutrino/hub/bin/easytier-core", *arguments], {}, None
     )
 
     path = tmp_path / "neutrino_hub_easytier.service.d" / "arguments.conf"
     assert path.read_text() == render_dropin(
-        arguments, core_path="/opt/neutrino/bin/easytier-core"
+        arguments, core_path="/opt/neutrino/hub/bin/easytier-core"
     )
     assert systemctl == [["systemctl", "daemon-reload"]]
 

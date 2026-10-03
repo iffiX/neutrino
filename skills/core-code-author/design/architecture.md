@@ -12,7 +12,7 @@ person's session, never as root. The hub box runs its own
 agent too, and hosts no module itself.
 
 ```
-config/ ──render──▶ /var/lib/neutrino/generated/ ──apply──▶ the daemons:
+config/ ──render──▶ /var/lib/neutrino/hub/generated/ ──apply──▶ the daemons:
   ▲                                              xray, dnsmasq, cliproxyapi,
   │ every change is a write here                 nftables, the overlays, units
   │
@@ -67,7 +67,7 @@ Everything the gateway does is a function of the JSON files under `config/`.
 State flows one way:
 
 ```
-config/<module>/*.json  ->  render (pure library)  ->  /var/lib/neutrino/generated/*
+config/<module>/*.json  ->  render (pure library)  ->  /var/lib/neutrino/hub/generated/*
                         ->  validate  ->  apply (systemctl / nft / ip)
 ```
 
@@ -123,7 +123,7 @@ as its own child:
 | --- | --- |
 | xray | the rendered configuration, with no service account and no capabilities |
 | CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
-| NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino_hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
+| NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
 | EasyTier | `easytier-core` with its rendered file and `--rpc-portal 127.0.0.1:15888` |
 
 - Every `netbird` command the hub runs names the same `--daemon-addr`, so a
@@ -279,7 +279,7 @@ its `want`.
 
 The bytes come from the hub. The agent opens a `package` stream for a
 module's package, and the hub serves it from its own cache,
-`/var/lib/neutrino/agent_module_cache/`. The cache fetches a package once for
+`/var/lib/neutrino/hub/agent_module_cache/`. The cache fetches a package once for
 every device of that platform, presenting a browser's TLS fingerprint where a
 vendor gates on one. Losing it costs a download and nothing else.
 
@@ -389,7 +389,7 @@ The data key never sits in `config/`. The store carries it wrapped under the
 master passphrase chosen at setup (scrypt → AES-256-GCM), so backing up
 `config/` produces a file that is safe as it stands; the working copy the
 panel decrypts with — with nobody at the keyboard — is state at
-`/var/lib/neutrino/vault.key` (mode 0600). A box without that state file is a
+`/var/lib/neutrino/hub/vault.key` (mode 0600). A box without that state file is a
 locked vault: every operation that needs the key refuses with
 `vault_locked`, and a restore is what unlocks it, proving the archive —
 name, manifest, every member's digest, the wrapped key opening under the
@@ -424,7 +424,7 @@ is re-encrypted.
 CLIProxyAPI's management API answers loopback callers only, unlocked by a
 key sealed under the vault's data key. The panel drains its per-request
 queue and accumulates what it held — requests and tokens, per client key and
-per upstream provider — under `/var/lib/neutrino/cliproxyapi/`, and a client
+per upstream provider — under `/var/lib/neutrino/hub/cliproxyapi/`, and a client
 key belongs to a device, so usage lands on the subscription that spent it.
 The dashboard, the AI page and the status strip all read that one store.
 
@@ -433,7 +433,7 @@ which lives in the vault and is rendered into the gateway's YAML like every
 other setting. An **account** is a subscription somebody signed into: the
 panel starts the flow through the same management API, hands the person the
 URL to open, passes the code back, and the gateway writes a token file into
-`/var/lib/neutrino/cliproxyapi/auth/` and serves with it without a restart.
+`/var/lib/neutrino/hub/cliproxyapi/auth/` and serves with it without a restart.
 
 **Auth files are the one deliberate exception to "backing up `config/`
 reproduces the appliance."** They are live provider credentials that no render

@@ -73,21 +73,21 @@ mkdir -p %{{buildroot}}
 cp -a {payload}/. %{{buildroot}}/
 
 %files
-/opt/neutrino
+/opt/neutrino/hub
 /usr/bin/nhub
 /{unit_dir}/neutrino_hub_web.service
-%dir /var/lib/neutrino
-/var/lib/neutrino/geodata
-/var/lib/neutrino/agent_cache
+%dir /var/lib/neutrino/hub
+/var/lib/neutrino/hub/geodata
+/var/lib/neutrino/hub/agent_cache
 %license /usr/share/doc/{name}/licenses/*
 %dir /usr/share/doc/{name}/licenses
 
 %post
 install -d -m 755 /etc/neutrino
 install -d -m 700 /etc/neutrino/hub
-install -d -m 755 /var/lib/neutrino
-install -d -m 755 /var/lib/neutrino/generated
-install -d -m 755 /var/log/neutrino
+install -d -m 755 /var/lib/neutrino/hub
+install -d -m 755 /var/lib/neutrino/hub/generated
+install -d -m 755 /var/log/neutrino/hub
 systemctl daemon-reload >/dev/null 2>&1 || true
 
 # An upgrade can change the unit files and the software they start, and
@@ -138,7 +138,8 @@ if [ "$1" = 0 ]; then
     # interpreter wrote while it ran, and the units `nhub setup` wrote into
     # /etc/systemd/system at runtime: rpm never owned those, and they name an
     # interpreter that has just gone.
-    rm -rf /opt/neutrino
+    rm -rf /opt/neutrino/hub
+    rmdir /opt/neutrino 2>/dev/null || true
     rm -f /etc/systemd/system/neutrino_hub_*.service
     rm -f /etc/systemd/system/*.wants/neutrino_hub_*.service
     echo "  Leaving /etc/neutrino/hub in place; remove it by hand if you"
@@ -148,7 +149,7 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 
 %posttrans
 {prune}
-rpm -ql {name} | prune_untracked /opt/neutrino
+rpm -ql {name} | prune_untracked /opt/neutrino/hub
 """
 
 

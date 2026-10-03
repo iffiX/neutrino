@@ -5,7 +5,7 @@ under their own home with no root: ``mount_smbfs`` attaches it and
 ``umount`` takes it down. The login stays off every argument vector: the
 share is named as ``//user@host/share`` and the password is typed at the
 tool's own prompt on a pseudo-terminal of its own. The control channel is a
-Unix socket under the person's Caches directory, whose peer identity comes
+Unix socket in the person's client directory, whose peer identity comes
 from the kernel's ``LOCAL_PEERCRED``. An EasyTier network is asked of the
 EasyTier daemon over its socket, which needs no administrator.
 """
@@ -29,15 +29,13 @@ except ImportError:  # Windows has no account database module.
 from neutrino_client.constants import (
     CLIENT_CLIPBOARD_TIMEOUT_S,
     CLIENT_CONTROL_SOCKET_NAME,
-    CLIENT_DATA_DIR_DARWIN,
     CLIENT_EASYTIER_SOCKET_PATH_DARWIN,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
-    CLIENT_OLD_DATA_DIR_DARWIN,
+    CLIENT_LOG_DIR_DARWIN,
 )
 from neutrino_client.exceptions import ShareAttachError
 from neutrino_client.platforms.base import (
     ClientPlatform,
-    move_old_data_dir,
     read_share_credentials,
     run_on_pty,
     run_quietly,
@@ -46,8 +44,8 @@ from neutrino_client.platforms.base import (
 from neutrino_client.platforms.posix_terminal import PosixRawTerminal
 from neutrino_client.words import language_for_tag
 
-DARWIN_CONFIG_DIR = os.path.join("Library", "Application Support", "Neutrino Client")
-DARWIN_SOCKET_DIR = os.path.join("Library", "Caches", "neutrino_client")
+DARWIN_CONFIG_DIR = os.path.join("Library", "Application Support", "Neutrino", "client")
+DARWIN_LOG_DIR = os.path.join("Library", "Logs", "Neutrino", "client")
 
 # The socket option level and name for the peer's credentials, and the
 # ``struct xucred`` it answers with: a version, the uid, then the groups.
@@ -106,8 +104,12 @@ class DarwinPlatform(ClientPlatform):
     os_name = "darwin"
 
     def config_dir(self) -> str:
-        """``~/Library/Application Support/Neutrino Client``."""
+        """``~/Library/Application Support/Neutrino/client``."""
         return os.path.join(self.home(), DARWIN_CONFIG_DIR)
+
+    def log_dir(self) -> str:
+        """``~/Library/Logs/Neutrino/client``."""
+        return os.path.join(self.home(), DARWIN_LOG_DIR)
 
     def system_language(self) -> str:
         """The first of the languages this account prefers, as set in
@@ -127,8 +129,8 @@ class DarwinPlatform(ClientPlatform):
         return language_for_tag(found.group(1))
 
     def control_socket_path(self) -> str:
-        """``~/Library/Caches/neutrino_client/neutrino_client.sock``."""
-        return os.path.join(self.home(), DARWIN_SOCKET_DIR, CLIENT_CONTROL_SOCKET_NAME)
+        """``~/Library/Application Support/Neutrino/client/client.sock``."""
+        return os.path.join(self.config_dir(), CLIENT_CONTROL_SOCKET_NAME)
 
     def read_peer_identity(self, connection) -> dict:
         """The peer's identity, from the kernel's ``LOCAL_PEERCRED``.
@@ -285,25 +287,16 @@ class DarwinPlatform(ClientPlatform):
         return PosixRawTerminal()
 
     def easytier_daemon_address(self) -> str:
-        """``/var/run/neutrino_client_easytier.sock``."""
+        """``/var/run/neutrino/client/easytier.sock``."""
         return CLIENT_EASYTIER_SOCKET_PATH_DARWIN
 
     def easytier_state_dir(self) -> str:
-        """``/Library/Application Support/Neutrino/client/easytier``."""
+        """``/Library/Application Support/Neutrino/client/state/easytier``."""
         return CLIENT_EASYTIER_STATE_DIR_DARWIN
 
-    def secure_easytier_state_dir(self, path: str) -> None:
-        """Make the state directory, root's alone, after moving the data
-        directory of an older install into its place.
-
-        Args:
-            path: The directory.
-
-        Raises:
-            OSError: When it cannot be made or narrowed.
-        """
-        move_old_data_dir(CLIENT_OLD_DATA_DIR_DARWIN, CLIENT_DATA_DIR_DARWIN)
-        super().secure_easytier_state_dir(path)
+    def easytier_log_dir(self) -> str:
+        """``/Library/Logs/Neutrino/client``."""
+        return CLIENT_LOG_DIR_DARWIN
 
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float

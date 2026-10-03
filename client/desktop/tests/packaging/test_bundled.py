@@ -207,7 +207,7 @@ def test_the_linux_staging_puts_both_where_the_runtime_looks(
 ):
     bundled.stage_linux_binaries(tmp_path, "amd64")
 
-    prefix = tmp_path / "opt/neutrino_client"
+    prefix = tmp_path / "opt/neutrino/client"
     switcher = prefix / "bin/cc-switch"
     assert switcher.is_file()
     assert switcher.stat().st_mode & 0o111

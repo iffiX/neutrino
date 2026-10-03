@@ -94,13 +94,13 @@ def package_kind(platform: dict) -> str:
     return FAMILY_TO_PACKAGE_KIND.get(platform.get("family", ""), "")
 
 
-def install_command(kind: str, path: str, *, data_dir: str) -> list:
+def install_command(kind: str, path: str, *, state_dir: str) -> list:
     """The detached command that installs a received package. Pure.
 
     Args:
         kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
         path: The received package file.
-        data_dir: The agent's data directory, where the install's log and
+        state_dir: The agent's state directory, where the install's log and
             its result are written.
 
     Returns:
@@ -109,10 +109,10 @@ def install_command(kind: str, path: str, *, data_dir: str) -> list:
         ``launchctl submit`` of ``installer``.
     """
     if kind == "msi":
-        return _windows_install_command(path, data_dir=data_dir)
+        return _windows_install_command(path, state_dir=state_dir)
     if kind == "pkg":
         install = f"installer -pkg {shlex.quote(path)} -target /"
-        script = _reporting_script(install, kind=kind, path=path, data_dir=data_dir)
+        script = _reporting_script(install, kind=kind, path=path, state_dir=state_dir)
         return [
             "launchctl",
             "submit",
@@ -133,7 +133,7 @@ def install_command(kind: str, path: str, *, data_dir: str) -> list:
         manager = "dnf" if shutil.which("dnf") else "yum"
         install = f"{manager} reinstall -y {path} || {manager} install -y {path}"
         setenv = []
-    script = _reporting_script(install, kind=kind, path=path, data_dir=data_dir)
+    script = _reporting_script(install, kind=kind, path=path, state_dir=state_dir)
     return (
         ["systemd-run", "--unit", AGENT_UPDATE_UNIT, "--collect"]
         + setenv
@@ -141,11 +141,11 @@ def install_command(kind: str, path: str, *, data_dir: str) -> list:
     )
 
 
-def read_reinstall_result(data_dir: str) -> "dict | None":
+def read_reinstall_result(state_dir: str) -> "dict | None":
     """What the reinstall this agent came from did.
 
     Args:
-        data_dir: The agent's data directory.
+        state_dir: The agent's state directory.
 
     Returns:
         ``{"package", "kind", "started_at", "finished_at", "exit_code",
@@ -153,7 +153,7 @@ def read_reinstall_result(data_dir: str) -> "dict | None":
     """
     try:
         with open(
-            _reinstall_result_path(data_dir), "r", encoding="utf-8", errors="replace"
+            _reinstall_result_path(state_dir), "r", encoding="utf-8", errors="replace"
         ) as stream:
             written = json.load(stream)
     except (OSError, ValueError):
@@ -174,14 +174,14 @@ def read_reinstall_result(data_dir: str) -> "dict | None":
     }
 
 
-def clear_reinstall_result(data_dir: str) -> None:
+def clear_reinstall_result(state_dir: str) -> None:
     """Drop what an earlier reinstall left, before a new one starts.
 
     Args:
-        data_dir: The agent's data directory.
+        state_dir: The agent's state directory.
     """
     try:
-        os.unlink(_reinstall_result_path(data_dir))
+        os.unlink(_reinstall_result_path(state_dir))
     except OSError:
         pass
 
@@ -214,7 +214,7 @@ def receive_package(channel, *, directory: str) -> str:
     raise SelfUpdateError(code)
 
 
-def run_update(package_path: str, *, kind: str, data_dir: str) -> None:
+def run_update(package_path: str, *, kind: str, state_dir: str) -> None:
     """Install a package whose digest was checked, detached from this process.
 
     Args:
@@ -222,15 +222,15 @@ def run_update(package_path: str, *, kind: str, data_dir: str) -> None:
             It outlives this process: the install restarts the service,
             and the agent that starts then clears the directory.
         kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
-        data_dir: The agent's data directory, where the install writes
+        state_dir: The agent's state directory, where the install writes
             what it did.
 
     Raises:
         SelfUpdateError: When the install cannot be launched, as
             ``agent_update_launch_failed``; the file is deleted.
     """
-    clear_reinstall_result(data_dir)
-    command = install_command(kind, package_path, data_dir=data_dir)
+    clear_reinstall_result(state_dir)
+    command = install_command(kind, package_path, state_dir=state_dir)
     try:
         if kind == "msi":
             _start_detached(command)
@@ -284,24 +284,24 @@ def _start_detached(command: list) -> None:
     raise refusal
 
 
-def _windows_install_command(path: str, *, data_dir: str) -> list:
+def _windows_install_command(path: str, *, state_dir: str) -> list:
     """The PowerShell that runs msiexec and writes its result.
 
     Args:
         path: The received ``.msi``.
-        data_dir: Where the log and the result are written.
+        state_dir: Where the log and the result are written.
 
     Returns:
         The argument vector.
     """
-    log = ntpath.join(data_dir, AGENT_REINSTALL_LOG_NAME)
+    log = ntpath.join(state_dir, AGENT_REINSTALL_LOG_NAME)
     arguments = f'/i "{path}" /qn /norestart /l*v "{log}"'
     script = _WINDOWS_SCRIPT.format(
         log=_powershell_quote(log),
         arguments=_powershell_quote(arguments),
         tail=AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
         package=_powershell_quote(ntpath.basename(path)),
-        result=_powershell_quote(ntpath.join(data_dir, AGENT_REINSTALL_RESULT_NAME)),
+        result=_powershell_quote(ntpath.join(state_dir, AGENT_REINSTALL_RESULT_NAME)),
     )
     return [
         "powershell.exe",
@@ -319,33 +319,33 @@ def _powershell_quote(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def _reinstall_result_path(data_dir: str) -> str:
+def _reinstall_result_path(state_dir: str) -> str:
     """Where the transient unit writes what the install did.
 
     Args:
-        data_dir: The agent's data directory.
+        state_dir: The agent's state directory.
 
     Returns:
         The result file's path.
     """
-    return os.path.join(data_dir, AGENT_REINSTALL_RESULT_NAME)
+    return os.path.join(state_dir, AGENT_REINSTALL_RESULT_NAME)
 
 
-def _reporting_script(install: str, *, kind: str, path: str, data_dir: str) -> str:
+def _reporting_script(install: str, *, kind: str, path: str, state_dir: str) -> str:
     """The shell the transient unit runs: the install, its log, its result.
 
     Args:
         install: The package manager's own command line.
         kind: ``deb``, ``rpm`` or ``pkg``.
         path: The received package file.
-        data_dir: Where the log and the result are written.
+        state_dir: Where the log and the result are written.
 
     Returns:
         One ``sh -c`` script. The umask makes both files 0600, and the
         install runs in a subshell so its own exit cannot skip the result.
     """
-    log = shlex.quote(os.path.join(data_dir, AGENT_REINSTALL_LOG_NAME))
-    result = shlex.quote(os.path.join(data_dir, AGENT_REINSTALL_RESULT_NAME))
+    log = shlex.quote(os.path.join(state_dir, AGENT_REINSTALL_LOG_NAME))
+    result = shlex.quote(os.path.join(state_dir, AGENT_REINSTALL_RESULT_NAME))
     tail = AGENT_REINSTALL_OUTPUT_LIMIT_BYTES
     return "\n".join(
         [

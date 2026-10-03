@@ -128,7 +128,7 @@ machinery").
 The file share on Windows and macOS is the one module that changes what the
 person set up. On Linux it owns the whole `smb.conf`; on Windows and macOS it
 owns who reaches the system's SMB server. It changes only the shares and
-accounts it made, the ones its record under the work root lists and its
+accounts it made, the ones its record under the state root lists and its
 marker names, but its fence covers every share on the machine, the person's
 own included.
 
@@ -253,18 +253,22 @@ builds the package-backed runners only on a platform with `packages`. A
 platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
-built-in RustDesk row. A platform with `hub_packages` names a root that
-software the hub sends down a package stream is unpacked under, readable by
-every account, and gets the VS Code module; on Linux VS Code is one of the
-runners `packages` builds. Every import
+built-in RustDesk row. A platform with `hub_packages` gets the VS Code
+module; on Linux VS Code is one of the runners `packages` builds. On every
+system, software the hub sends down a package stream is unpacked into a
+directory of the module's own name under the state root, and that directory
+alone is opened to every account to read and run: mode 755, and on Windows
+read and execute for the Users group. Every import
 only POSIX has is guarded, so one package imports on all three systems.
 
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| State root | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent`, its ACL SYSTEM and the administrators alone, set by the `.msi` | `/Library/Application Support/Neutrino/agent` |
-| Work root: configured marks, packages | `/var/lib/neutrino_agent` | the state root | the state root |
+| Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
+| Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
+| State root: configured marks, packages, the last reinstall, `vscode/`, `cloudcli/` | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
-| Control transport | Unix socket `/run/neutrino_agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino_agent/agent.sock` |
+| Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
 | Metrics | `/proc`, `/sys`, `nvidia-smi` | kernel32 `GetSystemTimes`, `GlobalMemoryStatusEx`, `GetTickCount64`; the system drive | `host_statistics`, `vm_stat`, `sysctl`; `/` |
 | Interfaces | `ip -j addr` | one PowerShell call joining `Get-NetAdapter` to `Get-NetIPAddress`, read at most every 30 seconds | `ifconfig -a` |
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
@@ -273,9 +277,9 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Refused | nothing | stepping down, packages, the `kill` verb, but not `persist` or `stop_session` | stepping down, packages |
 | Shell stream | the login shell on a pseudo-terminal | PowerShell on a pseudo console, in a job that kills it on close | `zsh -il` on a pseudo-terminal |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
-| RustDesk | `/usr/lib/neutrino_agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
-| File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the work root at every apply and when the agent starts |
-| VS Code | the CLI in `/usr/local/lib/neutrino_vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/etc/neutrino/vscode`, and `/etc/sysctl.d/90-neutrino-vscode.conf` when the machine's inotify watch or instance limit is under the module's floor (524288 and 512), since a served home directory runs a distribution's default out | the CLI in `%ProgramData%\Neutrino\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token | the CLI in `/Library/Application Support/Neutrino/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
+| RustDesk | `/usr/lib/neutrino/agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
+| File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the state root at every apply and when the agent starts |
+| VS Code | the CLI in `/var/lib/neutrino/agent/vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/var/lib/neutrino/agent/vscode/tokens`, and `/etc/sysctl.d/90-neutrino-vscode.conf` when the machine's inotify watch or instance limit is under the module's floor (524288 and 512), since a served home directory runs a distribution's default out | the CLI in `%ProgramData%\Neutrino\agent\state\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token | the CLI in `/Library/Application Support/Neutrino/agent/state/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
 | Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer` |
 
 On Linux the metrics come from `/proc` and `/sys` with nothing but the
@@ -321,12 +325,12 @@ each module there reads its own sources. The file share reads the SMB
 server's latest events from `Microsoft-Windows-SMBServer/Operational` on
 Windows, or what the unified log holds of `smbd` over the last 15 minutes on
 macOS. After them come the agent's own log lines that name the module, from
-`agent.log` under the state root on Windows and
-`/Library/Logs/neutrino_agent.log` on macOS. VS Code reads the end of each
+`agent.log` under the log root on Windows and
+`/Library/Logs/Neutrino/agent/agent.log` on macOS. VS Code reads the end of each
 instance's log file. On Windows the task runs the CLI through `cmd.exe`,
 which appends its output to `<account>.log` beside the CLI; on macOS the
 LaunchDaemon's `StandardOutPath` and `StandardErrorPath` name
-`/Library/Logs/Neutrino/vscode_<account>.log`. Every log comes oldest line
+`/Library/Logs/Neutrino/agent/vscode_<account>.log`. Every log comes oldest line
 first, at most the number of lines the verb asked for.
 
 The hub's own machine on macOS and Windows runs the local agent
@@ -359,11 +363,11 @@ for VS Code.
 nodejs.org standalone build of Node 22 LTS for Linux, macOS and Windows on
 x64 and arm64, each with its url and the sha256 of `SHASUMS256.txt`. The hub
 fetches it into its module cache and serves it on the `package` stream. The
-agent unpacks it under its own root, `/var/lib/neutrino_agent/cloudcli/` on
-Linux, `%ProgramData%\Neutrino\cloudcli` on Windows and
-`/Library/Application Support/Neutrino/cloudcli` on macOS (the root that holds
-software the hub sends; the agent's data directory is closed to the account):
-owned by root, read-only, one copy per machine. It is never put on `PATH`, in any shell
+agent unpacks it under its state root, `/var/lib/neutrino/agent/cloudcli/` on
+Linux, `%ProgramData%\Neutrino\agent\state\cloudcli` on Windows and
+`/Library/Application Support/Neutrino/agent/state/cloudcli` on macOS, the one
+directory there opened to every account: owned by root, read-only, one copy
+per machine. It is never put on `PATH`, in any shell
 profile, or under `/usr/local`.
 
 **CloudCLI is installed per account, apart from the account's own npm.** As
@@ -372,9 +376,9 @@ the account, with that Node, the agent runs
 `npm_config_cache` inside the app directory and `npm_config_userconfig`
 naming an empty file, so no `~/.npmrc` is read, `~/.npm` is untouched and
 nothing is installed globally. The app directory is
-`~/.local/share/neutrino_cloudcli/app` on Linux,
-`~/Library/Application Support/Neutrino/cloudcli/app` on macOS and
-`%LOCALAPPDATA%\Neutrino\cloudcli\app` on Windows. The install reaches
+`~/.local/share/neutrino/agent/cloudcli/app` on Linux,
+`~/Library/Application Support/Neutrino/agent/cloudcli/app` on macOS and
+`%LOCALAPPDATA%\Neutrino\agent\cloudcli\app` on Windows. The install reaches
 nodejs.org, npm and GitHub; a LAN machine reaches them through the hub's
 proxy, and no mirror is configured.
 

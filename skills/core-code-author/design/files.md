@@ -51,7 +51,9 @@ the program directory on `PATH` on Windows); `/lib/systemd/system/` and
 `/Library/LaunchDaemons/` because the service managers read from there and
 nowhere else; `/usr/share/doc/<package>/licenses/` because that is where a
 package's licences are looked for; the polkit rule of the client's mount
-helper under polkit's own directory. The application entry named
+helper under polkit's own directory; the agent's RustDesk host under
+`/usr/lib/neutrino/agent/rustdesk/`, because RustDesk answers `--password`
+only when its own binary, links resolved, sits under `/usr`. The application entry named
 `Neutrino Client` writes everything under `Neutrino/client`.
 
 ## What each operation leaves behind
@@ -86,7 +88,6 @@ and the client with their own three directories.
         bin/        xray, cli-proxy-api, netbird, easytier-core, easytier-cli
     agent/
         python/     the interpreter, the agent, and the window's bindings
-        rustdesk/   the RustDesk host
     client/
         the compiled client, its libraries and the carried programs
         libexec/mount_helper
@@ -201,7 +202,8 @@ with the descriptor `D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`, SYSTEM and the
 administrators alone, and the vault key, the TLS private keys and the session
 secret inherit it. On macOS the postinstall creates `config` and `state`
 owned by root:wheel with mode 0700, and the `chmod 0600` on each secret holds
-as on Linux.
+as on Linux. The agent's `state` alone is mode 755, so every account reaches
+`vscode/` and `cloudcli/` under it.
 
 ## /var/log/neutrino: what happened
 
