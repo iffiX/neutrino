@@ -428,3 +428,6 @@ const val RDP_STATE_LOGIN_FAILED = 2
 
 /** The RustDesk core's state: the connection ended. */
 const val RDP_STATE_CLOSED = 3
+
+/** The pause between two typed characters, so a Linux desktop types one before the next arrives. */
+const val RDP_TYPE_PACE_MILLIS = 40L
