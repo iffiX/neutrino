@@ -2,14 +2,17 @@
 
 This is what the service control manager starts. The dispatcher is handed
 the process first, inside the manager's 30 seconds; the agent and its
-control pipe are built once the service reports running. Its log goes to
-``agent.log`` under the agent's data root, rotated.
+control pipe are built once the service reports running. A stop only asks
+the agent's loop to end, so the manager hears back at once; the control
+pipe closes once the loop has ended. Its log goes to ``agent.log`` under
+the agent's data root, rotated.
 """
 
 import logging
 import logging.handlers
 import os
 import sys
+import threading
 
 from neutrino_agent.constants import AGENT_WINDOWS_LOG_NAME, AGENT_WINDOWS_SERVICE_NAME
 from neutrino_agent.control.server import ControlServer
@@ -36,19 +39,25 @@ def main_run() -> int:
     platform = detect_platform()
     log = service_log(platform.agent_data_dir())
     held: dict = {}
+    is_stop_asked = threading.Event()
 
     def on_start() -> None:
         agent = Agent(log=log, platform=platform)
         control = ControlServer(agent=agent, platform=platform, log=log)
-        held["control"] = control
+        held["agent"] = agent
         control.start()
-        agent.run_forever()
+        try:
+            if not is_stop_asked.is_set():
+                agent.run_forever()
+        finally:
+            control.stop()
 
     def on_stop() -> None:
         log("service stopping")
-        control = held.get("control")
-        if control is not None:
-            control.stop()
+        is_stop_asked.set()
+        agent = held.get("agent")
+        if agent is not None:
+            agent.stop()
 
     dispatcher = ServiceControlDispatcher(AGENT_WINDOWS_SERVICE_NAME, on_start, on_stop)
     try:

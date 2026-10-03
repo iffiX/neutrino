@@ -16,6 +16,9 @@ AGENT_SERVICE_NAME = "neutrino_agent.service"
 AGENT_WINDOWS_SERVICE_NAME = "neutrino_agent"
 AGENT_LAUNCHD_LABEL = "com.neutrino.agent"
 AGENT_LAUNCHD_PLIST_PATH = "/Library/LaunchDaemons/com.neutrino.agent.plist"
+# How long the service, once asked to stop, waits for the agent's loop to
+# end before it reports stopped and exits; under the 30 s wait hint.
+AGENT_SERVICE_STOP_WAIT_S = 25
 # The agent's own log where no journal keeps it: a file under the data root
 # on Windows, and the file the LaunchDaemon's output goes to on macOS.
 AGENT_WINDOWS_LOG_NAME = "agent.log"
