@@ -76,9 +76,6 @@ CLIENT_CODE_WORDS = {
     ),
     "link_incomplete": "that link carries no hub address and token",
     "link_not_for_client": "that link is for a device agent, not for a client",
-    "link_unreachable": (
-        "the hub cannot be reached from here; paste the link from its Clients page instead"
-    ),
     "enroll_refused": (
         "the hub refused this link; it may have expired, so generate a fresh one"
     ),

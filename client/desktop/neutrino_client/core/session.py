@@ -939,18 +939,42 @@ class ClientHubSession:
     def _join_at(self, url: str) -> None:
         """Spend the pending join's ticket at the address that answered.
 
+        A short link's object is fetched there first and kept on the binding.
+
         Raises:
-            EnrollmentError: When the hub refused the join.
+            EnrollmentError: When the hub refused the ticket.
             GatewayUntrusted: When what answers is not the pinned hub.
             GatewayUnreachable: When the address stops answering, or the
-                completed binding cannot be kept.
+                fetched or completed binding cannot be kept.
         """
+        if self.binding().get(enrollment.BINDING_OBJECT_PENDING_KEY) is True:
+            self._fetch_object_at(url)
         completed = enrollment.complete_join(self.binding(), url)
         try:
             self._on_joined(self, completed)
         except OSError as error:
             raise GatewayUnreachable(f"the join could not be kept: {error}")
         self._log(f"joined the hub at {url}")
+
+    def _fetch_object_at(self, url: str) -> None:
+        """Fetch a short link's object at the address that answered, and keep it.
+
+        Raises:
+            EnrollmentError: When the hub refused the ticket.
+            GatewayUntrusted: When what answers is not the pinned hub.
+            GatewayUnreachable: When the address stops answering, or the
+                fetched binding cannot be kept.
+        """
+        fetched = enrollment.fetch_link_object(self.binding(), url)
+        try:
+            enrollment.add_binding(fetched)
+        except OSError as error:
+            raise GatewayUnreachable(f"the link's object could not be kept: {error}")
+        with self._lock:
+            self._binding = dict(fetched)
+        self._log(f"fetched the link's object at {url}")
+        self._on_services(self)
+        self._on_change()
 
     def _on_join_refused(self, error: EnrollmentError) -> int:
         """Take the hub's refusal of a pending join: down, and no more rounds."""

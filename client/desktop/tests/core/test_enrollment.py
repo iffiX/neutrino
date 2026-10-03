@@ -170,21 +170,62 @@ def test_a_short_link_missing_a_part_is_unreadable(text):
     assert caught.value.code == "link_unreadable"
 
 
-def test_a_short_link_is_read_as_the_object_its_hub_answers(monkeypatch):
+def test_a_short_link_reads_as_its_one_address_and_asks_the_hub_nothing(
+    monkeypatch,
+):
+    asked = []
+    monkeypatch.setattr(
+        channel.GatewayHttpChannel, "get", lambda self, path: asked.append(path)
+    )
+
+    parsed = parse_link("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
+
+    assert parsed == (["https://192.168.100.1:8443"], "t", "ab" * 32, [])
+    assert asked == []
+
+
+def test_the_fetched_object_is_merged_into_the_pending_binding(monkeypatch):
     asked = []
 
     def get(self, path):
         asked.append((self._gateway_url, self._fingerprint, path))
-        return {"urls": ["https://192.168.100.1:8443"], "token": "t", "role": "client"}
+        return {
+            "urls": ["https://203.0.113.5:8443", "https://192.168.100.1:8443"],
+            "token": "t",
+            "fp": "cd" * 32,
+            "role": "client",
+            "overlays": [NETBIRD],
+        }
 
     monkeypatch.setattr(channel.GatewayHttpChannel, "get", get)
+    binding = enrollment.enroll("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
 
-    parsed = parse_link("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
+    fetched = enrollment.fetch_link_object(binding, "https://192.168.100.1:8443")
 
-    assert parsed == (["https://192.168.100.1:8443"], "t", "", [])
     assert asked == [
         ("https://192.168.100.1:8443", "ab" * 32, "/api/channel/enroll?ticket=t")
     ]
+    assert fetched["gateway_urls"] == [
+        "https://192.168.100.1:8443",
+        "https://203.0.113.5:8443",
+    ]
+    assert fetched["overlays"] == [NETBIRD]
+    assert (fetched["ticket"], fetched["fingerprint"]) == ("t", "ab" * 32)
+    assert fetched["is_pending"] is True and "is_object_pending" not in fetched
+
+
+def test_a_fetched_object_for_a_device_is_refused(monkeypatch):
+    monkeypatch.setattr(
+        channel.GatewayHttpChannel,
+        "get",
+        lambda self, path: {"urls": ["https://h"], "token": "t", "role": "agent"},
+    )
+    binding = enrollment.enroll("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
+
+    with pytest.raises(EnrollmentError) as caught:
+        enrollment.fetch_link_object(binding, "https://192.168.100.1:8443")
+
+    assert caught.value.code == "link_not_for_client"
 
 
 def answer_with(monkeypatch, *, reply=None, error=None):

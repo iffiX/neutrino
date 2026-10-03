@@ -28,7 +28,6 @@
   "code.link_incomplete": "that link carries no hub address and token",
   "code.link_missing": "paste the link from the hub's Clients page",
   "code.link_not_for_client": "that link is for a device agent",
-  "code.link_unreachable": "the hub cannot be reached from here; paste the link from its Clients page instead",
   "code.link_unreadable": "that is not an enrollment link; copy the whole line from the hub",
   "code.mount_not_authorized": "mounting was not authorized on this machine",
   "code.mount_tooling_missing": "the mount tooling is missing on this machine",

@@ -8,18 +8,22 @@ checked on every connection before anything is sent. A link whose ``role``
 is not ``client`` was made for a device agent and is refused.
 
 A QR code carries the short form, ``neutrino://enroll/<ticket>@<host>:<port>/
-<fp>``; the ``@`` tells it apart. The long form's object is fetched from
-``GET /api/channel/enroll?ticket=`` at that address with ``fp`` pinned, and
-read as a pasted link's.
+<fp>``; the ``@`` tells it apart. Its binding is stored at once with that
+one address and ``is_object_pending``; the session fetches the long form's
+object from ``GET /api/channel/enroll?ticket=`` at the address that answers
+with ``fp`` pinned, before it spends the ticket, and merges its addresses and
+overlays into the binding.
 
 The bindings live in ``client.json`` in the person's own configuration
 directory, mode 0600, one per hub joined:
 ``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
-fingerprint, token, ticket, is_pending, overlays, is_overlay_on,
-overlay_pick}], "exit_hub_id"}``, ``ticket`` and ``is_pending`` only on a
-pending join. A file without ``bindings`` reads as none. A join stores its
-binding at once, ``is_pending`` with the link's ``ticket``, no token and an
-id of this machine's own; the session spends the ticket at the first
+fingerprint, token, ticket, is_pending, is_object_pending, overlays,
+is_overlay_on, overlay_pick}], "exit_hub_id"}``, ``ticket`` and
+``is_pending`` only on a pending join, ``is_object_pending`` only on a short
+link's pending join whose object is not fetched yet. A file without
+``bindings`` reads as none. A join stores its binding at once,
+``is_pending`` with the link's ``ticket``, no token and an id of this
+machine's own; the session spends the ticket at the first
 address that answers, and the binding then holds the hub's id and token and
 no ticket. ``gateway_urls`` is every address the hub answers on, from the
 link and then from each ``state`` frame; ``gateway_url`` is the one that last
@@ -69,8 +73,6 @@ from neutrino_client.exceptions import (
     GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
-    GatewayUnreachable,
-    GatewayUntrusted,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.store import ClientServiceStore
@@ -79,7 +81,7 @@ LINK_PREFIX = "neutrino://enroll/"
 # What marks a short link: the base64url alphabet of a long one has no ``@``.
 LINK_SHORT_MARK = "@"
 # What one binding keeps: every field a string but the list of every address
-# the hub answers on, the list of overlay objects and the two flags.
+# the hub answers on, the list of overlay objects and the three flags.
 BINDING_KEYS = (
     "id",
     "name",
@@ -91,6 +93,7 @@ BINDING_KEYS = (
     "token",
     "ticket",
     "is_pending",
+    "is_object_pending",
     "overlays",
     "is_overlay_on",
     "overlay_pick",
@@ -99,6 +102,7 @@ BINDING_URLS_KEY = "gateway_urls"
 BINDING_OVERLAYS_KEY = "overlays"
 BINDING_OVERLAY_ON_KEY = "is_overlay_on"
 BINDING_PENDING_KEY = "is_pending"
+BINDING_OBJECT_PENDING_KEY = "is_object_pending"
 BINDING_TICKET_KEY = "ticket"
 # What a pending binding's own id starts with, before the hub names one.
 BINDING_PENDING_ID_PREFIX = "pending_"
@@ -120,7 +124,8 @@ OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn", "hub_address")
 def parse_link(link: str) -> "tuple[list, str, str, list]":
     """Pull the addresses, ticket, fingerprint and overlays out of a link.
 
-    A short link's object is fetched from the hub it names first.
+    A short link asks nothing of the hub: it gives its one address, its
+    ticket, its fingerprint and no overlays.
 
     Args:
         link: What the person pasted; the bare payload without its scheme
@@ -136,10 +141,7 @@ def parse_link(link: str) -> "tuple[list, str, str, list]":
         EnrollmentError: ``link_missing`` for an empty paste,
             ``link_unreadable`` for something that is not a link,
             ``link_incomplete`` for a link without an address or ticket,
-            ``link_not_for_client`` for a link whose role is not ``client``;
-            for a short link, ``link_unreachable`` when its address does
-            not answer, ``hub_untrusted`` when another certificate does,
-            and the hub's own code, ``ticket_spent``, when it refuses.
+            ``link_not_for_client`` for a link whose role is not ``client``.
     """
     text = link.strip()
     if not text:
@@ -147,9 +149,37 @@ def parse_link(link: str) -> "tuple[list, str, str, list]":
     if text.startswith(LINK_PREFIX):
         text = text[len(LINK_PREFIX) :]
     if LINK_SHORT_MARK in text:
-        payload = fetch_link_object(*parse_short_link(text))
-    else:
-        payload = _decoded(text)
+        ticket, gateway_url, fingerprint = parse_short_link(text)
+        return [gateway_url], ticket, fingerprint, []
+    return read_link_object(_decoded(text))
+
+
+def is_short_link(link: str) -> bool:
+    """Whether a link is the short form a QR code carries.
+
+    Args:
+        link: What the person pasted or scanned.
+
+    Returns:
+        True when it holds the short form's ``@``.
+    """
+    return LINK_SHORT_MARK in link
+
+
+def read_link_object(payload: dict) -> "tuple[list, str, str, list]":
+    """Pull the addresses, ticket, fingerprint and overlays out of a long link's object.
+
+    Args:
+        payload: The object a long link carries, or the one fetched for a
+            short link.
+
+    Returns:
+        The same four as :func:`parse_link`.
+
+    Raises:
+        EnrollmentError: ``link_unreadable``, ``link_incomplete`` or
+            ``link_not_for_client``, as for :func:`parse_link`.
+    """
     try:
         urls = [
             str(url).rstrip("/") for url in payload.get("urls", []) if str(url).strip()
@@ -198,38 +228,52 @@ def parse_short_link(text: str) -> "tuple[str, str, str]":
     return ticket, f"https://{address}", fingerprint
 
 
-def fetch_link_object(ticket: str, gateway_url: str, fingerprint: str) -> dict:
-    """The long link's object for a short link's ticket, from the hub it names.
+def fetch_link_object(binding: dict, gateway_url: str) -> dict:
+    """Fetch a short link's object and merge it into its pending binding.
 
     Args:
-        ticket: The ticket.
-        gateway_url: The hub's address the short link names.
-        fingerprint: The certificate fingerprint to pin.
+        binding: The pending binding whose object is not fetched yet.
+        gateway_url: The address whose certificate matched the pin.
 
     Returns:
-        The object, as a long link carries it.
+        The binding with the object's addresses after its own and the
+        object's overlays, the ticket kept, no longer awaiting the object.
 
     Raises:
-        EnrollmentError: ``link_unreachable`` when the address does not
-            answer or the answer is not an object, ``hub_untrusted`` when
-            another certificate answers, the hub's code (``ticket_spent``)
-            or ``enroll_refused`` when it refuses.
+        EnrollmentError: When the hub refused the ticket: ``ticket_spent``
+            or another code it named, ``enroll_refused`` for one it did
+            not, the protocol refusals with their numbers; or when the
+            object is not one a client can join with, as for
+            :func:`read_link_object`.
+        GatewayUntrusted: When what answers is not the pinned hub.
+        GatewayUnreachable: When the address does not answer.
     """
-    channel = GatewayHttpChannel(gateway_url=gateway_url, fingerprint=fingerprint)
-    query = urllib.parse.urlencode({"ticket": ticket})
+    channel = GatewayHttpChannel(
+        gateway_url=gateway_url, fingerprint=binding["fingerprint"]
+    )
+    query = urllib.parse.urlencode({"ticket": binding["ticket"]})
     try:
         payload = channel.get(f"{CLIENT_ENROLL_PATH}?{query}")
-    except GatewayUntrusted as error:
-        raise EnrollmentError("hub_untrusted") from error
+    except GatewayProtocolRefused as error:
+        raise EnrollmentError(
+            error.code,
+            {"peer": error.peer, "hub": error.hub, "min": error.minimum},
+        ) from error
     except GatewayRefused as error:
         raise EnrollmentError(error.code or "enroll_refused", error.params) from error
     except GatewayRefusedDetail as error:
         raise EnrollmentError(error.code, error.params) from error
-    except (GatewayProtocolRefused, GatewayUnreachable) as error:
-        raise EnrollmentError("link_unreachable") from error
     if not isinstance(payload, dict):
-        raise EnrollmentError("link_unreachable")
-    return payload
+        raise EnrollmentError("link_unreadable")
+    urls, _, _, overlays = read_link_object(payload)
+    return _binding(
+        dict(
+            binding,
+            gateway_urls=stored_urls(binding) + urls,
+            overlays=overlays,
+            is_object_pending=False,
+        )
+    )
 
 
 def config_path() -> str:
@@ -675,7 +719,8 @@ def enroll(link: str) -> dict:
 
     Returns:
         The binding stored: pending, with the link's ticket, its first
-        address, every address and its overlays, and an id of its own.
+        address, every address and its overlays, and an id of its own; a
+        short link's also awaits its object.
 
     Raises:
         EnrollmentError: If the link is unusable.
@@ -691,6 +736,7 @@ def enroll(link: str) -> dict:
             "fingerprint": fingerprint,
             "ticket": ticket,
             BINDING_PENDING_KEY: True,
+            BINDING_OBJECT_PENDING_KEY: is_short_link(link),
             "overlays": overlays,
         }
     )
@@ -799,8 +845,9 @@ def leave(binding: dict) -> None:
 
 def _binding(raw: dict) -> dict:
     """One binding with every kept field, each a string but the lists and the
-    two flags; the ticket and the pending flag only while the join is pending."""
-    flags = (BINDING_OVERLAY_ON_KEY, BINDING_PENDING_KEY)
+    flags; the ticket and the pending flag only while the join is pending, the
+    object flag only while the object is awaited."""
+    flags = (BINDING_OVERLAY_ON_KEY, BINDING_PENDING_KEY, BINDING_OBJECT_PENDING_KEY)
     binding = {
         key: str(raw.get(key, "") or "")
         for key in BINDING_KEYS
@@ -813,6 +860,9 @@ def _binding(raw: dict) -> dict:
     if not binding[BINDING_PENDING_KEY]:
         binding.pop(BINDING_PENDING_KEY)
         binding.pop(BINDING_TICKET_KEY)
+        binding[BINDING_OBJECT_PENDING_KEY] = False
+    if not binding[BINDING_OBJECT_PENDING_KEY]:
+        binding.pop(BINDING_OBJECT_PENDING_KEY)
     return binding
 
 

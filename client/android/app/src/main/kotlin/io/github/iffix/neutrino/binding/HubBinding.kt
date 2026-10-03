@@ -17,6 +17,8 @@ import kotlinx.serialization.Serializable
  * @property fingerprint The pinned SHA-256 of the hub's certificate.
  * @property token The secret every hello carries; empty while the ticket is unspent.
  * @property ticket The link's ticket while it is unspent; empty once the join is done.
+ * @property isObjectPending Whether the binding came from a short link whose long link's object is
+ *   not fetched yet: a round fetches it before it spends the ticket.
  * @property hubBindingId The id the hub gave a binding whose ticket was spent after it was kept;
  *   empty when [id] is the hub's own.
  * @property overlays What this phone joins the hub's virtual networks with, preferred first.
@@ -35,6 +37,7 @@ data class HubBinding(
     val fingerprint: String,
     val token: String,
     val ticket: String = "",
+    @SerialName("is_object_pending") val isObjectPending: Boolean = false,
     @SerialName("hub_binding_id") val hubBindingId: String = "",
     val overlays: List<ChannelOverlay> = emptyList(),
     @SerialName("is_overlay_on") val isOverlayOn: Boolean = false,
