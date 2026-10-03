@@ -42,7 +42,17 @@ SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
 # What the one service runs as its own children on macOS and Windows, by the
 # names the panel uses. The panel itself runs inside the service.
 SYSTEM_SUPERVISED_WEB = "web"
-SYSTEM_SUPERVISED_NAMES = ("web", "xray", "cliproxyapi", "netbird", "easytier")
+SYSTEM_SUPERVISED_NAMES = (
+    "web",
+    "xray",
+    "cliproxyapi",
+    "netbird",
+    "easytier",
+    "tun2socks",
+)
+# A child that runs only while another one runs: it starts once that one
+# runs and is stopped before that one stops, restarts or is found ended.
+SYSTEM_CHILD_REQUIREMENTS = {"tun2socks": "xray"}
 # The daemons the service runs whether or not a module enabled them.
 SYSTEM_SUPERVISED_CORE = ("xray", "cliproxyapi")
 # Which children the service runs and the start lines it was handed.

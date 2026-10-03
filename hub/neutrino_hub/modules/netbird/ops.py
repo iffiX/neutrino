@@ -137,6 +137,8 @@ class NetbirdState:
         netbird_ip: This box's overlay address.
         fqdn: This box's overlay name.
         peers: The other machines, connected ones first.
+        server_urls: The management plane, the signal server and every
+            relay the daemon talks to.
     """
 
     is_installed: bool
@@ -148,6 +150,7 @@ class NetbirdState:
     netbird_ip: str = ""
     fqdn: str = ""
     peers: list[NetbirdPeer] = field(default_factory=list)
+    server_urls: list = field(default_factory=list)
 
 
 class NetbirdStatusReader:
@@ -191,6 +194,16 @@ class NetbirdStatusReader:
                 )
             )
         peers.sort(key=lambda peer: (not peer.is_connected, peer.fqdn))
+        relays = (status.get("relays") or {}).get("details") or []
+        server_urls = [
+            str(url)
+            for url in [
+                management.get("url"),
+                (status.get("signal") or {}).get("url"),
+                *[relay.get("uri") for relay in relays if isinstance(relay, dict)],
+            ]
+            if url
+        ]
 
         return NetbirdState(
             is_installed=True,
@@ -203,6 +216,7 @@ class NetbirdStatusReader:
             netbird_ip=status.get("netbirdIp", ""),
             fqdn=status.get("fqdn", ""),
             peers=peers,
+            server_urls=server_urls,
         )
 
 

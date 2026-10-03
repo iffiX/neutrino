@@ -284,6 +284,147 @@ def test_a_start_line_without_an_argument_vector_is_refused():
         ChildStartLine.from_dict({"argv": []})
 
 
+# --- a child that runs only beside another -----------------------------------
+
+TUN = ChildStartLine(argv=["/app/bin/tun2socks", "-device", "tun://utun225"])
+
+
+class _Watcher:
+    """Records every ended child and every tick, in order."""
+
+    def __init__(self, events: list):
+        self.events = events
+
+    def child_ended(self, name):
+        self.events.append(("ended", name))
+
+    def tick(self):
+        self.events.append(("tick",))
+
+
+@pytest.fixture
+def paired(tmp_path, popen, clock):
+    """A supervisor holding xray and tun2socks, tun2socks requiring xray."""
+    events: list = []
+    supervisor = ChildProcessSupervisor(
+        log_dir=tmp_path / "log",
+        base_env={},
+        start_process=popen,
+        requirements={"tun2socks": "xray"},
+        clock=clock,
+        log=lambda line: None,
+    )
+    supervisor.set_watcher(_Watcher(events))
+    supervisor.set_start_line("xray", XRAY)
+    supervisor.set_start_line("tun2socks", TUN)
+    return supervisor, events
+
+
+def _ran(popen, program: str) -> list:
+    return [child for child in popen.started if child.argv[0] == program]
+
+
+def test_a_child_whose_requirement_is_not_running_waits_for_it(paired, popen):
+    supervisor, _ = paired
+
+    supervisor.start("tun2socks")
+    assert popen.started == []
+
+    supervisor.start("xray")
+    supervisor.tick()
+
+    assert [child.argv[0] for child in popen.started] == [
+        "/app/bin/xray",
+        "/app/bin/tun2socks",
+    ]
+    assert supervisor.is_running("tun2socks")
+
+
+def test_stopping_xray_stops_tun2socks_first(paired, popen):
+    supervisor, events = paired
+    supervisor.start("xray")
+    supervisor.start("tun2socks")
+
+    supervisor.stop("xray")
+
+    assert events == [("ended", "tun2socks"), ("ended", "xray")]
+    assert _ran(popen, "/app/bin/tun2socks")[0].is_terminated
+    assert not supervisor.is_running("tun2socks")
+
+
+def test_a_restart_of_xray_takes_tun2socks_down_and_back_up(paired, popen):
+    supervisor, events = paired
+    supervisor.start("xray")
+    supervisor.start("tun2socks")
+
+    supervisor.restart("xray")
+
+    assert events == [("ended", "tun2socks"), ("ended", "xray")]
+    assert not supervisor.is_running("tun2socks")
+    assert supervisor.is_running("xray")
+
+    supervisor.tick()
+
+    assert len(_ran(popen, "/app/bin/tun2socks")) == 2
+    assert supervisor.is_running("tun2socks")
+
+
+def test_xray_found_ended_ends_tun2socks_and_brings_it_back_with_xray(
+    paired, popen, clock
+):
+    """The dead-exit path: xray exits, tun2socks is stopped at once rather
+    than left reading nothing, and both come back once xray does."""
+    supervisor, events = paired
+    supervisor.start("xray")
+    supervisor.start("tun2socks")
+
+    _ran(popen, "/app/bin/xray")[0].end(2)
+    supervisor.tick()
+
+    assert ("ended", "tun2socks") in events
+    assert events.index(("ended", "tun2socks")) < events.index(("ended", "xray"))
+    assert not supervisor.is_running("tun2socks")
+    assert len(_ran(popen, "/app/bin/tun2socks")) == 1
+
+    clock.now += SYSTEM_CHILD_RESTART_MIN_S
+    supervisor.tick()
+
+    assert supervisor.is_running("xray")
+    assert supervisor.is_running("tun2socks")
+
+
+def test_tun2socks_waits_while_xray_waits_to_start_again(paired, popen, clock):
+    supervisor, _ = paired
+    supervisor.start("xray")
+    supervisor.start("tun2socks")
+
+    _ran(popen, "/app/bin/xray")[0].end(2)
+    supervisor.tick()
+    clock.now += SYSTEM_CHILD_RESTART_MIN_S / 2
+    supervisor.tick()
+
+    assert len(_ran(popen, "/app/bin/tun2socks")) == 1
+
+
+def test_stopping_every_child_ends_tun2socks_before_xray(paired, popen):
+    supervisor, events = paired
+    supervisor.start("xray")
+    supervisor.start("tun2socks")
+
+    supervisor.stop_all()
+
+    ended = [event for event in events if event[0] == "ended"]
+    assert ended == [("ended", "tun2socks"), ("ended", "xray")]
+
+
+def test_the_watcher_ticks_after_the_children(paired):
+    supervisor, events = paired
+
+    supervisor.tick()
+
+    assert events == [("tick",)]
+
+
 def _text(path) -> str:
     try:
         return path.read_text(encoding="utf-8")

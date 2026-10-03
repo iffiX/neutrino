@@ -143,6 +143,7 @@ class WindowsHubPlatform(HubPlatform):
         from neutrino_hub.system.child_supervisor import ChildProcessSupervisor
         from neutrino_hub.system.constants import (
             SYSTEM_CHILD_LOG_DIR,
+            SYSTEM_CHILD_REQUIREMENTS,
             SYSTEM_SERVICES_STATE_PATH,
         )
         from neutrino_hub.system.process_control import SupervisedProcessController
@@ -152,6 +153,7 @@ class WindowsHubPlatform(HubPlatform):
                 log_dir=SYSTEM_CHILD_LOG_DIR,
                 on_started=self.tie_to_service,
                 creation_flags=PLATFORM_WINDOWS_CREATE_NO_WINDOW,
+                requirements=SYSTEM_CHILD_REQUIREMENTS,
             ),
             service=self,
             state_path=SYSTEM_SERVICES_STATE_PATH,

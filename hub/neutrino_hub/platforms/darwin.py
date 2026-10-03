@@ -39,12 +39,16 @@ class DarwinHubPlatform(HubPlatform):
         from neutrino_hub.system.child_supervisor import ChildProcessSupervisor
         from neutrino_hub.system.constants import (
             SYSTEM_CHILD_LOG_DIR,
+            SYSTEM_CHILD_REQUIREMENTS,
             SYSTEM_SERVICES_STATE_PATH,
         )
         from neutrino_hub.system.process_control import SupervisedProcessController
 
         return SupervisedProcessController(
-            supervisor=ChildProcessSupervisor(log_dir=SYSTEM_CHILD_LOG_DIR),
+            supervisor=ChildProcessSupervisor(
+                log_dir=SYSTEM_CHILD_LOG_DIR,
+                requirements=SYSTEM_CHILD_REQUIREMENTS,
+            ),
             service=self,
             state_path=SYSTEM_SERVICES_STATE_PATH,
             log_dir=SYSTEM_CHILD_LOG_DIR,

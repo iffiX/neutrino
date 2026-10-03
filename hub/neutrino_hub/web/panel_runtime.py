@@ -88,6 +88,7 @@ from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
+from neutrino_hub.modules.tun.ops import egress_interface
 from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH, XRAY_SCOPE_SWITCHES
 from neutrino_hub.modules.xray.exit_controller import XrayExitController
 from neutrino_hub.modules.xray.node_config import XrayNodeList
@@ -519,6 +520,7 @@ class PanelRuntime:
                 if health.is_down
             },
             is_transparent=is_linux(),
+            egress_interface=egress_interface(routing),
         ).render()
         switcher = OverlaySwitcher()
         changes: list[dict] = []

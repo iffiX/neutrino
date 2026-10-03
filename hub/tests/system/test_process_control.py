@@ -232,7 +232,7 @@ def test_an_action_outside_the_list_is_refused(controller):
 def test_every_name_the_service_runs_has_a_status(controller):
     names = [status.name for status in controller.status_all()]
 
-    assert names == ["web", "xray", "cliproxyapi", "netbird", "easytier"]
+    assert names == ["web", "xray", "cliproxyapi", "netbird", "easytier", "tun2socks"]
 
 
 def test_a_command_enables_into_services_json_alone(controller, popen, tmp_path):

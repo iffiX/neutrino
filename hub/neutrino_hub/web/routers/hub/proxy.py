@@ -31,15 +31,9 @@ from neutrino_hub.modules.xray.routing_rules import (
     check_direct_address,
     check_direct_domain,
 )
-from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX
-from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.utils.json_file import write_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.web.constants import (
-    WEB_PORT_MAX,
-    WEB_PORT_MIN,
-    WEB_PROXY_LINUX_ONLY_SCOPES,
-)
+from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.exceptions import NetworkApplyError
 from neutrino_hub.web.models import (
@@ -91,18 +85,13 @@ def update_settings(
         config and the nftables ruleset, so it takes effect on the next Apply.
 
     Raises:
-        HTTPException: 400 when a scope other than the SOCKS ports is
-            switched on outside Linux, when a proxied scope is switched on
-            with nothing to go out through, when a resolver is not an address, when two listeners
+        HTTPException: 400 when a proxied scope is switched on with
+            nothing to go out through, when a resolver is not an address, when two listeners
             want one port, when a listener wants a port something on the box
             already holds, or when a direct list holds a line xray will not
             load. Each of these reaches the xray config, where a bad value is a
             proxy that will not start rather than a setting that does nothing.
     """
-    if hub_os() != PLATFORM_OS_LINUX:
-        for scope in WEB_PROXY_LINUX_ONLY_SCOPES:
-            if getattr(settings, scope):
-                raise _refusal("proxy_scope_unsupported", switch=scope)
     # The scopes that divert, not the listeners. A proxied port with no exit
     # is simply not published — the renderer already declines it — and that is
     # a listener waiting for a node, not a contradiction to refuse.

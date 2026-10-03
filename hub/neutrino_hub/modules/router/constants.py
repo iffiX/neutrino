@@ -191,6 +191,7 @@ ROUTER_STEP_CHANGE_CODES = {
     "resolver": "resolver_changed",
     "served_route": "served_route_changed",
     "overlay_gate": "overlay_exposure_changed",
+    "tun": "tun_changed",
 }
 ROUTER_CODE_NETWORK_CHANGED = "network_changed"
 # One access point per wireless interface, so both the rendered files and the

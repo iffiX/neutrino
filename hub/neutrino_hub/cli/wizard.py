@@ -364,11 +364,6 @@ def _proxy_from(given, mode: str) -> WizardProxy:
     except ValueError as error:
         raise WizardAborted(str(error)) from error
     is_serving = mode != ROUTER_MODE_SERVER
-    if given.get("is_local") and not is_linux():
-        raise WizardAborted(
-            "'is_local' is Linux's; this box's own traffic cannot go through "
-            "the proxy here"
-        )
     port = given.get("socks_proxy_port", XRAY_SOCKS_PORT)
     return WizardProxy(
         is_enabled=True,
@@ -852,13 +847,10 @@ class SetupWizard:
             proxy.is_socks_proxy_enabled = True
             proxy.socks_proxy_port = answer
 
-        if is_linux():
-            answer = self._yes_no(
-                "Send this box's own traffic through it", default=False
-            )
-            if answer is None:
-                return WIZARD_PREVIOUS
-            proxy.is_local = answer
+        answer = self._yes_no("Send this box's own traffic through it", default=False)
+        if answer is None:
+            return WIZARD_PREVIOUS
+        proxy.is_local = answer
         self._proxy = proxy
         return WIZARD_NEXT
 

@@ -307,11 +307,3 @@ WEB_PACKAGE_FAMILY_OF_SUFFIX = (
     (".msi", "msi"),
     (".pkg", "pkg"),
 )
-
-# The proxy's switches that exist on Linux alone; elsewhere the proxy is its
-# SOCKS ports.
-WEB_PROXY_LINUX_ONLY_SCOPES = (
-    "is_proxy_enabled",
-    "is_overlay_proxy_enabled",
-    "is_local_proxy_enabled",
-)

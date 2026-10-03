@@ -204,6 +204,15 @@ XRAY_PROBE_TAG = "socks_probe_in"
 # has no account without a password, so there is one.
 XRAY_PROBE_PASSWORD = "probe"  # scan: allow
 
+# The inbound tun2socks hands the TUN device's connections to on macOS and
+# Windows, loopback only. What arrives here is the hub's own traffic and the
+# overlay members' it forwards, split by the same rules as ``tproxy_in``.
+XRAY_LOCAL_SOCKS_LISTEN = "127.0.0.1"
+XRAY_LOCAL_SOCKS_PORT = 10087
+XRAY_LOCAL_SOCKS_TAG = "socks_local_in"
+# The lookups arriving there on port 53, which the DNS outbound answers.
+XRAY_LOCAL_DNS_PORT = "53"
+
 # Where dnsmasq's queries go once they are inside xray. The DNS outbound hands
 # them to the resolver the dns object configures, so a client's lookup takes
 # the same per-domain split and the same UseIPv4 that xray's own lookups take.
@@ -223,6 +232,8 @@ XRAY_RULE_TAG_INBOUND_DIRECT = "rule_inbound_direct"
 XRAY_RULE_TAG_SPLIT_DOMAIN = "rule_split_domain"
 XRAY_RULE_TAG_SPLIT_IP = "rule_split_ip"
 XRAY_RULE_TAG_BALANCER = "rule_balancer"
+XRAY_RULE_TAG_LOCAL_DNS = "rule_local_dns"
+XRAY_RULE_TAG_LOCAL_RESERVED = "rule_local_reserved"
 
 # The measurement window each node keeps. The count bounds the state file and
 # the arithmetic; the age bounds how stale a reading may be after the box was

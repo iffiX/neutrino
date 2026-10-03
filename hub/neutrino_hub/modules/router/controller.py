@@ -7,8 +7,8 @@ so a step that cannot be done yet waits for the event that allows it, and the
 steps after it still run.
 
 Not pure: drives the appliers in :mod:`neutrino_hub.modules.router.routes`.
-On macOS and Windows the pass drives the system firewall instead, and
-touches no route, sysctl or nftables table.
+On macOS and Windows the pass drives the system firewall and the TUN
+device's plan instead, and touches no nftables table.
 """
 
 import contextlib
@@ -21,6 +21,8 @@ from pathlib import Path
 from neutrino_hub.modules.firewall.ops import converge_firewall
 from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
 from neutrino_hub.modules.overlay.ops import overlay_devices
+from neutrino_hub.modules.tun.constants import TUN_CODE_ROUTE_FAILED, TUN_STEP_NAME
+from neutrino_hub.modules.tun.ops import converge_tun
 from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
@@ -191,12 +193,21 @@ class RouterStateController:
     def _reconcile_firewall(
         self, network: RouterNetworkConfig, routing: dict
     ) -> list[RouterStepResult]:
-        """The pass on macOS and Windows: the system firewall and the overlays."""
+        """The pass on macOS and Windows: the firewall, the TUN and the overlays."""
         devices = overlay_devices(network)
         found = network.with_overlay_devices(devices)
         results = [
             run_step("firewall", lambda: converge_firewall(found, routing=routing))
         ]
+        tun = run_step(TUN_STEP_NAME, lambda: converge_tun(found, routing))
+        if tun.is_failed:
+            tun = RouterStepResult(
+                name=tun.name,
+                state=tun.state,
+                code=TUN_CODE_ROUTE_FAILED,
+                detail=tun.detail,
+            )
+        results.append(tun)
         write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
         if self._on_base_ready is not None:
             self._on_base_ready()

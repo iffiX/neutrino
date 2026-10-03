@@ -547,6 +547,39 @@ def test_the_overlay_scope_diverts_the_exposed_overlay_beside_the_lan():
     assert 'iifname != { "enp1s0", "wt0" } return' in ruleset
 
 
+SERVER_OVERLAY_PREROUTING = """    chain prerouting {
+        type filter hook prerouting priority mangle + 1; policy accept;
+        meta l4proto { tcp, udp } socket transparent 1 meta mark set 0x1 accept
+        iifname != { "wt0" } return
+        ip daddr @reserved_v4 return
+        meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:12345 meta mark set 0x1 accept
+    }"""
+
+
+@pytest.mark.parametrize("is_proxy_enabled", [True, False], ids=["lan on", "lan off"])
+def test_a_server_diverts_its_exposed_overlay_and_nothing_else(is_proxy_enabled):
+    """Server mode serves no network, so the served networks' switch reads
+    as nothing there; the overlay scope diverts the overlay's members whose
+    exit this box is, as in every mode."""
+    ruleset = RouterNftRenderer(
+        network=network_config(mode="server"),
+        routing={
+            "is_proxy_enabled": is_proxy_enabled,
+            "is_overlay_proxy_enabled": True,
+            "is_local_proxy_enabled": False,
+        },
+        xray_uid=999,
+    ).render()
+
+    start = ruleset.index("    chain prerouting {")
+    end = ruleset.index("    }", start) + len("    }")
+    chain = without_comments(ruleset[start:end])
+    assert "\n".join(line for line in chain.splitlines() if line.strip()) == (
+        SERVER_OVERLAY_PREROUTING
+    )
+    assert "meta mark 0x1 accept" in ruleset
+
+
 def test_the_overlay_scope_alone_diverts_only_the_overlay():
     ruleset = render(
         wan_entry("enp2s0"),

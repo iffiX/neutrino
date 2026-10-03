@@ -73,6 +73,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.web.panel_tls import ensure_served
 from neutrino_hub.utils.subprocess_run import command_failure_text
+from neutrino_hub.modules.tun.ops import egress_interface
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH
@@ -201,6 +202,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             routing=routing,
             down_tags=_down_tags(),
             is_transparent=is_linux(),
+            egress_interface=egress_interface(routing),
         ).render()
     if "router" in selected and not is_linux():
         artifacts["router"] = ""

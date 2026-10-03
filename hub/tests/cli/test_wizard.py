@@ -770,8 +770,9 @@ def test_macos_and_windows_take_a_server_alone(monkeypatch, system):
     assert wizard.from_document(document).network.mode == "server"
 
 
-@pytest.mark.parametrize("system", ["darwin", "win32"])
-def test_macos_and_windows_refuse_this_boxs_own_traffic(monkeypatch, system):
+@pytest.mark.parametrize("system", ["linux", "darwin", "win32"])
+def test_every_system_takes_this_boxs_own_traffic(monkeypatch, system):
+    """The TUN device carries the hub's own scope on macOS and Windows."""
     monkeypatch.setattr(wizard.sys, "platform", system)
     document = {
         "password": "a-long-enough-password",
@@ -780,8 +781,7 @@ def test_macos_and_windows_refuse_this_boxs_own_traffic(monkeypatch, system):
         "proxy": {"links": [SHARE_LINK], "is_local": True},
     }
 
-    with pytest.raises(WizardAborted, match="is_local"):
-        wizard.from_document(document)
+    assert wizard.from_document(document).proxy.is_local
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
@@ -813,10 +813,12 @@ def test_macos_and_windows_offer_the_browser_a_server_alone(monkeypatch, system)
     assert [mode["key"] for mode in wizard.context()["modes"]] == ["server"]
 
 
-def test_the_proxy_screen_does_not_ask_about_this_box_outside_linux(monkeypatch):
-    monkeypatch.setattr(wizard.sys, "platform", "darwin")
+@pytest.mark.parametrize("system", ["linux", "darwin", "win32"])
+def test_the_proxy_screen_asks_about_this_box_on_every_system(monkeypatch, system):
+    monkeypatch.setattr(wizard.sys, "platform", system)
     asked = wizard.SetupWizard(links=StubLinks().all_links())
-    typed = iter(["2", SHARE_LINK, "", ""])
+    asked._mode = "server"
+    typed = iter(["2", SHARE_LINK, "", "", "y"])
     questions = []
 
     def answer(prompt=""):
@@ -827,8 +829,8 @@ def test_the_proxy_screen_does_not_ask_about_this_box_outside_linux(monkeypatch)
 
     assert asked._ask_proxy() == wizard.WIZARD_NEXT
     assert asked._proxy.is_enabled
-    assert not asked._proxy.is_local
-    assert not any("own traffic" in question for question in questions)
+    assert asked._proxy.is_local
+    assert any("own traffic" in question for question in questions)
 
 
 class _TypedLines:
