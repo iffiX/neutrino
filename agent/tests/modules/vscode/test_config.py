@@ -21,10 +21,11 @@ def test_a_sound_configuration_passes_and_names_its_url():
     assert config.url_of(config.instances[0]) == "http://192.168.1.5:8000/"
 
 
-def test_no_address_listens_on_every_address():
+def test_no_address_listens_on_every_address_and_names_the_loopback():
     config = config_with(ANN, address="")
 
     assert config.host == "0.0.0.0"
+    assert config.url_of(config.instances[0]) == "http://127.0.0.1:8000/"
 
 
 @pytest.mark.parametrize(

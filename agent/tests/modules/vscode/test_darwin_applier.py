@@ -21,7 +21,7 @@ from neutrino_agent.modules.vscode.darwin_applier import VscodeDarwinApplier
 
 CONFIG = VscodeConfig.from_dict(
     {
-        "address": "10.0.0.7",
+        "address": "",
         "instances": [{"account": "ann", "port": 8000, "token": "t-ann"}],
     }
 )
@@ -88,7 +88,7 @@ def test_an_instance_is_a_launch_daemon_of_its_account(applier, launchd, tmp_pat
         "serve-web",
         "--accept-server-license-terms",
         "--host",
-        "10.0.0.7",
+        "0.0.0.0",
         "--port",
         "8000",
         "--connection-token-file",
@@ -164,7 +164,7 @@ def test_the_states_read_launchd_and_the_plists_without_a_config(applier, launch
     assert state == {
         "account": "ann",
         "port": 8000,
-        "url": "http://10.0.0.7:8000/",
+        "url": "http://127.0.0.1:8000/",
         "is_running": True,
         "code": "",
     }

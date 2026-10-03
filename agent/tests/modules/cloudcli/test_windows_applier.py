@@ -7,6 +7,8 @@ instance's environment and keeps the account's ``PATH``; a refused login
 is ``credential_invalid``; and a task Windows cannot sign in reads so.
 """
 
+import ntpath
+
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -103,7 +105,8 @@ def test_an_instance_is_a_task_running_its_script(applier, powershell):
     assert 'set "HOST=127.0.0.1"' in text
     assert 'set "SERVER_PORT=41234"' in text
     assert 'set "ANTHROPIC_AUTH_TOKEN=device-key"' in text
-    assert 'set "PATH=' not in text
+    node_dir = ntpath.dirname(applier.node)
+    assert f'set "PATH={node_dir};%PATH%"' in text
     assert "node.exe" in text and "index.js" in text
     assert instance["arguments"].startswith("/s /c ")
     assert instance["description"].startswith("neutrino:")
@@ -194,4 +197,10 @@ def test_the_install_script_checks_the_native_modules_after_npm():
         in lines
     )
     assert any(line.endswith("|| exit /b 1") for line in lines)
+    path_line = (
+        'set "PATH=C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n;'
+        '%SystemRoot%\\System32;%SystemRoot%;%PATH%"'
+    )
+    npm_line = next(index for index, line in enumerate(lines) if "npm-cli" in line)
+    assert lines.index(path_line) < npm_line
     assert "createRequire" in lines[-2]

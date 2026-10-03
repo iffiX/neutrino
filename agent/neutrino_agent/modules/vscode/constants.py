@@ -18,6 +18,8 @@ VSCODE_TOKEN_DIR_NAME = "tokens"
 VSCODE_SERVE_ARGUMENTS = ("serve-web", "--accept-server-license-terms")
 # The address an instance listens on when the hub names none.
 VSCODE_ANY_ADDRESS = "0.0.0.0"
+# The address a reported url names for servers on every address.
+VSCODE_LOOPBACK_ADDRESS = "127.0.0.1"
 VSCODE_PORT_MIN = 1024
 VSCODE_PORT_MAX = 65535
 

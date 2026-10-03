@@ -72,6 +72,35 @@ ERROR_INSUFFICIENT_BUFFER = 122
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
 
+# The system information classes the metrics read, and the answer a buffer
+# too small for them gets.
+SYSTEM_PROCESS_INFORMATION_CLASS = 5
+SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS = 8
+STATUS_INFO_LENGTH_MISMATCH = 0xC0000004
+
+# A process's owner: the access a process and its token are opened with, and
+# the token information class that names the account.
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+TOKEN_QUERY = 0x0008
+TOKEN_USER_CLASS = 1
+
+# Performance counters: the answer a sizing call gets, the formats asked for,
+# and the item statuses that carry a value.
+PDH_MORE_DATA = 0x800007D2
+PDH_FMT_DOUBLE = 0x00000200
+PDH_FMT_LARGE = 0x00000400
+PDH_CSTATUS_VALID_DATA = 0
+PDH_CSTATUS_NEW_DATA = 1
+
+# The graphics kernel's adapter queries and the bits of the adapter's type.
+KMTQAITYPE_GETSEGMENTSIZE = 3
+KMTQAITYPE_ADAPTERREGISTRYINFO = 8
+KMTQAITYPE_ADAPTERTYPE = 15
+D3DKMT_ADAPTERTYPE_RENDER_SUPPORTED = 0x1
+D3DKMT_ADAPTERTYPE_SOFTWARE_DEVICE = 0x4
+D3DKMT_ADAPTERTYPE_COMPUTE_ONLY = 0x800
+D3DKMT_REGISTRY_STRING_CHARS = 260
+
 
 def last_error() -> OSError:
     """The calling thread's last Win32 error, as the OSError it is.
@@ -301,6 +330,148 @@ class LsaObjectAttributes(ctypes.Structure):
     ]
 
 
+class SystemProcessorPerformanceInformation(ctypes.Structure):
+    """SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION: one core's times."""
+
+    _fields_ = [
+        ("IdleTime", ctypes.c_int64),
+        ("KernelTime", ctypes.c_int64),
+        ("UserTime", ctypes.c_int64),
+        ("DpcTime", ctypes.c_int64),
+        ("InterruptTime", ctypes.c_int64),
+        ("InterruptCount", DWORD),
+    ]
+
+
+class UnicodeString(ctypes.Structure):
+    """UNICODE_STRING: UTF-16 by its length in bytes."""
+
+    _fields_ = [
+        ("Length", ctypes.c_ushort),
+        ("MaximumLength", ctypes.c_ushort),
+        ("Buffer", ctypes.c_void_p),
+    ]
+
+
+class SystemProcessInformation(ctypes.Structure):
+    """SYSTEM_PROCESS_INFORMATION, up to the working set."""
+
+    _fields_ = [
+        ("NextEntryOffset", DWORD),
+        ("NumberOfThreads", DWORD),
+        ("WorkingSetPrivateSize", ctypes.c_int64),
+        ("HardFaultCount", DWORD),
+        ("NumberOfThreadsHighWatermark", DWORD),
+        ("CycleTime", ctypes.c_uint64),
+        ("CreateTime", ctypes.c_int64),
+        ("UserTime", ctypes.c_int64),
+        ("KernelTime", ctypes.c_int64),
+        ("ImageName", UnicodeString),
+        ("BasePriority", ctypes.c_int32),
+        ("UniqueProcessId", ctypes.c_void_p),
+        ("InheritedFromUniqueProcessId", ctypes.c_void_p),
+        ("HandleCount", DWORD),
+        ("SessionId", DWORD),
+        ("UniqueProcessKey", ctypes.c_size_t),
+        ("PeakVirtualSize", ctypes.c_size_t),
+        ("VirtualSize", ctypes.c_size_t),
+        ("PageFaultCount", DWORD),
+        ("PeakWorkingSetSize", ctypes.c_size_t),
+        ("WorkingSetSize", ctypes.c_size_t),
+    ]
+
+
+class SidAndAttributes(ctypes.Structure):
+    """SID_AND_ATTRIBUTES, the head of what TokenUser answers."""
+
+    _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", DWORD)]
+
+
+class PdhFmtCounterValueUnion(ctypes.Union):
+    """The value half of PDH_FMT_COUNTERVALUE."""
+
+    _fields_ = [
+        ("longValue", ctypes.c_int32),
+        ("doubleValue", ctypes.c_double),
+        ("largeValue", ctypes.c_int64),
+        ("AnsiStringValue", ctypes.c_char_p),
+        ("WideStringValue", ctypes.c_wchar_p),
+    ]
+
+
+class PdhFmtCounterValue(ctypes.Structure):
+    """PDH_FMT_COUNTERVALUE."""
+
+    _fields_ = [("CStatus", DWORD), ("value", PdhFmtCounterValueUnion)]
+
+
+class PdhFmtCounterValueItem(ctypes.Structure):
+    """PDH_FMT_COUNTERVALUE_ITEM_W: one instance of a wildcard counter."""
+
+    _fields_ = [("szName", ctypes.c_wchar_p), ("FmtValue", PdhFmtCounterValue)]
+
+
+class Luid(ctypes.Structure):
+    """LUID: an adapter's id for this boot."""
+
+    _fields_ = [("LowPart", DWORD), ("HighPart", ctypes.c_int32)]
+
+
+class D3dkmtAdapterInfo(ctypes.Structure):
+    """D3DKMT_ADAPTERINFO: one adapter the graphics kernel lists."""
+
+    _fields_ = [
+        ("hAdapter", ctypes.c_uint32),
+        ("AdapterLuid", Luid),
+        ("NumOfSources", ctypes.c_uint32),
+        ("bPrecisePresentRegionsPreferred", ctypes.c_int32),
+    ]
+
+
+class D3dkmtEnumAdapters2(ctypes.Structure):
+    """D3DKMT_ENUMADAPTERS2: the count, then the adapters."""
+
+    _fields_ = [("NumAdapters", ctypes.c_uint32), ("pAdapters", ctypes.c_void_p)]
+
+
+class D3dkmtQueryAdapterInfo(ctypes.Structure):
+    """D3DKMT_QUERYADAPTERINFO: one question about one adapter."""
+
+    _fields_ = [
+        ("hAdapter", ctypes.c_uint32),
+        ("Type", ctypes.c_uint32),
+        ("pPrivateDriverData", ctypes.c_void_p),
+        ("PrivateDriverDataSize", ctypes.c_uint32),
+    ]
+
+
+class D3dkmtAdapterRegistryInfo(ctypes.Structure):
+    """D3DKMT_ADAPTERREGISTRYINFO, its strings as UTF-16 units."""
+
+    _fields_ = [
+        ("AdapterString", ctypes.c_uint16 * D3DKMT_REGISTRY_STRING_CHARS),
+        ("BiosString", ctypes.c_uint16 * D3DKMT_REGISTRY_STRING_CHARS),
+        ("DacType", ctypes.c_uint16 * D3DKMT_REGISTRY_STRING_CHARS),
+        ("ChipType", ctypes.c_uint16 * D3DKMT_REGISTRY_STRING_CHARS),
+    ]
+
+
+class D3dkmtSegmentSizeInfo(ctypes.Structure):
+    """D3DKMT_SEGMENTSIZEINFO: the adapter's memory by kind."""
+
+    _fields_ = [
+        ("DedicatedVideoMemorySize", ctypes.c_uint64),
+        ("DedicatedSystemMemorySize", ctypes.c_uint64),
+        ("SharedSystemMemorySize", ctypes.c_uint64),
+    ]
+
+
+class D3dkmtCloseAdapter(ctypes.Structure):
+    """D3DKMT_CLOSEADAPTER."""
+
+    _fields_ = [("hAdapter", ctypes.c_uint32)]
+
+
 class Win32Libraries:
     """Every DLL the agent calls, with its prototypes set once.
 
@@ -317,10 +488,14 @@ class Win32Libraries:
         self.advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
         self.shell32 = ctypes.WinDLL("shell32", use_last_error=True)
         self.wtsapi32 = ctypes.WinDLL("wtsapi32", use_last_error=True)
+        self.ntdll = ctypes.WinDLL("ntdll")
+        self.pdh = ctypes.WinDLL("pdh")
+        self.gdi32 = ctypes.WinDLL("gdi32")
         self._describe_kernel32()
         self._describe_advapi32()
         self._describe_shell32()
         self._describe_wtsapi32()
+        self._describe_metrics()
 
     def _describe_kernel32(self) -> None:
         """Prototype the kernel32 calls."""
@@ -517,3 +692,78 @@ class Win32Libraries:
             ctypes.POINTER(DWORD),
         ]
         self.wtsapi32.WTSFreeMemory.argtypes = [ctypes.c_void_p]
+
+    def _describe_metrics(self) -> None:
+        """Prototype the calls the metrics read beyond kernel32's own."""
+        self.ntdll.NtQuerySystemInformation.restype = DWORD
+        self.ntdll.NtQuerySystemInformation.argtypes = [
+            DWORD,
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.POINTER(DWORD),
+        ]
+        self.kernel32.OpenProcess.restype = ctypes.c_void_p
+        self.kernel32.OpenProcess.argtypes = [DWORD, ctypes.c_int, DWORD]
+        self.advapi32.OpenProcessToken.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.GetTokenInformation.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.POINTER(DWORD),
+        ]
+        self.advapi32.GetLengthSid.restype = DWORD
+        self.advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+        self.advapi32.LookupAccountSidW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.POINTER(DWORD),
+            ctypes.c_wchar_p,
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+        ]
+        self.pdh.PdhOpenQueryW.restype = DWORD
+        self.pdh.PdhOpenQueryW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.pdh.PdhAddEnglishCounterW.restype = DWORD
+        self.pdh.PdhAddEnglishCounterW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.pdh.PdhCollectQueryData.restype = DWORD
+        self.pdh.PdhCollectQueryData.argtypes = [ctypes.c_void_p]
+        self.pdh.PdhGetFormattedCounterArrayW.restype = DWORD
+        self.pdh.PdhGetFormattedCounterArrayW.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+            ctypes.c_void_p,
+        ]
+        self.pdh.PdhCloseQuery.restype = DWORD
+        self.pdh.PdhCloseQuery.argtypes = [ctypes.c_void_p]
+        # The adapter calls are absent before Windows 8; the GPU read checks
+        # for them before using them.
+        if hasattr(self.gdi32, "D3DKMTEnumAdapters2"):
+            self.gdi32.D3DKMTEnumAdapters2.restype = DWORD
+            self.gdi32.D3DKMTEnumAdapters2.argtypes = [
+                ctypes.POINTER(D3dkmtEnumAdapters2)
+            ]
+            self.gdi32.D3DKMTQueryAdapterInfo.restype = DWORD
+            self.gdi32.D3DKMTQueryAdapterInfo.argtypes = [
+                ctypes.POINTER(D3dkmtQueryAdapterInfo)
+            ]
+            self.gdi32.D3DKMTCloseAdapter.restype = DWORD
+            self.gdi32.D3DKMTCloseAdapter.argtypes = [
+                ctypes.POINTER(D3dkmtCloseAdapter)
+            ]

@@ -28,7 +28,13 @@ from neutrino_agent.constants import (
     AGENT_SERVICE_NAME,
     AGENT_STEP_DOWN_TIMEOUT_S,
 )
-from neutrino_agent.core.metrics import GpuMetrics, HostMetrics, ProcessMetrics
+from neutrino_agent.core.metrics import (
+    GpuMetrics,
+    HostMetrics,
+    ProcessMetrics,
+    busiest_processes,
+    read_nvidia_gpus,
+)
 from neutrino_agent.modules import installers
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -52,16 +58,6 @@ DRM_CARDS_PATH = "/sys/class/drm"
 DRM_CARD_PATTERN = re.compile(r"^card\d+$")
 AMD_VENDOR_ID = "0x1002"
 
-NVIDIA_SMI_TIMEOUT_S = 4
-NVIDIA_SMI_COMMAND = (
-    "nvidia-smi",
-    "--query-gpu=name,utilization.gpu,memory.used,memory.total,"
-    "temperature.gpu,power.draw",
-    "--format=csv,noheader,nounits",
-)
-
-PROCESS_TOP_COUNT = 12
-
 # Where systemd and dbus keep the machine id; the first that holds one wins.
 LINUX_MACHINE_ID_PATHS = ("/etc/machine-id", "/var/lib/dbus/machine-id")
 
@@ -78,21 +74,6 @@ POWER_COMMANDS = {
     "reboot": ["systemctl", "reboot", "--force"],
     "poweroff": ["systemctl", "poweroff", "--force"],
 }
-
-
-def _csv_number(text: str) -> "float | None":
-    """Parse one ``nvidia-smi`` CSV field, which may be a not-available marker.
-
-    Args:
-        text: The raw field.
-
-    Returns:
-        The value, or None when the driver reports none.
-    """
-    try:
-        return float(text.strip())
-    except ValueError:
-        return None
 
 
 def _read_int(path: str) -> "int | None":
@@ -574,46 +555,7 @@ class HostMetricsReader:
             return []
 
     def _read_gpus(self) -> "list[GpuMetrics]":
-        return self._read_nvidia_gpus() + self._read_amd_gpus()
-
-    def _read_nvidia_gpus(self) -> "list[GpuMetrics]":
-        if shutil.which(NVIDIA_SMI_COMMAND[0]) is None:
-            return []
-        try:
-            result = subprocess.run(
-                NVIDIA_SMI_COMMAND,
-                capture_output=True,
-                text=True,
-                timeout=NVIDIA_SMI_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return []
-        if result.returncode != 0:
-            return []
-
-        gpus = []
-        for line in result.stdout.splitlines():
-            parts = [part.strip() for part in line.split(",")]
-            if len(parts) != 6:
-                continue
-            memory_used = _csv_number(parts[2])
-            memory_total = _csv_number(parts[3])
-            gpus.append(
-                GpuMetrics(
-                    vendor="nvidia",
-                    name=parts[0],
-                    utilization_percent=_csv_number(parts[1]),
-                    memory_used_mb=(
-                        int(memory_used) if memory_used is not None else None
-                    ),
-                    memory_total_mb=(
-                        int(memory_total) if memory_total is not None else None
-                    ),
-                    temperature_c=_csv_number(parts[4]),
-                    power_w=_csv_number(parts[5]),
-                )
-            )
-        return gpus
+        return read_nvidia_gpus() + self._read_amd_gpus()
 
     def _read_amd_gpus(self) -> "list[GpuMetrics]":
         try:
@@ -697,11 +639,7 @@ class HostMetricsReader:
         # Replaced wholesale so counters of exited processes are not kept, and
         # a recycled pid cannot inherit a dead process's total.
         self._previous_process_jiffies = current_jiffies
-        processes.sort(
-            key=lambda process: (process.cpu_percent, process.memory_percent),
-            reverse=True,
-        )
-        return processes[:PROCESS_TOP_COUNT]
+        return busiest_processes(processes)
 
     def _read_process(self, pid: int) -> "tuple[ProcessMetrics, int] | None":
         base = os.path.join(PROC_PATH, str(pid))

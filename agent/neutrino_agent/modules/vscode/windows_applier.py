@@ -319,13 +319,13 @@ class VscodeWindowsApplier:
         }
         if config is not None:
             held = [(item.account, item.port) for item in config.instances]
-            host = config.host
+            host = config.url_host
         else:
             held = [
                 (name[len(VSCODE_TASK_PREFIX) :], _port_of(entry))
                 for name, entry in sorted(tasks.items())
             ]
-            host = VscodeConfig().host
+            host = VscodeConfig().url_host
         states = []
         for account, port in held:
             entry = tasks.get(task_name(account)) or {}

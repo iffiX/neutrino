@@ -24,7 +24,7 @@ from neutrino_agent.modules.vscode.windows_applier import VscodeWindowsApplier
 from neutrino_agent.platforms.base import AgentPlatform
 
 CONFIG = {
-    "address": "192.168.1.5",
+    "address": "",
     "instances": [{"account": "ann", "port": 8000, "token": "t"}],
 }
 
@@ -114,7 +114,7 @@ def test_an_apply_reaches_the_applier_and_the_details_list_each_server(runner):
             {
                 "account": "ann",
                 "port": 8000,
-                "url": "http://192.168.1.5:8000/",
+                "url": "http://127.0.0.1:8000/",
                 "is_running": True,
                 "code": "",
             }

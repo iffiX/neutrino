@@ -124,7 +124,9 @@ def test_an_instance_is_a_root_only_launchdaemon_of_its_account(
     environment = plist["EnvironmentVariables"]
     assert environment["HOST"] == "127.0.0.1"
     assert environment["SERVER_PORT"] == "41234"
-    assert environment["PATH"].startswith("/Users/ann/.local/bin:")
+    search_path = environment["PATH"].split(":")
+    assert search_path[0].endswith(f"{NODE_DIR}/bin")
+    assert search_path[1] == "/Users/ann/.local/bin"
     assert environment["ANTHROPIC_AUTH_TOKEN"] == "device-key"
     assert plist["StandardOutPath"].endswith("Logs/cloudcli_ann.log")
     assert ["launchctl", "bootstrap", "system", str(path)] in launchd.calls

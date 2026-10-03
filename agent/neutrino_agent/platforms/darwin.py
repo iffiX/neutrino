@@ -2,8 +2,9 @@
 
 The agent runs as the ``com.neutrino.agent`` LaunchDaemon and keeps its
 state under ``/Library/Application Support``. The accounts come from the
-directory service, the metrics from ``host_statistics``, ``vm_stat`` and
-``sysctl``, the interfaces from ``ifconfig``, the machine id from the
+directory service, the metrics from ``host_statistics``,
+``host_processor_info``, ``vm_stat``, ``sysctl``, ``ps``, ``ioreg`` and
+``powermetrics``, the interfaces from ``ifconfig``, the machine id from the
 platform expert. The file share module drives macOS's own SMB server. It
 steps down to no account and installs no package, so those capabilities are
 not advertised.
@@ -29,7 +30,13 @@ from neutrino_agent.constants import (
     AGENT_LAUNCHD_PLIST_PATH,
     AGENT_VAR_DIR_DARWIN,
 )
-from neutrino_agent.core.metrics import HostMetrics
+from neutrino_agent.core.metrics import (
+    GpuMetrics,
+    HostMetrics,
+    ProcessMetrics,
+    busiest_processes,
+    gpu_vendor,
+)
 from neutrino_agent.modules.samba.constants import SAMBA_DARWIN_PF_RULES_NAME
 from neutrino_agent.modules.samba.darwin_applier import SambaDarwinApplier
 from neutrino_agent.platforms.base import AgentPlatform
@@ -65,12 +72,48 @@ DARWIN_LIBSYSTEM = "/usr/lib/libSystem.B.dylib"
 DARWIN_HOST_CPU_LOAD_INFO = 3
 DARWIN_CPU_STATE_COUNT = 4
 DARWIN_CPU_STATE_IDLE = 2
+DARWIN_PROCESSOR_CPU_LOAD_INFO = 2
+DARWIN_MACH_TASK_SELF_SYMBOL = "mach_task_self_"
 
 DARWIN_VM_STAT_PAGE_SIZE = re.compile(r"page size of (\d+) bytes")
 DARWIN_VM_STAT_LINE = re.compile(r'^"?([^":]+)"?:\s+(\d+)\.?$', re.MULTILINE)
 # The pages vm_stat counts as there for the taking.
 DARWIN_VM_STAT_AVAILABLE = ("Pages free", "Pages inactive", "Pages speculative")
 DARWIN_BOOTTIME_PATTERN = re.compile(r"sec\s*=\s*(\d+)")
+
+DARWIN_PS_COMMAND = ("ps", "-axo", "pid,user,comm,%cpu,%mem")
+
+# Every graphics accelerator, without its children.
+DARWIN_IOREG_GPU_COMMAND = ("ioreg", "-r", "-c", "IOAccelerator", "-d", "1")
+DARWIN_IOREG_NODE_START = re.compile(r"^(?=\+-o )", re.MULTILINE)
+DARWIN_IOREG_NODE = re.compile(r"^\+-o\s+\S+\s+<class\s+([^,>]+)")
+DARWIN_IOREG_MODEL = re.compile(r'"model"\s*=\s*<?"([^"]+)"')
+DARWIN_IOREG_PERFORMANCE = re.compile(r'"PerformanceStatistics"\s*=\s*\{([^}]*)\}')
+DARWIN_IOREG_STATISTIC = re.compile(r'"([^"]+)"\s*=\s*(\d+)')
+DARWIN_GPU_UTILIZATION_KEY = "Device Utilization %"
+# The memory in use, by the key each driver names it with: AMD, Apple,
+# Intel.
+DARWIN_GPU_MEMORY_USED_KEYS = (
+    "vramUsedBytes",
+    "In use system memory",
+    "inUseVidMemoryBytes",
+)
+DARWIN_GPU_MEMORY_FREE_KEY = "vramFreeBytes"
+DARWIN_BYTES_PER_MB = 1024 * 1024
+
+# The SMC's reading of the processor die; Apple silicon has no such line.
+DARWIN_POWERMETRICS_COMMAND = (
+    "powermetrics",
+    "--samplers",
+    "smc",
+    "-n",
+    "1",
+    "-i",
+    "1",
+)
+DARWIN_CPU_DIE_TEMPERATURE = re.compile(r"CPU die temperature:\s*([0-9.]+)\s*C")
+# How long one reading of the temperature is believed.
+DARWIN_TEMPERATURE_TTL_S = 30.0
 
 
 def _run(command) -> str:
@@ -114,6 +157,103 @@ def parse_ifconfig(text: str) -> list:
         elif fields[0] in ("inet", "inet6"):
             current["addresses"].append(fields[1].split("%", 1)[0])
     return interfaces
+
+
+def parse_ps(text: str) -> "list[ProcessMetrics]":
+    """The busiest processes out of ``ps -axo pid,user,comm,%cpu,%mem``.
+
+    Args:
+        text: What ``ps`` printed, its header first.
+
+    Returns:
+        The processes a report lists, each named by its executable's file
+        name.
+    """
+    processes = []
+    for line in text.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 5:
+            continue
+        try:
+            pid = int(fields[0])
+            cpu_percent = float(fields[-2])
+            memory_percent = float(fields[-1])
+        except ValueError:
+            continue
+        command = " ".join(fields[2:-2])
+        processes.append(
+            ProcessMetrics(
+                pid=pid,
+                user=fields[1],
+                name=os.path.basename(command) or command,
+                cpu_percent=cpu_percent,
+                memory_percent=memory_percent,
+            )
+        )
+    return busiest_processes(processes)
+
+
+def parse_ioreg_gpus(text: str) -> "list[GpuMetrics]":
+    """The graphics cards out of ``ioreg -r -c IOAccelerator -d 1``.
+
+    Args:
+        text: What ``ioreg`` printed.
+
+    Returns:
+        One entry per accelerator in its order, named by its model where the
+        node carries one and by its driver's class where it does not.
+    """
+    gpus = []
+    for node in DARWIN_IOREG_NODE_START.split(text):
+        header = DARWIN_IOREG_NODE.match(node)
+        if header is None:
+            continue
+        driver = header.group(1).strip()
+        model = DARWIN_IOREG_MODEL.search(node)
+        name = model.group(1) if model else driver
+        performance = DARWIN_IOREG_PERFORMANCE.search(node)
+        statistics = {}
+        if performance is not None:
+            statistics = {
+                key: int(value)
+                for key, value in DARWIN_IOREG_STATISTIC.findall(performance.group(1))
+            }
+        utilization = statistics.get(DARWIN_GPU_UTILIZATION_KEY)
+        used = next(
+            (
+                statistics[key]
+                for key in DARWIN_GPU_MEMORY_USED_KEYS
+                if key in statistics
+            ),
+            None,
+        )
+        free = statistics.get(DARWIN_GPU_MEMORY_FREE_KEY)
+        gpus.append(
+            GpuMetrics(
+                vendor=gpu_vendor(name) or gpu_vendor(driver),
+                name=name,
+                utilization_percent=(
+                    float(utilization) if utilization is not None else None
+                ),
+                memory_used_mb=(
+                    used // DARWIN_BYTES_PER_MB if used is not None else None
+                ),
+                memory_total_mb=(
+                    (used + free) // DARWIN_BYTES_PER_MB
+                    if used is not None and free is not None
+                    else None
+                ),
+            )
+        )
+    return gpus
+
+
+def _mach_task_self(libsystem) -> "int | None":
+    """This process's task port, which libSystem keeps as a variable."""
+    try:
+        return ctypes.c_uint.in_dll(libsystem, DARWIN_MACH_TASK_SELF_SYMBOL).value
+    except (AttributeError, TypeError, ValueError):
+        return None
 
 
 class DarwinPlatform(AgentPlatform):
@@ -318,8 +458,8 @@ class DarwinPlatform(AgentPlatform):
 class DarwinHostMetricsReader:
     """Samples host metrics on a Mac, remembering the last CPU ticks.
 
-    Processor load is a rate, so the first sample after start has nothing
-    to compare against and reports zero.
+    Processor load, of the host and of each core, is a rate, so the first
+    sample after start has nothing to compare against and reports zero.
     """
 
     def __init__(self, *, libsystem=None):
@@ -330,6 +470,9 @@ class DarwinHostMetricsReader:
         """
         self._libsystem = libsystem
         self._previous_cpu: "tuple[int, int] | None" = None
+        self._previous_cores: "dict[int, tuple[int, int]]" = {}
+        self._temperature_c: "float | None" = None
+        self._temperature_at: "float | None" = None
 
     def read(self) -> HostMetrics:
         """Take one sample.
@@ -340,10 +483,14 @@ class DarwinHostMetricsReader:
         """
         return HostMetrics(
             cpu_percent=self._read_cpu_percent(),
+            cpu_core_percents=self._read_core_percents(),
             memory_percent=self._read_memory_percent(),
             disk_percent=self._read_disk_percent(),
+            temperature_c=self._read_temperature_c(),
             uptime_s=self._read_uptime_s(),
             load_average=self._read_load_average(),
+            gpus=parse_ioreg_gpus(_run(DARWIN_IOREG_GPU_COMMAND)),
+            processes=parse_ps(_run(DARWIN_PS_COMMAND)),
         )
 
     def _bound_libsystem(self):
@@ -380,6 +527,65 @@ class DarwinHostMetricsReader:
             return 0.0
         share = (busy - previous[0]) / (total - previous[1])
         return max(0.0, min(100.0, 100.0 * share))
+
+    def _read_core_percents(self) -> "list[float]":
+        percents = []
+        for index, ticks in enumerate(self._read_core_ticks()):
+            total = sum(ticks)
+            busy = total - ticks[DARWIN_CPU_STATE_IDLE]
+            previous = self._previous_cores.get(index)
+            self._previous_cores[index] = (busy, total)
+            if previous is None or total <= previous[1]:
+                percents.append(0.0)
+                continue
+            share = (busy - previous[0]) / (total - previous[1])
+            percents.append(max(0.0, min(100.0, 100.0 * share)))
+        return percents
+
+    def _read_core_ticks(self) -> "list[tuple]":
+        """Each core's user, system, idle and nice ticks, in core order."""
+        libsystem = self._bound_libsystem()
+        if libsystem is None:
+            return []
+        core_count = ctypes.c_uint(0)
+        info = ctypes.c_void_p()
+        info_count = ctypes.c_uint(0)
+        try:
+            outcome = libsystem.host_processor_info(
+                libsystem.mach_host_self(),
+                DARWIN_PROCESSOR_CPU_LOAD_INFO,
+                ctypes.byref(core_count),
+                ctypes.byref(info),
+                ctypes.byref(info_count),
+            )
+        except (AttributeError, OSError):
+            return []
+        if outcome != 0 or not info.value:
+            return []
+        try:
+            values = (
+                ctypes.c_uint * (core_count.value * DARWIN_CPU_STATE_COUNT)
+            ).from_address(info.value)
+            return [
+                tuple(values[start : start + DARWIN_CPU_STATE_COUNT])
+                for start in range(0, len(values), DARWIN_CPU_STATE_COUNT)
+            ]
+        finally:
+            self._deallocate(
+                libsystem, info.value, info_count.value * ctypes.sizeof(ctypes.c_int)
+            )
+
+    def _deallocate(self, libsystem, address: int, size: int) -> None:
+        """Hand back the array the kernel allocated in this task."""
+        task = _mach_task_self(libsystem)
+        if task is None:
+            return
+        try:
+            libsystem.vm_deallocate(
+                ctypes.c_uint(task), ctypes.c_size_t(address), ctypes.c_size_t(size)
+            )
+        except (AttributeError, OSError):
+            return
 
     def _read_memory_percent(self) -> float:
         try:
@@ -418,3 +624,15 @@ class DarwinHostMetricsReader:
             return list(os.getloadavg())
         except (OSError, AttributeError):
             return []
+
+    def _read_temperature_c(self) -> "float | None":
+        now = time.monotonic()
+        if (
+            self._temperature_at is not None
+            and now - self._temperature_at < DARWIN_TEMPERATURE_TTL_S
+        ):
+            return self._temperature_c
+        self._temperature_at = now
+        match = DARWIN_CPU_DIE_TEMPERATURE.search(_run(DARWIN_POWERMETRICS_COMMAND))
+        self._temperature_c = float(match.group(1)) if match else None
+        return self._temperature_c

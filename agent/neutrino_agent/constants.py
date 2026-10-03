@@ -228,3 +228,14 @@ AGENT_CONFIGURED_DIR = AGENT_VAR_DIR + "/" + AGENT_CONFIGURED_DIR_NAME
 # here clears the directory when it starts.
 AGENT_PACKAGE_DIR_NAME = "packages"
 AGENT_PACKAGE_DIR = AGENT_VAR_DIR + "/" + AGENT_PACKAGE_DIR_NAME
+
+# How many processes a report lists, the busiest first, on every system.
+AGENT_PROCESS_TOP_COUNT = 12
+# NVIDIA cards are read through the driver's own tool where it is installed.
+AGENT_NVIDIA_SMI_COMMAND = (
+    "nvidia-smi",
+    "--query-gpu=name,utilization.gpu,memory.used,memory.total,"
+    "temperature.gpu,power.draw",
+    "--format=csv,noheader,nounits",
+)
+AGENT_NVIDIA_SMI_TIMEOUT_S = 4

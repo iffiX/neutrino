@@ -51,7 +51,8 @@ CLOUDCLI_NPM_USERCONFIG_NAME = ".npmrc"
 CLOUDCLI_INSTALL_TIMEOUT_S = 1800
 # How long the look for an account's ``claude`` may take.
 CLOUDCLI_LOOKUP_TIMEOUT_S = 30
-# The directories a service's PATH holds after the one ``claude`` is in.
+# The directories a service's PATH holds after Node's and the one ``claude``
+# is in.
 CLOUDCLI_SYSTEM_PATH = ("/usr/local/bin", "/usr/bin", "/bin")
 
 # CloudCLI listens on loopback alone, on a port the agent picks.
@@ -122,6 +123,11 @@ CLOUDCLI_WINDOWS_SHELL = "cmd.exe"
 CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME = "run"
 CLOUDCLI_WINDOWS_RULE_PREFIX = "neutrino_cloudcli_port_"
 CLOUDCLI_WINDOWS_RULE_TITLE = "Neutrino CloudCLI ({account})"
+# What follows Node's directory on a task's PATH, expanded by the task's
+# script in the account's context: for the service the account's own PATH,
+# for npm the system's own directories first.
+CLOUDCLI_WINDOWS_SERVICE_PATH = ("%PATH%",)
+CLOUDCLI_WINDOWS_NPM_PATH = ("%SystemRoot%\\System32", "%SystemRoot%", "%PATH%")
 CLOUDCLI_LOGON_FAILURES = (0x8007052E,)
 
 # The end of every instance's log file, and of its record.

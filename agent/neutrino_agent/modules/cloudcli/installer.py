@@ -43,6 +43,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_SYSTEM_PATH,
     CLOUDCLI_UPSTREAM_HOST,
     CLOUDCLI_VERSION,
+    CLOUDCLI_WINDOWS_SERVICE_PATH,
 )
 
 # The words in npm's output that say a native module could not get its
@@ -247,6 +248,7 @@ def service_environment(
     upstream_port: int,
     home: str,
     os_name: str,
+    node_dir: str = "",
     claude_path: str = "",
     join=os.path.join,
 ) -> dict:
@@ -258,15 +260,16 @@ def service_environment(
         upstream_port: The loopback port CloudCLI listens on.
         home: The account's home.
         os_name: The system.
-        claude_path: The account's own ``claude``; its directory leads
-            ``PATH``. Empty on Windows, where the task keeps the account's
-            own ``PATH``.
+        node_dir: The directory Node.js is in; it leads ``PATH``.
+        claude_path: The account's own ``claude``; its directory follows
+            Node's on ``PATH``. Empty on Windows, where the task keeps the
+            account's own ``PATH`` after Node's directory.
         join: How the system joins a path.
 
     Returns:
         ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``, the
-        gateway's three, and with a ``claude`` also ``HOME``, ``PATH`` and
-        ``CLAUDE_CLI_PATH``.
+        gateway's three, ``PATH`` with a Node directory or a ``claude``,
+        and with a ``claude`` also ``HOME`` and ``CLAUDE_CLI_PATH``.
     """
     environment = {
         "HOST": CLOUDCLI_UPSTREAM_HOST,
@@ -275,12 +278,17 @@ def service_environment(
         "DATABASE_PATH": database_path(home, os_name, join),
         **config.environment(),
     }
+    if os_name == "windows":
+        if node_dir:
+            environment["PATH"] = ";".join([node_dir, *CLOUDCLI_WINDOWS_SERVICE_PATH])
+        return environment
+    leading = [node_dir] if node_dir else []
     if claude_path:
         environment["HOME"] = home
-        environment["PATH"] = ":".join(
-            [os.path.dirname(claude_path), *CLOUDCLI_SYSTEM_PATH]
-        )
+        leading.append(os.path.dirname(claude_path))
         environment["CLAUDE_CLI_PATH"] = claude_path
+    if leading:
+        environment["PATH"] = ":".join([*leading, *CLOUDCLI_SYSTEM_PATH])
     return environment
 
 

@@ -1,4 +1,4 @@
-"""The macOS platform: dscl, launchctl, host_statistics, vm_stat, ifconfig, ioreg.
+"""The macOS platform: dscl, launchctl, Mach, vm_stat, ps, ioreg, powermetrics.
 
 Nothing here needs a Mac: every command is faked at ``subprocess.run`` by
 its argument vector, libSystem is a fake that fills the tick counters, and
@@ -7,15 +7,19 @@ is turned into.
 """
 
 import collections
+import ctypes
 import subprocess
 
 import pytest
 
 import neutrino_agent.platforms.darwin as darwin_module
+from neutrino_agent.constants import AGENT_PROCESS_TOP_COUNT
 from neutrino_agent.platforms.darwin import (
     DarwinHostMetricsReader,
     DarwinPlatform,
     parse_ifconfig,
+    parse_ioreg_gpus,
+    parse_ps,
 )
 
 PwdEntry = collections.namedtuple("PwdEntry", "pw_name pw_dir")
@@ -227,6 +231,219 @@ def test_unreadable_sources_read_as_the_defaults(monkeypatch):
         0.0,
         0,
     )
+
+
+PS_SAMPLE = """  PID USER             COMM             %CPU %MEM
+    1 root             /sbin/launchd     0.0  0.1
+  301 _windowserver    /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer  12.5  1.4
+  842 pat              /Applications/Google Chrome.app/Contents/MacOS/Google Chrome  30.1  4.2
+    0 root             kernel_task       5.0  0.9
+"""
+
+IOREG_APPLE_SAMPLE = """+-o AGXAcceleratorG13X  <class AGXAcceleratorG13X, id 0x1000008b1, registered, matched, active, busy 0 (0 ms), retain 51>
+    {
+      "IOClass" = "AGXAcceleratorG13X"
+      "model" = "Apple M1"
+      "gpu-core-count" = 8
+      "PerformanceStatistics" = {"In use system memory (driver)"=0,"Alloc system memory"=1610612736,"Tiler Utilization %"=3,"Renderer Utilization %"=5,"Device Utilization %"=6,"In use system memory"=268435456}
+    }
+"""
+
+IOREG_INTEL_MAC_SAMPLE = """+-o AMDRadeonX6000_AMDNavi14GraphicsAccelerator  <class AMDRadeonX6000_AMDNavi14GraphicsAccelerator, id 0x100000488, registered, matched, active, busy 0 (0 ms), retain 30>
+    {
+      "IOClass" = "AMDRadeonX6000_AMDNavi14GraphicsAccelerator"
+      "PerformanceStatistics" = {"vramFreeBytes"=3221225472,"Device Utilization %"=17,"vramUsedBytes"=1073741824,"GPU Activity(%)"=17}
+    }
++-o IntelAccelerator  <class IntelAccelerator, id 0x100000492, registered, matched, active, busy 0 (0 ms), retain 24>
+    {
+      "IOClass" = "IntelAccelerator"
+      "PerformanceStatistics" = {"Device Utilization %"=2,"inUseVidMemoryBytes"=0}
+    }
+"""
+
+POWERMETRICS_INTEL_SAMPLE = """Machine model: MacBookPro16,1
+OS version: 21G115
+
+*** Sampled system activity (Mon Oct  3 10:00:00 2026 +0000) (1.02ms elapsed) ***
+
+**** SMC sensors ****
+
+CPU Thermal level: 0
+GPU Thermal level: 0
+IO Thermal level: 0
+Fan: 1823.55 rpm
+CPU die temperature: 52.31 C
+GPU die temperature: 48.00 C
+"""
+
+
+def fixed_time():
+    return 4600.0
+
+
+def fixed_load():
+    return (1.5, 1.0, 0.5)
+
+
+def quarter_used(path):
+    return type("Usage", (), {"total": 400, "used": 100, "free": 300})()
+
+
+def task_port(libsystem):
+    return 259
+
+
+class FakeProcessorInfo(FakeLibSystem):
+    """host_statistics, and host_processor_info handing out each core's
+    ticks in an array the caller must give back."""
+
+    def __init__(self, samples, core_samples):
+        super().__init__(samples)
+        self.core_samples = list(core_samples)
+        self.deallocated = []
+        self._held = []
+
+    def host_processor_info(self, host, flavor, count, info, info_count):
+        assert (host, flavor) == (7, 2)
+        cores = self.core_samples.pop(0)
+        array = (ctypes.c_uint * (4 * len(cores)))(*[t for core in cores for t in core])
+        self._held.append(array)
+        count._obj.value = len(cores)
+        info._obj.value = ctypes.addressof(array)
+        info_count._obj.value = 4 * len(cores)
+        return 0
+
+    def vm_deallocate(self, task, address, size):
+        self.deallocated.append((task.value, address.value, size.value))
+        return 0
+
+
+def test_ps_is_read_into_the_busiest_processes():
+    processes = parse_ps(PS_SAMPLE)
+
+    assert [process.to_dict() for process in processes] == [
+        {
+            "pid": 842,
+            "user": "pat",
+            "name": "Google Chrome",
+            "cpu_percent": 30.1,
+            "memory_percent": 4.2,
+        },
+        {
+            "pid": 301,
+            "user": "_windowserver",
+            "name": "WindowServer",
+            "cpu_percent": 12.5,
+            "memory_percent": 1.4,
+        },
+        {
+            "pid": 0,
+            "user": "root",
+            "name": "kernel_task",
+            "cpu_percent": 5.0,
+            "memory_percent": 0.9,
+        },
+        {
+            "pid": 1,
+            "user": "root",
+            "name": "launchd",
+            "cpu_percent": 0.0,
+            "memory_percent": 0.1,
+        },
+    ]
+
+
+def test_ps_lists_no_more_than_a_report_carries():
+    lines = ["  PID USER COMM %CPU %MEM"]
+    lines += [f"{pid} pat /bin/p{pid} {pid}.0 0.1" for pid in range(1, 40)]
+
+    processes = parse_ps("\n".join(lines))
+
+    assert len(processes) == AGENT_PROCESS_TOP_COUNT
+    assert processes[0].pid == 39
+
+
+def test_an_apple_silicon_gpu_is_its_model_load_and_memory_in_use():
+    assert [gpu.to_dict() for gpu in parse_ioreg_gpus(IOREG_APPLE_SAMPLE)] == [
+        {
+            "vendor": "apple",
+            "name": "Apple M1",
+            "utilization_percent": 6.0,
+            "memory_used_mb": 256,
+            "memory_total_mb": None,
+            "temperature_c": None,
+            "power_w": None,
+        }
+    ]
+
+
+def test_an_intel_mac_s_gpus_are_named_by_their_driver():
+    gpus = parse_ioreg_gpus(IOREG_INTEL_MAC_SAMPLE)
+
+    assert [
+        (gpu.vendor, gpu.utilization_percent, gpu.memory_used_mb, gpu.memory_total_mb)
+        for gpu in gpus
+    ] == [("amd", 17.0, 1024, 4096), ("intel", 2.0, 0, None)]
+    assert gpus[0].name == "AMDRadeonX6000_AMDNavi14GraphicsAccelerator"
+
+
+def test_a_mac_without_an_accelerator_has_no_gpus():
+    assert parse_ioreg_gpus("") == []
+
+
+def test_every_mac_field_is_filled_from_its_tool(monkeypatch):
+    total = 16 * 1024**3
+    replies = {
+        ("sysctl", "-n", "hw.memsize"): completed(f"{total}\n"),
+        ("sysctl", "-n", "kern.boottime"): completed("{ sec = 1000, usec = 5 }\n"),
+        ("vm_stat",): completed(VM_STAT_SAMPLE),
+        darwin_module.DARWIN_PS_COMMAND: completed(PS_SAMPLE),
+        darwin_module.DARWIN_IOREG_GPU_COMMAND: completed(IOREG_APPLE_SAMPLE),
+        darwin_module.DARWIN_POWERMETRICS_COMMAND: completed(POWERMETRICS_INTEL_SAMPLE),
+    }
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(tuple(command))
+        return replies[tuple(command)]
+
+    monkeypatch.setattr(darwin_module.subprocess, "run", run)
+    monkeypatch.setattr(darwin_module.time, "time", fixed_time)
+    monkeypatch.setattr(darwin_module.os, "getloadavg", fixed_load)
+    monkeypatch.setattr(darwin_module.shutil, "disk_usage", quarter_used)
+    monkeypatch.setattr(darwin_module, "_mach_task_self", task_port)
+    libsystem = FakeProcessorInfo(
+        [(10, 10, 80, 0), (40, 20, 130, 10)],
+        [[(10, 10, 80, 0), (0, 0, 100, 0)], [(60, 10, 130, 0), (0, 0, 200, 0)]],
+    )
+    reader = DarwinHostMetricsReader(libsystem=libsystem)
+
+    reader.read()
+    metrics = reader.read().to_dict()
+
+    # Core 0 moved busy 50 of 100 ticks, core 1 none of 100.
+    assert metrics["cpu_core_percents"] == [50.0, 0.0]
+    assert metrics["temperature_c"] == 52.3
+    assert metrics["load_average"] == [1.5, 1.0, 0.5]
+    assert [gpu["name"] for gpu in metrics["gpus"]] == ["Apple M1"]
+    assert [process["pid"] for process in metrics["processes"]] == [842, 301, 0, 1]
+    assert all(metrics[key] for key in ("cpu_percent", "memory_percent", "uptime_s"))
+    # Each array the kernel handed out is given back whole.
+    assert [entry[0] for entry in libsystem.deallocated] == [259, 259]
+    assert [entry[2] for entry in libsystem.deallocated] == [32, 32]
+    # The temperature is read once per thirty seconds.
+    assert calls.count(darwin_module.DARWIN_POWERMETRICS_COMMAND) == 1
+
+
+def test_apple_silicon_has_no_die_temperature_to_report(monkeypatch):
+    answering(monkeypatch, {("powermetrics", "--samplers"): completed("", 1)})
+
+    metrics = DarwinHostMetricsReader(libsystem=FakeLibSystem([(0, 0, 1, 0)])).read()
+
+    assert metrics.temperature_c is None
+    assert metrics.gpus == []
+    assert metrics.processes == []
+    assert metrics.cpu_core_percents == []
 
 
 IFCONFIG_SAMPLE = """lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384

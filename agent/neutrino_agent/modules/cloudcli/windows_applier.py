@@ -6,9 +6,9 @@ account's login, as VS Code's are: it starts at boot, runs with the
 account's limited token, has no time limit, and restarts when it stops. It
 runs a script that sets the instance's environment and starts the Node.js
 the agent unpacked with the server script of the account's own app
-directory, its output appended to the account's log file; the account
-keeps its own ``PATH``, so the ``claude`` it installed is the one CloudCLI
-finds. The script holds the instance's secrets and is reachable by its
+directory, its output appended to the account's log file; the script puts
+Node's directory before the account's own ``PATH``, so ``node`` and the
+``claude`` the account installed are the ones CloudCLI finds. The script holds the instance's secrets and is reachable by its
 account, SYSTEM and the administrators alone. An account's install runs
 once as a task of its own with the same login. Every operation is one
 PowerShell script, the passwords on its standard input.
@@ -37,6 +37,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_TASK_MARKER,
     CLOUDCLI_TASK_PREFIX,
     CLOUDCLI_VERSION,
+    CLOUDCLI_WINDOWS_NPM_PATH,
     CLOUDCLI_WINDOWS_RULE_PREFIX,
     CLOUDCLI_WINDOWS_RULE_TITLE,
     CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME,
@@ -239,10 +240,13 @@ def render_install_script(*, app: str, node: str, npm: str) -> str:
 
     Returns:
         The ``.cmd`` text, CRLF line ends: the app directory and the empty
-        npm configuration made, npm run, then the native check, exiting
-        with npm's failure or the check's.
+        npm configuration made, Node's directory leading ``PATH``, npm run,
+        then the native check, exiting with npm's failure or the check's.
     """
-    environment = installer.npm_environment(app, join=ntpath.join)
+    environment = {
+        "PATH": ";".join([ntpath.dirname(node), *CLOUDCLI_WINDOWS_NPM_PATH]),
+        **installer.npm_environment(app, join=ntpath.join),
+    }
     lines = ["@echo off", f'if not exist "{app}" mkdir "{app}"']
     lines.append(f'type nul > "{environment["npm_config_userconfig"]}"')
     lines += [f'set "{name}={value}"' for name, value in environment.items()]
@@ -350,6 +354,7 @@ class CloudcliWindowsApplier:
                 upstream_port=upstream_ports[instance.account],
                 home=home,
                 os_name="windows",
+                node_dir=ntpath.dirname(node),
                 join=ntpath.join,
             )
             server = installer.server_path(

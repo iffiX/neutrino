@@ -26,7 +26,7 @@ from neutrino_agent.modules.vscode.windows_applier import (
 ROOT = "C:\\ProgramData\\Neutrino\\agent\\state"
 CONFIG = VscodeConfig.from_dict(
     {
-        "address": "192.168.1.9",
+        "address": "",
         "instances": [
             {"account": "hanha", "port": 8000, "token": "t-1", "password": "pw"}
         ],
@@ -66,7 +66,7 @@ def test_an_instance_is_a_task_signed_in_with_its_login():
     assert instance["token_file"] == token_file
     assert instance["log_file"] == log_file
     assert instance["arguments"] == (
-        f'/s /c "{cli} serve-web --accept-server-license-terms --host 192.168.1.9 '
+        f'/s /c "{cli} serve-web --accept-server-license-terms --host 0.0.0.0 '
         f'--port 8000 --connection-token-file {token_file} >> {log_file} 2>&1"'
     )
     assert '"$($i.account):M"' in APPLY_SCRIPT
@@ -179,7 +179,7 @@ def test_the_states_read_each_task_and_its_last_result():
         {
             "account": "hanha",
             "port": 8000,
-            "url": "http://192.168.1.9:8000/",
+            "url": "http://127.0.0.1:8000/",
             "is_running": False,
             "code": "credential_invalid",
         }

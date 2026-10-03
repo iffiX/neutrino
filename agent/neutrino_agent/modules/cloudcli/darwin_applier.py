@@ -7,8 +7,8 @@ with the environment the plist holds and nothing else; the plist is
 root-only, since that environment holds the instance's secrets. Its output
 goes to the account's file under ``/Library/Logs/Neutrino/agent``. Before an
 instance first runs, the account installs CloudCLI into its app directory
-with that Node.js, and the ``claude`` its login shell finds leads the
-service's ``PATH``.
+with that Node.js, and the service's ``PATH`` holds that Node.js's
+directory and then the ``claude`` its login shell finds.
 
 Not pure: writes under ``/Library``, runs commands as an account and drives
 launchd.
@@ -237,6 +237,7 @@ class CloudcliDarwinApplier:
                     upstream_port=upstream_ports[instance.account],
                     home=home,
                     os_name="darwin",
+                    node_dir=os.path.dirname(node),
                     claude_path=claudes[instance.account],
                 ),
                 log_path=log_path,
