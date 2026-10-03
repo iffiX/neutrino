@@ -76,8 +76,13 @@ AGENT_MODULE_VERB_VALIDATE = "validate"
 AGENT_MODULE_VERB_JOURNAL = "journal"
 # How many lines of a module's log one read returns at most.
 AGENT_MODULE_JOURNAL_LINES = 200
-# How much of the end of a log file one read looks at.
+# How much of the end of a log file one read looks at, and how much a read
+# for the lines naming one module looks at: more than the agent's own log
+# holds before it is rotated.
 AGENT_MODULE_LOG_TAIL_BYTES = 256 * 1024
+AGENT_MODULE_LOG_SEARCH_BYTES = 2 * 1024 * 1024
+# The agent's log as its last rotation left it, beside the one written now.
+AGENT_LOG_ROTATED_SUFFIX = ".1"
 
 # What the hub's state may want a module to be. The agent makes each
 # mentioned module's actual state equal its want.
@@ -146,6 +151,9 @@ AGENT_SHELL_PENDING_BYTES = 1024 * 1024
 AGENT_SHELL_WINDOWS_ACCOUNT = "SYSTEM"
 # How long a signalled process may take to leave before it is killed.
 AGENT_KILL_GRACE_S = 2.0
+# The pids the kill verb never ends: the idle process and init on every
+# system, and Windows' System process.
+AGENT_KILL_PROTECTED_PIDS = frozenset({0, 1, 4})
 
 # How long a stepped-down account command may take.
 AGENT_STEP_DOWN_TIMEOUT_S = 120
@@ -208,6 +216,8 @@ AGENT_RUSTDESK_BINARY_PATH = "/usr/lib/neutrino/agent/rustdesk/rustdesk"
 # How long a module command waits for a pending desired state to apply
 # before it runs against the configuration that state carries.
 AGENT_MODULE_COMMAND_SETTLE_S = 30.0
+# How often a state whose apply waits on a running install is applied again.
+AGENT_MODULE_INSTALL_RECHECK_S = 30.0
 
 # What this machine accumulated: the configured marks, a package in transit,
 # the last reinstall's result, all root-only, and the software the hub sends

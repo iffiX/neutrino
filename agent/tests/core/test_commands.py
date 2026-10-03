@@ -1,14 +1,15 @@
 """The commands the hub opens: the agent's own verbs, and each module's own.
 
 What these pin: a module's verb reaches its runner by the ``module`` field
-with the lines it prints handed on, ``validate`` reaches every runner
-without waiting on the state, a module this build has no runner for and a
-verb this agent does not have both refuse ``verb_unknown``, a runner that
-raises answers ``agent_internal`` and never drops the stream, the power and
-reinstall verbs keep their answers, ``resize`` reaches the shell stream it
-names, a process is ended with a term and then a kill against a real
-child, and the remote desktop verbs reach their reader with the status
-riding the result.
+with the lines it prints handed on, ``validate`` and ``journal`` reach
+every runner without waiting on the state, a module this build has no
+runner for and a verb this agent does not have both refuse
+``verb_unknown``, a runner that raises answers ``agent_internal`` and never
+drops the stream, the power and reinstall verbs keep their answers,
+``resize`` reaches the shell stream it names, a process is ended with a
+term and then a kill against a real child and through the platform on
+Windows, never one of the protected pids, and the remote desktop verbs
+reach their reader with the status riding the result.
 """
 
 import os
@@ -190,6 +191,20 @@ def test_validate_reaches_the_runner_without_waiting_on_the_state():
     assert changed == []
 
 
+def test_the_journal_reads_while_a_state_is_still_applying():
+    settled: list = []
+    subject = DeviceOperator(
+        platform=PowerPlatform(),
+        module_runners={"samba": FakeRunner()},
+        settle=lambda timeout_s: settled.append(timeout_s) or False,
+    )
+
+    outcome = subject.run("samba", "journal", {"lines": 10})
+
+    assert (outcome.exit_code, outcome.code) == (0, "")
+    assert settled == []
+
+
 # --- the device verbs ---
 
 
@@ -243,21 +258,70 @@ def test_kill_of_a_missing_pid_is_typed():
     assert outcome.params == {"pid": child.pid}
 
 
-def test_kill_refuses_pid_one_and_itself():
-    for pid in (0, 1, os.getpid(), "x"):
+def test_kill_refuses_the_protected_pids_and_itself():
+    for pid in (0, 1, 4, -3, os.getpid(), "x"):
         outcome = device_operator().run("agent", "kill", {"pid": pid})
         assert outcome.code == "kill_failed"
 
 
-def test_kill_on_windows_is_refused_before_anything_is_signalled(monkeypatch):
+class TerminatingPlatform(PowerPlatform):
+    """A platform ending processes itself, recording each pid it is given."""
+
+    def __init__(self, error=None):
+        self.terminated: list = []
+        self.error = error
+
+    def terminate_process(self, pid):
+        self.terminated.append(pid)
+        if self.error is not None:
+            raise self.error
+
+
+def windows_kill(monkeypatch, platform, pid):
     signalled = []
     monkeypatch.setattr(commands.os, "name", "nt")
     monkeypatch.setattr(commands.os, "kill", lambda *args: signalled.append(args))
+    operator_ = DeviceOperator(platform=platform, remote_desktop=NoRemoteDesktop())
+    outcome = operator_.run("agent", "kill", {"pid": pid})
+    assert signalled == []
+    return outcome
 
-    outcome = device_operator().run("agent", "kill", {"pid": 4242})
+
+def test_kill_on_windows_ends_the_process_through_the_platform(monkeypatch):
+    platform = TerminatingPlatform()
+
+    outcome = windows_kill(monkeypatch, platform, 4242)
+
+    assert (outcome.exit_code, outcome.code) == (0, "")
+    assert outcome.output == "killed 4242\n"
+    assert platform.terminated == [4242]
+
+
+def test_kill_on_windows_types_a_gone_pid_and_a_refusal(monkeypatch):
+    gone = windows_kill(monkeypatch, TerminatingPlatform(ProcessLookupError()), 4242)
+    denied = windows_kill(
+        monkeypatch, TerminatingPlatform(PermissionError("access denied")), 4242
+    )
+
+    assert (gone.code, gone.params) == ("process_missing", {"pid": 4242})
+    assert (denied.code, denied.params) == (
+        "kill_failed",
+        {"pid": 4242, "detail": "access denied"},
+    )
+
+
+def test_kill_on_windows_never_reaches_the_system_process(monkeypatch):
+    platform = TerminatingPlatform()
+
+    for pid in (0, 4, os.getpid()):
+        assert windows_kill(monkeypatch, platform, pid).code == "kill_failed"
+    assert platform.terminated == []
+
+
+def test_kill_on_a_platform_without_terminate_is_unsupported(monkeypatch):
+    outcome = windows_kill(monkeypatch, PowerPlatform(), 4242)
 
     assert (outcome.exit_code, outcome.code) == (1, "unsupported_platform")
-    assert signalled == []
 
 
 class FakeShells:
@@ -321,11 +385,10 @@ def test_an_unknown_session_is_refused_typed():
         assert outcome.params == {"session_id": "gone"}
 
 
-def test_windows_answers_the_session_verbs_while_it_refuses_kill(monkeypatch):
+def test_windows_answers_the_session_verbs(monkeypatch):
     monkeypatch.setattr(commands.os, "name", "nt")
     operator_ = shell_operator(FakeShells())
 
-    assert operator_.run("agent", "kill", {"pid": 4242}).code == "unsupported_platform"
     assert operator_.run("agent", "stop_session", {"session_id": "tab-1"}).code == ""
     assert (
         operator_.run(

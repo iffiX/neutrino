@@ -26,7 +26,9 @@ from neutrino_agent.constants import (
     AGENT_COMMAND_MODULE,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_KILL_GRACE_S,
+    AGENT_KILL_PROTECTED_PIDS,
     AGENT_MODULE_COMMAND_SETTLE_S,
+    AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
     AGENT_OUTPUT_LIMIT_BYTES,
 )
@@ -126,9 +128,9 @@ class DeviceOperator:
                 module answers. None refuses every module verb.
             remote_desktop: The reader the remote desktop verbs run on.
                 None reads this machine through the platform.
-            settle: Called with a timeout before a module verb runs, to
-                let a pending desired state apply first; None waits for
-                nothing.
+            settle: Called with a timeout before a module verb that acts
+                runs, to let a pending desired state apply first; None
+                waits for nothing.
             on_module_changed: Called with the module name after one of its
                 verbs succeeded, so its details are read again at once.
             shells: The shell registry the ``persist`` and ``stop_session``
@@ -181,7 +183,7 @@ class DeviceOperator:
     def _module_verb(
         self, module: str, runner, verb: str, args: dict, on_line
     ) -> CommandOutcome:
-        is_reading = verb == AGENT_MODULE_VERB_VALIDATE
+        is_reading = verb in (AGENT_MODULE_VERB_VALIDATE, AGENT_MODULE_VERB_JOURNAL)
         if (
             not is_reading
             and self._settle is not None
@@ -252,16 +254,19 @@ class DeviceOperator:
         return CommandOutcome(exit_code=0, output="")
 
     def _kill_process(self, args: dict) -> CommandOutcome:
-        """End one process: a term, then a kill once its grace has run."""
-        # On Windows os.kill terminates whatever it is given, a probe too.
-        if os.name == "nt":
-            return _refused("unsupported_platform")
+        """End one process: a term, then a kill once its grace has run.
+
+        Windows has no signals, so there the platform ends it at once.
+        """
         try:
             pid = int(args.get("pid", 0))
         except (TypeError, ValueError):
             pid = 0
-        if pid <= 1 or pid == os.getpid():
+        if pid < 0 or pid in AGENT_KILL_PROTECTED_PIDS or pid == os.getpid():
             return _refused("kill_failed", pid=pid)
+        # On Windows os.kill terminates whatever it is given, a probe too.
+        if os.name == "nt":
+            return self._terminate_process(pid)
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
@@ -277,6 +282,17 @@ class DeviceOperator:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             return CommandOutcome(exit_code=0, output=f"terminated {pid}\n")
+        except OSError as error:
+            return _refused("kill_failed", pid=pid, detail=str(error)[:200])
+        return CommandOutcome(exit_code=0, output=f"killed {pid}\n")
+
+    def _terminate_process(self, pid: int) -> CommandOutcome:
+        try:
+            self._platform.terminate_process(pid)
+        except PlatformUnsupportedError:
+            return _refused("unsupported_platform")
+        except ProcessLookupError:
+            return _refused("process_missing", pid=pid)
         except OSError as error:
             return _refused("kill_failed", pid=pid, detail=str(error)[:200])
         return CommandOutcome(exit_code=0, output=f"killed {pid}\n")

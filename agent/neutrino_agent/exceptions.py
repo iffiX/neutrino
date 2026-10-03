@@ -103,6 +103,14 @@ class ModuleApplyError(ValueError):
         self.params = dict(params or {})
 
 
+class ModuleInstallPending(RuntimeError):
+    """Raised when a module's apply waits on an install that still runs.
+
+    The module reads ``installing``, and the state is applied again until
+    the install has ended.
+    """
+
+
 class EnrollmentError(RuntimeError):
     """Raised when a machine cannot join a hub, or its link is unusable.
 

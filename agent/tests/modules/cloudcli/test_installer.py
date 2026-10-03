@@ -230,3 +230,20 @@ def test_the_claude_found_is_the_last_absolute_path_printed():
         "/home/ann/.npm/bin/claude"
     )
     assert installer.claude_of("claude: not found\n") == ""
+
+
+def test_an_app_is_ready_with_the_pinned_package_and_every_native_module(tmp_path):
+    app = tmp_path / "app"
+    package = app / "node_modules" / "@cloudcli-ai" / "cloudcli"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text('{"version": "1.37.3"}')
+    for name in ("better-sqlite3", "node-pty"):
+        (app / "node_modules" / name).mkdir()
+        (app / "node_modules" / name / "package.json").write_text("{}")
+
+    assert installer.is_app_ready(str(app)) is False
+    (package / "node_modules" / "bcrypt").mkdir(parents=True)
+    (package / "node_modules" / "bcrypt" / "package.json").write_text("{}")
+    assert installer.is_app_ready(str(app)) is True
+    (package / "package.json").write_text('{"version": "1.37.2"}')
+    assert installer.is_app_ready(str(app)) is False

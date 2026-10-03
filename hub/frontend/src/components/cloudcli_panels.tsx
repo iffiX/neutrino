@@ -42,6 +42,8 @@ interface CloudcliPanelsProps {
   isEditable: boolean;
   /** Whether the machine is Windows, which starts each instance with a login. */
   isWindows: boolean;
+  /** Whether the machine reports CloudCLI installing, so no instance runs yet. */
+  isInstalling: boolean;
 }
 
 /** The form's own fields; the machine they are written to is the page's. */
@@ -52,6 +54,7 @@ export function CloudcliPanels({
   basePath,
   isEditable,
   isWindows,
+  isInstalling,
 }: CloudcliPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -184,7 +187,9 @@ export function CloudcliPanels({
               <span className={`badge ${isRunning ? "badge--ok" : ""}`}>
                 {isRunning
                   ? t("ui.cloudcli.running")
-                  : t("ui.cloudcli.stopped")}
+                  : isInstalling
+                    ? t("state.installing")
+                    : t("ui.cloudcli.stopped")}
               </span>
               <button
                 type="button"

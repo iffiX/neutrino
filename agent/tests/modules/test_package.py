@@ -226,6 +226,7 @@ def test_the_runner_keeps_no_memory_of_anything(runner, tmp_path):
     module.uninstall(DEB_MODULE)
 
     # No latch, no failure map, no set of names: policy is the hub's, and a
-    # runner that remembered would be a second opinion about retrying.
+    # runner that remembered would be a second opinion about retrying. The
+    # log sources a journal warned of are no policy.
     assert [name for name in vars(module) if not name.startswith("_")] == []
-    assert set(vars(module)) == {"_platform", "_log", "_publish"}
+    assert set(vars(module)) == {"_platform", "_log", "_publish", "_unread_sources"}

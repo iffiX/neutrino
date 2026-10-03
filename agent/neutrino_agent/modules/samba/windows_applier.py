@@ -481,16 +481,18 @@ class SambaWindowsApplier:
             lines: How many events to read at most.
 
         Returns:
-            One line per event, ``<time> <event id> <message>``; empty when
-            PowerShell cannot answer.
+            One line per event, ``<time> <event id> <message>``.
+
+        Raises:
+            OSError: When PowerShell fails.
+            subprocess.SubprocessError: When PowerShell does not answer in
+                time.
+            ModuleApplyError: When the script refuses.
         """
-        try:
-            read = self._powershell(
-                SERVER_LOG_SCRIPT,
-                {"log_name": SAMBA_WINDOWS_SERVER_LOG, "lines": int(lines)},
-            )
-        except (OSError, subprocess.SubprocessError, ModuleApplyError):
-            return []
+        read = self._powershell(
+            SERVER_LOG_SCRIPT,
+            {"log_name": SAMBA_WINDOWS_SERVER_LOG, "lines": int(lines)},
+        )
         return [str(line) for line in listed(read.get("lines")) if str(line).strip()]
 
     def set_password(self, name: str, password: str) -> None:

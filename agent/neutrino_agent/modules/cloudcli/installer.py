@@ -193,6 +193,29 @@ def installed_version(app: str) -> str:
         return ""
 
 
+def is_app_ready(app: str) -> bool:
+    """Whether an app directory holds CloudCLI at its pinned version and its native modules.
+
+    Args:
+        app: The app directory.
+
+    Returns:
+        True when the package names the pinned version and every native
+        module has its ``package.json`` beside it or inside it.
+    """
+    if installed_version(app) != CLOUDCLI_VERSION:
+        return False
+    package = os.path.join(app, *CLOUDCLI_PACKAGE_PARTS)
+    places = (os.path.join(app, "node_modules"), os.path.join(package, "node_modules"))
+    return all(
+        any(
+            os.path.isfile(os.path.join(place, name, "package.json"))
+            for place in places
+        )
+        for name in CLOUDCLI_NATIVE_MODULES
+    )
+
+
 def npm_environment(app: str, join=os.path.join) -> dict:
     """What npm runs with besides ``PATH`` and the account's own names.
 

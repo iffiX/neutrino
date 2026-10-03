@@ -1,21 +1,26 @@
 """CloudCLI on Windows, with PowerShell faked.
 
-What these pin: an account whose app directory holds no CloudCLI is
-installed once by a task with its login, and a failure names its step; each
-instance is a task with its login running a script that sets the
-instance's environment and keeps the account's ``PATH``; a refused login
-is ``credential_invalid``; and a task Windows cannot sign in reads so.
+What these pin: an account whose app directory holds no CloudCLI gets an
+install task with its login that is started and left to run; while the
+task runs the apply waits on it, starts no instance, and the account's log
+is the install's; an ended task is unregistered and judged by its result
+and by the app directory, a failure naming its step; each instance is a
+task with its login running a script that sets the instance's environment
+and keeps the account's ``PATH``; a refused login is
+``credential_invalid``; and a task Windows cannot sign in reads so.
 """
 
 import ntpath
 
 import pytest
 
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
+from neutrino_agent.modules.cloudcli import installer
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig
 from neutrino_agent.modules.cloudcli.installer import NATIVE_CHECK_EXIT
 from neutrino_agent.modules.cloudcli.windows_applier import (
     APPLY_SCRIPT,
+    FINISH_INSTALL_SCRIPT,
     INSTALL_SCRIPT,
     STATUS_SCRIPT,
     CloudcliWindowsApplier,
@@ -43,13 +48,30 @@ class PowerShell:
     def __init__(self):
         self.calls: list = []
         self.answers: dict = {}
+        self.install_tasks: list = []
 
     def __call__(self, script, document, timeout_s=120):
         self.calls.append((script, document, timeout_s))
+        if script == STATUS_SCRIPT and document["prefix"].endswith("install_"):
+            return {"tasks": list(self.install_tasks)}
         answer = self.answers.get(script, {})
         if isinstance(answer, Exception):
             raise answer
         return answer
+
+    def scripts(self) -> list:
+        return [
+            "install status" if script == STATUS_SCRIPT else script
+            for script, _document, _timeout in self.calls
+        ]
+
+
+def install_task(state, last_result=0):
+    return {
+        "name": "neutrino_cloudcli_install_ann",
+        "state": state,
+        "last_result": last_result,
+    }
 
 
 @pytest.fixture
@@ -58,7 +80,15 @@ def powershell():
 
 
 @pytest.fixture
-def applier(powershell, tmp_path):
+def ready(monkeypatch):
+    """Whether the app directory holds CloudCLI and its native modules."""
+    held = {"is_ready": False}
+    monkeypatch.setattr(installer, "is_app_ready", lambda app: held["is_ready"])
+    return held
+
+
+@pytest.fixture
+def applier(powershell, tmp_path, ready):
     module_dir = tmp_path / "Neutrino" / "cloudcli"
     (module_dir / "node-v22.23.3-win-x64").mkdir(parents=True)
 
@@ -75,24 +105,63 @@ def applier(powershell, tmp_path):
     )
 
 
-def test_an_account_is_installed_by_a_task_with_its_login(applier, powershell):
-    powershell.answers[INSTALL_SCRIPT] = {"exit_code": 0, "output": ""}
-    powershell.answers[APPLY_SCRIPT] = {"notes": ["registered CloudCLI of ann"]}
+def test_an_install_is_started_and_left_to_run(applier, powershell):
+    with pytest.raises(ModuleInstallPending):
+        applier.apply(CONFIG, {"ann": 41234})
 
-    notes = applier.apply(CONFIG, {"ann": 41234})
-
-    script, document, timeout_s = powershell.calls[0]
-    assert script == INSTALL_SCRIPT
+    assert powershell.scripts() == ["install status", INSTALL_SCRIPT]
+    _script, document, _timeout = powershell.calls[1]
     assert document["account"] == "ann"
     assert document["password"] == "login-pw"
     assert document["task"] == "neutrino_cloudcli_install_ann"
     assert "@cloudcli-ai/cloudcli@1.37.3" in document["script_text"]
-    assert timeout_s > 1800
+    assert document["timeout_s"] > 1800
+    assert "Start-ScheduledTask" in INSTALL_SCRIPT
+    assert "Unregister-ScheduledTask" not in INSTALL_SCRIPT
+    assert applier.installing == {"ann"}
+    assert applier.log_paths(["ann"]) == [("ann", applier.install_log_path("ann"))]
+
+
+@pytest.mark.parametrize("state", ["Running", "Queued"])
+def test_a_running_install_starts_nothing_and_keeps_waiting(applier, powershell, state):
+    powershell.install_tasks = [install_task(state, 0x41301)]
+
+    with pytest.raises(ModuleInstallPending):
+        applier.apply(CONFIG, {"ann": 41234})
+
+    assert powershell.scripts() == ["install status"]
+    assert applier.installing == {"ann"}
+
+
+def test_an_ended_install_is_unregistered_and_the_instance_starts(
+    applier, powershell, ready
+):
+    powershell.install_tasks = [install_task("Ready", 0)]
+    powershell.answers[APPLY_SCRIPT] = {"notes": ["registered CloudCLI of ann"]}
+    ready["is_ready"] = True
+
+    notes = applier.apply(CONFIG, {"ann": 41234})
+
+    assert powershell.scripts() == [
+        "install status",
+        FINISH_INSTALL_SCRIPT,
+        APPLY_SCRIPT,
+    ]
+    assert powershell.calls[1][1]["task"] == "neutrino_cloudcli_install_ann"
     assert notes == ["installed CloudCLI for ann", "registered CloudCLI of ann"]
+    assert applier.installing == frozenset()
+    assert applier.log_paths(["ann"]) == [("ann", applier.log_path("ann"))]
 
 
-def test_an_instance_is_a_task_running_its_script(applier, powershell):
-    powershell.answers[INSTALL_SCRIPT] = {"exit_code": 0, "output": ""}
+def test_an_app_already_there_starts_the_instance_at_once(applier, powershell, ready):
+    ready["is_ready"] = True
+
+    assert applier.apply(CONFIG, {"ann": 41234}) == []
+    assert powershell.scripts() == ["install status", APPLY_SCRIPT]
+
+
+def test_an_instance_is_a_task_running_its_script(applier, powershell, ready):
+    ready["is_ready"] = True
     applier.apply(CONFIG, {"ann": 41234})
 
     _script, document, _timeout = powershell.calls[1]
@@ -113,26 +182,37 @@ def test_an_instance_is_a_task_running_its_script(applier, powershell):
 
 
 @pytest.mark.parametrize(
-    "answer, expected",
+    "result, output, is_ready, expected",
     [
         (
-            {"exit_code": NATIVE_CHECK_EXIT, "output": "npm ok\nnode-pty\n"},
+            NATIVE_CHECK_EXIT,
+            "npm ok\nnode-pty\n",
+            False,
             ("cloudcli_native_module_failed", {"account": "ann", "module": "node-pty"}),
         ),
         (
-            {"exit_code": 1, "output": "npm error network"},
+            1,
+            "npm error network",
+            False,
             ("cloudcli_npm_install_failed", {"account": "ann"}),
         ),
+        (0, "", False, ("cloudcli_npm_install_failed", {"account": "ann"})),
+        (0x8007052E, "", False, ("credential_invalid", {"account": "ann"})),
     ],
 )
-def test_a_failed_install_names_its_step(applier, powershell, answer, expected):
-    powershell.answers[INSTALL_SCRIPT] = answer
+def test_a_failed_install_names_its_step(
+    applier, powershell, ready, result, output, is_ready, expected
+):
+    powershell.install_tasks = [install_task("Ready", result)]
+    powershell.answers[FINISH_INSTALL_SCRIPT] = {"output": output}
+    ready["is_ready"] = is_ready
 
     with pytest.raises(ModuleApplyError) as caught:
         applier.apply(CONFIG, {"ann": 41234})
 
     assert (caught.value.code, caught.value.params) == expected
-    assert len(powershell.calls) == 1
+    assert powershell.scripts() == ["install status", FINISH_INSTALL_SCRIPT]
+    assert applier.installing == frozenset()
 
 
 def test_a_refused_login_is_credential_invalid(applier, powershell):

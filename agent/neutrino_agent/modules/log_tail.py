@@ -1,6 +1,8 @@
 """The last lines of a log file, for a module's log where no journal keeps it.
 
-Only the end of the file is read.
+Only the end of the file is read. The file is opened for reading alone,
+which on Windows shares it with the handle the agent's logging writes
+through.
 
 Not pure: reads files.
 """
@@ -11,7 +13,10 @@ from __future__ import annotations
 
 import os
 
-from neutrino_agent.constants import AGENT_MODULE_LOG_TAIL_BYTES
+from neutrino_agent.constants import (
+    AGENT_MODULE_LOG_SEARCH_BYTES,
+    AGENT_MODULE_LOG_TAIL_BYTES,
+)
 
 
 def file_tail(path: str, lines: int, *, needle: str = "") -> list:
@@ -23,16 +28,18 @@ def file_tail(path: str, lines: int, *, needle: str = "") -> list:
         needle: Text a line holds to be returned; empty returns every line.
 
     Returns:
-        The non-blank lines, empty when the file cannot be read.
+        The non-blank lines. With a needle the read reaches further back,
+        so lines about one module are found among many others.
+
+    Raises:
+        OSError: When the file cannot be read.
     """
-    try:
-        with open(path, "rb") as stream:
-            size = stream.seek(0, os.SEEK_END)
-            start = max(0, size - AGENT_MODULE_LOG_TAIL_BYTES)
-            stream.seek(start)
-            data = stream.read()
-    except OSError:
-        return []
+    limit = AGENT_MODULE_LOG_SEARCH_BYTES if needle else AGENT_MODULE_LOG_TAIL_BYTES
+    with open(path, "rb") as stream:
+        size = stream.seek(0, os.SEEK_END)
+        start = max(0, size - limit)
+        stream.seek(start)
+        data = stream.read()
     held = data.decode("utf-8", errors="replace").splitlines()
     if start > 0 and held:
         held = held[1:]

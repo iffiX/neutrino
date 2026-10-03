@@ -566,6 +566,8 @@ class ModuleEngine(ReconcileWorker):
                 ),
                 is_active=is_active,
             )
+            if observed.get("is_installing"):
+                status["state"] = AGENT_MODULE_STATE_INSTALLING
             details = observed.get("details")
             status["details"] = dict(details) if isinstance(details, dict) else {}
         except PlatformUnsupportedError:

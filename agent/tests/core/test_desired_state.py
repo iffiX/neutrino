@@ -10,7 +10,9 @@ a ``log {module}`` stream closed with the module's state, the applied
 hash moving only when every mentioned module applied, a failed state
 reported under the old hash and tried again only under another hash
 unless the socket caused it, the first failure naming the state error,
-the file's mode, and the latest state winning when several arrive.
+the file's mode, the latest state winning when several arrive, and a state
+whose apply waits on a running install neither applied nor failed and
+applied again until the install has ended.
 """
 
 import json
@@ -20,12 +22,17 @@ import threading
 
 import pytest
 
+import neutrino_agent.core.desired_state as desired_state_module
 from neutrino_agent.core.desired_state import (
     APPLY_ORDER,
     DesiredStateApplier,
     DesiredStateStore,
 )
-from neutrino_agent.exceptions import GatewayUnreachable, ModuleApplyError
+from neutrino_agent.exceptions import (
+    GatewayUnreachable,
+    ModuleApplyError,
+    ModuleInstallPending,
+)
 from tests.streams.fake_channel import FakeChannel
 
 INSTALL = {"kind": "system_package", "packages": ["x"], "verify": ""}
@@ -179,6 +186,7 @@ def applier(runners, engine=None, tmp_path=None, rdp=None, open_stream=None):
     held._applied_hash = ""
     held._tried_hash = ""
     held._state_error = None
+    held._rechecked = None
     held._wakeup = threading.Event()
     return held, engine
 
@@ -542,6 +550,68 @@ def test_a_success_after_a_failure_clears_the_error(tmp_path):
 
     assert held.applied_hash == "h2"
     assert held.state_error is None
+
+
+def test_an_apply_waiting_on_an_install_is_neither_applied_nor_failed(tmp_path):
+    runners = {
+        "samba": FakeRunner(),
+        "cloudcli": FakeRunner(failure=ModuleInstallPending("ann")),
+    }
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    held.apply(state(samba="running", cloudcli="running"))
+
+    assert held.applied_hash == ""
+    assert held.state_error is None
+    assert engine.results["cloudcli"] == ("", {})
+    assert engine.configured == {"samba"}
+    assert held._tried_hash == ""
+    assert held._rechecked["hash"] == "h1"
+
+
+def test_a_waiting_state_that_failed_elsewhere_is_not_applied_again(tmp_path):
+    runners = {
+        "samba": FakeRunner(failure=ModuleApplyError("samba_missing")),
+        "cloudcli": FakeRunner(failure=ModuleInstallPending("ann")),
+    }
+    held, _ = applier(runners, tmp_path=tmp_path)
+
+    held.apply(state(samba="running", cloudcli="running"))
+
+    assert held.state_error["code"] == "samba_missing"
+    assert held._tried_hash == "h1"
+    assert held._rechecked is None
+
+
+def test_a_waiting_state_is_applied_again_until_its_install_ends(tmp_path, monkeypatch):
+    monkeypatch.setattr(desired_state_module, "AGENT_MODULE_INSTALL_RECHECK_S", 0.02)
+    runner = FakeRunner(failure=ModuleInstallPending("ann"))
+    calls = []
+
+    def apply(config):
+        calls.append(config)
+        if len(calls) >= 3:
+            runner.failure = None
+        FakeRunner.apply(runner, config)
+
+    runner.apply = apply
+    runners = {"cloudcli": runner}
+    held = DesiredStateApplier(
+        engine=FakeEngine(runners),
+        runners=runners,
+        store=DesiredStateStore(path=str(tmp_path / "desired.json")),
+        log=lambda message: None,
+    )
+
+    held.take(state(cloudcli="running"))
+
+    deadline = 100
+    while held.applied_hash != "h1" and deadline:
+        threading.Event().wait(0.02)
+        deadline -= 1
+    assert held.applied_hash == "h1"
+    assert len(calls) == 3
+    assert held._rechecked is None
 
 
 # --- taking states from the hub ---

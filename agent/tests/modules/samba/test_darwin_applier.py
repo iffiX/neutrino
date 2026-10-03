@@ -412,7 +412,8 @@ def test_the_server_log_is_what_the_unified_log_holds_of_smbd(applier, tools):
     ]
 
 
-def test_a_log_that_cannot_answer_is_no_lines(applier, tools):
+def test_a_log_that_cannot_answer_is_an_os_error(applier, tools):
     tools.failing.add(("log", "show"))
 
-    assert applier.read_server_log(10) == []
+    with pytest.raises(OSError):
+        applier.read_server_log(10)

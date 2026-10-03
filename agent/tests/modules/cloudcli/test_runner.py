@@ -18,7 +18,11 @@ import pytest
 
 import neutrino_agent.modules.cloudcli.runner as runner_module
 from neutrino_agent.core.engine import _download_refusal
-from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    ModuleApplyError,
+    ModuleInstallPending,
+    PlatformUnsupportedError,
+)
 from neutrino_agent.modules.cloudcli.darwin_applier import CloudcliDarwinApplier
 from neutrino_agent.modules.cloudcli.linux_applier import CloudcliLinuxApplier
 from neutrino_agent.modules.cloudcli.runner import (
@@ -40,6 +44,7 @@ class FakeApplier:
         self.calls: list = []
         self.running: set = set()
         self.error = None
+        self.installing = frozenset()
 
     def apply(self, config, upstream_ports):
         self.calls.append(("apply", dict(upstream_ports)))
@@ -284,3 +289,86 @@ def test_an_install_opens_the_node_directory_to_every_account(applier, monkeypat
     held.install({"entry": {"package_kind": "tar"}}, "/tmp/node.tar.gz")
 
     assert opened == [applier.module_dir]
+
+
+class LoggedPlatform(Platform):
+    """A platform whose agent writes its log to one file, as Windows and macOS do."""
+
+    def __init__(self, os_name, log_path):
+        super().__init__(os_name)
+        self._log_path = log_path
+
+    def agent_log_path(self):
+        return self._log_path
+
+
+@pytest.mark.parametrize("os_name", ["windows", "darwin"])
+def test_without_units_the_log_files_come_then_the_agent_s_lines(os_name, tmp_path):
+    agent_log = tmp_path / "agent.log"
+    agent_log.write_text(
+        "10:00 cloudcli: running\n10:01 samba: unchanged\n", encoding="utf-8"
+    )
+
+    def write(message):
+        with open(agent_log, "a", encoding="utf-8") as stream:
+            stream.write(f"10:02 {message}\n")
+
+    applier = FakeApplier(tmp_path)
+    applier.units = lambda: []
+    held = CloudcliModuleRunner(
+        platform=LoggedPlatform(os_name, str(agent_log)), log=write, applier=applier
+    )
+    ann = tmp_path / "ann.log"
+    ann.write_text("a1\n", encoding="utf-8")
+    missing = str(tmp_path / "bob.log")
+    applier.log_paths = lambda *args: [("ann", str(ann)), ("bob", missing)]
+
+    first = held.journal_text(200)
+    second = held.journal_text(200)
+    applier.log_paths = lambda *args: []
+    alone = held.journal_text(200)
+
+    assert first[:2] == ["ann: a1", "10:00 cloudcli: running"]
+    assert first[2].startswith(f"10:02 cloudcli: cannot read the log source {missing}")
+    assert len(first) == 3
+    assert second == first
+    assert alone == first[1:]
+
+
+def test_an_install_that_runs_reads_installing_and_its_log_is_the_install_s(
+    applier, tmp_path
+):
+    lines = []
+    held = CloudcliModuleRunner(
+        platform=Platform("darwin"),
+        log=lines.append,
+        applier=applier,
+        forwarder_factory=FakeForwarder,
+        pick_port=lambda: 41000,
+    )
+    install_log = tmp_path / "install_ann.log"
+    install_log.write_text("npm http fetch GET 200\n", encoding="utf-8")
+    applier.log_paths = lambda accounts: [
+        (account, str(install_log)) for account in accounts
+    ]
+
+    def pending(config, upstream_ports):
+        applier.installing = frozenset({"ann"})
+        raise ModuleInstallPending("ann")
+
+    applier.apply = pending
+
+    for _ in range(2):
+        with pytest.raises(ModuleInstallPending):
+            held.apply(CONFIG)
+
+    assert held.is_installing() is True
+    node = tmp_path / "node"
+    node.write_text("")
+    applier.node = str(node)
+    assert held.observe({})["is_installing"] is True
+    assert lines == ["cloudcli: installing CloudCLI for ann"]
+    assert held.journal_text(10) == ["ann: npm http fetch GET 200"]
+    assert FakeForwarder.made == []
+    applier.installing = frozenset()
+    assert held.is_installing() is False

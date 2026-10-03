@@ -949,3 +949,67 @@ def test_the_agent_s_log_is_agent_log_under_the_log_root(monkeypatch):
         WindowsPlatform().agent_log_path()
         == "D:\\Data\\Neutrino\\agent\\log\\agent.log"
     )
+
+
+class TerminatingKernel32:
+    """OpenProcess, TerminateProcess and CloseHandle, recording each call."""
+
+    def __init__(self, *, is_open=True, is_terminated=True):
+        self.is_open = is_open
+        self.is_terminated = is_terminated
+        self.calls: list = []
+
+    def OpenProcess(self, access, is_inherited, pid):
+        self.calls.append(("open", access, is_inherited, pid))
+        return 0x2000 if self.is_open else 0
+
+    def TerminateProcess(self, process, exit_code):
+        self.calls.append(("terminate", process, exit_code))
+        return 1 if self.is_terminated else 0
+
+    def CloseHandle(self, handle):
+        self.calls.append(("close", handle))
+        return 1
+
+
+def win_error(code: int) -> OSError:
+    error = OSError(code, f"error {code}")
+    error.winerror = code
+    return error
+
+
+def test_terminate_process_opens_ends_and_closes_the_process():
+    kernel32 = TerminatingKernel32()
+
+    WindowsPlatform(kernel32=kernel32).terminate_process(4242)
+
+    assert kernel32.calls == [
+        ("open", win32.PROCESS_TERMINATE, False, 4242),
+        ("terminate", 0x2000, win32.TERMINATED_EXIT_CODE),
+        ("close", 0x2000),
+    ]
+
+
+def test_terminate_process_of_a_pid_nobody_holds_is_a_lookup_error(monkeypatch):
+    monkeypatch.setattr(
+        win32, "last_error", lambda: win_error(win32.ERROR_INVALID_PARAMETER)
+    )
+    kernel32 = TerminatingKernel32(is_open=False)
+
+    with pytest.raises(ProcessLookupError):
+        WindowsPlatform(kernel32=kernel32).terminate_process(4242)
+    assert [call[0] for call in kernel32.calls] == ["open"]
+
+
+def test_terminate_process_denied_is_an_os_error_and_the_handle_closes(monkeypatch):
+    monkeypatch.setattr(win32, "last_error", lambda: win_error(5))
+    denied = TerminatingKernel32(is_open=False)
+    refused = TerminatingKernel32(is_terminated=False)
+
+    with pytest.raises(OSError) as opening:
+        WindowsPlatform(kernel32=denied).terminate_process(4242)
+    with pytest.raises(OSError):
+        WindowsPlatform(kernel32=refused).terminate_process(4242)
+
+    assert not isinstance(opening.value, ProcessLookupError)
+    assert refused.calls[-1] == ("close", 0x2000)

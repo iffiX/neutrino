@@ -8,7 +8,8 @@ process as an account: a systemd unit with ``User=`` on Linux, a
 LaunchDaemon with ``UserName`` on macOS, a scheduled task with the
 account's login on Windows. In front of each stands a forwarder of the
 agent on the instance's port, started again from the instance's record when
-the agent restarts.
+the agent restarts. While an account's install runs the module reads
+installing, and its log is the install's output where a file keeps it.
 
 Not pure: drives the platform's applier and the forwarders.
 """
@@ -24,7 +25,11 @@ import subprocess
 import threading
 import time
 
-from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    ModuleApplyError,
+    ModuleInstallPending,
+    PlatformUnsupportedError,
+)
 from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig
 from neutrino_agent.modules.cloudcli.constants import (
@@ -208,6 +213,7 @@ class CloudcliModuleRunner(ModuleRunner):
             ModuleApplyError: When the configuration is refused, an
                 account's install or lookup fails, or the system will not
                 run it.
+            ModuleInstallPending: While an account's install still runs.
         """
         parsed = CloudcliConfig.from_dict(config)
         parsed.validate(os_name=self._platform.os_name)
@@ -215,8 +221,14 @@ class CloudcliModuleRunner(ModuleRunner):
             instance.account: self._upstream_port(instance.account)
             for instance in parsed.instances
         }
+        before = set(self._applier.installing)
         try:
             notes = self._applier.apply(parsed, upstream_ports)
+        except ModuleInstallPending:
+            started = sorted(set(self._applier.installing) - before)
+            if started:
+                self._log("cloudcli: installing CloudCLI for " + ", ".join(started))
+            raise
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
@@ -283,12 +295,24 @@ class CloudcliModuleRunner(ModuleRunner):
         states = self._read_states()
         return bool(states) and all(state["is_running"] for state in states)
 
+    def is_installing(self) -> bool:
+        """Whether an account's install runs.
+
+        Returns:
+            True while the applier runs or waits on an install.
+        """
+        return bool(self._applier.installing)
+
     def journal_units(self) -> list:
         """Every instance's unit, on Linux."""
         return self._applier.units()
 
     def journal_text(self, lines: int) -> list:
         """Every instance's output: the units' journal, or each log file's tail.
+
+        Where no unit keeps the output, the agent's own lines that name the
+        module follow the log files' lines; an account whose install runs
+        is there by the install's log where the applier keeps one.
 
         Args:
             lines: How many lines to return at most.
@@ -297,14 +321,16 @@ class CloudcliModuleRunner(ModuleRunner):
             The lines, oldest first within each instance; a log file's lines
             start with its account's name.
         """
-        logs = self._applier.log_paths(self._records.accounts())
-        if not logs:
+        accounts = set(self._records.accounts()) | set(self._applier.installing)
+        logs = self._applier.log_paths(sorted(accounts))
+        if not logs and self.journal_units():
             return super().journal_text(lines)
-        share = max(1, lines // len(logs))
-        held = []
+        share = max(1, lines // len(logs)) if logs else 0
+        own = []
         for account, path in logs:
-            held += [f"{account}: {line}" for line in file_tail(path, share)]
-        return held[-lines:]
+            read = self._read_source(path, lambda path=path: file_tail(path, share))
+            own += [f"{account}: {line}" for line in read]
+        return self._with_agent_lines(own, lines)
 
     def details(self, resolved: dict) -> dict:
         """Each instance, its port and whether it answers.

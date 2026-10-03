@@ -332,7 +332,8 @@ def test_the_server_log_is_the_smb_server_s_latest_events():
     assert "Get-WinEvent -LogName $d.log_name -MaxEvents $d.lines" in script
 
 
-def test_a_server_log_powershell_cannot_give_is_no_lines():
+def test_a_server_log_powershell_cannot_give_is_an_os_error():
     powershell = FakePowerShell(error=OSError("gone"))
 
-    assert SambaWindowsApplier(powershell=powershell).read_server_log(50) == []
+    with pytest.raises(OSError):
+        SambaWindowsApplier(powershell=powershell).read_server_log(50)
