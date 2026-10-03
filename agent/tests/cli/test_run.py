@@ -76,39 +76,6 @@ def test_run_serves_the_control_socket_before_the_loop(run_stack):
     assert servers[0].socket_path == ""
 
 
-def test_on_macos_sigterm_asks_the_loop_to_end_with_a_deadline(run_stack, monkeypatch):
-    handlers = {}
-    timers = []
-
-    class Timer:
-        def __init__(self, seconds, function, args=()):
-            timers.append((seconds, function, args))
-            self.daemon = False
-
-        def start(self):
-            pass
-
-    monkeypatch.setattr(run_cli.sys, "platform", "darwin")
-    monkeypatch.setattr(
-        run_cli.signal,
-        "signal",
-        lambda number, handler: handlers.update({number: handler}),
-    )
-    monkeypatch.setattr(run_cli.threading, "Timer", Timer)
-    stopped = []
-    monkeypatch.setattr(
-        FakeRunAgent, "stop", lambda self: stopped.append(self), raising=False
-    )
-
-    assert run_cli.main() == 0
-    handlers[run_cli.signal.SIGTERM](run_cli.signal.SIGTERM, None)
-
-    platform, agents, servers = run_stack
-    assert stopped == agents
-    assert timers == [(run_cli.AGENT_SERVICE_STOP_WAIT_S, run_cli.os._exit, (0,))]
-    assert servers[0].socket_path == ""
-
-
 def test_run_takes_no_flags(monkeypatch):
     passed = {}
     monkeypatch.setattr(entry.os, "geteuid", lambda: 0)

@@ -284,7 +284,7 @@ def check_agent_macos(pkg: Path) -> None:
     )
     _sudo(["rm", "-rf", *AGENT_MACOS_LEFTOVERS])
     _sudo(["pkgutil", "--forget", AGENT_MACOS_PACKAGE_ID])
-    if subprocess.run(["sudo", "launchctl", "print", AGENT_MACOS_JOB]).returncode == 0:
+    if not _wait_for_job_gone(AGENT_MACOS_JOB):
         raise SystemExit("the agent's job outlived its removal")
 
 
@@ -389,7 +389,7 @@ def check_hub_macos(pkg: Path) -> None:
     _sudo(["rm", "-rf", *HUB_MACOS_LEFTOVERS, *AGENT_MACOS_LEFTOVERS])
     for package_id in (HUB_MACOS_PACKAGE_ID, AGENT_MACOS_PACKAGE_ID):
         subprocess.run(["sudo", "pkgutil", "--forget", package_id])
-    if _is_job_loaded(HUB_MACOS_JOB):
+    if not _wait_for_job_gone(HUB_MACOS_JOB):
         raise SystemExit("the hub's job outlived its removal")
 
     _run_install_script(pkg, ["sh", str(INSTALL_SCRIPTS_DIR / "install.sh"), "hub"])
@@ -602,6 +602,23 @@ def _service_exists(name: str) -> bool:
     """Whether the service control manager knows a service."""
     result = subprocess.run(["sc.exe", "query", name], capture_output=True)
     return result.returncode != SERVICE_DOES_NOT_EXIST
+
+
+def _wait_for_job_gone(job: str) -> bool:
+    """Wait for a launchd job to leave the system domain after its bootout.
+
+    Args:
+        job: The job, such as ``system/com.neutrino.agent``.
+
+    Returns:
+        Whether it was gone in time.
+    """
+    deadline = time.monotonic() + SERVICE_WAIT_S
+    while time.monotonic() < deadline:
+        if not _is_job_loaded(job):
+            return True
+        time.sleep(SERVICE_POLL_S)
+    return False
 
 
 def _wait_for_service(name: str, *, is_running: bool) -> bool:
