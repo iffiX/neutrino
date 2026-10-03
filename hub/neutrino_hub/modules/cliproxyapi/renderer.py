@@ -6,8 +6,8 @@ kind decides which upstream block it lands in: ``anthropic`` speaks the
 Messages protocol, ``openai`` the Responses protocol, ``gemini`` Google's,
 and ``custom`` is an OpenAI-compatible chat endpoint.
 
-Pure: state in, text out. The key material arrives already resolved from the
-vault; the renderer opens nothing.
+Pure: state in, text out. The client keys arrive already resolved from the
+vault; the device keys are opened through the configuration they belong to.
 """
 
 import re
@@ -64,7 +64,10 @@ class CliproxyApiConfigRenderer:
             "host": "",
             "port": self._config.listen_port,
             "auth-dir": str(CLIPROXYAPI_AUTH_DIR),
-            "api-keys": list(self._client_keys),
+            "api-keys": [
+                *self._client_keys,
+                *self._config.device_key_material(),
+            ],
             "logging-to-file": False,
         }
         if self._management_key:

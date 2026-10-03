@@ -1215,8 +1215,10 @@ class ClientResident:
                 ),
                 {},
             )
-            is_local = (entry.get("payload") or {}).get("is_local_only") is True
-            if not is_local:
+            payload = entry.get("payload") or {}
+            if payload.get("is_token_required") is True:
+                return key, JOB_OPENING
+            if payload.get("is_local_only") is not True:
                 return key, ""
             return key, (
                 JOB_DISCONNECTING if body.get("is_enabled") is False else JOB_OPENING

@@ -121,3 +121,20 @@ def test_provider_blocks_follow_the_given_order():
     )
     names = [entry["name"] for entry in document["openai-compatibility"]]
     assert names == ["second", "first"]
+
+
+def test_a_device_key_is_one_of_the_gateways_keys(monkeypatch, tmp_path):
+    from tests.conftest import unlock_vault
+    from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+
+    unlock_vault(monkeypatch, tmp_path)
+    key = CliproxyApiClientKey.generated("device/box")
+    text = CliproxyApiConfigRenderer(
+        config=CliproxyApiConfig(listen_port=8317, device_keys={"dev-1": key}),
+        providers=[],
+        api_keys={},
+        client_keys=["client-key-1"],
+        management_key="",
+    ).render()
+
+    assert yaml.safe_load(text)["api-keys"] == ["client-key-1", key.open_key()]

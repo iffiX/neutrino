@@ -462,3 +462,36 @@ def test_a_devices_vscode_instances_come_from_the_hubs_configuration(box):
         "is_local_only": True,
     }
     assert entry["is_healthy"] is True
+
+
+def test_a_devices_cloudcli_instances_come_from_the_hub_and_answer_as_reported(box):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "cloudcli", "running")
+    store.write(
+        DEVICE,
+        "cloudcli",
+        {
+            "instances": [
+                {"account": "alice", "port": 3001},
+                {"account": "bob", "port": 3002},
+            ]
+        },
+    )
+    reported = report(
+        cloudcli={
+            "instances": [
+                {"account": "alice", "is_running": True},
+                {"account": "bob", "is_running": False},
+            ]
+        }
+    )
+    sessions = StubSessions({DEVICE: reported})
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    alice, bob = entries
+    assert alice["id"] == "cloudcli_device-one_alice"
+    assert alice["payload"]["is_token_required"] is True
+    assert (alice["is_healthy"], bob["is_healthy"]) == (True, False)

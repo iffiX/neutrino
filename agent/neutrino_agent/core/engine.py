@@ -41,8 +41,9 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_UNINSTALLING,
     AGENT_MODULE_STATE_UNSUPPORTED,
 )
-from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules import installers, rustdesk
+from neutrino_agent.modules.cloudcli.runner import CloudcliModuleRunner
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
@@ -54,6 +55,7 @@ from neutrino_agent.modules.system_package import SystemPackageModuleRunner
 from neutrino_agent.modules.vscode.runner import VscodeModuleRunner
 from neutrino_agent.modules.zfs.runner import ZfsModuleRunner
 from neutrino_agent.platforms.detect import platform_tuple
+from neutrino_agent.streams.package import CODE_UNREACHABLE
 
 # How often to re-check inputs that have not changed. Every heartbeat wakes
 # the worker, and running each module's verify command that often would keep
@@ -195,12 +197,14 @@ class ModuleEngine(ReconcileWorker):
                 PodmanModuleRunner,
                 ZfsModuleRunner,
                 VscodeModuleRunner,
+                CloudcliModuleRunner,
             ]
         else:
             if "smb_server" in platform.capabilities:
                 kinds.append(SambaNativeServerRunner)
             if "hub_packages" in platform.capabilities:
                 kinds.append(VscodeModuleRunner)
+                kinds.append(CloudcliModuleRunner)
         self._module_runners = {}
         for kind in kinds:
             runner = kind(platform=platform, log=self._collect, publish=self._publish)
@@ -403,6 +407,9 @@ class ModuleEngine(ReconcileWorker):
                 refusal = step(name, wanted, *extra)
             except PlatformUnsupportedError:
                 refusal = {"code": "unsupported_platform", "params": {}}
+            except ModuleApplyError as error:
+                self._collect(error.code)
+                refusal = {"code": error.code, "params": dict(error.params)}
             except Exception as error:  # noqa: BLE001 - reported, never raised
                 self._collect(str(error))
                 refusal = {"code": failure, "params": {"detail": str(error)[:200]}}
@@ -427,7 +434,7 @@ class ModuleEngine(ReconcileWorker):
         else:
             received = receive(name)
             if "path" not in received:
-                return dict(received)
+                return _download_refusal(runner, received)
             try:
                 runner.install(resolved, received["path"])
             finally:
@@ -602,6 +609,24 @@ class ModuleEngine(ReconcileWorker):
         if runner is not None and (not kind or runner.kind == kind):
             return runner
         return {"package": self._package, "system_package": self._system}.get(kind)
+
+
+def _download_refusal(runner, received: dict) -> dict:
+    """Why an install got no package, in the runner's own code when it names one.
+
+    Args:
+        runner: The module's runner.
+        received: The package stream's ``{"code", "params"}``.
+
+    Returns:
+        ``{"code", "params"}``: the runner's ``download_failure_code`` with
+        the hub's code as ``detail``, or the stream's own when the runner
+        names none or the socket went away, which the next state retries.
+    """
+    code = str(received.get("code", "") or "")
+    if not runner.download_failure_code or code == CODE_UNREACHABLE:
+        return dict(received)
+    return {"code": runner.download_failure_code, "params": {"detail": code}}
 
 
 def _recipe_of(wanted: "dict | None") -> dict:

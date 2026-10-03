@@ -156,3 +156,41 @@ def test_an_apply_that_refuses_does_not_undo_the_mint(unlocked, monkeypatch):
     assert ensure_client_key(registry, registry.get(client_id))
     assert len(load_config().client_keys) == 1
     assert ai_keys.load_config().client_keys[0].name == "client/alice"
+
+
+# --- a CloudCLI device's key ---
+
+
+def test_a_devices_key_is_minted_once_under_its_id_and_revoked(unlocked):
+    material = ai_keys.ensure_device_key("dev-1", "box")
+
+    held = load_config().device_keys["dev-1"]
+    assert held.name == "device/box"
+    assert held.open_key() == material
+    assert ai_keys.ensure_device_key("dev-1", "box") == material
+    assert len(load_config().device_keys) == 1
+    assert load_config().client_keys == []
+
+    ai_keys.revoke_device_key("dev-1")
+    ai_keys.revoke_device_key("dev-1")
+
+    assert load_config().device_keys == {}
+
+
+def test_a_locked_vault_mints_no_device_key(config_dir):
+    assert ai_keys.ensure_device_key("dev-1", "box") is None
+    assert load_config().device_keys == {}
+
+
+def test_a_devices_gateway_is_the_hubs_address_and_its_own_key(unlocked):
+    assert ai_keys.device_gateway("dev-1", "10.0.0.1") == {
+        "gateway_url": "",
+        "gateway_key": "",
+    }
+    material = ai_keys.ensure_device_key("dev-1", "box")
+
+    assert ai_keys.device_gateway("dev-1", "10.0.0.1") == {
+        "gateway_url": "http://10.0.0.1:8317",
+        "gateway_key": material,
+    }
+    assert ai_keys.device_gateway("dev-1", "")["gateway_url"] == ""

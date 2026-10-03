@@ -21,7 +21,11 @@ import pytest
 
 import neutrino_agent.core.engine as engine_module
 from neutrino_agent.core.engine import ModuleEngine
-from neutrino_agent.exceptions import InstallError, PlatformUnsupportedError
+from neutrino_agent.exceptions import (
+    InstallError,
+    ModuleApplyError,
+    PlatformUnsupportedError,
+)
 from neutrino_agent.modules.base import ModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
 
@@ -220,6 +224,17 @@ def test_a_refused_package_is_reported_with_the_hubs_own_code(tmp_path):
         "params": {"detail": "refused"},
     }
     assert platform.installs == []
+
+
+def test_an_install_that_names_its_step_is_reported_with_that_code(tmp_path):
+    platform = FakePlatform(
+        install_error=ModuleApplyError("cloudcli_node_download_failed", {"x": 1})
+    )
+    engine = bare_engine(platform=platform, verified=[False], tmp_path=tmp_path)
+
+    refusal = engine.install("fakedesk", receive=landing_receive([], tmp_path))
+
+    assert refusal == {"code": "cloudcli_node_download_failed", "params": {"x": 1}}
 
 
 def test_a_platform_that_installs_nothing_is_reported_not_raised(tmp_path):
@@ -919,7 +934,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
 
     engine._refresh(is_forced=True)
 
-    assert set(engine.module_runners) == {"samba", "vscode"}
+    assert set(engine.module_runners) == {"samba", "vscode", "cloudcli"}
     assert engine.report()["vscode"]["state"] == "absent"
     assert engine.install("vscode", receive=receive) == {
         "code": "hub_unreachable",
@@ -942,4 +957,5 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "podman",
         "zfs",
         "vscode",
+        "cloudcli",
     }

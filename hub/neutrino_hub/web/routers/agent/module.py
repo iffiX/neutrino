@@ -31,6 +31,7 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     resolve_platform_entry,
 )
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.modules.clients.ai_keys import revoke_device_key
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
     CHANNEL_MODULE_STATE_ABSENT,
@@ -43,6 +44,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_USER,
+    DEVICE_CLOUDCLI_MODULE,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
@@ -634,6 +636,8 @@ def _set_want(
 ) -> DeviceModuleListView:
     """Write one module's ``want`` on one device, push it, and answer the list.
 
+    Withdrawing CloudCLI also revokes the device's gateway key.
+
     Args:
         runtime: The shared runtime.
         request: The device and the module.
@@ -666,6 +670,8 @@ def _set_want(
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
     runtime.desired_states.set_want(key, module, want)
+    if module == DEVICE_CLOUDCLI_MODULE and want == CHANNEL_MODULE_STATE_ABSENT:
+        revoke_device_key(key)
     push_state(runtime, key)
     _recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)

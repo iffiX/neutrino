@@ -127,7 +127,7 @@ AGENT_MODULE_PACKAGE_MAGIC = {
 
 # The modules a device hosts from the hub's desired state, in the order the
 # agent applies them. One file per module under the device's directory.
-DEVICE_MODULE_NAMES = ("zfs", "samba", "gitea", "podman", "vscode")
+DEVICE_MODULE_NAMES = ("zfs", "samba", "gitea", "podman", "vscode", "cloudcli")
 # What ``config/devices/<id>/modules.json`` is called, and the per-module
 # files beside it. A device directory is named by the device's id.
 DEVICE_MODULES_FILE = "modules.json"
@@ -147,6 +147,25 @@ DEVICE_VSCODE_MODULE = "vscode"
 DEVICE_VSCODE_TOKEN_KEY = "token_sealed"  # scan: allow
 DEVICE_VSCODE_LOGIN_KEY = "login_id"
 DEVICE_VSCODE_TOKEN_AAD = b"device_vscode:token"
+# CloudCLI, once per account. Each instance in its file holds, beside its
+# account and port, the vault login a Windows machine runs it as and two
+# secrets the hub generates once and keeps sealed: the password CloudCLI's
+# administrator signs in with, and the secret the instance's tokens are
+# signed with.
+DEVICE_CLOUDCLI_MODULE = "cloudcli"
+DEVICE_CLOUDCLI_LOGIN_KEY = "login_id"
+DEVICE_CLOUDCLI_PASSWORD_KEY = "web_password_sealed"  # scan: allow
+DEVICE_CLOUDCLI_SECRET_KEY = "token_secret_sealed"  # scan: allow
+DEVICE_CLOUDCLI_PASSWORD_AAD = b"device_cloudcli:web_password"
+DEVICE_CLOUDCLI_SECRET_AAD = b"device_cloudcli:token_secret"
+DEVICE_CLOUDCLI_SECRET_BYTES = 32
+# A token: ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry ||
+# nonce))``, the expiry eight bytes big-endian in seconds since the epoch,
+# minted for one ``service`` answer; the agent's forwarder checks the same
+# layout.
+DEVICE_CLOUDCLI_TOKEN_LIFETIME_S = 60
+DEVICE_CLOUDCLI_TOKEN_EXPIRY_BYTES = 8
+DEVICE_CLOUDCLI_TOKEN_NONCE_BYTES = 16
 # The remote desktop host every agent package carries, as the module report
 # names it, and the two states its row can take.
 DEVICE_RDP_MODULE = "rustdesk"

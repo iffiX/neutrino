@@ -76,6 +76,7 @@ def test_every_shipped_manifest_names_its_installer_tier():
         "zfs": "platform",
         "gitea": "hub",
         "vscode": "hub",
+        "cloudcli": "hub",
         "anydesk": "user",
         "teamviewer": "user",
     }
@@ -92,6 +93,7 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
         "zfs": "system",
         "gitea": "go-gitea/gitea",
         "vscode": "Microsoft",
+        "cloudcli": "nodejs.org",
         "anydesk": "AnyDesk Software GmbH",
         "teamviewer": "TeamViewer Germany GmbH",
     }
@@ -104,6 +106,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "podman",
         "samba",
         "zfs",
+        "cloudcli",
         "gitea",
         "vscode",
         "anydesk",
@@ -462,6 +465,57 @@ def test_the_loader_refuses_a_branch_installer_that_is_not_a_bare_builtin(
         load_module_manifests()
 
     assert "installer" in str(refusal.value) or "builtin" in str(refusal.value)
+
+
+NODE_VERSION = "22.23.3"
+NODE_BUILDS = {
+    "linux-amd64": (
+        "linux-x64.tar.gz",
+        "1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64.tar.gz",
+        "5ced2d48d1d7198739b7f86804de0171aefb6823b684b12341d3321afc3cb0b2",  # scan: allow
+    ),
+    "windows-amd64": (
+        "win-x64.zip",
+        "2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71",  # scan: allow
+    ),
+    "windows-arm64": (
+        "win-arm64.zip",
+        "33dad22e4cef5ee8f9fbb1b0d037fdacd0e56d12a4580f0d63f68b894deab535",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "darwin-x64.tar.gz",
+        "8a677b0219178efd6eb0e475457c4afb452b521a92f6e67845a73bd85727f2a8",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "darwin-arm64.tar.gz",
+        "23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53",  # scan: allow
+    ),
+}
+
+
+def test_cloudcli_pins_one_node_release_per_platform():
+    manifest = load_module_manifests()["cloudcli"]
+
+    assert manifest["version"] == "1.37.3"
+    assert manifest["license"] == "AGPL-3.0"
+    assert manifest["corresponding_source"] == (
+        "https://github.com/siteboon/claudecodeui/tree/v1.37.3"
+    )
+    assert set(manifest["platforms"]) == set(NODE_BUILDS)
+    for key, (build, digest) in NODE_BUILDS.items():
+        entry = manifest["platforms"][key]
+        assert entry["url"] == (
+            f"https://nodejs.org/dist/v{NODE_VERSION}/node-v{NODE_VERSION}-{build}"
+        )
+        assert entry["sha256"] == digest
+        assert entry["package_kind"] == ("zip" if build.endswith(".zip") else "tar")
+        assert f"node-v{NODE_VERSION}-{build.split('.')[0]}" in entry["verify"]
+        assert entry.get("min_version", "") == (
+            "2.28" if key.startswith("linux") else ""
+        )
 
 
 def test_vscode_pins_microsofts_cli_per_platform_at_one_build():

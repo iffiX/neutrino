@@ -59,10 +59,13 @@ class ModuleRunner:
         kind: The recipe kind this runner installs by.
         name: The module's name on the wire; empty for a runner that
             serves a kind rather than one module.
+        download_failure_code: The code an install reports when the hub
+            could not hand its package down; empty keeps the hub's own.
     """
 
     kind = ""
     name = ""
+    download_failure_code = ""
 
     def __init__(self, *, platform, log=print, publish=None):
         """

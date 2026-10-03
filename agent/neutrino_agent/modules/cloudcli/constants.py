@@ -1,0 +1,133 @@
+"""Fixed values of the CloudCLI module."""
+
+# The recipe kind and the module's name on the wire.
+CLOUDCLI_KIND = "cloudcli"
+CLOUDCLI_NAME = "cloudcli"
+
+# The npm package every instance runs, at the one version the hub pins.
+CLOUDCLI_PACKAGE = "@cloudcli-ai/cloudcli"
+CLOUDCLI_VERSION = "1.37.3"
+# Where the package lands under an app directory, and the server it starts.
+CLOUDCLI_PACKAGE_PARTS = ("node_modules", "@cloudcli-ai", "cloudcli")
+CLOUDCLI_SERVER_PARTS = ("dist-server", "server", "index.js")
+# The native modules npm fetches a prebuilt binary for during the install.
+CLOUDCLI_NATIVE_MODULES = ("better-sqlite3", "node-pty", "bcrypt")
+
+# The Node.js archive the hub sends: its kinds, and the prefix of the one
+# directory each archive holds.
+CLOUDCLI_PACKAGE_TAR = "tar"
+CLOUDCLI_PACKAGE_ZIP = "zip"
+CLOUDCLI_NODE_PREFIX = "node-v"
+# Inside that directory: the interpreter and npm, by system.
+CLOUDCLI_NODE_PARTS = {
+    "linux": ("bin", "node"),
+    "darwin": ("bin", "node"),
+    "windows": ("node.exe",),
+}
+CLOUDCLI_NPM_PARTS = {
+    "linux": ("lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    "darwin": ("lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    "windows": ("node_modules", "npm", "bin", "npm-cli.js"),
+}
+# The module's directory under the agent's work root on Linux, and under the
+# hub package root on macOS and Windows.
+CLOUDCLI_DIR_NAME = "cloudcli"
+
+# Each account's own directory, under its home, by system: the app
+# directory npm installs into is ``app`` inside it, and CloudCLI keeps its
+# database beside it.
+CLOUDCLI_ACCOUNT_PARTS = {
+    "linux": (".local", "share", "neutrino_cloudcli"),
+    "darwin": ("Library", "Application Support", "Neutrino", "cloudcli"),
+    "windows": ("AppData", "Local", "Neutrino", "cloudcli"),
+}
+CLOUDCLI_APP_DIR_NAME = "app"
+CLOUDCLI_DATABASE_NAME = "auth.db"
+# Inside the app directory: npm's cache, and the empty file npm reads as the
+# account's configuration instead of ``~/.npmrc``.
+CLOUDCLI_NPM_CACHE_NAME = ".npm"
+CLOUDCLI_NPM_USERCONFIG_NAME = ".npmrc"
+# How long one account's install may take.
+CLOUDCLI_INSTALL_TIMEOUT_S = 1800
+# How long the look for an account's ``claude`` may take.
+CLOUDCLI_LOOKUP_TIMEOUT_S = 30
+# The directories a service's PATH holds after the one ``claude`` is in.
+CLOUDCLI_SYSTEM_PATH = ("/usr/local/bin", "/usr/bin", "/bin")
+
+# CloudCLI listens on loopback alone, on a port the agent picks.
+CLOUDCLI_UPSTREAM_HOST = "127.0.0.1"
+# The forwarder listens on every address of the machine at the configured
+# port.
+CLOUDCLI_LISTEN_HOST = "0.0.0.0"
+CLOUDCLI_PORT_MIN = 1024
+CLOUDCLI_PORT_MAX = 65535
+
+# What CloudCLI 1.37.3 answers on: the first-run check, the two routes the
+# forwarder never passes on, and where its page keeps the login.
+CLOUDCLI_STATUS_PATH = "/api/auth/status"
+CLOUDCLI_REGISTER_PATH = "/api/auth/register"
+CLOUDCLI_LOGIN_PATH = "/api/auth/login"
+CLOUDCLI_BLOCKED_PATHS = (CLOUDCLI_REGISTER_PATH, CLOUDCLI_LOGIN_PATH)
+CLOUDCLI_STORAGE_KEY = "auth-token"
+# The query parameter CloudCLI's page sends its login in on a WebSocket.
+CLOUDCLI_QUERY_TOKEN = "token"
+# CloudCLI refuses a username shorter than this.
+CLOUDCLI_USERNAME_MIN = 3
+# How long a login CloudCLI issues lasts, which the forwarder's cookie
+# matches.
+CLOUDCLI_LOGIN_LIFETIME_S = 7 * 24 * 3600
+
+# The token a client opens an instance with: ``?tkn=`` holding
+# ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``.
+CLOUDCLI_TOKEN_PARAMETER = "tkn"
+CLOUDCLI_TOKEN_EXPIRY_BYTES = 8
+CLOUDCLI_TOKEN_NONCE_BYTES = 16
+CLOUDCLI_TOKEN_MAC_BYTES = 32
+# A token is refused when its expiry is further ahead than this, so the
+# nonces held stay few.
+CLOUDCLI_TOKEN_HORIZON_S = 300
+# The cookie the forwarder keeps CloudCLI's login in, per port, since a
+# cookie belongs to a host and not to a port.
+CLOUDCLI_COOKIE_PREFIX = "neutrino_cloudcli_"
+# The text CloudCLI's login secret is derived from the instance's secret by.
+CLOUDCLI_JWT_LABEL = b"neutrino cloudcli jwt"
+
+# How the forwarder reads one request, and how it waits for CloudCLI.
+CLOUDCLI_HEAD_LIMIT_BYTES = 65536
+CLOUDCLI_RELAY_CHUNK_BYTES = 65536
+CLOUDCLI_UPSTREAM_TIMEOUT_S = 10.0
+CLOUDCLI_IDLE_TIMEOUT_S = 3600.0
+CLOUDCLI_READY_POLL_S = 3.0
+CLOUDCLI_REGISTER_RETRY_S = 30.0
+
+# Linux: one systemd unit per account, from a template, its environment in
+# a root-only file beside the instance's record.
+CLOUDCLI_UNIT_TEMPLATE = "neutrino_cloudcli@.service"
+CLOUDCLI_UNIT_PREFIX = "neutrino_cloudcli@"
+CLOUDCLI_SYSTEMD_DIR = "/etc/systemd/system"
+CLOUDCLI_LINUX_ETC_DIR = "/etc/neutrino/cloudcli"
+
+# macOS: one LaunchDaemon per account, its output in its own log file.
+CLOUDCLI_LAUNCHD_PREFIX = "com.neutrino.cloudcli."
+CLOUDCLI_LAUNCHD_DIR = "/Library/LaunchDaemons"
+CLOUDCLI_DARWIN_LOG_DIR = "/Library/Logs/Neutrino"
+CLOUDCLI_DARWIN_LOG_PREFIX = "cloudcli_"
+
+# Windows: one scheduled task per account, started at boot with its login,
+# running a script that sets the environment; a second task runs an
+# account's install once.
+CLOUDCLI_TASK_PREFIX = "neutrino_cloudcli_"
+CLOUDCLI_INSTALL_TASK_PREFIX = "neutrino_cloudcli_install_"
+CLOUDCLI_TASK_MARKER = "neutrino:"
+CLOUDCLI_WINDOWS_SHELL = "cmd.exe"
+CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME = "run"
+CLOUDCLI_WINDOWS_RULE_PREFIX = "neutrino_cloudcli_port_"
+CLOUDCLI_WINDOWS_RULE_TITLE = "Neutrino CloudCLI ({account})"
+CLOUDCLI_LOGON_FAILURES = (0x8007052E,)
+
+# The end of every instance's log file, and of its record.
+CLOUDCLI_LOG_SUFFIX = ".log"
+CLOUDCLI_RECORD_SUFFIX = ".json"
+
+# How long one reading of the instances is believed.
+CLOUDCLI_STATUS_TTL_S = 30.0

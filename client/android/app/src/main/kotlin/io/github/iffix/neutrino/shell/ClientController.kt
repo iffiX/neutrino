@@ -177,4 +177,9 @@ class ClientController(
         forwards.openLocal(bindingId, entryId, url) { address ->
             ContextCompat.getMainExecutor(context).execute { openUrl(address) }
         }
+
+    override fun openWithToken(bindingId: String, entryId: String, url: String) =
+        forwards.openWithToken(bindingId, entryId, url) { address ->
+            ContextCompat.getMainExecutor(context).execute { openUrl(address) }
+        }
 }

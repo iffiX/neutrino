@@ -27,7 +27,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * The loopback forwards of the app core, by entry key `<binding>/<entry>`: a port entry's
  * Connect and Disconnect, and a local-only web entry's Open locally, which forwards as a port
  * entry does, reads the entry's token on the `service` stream and opens the browser on the
- * entry's own `.localhost` name with the token. Each forward listens on the number the local port table gives its
+ * entry's own `.localhost` name with the token. A web entry with `is_token_required` has a row
+ * here too while its Open reads a token, with no forward. Each forward listens on the number the local port table gives its
  * entry. A forward stops when its hub is left, when its entry leaves the hub's state, and on
  * [stopAll] as the app core's service ends.
  *
@@ -129,6 +130,37 @@ class PortForwards(
             val query = "$WEB_TOKEN_PARAMETER=${URLEncoder.encode(token, "UTF-8")}"
             onOpen("http://${slugOf(entryId)}.$WEB_LOOPBACK_DOMAIN:$bound$path?$query")
             settle(key) { PortForwardRow(localPort = bound) }
+        }
+    }
+
+    /**
+     * Press Open on a web entry with `is_token_required`: a fresh token is read on the `service`
+     * stream and the browser opens the entry's own address with `?tkn=<token>`, with no forward. A
+     * press while the row's job runs is dropped.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     * @param url The entry's address.
+     * @param onOpen What opening the address in the browser does.
+     */
+    fun openWithToken(bindingId: String, entryId: String, url: String, onOpen: (String) -> Unit) {
+        val key = keyOf(bindingId, entryId)
+        if (!begin(key, PortForwardJob.OPENING)) return
+        scope.launch {
+            val token = when (val answer = material(bindingId, entryId)) {
+                is ChannelResult.Refused -> {
+                    settle(key) { PortForwardRow(error = answer) }
+                    return@launch
+                }
+
+                is ChannelResult.Ok -> (answer.value["token"] as? JsonPrimitive)?.content.orEmpty()
+            }
+            if (token.isEmpty()) {
+                settle(key) { PortForwardRow(error = ChannelResult.refused("web_token_missing")) }
+                return@launch
+            }
+            onOpen(tokenUrlOf(url, token))
+            settle(key) { null }
         }
     }
 
@@ -289,5 +321,17 @@ class PortForwards(
          * @return `<binding>/<entry>`.
          */
         fun keyOf(bindingId: String, entryId: String): String = "$bindingId/$entryId"
+
+        /**
+         * An entry's own address with the token it opens with.
+         *
+         * @param url The entry's address.
+         * @param token The token the hub handed for this open.
+         * @return The address with `tkn=<token>` added to its query.
+         */
+        fun tokenUrlOf(url: String, token: String): String {
+            val query = "$WEB_TOKEN_PARAMETER=${URLEncoder.encode(token, "UTF-8")}"
+            return if ('?' in url) "$url&$query" else "$url?$query"
+        }
     }
 }

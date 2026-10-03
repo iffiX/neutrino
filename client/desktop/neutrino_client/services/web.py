@@ -7,7 +7,8 @@ is what opens the payload's url. An entry whose payload says
 the local port table gives it, and the browser opens the forward on the
 entry's own ``.localhost`` name with the token in the address, so each
 instance keeps its own cookie. The forwards are runtime state and end with
-the client.
+the client. An entry whose payload says ``is_token_required`` opens at its
+own address with a token the ``service`` stream hands for that one open.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -37,6 +38,24 @@ WEB_TOKEN_PARAMETER = "tkn"
 WEB_SLUG_OUTSIDE = re.compile(r"[^A-Za-z0-9-]")
 # The platform whose browser resolves no ``.localhost`` name.
 WEB_NO_LOCALHOST_NAMES_OS = "darwin"
+
+
+def token_url(url: str, token: str) -> str:
+    """An entry's own address with the token it opens with.
+
+    Args:
+        url: The entry's address.
+        token: The token the hub handed for this open.
+
+    Returns:
+        The address with ``tkn=<token>`` added to its query.
+    """
+    parts = urllib.parse.urlsplit(url)
+    query = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    query.append((WEB_TOKEN_PARAMETER, token))
+    return urllib.parse.urlunsplit(
+        parts._replace(path=parts.path or "/", query=urllib.parse.urlencode(query))
+    )
 
 
 def local_url(entry_id: str, port: int, path: str, token: str, os_name: str) -> str:
@@ -108,6 +127,8 @@ class WebServiceHandler(ServiceTypeHandler):
         url = str(payload.get("url", ""))
         if not url:
             return {"code": "unknown_request", "params": {}}
+        if payload.get("is_token_required") is True:
+            return self._open_with_token(entry, url)
         if payload.get("is_local_only") is True:
             return self._open_local(entry, url)
         self._platform.open_url(url)
@@ -171,6 +192,22 @@ class WebServiceHandler(ServiceTypeHandler):
         for relay in relays:
             relay.close()
         return len(relays)
+
+    def _open_with_token(self, entry: dict, url: str) -> dict:
+        """Take a fresh token for an entry and open its own address with it."""
+        if self._open_service is None:
+            return {"code": "unknown_request", "params": {}}
+        try:
+            material = self._open_service(
+                str(entry.get("hub_id", "")), str(entry.get("id", ""))
+            )
+        except Exception as error:  # noqa: BLE001 - a refusal, never a crash
+            return channel_refusal(error)
+        token = str((material or {}).get("token", "") or "")
+        if not token:
+            return {"code": "web_token_missing", "params": {}}
+        self._platform.open_url(token_url(url, token))
+        return {}
 
     def _open_local(self, entry: dict, url: str) -> dict:
         """Take a local-only entry's token, forward it to the loopback, open it."""

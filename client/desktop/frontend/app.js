@@ -901,7 +901,9 @@ function serviceAction(type, body) {
 }
 
 // A web entry: Open, or for a local-only one Configure, Open locally and,
-// while forwarded, Disconnect, with the loopback port on the mono line.
+// while forwarded, Disconnect, with the loopback port on the mono line. Open
+// on an entry with is_token_required runs as the opening job while the
+// resident reads its token.
 function drawWebEntry(card, state, hub, entry) {
   const payload = entry.payload || {};
   const isLocal = payload.is_local_only === true;

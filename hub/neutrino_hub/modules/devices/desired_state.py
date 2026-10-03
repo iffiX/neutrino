@@ -24,10 +24,12 @@ config lock, re-reading inside it.
 
 import base64
 import hashlib
+import hmac
 import json
 import secrets
 import shutil
 import string
+import time
 
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.credentials.vault import (
@@ -36,8 +38,19 @@ from neutrino_hub.modules.credentials.vault import (
     unseal_bytes,
 )
 from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_WANTS
+from neutrino_hub.modules.clients.ai_keys import device_gateway
 from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_CLOUDCLI_LOGIN_KEY,
+    DEVICE_CLOUDCLI_MODULE,
+    DEVICE_CLOUDCLI_PASSWORD_AAD,
+    DEVICE_CLOUDCLI_PASSWORD_KEY,
+    DEVICE_CLOUDCLI_SECRET_AAD,
+    DEVICE_CLOUDCLI_SECRET_BYTES,
+    DEVICE_CLOUDCLI_SECRET_KEY,
+    DEVICE_CLOUDCLI_TOKEN_EXPIRY_BYTES,
+    DEVICE_CLOUDCLI_TOKEN_LIFETIME_S,
+    DEVICE_CLOUDCLI_TOKEN_NONCE_BYTES,
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
     DEVICE_MODULES_FILE,
@@ -108,6 +121,66 @@ def vscode_agent_config(stored: dict, address: str, platform: dict) -> dict:
             sent["password"] = _login_password(login_id)
         instances.append(sent)
     return {"address": address, "instances": instances}
+
+
+def cloudcli_agent_config(stored: dict, platform: dict, gateway: dict) -> dict:
+    """What the agent is sent for CloudCLI.
+
+    Args:
+        stored: The module's file: the instances, each with its two sealed
+            secrets and the login it runs as.
+        platform: The tuple the agent reported; only a Windows machine is
+            sent a password.
+        gateway: ``{gateway_url, gateway_key}``: the AI gateway as the
+            device reaches it, and the device's own key.
+
+    Returns:
+        ``{gateway_url, gateway_key, instances: [{account, port,
+        web_password, token_secret, password}]}``, both secrets opened and
+        the password taken from the instance's login.
+    """
+    is_windows = platform.get("os") == VSCODE_PASSWORD_OS
+    instances = []
+    for instance in stored.get("instances") or []:
+        if not isinstance(instance, dict):
+            continue
+        sent = {
+            "account": str(instance.get("account", "") or ""),
+            "port": instance.get("port", 0),
+            "web_password": _unsealed_text(
+                instance.get(DEVICE_CLOUDCLI_PASSWORD_KEY),
+                DEVICE_CLOUDCLI_PASSWORD_AAD,
+            ),
+            "token_secret": _unsealed_text(
+                instance.get(DEVICE_CLOUDCLI_SECRET_KEY), DEVICE_CLOUDCLI_SECRET_AAD
+            ),
+        }
+        login_id = str(instance.get(DEVICE_CLOUDCLI_LOGIN_KEY, "") or "")
+        if is_windows and login_id:
+            sent["password"] = _login_password(login_id)
+        instances.append(sent)
+    return {
+        "gateway_url": str(gateway.get("gateway_url", "") or ""),
+        "gateway_key": str(gateway.get("gateway_key", "") or ""),
+        "instances": instances,
+    }
+
+
+def cloudcli_token(secret: str, *, expiry: int, nonce: bytes) -> str:
+    """One token a CloudCLI instance's forwarder takes once.
+
+    Args:
+        secret: The instance's token secret.
+        expiry: When it stops working, in seconds since the epoch.
+        nonce: Random bytes, as many as a token carries.
+
+    Returns:
+        ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``
+        without padding.
+    """
+    body = int(expiry).to_bytes(DEVICE_CLOUDCLI_TOKEN_EXPIRY_BYTES, "big") + nonce
+    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(body + mac).rstrip(b"=").decode("ascii")
 
 
 class DesiredStateStore:
@@ -355,6 +428,68 @@ class DesiredStateStore:
             DEVICE_VSCODE_TOKEN_AAD,
         )
 
+    def sealed_cloudcli_secret(self, key: str, account: str, field: str) -> dict:
+        """One CloudCLI instance's password or token secret, made the first time.
+
+        Args:
+            key: The device key.
+            account: The account the instance runs as.
+            field: ``web_password_sealed`` or ``token_secret_sealed``.
+
+        Returns:
+            The seal ``cloudcli.json`` holds for that account's instance, or
+            a fresh one to store with it.
+
+        Raises:
+            KeyError: For a field that is neither.
+            VaultLockedError: If there is no data key to seal a fresh one
+                under.
+        """
+        aad = {
+            DEVICE_CLOUDCLI_PASSWORD_KEY: DEVICE_CLOUDCLI_PASSWORD_AAD,
+            DEVICE_CLOUDCLI_SECRET_KEY: DEVICE_CLOUDCLI_SECRET_AAD,
+        }[field]
+        for instance in self.read(key, DEVICE_CLOUDCLI_MODULE).get("instances") or []:
+            if not isinstance(instance, dict) or instance.get("account") != account:
+                continue
+            held = instance.get(field)
+            if isinstance(held, dict) and held:
+                return dict(held)
+        return seal_bytes(
+            secrets.token_urlsafe(DEVICE_CLOUDCLI_SECRET_BYTES).encode(), aad
+        )
+
+    def cloudcli_token(
+        self, key: str, account: str, *, now: "float | None" = None
+    ) -> str:
+        """A fresh token for one CloudCLI instance, good for one open.
+
+        Args:
+            key: The device key.
+            account: The account the instance runs as.
+            now: Seconds since the epoch; None is the clock.
+
+        Returns:
+            The token, its expiry 60 seconds ahead; empty when the device
+            has no such instance, when the vault is locked, or when the
+            secret does not open under this box's data key.
+        """
+        for instance in self.read(key, DEVICE_CLOUDCLI_MODULE).get("instances") or []:
+            if not isinstance(instance, dict) or instance.get("account") != account:
+                continue
+            secret = _unsealed_text(
+                instance.get(DEVICE_CLOUDCLI_SECRET_KEY), DEVICE_CLOUDCLI_SECRET_AAD
+            )
+            if not secret:
+                return ""
+            moment = time.time() if now is None else now
+            return cloudcli_token(
+                secret,
+                expiry=int(moment) + DEVICE_CLOUDCLI_TOKEN_LIFETIME_S,
+                nonce=secrets.token_bytes(DEVICE_CLOUDCLI_TOKEN_NONCE_BYTES),
+            )
+        return ""
+
     def compose(
         self,
         key: str,
@@ -363,6 +498,7 @@ class DesiredStateStore:
         address: str = "",
         allowed_subnets: "list | tuple" = (),
         urls: "list | tuple" = (),
+        hub_address: str = "",
     ) -> tuple:
         """One device's whole desired state and its hash.
 
@@ -376,6 +512,8 @@ class DesiredStateStore:
             address: Where the device is, for the URLs it derives.
             allowed_subnets: The networks its shares answer.
             urls: Every address the hub answers the channel on.
+            hub_address: The hub's own address on the device's network, for
+                the AI gateway CloudCLI reaches.
 
         Returns:
             ``(desired, hash)``, the document being
@@ -394,6 +532,10 @@ class DesiredStateStore:
                 config["secrets"] = self.gitea_secrets(key)
             elif name == DEVICE_VSCODE_MODULE:
                 config = vscode_agent_config(config, address, platform)
+            elif name == DEVICE_CLOUDCLI_MODULE:
+                config = cloudcli_agent_config(
+                    config, platform, device_gateway(key, hub_address)
+                )
             modules[name] = {
                 "want": entry["want"],
                 "config": config,

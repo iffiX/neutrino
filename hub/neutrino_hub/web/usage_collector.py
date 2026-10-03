@@ -93,7 +93,7 @@ class PanelUsageCollector:
             return 0
         try:
             config = load_config()
-            key_ids = {key.open_key(): key.id for key in config.client_keys}
+            key_ids = {key.open_key(): key.id for key in config.gateway_keys()}
         except ValueError:
             return 0
         try:
@@ -120,7 +120,7 @@ class PanelUsageCollector:
         return self._store.ingest(
             records,
             key_ids=key_ids,
-            key_names={key.id: key.name for key in config.client_keys},
+            key_names={key.id: key.name for key in config.gateway_keys()},
             provider_ids=self._provider_ids,
             account_ids=self._account_ids,
         )

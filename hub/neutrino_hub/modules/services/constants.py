@@ -108,7 +108,7 @@ SERVICES_RDP_PORT = 21118
 
 # The device-hosted modules the list is composed from: a desired state written
 # for one of these composes a different list.
-SERVICES_PUBLISHED_MODULES = ("samba", "gitea", "podman", "vscode")
+SERVICES_PUBLISHED_MODULES = ("samba", "gitea", "podman", "vscode", "cloudcli")
 
 SERVICES_LIST_TTL_S = 10.0
 SERVICES_ANSWER_TIMEOUT_S = 2.0
@@ -132,6 +132,7 @@ SERVICES_DESCRIPTION_DEVICE_SHARE = "device_share"
 SERVICES_DESCRIPTION_GITEA_MODULE = "gitea_module"
 SERVICES_DESCRIPTION_SAMBA_MODULE = "samba_module"
 SERVICES_DESCRIPTION_VSCODE_MODULE = "vscode_module"
+SERVICES_DESCRIPTION_CLOUDCLI_MODULE = "cloudcli_module"
 SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_AI_GATEWAY,
     SERVICES_DESCRIPTION_CONTAINER,
@@ -140,6 +141,7 @@ SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_GITEA_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
     SERVICES_DESCRIPTION_VSCODE_MODULE,
+    SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
 )
 
 SERVICES_GITEA_TITLE = "Gitea"
@@ -151,3 +153,10 @@ SERVICES_GITEA_ID = "gitea"
 SERVICES_VSCODE_ID = "vscode"
 SERVICES_VSCODE_TITLE = "VS Code ({account})"
 SERVICES_VSCODE_DESCRIPTION = "published by the vscode module on {host} for {account}"
+# One web entry per CloudCLI instance, opened by a client at the device's own
+# address with a token the ``service`` stream mints for one open.
+SERVICES_CLOUDCLI_ID = "cloudcli"
+SERVICES_CLOUDCLI_TITLE = "CloudCLI ({account})"
+SERVICES_CLOUDCLI_DESCRIPTION = (
+    "published by the cloudcli module on {host} for {account}"
+)

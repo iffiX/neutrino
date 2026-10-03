@@ -344,6 +344,7 @@
   "ui.services.delete_body": "The declaration is removed, every row it published with it; the machine it points at is untouched.",
   "ui.services.delete_title": "Delete {name}",
   "ui.services.description_ai_gateway": "published by the AI gateway",
+  "ui.services.description_cloudcli_module": "published by the cloudcli module on {host} for {account}",
   "ui.services.description_container": "published by container {image}",
   "ui.services.description_declared": "declared by hand",
   "ui.services.description_device_share": "shared from {device}",

@@ -563,12 +563,14 @@ class PanelRuntime:
             The hash and the state.
         """
         key = device if isinstance(device, str) else device.id
+        scope = self.device_scope.get(key)
         desired, state_hash = self.desired_states.compose(
             key,
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
             allowed_subnets=self.share_subnets(),
             urls=channel_urls(self),
+            hub_address=scope.hub_address if scope is not None else "",
         )
         return state_hash, desired
 

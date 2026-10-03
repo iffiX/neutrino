@@ -269,7 +269,8 @@ class PublishedServiceCache:
 
         Returns:
             One entry per device whose report names a hosted module, each
-            ``{"device_id", "host", "samba", "gitea", "podman", "vscode"}``.
+            ``{"device_id", "host", "samba", "gitea", "podman", "vscode",
+            "cloudcli"}``.
         """
         if self._agent_sessions is None:
             return []
@@ -331,6 +332,28 @@ class PublishedServiceCache:
                 "instances": [
                     {"account": str(instance["account"]), "port": int(instance["port"])}
                     for instance in self._desired_states.read(key, "vscode").get(
+                        "instances"
+                    )
+                    or []
+                    if isinstance(instance, dict)
+                    and instance.get("account")
+                    and instance.get("port")
+                ],
+            }
+        if name == "cloudcli":
+            reported = {
+                str(instance.get("account", "")): bool(instance.get("is_running"))
+                for instance in details.get("instances") or []
+                if isinstance(instance, dict)
+            }
+            return {
+                "instances": [
+                    {
+                        "account": str(instance["account"]),
+                        "port": int(instance["port"]),
+                        "is_healthy": reported.get(str(instance["account"]), False),
+                    }
+                    for instance in self._desired_states.read(key, "cloudcli").get(
                         "instances"
                     )
                     or []

@@ -2,7 +2,8 @@
 
 Deliberately thin, like the git server's. The upstream providers live in the
 credentials store — this holds only what CLIProxyAPI needs beyond them: where
-to listen, and the client keys handed to devices.
+to listen, the client keys handed to devices, and the key of each managed
+device whose CloudCLI module is enabled.
 
 Parsing and validation, plus the seal a client key is stored under: the
 material never sits in the file, so a backup of ``config/`` carries none.
@@ -114,6 +115,8 @@ class CliproxyApiConfig:
         client_keys: The keys devices authenticate with. A stored record
             without a seal is dropped on load, and whatever held it is issued
             a fresh key.
+        device_keys: Device id to the key its CloudCLI module authenticates
+            with, sealed the same way.
         hub_key: The hub's own key, which it probes the gateway with. Minted
             on the first apply and never handed out; it is what keeps the
             gateway's key list from being empty, since an empty list is a
@@ -123,6 +126,7 @@ class CliproxyApiConfig:
     listen_port: int = CLIPROXYAPI_DEFAULT_PORT
     client_keys: list[CliproxyApiClientKey] = field(default_factory=list)
     hub_key: "CliproxyApiClientKey | None" = None
+    device_keys: dict[str, CliproxyApiClientKey] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "CliproxyApiConfig":
@@ -138,6 +142,11 @@ class CliproxyApiConfig:
                 if _has_seal(data.get("hub_key"))
                 else None
             ),
+            device_keys={
+                str(device_id): CliproxyApiClientKey.from_dict(entry)
+                for device_id, entry in (data.get("device_keys") or {}).items()
+                if _has_seal(entry)
+            },
         )
 
     def to_dict(self) -> dict:
@@ -145,7 +154,33 @@ class CliproxyApiConfig:
             "listen_port": self.listen_port,
             "client_keys": [key.to_dict() for key in self.client_keys],
             "hub_key": self.hub_key.to_dict() if self.hub_key is not None else None,
+            "device_keys": {
+                device_id: key.to_dict() for device_id, key in self.device_keys.items()
+            },
         }
+
+    def gateway_keys(self) -> list[CliproxyApiClientKey]:
+        """Every key a caller of the gateway is counted under.
+
+        Returns:
+            The client keys, then the device keys.
+        """
+        return [*self.client_keys, *self.device_keys.values()]
+
+    def device_key_material(self) -> list[str]:
+        """The device keys opened, for the gateway's key list.
+
+        Returns:
+            Each device key that opens under this box's data key; one that
+            does not is left out.
+        """
+        opened = []
+        for key in self.device_keys.values():
+            try:
+                opened.append(key.open_key())
+            except ValueError:
+                continue
+        return opened
 
     def probe_key(self) -> "str | None":
         """The key material the hub probes the gateway with.

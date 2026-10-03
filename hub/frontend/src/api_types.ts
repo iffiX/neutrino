@@ -706,6 +706,8 @@ export interface AiUsageKey extends AiUsageCounters {
   key_id: string;
   name: string;
   client_name: string | null;
+  /** The device whose CloudCLI holds the key; null for a client's key. */
+  device_name: string | null;
   first_seen_at: string;
   last_seen_at: string;
 }
@@ -1446,6 +1448,36 @@ export interface VscodeDeviceView extends ModuleDeviceState {
 export interface VscodeConfigUpdate {
   device_id: string;
   instances: VscodeInstance[];
+}
+
+/** One CloudCLI instance: the account it runs as, the port its forwarder
+ * listens on, and on Windows the vault login that account signs in with. */
+export interface CloudcliInstance {
+  account: string;
+  port: number;
+  login_id: string;
+}
+
+/** One instance as configured, with what the machine says of it. */
+export interface CloudcliInstanceView extends CloudcliInstance {
+  is_running: boolean;
+  /** Why it does not run, typed; empty when nothing is in the way. */
+  code: string;
+}
+
+/** CloudCLI on one device: its instances and the machine's accounts. */
+export interface CloudcliDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  instances: CloudcliInstanceView[];
+  /** The human accounts the machine last reported. */
+  accounts: string[];
+  is_active: boolean;
+}
+
+export interface CloudcliConfigUpdate {
+  device_id: string;
+  instances: CloudcliInstance[];
 }
 
 export interface GiteaConfigUpdate {

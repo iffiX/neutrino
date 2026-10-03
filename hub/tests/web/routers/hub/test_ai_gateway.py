@@ -811,3 +811,32 @@ def test_the_status_carries_the_day_counters(usage_client, monkeypatch):
     body = usage_client.get("/api/hub/ai/gateway").json()
     assert body["requests_today"] == 1
     assert body["tokens_today"] == 110
+
+
+def test_a_device_keys_usage_row_names_its_device(usage_client, monkeypatch):
+    from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
+    from neutrino_hub.modules.cliproxyapi.ops import load_config, save_config
+
+    config = load_config()
+    key = CliproxyApiClientKey.generated("device/box")
+    key.id = "k1"
+    config.device_keys["dev-1"] = key
+    save_config(config)
+    monkeypatch.setattr(cliproxyapi_router, "DeviceRegistry", StubDeviceRegistry)
+    seed_usage()
+
+    (row,) = usage_client.get("/api/hub/ai/gateway/usage?range=day").json()["keys"]
+
+    assert row["device_name"] == "box"
+    assert (
+        usage_client.get("/api/hub/ai/gateway/usage?range=day&key_id=k1").status_code
+        == 200
+    )
+
+
+class StubDeviceRegistry:
+    def get(self, device_id):
+        class Device:
+            name = "box"
+
+        return Device() if device_id == "dev-1" else None
