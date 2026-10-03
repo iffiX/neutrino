@@ -33,8 +33,9 @@ CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 # What the hub answers as in its welcome.
 CLIENT_HUB_ROLE = "hub"
 
-# The hub's channel, on the pinned-TLS agent port. Joining and leaving are
-# HTTP; everything else rides the one socket.
+# The hub's channel, on the pinned-TLS agent port. A short link's fetch,
+# joining and leaving are HTTP; everything else rides the one socket.
+CLIENT_ENROLL_PATH = "/api/channel/enroll"
 CLIENT_JOIN_PATH = "/api/channel/join"
 CLIENT_LEAVE_PATH = "/api/channel/leave"
 CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"

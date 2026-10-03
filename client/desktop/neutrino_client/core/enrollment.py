@@ -7,6 +7,11 @@ hub: it is the SHA-256 fingerprint of the agent port's TLS certificate,
 checked on every connection before anything is sent. A link whose ``role``
 is not ``client`` was made for a device agent and is refused.
 
+A QR code carries the short form, ``neutrino://enroll/<ticket>@<host>:<port>/
+<fp>``; the ``@`` tells it apart. The long form's object is fetched from
+``GET /api/channel/enroll?ticket=`` at that address with ``fp`` pinned, and
+read as a pasted link's.
+
 The bindings live in ``client.json`` in the person's own configuration
 directory, mode 0600, one per hub joined:
 ``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
@@ -48,6 +53,7 @@ import uuid
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_CONFIG_FILE_NAME,
+    CLIENT_ENROLL_PATH,
     CLIENT_HUB_NAME,
     CLIENT_JOIN_PATH,
     CLIENT_LEAVE_PATH,
@@ -63,11 +69,15 @@ from neutrino_client.exceptions import (
     GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
+    GatewayUnreachable,
+    GatewayUntrusted,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.store import ClientServiceStore
 
 LINK_PREFIX = "neutrino://enroll/"
+# What marks a short link: the base64url alphabet of a long one has no ``@``.
+LINK_SHORT_MARK = "@"
 # What one binding keeps: every field a string but the list of every address
 # the hub answers on, the list of overlay objects and the two flags.
 BINDING_KEYS = (
@@ -110,6 +120,8 @@ OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn", "hub_address")
 def parse_link(link: str) -> "tuple[list, str, str, list]":
     """Pull the addresses, ticket, fingerprint and overlays out of a link.
 
+    A short link's object is fetched from the hub it names first.
+
     Args:
         link: What the person pasted; the bare payload without its scheme
             is accepted too.
@@ -124,16 +136,21 @@ def parse_link(link: str) -> "tuple[list, str, str, list]":
         EnrollmentError: ``link_missing`` for an empty paste,
             ``link_unreadable`` for something that is not a link,
             ``link_incomplete`` for a link without an address or ticket,
-            ``link_not_for_client`` for a link whose role is not ``client``.
+            ``link_not_for_client`` for a link whose role is not ``client``;
+            for a short link, ``link_unreachable`` when its address does
+            not answer, ``hub_untrusted`` when another certificate does,
+            and the hub's own code, ``ticket_spent``, when it refuses.
     """
     text = link.strip()
     if not text:
         raise EnrollmentError("link_missing")
     if text.startswith(LINK_PREFIX):
         text = text[len(LINK_PREFIX) :]
+    if LINK_SHORT_MARK in text:
+        payload = fetch_link_object(*parse_short_link(text))
+    else:
+        payload = _decoded(text)
     try:
-        padded = text + "=" * (-len(text) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode()))
         urls = [
             str(url).rstrip("/") for url in payload.get("urls", []) if str(url).strip()
         ]
@@ -148,6 +165,71 @@ def parse_link(link: str) -> "tuple[list, str, str, list]":
     if role != CLIENT_ROLE:
         raise EnrollmentError("link_not_for_client", {"role": role})
     return urls, token, fingerprint, overlays
+
+
+def parse_short_link(text: str) -> "tuple[str, str, str]":
+    """Split a short link into its ticket, its address and its fingerprint.
+
+    Args:
+        text: The short link without its scheme,
+            ``<ticket>@<host>:<port>/<fingerprint>``.
+
+    Returns:
+        The ticket, the base URL ``https://<host>:<port>``, and the
+        fingerprint in lower case.
+
+    Raises:
+        EnrollmentError: ``link_unreadable`` when a part is missing or the
+            fingerprint is not 64 hex characters.
+    """
+    ticket, _, rest = text.partition(LINK_SHORT_MARK)
+    address, _, fingerprint = rest.rpartition("/")
+    fingerprint = fingerprint.strip().lower()
+    try:
+        parts = urllib.parse.urlsplit(f"https://{address}")
+        port = parts.port
+    except ValueError as error:
+        raise EnrollmentError("link_unreadable") from error
+    is_hex = len(fingerprint) == 64 and all(
+        char in "0123456789abcdef" for char in fingerprint
+    )
+    if not ticket or not parts.hostname or port is None or not is_hex:
+        raise EnrollmentError("link_unreadable")
+    return ticket, f"https://{address}", fingerprint
+
+
+def fetch_link_object(ticket: str, gateway_url: str, fingerprint: str) -> dict:
+    """The long link's object for a short link's ticket, from the hub it names.
+
+    Args:
+        ticket: The ticket.
+        gateway_url: The hub's address the short link names.
+        fingerprint: The certificate fingerprint to pin.
+
+    Returns:
+        The object, as a long link carries it.
+
+    Raises:
+        EnrollmentError: ``link_unreachable`` when the address does not
+            answer or the answer is not an object, ``hub_untrusted`` when
+            another certificate answers, the hub's code (``ticket_spent``)
+            or ``enroll_refused`` when it refuses.
+    """
+    channel = GatewayHttpChannel(gateway_url=gateway_url, fingerprint=fingerprint)
+    query = urllib.parse.urlencode({"ticket": ticket})
+    try:
+        payload = channel.get(f"{CLIENT_ENROLL_PATH}?{query}")
+    except GatewayUntrusted as error:
+        raise EnrollmentError("hub_untrusted") from error
+    except GatewayRefused as error:
+        raise EnrollmentError(error.code or "enroll_refused", error.params) from error
+    except GatewayRefusedDetail as error:
+        raise EnrollmentError(error.code, error.params) from error
+    except (GatewayProtocolRefused, GatewayUnreachable) as error:
+        raise EnrollmentError("link_unreachable") from error
+    if not isinstance(payload, dict):
+        raise EnrollmentError("link_unreachable")
+    return payload
 
 
 def config_path() -> str:
@@ -751,6 +833,22 @@ def _is_complete(binding: dict) -> bool:
     else:
         secret = binding["token"]
     return bool(binding["id"] and binding["gateway_url"] and secret)
+
+
+def _decoded(text: str) -> dict:
+    """The object a long link's base64url payload holds.
+
+    Raises:
+        EnrollmentError: ``link_unreadable`` when it is not one.
+    """
+    try:
+        padded = text + "=" * (-len(text) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode()))
+    except (binascii.Error, ValueError, UnicodeDecodeError) as error:
+        raise EnrollmentError("link_unreadable") from error
+    if not isinstance(payload, dict):
+        raise EnrollmentError("link_unreadable")
+    return payload
 
 
 def _machine_id() -> str:
