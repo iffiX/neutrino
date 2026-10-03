@@ -154,10 +154,11 @@ def service_component(
     account: str = "LocalSystem",
     start: str = "auto",
     permissions: tuple = (),
+    is_started_on_install: bool = True,
 ) -> str:
     """A component holding a service's binary, its registration and its
-    control: started on install, stopped on install and removal, removed
-    on removal.
+    control: stopped on install and removal, removed on removal, and
+    started on install when asked.
 
     Args:
         component_id: The component's Id; the file's is derived from it.
@@ -169,6 +170,8 @@ def service_component(
         account: The account it runs as.
         start: ``auto``, ``demand`` or ``disabled``.
         permissions: :func:`permission_ex` elements set on the service.
+        is_started_on_install: Whether the install starts it; False leaves
+            it registered and stopped.
 
     Returns:
         The component element.
@@ -185,6 +188,10 @@ def service_component(
     }
     if arguments:
         install["Arguments"] = arguments
+    control = {"Id": f"{component_id}Control", "Name": service_name}
+    if is_started_on_install:
+        control["Start"] = "install"
+    control.update({"Stop": "both", "Remove": "uninstall", "Wait": "yes"})
     return element(
         "Component",
         {"Id": component_id, "Guid": "*"},
@@ -194,17 +201,7 @@ def service_component(
                 {"Id": f"{component_id}File", "Source": str(source), "KeyPath": "yes"},
             ),
             element("ServiceInstall", install, permissions),
-            element(
-                "ServiceControl",
-                {
-                    "Id": f"{component_id}Control",
-                    "Name": service_name,
-                    "Start": "install",
-                    "Stop": "both",
-                    "Remove": "uninstall",
-                    "Wait": "yes",
-                },
-            ),
+            element("ServiceControl", control),
         ),
     )
 

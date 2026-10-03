@@ -1,12 +1,13 @@
-"""Staging the hub's own package and handing its install to systemd.
+"""Staging the hub's own package and handing its install to the system.
 
 The package's maintainer script restarts the panel, which is the process that
 would be running the install, so the panel only stages: it makes room, takes
 the package down and checks its digest, keeps the running version's package
-beside it as the rollback, writes the script below and starts it as a
-transient unit. The unit installs, holds a health gate, and installs the
-rollback when the gate fails; every turn it takes is written to the state
-file the panel reads when it is back.
+beside it as the rollback, writes the script below and starts it apart from
+itself: a transient systemd unit on Linux, a job given to ``launchctl
+submit`` on macOS, a detached PowerShell on Windows. The script installs,
+holds a health gate, and installs the rollback when the gate fails; every
+turn it takes is written to the state file the panel reads when it is back.
 """
 
 import hashlib
@@ -22,14 +23,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+import psutil
+
 from neutrino_hub import HUB_PACKAGE_ASSET
 from neutrino_hub.exceptions import AgentArtifactFetchError, HubUpdateError
 from neutrino_hub.modules.devices.agent_package import (
+    AGENT_PACKAGE_FAMILY_OF_OS,
     AGENT_PACKAGE_FAMILY_OF_PLATFORM,
     AgentPackageCache,
 )
+from neutrino_hub.modules.devices.constants import AGENT_PACKAGE_CACHE_DIR
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_AGENT_COMMAND,
+    HUB_UPDATE_AGENT_COMMAND_DARWIN,
+    HUB_UPDATE_AGENT_COMMAND_WINDOWS,
+    HUB_UPDATE_AGENT_PATTERNS,
+    HUB_UPDATE_CREATION_FLAGS_WINDOWS,
+    HUB_UPDATE_FAMILY_OF_OS,
+    HUB_UPDATE_JOB_DARWIN,
+    HUB_UPDATE_MSI_INSTALLED_CODES,
+    HUB_UPDATE_NHUB_DARWIN,
+    HUB_UPDATE_NHUB_NAME_WINDOWS,
+    HUB_UPDATE_PID_NAME,
+    HUB_UPDATE_PLIST_DARWIN,
+    HUB_UPDATE_PROGRAM_FILES_DEFAULT,
+    HUB_UPDATE_SCRIPT_NAME_WINDOWS,
+    HUB_UPDATE_SERVICE_DARWIN,
+    HUB_UPDATE_SERVICE_WINDOWS,
     HUB_UPDATE_DIR_MODE,
     HUB_UPDATE_DIR_NAME,
     HUB_UPDATE_FETCH_LIMIT_BYTES,
@@ -79,6 +99,7 @@ from neutrino_hub.modules.hub_update.release import (
     version_of_asset,
 )
 from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStateFile
+from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.system.machine import distribution_family, machine_architecture
 from neutrino_hub.system.systemd_ctl import unit_state
 from neutrino_hub.utils import constants
@@ -87,7 +108,7 @@ from neutrino_hub.utils.subprocess_run import run
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 PROGRESS_STEPS = 10
 UNIT_ACTIVE_STATES = ("active", "activating")
-PACKAGE_SUFFIXES = (".deb", ".rpm", ".zst", ".xz")
+PACKAGE_SUFFIXES = (".deb", ".rpm", ".zst", ".xz", ".msi", ".pkg")
 # The exact digest of a file already on disk decides whether it downloads
 # again; a file with no digest to check against is fetched again.
 DIGEST_CHUNK_BYTES = 1024 * 1024
@@ -114,7 +135,20 @@ INSTALL_COMMANDS = {
         "$PACE pacman -U --noconfirm @PATH@",
         "$PACE pacman -U --noconfirm @PATH@",
     ),
+    # macOS's installer takes an older package as readily as a newer one.
+    "pkg": (
+        "installer -pkg @PATH@ -target /",
+        "installer -pkg @PATH@ -target /",
+    ),
+    # msiexec's arguments; the PowerShell takes the newer version away before
+    # it puts the older one back, which the installer refuses as a downgrade.
+    "msi": (
+        "/i @PATH@ /qn /norestart",
+        "/i @PATH@ /qn /norestart",
+    ),
 }
+# Where each family's script is written, and in what language it is rendered.
+SCRIPT_NAMES = {"msi": HUB_UPDATE_SCRIPT_NAME_WINDOWS}
 
 SCRIPT = """#!/bin/sh
 # Written by neutrino_hub.modules.hub_update; runs as the transient unit
@@ -243,6 +277,255 @@ exit 1
 """
 
 
+SCRIPT_DARWIN = """#!/bin/sh
+# Written by neutrino_hub.modules.hub_update; runs as the launchd job
+# @UNIT@. Do not edit. launchd starts a submitted job again when it
+# fails, so every end exits 0 and the state file says how it went.
+umask 022
+STATE=@STATE@
+LOG=@LOG@
+FROM=@FROM@
+TO=@TO@
+ROLLBACK=@ROLLBACK@
+PORT=@PORT@
+HTTPS_PORT=@HTTPS_PORT@
+HEALTH_PATH=@HEALTH_PATH@
+STARTED=@STARTED@
+GATE_TIMEOUT=@GATE_TIMEOUT@
+POLL=@POLL@
+SERVICE=@SERVICE@
+PLIST=@PLIST@
+NHUB=@NHUB@
+AGENT_COMMAND=@AGENT_COMMAND@
+AGENT_CACHE=@AGENT_CACHE@
+AGENT_PATTERN=@AGENT_PATTERN@
+
+write_state() {
+    finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    {
+        printf '{"stage": "%s", "from_version": "%s", "to_version": "%s", "started_at": "%s", "finished_at": "%s", "reason": "%s", "output": "' \\
+            "$1" "$FROM" "$TO" "$STARTED" "$finished" "$2"
+        tail -c @OUTPUT_LIMIT@ "$LOG" | tr '\\t' ' ' | tr -d '\\000-\\010\\013-\\037' \\
+            | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g' -e 's/$/\\\\n/' | tr -d '\\n'
+        printf '"}\\n'
+    } > "$STATE.tmp"
+    chmod 600 "$STATE.tmp"
+    mv -f "$STATE.tmp" "$STATE"
+}
+
+start_service() {
+    launchctl print "$SERVICE" >/dev/null 2>&1 \\
+        || launchctl bootstrap system "$PLIST" >> "$LOG" 2>&1
+    launchctl kickstart "$SERVICE" >> "$LOG" 2>&1 || true
+}
+
+install_agent() {
+    [ -x "$AGENT_COMMAND" ] || return 0
+    AGENT=''
+    for found in "$AGENT_CACHE"/$AGENT_PATTERN; do
+        [ -f "$found" ] && AGENT=$found
+    done
+    if [ -z "$AGENT" ]; then
+        echo "agent: this hub carries no agent for this machine" >> "$LOG"
+        return 0
+    fi
+    INSTALLED=$("$AGENT_COMMAND" --version 2>/dev/null | tail -n 1)
+    if [ "$INSTALLED" = "$TO" ]; then
+        echo "agent: already $INSTALLED" >> "$LOG"
+        return 0
+    fi
+    echo "agent: reinstalling $AGENT" >> "$LOG"
+    ( @AGENT_INSTALL@ ) >> "$LOG" 2>&1 || echo "agent: the reinstall failed" >> "$LOG"
+}
+
+gate() {
+    deadline=$(( $(date +%s) + GATE_TIMEOUT ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        ok=1
+        report=''
+        launchctl print "$SERVICE" 2>/dev/null | grep -q 'state = running' \\
+            || { ok=0; report="$report service=stopped"; }
+        first="http://127.0.0.1:$PORT"
+        second="https://127.0.0.1:$HTTPS_PORT"
+        grep -Eq '"is_https_enabled": *true' @SETTINGS@ 2>/dev/null \\
+            && { first="https://127.0.0.1:$HTTPS_PORT"; second="http://127.0.0.1:$PORT"; }
+        curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$first$HEALTH_PATH" \\
+            || curl -fsS -m 5 --cacert @AUTHORITY@ -o /dev/null "$second$HEALTH_PATH" \\
+            || { ok=0; report="$report panel=failed"; }
+        seen=$("$NHUB" --version 2>/dev/null)
+        [ "$seen" = "$1" ] || { ok=0; report="$report version=$seen"; }
+        [ "$ok" = 1 ] && return 0
+        sleep "$POLL"
+    done
+    echo "gate: timed out after ${GATE_TIMEOUT}s:$report" >> "$LOG"
+    return 1
+}
+
+: > "$LOG"
+if ( @INSTALL@ ) >> "$LOG" 2>&1; then
+    start_service
+    if gate "$TO"; then
+        install_agent
+        write_state @STAGE_INSTALLED@ ''
+        exit 0
+    fi
+    reason=@REASON_GATE_FAILED@
+else
+    reason=@REASON_INSTALL_FAILED@
+fi
+if [ -z "$ROLLBACK" ]; then
+    write_state @STAGE_FAILED@ "$reason"
+    exit 0
+fi
+write_state @STAGE_ROLLING_BACK@ "$reason"
+if ( @ROLLBACK_INSTALL@ ) >> "$LOG" 2>&1 && start_service && gate "$FROM"; then
+    write_state @STAGE_ROLLED_BACK@ "$reason"
+    exit 0
+fi
+write_state @STAGE_FAILED@ "$reason"
+exit 0
+"""
+
+SCRIPT_WINDOWS = """# Written by neutrino_hub.modules.hub_update; runs detached from the hub's
+# service. Do not edit.
+$ErrorActionPreference = 'Continue'
+$State = @STATE@
+$Log = @LOG@
+$From = @FROM@
+$To = @TO@
+$Package = @PACKAGE@
+$Rollback = @ROLLBACK@
+$Port = @PORT@
+$HttpsPort = @HTTPS_PORT@
+$HealthPath = @HEALTH_PATH@
+$Started = @STARTED@
+$GateTimeout = @GATE_TIMEOUT@
+$Poll = @POLL@
+$Service = @SERVICE@
+$Nhub = @NHUB@
+$Settings = @SETTINGS@
+$Authority = @AUTHORITY@
+$AgentCommand = @AGENT_COMMAND@
+$AgentCache = @AGENT_CACHE@
+$AgentPattern = @AGENT_PATTERN@
+$Installed = @INSTALLED_CODES@
+[IO.File]::WriteAllText(@PID_FILE@, [string]$PID)
+
+function Write-UpdateState($Stage, $Reason) {
+    $output = ''
+    if (Test-Path -LiteralPath $Log) {
+        $output = [string](Get-Content -LiteralPath $Log -Raw)
+        if ($output.Length -gt @OUTPUT_LIMIT@) {
+            $output = $output.Substring($output.Length - @OUTPUT_LIMIT@)
+        }
+        $output = $output.Replace("`r", '')
+    }
+    $finished = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $record = [ordered]@{
+        stage = $Stage; from_version = $From; to_version = $To
+        started_at = $Started; finished_at = $finished; reason = $Reason
+        output = $output
+    }
+    [IO.File]::WriteAllText("$State.tmp", ($record | ConvertTo-Json -Compress))
+    Move-Item -Force -LiteralPath "$State.tmp" -Destination $State
+}
+
+function Invoke-Msi($Arguments) {
+    $run = Start-Process -FilePath msiexec.exe -Wait -PassThru -WindowStyle Hidden `
+        -ArgumentList $Arguments
+    Add-Content -LiteralPath $Log -Value "msiexec $Arguments exited $($run.ExitCode)"
+    return ($Installed -contains $run.ExitCode)
+}
+
+function Start-Hub {
+    Start-Service -Name $Service -ErrorAction SilentlyContinue
+    return $true
+}
+
+function Install-Agent {
+    if (-not (Test-Path -LiteralPath $AgentCommand)) { return }
+    $found = Get-ChildItem -Path $AgentCache -Filter $AgentPattern -ErrorAction SilentlyContinue |
+        Select-Object -Last 1
+    if (-not $found) {
+        Add-Content -LiteralPath $Log -Value 'agent: this hub carries no agent for this machine'
+        return
+    }
+    $current = & $AgentCommand --version 2>$null | Select-Object -Last 1
+    if ($current -eq $To) {
+        Add-Content -LiteralPath $Log -Value "agent: already $current"
+        return
+    }
+    Add-Content -LiteralPath $Log -Value "agent: reinstalling $($found.FullName)"
+    if (-not (Invoke-Msi "/i `"$($found.FullName)`" /qn /norestart")) {
+        Add-Content -LiteralPath $Log -Value 'agent: the reinstall failed'
+    }
+}
+
+function Test-Gate($Version) {
+    $deadline = (Get-Date).AddSeconds($GateTimeout)
+    $report = ''
+    while ((Get-Date) -lt $deadline) {
+        $ok = $true
+        $report = ''
+        $running = Get-Service -Name $Service -ErrorAction SilentlyContinue
+        if (-not $running -or $running.Status -ne 'Running') {
+            $ok = $false
+            $report += ' service=stopped'
+        }
+        $first = "http://127.0.0.1:$Port"
+        $second = "https://127.0.0.1:$HttpsPort"
+        if ((Test-Path -LiteralPath $Settings) -and
+            ((Get-Content -LiteralPath $Settings -Raw) -match '"is_https_enabled": *true')) {
+            $first = "https://127.0.0.1:$HttpsPort"
+            $second = "http://127.0.0.1:$Port"
+        }
+        & curl.exe -fsS -m 5 --cacert $Authority -o NUL "$first$HealthPath" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            & curl.exe -fsS -m 5 --cacert $Authority -o NUL "$second$HealthPath" 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                $ok = $false
+                $report += ' panel=failed'
+            }
+        }
+        $seen = & $Nhub --version 2>$null | Select-Object -Last 1
+        if ($seen -ne $Version) {
+            $ok = $false
+            $report += " version=$seen"
+        }
+        if ($ok) { return $true }
+        Start-Sleep -Seconds $Poll
+    }
+    Add-Content -LiteralPath $Log -Value "gate: timed out after $($GateTimeout)s:$report"
+    return $false
+}
+
+Set-Content -LiteralPath $Log -Value ''
+if (Invoke-Msi @INSTALL@) {
+    Start-Hub | Out-Null
+    if (Test-Gate $To) {
+        Install-Agent
+        Write-UpdateState @STAGE_INSTALLED@ ''
+        exit 0
+    }
+    $reason = @REASON_GATE_FAILED@
+} else {
+    $reason = @REASON_INSTALL_FAILED@
+}
+if (-not $Rollback) {
+    Write-UpdateState @STAGE_FAILED@ $reason
+    exit 1
+}
+Write-UpdateState @STAGE_ROLLING_BACK@ $reason
+Invoke-Msi "/x `"$Package`" /qn /norestart" | Out-Null
+if ((Invoke-Msi @ROLLBACK_INSTALL@) -and (Start-Hub) -and (Test-Gate $From)) {
+    Write-UpdateState @STAGE_ROLLED_BACK@ $reason
+    exit 1
+}
+Write-UpdateState @STAGE_FAILED@ $reason
+exit 1
+"""
+
+
 @dataclass(frozen=True)
 class HubUpdatePlan:
     """Everything the install unit is told.
@@ -253,7 +536,8 @@ class HubUpdatePlan:
         package: The package file, digest checked, under the update directory.
         rollback: The running version's own package beside it, or None when
             no release carries one.
-        family: The distribution family, which names the package manager.
+        family: The distribution family, which names the package manager,
+            or ``pkg`` on macOS and ``msi`` on Windows.
         port: The panel's HTTP port, which the gate probes while HTTPS is
             off.
         https_port: The panel's HTTPS port, which the gate probes while
@@ -369,17 +653,24 @@ def install_commands(family: str, path: Path) -> tuple[str, str]:
     """What installs a package file on this family, and what puts one back.
 
     Args:
-        family: The distribution family.
+        family: The distribution family, or ``pkg`` or ``msi``.
         path: The package file.
 
     Returns:
-        The install command line, and the rollback's.
+        The install command line, and the rollback's; for ``msi``, msiexec's
+        arguments as PowerShell strings.
 
     Raises:
         ValueError: If no package manager is known for the family.
     """
     if family not in INSTALL_COMMANDS:
         raise ValueError(f"no package manager is known for {family}")
+    if family == "msi":
+        windows_path = f'"{path}"'
+        return tuple(
+            _powershell_quote(line.replace("@PATH@", windows_path))
+            for line in INSTALL_COMMANDS[family]
+        )
     quoted = shlex.quote(str(path))
     lock = str(HUB_UPDATE_LOCK_TIMEOUT_S)
     return tuple(
@@ -410,6 +701,15 @@ def agent_install_command(family: str) -> str:
     )
 
 
+def update_family() -> str:
+    """Which family this hub updates itself as.
+
+    Returns:
+        ``pkg`` on macOS, ``msi`` on Windows, else the distribution family.
+    """
+    return HUB_UPDATE_FAMILY_OF_OS.get(hub_os(), "") or distribution_family()
+
+
 def local_agent_package() -> str:
     """This machine's own agent package, as the hub's cache holds it.
 
@@ -417,7 +717,8 @@ def local_agent_package() -> str:
         The file's path; empty when the cache holds none for this machine or
         it cannot be had.
     """
-    family = AGENT_PACKAGE_FAMILY_OF_PLATFORM.get(distribution_family(), "")
+    family = AGENT_PACKAGE_FAMILY_OF_OS.get(hub_os(), "")
+    family = family or AGENT_PACKAGE_FAMILY_OF_PLATFORM.get(distribution_family(), "")
     architecture = machine_architecture()
     cache = AgentPackageCache()
     if not family or not cache.serves(family=family, architecture=architecture):
@@ -439,11 +740,12 @@ def render_script(
     low_memory_bytes: int = HUB_UPDATE_LOW_MEMORY_BYTES,
     agent_command: str = HUB_UPDATE_AGENT_COMMAND,
 ) -> str:
-    """The shell the transient unit runs. Pure.
+    """The script the update runs: the transient unit's shell on Linux, the
+    launchd job's shell on macOS, the PowerShell on Windows. Pure.
 
-    On a machine with less available memory than ``low_memory_bytes`` it stops
+    On Linux, with less available memory than ``low_memory_bytes``, it stops
     the panel and the AI gateway before the package unpacks and starts them
-    after; once the new hub passes its gate it reinstalls the machine's own
+    after. Once the new hub passes its gate it reinstalls the machine's own
     agent from the hub's cache.
 
     Args:
@@ -464,6 +766,14 @@ def render_script(
     Raises:
         ValueError: If no package manager is known for the plan's family.
     """
+    if plan.family in HUB_UPDATE_FAMILY_OF_OS.values():
+        return _render_system_script(
+            plan,
+            directory=directory,
+            gate_timeout_s=gate_timeout_s,
+            poll_s=poll_s,
+            output_limit_bytes=output_limit_bytes,
+        )
     install, _ = install_commands(plan.family, plan.package)
     rollback_install = ""
     if plan.rollback is not None:
@@ -507,8 +817,60 @@ def render_script(
     return text
 
 
+def script_name(family: str) -> str:
+    """What the install script of a family is called.
+
+    Args:
+        family: The plan's family.
+
+    Returns:
+        ``update.ps1`` for ``msi``, ``update.sh`` for every other.
+    """
+    return SCRIPT_NAMES.get(family, HUB_UPDATE_SCRIPT_NAME)
+
+
+def launchd_job_state(job: str = HUB_UPDATE_JOB_DARWIN) -> str:
+    """Whether the macOS install job is running, in systemd's words.
+
+    Args:
+        job: The job, as ``launchctl print`` names it.
+
+    Returns:
+        ``active`` while launchd says it runs, else ``inactive``.
+    """
+    try:
+        result = subprocess.run(
+            ["launchctl", "print", job],
+            capture_output=True,
+            text=True,
+            timeout=HUB_UPDATE_LAUNCH_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "inactive"
+    if result.returncode == 0 and "state = running" in result.stdout:
+        return "active"
+    return "inactive"
+
+
+def windows_script_state(pid_file: Path) -> str:
+    """Whether the Windows install script is running, in systemd's words.
+
+    Args:
+        pid_file: Where the script wrote its process id.
+
+    Returns:
+        ``active`` while a PowerShell of that id runs, else ``inactive``.
+    """
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
+        name = psutil.Process(pid).name().lower()
+    except (OSError, ValueError, psutil.Error):
+        return "inactive"
+    return "active" if "powershell" in name else "inactive"
+
+
 class HubUpdateInstaller:
-    """Stages one update and hands it to the install unit."""
+    """Stages one update and hands it to the system to install."""
 
     def __init__(
         self,
@@ -520,8 +882,9 @@ class HubUpdateInstaller:
         family: str | None = None,
         open_url: Callable[[str], object] | None = None,
         run_command: Callable[..., object] = run,
-        unit_state_of: Callable[[str], str] = unit_state,
+        unit_state_of: Callable[[str], str] | None = None,
         disk_usage: Callable[[Path], "shutil._ntuple_diskusage"] = shutil.disk_usage,
+        start_detached: Callable[[list], None] | None = None,
     ):
         """Set up an installer.
 
@@ -532,12 +895,18 @@ class HubUpdateInstaller:
                 the update directory under the state root, resolved at each
                 call.
             asset: The name the build stamped, with ``{version}`` open.
-            family: The distribution family; None reads the machine's.
+            family: The distribution family, or ``pkg`` or ``msi``; None
+                reads the machine's.
             open_url: How a download is opened, answering a stream with a
                 ``read(size)``; None opens it over the network.
-            run_command: How the unit is started.
-            unit_state_of: How a unit's state is read.
+            run_command: How the unit or the launchd job is started.
+            unit_state_of: How the install's state is read, in systemd's
+                words; None reads it from systemd, launchd or the Windows
+                script's process, by the family.
             disk_usage: How a root's usage is read.
+            start_detached: How the Windows script is started apart from the
+                service; None starts it with no console and outside the
+                service's job.
         """
         self._checker = checker
         self._state = state
@@ -548,6 +917,7 @@ class HubUpdateInstaller:
         self._run = run_command
         self._unit_state = unit_state_of
         self._disk_usage = disk_usage
+        self._start_detached = start_detached or _start_detached
 
     @property
     def checker(self) -> HubReleaseChecker:
@@ -568,9 +938,10 @@ class HubUpdateInstaller:
         """Whether the install unit is running now.
 
         Returns:
-            True while systemd reports it active or activating.
+            True while systemd, launchd or the Windows process table reports
+            it active or activating.
         """
-        return self._unit_state(HUB_UPDATE_UNIT) in UNIT_ACTIVE_STATES
+        return self._state_of(HUB_UPDATE_UNIT) in UNIT_ACTIVE_STATES
 
     def is_rollback_available(self, current: str) -> bool:
         """Whether the running version's package can be at hand.
@@ -669,7 +1040,7 @@ class HubUpdateInstaller:
             to_version=release.version,
             package=target,
             rollback=rollback,
-            family=self._family or distribution_family(),
+            family=self._family_now(),
             port=port,
             https_port=https_port,
             units=self._gate_units(),
@@ -757,7 +1128,7 @@ class HubUpdateInstaller:
             to_version=version,
             package=target,
             rollback=rollback,
-            family=self._family or distribution_family(),
+            family=self._family_now(),
             port=port,
             https_port=https_port,
             units=self._gate_units(),
@@ -772,11 +1143,11 @@ class HubUpdateInstaller:
             plan: What the unit is told.
 
         Raises:
-            HubUpdateError: ``update_launch_failed`` when systemd would not start
-                the unit; the state file says so.
+            HubUpdateError: ``update_launch_failed`` when the system would not
+                start the script; the state file says so.
         """
         directory = self._ready_directory()
-        script = directory / HUB_UPDATE_SCRIPT_NAME
+        script = directory / script_name(plan.family)
         script.write_text(render_script(plan, directory=directory), encoding="utf-8")
         os.chmod(script, HUB_UPDATE_SCRIPT_MODE)
         record = HubUpdateRecord(
@@ -787,19 +1158,7 @@ class HubUpdateInstaller:
         )
         self._state.save(record)
         try:
-            self._run(
-                [
-                    "systemd-run",
-                    "--unit",
-                    HUB_UPDATE_UNIT,
-                    "--collect",
-                    f"--property=MemoryHigh={HUB_UPDATE_UNIT_MEMORY_HIGH}",
-                    *(f"--setenv={pair}" for pair in HUB_UPDATE_UNIT_ENVIRONMENT),
-                    "/bin/sh",
-                    str(script),
-                ],
-                timeout_s=HUB_UPDATE_LAUNCH_TIMEOUT_S,
-            )
+            self._start(plan.family, script)
         except (OSError, subprocess.SubprocessError) as error:
             record.stage = HUB_UPDATE_STAGE_FAILED
             record.reason = HUB_UPDATE_REASON_LAUNCH_FAILED
@@ -809,6 +1168,65 @@ class HubUpdateInstaller:
             raise HubUpdateError(
                 HUB_UPDATE_REASON_LAUNCH_FAILED, detail=str(error)[:200]
             ) from error
+
+    def _start(self, family: str, script: Path) -> None:
+        """Start the script apart from the panel, the way the system does it."""
+        if family == "msi":
+            self._start_detached(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                ]
+            )
+            return
+        if family == "pkg":
+            # A job an earlier update submitted keeps its label until removed.
+            try:
+                self._run(
+                    ["launchctl", "remove", HUB_UPDATE_UNIT],
+                    timeout_s=HUB_UPDATE_LAUNCH_TIMEOUT_S,
+                )
+            except (OSError, subprocess.SubprocessError):
+                pass
+            self._run(
+                ["launchctl", "submit", "-l", HUB_UPDATE_UNIT, "--", "/bin/sh"]
+                + [str(script)],
+                timeout_s=HUB_UPDATE_LAUNCH_TIMEOUT_S,
+            )
+            return
+        self._run(
+            [
+                "systemd-run",
+                "--unit",
+                HUB_UPDATE_UNIT,
+                "--collect",
+                f"--property=MemoryHigh={HUB_UPDATE_UNIT_MEMORY_HIGH}",
+                *(f"--setenv={pair}" for pair in HUB_UPDATE_UNIT_ENVIRONMENT),
+                "/bin/sh",
+                str(script),
+            ],
+            timeout_s=HUB_UPDATE_LAUNCH_TIMEOUT_S,
+        )
+
+    def _family_now(self) -> str:
+        """The family given, or the machine's own."""
+        return self._family or update_family()
+
+    def _state_of(self, unit: str) -> str:
+        """The install's state, read the way the family's system keeps it."""
+        if self._unit_state is not None:
+            return self._unit_state(unit)
+        family = self._family_now()
+        if family == "pkg":
+            return launchd_job_state()
+        if family == "msi":
+            return windows_script_state(self.directory / HUB_UPDATE_PID_NAME)
+        return unit_state(unit)
 
     def _ready_directory(self) -> Path:
         directory = self.directory
@@ -824,9 +1242,12 @@ class HubUpdateInstaller:
         for entry in self.directory.iterdir():
             if entry.name in keep or not entry.is_file():
                 continue
-            if entry.name in (HUB_UPDATE_SCRIPT_NAME, HUB_UPDATE_LOG_NAME) or (
-                entry.suffix in PACKAGE_SUFFIXES or entry.name.startswith(".tmp_")
-            ):
+            if entry.name in (
+                HUB_UPDATE_SCRIPT_NAME,
+                HUB_UPDATE_SCRIPT_NAME_WINDOWS,
+                HUB_UPDATE_LOG_NAME,
+                HUB_UPDATE_PID_NAME,
+            ) or (entry.suffix in PACKAGE_SUFFIXES or entry.name.startswith(".tmp_")):
                 entry.unlink(missing_ok=True)
 
     def _ensure_rollback(
@@ -869,8 +1290,10 @@ class HubUpdateInstaller:
         return rollback
 
     def _gate_units(self) -> tuple[str, ...]:
+        if self._family_now() in HUB_UPDATE_FAMILY_OF_OS.values():
+            return ()
         running = tuple(
-            unit for unit in HUB_UPDATE_GATE_UNITS if self._unit_state(unit) == "active"
+            unit for unit in HUB_UPDATE_GATE_UNITS if self._state_of(unit) == "active"
         )
         return (HUB_UPDATE_PANEL_UNIT,) + running
 
@@ -919,6 +1342,119 @@ class HubUpdateInstaller:
             Path(temporary).unlink(missing_ok=True)
             raise
         return digest.hexdigest()
+
+
+def _render_system_script(
+    plan: HubUpdatePlan,
+    *,
+    directory: Path,
+    gate_timeout_s: int,
+    poll_s: float,
+    output_limit_bytes: int,
+) -> str:
+    """The macOS sh or the Windows PowerShell an update runs. Pure."""
+    install, _ = install_commands(plan.family, plan.package)
+    rollback_install = ""
+    if plan.rollback is not None:
+        _, rollback_install = install_commands(plan.family, plan.rollback)
+    if plan.family == "msi":
+        template = SCRIPT_WINDOWS
+        quote = _powershell_quote
+        program_files = os.environ.get("ProgramFiles", HUB_UPDATE_PROGRAM_FILES_DEFAULT)
+        values = {
+            "@SERVICE@": quote(HUB_UPDATE_SERVICE_WINDOWS),
+            "@NHUB@": quote(
+                str(constants.UTILS_STATIC_ROOT / HUB_UPDATE_NHUB_NAME_WINDOWS)
+            ),
+            "@AGENT_COMMAND@": quote(
+                "\\".join((program_files, *HUB_UPDATE_AGENT_COMMAND_WINDOWS))
+            ),
+            "@PID_FILE@": quote(str(directory / HUB_UPDATE_PID_NAME)),
+            "@INSTALLED_CODES@": "@("
+            + ", ".join(str(code) for code in HUB_UPDATE_MSI_INSTALLED_CODES)
+            + ")",
+            "@ROLLBACK_INSTALL@": rollback_install or "''",
+        }
+    else:
+        template = SCRIPT_DARWIN
+        quote = shlex.quote
+        values = {
+            "@SERVICE@": quote(HUB_UPDATE_SERVICE_DARWIN),
+            "@PLIST@": quote(HUB_UPDATE_PLIST_DARWIN),
+            "@NHUB@": quote(HUB_UPDATE_NHUB_DARWIN),
+            "@AGENT_COMMAND@": quote(HUB_UPDATE_AGENT_COMMAND_DARWIN),
+            "@AGENT_INSTALL@": INSTALL_COMMANDS["pkg"][0].replace("@PATH@", '"$AGENT"'),
+            "@ROLLBACK_INSTALL@": rollback_install or "false",
+        }
+    values.update(
+        {
+            "@UNIT@": HUB_UPDATE_UNIT,
+            "@STATE@": quote(str(directory / HUB_UPDATE_STATE_NAME)),
+            "@LOG@": quote(str(directory / HUB_UPDATE_LOG_NAME)),
+            "@FROM@": quote(plan.from_version),
+            "@TO@": quote(plan.to_version),
+            "@PACKAGE@": quote(str(plan.package)),
+            "@ROLLBACK@": quote(str(plan.rollback) if plan.rollback else ""),
+            "@PORT@": quote(str(plan.port)),
+            "@HTTPS_PORT@": quote(str(plan.https_port)),
+            "@HEALTH_PATH@": quote(HUB_UPDATE_HEALTH_PATH),
+            "@STARTED@": quote(plan.started_at),
+            "@GATE_TIMEOUT@": str(int(gate_timeout_s)),
+            "@POLL@": str(poll_s),
+            "@OUTPUT_LIMIT@": str(int(output_limit_bytes)),
+            "@SETTINGS@": quote(str(HUB_UPDATE_PANEL_SETTINGS_PATH)),
+            "@AUTHORITY@": quote(str(HUB_UPDATE_PANEL_AUTHORITY_PATH)),
+            "@AGENT_CACHE@": quote(str(AGENT_PACKAGE_CACHE_DIR)),
+            "@AGENT_PATTERN@": quote(
+                HUB_UPDATE_AGENT_PATTERNS[plan.family].format(version=plan.to_version)
+            ),
+            "@INSTALL@": install,
+            "@STAGE_INSTALLED@": HUB_UPDATE_STAGE_INSTALLED,
+            "@STAGE_ROLLING_BACK@": HUB_UPDATE_STAGE_ROLLING_BACK,
+            "@STAGE_ROLLED_BACK@": HUB_UPDATE_STAGE_ROLLED_BACK,
+            "@STAGE_FAILED@": HUB_UPDATE_STAGE_FAILED,
+            "@REASON_GATE_FAILED@": quote(HUB_UPDATE_REASON_GATE_FAILED),
+            "@REASON_INSTALL_FAILED@": quote(HUB_UPDATE_REASON_INSTALL_FAILED),
+        }
+    )
+    text = template
+    for token, value in values.items():
+        text = text.replace(token, value)
+    return text
+
+
+def _start_detached(command: list) -> None:
+    """Start the Windows script with no console and outside the service's job.
+
+    A job that refuses breakaway refuses the start; the script is then
+    started with no console alone.
+
+    Args:
+        command: The argument vector.
+
+    Raises:
+        OSError: When the process cannot be started at all.
+    """
+    refusal = OSError("no creation flags to try")
+    for flags in HUB_UPDATE_CREATION_FLAGS_WINDOWS:
+        try:
+            subprocess.Popen(
+                command,
+                creationflags=flags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+            return
+        except OSError as error:
+            refusal = error
+    raise refusal
+
+
+def _powershell_quote(text: str) -> str:
+    """One value as a PowerShell literal string."""
+    return "'" + text.replace("'", "''") + "'"
 
 
 def _open_url(url: str):

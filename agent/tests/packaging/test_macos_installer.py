@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import build_agent_macos
+from neutrino_agent.constants import AGENT_DARWIN_LOG_PATH
 
 
 @pytest.fixture
@@ -94,8 +95,9 @@ def test_the_agents_daemon_runs_nagent_run_into_its_log(laid_out):
         "/Library/Application Support/Neutrino/agent/nagent",
         "run",
     ]
-    assert job["StandardOutPath"] == "/Library/Logs/neutrino_agent.log"
-    assert job["StandardErrorPath"] == "/Library/Logs/neutrino_agent.log"
+    assert job["StandardOutPath"] == "/Library/Logs/Neutrino/agent/agent.log"
+    assert job["StandardErrorPath"] == "/Library/Logs/Neutrino/agent/agent.log"
+    assert job["StandardOutPath"] == AGENT_DARWIN_LOG_PATH
     assert job["RunAtLoad"] is True
     assert job["KeepAlive"] is True
 
@@ -142,6 +144,9 @@ def test_the_scripts_unload_before_and_load_all_three_after(laid_out):
         "/Library/LaunchAgents/com.carriez.RustDesk_server.plist" in postinstall
     )
     assert "stat -f %u /dev/console" in postinstall
+    assert postinstall.index('mkdir -p "/Library/Logs/Neutrino/agent"') < (
+        postinstall.index("launchctl bootstrap")
+    )
     for script in ("preinstall", "postinstall"):
         assert (scripts / script).stat().st_mode & 0o111
 
@@ -150,9 +155,43 @@ def test_the_package_is_named_the_way_the_release_publishes_it():
     assert build_agent_macos.pkg_name("0.4.0", "arm64") == (
         "neutrino-agent-0.4.0-macos-arm64.pkg"
     )
+    assert build_agent_macos.pkg_name("0.4.0", "amd64") == (
+        "neutrino-agent-0.4.0-macos-amd64.pkg"
+    )
     assert build_agent_macos.macos_machine("arm64") == "arm64"
+    assert build_agent_macos.macos_machine("x86_64") == "amd64"
     with pytest.raises(SystemExit):
-        build_agent_macos.macos_machine("amd64")
+        build_agent_macos.macos_machine("armhf")
+
+
+def test_an_intel_package_carries_the_intel_rustdesk(tmp_path, monkeypatch):
+    asked = []
+
+    def compile_standalone(python, entry, output_dir, binary_name, **kwargs):
+        dist = output_dir / "entry.dist"
+        dist.mkdir(parents=True)
+        (dist / binary_name).write_bytes(b"")
+        return dist
+
+    def stage_darwin_app(dest_dir, *, machine="aarch64"):
+        asked.append(machine)
+        return dest_dir / "RustDesk.app"
+
+    monkeypatch.setattr(build_agent_macos, "_check_build_machine", lambda machine: None)
+    monkeypatch.setattr(
+        build_agent_macos, "_make_build_environment", lambda venv: Path("python3")
+    )
+    monkeypatch.setattr(
+        build_agent_macos.nuitka_build, "compile_standalone", compile_standalone
+    )
+    monkeypatch.setattr(
+        build_agent_macos.rustdesk_assets, "stage_darwin_app", stage_darwin_app
+    )
+    monkeypatch.setattr(build_agent_macos.pkg_build, "sign_ad_hoc", lambda path: None)
+
+    build_agent_macos._lay_out(tmp_path, "9.9.9", "amd64")
+
+    assert asked == ["x86_64"]
 
 
 def test_the_build_refuses_anything_but_a_mac(monkeypatch):

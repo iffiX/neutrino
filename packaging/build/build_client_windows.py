@@ -71,6 +71,7 @@ import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import wix_build  # noqa: E402
+from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 # The service names and the portal are the client's own, named here so the
 # installer and the runtime cannot drift.
@@ -249,8 +250,18 @@ PACKET_DLL_NAME = "packet.dll"
 # with its verb, and makes its own state directory under ProgramData.
 NETBIRD_EXE = "netbird.exe"
 NETBIRD_SERVICE_ARGUMENTS = (
-    'service run --config "[CommonAppDataFolder]Neutrino Client\\netbird\\config.json"'
-    ' --log-file "[CommonAppDataFolder]Neutrino Client\\netbird\\client.log"'
+    'service run --config "[CommonAppDataFolder]Neutrino\\client\\netbird\\config.json"'
+    ' --log-file "[CommonAppDataFolder]Neutrino\\client\\netbird\\client.log"'
+)
+
+# The data folder of an install from before the one Neutrino tree, moved
+# whole into its place before the folders are made and NetBird starts on it.
+MOVE_DATA_COMMAND = (
+    '"[SystemFolder]cmd.exe" /c '
+    'if exist "[CommonAppDataFolder]Neutrino Client" '
+    'if not exist "[CommonAppDataFolder]Neutrino\\client" '
+    '(md "[CommonAppDataFolder]Neutrino" 2>nul & '
+    'move "[CommonAppDataFolder]Neutrino Client" "[CommonAppDataFolder]Neutrino\\client")'
 )
 EASYTIER_DAEMON_ARGUMENTS = f"{CLIENT_EASYTIER_DAEMON_VERB} --service"
 # What the service control manager does when the EasyTier daemon ends without
@@ -324,13 +335,17 @@ WIX_BODY = r"""
     </Property>
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Neutrino Client" />
+      <Directory Id="NeutrinoProgramFolder" Name="Neutrino">
+        <Directory Id="INSTALLFOLDER" Name="client" />
+      </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
 
     <StandardDirectory Id="CommonAppDataFolder">
-      <Directory Id="CLIENTDATAFOLDER" Name="Neutrino Client">
-        <Directory Id="NETBIRDDATAFOLDER" Name="netbird" />
+      <Directory Id="NeutrinoDataFolder" Name="Neutrino">
+        <Directory Id="CLIENTDATAFOLDER" Name="client">
+          <Directory Id="NETBIRDDATAFOLDER" Name="netbird" />
+        </Directory>
       </Directory>
     </StandardDirectory>
 
@@ -420,7 +435,24 @@ WIX_BODY = r"""
                   Impersonate="no"
                   Return="ignore" />
 
+    <CustomAction Id="SetMoveClientData"
+                  Property="MoveClientData"
+                  Value="@MOVE_DATA_COMMAND@"
+                  Execute="immediate" />
+    <CustomAction Id="MoveClientData"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="@UTIL_LIBRARY@"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
+      <Custom Action="SetMoveClientData"
+              Before="MoveClientData"
+              Condition="NOT REMOVE" />
+      <Custom Action="MoveClientData"
+              Before="CreateFolders"
+              Condition="NOT REMOVE" />
       <!-- After costing, which resolves [INSTALLFOLDER], and before the
            extension's own close, which it schedules on InstallInitialize. -->
       <Custom Action="QuitClientResident"
@@ -573,9 +605,9 @@ def main() -> int:
     machine = WINDOWS_MACHINES[payload.machine_name(arguments.architecture)]
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    # The OS in the name: nothing about `.msi` says Windows to a release page
-    # listing five platforms.
-    target = output_dir / f"{PACKAGE_NAME}-{version}-windows-{machine}.msi"
+    target = output_dir / PACKAGING_ASSET_PATTERNS["msi"].format(
+        name=PACKAGE_NAME, version=version, architecture=machine
+    )
 
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
@@ -712,6 +744,7 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
             "UTIL_LIBRARY": wix_build.UTIL_LIBRARY[machine],
             "QUIT_COMMAND": QUIT_COMMAND,
             "REMOVE_CONFIG_COMMAND": REMOVE_CONFIG_COMMAND,
+            "MOVE_DATA_COMMAND": MOVE_DATA_COMMAND,
             "CONFIG_GOES": CONFIG_GOES_CONDITION,
             "PATH_DECLINED": PATH_DECLINED_CONDITION,
             "NETBIRD_EXE": Path(staged["payload"]) / "bin" / NETBIRD_EXE,

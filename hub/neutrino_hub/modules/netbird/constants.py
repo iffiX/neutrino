@@ -20,6 +20,34 @@ NETBIRD_SHA256 = {
 }
 NETBIRD_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 NETBIRD_BINARY_NAME = "netbird"
+# The asset each system and machine takes from the same release, and its
+# hash, for every system a hub package is built for. The Linux rows are the
+# files the two tables above name.
+NETBIRD_RELEASE_URL = (
+    "https://github.com/netbirdio/netbird/releases/download/v{version}/{asset}"
+)
+NETBIRD_ASSETS = {
+    ("linux", "amd64"): (
+        "netbird_0.78.1_linux_amd64.tar.gz",
+        NETBIRD_SHA256["amd64"],
+    ),
+    ("linux", "arm64"): (
+        "netbird_0.78.1_linux_arm64.tar.gz",
+        NETBIRD_SHA256["arm64"],
+    ),
+    ("darwin", "amd64"): (
+        "netbird_0.78.1_darwin_amd64.tar.gz",
+        "1441be19db0394497866fc19a519d7d0483fbad0fcd4d1adaeb0ed1bded739be",  # scan: allow
+    ),
+    ("darwin", "arm64"): (
+        "netbird_0.78.1_darwin_arm64.tar.gz",
+        "8d613dc78aa0e5b9f01b07ec9d02417c27638bf68b829a72399293f76da0fa03",  # scan: allow
+    ),
+    ("windows", "amd64"): (
+        "netbird_0.78.1_windows_amd64.tar.gz",
+        "c9ad0e7aa778b9ba28b3e2338354d705df7ead94cdf6edbde137bdae79d30eab",  # scan: allow
+    ),
+}
 # Under the hub's own prefix, beside xray and the AI gateway, because the
 # package carries it rather than a vendor repository installing it.
 NETBIRD_BINARY_PATH = UTILS_STATIC_ROOT / "bin" / NETBIRD_BINARY_NAME

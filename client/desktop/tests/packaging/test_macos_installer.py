@@ -6,7 +6,7 @@ bundle with the window's bindings named, the ad hoc signature, pkgbuild
 over the package root and productbuild around it; the package root's own
 shape, with the bundle under Applications, the data beside the compiled
 package and the link on the path; the refusals for a machine that is not
-an Apple Silicon Mac of the pinned Python; and the pins being well formed.
+a Mac of the pinned Python and machine; and the pins being well formed.
 """
 
 import subprocess
@@ -28,15 +28,22 @@ def darwin_build_machine(monkeypatch, *, machine="arm64", version=(3, 13, 7)):
     monkeypatch.setattr(build_client_macos.platform, "machine", lambda: machine)
 
 
-def test_the_package_is_named_for_apple_silicon_alone():
-    assert build_client_macos.MACOS_MACHINES == {"aarch64": "arm64"}
+def test_the_package_is_named_for_apple_silicon_and_intel():
+    assert build_client_macos.MACOS_MACHINES == {"aarch64": "arm64", "x86_64": "amd64"}
     assert build_client_macos.macos_machine("arm64") == "arm64"
     assert build_client_macos.macos_machine("aarch64") == "arm64"
+    assert build_client_macos.macos_machine("x86_64") == "amd64"
     assert payload.PACKAGE_NAME == "neutrino-client"
 
     with pytest.raises(SystemExit) as refused:
-        build_client_macos.macos_machine("amd64")
-    assert "amd64" in str(refused.value)
+        build_client_macos.macos_machine("armhf")
+    assert "armhf" in str(refused.value)
+
+
+def test_an_intel_mac_of_the_pinned_python_builds_the_intel_package(monkeypatch):
+    darwin_build_machine(monkeypatch, machine="x86_64")
+
+    build_client_macos._check_build_machine("amd64")
 
 
 def test_the_build_refuses_anything_but_a_mac(monkeypatch):
@@ -195,8 +202,8 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         (app / "Contents" / "Info.plist").write_text("")
         return app
 
-    def stage_binaries(contents):
-        order.append("binaries")
+    def stage_binaries(contents, architecture):
+        order.append(("binaries", architecture))
         (contents / "Resources" / "bin").mkdir(parents=True)
         (contents / "Resources" / "bin" / "cc-switch").write_text("")
 
@@ -234,7 +241,7 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
         "rustdesk.txt",
         "xterm.txt",
     ]
-    assert order == ["venv", "compile", "binaries", ("sign", app)]
+    assert order == ["venv", "compile", ("binaries", "arm64"), ("sign", app)]
     link = tmp_path / "root" / "usr" / "local" / "bin" / "nclient"
     assert link.is_symlink()
     assert Path(link.readlink()) == Path(
@@ -345,7 +352,7 @@ def test_netbird_runs_unless_another_daemon_holds_the_socket(tmp_path):
     assert (
         "exec '/Applications/Neutrino Client.app/Contents/Resources/netbird/netbird'"
         " service run --config"
-        " '/Library/Application Support/Neutrino Client/netbird/config.json'"
+        " '/Library/Application Support/Neutrino/client/netbird/config.json'"
         " --log-file console"
     ) in command
     assert job["RunAtLoad"] is True
@@ -371,11 +378,61 @@ def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path)
     assert "chown root:wheel" in build_client_macos.POSTINSTALL
     assert "launchctl bootstrap system" in build_client_macos.POSTINSTALL
     assert (
-        '"/Library/Application Support/Neutrino Client/easytier"'
+        '"/Library/Application Support/Neutrino/client/easytier"'
         in build_client_macos.POSTINSTALL
     )
+    assert 'mkdir -p "/Library/Logs/Neutrino/client"' in build_client_macos.POSTINSTALL
     for script in (build_client_macos.PREINSTALL, build_client_macos.POSTINSTALL):
         assert script.startswith("#!/bin/sh\n") and script.endswith("exit 0\n")
+
+
+def test_each_daemon_writes_into_the_clients_log_directory(tmp_path):
+    netbird = daemon(tmp_path, "com.neutrino.client.netbird")
+    easytier = daemon(tmp_path, "com.neutrino.client.easytier")
+
+    assert netbird["StandardOutPath"] == "/Library/Logs/Neutrino/client/netbird.log"
+    assert easytier["StandardOutPath"] == "/Library/Logs/Neutrino/client/easytier.log"
+
+
+def _run_the_move(tmp_path):
+    """The postinstall's move, run over a temporary root."""
+    old = tmp_path / "Application Support" / "Neutrino Client"
+    new = tmp_path / "Application Support" / "Neutrino" / "client"
+    script = build_client_macos.POSTINSTALL.split('mkdir -p "/Library/Logs')[0]
+    script = script.replace(build_client_macos.CLIENT_OLD_DATA_DIR_DARWIN, str(old))
+    script = script.replace(build_client_macos.CLIENT_DATA_DIR_DARWIN, str(new))
+    result = subprocess.run(["sh", "-c", script], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    return old, new
+
+
+def test_the_postinstall_moves_an_old_data_directory_whole(tmp_path):
+    """NetBird's profile and EasyTier's networks survive the upgrade."""
+    old = tmp_path / "Application Support" / "Neutrino Client"
+    (old / "netbird").mkdir(parents=True)
+    (old / "netbird" / "config.json").write_text("kept")
+    (old / "easytier" / "networks").mkdir(parents=True)
+    (old / "easytier" / "networks" / "home.toml").write_text("kept")
+
+    old, new = _run_the_move(tmp_path)
+
+    assert not old.exists()
+    assert (new / "netbird" / "config.json").read_text() == "kept"
+    assert (new / "easytier" / "networks" / "home.toml").read_text() == "kept"
+
+
+def test_the_postinstall_never_moves_over_a_directory_holding_a_file(tmp_path):
+    old = tmp_path / "Application Support" / "Neutrino Client"
+    old.mkdir(parents=True)
+    (old / "stale").write_text("old")
+    new = tmp_path / "Application Support" / "Neutrino" / "client"
+    new.mkdir(parents=True)
+    (new / "current").write_text("new")
+
+    _run_the_move(tmp_path)
+
+    assert (new / "current").read_text() == "new"
+    assert (old / "stale").read_text() == "old"
 
 
 def test_the_build_pins_what_the_other_platforms_pin():

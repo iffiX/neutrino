@@ -2,15 +2,15 @@
 
     python3 packaging/build/build_client_macos.py --output-dir dist/
 
-Runs on: macOS on Apple silicon, with Python 3.13 and the Xcode command
-line tools.
+Runs on: macOS on Apple silicon or on Intel, the machine the package is
+for, with Python 3.13 and the Xcode command line tools.
 
 The installer carries the client compiled into an app bundle: Nuitka turns
 the package, the interpreter it runs on and the window's Python side into
 ``Neutrino Client.app`` with ``nclient`` as its binary and the libraries
 beside it. The interpreter compiled in is the one running this script, so
 the build machine's Python is pinned to a minor here and checked; the
-compile is native, so an Apple Silicon package comes off an Apple Silicon
+compile is native, so an Apple silicon package comes off an Apple silicon
 Mac.
 
 The client is a person's application, not a service and not a login item:
@@ -20,7 +20,7 @@ overlay daemons it carries are LaunchDaemons, both kept running: NetBird's,
 and the client's own EasyTier daemon, ``nclient easytier-daemon``, which
 runs EasyTier's core only while a network or a console is configured.
 
-The bundle is signed ad hoc. Apple Silicon refuses native code with no
+The bundle is signed ad hoc. Apple silicon refuses native code with no
 signature at all, and an ad hoc one is what a build with no developer
 identity can give; Gatekeeper still asks the person once on first open.
 
@@ -48,17 +48,20 @@ import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import pkg_build  # noqa: E402
+from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 # The labels, the directories and the portal are the client's own, named here
 # so the installer and the runtime cannot drift.
 from neutrino_client.constants import (  # noqa: E402
     CLIENT_BUNDLED_PATHS_DARWIN,
+    CLIENT_DATA_DIR_DARWIN,
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_LAUNCHD_LABEL,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
     CLIENT_LAUNCHD_DAEMONS_DIR,
     CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
     CLIENT_NETBIRD_LAUNCHD_LABEL,
+    CLIENT_OLD_DATA_DIR_DARWIN,
 )
 
 CLIENT_ROOT = payload.CLIENT_ROOT
@@ -84,9 +87,15 @@ PACKAGE_IDENTIFIER = "com.neutrino.client"
 INSTALL_APPLICATIONS_DIR = Path("/Applications")
 INSTALL_LINK_PATH = Path("/usr/local/bin") / CLIENT_BINARY_NAME
 
-# What the install runs around the files: both daemons unloaded and NetBird
-# taken off its network before, their directories made and both loaded
-# after.
+# Where each daemon's output goes.
+LOG_DIR = "/Library/Logs/Neutrino/client"
+NETBIRD_LOG_PATH = LOG_DIR + "/netbird.log"
+EASYTIER_LOG_PATH = LOG_DIR + "/easytier.log"
+
+# What the install runs around the files: both daemons unloaded before; the
+# data directory of an install from before the one Neutrino tree moved whole
+# into its place, unless that place already holds a file, their directories
+# made and both loaded after.
 PREINSTALL = f"""#!/bin/sh
 for label in {CLIENT_NETBIRD_LAUNCHD_LABEL} {CLIENT_EASYTIER_LAUNCHD_LABEL}; do
     launchctl bootout "system/$label" >/dev/null 2>&1 || true
@@ -94,6 +103,14 @@ done
 exit 0
 """
 POSTINSTALL = f"""#!/bin/sh
+old="{CLIENT_OLD_DATA_DIR_DARWIN}"
+new="{CLIENT_DATA_DIR_DARWIN}"
+if [ -d "$old" ] && [ -z "$(find "$new" -type f 2>/dev/null | head -n 1)" ]; then
+    rm -rf "$new"
+    mkdir -p "$(dirname "$new")"
+    mv "$old" "$new"
+fi
+mkdir -p "{LOG_DIR}"
 for directory in "{os.path.dirname(CLIENT_NETBIRD_CONFIG_PATH_DARWIN)}" \\
         "{CLIENT_EASYTIER_STATE_DIR_DARWIN}"; do
     mkdir -p "$directory"
@@ -107,16 +124,13 @@ done
 exit 0
 """
 
-# Where each daemon's output goes.
-NETBIRD_LOG_PATH = "/Library/Logs/neutrino_client_netbird.log"
 # The socket every NetBird daemon on a Mac listens on; one already there
 # belongs to NetBird's own install, which the client then uses as it is.
 NETBIRD_SOCKET_PATH = "/var/run/netbird.sock"
-EASYTIER_LOG_PATH = "/Library/Logs/neutrino_client_easytier.log"
 
 # What each name for the machine maps to: the wheel's own, and the platform
-# the package is named for. Apple Silicon only.
-MACOS_MACHINES = {"aarch64": "arm64"}
+# the package is named for, Apple silicon and Intel.
+MACOS_MACHINES = {"aarch64": "arm64", "x86_64": "amd64"}
 
 # The window's Python side, pinned to the file and compiled in: pyobjc's
 # core, the Cocoa wrappers the window and the menu bar item run on, and the
@@ -184,7 +198,9 @@ def main() -> int:
     machine = macos_machine(arguments.architecture)
     output_dir = Path(arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / f"{PACKAGE_NAME}-{version}-macos-{machine}.pkg"
+    target = output_dir / PACKAGING_ASSET_PATTERNS["macos_pkg"].format(
+        name=PACKAGE_NAME, version=version, architecture=machine
+    )
 
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
@@ -214,7 +230,7 @@ def macos_machine(architecture: str) -> str:
             names it.
 
     Returns:
-        ``arm64``.
+        ``arm64`` or ``amd64``.
 
     Raises:
         SystemExit: When it is not a machine the client is published for
@@ -235,7 +251,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     Args:
         root: The working directory to build under.
         version: The version being packaged.
-        machine: ``arm64``.
+        machine: ``arm64`` or ``amd64``.
 
     Returns:
         ``{"root", "app", "scripts"}``: the package root standing in for the
@@ -266,7 +282,7 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     # package's own data goes beside where that points.
     shutil.copytree(package / "data", contents / "MacOS" / package.name / "data")
 
-    bundled.stage_darwin_binaries(contents)
+    bundled.stage_darwin_binaries(contents, machine)
     _stage_licenses(contents / "Resources" / "licenses")
     pkg_build.sign_ad_hoc(app)
 
@@ -360,7 +376,7 @@ def _check_build_machine(machine: str) -> None:
     than the pinned one, or one for a machine this is not.
 
     Args:
-        machine: ``arm64``, as asked for.
+        machine: ``arm64`` or ``amd64``, as asked for.
 
     Raises:
         SystemExit: On any mismatch.

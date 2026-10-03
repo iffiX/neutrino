@@ -209,14 +209,17 @@ CLIENT_OVERLAY_PROVIDERS = ("netbird", "easytier")
 CLIENT_NETBIRD_CONFIG_PATH_LINUX = "/etc/neutrino_client/netbird/config.json"
 CLIENT_NETBIRD_SERVICE_LINUX = "neutrino_client_netbird.service"
 CLIENT_EASYTIER_SERVICE_LINUX = "neutrino_client_easytier.service"
-# Under %PROGRAMDATA%.
-CLIENT_OVERLAY_DATA_DIR_WINDOWS = "Neutrino Client"
+# The client's directory of the one Neutrino tree: under %PROGRAMDATA% on
+# Windows, under /Library/Application Support on macOS. The directory each
+# took before the tree is moved into it whole at the first start.
+CLIENT_DATA_SUBDIR_WINDOWS = ("Neutrino", "client")
+CLIENT_OLD_DATA_DIR_NAME_WINDOWS = "Neutrino Client"
+CLIENT_DATA_DIR_DARWIN = "/Library/Application Support/Neutrino/client"
+CLIENT_OLD_DATA_DIR_DARWIN = "/Library/Application Support/Neutrino Client"
 CLIENT_NETBIRD_CONFIG_NAME_WINDOWS = "netbird\\config.json"
 CLIENT_NETBIRD_SERVICE_WINDOWS = "NeutrinoClientNetbird"
 CLIENT_EASYTIER_SERVICE_WINDOWS = "NeutrinoClientEasytier"
-CLIENT_NETBIRD_CONFIG_PATH_DARWIN = (
-    "/Library/Application Support/Neutrino Client/netbird/config.json"
-)
+CLIENT_NETBIRD_CONFIG_PATH_DARWIN = CLIENT_DATA_DIR_DARWIN + "/netbird/config.json"
 CLIENT_NETBIRD_LAUNCHD_LABEL = "com.neutrino.client.netbird"
 CLIENT_EASYTIER_LAUNCHD_LABEL = "com.neutrino.client.easytier"
 CLIENT_LAUNCHD_DAEMONS_DIR = "/Library/LaunchDaemons"
@@ -252,11 +255,9 @@ CLIENT_EASYTIER_SOCKET_PATH_DARWIN = "/var/run/neutrino_client_easytier.sock"
 CLIENT_EASYTIER_PIPE_WINDOWS = "\\\\.\\pipe\\neutrino_client_easytier"
 # Its state, one directory only root reads: the manual networks' files the
 # core loads, and the console it is pointed at. On Windows it is under
-# %PROGRAMDATA%\Neutrino Client.
+# %PROGRAMDATA%\Neutrino\client.
 CLIENT_EASYTIER_STATE_DIR_LINUX = "/etc/neutrino_client/easytier"
-CLIENT_EASYTIER_STATE_DIR_DARWIN = (
-    "/Library/Application Support/Neutrino Client/easytier"
-)
+CLIENT_EASYTIER_STATE_DIR_DARWIN = CLIENT_DATA_DIR_DARWIN + "/easytier"
 CLIENT_EASYTIER_STATE_NAME_WINDOWS = "easytier"
 CLIENT_EASYTIER_NETWORKS_DIR_NAME = "networks"
 CLIENT_EASYTIER_CONSOLE_FILE_NAME = "console.json"

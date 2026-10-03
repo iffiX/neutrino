@@ -29,12 +29,15 @@ except ImportError:  # Windows has no account database module.
 from neutrino_client.constants import (
     CLIENT_CLIPBOARD_TIMEOUT_S,
     CLIENT_CONTROL_SOCKET_NAME,
+    CLIENT_DATA_DIR_DARWIN,
     CLIENT_EASYTIER_SOCKET_PATH_DARWIN,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
+    CLIENT_OLD_DATA_DIR_DARWIN,
 )
 from neutrino_client.exceptions import ShareAttachError
 from neutrino_client.platforms.base import (
     ClientPlatform,
+    move_old_data_dir,
     read_share_credentials,
     run_on_pty,
     run_quietly,
@@ -286,8 +289,21 @@ class DarwinPlatform(ClientPlatform):
         return CLIENT_EASYTIER_SOCKET_PATH_DARWIN
 
     def easytier_state_dir(self) -> str:
-        """``/Library/Application Support/Neutrino Client/easytier``."""
+        """``/Library/Application Support/Neutrino/client/easytier``."""
         return CLIENT_EASYTIER_STATE_DIR_DARWIN
+
+    def secure_easytier_state_dir(self, path: str) -> None:
+        """Make the state directory, root's alone, after moving the data
+        directory of an older install into its place.
+
+        Args:
+            path: The directory.
+
+        Raises:
+            OSError: When it cannot be made or narrowed.
+        """
+        move_old_data_dir(CLIENT_OLD_DATA_DIR_DARWIN, CLIENT_DATA_DIR_DARWIN)
+        super().secure_easytier_state_dir(path)
 
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float

@@ -114,6 +114,23 @@ jobs:
       - run: ./gradlew --no-daemon ktlintCheck test lint
         working-directory: client/android
 
+  # The two one-command installers, each held to its language's linter.
+  install_scripts:
+    name: shellcheck and PSScriptAnalyzer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: shellcheck packaging/install/install.sh
+
+      - name: Invoke-ScriptAnalyzer on install.ps1
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $found = Invoke-ScriptAnalyzer -Path packaging/install/install.ps1
+          $found | Format-List RuleName, Severity, Line, Message
+          if ($found) { throw "PSScriptAnalyzer found $(@($found).Count) issues" }
+
   agent_oldest_python:
     name: agent on Python 3.9
     runs-on: ubuntu-24.04

@@ -16,7 +16,8 @@ $ProgressPreference = 'SilentlyContinue'
 function Step($name) { Write-Host ""; Write-Host "== $name" }
 function Fail($why) { Write-Host "FAILED: $why"; exit 1 }
 
-$nclient = "$env:ProgramFiles\Neutrino Client\nclient.exe"
+$prefix = "$env:ProgramFiles\Neutrino\client"
+$nclient = "$prefix\nclient.exe"
 
 # A resident left by an earlier walk holds the prefix open, and the
 # installer's own quit cannot reach one in another session.
@@ -31,7 +32,7 @@ foreach ($product in $installed) {
     $remove = Start-Process msiexec -Wait -PassThru -ArgumentList '/x', $product.PSChildName, '/quiet', '/norestart', '/l*v', 'C:\neutrino\uninstall.log'
     if ($remove.ExitCode -ne 0) { Fail "msiexec /x exited $($remove.ExitCode); see C:\neutrino\uninstall.log" }
 }
-if (Test-Path "$env:ProgramFiles\Neutrino Client") { Fail "the prefix outlived the uninstaller" }
+if (Test-Path $prefix) { Fail "the prefix outlived the uninstaller" }
 
 Step "install $Msi"
 $install = Start-Process msiexec -Wait -PassThru -ArgumentList '/i', $Msi, '/quiet', '/norestart', '/l*v', 'C:\neutrino\install.log'
@@ -39,7 +40,7 @@ if ($install.ExitCode -ne 0) { Fail "msiexec exited $($install.ExitCode); see C:
 if (-not (Test-Path $nclient)) { Fail "no nclient.exe under Program Files" }
 
 Step "what landed"
-$all = Get-ChildItem -Recurse -File "$env:ProgramFiles\Neutrino Client"
+$all = Get-ChildItem -Recurse -File $prefix
 Write-Host "files $($all.Count), .py $(($all | Where-Object Extension -eq '.py').Count), .pyc $(($all | Where-Object Extension -eq '.pyc').Count)"
 if (($all | Where-Object { $_.Extension -in '.py', '.pyc' }).Count -ne 0) { Fail "the payload carries Python source or bytecode" }
 

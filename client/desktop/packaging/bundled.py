@@ -52,6 +52,10 @@ CC_SWITCH_ASSETS = {
         "darwin-arm64.tar.gz",
         "7ca345ac2c9c930e7929252584fcfe7e7507ae40c1350d4969a80bafbad769f5",  # scan: allow
     ),
+    ("darwin", "x86_64"): (
+        "darwin-x64.tar.gz",
+        "aaea1f60f5d34b784831c9a6cb9568927a07930e52fd295608b94d2ac17ba53b",  # scan: allow
+    ),
 }
 CC_SWITCH_BINARY_NAME = "cc-switch"
 CC_SWITCH_WINDOWS_BINARY_NAME = "cc-switch.exe"
@@ -93,6 +97,10 @@ NETBIRD_ASSETS = {
         "darwin_arm64",
         "8d613dc78aa0e5b9f01b07ec9d02417c27638bf68b829a72399293f76da0fa03",  # scan: allow
     ),
+    ("darwin", "x86_64"): (
+        "darwin_amd64",
+        "1441be19db0394497866fc19a519d7d0483fbad0fcd4d1adaeb0ed1bded739be",  # scan: allow
+    ),
 }
 NETBIRD_BINARY_NAME = "netbird"
 NETBIRD_WINDOWS_BINARY_NAME = "netbird.exe"
@@ -124,6 +132,10 @@ EASYTIER_ASSETS = {
     ("darwin", "aarch64"): (
         "macos-aarch64",
         "4be1882d1aa36d31c1d6ba0596f2cf8a097e371f8da124212324b2e0f8df7e4b",  # scan: allow
+    ),
+    ("darwin", "x86_64"): (
+        "macos-x86_64",
+        "89fc28a6e6995259d76ce3f11775220e8a21c760e94df91a6a9db30a69b6982e",  # scan: allow
     ),
 }
 EASYTIER_CARRIED = ("easytier-core", "easytier-cli")
@@ -180,21 +192,24 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
     _stage_easytier(installed / "bin", "windows", machine)
 
 
-def stage_darwin_binaries(app_contents: Path) -> None:
+def stage_darwin_binaries(app_contents: Path, architecture: str) -> None:
     """Put every carried binary under an app bundle's Contents directory.
 
     Args:
         app_contents: The bundle's ``Contents`` directory.
+        architecture: The architecture, named however the format names it.
 
     Raises:
-        SystemExit: When what arrived is not what was pinned, the disk
-            image carries no viewer, or hdiutil refuses.
+        SystemExit: When an asset is not pinned for the machine, what
+            arrived is not what was pinned, the disk image carries no
+            viewer, or hdiutil refuses.
     """
+    machine = payload.machine_name(architecture)
     resources = app_contents / DARWIN_RESOURCES_DIR
-    _stage_cc_switch(resources / CC_SWITCH_INSTALL_PATH, "darwin", "aarch64")
-    rustdesk_assets.stage_darwin_app(resources / RUSTDESK_INSTALL_DIR)
-    _stage_netbird(resources / NETBIRD_INSTALL_PATH, "darwin", "aarch64")
-    _stage_easytier(resources / EASYTIER_INSTALL_DIR, "darwin", "aarch64")
+    _stage_cc_switch(resources / CC_SWITCH_INSTALL_PATH, "darwin", machine)
+    rustdesk_assets.stage_darwin_app(resources / RUSTDESK_INSTALL_DIR, machine=machine)
+    _stage_netbird(resources / NETBIRD_INSTALL_PATH, "darwin", machine)
+    _stage_easytier(resources / EASYTIER_INSTALL_DIR, "darwin", machine)
 
 
 def _asset(assets: dict, os_name: str, machine: str, what: str) -> tuple:

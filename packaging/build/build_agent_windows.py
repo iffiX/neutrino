@@ -37,6 +37,7 @@ from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
 from shared import wix_build  # noqa: E402
+from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
 REPO_ROOT = payload.REPO_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
@@ -81,7 +82,9 @@ SERVICE_RECOVERY = (
 # The package's body, inside the Package element wix_build writes around it.
 WIX_BODY = r"""
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Neutrino Agent" />
+      <Directory Id="NeutrinoProgramFolder" Name="Neutrino">
+        <Directory Id="INSTALLFOLDER" Name="agent" />
+      </Directory>
     </StandardDirectory>
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="NeutrinoDataFolder" Name="Neutrino">
@@ -227,7 +230,9 @@ def msi_name(version: str, machine: str) -> str:
     Returns:
         The file name.
     """
-    return f"{PACKAGE_NAME}-{version}-windows-{machine}.msi"
+    return PACKAGING_ASSET_PATTERNS["msi"].format(
+        name=PACKAGE_NAME, version=version, architecture=machine
+    )
 
 
 def wix_source(staged: dict, version: str, publisher: str) -> str:

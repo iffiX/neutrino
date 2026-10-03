@@ -48,7 +48,7 @@ def test_the_windows_executable_takes_the_name_asked_for(monkeypatch, tmp_path):
 
 def test_a_machine_with_no_pin_is_refused_by_name():
     with pytest.raises(SystemExit) as refused:
-        rustdesk_assets.asset_url("darwin", "x86_64")
+        rustdesk_assets.asset_url("windows", "aarch64")
 
-    assert "x86_64" in str(refused.value)
     assert "aarch64" in str(refused.value)
+    assert "x86_64" in str(refused.value)

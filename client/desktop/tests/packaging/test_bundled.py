@@ -138,14 +138,13 @@ def test_windows_has_both_binaries_pinned():
         assert len(digest) == 64
 
 
-def test_apple_silicon_has_both_binaries_pinned():
+@pytest.mark.parametrize("machine", ["aarch64", "x86_64"])
+def test_both_mac_architectures_have_both_binaries_pinned(machine):
     for assets in (bundled.CC_SWITCH_ASSETS, rustdesk_assets.RUSTDESK_ASSETS):
-        asset, digest = assets[("darwin", "aarch64")]
+        asset, digest = assets[("darwin", machine)]
         assert asset
         assert len(digest) == 64
         assert digest == digest.lower()
-    assert ("darwin", "x86_64") not in bundled.CC_SWITCH_ASSETS
-    assert ("darwin", "x86_64") not in rustdesk_assets.RUSTDESK_ASSETS
 
 
 def test_the_linux_switcher_is_the_musl_build_and_windows_is_the_zip():
@@ -153,6 +152,7 @@ def test_the_linux_switcher_is_the_musl_build_and_windows_is_the_zip():
     assert bundled.CC_SWITCH_ASSETS[("linux", "aarch64")][0].endswith("-musl.tar.gz")
     assert bundled.CC_SWITCH_ASSETS[("windows", "x86_64")][0].endswith(".zip")
     assert bundled.CC_SWITCH_ASSETS[("darwin", "aarch64")][0] == "darwin-arm64.tar.gz"
+    assert bundled.CC_SWITCH_ASSETS[("darwin", "x86_64")][0] == "darwin-x64.tar.gz"
 
 
 def test_the_viewer_is_the_flutter_build_and_never_the_old_frontend():
@@ -164,6 +164,7 @@ def test_the_viewer_is_the_flutter_build_and_never_the_old_frontend():
     assert rustdesk_assets.RUSTDESK_ASSETS[("linux", "x86_64")][0].endswith(".deb")
     assert rustdesk_assets.RUSTDESK_ASSETS[("windows", "x86_64")][0].endswith(".exe")
     assert rustdesk_assets.RUSTDESK_ASSETS[("darwin", "aarch64")][0] == "-aarch64.dmg"
+    assert rustdesk_assets.RUSTDESK_ASSETS[("darwin", "x86_64")][0] == "-x86_64.dmg"
 
 
 def test_the_urls_name_the_versions_the_pins_are_for():
@@ -269,7 +270,7 @@ def test_the_macos_staging_puts_both_under_the_bundles_resources(
 ):
     contents = tmp_path / "Neutrino Client.app" / "Contents"
 
-    bundled.stage_darwin_binaries(contents)
+    bundled.stage_darwin_binaries(contents, "arm64")
 
     switcher = contents / "Resources" / "bin" / "cc-switch"
     assert switcher.is_file()
@@ -288,10 +289,21 @@ def test_the_macos_staging_puts_both_under_the_bundles_resources(
     ]
 
 
+def test_an_intel_mac_takes_the_x86_64_builds(tmp_path, downloads, attached_image):
+    bundled.stage_darwin_binaries(tmp_path / "Contents", "amd64")
+
+    assert [url.rsplit("/", 1)[-1] for url in downloads] == [
+        "cc-switch-cli-v5.10.4-darwin-x64.tar.gz",
+        "rustdesk-1.4.9-x86_64.dmg",
+        "netbird_0.78.1_darwin_amd64.tar.gz",
+        "easytier-macos-x86_64-v2.6.4.zip",
+    ]
+
+
 def test_the_disk_image_is_attached_read_only_and_detached_again(
     tmp_path, downloads, attached_image
 ):
-    bundled.stage_darwin_binaries(tmp_path / "Contents")
+    bundled.stage_darwin_binaries(tmp_path / "Contents", "arm64")
 
     attach, detach = attached_image
     assert attach[:5] == ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint"]
@@ -310,7 +322,7 @@ def test_a_disk_image_carrying_no_viewer_is_refused_and_still_detached(
     monkeypatch.setattr(rustdesk_assets, "_run", run)
 
     with pytest.raises(SystemExit) as refused:
-        bundled.stage_darwin_binaries(tmp_path / "Contents")
+        bundled.stage_darwin_binaries(tmp_path / "Contents", "arm64")
 
     assert "RustDesk.app" in str(refused.value)
     assert [command[1] for command in commands] == ["attach", "detach"]
@@ -367,6 +379,7 @@ def test_the_install_paths_are_the_ones_the_runtime_resolver_reads():
         ("linux", "aarch64"),
         ("windows", "x86_64"),
         ("darwin", "aarch64"),
+        ("darwin", "x86_64"),
     ],
 )
 def test_every_platform_has_both_overlay_daemons_pinned(key):

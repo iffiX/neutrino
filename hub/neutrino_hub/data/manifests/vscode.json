@@ -55,6 +55,17 @@
         "post_uninstall": [],
         "is_data_kept": true
       }
+    },
+    "darwin-amd64": {
+      "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/07f806f999227108933c2e30515b26eecc1fda74/vscode_cli_darwin_x64_cli.zip", "_url_scan": "scan: allow",
+      "sha256": "ef91848ae48438f6589ad013a2ef795e5bd61568f1026042a4bdab934e6bedd4", "_sha256_scan": "scan: allow",
+      "package_kind": "zip",
+      "verify": "\"/Library/Application Support/Neutrino/vscode/code\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
     }
   }
 }

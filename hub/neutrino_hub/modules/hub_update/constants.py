@@ -72,6 +72,36 @@ HUB_UPDATE_OUTPUT_LIMIT_BYTES = 4 * 1024
 # The package manager waits this long for another install to release its lock.
 HUB_UPDATE_LOCK_TIMEOUT_S = 300
 
+# macOS and Windows: the package family each installs, and how the install
+# runs there. On macOS the script is a launchd job of the unit's name, given
+# to `launchctl submit`; on Windows it is a PowerShell started detached from
+# the service, which writes its process id beside the state file.
+HUB_UPDATE_FAMILY_OF_OS = {"darwin": "pkg", "windows": "msi"}
+HUB_UPDATE_SCRIPT_NAME_WINDOWS = "update.ps1"
+HUB_UPDATE_PID_NAME = "update.pid"
+HUB_UPDATE_JOB_DARWIN = f"system/{HUB_UPDATE_UNIT}"
+# DETACHED_PROCESS with CREATE_BREAKAWAY_FROM_JOB, then DETACHED_PROCESS
+# alone for a job that refuses breakaway.
+HUB_UPDATE_CREATION_FLAGS_WINDOWS = (0x00000008 | 0x01000000, 0x00000008)
+# The one service the package registers, and the commands the gate and the
+# agent's reinstall run.
+HUB_UPDATE_SERVICE_DARWIN = "system/com.neutrino.hub"
+HUB_UPDATE_PLIST_DARWIN = "/Library/LaunchDaemons/com.neutrino.hub.plist"
+HUB_UPDATE_SERVICE_WINDOWS = "neutrino_hub"
+HUB_UPDATE_NHUB_DARWIN = "/usr/local/bin/nhub"
+HUB_UPDATE_NHUB_NAME_WINDOWS = "nhub.exe"
+HUB_UPDATE_AGENT_COMMAND_DARWIN = "/usr/local/bin/nagent"
+HUB_UPDATE_AGENT_COMMAND_WINDOWS = ("Neutrino", "agent", "nagent.exe")
+HUB_UPDATE_PROGRAM_FILES_DEFAULT = "C:\\Program Files"
+# The agent package the new hub's package seeds into the cache, by family.
+HUB_UPDATE_AGENT_PATTERNS = {
+    "pkg": "neutrino-agent-{version}-macos-*.pkg",
+    "msi": "neutrino-agent-{version}-windows-*.msi",
+}
+# What msiexec answers for a finished install, with and without a reboot
+# owed.
+HUB_UPDATE_MSI_INSTALLED_CODES = (0, 3010)
+
 # The task the panel streams while the package is staged.
 HUB_UPDATE_TASK_LABEL = "hub_update"
 

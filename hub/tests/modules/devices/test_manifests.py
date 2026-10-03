@@ -48,11 +48,15 @@ VSCODE_DIGEST_WIN32_X64 = (
 VSCODE_DIGEST_DARWIN_ARM64 = (
     "352754c307ff1edb03ea01f55388e17b7e4e5bb1485aa62bcd2663b42ce5420c"  # scan: allow
 )
+VSCODE_DIGEST_DARWIN_X64 = (
+    "ef91848ae48438f6589ad013a2ef795e5bd61568f1026042a4bdab934e6bedd4"  # scan: allow
+)
 VSCODE_BUILDS = {
     "linux-amd64": ("cli_alpine_x64", "tar.gz", VSCODE_DIGEST_ALPINE_X64),
     "linux-arm64": ("cli_alpine_arm64", "tar.gz", VSCODE_DIGEST_ALPINE_ARM64),
     "windows-amd64": ("cli_win32_x64", "zip", VSCODE_DIGEST_WIN32_X64),
     "darwin-arm64": ("cli_darwin_arm64", "zip", VSCODE_DIGEST_DARWIN_ARM64),
+    "darwin-amd64": ("cli_darwin_x64", "zip", VSCODE_DIGEST_DARWIN_X64),
 }
 
 DEBIAN = {"os": "linux", "family": "debian", "arch": "amd64"}

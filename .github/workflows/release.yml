@@ -135,10 +135,19 @@ jobs:
           path: dist/*.msi
           if-no-files-found: error
 
-  # Apple silicon, which is what GitHub's macOS runners are.
+  # Both Macs: Apple silicon on macos-15, Intel on macos-15-intel. The build
+  # is native, so each package comes off a runner of its own machine.
   agent_macos:
-    name: agent installer (macOS arm64)
-    runs-on: macos-15
+    name: agent installer (macOS ${{ matrix.arch }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: amd64
     steps:
       - uses: actions/checkout@v7
 
@@ -146,14 +155,134 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: python3 packaging/build/build_agent_macos.py --output-dir dist --architecture arm64
+      - run: python3 packaging/build/build_agent_macos.py --output-dir dist --architecture ${{ matrix.arch }}
 
       - run: python3 packaging/ci/check.py agent_macos dist/*.pkg
 
       - uses: actions/upload-artifact@v7
         with:
-          name: agent_macos_arm64
+          name: agent_macos_${{ matrix.arch }}
           path: dist/*.pkg
+          if-no-files-found: error
+
+  # The hub of each Mac, after every agent: it carries the agent's .pkg of its
+  # own machine and names every agent package in its manifest.
+  hub_macos:
+    name: hub installer (macOS ${{ matrix.arch }})
+    needs: [agent, agent_windows, agent_macos]
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: agent_*
+          path: agent_packages
+          merge-multiple: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: hub/frontend
+
+      - run: npm run build
+        working-directory: hub/frontend
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: >
+          python3 packaging/build/build_hub_macos.py
+          --output-dir dist
+          --architecture ${{ matrix.arch }}
+          --agent-packages agent_packages
+          ${{ startsWith(github.ref, 'refs/tags/')
+              && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
+              || '' }}
+
+      - run: python3 packaging/ci/check.py hub_macos dist/*.pkg
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hub_macos_${{ matrix.arch }}
+          path: dist/*.pkg
+          if-no-files-found: error
+
+  # x64 only, as the agent it carries is.
+  hub_windows:
+    name: hub installer (Windows x64)
+    needs: [agent, agent_windows, agent_macos]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: agent_*
+          path: agent_packages
+          merge-multiple: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: hub/frontend
+
+      - run: npm run build
+        working-directory: hub/frontend
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: dotnet tool install --global wix --version 6.0.2
+      - run: wix extension add -g WixToolset.Util.wixext/6.0.2
+
+      # The stand-in for Npcap's Packet.dll beside easytier-core, as the
+      # client's job builds it.
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build the stand-in packet.dll
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/packet_stub | Out-Null
+          cl /nologo /O2 /LD client/desktop/packaging/packet_stub.c /Fe:build/packet_stub/packet.dll /Fo:build/packet_stub/
+          if ($LASTEXITCODE -ne 0) { throw "cl exited $LASTEXITCODE" }
+
+      - run: >
+          python packaging/build/build_hub_windows.py
+          --output-dir dist
+          --architecture x64
+          --agent-packages agent_packages
+          --packet-dll build/packet_stub/packet.dll
+          ${{ startsWith(github.ref, 'refs/tags/')
+              && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
+              || '' }}
+
+      - run: python packaging/ci/check.py hub_windows dist/*.msi
+        shell: bash
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hub_windows_amd64
+          path: dist/*.msi
           if-no-files-found: error
 
   # The client is compiled, so each package is built on a machine of its own
@@ -232,10 +361,18 @@ jobs:
           path: dist/*.msi
           if-no-files-found: error
 
-  # Apple silicon, which is what GitHub's macOS runners are.
+  # Both Macs, as the agent's job builds them.
   client_macos:
-    name: client installer (macOS arm64)
-    runs-on: macos-15
+    name: client installer (macOS ${{ matrix.arch }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: amd64
     steps:
       - uses: actions/checkout@v7
 
@@ -243,13 +380,13 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: python3 packaging/build/build_client_macos.py --output-dir dist --architecture arm64
+      - run: python3 packaging/build/build_client_macos.py --output-dir dist --architecture ${{ matrix.arch }}
 
       - run: python3 packaging/ci/check.py client_macos dist/*.pkg
 
       - uses: actions/upload-artifact@v7
         with:
-          name: client_macos_arm64
+          name: client_macos_${{ matrix.arch }}
           path: dist/*.pkg
           if-no-files-found: error
 
@@ -369,7 +506,18 @@ jobs:
 
   draft:
     name: checksums and draft release
-    needs: [hub, agent, client, client_windows, client_macos, client_android, sources]
+    needs:
+      [
+        hub,
+        hub_macos,
+        hub_windows,
+        agent,
+        client,
+        client_windows,
+        client_macos,
+        client_android,
+        sources,
+      ]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -379,8 +527,11 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # SHA256SUMS covers every package at once, so it is written here rather
-      # than by the jobs that each produced one file.
+      # The two install scripts are release assets beside the packages.
+      - run: cp packaging/install/install.sh packaging/install/install.ps1 dist/
+
+      # SHA256SUMS covers every package and both scripts at once, so it is
+      # written here rather than by the jobs that each produced one file.
       - run: python3 packaging/build/build_checksums.py --output-dir dist
 
       - uses: actions/upload-artifact@v7
