@@ -346,7 +346,7 @@ def server_elsewhere(elsewhere, box, monkeypatch):
 
     def firewall(network, *, routing):
         handed.append((network, routing))
-        return ["firewall opened neutrino_hub_panel_http"]
+        return ["firewall opened neutrino_hub_panel_http"], []
 
     def tun(network, routing):
         handed.append(("tun", network.overlay_device_names, routing))
@@ -403,6 +403,32 @@ def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
     assert results[0].state == ROUTER_STEP_FAILED
     assert results[0].code == ROUTER_CODE_COMMAND_FAILED
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
+
+
+def test_elsewhere_a_refused_rule_is_named_beside_the_firewall_that_applied(
+    server_elsewhere, monkeypatch
+):
+    detail = "neutrino_hub_easytier_tcp on et_2_tncd: The parameter is incorrect."
+
+    def firewall(network, *, routing):
+        return ["firewall opened neutrino_hub_panel_http"], [
+            {"rule": "neutrino_hub_easytier_tcp", "detail": detail}
+        ]
+
+    monkeypatch.setattr(controller, "converge_firewall", firewall)
+
+    results = pass_of().reconcile()
+
+    assert names(results) == [
+        "firewall",
+        "firewall neutrino_hub_easytier_tcp",
+        "tun",
+        "overlay_gate NetBird",
+    ]
+    assert results[0].state == ROUTER_STEP_APPLIED
+    assert controller.failure_codes(results) == [
+        {"code": ROUTER_CODE_COMMAND_FAILED, "params": {"detail": detail}}
+    ]
 
 
 def test_elsewhere_a_tun_route_that_failed_is_named_by_its_own_code(

@@ -72,10 +72,17 @@ class Recorder:
         return ["flushed"]
 
 
+class WindowsRecorder(Recorder):
+    """The Windows applier, which answers its refusals beside its notes."""
+
+    def apply(self, wanted):
+        return super().apply(wanted), []
+
+
 @pytest.fixture
 def recorder(monkeypatch):
     Recorder.handed = []
-    monkeypatch.setattr(ops, "FirewallWindowsApplier", Recorder)
+    monkeypatch.setattr(ops, "FirewallWindowsApplier", WindowsRecorder)
     monkeypatch.setattr(ops, "FirewallDarwinApplier", Recorder)
     monkeypatch.setattr(ops, "device_addresses", lambda: dict(PRESENT))
     return Recorder
@@ -88,7 +95,7 @@ def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeyp
     }
     monkeypatch.setattr(ops, "read_config", lambda name: stored[name])
 
-    assert ops.converge_firewall(NETWORK, routing=ROUTING) == ["changed"]
+    assert ops.converge_firewall(NETWORK, routing=ROUTING) == (["changed"], [])
 
     ((verb, rules),) = recorder.handed
     assert [(rule.name, rule.port) for rule in rules] == [

@@ -196,8 +196,22 @@ class RouterStateController:
         """The pass on macOS and Windows: the firewall, the TUN and the overlays."""
         devices = overlay_devices(network)
         found = network.with_overlay_devices(devices)
-        results = [
-            run_step("firewall", lambda: converge_firewall(found, routing=routing))
+        refused = []
+
+        def firewall() -> list:
+            notes, failed = converge_firewall(found, routing=routing)
+            refused.extend(failed)
+            return notes
+
+        results = [run_step("firewall", firewall)]
+        results += [
+            RouterStepResult(
+                name=f"firewall {entry['rule']}",
+                state=ROUTER_STEP_FAILED,
+                code=ROUTER_CODE_COMMAND_FAILED,
+                detail=entry["detail"],
+            )
+            for entry in refused
         ]
         tun = run_step(TUN_STEP_NAME, lambda: converge_tun(found, routing))
         if tun.is_failed:
