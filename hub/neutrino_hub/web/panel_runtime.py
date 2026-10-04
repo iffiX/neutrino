@@ -39,9 +39,11 @@ from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.overlay.ops import (
     OverlayRouteGuard,
     OverlaySwitcher,
+    engine_devices,
     overlay_devices,
 )
 from neutrino_hub.modules.router.link_status import device_addresses
@@ -168,6 +170,8 @@ class PanelRuntime:
         # The scope each client's socket arrived from, settled at its hello;
         # its list and its gateway URL are resolved for it.
         self.client_scope: dict[str, HostScope] = {}
+        # The way each client's socket reached the hub, settled at its hello.
+        self.client_reached: dict[str, str] = {}
         # Where each device is, keyed by id: the address its socket leaves
         # by, or the peer address when the report names none, refreshed
         # every report.
@@ -323,6 +327,23 @@ class PanelRuntime:
             Each served LAN and each overlay this box holds an address on.
         """
         return served_scopes(self.network(), device_addresses())
+
+    def overlay_networks(self) -> dict:
+        """The networks each overlay engine's devices hold an address in.
+
+        Returns:
+            Engine key to the CIDRs of the addresses its devices hold now,
+            the devices the Overlay page counts clients by.
+        """
+        addresses = device_addresses()
+        return {
+            provider: [
+                addresses[name]
+                for name in engine_devices(provider)
+                if name in addresses
+            ]
+            for provider in OVERLAY_ENGINES
+        }
 
     def connections(self) -> RouterConnectionSet:
         """Read the wireless networks this box knows how to join.
@@ -725,6 +746,7 @@ class PanelRuntime:
             client_id: The client.
         """
         self.client_scope.pop(client_id, None)
+        self.client_reached.pop(client_id, None)
         self.client_sessions.refuse_from_thread(client_id, CHANNEL_CODE_BINDING_UNKNOWN)
 
     def publish_node_readings(self, readings: dict) -> None:

@@ -98,6 +98,12 @@ SERVICES_HUB_SELF_HOSTS = ("127.0.0.1", "0.0.0.0", "::1", "localhost")
 SERVICES_SCOPE_OVERLAY = "overlay"
 SERVICES_SCOPE_LINK = "link"
 
+# The way a client's socket reached the hub, beside each overlay engine's
+# own key: a peer on loopback came through the relay, any other through a
+# network the hub serves or exposes.
+SERVICES_REACHED_LAN = "lan"
+SERVICES_REACHED_RELAY = "relay"
+
 SERVICES_FILE_PROTOCOL = "smb"
 SERVICES_AI_PROTOCOL = "openai"
 SERVICES_RDP_PROTOCOL = "rustdesk"
@@ -157,13 +163,14 @@ SERVICES_GITEA_TITLE = "Gitea"
 SERVICES_AI_TITLE = "AI gateway"
 SERVICES_AI_ID = "ai"
 SERVICES_GITEA_ID = "gitea"
-# One web entry per VS Code instance, opened by a client only through a port
+# One web entry per VS Code instance, opened by a client through a port
 # forwarded to its own loopback, with the token the ``service`` stream hands.
 SERVICES_VSCODE_ID = "vscode"
 SERVICES_VSCODE_TITLE = "VS Code ({account})"
 SERVICES_VSCODE_DESCRIPTION = "published by the vscode module on {host} for {account}"
-# One web entry per CloudCLI instance, opened by a client at the device's own
-# address with a token the ``service`` stream mints for one open.
+# One web entry per CloudCLI instance, opened by a client through a port
+# forwarded to its own loopback, with a token the ``service`` stream mints
+# for one open.
 SERVICES_CLOUDCLI_ID = "cloudcli"
 SERVICES_CLOUDCLI_TITLE = "CloudCLI ({account})"
 SERVICES_CLOUDCLI_DESCRIPTION = (

@@ -111,7 +111,7 @@ def test_an_instance_gets_its_token_its_environment_and_its_unit(
     assert stat.S_IMODE(os.stat(token).st_mode) == 0o600
     assert applier.owners == [("ann.token", 1000, 1000)]
     assert (tmp_path / "vscode" / "ann.env").read_text() == (
-        f"VSCODE_HOST=0.0.0.0\nVSCODE_PORT=8000\nVSCODE_TOKEN_FILE={token}\n"
+        f"VSCODE_HOST=127.0.0.1\nVSCODE_PORT=8000\nVSCODE_TOKEN_FILE={token}\n"
     )
     assert (tmp_path / "systemd" / "neutrino_vscode@.service").is_file()
     assert systemd.calls == [

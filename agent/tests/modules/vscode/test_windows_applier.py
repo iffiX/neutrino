@@ -69,7 +69,7 @@ def test_an_instance_is_a_task_signed_in_with_its_login():
     assert instance["token_file"] == token_file
     assert instance["log_file"] == log_file
     assert instance["arguments"] == (
-        f'/s /c "{cli} serve-web --accept-server-license-terms --host 0.0.0.0 '
+        f'/s /c "{cli} serve-web --accept-server-license-terms --host 127.0.0.1 '
         f'--port 8000 --connection-token-file {token_file} >> {log_file} 2>&1"'
     )
     assert '"$($i.account):M"' in APPLY_SCRIPT

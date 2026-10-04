@@ -144,12 +144,17 @@ def make_forwarder(upstream_port, *, clock=time.time, account="ann"):
         upstream_port=upstream_port,
         web_password=PASSWORD,
         token_secret=SECRET,
-        listen_host="127.0.0.1",
         clock=clock,
         log=lambda line: None,
         ready_poll_s=0.05,
         retry_s=0.05,
     )
+
+
+def test_the_forwarder_listens_on_loopback_alone(listening):
+    forwarder, _ = listening
+
+    assert forwarder.listen_address[0] == "127.0.0.1"
 
 
 def wait_listening(forwarder, timeout=5.0):

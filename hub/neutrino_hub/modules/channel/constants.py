@@ -48,7 +48,7 @@ CHANNEL_STREAM_COMMAND = "command"
 CHANNEL_STREAM_PACKAGE = "package"
 CHANNEL_STREAM_LOG = "log"
 CHANNEL_STREAM_SERVICE = "service"
-CHANNEL_STREAM_DESKTOP = "desktop"
+CHANNEL_STREAM_CONNECT = "connect"
 
 # A ``shell`` inside a container names the module that runs it.
 CHANNEL_SHELL_CONTAINER_MODULE = "podman"
@@ -97,6 +97,12 @@ CHANNEL_CALL_TIMEOUT_S = 15.0
 # socket whose pong is late by this much.
 CHANNEL_PING_INTERVAL_S = 20.0
 CHANNEL_PING_TIMEOUT_S = 20.0
+# How long the hub waits for the far end of a ``connect`` stream it dials.
+CHANNEL_CONNECT_DIAL_TIMEOUT_S = 10.0
+# How many ``connect`` streams one client socket may hold open at once.
+CHANNEL_CONNECT_STREAMS_MAX = 256
+# The loopback address the hub dials its own gateway and panel on.
+CHANNEL_CONNECT_LOOPBACK = "127.0.0.1"
 
 # The codes a refusal or a close carries.
 CHANNEL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
@@ -119,6 +125,13 @@ CHANNEL_CODE_HELLO_INVALID = "hello_invalid"
 # stream ran out of time, or the loop did. It is a display code, worded by
 # the panel as the word for a machine that has not reported.
 CHANNEL_CODE_NEVER_REPORTED = "agent_never_reported"
+# A ``connect`` past the socket's limit, and a dial that failed, with its
+# reason.
+CHANNEL_CODE_CONNECT_LIMIT = "connect_limit"
+CHANNEL_CODE_CONNECT_FAILED = "connect_failed"
+CHANNEL_CONNECT_REFUSED = "refused"
+CHANNEL_CONNECT_TIMEOUT = "timeout"
+CHANNEL_CONNECT_UNREACHABLE = "unreachable"
 
 # The state an agent reports for a module. The first four are also the
 # words ``want`` takes.

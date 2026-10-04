@@ -253,6 +253,36 @@ def test_every_socket_opens_shells_in_the_one_registry_the_report_lists(
     } <= set(listed)
 
 
+def test_a_connect_stream_dials_only_what_the_last_state_and_report_publish(
+    config_path, monkeypatch
+):
+    agent, _script = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    agent._desired.latest = lambda: {
+        "modules": {
+            "vscode": {
+                "want": "running",
+                "config": {"instances": [{"account": "ann", "port": 8000}]},
+            }
+        }
+    }
+    monkeypatch.setattr(
+        agent._engine,
+        "report",
+        lambda: {"samba": {"state": "running", "details": {"shares": [{}]}}},
+    )
+    monkeypatch.setattr(
+        agent, "rdp_declaration", lambda: {"is_shared": True, "port": 21118}
+    )
+
+    factory = agent._open_session()._stream_kinds["connect"]
+
+    assert factory.keywords["published"]() == {
+        445: "127.0.0.1",
+        21118: "127.0.0.1",
+        8000: "127.0.0.1",
+    }
+
+
 def test_leave_gives_the_binding_back_and_leaves_the_service_unbound(
     config_path, monkeypatch
 ):

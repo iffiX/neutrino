@@ -330,8 +330,10 @@ def test_observe_reads_what_podman_itself_says_of_each_container(runner, monkeyp
             "container=podman",
         ],
         "has_unit": True,
+        "host_bindings": [{"address": "", "port": 8080}],
     }
     assert by_name["adhoc"]["is_running"] is False
+    assert by_name["adhoc"]["host_bindings"] == []
     assert by_name["adhoc"]["ports"] == []
     assert by_name["adhoc"]["volumes"] == []
     assert by_name["adhoc"]["has_unit"] is False
