@@ -15,6 +15,16 @@ title: 快速上手
 
 三台机器在同一个局域网里。服务器形态保留 `home-hub` 的所有地址，你网络里的其他部分保持原样。
 
+## 完整版和国内版
+
+本页用的是 GitHub 上的完整版。国内版发布在 [Gitee](https://gitee.com/iffiX/neutrino)，除代理和 NetBird 以外功能都有，各项下载走国内镜像。每个版本只从自己的发布页更新。用国内版走本页的步骤时，三个 `.deb` 从 Gitee 的发布页下载；中枢也可以用一条命令安装：
+
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+```
+
+国内版的向导没有 **通过代理出网** 这一屏，跳过那一步即可。
+
 ## 安装中枢
 
 1. 在 `home-hub` 上安装包：
@@ -116,10 +126,11 @@ title: 快速上手
 
 ## 在笔记本上挂载共享
 
-1. 在客户端窗口里打开**文件**（Files）。`media` 条目旁边是 `studio` 的地址。
-1. 在 `media` 条目上选择**配置**（Config）。
+1. 在客户端窗口里打开**文件**（Files）。`media` 条目旁边是 `studio` 的地址，客户端经中枢连到它。
+1. 在 `media` 条目上选择**配置**（Configure）。
 1. **共享用户名**（Share username）填 `alex`，**共享密码**（Share password）填它的密码。
 1. **挂载路径**（Mount path）保持默认，即家目录下的 `nas/media`。
+1. 选择**保存**（Save）。
 1. 选择**挂载**（Mount）。
 
 按钮变成**卸载**（Unmount），`laptop` 上的 `~/nas/media` 里就是 `studio` 上 `/srv/media` 的文件。

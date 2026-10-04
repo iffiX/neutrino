@@ -12,9 +12,28 @@ The box must meet these conditions:
 
 - It runs Debian 12 or newer, Ubuntu 22.04 or newer, Raspberry Pi OS 64-bit, Fedora, the RHEL 9 family, or Arch on x86-64.
 - You have root on it.
-- It reaches the internet, because setup fetches xray-core, its geodata and the AI gateway.
+- It reaches the internet, because setup fetches the AI gateway, and in the full edition xray-core and its geodata.
 
 [Supported platforms](../reference/platforms.md) lists every file of the release and the system each one installs on.
+
+## Pick an edition
+
+Every release comes in two editions built from one source:
+
+| Edition  | Where it is published                                                                        | What it has                                |
+| -------- | -------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| full     | GitHub, the [releases page](https://github.com/iffiX/neutrino/releases)                      | every feature                              |
+| mainland | Gitee, [gitee.com/iffiX/neutrino](https://gitee.com/iffiX/neutrino), the latest release only | every feature except the proxy and NetBird |
+
+The mainland edition fetches its downloads from mirrors in mainland China. For a Linux hub it publishes the `.deb` for amd64 and arm64. To install it with one command, run:
+
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+```
+
+The script checks the package against the release's `SHA256SUMS`, installs it, and prints the setup wizard's address with its token. The mainland wizard skips the **Going out through a proxy** screen, and its shapes leave out **Side gateway**.
+
+Each edition updates from its own release page, so an update from **Settings** or `nhub update` keeps a mainland hub mainland. The rest of this page installs the full edition.
 
 ## Install the package
 

@@ -10,9 +10,28 @@ title: 安装中枢
 
 - 系统是 Debian 12 及以上、Ubuntu 22.04 及以上、64 位树莓派 OS、Fedora、RHEL 9 系，或 x86-64 上的 Arch。
 - 你有这台机器的 root 权限。
-- 这台机器能出网。初始化要下载 xray-core、geodata 和 AI 网关。
+- 这台机器能出网。初始化要下载 AI 网关；完整版还要下载 xray-core 和 geodata。
 
 每个文件对应哪个系统，见[支持的平台](../reference/platforms.md)。
+
+## 选择版本
+
+每次发布都从同一份源码编出两个版本：
+
+| 版本   | 发布在哪里                                                                            | 包含什么                        |
+| ------ | ------------------------------------------------------------------------------------- | ------------------------------- |
+| 完整版 | GitHub 的 [Releases 页](https://github.com/iffiX/neutrino/releases)                   | 全部功能                        |
+| 国内版 | Gitee 上的 [gitee.com/iffiX/neutrino](https://gitee.com/iffiX/neutrino)，只留最新一版 | 除代理和 NetBird 以外的全部功能 |
+
+国内版的各项下载都走国内镜像。Linux 上的中枢，国内版发布 amd64 和 arm64 的 `.deb`。用一条命令安装国内版：
+
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+```
+
+脚本先用发布页的 `SHA256SUMS` 核对安装包，再安装，最后打印设置向导的地址和一次性令牌。国内版的向导没有 **通过代理出网**（Going out through a proxy）这一屏，形态里也没有 **旁路网关**（Side gateway）。
+
+每个版本只从自己的发布页更新，所以国内版的中枢不论在 **设置**（Settings）里更新，还是运行 `nhub update`，更新后仍是国内版。本页其余部分安装的是完整版。
 
 ## 安装包
 

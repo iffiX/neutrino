@@ -15,6 +15,16 @@ In about half an hour you build a hub in server mode on one Linux box and a seco
 
 The three machines are on one local network. Server mode keeps every address `home-hub` has, and the rest of your network stays as it is.
 
+## Full or mainland edition
+
+This page uses the full edition from GitHub. The mainland edition, on [Gitee](https://gitee.com/iffiX/neutrino), has every feature except the proxy and NetBird, and fetches its downloads from mirrors in mainland China. Each edition updates from its own release page. To follow this page with the mainland edition, take the three `.deb` files from the Gitee release page, or install the hub with one command:
+
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+```
+
+The mainland wizard has no **Going out through a proxy** screen, so skip that step.
+
 ## Install the hub
 
 1. On `home-hub`, install the package:
@@ -116,10 +126,11 @@ The agent creates `/srv/media` on `studio` and publishes it as `media` to every 
 
 ## Mount the share on your laptop
 
-1. In the client window, open **Files**. The `media` entry is listed with the address of `studio`.
-1. On the `media` entry, select **Config**.
+1. In the client window, open **Files**. The `media` entry is listed with the address of `studio`. The client reaches it through the hub.
+1. On the `media` entry, select **Configure**.
 1. Type `alex` in **Share username** and its password in **Share password**.
 1. Leave **Mount path** at its default, `nas/media` under your home folder.
+1. Select **Save**.
 1. Select **Mount**.
 
 The button changes to **Unmount**, and `~/nas/media` on `laptop` shows the files of `/srv/media` on `studio`.
