@@ -152,8 +152,7 @@ class RouterDnsmasqRenderer:
             if lines is not None:
                 return lines
         return [
-            "# LAN traffic is not proxied, so queries go to the network's",
-            "# resolvers.",
+            "# Queries go to the network's resolvers.",
             "no-resolv",
             *_server_lines(self._network_resolvers),
             "",

@@ -25,7 +25,10 @@ from neutrino_hub.modules.router.modes import (
     RouterModePlanner,
 )
 
-MODES_ADDRESSING_NOTHING = (ROUTER_MODE_SERVER, ROUTER_MODE_SIDE_GATEWAY)
+MODES_ADDRESSING_NOTHING = (
+    ROUTER_MODE_SERVER,
+    pytest.param(ROUTER_MODE_SIDE_GATEWAY, marks=pytest.mark.feature("proxy")),
+)
 MODES_THE_HUB_ADDRESSES = (ROUTER_MODE_ROUTER, ROUTER_LAYOUT_ONE_ARM)
 
 # Every way the applier can reach the machine, so that "it did nothing" is a

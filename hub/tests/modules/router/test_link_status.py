@@ -12,7 +12,6 @@ import pytest
 
 from tests.conftest import FakePowerShell, FakePsutil, FakeTools
 from neutrino_hub.modules.router import link_status
-from neutrino_hub.modules.tun.constants import TUN_ADDRESS
 from neutrino_hub.modules.router.link_status import (
     LINK_KIND_ETHERNET,
     LINK_WINDOWS_ROUTE_SCRIPT,
@@ -30,6 +29,9 @@ destination: default
   interface: en0
       flags: <UP,GATEWAY,DONE,STATIC,PRCLONING,GLOBAL>
 """
+
+# The proxy's TUN device address on macOS and Windows.
+TUN_ADDRESS = "198.18.0.1"  # scan: allow
 
 
 @pytest.fixture
@@ -82,6 +84,7 @@ def test_a_port_is_every_interface_holding_an_ipv4_address(elsewhere, machine):
     assert links[0].speed_mbps is None
 
 
+@pytest.mark.feature("proxy")
 @pytest.mark.parametrize(
     ("system", "tun_device"), [("darwin", "utun225"), ("win32", "neutrino_tun")]
 )

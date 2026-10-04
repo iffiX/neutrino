@@ -179,6 +179,7 @@ def test_ready_is_said_before_any_step_that_starts_a_unit(box, monkeypatch):
     assert events == ["ready", "interfaces"]
 
 
+@pytest.mark.feature("proxy")
 def test_a_port_down_at_boot_leaves_the_firewall_loaded(box, monkeypatch):
     """The boot this was written after: enp1s0 was still down when its
     served route was added, the kernel refused it, and nothing after it ran,
@@ -201,6 +202,7 @@ def test_a_port_down_at_boot_leaves_the_firewall_loaded(box, monkeypatch):
     assert by_name["served_route wlp3s0"].state == ROUTER_STEP_APPLIED
 
 
+@pytest.mark.feature("proxy")
 def test_a_failed_interface_does_not_stop_the_steps_after_it(box):
     Interfaces.results = [
         RouterStepResult(
@@ -343,6 +345,8 @@ def test_nothing_recorded_reads_as_no_devices_found(box):
     assert controller.rendered_overlay_devices() == {}
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_engine_cgroups_found_are_rendered_and_recorded(box, monkeypatch):
     """The hub's own engines leave directly; the ids loaded are kept to tell
     when a unit started again."""

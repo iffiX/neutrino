@@ -161,9 +161,9 @@ class RouterNftRenderer:
         ]
         if self._lans and self._wans:
             lines += [
-                "        # Traffic TPROXY did not divert (ICMP, and everything at all",
-                "        # if xray is down) still reaches the internet, so the box",
-                "        # degrades to a plain router rather than going dark.",
+                "        # The served networks reach the internet through the uplinks,",
+                "        # whatever is not diverted included, so the box is a plain",
+                "        # router rather than dark when nothing diverts.",
                 f"        iifname {_interface_set(self._lans)} "
                 f"oifname {_interface_set(self._wans)} accept",
             ]

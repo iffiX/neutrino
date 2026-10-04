@@ -365,6 +365,7 @@ def write_node(tmp_path, secret_id: str) -> None:
     )
 
 
+@pytest.mark.feature("proxy")
 def test_deleting_a_token_disables_the_nodes_it_keyed(client, tmp_path):
     created = client.post(
         "/api/hub/credential/token/add",

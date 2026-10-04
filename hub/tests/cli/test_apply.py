@@ -2,6 +2,7 @@
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.cli import apply
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
@@ -16,7 +17,7 @@ def test_the_components_are_the_hubs_own():
     storage from its desired state; the hub renders none of them."""
     assert apply.COMPONENTS == (
         "router",
-        "xray",
+        *(["xray"] if edition.has_feature("proxy") else []),
         "dnsmasq",
         "cliproxyapi",
         "overlay",
@@ -103,12 +104,14 @@ def _stored_easytier(tmp_path, monkeypatch, providers: list) -> None:
     write_config(EASYTIER_CONFIG_NAME, stored.to_dict())
 
 
+@pytest.mark.feature("netbird")
 def test_an_apply_renders_easytier_when_it_is_enabled(tmp_path, monkeypatch):
     _stored_easytier(tmp_path, monkeypatch, ["netbird", "easytier"])
 
     assert apply._render(("overlay",))["easytier"].is_console_mode
 
 
+@pytest.mark.feature("netbird")
 def test_an_apply_leaves_easytier_down_when_it_is_off(tmp_path, monkeypatch):
     """A package upgrade runs this; a stored network must not start an
     overlay nobody turned on."""

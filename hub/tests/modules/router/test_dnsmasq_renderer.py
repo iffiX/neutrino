@@ -6,6 +6,7 @@ config dnsmasq refused to start on, which took DHCP and DNS off the wired LAN
 because of a mistake in the Wi-Fi half.
 """
 
+import pytest
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNS_CACHE_SIZE,
     ROUTER_DNS_MIN_CACHE_TTL_S,
@@ -128,6 +129,7 @@ def test_a_box_serving_nothing_still_refuses_to_answer_the_uplink(tmp_path):
     validate_dnsmasq(config, tmp_path)
 
 
+@pytest.mark.feature("proxy")
 def test_the_only_upstream_is_the_local_xray_inbound(tmp_path):
     """The whole point of the DNS path: no query leaves by the uplink in clear."""
     config = render(lan_entry("enp1s0", address="192.168.100.1"))
@@ -156,6 +158,7 @@ def test_the_query_log_goes_to_the_journal_rather_than_a_file(tmp_path):
     validate_dnsmasq(config, tmp_path)
 
 
+@pytest.mark.feature("proxy")
 def test_queries_go_through_xray_while_the_proxy_is_on(tmp_path):
     config = RouterDnsmasqRenderer(
         network=network_config(lan_entry("enp1s0", address="192.168.100.1")),
@@ -206,6 +209,7 @@ def test_with_no_resolvers_known_the_built_in_fallbacks_answer():
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_the_fallback_puts_the_direct_resolvers_behind_xray():
     """A dead exit is a dead resolver, and without a second upstream the LAN
     loses every name rather than the proxied ones."""
@@ -232,6 +236,7 @@ def test_the_fallback_puts_the_direct_resolvers_behind_xray():
     assert "strict-order" in rendered
 
 
+@pytest.mark.feature("proxy")
 def test_an_empty_direct_list_puts_the_networks_resolvers_behind_xray():
     rendered = render(
         lan_entry("enp1s0", address="192.168.100.1"),
@@ -249,6 +254,7 @@ def test_an_empty_direct_list_puts_the_networks_resolvers_behind_xray():
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_without_the_fallback_xray_is_the_only_upstream():
     rendered = render(
         lan_entry("enp1s0", address="192.168.100.1"),

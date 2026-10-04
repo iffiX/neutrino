@@ -88,6 +88,8 @@ def recorder(monkeypatch):
     return Recorder
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeypatch):
     stored = {
         "web/settings.json": {"listen_port": 9080, "https_listen_port": 9443},
@@ -123,6 +125,8 @@ def test_windows_before_setup_opens_the_default_ports(
     assert [rule.port for rule in rules[:4]] == [8080, 443, 8443, 8317]
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_windows_answers_on_the_exposed_interfaces_and_overlays(
     on_windows, recorder, monkeypatch
 ):
@@ -145,6 +149,8 @@ def test_windows_answers_on_the_exposed_interfaces_and_overlays(
     }
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_macos_blocks_the_ports_where_they_do_not_answer(
     on_darwin, recorder, monkeypatch
 ):

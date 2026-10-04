@@ -6,6 +6,7 @@ wholesale by a pull, and a box that fails to parse it has no LAN, no firewall
 and no way back in but a keyboard.
 """
 
+import pytest
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 
 from tests.conftest import lan_entry, network_config, wan_entry
@@ -23,6 +24,7 @@ def test_an_unknown_role_reads_as_disabled():
 # --- Overlays ---------------------------------------------------------------
 
 
+@pytest.mark.feature("netbird")
 def test_a_file_with_no_overlays_block_reads_one_open_overlay():
     """That is what the firewall did before the switch existed. Reading it as
     "no overlay" would close the way back into every box that upgrades."""
@@ -69,6 +71,7 @@ def test_an_overlay_nobody_supports_is_dropped_rather_than_carried():
     assert config.overlays == []
 
 
+@pytest.mark.feature("netbird")
 def test_an_overlay_survives_a_round_trip_with_its_switch():
     config = RouterNetworkConfig.from_dict(
         {"interfaces": [], "overlays": [{"provider": "netbird", "is_exposed": False}]}
@@ -307,6 +310,7 @@ def test_a_side_gateway_lan_round_trips():
     ).side_gateway_lans
 
 
+@pytest.mark.feature("netbird")
 def test_exposed_interfaces_is_every_exposed_role_then_the_exposed_overlays():
     """Exposure is the only control plane for what answers: an uplink counts
     once exposed, a served network does not until it is, and the overlays

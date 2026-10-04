@@ -69,6 +69,7 @@ def test_one_arm_goes_out_untagged_and_serves_on_a_tag():
     assert lan.device_name == "enp1s0.3"
 
 
+@pytest.mark.feature("proxy")
 def test_a_side_gateway_serves_no_leases_and_names_the_real_router():
     """The network's own router keeps handing out leases; two would fight."""
     plan = RouterModePlanner(

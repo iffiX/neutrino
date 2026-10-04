@@ -285,6 +285,7 @@ def test_the_networks_resolvers_reach_dnsmasq_and_xray_and_are_recorded(
     assert "xray" in rendered
 
 
+@pytest.mark.feature("proxy")
 def test_every_peer_is_pushed_before_an_engine_stops(applied):
     """A client reached through the engine being turned off hears the new
     state while its socket still stands, and nobody waits for it to say so."""
@@ -335,6 +336,7 @@ def test_a_refused_xray_config_does_not_take_the_firewall_or_dns_with_it(applied
     assert [failure["code"] for failure in refusal.value.failures] == ["xray_refused"]
 
 
+@pytest.mark.feature("proxy")
 def test_a_refused_apply_leaves_the_configuration_dirty(applied):
     """The panel goes on showing there is something to apply, because there is:
     xray is running what it was running before."""
@@ -419,6 +421,7 @@ def test_a_step_waiting_on_a_lease_is_not_a_failure(applied, monkeypatch):
 # --- text that did not move restarts nothing --------------------------------
 
 
+@pytest.mark.feature("proxy")
 def test_the_interfaces_are_applied_before_dnsmasq_binds_them(applied):
     """dnsmasq restarted before a LAN has its new address has nothing to
     listen on."""
