@@ -9,7 +9,8 @@ LaunchDaemon with ``UserName`` on macOS, a scheduled task with the
 account's login on Windows. In front of each stands a forwarder of the
 agent on the instance's port, started again from the instance's record when
 the agent restarts. While an account's install runs the module reads
-installing, and its log is the install's output where a file keeps it.
+installing, and its log is the install's output where a file keeps it. The
+code the last apply was refused with ends the log until an apply takes.
 
 Not pure: drives the platform's applier and the forwarders.
 """
@@ -97,6 +98,15 @@ def free_loopback_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def _refusal_line(code: str, params: dict) -> str:
+    """One refused apply as a journal line: ``cloudcli: <code> <name>=<value>``."""
+    named = "".join(
+        f" {name}={' '.join(str(value).split())}"
+        for name, value in sorted(params.items())
+    )
+    return f"{CLOUDCLI_NAME}: {code}{named}"
+
+
 class CloudcliModuleRunner(ModuleRunner):
     """Installs Node.js from the hub's bytes and runs CloudCLI per account."""
 
@@ -147,6 +157,7 @@ class CloudcliModuleRunner(ModuleRunner):
         self._is_stopped = False
         self._applied: "dict | None" = None
         self._applied_at = 0.0
+        self._refusal: "tuple | None" = None
 
     def verify(self, resolved: dict) -> bool:
         """Whether Node.js is on the machine.
@@ -215,6 +226,111 @@ class CloudcliModuleRunner(ModuleRunner):
                 run it.
             ModuleInstallPending: While an account's install still runs.
         """
+        try:
+            self._apply(config)
+        except ModuleApplyError as error:
+            with self._lock:
+                self._refusal = (error.code, dict(error.params))
+            raise
+        with self._lock:
+            self._refusal = None
+
+    def stop(self) -> None:
+        """Stop every instance and its forwarder; Node.js and the records stay.
+
+        Raises:
+            OSError: When the system will not stop one.
+        """
+        with self._lock:
+            self._is_resumed = True
+            self._is_stopped = True
+        self._close_forwarders()
+        try:
+            self._applier.stop()
+        finally:
+            self._forget_states()
+
+    def remove_configuration(self) -> None:
+        """Stop every instance and delete what the applies wrote.
+
+        Raises:
+            OSError: When the system will not let one go.
+        """
+        with self._lock:
+            self._is_resumed = True
+            self._is_stopped = True
+            self._refusal = None
+        self._close_forwarders()
+        for account in self._records.accounts():
+            self._records.remove(account)
+        try:
+            self._applier.remove()
+        finally:
+            self._forget_states()
+
+    def is_active(self) -> bool:
+        """Whether there is an instance and every one of them answers."""
+        states = self._read_states()
+        return bool(states) and all(state["is_running"] for state in states)
+
+    def is_installing(self) -> bool:
+        """Whether an account's install runs.
+
+        Returns:
+            True while the applier runs or waits on an install.
+        """
+        return bool(self._applier.installing)
+
+    def journal_units(self) -> list:
+        """Every instance's unit, on Linux."""
+        return self._applier.units()
+
+    def journal_text(self, lines: int) -> list:
+        """Every instance's output: the units' journal, or each log file's tail.
+
+        Where no unit keeps the output, the agent's own lines that name the
+        module follow the log files' lines; an account whose install runs
+        is there by the install's log where the applier keeps one. The code
+        the last apply was refused with is the last line, on every system.
+
+        Args:
+            lines: How many lines to return at most.
+
+        Returns:
+            The lines, oldest first within each instance; a log file's lines
+            start with its account's name.
+        """
+        with self._lock:
+            refusal = self._refusal
+        tail = [_refusal_line(*refusal)] if refusal is not None else []
+        accounts = set(self._records.accounts()) | set(self._applier.installing)
+        logs = self._applier.log_paths(sorted(accounts))
+        if not logs and self.journal_units():
+            return (super().journal_text(lines) + tail)[-lines:]
+        share = max(1, lines // len(logs)) if logs else 0
+        own = []
+        for account, path in logs:
+            read = self._read_source(path, lambda path=path: file_tail(path, share))
+            own += [f"{account}: {line}" for line in read]
+        held = self._with_agent_lines(own, lines)
+        return (held + tail)[-lines:]
+
+    def details(self, resolved: dict) -> dict:
+        """Each instance, its port and whether it answers.
+
+        Args:
+            resolved: The module as the hub resolved it.
+
+        Returns:
+            ``{"instances": [{"account", "port", "is_running", "code"}]}``:
+            ``is_running`` while CloudCLI runs and its forwarder listens,
+            ``code`` the reason it does not, such as
+            ``cloudcli_register_failed`` or ``credential_invalid``.
+        """
+        return {"instances": [dict(state) for state in self._read_states()]}
+
+    def _apply(self, config: dict) -> None:
+        """Make the configuration true, raising what it refused."""
         parsed = CloudcliConfig.from_dict(config)
         parsed.validate(os_name=self._platform.os_name)
         upstream_ports = {
@@ -257,94 +373,6 @@ class CloudcliModuleRunner(ModuleRunner):
             self._is_stopped = False
         self._sync_forwarders()
         self._log("cloudcli: " + "; ".join(notes or ["unchanged"]))
-
-    def stop(self) -> None:
-        """Stop every instance and its forwarder; Node.js and the records stay.
-
-        Raises:
-            OSError: When the system will not stop one.
-        """
-        with self._lock:
-            self._is_resumed = True
-            self._is_stopped = True
-        self._close_forwarders()
-        try:
-            self._applier.stop()
-        finally:
-            self._forget_states()
-
-    def remove_configuration(self) -> None:
-        """Stop every instance and delete what the applies wrote.
-
-        Raises:
-            OSError: When the system will not let one go.
-        """
-        with self._lock:
-            self._is_resumed = True
-            self._is_stopped = True
-        self._close_forwarders()
-        for account in self._records.accounts():
-            self._records.remove(account)
-        try:
-            self._applier.remove()
-        finally:
-            self._forget_states()
-
-    def is_active(self) -> bool:
-        """Whether there is an instance and every one of them answers."""
-        states = self._read_states()
-        return bool(states) and all(state["is_running"] for state in states)
-
-    def is_installing(self) -> bool:
-        """Whether an account's install runs.
-
-        Returns:
-            True while the applier runs or waits on an install.
-        """
-        return bool(self._applier.installing)
-
-    def journal_units(self) -> list:
-        """Every instance's unit, on Linux."""
-        return self._applier.units()
-
-    def journal_text(self, lines: int) -> list:
-        """Every instance's output: the units' journal, or each log file's tail.
-
-        Where no unit keeps the output, the agent's own lines that name the
-        module follow the log files' lines; an account whose install runs
-        is there by the install's log where the applier keeps one.
-
-        Args:
-            lines: How many lines to return at most.
-
-        Returns:
-            The lines, oldest first within each instance; a log file's lines
-            start with its account's name.
-        """
-        accounts = set(self._records.accounts()) | set(self._applier.installing)
-        logs = self._applier.log_paths(sorted(accounts))
-        if not logs and self.journal_units():
-            return super().journal_text(lines)
-        share = max(1, lines // len(logs)) if logs else 0
-        own = []
-        for account, path in logs:
-            read = self._read_source(path, lambda path=path: file_tail(path, share))
-            own += [f"{account}: {line}" for line in read]
-        return self._with_agent_lines(own, lines)
-
-    def details(self, resolved: dict) -> dict:
-        """Each instance, its port and whether it answers.
-
-        Args:
-            resolved: The module as the hub resolved it.
-
-        Returns:
-            ``{"instances": [{"account", "port", "is_running", "code"}]}``:
-            ``is_running`` while CloudCLI runs and its forwarder listens,
-            ``code`` the reason it does not, such as
-            ``cloudcli_register_failed`` or ``credential_invalid``.
-        """
-        return {"instances": [dict(state) for state in self._read_states()]}
 
     def _upstream_port(self, account: str) -> int:
         """The loopback port an account's CloudCLI keeps, or a new one."""
