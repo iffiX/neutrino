@@ -31,7 +31,7 @@ with sniffing on, so the domain rules of the split apply as they do to
 `tproxy_in`. The hub routes the two halves of the IPv4 space (`0.0.0.0/1`
 and its upper twin) at the device, which win over the uplink's default route without touching
 it, and keeps a host route through the uplink's gateway for every address
-that has to stay out: every exit node's address, `direct_dns`, the
+that has to stay out: every exit node's address, every direct resolver, the
 reference host, and everything the running overlay engines talk to, which
 is their servers as the engines report them, EasyTier's console and its
 peer-resolve host, and every peer endpoint the engines hold now; a name
@@ -167,18 +167,40 @@ hub sets the override again within a second.
 
 ## Where names resolve
 
+Names resolve in two layers. The network's resolvers are the machine's and
+its served networks' wherever no proxy scope covers the traffic. The proxy's
+resolvers decide only for traffic a scope covers; they are an override, and
+an edition built without the proxy has the first layer alone.
+
+**The network's resolvers** belong to the uplink and live in
+`config/router/`. An uplink that takes its address by DHCP uses the
+resolvers its lease names. A static uplink lists its own under its address,
+prefix and gateway, one row each. With several uplinks, each one's resolvers
+are used in the uplinks' order of priority. When an uplink names none, two
+built-in fallbacks answer: `223.5.5.5` and `119.29.29.29`. dnsmasq forwards
+to these.
+
+**The proxy's resolvers** are two lists in `config/xray/routing.json`, one
+row each on the Proxy page: `remote_dns`, asked through the exit for names
+whose traffic goes through it, and `direct_dns`, asked out the uplink for
+names whose traffic stays direct. An empty `direct_dns` means the network's
+resolvers. A file written before the lists holds one address under
+`direct_dns`: it reads as a list of that address, and as an empty list when
+the address is the former default `223.5.5.5`.
+
 Resolution is where a proxy loops on itself, so every lookup has one
-assigned resolver.
+assigned resolver. "Direct" in the table is `direct_dns`, or the network's
+resolvers while that list is empty.
 
 | Lookup | Resolver | Path |
 | --- | --- | --- |
-| an exit node's own name | `direct_dns` | xray's resolver, out the uplink, under the egress mark |
-| the hub's probe host | `direct_dns` | the same |
-| the hub's connect measurement | `direct_dns` | a plain A query from the hub, under the egress mark |
+| an exit node's own name | direct | xray's resolver, out the uplink, under the egress mark |
+| the hub's probe host | direct | the same |
+| the hub's connect measurement | direct | a plain A query from the hub, under the egress mark |
 | a served network's names, LAN scope on | the split below | dnsmasq → xray `dns_in` → `dns_out` → xray's resolver |
-| a served network's names, LAN scope off | `direct_dns` | dnsmasq → the uplink |
-| the hub's own names | dnsmasq | the row above that matches; with the hub scope on the query to `direct_dns` is diverted like any other |
-| the names xray resolves for the split | `direct_dns` for `direct_domains`, `remote_dns` otherwise | the query to `remote_dns` follows the balancer |
+| a served network's names, LAN scope off | the network's resolvers | dnsmasq → the uplink |
+| the hub's own names | dnsmasq | the row above that matches; with the hub scope on the query to a direct resolver is diverted like any other |
+| the names xray resolves for the split | direct for `direct_domains`, `remote_dns` otherwise | the query to `remote_dns` follows the balancer |
 
 The first three are the proxy's own lookups: a lookup for an exit's address
 that goes through an exit waits on its own answer. They take no switch into

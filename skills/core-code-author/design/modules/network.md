@@ -321,6 +321,12 @@ pushes. A peer is handed its state when it next reports to a running panel.
 
 ## What dnsmasq gives a served network
 
+dnsmasq's upstreams are the network's resolvers, the uplink's own
+([proxy.md](proxy.md), "Where names resolve"): the ones a DHCP uplink's
+lease names, or the rows a static uplink lists under its address, prefix and
+gateway. The lease client still writes no `/etc/resolv.conf`; the hub reads
+the resolvers out of the lease and renders them into dnsmasq.
+
 dnsmasq is the DHCP server and the resolver of every served network, and
 nothing else on the box answers either. It gets one `dhcp-range` per LAN
 whose DHCP is on, and every request is tagged with the interface it arrived
@@ -401,7 +407,7 @@ Turned on, two things change together:
 | Half | Mechanism | Why not the obvious one |
 | --- | --- | --- |
 | Traffic | `fallbackTag: direct` on the balancer | xray's own; nothing to build |
-| Names | dnsmasq gets `strict-order` and the **direct** resolver as a second upstream behind xray | letting DNS fall back through the balancer would query the *remote* resolver in plaintext — which, in the network this exists for, is answered wrongly rather than not at all |
+| Names | dnsmasq gets `strict-order` and the direct resolvers as the upstreams behind xray | letting DNS fall back through the balancer would query the *remote* resolver in plaintext — which, in the network this exists for, is answered wrongly rather than not at all |
 
 `strict-order` is what makes the second upstream a fallback rather than a
 race: without it dnsmasq asks both and every query leaks to the direct
@@ -497,7 +503,7 @@ The resolver file is the one file put back. Router mode replaces
 `resolv.conf.original` under the state root, a symlink as the same symlink.
 Handing back links the file to the stub of `systemd-resolved` when that unit
 is enabled. Otherwise it puts the copy back and deletes it, and with no copy
-it writes the `direct_dns` address from `config/xray/routing.json`, so the
+it writes the network's resolvers, so the
 machine still has a resolver that answers. A box that entered router mode
 under 0.3.1 has no copy: its reset writes the direct resolver, and the file it
 had before is lost.

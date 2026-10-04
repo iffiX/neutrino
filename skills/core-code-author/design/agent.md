@@ -132,6 +132,14 @@ accounts it made, the ones its record under the state root lists and its
 marker names, but its fence covers every share on the machine, the person's
 own included.
 
+Removing the agent's package takes away what the agent added in order to
+run and to fence, and leaves what the machine serves. On every system the
+shares and the accounts stay as they are and the system's SMB server goes on
+serving them. The agent's own units, scheduled tasks, firewall rules and
+fence go with the package. An agent installed again finds the shares and
+accounts that were left and takes them back by the rule above: they are
+displayed, and the first report imports them.
+
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
 wording. The agent's `error` section crosses the socket the same way, so a
