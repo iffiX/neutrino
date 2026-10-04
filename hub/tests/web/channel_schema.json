@@ -789,47 +789,6 @@
       "title": "ChannelDesktopState",
       "type": "object"
     },
-    "ChannelEnrollView": {
-      "description": "What ``GET /api/channel/enroll`` answers: a client link's object.",
-      "properties": {
-        "urls": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Urls",
-          "type": "array"
-        },
-        "token": {
-          "title": "Token",
-          "type": "string"
-        },
-        "fp": {
-          "title": "Fp",
-          "type": "string"
-        },
-        "role": {
-          "title": "Role",
-          "type": "string"
-        },
-        "overlays": {
-          "items": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "title": "Overlays",
-          "type": "array"
-        }
-      },
-      "required": [
-        "urls",
-        "token",
-        "fp",
-        "role",
-        "overlays"
-      ],
-      "title": "ChannelEnrollView",
-      "type": "object"
-    },
     "ChannelError": {
       "description": "The agent's most recent failure worth showing.",
       "properties": {

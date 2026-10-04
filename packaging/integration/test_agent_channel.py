@@ -15,6 +15,7 @@ passes by skipping tested nothing.
 import base64
 import json
 import urllib.parse
+import zlib
 
 import pytest
 
@@ -33,14 +34,15 @@ def tampered(link: str) -> str:
     """The same link with its fingerprint replaced, everything else intact."""
     payload = generated_payload(link)
     payload["fp"] = WRONG_FINGERPRINT
-    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    text = json.dumps(payload, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(zlib.compress(text, 9)).decode()
     return "neutrino://enroll/" + encoded.rstrip("=")
 
 
 def generated_payload(link: str) -> dict:
     payload_text = link.removeprefix("neutrino://enroll/")
     padded = payload_text + "=" * (-len(payload_text) % 4)
-    return json.loads(base64.urlsafe_b64decode(padded))
+    return json.loads(zlib.decompress(base64.urlsafe_b64decode(padded)))
 
 
 @pytest.fixture(scope="module")

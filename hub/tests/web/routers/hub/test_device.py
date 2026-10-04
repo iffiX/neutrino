@@ -9,6 +9,7 @@ is written above each.
 import base64
 import json
 import time
+import zlib
 from types import SimpleNamespace
 
 import asyncssh
@@ -1469,11 +1470,12 @@ def test_the_link_is_one_shell_safe_token(box_api, monkeypatch):
     payload_text = link.removeprefix("neutrino://enroll/")
     assert not any(character in payload_text for character in "?&%#;|<> '\"=")
     padded = payload_text + "=" * (-len(payload_text) % 4)
-    payload = json.loads(base64.urlsafe_b64decode(padded))
+    payload = json.loads(zlib.decompress(base64.urlsafe_b64decode(padded)))
     assert payload["urls"] == ["http://192.168.8.1:8080", "http://10.0.0.1:8080"]
     assert payload["token"] == answer["token"]
     assert payload["fp"] == FINGERPRINT
     assert payload["role"] == "agent"
+    assert "qr_link" not in answer
 
 
 def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(box_api, monkeypatch):

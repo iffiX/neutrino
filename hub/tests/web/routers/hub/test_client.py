@@ -17,7 +17,6 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.modules.services.host_scope import HostScope
 from neutrino_hub.web import channel_addresses, channel_state
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import client as clients_router
@@ -104,9 +103,11 @@ def api(monkeypatch, tmp_path):
 def decoded_link(link: str) -> dict:
     import base64
     import json
+    import zlib
 
     payload = link.removeprefix("neutrino://enroll/")
-    return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    packed = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
+    return json.loads(zlib.decompress(packed))
 
 
 def test_an_empty_hub_lists_no_clients(api):
@@ -137,7 +138,6 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
         "name": "alice",
         "client_id": rows[0]["id"],
         "expires_at": ticket["expires_at"],
-        "link_body": payload,
     }
     assert body["expires_at"].endswith("+00:00")
     # The page shows this number, not a difference against its own clock.
@@ -475,36 +475,9 @@ def test_a_client_link_with_no_overlay_to_join_carries_an_empty_list(api):
     assert "overlay" not in payload
 
 
-def test_the_qr_link_is_short_and_carries_the_ticket_one_address_and_the_pin(api):
+def test_the_enrollment_view_carries_one_link_and_no_qr_link(api):
     client, _ = api
 
     reply = client.post("/api/hub/client/enrollment/create", json={"name": "a"})
 
-    token = decoded_link(reply.json()["link"])["token"]
-    assert reply.json()["qr_link"] == (
-        f"neutrino://enroll/{token}@192.168.100.1:8443/{FINGERPRINT}"
-    )
-
-
-def test_the_qr_link_names_the_hub_on_the_network_the_panel_was_reached_from(
-    api, monkeypatch
-):
-    client, runtime = api
-    monkeypatch.setattr(
-        channel_addresses,
-        "channel_urls",
-        lambda given: ["https://192.168.100.1:8443", "https://10.0.0.1:8443"],
-    )
-    runtime.scopes = [
-        HostScope(
-            id="192.168.100.0/24", cidr="192.168.100.0/24", hub_address="192.168.100.1"
-        ),
-        HostScope(id="10.0.0.0/24", cidr="10.0.0.0/24", hub_address="10.0.0.1"),
-    ]
-    from_lan = TestClient(client.app, client=("10.0.0.7", 50000))
-
-    reply = from_lan.post("/api/hub/client/enrollment/create", json={"name": "a"})
-    elsewhere = client.post("/api/hub/client/enrollment/create", json={"name": "b"})
-
-    assert "@10.0.0.1:8443/" in reply.json()["qr_link"]
-    assert "@192.168.100.1:8443/" in elsewhere.json()["qr_link"]
+    assert set(reply.json()) == {"link", "expires_at", "expires_in_s"}

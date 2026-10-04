@@ -252,59 +252,15 @@ def test_an_unknown_or_expired_ticket_is_ticket_spent(api):
     assert runtime.enrollments == {}
 
 
-LINK_BODY = {
-    "urls": ["https://192.168.100.1:8443"],
-    "token": "c1",
-    "fp": "ab" * 32,
-    "role": "client",
-    "overlays": [{"provider": "netbird", "setup_key": "key"}],
-}
-
-
-def test_a_short_links_ticket_fetches_the_long_links_object_and_spends_nothing(api):
+def test_no_route_hands_out_a_tickets_link(api):
     client, runtime = api
     client_id = ClientRegistry().create("alice")
-    ticket(runtime, "c1", kind="client", client_id=client_id, link_body=LINK_BODY)
+    ticket(runtime, "c1", kind="client", client_id=client_id)
 
-    first = client.get("/api/channel/enroll", params={"ticket": "c1"})
-    second = client.get("/api/channel/enroll", params={"ticket": "c1"})
+    answer = client.get("/api/channel/enroll", params={"ticket": "c1"})
 
-    assert first.status_code == second.status_code == 200
-    assert first.json() == LINK_BODY
+    assert answer.status_code == 404
     assert "c1" in runtime.enrollments
-
-
-def test_the_join_after_the_fetch_still_spends_the_ticket(api):
-    client, runtime = api
-    client_id = ClientRegistry().create("alice")
-    ticket(runtime, "c1", kind="client", client_id=client_id, link_body=LINK_BODY)
-    client.get("/api/channel/enroll", params={"ticket": "c1"})
-
-    joined = client.post(
-        "/api/channel/join",
-        json=join_body(ticket="c1", role="client", software="neutrino_client/1.2.3"),
-    )
-    after = client.get("/api/channel/enroll", params={"ticket": "c1"})
-
-    assert joined.status_code == 200
-    assert after.status_code == 401
-    assert after.json()["detail"] == {"code": "ticket_spent", "params": {}}
-
-
-def test_an_unknown_expired_or_linkless_ticket_fetches_nothing(api):
-    client, runtime = api
-    ticket(
-        runtime, "old", kind="client", expires_at=time.time() - 1, link_body=LINK_BODY
-    )
-    ticket(runtime, "dev")
-
-    answers = [
-        client.get("/api/channel/enroll", params={"ticket": name})
-        for name in ("nonsense", "old", "dev")
-    ]
-
-    assert [answer.status_code for answer in answers] == [401, 401, 401]
-    assert {answer.json()["detail"]["code"] for answer in answers} == {"ticket_spent"}
 
 
 def test_a_rejected_protocol_spends_no_ticket(api):
