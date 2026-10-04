@@ -288,12 +288,13 @@ def test_post_a_dead_port_raises_unreachable():
 # --- the link a QR code carries ---
 
 
-NETBIRD = {
-    "provider": "netbird",
-    "setup_key": "KEY-1",  # scan: allow
-    "management_url": "https://api.netbird.io",
-    "fqdn": "hub.netbird.cloud",
-    "hub_address": "100.64.0.1",
+OVERLAY = {
+    "provider": "easytier",
+    "mode": "manual",
+    "network_name": "home",
+    "network_secret": "s3cret",  # scan: allow
+    "peer": "tcp://203.0.113.7:11010",
+    "hub_address": "10.144.144.1",
 }
 
 
@@ -304,7 +305,7 @@ def scanned_link(url: str, fingerprint: str, ticket: str = "c1") -> str:
             "urls": [url, "https://10.0.0.1:8443"],
             "token": ticket,
             "fp": fingerprint,
-            "overlays": [NETBIRD],
+            "overlays": [OVERLAY],
         }
     )
 
@@ -336,7 +337,7 @@ def test_a_scanned_link_is_stored_pending_at_once_and_asks_nothing(tls_server):
     assert binding["gateway_urls"] == [url, "https://10.0.0.1:8443"]
     assert (binding["ticket"], binding["fingerprint"]) == ("c1", fingerprint)
     assert binding["is_pending"] is True and "is_object_pending" not in binding
-    assert binding["overlays"] == [NETBIRD] and binding["token"] == ""
+    assert binding["overlays"] == [OVERLAY] and binding["token"] == ""
     assert enrollment.bindings() == [binding]
     assert RecordingHandler.requests == []
 
@@ -348,7 +349,7 @@ def test_a_scanned_link_whose_hub_does_not_answer_stays_pending(config_path):
 
     assert session.connection() == "pending"
     (stored,) = json.loads(config_path.read_text())["bindings"]
-    assert stored["is_pending"] is True and stored["overlays"] == [NETBIRD]
+    assert stored["is_pending"] is True and stored["overlays"] == [OVERLAY]
 
 
 def test_a_round_that_reaches_the_hub_joins_with_nothing_fetched_first(
@@ -367,7 +368,7 @@ def test_a_round_that_reaches_the_hub_joins_with_nothing_fetched_first(
     assert json.loads(RecordingHandler.requests[0][1])["ticket"] == "c1"
     (stored,) = json.loads(config_path.read_text())["bindings"]
     assert (stored["id"], stored["token"]) == ("h-c1", "tok")
-    assert stored["overlays"] == [NETBIRD] and "ticket" not in stored
+    assert stored["overlays"] == [OVERLAY] and "ticket" not in stored
     assert sockets.made[0].sent[0]["type"] == "hello"
 
 

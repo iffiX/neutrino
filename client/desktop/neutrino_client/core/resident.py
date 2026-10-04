@@ -199,7 +199,7 @@ class ClientResident:
             log: Callable used for progress messages.
             platform: The machine's platform; None detects it.
             overlay_drivers: ``{provider: driver}`` for the virtual
-                networks; None drives the carried NetBird and EasyTier.
+                networks; None drives the carried engines.
             start_thread: ``start_thread(target)`` runs a job a press
                 started; None uses a daemon thread. Tests pass one that
                 runs inline.

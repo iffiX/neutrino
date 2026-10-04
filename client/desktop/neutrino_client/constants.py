@@ -139,14 +139,12 @@ CLIENT_INSTALL_PREFIX_LINUX = "/opt/neutrino/client"
 CLIENT_BUNDLED_PATHS_LINUX = {
     "cc-switch": "bin/cc-switch",
     "rustdesk": "rustdesk/rustdesk",
-    "netbird": "netbird/netbird",
     "easytier-core": "easytier/easytier-core",
     "easytier-cli": "easytier/easytier-cli",
 }
 CLIENT_BUNDLED_PATHS_WINDOWS = {
     "cc-switch": "bin\\cc-switch.exe",
     "rustdesk": "bin\\rustdesk.exe",
-    "netbird": "bin\\netbird.exe",
     "easytier-core": "bin\\easytier-core.exe",
     "easytier-cli": "bin\\easytier-cli.exe",
     "tun2socks": "bin\\tun2socks.exe",
@@ -156,7 +154,6 @@ CLIENT_BUNDLED_PATHS_WINDOWS = {
 CLIENT_BUNDLED_PATHS_DARWIN = {
     "cc-switch": "Resources/bin/cc-switch",
     "rustdesk": "Resources/rustdesk/RustDesk.app/Contents/MacOS/RustDesk",
-    "netbird": "Resources/netbird/netbird",
     "easytier-core": "Resources/easytier/easytier-core",
     "easytier-cli": "Resources/easytier/easytier-cli",
 }
@@ -215,25 +212,18 @@ CLIENT_CLIPBOARD_TIMEOUT_S = 5
 CLIENT_LOG_FILE_NAME = "client.log"
 CLIENT_LOG_KEEP_BYTES = 1024 * 1024
 
-# The two overlay daemons the packages carry and register as system
-# services: NetBird's own, whose CLI the person runs, and the client's
-# EasyTier daemon, which runs EasyTier's core and which the person asks over
-# its socket. Neither asks the person for an administrator.
-CLIENT_OVERLAY_PROVIDERS = ("netbird", "easytier")
-# What the machine accumulated for the two daemons: under /var/lib on Linux,
-# and the client's state directory of the one Neutrino tree elsewhere, under
-# /Library/Application Support on macOS and %PROGRAMDATA% on Windows.
+# The overlay daemons the packages carry and register as system services:
+# the client's EasyTier daemon, which runs EasyTier's core and which the
+# person asks over its socket, and those of the engines the edition table
+# adds. None asks the person for an administrator. What the machine
+# accumulated for them: under /var/lib on Linux, and the client's state
+# directory of the one Neutrino tree elsewhere, under /Library/Application
+# Support on macOS and %PROGRAMDATA% on Windows.
 CLIENT_STATE_DIR_LINUX = "/var/lib/neutrino/client"
-CLIENT_NETBIRD_CONFIG_PATH_LINUX = CLIENT_STATE_DIR_LINUX + "/netbird/config.json"
-CLIENT_NETBIRD_SERVICE_LINUX = "neutrino_client_netbird.service"
 CLIENT_EASYTIER_SERVICE_LINUX = "neutrino_client_easytier.service"
 CLIENT_STATE_SUBDIR_WINDOWS = ("Neutrino", "client", "state")
 CLIENT_STATE_DIR_DARWIN = "/Library/Application Support/Neutrino/client/state"
-CLIENT_NETBIRD_CONFIG_NAME_WINDOWS = "netbird\\config.json"
-CLIENT_NETBIRD_SERVICE_WINDOWS = "NeutrinoClientNetbird"
 CLIENT_EASYTIER_SERVICE_WINDOWS = "NeutrinoClientEasytier"
-CLIENT_NETBIRD_CONFIG_PATH_DARWIN = CLIENT_STATE_DIR_DARWIN + "/netbird/config.json"
-CLIENT_NETBIRD_LAUNCHD_LABEL = "com.neutrino.client.netbird"
 CLIENT_EASYTIER_LAUNCHD_LABEL = "com.neutrino.client.easytier"
 CLIENT_LAUNCHD_DAEMONS_DIR = "/Library/LaunchDaemons"
 # The one RPC portal the EasyTier core listens on, for every network it
@@ -255,13 +245,11 @@ CLIENT_OVERLAY_POLL_INTERVAL_S = 15
 CLIENT_OVERLAY_LOGIN_TIMEOUT_S = 90
 CLIENT_OVERLAY_CONNECT_POLL_S = 1
 CLIENT_OVERLAY_HUB_PROBE_S = 2
-# The prefix every NetBird address sits in.
-CLIENT_OVERLAY_NETBIRD_NETWORK = "100.64.0.0/10"
 
 # The EasyTier daemon: a long-running process of this package, root on Linux
 # and macOS and SYSTEM on Windows, the only thing that runs easytier-core. It
 # answers one JSON request per connection on a local socket every account on
-# the machine may open, the way NetBird's daemon does.
+# the machine may open.
 CLIENT_EASYTIER_DAEMON_VERB = "easytier-daemon"
 CLIENT_EASYTIER_SOCKET_PATH_LINUX = "/run/neutrino/client/easytier.sock"
 CLIENT_EASYTIER_SOCKET_PATH_DARWIN = "/var/run/neutrino/client/easytier.sock"
@@ -275,7 +263,7 @@ CLIENT_EASYTIER_STATE_NAME_WINDOWS = "easytier"
 CLIENT_EASYTIER_NETWORKS_DIR_NAME = "networks"
 CLIENT_EASYTIER_CONSOLE_FILE_NAME = "console.json"
 # The core's output and, as a Windows service, the daemon's own, under the
-# client's log root beside NetBird's log; one file each, kept to a size, the
+# client's log root; one file each, kept to a size, the
 # previous one beside it. On Windows the root is under %PROGRAMDATA%.
 CLIENT_LOG_DIR_LINUX = "/var/log/neutrino/client"
 CLIENT_LOG_DIR_DARWIN = "/Library/Logs/Neutrino/client"

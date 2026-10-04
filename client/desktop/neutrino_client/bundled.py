@@ -1,7 +1,8 @@
 """Where the binaries the client carries are installed.
 
-The packages put cc-switch, the RustDesk viewer and the NetBird and
-EasyTier CLIs beside the client: under ``/opt/neutrino/client`` on Linux,
+The packages put cc-switch, the RustDesk viewer, the EasyTier CLIs and those
+of the engines the edition table adds beside the client: under
+``/opt/neutrino/client`` on Linux,
 next to the package on Windows, under the app bundle's
 ``Contents/Resources`` on macOS. A checkout carries none of them, and
 asking for one there is a typed refusal.
@@ -11,6 +12,7 @@ import os
 import pathlib
 import sys
 
+from neutrino_client import edition
 from neutrino_client.constants import (
     CLIENT_BUNDLED_PATHS_DARWIN,
     CLIENT_BUNDLED_PATHS_LINUX,
@@ -37,21 +39,24 @@ def bundled_path(binary: str) -> str:
     """One carried binary's absolute path.
 
     Args:
-        binary: ``cc-switch``, ``rustdesk``, ``netbird``, ``easytier-core``
-            or ``easytier-cli``.
+        binary: ``cc-switch``, ``rustdesk``, ``easytier-core``,
+            ``easytier-cli`` or one the edition table adds.
 
     Returns:
         The path when the binary is on the machine, empty otherwise.
     """
     if os.name == "nt":
-        relative = CLIENT_BUNDLED_PATHS_WINDOWS.get(binary, "")
+        system, paths = "windows", CLIENT_BUNDLED_PATHS_WINDOWS
         root = _PACKAGE_DIR.parent
     elif sys.platform == "darwin":
-        relative = CLIENT_BUNDLED_PATHS_DARWIN.get(binary, "")
+        system, paths = "darwin", CLIENT_BUNDLED_PATHS_DARWIN
         root = _PACKAGE_DIR.parent.parent
     else:
-        relative = CLIENT_BUNDLED_PATHS_LINUX.get(binary, "")
+        system, paths = "linux", CLIENT_BUNDLED_PATHS_LINUX
         root = pathlib.Path(CLIENT_INSTALL_PREFIX_LINUX)
+    relative = paths.get(binary, "")
+    for added in edition.hooks("bundled_paths"):
+        relative = relative or added[system].get(binary, "")
     if not relative:
         return ""
     candidate = root / relative

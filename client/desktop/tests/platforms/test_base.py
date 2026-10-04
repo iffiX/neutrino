@@ -352,10 +352,10 @@ def test_an_overlay_cli_the_install_does_not_carry_is_bundle_missing(monkeypatch
     monkeypatch.setattr(base_module.bundled, "bundled_path", lambda binary: "")
 
     with pytest.raises(OverlayControlError) as caught:
-        ClientPlatform().run_overlay("netbird", ["status"], timeout_s=1)
+        ClientPlatform().run_overlay("easytier-cli", ["node"], timeout_s=1)
 
     assert caught.value.code == "bundle_missing"
-    assert caught.value.params == {"binary": "netbird"}
+    assert caught.value.params == {"binary": "easytier-cli"}
 
 
 def test_an_overlay_cli_runs_as_this_person_with_its_arguments(monkeypatch):

@@ -10,8 +10,8 @@ built in a container of the machine it is for.
 
 The same maintainer scripts too: every resident is asked to quit before its
 files are taken, erasing the package keeps each person's own configuration,
-and the two overlay daemons' units, NetBird's and the client's own EasyTier
-daemon, are registered on install and stopped on erase.
+and the overlay daemons' units, the client's own EasyTier daemon's and those
+a part of the payload adds, are registered on install and stopped on erase.
 
 Needs `rpmbuild`, from the `rpm` package on Debian family and `rpm-build` on
 RHEL family, a C compiler and patchelf for Nuitka, and `dpkg` for the viewer
@@ -79,8 +79,7 @@ Summary:        Neutrino client
 License:        MIT
 URL:            https://github.com/iffiX/neutrino
 BuildArch:      {architecture}
-{requires}
-Conflicts:      netbird
+{requires}{conflicts}
 Packager:       {packager}
 
 # The payload is prebuilt and compiled, so none of rpmbuild's opinions about
@@ -216,13 +215,14 @@ def main() -> int:
 
 
 def overlay_spec_values() -> dict:
-    """What the spec says of the two overlay daemons.
+    """What the spec says of the overlay daemons.
 
     Returns:
-        ``{units, overlay_start, overlay_stop}``, the
+        ``{conflicts, units, overlay_start, overlay_stop}``, the
         values the spec's holes of those names take.
     """
     return {
+        "conflicts": "".join(f"\nConflicts:      {name}" for name in payload.CONFLICTS),
         "units": "\n".join(
             f"/{payload.SYSTEMD_UNIT_DIR}/{unit}" for unit in payload.OVERLAY_UNITS
         ),

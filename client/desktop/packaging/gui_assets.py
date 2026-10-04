@@ -5,7 +5,8 @@ source is ``images/icons/`` at the repository root. Every client package build
 copies both into the package's ``data/gui/``, which a checkout does not carry.
 The word catalogs go with them, under ``data/gui/locales/``, where the page's
 loader and the resident both read them, and the vendored terminal library
-under ``data/gui/vendor/``.
+under ``data/gui/vendor/``, and the parts of the left-out features the tree
+holds under ``data/gui/parts/``.
 
 Not pure: copies files.
 """
@@ -19,6 +20,9 @@ CLIENT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = CLIENT_ROOT / "frontend"
 LOCALES_DIR = FRONTEND_DIR / "locales"
 VENDOR_DIR = FRONTEND_DIR / "vendor"
+# The scripts of the left-out features the tree holds; none in the mainland
+# tree.
+PARTS_DIR = FRONTEND_DIR / "parts"
 ICONS_DIR = CLIENT_ROOT.parent.parent / "images" / "icons"
 
 
@@ -46,6 +50,10 @@ def stage_gui(package_dir: Path) -> None:
     for source in sorted(VENDOR_DIR.iterdir()):
         if source.is_file():
             shutil.copyfile(source, vendor_dir / source.name)
+    parts_dir = gui_dir / "parts"
+    parts_dir.mkdir(exist_ok=True)
+    for source in sorted(PARTS_DIR.glob("*.js")):
+        shutil.copyfile(source, parts_dir / source.name)
     shutil.copyfile(ICONS_DIR / "neutrino_256.png", gui_dir / "neutrino_client.png")
     # Windows loads a window and tray icon from an .ico and from nothing
     # else; a .png there leaves the stock grey application icon.

@@ -2,7 +2,7 @@
 
 wix is not run here — it needs Windows and the .NET tool — and neither is
 the compiler, so what is asserted is the document the build writes and the
-command the compile is given: a product identity of its own, the two
+command the compile is given: a product identity of its own, the
 overlay daemons as services, the EasyTier one the client run as its daemon, no autostart Run
 entry, the shortcut, the quit that comes before
 anything ends a resident and opens no window doing it, the two questions and
@@ -30,6 +30,14 @@ AGENT_UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
 # The two namespaces the document is written in.
 WXS = "{http://wixtoolset.org/schemas/v4/wxs}"
 UTIL = "{http://wixtoolset.org/schemas/v4/wxs/util}"
+
+# The services the installer registers: the EasyTier and files daemons, and
+# those of the parts the tree holds.
+DAEMON_SERVICES = {"NeutrinoClientEasytier", "NeutrinoClientFiles"} | {
+    name for part in payload.parts() for name in part.WINDOWS_SERVICES
+}
+# The licences the parts the tree holds add.
+PARTS_LICENSES = [name for part in payload.parts() for name in part.CARRIED_LICENSES]
 
 
 @pytest.fixture
@@ -71,12 +79,8 @@ def controls(source) -> dict:
     }
 
 
-def test_the_installer_registers_the_three_daemons_and_no_other_service(source):
-    assert set(services(source)) == {
-        "NeutrinoClientNetbird",
-        "NeutrinoClientEasytier",
-        "NeutrinoClientFiles",
-    }
+def test_the_installer_registers_the_daemons_and_no_other_service(source):
+    assert set(services(source)) == DAEMON_SERVICES
     for element in services(source).values():
         assert element.get("Account") == "LocalSystem"
     assert "gui" not in " ".join(
@@ -85,11 +89,7 @@ def test_the_installer_registers_the_three_daemons_and_no_other_service(source):
 
 
 def test_every_daemon_starts_with_windows_and_goes_with_the_client(source):
-    for name in (
-        "NeutrinoClientNetbird",
-        "NeutrinoClientEasytier",
-        "NeutrinoClientFiles",
-    ):
+    for name in DAEMON_SERVICES:
         assert services(source)[name].get("Start") == "auto"
         assert controls(source)[name].get("Start") == "install"
         assert controls(source)[name].get("Stop") == "both"
@@ -99,18 +99,12 @@ def test_every_daemon_starts_with_windows_and_goes_with_the_client(source):
 def test_the_easytier_service_is_the_client_run_as_its_daemon(source):
     """The core is the daemon's child, never a service of its own."""
     root = xml.etree.ElementTree.fromstring(source)
-    netbird = services(source)["NeutrinoClientNetbird"].get("Arguments")
     easytier = services(source)["NeutrinoClientEasytier"].get("Arguments")
     components = {
         component.get("Id"): component for component in root.iter(f"{WXS}Component")
     }
     (daemon_file,) = components["EasytierDaemon"].iter(f"{WXS}File")
 
-    assert netbird == (
-        "service run --config "
-        '"[CommonAppDataFolder]Neutrino\\client\\state\\netbird\\config.json"'
-        ' --log-file "[CommonAppDataFolder]Neutrino\\client\\log\\netbird.log"'
-    )
     assert easytier == "easytier-daemon --service"
     assert (
         daemon_file.get("Source").replace("\\", "/") == "C:/build/payload/nclient.exe"
@@ -175,11 +169,15 @@ def test_the_daemon_binaries_are_service_components_and_not_files_of_the_glob(
         component.get("Id"): component for component in root.iter(f"{WXS}Component")
     }
 
-    assert [name.replace("\\", "/") for name in excluded] == [
-        "C:/build/payload/bin/netbird.exe",
-        "C:/build/payload/nclient.exe",
+    parts_excluded = [
+        str(path).replace("\\", "/")
+        for part in payload.parts()
+        for path in part.windows_excluded(Path("C:\\build\\payload"))
     ]
-    assert components["NetbirdService"].get("Subdirectory") == "bin"
+    assert [name.replace("\\", "/") for name in excluded] == parts_excluded + [
+        "C:/build/payload/nclient.exe"
+    ]
+    assert components["EasytierDaemon"].get("Subdirectory") is None
     main = [
         feature for feature in root.iter(f"{WXS}Feature") if feature.get("Id") == "Main"
     ][0]
@@ -547,17 +545,19 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
     build_client_windows._stage_licenses(tmp_path)
 
     carried = tmp_path / "licenses"
-    assert sorted(path.name for path in carried.iterdir()) == [
-        "cc_switch.txt",
-        "easytier.txt",
-        "meslolgs_nf.txt",
-        "netbird.txt",
-        "packet_stub.txt",
-        "rustdesk.txt",
-        "tun2socks.txt",
-        "wintun.txt",
-        "xterm.txt",
-    ]
+    assert sorted(path.name for path in carried.iterdir()) == sorted(
+        PARTS_LICENSES
+        + [
+            "cc_switch.txt",
+            "easytier.txt",
+            "meslolgs_nf.txt",
+            "packet_stub.txt",
+            "rustdesk.txt",
+            "tun2socks.txt",
+            "wintun.txt",
+            "xterm.txt",
+        ]
+    )
     assert "Prebuilt Binaries License" in (carried / "wintun.txt").read_text()
     note = (carried / "packet_stub.txt").read_text()
     assert "not Npcap's Packet.dll" in note
@@ -701,5 +701,4 @@ def test_the_client_takes_its_own_folders_of_the_one_neutrino_tree(source):
     assert directories["CLIENTDATAFOLDER"].get("Name") == "client"
     assert directories["CLIENTDATAFOLDER"] in list(directories["NeutrinoDataFolder"])
     assert directories["CLIENTSTATEFOLDER"].get("Name") == "state"
-    assert directories["NETBIRDDATAFOLDER"] in list(directories["CLIENTSTATEFOLDER"])
     assert "Neutrino Client" not in [node.get("Name") for node in directories.values()]

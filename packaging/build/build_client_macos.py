@@ -15,10 +15,11 @@ Mac.
 
 The client is a person's application, not a service and not a login item:
 it runs when the person opens it. The installer puts the bundle under
-``/Applications`` and links ``nclient`` into ``/usr/local/bin``. The two
-overlay daemons it carries are LaunchDaemons, both kept running: NetBird's,
-and the client's own EasyTier daemon, ``nclient easytier-daemon``, which
-runs EasyTier's core only while a network or a console is configured.
+``/Applications`` and links ``nclient`` into ``/usr/local/bin``. The overlay
+daemons it carries are LaunchDaemons, all kept running: each one a part of
+the payload the tree holds adds, and the client's own EasyTier daemon,
+``nclient easytier-daemon``, which runs EasyTier's core only while a network
+or a console is configured.
 
 The bundle is read back with ``otool`` and refused when a file of it loads
 a library from outside the system, then signed ad hoc. Apple silicon
@@ -34,9 +35,7 @@ compiles, signs, writes a package tree, runs pkgbuild and productbuild.
 """
 
 import argparse
-import os
 import platform
-import shlex
 import shutil
 import sys
 import tempfile
@@ -57,14 +56,11 @@ from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 # The labels, the directories and the portal are the client's own, named here
 # so the installer and the runtime cannot drift.
 from neutrino_client.constants import (  # noqa: E402
-    CLIENT_BUNDLED_PATHS_DARWIN,
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_LAUNCHD_LABEL,
     CLIENT_EASYTIER_STATE_DIR_DARWIN,
     CLIENT_LAUNCHD_DAEMONS_DIR,
     CLIENT_LOG_DIR_DARWIN,
-    CLIENT_NETBIRD_CONFIG_PATH_DARWIN,
-    CLIENT_NETBIRD_LAUNCHD_LABEL,
     CLIENT_STATE_DIR_DARWIN,
 )
 
@@ -98,36 +94,48 @@ INSTALL_LINK_PATH = Path("/usr/local/bin") / CLIENT_BINARY_NAME
 
 # Where each daemon's output goes.
 LOG_DIR = CLIENT_LOG_DIR_DARWIN
-NETBIRD_LOG_PATH = LOG_DIR + "/netbird.log"
 EASYTIER_LOG_PATH = LOG_DIR + "/easytier.log"
 
-# What the install runs around the files: both daemons unloaded before; their
-# directories made, root's alone, and both loaded after.
+# The LaunchDaemons the parts of the payload the tree holds add before
+# EasyTier's, each ``{label, program_arguments, log_path, extra, state_dir}``.
+PART_DAEMONS = tuple(
+    daemon
+    for part in payload.parts()
+    for daemon in part.darwin_daemons(
+        INSTALL_APPLICATIONS_DIR / APP_BUNDLE_NAME / "Contents", LOG_DIR
+    )
+)
+DAEMON_LABELS = " ".join(
+    [daemon["label"] for daemon in PART_DAEMONS] + [CLIENT_EASYTIER_LAUNCHD_LABEL]
+)
+DAEMON_STATE_DIRS = " ".join(
+    f'"{directory}"'
+    for directory in [CLIENT_STATE_DIR_DARWIN]
+    + [daemon["state_dir"] for daemon in PART_DAEMONS]
+    + [CLIENT_EASYTIER_STATE_DIR_DARWIN]
+)
+
+# What the install runs around the files: every daemon unloaded before; their
+# directories made, root's alone, and every daemon loaded after.
 PREINSTALL = f"""#!/bin/sh
-for label in {CLIENT_NETBIRD_LAUNCHD_LABEL} {CLIENT_EASYTIER_LAUNCHD_LABEL}; do
+for label in {DAEMON_LABELS}; do
     launchctl bootout "system/$label" >/dev/null 2>&1 || true
 done
 exit 0
 """
 POSTINSTALL = f"""#!/bin/sh
 mkdir -p "{LOG_DIR}"
-for directory in "{CLIENT_STATE_DIR_DARWIN}" \\
-        "{os.path.dirname(CLIENT_NETBIRD_CONFIG_PATH_DARWIN)}" \\
-        "{CLIENT_EASYTIER_STATE_DIR_DARWIN}"; do
+for directory in {DAEMON_STATE_DIRS}; do
     mkdir -p "$directory"
     chown root:wheel "$directory"
     chmod 700 "$directory"
 done
-for label in {CLIENT_NETBIRD_LAUNCHD_LABEL} {CLIENT_EASYTIER_LAUNCHD_LABEL}; do
+for label in {DAEMON_LABELS}; do
     launchctl bootstrap system "{CLIENT_LAUNCHD_DAEMONS_DIR}/$label.plist" \\
         >/dev/null 2>&1 || true
 done
 exit 0
 """
-
-# The socket every NetBird daemon on a Mac listens on; one already there
-# belongs to NetBird's own install, which the client then uses as it is.
-NETBIRD_SOCKET_PATH = "/var/run/netbird.sock"
 
 # What each name for the machine maps to: the wheel's own, and the platform
 # the package is named for, Apple silicon and Intel.
@@ -302,39 +310,6 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     )
     return {"root": package_root, "app": app, "scripts": scripts}
 
-
-def installed_resource(name: str) -> str:
-    """Where one carried binary is once the bundle is installed.
-
-    Args:
-        name: The binary's name in ``CLIENT_BUNDLED_PATHS_DARWIN``.
-
-    Returns:
-        Its absolute path.
-    """
-    return str(
-        INSTALL_APPLICATIONS_DIR
-        / APP_BUNDLE_NAME
-        / "Contents"
-        / CLIENT_BUNDLED_PATHS_DARWIN[name]
-    )
-
-
-def netbird_command() -> str:
-    """The shell that runs NetBird unless another daemon holds its socket.
-
-    Returns:
-        ``/bin/sh -c`` text that exits 0 when the socket exists and otherwise
-        runs the daemon in its place.
-    """
-    netbird = shlex.quote(installed_resource("netbird"))
-    config = shlex.quote(CLIENT_NETBIRD_CONFIG_PATH_DARWIN)
-    return (
-        f"[ -S {NETBIRD_SOCKET_PATH} ] && exit 0; "
-        f"exec {netbird} service run --config {config} --log-file console"
-    )
-
-
 def easytier_daemon_arguments() -> list:
     """The client's EasyTier daemon, as its LaunchDaemon runs it.
 
@@ -353,18 +328,19 @@ def easytier_daemon_arguments() -> list:
 
 
 def write_daemons(package_root: Path) -> None:
-    """Write both daemons' LaunchDaemons into the package root.
+    """Write every daemon's LaunchDaemon into the package root.
 
     Args:
         package_root: The directory standing in for the filesystem root.
     """
-    pkg_build.write_launchd_plist(
-        package_root,
-        label=CLIENT_NETBIRD_LAUNCHD_LABEL,
-        program_arguments=["/bin/sh", "-c", netbird_command()],
-        log_path=NETBIRD_LOG_PATH,
-        extra={"KeepAlive": {"SuccessfulExit": False}},
-    )
+    for daemon in PART_DAEMONS:
+        pkg_build.write_launchd_plist(
+            package_root,
+            label=daemon["label"],
+            program_arguments=daemon["program_arguments"],
+            log_path=daemon["log_path"],
+            extra=daemon["extra"],
+        )
     pkg_build.write_launchd_plist(
         package_root,
         label=CLIENT_EASYTIER_LAUNCHD_LABEL,

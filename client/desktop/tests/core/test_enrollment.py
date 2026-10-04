@@ -744,7 +744,10 @@ def test_a_link_without_overlays_carries_none():
     assert overlays == []
 
 
-@pytest.mark.parametrize("material", [NETBIRD, EASYTIER, CONSOLE])
+@pytest.mark.parametrize(
+    "material",
+    [pytest.param(NETBIRD, marks=pytest.mark.feature("netbird")), EASYTIER, CONSOLE],
+)
 def test_a_link_carries_the_overlay_objects(material):
     *_, overlays = parse_link(
         link_for({"urls": ["http://g"], "token": "t", "overlays": [material]})
@@ -753,6 +756,7 @@ def test_a_link_carries_the_overlay_objects(material):
     assert overlays == [material]
 
 
+@pytest.mark.feature("netbird")
 def test_the_overlays_keep_the_hubs_order_and_one_object_per_provider():
     raw = [EASYTIER, {"provider": "zerotier"}, NETBIRD, CONSOLE]
 
@@ -798,6 +802,14 @@ def test_an_unreadable_overlay_reads_as_none(raw):
     assert enrollment.clean_overlay(raw) is None
 
 
+def test_an_object_of_an_engine_the_tree_lacks_reads_as_none(monkeypatch):
+    monkeypatch.setattr(enrollment.edition, "has_feature", lambda name: False)
+
+    assert enrollment.clean_overlay(NETBIRD) is None
+    assert enrollment.clean_overlays([NETBIRD, EASYTIER]) == [EASYTIER]
+
+
+@pytest.mark.feature("netbird")
 def test_a_netbird_overlay_may_name_no_management_url_fqdn_or_address():
     raw = dict(NETBIRD, fqdn="", hub_address="")
 
@@ -814,6 +826,7 @@ def test_the_join_keeps_the_links_overlays_on_the_binding():
     assert binding["is_overlay_on"] is False
 
 
+@pytest.mark.feature("netbird")
 def test_note_overlays_writes_and_clears_one_bindings_list():
     enrollment.add_binding(BINDING)
     enrollment.add_binding(SECOND)

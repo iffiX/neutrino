@@ -427,7 +427,8 @@ class ClientPlatform:
         """Run one of the carried overlay CLIs as this person.
 
         Args:
-            binary: ``netbird``, ``easytier-cli`` or ``easytier-core``.
+            binary: ``easytier-cli``, ``easytier-core`` or a CLI the
+                edition table adds.
             args: Its arguments.
             timeout_s: How long it may take.
 

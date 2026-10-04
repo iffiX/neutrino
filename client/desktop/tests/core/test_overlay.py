@@ -1,15 +1,14 @@
 """This machine's place on each hub's virtual network.
 
-The drivers run on a scripted platform. Pinned here: NetBird's join carries
-the setup key, the management URL and ``--disable-dns``, and refuses without
-running while the daemon is on another network; EasyTier is asked of the
+The drivers run on a scripted platform. Pinned here: EasyTier is asked of the
 client's EasyTier daemon, here the real daemon behind a fake socket, with
 the secret and the console's address in the request's body and never on a
 CLI's argument vector; a manual network's status asks the one portal by the
 network's name, and a console's is the instance the daemon's own networks do
 not name.
 
-The memberships run on recording drivers. Pinned here: the three states
+The memberships run on recording drivers, beside a second engine shaped as
+NetBird's in every tree. Pinned here: the three states
 ``off``, ``connecting`` and ``on`` and nothing else; a connect is one attempt
 in two stages, ``login`` until the engine has an address, within its
 limit, and ``hub`` until the hub's channel is up through the hub's own
@@ -32,17 +31,17 @@ import json
 import subprocess
 import threading
 import time
+import urllib.parse
 
 import pytest
 
 from neutrino_client.constants import CLIENT_EASYTIER_RPC_PORTAL
+from neutrino_client.core import overlay as overlay_module
 from neutrino_client.core.easytier_daemon import EasytierDaemon
 from neutrino_client.core.overlay import (
     OVERLAY_STATES,
     OverlayEasytierDriver,
     OverlayMemberships,
-    OverlayNetbirdDriver,
-    netbird_management_key,
     overlay_hub_host,
     overlay_key,
     overlay_network,
@@ -73,16 +72,6 @@ CONSOLE = {
     "is_secure_mode": True,
     "hub_address": "10.126.126.1",
 }
-
-
-def netbird_status(url="https://nb.example:443", is_connected=True, peers=()):
-    return json.dumps(
-        {
-            "management": {"url": url, "connected": is_connected},
-            "netbirdIp": "100.64.0.7/16",
-            "peers": {"details": list(peers)},
-        }
-    )
 
 
 class ScriptedPlatform:
@@ -164,120 +153,17 @@ class FakeSocket:
 
 
 def drivers(tmp_path):
-    """The NetBird and EasyTier drivers over one scripted platform."""
+    """The EasyTier driver over one scripted platform."""
     platform = ScriptedPlatform(tmp_path)
     platform.socket = FakeSocket(tmp_path)
     return (
-        OverlayNetbirdDriver(platform=platform),
         OverlayEasytierDriver(platform=platform, ask=platform.socket),
         platform,
     )
 
 
-# --- NetBird ---
-
-
-def test_a_netbird_join_carries_the_key_the_url_and_no_dns(tmp_path):
-    netbird, _easytier, platform = drivers(tmp_path)
-    platform.answer("netbird", "status", stdout=netbird_status(is_connected=False))
-
-    netbird.join(NETBIRD, "box")
-
-    ups = [args for binary, args in platform.runs if args[0] == "up"]
-    assert ups == [
-        [
-            "up",
-            "--setup-key",
-            KEY,
-            "--management-url",
-            "https://nb.example:443",
-            "--disable-dns",
-        ]
-    ]
-
-
-def test_a_daemon_on_another_network_is_refused_and_left_alone(tmp_path):
-    netbird, _easytier, platform = drivers(tmp_path)
-    platform.answer(
-        "netbird", "status", stdout=netbird_status(url="https://api.netbird.io:443")
-    )
-
-    with pytest.raises(OverlayControlError) as refused:
-        netbird.join(NETBIRD, "box")
-
-    assert refused.value.code == "overlay_other_network"
-    assert refused.value.params == {"network": "nb.example"}
-    assert all(args[0] != "up" for _binary, args in platform.runs)
-
-
-def test_a_connected_daemon_reads_on_with_its_address_and_the_hub_seen(tmp_path):
-    netbird, _easytier, platform = drivers(tmp_path)
-    platform.answer(
-        "netbird",
-        "status",
-        stdout=netbird_status(
-            peers=[{"fqdn": "hub.nb.example", "status": "Connected"}]
-        ),
-    )
-
-    status = netbird.status(NETBIRD)
-
-    assert (status["is_on"], status["address"], status["is_hub_seen"]) == (
-        True,
-        "100.64.0.7",
-        True,
-    )
-
-
-def test_two_hubs_on_one_management_url_are_one_network():
-    other = dict(NETBIRD, management_url="https://NB.example:443/", fqdn="o")
-
-    assert overlay_key(NETBIRD) == overlay_key(other)
-
-
-def test_a_daemon_that_does_not_answer_is_daemon_down(tmp_path):
-    netbird, _easytier, platform = drivers(tmp_path)
-    platform.answer(
-        "netbird",
-        "status",
-        returncode=1,
-        stderr="failed to connect to daemon error: context deadline exceeded",
-    )
-
-    with pytest.raises(OverlayControlError) as refused:
-        netbird.status(NETBIRD)
-
-    assert refused.value.code == "overlay_daemon_down"
-
-
-def test_a_daemon_that_needs_login_reads_off(tmp_path):
-    netbird, _easytier, platform = drivers(tmp_path)
-    platform.answer("netbird", "status", stdout="Daemon status: NeedsLogin\n")
-
-    assert netbird.status(NETBIRD)["is_on"] is False
-
-
-def test_a_leave_is_netbird_down(tmp_path):
-    netbird, _easytier, platform = drivers(tmp_path)
-
-    netbird.leave(NETBIRD)
-
-    assert ("netbird", ["down"]) in platform.runs
-
-
-def test_the_default_management_url_is_netbirds_own():
-    assert netbird_management_key("") == "https://api.netbird.io:443"
-    assert netbird_management_key("http://nb.lan") == "http://nb.lan:80"
-
-
-def test_the_hubs_address_is_its_own_then_a_url_inside_the_network_then_its_name():
+def test_the_hubs_address_is_its_own_then_a_url_inside_the_network():
     urls = ["https://192.168.10.1:8443", "https://100.88.92.30:8443"]
-    netbird = dict(NETBIRD, hub_address="100.88.92.31")
-
-    assert overlay_hub_host(netbird, urls) == "100.88.92.31"
-    assert overlay_hub_host(NETBIRD, urls) == "100.88.92.30"
-    assert overlay_hub_host(NETBIRD, urls[:1]) == "hub.nb.example"
-    assert overlay_hub_host(dict(NETBIRD, fqdn=""), urls[:1]) == ""
     assert (
         overlay_hub_host(dict(EASYTIER, hub_address="10.144.144.1/24"), urls)
         == "10.144.144.1"
@@ -287,28 +173,6 @@ def test_the_hubs_address_is_its_own_then_a_url_inside_the_network_then_its_name
     assert overlay_hub_host(bare, easytier_urls, "10.144.144.0/24") == "10.144.144.9"
     assert overlay_hub_host(bare, easytier_urls, "10.200.0.0/24") == ""
     assert overlay_hub_host(bare, easytier_urls) == ""
-
-
-def test_the_hub_is_seen_by_netbird_at_its_address_or_by_its_name(tmp_path):
-    netbird, _easytier, platform = drivers(tmp_path)
-    platform.answer(
-        "netbird",
-        "status",
-        stdout=netbird_status(
-            peers=[
-                {
-                    "fqdn": "x.nb.example",
-                    "netbirdIp": "100.88.92.30/16",
-                    "status": "Connected",
-                },
-                {"fqdn": "hub.nb.example", "status": "Connecting"},
-            ]
-        ),
-    )
-
-    assert netbird.status(dict(NETBIRD, hub_address="100.88.92.30"))["is_hub_seen"]
-    assert not netbird.status(NETBIRD)["is_hub_seen"]
-    assert netbird.status(NETBIRD)["network"] == "100.64.0.0/10"
 
 
 # --- EasyTier ---
@@ -338,7 +202,7 @@ def joined(platform, *names):
 
 
 def test_an_easytier_join_hands_the_daemon_the_secret_in_the_body(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
 
     easytier.join(EASYTIER, "Alice's box")
 
@@ -358,7 +222,7 @@ def test_an_easytier_join_hands_the_daemon_the_secret_in_the_body(tmp_path):
 
 
 def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
 
@@ -380,14 +244,14 @@ def test_the_easytier_status_asks_the_one_portal_by_network_name(tmp_path):
 def test_a_network_the_daemon_does_not_hold_is_off_without_asking_the_core(
     tmp_path,
 ):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
 
     assert easytier.status(EASYTIER)["is_on"] is False
     assert platform.runs == []
 
 
 def test_the_hub_is_seen_only_at_its_own_address(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     joined(platform, "home")
     platform.answer("easytier-cli", "peer", stdout=easytier_peers())
 
@@ -399,7 +263,7 @@ def test_the_hub_is_seen_only_at_its_own_address(tmp_path):
 
 
 def test_an_instance_the_core_does_not_run_is_off(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     joined(platform, "home")
     platform.answer(
         "easytier-cli",
@@ -411,7 +275,7 @@ def test_an_instance_the_core_does_not_run_is_off(tmp_path):
 
 
 def test_a_daemon_that_does_not_answer_is_daemon_down_for_easytier(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     platform.socket.error = ConnectionRefusedError(111, "Connection refused")
 
     with pytest.raises(OverlayControlError) as refused:
@@ -420,7 +284,7 @@ def test_a_daemon_that_does_not_answer_is_daemon_down_for_easytier(tmp_path):
 
 
 def test_a_daemons_refusal_is_the_joins_code(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     platform.socket.refusal = {"code": "overlay_peer_invalid", "params": {}}
 
     with pytest.raises(OverlayControlError) as refused:
@@ -429,7 +293,7 @@ def test_a_daemons_refusal_is_the_joins_code(tmp_path):
 
 
 def test_an_easytier_leave_asks_the_daemon_to_drop_the_network(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     joined(platform, "home")
 
     easytier.leave(EASYTIER)
@@ -467,7 +331,7 @@ def test_a_console_is_keyed_by_its_address_and_named_by_its_host():
 
 
 def test_a_console_join_hands_the_daemon_the_address_in_the_body(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
 
     easytier.join(CONSOLE, "box")
 
@@ -483,7 +347,7 @@ def test_a_console_join_hands_the_daemon_the_address_in_the_body(tmp_path):
 
 
 def test_a_console_is_on_at_the_instance_no_manual_network_names(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     joined(platform, "home")
     easytier.join(CONSOLE, "box")
     platform.answer("easytier-cli", "node", stdout=console_nodes())
@@ -503,7 +367,7 @@ def test_a_console_is_on_at_the_instance_no_manual_network_names(tmp_path):
 
 
 def test_a_console_whose_core_runs_no_instance_yet_has_no_address(tmp_path):
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     easytier.join(CONSOLE, "box")
     platform.answer(
         "easytier-cli", "node", returncode=1, stderr="no running instances found"
@@ -520,7 +384,7 @@ def test_a_console_whose_core_runs_no_instance_yet_has_no_address(tmp_path):
 
 def test_another_console_held_by_the_daemon_is_another_network(tmp_path):
     other = "tcp://console.example:22020/etk_other"
-    _netbird, easytier, platform = drivers(tmp_path)
+    easytier, platform = drivers(tmp_path)
     platform.socket.daemon.handle({"verb": "join_console", "config_server": other})
 
     assert easytier.status(CONSOLE)["is_other_network"] is True
@@ -529,6 +393,36 @@ def test_another_console_held_by_the_daemon_is_another_network(tmp_path):
 
 
 # --- the memberships ---
+
+
+class SecondEngine:
+    """A second engine beside EasyTier, shaped as NetBird's, in every tree."""
+
+    provider = "netbird"
+
+    @staticmethod
+    def key(material):
+        return "netbird:" + SecondEngine.network(material)
+
+    @staticmethod
+    def network(material):
+        return urllib.parse.urlsplit(material.get("management_url", "")).hostname or ""
+
+    @staticmethod
+    def hub_network(network):
+        return network or "100.64.0.0/10"
+
+    @staticmethod
+    def hub_name(material):
+        return str(material.get("fqdn", "") or "")
+
+
+@pytest.fixture(autouse=True)
+def second_engine(monkeypatch):
+    """The memberships see a second engine whether or not the tree has one."""
+    monkeypatch.setattr(
+        overlay_module, "overlay_engines", lambda: {"netbird": SecondEngine}
+    )
 
 
 class FakeDriver:
