@@ -83,3 +83,14 @@ def test_the_login_secret_follows_the_instance_secret():
 def test_a_short_account_is_padded_to_cloudclis_minimum():
     assert username_of("ann") == "ann"
     assert username_of("al") == "al_"
+
+
+def test_the_npm_registry_is_read_from_the_state():
+    from neutrino_agent.modules.cloudcli.config import CloudcliConfig
+
+    config = CloudcliConfig.from_dict(
+        {"npm_registry": "https://registry.npmmirror.com"}
+    )
+
+    assert config.npm_registry == "https://registry.npmmirror.com"
+    assert CloudcliConfig.from_dict({}).npm_registry == ""

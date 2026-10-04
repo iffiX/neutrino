@@ -240,6 +240,58 @@ class SystemdServiceController(ProcessController):
         )
         return result.stdout or result.stderr
 
+    def process_id(self, name: str) -> int:
+        """The id of one unit's main process.
+
+        Args:
+            name: Panel-facing service name.
+
+        Returns:
+            ``MainPID``; 0 while the unit runs no process.
+
+        Raises:
+            KeyError: If the name is not a managed unit.
+        """
+        answers = self._properties(self._unit_for(name), ("MainPID",))
+        try:
+            return int(answers.get("MainPID", "0") or 0)
+        except ValueError:
+            return 0
+
+    def run_output(self, name: str, *, line_count: int) -> list:
+        """What the unit's last main process wrote to the journal.
+
+        Args:
+            name: Panel-facing service name.
+            line_count: How many of the last lines to return.
+
+        Returns:
+            The lines of ``ExecMainPID``, oldest first; empty when the unit
+            never ran.
+
+        Raises:
+            KeyError: If the name is not a managed unit.
+        """
+        unit = self._unit_for(name)
+        answers = self._properties(unit, ("ExecMainPID",))
+        pid = answers.get("ExecMainPID", "0") or "0"
+        if pid == "0":
+            return []
+        result = run(
+            [
+                "journalctl",
+                f"_SYSTEMD_UNIT={unit}",
+                f"_PID={pid}",
+                "-n",
+                str(line_count),
+                "--no-pager",
+                "--output",
+                "cat",
+            ],
+            is_checked=False,
+        )
+        return result.stdout.splitlines()
+
     def reload(self) -> None:
         """Reload unit files after installing or editing one.
 

@@ -155,6 +155,7 @@ def service_component(
     start: str = "auto",
     permissions: tuple = (),
     is_started_on_install: bool = True,
+    also: tuple = (),
 ) -> str:
     """A component holding a service's binary, its registration and its
     control: stopped on install and removal, removed on removal, and
@@ -172,12 +173,66 @@ def service_component(
         permissions: :func:`permission_ex` elements set on the service.
         is_started_on_install: Whether the install starts it; False leaves
             it registered and stopped.
+        also: More services the same binary runs, as
+            :func:`service_entries` makes them.
 
     Returns:
         The component element.
     """
+    return element(
+        "Component",
+        {"Id": component_id, "Guid": "*"},
+        (
+            element(
+                "File",
+                {"Id": f"{component_id}File", "Source": str(source), "KeyPath": "yes"},
+            ),
+        )
+        + service_entries(
+            entry_id=component_id,
+            service_name=service_name,
+            display_name=display_name,
+            description=description,
+            arguments=arguments,
+            account=account,
+            start=start,
+            permissions=permissions,
+            is_started_on_install=is_started_on_install,
+        )
+        + tuple(also),
+    )
+
+
+def service_entries(
+    *,
+    entry_id: str,
+    service_name: str,
+    display_name: str,
+    description: str,
+    arguments: str = "",
+    account: str = "LocalSystem",
+    start: str = "auto",
+    permissions: tuple = (),
+    is_started_on_install: bool = True,
+) -> tuple:
+    """One service's registration and control, for the component holding its binary.
+
+    Args:
+        entry_id: The prefix of the two elements' Ids.
+        service_name: The name the service control manager knows.
+        display_name: The name the Services console shows.
+        description: The description the Services console shows.
+        arguments: The command line the service is started with.
+        account: The account it runs as.
+        start: ``auto``, ``demand`` or ``disabled``.
+        permissions: :func:`permission_ex` elements set on the service.
+        is_started_on_install: Whether the install starts it.
+
+    Returns:
+        The ``ServiceInstall`` and the ``ServiceControl`` elements.
+    """
     install = {
-        "Id": f"{component_id}Install",
+        "Id": f"{entry_id}Install",
         "Name": service_name,
         "DisplayName": display_name,
         "Description": description,
@@ -188,21 +243,13 @@ def service_component(
     }
     if arguments:
         install["Arguments"] = arguments
-    control = {"Id": f"{component_id}Control", "Name": service_name}
+    control = {"Id": f"{entry_id}Control", "Name": service_name}
     if is_started_on_install:
         control["Start"] = "install"
     control.update({"Stop": "both", "Remove": "uninstall", "Wait": "yes"})
-    return element(
-        "Component",
-        {"Id": component_id, "Guid": "*"},
-        (
-            element(
-                "File",
-                {"Id": f"{component_id}File", "Source": str(source), "KeyPath": "yes"},
-            ),
-            element("ServiceInstall", install, permissions),
-            element("ServiceControl", control),
-        ),
+    return (
+        element("ServiceInstall", install, permissions),
+        element("ServiceControl", control),
     )
 
 

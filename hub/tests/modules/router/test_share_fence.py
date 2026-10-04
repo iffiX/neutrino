@@ -1,5 +1,6 @@
 """The networks a device's shares answer, derived from this hub's own fence."""
 
+import pytest
 from neutrino_hub.modules.router.share_fence import allowed_subnets, share_subnets
 from tests.conftest import lan_entry, network_config, wan_entry
 
@@ -27,6 +28,7 @@ def test_a_router_fences_its_shares_to_the_served_lan():
     assert subnets == ["192.168.100.0/24"]
 
 
+@pytest.mark.feature("netbird")
 def test_an_exposed_overlay_is_allowed_where_the_firewall_already_lets_it_in():
     network = network_config(lan_entry("enp1s0", address="192.168.100.1"))
 

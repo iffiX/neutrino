@@ -8,6 +8,7 @@ else, and every link carries the certificate fingerprint the peer pins.
 
 import asyncio
 import contextlib
+import math
 
 from fastapi import (
     APIRouter,
@@ -25,7 +26,9 @@ from neutrino_hub.modules.channel.admission import admit
 from neutrino_hub.modules.channel.bindings import resolve_token, spend_ticket
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CLOSE_REFUSED,
+    CHANNEL_CODE_ADMISSION_PAUSED,
     CHANNEL_CODE_BINDING_UNKNOWN,
+    CHANNEL_CODE_CHANNEL_FULL,
     CHANNEL_CODE_HELLO_INVALID,
     CHANNEL_CODE_ROLE_MISMATCH,
     CHANNEL_CODE_TICKET_SPENT,
@@ -85,26 +88,43 @@ def join(
         The binding: its id and the token every later hello carries.
 
     Raises:
-        HTTPException: 409 with the protocol refusal; 409 ``role_mismatch``
-            when the ticket was made for the other role, or the role is
-            neither; 401 ``ticket_spent`` when the ticket is unknown,
-            expired, or names a row that is gone.
+        HTTPException: 409 with the protocol refusal; 409
+            ``admission_paused {retry_after_s}`` while the hub's failed
+            admissions are at their limit, before the ticket is looked up;
+            409 ``role_mismatch`` when the ticket was made for the other
+            role, or the role is neither; 401 ``ticket_spent`` when the
+            ticket is unknown, expired, or names a row that is gone. The
+            last two count as failed admissions.
     """
     refusal = admit(request.protocol)
     if refusal is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=refusal)
-    if request.role not in ROLES:
-        raise _role_mismatch(request.role)
+    paused_s = runtime.channel_port.pause_remaining_s()
+    if paused_s > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": CHANNEL_CODE_ADMISSION_PAUSED,
+                "params": {"retry_after_s": math.ceil(paused_s)},
+            },
+        )
     try:
-        ticket = spend_ticket(runtime.enrollments, request.ticket, request.role)
-    except KeyError:
-        raise _ticket_spent()
-    except ValueError:
-        raise _role_mismatch(request.role)
-    if request.role == CHANNEL_ROLE_AGENT:
-        binding_id, token = _join_agent(runtime, request, ticket, http_request)
-    else:
-        binding_id, token = _join_client(runtime, request, ticket)
+        if request.role not in ROLES:
+            raise _role_mismatch(request.role)
+        try:
+            ticket = spend_ticket(runtime.enrollments, request.ticket, request.role)
+        except KeyError:
+            raise _ticket_spent()
+        except ValueError:
+            raise _role_mismatch(request.role)
+        if request.role == CHANNEL_ROLE_AGENT:
+            binding_id, token = _join_agent(runtime, request, ticket, http_request)
+        else:
+            binding_id, token = _join_client(runtime, request, ticket)
+    except HTTPException as error:
+        if _is_failed_admission(error):
+            runtime.channel_port.record_failure()
+        raise
     return ChannelJoinView(id=binding_id, token=token)
 
 
@@ -159,6 +179,7 @@ async def socket(websocket: WebSocket) -> None:
     await websocket.accept()
     hello = await _read_hello(websocket)
     if hello is None:
+        runtime.channel_port.record_failure()
         # A rejected hello gets a refused frame and then the close, like
         # every other; the socket may already be gone, and then only the
         # close is left to try.
@@ -190,18 +211,30 @@ async def socket(websocket: WebSocket) -> None:
         return
     binding = await asyncio.to_thread(resolve_token, hello.token)
     if binding is None or binding.id != hello.id:
+        runtime.channel_port.record_failure()
         await session.refuse(CHANNEL_CODE_BINDING_UNKNOWN, {})
         return
     if binding.role != hello.role:
         await session.refuse(CHANNEL_CODE_ROLE_MISMATCH, {"role": hello.role})
         return
-    welcome = await asyncio.to_thread(_welcome)
-    if binding.role == CHANNEL_ROLE_AGENT:
-        device = await asyncio.to_thread(DeviceRegistry().get, binding.id)
-        await channel_serve.serve_agent(websocket, runtime, session, device, welcome)
+    admission = runtime.channel_port.admit(_connection_key(websocket))
+    if admission is None:
+        await session.refuse(
+            CHANNEL_CODE_CHANNEL_FULL, {"limit": runtime.channel_port.sockets_max}
+        )
         return
-    client = await asyncio.to_thread(ClientRegistry().get, binding.id)
-    await channel_serve.serve_client(websocket, runtime, session, client, welcome)
+    try:
+        welcome = await asyncio.to_thread(_welcome)
+        if binding.role == CHANNEL_ROLE_AGENT:
+            device = await asyncio.to_thread(DeviceRegistry().get, binding.id)
+            await channel_serve.serve_agent(
+                websocket, runtime, session, device, welcome
+            )
+            return
+        client = await asyncio.to_thread(ClientRegistry().get, binding.id)
+        await channel_serve.serve_client(websocket, runtime, session, client, welcome)
+    finally:
+        runtime.channel_port.release(admission)
 
 
 def _welcome() -> dict:
@@ -312,6 +345,20 @@ async def _read_hello(websocket: WebSocket) -> "ChannelHello | None":
         return ChannelHello.model_validate(decoded)
     except ValidationError:
         return None
+
+
+def _is_failed_admission(error: HTTPException) -> bool:
+    """Whether a refused join counts against the port's failed admissions."""
+    detail = error.detail if isinstance(error.detail, dict) else {}
+    return detail.get("code") in (CHANNEL_CODE_TICKET_SPENT, CHANNEL_CODE_ROLE_MISMATCH)
+
+
+def _connection_key(connection) -> tuple:
+    """The connection's peer address and port, which name it on the port."""
+    client = connection.client
+    if client is None:
+        return ("", 0)
+    return (client.host, client.port)
 
 
 def _peer_host(connection) -> str:

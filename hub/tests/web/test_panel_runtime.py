@@ -77,6 +77,7 @@ def following(monkeypatch, found: dict, recorded: "dict | None") -> tuple:
         lambda name: {"overlays": [{"provider": "easytier"}]},
     )
     monkeypatch.setattr(runtime_module, "overlay_devices", lambda network: found)
+    monkeypatch.setattr(runtime_module, "read_proxy_routing", lambda: {})
     passes = CountingConverge()
     panel = object.__new__(PanelRuntime)
     panel.converge_network_blocking = passes
@@ -168,7 +169,21 @@ def following_resolvers(monkeypatch, routing: dict, found: list) -> tuple:
     passes = CountingConverge()
     panel = object.__new__(PanelRuntime)
     panel.converge_network_blocking = passes
+    panel.proxy = FakeProxy(routing)
     return panel, passes
+
+
+class FakeProxy:
+    """The proxy's part, holding the routing options the test gave."""
+
+    def __init__(self, routing: dict):
+        self._routing = routing
+
+    def routing(self) -> dict:
+        return dict(self._routing)
+
+    def has_direct_resolvers(self, routing: dict) -> bool:
+        return bool(routing.get("direct_dns"))
 
 
 def test_a_lease_naming_new_resolvers_runs_one_converge(monkeypatch):
@@ -187,6 +202,7 @@ def test_the_resolvers_the_last_render_used_run_nothing(monkeypatch):
     assert passes.passes == 0
 
 
+@pytest.mark.feature("proxy")
 def test_outside_linux_a_direct_list_of_its_own_reads_nothing(on_windows, monkeypatch):
     """No dnsmasq runs there, so the network's resolvers matter only while
     the direct list follows them."""
@@ -201,13 +217,3 @@ def test_outside_linux_a_direct_list_of_its_own_reads_nothing(on_windows, monkey
 
     assert panel.follow_network_resolvers() is False
     assert passes.passes == 0
-
-
-def test_the_proxys_own_lookups_ask_the_first_direct_resolver(monkeypatch):
-    routes.record_network_resolvers(LEASED)
-    panel, _ = following_resolvers(
-        monkeypatch, {"direct_dns": {"address": "223.5.5.5", "port": 53}}, LEASED
-    )
-
-    assert panel.routing()["direct_dns"] == []
-    assert panel._direct_resolver() == ("192.168.1.1", 53)

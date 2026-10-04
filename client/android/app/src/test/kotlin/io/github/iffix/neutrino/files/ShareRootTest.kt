@@ -22,7 +22,10 @@ class ShareRootTest {
             hub,
             entry("""{"protocol":"smb","host":"10.0.0.5","share":"media","users":["iffi","guest"]}"""),
         )
-        assertEquals(ShareRoot("b1~f1", "media", "10.0.0.5", "media", listOf("iffi", "guest"), "Neutrino:Argon"), root)
+        assertEquals(
+            ShareRoot("b1~f1", "media", "10.0.0.5", "media", listOf("iffi", "guest"), "Neutrino:Argon", "b1", "f1"),
+            root,
+        )
     }
 
     @Test

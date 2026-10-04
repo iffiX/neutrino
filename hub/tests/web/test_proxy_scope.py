@@ -1,5 +1,7 @@
 """Whose traffic the proxy is taking, as the status strip will report it."""
 
+import pytest
+
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
@@ -14,6 +16,21 @@ HUB_DIVERSION = (
     '        iifname "lo" meta mark 0x1 meta l4proto { tcp, udp } '
     "tproxy ip to 127.0.0.1:12345 accept\n"
 )
+
+
+class FakeProxy:
+    """The proxy's part, reading the files the test holds."""
+
+    def __init__(self, config: dict):
+        self._config = config
+
+    def routing(self) -> dict:
+        return self._config["xray/routing.json"]
+
+    def node_list(self):
+        from neutrino_hub.modules.xray.node_config import XrayNodeList
+
+        return XrayNodeList.from_dict(self._config["xray/nodes.json"])
 
 
 def routing(**overrides) -> dict:
@@ -42,6 +59,7 @@ def runtime_with(
         "xray/nodes.json": nodes or {"nodes": []},
     }
     monkeypatch.setattr(runtime_module, "read_config", lambda name: config[name])
+    runtime.proxy = FakeProxy(config)
     path = tmp_path / "router.nft"
     if ruleset is not None:
         path.write_text(ruleset, encoding="utf-8")
@@ -49,6 +67,7 @@ def runtime_with(
     return runtime
 
 
+@pytest.mark.feature("proxy")
 def test_every_switch_off_is_off(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch,
@@ -60,6 +79,7 @@ def test_every_switch_off_is_off(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "off"
 
 
+@pytest.mark.feature("proxy")
 def test_the_kernel_outranks_a_switch_nobody_applied(monkeypatch, tmp_path):
     """A switch turned off and not yet applied is a firewall still diverting,
     and the strip answers for the traffic, not the form."""
@@ -73,6 +93,7 @@ def test_the_kernel_outranks_a_switch_nobody_applied(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "lan"
 
 
+@pytest.mark.feature("proxy")
 def test_a_diverted_lan_reads_as_lan(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch, tmp_path, routing=routing(), ruleset=LAN_DIVERSION
@@ -81,6 +102,7 @@ def test_a_diverted_lan_reads_as_lan(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "lan"
 
 
+@pytest.mark.feature("proxy")
 def test_both_diversions_read_as_both(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch,
@@ -92,6 +114,7 @@ def test_both_diversions_read_as_both(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "lan+hub"
 
 
+@pytest.mark.feature("proxy")
 def test_the_hub_alone_reads_as_hub(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch, tmp_path, routing=routing(), ruleset=HUB_DIVERSION
@@ -100,6 +123,7 @@ def test_the_hub_alone_reads_as_hub(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "hub"
 
 
+@pytest.mark.feature("proxy")
 def test_a_proxied_port_with_no_diversion_reads_as_ports(monkeypatch, tmp_path):
     """A server's proxy is its listeners.
 
@@ -134,6 +158,7 @@ def test_a_proxied_port_with_no_diversion_reads_as_ports(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "ports"
 
 
+@pytest.mark.feature("proxy")
 def test_nothing_sent_to_the_proxy_reads_as_unused(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch,
@@ -145,6 +170,7 @@ def test_nothing_sent_to_the_proxy_reads_as_unused(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "unused"
 
 
+@pytest.mark.feature("proxy")
 def test_nothing_applied_yet_answers_from_the_configuration(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch,
@@ -172,6 +198,7 @@ OVERLAY_NETWORK = {
 }
 
 
+@pytest.mark.feature("proxy")
 def test_the_diverted_overlay_reads_beside_the_lan(monkeypatch, tmp_path):
     """The interfaces the forwarded tproxy takes from are the set on the
     line before it; which of them are overlays is the network's to say."""
@@ -186,6 +213,7 @@ def test_the_diverted_overlay_reads_beside_the_lan(monkeypatch, tmp_path):
     assert runtime.proxy_scope() == "lan+overlay"
 
 
+@pytest.mark.feature("proxy")
 def test_the_overlay_alone_reads_as_overlay(monkeypatch, tmp_path):
     runtime = runtime_with(
         monkeypatch,
@@ -196,3 +224,12 @@ def test_the_overlay_alone_reads_as_overlay(monkeypatch, tmp_path):
     )
 
     assert runtime.proxy_scope() == "overlay+hub"
+
+
+def test_a_tree_without_the_proxy_is_off(monkeypatch, tmp_path):
+    runtime = runtime_with(
+        monkeypatch, tmp_path, routing=routing(), ruleset=LAN_DIVERSION
+    )
+    runtime.proxy = None
+
+    assert runtime.proxy_scope() == "off"

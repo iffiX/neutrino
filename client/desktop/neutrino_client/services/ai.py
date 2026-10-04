@@ -2,10 +2,14 @@
 
 The page stages one Enabled toggle and per-tool model choices, and Apply
 commits them here in one step: the tools are pointed at once the exit hub
-has answered its ``ai`` entry's ``service`` stream with a credential. The
-store keeps the model choices only; whether the tools point at a hub, and
-which hub and endpoint the last activation granted, are this run's own and
-go with it.
+has answered its ``ai`` entry's ``service`` stream with this client's key.
+The endpoint the tools are given is the entry's forward of the local port
+table, ``http://127.0.0.1:<local port><path>``, which listens while the hub
+is the exit of the tools and carries every request to the gateway as a
+``connect`` stream: the tools work only while the client runs. The store
+keeps the model choices only; whether the tools point at a hub, and which
+hub and endpoint the last activation granted, are this run's own and go
+with it.
 
 The staged choices are what each tool is pointed with; the grant's ``model``
 is only the prefill default for a slot nobody has chosen. A change of exit
@@ -24,6 +28,7 @@ from __future__ import annotations
 
 import os
 import threading
+import urllib.parse
 
 from neutrino_client.exceptions import (
     GatewayUnreachable,
@@ -32,6 +37,7 @@ from neutrino_client.exceptions import (
 )
 from neutrino_client.services import switcher
 from neutrino_client.services.base import ServiceTypeHandler, channel_refusal
+from neutrino_client.services.forward import FORWARD_BIND_HOST
 from neutrino_client.services.worker import IF_BUSY_KEEP_ONE, ServiceWorker
 
 AI_CLAUDE_SLOTS = ("default", "opus", "sonnet", "haiku")
@@ -113,14 +119,58 @@ def ai_entry_id(entries: list, hub_id: str) -> str:
     Returns:
         That hub's first ``ai`` entry's id, empty when it publishes none.
     """
+    return str(ai_entry(entries, hub_id).get("id", "") or "")
+
+
+def ai_entry(entries: list, hub_id: str) -> dict:
+    """The AI gateway entry one hub publishes.
+
+    Args:
+        entries: The merged service list, each entry stamped with ``hub_id``.
+        hub_id: The hub whose entry is wanted.
+
+    Returns:
+        That hub's first ``ai`` entry, empty when it publishes none.
+    """
     for entry in entries or []:
         if (
             isinstance(entry, dict)
             and entry.get("type") == "ai"
             and entry.get("hub_id") == hub_id
         ):
-            return str(entry.get("id", "") or "")
-    return ""
+            return entry
+    return {}
+
+
+def local_base_url(endpoint: str, port: int) -> str:
+    """The endpoint the tools are given: the forward, at the endpoint's own path.
+
+    Args:
+        endpoint: The ``ai`` entry's endpoint, where the gateway stands on
+            the hub's networks.
+        port: The loopback port the entry's forward listens on.
+
+    Returns:
+        ``http://127.0.0.1:<port><path>``, the path empty when the endpoint
+        names none.
+    """
+    path = urllib.parse.urlsplit(endpoint).path.rstrip("/")
+    return f"http://{FORWARD_BIND_HOST}:{port}{path}"
+
+
+def endpoint_port(endpoint: str) -> int:
+    """The port the gateway's endpoint names, which an auto pick takes first.
+
+    Args:
+        endpoint: The ``ai`` entry's endpoint.
+
+    Returns:
+        The port; 0 when the endpoint names none or one that is no number.
+    """
+    try:
+        return urllib.parse.urlsplit(endpoint).port or 0
+    except ValueError:
+        return 0
 
 
 def _nobody() -> None:
@@ -139,6 +189,7 @@ class AiServiceHandler(ServiceTypeHandler):
         original_dir,
         open_service,
         exit_hub_id,
+        forwards,
         log=print,
         switcher_module=None,
         on_change=None,
@@ -150,10 +201,13 @@ class AiServiceHandler(ServiceTypeHandler):
             original_dir: Where the switcher keeps its adopt records.
             open_service: Callable ``(hub_id, entry_id) -> dict`` opening
                 the entry's ``service`` stream on that hub and returning its
-                close's params, the credential ``{"base_url", "api_key",
-                "model"}``; raises the channel's exceptions.
+                close's params, the credential ``{"api_key", "model"}``;
+                raises the channel's exceptions.
             exit_hub_id: Callable ``() -> str`` naming the hub whose
                 gateway the tools point at, empty when there is none.
+            forwards: The
+                :class:`~neutrino_client.services.forward.ForwardListenerRegistry`
+                the gateway's forward lives in.
             log: Callable used for progress messages.
             switcher_module: The switcher to drive; None uses the real one.
             on_change: Called after every change of standing; None for
@@ -165,15 +219,18 @@ class AiServiceHandler(ServiceTypeHandler):
         self._original_dir = original_dir
         self._open_service = open_service
         self._exit_hub_id = exit_hub_id
+        self._forwards = forwards
         self._log = log
         self._switcher = switcher_module if switcher_module is not None else switcher
         self._lock = threading.Lock()
-        # The exit hub and its ai entry, as of the last apply or refresh.
+        # The exit hub, its ai entry and that entry's endpoint, as of the
+        # last apply or refresh.
         self._hub_id = ""
         self._entry_id = ""
+        self._endpoint = ""
         self._is_enabled = False
-        # What the last activation pointed the tools at: hub_id, base_url
-        # and the default model.
+        # What the last activation pointed the tools at: hub_id, entry_id,
+        # base_url and the default model.
         self._granted: dict = {}
         self._status: dict = self._steady(is_active=False)
         self._on_change = on_change if on_change is not None else _nobody
@@ -273,6 +330,7 @@ class AiServiceHandler(ServiceTypeHandler):
         with self._lock:
             self._granted = {}
             self._status = self._steady(is_active=False)
+        self._end_forward(granted)
 
     def release(self) -> int:
         """Restore the tools; the toggle this run holds is kept.
@@ -338,11 +396,13 @@ class AiServiceHandler(ServiceTypeHandler):
         return False
 
     def _aim(self, entries: list) -> None:
-        """Take the exit hub and its ai entry from the merged list."""
+        """Take the exit hub, its ai entry and the endpoint from the merged list."""
         hub_id = str(self._exit_hub_id() or "")
+        entry = ai_entry(entries, hub_id)
         with self._lock:
             self._hub_id = hub_id
-            self._entry_id = ai_entry_id(entries, hub_id)
+            self._entry_id = str(entry.get("id", "") or "")
+            self._endpoint = str((entry.get("payload") or {}).get("endpoint", ""))
 
     def _activate(self, hub_id: str, entry_id: str) -> dict:
         if not entry_id:
@@ -353,10 +413,26 @@ class AiServiceHandler(ServiceTypeHandler):
             return dict(
                 channel_refusal(error), state=self._steady_state(), is_active=False
             )
-        base_url = str(credential.get("base_url", ""))
         api_key = str(credential.get("api_key", ""))
-        if not base_url or not api_key:
+        if not api_key:
             return self._no_endpoint()
+        with self._lock:
+            endpoint = self._endpoint
+        try:
+            port = self._forwards.ensure(
+                hub_id=hub_id,
+                entry_id=entry_id,
+                own_port=endpoint_port(endpoint),
+                kind=self.service_type,
+            )
+        except OSError as error:
+            return {
+                "state": self._steady_state(),
+                "code": "forward_failed",
+                "params": {"detail": str(error)[:200]},
+                "is_active": False,
+            }
+        base_url = local_base_url(endpoint, port)
         resolved = resolved_configs(credential, self._store.ai_tool_configs())
         default_model = resolved["claude"]["default"]
         if self._switcher.find_cli() is None:
@@ -374,11 +450,15 @@ class AiServiceHandler(ServiceTypeHandler):
         if switched:
             self._log(f"ai service: pointed {switched} at the hub")
         with self._lock:
+            before = dict(self._granted)
             self._granted = {
                 "hub_id": hub_id,
+                "entry_id": entry_id,
                 "base_url": base_url,
                 "model": default_model,
             }
+        if (before.get("hub_id"), before.get("entry_id")) != (hub_id, entry_id):
+            self._end_forward(before)
         return {"state": "installed", "code": "", "params": {}, "is_active": True}
 
     def _deactivate(self) -> dict:
@@ -389,7 +469,13 @@ class AiServiceHandler(ServiceTypeHandler):
             self._switcher.deactivate(base_url=granted.get("base_url", ""))
             with self._lock:
                 self._granted = {}
+            self._end_forward(granted)
         return self._steady(is_active=False)
+
+    def _end_forward(self, granted: dict) -> None:
+        """End the forward an activation made, when it made one."""
+        if granted.get("hub_id") and granted.get("entry_id"):
+            self._forwards.stop(granted["hub_id"], granted["entry_id"])
 
     def _no_endpoint(self) -> dict:
         return {

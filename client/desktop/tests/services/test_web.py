@@ -1,11 +1,12 @@
-"""The web service: a published link of one hub opens in the platform's browser.
+"""The web service: every published page of a hub opens through its forward.
 
-An entry that opens only through localhost is forwarded as bytes to
-``127.0.0.1`` over a real loopback socket on the port the local port table
-gives it, its token taken from the hub's material, and opened on the entry's
-own ``.localhost`` name with the token in the address, on ``127.0.0.1`` on
-macOS; the forward is reused, ends on Disconnect, and ends with the client
-or with its hub.
+Open makes the entry's forward of the local port table, every connection a
+``connect`` stream through the hub and none dialled to the entry's own
+address, and opens the browser at ``<scheme>://<slug>.localhost:<local
+port><path>``, on ``127.0.0.1`` on macOS; an entry with
+``is_token_required`` takes a fresh token on every open and opens with
+``?tkn=<token>``. The forward is reused, ends on Disconnect, and ends with
+the client or with its hub.
 """
 
 import socket
@@ -15,54 +16,18 @@ import urllib.parse
 import pytest
 
 from neutrino_client.exceptions import GatewayRefusedDetail
-from neutrino_client.services.port import PortLocalTable
-from neutrino_client.services.web import WebServiceHandler, local_url
-from tests.conftest import SERVICES, FakeClientPlatform, discard
-
-
-def test_open_hands_the_url_to_the_platform():
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(platform=platform)
-
-    assert handler.act(entries=SERVICES, body={"hub_id": "h1", "id": "svc_wiki"}) == {}
-    assert handler.act(entries=SERVICES, body={"hub_id": "h2", "id": "svc_docs"}) == {}
-
-    assert platform.opened_urls == ["http://w/", "http://docs/"]
-    assert handler.state() == {"web_forwards": {}}
-
-
-def test_an_unknown_or_bare_entry_opens_nothing():
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(platform=platform)
-    bare = [{"id": "svc_bare", "type": "web", "hub_id": "h1", "payload": {}}]
-
-    assert handler.act(entries=SERVICES, body={"hub_id": "h1", "id": "nothing"}) == {
-        "code": "unknown_request",
-        "params": {},
-    }
-    assert handler.act(entries=SERVICES, body={"hub_id": "h2", "id": "svc_wiki"}) == {
-        "code": "unknown_request",
-        "params": {},
-    }
-    assert handler.act(entries=SERVICES, body={"id": "svc_wiki"}) == {
-        "code": "unknown_request",
-        "params": {},
-    }
-    assert handler.act(entries=bare, body={"hub_id": "h1", "id": "svc_bare"}) == {
-        "code": "unknown_request",
-        "params": {},
-    }
-    assert platform.opened_urls == []
-
-
-# --- an entry that opens only through localhost ---
+from neutrino_client.services.forward import ForwardListenerRegistry
+from neutrino_client.services.web import WebServiceHandler, local_url, slug
+from tests.conftest import SERVICES, FakeClientPlatform, FakeConnectHub, discard
 
 TOKEN = "vsc-token-1"  # scan: allow
+# An address no test machine has: a dial there would never answer.
+DEVICE_HOST = "203.0.113.9"
 
 
 @pytest.fixture
-def upstream():
-    """A real server on a loopback port of its own that answers each connection once."""
+def far():
+    """What the hub would dial: a server that answers each connection once."""
     server = socket.create_server(("127.0.0.1", 0))
     port = server.getsockname()[1]
 
@@ -73,7 +38,7 @@ def upstream():
             except OSError:
                 return
             connection.recv(4096)
-            connection.sendall(b"HTTP/1.0 200 OK\r\n\r\nvscode")
+            connection.sendall(b"HTTP/1.0 200 OK\r\n\r\nthe page")
             connection.close()
 
     threading.Thread(target=serve, daemon=True).start()
@@ -81,15 +46,16 @@ def upstream():
     server.close()
 
 
-def local_entry(port, hub_id="h1", entry_id="vscode_d1_alice"):
-    return {
-        "id": entry_id,
-        "type": "web",
-        "hub_id": hub_id,
-        "title": "VS Code (alice)",
-        "payload": {"url": f"http://127.0.0.1:{port}/", "is_local_only": True},
-        "is_healthy": True,
-    }
+@pytest.fixture
+def hub(far):
+    return FakeConnectHub(far_port=far)
+
+
+@pytest.fixture
+def forwards(hub):
+    registry = ForwardListenerRegistry(open_connect=hub.open_connect, log=discard)
+    yield registry
+    registry.release()
 
 
 class Material:
@@ -107,6 +73,29 @@ class Material:
         return dict(self.answer)
 
 
+def handler_on(forwards, material=None, os_name="linux"):
+    platform = FakeClientPlatform()
+    platform.os_name = os_name
+    handler = WebServiceHandler(
+        platform=platform, forwards=forwards, open_service=material, log=discard
+    )
+    return handler, platform
+
+
+def page_entry(url, hub_id="h1", entry_id="gitea_d1", is_token_required=False):
+    payload = {"url": url}
+    if is_token_required:
+        payload["is_token_required"] = True
+    return {
+        "id": entry_id,
+        "type": "web",
+        "hub_id": hub_id,
+        "title": "page",
+        "payload": payload,
+        "is_healthy": True,
+    }
+
+
 def fetch(url: str) -> bytes:
     parts = urllib.parse.urlsplit(url)
     with socket.create_connection(("127.0.0.1", parts.port), timeout=5) as client:
@@ -119,267 +108,184 @@ def fetch(url: str) -> bytes:
             received += data
 
 
-def test_a_local_only_entry_is_forwarded_and_opened_on_its_own_name(upstream):
-    platform = FakeClientPlatform()
-    material = Material()
-    handler = WebServiceHandler(platform=platform, open_service=material, log=discard)
+def test_open_forwards_the_page_and_opens_its_slug_address(forwards, hub):
+    handler, platform = handler_on(forwards)
+    entry = page_entry(f"http://{DEVICE_HOST}:3000/explore?tab=repos")
 
-    outcome = handler.act(
-        entries=[local_entry(upstream)], body={"hub_id": "h1", "id": "vscode_d1_alice"}
-    )
+    assert handler.act(entries=[entry], body={"hub_id": "h1", "id": "gitea_d1"}) == {}
 
-    assert outcome == {}
-    assert material.asked == [("h1", "vscode_d1_alice")]
-    (opened,) = platform.opened_urls
-    parts = urllib.parse.urlsplit(opened)
-    assert (parts.scheme, parts.hostname, parts.path) == (
-        "http",
-        "vscode-d1-alice.localhost",
-        "/",
-    )
-    assert parts.port != upstream
-    assert urllib.parse.parse_qs(parts.query) == {"tkn": [TOKEN]}
-    assert fetch(opened).endswith(b"vscode")
-    assert handler.state()["web_forwards"] == {
-        "h1/vscode_d1_alice": {"local_port": parts.port, "is_active": True}
-    }
-    handler.release()
+    port = forwards.port_of("h1", "gitea_d1")
+    assert platform.opened_urls == [
+        f"http://gitea-d1.localhost:{port}/explore?tab=repos"
+    ]
+    assert fetch(platform.opened_urls[0]).endswith(b"the page")
+    assert hub.opens == [("h1", {"id": "gitea_d1"})]
 
 
-def test_a_disconnect_ends_the_forward(upstream):
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(platform=platform, open_service=Material(), log=discard)
-    entries = [local_entry(upstream)]
-    body = {"hub_id": "h1", "id": "vscode_d1_alice"}
-    handler.act(entries=entries, body=body)
+def test_the_entrys_own_port_is_the_local_port_when_free(forwards):
+    handler, platform = handler_on(forwards)
+    probe = socket.create_server(("127.0.0.1", 0))
+    own = probe.getsockname()[1]
+    probe.close()
 
-    assert handler.act(entries=entries, body=dict(body, is_enabled=False)) == {}
-
-    assert handler.state()["web_forwards"] == {}
-    with pytest.raises(OSError):
-        fetch(platform.opened_urls[0])
-
-
-def test_two_instances_on_one_remote_port_take_two_local_ports_kept_by_entry(
-    upstream,
-):
-    table = PortLocalTable(is_free=_free_but(upstream))
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(
-        platform=platform, open_service=Material(), log=discard, ports=table
-    )
-    entries = [local_entry(upstream, "h1"), local_entry(upstream, "h2")]
-    for hub_id in ("h2", "h1"):
-        handler.act(entries=entries, body={"hub_id": hub_id, "id": "vscode_d1_alice"})
-
-    ports = [urllib.parse.urlsplit(url).port for url in platform.opened_urls]
-    assert ports == [20000, 20001]
-    handler.release()
-
-
-def test_the_slug_keeps_letters_digits_and_hyphens_and_macos_opens_the_loopback():
-    assert (
-        local_url("vscode_d1.alice", 20000, "", "t", "linux")
-        == "http://vscode-d1-alice.localhost:20000/?tkn=t"
-    )
-    assert (
-        local_url("Code-2", 8000, "/x", "a b", "windows")
-        == "http://Code-2.localhost:8000/x?tkn=a+b"
-    )
-    assert (
-        local_url("vscode_d1", 8000, "/", "t", "darwin")
-        == "http://127.0.0.1:8000/?tkn=t"
-    )
-
-
-def test_the_forward_relays_bytes_untouched():
-    received = []
-    server = socket.create_server(("127.0.0.1", 0))
-
-    def serve():
-        connection, _address = server.accept()
-        data = connection.recv(4096)
-        received.append(data)
-        connection.sendall(b"HTTP/1.1 200 OK\r\nSet-Cookie: vscode-tkn=x\r\n\r\nok")
-        connection.close()
-
-    threading.Thread(target=serve, daemon=True).start()
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(platform=platform, open_service=Material(), log=discard)
     handler.act(
-        entries=[local_entry(server.getsockname()[1])],
-        body={"hub_id": "h1", "id": "vscode_d1_alice"},
+        entries=[page_entry(f"http://{DEVICE_HOST}:{own}/")],
+        body={"hub_id": "h1", "id": "gitea_d1"},
     )
-    port = urllib.parse.urlsplit(platform.opened_urls[0]).port
 
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
-        client.sendall(b"GET / HTTP/1.1\r\nCookie: vscode-tkn=mine\r\n\r\n")
-        answer = b""
-        while True:
-            data = client.recv(4096)
-            if not data:
-                break
-            answer += data
-
-    assert received == [b"GET / HTTP/1.1\r\nCookie: vscode-tkn=mine\r\n\r\n"]
-    assert answer == b"HTTP/1.1 200 OK\r\nSet-Cookie: vscode-tkn=x\r\n\r\nok"
-    handler.release()
-    server.close()
+    assert forwards.port_of("h1", "gitea_d1") == own
 
 
-def _free_but(port):
-    """An ``is_free`` that has every port free except one."""
+def test_a_url_without_a_port_takes_its_schemes(forwards):
+    handler, platform = handler_on(forwards)
 
-    def is_free(candidate):
-        return candidate != port
+    handler.act(
+        entries=[page_entry("https://wiki.lan/")],
+        body={"hub_id": "h1", "id": "gitea_d1"},
+    )
 
-    return is_free
+    assert platform.opened_urls[0].startswith("https://gitea-d1.localhost:")
 
 
-def test_a_second_open_reuses_the_forward_and_the_client_ending_closes_it(upstream):
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(platform=platform, open_service=Material(), log=discard)
-    entries = [local_entry(upstream)]
+def test_a_token_entry_opens_with_a_fresh_token_each_time(forwards):
+    material = Material()
+    handler, platform = handler_on(forwards, material)
+    entry = page_entry(
+        f"http://{DEVICE_HOST}:8000/",
+        entry_id="vscode_d1_alice",
+        is_token_required=True,
+    )
     body = {"hub_id": "h1", "id": "vscode_d1_alice"}
 
-    handler.act(entries=entries, body=body)
-    handler.act(entries=entries, body=body)
+    assert handler.act(entries=[entry], body=body) == {}
+    material.answer = {"token": "second"}
+    assert handler.act(entries=[entry], body=body) == {}
 
-    first, second = platform.opened_urls
-    assert first == second
-    assert handler.release() == 1
-    with pytest.raises(OSError):
-        fetch(first)
-
-
-def test_leaving_a_hub_closes_only_its_forwards(upstream):
-    handler = WebServiceHandler(
-        platform=FakeClientPlatform(), open_service=Material(), log=discard
-    )
-    entries = [local_entry(upstream, "h1"), local_entry(upstream, "h2")]
-    for hub_id in ("h1", "h2"):
-        handler.act(entries=entries, body={"hub_id": hub_id, "id": "vscode_d1_alice"})
-
-    assert handler.release_hub("h1") == 1
-    assert handler.release() == 1
+    port = forwards.port_of("h1", "vscode_d1_alice")
+    assert platform.opened_urls == [
+        f"http://vscode-d1-alice.localhost:{port}/?tkn={TOKEN}",
+        f"http://vscode-d1-alice.localhost:{port}/?tkn=second",
+    ]
+    assert material.asked == [("h1", "vscode_d1_alice")] * 2
 
 
-def test_the_hubs_refusal_of_the_token_is_the_answer_and_nothing_opens(upstream):
-    platform = FakeClientPlatform()
-    refused = GatewayRefusedDetail(code="permission_denied", params={"kind": "web"})
-    handler = WebServiceHandler(
-        platform=platform, open_service=Material(error=refused), log=discard
-    )
-
-    outcome = handler.act(
-        entries=[local_entry(upstream)], body={"hub_id": "h1", "id": "vscode_d1_alice"}
-    )
-
-    assert outcome == {"code": "permission_denied", "params": {"kind": "web"}}
-    assert platform.opened_urls == []
-    handler.release()
-
-
-def test_material_without_a_token_opens_nothing(upstream):
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(
-        platform=platform, open_service=Material(answer={}), log=discard
-    )
-
-    outcome = handler.act(
-        entries=[local_entry(upstream)], body={"hub_id": "h1", "id": "vscode_d1_alice"}
-    )
-
-    assert outcome == {"code": "web_token_missing", "params": {}}
-    assert platform.opened_urls == []
-    handler.release()
-
-
-def test_an_entry_that_is_not_local_only_asks_the_hub_for_nothing():
+def test_a_page_without_a_token_asks_the_hub_for_none(forwards):
     material = Material()
-    handler = WebServiceHandler(
-        platform=FakeClientPlatform(), open_service=material, log=discard
-    )
+    handler, platform = handler_on(forwards, material)
 
     handler.act(entries=SERVICES, body={"hub_id": "h1", "id": "svc_wiki"})
 
     assert material.asked == []
-    assert handler.release() == 0
+    assert len(platform.opened_urls) == 1
 
 
-# --- an entry that opens with a token ---
+def test_macos_opens_the_loopback_since_safari_resolves_no_localhost_name(forwards):
+    handler, platform = handler_on(forwards, os_name="darwin")
+
+    handler.act(
+        entries=[page_entry(f"http://{DEVICE_HOST}:3000/")],
+        body={"hub_id": "h1", "id": "gitea_d1"},
+    )
+
+    port = forwards.port_of("h1", "gitea_d1")
+    assert platform.opened_urls == [f"http://127.0.0.1:{port}/"]
 
 
-def token_entry(hub_id="h1", entry_id="cloudcli_d1_alice"):
-    return {
-        "id": entry_id,
-        "type": "web",
-        "hub_id": hub_id,
-        "title": "CloudCLI (alice)",
-        "payload": {
-            "url": "http://192.168.100.7:3001/",
-            "is_local_only": False,
-            "is_token_required": True,
-        },
-        "is_healthy": True,
-    }
+def test_the_slug_keeps_letters_digits_and_hyphens():
+    assert slug("vscode_d1.alice@x") == "vscode-d1-alice-x"
+    assert local_url("http://h:1/p?q=1", "a_b", 20000, "t", "linux") == (
+        "http://a-b.localhost:20000/p?q=1&tkn=t"
+    )
+    assert local_url("https://h/", "a_b", 20000, "", "darwin") == (
+        "https://127.0.0.1:20000/"
+    )
 
 
-def test_a_token_entry_opens_its_own_address_with_a_fresh_token():
-    platform = FakeClientPlatform()
-    material = Material(answer={"token": "a+b/c"})
-    handler = WebServiceHandler(platform=platform, open_service=material, log=discard)
+def test_a_second_open_reuses_the_forward(forwards):
+    handler, platform = handler_on(forwards)
+    entry = page_entry(f"http://{DEVICE_HOST}:3000/")
+    body = {"hub_id": "h1", "id": "gitea_d1"}
+
+    handler.act(entries=[entry], body=body)
+    handler.act(entries=[entry], body=body)
+
+    assert platform.opened_urls[0] == platform.opened_urls[1]
+    assert list(forwards.forwards()) == ["h1/gitea_d1"]
+
+
+def test_a_disconnect_ends_the_forward(forwards):
+    handler, platform = handler_on(forwards)
+    entry = page_entry(f"http://{DEVICE_HOST}:3000/")
+    handler.act(entries=[entry], body={"hub_id": "h1", "id": "gitea_d1"})
 
     assert (
         handler.act(
-            entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
-        )
-        == {}
-    )
-    assert (
-        handler.act(
-            entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
+            entries=[entry],
+            body={"hub_id": "h1", "id": "gitea_d1", "is_enabled": False},
         )
         == {}
     )
 
-    assert material.asked == [("h1", "cloudcli_d1_alice")] * 2
-    assert platform.opened_urls == ["http://192.168.100.7:3001/?tkn=a%2Bb%2Fc"] * 2
-    assert handler.state() == {"web_forwards": {}}
+    assert forwards.forwards() == {}
+    assert len(platform.opened_urls) == 1
 
 
-def test_a_token_entry_without_a_token_writes_the_code():
-    platform = FakeClientPlatform()
-    handler = WebServiceHandler(
-        platform=platform, open_service=Material(answer={}), log=discard
+def test_two_instances_on_one_remote_port_take_two_local_ports(forwards):
+    handler, platform = handler_on(forwards)
+    entries = [
+        page_entry(f"http://{DEVICE_HOST}:8000/", entry_id="vscode_d1_alice"),
+        page_entry(f"http://{DEVICE_HOST}:8000/", entry_id="vscode_d1_bob"),
+    ]
+
+    for entry in entries:
+        handler.act(entries=entries, body={"hub_id": "h1", "id": entry["id"]})
+
+    ports = forwards.forwards()
+    assert ports["h1/vscode_d1_alice"] != ports["h1/vscode_d1_bob"]
+
+
+def test_the_hubs_refusal_of_the_token_is_the_answer_and_nothing_opens(forwards):
+    material = Material(error=GatewayRefusedDetail(code="vault_locked", params={}))
+    handler, platform = handler_on(forwards, material)
+    entry = page_entry(
+        f"http://{DEVICE_HOST}:8000/",
+        entry_id="vscode_d1_alice",
+        is_token_required=True,
     )
 
-    assert handler.act(
-        entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
-    ) == {
-        "code": "web_token_missing",
-        "params": {},
-    }
+    outcome = handler.act(entries=[entry], body={"hub_id": "h1", "id": entry["id"]})
+
+    assert outcome == {"code": "vault_locked", "params": {}}
     assert platform.opened_urls == []
 
 
-def test_a_refused_token_writes_the_hubs_code():
-    platform = FakeClientPlatform()
-    refused = GatewayRefusedDetail(code="permission_denied", params={"kind": "web"})
-    handler = WebServiceHandler(
-        platform=platform, open_service=Material(error=refused), log=discard
+def test_material_without_a_token_opens_nothing(forwards):
+    handler, platform = handler_on(forwards, Material(answer={}))
+    entry = page_entry(
+        f"http://{DEVICE_HOST}:8000/",
+        entry_id="vscode_d1_alice",
+        is_token_required=True,
     )
 
-    outcome = handler.act(
-        entries=[token_entry()], body={"hub_id": "h1", "id": "cloudcli_d1_alice"}
-    )
+    outcome = handler.act(entries=[entry], body={"hub_id": "h1", "id": entry["id"]})
 
-    assert outcome["code"] == "permission_denied"
+    assert outcome == {"code": "web_token_missing", "params": {}}
     assert platform.opened_urls == []
 
 
-def test_the_token_joins_the_address_own_query():
-    from neutrino_client.services.web import token_url
+def test_an_unknown_or_bare_entry_opens_nothing(forwards):
+    handler, platform = handler_on(forwards)
+    bare = [{"id": "svc_bare", "type": "web", "hub_id": "h1", "payload": {}}]
 
-    assert token_url("http://h:3001", "t") == "http://h:3001/?tkn=t"
-    assert token_url("http://h:3001/x?a=1", "t") == "http://h:3001/x?a=1&tkn=t"
+    for entries, body in (
+        (SERVICES, {"hub_id": "h1", "id": "nothing"}),
+        (SERVICES, {"hub_id": "h2", "id": "svc_wiki"}),
+        (SERVICES, {"id": "svc_wiki"}),
+        (bare, {"hub_id": "h1", "id": "svc_bare"}),
+    ):
+        assert handler.act(entries=entries, body=body) == {
+            "code": "unknown_request",
+            "params": {},
+        }
+    assert platform.opened_urls == []
+    assert forwards.forwards() == {}

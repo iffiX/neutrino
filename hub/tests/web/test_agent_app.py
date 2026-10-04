@@ -24,6 +24,13 @@ class StubExitController:
         return None
 
 
+class StubRelayMonitor:
+    """The relay's monitor, which the application starts and nothing here runs."""
+
+    def start(self) -> None:
+        return None
+
+
 class StubUsageCollector:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -39,7 +46,8 @@ class StubRuntime:
         self.served_models = None
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
-        self.exit_controller = StubExitController()
+        self.proxy = StubExitController()
+        self.relay_monitor = StubRelayMonitor()
 
     def publish_ai_usage(self) -> None:
         return None

@@ -43,6 +43,7 @@ class _Result:
         self.is_success = True
 
 
+@pytest.mark.feature("netbird")
 def test_a_unit_that_is_not_there_is_not_installed(systemd):
     status = SystemdServiceController().status("netbird")
 
@@ -61,6 +62,7 @@ def test_a_running_unit_reads_as_all_three(systemd):
     assert status.is_enabled
 
 
+@pytest.mark.feature("netbird")
 def test_an_installed_unit_that_is_stopped_is_still_installed(systemd):
     """The distinction the Services page is built on: a module that is there
     and switched off is not one that has to be installed again."""
@@ -73,6 +75,7 @@ def test_an_installed_unit_that_is_stopped_is_still_installed(systemd):
     assert not status.is_enabled
 
 
+@pytest.mark.feature("netbird")
 def test_a_unit_with_no_install_section_counts_as_enabled(systemd):
     """`static` is what a unit something else pulls in reports, and it starts
     at boot as surely as an enabled one."""
@@ -81,6 +84,7 @@ def test_a_unit_with_no_install_section_counts_as_enabled(systemd):
     assert SystemdServiceController().status("netbird").is_enabled
 
 
+@pytest.mark.feature("netbird")
 def test_a_masked_unit_is_installed_and_not_enabled(systemd):
     """Masking is what the hub does to a manager it has taken over from, and
     the unit is still on the disk."""

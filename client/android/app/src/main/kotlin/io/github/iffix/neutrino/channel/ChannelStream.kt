@@ -39,9 +39,16 @@ class ChannelStream internal constructor(
     private val creditLock = Mutex()
     private var consumed = 0L
 
+    @Volatile
+    private var endedIn: ChannelResult.Refused? = null
+
     /** Whether the hub closed it, the socket ended, or this side closed it. */
     val isDone: Boolean
         get() = outcome.isCompleted
+
+    /** The code the stream ended in: the hub's refusal, or `hub_unreachable` once the socket ended; else null. */
+    val refusal: ChannelResult.Refused?
+        get() = endedIn
 
     /**
      * Wait for the hub's close.
@@ -114,13 +121,16 @@ class ChannelStream internal constructor(
     }
 
     internal fun takeClose(code: String, params: JsonObject) {
+        if (code.isNotEmpty() && !outcome.isCompleted) endedIn = ChannelResult.Refused(code, params)
         outcome.complete(if (code.isEmpty()) ChannelResult.Ok(params) else ChannelResult.Refused(code, params))
         incoming.close()
         isEnded.value = true
     }
 
     internal fun end() {
-        outcome.complete(ChannelResult.refused("hub_unreachable", "detail" to "the hub socket closed"))
+        val ended = ChannelResult.refused("hub_unreachable", "detail" to "the hub socket closed")
+        if (!outcome.isCompleted) endedIn = ended
+        outcome.complete(ended)
         incoming.close()
         isEnded.value = true
     }

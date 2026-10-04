@@ -13,11 +13,13 @@ arguments.
 import ipaddress
 from dataclasses import dataclass
 
+from neutrino_hub import edition
 from neutrino_hub.modules.services.constants import (
+    SERVICES_REACHED_LAN,
+    SERVICES_REACHED_RELAY,
     SERVICES_SCOPE_LINK,
     SERVICES_SCOPE_OVERLAY,
 )
-from neutrino_hub.modules.tun.constants import TUN_ADDRESS, TUN_PREFIX_LENGTH
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,37 @@ def scope_of(
     return link_scope(reached_address)
 
 
+def reached_through(peer_address: str, overlay_networks: dict) -> str:
+    """The way a caller's socket reached the hub.
+
+    Args:
+        peer_address: Where the caller's socket comes from.
+        overlay_networks: Overlay engine key to the addresses, each with its
+            prefix length, that the engine's devices hold on this box.
+
+    Returns:
+        ``relay`` for a peer on loopback; the key of the first engine one of
+        whose networks holds the peer; ``lan`` for anything else.
+    """
+    address = _ipv4_of(peer_address)
+    if address is None:
+        try:
+            address = ipaddress.ip_address(peer_address)
+        except ValueError:
+            return SERVICES_REACHED_LAN
+    if address.is_loopback:
+        return SERVICES_REACHED_RELAY
+    for provider, held in overlay_networks.items():
+        for text in held:
+            try:
+                network = ipaddress.ip_interface(str(text)).network
+            except ValueError:
+                continue
+            if address.version == network.version and address in network:
+                return provider
+    return SERVICES_REACHED_LAN
+
+
 def link_scope(reached_address: str) -> HostScope:
     """The scope of a caller on no served network.
 
@@ -159,7 +192,10 @@ def lan_in_place_of_overlay(
     link = _ipv4_of(link_address)
     if link is None or not any(link in network for network in overlays):
         return "", ""
-    tun = ipaddress.ip_network(f"{TUN_ADDRESS}/{TUN_PREFIX_LENGTH}", strict=False)
+    hidden = [
+        ipaddress.ip_network(network, strict=False)
+        for network in edition.hooks("hidden_networks")
+    ]
     for interface in interfaces:
         if not isinstance(interface, dict):
             continue
@@ -167,7 +203,7 @@ def lan_in_place_of_overlay(
             address = _ipv4_of(str(text))
             if address is None or address.is_loopback or address.is_link_local:
                 continue
-            if address in tun or any(address in network for network in overlays):
+            if any(address in network for network in hidden + overlays):
                 continue
             return str(address), str(interface.get("mac", "") or "")
     return "", ""

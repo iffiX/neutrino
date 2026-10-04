@@ -9,9 +9,11 @@ import io.github.iffix.neutrino.CLIENT_HUB_ROLE
 import io.github.iffix.neutrino.CLIENT_IDLE_POLL_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_JOIN_PATH
 import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_ADMISSION_PAUSED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.CLIENT_REPORT_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_ROTATE_DELAY_S
+import io.github.iffix.neutrino.CLIENT_STREAM_KIND_CONNECT
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SERVICE
 import io.github.iffix.neutrino.CLIENT_STREAM_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_WS_CLOSE_NORMAL
@@ -37,6 +39,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /**
  * The one socket to one hub: a connection round over the hub's addresses, the handshake, the
@@ -51,7 +54,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * certificate takes the ticket, and the hello follows there with the token it returned. A
  * short link's binding first fetches the long link's object at that address and keeps its
  * addresses and overlays. A refusal of the ticket is `down` with its code, and no round runs
- * after it.
+ * after it, except `admission_paused`: the ticket is kept, the binding stays `pending` with the
+ * code, and the join runs again after the `retry_after_s` it names.
  *
  * @param bindingId The binding the session is for.
  * @param store Where the binding is kept and noted.
@@ -243,6 +247,15 @@ class HubSession(
         }
 
     /**
+     * Open one `connect` stream: one TCP connection to a published entry or to the hub's panel.
+     *
+     * @param args `{id}` for an entry, `{is_panel: true}` for the panel.
+     * @return The stream, or `hub_unreachable` while the hub is not connected.
+     */
+    fun openConnect(args: Map<String, JsonElement>): ChannelResult<ChannelStream> =
+        openStream(CLIENT_STREAM_KIND_CONNECT, args, hasBytes = true)
+
+    /**
      * One round, or one idle turn.
      *
      * @return How many seconds to wait before the next.
@@ -274,6 +287,8 @@ class HubSession(
                             if (url != nameUrl || url in binding.storedUrls) untrusted = spent
                             continue
                         }
+
+                        CLIENT_REFUSAL_CODE_ADMISSION_PAUSED -> return onAdmissionPaused(spent)
 
                         else -> return onJoinRefused(spent)
                     }
@@ -334,6 +349,13 @@ class HubSession(
         endRefresh()
         current.update { it.copy(connection = HubConnection.DOWN, lastError = refusal) }
         return CLIENT_IDLE_POLL_INTERVAL_S
+    }
+
+    private fun onAdmissionPaused(refusal: ChannelResult.Refused): Long {
+        endRefresh()
+        current.update { it.copy(connection = HubConnection.PENDING, lastError = refusal) }
+        val retryS = (refusal.params["retry_after_s"] as? JsonPrimitive)?.longOrNull ?: CLIENT_BACKOFF_MAX_S
+        return retryS.coerceAtLeast(1)
     }
 
     private fun roundState(binding: HubBinding): HubConnection =
@@ -510,6 +532,8 @@ class HubSession(
                 connection = if (state.isDisabled) HubConnection.DISABLED else HubConnection.CONNECTED,
                 services = state.services,
                 terminals = state.terminals,
+                reachedThrough = state.reachedThrough,
+                isPanelAllowed = state.isPanelAllowed,
                 lastError = null,
             )
         }

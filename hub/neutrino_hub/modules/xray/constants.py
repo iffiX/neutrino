@@ -4,6 +4,7 @@ Ports and tags here are referenced by the nftables ruleset and the dnsmasq
 config, so they are wire-level identifiers rather than user settings.
 """
 
+from neutrino_hub.modules.tun.constants import TUN_SUPERVISED_NAME
 from neutrino_hub.utils.constants import (
     UTILS_GEODATA_DIR,
     UTILS_GENERATED_DIR,
@@ -294,3 +295,21 @@ XRAY_SCOPE_LAN = "is_proxy_enabled"
 XRAY_SCOPE_OVERLAY = "is_overlay_proxy_enabled"
 XRAY_SCOPE_HUB = "is_local_proxy_enabled"
 XRAY_SCOPE_SWITCHES = (XRAY_SCOPE_LAN, XRAY_SCOPE_OVERLAY, XRAY_SCOPE_HUB)
+
+# The proxy's two files under ``config/``, copied from their examples at setup.
+XRAY_NODES_FILE = "xray/nodes.json"
+XRAY_ROUTING_FILE = "xray/routing.json"
+XRAY_CONFIG_FILES = (XRAY_NODES_FILE, XRAY_ROUTING_FILE)
+# The DNS inbound as ``(address, port)``, as the DNS log tells a forward to it.
+XRAY_DNS_INBOUND = (XRAY_DNS_LISTEN, XRAY_DNS_PORT)
+# The network mode the proxy adds to ``router`` and ``server``: a box that
+# forwards for hosts naming it their gateway exists to divert them.
+# The proxy core's unit, and the children the hub's one service runs for
+# the proxy outside Linux, the TUN's beside xray and only while xray runs.
+XRAY_CORE_UNIT = (XRAY_SUPERVISED_NAME, f"{XRAY_SERVICE_NAME}.service")
+XRAY_SUPERVISED_NAMES = (XRAY_SUPERVISED_NAME, TUN_SUPERVISED_NAME)
+XRAY_CHILD_REQUIREMENTS = {TUN_SUPERVISED_NAME: XRAY_SUPERVISED_NAME}
+XRAY_SIDE_GATEWAY_MODE = {
+    "key": "side_gateway",
+    "summary": "Forwards for hosts that name it as their gateway.",
+}

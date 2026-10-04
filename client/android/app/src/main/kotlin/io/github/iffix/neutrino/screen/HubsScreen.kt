@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.CLIENT_PERSON_CODES
+import io.github.iffix.neutrino.CLIENT_REACHED_THROUGH
 import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubNotice
@@ -44,6 +45,7 @@ import io.github.iffix.neutrino.overlay.OverlayJob
 import io.github.iffix.neutrino.overlay.OverlayLine
 import io.github.iffix.neutrino.overlay.OverlayStage
 import io.github.iffix.neutrino.overlay.OverlayState
+import io.github.iffix.neutrino.words.WordCatalog
 import kotlinx.coroutines.delay
 
 /**
@@ -57,6 +59,7 @@ import kotlinx.coroutines.delay
  * @param onCloseNotice What pressing a notice's close button does, with the notice.
  * @param onLeave What the second press on Leave does, with the binding's id.
  * @param onReconnect What pressing Reconnect does, with the binding's id.
+ * @param onOpenPanel What pressing Panel does, with the binding's id.
  * @param onOverlayConnect What pressing Connect on a hub's network does, with the binding's id.
  * @param onOverlayCancel What pressing Cancel does, with the binding's id.
  * @param onOverlayDisconnect What pressing Disconnect does, with the binding's id.
@@ -70,6 +73,7 @@ fun HubsScreen(
     onCloseNotice: (HubNotice) -> Unit,
     onLeave: (String) -> Unit,
     onReconnect: (String) -> Unit,
+    onOpenPanel: (String) -> Unit,
     onOverlayConnect: (String) -> Unit,
     onOverlayCancel: (String) -> Unit,
     onOverlayDisconnect: (String) -> Unit,
@@ -107,6 +111,7 @@ fun HubsScreen(
                     hasDivider = hasDivider,
                     onLeave = onLeave,
                     onReconnect = onReconnect,
+                    onOpenPanel = onOpenPanel,
                     onOverlayConnect = onOverlayConnect,
                     onOverlayCancel = onOverlayCancel,
                     onOverlayDisconnect = onOverlayDisconnect,
@@ -160,8 +165,19 @@ fun hubTone(hub: HubView): DotTone = when {
 fun hubStateKey(hub: HubView): String = when {
     hub.jobs.isLeaving -> "ui.job.leaving"
     hub.jobs.isRefreshing -> "ui.job.refreshing"
+    hub.isConnected && hub.reachedThrough in CLIENT_REACHED_THROUGH -> "ui.state.connected_through"
     else -> "ui.state.${hub.connection.wireName}"
 }
+
+/**
+ * The state word of a hub row, worded: `Connected · <way>` names the way the socket reached the hub.
+ *
+ * @param hub The hub.
+ * @param words The catalog.
+ * @return The sentence.
+ */
+fun hubStateWord(hub: HubView, words: WordCatalog): String =
+    words.word(hubStateKey(hub), mapOf("way" to words.word("ui.through.${hub.reachedThrough}")))
 
 @Composable
 private fun waitedSeconds(line: OverlayLine): Long {
@@ -182,6 +198,7 @@ private fun HubRow(
     hasDivider: Boolean,
     onLeave: (String) -> Unit,
     onReconnect: (String) -> Unit,
+    onOpenPanel: (String) -> Unit,
     onOverlayConnect: (String) -> Unit,
     onOverlayCancel: (String) -> Unit,
     onOverlayDisconnect: (String) -> Unit,
@@ -263,6 +280,15 @@ private fun HubRow(
                     isEnabled = networkReason == null,
                 )
             }
+            if (hub.isPanelAllowed) {
+                NeutrinoButton(
+                    words.word(if (hub.jobs.isOpeningPanel) "ui.job.opening" else "ui.hub_panel"),
+                    { onOpenPanel(id) },
+                    isSmall = true,
+                    isBusy = hub.jobs.isOpeningPanel,
+                    isEnabled = hub.isConnected && !hub.jobs.isOpeningPanel && !hub.jobs.isLeaving,
+                )
+            }
             if (hub.connection == HubConnection.REPLACED) {
                 NeutrinoButton(words.word("ui.reconnect"), { onReconnect(id) }, isSmall = true)
             }
@@ -276,7 +302,7 @@ private fun HubRow(
         },
     ) {
         BasicText(hub.binding.title, style = NeutrinoTheme.rowTitle)
-        BasicText(words.word(hubStateKey(hub)), style = NeutrinoTheme.note)
+        BasicText(hubStateWord(hub, words), style = NeutrinoTheme.note)
         val software = if (hub.software.isEmpty()) {
             ""
         } else {
@@ -327,6 +353,7 @@ private fun HubsScreenPreview() {
             onCloseNotice = {},
             onLeave = {},
             onReconnect = {},
+            onOpenPanel = {},
             onOverlayConnect = {},
             onOverlayCancel = {},
             onOverlayDisconnect = {},

@@ -187,6 +187,50 @@ def test_attach_asks_the_system_to_mount_a_volume_on_osascripts_stdin(
         assert "s3cret" not in " ".join(argv)  # scan: allow
 
 
+def test_a_forwarded_share_is_mounted_at_the_loopback_and_its_port(
+    monkeypatch, tmp_path
+):
+    table = volume_table(source="//media@127.0.0.1:20445/media")
+    recorder = CommandRecorder(
+        [completed(stdout=MOUNT_TABLE), completed(), completed(stdout=table)]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    mounted = DarwinPlatform().attach_share(
+        share_url="//127.0.0.1/media",
+        port=20445,
+        location="",
+        credentials_path=credentials_file(tmp_path),
+    )
+
+    assert mounted == "/Volumes/media"
+    assert recorder.inputs[1] == (
+        'mount volume "smb://media@127.0.0.1:20445/media" as user name "media"'
+        ' with password "s3cret"\n'  # scan: allow
+    )
+
+
+def test_a_volume_of_another_forward_is_not_taken_as_mounted(monkeypatch, tmp_path):
+    other = volume_table(source="//media@127.0.0.1:20446/media")
+    table = volume_table(
+        source="//media@127.0.0.1:20445/media", location="/Volumes/media-1"
+    )
+    recorder = CommandRecorder(
+        [completed(stdout=other), completed(), completed(stdout=other + table)]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    mounted = DarwinPlatform().attach_share(
+        share_url="//127.0.0.1/media",
+        port=20445,
+        location="",
+        credentials_path=credentials_file(tmp_path),
+    )
+
+    assert mounted == "/Volumes/media-1"
+    assert recorder.commands == [["mount"], ["osascript", "-"], ["mount"]]
+
+
 def test_the_system_picks_the_next_free_name_and_it_is_read_back(monkeypatch, tmp_path):
     table = volume_table(location="/Volumes/media-1")
     recorder = CommandRecorder(

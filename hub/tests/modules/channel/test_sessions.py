@@ -245,6 +245,21 @@ def test_a_close_from_this_side_carries_its_result_and_ends_the_stream():
     run(scenario)
 
 
+def test_a_stream_closed_from_this_side_is_forgotten_and_its_late_bytes_dropped():
+    async def scenario():
+        socket = FakeWebSocket()
+        made = session(socket=socket)
+        stream = await made.open_stream("connect", {"port": 445})
+
+        await stream.close()
+        made.dispatch_bytes(frame(stream.id, b"late"))
+
+        assert stream.id not in made._streams
+        assert await stream.recv() is None
+
+    run(scenario)
+
+
 def test_a_stream_the_peer_closed_gets_no_close_back():
     async def scenario():
         socket = FakeWebSocket()

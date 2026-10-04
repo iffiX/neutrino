@@ -1,0 +1,125 @@
+"""The mainland source tree: the left-out paths gone, everything stamped cn.
+
+A cn tree holding a path of ``PACKAGING_CN_LEFT_OUT_PATHS`` is refused by
+name, and so is an intl tree lacking one; the repository itself is the
+intl tree, so every listed path is one it holds.
+"""
+
+from pathlib import Path
+
+import pytest
+
+import build_sources
+from shared.constants import (
+    PACKAGING_CN_LEFT_OUT_PATHS,
+    PACKAGING_INSTALL_EDITION_LINES,
+)
+from shared.edition_tree import check_tree, make_cn_tree
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def intl_tree(root: Path) -> Path:
+    """A tree holding every left-out path, the edition file and both scripts."""
+    for relative in PACKAGING_CN_LEFT_OUT_PATHS:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix:
+            path.write_text("left out\n", encoding="utf-8")
+        else:
+            path.mkdir()
+            (path / "__init__.py").write_text("", encoding="utf-8")
+    for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# a script\n{line.format(edition='intl')}\n", "utf-8")
+    (root / "EDITION").write_text("intl\n", encoding="utf-8")
+    (root / "README.md").write_text(
+        "[releases](https://github.com/iffiX/neutrino/releases)\n", encoding="utf-8"
+    )
+    (root / "hub" / "neutrino_hub" / "kept.py").write_text("", encoding="utf-8")
+    return root
+
+
+def test_the_repository_is_the_edition_its_root_file_names():
+    """The GitHub repository holds every listed path; the mainland tree
+    none of them."""
+    edition = (REPO_ROOT / "EDITION").read_text(encoding="utf-8").strip()
+
+    check_tree(REPO_ROOT, edition)
+
+
+def test_the_mainland_tree_holds_none_of_the_listed_paths(tmp_path):
+    root = intl_tree(tmp_path)
+
+    make_cn_tree(root)
+
+    assert [p for p in PACKAGING_CN_LEFT_OUT_PATHS if (root / p).exists()] == []
+    assert (root / "hub" / "neutrino_hub" / "kept.py").is_file()
+    assert (root / "EDITION").read_text(encoding="utf-8") == "cn\n"
+    check_tree(root, "cn")
+
+
+def test_both_install_scripts_are_stamped_cn(tmp_path):
+    root = intl_tree(tmp_path)
+
+    make_cn_tree(root)
+
+    for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
+        text = (root / relative).read_text(encoding="utf-8")
+        assert line.format(edition="cn") in text.splitlines()
+        assert line.format(edition="intl") not in text
+
+
+def test_the_readme_points_at_gitee(tmp_path):
+    root = intl_tree(tmp_path)
+
+    make_cn_tree(root)
+
+    assert "https://gitee.com/iffiX/neutrino/releases" in (
+        root / "README.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_a_cn_tree_holding_a_left_out_path_is_refused_by_name(tmp_path):
+    root = intl_tree(tmp_path)
+    make_cn_tree(root)
+    (root / "hub/neutrino_hub/modules/xray").mkdir()
+
+    with pytest.raises(SystemExit, match="hub/neutrino_hub/modules/xray"):
+        check_tree(root, "cn")
+
+
+def test_an_intl_tree_lacking_a_left_out_path_is_refused_by_name(tmp_path):
+    root = intl_tree(tmp_path)
+    (root / "hub/neutrino_hub/web/routers/hub/overlay_netbird.py").unlink()
+
+    with pytest.raises(SystemExit, match="overlay_netbird.py"):
+        check_tree(root, "intl")
+
+
+def test_a_tree_whose_edition_file_says_otherwise_is_refused(tmp_path):
+    root = intl_tree(tmp_path)
+
+    with pytest.raises(SystemExit, match="EDITION names intl, not cn"):
+        check_tree(root, "cn")
+
+
+def test_a_script_with_no_line_to_stamp_stops_the_tree(tmp_path):
+    root = intl_tree(tmp_path)
+    (root / "packaging/install/install.sh").write_text("# no edition\n", "utf-8")
+
+    with pytest.raises(SystemExit, match="install.sh holds no line"):
+        make_cn_tree(root)
+
+
+def test_the_cn_archive_carries_no_upstream_source_of_a_left_out_feature():
+    kept = [
+        name
+        for name, _, _ in build_sources.SOURCE_ARCHIVES
+        if not name.startswith(build_sources.CN_LEFT_OUT_SOURCES)
+    ]
+
+    assert not any("netbird" in name or "xray" in name for name in kept)
+    assert any(name.startswith("easytier-") for name in kept)
+    assert any(name.startswith("rustdesk-") for name in kept)

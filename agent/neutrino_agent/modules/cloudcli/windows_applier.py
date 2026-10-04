@@ -41,7 +41,6 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_WINDOWS_NPM_PATH,
     CLOUDCLI_WINDOWS_INSTALL_LIMIT_S,
     CLOUDCLI_WINDOWS_RULE_PREFIX,
-    CLOUDCLI_WINDOWS_RULE_TITLE,
     CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME,
     CLOUDCLI_WINDOWS_SHELL,
 )
@@ -102,9 +101,9 @@ if ($output.Length -gt 8000) { $output = $output.Substring($output.Length - 8000
 """
 
 # Writes each instance's script, registers the tasks that changed, starts
-# them, restarts one whose script changed, opens each instance's port in the
-# firewall, and unregisters the module's tasks no instance names, closing
-# their ports.
+# them, restarts one whose script changed, unregisters the module's tasks
+# no instance names, and removes every firewall rule an older build opened
+# for an instance's port.
 APPLY_SCRIPT = """
 $notes = @()
 foreach ($i in @($d.instances)) {
@@ -151,16 +150,6 @@ foreach ($i in @($d.instances)) {
   if ((Get-ScheduledTask -TaskName $i.task).State -ne 'Running') {
     Start-ScheduledTask -TaskName $i.task
   }
-  $rule = Get-NetFirewallRule -Name $i.rule -ErrorAction SilentlyContinue
-  if (-not $rule) {
-    New-NetFirewallRule -Name $i.rule -DisplayName $i.rule_title `
-      -Direction Inbound -Action Allow -Protocol TCP -LocalPort $i.port `
-      -Profile Any | Out-Null
-    $notes += "opened port $($i.port) for $($i.account)"
-  } elseif ("$(($rule | Get-NetFirewallPortFilter).LocalPort)" -ne "$($i.port)") {
-    $rule | Set-NetFirewallRule -LocalPort $i.port
-    $notes += "moved the port of $($i.account) to $($i.port)"
-  }
 }
 foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
   if (@($d.tasks) -notcontains $task.TaskName) {
@@ -171,15 +160,19 @@ foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction Sil
         (Join-Path $d.log_dir "$account$($d.log_suffix)"))) {
       Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
     }
-    Remove-NetFirewallRule -Name "$($d.rule_prefix)$account" -ErrorAction SilentlyContinue
     $notes += "removed $($task.TaskName)"
   }
+}
+$stale = @(Get-NetFirewallRule -Name "$($d.rule_prefix)*" -ErrorAction SilentlyContinue)
+if ($stale.Count -gt 0) {
+  $stale | Remove-NetFirewallRule
+  $notes += "closed the ports an older build opened"
 }
 @{notes = $notes} | ConvertTo-Json -Compress -Depth 4
 """
 
 # Stops the module's tasks; with ``is_removed`` also unregisters them,
-# deletes their scripts and closes their ports.
+# deletes their scripts and the firewall rules an older build added.
 WITHDRAW_SCRIPT = """
 foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
   Stop-ScheduledTask -TaskName $task.TaskName -ErrorAction SilentlyContinue
@@ -235,13 +228,14 @@ def render_script(environment: dict, *, node: str, server: str) -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
-def render_install_script(*, app: str, node: str, npm: str) -> str:
+def render_install_script(*, app: str, node: str, npm: str, registry: str = "") -> str:
     """The script an account's install task runs.
 
     Args:
         app: The account's app directory.
         node: The Node.js interpreter.
         npm: npm's script.
+        registry: The registry npm installs from; empty for npm's own.
 
     Returns:
         The ``.cmd`` text, CRLF line ends: the app directory and the empty
@@ -250,7 +244,7 @@ def render_install_script(*, app: str, node: str, npm: str) -> str:
     """
     environment = {
         "PATH": ";".join([ntpath.dirname(node), *CLOUDCLI_WINDOWS_NPM_PATH]),
-        **installer.npm_environment(app, join=ntpath.join),
+        **installer.npm_environment(app, join=ntpath.join, registry=registry),
     }
     lines = ["@echo off", f'if not exist "{app}" mkdir "{app}"']
     lines.append(f'type nul > "{environment["npm_config_userconfig"]}"')
@@ -368,6 +362,7 @@ class CloudcliWindowsApplier:
                     homes[instance.account],
                     node,
                     tasks.get(CLOUDCLI_INSTALL_TASK_PREFIX + instance.account),
+                    registry=config.npm_registry,
                 )
                 if step == INSTALL_RUNNING:
                     running.append(instance.account)
@@ -404,10 +399,6 @@ class CloudcliWindowsApplier:
                     "log_file": log_file,
                     "task": task_name(instance.account),
                     "port": instance.port,
-                    "rule": CLOUDCLI_WINDOWS_RULE_PREFIX + instance.account,
-                    "rule_title": CLOUDCLI_WINDOWS_RULE_TITLE.format(
-                        account=instance.account
-                    ),
                     "arguments": arguments,
                     "description": CLOUDCLI_TASK_MARKER
                     + _digest(
@@ -514,7 +505,15 @@ class CloudcliWindowsApplier:
             if isinstance(entry, dict)
         }
 
-    def _install_app(self, instance, home: str, node: str, task: "dict | None") -> str:
+    def _install_app(
+        self,
+        instance,
+        home: str,
+        node: str,
+        task: "dict | None",
+        *,
+        registry: str = "",
+    ) -> str:
         """Judge an account's install task, or start one when CloudCLI is not there.
 
         Returns:
@@ -544,7 +543,9 @@ class CloudcliWindowsApplier:
                 "password": instance.password,
                 "task": name,
                 "script": script,
-                "script_text": render_install_script(app=app, node=node, npm=npm),
+                "script_text": render_install_script(
+                    app=app, node=node, npm=npm, registry=registry
+                ),
                 "log": log_file,
                 "program": CLOUDCLI_WINDOWS_SHELL,
                 "arguments": task_arguments(script, [], log_file),

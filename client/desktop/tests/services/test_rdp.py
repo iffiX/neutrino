@@ -1,9 +1,11 @@
-"""The desktop viewer: the service stream answers, the viewer dials, nothing kept.
+"""The desktop viewer: the service stream answers, the viewer dials the forward.
 
-Connect opens the entry's ``service`` stream on its hub for the share's
-address and password, starts the carried viewer with ``--connect`` and
-``--password``, and the password lands in no log line and no state payload.
-Every viewer opened is closed by ``close_all``, and one hub's by
+Connect opens the entry's ``service`` stream on its hub for the seat's
+password, makes the entry's forward of the local port table, and starts the
+carried viewer with ``--connect 127.0.0.1[:<local port>]`` and
+``--password``; the viewer never dials the share's own address, and the
+password lands in no log line and no state payload. The forward ends with
+the viewer. Every viewer opened is closed by ``close_all``, and one hub's by
 ``release_hub``.
 """
 
@@ -18,12 +20,23 @@ from neutrino_client.exceptions import (
     GatewayUnreachable,
     GatewayUntrusted,
 )
+from neutrino_client.services.forward import (
+    ForwardListenerRegistry,
+    PortLocalTable,
+    is_port_free,
+)
 from neutrino_client.services.rdp import (
     RdpViewerHandler,
     client_invocation,
     connect_peer,
 )
-from tests.conftest import SERVICES, FakeClientPlatform, FakeProcess
+from tests.conftest import (
+    SERVICES,
+    FakeClientPlatform,
+    FakeConnectHub,
+    FakeProcess,
+    discard,
+)
 
 ENTRY = SERVICES[4]
 OFFICE_ENTRY = SERVICES[-1]
@@ -35,13 +48,7 @@ class FakeHub:
 
     def __init__(self, reply=None, error=None):
         self.reply = (
-            reply
-            if reply is not None
-            else {
-                "host": "192.168.100.6",
-                "port": 21118,
-                "password": "hunter2",  # scan: allow
-            }
+            reply if reply is not None else {"password": "hunter2"}  # scan: allow
         )
         self.error = error
         self.opened = []
@@ -67,6 +74,17 @@ def run_inline(target):
     target()
 
 
+def forwards_on(busy=()):
+    """A registry whose table finds every free port free but the busy ones."""
+    return ForwardListenerRegistry(
+        open_connect=FakeConnectHub().open_connect,
+        ports=PortLocalTable(
+            is_free=lambda port: port not in busy and is_port_free(port)
+        ),
+        log=discard,
+    )
+
+
 @pytest.fixture
 def handler(monkeypatch):
     monkeypatch.setattr(bundled, "rustdesk_path", lambda: "/opt/rustdesk")
@@ -75,13 +93,17 @@ def handler(monkeypatch):
     lines = []
     platform = FakeClientPlatform()
     hub = FakeHub()
+    forwards = forwards_on(busy=(21118,))
     subject = RdpViewerHandler(
         platform=platform,
         open_service=hub.open_service,
+        forwards=forwards,
         log=lines.append,
         start_thread=run_inline,
     )
-    return subject, platform, hub, lines
+    subject.forwards = forwards
+    yield subject, platform, hub, lines
+    forwards.release()
 
 
 def test_connect_opens_the_entrys_service_stream_and_dials_the_viewer(handler):
@@ -92,10 +114,12 @@ def test_connect_opens_the_entrys_service_stream_and_dials_the_viewer(handler):
     assert outcome == {}
     assert hub.opened == [("h1", "rdp_s9")]
     (process,) = platform.started
+    port = subject.forwards.port_of("h1", "rdp_s9")
+    assert port >= 20000
     assert process.argv == [
         "/opt/rustdesk",
         "--connect",
-        "192.168.100.6",
+        f"127.0.0.1:{port}",
         "--password",
         "hunter2",  # scan: allow
     ]
@@ -113,15 +137,6 @@ def test_the_password_reaches_no_log_and_no_state(handler):
     assert "hunter2" not in "\n".join(lines)  # scan: allow
     assert "hunter2" not in json.dumps(subject.state())  # scan: allow
     assert "password" not in json.dumps(subject.state())
-
-
-def test_another_port_is_spelled_out(handler):
-    subject, platform, hub, _lines = handler
-    hub.reply["port"] = 25000
-
-    subject.act(entries=[ENTRY], body=CONNECT_BODY)
-
-    assert platform.started[0].argv[2] == "192.168.100.6:25000"
 
 
 def test_a_share_the_hub_no_longer_has_is_typed(handler):
@@ -186,12 +201,12 @@ def test_an_action_the_handler_does_not_know_is_typed(handler):
     }
 
 
-def test_a_reply_with_no_address_is_refused_rather_than_dialled(handler):
-    subject, platform, hub, _lines = handler
-    hub.reply["host"] = ""
+def test_a_forward_that_cannot_listen_starts_no_viewer(handler):
+    subject, platform, _hub, _lines = handler
+    subject.forwards.ports = PortLocalTable(is_free=lambda port: False)
 
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
-    assert failure_of(subject) == {"code": "rdp_no_address", "params": {}}
+    assert failure_of(subject)["code"] == "forward_failed"
     assert platform.started == []
 
 
@@ -203,6 +218,7 @@ def test_no_display_refuses_rather_than_opening_nothing(handler, monkeypatch):
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
     assert failure_of(subject) == {"code": "rdp_no_desktop", "params": {}}
     assert platform.started == []
+    assert subject.forwards.forwards() == {}
 
 
 @pytest.mark.parametrize("platform_name", ["darwin", "win32"])
@@ -227,6 +243,7 @@ def test_a_viewer_that_will_not_start_is_typed(handler):
     assert subject.act(entries=[ENTRY], body=CONNECT_BODY) == {}
 
     assert failure_of(subject)["code"] == "rdp_launch_failed"
+    assert subject.forwards.forwards() == {}
 
 
 def test_close_all_terminates_every_viewer_and_is_idempotent(handler):
@@ -243,6 +260,7 @@ def test_close_all_terminates_every_viewer_and_is_idempotent(handler):
 
     assert all(process.is_terminated for process in platform.started)
     assert subject.state() == {"viewers": {}, "rdp_work": IDLE_WORK}
+    assert subject.forwards.forwards() == {}
 
 
 def test_release_hub_closes_only_that_hubs_viewers(handler):
@@ -262,6 +280,7 @@ def test_release_hub_closes_only_that_hubs_viewers(handler):
     assert office.is_terminated is True
     assert home.is_terminated is False
     assert list(subject.state()["viewers"]) == ["h1/rdp_s9"]
+    assert list(subject.forwards.forwards()) == ["h1/rdp_s9"]
 
 
 def test_a_viewer_the_person_closed_leaves_the_state(handler):
@@ -310,6 +329,7 @@ def test_a_second_connect_while_one_is_in_flight_is_busy(monkeypatch):
     subject = RdpViewerHandler(
         platform=FakeClientPlatform(),
         open_service=FakeHub().open_service,
+        forwards=forwards_on(busy=(21118,)),
         log=print,
         start_thread=held.append,
     )
@@ -324,6 +344,7 @@ def test_a_second_connect_while_one_is_in_flight_is_busy(monkeypatch):
 
     held[0]()
     assert subject.state()["rdp_work"]["state"] == "idle"
+    subject.release()
 
 
 def test_a_viewer_that_ends_frees_the_entry_and_says_so(handler, monkeypatch):
@@ -346,7 +367,10 @@ def test_a_viewer_that_ends_frees_the_entry_and_says_so(handler, monkeypatch):
 
     assert changed.wait(2)
     deadline = time.monotonic() + 2
-    while subject.state()["viewers"] and time.monotonic() < deadline:
+    while (
+        subject.state()["viewers"] or subject.forwards.forwards()
+    ) and time.monotonic() < deadline:
         time.sleep(0.01)
     assert subject.state()["viewers"] == {}
     assert any("closed" in line for line in lines)
+    assert subject.forwards.forwards() == {}

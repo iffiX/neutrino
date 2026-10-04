@@ -9,8 +9,6 @@
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
-    "ai_qr_hint": "A chat app that scans this code can use this gateway.",
-    "ai_qr_label": "QR code of the gateway address and the key",
     "back": "Back",
     "camera_allow": "Allow the camera",
     "camera_refused": "The camera is not allowed; paste the link below.",
@@ -21,7 +19,6 @@
     "core_notice": "Connected to {count} hubs",
     "forget_password": "Forget password",
     "forget_password_arm": "Press again to forget",
-    "gateway_address": "Gateway address",
     "hub_forgot": "{hub} no longer knows this phone, so its row was removed.",
     "join_hint": "Scan the QR code, or paste the link.",
     "key_hide": "Hide the key",
@@ -31,7 +28,6 @@
     "overlay_count": "This hub publishes {count} virtual networks",
     "password_not_saved": "Password not saved",
     "paste": "Paste",
-    "qr": "QR",
     "rdp_codec": "Codec",
     "rdp_codec_auto": "Auto",
     "rdp_configure_title": "Picture",

@@ -52,12 +52,12 @@ Direct includes traffic that never enters xray, such as an overlay engine's own 
 
 **DNS queries** lists the names the served networks resolve, **newest first**, and the badge counts the rows held as **held**. Each row shows the time, the name, the asking device's address, and the resolver that answered:
 
-| Tag      | Answered by                                                |
-| -------- | ---------------------------------------------------------- |
-| `cached` | dnsmasq's cache                                            |
-| `config` | dnsmasq's own records, such as `hub.neutrino.internal`     |
-| `direct` | the direct resolver of the [Proxy](./proxy.md) page        |
-| `xray`   | xray, which picks the direct or the remote resolver itself |
+| Tag      | Answered by                                                                                                                                         |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cached` | dnsmasq's cache                                                                                                                                     |
+| `config` | dnsmasq's own records, such as `hub.neutrino.internal`                                                                                              |
+| `direct` | a resolver dnsmasq queries directly: the uplink's resolvers, or the direct resolvers of the [Proxy](./proxy.md) page when the direct fallback is on |
+| `xray`   | xray, which picks the direct or the remote resolver itself                                                                                          |
 
 A row still waiting for its answer shows **pending**. A server-mode box serves no network, so the card reads **No DNS queries yet**.
 

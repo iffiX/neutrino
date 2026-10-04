@@ -15,6 +15,7 @@ import socket
 import time
 from typing import Callable
 
+from neutrino_hub import edition
 from neutrino_hub.modules.easytier.ops import (
     EasyTierStatusReader,
     apply_stored_if_changed,
@@ -22,18 +23,12 @@ from neutrino_hub.modules.easytier.ops import (
 from neutrino_hub.modules.easytier.ops import console_device_names, devices_holding
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
-from neutrino_hub.modules.netbird.ops import (
-    NetbirdRouteSelector,
-    NetbirdStatusReader,
-)
-from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_ADDRESS_POLL_S,
     OVERLAY_ADDRESS_WAIT_S,
     OVERLAY_EASYTIER,
     OVERLAY_ENGINES,
-    OVERLAY_NETBIRD,
 )
 from neutrino_hub.modules.overlay.route_check import (
     OverlayRouteConflict,
@@ -48,11 +43,21 @@ from neutrino_hub.utils.subprocess_run import run
 
 # What installs each engine. An engine the table names but nothing here
 # provisions is one this hub cannot run yet, and asking for it is refused
-# rather than half-done.
+# rather than half-done. NetBird's is NetBird's own, from the edition table.
 OVERLAY_PROVISIONERS = {
-    OVERLAY_NETBIRD: NetbirdProvisioner,
+    **{key: part.provisioner for key, part in edition.hooks("overlay_parts")},
     OVERLAY_EASYTIER: EasyTierProvisioner,
 }
+
+
+def overlay_parts() -> dict:
+    """The engines that keep a part of their own beside the overlay module.
+
+    Returns:
+        Provider to its part's class, for each engine the tree carries:
+        NetBird's, which reads its daemon and drives its own settings.
+    """
+    return dict(edition.hooks("overlay_parts"))
 
 
 def overlay_devices(network: RouterNetworkConfig) -> dict:
@@ -96,7 +101,8 @@ def engine_devices(provider: str) -> list:
     if not is_linux():
         if provider == OVERLAY_EASYTIER:
             return console_device_names()
-        address = NetbirdStatusReader().survey().netbird_ip
+        part = overlay_parts().get(provider)
+        address = part().address() if part is not None else ""
         return devices_holding(device_addresses(), [address]) if address else []
     if provider == OVERLAY_EASYTIER and _is_easytier_console_mode():
         return console_device_names()
@@ -376,8 +382,9 @@ class OverlayRouteGuard:
             The conflict, ``is_withdrawn`` set when it was taken away.
         """
         is_withdrawn = False
-        if conflict.provider == OVERLAY_NETBIRD:
-            is_withdrawn = NetbirdRouteSelector().deselect(conflict.route)
+        part = overlay_parts().get(conflict.provider)
+        if part is not None:
+            is_withdrawn = part().deselect(conflict.route)
         if conflict.is_default:
             for destination, device, table in routes.get(conflict.provider, []):
                 if _network_of(destination) != conflict.route:

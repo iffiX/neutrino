@@ -250,3 +250,19 @@ def test_the_watch_thread_restarts_a_core_that_ended():
 
     assert len(started) == 2
     assert started[1].terminated == 1
+
+
+def test_a_supervisor_named_for_another_program_logs_under_that_name():
+    lines = []
+    process = FakeProcess(["tun2socks"], {})
+    supervisor = EasytierCoreSupervisor(
+        command_of=lambda: (["tun2socks"], {}),
+        log=lines.append,
+        start_process=lambda argv, env: process,
+        name="tun2socks",
+    )
+
+    supervisor.apply()
+    supervisor.stop()
+
+    assert lines == ["tun2socks started as 4000", "tun2socks stopped"]

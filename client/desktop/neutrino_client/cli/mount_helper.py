@@ -1,6 +1,6 @@
 """The root half of a mount, run under ``pkexec``.
 
-    mount_helper mount --share //host/name --location PATH --credentials FILE
+    mount_helper mount --share //host/name [--port PORT] --location PATH --credentials FILE
     mount_helper unmount --location PATH
 
 polkit hands the helper the caller's uid in ``PKEXEC_UID``; everything the
@@ -43,6 +43,9 @@ EXIT_SHARE_NOT_FOUND = 10
 EXIT_SHARE_UNREACHABLE = 11
 
 CIFS_TYPE = "cifs"
+# The ports a mount may name: any TCP port.
+PORT_MIN = 1
+PORT_MAX = 65535
 MOUNT_TIMEOUT_S = 90
 # What ``mount.cifs`` prints for a failure: ``mount error(13): Permission
 # denied``. The number is the errno the kernel answered with.
@@ -144,6 +147,7 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command")
     mount = commands.add_parser("mount", add_help=False)
     mount.add_argument("--share", required=True)
+    mount.add_argument("--port", default="")
     mount.add_argument("--location", required=True)
     mount.add_argument("--credentials", required=True)
     unmount = commands.add_parser("unmount", add_help=False)
@@ -184,10 +188,15 @@ def _mount(caller, arguments, run_command) -> int:
             return EXIT_MOUNTPOINT_NOT_EMPTY
     except OSError:
         return EXIT_MOUNTPOINT_INVALID
+    port = _judge_port(arguments.port)
+    if port is None:
+        return EXIT_USAGE
     credentials = _judge_credentials(caller, arguments.credentials)
     if credentials is None:
         return EXIT_CREDENTIALS_MISSING
     options = f"credentials={credentials},uid={caller.pw_uid},gid={caller.pw_gid}"
+    if port:
+        options += f",port={port}"
     command = ["mount", "-t", CIFS_TYPE, share, location, "-o", options]
     started_at = datetime.datetime.now()
     status, text = _run(command, run_command, failure=EXIT_MOUNT_FAILED)
@@ -273,6 +282,23 @@ def _judge_location(caller, location: str) -> "str | None":
     if not os.path.isdir(real) or facts.st_uid != caller.pw_uid:
         return None
     return real
+
+
+def _judge_port(raw: str) -> "int | None":
+    """The port a mount names, 0 for none.
+
+    Args:
+        raw: The ``--port`` value as given; empty for none.
+
+    Returns:
+        The port, 0 when none was given, None when it is not a TCP port.
+    """
+    raw = str(raw)
+    if not raw:
+        return 0
+    if not (raw.isascii() and raw.isdigit()) or not PORT_MIN <= int(raw) <= PORT_MAX:
+        return None
+    return int(raw)
 
 
 def _judge_credentials(caller, path: str) -> "str | None":

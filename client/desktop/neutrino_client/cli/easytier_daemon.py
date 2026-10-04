@@ -89,7 +89,7 @@ def start_daemon(platform, state_dir: str, log) -> dict:
         OSError: When a directory or the socket cannot be taken.
     """
     platform.secure_easytier_state_dir(state_dir)
-    core_log = _file_log(
+    core_log = file_log(
         os.path.join(_log_dir(platform), CLIENT_EASYTIER_CORE_LOG_NAME),
         "easytier_core",
         log_format=CORE_LOG_FORMAT,
@@ -130,13 +130,36 @@ def stop_daemon(parts: dict, log) -> None:
     parts["supervisor"].stop()
 
 
+def file_log(path: str, name: str, *, log_format: str = LOG_FORMAT):
+    """A log callable that writes to one file, kept to a size.
+
+    Args:
+        path: The file.
+        name: The logger's name.
+        log_format: How each line is written.
+
+    Returns:
+        A callable taking one message.
+    """
+    logger = logging.Logger(name, logging.INFO)
+    handler = logging.handlers.RotatingFileHandler(
+        path,
+        maxBytes=CLIENT_EASYTIER_LOG_KEEP_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter(log_format))
+    logger.addHandler(handler)
+    return logger.info
+
+
 def _run_as_service(platform, state_dir: str) -> int:
     """Run under the Windows service control manager."""
     from neutrino_client.platforms.windows_service import ServiceControlDispatcher
 
     try:
         platform.secure_easytier_state_dir(state_dir)
-        log = _file_log(
+        log = file_log(
             os.path.join(_log_dir(platform), CLIENT_EASYTIER_DAEMON_LOG_NAME),
             "easytier_daemon",
         )
@@ -181,26 +204,3 @@ def _stream_log():
         print(f"easytier-daemon: {message}", file=sys.stderr, flush=True)
 
     return log
-
-
-def _file_log(path: str, name: str, *, log_format: str = LOG_FORMAT):
-    """A log callable that writes to one file, kept to a size.
-
-    Args:
-        path: The file.
-        name: The logger's name.
-        log_format: How each line is written.
-
-    Returns:
-        A callable taking one message.
-    """
-    logger = logging.Logger(name, logging.INFO)
-    handler = logging.handlers.RotatingFileHandler(
-        path,
-        maxBytes=CLIENT_EASYTIER_LOG_KEEP_BYTES,
-        backupCount=LOG_BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    handler.setFormatter(logging.Formatter(log_format))
-    logger.addHandler(handler)
-    return logger.info

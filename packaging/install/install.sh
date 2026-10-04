@@ -13,6 +13,7 @@
 # which are installed from there with nothing downloaded.
 set -eu
 
+# The edition this script installs; the mainland source tree stamps it cn.
 EDITION="intl"
 RELEASES="https://github.com/iffiX/neutrino/releases"
 CN_RELEASES="https://gitee.com/iffiX/neutrino/releases"

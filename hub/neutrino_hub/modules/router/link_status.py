@@ -20,7 +20,7 @@ from pathlib import Path
 
 import psutil
 
-from neutrino_hub.modules.tun.constants import TUN_DEVICE_NAMES
+from neutrino_hub import edition
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN
 from neutrino_hub.platforms.detect import hub_os, is_linux
 from neutrino_hub.system.powershell_run import listed, run_powershell
@@ -473,10 +473,10 @@ def system_default_routes() -> list[dict]:
 def _system_entries() -> dict[str, dict]:
     """Every interface psutil reports but the proxy's TUN, shaped as ``ip -json addr show`` entries."""
     stats = psutil.net_if_stats()
-    tun_device = TUN_DEVICE_NAMES.get(hub_os(), "")
+    hidden = {names.get(hub_os(), "") for names in edition.hooks("hidden_devices")}
     entries = {}
     for name, addresses in psutil.net_if_addrs().items():
-        if name == tun_device:
+        if name in hidden:
             continue
         stat = stats.get(name)
         is_up = stat is not None and stat.isup

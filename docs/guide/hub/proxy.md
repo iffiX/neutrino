@@ -59,10 +59,12 @@ With **GeoIP split routing** on, destinations matching the direct lists leave st
 
 **Update geodata** checks for a newer release of the geoip and geosite databases and installs it. The line beside the button says whether the databases are **as the package carries them** or **taken from a release**.
 
-**DNS** has two resolvers, each an address and a port:
+**DNS** holds two lists of resolvers. Each row is an address, or `<address>:<port>`, and a row with no port uses port 53. The rows are asked in order:
 
-- **Remote resolver (proxied names)** answers every name that is not on a direct list, and the query reaches it through the exit node.
-- **Direct resolver (bypassed names)** answers the direct-list names, the exit nodes' own names and the probe host. It answers every name while the proxy is off.
+- **Remote resolvers (proxied names)** answer every name that is not on a direct list, and the query reaches them through the exit node. The list needs at least one row; an empty one is rejected with `resolver_required`.
+- **Direct resolvers (bypassed names)** answer the direct-list names, the exit nodes' own names and the probe host. An empty list reads **Follows the network's resolvers**, and those names go to the uplink's resolvers shown on the [Network](./network.md) page.
+
+Names outside every proxy scope skip both lists. With the LAN switch off, the served networks' names also go to the network's resolvers.
 
 Select **Apply route** to rewrite the routing rules.
 

@@ -5,16 +5,17 @@ runs ``nclient gui``, which is the resident and its window. These commands
 do the same things from a terminal.
 
     nclient join neutrino://enroll/...
-    nclient leave [--hub <name>]
-    nclient status
+    nclient leave [--hub <name>] [--yes]
+    nclient status [--json]
     nclient gui [--hidden]
     nclient quit
     nclient service list | <kind> <action> [--hub <name>]
     nclient terminal <machine> [--hub <name>] [--session <id>]
 
-The client runs as a person and never as root. The one exception is
+The client runs as a person and never as root. The exceptions are
 ``nclient easytier-daemon``, which the system starts as root, or as SYSTEM
-with ``--service`` on Windows, and no person runs.
+with ``--service`` on Windows, and ``nclient files-daemon``, which Windows
+starts as SYSTEM with ``--service``; no person runs either.
 """
 
 import argparse
@@ -24,6 +25,7 @@ import sys
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import (
     easytier_daemon,
+    files_daemon,
     gui,
     join,
     leave,
@@ -33,7 +35,10 @@ from neutrino_client.cli import (
     terminal,
     wording,
 )
-from neutrino_client.constants import CLIENT_EASYTIER_DAEMON_VERB
+from neutrino_client.constants import (
+    CLIENT_EASYTIER_DAEMON_VERB,
+    CLIENT_FILES_DAEMON_VERB,
+)
 from neutrino_client.services.ai import AI_REASONING_EFFORTS
 
 AI_PROVIDER_HUB = "hub"
@@ -63,7 +68,11 @@ def main() -> int:
     )
     leave_parser = subparsers.add_parser("leave", help="leave one hub")
     _add_hub_argument(leave_parser)
-    subparsers.add_parser("status", help="what this person is bound to")
+    leave_parser.add_argument("--yes", action="store_true", help="leave without asking")
+    status_parser = subparsers.add_parser("status", help="what this person is bound to")
+    status_parser.add_argument(
+        "--json", action="store_true", help="print one JSON object"
+    )
     gui_parser = subparsers.add_parser("gui", help="run the client and its window")
     gui_parser.add_argument(
         "--hidden", action="store_true", help="start without showing the window"
@@ -82,6 +91,8 @@ def main() -> int:
     service_parser, service_kind_parsers = _add_service_parser(subparsers)
     daemon_parser = subparsers.add_parser(CLIENT_EASYTIER_DAEMON_VERB)
     daemon_parser.add_argument("--service", action="store_true")
+    files_daemon_parser = subparsers.add_parser(CLIENT_FILES_DAEMON_VERB)
+    files_daemon_parser.add_argument("--service", action="store_true")
 
     arguments = parser.parse_args(_argv_without_launch_services())
     if not arguments.command:
@@ -91,13 +102,15 @@ def main() -> int:
         return 2
     if arguments.command == CLIENT_EASYTIER_DAEMON_VERB:
         return easytier_daemon.main(is_service=arguments.service)
+    if arguments.command == CLIENT_FILES_DAEMON_VERB:
+        return files_daemon.main(is_service=arguments.service)
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         print(wording.word_code("root_refused"), file=sys.stderr)
         return 2
     if arguments.command == "join":
         return join.main(arguments.link)
     if arguments.command == "leave":
-        return leave.main(arguments.hub)
+        return leave.main(arguments.hub, is_forced=arguments.yes)
     if arguments.command == "gui":
         return gui.main(is_hidden=arguments.hidden)
     if arguments.command == "quit":
@@ -108,7 +121,7 @@ def main() -> int:
         )
     if arguments.command == "service":
         return _run_service(arguments, service_parser, service_kind_parsers)
-    return status.main()
+    return status.main(is_json=arguments.json)
 
 
 # What Launch Services passes a program it opens: a process serial number on

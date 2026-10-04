@@ -12,7 +12,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
+from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_EASYTIER,
+    OVERLAY_NETBIRD,
+    OVERLAY_RELAY,
+)
+from neutrino_hub.modules.overlay.relay_config import (
+    OverlayRelayConfig,
+    read_relay,
+    write_relay,
+)
 from neutrino_hub.modules.overlay.route_check import OverlayRouteConflict
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.system.systemd_ctl import ServiceStatus
@@ -38,6 +47,21 @@ class FakeServices:
         )
 
 
+class FakeRelayMonitor:
+    """Where the relay stands, as the monitor would say."""
+
+    def __init__(self):
+        self.state = "disabled"
+
+    def view(self) -> dict:
+        return {
+            "state": self.state,
+            "last_error": "",
+            "host_key_fingerprint": "",
+            "checked_at": "",
+        }
+
+
 class FakeSession:
     def __init__(self, address: str):
         self.address = address
@@ -61,6 +85,7 @@ class FakeRuntime:
         self.converged: list = []
         self.refusal: Exception | None = None
         self.overlay_route_conflicts: list = []
+        self.relay_monitor = FakeRelayMonitor()
 
     def network(self) -> RouterNetworkConfig:
         return RouterNetworkConfig.from_dict(self._config.to_dict())
@@ -78,8 +103,10 @@ class FakeRuntime:
 
 
 @pytest.fixture
-def box(monkeypatch):
+def box(monkeypatch, tmp_path):
     """A gateway on NetBird, with the converge step replaced."""
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(overlay_router, "ssh_path", lambda: "/usr/bin/ssh")
     runtime = FakeRuntime(
         RouterNetworkConfig.from_dict(
             {"mode": "router", "overlays": [{"provider": OVERLAY_NETBIRD}]}
@@ -119,7 +146,8 @@ def kinds_of(payload: dict) -> dict:
 # --- Reading ----------------------------------------------------------------
 
 
-def test_the_view_has_one_switch_per_engine_and_no_none(box):
+@pytest.mark.feature("netbird")
+def test_the_view_has_one_switch_per_engine_then_the_relay_and_no_none(box):
     client, _ = box
 
     payload = client.get("/api/hub/overlay").json()
@@ -127,12 +155,14 @@ def test_the_view_has_one_switch_per_engine_and_no_none(box):
     assert [entry["key"] for entry in payload["kinds"]] == [
         OVERLAY_NETBIRD,
         OVERLAY_EASYTIER,
+        OVERLAY_RELAY,
     ]
     kinds = kinds_of(payload)
     assert kinds[OVERLAY_NETBIRD]["is_enabled"] is True
     assert kinds[OVERLAY_EASYTIER]["is_enabled"] is False
 
 
+@pytest.mark.feature("netbird")
 def test_a_running_engine_reads_as_running(box):
     client, _ = box
 
@@ -143,6 +173,7 @@ def test_a_running_engine_reads_as_running(box):
     assert kinds[OVERLAY_EASYTIER]["title"] == "EasyTier"
 
 
+@pytest.mark.feature("netbird")
 def test_the_clients_reaching_the_hub_through_an_engine_are_counted(box):
     """The apply bar's warning names how many people turning it off
     disconnects: a client counts when its socket comes from the engine's
@@ -155,9 +186,86 @@ def test_the_clients_reaching_the_hub_through_an_engine_are_counted(box):
     assert kinds[OVERLAY_EASYTIER]["client_count"] == 0
 
 
+def test_the_relay_row_is_off_and_installed_where_ssh_is(box):
+    client, _ = box
+
+    relay = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_RELAY]
+
+    assert relay["title"] == "Relay"
+    assert relay["is_enabled"] is False
+    assert relay["is_installed"] is True
+    assert relay["is_active"] is False
+    assert relay["client_count"] == 0
+
+
+def test_a_connected_relay_is_active_and_counts_the_clients_from_loopback(box):
+    client, runtime = box
+    write_relay(OverlayRelayConfig(is_enabled=True, host="vps", account="r"))
+    runtime.relay_monitor.state = "connected"
+    runtime.client_sessions = FakeSessions(
+        ["127.0.0.1", "127.0.0.1", "192.168.100.20", "::1"]
+    )
+
+    relay = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_RELAY]
+
+    assert relay["is_enabled"] is True
+    assert relay["is_active"] is True
+    assert relay["client_count"] == 3
+
+
+def test_the_relay_row_says_when_the_machine_has_no_ssh(box, monkeypatch):
+    client, _ = box
+    monkeypatch.setattr(overlay_router, "ssh_path", lambda: "")
+
+    relay = kinds_of(client.get("/api/hub/overlay").json())[OVERLAY_RELAY]
+
+    assert relay["is_installed"] is False
+
+
 # --- Switching --------------------------------------------------------------
 
 
+@pytest.mark.feature("netbird")
+def test_turning_the_relay_on_writes_its_file_and_converges(box):
+    client, runtime = box
+    write_relay(OverlayRelayConfig(host="vps", account="relay", key_id="k1"))
+
+    payload = client.post(
+        "/api/hub/overlay/set", json={"relay": {"is_enabled": True}}
+    ).json()
+
+    assert kinds_of(payload)[OVERLAY_RELAY]["is_enabled"] is True
+    assert read_relay().is_enabled is True
+    assert read_relay().host == "vps"
+    assert runtime.converged == [[OVERLAY_NETBIRD]]
+
+
+def test_turning_the_relay_on_without_ssh_is_refused(box, monkeypatch):
+    client, runtime = box
+    monkeypatch.setattr(overlay_router, "ssh_path", lambda: "")
+
+    response = client.post("/api/hub/overlay/set", json={"relay": {"is_enabled": True}})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {"code": "relay_ssh_missing", "params": {}}
+    assert read_relay().is_enabled is False
+    assert runtime.converged == []
+
+
+def test_turning_the_relay_off_needs_no_ssh(box, monkeypatch):
+    client, _ = box
+    write_relay(OverlayRelayConfig(is_enabled=True, host="vps"))
+    monkeypatch.setattr(overlay_router, "ssh_path", lambda: "")
+
+    response = client.post(
+        "/api/hub/overlay/set", json={"relay": {"is_enabled": False}}
+    )
+
+    assert response.status_code == 200
+    assert read_relay().is_enabled is False
+
+
+@pytest.mark.feature("netbird")
 def test_turning_a_second_engine_on_keeps_the_first(box):
     client, runtime = box
 
@@ -169,6 +277,7 @@ def test_turning_a_second_engine_on_keeps_the_first(box):
     assert runtime.converged == [[OVERLAY_NETBIRD, OVERLAY_EASYTIER]]
 
 
+@pytest.mark.feature("netbird")
 def test_turning_every_engine_off_keeps_the_rows(box):
     client, runtime = box
 
@@ -184,6 +293,7 @@ def test_turning_every_engine_off_keeps_the_rows(box):
     assert runtime.network().overlays[0].is_enabled is False
 
 
+@pytest.mark.feature("netbird")
 def test_setting_what_is_stored_still_makes_the_machine_agree(box):
     client, runtime = box
 
@@ -192,6 +302,7 @@ def test_setting_what_is_stored_still_makes_the_machine_agree(box):
     assert runtime.converged == [[OVERLAY_NETBIRD]]
 
 
+@pytest.mark.feature("netbird")
 def test_the_rows_are_written_before_the_converge(box):
     client, runtime = box
     runtime.refusal = OSError("the daemon refused")
@@ -306,6 +417,7 @@ def test_an_engine_whose_network_overlaps_one_this_box_is_on_is_refused(
     assert runtime.network().overlay(OVERLAY_EASYTIER) is None
 
 
+@pytest.mark.feature("netbird")
 def test_two_overlays_on_one_network_are_refused(box, monkeypatch):
     client, _ = box
     monkeypatch.setattr(
@@ -346,6 +458,7 @@ def test_turning_an_engine_off_is_never_refused_for_an_overlap(box, monkeypatch)
 # --- Routes the hub refused -------------------------------------------------
 
 
+@pytest.mark.feature("netbird")
 def test_the_refused_routes_are_named_on_the_page(box):
     client, runtime = box
     runtime.overlay_route_conflicts = [

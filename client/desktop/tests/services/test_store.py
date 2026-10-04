@@ -111,6 +111,7 @@ def test_a_file_an_older_build_wrote_is_read_without_its_keys(tmp_path):
         "terminal_font_size": 0,
         "ai": {"tool_configs": {"claude": {"default": "m2"}}},
         "local_ports": {},
+        "files_addresses": {},
         "mounts": {"r1": RECORD},
     }
 
@@ -254,3 +255,39 @@ def test_the_terminal_font_size_round_trips_held_to_its_range(store, tmp_path):
     assert store.terminal_font_size() == 32
     store.set_terminal_font_size(1)
     assert json.loads((tmp_path / "state.json").read_text())["terminal_font_size"] == 8
+
+
+def test_the_files_addresses_are_kept_and_one_of_another_shape_is_dropped(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "files_addresses": {
+                    "198.19.255.2": {"hub_id": "h1", "machine": "d1"},  # scan: allow
+                    "198.19.255.3": {"hub_id": "h1"},  # scan: allow
+                    "198.19.255.4": {"hub_id": "", "machine": "d2"},  # scan: allow
+                    "198.19.255.5": "d3",  # scan: allow
+                }
+            }
+        )
+    )
+    store = ClientServiceStore(path=str(path))
+
+    assert store.files_addresses() == {
+        "198.19.255.2": {"hub_id": "h1", "machine": "d1"}  # scan: allow
+    }
+
+    store.set_files_address("198.19.255.3", "h2", "nas.lan")  # scan: allow
+    store.remove_files_addresses(["198.19.255.2"])  # scan: allow
+
+    assert store.files_addresses() == {
+        "198.19.255.3": {"hub_id": "h2", "machine": "nas.lan"}  # scan: allow
+    }
+    assert os.stat(path).st_mode & 0o777 == 0o600
+
+
+def test_a_files_address_names_a_hub_and_a_machine(tmp_path):
+    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+
+    with pytest.raises(ValueError):
+        store.set_files_address("198.19.255.2", "h1", "")  # scan: allow

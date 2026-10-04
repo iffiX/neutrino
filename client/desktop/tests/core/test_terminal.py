@@ -10,10 +10,14 @@ ended first.
 
 import threading
 
+from neutrino_client.constants import (
+    CLIENT_TERMINAL_CLEAR_MAX_S,
+    CLIENT_TERMINAL_CLEAR_QUIET_S,
+)
 from neutrino_client.core.streams import ClientStreamRegistry
 from neutrino_client.core.terminal import TerminalBridge
 from neutrino_client.core.protocol import decode_binary
-from tests.conftest import discard
+from tests.conftest import Clock, discard
 
 
 class Wire:
@@ -208,3 +212,82 @@ def test_a_session_the_machine_no_longer_keeps_is_the_outcome():
         "code": "session_unknown",
         "params": {"session_id": "kept-1"},
     }
+
+
+# --- Clear: Ctrl+C, then the output dropped until the stream is quiet ---
+
+
+def clearing_pump(clock):
+    """A bridge pumping into a list on a thread, with the clock injected."""
+    registry, stream, wire = shell()
+    registry.take_credit({"type": "credit", "stream": 1, "bytes": 100})
+    bridge = TerminalBridge(stream=stream, clock=clock)
+    written = []
+    cleared = threading.Event()
+    pump = threading.Thread(
+        target=bridge.pump_out, args=(written.append, cleared.set), daemon=True
+    )
+    pump.start()
+    return registry, bridge, wire, written, cleared, pump
+
+
+def wait_for(condition, timeout_s: float = 5.0) -> bool:
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return condition()
+
+
+def test_clear_sends_ctrl_c_and_draws_the_first_output_after_the_quiet():
+    clock = Clock()
+    registry, bridge, wire, written, cleared, pump = clearing_pump(clock)
+
+    assert bridge.clear() is True
+    assert bridge.is_clearing is True
+    registry.take_bytes(1, b"the flood")
+    clock.now = 0.4
+    registry.take_bytes(1, b"its tail")
+    assert not cleared.wait(0.6)
+    clock.now = 0.4 + CLIENT_TERMINAL_CLEAR_QUIET_S
+    assert cleared.wait(2)
+    registry.take_bytes(1, b"$ ")
+
+    assert wait_for(lambda: written == [b"$ "])
+    assert wire.binary == [(1, b"\x03")]
+    assert bridge.is_clearing is False
+    registry.take_close({"type": "close", "stream": 1, "params": {}})
+    pump.join(timeout=5)
+
+
+def test_a_stream_that_never_goes_quiet_is_drawn_again_after_the_cap():
+    clock = Clock()
+    registry, bridge, _wire, written, cleared, pump = clearing_pump(clock)
+
+    bridge.clear()
+    for step in range(5):
+        clock.now = step * CLIENT_TERMINAL_CLEAR_MAX_S / 4
+        registry.take_bytes(1, b"flood")
+        wait_for(lambda: False, 0.05)
+
+    assert cleared.wait(2)
+    registry.take_bytes(1, b"after")
+    assert wait_for(lambda: written and written[-1].endswith(b"after"))
+    assert b"flood" not in b"".join(written)
+    registry.take_close({"type": "close", "stream": 1, "params": {}})
+    pump.join(timeout=5)
+
+
+def test_output_before_a_clear_is_written_as_ever():
+    clock = Clock()
+    registry, bridge, _wire, written, _cleared, pump = clearing_pump(clock)
+
+    registry.take_bytes(1, b"before")
+
+    assert wait_for(lambda: written == [b"before"])
+    assert bridge.is_clearing is False
+    registry.take_close({"type": "close", "stream": 1, "params": {}})
+    pump.join(timeout=5)

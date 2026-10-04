@@ -8,8 +8,9 @@ network change under the machine starts a round at once. The hub pushes its
 whether this client is switched off, and the session answers each state and
 every interval with a ``report``. What a
 service handler needs from the hub comes down a ``service`` stream the
-session opens on request, and a terminal on a managed machine comes down a
-``shell`` stream carrying bytes both ways. The resident owns the handlers and the store; the
+session opens on request, a terminal on a managed machine comes down a
+``shell`` stream carrying bytes both ways, and every connection a local
+forward accepts rides a ``connect`` stream. The resident owns the handlers and the store; the
 session tells it what changed through its callbacks and never touches them.
 
 A ``refused`` frame ends the socket whenever it arrives, and says the same
@@ -48,6 +49,7 @@ from neutrino_client.constants import (
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
     CLIENT_REFRESH_TIMEOUT_S,
+    CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
@@ -59,6 +61,7 @@ from neutrino_client.constants import (
     CLIENT_SOFTWARE_PREFIX,
     CLIENT_STREAM_CODE_KIND_UNKNOWN,
     CLIENT_STREAM_KIND_COMMAND,
+    CLIENT_STREAM_KIND_CONNECT,
     CLIENT_STREAM_KIND_SERVICE,
     CLIENT_STREAM_KIND_SHELL,
     CLIENT_STREAM_TIMEOUT_S,
@@ -340,6 +343,11 @@ class ClientHubSession:
         self._is_down = False
         self._last_error: "dict | None" = None
         self._services_list: list = []
+        # The state's word for the way this socket reached the hub, and
+        # whether this client may open the hub's panel; empty and False
+        # before the first state.
+        self._reached_through = ""
+        self._is_panel_allowed = False
         self._terminals: dict = {"machines": [], "sessions": []}
         self._state_hash = ""
         self._hub_software = ""
@@ -443,6 +451,21 @@ class ClientHubSession:
             if not self._is_welcomed:
                 return []
             return [entry for entry in self._services_list if isinstance(entry, dict)]
+
+    def reached_through(self) -> str:
+        """The way the channel reached the hub, as the hub's last state named it.
+
+        Returns:
+            ``lan``, ``netbird``, ``easytier`` or ``relay``; empty before
+            the first state.
+        """
+        with self._lock:
+            return self._reached_through
+
+    def is_panel_allowed(self) -> bool:
+        """Whether the hub's last state allows this client to open its panel."""
+        with self._lock:
+            return self._is_panel_allowed
 
     def overlays(self) -> list:
         """How this machine joins each of the hub's virtual networks, as last named.
@@ -651,6 +674,26 @@ class ClientHubSession:
         """
         stream = self._live_streams().open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
         return stream.wait_close(timeout_s)
+
+    def open_connect(self, args: dict) -> ClientStream:
+        """Open a ``connect`` stream: one TCP connection the hub carries.
+
+        The hub's refusal arrives as the stream's close: a read comes back
+        empty and ``wait_close`` raises it.
+
+        Args:
+            args: ``{"id"}`` naming a published entry, or
+                ``{"is_panel": True}`` for the hub's own panel.
+
+        Returns:
+            The open stream, credit granted, to read, send on and close.
+
+        Raises:
+            GatewayUnreachable: When there is no socket, or it is gone.
+        """
+        return self._live_streams().open(
+            CLIENT_STREAM_KIND_CONNECT, dict(args), has_bytes=True
+        )
 
     def open_shell(
         self,
@@ -955,7 +998,14 @@ class ClientHubSession:
         self._log(f"joined the hub at {url}")
 
     def _on_join_refused(self, error: EnrollmentError) -> int:
-        """Take the hub's refusal of a pending join: down, and no more rounds."""
+        """Take the hub's refusal of a pending join: down, and no more rounds.
+
+        ``admission_paused`` is the one refusal that keeps the ticket: the
+        binding stays pending with the code, and the join runs again after
+        the ``retry_after_s`` it names.
+        """
+        if error.code == CLIENT_REFUSAL_CODE_ADMISSION_PAUSED:
+            return self._on_admission_paused(error)
         with self._lock:
             self._is_join_refused = True
             self._is_down = True
@@ -964,6 +1014,24 @@ class ClientHubSession:
         self._log(f"the hub refused the join: {error.code}")
         self._on_change()
         return CLIENT_IDLE_POLL_INTERVAL_S
+
+    def _on_admission_paused(self, error: EnrollmentError) -> int:
+        """Keep a join the hub paused: pending with the code, tried again later.
+
+        Returns:
+            The hub's ``retry_after_s``, at least ``CLIENT_ROTATE_DELAY_S``.
+        """
+        try:
+            delay = float(error.params.get("retry_after_s") or 0)
+        except (TypeError, ValueError):
+            delay = 0
+        delay = max(delay, CLIENT_ROTATE_DELAY_S)
+        with self._lock:
+            self._is_refreshing = False
+            self._last_error = {"code": error.code, "params": dict(error.params)}
+        self._log(f"the hub paused admissions; joining again in {delay:g}s")
+        self._on_change()
+        return delay
 
     def _redirect_round(self) -> None:
         """End a round in progress, its connect aborted, and start the next one now."""
@@ -1416,6 +1484,8 @@ class ClientHubSession:
             self._services_list = [
                 entry for entry in services if isinstance(entry, dict)
             ]
+            self._reached_through = str(message.get("reached_through", "") or "")
+            self._is_panel_allowed = message.get("is_panel_allowed") is True
             self._terminals = clean_terminals(terminals)
             self._state_hash = str(message.get("hash", "") or "")
             self._is_refreshing = False

@@ -141,6 +141,7 @@ class ChannelStream:
             return
         info = {"code": code, "params": dict(params or {})}
         self._finish(info)
+        self._session._streams.pop(self.id, None)
         await self._session.send_json(
             {"type": CHANNEL_FRAME_CLOSE, "stream": self.id, **info}
         )
@@ -211,6 +212,7 @@ class ChannelSession:
             stream the peer opens, called with ``(session, stream)``.
         shells: A client's open ``shell`` streams by id, each the
             ``(device_id, agent_stream_id, session_id)`` it is bridged to.
+        connects: The ids of a client's open ``connect`` streams.
         loop: The loop the socket is served on.
     """
 
@@ -237,6 +239,7 @@ class ChannelSession:
         self.offered_hash: "str | None" = None
         self.stream_handlers: dict = {}
         self.shells: dict = {}
+        self.connects: set = set()
         self.loop = loop
         self.opened_at = time.monotonic()
         self._reported = asyncio.Event()

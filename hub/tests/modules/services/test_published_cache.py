@@ -472,7 +472,7 @@ def test_a_devices_vscode_instances_come_from_the_hub_while_they_run(box):
     assert entry["id"] == "vscode_device-one_alice"
     assert entry["payload"] == {
         "url": "http://192.168.100.7:8000/",
-        "is_local_only": True,
+        "is_token_required": True,
     }
     assert entry["is_healthy"] is True
 

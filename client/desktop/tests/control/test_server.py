@@ -101,7 +101,7 @@ def test_service_actions_reach_the_resident_with_their_body(control):
 
     assert status == 200
     assert resident.service_calls == [("port", {"id": "svc_tcp", "is_enabled": True})]
-    assert "forwards" in state
+    assert "services" in state
 
 
 def test_a_garbage_body_acts_on_nothing_and_never_crashes(control):

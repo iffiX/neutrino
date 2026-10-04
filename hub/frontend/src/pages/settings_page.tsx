@@ -297,7 +297,9 @@ export function SettingsPage() {
                 label={t("ui.settings.about_panel")}
                 value={about.data.gateway_version}
               />
-              <AboutRow label={ABOUT_XRAY} value={about.data.xray_version} />
+              {about.data.xray_version !== "" && (
+                <AboutRow label={ABOUT_XRAY} value={about.data.xray_version} />
+              )}
               <AboutRow
                 label={ABOUT_CLIPROXYAPI}
                 value={about.data.cliproxyapi_version}
@@ -306,10 +308,12 @@ export function SettingsPage() {
                 label={ABOUT_PYTHON}
                 value={about.data.python_version}
               />
-              <AboutRow
-                label={t("ui.settings.about_geodata")}
-                value={about.data.geodata_version}
-              />
+              {about.data.geodata_version !== "" && (
+                <AboutRow
+                  label={t("ui.settings.about_geodata")}
+                  value={about.data.geodata_version}
+                />
+              )}
               <div className="section_label">{t("ui.settings.about_host")}</div>
               <AboutRow
                 label={t("ui.settings.about_system")}

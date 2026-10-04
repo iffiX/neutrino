@@ -1,6 +1,8 @@
-"""What the hub's own releases publish, read from GitHub.
+"""What the hub's own releases publish, read from its edition's release API.
 
-A release is the one `releases/latest` names, which by GitHub's definition is
+``intl`` reads GitHub's and ``cn`` Gitee's, whose release carries the same
+``tag_name`` and ``assets`` of ``name`` and ``browser_download_url``. A
+release is the one `releases/latest` names, which by GitHub's definition is
 neither a draft nor a pre-release; the package this box wants from it is the
 one whose name the build stamped into this package with the version left
 open, so nothing here knows how any family spells a machine. Pure but for the
@@ -16,6 +18,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from neutrino_hub import HUB_PACKAGE_ASSET
+from neutrino_hub.edition import EDITION
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_CHECKSUMS_NAME,
     HUB_UPDATE_ERROR_RELEASE_DNS,
@@ -25,13 +28,14 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_ERROR_RELEASE_UNREACHABLE,
     HUB_UPDATE_FETCH_TIMEOUT_S,
     HUB_UPDATE_HEADERS,
-    HUB_UPDATE_LATEST_URL,
+    HUB_UPDATE_LATEST_URLS,
+    HUB_UPDATE_PAGE_URLS,
     HUB_UPDATE_RELATION_CURRENT,
     HUB_UPDATE_RELATION_MAJOR,
     HUB_UPDATE_RELATION_NEWER,
     HUB_UPDATE_REPOSITORY,
     HUB_UPDATE_TAG_PREFIX,
-    HUB_UPDATE_TAG_URL,
+    HUB_UPDATE_TAG_URLS,
 )
 from neutrino_hub.utils.version_number import parse_version
 from neutrino_hub.utils.tls_trust import public_ssl_context
@@ -143,18 +147,21 @@ class HubReleaseChecker:
         *,
         asset: str = HUB_PACKAGE_ASSET,
         repository: str = HUB_UPDATE_REPOSITORY,
+        edition: str = EDITION,
         fetch_bytes: Callable[[str], bytes] | None = None,
     ):
         """Set up a checker.
 
         Args:
             asset: The name the build stamped, with ``{version}`` open.
-            repository: The GitHub repository the releases are under.
+            repository: The repository the releases are under.
+            edition: The hub's edition, whose release API is read.
             fetch_bytes: How one address is read; None reads it over the
                 network, and a test answers from its own table instead.
         """
         self._asset = asset
         self._repository = repository
+        self._edition = edition
         self._read = _read if fetch_bytes is None else fetch_bytes
 
     def latest(self) -> HubRelease | None:
@@ -169,7 +176,7 @@ class HubReleaseChecker:
             ValueError: If the reply is not a release.
         """
         return self._release_at(
-            HUB_UPDATE_LATEST_URL.format(repository=self._repository)
+            HUB_UPDATE_LATEST_URLS[self._edition].format(repository=self._repository)
         )
 
     def for_version(self, version: str) -> HubRelease | None:
@@ -189,7 +196,9 @@ class HubReleaseChecker:
         """
         tag = HUB_UPDATE_TAG_PREFIX + version
         return self._release_at(
-            HUB_UPDATE_TAG_URL.format(repository=self._repository, tag=tag)
+            HUB_UPDATE_TAG_URLS[self._edition].format(
+                repository=self._repository, tag=tag
+            )
         )
 
     def digest_of(self, release: HubRelease) -> str:
@@ -252,13 +261,23 @@ class HubReleaseChecker:
         }
         package = assets.get(wanted)
         checksums = assets.get(HUB_UPDATE_CHECKSUMS_NAME)
+        # Gitee names when a release was made and no page of its own.
+        published_at = str(
+            described.get("published_at") or described.get("created_at") or ""
+        )
+        page_url = str(
+            described.get("html_url")
+            or HUB_UPDATE_PAGE_URLS[self._edition].format(
+                repository=self._repository, tag=tag
+            )
+        )
         if package is None or checksums is None:
             return HubRelease(
                 version=version,
                 tag=tag,
-                published_at=str(described.get("published_at") or ""),
+                published_at=published_at,
                 notes=str(described.get("body") or ""),
-                page_url=str(described.get("html_url") or ""),
+                page_url=page_url,
                 asset_name=wanted,
                 asset_url="",
                 asset_size=0,
@@ -268,9 +287,9 @@ class HubReleaseChecker:
         return HubRelease(
             version=version,
             tag=tag,
-            published_at=str(described.get("published_at") or ""),
+            published_at=published_at,
             notes=str(described.get("body") or ""),
-            page_url=str(described.get("html_url") or ""),
+            page_url=page_url,
             asset_name=wanted,
             asset_url=str(package.get("browser_download_url") or ""),
             asset_size=int(package.get("size") or 0),

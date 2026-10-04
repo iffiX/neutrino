@@ -16,10 +16,9 @@ from neutrino_hub.modules.easytier.constants import (
 )
 from neutrino_hub.modules.easytier.ops import EasyTierStatusReader
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
-from neutrino_hub.modules.netbird.config import read_stored as read_netbird
-from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
 from neutrino_hub.modules.overlay.config import enabled_providers
-from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
+from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
+from neutrino_hub.modules.overlay.ops import overlay_parts
 from neutrino_hub.modules.router.constants import ROUTER_ROLE_WAN
 from neutrino_hub.modules.router.link_status import device_addresses
 
@@ -41,9 +40,10 @@ def overlay_materials(runtime) -> list:
         locked.
     """
     materials = []
+    parts = overlay_parts()
     for provider in enabled_providers(runtime.network()):
-        if provider == OVERLAY_NETBIRD:
-            material = _netbird_material()
+        if provider in parts:
+            material = parts[provider]().material()
         elif provider == OVERLAY_EASYTIER:
             material = _easytier_material(runtime)
         else:
@@ -76,25 +76,6 @@ def easytier_join_host(runtime) -> str:
             continue
         return addresses[name].split("/")[0]
     return ""
-
-
-def _netbird_material() -> "dict | None":
-    """The kept setup key and the hub's overlay name, or None."""
-    config = read_netbird()
-    if not config.has_setup_key:
-        return None
-    try:
-        setup_key = config.setup_key()
-    except ValueError:
-        return None
-    survey = NetbirdStatusReader().survey()
-    return {
-        "provider": OVERLAY_NETBIRD,
-        "setup_key": setup_key,
-        "management_url": config.management_url,
-        "fqdn": str(survey.fqdn or ""),
-        "hub_address": _host(str(survey.netbird_ip or "")),
-    }
 
 
 def _easytier_material(runtime) -> "dict | None":

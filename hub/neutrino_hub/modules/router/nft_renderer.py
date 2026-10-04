@@ -1,16 +1,15 @@
-"""Rendering the nftables ruleset that steers traffic into xray.
+"""Rendering the nftables ruleset: the firewall, and the proxy's diversion.
 
 Pure: this module turns ``config/`` data into ruleset text and never touches the
-system. Loading the result is :mod:`neutrino_hub.modules.router.routes`.
+system. Loading the result is :mod:`neutrino_hub.modules.router.routes`. The
+chains that divert into the proxy are the proxy's own, taken from the
+edition table; a tree without the proxy renders the firewall alone.
 """
 
 import ipaddress
 
-from neutrino_hub.modules.xray.constants import XRAY_TPROXY_LISTEN, XRAY_TPROXY_PORT
-
+from neutrino_hub import edition
 from neutrino_hub.modules.router.constants import (
-    ROUTER_FWMARK_TPROXY,
-    ROUTER_FWMARK_XRAY_EGRESS,
     ROUTER_NFT_FAMILY,
     ROUTER_NFT_TABLE,
     ROUTER_RESERVED_NETWORKS,
@@ -24,7 +23,8 @@ class RouterNftRenderer:
     The table carries five chains: ``prerouting`` diverts LAN traffic into the
     TPROXY socket, ``output`` optionally does the same for the gateway's own
     traffic, ``forward`` and ``input`` are the firewall, and ``postrouting``
-    masquerades whatever leaves through a WAN.
+    masquerades whatever leaves through a WAN. The first two are the proxy's,
+    and a tree without it renders the other three.
 
     Which interfaces those chains name comes from the roles in the network
     config, so a box with two LANs or two uplinks renders the same rules over
@@ -45,11 +45,10 @@ class RouterNftRenderer:
         """
         Args:
             network: The parsed router configuration.
-            routing: Parsed ``config/xray/routing.json``; only the LAN and
-                local-proxy switches are read here.
-            xray_uid: Numeric uid the xray service runs as. Traffic from this
-                uid is never diverted, which is what stops the proxy from
-                looping into itself.
+            routing: The proxy's routing options, handed to its chains;
+                empty in a tree without the proxy.
+            xray_uid: Numeric uid the xray service runs as, handed to the
+                proxy's chains; 0 in a tree without the proxy.
             overlay_devices: Provider to the kernel devices its overlay rides
                 on, found at run time; a provider left out rides on its
                 engine's own device. None keeps what ``network`` carries.
@@ -76,15 +75,18 @@ class RouterNftRenderer:
         self._overlay_ports = network.exposed_overlay_peer_ports
         self._side_lans = _side_lan_subnets(network)
         self._is_inter_lan_allowed = network.is_inter_lan_allowed
-        # Three independent scopes: the networks the box serves, the overlay
-        # members using it as their exit node, and the box itself. None
-        # implies another, so a server can proxy its own traffic while
-        # forwarding nobody's.
-        self._is_lan_proxy_enabled = routing.get("is_proxy_enabled", True)
-        self._is_overlay_proxy_enabled = routing.get("is_overlay_proxy_enabled", False)
-        self._is_local_proxy_enabled = routing.get("is_local_proxy_enabled", False)
-        self._xray_uid = xray_uid
-        self._engine_cgroups = list(engine_cgroups or [])
+        part = edition.hook("router_nft")
+        self._proxy = (
+            None
+            if part is None
+            else part(
+                routing=routing,
+                xray_uid=xray_uid,
+                lan_devices=self._lans,
+                exposed_overlay_devices=self._exposed_overlays,
+                engine_cgroups=list(engine_cgroups or []),
+            )
+        )
 
     def render(self) -> str:
         """Render the complete ruleset.
@@ -127,99 +129,14 @@ class RouterNftRenderer:
         )
 
     def _render_prerouting(self) -> str:
-        target = f"{XRAY_TPROXY_LISTEN}:{XRAY_TPROXY_PORT}"
-        lines = [
-            "    chain prerouting {",
-            "        # One step after mangle: an overlay daemon marks every new",
-            "        # connection from a network it routes at mangle itself, and two",
-            "        # chains at one priority run in the order they were registered,",
-            "        # which either reload changes. Running later keeps the mark the",
-            "        # policy route looks for on the diverted packet.",
-            "        type filter hook prerouting priority mangle + 1; policy accept;",
-            "",
-            "        # Packets of an established transparent session: mark for local",
-            "        # delivery and let the existing socket pick them up.",
-            "        meta l4proto { tcp, udp } socket transparent 1 "
-            f"meta mark set {hex(ROUTER_FWMARK_TPROXY)} accept",
-            "",
-        ]
-        if self._is_local_proxy_enabled:
-            lines += [
-                "        # Gateway-originated traffic looped back by the output chain.",
-                f'        iifname "lo" meta mark {hex(ROUTER_FWMARK_TPROXY)} '
-                "meta l4proto { tcp, udp } "
-                f"tproxy ip to {target} accept",
-                "",
-            ]
-        diverted = self._diverted_interfaces
-        if not diverted:
-            lines += [
-                "        # Nothing forwarded is sent to the proxy: it is forwarded",
-                "        # and masqueraded like any router's.",
-                "    }\n",
-            ]
-            return "\n".join(lines)
-        lines += [
-            "        # Everything below is forwarded traffic being proxied: the",
-            "        # served networks, and the overlays whose members exit here.",
-            f"        iifname != {_interface_set(diverted)} return",
-            "        ip daddr @reserved_v4 return",
-            "        meta l4proto { tcp, udp } "
-            f"tproxy ip to {target} meta mark set {hex(ROUTER_FWMARK_TPROXY)} accept",
-            "    }\n",
-        ]
-        return "\n".join(lines)
-
-    @property
-    def _diverted_interfaces(self) -> list[str]:
-        """The interfaces whose forwarded traffic the proxy takes."""
-        names = []
-        if self._is_lan_proxy_enabled:
-            names += self._lans
-        if self._is_overlay_proxy_enabled:
-            names += self._exposed_overlays
-        return names
+        if self._proxy is None:
+            return ""
+        return self._proxy.prerouting(_interface_set)
 
     def _render_output(self) -> str:
-        if not self._is_local_proxy_enabled:
-            return (
-                "    # Local proxy is off: the gateway's own traffic leaves directly.\n"
-                "    chain output {\n"
-                "        type route hook output priority mangle; policy accept;\n"
-                "    }\n"
-            )
-        return "\n".join(
-            [
-                "    chain output {",
-                "        type route hook output priority mangle; policy accept;",
-                "",
-                "        # Anti-loop: xray's own egress must never re-enter the proxy.",
-                f"        meta skuid {self._xray_uid} return",
-                f"        meta mark {hex(ROUTER_FWMARK_XRAY_EGRESS)} return",
-                "        ip daddr @reserved_v4 return",
-                "",
-                *self._render_engine_accepts(),
-                "        # Mark the rest; the fwmark rule reroutes it to lo for TPROXY.",
-                "        meta l4proto { tcp, udp } "
-                f"meta mark set {hex(ROUTER_FWMARK_TPROXY)}",
-                "    }\n",
-            ]
-        )
-
-    def _render_engine_accepts(self) -> list:
-        """The output chain's accepts for the hub's own overlay engines.
-
-        Returns:
-            One line per engine cgroup and a blank line after them; empty
-            when no engine cgroup is present.
-        """
-        if not self._engine_cgroups:
-            return []
-        lines = ["        # The hub's own overlay engines reach their peers directly."]
-        for path in self._engine_cgroups:
-            level = len(path.strip("/").split("/"))
-            lines.append(f'        socket cgroupv2 level {level} "{path}" accept')
-        return lines + [""]
+        if self._proxy is None:
+            return ""
+        return self._proxy.output()
 
     def _render_forward(self) -> str:
         if not self._lans and not self._wans:
@@ -244,9 +161,9 @@ class RouterNftRenderer:
         ]
         if self._lans and self._wans:
             lines += [
-                "        # Traffic TPROXY did not divert (ICMP, and everything at all",
-                "        # if xray is down) still reaches the internet, so the box",
-                "        # degrades to a plain router rather than going dark.",
+                "        # The served networks reach the internet through the uplinks,",
+                "        # whatever is not diverted included, so the box is a plain",
+                "        # router rather than dark when nothing diverts.",
                 f"        iifname {_interface_set(self._lans)} "
                 f"oifname {_interface_set(self._wans)} accept",
             ]
@@ -339,13 +256,8 @@ class RouterNftRenderer:
             "        ct state invalid drop",
             '        iifname "lo" accept',
         ]
-        if self._diverted_interfaces:
-            lines += [
-                "        # What TPROXY diverted is xray's to take, from any served",
-                "        # network, exposed or not: the mark is set on the way in",
-                "        # and on nothing else.",
-                f"        meta mark {hex(ROUTER_FWMARK_TPROXY)} accept",
-            ]
+        if self._proxy is not None:
+            lines += self._proxy.input_lines()
         lines.append("")
         if self._answering:
             lines += [

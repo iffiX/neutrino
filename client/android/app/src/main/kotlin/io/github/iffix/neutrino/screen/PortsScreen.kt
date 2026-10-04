@@ -23,14 +23,14 @@ import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.shell.LocalClientActions
 
 /**
- * The ports the joined hubs publish, each forwarded to this phone's loopback on Connect: the
+ * The ports the joined hubs publish, each forwarded to this phone's loopback through the hub on Connect: the
  * button shows the job, a forwarded row names its loopback address with Copy beside Disconnect,
  * and Connect is disabled with its reason while the entry is unhealthy. Configure, at the left,
  * opens the local port dialog while the entry is not forwarded.
  *
  * @param hubs Every hub joined.
  * @param forwards Each entry's forward, by entry key.
- * @param onConnect What pressing Connect does, with the binding id, the entry id, the host and the port.
+ * @param onConnect What pressing Connect does, with the binding id, the entry id and the port.
  * @param onDisconnect What pressing Disconnect does, with the binding id and the entry id.
  * @param onCopy What copying an address does.
  */
@@ -38,7 +38,7 @@ import io.github.iffix.neutrino.shell.LocalClientActions
 fun PortsScreen(
     hubs: List<HubView>,
     forwards: Map<String, PortForwardRow>,
-    onConnect: (String, String, String, Int) -> Unit,
+    onConnect: (String, String, Int) -> Unit,
     onDisconnect: (String, String) -> Unit,
     onCopy: (String) -> Unit,
 ) {
@@ -83,7 +83,7 @@ fun PortsScreen(
                         if (row.isForwarded) {
                             onDisconnect(hub.binding.id, entry.id)
                         } else if (port != null) {
-                            onConnect(hub.binding.id, entry.id, host, port)
+                            onConnect(hub.binding.id, entry.id, port)
                         }
                     },
                     tier = if (row.isForwarded && job == null) ButtonTier.DANGER else ButtonTier.PLAIN,
@@ -128,6 +128,6 @@ private fun PortsScreenPreview() {
             "ui.copy" to "复制",
         ),
     ) {
-        PortsScreen(PreviewHubs.all, emptyMap(), onConnect = { _, _, _, _ -> }, onDisconnect = { _, _ -> }, onCopy = {})
+        PortsScreen(PreviewHubs.all, emptyMap(), onConnect = { _, _, _ -> }, onDisconnect = { _, _ -> }, onCopy = {})
     }
 }

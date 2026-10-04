@@ -122,7 +122,6 @@ fun AppShell(
     val connecting by desktops.connecting.collectAsStateWithLifecycle()
     val desktopErrors by desktops.errors.collectAsStateWithLifecycle()
     val viewing by desktops.viewing.collectAsStateWithLifecycle()
-    val dialed by desktops.dialed.collectAsStateWithLifecycle()
     val forwardRows by forwards.rows.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val noticeAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -192,6 +191,10 @@ fun AppShell(
                                     onCloseNotice = actions::closeNotice,
                                     onLeave = actions::leave,
                                     onReconnect = actions::reconnect,
+                                    onOpenPanel = { bindingId ->
+                                        askNotices()
+                                        actions.openPanel(bindingId)
+                                    },
                                     onOverlayConnect = connectOverlay,
                                     onOverlayCancel = actions::cancelOverlay,
                                     onOverlayDisconnect = actions::disconnectOverlay,
@@ -202,28 +205,36 @@ fun AppShell(
                                 WebScreen(
                                     hubs,
                                     forwards = forwardRows,
-                                    onOpen = actions::openUrl,
-                                    onOpenLocal = { bindingId, entryId, url ->
+                                    onOpen = { bindingId, entryId, url, isTokenRequired ->
                                         askNotices()
-                                        actions.openLocal(bindingId, entryId, url)
+                                        actions.openWeb(bindingId, entryId, url, isTokenRequired)
                                     },
-                                    onOpenWithToken = actions::openWithToken,
                                 )
                             }
                             composable(AppScreen.PORTS.route) {
                                 PortsScreen(
                                     hubs,
                                     forwards = forwardRows,
-                                    onConnect = { bindingId, entryId, host, port ->
+                                    onConnect = { bindingId, entryId, port ->
                                         askNotices()
-                                        actions.connectPort(bindingId, entryId, host, port)
+                                        actions.connectPort(bindingId, entryId, port)
                                     },
                                     onDisconnect = actions::disconnectPort,
                                     onCopy = { actions.copy(it) },
                                 )
                             }
                             composable(AppScreen.AI.route) {
-                                AiScreen(hubs, material = actions::serviceMaterial, onCopy = actions::copy)
+                                AiScreen(
+                                    hubs,
+                                    forwards = forwardRows,
+                                    material = actions::serviceMaterial,
+                                    onConnect = { bindingId, entryId, port ->
+                                        askNotices()
+                                        actions.connectPort(bindingId, entryId, port)
+                                    },
+                                    onDisconnect = actions::disconnectPort,
+                                    onCopy = actions::copy,
+                                )
                             }
                             composable(AppScreen.FILES.route) {
                                 FilesScreen(
@@ -241,7 +252,6 @@ fun AppShell(
                                     connecting = connecting,
                                     errors = desktopErrors,
                                     viewingKey = viewing?.first,
-                                    dialed = dialed,
                                     onConnect = actions::connectDesktop,
                                 )
                             }

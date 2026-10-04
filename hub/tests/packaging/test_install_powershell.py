@@ -10,6 +10,7 @@ sentence each refusal says. Skipped where ``pwsh`` is not on the path.
 import hashlib
 import json
 import shutil
+import sys
 import subprocess
 from pathlib import Path
 
@@ -56,10 +57,6 @@ def run(tmp_path):
         (served / name).write_bytes(name.encode())
         lines.append(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}")
     (served / "SHA256SUMS").write_text("\n".join(lines) + "\n")
-    text = SCRIPT.read_text()
-    assert text.rstrip().endswith(LAST_LINE)
-    functions = tmp_path / "functions.ps1"
-    functions.write_text(text.rstrip()[: -len(LAST_LINE)])
 
     def invoke(
         *arguments,
@@ -68,13 +65,21 @@ def run(tmp_path):
         exit_code=0,
         env=None,
         edition="intl",
+        script=SCRIPT,
     ):
+        text = script.read_text().replace(
+            "$script:NeutrinoEdition = 'intl'",
+            f"$script:NeutrinoEdition = '{edition}'",
+            1,
+        )
+        assert text.rstrip().endswith(LAST_LINE)
+        functions = tmp_path / "functions.ps1"
+        functions.write_text(text.rstrip()[: -len(LAST_LINE)])
         driver = tmp_path / "driver.ps1"
         quoted = ", ".join(f"'{argument}'" for argument in arguments)
         driver.write_text(
             f". '{functions}'\n"
             + STAND_INS
-            + f"$EDITION = '{edition}'\n"
             + "$outcome = 'ok'\n"
             + f"$given = @({quoted})\n"
             + "try { Install-Neutrino @given | Out-Null }"
@@ -179,7 +184,7 @@ def test_a_reboot_owed_is_still_an_install(run):
 
 
 def test_the_committed_script_is_the_intl_edition():
-    assert "\n$EDITION = 'intl'\n" in SCRIPT.read_text()
+    assert "\n$script:NeutrinoEdition = 'intl'\n" in SCRIPT.read_text()
 
 
 def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(run):
@@ -208,3 +213,28 @@ def test_a_cn_latest_release_with_no_tag_is_one_sentence(run):
     outcome, _asked = run(edition="cn")
 
     assert outcome == f"The latest release at {CN_LATEST} names no tag."
+
+
+def test_the_mainland_script_installs_from_gitee(run, tmp_path):
+    target = tmp_path / "mainland"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT.parents[1] / "build" / "build_sources.py"),
+            "--edition",
+            "cn",
+            "--tree",
+            str(target),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (run.served / "latest").write_text('{"tag_name": "v9.9.9"}')
+
+    outcome, asked = run(script=target / "packaging" / "install" / "install.ps1")
+
+    assert outcome == "ok"
+    assert asked[:2] == [
+        f"fetch {CN_LATEST}",
+        f"fetch {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
+    ]

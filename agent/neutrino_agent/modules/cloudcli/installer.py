@@ -218,24 +218,29 @@ def is_app_ready(app: str) -> bool:
     )
 
 
-def npm_environment(app: str, join=os.path.join) -> dict:
+def npm_environment(app: str, join=os.path.join, *, registry: str = "") -> dict:
     """What npm runs with besides ``PATH`` and the account's own names.
 
     Args:
         app: The app directory.
         join: How the system joins a path.
+        registry: The registry the hub's state names; empty for npm's own.
 
     Returns:
         npm's cache inside the app directory, an empty file as the
-        account's configuration, and no audit, funding or update notes.
+        account's configuration, no audit, funding or update notes, and the
+        registry when one is named.
     """
-    return {
+    environment = {
         "npm_config_cache": join(app, CLOUDCLI_NPM_CACHE_NAME),
         "npm_config_userconfig": join(app, CLOUDCLI_NPM_USERCONFIG_NAME),
         "npm_config_audit": "false",
         "npm_config_fund": "false",
         "npm_config_update_notifier": "false",
     }
+    if registry:
+        environment["npm_config_registry"] = registry
+    return environment
 
 
 def npm_arguments(app: str) -> list:

@@ -388,6 +388,15 @@ def test_the_base_platform_has_no_easytier_daemon_and_binds_nothing(tmp_path):
     assert platform.bind_child_process(object()) is None
 
 
+def test_only_windows_has_a_files_adapter():
+    platform = ClientPlatform()
+
+    with pytest.raises(PlatformUnsupportedError):
+        platform.files_daemon_address()
+    with pytest.raises(PlatformUnsupportedError):
+        platform.configure_files_adapter()
+
+
 def test_the_state_directory_is_made_for_its_owner_alone(tmp_path):
     state = tmp_path / "a" / "easytier"
 

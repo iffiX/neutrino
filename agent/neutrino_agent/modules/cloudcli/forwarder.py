@@ -1,8 +1,9 @@
 """The forwarder in front of one account's CloudCLI.
 
 CloudCLI listens on loopback alone. The forwarder is a thread of the agent
-that listens on every address of the machine at the instance's port and
-judges each request before CloudCLI sees it:
+that listens on loopback at the instance's port, where the agent's end of a
+``connect`` stream reaches it, and judges each request before CloudCLI sees
+it:
 
 | A request | The forwarder |
 | --- | --- |

@@ -682,7 +682,9 @@ def test_a_sent_mount_keeps_its_form_until_the_share_is_mounted():
     button = body_of("mountButton")
     assert "staged.password = '';" not in PAGE_JS
     assert "delete fileStaged[serviceKey(entry)];" not in button
-    assert "staged.is_open = false;\n      staged.is_sent = true;" in button
+    assert "button.onclick = () => sendFileMount(entry, staged);" in button
+    sent = body_of("sendFileMount")
+    assert "staged.is_open = false;\n  staged.is_sent = true;" in sent
     files = body_of("drawFileEntry")
     assert (
         "if (record && record.is_attached && !entry.job && fileStaged[key]\n"
@@ -785,9 +787,26 @@ def test_the_menus_clear_sends_ctrl_c_before_it_clears_the_screen():
     clear = function_body("function clearTerminal(tab)")
 
     assert "[t('ui.menu.clear'), false, () => clearTerminal(tab)]," in menu
-    assert clear.index("sendShellKeys(tab, '\\x03');") < clear.index(
-        "tab.term.clear();"
+    assert "tab.term.clear();" in clear
+    assert "tab.isClearAsked = true;" in clear
+    flush = function_body("function flushShellKeys(tab)")
+    # What was typed before the Clear goes first; the resident sends Ctrl+C.
+    assert flush.index("if (!tab.typed && tab.isClearAsked) {") < flush.index(
+        "const text = tab.typed;"
     )
+    assert "api('/api/terminal/clear', { terminal_id: tab.terminal_id })" in flush
+
+
+def test_the_clearing_word_covers_the_terminal_while_the_resident_drops():
+    piece = function_body("function takeShellPiece(piece)")
+    assert "if (piece.clearing !== undefined) {" in piece
+    assert "showClearing(tab, piece.clearing === true);" in piece
+    shown = function_body("function showClearing(tab, isClearing)")
+    assert "t('ui.job.clearing')" in shown
+    assert "tab.term.write('', () => tab.term.clear());" in shown
+    assert EN_WORDS["ui.job.clearing"] == "Clearing…"
+    assert CATALOGS["zh-CN"]["ui.job.clearing"] == "清屏中…"
+    assert ".term_clearing {" in PAGE_CSS
 
 
 def test_the_shells_panes_outlive_a_redraw():
@@ -883,8 +902,8 @@ def test_the_page_names_the_six_connections_and_the_three_network_states():
 def test_the_hub_dot_follows_the_colour_table():
     tone = body_of("hubTone")
     assert (
-        "if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';"
-        in tone
+        "if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job\n"
+        "    || jobs.is_opening_panel) return 'pulse';" in tone
     )
     assert "if (hub.connection === 'connecting') return 'pulse';" in tone
     assert "if (isJoinRefused(hub)) return 'bad';" in tone
@@ -1069,12 +1088,58 @@ def test_every_entry_is_one_row_with_its_provider_line():
         assert "entryRow(hub, entry," in body_of(build)
 
 
-def test_a_local_only_web_entry_opens_through_a_forward_as_a_job():
+def test_every_web_entry_opens_through_a_forward_as_a_job():
     web = body_of("drawWebEntry")
-    assert "jobButton(isLocal ? t('ui.open_local') : t('ui.open'), opening)" in web
-    assert "actions.unshift(configure);" in web
+    assert "jobButton(t('ui.open'), opening)" in web
+    assert "const actions = [configure, open];" in web
     assert "actions.push(disconnectButton('web', entry));" in web
     assert "forwardedTo(entry)" in web
+    assert "is_local_only" not in PAGE_JS
+    assert "ui.open_local" not in EN_WORDS
+
+
+def test_the_hub_row_says_the_way_in_and_offers_the_panel():
+    word = body_of("hubWord")
+    assert "t('ui.state.connected_through'," in word
+    assert "{ way: t('ui.through.' + hub.reached_through) }" in word
+    row = body_of("hubRow")
+    assert "if (hub.is_panel_allowed) actions.push(panelButton(hub));" in row
+    assert row.index("actions.push(network);") < row.index("panelButton(hub)")
+    assert row.index("panelButton(hub)") < row.index("actions.push(leaveButton(hub));")
+    panel = body_of("panelButton")
+    assert "jobs.is_opening_panel ? 'opening' : ''" in panel
+    assert "send('/api/panel/open', { hub_id: hubKey(hub) })" in panel
+    assert "hub.connection !== 'connected'" in panel
+    for way, english, chinese in (
+        ("lan", "LAN", "局域网"),
+        ("netbird", "NetBird", "NetBird"),
+        ("easytier", "EasyTier", "EasyTier"),
+        ("relay", "Relay", "中继"),
+    ):
+        assert EN_WORDS["ui.through." + way] == english
+        assert CATALOGS["zh-CN"]["ui.through." + way] == chinese
+    assert EN_WORDS["ui.state.connected_through"] == "Connected · {way}"
+    assert EN_WORDS["ui.hub_panel"] == "Panel"
+    assert CATALOGS["zh-CN"]["ui.hub_panel"] == "面板"
+
+
+def test_the_ai_row_shows_its_forward_and_that_the_tools_need_the_client():
+    ai = body_of("drawAiEntry")
+    assert "(payload.endpoint || '') + forwardedTo(entry)" in ai
+    assert "const extras = [noteLine(t('ui.ai_needs_client'))];" in ai
+    assert EN_WORDS["ui.ai_needs_client"] == (
+        "The tools reach the gateway only while this client runs."
+    )
+
+
+def test_after_a_refused_login_save_mounts_at_once():
+    files = body_of("drawFileEntry")
+    assert "const onSave = isLoginRefused && !entry.job" in files
+    assert "? () => sendFileMount(entry, staged) : null;" in files
+    form = body_of("drawFileForm")
+    assert "if (onSave && isMountFormFilled(staged, state)) { onSave(); return; }" in (
+        form
+    )
 
 
 def test_a_forwardable_entry_sets_its_local_port_only_while_not_forwarded():
@@ -1119,7 +1184,7 @@ def test_a_volume_form_asks_for_no_place_and_names_the_server():
     caption = body_of("volumeCaptionLine")
     assert "t('ui.mount_volume_caption', { server: server })" in caption
     files = body_of("drawFileEntry")
-    assert "drawFileForm(staged, state, payload.host || ''," in files
+    assert "drawFileForm(staged, state, LOOPBACK_SERVER, key, onSave, () => {" in files
     assert "t('ui.reason.mount_form_volume')" in body_of("mountReason")
     assert EN_WORDS["ui.mount_volume_caption"] == "Appears in the Finder under {server}"
     assert (
@@ -1142,7 +1207,10 @@ def test_a_volume_shows_no_path_before_the_system_mounted_it():
 def test_a_mounted_volume_names_the_server_the_finder_lists_it_under():
     files = body_of("drawFileEntry")
     assert "if (!asksMountPlace(state) && each.is_attached && each.path) {" in files
-    assert "noteLine(t('ui.mount_finder', { server: each.host || '' }))" in files
+    assert (
+        "noteLine(t('ui.mount_finder', { server: each.server || each.host || '' }))"
+        in files
+    )
     assert EN_WORDS["ui.mount_finder"] == "In the Finder it is under {server}."
 
 
@@ -1405,6 +1473,11 @@ def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_wo
         ("cc-switch", "MIT"),
     ):
         assert f"name: '{name}'" in PAGE_JS and f"licence: '{licence}'" in PAGE_JS
+    assert "{ name: 'tun2socks', key: 'tun2socks', licence: 'MIT'," in PAGE_JS
+    assert "os: 'windows' }" in PAGE_JS
+    assert "CARRIED.filter((core) => !core.os || core.os === platform.os)" in (
+        body_of("aboutSection")
+    )
     assert "core.repository + '/tree/' + fill(core.tag, { version: version })" in (
         body_of("carriedSource")
     )
@@ -1419,4 +1492,3 @@ def test_the_sidebar_carries_only_the_pages_and_no_foot():
 def test_a_token_web_entry_has_open_alone_and_shows_its_job():
     web = body_of("drawWebEntry")
     assert "const opening = entry.job === 'opening' ? entry.job : '';" in web
-    assert "if (isLocal) {" in web

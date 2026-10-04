@@ -28,6 +28,8 @@ import sys
 
 import pytest
 
+from neutrino_hub import edition
+
 # What a test may run: the program, and the verbs of it that only read. A
 # program not listed here is refused outright; one listed is refused unless
 # the first word of it that is not an option is one of these.
@@ -249,7 +251,14 @@ from neutrino_hub.modules.router.uplink_plan import UplinkFacts
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip the tests that need privileges the current run does not have."""
+    """Skip the tests that need privileges the current run does not have,
+    and the tests of a left-out feature the tree does not carry."""
+    for item in items:
+        for marker in item.iter_markers(name="feature"):
+            if not edition.has_feature(marker.args[0]):
+                item.add_marker(
+                    pytest.mark.skip(reason=f"this tree has no {marker.args[0]}")
+                )
     if os.geteuid() == 0:
         return
     skip = pytest.mark.skip(reason="needs root: `nft -c` cannot open netlink")
@@ -1231,3 +1240,48 @@ def fake_controller(monkeypatch) -> FakeProcessController:
     controller = FakeProcessController()
     monkeypatch.setattr(detect, "_CONTROLLER", controller)
     return controller
+
+
+def self_signed_pair(directory) -> tuple:
+    """A fresh self-signed certificate and its key, written as PEM files.
+
+    Args:
+        directory: Where ``certificate.pem`` and ``key.pem`` are written.
+
+    Returns:
+        ``(certificate_path, key_path, fingerprint)``, the fingerprint being
+        the SHA-256 hex of the certificate's DER form.
+    """
+    import datetime
+    import hashlib
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    certificate_path = directory / "certificate.pem"
+    key_path = directory / "key.pem"
+    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    der = certificate.public_bytes(serialization.Encoding.DER)
+    return certificate_path, key_path, hashlib.sha256(der).hexdigest()

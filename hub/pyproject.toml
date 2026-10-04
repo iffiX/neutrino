@@ -67,4 +67,5 @@ pythonpath = ["."]
 addopts = "-ra --strict-markers"
 markers = [
     "needs_root: shells out to a tool that will not run unprivileged, chiefly `nft -c`. Skipped automatically when the test run is not root.",
+    "feature(name): needs a feature the mainland edition leaves out, `proxy` or `netbird`. Skipped automatically in a tree without it.",
 ]

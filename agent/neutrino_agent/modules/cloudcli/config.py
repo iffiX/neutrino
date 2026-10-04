@@ -100,11 +100,14 @@ class CloudcliConfig:
         gateway_url: The hub's AI gateway as this machine reaches it; empty
             when the hub serves none.
         gateway_key: This device's own key to the gateway.
+        npm_registry: The npm registry of the hub's edition, which npm
+            installs CloudCLI from; empty for npm's own default.
         instances: One CloudCLI per account.
     """
 
     gateway_url: str = ""
     gateway_key: str = ""
+    npm_registry: str = ""
     instances: list = field(default_factory=list)
 
     @classmethod
@@ -113,6 +116,7 @@ class CloudcliConfig:
         return cls(
             gateway_url=str(data.get("gateway_url", "") or "").rstrip("/"),
             gateway_key=str(data.get("gateway_key", "") or ""),
+            npm_registry=str(data.get("npm_registry", "") or ""),
             instances=[
                 CloudcliInstance.from_dict(entry)
                 for entry in (instances if isinstance(instances, list) else [])

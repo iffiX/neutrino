@@ -169,7 +169,11 @@ def test_an_instance_is_a_task_running_its_script(applier, powershell, ready):
     assert instance["task"] == "neutrino_cloudcli_ann"
     assert instance["password"] == "login-pw"
     assert instance["port"] == 3001
-    assert instance["rule"] == "neutrino_cloudcli_port_ann"
+    assert "rule" not in instance
+    assert "New-NetFirewallRule" not in APPLY_SCRIPT
+    assert document["rule_prefix"] == "neutrino_cloudcli_port_"
+    assert 'Get-NetFirewallRule -Name "$($d.rule_prefix)*"' in APPLY_SCRIPT
+    assert "$stale | Remove-NetFirewallRule" in APPLY_SCRIPT
     text = instance["script_text"]
     assert 'set "HOST=127.0.0.1"' in text
     assert 'set "SERVER_PORT=41234"' in text
@@ -262,6 +266,19 @@ def test_a_task_windows_cannot_sign_in_reads_so(applier, powershell):
     assert applier.states(["ann"]) == {
         "ann": {"is_running": False, "code": "credential_invalid"}
     }
+
+
+def test_the_install_script_names_the_registry_the_state_names():
+    text = render_install_script(
+        app="C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\cloudcli\\app",
+        node="C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n\\node.exe",
+        npm="C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n\\npm-cli.js",
+        registry="https://registry.npmmirror.com",
+    )
+
+    assert 'set "npm_config_registry=https://registry.npmmirror.com"' in text.split(
+        "\r\n"
+    )
 
 
 def test_the_install_script_checks_the_native_modules_after_npm():

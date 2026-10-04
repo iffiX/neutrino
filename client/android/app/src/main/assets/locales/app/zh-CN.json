@@ -9,8 +9,6 @@
     "verb_unknown": "中枢不认识这个命令，请先更新中枢"
   },
   "ui": {
-    "ai_qr_hint": "第三方聊天 app 扫这个码，就能用这个网关。",
-    "ai_qr_label": "网关地址和密钥的二维码",
     "back": "返回",
     "camera_allow": "允许使用相机",
     "camera_refused": "没有相机权限，请在下面粘贴链接。",
@@ -21,7 +19,6 @@
     "core_notice": "已连接 {count} 台中枢",
     "forget_password": "忘掉密码",
     "forget_password_arm": "再按一次以忘掉",
-    "gateway_address": "网关地址",
     "hub_forgot": "{hub} 已不再认识本机，它的一行已移除。",
     "join_hint": "扫描二维码，或粘贴链接。",
     "key_hide": "隐藏密钥",
@@ -31,7 +28,6 @@
     "overlay_count": "此中枢发布了 {count} 个虚拟网",
     "password_not_saved": "未存密码",
     "paste": "粘贴",
-    "qr": "二维码",
     "rdp_codec": "编码",
     "rdp_codec_auto": "自动",
     "rdp_configure_title": "画面",

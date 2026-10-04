@@ -36,6 +36,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_HOME,
     SAMBA_DARWIN_PF_ANCHOR,
     SAMBA_DARWIN_PF_TABLE,
+    SAMBA_LOOPBACK_NETWORKS,
     SAMBA_DARWIN_SERVER_LOG_COMMAND,
     SAMBA_DARWIN_SHARE_PREFIX,
     SAMBA_DARWIN_SHELL,
@@ -53,7 +54,7 @@ SMB_NT_HASH = "SMB-NT"
 
 
 def render_pf_rules(allowed_subnets: list) -> str:
-    """The fence's pf rules: SMB from the allowed subnets, nothing else.
+    """The fence's pf rules: SMB from loopback and the allowed subnets, nothing else.
 
     Args:
         allowed_subnets: The networks the shares answer; an entry that is
@@ -70,7 +71,8 @@ def render_pf_rules(allowed_subnets: list) -> str:
             )
         except ValueError:
             continue
-    lines = []
+    loopback = ", ".join(SAMBA_LOOPBACK_NETWORKS)
+    lines = [f"pass in quick proto tcp from {{ {loopback} }} to any port 445"]
     if networks:
         lines.append(
             f"table <{SAMBA_DARWIN_PF_TABLE}> const {{ {', '.join(networks)} }}"

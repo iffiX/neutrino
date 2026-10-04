@@ -72,6 +72,7 @@ class FakeRuntime:
         self.agent_sessions = FakeChannelSessions(online=[DEVICE])
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.client_scope: dict = {}
+        self.client_reached: dict = {}
         self.published_services = StubPublishedServices()
         self.desired = (
             "h9",
@@ -83,6 +84,9 @@ class FakeRuntime:
 
     def host_scopes(self):
         return [LAN, OVERLAY]
+
+    def overlay_networks(self):
+        return {}
 
     def desired_state_for(self, device):
         return self.desired
@@ -534,3 +538,42 @@ def test_push_states_hands_every_client_whose_hash_differs_the_list(config_dir):
         assert pushed["services"][0]["payload"] == {"url": "http://192.168.100.1:3000"}
 
     asyncio.run(scenario())
+
+
+def test_the_panel_is_allowed_while_the_client_is_on_and_holds_panel(config_dir):
+    runtime = FakeRuntime()
+    registry = ClientRegistry()
+    client_id = registry.create("alice")
+    allowed = channel_state.client_state(runtime, client_id)
+
+    registry.set_permission(client_id, ["web"])
+    without = channel_state.client_state(runtime, client_id)
+    registry.set_permission(client_id, ["panel"])
+    registry.set_disabled(client_id, True)
+    disabled = channel_state.client_state(runtime, client_id)
+
+    assert allowed["is_panel_allowed"] is True
+    assert without["is_panel_allowed"] is False
+    assert disabled["is_panel_allowed"] is False
+    assert allowed["hash"] != without["hash"]
+
+
+def test_the_way_a_socket_reached_the_hub_is_settled_at_hello_and_hashed(
+    config_dir,
+):
+    runtime = FakeRuntime()
+    runtime.overlay_networks = lambda: {"netbird": ["100.64.0.1/16"]}
+    client_id = ClientRegistry().create("alice")
+
+    ways = []
+    hashes = []
+    for peer in ("192.168.100.9", "100.64.3.3", "127.0.0.1"):
+        channel_state.note_client_scope(
+            runtime, client_id, peer_host=peer, reached_host="192.168.100.1"
+        )
+        state = channel_state.client_state(runtime, client_id)
+        ways.append(state["reached_through"])
+        hashes.append(state["hash"])
+
+    assert ways == ["lan", "netbird", "relay"]
+    assert len(set(hashes)) == 3

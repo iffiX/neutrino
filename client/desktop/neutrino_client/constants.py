@@ -29,6 +29,9 @@ CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
 CLIENT_PROTOCOL_REFUSAL_CODES = ("protocol_too_old", "protocol_too_new")
 # The one refusal that unbinds: the hub holds no such binding.
 CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
+# The one refusal of a join that keeps the ticket: the hub paused new
+# enrolments, and the join runs again after the seconds it names.
+CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
 
 # What the hub answers as in its welcome.
 CLIENT_HUB_ROLE = "hub"
@@ -41,10 +44,12 @@ CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
 
 # The stream kinds a client opens, and the code it closes a stream the hub
 # opened with. A ``shell`` carries terminal bytes both ways; a ``command``
-# resizes one.
+# resizes one; a ``connect`` carries one TCP connection to a published entry
+# or to the hub's panel.
 CLIENT_STREAM_KIND_SERVICE = "service"
 CLIENT_STREAM_KIND_SHELL = "shell"
 CLIENT_STREAM_KIND_COMMAND = "command"
+CLIENT_STREAM_KIND_CONNECT = "connect"
 CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
 # The module and verb a resize names on a ``command`` stream.
 CLIENT_SHELL_RESIZE_MODULE = "agent"
@@ -88,6 +93,10 @@ CLIENT_STREAM_CREDIT_BYTES = 1024 * 1024
 CLIENT_WS_CHUNK_BYTES = 64 * 1024
 # How long a send waits for the hub's credit before it gives up.
 CLIENT_WS_CREDIT_TIMEOUT_S = 60
+# A terminal's Clear drops the output until the stream has been quiet this
+# long, and for this long at most.
+CLIENT_TERMINAL_CLEAR_QUIET_S = 0.5
+CLIENT_TERMINAL_CLEAR_MAX_S = 20
 
 # What the hub's close codes mean: a refused hello, and a second socket for
 # the same binding replacing this one.
@@ -140,6 +149,7 @@ CLIENT_BUNDLED_PATHS_WINDOWS = {
     "netbird": "bin\\netbird.exe",
     "easytier-core": "bin\\easytier-core.exe",
     "easytier-cli": "bin\\easytier-cli.exe",
+    "tun2socks": "bin\\tun2socks.exe",
 }
 # Under the app bundle's Contents directory, beside the MacOS directory the
 # compiled package runs from.
@@ -180,6 +190,7 @@ CLIENT_MOUNT_SETTLED_CODES = (
     "share_access_denied",
     "share_not_found",
     "share_session_conflict",
+    "files_adapter_unavailable",
 )
 CLIENT_PKEXEC_REFUSAL_EXIT_CODES = (126, 127)
 
@@ -283,3 +294,38 @@ CLIENT_EASYTIER_RESTART_MAX_S = 60
 CLIENT_EASYTIER_STABLE_S = 60
 # How long a stopped core is given to end before it is killed.
 CLIENT_EASYTIER_STOP_TIMEOUT_S = 10
+
+# The files adapter on Windows: a wintun adapter whose SMB connections reach
+# the hub. The daemon is a service of this package run as SYSTEM, the only
+# thing that runs tun2socks; it answers one JSON request per connection on
+# a pipe with the EasyTier daemon's security descriptor.
+CLIENT_FILES_DAEMON_VERB = "files-daemon"
+CLIENT_FILES_SERVICE_WINDOWS = "NeutrinoClientFiles"
+CLIENT_FILES_PIPE_WINDOWS = "\\\\.\\pipe\\neutrino_client_files"
+# The adapter, its own address and network, and the addresses the machines
+# that provide a share take on it, from the second up. The range is set
+# aside for benchmarking, whose first block the hub's own TUN takes.
+CLIENT_FILES_ADAPTER_NAME = "neutrino_files"
+CLIENT_FILES_NETWORK = "198.19.255.0/24"  # scan: allow
+CLIENT_FILES_ADAPTER_ADDRESS = "198.19.255.1"  # scan: allow
+CLIENT_FILES_ADAPTER_MTU = 1500
+# Windows prefers the lowest metric; this one never wins a tie.
+CLIENT_FILES_ADAPTER_METRIC = 9999
+# How long the adapter may take to appear once tun2socks starts.
+CLIENT_FILES_ADAPTER_WAIT_S = 15
+# How long giving the adapter its address may take in all.
+CLIENT_FILES_ADAPTER_SCRIPT_TIMEOUT_S = 60
+# The one port the SMB client dials, and the one the endpoint accepts.
+CLIENT_FILES_SHARE_PORT = 445
+# What tun2socks prints: warnings and worse.
+CLIENT_FILES_TUN2SOCKS_LOG_LEVEL = "warn"
+# The daemon's own log and tun2socks's output, under the client's log root.
+CLIENT_FILES_DAEMON_LOG_NAME = "files.log"
+CLIENT_FILES_TUN2SOCKS_LOG_NAME = "tun2socks.log"
+# How often the daemon looks whether a restarted tun2socks needs the
+# adapter's address again.
+CLIENT_FILES_DAEMON_TICK_S = 1
+# How long a SOCKS client may take to say where it goes.
+CLIENT_FILES_SOCKS_HANDSHAKE_TIMEOUT_S = 10
+# The most one relay read takes from either side.
+CLIENT_FILES_RELAY_CHUNK_BYTES = 64 * 1024

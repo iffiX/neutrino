@@ -1,4 +1,5 @@
 import type { IconName } from "./components/icon";
+import { hasFeature } from "./edition";
 
 /**
  * The sidebar's contents, in order.
@@ -61,13 +62,18 @@ export const NAV_ITEMS: NavItem[] = [
     descriptionKey: "ui.nav.overlay_description",
     group: "hub",
   },
-  {
-    path: "/proxy",
-    labelKey: "ui.nav.proxy",
-    icon: "globe",
-    descriptionKey: "ui.nav.proxy_description",
-    group: "hub",
-  },
+  // The proxy's page, where the tree carries it.
+  ...(hasFeature("proxy")
+    ? [
+        {
+          path: "/proxy",
+          labelKey: "ui.nav.proxy",
+          icon: "globe" as IconName,
+          descriptionKey: "ui.nav.proxy_description",
+          group: "hub" as NavGroup,
+        },
+      ]
+    : []),
   {
     path: "/ai",
     labelKey: "ui.nav.ai",

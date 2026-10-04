@@ -2,10 +2,23 @@
 
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 
-# Where the hub's own releases are published, and how a release is asked for.
+# Where the hub's own releases are published, and how a release is asked
+# for, by edition: GitHub's API for ``intl``, Gitee's for ``cn``. An edition
+# reads its own edition's releases and no other.
 HUB_UPDATE_REPOSITORY = "iffiX/neutrino"
-HUB_UPDATE_LATEST_URL = "https://api.github.com/repos/{repository}/releases/latest"
-HUB_UPDATE_TAG_URL = "https://api.github.com/repos/{repository}/releases/tags/{tag}"
+HUB_UPDATE_LATEST_URLS = {
+    "intl": "https://api.github.com/repos/{repository}/releases/latest",
+    "cn": "https://gitee.com/api/v5/repos/{repository}/releases/latest",
+}
+HUB_UPDATE_TAG_URLS = {
+    "intl": "https://api.github.com/repos/{repository}/releases/tags/{tag}",
+    "cn": "https://gitee.com/api/v5/repos/{repository}/releases/tags/{tag}",
+}
+# A release's own page, for an edition whose API names none.
+HUB_UPDATE_PAGE_URLS = {
+    "intl": "https://github.com/{repository}/releases/tag/{tag}",
+    "cn": "https://gitee.com/{repository}/releases/tag/{tag}",
+}
 HUB_UPDATE_TAG_PREFIX = "v"
 # The release's own digest list, one `<sha256>  <file>` line per asset.
 HUB_UPDATE_CHECKSUMS_NAME = "SHA256SUMS"

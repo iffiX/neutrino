@@ -8,6 +8,7 @@ stops a wrong file, and the one sentence each refusal prints.
 """
 
 import hashlib
+import sys
 import os
 import subprocess
 from pathlib import Path
@@ -104,11 +105,12 @@ def stand_ins(tmp_path):
         uid="1000",
         environment=None,
         edition="intl",
+        script=SCRIPT,
     ):
         release_file = tmp_path / "os-release"
         release_file.write_text(OS_RELEASES[os_release])
         functions = tmp_path / "functions.sh"
-        text = SCRIPT.read_text().replace('EDITION="intl"', f'EDITION="{edition}"', 1)
+        text = script.read_text().replace('EDITION="intl"', f'EDITION="{edition}"', 1)
         assert text.rstrip().endswith('main "$@"')
         functions.write_text(text.rstrip()[: -len('main "$@"')])
         env = {
@@ -390,3 +392,44 @@ def test_a_cn_release_with_its_files_not_yet_uploaded_stops_with_one_sentence(
         f"Downloading {CN_RELEASE}/download/v9.9.9/SHA256SUMS failed."
     )
     assert _installs(asked) == []
+
+
+@pytest.fixture(scope="module")
+def mainland_tree(tmp_path_factory):
+    """The mainland tree ``build_sources.py --edition cn --tree`` writes."""
+    target = tmp_path_factory.mktemp("mainland") / "tree"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT.parents[1] / "build" / "build_sources.py"),
+            "--edition",
+            "cn",
+            "--tree",
+            str(target),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return target
+
+
+def test_the_mainland_tree_stamps_both_scripts_cn(mainland_tree):
+    install = mainland_tree / "packaging" / "install"
+
+    assert '\nEDITION="cn"\n' in (install / "install.sh").read_text()
+    assert "\n$script:NeutrinoEdition = 'cn'\n" in (install / "install.ps1").read_text()
+
+
+def test_the_mainland_script_installs_from_gitee(stand_ins, mainland_tree):
+    (stand_ins.served / "latest").write_text('{"tag_name": "v9.9.9"}')
+
+    result, asked = stand_ins(
+        script=mainland_tree / "packaging" / "install" / "install.sh"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert asked[:3] == [
+        f"curl {CN_LATEST}",
+        f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
+        f"curl {CN_RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
+    ]

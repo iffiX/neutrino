@@ -119,8 +119,8 @@ class FakeServiceResident(FakeResident):
     def __init__(self, *, platform=None):
         super().__init__(platform=platform)
         self.hubs_value = [dict(HUB_ROW)]
+        self.forward_ports = {}
         self.states = {
-            "forwards": {},
             "mounts": [],
             "ai": {
                 "is_enabled": False,
@@ -148,12 +148,9 @@ class FakeServiceResident(FakeResident):
         if service_type == "port":
             key = f"{body.get('hub_id')}/{body.get('id')}"
             if body.get("is_enabled"):
-                self.states["forwards"][key] = {
-                    "local_port": body.get("local_port") or 15432,
-                    "is_active": True,
-                }
+                self.forward_ports[key] = body.get("local_port") or 15432
             else:
-                self.states["forwards"].pop(key, None)
+                self.forward_ports.pop(key, None)
         if service_type == "file" and body.get("action") == "mount":
             if body.get("record_id"):
                 for row in self.states["mounts"]:
@@ -217,7 +214,7 @@ def stack(monkeypatch, config_path):
 
 
 def test_list_heads_each_hub_and_numbers_per_kind_under_it(stack, capsys):
-    stack.states["forwards"]["h1/svc_tcp"] = {"local_port": 15432, "is_active": True}
+    stack.forward_ports["h1/svc_tcp"] = 15432
     stack.states["mounts"].append(dict(MOUNTED_ROW))
 
     assert service_cli.main_list() == 0
@@ -416,7 +413,7 @@ def test_port_forward_carries_a_preferred_local_port(stack, capsys):
 
 
 def test_port_unforward_closes_and_names_the_loopback(stack, capsys):
-    stack.states["forwards"]["h1/svc_tcp"] = {"local_port": 15432, "is_active": True}
+    stack.forward_ports["h1/svc_tcp"] = 15432
 
     assert service_cli.main_port("1", is_enabled=False) == 0
 

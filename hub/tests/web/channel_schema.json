@@ -689,6 +689,16 @@
           },
           "title": "Terminals",
           "type": "array"
+        },
+        "is_panel_allowed": {
+          "default": false,
+          "title": "Is Panel Allowed",
+          "type": "boolean"
+        },
+        "reached_through": {
+          "default": "",
+          "title": "Reached Through",
+          "type": "string"
         }
       },
       "required": [

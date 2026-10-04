@@ -18,6 +18,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CLOSE_REFUSED,
@@ -49,6 +50,7 @@ class FakeRuntime:
     def __init__(self):
         self.events = PanelEventBus()
         self.enrollments = ChannelTicketRegistry()
+        self.channel_port = ChannelPortGuard()
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}
@@ -59,6 +61,7 @@ class FakeRuntime:
         self.device_scope = {}
         self.device_last_error = {}
         self.client_scope = {}
+        self.client_reached: dict = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
@@ -69,6 +72,9 @@ class FakeRuntime:
 
     def host_scopes(self):
         return []
+
+    def overlay_networks(self):
+        return {}
 
     def desired_state_for(self, device):
         return self.desired
@@ -601,3 +607,91 @@ def test_a_second_socket_for_one_binding_replaces_the_first_with_4010(api):
     finally:
         first.__exit__(None, None, None)
     assert wait_until(lambda: not runtime.agent_sessions.is_online(binding["id"]))
+
+
+# --- the agent port's limits ---
+
+
+def test_a_refused_ticket_or_role_counts_as_a_failed_admission(api):
+    client, runtime = api
+    runtime.channel_port = ChannelPortGuard(failures_max=2)
+
+    client.post("/api/channel/join", json=join_body(ticket="nonsense"))
+    assert runtime.channel_port.pause_remaining_s() == 0
+    client.post("/api/channel/join", json=join_body(role="hub"))
+
+    assert runtime.channel_port.pause_remaining_s() > 0
+
+
+def test_a_protocol_refusal_is_not_a_failed_admission(api):
+    client, runtime = api
+    runtime.channel_port = ChannelPortGuard(failures_max=1)
+
+    client.post("/api/channel/join", json=join_body(protocol=PROTOCOL + 1))
+
+    assert runtime.channel_port.pause_remaining_s() == 0
+
+
+def test_a_paused_join_is_refused_before_its_ticket_is_looked_up(api):
+    client, runtime = api
+    runtime.channel_port = ChannelPortGuard(failures_max=1)
+    runtime.channel_port.record_failure()
+    ticket(runtime, "t1")
+
+    answer = client.post("/api/channel/join", json=join_body())
+
+    assert answer.status_code == 409
+    detail = answer.json()["detail"]
+    assert detail["code"] == "admission_paused"
+    assert 59 <= detail["params"]["retry_after_s"] <= 60
+    assert runtime.enrollments.get("t1") is not None
+
+
+def test_a_bound_peer_with_a_valid_token_is_admitted_while_join_is_paused(api):
+    client, runtime = api
+    binding = joined_device(client, runtime)
+    runtime.channel_port = ChannelPortGuard(failures_max=1)
+    runtime.channel_port.record_failure()
+
+    socket, welcome = welcomed(client, binding)
+    try:
+        assert welcome["type"] == "welcome"
+        assert runtime.channel_port.admitted_count == 1
+    finally:
+        socket.__exit__(None, None, None)
+    assert wait_until(lambda: runtime.channel_port.admitted_count == 0)
+
+
+def test_an_unknown_token_and_an_unreadable_hello_count_as_failed_admissions(api):
+    client, runtime = api
+    binding = joined_device(client, runtime)
+    runtime.channel_port = ChannelPortGuard(failures_max=2)
+
+    with client.websocket_connect("/api/channel/socket") as socket:
+        socket.send_json(hello(binding, token="nonsense"))  # scan: allow
+        refused_with(socket)
+    assert runtime.channel_port.pause_remaining_s() == 0
+    with client.websocket_connect("/api/channel/socket") as socket:
+        socket.send_text("not a frame")
+        refused_with(socket)
+
+    assert runtime.channel_port.pause_remaining_s() > 0
+
+
+def test_a_hello_past_the_cap_on_sockets_is_channel_full(api):
+    client, runtime = api
+    binding = joined_device(client, runtime)
+    runtime.channel_port = ChannelPortGuard(sockets_max=1, failures_max=1)
+    runtime.channel_port.admit(("10.0.0.9", 4000))
+
+    with client.websocket_connect("/api/channel/socket") as socket:
+        socket.send_json(hello(binding))
+        refused = refused_with(socket)
+
+    assert refused == {
+        "type": "refused",
+        "code": "channel_full",
+        "params": {"limit": 1},
+    }
+    assert runtime.channel_port.pause_remaining_s() == 0
+    assert not runtime.agent_sessions.is_online(binding["id"])

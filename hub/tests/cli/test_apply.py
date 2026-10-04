@@ -2,10 +2,12 @@
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.cli import apply
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
 from neutrino_hub.modules.overlay.config import set_enabled
+from neutrino_hub.modules.overlay.relay_config import OverlayRelayConfig, write_relay
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.utils.json_file import write_config
 from tests.conftest import unlock_vault
@@ -16,7 +18,7 @@ def test_the_components_are_the_hubs_own():
     storage from its desired state; the hub renders none of them."""
     assert apply.COMPONENTS == (
         "router",
-        "xray",
+        *(["xray"] if edition.has_feature("proxy") else []),
         "dnsmasq",
         "cliproxyapi",
         "overlay",
@@ -103,12 +105,14 @@ def _stored_easytier(tmp_path, monkeypatch, providers: list) -> None:
     write_config(EASYTIER_CONFIG_NAME, stored.to_dict())
 
 
+@pytest.mark.feature("netbird")
 def test_an_apply_renders_easytier_when_it_is_enabled(tmp_path, monkeypatch):
     _stored_easytier(tmp_path, monkeypatch, ["netbird", "easytier"])
 
     assert apply._render(("overlay",))["easytier"].is_console_mode
 
 
+@pytest.mark.feature("netbird")
 def test_an_apply_leaves_easytier_down_when_it_is_off(tmp_path, monkeypatch):
     """A package upgrade runs this; a stored network must not start an
     overlay nobody turned on."""
@@ -165,7 +169,7 @@ def test_elsewhere_an_apply_renders_no_ruleset(elsewhere, tmp_path, monkeypatch)
     def refuse():
         raise AssertionError("looked up the xray account")
 
-    monkeypatch.setattr(apply, "lookup_xray_uid", refuse)
+    monkeypatch.setattr(apply, "proxy_uid", refuse)
 
     assert apply._render(("router",)) == {"router": ""}
 
@@ -210,3 +214,51 @@ def test_a_run_of_neither_xray_nor_dnsmasq_reads_no_resolvers(
     )
 
     assert "network_resolvers" not in apply._render(("router",))
+
+
+# --- the relay: rendered with the overlays, applied after they stop ---
+
+
+def test_an_apply_renders_the_relay_with_the_overlays(tmp_path, monkeypatch):
+    _stored_easytier(tmp_path, monkeypatch, [])
+    write_relay(OverlayRelayConfig(is_enabled=True, host="vps", account="relay"))
+
+    assert apply._render(("overlay",))["relay"].host == "vps"
+
+
+def test_a_dry_run_prints_the_relays_start_line(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(apply, "is_relay_configured", lambda relay: True)
+    monkeypatch.setattr(apply, "ssh_path", lambda: "/usr/bin/ssh")
+    monkeypatch.setattr(apply, "_agent_port", lambda: 8443)
+    relay = OverlayRelayConfig(
+        is_enabled=True, host="vps", account="relay", key_id="k", public_port=18443
+    )
+
+    apply._print_artifacts({"relay": relay})
+
+    printed = capsys.readouterr().out
+    assert "neutrino_hub_relay.service.d/arguments.conf ---" in printed
+    assert '"0.0.0.0:18443:127.0.0.1:8443" "relay@vps"' in printed
+
+
+def test_an_apply_runs_the_relay_after_the_overlays_stop(monkeypatch):
+    _RecordingSwitcher.calls = []
+    monkeypatch.setattr(apply, "OverlaySwitcher", _RecordingSwitcher)
+    monkeypatch.setattr(apply, "process_controller", lambda: None)
+    monkeypatch.setattr(apply, "_agent_port", lambda: 8443)
+
+    class Applier:
+        def __init__(self, *, controller, agent_port):
+            self.agent_port = agent_port
+
+        def apply(self, relay):
+            _RecordingSwitcher.calls.append(f"relay on {self.agent_port}")
+            return ""
+
+    monkeypatch.setattr(apply, "OverlayRelayApplier", Applier)
+
+    apply._apply(
+        {"overlay": RouterNetworkConfig.from_dict({}), "relay": OverlayRelayConfig()}
+    )
+
+    assert _RecordingSwitcher.calls == ["start", "stop", "relay on 8443"]

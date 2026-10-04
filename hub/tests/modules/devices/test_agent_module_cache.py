@@ -7,7 +7,9 @@ and that losing the directory costs a download and nothing else.
 """
 
 import hashlib
+import os
 import threading
+import urllib.error
 
 import pytest
 
@@ -19,7 +21,6 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     latest_release_url,
     looks_like_package,
     platform_keys,
-    read_in_chunks,
     resolve_platform_entry,
 )
 
@@ -55,14 +56,21 @@ def cache(tmp_path):
 
 
 def serving(content=DEB, fetches=None):
-    """A fetch that hands back fixed bytes and counts the calls."""
+    """An open that answers fixed bytes and counts the calls."""
 
-    def fetch(entry, progress=None):
+    def open_(request):
         if fetches is not None:
-            fetches.append(entry.get("url", ""))
-        return content
+            fetches.append(request.full_url)
+        return ChunkedResponse(content)
 
-    return fetch
+    return open_
+
+
+def left_on_disk(cache) -> list:
+    """Every file the cache directory holds, a hidden partial one included."""
+    if not cache._root.is_dir():
+        return []
+    return sorted(os.listdir(cache._root))
 
 
 def test_keys_run_most_specific_first_with_a_family():
@@ -103,7 +111,7 @@ def test_a_platform_the_manifest_offers_nothing_resolves_to_nothing():
 
 def test_an_unsupported_platform_is_refused_before_any_fetch(cache, monkeypatch):
     fetches: list = []
-    monkeypatch.setattr(cache, "_fetch", serving(fetches=fetches))
+    monkeypatch.setattr(cache, "_open", serving(fetches=fetches))
 
     with pytest.raises(AgentArtifactFetchError) as raised:
         cache.artifact(name="fakedesk", manifest=MANIFEST, platform=UNKNOWN)
@@ -113,7 +121,7 @@ def test_an_unsupported_platform_is_refused_before_any_fetch(cache, monkeypatch)
 
 
 def test_the_bytes_land_under_the_key_with_their_digest(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_fetch", serving())
+    monkeypatch.setattr(cache, "_open", serving())
 
     artifact = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
 
@@ -123,7 +131,7 @@ def test_the_bytes_land_under_the_key_with_their_digest(cache, monkeypatch):
 
 
 def test_two_platforms_get_two_artifacts(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_fetch", serving())
+    monkeypatch.setattr(cache, "_open", serving())
 
     amd = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
     arm = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=ARM64)
@@ -136,13 +144,13 @@ def test_a_second_asker_waits_on_the_first_fetch_rather_than_starting_one(cache)
     release = threading.Event()
     fetches: list = []
 
-    def slow_fetch(entry, progress=None):
-        fetches.append(entry.get("url", ""))
+    def slow_open(request):
+        fetches.append(request.full_url)
         started.set()
         release.wait(timeout=5)
-        return DEB
+        return ChunkedResponse(DEB)
 
-    cache._fetch = slow_fetch
+    cache._open = slow_open
     results: list = []
 
     def ask():
@@ -166,7 +174,7 @@ def test_a_second_asker_waits_on_the_first_fetch_rather_than_starting_one(cache)
 
 
 def test_a_manifest_that_changes_its_url_is_not_served_the_old_file(cache, monkeypatch):
-    monkeypatch.setattr(cache, "_fetch", serving(content=DEB))
+    monkeypatch.setattr(cache, "_open", serving(content=DEB))
     first = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
 
     moved = {
@@ -180,7 +188,7 @@ def test_a_manifest_that_changes_its_url_is_not_served_the_old_file(cache, monke
         },
     }
     newer = b"!<arch>newer-bytes"
-    monkeypatch.setattr(cache, "_fetch", serving(content=newer))
+    monkeypatch.setattr(cache, "_open", serving(content=newer))
     second = cache.artifact(name="fakedesk", manifest=moved, platform=AMD64)
 
     # The key carries a digest of the entry itself, so the edit is a
@@ -192,7 +200,7 @@ def test_a_manifest_that_changes_its_url_is_not_served_the_old_file(cache, monke
 
 def test_a_held_artifact_is_not_fetched_again(cache, monkeypatch):
     fetches: list = []
-    monkeypatch.setattr(cache, "_fetch", serving(fetches=fetches))
+    monkeypatch.setattr(cache, "_open", serving(fetches=fetches))
 
     cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
     cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
@@ -204,7 +212,7 @@ def test_losing_the_directory_costs_only_a_re_download(cache, monkeypatch):
     import shutil
 
     fetches: list = []
-    monkeypatch.setattr(cache, "_fetch", serving(fetches=fetches))
+    monkeypatch.setattr(cache, "_open", serving(fetches=fetches))
     first = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
 
     shutil.rmtree(cache._root)
@@ -228,11 +236,7 @@ def test_a_github_release_entry_resolves_and_fetches_plain(cache, monkeypatch):
         "_resolve_github_asset",
         staticmethod(lambda repo, pattern: f"https://github.example/{repo}/{pattern}"),
     )
-    monkeypatch.setattr(
-        AgentModuleCache,
-        "_fetch_plain",
-        staticmethod(lambda url, progress=None: binary),
-    )
+    monkeypatch.setattr(cache, "_open", serving(content=binary))
     manifest = {
         "name": "cc_switch",
         "installer": "hub",
@@ -269,7 +273,7 @@ def test_a_key_that_is_not_one_names_no_file(cache, key):
 
 
 def test_a_pinned_sha256_that_matches_is_fetched_and_kept(cache, monkeypatch):
-    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(_serve_deb))
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(_serve_deb))
     manifest = _pinned_manifest(hashlib.sha256(DEB).hexdigest())
 
     artifact = cache.artifact(name="rustdesk", manifest=manifest, platform=AMD64)
@@ -279,7 +283,7 @@ def test_a_pinned_sha256_that_matches_is_fetched_and_kept(cache, monkeypatch):
 
 
 def test_a_download_that_misses_its_pin_is_refused_and_never_cached(cache, monkeypatch):
-    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(_serve_deb))
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(_serve_deb))
     manifest = _pinned_manifest("0" * 64)
 
     with pytest.raises(AgentArtifactFetchError) as refusal:
@@ -289,7 +293,7 @@ def test_a_download_that_misses_its_pin_is_refused_and_never_cached(cache, monke
     assert refusal.value.params["expected"] == "0" * 64
     assert refusal.value.params["received"] == hashlib.sha256(DEB).hexdigest()
     # Nothing a pin refused is left behind for the next asker to be served.
-    assert list(cache._root.glob("*")) == []
+    assert left_on_disk(cache) == []
 
 
 def test_a_real_disk_image_opens_like_one():
@@ -299,8 +303,8 @@ def test_a_real_disk_image_opens_like_one():
         assert looks_like_package(opening + b"rest-of-the-image", "dmg")
 
 
-def _serve_deb(url, progress=None):
-    return DEB
+def _serve_deb(request):
+    return ChunkedResponse(DEB)
 
 
 def _pinned_manifest(digest):
@@ -368,14 +372,23 @@ MEGABYTE = 1024 * 1024
 class ChunkedResponse:
     """A response that hands out its body in the sizes asked for."""
 
-    def __init__(self, body: bytes, *, is_sized: bool = True):
+    def __init__(self, body: bytes, *, is_sized: bool = True, broken_at=None):
         self._body = body
         self._offset = 0
+        self._broken_at = broken_at
         self.headers = {"Content-Length": str(len(body))} if is_sized else {}
         self.reads: list = []
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
     def read(self, size):
         self.reads.append(size)
+        if self._broken_at is not None and self._offset >= self._broken_at:
+            raise ConnectionResetError("the peer went away")
         chunk = self._body[self._offset : self._offset + size]
         self._offset += len(chunk)
         return chunk
@@ -391,26 +404,58 @@ class StoppedClock:
         return self.now
 
 
-def test_a_download_is_read_in_64_kb_chunks():
-    response = ChunkedResponse(b"x" * (200 * 1024))
+def test_a_large_download_is_streamed_to_disk_in_64_kb_pieces(cache, monkeypatch):
+    body = b"!<arch>" + os.urandom(5 * MEGABYTE)
+    response = ChunkedResponse(body)
+    monkeypatch.setattr(cache, "_open", lambda request: response)
 
-    content = read_in_chunks(response, None)
+    artifact = cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
 
-    assert content == b"x" * (200 * 1024)
-    assert set(response.reads) == {64 * 1024}
+    assert artifact.path.read_bytes() == body
+    assert artifact.digest == hashlib.sha256(body).hexdigest()
+    assert len(response.reads) > 80
+    assert max(response.reads) == 64 * 1024
+    assert left_on_disk(cache) == [artifact.key]
 
 
-def test_progress_is_written_every_five_percent_and_at_the_end():
+def test_a_read_that_breaks_off_leaves_nothing_behind(cache, monkeypatch):
+    response = ChunkedResponse(b"!<arch>" + b"x" * MEGABYTE, broken_at=512 * 1024)
+    monkeypatch.setattr(cache, "_open", lambda request: response)
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
+
+    assert refusal.value.code == "module_fetch_failed"
+    assert left_on_disk(cache) == []
+
+
+def test_a_download_of_the_wrong_kind_leaves_nothing_behind(cache, monkeypatch):
+    monkeypatch.setattr(cache, "_open", serving(content=b"<!doctype html>"))
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        cache.artifact(name="fakedesk", manifest=MANIFEST, platform=AMD64)
+
+    assert refusal.value.code == "module_fetch_failed"
+    assert left_on_disk(cache) == []
+
+
+def test_progress_is_written_every_five_percent_and_at_the_end(cache, monkeypatch):
     lines: list = []
-    progress = AgentModuleFetchProgress(
-        title="VS Code 1.140.0",
-        source="Microsoft",
-        on_line=lines.append,
-        clock=StoppedClock(),
+    monkeypatch.setattr(
+        cache,
+        "_open",
+        lambda request: ChunkedResponse(b"!<arch>" + b"x" * (20 * MEGABYTE - 7)),
     )
-    response = ChunkedResponse(b"x" * (20 * MEGABYTE))
+    manifest = {
+        **MANIFEST,
+        "title": "VS Code",
+        "version": "1.140.0",
+        "source": "Microsoft",
+    }
 
-    read_in_chunks(response, progress)
+    cache.artifact(
+        name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
+    )
 
     assert lines[0] == "hub: downloading VS Code 1.140.0 from Microsoft, 0.1 / 20.0 MB"
     assert (
@@ -443,11 +488,7 @@ def test_a_fetch_tells_its_progress_and_a_held_artifact_says_it_is_cached(
     cache, monkeypatch
 ):
     lines: list = []
-    monkeypatch.setattr(
-        AgentModuleCache,
-        "_fetch_plain",
-        staticmethod(_serve_deb_telling),
-    )
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(_serve_deb))
     manifest = {**MANIFEST, "title": "FakeDesk", "version": "2.0", "source": "Vendor"}
 
     cache.artifact(
@@ -457,15 +498,10 @@ def test_a_fetch_tells_its_progress_and_a_held_artifact_says_it_is_cached(
         name="fakedesk", manifest=manifest, platform=AMD64, on_progress=lines.append
     )
 
-    assert lines == [
-        "hub: downloading FakeDesk 2.0 from Vendor, 0.0 / 0.0 MB",
-        "hub: FakeDesk 2.0 is in the cache",
-    ]
-
-
-def _serve_deb_telling(url, progress=None):
-    progress.note(len(DEB), len(DEB), is_done=True)
-    return DEB
+    assert set(lines[:-1]) == {
+        "hub: downloading FakeDesk 2.0 from Vendor, 0.0 / 0.0 MB"
+    }
+    assert lines[-1] == "hub: FakeDesk 2.0 is in the cache"
 
 
 # --- the edition's own source: cn_url, and a mirror that kept only its latest ---
@@ -496,7 +532,7 @@ LISTING = (
 
 
 class MirrorFetches:
-    """``_fetch_plain`` and ``_fetch_listing`` stood in for, every url recorded."""
+    """``_open`` and ``_fetch_listing`` stood in for, every url recorded."""
 
     def __init__(self, *, missing=(), served=TARBALL, listing=LISTING):
         self.urls: list = []
@@ -504,11 +540,12 @@ class MirrorFetches:
         self._served = served
         self._listing = listing
 
-    def plain(self, url, progress=None):
+    def open(self, request):
+        url = request.full_url
         self.urls.append(url)
         if url in self._missing:
-            raise AgentArtifactFetchError("module_fetch_failed", status=404)
-        return self._served
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        return ChunkedResponse(self._served)
 
     def listing(self, url):
         self.urls.append(url)
@@ -516,7 +553,7 @@ class MirrorFetches:
 
 
 def mirrored(monkeypatch, tmp_path, edition, fetches):
-    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(fetches.plain))
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(fetches.open))
     monkeypatch.setattr(
         AgentModuleCache, "_fetch_listing", staticmethod(fetches.listing)
     )
@@ -545,6 +582,7 @@ def test_a_cn_hub_fetches_the_pinned_file_from_the_mirror_and_checks_it(
 
     assert fetches.urls == [f"{MIRROR}v4.140.0/{PINNED_NAME}"]
     assert refusal.value.code == "module_sha256_mismatch"
+    assert left_on_disk(cache) == []
 
 
 def test_a_cn_hub_takes_the_mirrors_current_release_when_the_pin_is_gone(
@@ -592,12 +630,12 @@ def test_a_mirror_whose_latest_holds_no_such_file_names_no_download(
 def test_a_mirror_that_fails_otherwise_is_not_read_for_its_latest(
     monkeypatch, tmp_path
 ):
-    def broken(url, progress=None):
-        raise AgentArtifactFetchError("module_fetch_failed", status=503)
+    def broken(request):
+        raise urllib.error.HTTPError(request.full_url, 503, "Unavailable", {}, None)
 
     fetches = MirrorFetches()
     cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
-    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(broken))
+    monkeypatch.setattr(AgentModuleCache, "_open", staticmethod(broken))
 
     with pytest.raises(AgentArtifactFetchError) as refusal:
         cache.artifact(

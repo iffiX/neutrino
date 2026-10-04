@@ -1,11 +1,10 @@
 """Which edition a build makes, and the check that its tree holds that edition.
 
 Every script under ``packaging/build`` takes ``--edition intl`` or
-``--edition cn``. Before it builds anything it checks the tree it runs in:
-a ``cn`` build stops when a path of ``PACKAGING_CN_LEFT_OUT_PATHS`` exists
-there, and an ``intl`` build stops when one is missing. It then names the
-edition in ``NEUTRINO_EDITION``, which a build in a container is handed and
-which the step writing each package's ``_version.py`` reads.
+``--edition cn``. Before it builds anything it checks the tree it runs in
+with :func:`shared.edition_tree.check_tree`, then names the edition in
+``NEUTRINO_EDITION``, which a build in a container is handed and which the
+step writing each package's ``_version.py`` reads.
 
 Not pure: reads the tree and sets the process's environment.
 """
@@ -13,11 +12,8 @@ Not pure: reads the tree and sets the process's environment.
 import os
 from pathlib import Path
 
-from shared.constants import (
-    PACKAGING_CN_LEFT_OUT_PATHS,
-    PACKAGING_EDITION_ENV,
-    PACKAGING_EDITIONS,
-)
+from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_EDITIONS
+from shared.edition_tree import check_tree
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -44,25 +40,11 @@ def require_edition_tree(edition: str, root: Path = REPO_ROOT) -> None:
         root: The repository tree the build runs in.
 
     Raises:
-        SystemExit: When a ``cn`` build finds a left-out path in the tree,
-            an ``intl`` build finds one missing, or the edition is not one
-            of :data:`PACKAGING_EDITIONS`.
+        SystemExit: When the tree is not that edition's, as
+            :func:`shared.edition_tree.check_tree` names it.
+        ValueError: When the edition is not one of :data:`PACKAGING_EDITIONS`.
     """
-    if edition not in PACKAGING_EDITIONS:
-        raise SystemExit(
-            f"there is no edition {edition}; there is: {', '.join(PACKAGING_EDITIONS)}"
-        )
-    for path in PACKAGING_CN_LEFT_OUT_PATHS:
-        is_present = (root / path).exists()
-        if edition == "cn" and is_present:
-            raise SystemExit(
-                f"a cn build cannot hold {path}; build it from the mainland "
-                "source tree"
-            )
-        if edition != "cn" and not is_present:
-            raise SystemExit(
-                f"an {edition} build needs {path}, which this tree does not hold"
-            )
+    check_tree(root, edition)
     os.environ[PACKAGING_EDITION_ENV] = edition
 
 

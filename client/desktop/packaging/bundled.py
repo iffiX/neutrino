@@ -1,11 +1,13 @@
 """The binaries the client packages carry, pinned and unpacked at build time.
 
-Four of them: the cc-switch CLI, which points a person's AI tools at the
-hub's gateway; the RustDesk viewer, which opens a desktop the fleet shares;
-and NetBird and EasyTier, whose daemons the packages register as services so
-the client can join a hub's virtual network. Each is fetched from its own
-upstream release and checked against a hash recorded here, so a build either
-produces the binaries this project was tested against or fails.
+Four of them everywhere: the cc-switch CLI, which points a person's AI
+tools at the hub's gateway; the RustDesk viewer, which opens a desktop the
+fleet shares; and NetBird and EasyTier, whose daemons the packages register
+as services so the client can join a hub's virtual network. Windows adds
+tun2socks, which the files daemon runs on the files adapter, pinned where the
+hub's own package pins it. Each is fetched from its own upstream release and
+checked against a hash recorded here, so a build either produces the
+binaries this project was tested against or fails.
 
 The Linux RustDesk build is unpacked out of upstream's own package; only its
 host directory is carried, under the client's prefix. Its binary's RUNPATH is
@@ -26,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import payload  # noqa: E402
+from shared import hub_assets  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
 
 # The AI tool switcher, published as one static binary per machine. The musl
@@ -142,6 +145,12 @@ EASYTIER_CARRIED = ("easytier-core", "easytier-cli")
 EASYTIER_WINDOWS_CARRIED = ("easytier-core.exe", "easytier-cli.exe", "wintun.dll")
 EASYTIER_CORE_NAME = "easytier-core"
 
+# tun2socks on Windows, at the hub's own pin, under the name the runtime
+# resolver looks for; it opens its adapter with EasyTier's wintun.dll beside
+# it. The pin names machines as Go does.
+TUN2SOCKS_PROGRAM = "tun2socks"
+TUN2SOCKS_MACHINES = {"x86_64": "amd64", "aarch64": "arm64"}
+
 # Where each lands under the install prefix, matching what the runtime
 # resolver in ``neutrino_client.bundled`` looks for.
 CC_SWITCH_INSTALL_PATH = "bin/cc-switch"
@@ -190,6 +199,12 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
     rustdesk_assets.stage_windows_exe(installed / "bin", machine=machine)
     _stage_netbird(installed / "bin" / NETBIRD_WINDOWS_BINARY_NAME, "windows", machine)
     _stage_easytier(installed / "bin", "windows", machine)
+    hub_assets.stage_program(
+        installed / "bin",
+        TUN2SOCKS_PROGRAM,
+        "windows",
+        TUN2SOCKS_MACHINES.get(machine, machine),
+    )
 
 
 def stage_darwin_binaries(app_contents: Path, architecture: str) -> None:

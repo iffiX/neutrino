@@ -143,6 +143,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.rdp.windows_seat",
     "neutrino_agent.streams",
     "neutrino_agent.streams.channel",
+    "neutrino_agent.streams.connect",
     "neutrino_agent.streams.files",
     "neutrino_agent.streams.log",
     "neutrino_agent.streams.module_command",

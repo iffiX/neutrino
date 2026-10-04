@@ -159,6 +159,7 @@ def test_a_file_with_no_default_allows_every_kind(config_dir):
         "rdp",
         "overlay",
         "terminal",
+        "panel",
     ]
     assert ClientRegistry().get(client_id).permission is None
 

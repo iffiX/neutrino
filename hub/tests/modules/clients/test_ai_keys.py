@@ -95,7 +95,7 @@ def test_a_key_removed_behind_the_record_is_minted_again(unlocked):
     assert ClientRegistry().get(client_id).ai_key_id == load_config().client_keys[0].id
 
 
-def test_the_credential_names_the_hub_as_the_client_reaches_it(unlocked):
+def test_the_credential_is_the_clients_key_and_the_first_model(unlocked):
     registry = ClientRegistry()
     client_id = registry.create("alice")
     served = StubServedModels("claude-x")
@@ -103,13 +103,11 @@ def test_the_credential_names_the_hub_as_the_client_reaches_it(unlocked):
     credential = client_credential(
         registry,
         registry.get(client_id),
-        hub_host="192.168.100.1",
         served_models=served,
     )
 
     port = load_config().listen_port
     assert credential == {
-        "base_url": f"http://192.168.100.1:{port}",
         "api_key": load_config().client_keys[0].open_key(),
         "model": "claude-x",
     }
@@ -123,9 +121,7 @@ def test_a_disabled_client_and_a_locked_vault_have_no_credential(
     client_id = registry.create("alice")
     served = StubServedModels()
     assert (
-        client_credential(
-            registry, registry.get(client_id), hub_host="h", served_models=served
-        )
+        client_credential(registry, registry.get(client_id), served_models=served)
         is None
     )
 
@@ -136,7 +132,6 @@ def test_a_disabled_client_and_a_locked_vault_have_no_credential(
         client_credential(
             registry,
             ClientRegistry().get(client_id),
-            hub_host="h",
             served_models=served,
         )
         is None

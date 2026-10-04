@@ -100,6 +100,21 @@ def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path
         "rustdesk": rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": bundled.CC_SWITCH_VERSION,
     }
+    assert "tun2socks" not in stamped["CLIENT_CARRIED_VERSIONS"]
+
+
+def test_the_windows_tree_also_stamps_the_tun2socks_it_carries(tmp_path):
+    import bundled
+
+    staged = payload.stage_client_tree(
+        tmp_path / "site-packages", "9.9.9", is_windows=True
+    )
+
+    stamped = {}
+    exec((staged / "_version.py").read_text(), stamped)
+    assert stamped["CLIENT_CARRIED_VERSIONS"]["tun2socks"] == (
+        bundled.hub_assets.pinned_version("tun2socks")
+    )
 
 
 def test_the_staged_tree_carries_the_page_and_the_window_icon(tmp_path):

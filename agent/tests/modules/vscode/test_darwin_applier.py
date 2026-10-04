@@ -88,7 +88,7 @@ def test_an_instance_is_a_launch_daemon_of_its_account(applier, launchd, tmp_pat
         "serve-web",
         "--accept-server-license-terms",
         "--host",
-        "0.0.0.0",
+        "127.0.0.1",
         "--port",
         "8000",
         "--connection-token-file",

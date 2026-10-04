@@ -6,7 +6,8 @@ system and machine and checked against the hash the hub's module states in
 its ``<MODULE>_ASSETS`` table, and the v2fly geodata. The Linux packages put
 the programs under ``/opt/neutrino/hub/bin``, the macOS and Windows packages
 beside ``nhub``; on Windows ``wintun.dll`` comes out of EasyTier's archive
-with them, and tun2socks opens its device with that same driver. A program
+with them, and tun2socks opens its device with that same driver. The
+client's Windows package takes its tun2socks from the same pin. A program
 or a database whose module the tree does not hold is a feature its edition
 leaves out, and is not carried.
 
@@ -120,27 +121,61 @@ def stage_programs(binaries: Path, os_name: str, machine: str) -> list:
     """
     binaries.mkdir(parents=True, exist_ok=True)
     written = []
-    for program, (module, prefix, files) in HUB_ASSET_PROGRAMS.items():
-        if not _is_carried(program, os_name):
-            continue
-        url, digest = pinned(program, os_name, machine)
-        payload = fetch(url, digest, program)
-        wanted = [_on(os_name, name) for name in files]
-        if os_name == "windows":
-            wanted += list(HUB_ASSET_WINDOWS_EXTRAS.get(program, ()))
-        names = dict(zip(wanted, wanted))
-        if program in HUB_ASSET_RENAMED:
-            member = _runtime(module, f"{prefix}_ASSET_MEMBER")
-            (staged,) = [_on(os_name, name) for name in files]
-            names = {
-                _on(os_name, member.format(os_name=os_name, machine=machine)): staged
-            }
-        for name, content in _members(payload, url, list(names)).items():
-            target = binaries / names[name]
-            target.write_bytes(content)
-            target.chmod(0o755)
-            written.append(target)
+    for program in HUB_ASSET_PROGRAMS:
+        if _is_carried(program, os_name):
+            written += stage_program(binaries, program, os_name, machine)
     return written
+
+
+def stage_program(binaries: Path, program: str, os_name: str, machine: str) -> list:
+    """Put one pinned program for one system and machine into a directory.
+
+    Args:
+        binaries: The directory it belongs in.
+        program: A key of :data:`HUB_ASSET_PROGRAMS`.
+        os_name: ``linux``, ``darwin`` or ``windows``.
+        machine: ``amd64`` or ``arm64``.
+
+    Returns:
+        The files written.
+
+    Raises:
+        SystemExit: When the program is not pinned for the system and
+            machine, what arrived is not what was pinned, or its archive
+            lacks a file.
+    """
+    module, prefix, files = HUB_ASSET_PROGRAMS[program]
+    binaries.mkdir(parents=True, exist_ok=True)
+    url, digest = pinned(program, os_name, machine)
+    payload = fetch(url, digest, program)
+    wanted = [_on(os_name, name) for name in files]
+    if os_name == "windows":
+        wanted += list(HUB_ASSET_WINDOWS_EXTRAS.get(program, ()))
+    names = dict(zip(wanted, wanted))
+    if program in HUB_ASSET_RENAMED:
+        member = _runtime(module, f"{prefix}_ASSET_MEMBER")
+        (staged,) = [_on(os_name, name) for name in files]
+        names = {_on(os_name, member.format(os_name=os_name, machine=machine)): staged}
+    written = []
+    for name, content in _members(payload, url, list(names)).items():
+        target = binaries / names[name]
+        target.write_bytes(content)
+        target.chmod(0o755)
+        written.append(target)
+    return written
+
+
+def pinned_version(program: str) -> str:
+    """The release of one program the packages carry.
+
+    Args:
+        program: A key of :data:`HUB_ASSET_PROGRAMS`.
+
+    Returns:
+        The version, as its module pins it.
+    """
+    module, prefix, _files = HUB_ASSET_PROGRAMS[program]
+    return _runtime(module, f"{prefix}_VERSION")
 
 
 def stage_geodata(geodata: Path) -> list:

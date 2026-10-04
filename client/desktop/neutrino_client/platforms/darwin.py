@@ -107,7 +107,7 @@ def mount_volume_script(*, host: str, share: str, username: str, password: str) 
     """The AppleScript that asks the system to mount a share as a volume.
 
     Args:
-        host: The server.
+        host: The server, with ``:<port>`` after it for a port of its own.
         share: The share's name.
         username: The share's own username; empty mounts as a guest.
         password: The share's own password.
@@ -216,16 +216,17 @@ class DarwinPlatform(ClientPlatform):
         return shutil.which(MOUNT_SCRIPT_COMMAND[0]) is not None
 
     def attach_share(
-        self, *, share_url: str, location: str, credentials_path: str
+        self, *, share_url: str, location: str, credentials_path: str, port: int = 0
     ) -> str:
         """Ask the system to mount an SMB share as a network volume.
 
         The script goes to ``osascript`` on its standard input. A share the
-        mount table already lists for the same host and share is taken as
-        mounted where it is.
+        mount table already lists for the same host, port and share is
+        taken as mounted where it is.
 
         Args:
             share_url: The share, as ``//host/name``.
+            port: The port the server answers SMB on; 0 for its own.
             location: Unused; the system picks the mount point.
             credentials_path: The credentials file.
 
@@ -245,6 +246,8 @@ class DarwinPlatform(ClientPlatform):
             raise ShareAttachError("mount_failed", detail="unreadable share url")
         if not os.path.isfile(credentials_path):
             raise ShareAttachError("credentials_missing")
+        if port:
+            host = f"{host}:{int(port)}"
         mounted = self._volume_location(host, share)
         if mounted:
             return mounted
@@ -413,7 +416,12 @@ class DarwinPlatform(ClientPlatform):
         return rows
 
     def _volume_location(self, host: str, share: str) -> str:
-        """Where the mount table has an SMB volume of a host's share; empty for none."""
+        """Where the mount table has an SMB volume of a host's share; empty for none.
+
+        Args:
+            host: The server, with ``:<port>`` after it for a port of its own.
+            share: The share's name.
+        """
         for source, mounted_at, options in self._mount_table():
             found = MOUNT_TABLE_SMB_SOURCE.match(source)
             if not options.startswith("smbfs") or found is None:

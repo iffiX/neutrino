@@ -28,12 +28,17 @@ import "./overlay_mode_panel.css";
 const KIND_SUMMARY_KEYS: Record<string, string> = {
   netbird: "ui.overlay.summary_netbird",
   easytier: "ui.overlay.summary_easytier",
+  relay: "ui.overlay.summary_relay",
 };
 
 const KIND_ICONS: Record<string, IconName> = {
   netbird: "mesh",
   easytier: "nodes",
+  relay: "server",
 };
+
+/** The relay's row, whose name is a word rather than a product's. */
+const KIND_RELAY = "relay";
 
 const KIND_ICON_OTHER: IconName = "mesh";
 
@@ -142,7 +147,7 @@ export function OverlayModePanel({
                     name={KIND_ICONS[kind.key] ?? KIND_ICON_OTHER}
                     size={15}
                   />
-                  <strong>{kind.title}</strong>
+                  <strong>{kindTitle(kind)}</strong>
                   {kind.is_active && (
                     <span className="badge">{t("state.active")}</span>
                   )}
@@ -185,8 +190,16 @@ export function OverlayModePanel({
   );
 }
 
+/** What a card is called: an engine's own name, or the relay's word. */
+function kindTitle(kind: OverlayKindView): string {
+  return kind.key === KIND_RELAY ? t("ui.overlay.relay_title") : kind.title;
+}
+
 /** Why this card's engine cannot be turned on, or null when it can. */
 function unavailableReason(kind: OverlayKindView): string | null {
+  if (kind.key === KIND_RELAY) {
+    return kind.is_installed ? null : t("code.relay_ssh_missing");
+  }
   if (!kind.is_integrated) {
     return t("ui.overlay.not_integrated");
   }
@@ -207,12 +220,12 @@ function departureWarning(leaving: OverlayKindView[]): string | undefined {
       lines.push(
         t("ui.overlay.warning_clients", {
           count: kind.client_count,
-          title: kind.title,
+          title: kindTitle(kind),
         }),
       );
     }
     if (kind.is_active) {
-      lines.push(t("ui.overlay.warning_leaving", { title: kind.title }));
+      lines.push(t("ui.overlay.warning_leaving", { title: kindTitle(kind) }));
     }
   }
   if (lines.length === 0) {

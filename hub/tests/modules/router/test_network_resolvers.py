@@ -103,6 +103,7 @@ def test_with_no_resolver_named_the_built_in_fallbacks_answer(network):
     assert compose(network, order=["enp2s0"], leases={"enp2s0": []}) == FALLBACKS
 
 
+@pytest.mark.feature("proxy")
 def test_where_the_hub_does_not_address_the_machine_the_systems_own_are_used():
     network = network_config(wan_entry("enp2s0"), mode="side_gateway")
 

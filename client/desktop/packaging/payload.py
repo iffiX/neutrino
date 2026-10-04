@@ -156,9 +156,13 @@ CARRIED_LICENSES = (
     "meslolgs_nf.txt",
 )
 # The Windows installer also carries EasyTier's wintun.dll, under WireGuard's
-# prebuilt binaries licence, and the stand-in packet.dll, which says what it
-# is.
-WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + ("wintun.txt", "packet_stub.txt")
+# prebuilt binaries licence, the stand-in packet.dll, which says what it is,
+# and tun2socks, under the GPL-3.0.
+WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + (
+    "wintun.txt",
+    "packet_stub.txt",
+    "tun2socks.txt",
+)
 # The Linux packages also install :data:`LINUX_GUI_CARRIED_LIBRARY`, which is
 # under the LGPL and has no counterpart in the Windows and macOS packages.
 LINUX_CARRIED_LICENSES = CARRIED_LICENSES + ("gobject_introspection.txt",)
@@ -262,7 +266,9 @@ def machine_name(architecture: str) -> str:
     return name
 
 
-def stage_client_tree(parent: Path, package_version: str) -> Path:
+def stage_client_tree(
+    parent: Path, package_version: str, *, is_windows: bool = False
+) -> Path:
     """Copy the client package into a tree and stamp its version into it.
 
     No packaging format installs a ``.dist-info`` for the client, so
@@ -274,6 +280,8 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
     Args:
         parent: The directory the ``neutrino_client`` package belongs in.
         package_version: The version being packaged.
+        is_windows: Whether the package is the Windows one, which also
+            carries tun2socks.
 
     Returns:
         The copied package directory.
@@ -296,6 +304,10 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
         "rustdesk": bundled.rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": bundled.CC_SWITCH_VERSION,
     }
+    if is_windows:
+        carried["tun2socks"] = bundled.hub_assets.pinned_version(
+            bundled.TUN2SOCKS_PROGRAM
+        )
     (package_dir / "_version.py").write_text(
         '"""Written by the packaging build. Do not edit."""\n\n'
         f'CLIENT_VERSION = "{package_version}"\n'

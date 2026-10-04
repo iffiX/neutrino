@@ -4,18 +4,21 @@ A served LAN is a scope named by its network CIDR, the overlay is one from
 the address the hub's own overlay interface holds, and everything else is
 ``link`` with the address the caller reached. A device's address in a
 scope is its link address when that is inside, else the first reported
-IPv4 address inside, else the link address; IPv6 is never considered.
+IPv4 address inside, else the link address; IPv6 is never considered. A
+socket from loopback came through the relay, one inside an overlay
+engine's network through that engine, and any other through the LAN.
 """
 
+import pytest
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
     device_host_for,
     lan_in_place_of_overlay,
     link_scope,
+    reached_through,
     scope_of,
     served_scopes,
 )
-from neutrino_hub.modules.tun.constants import TUN_ADDRESS
 from tests.conftest import lan_entry, network_config
 
 LAN = HostScope(
@@ -23,6 +26,9 @@ LAN = HostScope(
 )
 OVERLAY = HostScope(id="overlay", cidr="100.64.0.0/16", hub_address="100.64.0.1")
 SERVED = [LAN, OVERLAY]
+
+# The proxy's TUN device address on macOS and Windows.
+TUN_ADDRESS = "198.18.0.1"  # scan: allow
 
 
 def interfaces(*addresses: str) -> list:
@@ -46,6 +52,7 @@ def test_each_served_lan_is_a_scope_named_by_its_network():
     ]
 
 
+@pytest.mark.feature("netbird")
 def test_the_overlay_scope_comes_from_the_hubs_own_overlay_address():
     network = network_config(
         lan_entry("enp1s0", address="192.168.100.1"),
@@ -144,6 +151,7 @@ def test_the_link_scope_is_the_link_address_whatever_was_reported():
 # --- the address a device is recorded at ---
 
 
+@pytest.mark.feature("proxy")
 def test_a_link_address_on_the_overlay_gives_way_to_the_lan_address():
     """A Windows hub's own agent came back over EasyTier after a restart and
     the device table showed the overlay address."""
@@ -175,3 +183,25 @@ def test_an_overlay_only_device_keeps_its_overlay_address():
         "",
         "",
     )
+
+
+# --- the way a socket reached the hub ---
+
+ENGINE_NETWORKS = {"netbird": ["100.88.0.1/16"], "easytier": ["10.126.126.1/24"]}
+
+
+def test_a_peer_on_loopback_came_through_the_relay():
+    assert reached_through("127.0.0.1", ENGINE_NETWORKS) == "relay"
+    assert reached_through("::1", ENGINE_NETWORKS) == "relay"
+
+
+def test_a_peer_inside_an_engines_network_came_through_that_engine():
+    assert reached_through("100.88.4.2", ENGINE_NETWORKS) == "netbird"
+    assert reached_through("10.126.126.9", ENGINE_NETWORKS) == "easytier"
+
+
+def test_any_other_peer_came_through_the_lan():
+    assert reached_through("192.168.100.20", ENGINE_NETWORKS) == "lan"
+    assert reached_through("203.0.113.9", {}) == "lan"
+    assert reached_through("", ENGINE_NETWORKS) == "lan"
+    assert reached_through("100.88.4.2", {"netbird": ["not an address"]}) == "lan"

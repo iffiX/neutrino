@@ -2,7 +2,10 @@ package io.github.iffix.neutrino.forward
 
 import io.github.iffix.neutrino.FakeSharedPreferences
 import io.github.iffix.neutrino.channel.ChannelResult
+import java.net.InetAddress
+import java.net.ServerSocket
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -99,5 +102,17 @@ class LocalPortTableTest {
         table.forget("b1")
         assertTrue("b1/w1" !in table.choices.value)
         assertEquals(8000, table.portFor("b3/w1", 8000))
+    }
+
+    @Test
+    fun aPortIsFreeOnlyWhenNothingListensOnItOnAnyAddress() {
+        ServerSocket(0, 50, InetAddress.getByName("0.0.0.0")).use { everywhere ->
+            assertFalse(LocalPortTable.isPortFree(everywhere.localPort))
+        }
+        ServerSocket(0, 50, InetAddress.getByName("127.0.0.1")).use { loopback ->
+            assertFalse(LocalPortTable.isPortFree(loopback.localPort))
+        }
+        val free = ServerSocket(0).use { it.localPort }
+        assertTrue(LocalPortTable.isPortFree(free))
     }
 }

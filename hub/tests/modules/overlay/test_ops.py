@@ -12,7 +12,6 @@ import pytest
 from neutrino_hub.modules.easytier import ops as easytier_ops
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
-from neutrino_hub.modules.netbird.ops import NetbirdState
 from neutrino_hub.modules.overlay import ops
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -100,6 +99,7 @@ def switcher() -> ops.OverlaySwitcher:
     return ops.OverlaySwitcher(address_wait_s=0.0, address_poll_s=0.0)
 
 
+@pytest.mark.feature("netbird")
 def test_every_enabled_engine_is_provisioned(box):
     switcher().start(network_of(OVERLAY_NETBIRD, OVERLAY_EASYTIER))
 
@@ -114,12 +114,14 @@ def test_starting_stops_nothing(box):
     assert box.changes() == []
 
 
+@pytest.mark.feature("netbird")
 def test_an_engine_just_started_is_waited_for_until_it_holds_an_address(box):
     notes = switcher().start(network_of(OVERLAY_NETBIRD))
 
     assert notes == ["NetBird started"]
 
 
+@pytest.mark.feature("netbird")
 def test_an_engine_that_holds_no_address_in_time_is_named(box, monkeypatch):
     monkeypatch.setattr(ops, "device_addresses", lambda: {})
 
@@ -312,8 +314,11 @@ def routed(monkeypatch):
             deselected.append(cidr)
             return True
 
+    def parts():
+        return {OVERLAY_NETBIRD: Selector}
+
     monkeypatch.setattr(ops, "run", run)
-    monkeypatch.setattr(ops, "NetbirdRouteSelector", Selector)
+    monkeypatch.setattr(ops, "overlay_parts", parts)
     monkeypatch.setattr(
         ops,
         "engine_devices",
@@ -335,6 +340,7 @@ def routed(monkeypatch):
     return commands, deselected
 
 
+@pytest.mark.feature("netbird")
 def test_a_default_route_is_deleted_and_deselected(routed):
     commands, deselected = routed
 
@@ -357,6 +363,7 @@ def test_a_default_route_is_deleted_and_deselected(routed):
     assert "0.0.0.0/0" in deselected
 
 
+@pytest.mark.feature("netbird")
 def test_a_netbird_route_onto_the_lan_is_deselected(routed):
     _, deselected = routed
 
@@ -412,6 +419,7 @@ def supervised(elsewhere, box, monkeypatch, fake_controller):
     return fake_controller
 
 
+@pytest.mark.feature("netbird")
 def test_elsewhere_an_engine_running_is_asked_of_the_controller(supervised):
     supervised.active.add("netbird")
 
@@ -419,6 +427,7 @@ def test_elsewhere_an_engine_running_is_asked_of_the_controller(supervised):
     assert ("is_active", "netbird") in supervised.calls
 
 
+@pytest.mark.feature("netbird")
 def test_elsewhere_an_engine_just_started_is_waited_for_by_address(
     supervised, monkeypatch
 ):
@@ -428,6 +437,7 @@ def test_elsewhere_an_engine_just_started_is_waited_for_by_address(
     assert switcher().start(network_of(OVERLAY_NETBIRD)) == ["NetBird started"]
 
 
+@pytest.mark.feature("netbird")
 def test_elsewhere_an_engine_the_stopped_service_will_start_is_not_waited_for(
     supervised, monkeypatch
 ):
@@ -454,14 +464,19 @@ def test_elsewhere_an_engine_already_down_is_left_alone(supervised):
     assert supervised.verbs() == []
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_elsewhere_netbird_rides_on_the_device_holding_its_address(
     elsewhere, monkeypatch
 ):
     class Reader:
-        def survey(self):
-            return NetbirdState(is_installed=True, netbird_ip="100.92.10.4")
+        def address(self):
+            return "100.92.10.4"
 
-    monkeypatch.setattr(ops, "NetbirdStatusReader", Reader)
+    def parts():
+        return {OVERLAY_NETBIRD: Reader}
+
+    monkeypatch.setattr(ops, "overlay_parts", parts)
     monkeypatch.setattr(
         ops,
         "device_addresses",

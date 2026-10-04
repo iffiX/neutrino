@@ -12,6 +12,8 @@ import kotlinx.serialization.Serializable
  * @property urls Every address the hub answers the channel on.
  * @property overlays What this phone joins each of the hub's virtual networks with, preferred first.
  * @property terminals The managed machines this phone may open a shell on.
+ * @property isPanelAllowed Whether this phone may open the hub's panel through `connect {is_panel: true}`.
+ * @property reachedThrough The way this phone's socket reached the hub: `lan`, `netbird`, `easytier` or `relay`.
  */
 @Serializable
 data class ChannelClientState(
@@ -21,4 +23,6 @@ data class ChannelClientState(
     val urls: List<String> = emptyList(),
     val overlays: List<ChannelOverlay> = emptyList(),
     val terminals: List<ChannelTerminal> = emptyList(),
+    @SerialName("is_panel_allowed") val isPanelAllowed: Boolean = false,
+    @SerialName("reached_through") val reachedThrough: String = "",
 )

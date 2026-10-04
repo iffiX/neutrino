@@ -102,7 +102,13 @@ def test_an_apply_names_only_what_the_module_made():
     assert document["removed_shares"] == ["old"]
     assert document["rule_name"] == "neutrino_smb_fence"
     assert document["share_owner"] == "BUILTIN\\Administrators"
-    assert document["blocked_addresses"] == blocked_ranges(["192.168.1.0/24"])
+    assert document["blocked_addresses"] == [
+        "0.0.0.0-126.255.255.255",  # scan: allow
+        "128.0.0.0-192.168.0.255",  # scan: allow
+        "192.168.2.0-255.255.255.255",
+        "::",
+        "::2-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    ]
     media, docs = document["shares"]
     assert media == {
         "name": "media",

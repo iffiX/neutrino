@@ -19,7 +19,6 @@ import json
 import pytest
 
 from neutrino_hub.modules.easytier.config import EasyTierConfig
-from neutrino_hub.modules.netbird.ops import NetbirdState
 from neutrino_hub.modules.tun import ops
 from neutrino_hub.modules.tun.applied_state import (
     TunAppliedState,
@@ -110,15 +109,26 @@ SYSTEM_RESOLVERS = [
 
 
 class FakeNetbirdReader:
-    def survey(self):
-        return NetbirdState(
-            is_installed=True,
-            server_urls=[
-                "https://api.netbird.io:443",
-                "https://signal.netbird.io:443",
-                "rels://streamline-de-fra1-0.relay.netbird.io:443",
-            ],
-        )
+    """NetBird's part, its daemon reporting its servers."""
+
+    def server_urls(self):
+        return [
+            "https://api.netbird.io:443",
+            "https://signal.netbird.io:443",
+            "rels://streamline-de-fra1-0.relay.netbird.io:443",
+        ]
+
+    def peer_endpoints(self):
+        return []
+
+
+def netbird_part(part):
+    """The overlay parts, NetBird's stood in for by one of these."""
+
+    def parts():
+        return {} if part is None else {"netbird": part}
+
+    return parts
 
 
 def _no_system_answer(*args, **keywords):
@@ -144,7 +154,7 @@ def machine(monkeypatch):
     monkeypatch.setattr(ops, "resolve_direct", resolve)
     monkeypatch.setattr(ops, "rendered_network_resolvers", lambda: SYSTEM_RESOLVERS)
     monkeypatch.setattr(ops.socket, "getaddrinfo", _no_system_answer)
-    monkeypatch.setattr(ops, "NetbirdStatusReader", FakeNetbirdReader)
+    monkeypatch.setattr(ops, "overlay_parts", netbird_part(FakeNetbirdReader))
     monkeypatch.setattr(
         ops,
         "read_easytier",
@@ -245,7 +255,7 @@ def test_a_name_the_direct_resolver_has_no_answer_for_is_asked_of_the_system(
 
 def test_a_console_named_by_its_token_alone_is_easytiers_own(machine, monkeypatch):
     network = machine("darwin", has_overlays=True)
-    monkeypatch.setattr(ops, "NetbirdStatusReader", None)
+    monkeypatch.setattr(ops, "overlay_parts", netbird_part(None))
     network = network_config(
         mode="server", overlays=[{"provider": "easytier", "is_enabled": True}]
     )
@@ -331,15 +341,14 @@ def test_easytiers_own_console_keeps_its_peer_resolve_host_out(machine, monkeypa
 class FakeEngineReaders:
     """NetBird and EasyTier as their status commands report them."""
 
-    def survey(self):
-        return NetbirdState(
-            is_installed=True,
-            server_urls=["https://api.netbird.io:443", "stun:stun.netbird.io:443"],
-            peer_endpoints=[
-                "203.0.113.25:51820",
-                "rels://streamline-de-fra1-0.relay.netbird.io:443",
-            ],
-        )
+    def server_urls(self):
+        return ["https://api.netbird.io:443", "stun:stun.netbird.io:443"]
+
+    def peer_endpoints(self):
+        return [
+            "203.0.113.25:51820",
+            "rels://streamline-de-fra1-0.relay.netbird.io:443",
+        ]
 
     def endpoints(self):
         return [
@@ -350,7 +359,7 @@ class FakeEngineReaders:
 
 
 def engines_running(monkeypatch) -> object:
-    monkeypatch.setattr(ops, "NetbirdStatusReader", FakeEngineReaders)
+    monkeypatch.setattr(ops, "overlay_parts", netbird_part(FakeEngineReaders))
     monkeypatch.setattr(ops, "EasyTierStatusReader", FakeEngineReaders)
     return network_config(
         mode="server",

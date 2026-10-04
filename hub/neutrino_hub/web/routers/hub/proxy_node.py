@@ -4,6 +4,9 @@ A file of its own rather than a section of ``proxy.py`` because the nodes
 are a collection with a life of their own — added from a share link,
 renamed, tested, deleted — where the module's own settings are two
 switches. Both answer under ``/api/hub/proxy``.
+
+The nodes' part of the live statistics frame is here too, which the frame's
+collector takes from the edition table.
 """
 
 import asyncio
@@ -16,13 +19,17 @@ from neutrino_hub.web.models import (
     BalancerSettings,
     NodeCreate,
     NodeListView,
+    NodeProbeView,
     NodeRequest,
     NodeTestRequest,
     NodeUpdate,
     NodeView,
+    OutboundTrafficView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.modules.xray.constants import (
+    XRAY_DIRECT_TAG,
+    XRAY_NODE_TAG_PREFIX,
     XRAY_SCOPE_SWITCHES,
     XRAY_PROBE_INTERVAL_MAX_S,
     XRAY_PROBE_INTERVAL_MIN_S,
@@ -360,3 +367,107 @@ def _refusal(code: str, **params) -> HTTPException:
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={"code": code, "params": params},
     )
+
+
+def stats_readings(runtime) -> dict:
+    """The proxy's fields of one statistics frame, from what is in memory.
+
+    Also tells the nodes panel its readings moved: nothing else refreshes
+    them, so this cycle is what tells it.
+
+    Args:
+        runtime: The shared runtime, for the stats client, the node list
+            and the exit controller.
+
+    Returns:
+        The frame's ``outbounds``, ``nodes``, ``exit_tag``, ``exit_since``,
+        ``is_wan_reachable``, ``is_xray_reachable``, ``is_in_sync`` and
+        ``enabled_node_count``.
+    """
+    outbounds = runtime.stats.outbound_traffic()
+    node_list = runtime.node_list()
+    controller = runtime.exit_controller
+    exit_status = controller.status
+    probes = _node_probe_views(node_list, controller.healths(), exit_status.exit_tag)
+    runtime.publish_node_readings(_node_readings(outbounds, probes))
+    return {
+        "outbounds": [
+            OutboundTrafficView(
+                tag=entry.tag,
+                uplink_bytes=entry.uplink_bytes,
+                downlink_bytes=entry.downlink_bytes,
+            )
+            for entry in outbounds
+        ],
+        "nodes": probes,
+        "exit_tag": exit_status.exit_tag,
+        "exit_since": exit_status.since.isoformat() if exit_status.since else "",
+        "is_wan_reachable": exit_status.is_wan_reachable,
+        "is_xray_reachable": exit_status.is_xray_reachable,
+        "is_in_sync": exit_status.is_in_sync,
+        "enabled_node_count": len(node_list.enabled_nodes),
+    }
+
+
+def is_exit_tag(tag: str) -> bool:
+    """Whether an outbound is an exit: a node, or the direct outbound.
+
+    Args:
+        tag: The outbound's tag.
+
+    Returns:
+        True for a node's tag and for ``direct``.
+    """
+    return tag.startswith(XRAY_NODE_TAG_PREFIX) or tag == XRAY_DIRECT_TAG
+
+
+def _node_readings(outbounds: list, probes: list) -> dict:
+    """What the nodes panel draws per node, by outbound tag.
+
+    Args:
+        outbounds: The traffic counters this cycle read.
+        probes: The measurements this cycle read.
+
+    Returns:
+        Tag to ``(traffic, measurement)``, either of which is None where this
+        cycle has nothing for that tag.
+    """
+    traffic = {
+        entry.tag: (entry.uplink_bytes, entry.downlink_bytes) for entry in outbounds
+    }
+    probed = {probe.tag: probe.model_dump() for probe in probes}
+    return {
+        tag: (traffic.get(tag), probed.get(tag))
+        for tag in sorted(set(traffic) | set(probed))
+    }
+
+
+def _node_probe_views(node_list, healths: dict, exit_tag: str) -> list:
+    """Every node's latest measurement, in the order the list holds them.
+
+    Args:
+        node_list: The nodes as ``config/`` holds them.
+        healths: Each node's window, keyed by outbound tag.
+        exit_tag: The outbound the hub has pinned.
+
+    Returns:
+        One view per node, switched on or not.
+    """
+    views = []
+    for node in node_list.nodes:
+        # A node nobody has measured reads as an empty window, which is what
+        # it is: no number at all rather than a zero.
+        health = healths.get(node.tag) or XrayNodeHealth(tag=node.tag)
+        views.append(
+            NodeProbeView(
+                tag=node.tag,
+                is_alive=health.is_alive,
+                is_enabled=node.is_enabled,
+                is_selected=node.tag == exit_tag,
+                connect_ms=health.connect_ms,
+                request_ms=health.request_ms,
+                probed_at=health.probed_at.isoformat() if health.probed_at else "",
+                success_rate=health.success_rate,
+            )
+        )
+    return views

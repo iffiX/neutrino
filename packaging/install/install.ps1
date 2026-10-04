@@ -4,7 +4,7 @@
 #   & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) agent
 #   irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
 #
-# Run in a PowerShell opened as administrator. $EDITION is the edition this
+# Run in a PowerShell opened as administrator. $NeutrinoEdition is the edition this
 # script installs: intl from GitHub, cn from Gitee, where the latest
 # release's tag is read from the API first. $env:NEUTRINO_VERSION names the
 # release, such as v0.5.0; the latest when unset. $env:NEUTRINO_ASSET_DIR
@@ -14,7 +14,8 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$EDITION = 'intl'
+# The edition this script installs; the mainland source tree stamps it cn.
+$script:NeutrinoEdition = 'intl'
 $NeutrinoReleases = 'https://github.com/iffiX/neutrino/releases'
 $NeutrinoCnReleases = 'https://gitee.com/iffiX/neutrino/releases'
 $NeutrinoCnLatestReleaseApi = 'https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest'
@@ -51,7 +52,7 @@ function Find-NeutrinoAsset {
 # found by its tag, which the API names for the latest one.
 function Get-NeutrinoReleaseBase {
     param([string]$Work)
-    if ($EDITION -ne 'cn') {
+    if ($script:NeutrinoEdition -ne 'cn') {
         if ($env:NEUTRINO_VERSION) {
             return "$NeutrinoReleases/download/$env:NEUTRINO_VERSION"
         }

@@ -93,6 +93,7 @@ def test_every_unit_the_hub_owns_is_named_for_the_package_that_owns_it():
         assert unit.startswith("neutrino_hub_"), unit
 
 
+@pytest.mark.feature("proxy")
 def test_each_unit_starts_one_process_through_the_hub():
     """The unit names no path of its own; the hub knows where its files are."""
     from neutrino_hub.utils.constants import UTILS_DATA_DIR
@@ -129,6 +130,7 @@ def test_no_rendered_unit_keeps_a_placeholder():
             assert not left, f"{template.name}, packaged={is_packaged_value}: {left}"
 
 
+@pytest.mark.feature("proxy")
 def test_the_units_the_panel_restarts_are_not_rate_limited():
     """systemd stops a unit after five starts in ten seconds and leaves it
     down until the window clears. The panel restarts these by design — every

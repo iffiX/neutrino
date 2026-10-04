@@ -26,6 +26,7 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
+    SAMBA_LOOPBACK_NETWORKS,
     SAMBA_WINDOWS_DENIED_RIGHTS,
     SAMBA_WINDOWS_FENCE_RULE,
     SAMBA_WINDOWS_FENCE_TITLE,
@@ -439,7 +440,9 @@ class SambaWindowsApplier:
                     _share_document(share, config, known_accounts)
                     for share in config.shares
                 ],
-                "blocked_addresses": blocked_ranges(config.allowed_subnets),
+                "blocked_addresses": blocked_ranges(
+                    list(config.allowed_subnets) + list(SAMBA_LOOPBACK_NETWORKS)
+                ),
                 "rule_name": SAMBA_WINDOWS_FENCE_RULE,
                 "rule_title": SAMBA_WINDOWS_FENCE_TITLE,
                 "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
