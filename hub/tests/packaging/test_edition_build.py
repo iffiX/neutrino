@@ -28,6 +28,9 @@ BUILD_SCRIPTS = sorted(
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+# The edition this tree is, and the one it is not.
+OWN_EDITION = (REPO_ROOT / "EDITION").read_text().strip()
+OTHER_EDITION = "cn" if OWN_EDITION == "intl" else "intl"
 
 
 @pytest.fixture
@@ -42,13 +45,13 @@ def cn_tree(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_a_cn_build_stops_on_the_full_tree(monkeypatch):
+def test_a_build_of_the_other_edition_stops_on_this_tree(monkeypatch):
     monkeypatch.setenv(PACKAGING_EDITION_ENV, "")
 
     with pytest.raises(SystemExit) as refused:
-        edition_build.require_edition_tree("cn", REPO_ROOT)
+        edition_build.require_edition_tree(OTHER_EDITION, REPO_ROOT)
 
-    assert str(refused.value) == "EDITION names intl, not cn"
+    assert str(refused.value) == f"EDITION names {OWN_EDITION}, not {OTHER_EDITION}"
 
 
 def test_an_intl_build_stops_on_the_mainland_tree(cn_tree):
@@ -64,19 +67,28 @@ def test_a_tree_of_its_edition_names_the_edition_for_the_build(cn_tree):
     assert edition_build.build_edition() == "cn"
 
 
-def test_a_build_script_asked_for_cn_in_the_full_tree_exits_with_one_sentence(
+def test_a_build_script_asked_for_the_other_edition_exits_with_one_sentence(
     tmp_path,
 ):
     script = REPO_ROOT / "packaging" / "build" / "build_checksums.py"
 
     result = subprocess.run(
-        [sys.executable, str(script), "--edition", "cn", "--output-dir", str(tmp_path)],
+        [
+            sys.executable,
+            str(script),
+            "--edition",
+            OTHER_EDITION,
+            "--output-dir",
+            str(tmp_path),
+        ],
         capture_output=True,
         text=True,
     )
 
     assert result.returncode == 1
-    assert result.stderr.strip() == "EDITION names intl, not cn"
+    assert result.stderr.strip() == (
+        f"EDITION names {OWN_EDITION}, not {OTHER_EDITION}"
+    )
 
 
 def test_a_build_with_no_edition_named_is_intl(monkeypatch):

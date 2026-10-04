@@ -333,7 +333,8 @@ def version_stamp(version: str, asset: str) -> str:
     No packaging format installs a .dist-info for the hub itself, so the
     version is stamped where importlib.metadata cannot answer, and the
     package's own release file name beside it, with the version left open,
-    and the edition the build was asked for.
+    the edition the build was asked for, and the versions of the carried
+    programs the build pins outside the hub.
 
     Args:
         version: The version being packaged.
@@ -351,6 +352,7 @@ def version_stamp(version: str, asset: str) -> str:
         f'HUB_VERSION = "{version}"\n'
         f'HUB_PACKAGE_ASSET = "{asset}"\n'
         f'EDITION = "{edition_build.build_edition()}"\n'
+        f"HUB_CARRIED_VERSIONS = {hub_assets.stamped_versions()!r}\n"
     )
 
 

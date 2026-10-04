@@ -9,6 +9,7 @@ sentence each refusal says. Skipped where ``pwsh`` is not on the path.
 
 import hashlib
 import json
+import re
 import shutil
 import sys
 import subprocess
@@ -67,10 +68,12 @@ def run(tmp_path):
         edition="intl",
         script=SCRIPT,
     ):
-        text = script.read_text().replace(
-            "$script:NeutrinoEdition = 'intl'",
-            f"$script:NeutrinoEdition = '{edition}'",
-            1,
+        text = re.sub(
+            r"^\$script:NeutrinoEdition = '[a-z]+'$",
+            f"$script:NeutrinoEdition = '{edition}'" if edition else r"\g<0>",
+            script.read_text(),
+            count=1,
+            flags=re.MULTILINE,
         )
         assert text.rstrip().endswith(LAST_LINE)
         functions = tmp_path / "functions.ps1"
@@ -183,8 +186,10 @@ def test_a_reboot_owed_is_still_an_install(run):
     assert outcome == "ok"
 
 
-def test_the_committed_script_is_the_intl_edition():
-    assert "\n$script:NeutrinoEdition = 'intl'\n" in SCRIPT.read_text()
+def test_the_script_names_the_edition_of_its_tree():
+    edition = (SCRIPT.parents[2] / "EDITION").read_text().strip()
+
+    assert f"\n$script:NeutrinoEdition = '{edition}'\n" in SCRIPT.read_text()
 
 
 def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(run):
@@ -215,6 +220,14 @@ def test_a_cn_latest_release_with_no_tag_is_one_sentence(run):
     assert outcome == f"The latest release at {CN_LATEST} names no tag."
 
 
+# The mainland tree is written from the intl checkout, and from nothing else.
+from_intl_tree = pytest.mark.skipif(
+    (Path(__file__).resolve().parents[3] / "EDITION").read_text().strip() != "intl",
+    reason="the mainland tree is written from the intl checkout",
+)
+
+
+@from_intl_tree
 def test_the_mainland_script_installs_from_gitee(run, tmp_path):
     target = tmp_path / "mainland"
     subprocess.run(
@@ -231,7 +244,9 @@ def test_the_mainland_script_installs_from_gitee(run, tmp_path):
     )
     (run.served / "latest").write_text('{"tag_name": "v9.9.9"}')
 
-    outcome, asked = run(script=target / "packaging" / "install" / "install.ps1")
+    outcome, asked = run(
+        edition=None, script=target / "packaging" / "install" / "install.ps1"
+    )
 
     assert outcome == "ok"
     assert asked[:2] == [

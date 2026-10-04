@@ -145,7 +145,7 @@ EASYTIER_CARRIED = ("easytier-core", "easytier-cli")
 EASYTIER_WINDOWS_CARRIED = ("easytier-core.exe", "easytier-cli.exe", "wintun.dll")
 EASYTIER_CORE_NAME = "easytier-core"
 
-# tun2socks on Windows, at the hub's own pin, under the name the runtime
+# tun2socks on Windows, at the pin the hub's packages share, under the name the runtime
 # resolver looks for; it opens its adapter with EasyTier's wintun.dll beside
 # it. The pin names machines as Go does.
 TUN2SOCKS_PROGRAM = "tun2socks"

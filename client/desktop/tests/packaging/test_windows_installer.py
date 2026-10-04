@@ -12,8 +12,10 @@ downloads faked.
 """
 
 import inspect
+import json
 import re
 import subprocess
+import sys
 import xml.etree.ElementTree
 from pathlib import Path
 
@@ -703,3 +705,119 @@ def test_the_client_takes_its_own_folders_of_the_one_neutrino_tree(source):
     assert directories["CLIENTSTATEFOLDER"].get("Name") == "state"
     assert directories["NETBIRDDATAFOLDER"] in list(directories["CLIENTSTATEFOLDER"])
     assert "Neutrino Client" not in [node.get("Name") for node in directories.values()]
+
+
+# --- the mainland tree ---
+
+# Run inside the mainland tree: tun2socks staged with its download faked, the
+# client tree stamped, the licences laid out and the installer's source
+# written, each as far as Linux goes.
+MAINLAND_STAGING = r"""
+import io, json, sys, zipfile
+from pathlib import Path
+
+tree, work = Path(sys.argv[1]), Path(sys.argv[2])
+for directory in (
+    tree / "client" / "desktop" / "packaging",
+    tree / "client" / "desktop",
+    tree / "packaging",
+    tree / "packaging" / "build",
+):
+    sys.path.insert(0, str(directory))
+from shared import hub_assets
+import build_client_windows
+import payload
+
+
+def fetch(url, digest, what):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as bundle:
+        bundle.writestr("tun2socks-windows-amd64.exe", b"MZ tun2socks")
+    return buffer.getvalue()
+
+
+hub_assets.fetch = fetch
+staged = hub_assets.stage_program(work / "bin", "tun2socks", "windows", "amd64")
+package = payload.stage_client_tree(work / "site", "9.9.9", is_windows=True)
+stamp = {}
+exec((package / "_version.py").read_text(), stamp)
+build_client_windows._stage_licenses(work / "installed")
+source = build_client_windows._wix_source(
+    {
+        "payload": "C:\\build\\payload",
+        "bootstrapper": "C:\\build\\MicrosoftEdgeWebview2Setup.exe",
+        "icon": "C:\\build\\neutrino_client.ico",
+        "license": "C:\\build\\license.rtf",
+    },
+    "9.9.9",
+    "iffiX",
+    "amd64",
+)
+print(json.dumps({
+    "staged": [path.name for path in staged],
+    "has_tun_module": (tree / "hub" / "neutrino_hub" / "modules" / "tun").exists(),
+    "edition": stamp["EDITION"],
+    "carried": stamp["CLIENT_CARRIED_VERSIONS"],
+    "licenses": sorted(p.name for p in (work / "installed" / "licenses").iterdir()),
+    "source": source,
+}))
+"""
+
+# The mainland tree is written from the intl checkout, and from nothing else.
+from_intl_tree = pytest.mark.skipif(
+    (Path(payload.__file__).resolve().parents[3] / "EDITION").read_text().strip()
+    != "intl",
+    reason="the mainland tree is written from the intl checkout",
+)
+
+
+@pytest.fixture(scope="module")
+def mainland_staging(tmp_path_factory):
+    """What the Windows client stages from the tree build_sources.py writes
+    with --edition cn --tree."""
+    repository = Path(payload.__file__).resolve().parents[3]
+    tree = tmp_path_factory.mktemp("mainland") / "tree"
+    subprocess.run(
+        [
+            sys.executable,
+            str(repository / "packaging" / "build" / "build_sources.py"),
+            "--edition",
+            "cn",
+            "--tree",
+            str(tree),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    work = tmp_path_factory.mktemp("staging")
+    result = subprocess.run(
+        [sys.executable, "-c", MAINLAND_STAGING, str(tree), str(work)],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin", "NEUTRINO_EDITION": "cn", "HOME": str(work)},
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+@from_intl_tree
+def test_the_mainland_tree_stages_the_files_adapter_s_tun2socks(mainland_staging):
+    from shared.constants import PACKAGING_TUN2SOCKS_VERSION
+
+    assert not mainland_staging["has_tun_module"]
+    assert mainland_staging["staged"] == ["tun2socks.exe"]
+    assert mainland_staging["edition"] == "cn"
+    assert mainland_staging["carried"]["tun2socks"] == PACKAGING_TUN2SOCKS_VERSION
+
+
+@from_intl_tree
+def test_the_mainland_installer_carries_the_tun2socks_licence(mainland_staging):
+    assert "tun2socks.txt" in mainland_staging["licenses"]
+
+
+@from_intl_tree
+def test_the_mainland_installer_registers_the_files_daemon(mainland_staging):
+    document = xml.etree.ElementTree.fromstring(mainland_staging["source"])
+    names = [install.get("Name") for install in document.iter(f"{WXS}ServiceInstall")]
+
+    assert "NeutrinoClientFiles" in names

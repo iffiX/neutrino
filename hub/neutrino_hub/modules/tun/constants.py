@@ -13,29 +13,6 @@ TUN_BINARY_PATH = carried_program(TUN_BINARY_NAME)
 # The name the process controller knows it by.
 TUN_SUPERVISED_NAME = "tun2socks"
 
-# The release a package carries, the asset each system and machine takes,
-# and its hash. Packaging reads these rather than restating them.
-TUN_VERSION = "2.7.0"
-TUN_RELEASE_URL = (
-    "https://github.com/xjasonlyu/tun2socks/releases/download/v{version}/{asset}"
-)
-TUN_ASSETS = {
-    ("darwin", "amd64"): (
-        "tun2socks-darwin-amd64.zip",
-        "6e654da8bab9ca1645862f0e251a69980e0966680713011feea7b1e5901b2a95",  # scan: allow
-    ),
-    ("darwin", "arm64"): (
-        "tun2socks-darwin-arm64.zip",
-        "7c5ebfe2ffb60ecf6e958cc5bbf3e06e74b8b33575ffbb4ba4f6f785a647f1ad",  # scan: allow
-    ),
-    ("windows", "amd64"): (
-        "tun2socks-windows-amd64.zip",
-        "c5d46e9452f6c9cc7c15ab9158d6d6a0169ceecd6bca019ce476b49337d2be43",  # scan: allow
-    ),
-}
-# What the program is called inside each archive.
-TUN_ASSET_MEMBER = "tun2socks-{os_name}-{machine}"
-
 # The device tun2socks opens: a utun of a fixed number on macOS, so the
 # routes can name it, and a wintun adapter of this name on Windows.
 TUN_DEVICE_NAMES = {"darwin": "utun225", "windows": "neutrino_tun"}

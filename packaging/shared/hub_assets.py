@@ -7,7 +7,9 @@ its ``<MODULE>_ASSETS`` table, and the v2fly geodata. The Linux packages put
 the programs under ``/opt/neutrino/hub/bin``, the macOS and Windows packages
 beside ``nhub``; on Windows ``wintun.dll`` comes out of EasyTier's archive
 with them, and tun2socks opens its device with that same driver. The
-client's Windows package takes its tun2socks from the same pin. A program
+client's Windows package takes its tun2socks from the same pin, which
+lives in ``packaging/shared/constants.py`` so the mainland tree holds it too.
+A program
 or a database whose module the tree does not hold is a feature its edition
 leaves out, and is not carried.
 
@@ -40,11 +42,14 @@ HUB_ASSET_PROGRAMS = {
         "EASYTIER",
         ("easytier-core", "easytier-cli"),
     ),
-    "tun2socks": ("neutrino_hub.modules.tun.constants", "TUN", ("tun2socks",)),
+    "tun2socks": ("shared.constants", "PACKAGING_TUN2SOCKS", ("tun2socks",)),
 }
 # The programs a system's package carries only there; every other program
 # goes into every package.
 HUB_ASSET_SYSTEMS = {"tun2socks": ("darwin", "windows")}
+# The hub module a program pinned outside the hub serves; the hub carries the
+# program only where its tree holds that module.
+HUB_ASSET_SERVED_MODULES = {"tun2socks": "neutrino_hub.modules.tun.constants"}
 # The programs whose archive names the file after the system and machine;
 # the module states the name under ``<PREFIX>_ASSET_MEMBER``.
 HUB_ASSET_RENAMED = ("tun2socks",)
@@ -230,9 +235,24 @@ def fetch(url: str, digest: str, what: str) -> bytes:
 
 def _is_carried(program: str, os_name: str) -> bool:
     """Whether a system's package carries one program."""
-    if not _has_module(HUB_ASSET_PROGRAMS[program][0]):
+    served = HUB_ASSET_SERVED_MODULES.get(program, HUB_ASSET_PROGRAMS[program][0])
+    if not _has_module(served):
         return False
     return os_name in HUB_ASSET_SYSTEMS.get(program, (os_name,))
+
+
+def stamped_versions() -> dict:
+    """The versions the hub reads from its stamp: of each carried program
+    pinned outside the hub, where the tree holds the module it serves.
+
+    Returns:
+        The version of each such program, by name.
+    """
+    return {
+        program: pinned_version(program)
+        for program, served in HUB_ASSET_SERVED_MODULES.items()
+        if _has_module(served)
+    }
 
 
 def _has_module(module_name: str) -> bool:
