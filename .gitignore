@@ -24,6 +24,7 @@ config/devices/known_hosts
 # not done yet, alongside the maintainer's address and the layout of the box it
 # runs on. Kept beside the code and out of the history.
 docs/memory.md
+docs/0.5.0_round1_and_2.md
 
 # Drafts written on this machine before they have a place in the tree.
 tmp-docs/
