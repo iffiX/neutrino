@@ -95,14 +95,11 @@ const val CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
 /** What `os` reads in the platform this app reports. */
 const val CLIENT_PLATFORM_OS = "android"
 
-/** What a pasted link starts with. */
+/** What a pasted or scanned link starts with. */
 const val CLIENT_LINK_PREFIX = "neutrino://enroll/"
 
-/** What tells a short link from a QR code apart: a long link's base64url alphabet has none. */
-const val CLIENT_LINK_SHORT_MARK = '@'
-
-/** The path a short link's ticket fetches the long link's object from, on the pinned agent port. */
-const val CLIENT_ENROLL_PATH = "/api/channel/enroll"
+/** How many bytes one step of inflating a link's payload writes. */
+const val CLIENT_LINK_INFLATE_CHUNK_BYTES = 1024
 
 /** The path a binding starts at, on the pinned agent port. */
 const val CLIENT_JOIN_PATH = "/api/channel/join"

@@ -1,8 +1,12 @@
 package io.github.iffix.neutrino.channel
 
+import io.github.iffix.neutrino.CLIENT_LINK_INFLATE_CHUNK_BYTES
 import io.github.iffix.neutrino.CLIENT_LINK_PREFIX
 import io.github.iffix.neutrino.CLIENT_ROLE
+import java.io.ByteArrayOutputStream
 import java.util.Base64
+import java.util.zip.DataFormatException
+import java.util.zip.Inflater
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -11,8 +15,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 
 /**
- * A client link from a hub's Clients page: `neutrino://enroll/<base64url>` over one JSON object,
- * pasted, or fetched for the [ShortEnrollmentLink] a QR code carries.
+ * A client link from a hub's Clients page, pasted or scanned from its QR code:
+ * `neutrino://enroll/<base64url>`, one JSON object compressed with zlib, in base64url without
+ * padding.
  *
  * @property urls Every address the hub answers on, in the hub's order, without a trailing slash.
  * @property ticket The enrolment ticket, spent by the join.
@@ -44,13 +49,7 @@ data class EnrollmentLink(
             return fromObject(payload)
         }
 
-        /**
-         * Read the object a long link carries, or the one a short link's hub answered.
-         *
-         * @param payload The object.
-         * @return The link, or the refusal [parse] names for a link of that object.
-         */
-        fun fromObject(payload: JsonObject): ChannelResult<EnrollmentLink> {
+        private fun fromObject(payload: JsonObject): ChannelResult<EnrollmentLink> {
             val urls = cleanUrls(payload["urls"])
             val ticket = (payload["token"] as? JsonPrimitive)?.content.orEmpty()
             val fingerprint = (payload["fp"] as? JsonPrimitive)?.content.orEmpty().trim().lowercase()
@@ -97,12 +96,33 @@ data class EnrollmentLink(
         private fun decode(text: String): JsonObject? {
             val padded = text + "=".repeat((4 - text.length % 4) % 4)
             return try {
-                val bytes = Base64.getUrlDecoder().decode(padded)
+                val bytes = inflate(Base64.getUrlDecoder().decode(padded))
                 json.parseToJsonElement(String(bytes, Charsets.UTF_8)) as? JsonObject
             } catch (_: IllegalArgumentException) {
                 null
+            } catch (_: DataFormatException) {
+                null
             } catch (_: SerializationException) {
                 null
+            }
+        }
+
+        private fun inflate(packed: ByteArray): ByteArray {
+            val inflater = Inflater()
+            try {
+                inflater.setInput(packed)
+                val out = ByteArrayOutputStream()
+                val chunk = ByteArray(CLIENT_LINK_INFLATE_CHUNK_BYTES)
+                while (!inflater.finished()) {
+                    val count = inflater.inflate(chunk)
+                    if (count == 0 && (inflater.needsInput() || inflater.needsDictionary())) {
+                        throw DataFormatException("the payload ends before its stream does")
+                    }
+                    out.write(chunk, 0, count)
+                }
+                return out.toByteArray()
+            } finally {
+                inflater.end()
             }
         }
     }

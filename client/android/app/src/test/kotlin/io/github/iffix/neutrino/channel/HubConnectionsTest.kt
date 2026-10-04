@@ -212,14 +212,12 @@ class HubConnectionsTest {
         assertEquals(HubJoin(), connections.join.value)
     }
 
-    private val shortLink = "neutrino://enroll/ticket-1@192.168.100.1:8443/${Samples.FINGERPRINT}"
-    private val enrollAt = "https://192.168.100.1:8443" to "/api/channel/enroll?ticket=ticket-1"
+    private val scannedLink = Samples.link(Samples.clientPayload)
 
     private val joinAt = "https://192.168.100.1:8443" to "/api/channel/join"
 
     private fun TestScope.reachable(): Triple<HubConnections, BindingStore, FakeHubTransport> {
         val hub = FakeHubTransport { FakeHubTransport.welcoming }
-        hub.readings[enrollAt] = ChannelResult.Ok(Samples.clientPayload)
         hub.answers[joinAt] =
             ChannelResult.Ok(JsonObject(mapOf("id" to JsonPrimitive("c9"), "token" to JsonPrimitive("t9"))))
         val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
@@ -227,95 +225,56 @@ class HubConnectionsTest {
     }
 
     @Test
-    fun aScannedShortLinkIsKeptPendingAtOnceAndAsksTheHubNothing() = runTest {
+    fun aScannedLinkIsKeptPendingAtOnceWithEveryAddressAndOverlay() = runTest {
         val (connections, store) = connections()
-        connections.startJoin(shortLink)
+        connections.startJoin(scannedLink)
         runCurrent()
         val binding = store.bindings.value.single()
         assertEquals(binding.id, connections.join.value.joinedId)
         assertEquals(true, binding.isPending)
-        assertEquals(true, binding.isObjectPending)
         assertEquals("ticket-1", binding.ticket)
         assertEquals(Samples.FINGERPRINT, binding.fingerprint)
-        assertEquals(listOf("https://192.168.100.1:8443"), binding.gatewayUrls)
-        assertEquals(emptyList<ChannelOverlay>(), binding.overlays)
-        assertEquals(emptyList<Any>(), transport.gets)
+        assertEquals(link.urls, binding.gatewayUrls)
+        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
         assertEquals(emptyList<Any>(), transport.posts)
     }
 
     @Test
-    fun aSilentHubKeepsAShortLinksRowPending() = runTest {
+    fun aSilentHubKeepsTheScannedRowPending() = runTest {
         val (connections, store) = connections()
         connections.start()
-        connections.startJoin(shortLink)
+        connections.startJoin(scannedLink)
         runCurrent()
         val row = connections.views.first().single()
         assertEquals(HubConnection.PENDING, row.connection)
         assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
-        assertEquals(emptyList<ChannelOverlay>(), row.binding.overlays)
-        assertEquals(true, store.bindings.value.single().isObjectPending)
-        assertEquals(emptyList<Any>(), transport.posts)
+        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
+        assertEquals("ticket-1", store.bindings.value.single().ticket)
     }
 
     @Test
-    fun aRoundThatReachesTheHubFetchesTheObjectOnThePinThenJoins() = runTest {
+    fun aRoundThatReachesTheHubJoinsWithNothingFetchedFirst() = runTest {
         val (connections, store, hub) = reachable()
-        assertEquals(emptyList<String>(), GoldenSchema.problems(Samples.clientPayload, "ChannelEnrollView"))
         connections.start()
-        connections.startJoin(shortLink)
+        connections.startJoin(scannedLink)
         runCurrent()
-        assertEquals(Triple(enrollAt.first, enrollAt.second, Samples.FINGERPRINT), hub.gets.single())
         assertEquals(joinAt, hub.posts.single().let { it.first to it.second })
         val binding = store.bindings.value.single()
-        assertEquals(link.urls, binding.gatewayUrls)
-        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
-        assertEquals(false, binding.isObjectPending)
         assertEquals("c9" to "t9", binding.boundId to binding.token)
         assertEquals(HubConnection.CONNECTED, connections.views.first().single().connection)
     }
 
     @Test
-    fun aSpentTicketOnTheFetchPutsTheRowDown() = runTest {
-        val (connections, store) = connections()
-        transport.readings[enrollAt] = ChannelResult.refused("ticket_spent")
-        connections.start()
-        connections.startJoin(shortLink)
-        runCurrent()
-        val row = connections.views.first().single()
-        assertEquals(HubConnection.DOWN, row.connection)
-        assertEquals("ticket_spent", row.lastError?.code)
-        assertEquals(true, row.isJoinRefused)
-        assertEquals(emptyList<Any>(), transport.posts)
-        assertEquals(true, store.bindings.value.single().isObjectPending)
-    }
-
-    @Test
-    fun aFetchOnAnotherCertificateIsUntrustedAndSpendsNothing() = runTest {
-        val (connections, store) = connections()
-        transport.readings[enrollAt] = ChannelResult.refused("hub_untrusted")
-        connections.start()
-        connections.startJoin(shortLink)
-        runCurrent()
-        val row = connections.views.first().single()
-        assertEquals(HubConnection.PENDING, row.connection)
-        assertEquals("hub_untrusted", row.lastError?.code)
-        assertEquals(emptyList<Any>(), transport.posts)
-        assertEquals(true, store.bindings.value.single().isObjectPending)
-    }
-
-    @Test
-    fun aKeptShortLinkStillAwaitsItsObjectAfterARestartAndARoundFetchesIt() = runTest {
+    fun aKeptScannedLinkIsJoinedByARoundAfterARestart() = runTest {
         val (scanned, _) = connections()
-        scanned.startJoin(shortLink)
+        scanned.startJoin(scannedLink)
         runCurrent()
         val (connections, store, hub) = reachable()
         val kept = store.bindings.value.single()
-        assertEquals(true, kept.isObjectPending)
         assertEquals("ticket-1", kept.ticket)
         connections.start()
         runCurrent()
-        assertEquals(enrollAt.second, hub.gets.single().second)
-        assertEquals(false, store.get(kept.id)?.isObjectPending)
+        assertEquals(joinAt, hub.posts.single().let { it.first to it.second })
         assertEquals("c9", store.get(kept.id)?.boundId)
     }
 }
