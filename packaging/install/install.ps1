@@ -2,8 +2,11 @@
 #
 #   irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
 #   & ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) agent
+#   irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
 #
-# Run in a PowerShell opened as administrator. $env:NEUTRINO_VERSION names the
+# Run in a PowerShell opened as administrator. $EDITION is the edition this
+# script installs: intl from GitHub, cn from Gitee, where the latest
+# release's tag is read from the API first. $env:NEUTRINO_VERSION names the
 # release, such as v0.5.0; the latest when unset. $env:NEUTRINO_ASSET_DIR
 # names a directory holding SHA256SUMS and the packages, which are installed
 # from there with nothing downloaded.
@@ -11,7 +14,10 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+$EDITION = 'intl'
 $NeutrinoReleases = 'https://github.com/iffiX/neutrino/releases'
+$NeutrinoCnReleases = 'https://gitee.com/iffiX/neutrino/releases'
+$NeutrinoCnLatestReleaseApi = 'https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest'
 # What msiexec answers for a finished install, with and without a reboot owed.
 $NeutrinoInstalledCodes = @(0, 3010)
 
@@ -41,6 +47,28 @@ function Find-NeutrinoAsset {
     return $null
 }
 
+# Where the release's files are, for this script's edition. A cn release is
+# found by its tag, which the API names for the latest one.
+function Get-NeutrinoReleaseBase {
+    param([string]$Work)
+    if ($EDITION -ne 'cn') {
+        if ($env:NEUTRINO_VERSION) {
+            return "$NeutrinoReleases/download/$env:NEUTRINO_VERSION"
+        }
+        return "$NeutrinoReleases/latest/download"
+    }
+    $tag = $env:NEUTRINO_VERSION
+    if (-not $tag) {
+        $latest = Join-Path $Work 'latest.json'
+        Invoke-WebRequest -UseBasicParsing -Uri $NeutrinoCnLatestReleaseApi -OutFile $latest
+        $tag = (Get-Content -Raw -LiteralPath $latest | ConvertFrom-Json).tag_name
+        if (-not $tag) {
+            throw "The latest release at $NeutrinoCnLatestReleaseApi names no tag."
+        }
+    }
+    return "$NeutrinoCnReleases/download/$tag"
+}
+
 function Install-Neutrino {
     param([string]$Component = 'hub')
 
@@ -64,11 +92,7 @@ function Install-Neutrino {
                 throw "There is no SHA256SUMS in $source."
             }
         } else {
-            if ($env:NEUTRINO_VERSION) {
-                $base = "$NeutrinoReleases/download/$env:NEUTRINO_VERSION"
-            } else {
-                $base = "$NeutrinoReleases/latest/download"
-            }
+            $base = Get-NeutrinoReleaseBase -Work $work
             $source = $work
             Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS" -OutFile (Join-Path $work 'SHA256SUMS')
         }

@@ -18,6 +18,8 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.ps1"
 LAST_LINE = "Install-Neutrino @args"
 RELEASE = "https://github.com/iffiX/neutrino/releases"
+CN_RELEASE = "https://gitee.com/iffiX/neutrino/releases"
+CN_LATEST = "https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest"
 
 PACKAGES = (
     "neutrino-hub-9.9.9-windows-amd64.msi",
@@ -59,12 +61,20 @@ def run(tmp_path):
     functions = tmp_path / "functions.ps1"
     functions.write_text(text.rstrip()[: -len(LAST_LINE)])
 
-    def invoke(*arguments, architecture="AMD64", is_admin=True, exit_code=0, env=None):
+    def invoke(
+        *arguments,
+        architecture="AMD64",
+        is_admin=True,
+        exit_code=0,
+        env=None,
+        edition="intl",
+    ):
         driver = tmp_path / "driver.ps1"
         quoted = ", ".join(f"'{argument}'" for argument in arguments)
         driver.write_text(
             f". '{functions}'\n"
             + STAND_INS
+            + f"$EDITION = '{edition}'\n"
             + "$outcome = 'ok'\n"
             + f"$given = @({quoted})\n"
             + "try { Install-Neutrino @given | Out-Null }"
@@ -166,3 +176,35 @@ def test_a_reboot_owed_is_still_an_install(run):
     outcome, _asked = run(exit_code=3010)
 
     assert outcome == "ok"
+
+
+def test_the_committed_script_is_the_intl_edition():
+    assert "\n$EDITION = 'intl'\n" in SCRIPT.read_text()
+
+
+def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(run):
+    (run.served / "latest").write_text('{"id": 7, "tag_name": "v9.9.9"}')
+
+    outcome, asked = run(edition="cn")
+
+    assert outcome == "ok"
+    assert asked[:3] == [
+        f"fetch {CN_LATEST}",
+        f"fetch {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
+        f"fetch {CN_RELEASE}/download/v9.9.9/neutrino-hub-9.9.9-windows-amd64.msi",
+    ]
+
+
+def test_a_cn_script_given_a_version_asks_the_api_nothing(run):
+    outcome, asked = run(edition="cn", env={"NEUTRINO_VERSION": "v9.9.9"})
+
+    assert outcome == "ok"
+    assert asked[0] == f"fetch {CN_RELEASE}/download/v9.9.9/SHA256SUMS"
+
+
+def test_a_cn_latest_release_with_no_tag_is_one_sentence(run):
+    (run.served / "latest").write_text("{}")
+
+    outcome, _asked = run(edition="cn")
+
+    assert outcome == f"The latest release at {CN_LATEST} names no tag."

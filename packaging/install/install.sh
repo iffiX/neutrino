@@ -4,13 +4,19 @@
 #
 #   curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
 #   curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- agent
+#   curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
 #
+# EDITION is the edition this script installs: intl from GitHub, cn from
+# Gitee, where the latest release's tag is read from the API first.
 # NEUTRINO_VERSION names the release, such as v0.5.0; the latest when unset.
 # NEUTRINO_ASSET_DIR names a directory holding SHA256SUMS and the packages,
 # which are installed from there with nothing downloaded.
 set -eu
 
+EDITION="intl"
 RELEASES="https://github.com/iffiX/neutrino/releases"
+CN_RELEASES="https://gitee.com/iffiX/neutrino/releases"
+CN_LATEST_RELEASE_API="https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest"
 OS_RELEASE=/etc/os-release
 
 fail() {
@@ -85,6 +91,26 @@ fetch() {
     curl -fsSL --retry 3 -o "$2" "$1" || fail "Downloading $1 failed."
 }
 
+# Where the release's files are, for this script's edition. A cn release is
+# found by its tag, which the API names for the latest one.
+release_base() {
+    if [ "$EDITION" != cn ]; then
+        if [ -n "${NEUTRINO_VERSION:-}" ]; then
+            echo "$RELEASES/download/$NEUTRINO_VERSION"
+        else
+            echo "$RELEASES/latest/download"
+        fi
+        return 0
+    fi
+    tag=${NEUTRINO_VERSION:-}
+    if [ -z "$tag" ]; then
+        fetch "$CN_LATEST_RELEASE_API" "$1/latest.json"
+        tag=$(sed -n -E 's/.*"tag_name" *: *"([^"]+)".*/\1/p' "$1/latest.json" | head -n 1)
+        [ -n "$tag" ] || fail "The latest release at $CN_LATEST_RELEASE_API names no tag."
+    fi
+    echo "$CN_RELEASES/download/$tag"
+}
+
 main() {
     component=${1:-hub}
     case "$component" in
@@ -118,11 +144,7 @@ main() {
         source_dir=$NEUTRINO_ASSET_DIR
         [ -f "$source_dir/SHA256SUMS" ] || fail "There is no SHA256SUMS in $source_dir."
     else
-        if [ -n "${NEUTRINO_VERSION:-}" ]; then
-            base="$RELEASES/download/$NEUTRINO_VERSION"
-        else
-            base="$RELEASES/latest/download"
-        fi
+        base=$(release_base "$work") || exit 1
         source_dir=$work
         fetch "$base/SHA256SUMS" "$work/SHA256SUMS"
     fi
