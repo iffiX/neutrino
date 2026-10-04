@@ -87,7 +87,8 @@ LOCAL_NETWORK_RESOURCE = (
 )
 APP_BUNDLE_NAME = f"{APP_NAME}.app"
 
-# The identity the installer records the package under.
+# The identity the installer records the package under, and the app bundle's
+# own identifier.
 PACKAGE_IDENTIFIER = "com.neutrino.client"
 
 # Where the installer puts the bundle, and the link a terminal reaches the
@@ -460,6 +461,8 @@ def _compile(python: Path, tree: Path, build: Path, version: str) -> Path:
             # macOS 15 asks the person before an app reaches the local
             # network; this is the sentence its prompt carries.
             f"--macos-app-protected-resource={LOCAL_NETWORK_RESOURCE}",
+            # Nuitka writes this name as the bundle's CFBundleIdentifier.
+            f"--macos-signed-app-name={PACKAGE_IDENTIFIER}",
         ),
     )
 

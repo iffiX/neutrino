@@ -145,3 +145,15 @@ class ServiceTypeHandler:
         Args:
             hub_id: The hub whose entries are let go of.
         """
+
+    def drop_withdrawn(self, *, hub_id: str, entries: list) -> int:
+        """Forget what this type keeps for entries one hub's list no longer has.
+
+        Args:
+            hub_id: The hub whose list arrived.
+            entries: That hub's service list as it stands now.
+
+        Returns:
+            How many were forgotten.
+        """
+        return 0

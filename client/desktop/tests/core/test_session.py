@@ -356,6 +356,25 @@ def test_a_first_frame_that_is_not_a_welcome_is_unreachable(bound, monkeypatch):
     assert script.made[0].is_closed is True
 
 
+def test_a_new_round_removes_the_error_line_of_the_last(bound, monkeypatch):
+    session, _listener = bound
+    socket_of(monkeypatch, [STATE])
+    session.run_once()
+    assert session.last_error()["code"] == "hub_unreachable"
+    seen = []
+
+    def round_seen():
+        seen.append((session.connection(), session.last_error()))
+        raise GatewayUnreachable("still away")
+
+    monkeypatch.setattr(session, "_connect_round", round_seen)
+    session.run_once()
+
+    assert seen == [("connecting", None)]
+    assert session.connection() == "down"
+    assert session.last_error()["code"] == "hub_unreachable"
+
+
 def test_a_welcome_of_another_role_is_unreachable(bound, monkeypatch):
     session, _listener = bound
     script = socket_of(monkeypatch, [dict(WELCOME, role="agent")])

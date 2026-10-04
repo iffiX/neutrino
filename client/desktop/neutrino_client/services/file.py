@@ -17,7 +17,9 @@ absent, its hub being away, leaves the record as it is. A record whose
 credentials file is gone reports
 ``credentials_missing`` and waits for the password to be entered again, and
 one the share refused for its login, its access or its name waits the same
-way: mounting it again would only be refused again. A record that names no
+way: mounting it again would only be refused again. A failed record holds no
+place: it is dropped once its hub's list lacks its entry, and when another
+record is set to mount where it was. A record that names no
 hub was written by an older build and is dropped at start, after whatever it
 left mounted is unmounted by path.
 """
@@ -192,6 +194,38 @@ class FileServiceHandler(ServiceTypeHandler):
             self._on_change()
         return detached
 
+    def drop_withdrawn(self, *, hub_id: str, entries: list) -> int:
+        """Drop the failed records of one hub whose entry its list no longer has.
+
+        Args:
+            hub_id: The hub whose list arrived.
+            entries: That hub's service list as it stands now; empty for a
+                hub this person left.
+
+        Returns:
+            How many records were dropped.
+        """
+        listed = {
+            str(entry.get("id", ""))
+            for entry in entries
+            if entry.get("type") == self.service_type
+        }
+        dropped = 0
+        with self._lock:
+            for record_id, record in sorted(self._store.mounts().items()):
+                if record.get("hub_id") != hub_id:
+                    continue
+                if str(record.get("entry_id", "")) in listed:
+                    continue
+                if not self._is_failed(record_id, record):
+                    continue
+                self._drop_record(record_id)
+                dropped += 1
+                self._log(f"dropped the failed mount record {record_id}: not shared")
+        if dropped:
+            self._on_change()
+        return dropped
+
     def clear_leftovers(self) -> None:
         """Detach every record an earlier run left attached, then drop the
         records that name no hub and their credentials."""
@@ -237,7 +271,7 @@ class FileServiceHandler(ServiceTypeHandler):
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal;
             ``mountpoint_in_use`` when another record already holds the
-            path.
+            path; a failed record there is dropped instead.
         """
         refusal = self._platform.validate_mount_location(location=path)
         if refusal is not None:
@@ -253,7 +287,13 @@ class FileServiceHandler(ServiceTypeHandler):
             for old_id, old in list(self._store.mounts().items()):
                 if old.get("hub_id") != hub_id or old.get("entry_id") != entry_id:
                     if location and str(old.get("path", "")) == location:
-                        return {"code": "mountpoint_in_use", "params": {"path": path}}
+                        if not self._is_failed(old_id, old):
+                            return {
+                                "code": "mountpoint_in_use",
+                                "params": {"path": path},
+                            }
+                        self._drop_record(old_id)
+                        self._log(f"dropped the failed mount record at {location}")
                     continue
                 old_location = str(old.get("path", ""))
                 try:
@@ -261,11 +301,7 @@ class FileServiceHandler(ServiceTypeHandler):
                         self._platform.detach_share(location=old_location)
                 except (ShareAttachError, PlatformUnsupportedError):
                     pass
-                self._discard_credentials(old_id)
-                self._store.remove_mount(old_id)
-                self._problems.pop(old_id, None)
-                self._stages.pop(old_id, None)
-                self._attached.discard(old_id)
+                self._drop_record(old_id)
             record_id = mount_record_id(hub_id, entry_id, location)
             record = {
                 "hub_id": hub_id,
@@ -518,6 +554,30 @@ class FileServiceHandler(ServiceTypeHandler):
             self._stages.pop(record_id, None)
             self._attached.discard(record_id)
         return detached
+
+    def _is_failed(self, record_id: str, record: dict) -> bool:
+        """Whether a record stands failed and holds nothing mounted; under the lock."""
+        if record_id in self._stages:
+            return False
+        is_failed = record_id in self._problems or not os.path.isfile(
+            self._credentials_path(record_id)
+        )
+        if not is_failed:
+            return False
+        try:
+            return not self._platform.is_share_attached(
+                location=str(record.get("path", ""))
+            )
+        except PlatformUnsupportedError:
+            return True
+
+    def _drop_record(self, record_id: str) -> None:
+        """Forget one record, its login and its standing; under the lock."""
+        self._discard_credentials(record_id)
+        self._store.remove_mount(record_id)
+        self._problems.pop(record_id, None)
+        self._stages.pop(record_id, None)
+        self._attached.discard(record_id)
 
     def _tooling_refusal(self) -> "dict | None":
         """Refuse when the machine has no way to attach a share.

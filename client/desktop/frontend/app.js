@@ -95,12 +95,14 @@ let lastSerialized = '';
 // the same state does not count.
 let stateSerial = 0;
 let pendingState = null;
-// What each AI tool points with, as the Config dialog left it; sent with
+// What each AI tool points with, as the Configure dialog left it; sent with
 // the next switch, and null rebuilds it from the next server state.
 let aiStaged = null;
 // The staged file configs, one per service key: {is_open, username,
-// password, path}. The password lives only here and in the one request
-// that sends it.
+// password, path, before, is_sent}. A closed stage is a saved form, sent by
+// Mount and kept until the share it sent is mounted; ``before`` is what
+// Cancel puts back. The password lives only here and in the requests that
+// send it.
 let fileStaged = {};
 // The join row while its link is checked, and the code a refused link left
 // under the input until the next press.
@@ -566,12 +568,12 @@ function hubTone(hub) {
   const jobs = hub.jobs || {};
   if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';
   if (isJoinRefused(hub)) return 'bad';
-  if (hub.connection === 'connecting' || hub.connection === 'pending') return 'pulse';
+  if (hub.connection === 'pending') return 'off';
+  if (hub.connection === 'connecting') return 'pulse';
   if (hub.connection === 'connected') return 'ok';
   if (hub.connection === 'down') {
     const code = hub.last_error ? hub.last_error.code : '';
     if (PERSON_CODES.indexOf(code) >= 0) return 'bad';
-    return hub.software ? 'wait' : 'off';
   }
   return 'wait';
 }
@@ -1091,7 +1093,7 @@ function drawDesktopEntry(card, state, hub, entry) {
   const extras = payload.platform_os === 'darwin' ? [noteLine(t('ui.rdp_mac_hint'))] : [];
   card.appendChild(entryRow(hub, entry,
     (payload.host || '') + ':' + (payload.port || ''),
-    isOpen ? t('ui.rdp_open') : '', [connect], reason, extras));
+    isOpen ? t('ui.rdp_open') : t('ui.healthy'), [connect], reason, extras));
 }
 
 // --- the AI panel: one gateway per hub, one of them the tools' ---
@@ -1124,7 +1126,7 @@ function drawAiEntry(card, state, hub, entry) {
   const config = document.createElement('button');
   config.type = 'button';
   config.className = 'ghost';
-  config.textContent = t('ui.config');
+  config.textContent = t('ui.configure');
   config.disabled = !isFree;
   config.onclick = () => openConfigDialog(staged, payload.models || [],
     () => { if (isInUse) askAiUse(hub, entry, true); });
@@ -2017,30 +2019,30 @@ function dropStaleFileStages(state) {
 // it stands would be refused again, so Mount opens the form instead.
 const LOGIN_CODES = ['share_login_rejected', 'credentials_missing'];
 
-// The panel is marked dirty while any entry's form is open.
+// The panel is marked dirty while any entry's form is open. A stage stays
+// through a failed mount and goes once the share is mounted.
 function drawFileEntry(card, state, hub, entry) {
   const key = serviceKey(entry);
   const payload = entry.payload || {};
   const records = (state.mounts || []).filter(
     (record) => record.hub_id === entry.hub_id && record.entry_id === entry.id);
   const record = records[0];
+  if (record && record.is_attached && !entry.job && fileStaged[key]
+    && fileStaged[key].is_sent && !fileStaged[key].is_open) {
+    delete fileStaged[key];
+  }
   const staged = fileStaged[key];
   if (staged && staged.is_open) card.classList.add('dirty');
   const config = document.createElement('button');
   config.type = 'button';
   config.className = 'ghost';
-  config.textContent = t('ui.config');
+  config.textContent = t('ui.configure');
   config.disabled = !isEntryFree(hub, entry);
   config.onclick = () => {
     if (staged && staged.is_open) {
-      delete fileStaged[key];
+      cancelFileForm(key);
     } else {
-      fileStaged[key] = {
-        is_open: true, username: record ? (record.username || '') : '',
-        password: '',
-        path: record && asksMountPlace(state) ? record.path
-          : mountDefaultPath(payload, state),
-      };
+      openFileForm(key, state, payload, record);
     }
     redraw();
   };
@@ -2053,28 +2055,75 @@ function drawFileEntry(card, state, hub, entry) {
       extras.push(noteLine(t('ui.mount_finder', { server: each.host || '' })));
     }
   }
+  let row = null;
   if (staged && staged.is_open) {
-    extras.push(drawFileForm(staged, state, payload.host || '', () => {
+    extras.push(drawFileForm(staged, state, payload.host || '', key, () => {
       if (!entry.job) {
         mount.disabled = !isEntryFree(hub, entry) || !entry.is_healthy
           || !isMountFormFilled(staged, state);
       }
+      if (row) setReasonLine(row, mountReason(state, hub, entry, record, mount));
     }));
   }
-  let reason = '';
-  if (mount.disabled && !entryWork(hub, entry)) {
-    reason = entryReason(hub, entry, !(record && record.is_attached))
-      || (asksMountPlace(state) ? t('ui.reason.mount_form')
-        : t('ui.reason.mount_form_volume'));
-  }
-  card.appendChild(entryRow(hub, entry,
+  row = entryRow(hub, entry,
     '//' + (payload.host || '') + '/' + (payload.share || ''),
-    '', [config, mount], reason, extras));
+    '', [config, mount], mountReason(state, hub, entry, record, mount), extras);
+  card.appendChild(row);
+}
+
+// Why Mount cannot run, empty while it can.
+function mountReason(state, hub, entry, record, mount) {
+  if (!mount.disabled || entryWork(hub, entry)) return '';
+  return entryReason(hub, entry, !(record && record.is_attached))
+    || (asksMountPlace(state) ? t('ui.reason.mount_form')
+      : t('ui.reason.mount_form_volume'));
+}
+
+// A row's faint reason line set to a text, or removed with none.
+function setReasonLine(row, text) {
+  const body = row.querySelector('.body');
+  const line = body.querySelector('.reason');
+  if (!text) {
+    if (line) line.remove();
+  } else if (line) {
+    line.textContent = text;
+  } else {
+    body.appendChild(reasonLine(text));
+  }
+}
+
+// Open an entry's form on its saved stage, else on the record's login,
+// else on the defaults; what it held before is what Cancel puts back.
+function openFileForm(key, state, payload, record) {
+  const staged = fileStaged[key];
+  if (staged) {
+    staged.before = Object.assign({}, staged);
+    staged.is_open = true;
+    return;
+  }
+  fileStaged[key] = {
+    is_open: true, username: record ? (record.username || '') : '',
+    password: '',
+    path: record && asksMountPlace(state) ? record.path
+      : mountDefaultPath(payload, state),
+    before: null,
+  };
+}
+
+// Close an entry's form on what its stage held before the form opened.
+function cancelFileForm(key) {
+  const staged = fileStaged[key];
+  if (staged && staged.before) {
+    fileStaged[key] = Object.assign({}, staged.before, { is_open: false });
+  } else {
+    delete fileStaged[key];
+  }
 }
 
 // The one button beside Configure: Mount, its job while it mounts, Unmount
-// once mounted, its job while it unmounts. An open form always wins: what
-// it holds is sent as a fresh mount.
+// once mounted, its job while it unmounts. A stage wins: what it holds is
+// sent as a fresh mount, and it is kept until the share is mounted; after a
+// refused login the press opens the form on it instead.
 function mountButton(state, hub, entry, record, staged) {
   if (entry.job) {
     return jobButton('', entry.job, entry.job === 'unmounting' ? 'danger' : '');
@@ -2082,17 +2131,28 @@ function mountButton(state, hub, entry, record, staged) {
   const button = document.createElement('button');
   button.type = 'button';
   const isFree = isEntryFree(hub, entry);
-  if (staged && staged.is_open) {
+  const isLoginRefused = !!record && LOGIN_CODES.indexOf(record.code) >= 0;
+  if (staged && !staged.is_open && isLoginRefused) {
+    button.textContent = t('ui.mount');
+    button.disabled = !isFree;
+    button.onclick = () => {
+      staged.before = Object.assign({}, staged);
+      staged.is_open = true;
+      redraw();
+    };
+    return button;
+  }
+  if (staged) {
     button.textContent = t('ui.mount');
     button.disabled = !isFree || !entry.is_healthy || !isMountFormFilled(staged, state);
     button.onclick = () => {
-      const sent = {
+      staged.is_open = false;
+      staged.is_sent = true;
+      staged.before = null;
+      serviceAction('file', {
         action: 'mount', hub_id: entry.hub_id, id: entry.id,
         username: staged.username, password: staged.password, path: staged.path,
-      };
-      staged.password = '';
-      delete fileStaged[serviceKey(entry)];
-      serviceAction('file', sent);
+      });
     };
     return button;
   }
@@ -2101,14 +2161,14 @@ function mountButton(state, hub, entry, record, staged) {
     button.disabled = true;
     return button;
   }
-  if (LOGIN_CODES.indexOf(record.code) >= 0) {
+  if (isLoginRefused) {
     // Nothing to retry with: the press opens the form, the login prefilled.
     button.textContent = t('ui.mount');
     button.disabled = !isFree;
     button.onclick = () => {
       fileStaged[serviceKey(entry)] = {
         is_open: true, username: record.username || '', password: '',
-        path: asksMountPlace(state) ? record.path : '',
+        path: asksMountPlace(state) ? record.path : '', before: null,
       };
       redraw();
     };
@@ -2150,8 +2210,9 @@ function drawMountRecord(record) {
 }
 
 // The form's fields write the stage as typed, and onChange keeps the Mount
-// button in step with them.
-function drawFileForm(staged, state, server, onChange) {
+// button and the reason line in step with them. Save keeps the stage for the
+// next Mount; Cancel puts back what the stage held before the form opened.
+function drawFileForm(staged, state, server, key, onChange) {
   const form = document.createElement('div');
   form.className = 'form';
   const fields = [
@@ -2165,7 +2226,7 @@ function drawFileForm(staged, state, server, onChange) {
     input.type = type;
     input.placeholder = hint;
     input.value = staged[name];
-    input.oninput = () => { staged[name] = input.value; onChange(); };
+    input.oninput = () => { staged[name] = input.value; changed(); };
     // Leaving the field lets a state that arrived while typing draw.
     input.onblur = settle;
     line.appendChild(input);
@@ -2176,8 +2237,31 @@ function drawFileForm(staged, state, server, onChange) {
   } else if (!asksMountPlace(state)) {
     form.appendChild(volumeCaptionLine(server));
   } else {
-    form.appendChild(mountPathLine(staged, onChange));
+    form.appendChild(mountPathLine(staged, changed));
   }
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.textContent = t('ui.save');
+  save.onclick = () => {
+    staged.is_open = false;
+    staged.before = null;
+    redraw();
+  };
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'ghost';
+  cancel.textContent = t('ui.cancel');
+  cancel.onclick = () => { cancelFileForm(key); redraw(); };
+  actions.appendChild(save);
+  actions.appendChild(cancel);
+  form.appendChild(actions);
+  function changed() {
+    save.disabled = !isMountFormFilled(staged, state);
+    onChange();
+  }
+  save.disabled = !isMountFormFilled(staged, state);
   return form;
 }
 

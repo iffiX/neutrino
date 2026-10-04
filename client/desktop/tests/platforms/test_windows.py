@@ -486,6 +486,91 @@ def test_every_core_joins_one_job_that_ends_with_the_daemon():
     ]
 
 
+# --- a program on the screen, followed through its job ---
+
+
+class FakeJobWin32(FakeDaemonWin32):
+    """A job that counts its live processes as the test sets them."""
+
+    def __init__(self):
+        super().__init__()
+        self.active = 2
+        self.job_error = None
+
+    def create_kill_on_close_job(self):
+        self.calls.append(("create_job",))
+        if self.job_error is not None:
+            raise self.job_error
+        return 900
+
+    def job_active_processes(self, job):
+        self.calls.append(("active", job))
+        return self.active
+
+    def terminate_job(self, job):
+        self.calls.append(("terminate_job", job))
+        self.active = 0
+
+
+class FakeStartedProcess:
+    """The bundled viewer: it started its copy and has already exited."""
+
+    def __init__(self, argv, **kwargs):
+        self.args = list(argv)
+        self.pid = 7
+        self._handle = 31
+
+    def poll(self):
+        return 0
+
+
+def started_on_screen(monkeypatch, fake):
+    monkeypatch.setattr(windows_module.subprocess, "Popen", FakeStartedProcess)
+    return WindowsPlatform(win32=fake).start_on_screen(["rustdesk.exe", "--connect"])
+
+
+def test_a_viewer_runs_while_the_copy_it_started_runs(monkeypatch):
+    fake = FakeJobWin32()
+    viewer = started_on_screen(monkeypatch, fake)
+
+    assert isinstance(viewer, windows_module.WindowsJobProcess)
+    assert fake.calls[:2] == [("create_job",), ("assign", 900, 31)]
+    assert viewer.poll() is None
+
+    fake.active = 0
+    assert viewer.poll() == 0
+    assert ("close", 900) in fake.calls
+    assert viewer.poll() == 0
+    assert fake.calls.count(("active", 900)) == 2
+
+
+def test_closing_a_viewer_ends_every_process_in_its_job(monkeypatch):
+    fake = FakeJobWin32()
+    viewer = started_on_screen(monkeypatch, fake)
+
+    viewer.terminate()
+
+    assert ("terminate_job", 900) in fake.calls
+    assert viewer.wait(timeout=1) == 0
+
+
+def test_a_viewer_that_outlives_the_wait_times_out(monkeypatch):
+    fake = FakeJobWin32()
+    viewer = started_on_screen(monkeypatch, fake)
+
+    with pytest.raises(windows_module.subprocess.TimeoutExpired):
+        viewer.wait(timeout=0)
+
+
+def test_a_refused_job_leaves_the_bare_process(monkeypatch):
+    fake = FakeJobWin32()
+    fake.job_error = OSError("no job")
+
+    viewer = started_on_screen(monkeypatch, fake)
+
+    assert isinstance(viewer, FakeStartedProcess)
+
+
 def test_windows_has_no_service_control_left_for_easytier():
     assert not hasattr(WindowsPlatform, "easytier_join")
     assert not hasattr(windows_module, "SERVICE_REFUSALS")

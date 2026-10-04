@@ -21,6 +21,8 @@ import getpass
 import os
 import re
 import subprocess
+import threading
+import time
 
 from neutrino_client.constants import (
     CLIENT_CONTROL_PIPE_NAME_PREFIX,
@@ -60,6 +62,8 @@ WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
 # mapping comes or goes.
 SHCNE_DRIVEADD = win32.SHCNE_DRIVEADD
 SHCNE_DRIVEREMOVED = win32.SHCNE_DRIVEREMOVED
+# How often a job's wait looks at its live processes again.
+WINDOWS_JOB_WAIT_INTERVAL_S = 0.05
 
 
 def _program_data() -> str:
@@ -390,6 +394,36 @@ class WindowsPlatform(ClientPlatform):
             self._job = api.create_kill_on_close_job()
         api.assign_to_job(self._job, int(process._handle))
 
+    def start_on_screen(self, argv: list):
+        """Start a windowed program, followed through every process it starts.
+
+        The program and each process it starts share a job of their own, so
+        a program that starts a copy of itself and exits is still running
+        while the copy runs.
+
+        Args:
+            argv: Argument vector.
+
+        Returns:
+            A :class:`WindowsJobProcess`; the bare process when Windows
+            refuses the job.
+
+        Raises:
+            OSError: When the program cannot be started.
+        """
+        process = super().start_on_screen(argv)
+        api = self._win32()
+        try:
+            job = api.create_kill_on_close_job()
+        except OSError:
+            return process
+        try:
+            api.assign_to_job(job, int(process._handle))
+        except OSError:
+            api.close_handle(job)
+            return process
+        return WindowsJobProcess(api=api, process=process, job=job)
+
     def _announce_drive(self, location: str, event: int) -> None:
         """Tell the shell a drive letter came or went.
 
@@ -411,6 +445,90 @@ class WindowsPlatform(ClientPlatform):
         if self._win32_api is None:
             self._win32_api = _WindowsApi()
         return self._win32_api
+
+
+class WindowsJobProcess:
+    """One started program and every process it starts, held in one job.
+
+    It answers ``poll``, ``wait``, ``terminate`` and ``kill`` as a
+    ``subprocess.Popen`` does, for the job as a whole: running while any
+    process in the job runs. The job ends what is left in it when its handle
+    closes.
+    """
+
+    def __init__(self, *, api, process, job: int):
+        """
+        Args:
+            api: The Win32 seam the job is asked through.
+            process: The started ``subprocess.Popen``.
+            job: The job's handle, the process already in it.
+        """
+        self._api = api
+        self._process = process
+        self._job: "int | None" = job
+        self._lock = threading.Lock()
+        self.args = process.args
+        self.pid = process.pid
+        self.returncode: "int | None" = None
+
+    def poll(self) -> "int | None":
+        """Whether the job still runs a process.
+
+        Returns:
+            None while a process in the job runs; the started process's exit
+            status once none does, the job's handle then closed.
+        """
+        with self._lock:
+            if self._job is None:
+                return self.returncode
+            try:
+                active = self._api.job_active_processes(self._job)
+            except OSError:
+                active = 0
+            if active:
+                return None
+            status = self._process.poll()
+            self.returncode = 0 if status is None else status
+            self._api.close_handle(self._job)
+            self._job = None
+            return self.returncode
+
+    def wait(self, timeout: "float | None" = None) -> int:
+        """Wait for the job to run no process.
+
+        Args:
+            timeout: Seconds to wait; None waits as long as it takes.
+
+        Returns:
+            The exit status ``poll`` gives.
+
+        Raises:
+            subprocess.TimeoutExpired: When the wait ran out first.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.poll() is None:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(self.args, timeout)
+            time.sleep(WINDOWS_JOB_WAIT_INTERVAL_S)
+        return self.returncode
+
+    def terminate(self) -> None:
+        """End every process in the job.
+
+        Raises:
+            OSError: When Windows refuses.
+        """
+        with self._lock:
+            if self._job is not None:
+                self._api.terminate_job(self._job)
+
+    def kill(self) -> None:
+        """End every process in the job, as ``terminate`` does.
+
+        Raises:
+            OSError: When Windows refuses.
+        """
+        self.terminate()
 
 
 class _WindowsApi:
@@ -507,6 +625,41 @@ class _WindowsApi:
             OSError: When Windows refuses.
         """
         if not win32.libraries().kernel32.AssignProcessToJobObject(job, process_handle):
+            raise win32.last_error()
+
+    def job_active_processes(self, job: int) -> int:
+        """How many processes in a job still run.
+
+        Args:
+            job: The job's handle.
+
+        Returns:
+            The count.
+
+        Raises:
+            OSError: When Windows refuses.
+        """
+        accounting = win32.JobObjectBasicAccountingInformation()
+        if not win32.libraries().kernel32.QueryInformationJobObject(
+            job,
+            win32.JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS,
+            ctypes.byref(accounting),
+            ctypes.sizeof(accounting),
+            None,
+        ):
+            raise win32.last_error()
+        return int(accounting.ActiveProcesses)
+
+    def terminate_job(self, job: int) -> None:
+        """End every process in a job.
+
+        Args:
+            job: The job's handle.
+
+        Raises:
+            OSError: When Windows refuses.
+        """
+        if not win32.libraries().kernel32.TerminateJobObject(job, 1):
             raise win32.last_error()
 
     def clipboard_text(self) -> str:

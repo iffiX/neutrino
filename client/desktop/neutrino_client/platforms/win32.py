@@ -77,6 +77,7 @@ ERROR_CALL_NOT_IMPLEMENTED = 120
 # Job objects: the core dies with the daemon's last handle on its job.
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION_CLASS = 1
 
 # A file's access list, set whole and cut off from its parent's.
 SE_FILE_OBJECT = 1
@@ -463,6 +464,21 @@ class JobObjectExtendedLimitInformation(ctypes.Structure):
     ]
 
 
+class JobObjectBasicAccountingInformation(ctypes.Structure):
+    """JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, which counts a job's live processes."""
+
+    _fields_ = [
+        ("TotalUserTime", ctypes.c_int64),
+        ("TotalKernelTime", ctypes.c_int64),
+        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+        ("TotalPageFaultCount", DWORD),
+        ("TotalProcesses", DWORD),
+        ("ActiveProcesses", DWORD),
+        ("TotalTerminatedProcesses", DWORD),
+    ]
+
+
 class Win32Libraries:
     """Every DLL the client calls, with its prototypes set once.
 
@@ -541,6 +557,14 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.c_void_p,
         ]
+        self.kernel32.QueryInformationJobObject.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.c_void_p,
+        ]
+        self.kernel32.TerminateJobObject.argtypes = [ctypes.c_void_p, ctypes.c_uint]
         self.kernel32.InitializeProcThreadAttributeList.argtypes = [
             ctypes.c_void_p,
             ctypes.c_ulong,

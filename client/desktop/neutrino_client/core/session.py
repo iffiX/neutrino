@@ -835,6 +835,8 @@ class ClientHubSession:
             is_idle = self._is_replaced or self._is_unbound or self._is_join_refused
             was_down = self._is_down
             self._is_down = False
+            if was_down and not is_idle:
+                self._last_error = None
         if is_idle:
             return CLIENT_IDLE_POLL_INTERVAL_S
         if was_down:
