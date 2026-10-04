@@ -87,7 +87,9 @@ def parse_share_points(text: str) -> list:
 
     Args:
         text: What the command printed: an object keyed by record name, or
-            a list of objects each naming itself.
+            a list of objects each naming itself. The SMB name and the
+            read-only flag are read from ``smb_name`` and ``smb_read_only``,
+            or from an ``smb`` object's ``name`` and ``read-only``.
 
     Returns:
         ``[{"record", "path", "smb_name", "is_read_only"}]``; empty when the
@@ -111,12 +113,14 @@ def parse_share_points(text: str) -> list:
     for entry in entries:
         smb = entry.get("smb") if isinstance(entry.get("smb"), dict) else {}
         record = str(entry.get("name", "") or "")
+        smb_name = entry.get("smb_name", smb.get("name", ""))
+        read_only = entry.get("smb_read_only", smb.get("read-only", 0))
         points.append(
             {
                 "record": record,
                 "path": str(entry.get("path", "") or ""),
-                "smb_name": str(smb.get("name", "") or record),
-                "is_read_only": str(smb.get("read-only", "0")) in ("1", "true"),
+                "smb_name": str(smb_name or record),
+                "is_read_only": str(read_only).lower() in ("1", "true"),
             }
         )
     return points
@@ -158,7 +162,8 @@ class SambaDarwinApplier:
 
         An account is the module's when the record lists it or its full name
         is the module's; a share point is the module's when the record lists
-        it and its record name has the module's prefix.
+        its name and its record name has the module's prefix. Each share
+        keeps one point: a matching one stays, the others of its name go.
 
         Args:
             config: The validated configuration.
@@ -175,14 +180,13 @@ class SambaDarwinApplier:
         """
         owned_shares = dict(record.get("shares") or {})
         owned_accounts = list(record.get("accounts") or [])
-        points = {point["smb_name"]: point for point in self._share_points()}
+        points = self._share_points()
         for share in config.shares:
-            held = points.get(share.name)
-            is_ours = held is not None and (
-                share.name in owned_shares
-                and held["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX)
+            held = [point for point in points if point["smb_name"] == share.name]
+            is_ours = share.name in owned_shares and all(
+                point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX) for point in held
             )
-            if held is not None and not is_ours:
+            if held and not is_ours:
                 raise ModuleApplyError("share_name_taken", {"name": share.name})
         for name in config.users:
             if name in owned_accounts or not self._account_exists(name):
@@ -226,8 +230,10 @@ class SambaDarwinApplier:
     def set_password(self, name: str, password: str) -> None:
         """Set one of the module's accounts' SMB password and enable it.
 
-        The NT hash is turned on before the password is set, or the server
-        has no hash to check it against.
+        An account that does not exist yet is made first, as an apply makes
+        it. The account is enabled before the password is set, since
+        ``dscl`` refuses a disabled one, and the NT hash is turned on
+        before it, or the server has no hash to check it against.
 
         Args:
             name: An account the record lists.
@@ -237,9 +243,11 @@ class SambaDarwinApplier:
             OSError: When a command cannot run.
             subprocess.CalledProcessError: When a command refuses.
         """
+        if not self._account_exists(name):
+            self._make_account(name, has_access_group=self._has_access_group())
+        self._run(["pwpolicy", "-u", name, "-enableuser"], is_checked=False)
         self._run(["pwpolicy", "-u", name, "-sethashtypes", SMB_NT_HASH, "on"])
         self._run(["dscl", ".", "-passwd", f"/Users/{name}", password])
-        self._run(["pwpolicy", "-u", name, "-enableuser"], is_checked=False)
 
     def read_server_log(self, lines: int) -> list:
         """What the unified log holds of smbd over the last 15 minutes.
@@ -276,10 +284,20 @@ class SambaDarwinApplier:
             self._load_rules_file()
 
     def _read_status(self, record: dict) -> dict:
-        """The status once smbd's job is known to be there."""
+        """The status once smbd's job is known to be there.
+
+        A user has a password once the record lists it under ``passworded``
+        and its NT hash is on.
+        """
         owned = set(record.get("shares") or {})
-        shares = [
-            {
+        passworded = set(record.get("passworded") or [])
+        shares: dict = {}
+        for point in self._share_points():
+            if not point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX):
+                continue
+            if point["smb_name"] not in owned or point["smb_name"] in shares:
+                continue
+            shares[point["smb_name"]] = {
                 "name": point["smb_name"],
                 "path": point["path"],
                 "params": {
@@ -288,20 +306,17 @@ class SambaDarwinApplier:
                     "valid users": "",
                 },
             }
-            for point in self._share_points()
-            if point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX)
-            and point["smb_name"] in owned
-        ]
         return {
             "is_present": True,
             "is_running": self._is_loaded(),
-            "shares": shares,
+            "shares": list(shares.values()),
             "sessions": self._sessions(),
             "users": [
                 {
                     "name": name,
                     "is_present": self._account_exists(name),
-                    "has_password": SMB_NT_HASH
+                    "has_password": name in passworded
+                    and SMB_NT_HASH
                     in self._read(
                         [
                             "dscl",
@@ -349,60 +364,77 @@ class SambaDarwinApplier:
     def _converge_accounts(self, config: SambaConfig, owned: list) -> list:
         """Make every configured account, hidden and in the SMB group."""
         notes = []
-        has_access_group = self._run(
-            ["dscl", ".", "-read", f"/Groups/{SAMBA_DARWIN_ACCESS_GROUP}"],
-            is_checked=False,
-        ).is_success
+        has_access_group = self._has_access_group()
         for name in config.users:
-            if not self._account_exists(name):
-                self._run(
-                    [
-                        "sysadminctl",
-                        "-addUser",
-                        name,
-                        "-fullName",
-                        SAMBA_DARWIN_ACCOUNT_NAME,
-                        "-shell",
-                        SAMBA_DARWIN_SHELL,
-                        "-home",
-                        SAMBA_DARWIN_HOME,
-                        "-password",
-                        secrets.token_urlsafe(24),
-                    ]
-                )
+            if self._account_exists(name):
+                self._settle_account(name, has_access_group=has_access_group)
+            else:
+                self._make_account(name, has_access_group=has_access_group)
                 notes.append(f"created account {name}")
-            self._run(["dscl", ".", "-create", f"/Users/{name}", "IsHidden", "1"])
-            if has_access_group:
-                self._run(
-                    [
-                        "dseditgroup",
-                        "-o",
-                        "edit",
-                        "-a",
-                        name,
-                        "-t",
-                        "user",
-                        SAMBA_DARWIN_ACCESS_GROUP,
-                    ]
-                )
         for name in owned:
             if name not in config.users:
                 self._run(["pwpolicy", "-u", name, "-disableuser"], is_checked=False)
                 notes.append(f"retired {name}")
         return notes
 
+    def _has_access_group(self) -> bool:
+        return self._run(
+            ["dscl", ".", "-read", f"/Groups/{SAMBA_DARWIN_ACCESS_GROUP}"],
+            is_checked=False,
+        ).is_success
+
+    def _make_account(self, name: str, *, has_access_group: bool) -> None:
+        """Make one account with a random password, hidden, in the SMB group."""
+        self._run(
+            [
+                "sysadminctl",
+                "-addUser",
+                name,
+                "-fullName",
+                SAMBA_DARWIN_ACCOUNT_NAME,
+                "-shell",
+                SAMBA_DARWIN_SHELL,
+                "-home",
+                SAMBA_DARWIN_HOME,
+                "-password",
+                secrets.token_urlsafe(24),
+            ]
+        )
+        self._settle_account(name, has_access_group=has_access_group)
+
+    def _settle_account(self, name: str, *, has_access_group: bool) -> None:
+        """Hide one account and put it in the SMB group where there is one."""
+        self._run(["dscl", ".", "-create", f"/Users/{name}", "IsHidden", "1"])
+        if has_access_group:
+            self._run(
+                [
+                    "dseditgroup",
+                    "-o",
+                    "edit",
+                    "-a",
+                    name,
+                    "-t",
+                    "user",
+                    SAMBA_DARWIN_ACCESS_GROUP,
+                ]
+            )
+
     def _converge_shares(
-        self, config: SambaConfig, owned: dict, accounts: list, points: dict
+        self, config: SambaConfig, owned: dict, accounts: list, points: list
     ) -> list:
-        """Make every configured share point, and remove the module's others."""
+        """Keep one point per configured share, and remove the module's others."""
         notes = []
         wanted = {share.name for share in config.shares}
+        ours = [
+            point
+            for point in points
+            if point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX)
+        ]
         for name in sorted(set(owned) - wanted):
-            held = points.get(name)
-            if held is not None and held["record"].startswith(
-                SAMBA_DARWIN_SHARE_PREFIX
-            ):
-                self._run(["sharing", "-r", held["record"]])
+            held = [point for point in ours if point["smb_name"] == name]
+            for point in held:
+                self._run(["sharing", "-r", point["record"]])
+            if held:
                 notes.append(f"removed share {name}")
         known = accounts + [name for name in config.users if name not in accounts]
         for share in config.shares:
@@ -419,14 +451,14 @@ class SambaDarwinApplier:
             )
             for name in granted:
                 self._run(["chmod", "+a", f"user:{name} allow {entry}", share.path])
-            held = points.get(share.name)
-            if held is not None and (
-                held["path"] == share.path
-                and held["is_read_only"] == share.is_read_only
-            ):
+            held = [point for point in ours if point["smb_name"] == share.name]
+            kept = _kept_point(held, share)
+            for point in held:
+                if point is not kept:
+                    self._run(["sharing", "-r", point["record"]])
+                    notes.append(f"removed share point {point['record']}")
+            if kept is not None:
                 continue
-            if held is not None:
-                self._run(["sharing", "-r", held["record"]])
             command = [
                 "sharing",
                 "-a",
@@ -491,3 +523,25 @@ class SambaDarwinApplier:
         except (OSError, subprocess.SubprocessError):
             return ""
         return result.stdout if result.is_success else ""
+
+
+def _kept_point(held: list, share) -> "dict | None":
+    """The one point of a share's that already serves it as configured.
+
+    Args:
+        held: The module's points of the share's name.
+        share: The configured share.
+
+    Returns:
+        The point with the share's path and read-only flag, the one under
+        the module's own record name first; None when no point matches.
+    """
+    matching = [
+        point
+        for point in held
+        if point["path"] == share.path and point["is_read_only"] == share.is_read_only
+    ]
+    for point in matching:
+        if point["record"] == SAMBA_DARWIN_SHARE_PREFIX + share.name:
+            return point
+    return matching[0] if matching else None

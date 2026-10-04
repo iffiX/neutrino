@@ -40,8 +40,9 @@ from neutrino_agent.streams.package import (
 )
 
 FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
-# The received package's final name before its kind's extension; ``installer``
-# and ``dnf`` refuse a file that does not end in ``.pkg`` or ``.rpm``.
+# The received package's final name before its kind's extension, when the
+# hub sends no release name; ``installer`` and ``dnf`` refuse a file that
+# does not end in ``.pkg`` or ``.rpm``.
 PACKAGE_FILE_STEM = "neutrino_agent"
 # The package kind a machine installs by its operating system alone.
 OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
@@ -231,7 +232,8 @@ def receive_package(channel, *, directory: str, kind: str) -> str:
 
     Returns:
         The path of the file whose digest matched the close's ``sha256``,
-        renamed ``neutrino_agent.<kind>``.
+        renamed to the release file name the close carried, or
+        ``neutrino_agent.<kind>`` when it carried none or an unsafe one.
 
     Raises:
         SelfUpdateError: When the bytes do not match the digest the hub

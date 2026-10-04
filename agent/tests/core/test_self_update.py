@@ -374,6 +374,84 @@ def test_the_installer_sees_the_package_under_its_final_name(tmp_path, kind):
     assert ".part" not in command
 
 
+RELEASE_NAMES = {
+    "deb": "neutrino-agent_0.5.0_amd64.deb",
+    "rpm": "neutrino-agent-0.5.0-1.x86_64.rpm",
+    "msi": "neutrino-agent-0.5.0-windows-amd64.msi",
+    "pkg": "neutrino-agent-0.5.0-macos.pkg",
+}
+
+
+@pytest.mark.parametrize("kind", ["deb", "rpm", "msi", "pkg"])
+def test_the_package_takes_the_file_name_its_release_gave_it(tmp_path, kind):
+    name = RELEASE_NAMES[kind]
+    path = stream_outcome(
+        tmp_path,
+        [PACKAGE_BYTES],
+        ("", {"sha256": sha256(PACKAGE_BYTES), "name": name}),
+        kind,
+    )
+
+    assert path == str(tmp_path / "packages" / name)
+    assert landed(tmp_path) == [name]
+    command = " ".join(self_update.install_command(kind, path, state_dir="/s"))
+    assert path in command
+    assert "neutrino_agent." not in command
+
+
+def test_the_msi_reinstall_runs_the_file_under_its_release_name():
+    path = "C:\\ProgramData\\Neutrino\\agent\\state\\packages\\" + RELEASE_NAMES["msi"]
+
+    script = self_update.install_command("msi", path, state_dir="C:\\s")[-1]
+
+    assert f'/i "{path}" REINSTALL=ALL' in script
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../neutrino-agent.msi",
+        "..\\neutrino-agent.msi",
+        "sub/neutrino-agent.msi",
+        "sub\\neutrino-agent.msi",
+        "C:neutrino-agent.msi",
+        "C:\\Windows\\neutrino-agent.msi",
+        "/etc/neutrino-agent.msi",
+        ".neutrino-agent.msi",
+        "..msi",
+        "neutrino..agent.msi",
+        "neutrino agent.msi",
+        "neutrino-agent.msi;reboot",
+        "neutrino-agent.pkg",
+        "",
+        7,
+        None,
+    ],
+)
+def test_an_unsafe_release_name_falls_back_to_the_agents_own(tmp_path, name):
+    path = stream_outcome(
+        tmp_path,
+        [PACKAGE_BYTES],
+        ("", {"sha256": sha256(PACKAGE_BYTES), "name": name}),
+        "msi",
+    )
+
+    assert path == str(tmp_path / "packages" / "neutrino_agent.msi")
+    assert landed(tmp_path) == ["neutrino_agent.msi"]
+
+
+def test_a_release_name_does_not_skip_the_digest_check(tmp_path):
+    with pytest.raises(SelfUpdateError):
+        stream_outcome(
+            tmp_path,
+            [PACKAGE_BYTES],
+            ("", {"sha256": "0" * 64, "name": RELEASE_NAMES["msi"]}),
+            "msi",
+        )
+
+    assert landed(tmp_path) == []
+
+
 def test_receive_package_names_a_mismatch_with_the_agents_own_code(tmp_path):
     with pytest.raises(SelfUpdateError) as caught:
         stream_outcome(tmp_path, [PACKAGE_BYTES], ("", {"sha256": "0" * 64}))

@@ -466,7 +466,11 @@ REINSTALL_RESULT = {
 FAILED_REINSTALL = dict(REINSTALL_RESULT, exit_code=100, output="dpkg: error\n")
 REINSTALL_ERROR = {
     "code": "reinstall_failed",
-    "params": {"exit_code": 100, "finished_at": "2026-09-10T10:00:12Z"},
+    "params": {
+        "exit_code": 100,
+        "finished_at": "2026-09-10T10:00:12Z",
+        "output": "dpkg: error\n",
+    },
 }
 
 
@@ -480,8 +484,23 @@ def test_a_failed_reinstall_is_the_reports_error(tmp_path, config_path, monkeypa
     (report,) = script.clients[0].frames("report")
     assert "error" not in hello
     assert report["error"] == REINSTALL_ERROR
-    # The package manager's own output stays on the machine.
-    assert "dpkg" not in json.dumps(report)
+
+
+def test_a_failed_reinstall_reports_the_installers_tail_masked(
+    tmp_path, config_path, monkeypatch
+):
+    output = "MSI (s) Note: 1: 1316\nhttp://host:8000/?tkn=s3cr3t-token\n"
+    (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(
+        json.dumps(dict(FAILED_REINSTALL, exit_code=1603, output=output))
+    )
+    agent, script = scripted_agent(config_path, monkeypatch, [welcomed_then_dropped()])
+
+    agent.run_once()
+
+    (report,) = script.clients[0].frames("report")
+    params = report["error"]["params"]
+    assert params["exit_code"] == 1603
+    assert params["output"] == "MSI (s) Note: 1: 1316\nhttp://host:8000/?tkn=***\n"
 
 
 def test_a_reinstall_that_went_through_is_no_error(tmp_path, config_path, monkeypatch):
@@ -1260,7 +1279,10 @@ def test_a_reinstall_the_installer_refused_ends_with_its_code_and_a_failed_exit(
 
     assert outcome["exit_code"] == 100
     assert outcome["code"] == "reinstall_failed"
-    assert outcome["params"] == REINSTALL_ERROR["params"]
+    assert outcome["params"] == {
+        "exit_code": 100,
+        "finished_at": "2026-09-10T10:00:12Z",
+    }
     lines = outcome["output"].splitlines()
     assert lines[0] == "installer: Error - the package path specified was invalid"
     assert lines[1] == "http://host:8000/?tkn=***"
