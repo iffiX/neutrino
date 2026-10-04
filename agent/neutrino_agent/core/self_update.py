@@ -21,15 +21,18 @@ import os
 import shlex
 import shutil
 import subprocess
+import time
 
 from neutrino_agent.constants import (
     AGENT_REINSTALL_LOG_NAME,
     AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
+    AGENT_REINSTALL_POLL_S,
     AGENT_REINSTALL_RESULT_NAME,
     AGENT_UPDATE_LAUNCH_TIMEOUT_S,
     AGENT_UPDATE_UNIT,
 )
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError
+from neutrino_agent.modules.log_tail import mask_secrets
 from neutrino_agent.streams.package import (
     CODE_DIGEST_MISMATCH,
     CODE_UNREACHABLE,
@@ -37,6 +40,9 @@ from neutrino_agent.streams.package import (
 )
 
 FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
+# The received package's final name before its kind's extension; ``installer``
+# and ``dnf`` refuse a file that does not end in ``.pkg`` or ``.rpm``.
+PACKAGE_FILE_STEM = "neutrino_agent"
 # The package kind a machine installs by its operating system alone.
 OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
 
@@ -149,7 +155,8 @@ def read_reinstall_result(state_dir: str) -> "dict | None":
 
     Returns:
         ``{"package", "kind", "started_at", "finished_at", "exit_code",
-        "output"}``, or None when no readable result stands there.
+        "output"}``, the output's tokens masked, or None when no readable
+        result stands there.
     """
     try:
         with open(
@@ -170,8 +177,33 @@ def read_reinstall_result(state_dir: str) -> "dict | None":
         "started_at": str(written.get("started_at", "") or ""),
         "finished_at": str(written.get("finished_at", "") or ""),
         "exit_code": exit_code,
-        "output": str(written.get("output", "") or ""),
+        "output": mask_secrets(str(written.get("output", "") or "")),
     }
+
+
+def wait_reinstall_result(
+    state_dir: str, *, timeout_s: float, sleep=time.sleep, clock=time.monotonic
+) -> "dict | None":
+    """What the launched install did, once its result is written.
+
+    An install that goes through restarts this process, which ends the wait.
+
+    Args:
+        state_dir: The agent's state directory.
+        timeout_s: How long to wait for the result.
+        sleep: Waits the given seconds between looks.
+        clock: Returns monotonic seconds.
+
+    Returns:
+        The result as :func:`read_reinstall_result` reads it, or None when
+        none was written in time.
+    """
+    deadline = clock() + timeout_s
+    while True:
+        result = read_reinstall_result(state_dir)
+        if result is not None or clock() >= deadline:
+            return result
+        sleep(AGENT_REINSTALL_POLL_S)
 
 
 def clear_reinstall_result(state_dir: str) -> None:
@@ -186,15 +218,18 @@ def clear_reinstall_result(state_dir: str) -> None:
         pass
 
 
-def receive_package(channel, *, directory: str) -> str:
+def receive_package(channel, *, directory: str, kind: str) -> str:
     """Take the agent's own package down a ``package {}`` stream.
 
     Args:
         channel: The stream's channel, already opened as ``package {}``.
         directory: Where the file lands.
+        kind: ``deb``, ``rpm``, ``msi`` or ``pkg``, the final name's
+            extension.
 
     Returns:
-        The path of the file whose digest matched the close's ``sha256``.
+        The path of the file whose digest matched the close's ``sha256``,
+        renamed ``neutrino_agent.<kind>``.
 
     Raises:
         SelfUpdateError: When the bytes do not match the digest the hub
@@ -203,7 +238,9 @@ def receive_package(channel, *, directory: str) -> str:
         GatewayUnreachable: When the socket went away mid-transfer; no
             file remains.
     """
-    received = PackageStream(channel, directory=directory).receive()
+    received = PackageStream(
+        channel, directory=directory, name=f"{PACKAGE_FILE_STEM}.{kind}"
+    ).receive()
     if "path" in received:
         return received["path"]
     code = received["code"]

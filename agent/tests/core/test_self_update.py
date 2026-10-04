@@ -139,9 +139,11 @@ def test_a_newer_hub_takes_the_package_down_a_stream_and_installs_it_detached(
     agent.run_once()
 
     assert opened(agent) == [PACKAGE_OPEN]
-    (name,) = landed(tmp_path)
-    path = str(tmp_path / "packages" / name)
-    assert (tmp_path / "packages" / name).read_bytes() == PACKAGE_BYTES
+    assert landed(tmp_path) == ["neutrino_agent.deb"]
+    path = str(tmp_path / "packages" / "neutrino_agent.deb")
+    assert (tmp_path / "packages" / "neutrino_agent.deb").read_bytes() == (
+        PACKAGE_BYTES
+    )
     launched_command = launched[0]
     assert launched_command[:4] == [
         "systemd-run",
@@ -339,12 +341,14 @@ def test_a_successful_target_is_not_relaunched(config_path, monkeypatch, launche
 # --- the stream's outcome, as the update reads it ---
 
 
-def stream_outcome(tmp_path, chunks, close):
+def stream_outcome(tmp_path, chunks, close, kind="deb"):
     channel = FakeChannel(stream_id=1)
     for chunk in chunks:
         channel.feed(("data", chunk))
     channel.feed(("close", close[0], close[1]))
-    return self_update.receive_package(channel, directory=str(tmp_path / "packages"))
+    return self_update.receive_package(
+        channel, directory=str(tmp_path / "packages"), kind=kind
+    )
 
 
 def test_receive_package_hands_over_the_file_the_close_vouches_for(tmp_path):
@@ -355,6 +359,19 @@ def test_receive_package_hands_over_the_file_the_close_vouches_for(tmp_path):
     assert path.startswith(str(tmp_path / "packages"))
     with open(path, "rb") as stream:
         assert stream.read() == PACKAGE_BYTES
+
+
+@pytest.mark.parametrize("kind", ["deb", "rpm", "msi", "pkg"])
+def test_the_installer_sees_the_package_under_its_final_name(tmp_path, kind):
+    path = stream_outcome(
+        tmp_path, [PACKAGE_BYTES], ("", {"sha256": sha256(PACKAGE_BYTES)}), kind
+    )
+
+    assert path == str(tmp_path / "packages" / f"neutrino_agent.{kind}")
+    assert landed(tmp_path) == [f"neutrino_agent.{kind}"]
+    command = " ".join(self_update.install_command(kind, path, state_dir="/s"))
+    assert f"neutrino_agent.{kind}" in command
+    assert ".part" not in command
 
 
 def test_receive_package_names_a_mismatch_with_the_agents_own_code(tmp_path):
@@ -541,6 +558,52 @@ def test_the_result_reads_back_in_the_shape_the_hub_is_given(tmp_path, stubbed):
         "output",
     }
     assert read["exit_code"] == 0
+
+
+def test_the_result_reads_back_with_its_tokens_masked(tmp_path):
+    (tmp_path / "reinstall.json").write_text(
+        json.dumps(
+            {
+                "package": "neutrino_agent.pkg",
+                "exit_code": 1,
+                "output": "Web UI available at http://h:8000?tkn=abc123\n",
+            }
+        )
+    )
+
+    result = self_update.read_reinstall_result(str(tmp_path))
+
+    assert result["output"] == "Web UI available at http://h:8000?tkn=***\n"
+
+
+def test_the_wait_for_a_result_returns_it_once_written(tmp_path):
+    slept = []
+
+    def sleep(seconds):
+        slept.append(seconds)
+        (tmp_path / "reinstall.json").write_text(
+            json.dumps({"exit_code": 1, "finished_at": "t"})
+        )
+
+    result = self_update.wait_reinstall_result(
+        str(tmp_path), timeout_s=60, sleep=sleep, clock=lambda: 0.0
+    )
+
+    assert result["exit_code"] == 1
+    assert len(slept) == 1
+
+
+def test_the_wait_for_a_result_gives_up_at_its_deadline(tmp_path):
+    ticks = iter([0.0, 5.0, 11.0])
+
+    result = self_update.wait_reinstall_result(
+        str(tmp_path),
+        timeout_s=10,
+        sleep=lambda seconds: None,
+        clock=lambda: next(ticks),
+    )
+
+    assert result is None
 
 
 def test_no_result_file_reads_as_nothing(tmp_path):

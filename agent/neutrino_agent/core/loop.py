@@ -38,6 +38,7 @@ from neutrino_agent.constants import (
     AGENT_CONFIGURED_DIR_NAME,
     AGENT_CREDENTIALS_DIR_NAME,
     AGENT_DESIRED_STATE_NAME,
+    AGENT_REINSTALL_WAIT_S,
     AGENT_REPORT_INTERVAL_S,
     AGENT_HUB_SOFTWARE_PREFIX,
     AGENT_PACKAGE_DIR_NAME,
@@ -766,15 +767,35 @@ class Agent:
     def _reinstall(self) -> dict:
         """Reinstall this agent from the hub's package, on the hub's order.
 
+        After the launch the install's result is waited for; an install
+        that goes through restarts this process before the wait ends.
+
         Returns:
-            Empty when the install was launched, ``{"code", "params"}``
-            when it was not.
+            Empty when the install was launched and wrote no failure in
+            time; ``{"code", "params"}`` when it was not launched; and
+            ``{"code": "reinstall_failed", "params", "output"}`` when the
+            installer exited non-zero, ``output`` its masked log tail.
         """
         with self._lock:
             self._update_target = ""
         self._force_self_update("reinstall")
         with self._lock:
-            return dict(self._update_error) if self._update_error else {}
+            if self._update_error:
+                return dict(self._update_error)
+        result = self_update.wait_reinstall_result(
+            self._var_dir, timeout_s=AGENT_REINSTALL_WAIT_S
+        )
+        if result is None or result["exit_code"] == 0:
+            return {}
+        self._log(f"reinstall failed: the installer exited {result['exit_code']}")
+        return {
+            "code": "reinstall_failed",
+            "params": {
+                "exit_code": result["exit_code"],
+                "finished_at": result["finished_at"],
+            },
+            "output": result["output"],
+        }
 
     def _read_metrics(self) -> dict:
         try:
@@ -966,14 +987,16 @@ class Agent:
 
         Args:
             target: What the attempt is latched under.
-            kind: ``deb`` or ``rpm``.
+            kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
 
         Returns:
             True when the install was launched.
         """
         try:
             channel = self._open_stream(STREAM_KIND_PACKAGE)
-            path = self_update.receive_package(channel, directory=self._package_dir)
+            path = self_update.receive_package(
+                channel, directory=self._package_dir, kind=kind
+            )
         except GatewayUnreachable as error:
             with self._lock:
                 self._update_target = ""

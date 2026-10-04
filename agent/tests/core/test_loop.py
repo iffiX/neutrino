@@ -1152,11 +1152,12 @@ def installer(monkeypatch) -> list:
     """The self-update replaced at its two seams: the bytes come from a
     stub, and what it was asked to install is recorded."""
     installed: list = []
+    monkeypatch.setattr(loop_module, "AGENT_REINSTALL_WAIT_S", 0)
     monkeypatch.setattr(loop_module.self_update, "package_kind", lambda platform: "deb")
     monkeypatch.setattr(
         loop_module.self_update,
         "receive_package",
-        lambda channel, directory: f"{directory}/agent.deb",
+        lambda channel, directory, kind: f"{directory}/neutrino_agent.{kind}",
     )
     monkeypatch.setattr(
         loop_module.self_update,
@@ -1182,7 +1183,7 @@ def test_a_newer_hub_opens_a_package_stream_and_launches_the_install_once_per_ta
     agent.run_once()
     agent.run_once()
 
-    assert installed == [(f"{tmp_path / 'packages'}/agent.deb", "deb")]
+    assert installed == [(f"{tmp_path / 'packages'}/neutrino_agent.deb", "deb")]
     assert script.clients[0].frames("open") == [PACKAGE_OPEN]
     assert script.clients[1].frames("open") == []
 
@@ -1233,6 +1234,38 @@ def test_a_reinstall_command_opens_the_same_package_stream(config_path, monkeypa
         "params": {},
         "output": "reinstall launched\n",
     }
+    session.close()
+
+
+def test_a_reinstall_the_installer_refused_ends_with_its_code_and_a_failed_exit(
+    config_path, monkeypatch, tmp_path
+):
+    agent, _ = scripted_agent(config_path, monkeypatch, [[WELCOME]])
+    installer(monkeypatch)
+    failed = dict(
+        FAILED_REINSTALL,
+        output="installer: Error - the package path specified was invalid\n"
+        "http://host:8000/?tkn=s3cr3t-token\n",
+    )
+
+    def install(path, kind, state_dir):
+        (tmp_path / AGENT_REINSTALL_RESULT_NAME).write_text(json.dumps(failed))
+
+    monkeypatch.setattr(loop_module.self_update, "run_update", install)
+    session = agent._open_session()
+    session.connect()
+    agent._session = session
+
+    outcome = agent._run_command("agent", "reinstall", {})
+
+    assert outcome["exit_code"] == 100
+    assert outcome["code"] == "reinstall_failed"
+    assert outcome["params"] == REINSTALL_ERROR["params"]
+    lines = outcome["output"].splitlines()
+    assert lines[0] == "installer: Error - the package path specified was invalid"
+    assert lines[1] == "http://host:8000/?tkn=***"
+    assert lines[-1] == "reinstall_failed: exit status 100"
+    assert "s3cr3t" not in outcome["output"]
     session.close()
 
 

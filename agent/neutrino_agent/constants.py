@@ -203,6 +203,10 @@ AGENT_REINSTALL_RESULT_NAME = "reinstall.json"
 AGENT_REINSTALL_LOG_NAME = "reinstall.log"
 # How much of the install log the result carries up.
 AGENT_REINSTALL_OUTPUT_LIMIT_BYTES = 4 * 1024
+# How long the reinstall verb waits for the install's result before it
+# closes as launched, and how often it looks; under the hub's own wait.
+AGENT_REINSTALL_WAIT_S = 120.0
+AGENT_REINSTALL_POLL_S = 1.0
 
 # How long a module's live details stand in the report before the engine
 # reads them again. The reporter never waits on a read.

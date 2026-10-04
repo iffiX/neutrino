@@ -4,13 +4,14 @@ What these pin: the lines come oldest first, capped, blank lines dropped; a
 needle keeps only the lines that hold it and reads further back than a
 plain tail; a file longer than the read starts at its first whole line; a
 file another handle holds open for writing reads; a file that cannot be
-read is an OSError.
+read is an OSError. The mask hides a token in a URL's query and a token on
+a line of its own, and leaves every other line as it was.
 """
 
 import pytest
 
 import neutrino_agent.modules.log_tail as log_tail_module
-from neutrino_agent.modules.log_tail import file_tail
+from neutrino_agent.modules.log_tail import file_tail, mask_secrets
 
 
 def test_the_last_lines_come_oldest_first(tmp_path):
@@ -67,3 +68,38 @@ def test_a_file_held_open_for_writing_reads(tmp_path):
 def test_a_missing_file_is_an_os_error(tmp_path):
     with pytest.raises(OSError):
         file_tail(str(tmp_path / "absent.log"), 10)
+
+
+# --- the mask ---
+
+TOKEN = "zZ2Z4CWHAnCH_qiBdPeGKRIh_NoaXewv"  # scan: allow
+
+
+def test_a_token_in_a_url_is_masked():
+    line = f"lab: Web UI available at http://0.0.0.0:8000?tkn={TOKEN}"
+
+    assert mask_secrets(line) == "lab: Web UI available at http://0.0.0.0:8000?tkn=***"
+
+
+def test_a_token_in_a_query_with_more_after_it_is_masked_alone():
+    assert mask_secrets("open http://h:3001/?token=abc&x=1 now") == (
+        "open http://h:3001/?token=***&x=1 now"
+    )
+
+
+def test_a_token_on_a_line_of_its_own_is_masked_after_its_prefix():
+    text = f"lab: starting\nlab: {TOKEN}\n{TOKEN}\n"
+
+    assert mask_secrets(text) == "lab: starting\nlab: ***\n***\n"
+
+
+def test_a_line_that_is_more_than_one_word_is_left_as_it_was():
+    lines = [
+        "lab: [2026-10-04 07:46:42] info Downloading server "
+        "07f806f999227108933c2e30515b24eecc1fda74",  # scan: allow
+        "2026-10-04 15:18:45,296 vscode: registered the server of lab",
+        "lab: * the Visual Studio Code Server License Terms",
+        "lab: abcdefghijklmnopqrstuvwxyz",
+    ]
+
+    assert mask_secrets("\n".join(lines)) == "\n".join(lines)

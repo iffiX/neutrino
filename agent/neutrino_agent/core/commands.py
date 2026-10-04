@@ -119,8 +119,9 @@ class DeviceOperator:
         Args:
             platform: The machine's platform, behind the contract.
             reinstall: Called for the ``reinstall`` verb; returns empty
-                when the install was launched, ``{"code", "params"}`` when
-                not. None refuses the verb as unsupported.
+                when the install was launched, ``{"code", "params"}`` and
+                an optional ``output`` when not. None refuses the verb as
+                unsupported.
             resize: Called with ``(stream_id, cols, rows)`` for the
                 ``resize`` verb; returns True when a shell stream of that
                 id took the size. None refuses the verb as unsupported.
@@ -208,14 +209,20 @@ class DeviceOperator:
         if self._reinstall is None:
             return _refused("unsupported_platform")
         refusal = self._reinstall()
-        if refusal:
-            return CommandOutcome(
-                exit_code=1,
-                output="",
-                code=str(refusal.get("code", "")),
-                params=dict(refusal.get("params") or {}),
-            )
-        return CommandOutcome(exit_code=0, output="reinstall launched\n")
+        if not refusal:
+            return CommandOutcome(exit_code=0, output="reinstall launched\n")
+        code = str(refusal.get("code", ""))
+        params = dict(refusal.get("params") or {})
+        exit_code = int(params.get("exit_code", 0) or 0) or 1
+        last = f"{code}: exit status {exit_code}" if "exit_code" in params else code
+        output = str(refusal.get("output", "") or "").rstrip("\n")
+        output = (output + "\n" if output else "") + last + "\n"
+        return CommandOutcome(
+            exit_code=exit_code,
+            output=output[-AGENT_OUTPUT_LIMIT_BYTES:],
+            code=code,
+            params=params,
+        )
 
     def _resize_shell(self, args: dict) -> CommandOutcome:
         """Give one shell stream a new window size."""

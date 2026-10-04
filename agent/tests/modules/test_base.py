@@ -83,6 +83,22 @@ def test_the_journal_verb_answers_the_runner_s_own_log_capped_at_the_newest():
     assert (outcome["exit_code"], outcome["output"]) == (0, "line 3\nline 4")
 
 
+def test_the_journal_verb_masks_every_token_it_would_show():
+    runner = FileLogRunner(
+        [
+            "lab: Web UI available at http://0.0.0.0:8000?tkn=zZ2Z4CWHAnCH_qiBdPeGKRIh",
+            "lab: zZ2Z4CWHAnCH_qiBdPeGKRIh_NoaXewv",
+        ],
+        platform=None,
+    )
+
+    outcome = runner.command("journal", {"lines": 10})
+
+    assert outcome["output"] == (
+        "lab: Web UI available at http://0.0.0.0:8000?tkn=***\nlab: ***"
+    )
+
+
 def test_the_default_log_is_the_units_journal(monkeypatch):
     calls = []
 
