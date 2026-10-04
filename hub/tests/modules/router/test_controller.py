@@ -327,6 +327,41 @@ def test_nothing_recorded_reads_as_no_devices_found(box):
     assert controller.rendered_overlay_devices() == {}
 
 
+def test_the_engine_cgroups_found_are_rendered_and_recorded(box, monkeypatch):
+    """The hub's own engines leave directly; the ids loaded are kept to tell
+    when a unit started again."""
+    files, _ = box
+    files["xray/routing.json"]["is_local_proxy_enabled"] = True
+    found = {"system.slice/neutrino_hub_netbird.service": 4242}
+    monkeypatch.setattr(controller, "engine_cgroups", lambda routing: dict(found))
+
+    pass_of().reconcile()
+
+    loaded = controller.ROUTER_NFT_PATH.read_text()
+    assert (
+        'socket cgroupv2 level 2 "system.slice/neutrino_hub_netbird.service" accept'
+        in loaded
+    )
+    assert controller.rendered_engine_cgroups() == found
+
+
+def test_only_the_engine_cgroups_present_are_found(tmp_path):
+    (tmp_path / "system.slice" / "neutrino_hub_easytier.service").mkdir(parents=True)
+
+    found = controller.engine_cgroups({"is_local_proxy_enabled": True}, root=tmp_path)
+
+    assert list(found) == ["system.slice/neutrino_hub_easytier.service"]
+    assert found["system.slice/neutrino_hub_easytier.service"] == (
+        (tmp_path / "system.slice" / "neutrino_hub_easytier.service").stat().st_ino
+    )
+
+
+def test_no_engine_cgroup_is_found_while_the_local_proxy_is_off(tmp_path):
+    (tmp_path / "system.slice" / "neutrino_hub_netbird.service").mkdir(parents=True)
+
+    assert controller.engine_cgroups({}, root=tmp_path) == {}
+
+
 # --- macOS and Windows: the system firewall, no kernel routing -------------
 
 

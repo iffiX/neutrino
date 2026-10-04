@@ -73,8 +73,11 @@ EASYTIER_MODE_MANUAL = "manual"
 EASYTIER_MODE_CONSOLE = "console"
 EASYTIER_MODES = (EASYTIER_MODE_MANUAL, EASYTIER_MODE_CONSOLE)
 EASYTIER_CONFIG_SERVER_SCHEMES = ("tcp", "udp", "ws", "wss")
-# The console the engine reaches when it is handed a token alone.
+# The console the engine reaches when it is handed a token alone, and the
+# host that console's peer-resolve addresses name, which the engine fetches
+# its peers from.
 EASYTIER_DEFAULT_CONFIG_SERVER = "udp://config-server.easytier.cn:22020"
+EASYTIER_CONSOLE_API_HOST = "api.console.easytier.net"
 
 # The tunnel device the firewall rules name, and the port this box's own peers
 # knock on. Both are stated rather than left to the engine: a device it named

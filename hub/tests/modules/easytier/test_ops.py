@@ -113,6 +113,92 @@ def test_reading_the_peers_asks_only_for_the_peer_table(engine):
     )
 
 
+# What `easytier-cli -o json -v peer` prints on 2.6.4, cut to the fields the
+# reader takes: one peer this box dialled by name, one that dialled in.
+VERBOSE_PEERS = [
+    {
+        "route": {"peer_id": 903187897, "hostname": "laptop", "cost": 1},
+        "peer": {
+            "peer_id": 903187897,
+            "conns": [
+                {
+                    "conn_id": "50db2c50-92a2-42f0-9435-c9e697a89e36",
+                    "my_peer_id": 804466385,
+                    "peer_id": 903187897,
+                    "features": [],
+                    "tunnel": {
+                        "tunnel_type": "tcp",
+                        "local_addr": {"url": "tcp://192.168.1.20:42407"},
+                        "remote_addr": {"url": "tcp://public.easytier.top:11010"},
+                        "resolved_remote_addr": {"url": "tcp://192.0.2.61:11010"},
+                    },
+                    "stats": {"rx_bytes": 1301, "tx_bytes": 1466, "latency_us": 87},
+                    "loss_rate": 0.0,
+                    "is_client": True,
+                    "network_name": "home",
+                    "is_closed": False,
+                }
+            ],
+        },
+    },
+    {
+        "route": {"peer_id": 1176, "hostname": "phone", "cost": 2},
+        "peer": {
+            "peer_id": 1176,
+            "conns": [
+                {
+                    "tunnel": {
+                        "tunnel_type": "udp",
+                        "local_addr": {"url": "udp://0.0.0.0:11010"},
+                        "remote_addr": {"url": "udp://198.51.100.40:40112"},
+                    },
+                    "is_client": False,
+                }
+            ],
+        },
+    },
+]
+# What `easytier-cli -o json connector` prints for a peer the console handed
+# down and one this box was configured with.
+CONNECTORS = [
+    {
+        "url": {
+            "url": "https://api.console.easytier.net/api/v1/network/peer-resolve/ab12"
+        },
+        "status": 0,
+    },
+    {"url": {"url": "tcp://public.easytier.top:11010"}, "status": 0},
+]
+
+
+def test_where_the_engine_reaches_its_peers_is_read(monkeypatch, tmp_path):
+    installed(monkeypatch, tmp_path)
+    asked = []
+
+    def fake_run(command, **kwargs):
+        asked.append(command[5:])
+        if command[-1] == "connector":
+            return FakeResult(json.dumps(CONNECTORS))
+        return FakeResult(json.dumps(VERBOSE_PEERS))
+
+    monkeypatch.setattr(ops, "run", fake_run)
+
+    assert EasyTierStatusReader().endpoints() == [
+        "tcp://public.easytier.top:11010",
+        "tcp://192.0.2.61:11010",
+        "udp://198.51.100.40:40112",
+        "https://api.console.easytier.net/api/v1/network/peer-resolve/ab12",
+    ]
+    assert asked == [["-v", "peer"], ["connector"]]
+
+
+def test_an_engine_not_running_reaches_no_peer(monkeypatch, tmp_path):
+    installed(monkeypatch, tmp_path)
+    monkeypatch.setattr(ops, "run", lambda command, **kwargs: FakeResult("", False))
+
+    assert EasyTierStatusReader().endpoints() == []
+
+
 NODE_INFO = {
     "peer_id": 4261311561,
     "ipv4_addr": "10.144.99.1/24",

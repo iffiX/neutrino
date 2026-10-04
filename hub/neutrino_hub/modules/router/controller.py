@@ -25,9 +25,12 @@ from neutrino_hub.modules.tun.constants import TUN_CODE_ROUTE_FAILED, TUN_STEP_N
 from neutrino_hub.modules.tun.ops import converge_tun
 from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.modules.router.constants import (
+    ROUTER_CGROUP_ROOT,
     ROUTER_CODE_COMMAND_FAILED,
     ROUTER_CODE_NETWORK_CHANGED,
     ROUTER_CODE_POLICY_ROUTE_MISSING,
+    ROUTER_ENGINE_CGROUPS_PATH,
+    ROUTER_ENGINE_UNITS,
     ROUTER_LOCK_PATH,
     ROUTER_LOCK_POLL_S,
     ROUTER_LOCK_TIMEOUT_S,
@@ -37,6 +40,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_OVERLAY_DEVICES_PATH,
     ROUTER_OVERLAY_NETBIRD,
     ROUTER_ROUTING_FILE,
+    ROUTER_SERVICE_SLICE,
     ROUTER_STEP_CHANGE_CODES,
     ROUTER_STEP_FAILED,
     ROUTER_STEP_UNCHANGED,
@@ -155,11 +159,13 @@ class RouterStateController:
         if not is_linux():
             return self._reconcile_firewall(network, routing)
         devices = overlay_devices(network)
+        cgroups = engine_cgroups(routing)
         ruleset = RouterNftRenderer(
             network=network,
             routing=routing,
             xray_uid=lookup_xray_uid(),
             overlay_devices=devices,
+            engine_cgroups=list(cgroups),
         ).render()
         is_diverting = ROUTER_NFT_DIVERT_MARKER in ruleset
         rules = RouterRulesetApplier()
@@ -181,6 +187,7 @@ class RouterStateController:
         results.append(loaded)
         if not loaded.is_failed:
             write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
+            write_generated(ROUTER_ENGINE_CGROUPS_PATH, json.dumps(cgroups))
         if self._on_base_ready is not None:
             self._on_base_ready()
 
@@ -287,6 +294,45 @@ def rendered_overlay_devices() -> dict:
         for provider, names in stored.items()
         if isinstance(names, list)
     }
+
+
+def engine_cgroups(routing: dict, *, root: Path = ROUTER_CGROUP_ROOT) -> dict:
+    """The overlay engines' cgroups the output chain names, as they are now.
+
+    Args:
+        routing: Parsed ``config/xray/routing.json``.
+        root: Where the cgroup tree is mounted.
+
+    Returns:
+        Each engine cgroup present, as its path under the root, to its id;
+        empty while the local proxy is off.
+    """
+    if not routing.get("is_local_proxy_enabled", False):
+        return {}
+    found = {}
+    for unit in ROUTER_ENGINE_UNITS:
+        path = f"{ROUTER_SERVICE_SLICE}/{unit}"
+        try:
+            found[path] = (root / path).stat().st_ino
+        except OSError:
+            continue
+    return found
+
+
+def rendered_engine_cgroups() -> dict:
+    """The engine cgroups the loaded ruleset names.
+
+    Returns:
+        Path to id, as :func:`engine_cgroups` found them for the last
+        ruleset loaded; empty when none was recorded.
+    """
+    try:
+        stored = json.loads(ROUTER_ENGINE_CGROUPS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(stored, dict):
+        return {}
+    return {str(path): number for path, number in stored.items()}
 
 
 def failure_text(results: list[RouterStepResult]) -> str:

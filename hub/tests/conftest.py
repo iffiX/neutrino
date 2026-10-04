@@ -218,6 +218,11 @@ def _router_lock_in_a_test_directory(tmp_path, monkeypatch):
         "ROUTER_OVERLAY_DEVICES_PATH",
         tmp_path / "router_overlay_devices.json",
     )
+    monkeypatch.setattr(
+        controller,
+        "ROUTER_ENGINE_CGROUPS_PATH",
+        tmp_path / "router_engine_cgroups.json",
+    )
 
 
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig

@@ -139,6 +139,9 @@ class NetbirdState:
         peers: The other machines, connected ones first.
         server_urls: The management plane, the signal server and every
             relay the daemon talks to.
+        peer_endpoints: Where the daemon reaches each peer now, as it writes
+            them: the peer's side of the ICE pair as ``host:port`` and the
+            relay a relayed peer goes through as a URL.
     """
 
     is_installed: bool
@@ -151,6 +154,7 @@ class NetbirdState:
     fqdn: str = ""
     peers: list[NetbirdPeer] = field(default_factory=list)
     server_urls: list = field(default_factory=list)
+    peer_endpoints: list = field(default_factory=list)
 
 
 class NetbirdStatusReader:
@@ -173,7 +177,9 @@ class NetbirdStatusReader:
 
         management = status.get("management") or {}
         peers = []
+        peer_endpoints = []
         for entry in (status.get("peers") or {}).get("details") or []:
+            peer_endpoints += _peer_endpoints(entry)
             latency = entry.get("latency")
             peers.append(
                 NetbirdPeer(
@@ -217,7 +223,28 @@ class NetbirdStatusReader:
             fqdn=status.get("fqdn", ""),
             peers=peers,
             server_urls=server_urls,
+            peer_endpoints=list(dict.fromkeys(peer_endpoints)),
         )
+
+
+def _peer_endpoints(entry: dict) -> list:
+    """Where the daemon reaches one peer now.
+
+    Args:
+        entry: One of ``peers.details`` in ``netbird status --json``.
+
+    Returns:
+        The remote ICE endpoint, from ``iceCandidateEndpoint.remote`` or
+        ``remoteIceCandidateEndpoint``, and ``relayAddress``; each left out
+        when empty or ``-``.
+    """
+    pair = entry.get("iceCandidateEndpoint")
+    remote = pair.get("remote") if isinstance(pair, dict) else None
+    found = [
+        remote or entry.get("remoteIceCandidateEndpoint"),
+        entry.get("relayAddress"),
+    ]
+    return [str(text) for text in found if text and str(text).strip() != "-"]
 
 
 def _counter(value) -> "int | None":

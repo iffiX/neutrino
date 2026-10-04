@@ -7,7 +7,8 @@ makes, so nothing else would tell the agents and the clients. This reads
 read last, runs the runtime's converge step, which pushes the state to every
 live binding of both roles. Before each read it asks the runtime to converge
 when an overlay's device moved, so the firewall follows an EasyTier console
-bringing its network up, and checks the routes the overlays installed. After each read it issues the panel's
+bringing its network up, or an engine's unit started under a new cgroup,
+and checks the routes the overlays installed. After each read it issues the panel's
 certificate again when the names in it are no longer the set.
 """
 

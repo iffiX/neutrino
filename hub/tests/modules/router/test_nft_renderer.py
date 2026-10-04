@@ -354,6 +354,57 @@ def test_the_local_proxy_chain_cannot_loop_back_into_itself():
     assert "meta mark 0xff return" in ruleset
 
 
+ENGINE_CGROUPS = [
+    "system.slice/neutrino_hub_netbird.service",
+    "system.slice/neutrino_hub_easytier.service",
+]
+
+
+def render_with_engines(routing: dict, cgroups=ENGINE_CGROUPS) -> str:
+    return RouterNftRenderer(
+        network=network_config(
+            wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
+        ),
+        routing={**ROUTING_DIRECT, **routing},
+        xray_uid=999,
+        engine_cgroups=cgroups,
+    ).render()
+
+
+def test_the_hubs_own_engines_are_accepted_before_the_mark():
+    """Through xray an engine's handshakes leave from the exit's address."""
+    ruleset = render_with_engines(ROUTING_LOCAL_PROXY)
+    chain = ruleset.split("chain output {")[1].split("\n    }")[0]
+    rules = [line.strip() for line in chain.splitlines()]
+
+    netbird = rules.index(
+        'socket cgroupv2 level 2 "system.slice/neutrino_hub_netbird.service" accept'
+    )
+    easytier = rules.index(
+        'socket cgroupv2 level 2 "system.slice/neutrino_hub_easytier.service" accept'
+    )
+    mark = rules.index("meta l4proto { tcp, udp } meta mark set 0x1")
+    assert rules.index("meta skuid 999 return") < netbird < easytier < mark
+
+
+def test_an_engine_not_running_is_not_named():
+    ruleset = render_with_engines(ROUTING_LOCAL_PROXY, cgroups=ENGINE_CGROUPS[:1])
+
+    assert "neutrino_hub_netbird.service" in ruleset
+    assert "neutrino_hub_easytier.service" not in ruleset
+
+
+def test_no_engine_is_named_while_the_local_proxy_is_off():
+    assert "cgroupv2" not in render_with_engines(ROUTING_DIRECT)
+
+
+@pytest.mark.needs_root
+def test_nft_accepts_an_engine_accept_for_a_cgroup_that_exists():
+    if not Path("/sys/fs/cgroup/init.scope").is_dir():
+        pytest.skip("no systemd cgroup tree here")
+    validate_nft(render_with_engines(ROUTING_LOCAL_PROXY, cgroups=["init.scope"]))
+
+
 def test_the_output_chain_is_empty_while_the_local_proxy_is_off():
     ruleset = render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
 

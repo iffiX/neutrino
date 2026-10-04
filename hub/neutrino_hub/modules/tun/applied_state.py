@@ -28,6 +28,8 @@ class TunAppliedState:
         forwarded_devices: On Windows, the interfaces the hub turned
             forwarding on for.
         failures: One line per route or step that could not be done.
+        endpoints: The destinations among ``routes`` the keeper added for
+            the overlay engines' endpoints after the bring-up.
     """
 
     plan: dict = field(default_factory=dict)
@@ -35,6 +37,7 @@ class TunAppliedState:
     forwarding_before: str = ""
     forwarded_devices: list = field(default_factory=list)
     failures: list = field(default_factory=list)
+    endpoints: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """The state as the file keeps it.
@@ -48,6 +51,7 @@ class TunAppliedState:
             "forwarding_before": self.forwarding_before,
             "forwarded_devices": list(self.forwarded_devices),
             "failures": list(self.failures),
+            "endpoints": list(self.endpoints),
         }
 
     @classmethod
@@ -75,6 +79,7 @@ class TunAppliedState:
                 str(name) for name in data.get("forwarded_devices") or []
             ],
             failures=[str(line) for line in data.get("failures") or []],
+            endpoints=[str(line) for line in data.get("endpoints") or []],
         )
 
 

@@ -228,27 +228,9 @@ def render_tun_plan(
         The plan. Each address kept out is one host route through the
         gateway, in address order, ahead of the two halves onto the device.
     """
-    networks = []
-    for cidr in local_networks:
-        try:
-            networks.append(ipaddress.ip_network(cidr, strict=False))
-        except ValueError:
-            continue
-    hosts = set()
-    for address in kept_out:
-        try:
-            parsed = ipaddress.ip_address(address)
-        except ValueError:
-            continue
-        if parsed.version != 4 or parsed.is_loopback or parsed.is_unspecified:
-            continue
-        if any(parsed in network for network in networks):
-            continue
-        hosts.add(parsed)
-    routes = [
-        TunRoute(destination=f"{host}/32", device=uplink, gateway=gateway)
-        for host in sorted(hosts)
-    ]
+    routes = host_routes(
+        kept_out, local_networks=local_networks, uplink=uplink, gateway=gateway
+    )
     routes += [
         TunRoute(destination=prefix, device=device) for prefix in TUN_DIVERTED_PREFIXES
     ]
@@ -263,6 +245,45 @@ def render_tun_plan(
         forwarding_devices=tuple(dict.fromkeys(forwarding_devices)),
         gateway=gateway,
     )
+
+
+def host_routes(
+    addresses: list, *, local_networks: list, uplink: str, gateway: str
+) -> list:
+    """One host route through the uplink for each address that stays out.
+
+    Args:
+        addresses: The addresses; anything that is not an IPv4 address, a
+            loopback or the unspecified address is left out.
+        local_networks: Every network the box has an address on, in CIDR
+            form. An address inside one is on the link and needs no route.
+        uplink: The interface the routes leave by.
+        gateway: Its next hop; empty when it has none.
+
+    Returns:
+        The routes, in address order, each address once.
+    """
+    networks = []
+    for cidr in local_networks:
+        try:
+            networks.append(ipaddress.ip_network(cidr, strict=False))
+        except ValueError:
+            continue
+    hosts = set()
+    for address in addresses:
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if parsed.version != 4 or parsed.is_loopback or parsed.is_unspecified:
+            continue
+        if any(parsed in network for network in networks):
+            continue
+        hosts.add(parsed)
+    return [
+        TunRoute(destination=f"{host}/32", device=uplink, gateway=gateway)
+        for host in sorted(hosts)
+    ]
 
 
 def darwin_address_command(plan: TunPlan) -> list:

@@ -14,6 +14,7 @@ Not pure: runs PowerShell.
 from neutrino_hub.modules.tun.applied_state import TunAppliedState
 from neutrino_hub.modules.tun.constants import (
     TUN_WINDOWS_DOWN_SCRIPT,
+    TUN_WINDOWS_ROUTES_SCRIPT,
     TUN_WINDOWS_UP_SCRIPT,
 )
 from neutrino_hub.modules.tun.renderer import TunPlan, windows_route_document
@@ -72,6 +73,52 @@ class TunWindowsApplier:
         if keep is not None:
             keep(state)
         return state
+
+    def add_routes(self, routes: list) -> tuple:
+        """Add routes beside a plan already up.
+
+        Args:
+            routes: The routes, as :class:`TunRoute`.
+
+        Returns:
+            The routes added, and one line per route that could not be.
+
+        Raises:
+            OSError: When PowerShell cannot run.
+        """
+        answer = self._powershell(
+            TUN_WINDOWS_ROUTES_SCRIPT,
+            {"routes": [windows_route_document(route) for route in routes]},
+        )
+        added = {str(prefix) for prefix in listed(answer.get("added"))}
+        return [route for route in routes if route.destination in added], [
+            f"{entry.get('prefix', '')}: {entry.get('detail', '')}"
+            for entry in listed(answer.get("failed"))
+            if isinstance(entry, dict)
+        ]
+
+    def delete_routes(self, routes: list) -> list:
+        """Remove routes added beside a plan; one already gone is not an error.
+
+        Args:
+            routes: The routes, as :class:`TunRoute`.
+
+        Returns:
+            One line per route removed.
+
+        Raises:
+            OSError: When PowerShell cannot run.
+        """
+        if not routes:
+            return []
+        self._powershell(
+            TUN_WINDOWS_DOWN_SCRIPT,
+            {
+                "routes": [windows_route_document(route) for route in routes],
+                "forwarding": [],
+            },
+        )
+        return [f"route {route.destination} withdrawn" for route in routes]
 
     def withdraw(self, state: TunAppliedState) -> list:
         """Remove every recorded route in reverse and turn forwarding back off.

@@ -10,7 +10,7 @@ back.
 """
 
 from neutrino_hub.modules.tun.darwin_applier import TunDarwinApplier
-from neutrino_hub.modules.tun.renderer import render_tun_plan
+from neutrino_hub.modules.tun.renderer import host_routes, render_tun_plan
 from tests.conftest import FakeTools
 
 # The upper half of the address space and the device's own address, as
@@ -187,3 +187,30 @@ def test_a_route_that_went_with_the_device_is_no_error():
         "route 203.0.113.10/32 withdrawn",
         f"route {EVERYTHING} withdrawn",
     ]
+
+
+def test_endpoint_routes_are_added_and_deleted_one_by_one():
+    tools = FakeTools()
+    tools.failing.add(("route", "-n", "add", "-host", "198.51.100.8"))
+    applier = TunDarwinApplier(run=tools)
+    wanted = host_routes(
+        ["198.51.100.7", "198.51.100.8"],
+        local_networks=[],
+        uplink="en0",
+        gateway="192.168.1.1",
+    )
+
+    added, failures = applier.add_routes(wanted)
+    notes = applier.delete_routes(added)
+
+    assert [route.destination for route in added] == ["198.51.100.7/32"]
+    assert "198.51.100.8" in failures[0]
+    assert tools.calls[-1] == [
+        "route",
+        "-n",
+        "delete",
+        "-host",
+        "198.51.100.7",
+        "192.168.1.1",
+    ]
+    assert notes == ["route 198.51.100.7/32 withdrawn"]

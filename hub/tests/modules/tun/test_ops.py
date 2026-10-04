@@ -8,8 +8,10 @@ the plan and enables tun2socks while it stands and disables it when it
 does not; the keeper brings the routes up once the device is there,
 withdraws them when tun2socks ends or the plan changes, keeps exactly what
 it added, and logs a step that cannot run rather than stopping the
-supervisor; and xray exiting under the supervisor takes tun2socks and the
-default route with it.
+supervisor; xray exiting under the supervisor takes tun2socks and the
+default route with it; and every host the running overlay engines talk to
+is kept out, the keeper adding and withdrawing their host routes as the
+engines name them.
 """
 
 import json
@@ -296,6 +298,117 @@ def test_xray_is_bound_to_the_uplink_while_a_tun_scope_is_on(machine):
     assert ops.egress_interface(ROUTING) == ""
 
 
+def test_easytiers_own_console_keeps_its_peer_resolve_host_out(machine, monkeypatch):
+    """The engine fetches its peers from the console's peer-resolve address;
+    through the exit that fetch timed out on the Windows lab hub."""
+    machine("windows", has_overlays=False)
+    network = network_config(
+        mode="server", overlays=[{"provider": "easytier", "is_enabled": True}]
+    )
+
+    class Console(EasyTierConfig):
+        def config_server(self):
+            return "abcdef"
+
+    monkeypatch.setattr(
+        ops,
+        "read_easytier",
+        lambda: Console(mode="console", config_server_sealed={"sealed": 1}),
+    )
+    monkeypatch.setitem(ANSWERS, "api.console.easytier.net", "192.0.2.70")
+
+    rendered = ops.plan_tun(network, {**ROUTING, **SCOPES["hub"]})
+
+    assert "192.0.2.70/32" in [route.destination for route in rendered.routes]
+
+
+class FakeEngineReaders:
+    """NetBird and EasyTier as their status commands report them."""
+
+    def survey(self):
+        return NetbirdState(
+            is_installed=True,
+            server_urls=["https://api.netbird.io:443", "stun:stun.netbird.io:443"],
+            peer_endpoints=[
+                "203.0.113.25:51820",
+                "rels://streamline-de-fra1-0.relay.netbird.io:443",
+            ],
+        )
+
+    def endpoints(self):
+        return [
+            "tcp://public.easytier.top:11010",
+            "udp://198.51.100.40:40112",
+            "https://api.console.easytier.net/api/v1/network/peer-resolve/ab12",
+        ]
+
+
+def engines_running(monkeypatch) -> object:
+    monkeypatch.setattr(ops, "NetbirdStatusReader", FakeEngineReaders)
+    monkeypatch.setattr(ops, "EasyTierStatusReader", FakeEngineReaders)
+    return network_config(
+        mode="server",
+        overlays=[
+            {"provider": "netbird", "is_enabled": True},
+            {"provider": "easytier", "is_enabled": True},
+        ],
+    )
+
+
+def test_every_host_the_running_engines_talk_to_is_named(monkeypatch):
+    network = engines_running(monkeypatch)
+
+    assert ops.overlay_endpoint_hosts(network) == [
+        "api.netbird.io",
+        "stun.netbird.io",
+        "203.0.113.25",
+        "streamline-de-fra1-0.relay.netbird.io",
+        "public.easytier.top",
+        "198.51.100.40",
+        "api.console.easytier.net",
+    ]
+
+
+def test_an_engine_not_enabled_is_not_asked(monkeypatch):
+    engines_running(monkeypatch)
+    network = network_config(
+        mode="server", overlays=[{"provider": "easytier", "is_enabled": True}]
+    )
+
+    assert "api.netbird.io" not in ops.overlay_endpoint_hosts(network)
+
+
+def test_the_endpoint_names_are_resolved_once_until_they_age(machine, monkeypatch):
+    machine("darwin", has_overlays=False)
+    network = engines_running(monkeypatch)
+    monkeypatch.setattr(
+        ops,
+        "_config",
+        lambda name: network.to_dict() if name == "router/network.json" else ROUTING,
+    )
+    monkeypatch.setitem(ANSWERS, "api.console.easytier.net", "192.0.2.70")
+    clock = FakeClock()
+    source = ops.TunEndpointSource(clock=clock)
+
+    first = source.addresses()
+    asked = len(machine.asked)
+    source.addresses()
+    assert len(machine.asked) == asked
+
+    clock.now += ops.TUN_ENDPOINT_NAME_TTL_S
+    source.addresses()
+    assert len(machine.asked) == 2 * asked
+    assert first == [
+        "198.51.100.11",
+        "203.0.113.25",
+        "198.51.100.13",
+        "192.0.2.61",
+        "198.51.100.40",
+        "192.0.2.70",
+    ]
+    assert {server for _, server, _ in machine.asked} == {"223.5.5.5"}
+
+
 # --- the routing pass ----------------------------------------------------------
 
 
@@ -407,6 +520,14 @@ class FakeApplier:
         self.calls.append(("down", [route.destination for route in state.routes]))
         return [f"route {route.destination} withdrawn" for route in state.routes]
 
+    def add_routes(self, routes):
+        self.calls.append(("add", [route.destination for route in routes]))
+        return list(routes), []
+
+    def delete_routes(self, routes):
+        self.calls.append(("delete", [route.destination for route in routes]))
+        return [f"route {route.destination} withdrawn" for route in routes]
+
 
 @pytest.fixture
 def keeper(files):
@@ -417,6 +538,7 @@ def keeper(files):
         is_running=lambda name: name in running,
         applier=applier,
         devices=lambda: set(present),
+        endpoints=list,
         log=lambda line: None,
         **files,
     )
@@ -524,6 +646,7 @@ def test_xray_exiting_takes_tun2socks_and_the_default_route_with_it(keeper, tmp_
         is_running=supervisor.is_running,
         applier=applier,
         devices=lambda: set(present),
+        endpoints=list,
         log=lambda line: None,
         **files,
     )
@@ -614,3 +737,116 @@ def test_a_withdrawal_that_cannot_run_keeps_the_state_and_waits_to_try_again(fil
     clock.now += ops.TUN_RETRY_S
     kept.tick()
     assert read_applied(files["state_path"]) is None
+
+
+# --- the engines' endpoints ---------------------------------------------------
+
+
+@pytest.fixture
+def following(files):
+    """A keeper with the plan up, the engines naming what ``named`` holds."""
+    named = ["203.0.113.25"]
+    reads = []
+    clock = FakeClock()
+    applier = FakeApplier()
+
+    def endpoints():
+        reads.append(clock.now)
+        if named and isinstance(named[0], OSError):
+            raise named[0]
+        return list(named)
+
+    kept = ops.TunRouteKeeper(
+        is_running=lambda name: True,
+        applier=applier,
+        devices=lambda: {"utun225"},
+        endpoints=endpoints,
+        networks=lambda device: ["192.168.1.20/24"],
+        clock=clock,
+        log=lambda line: None,
+        **files,
+    )
+    files["plan_path"].write_text(json.dumps(a_plan().to_dict()))
+    return kept, applier, named, reads, clock, files
+
+
+def endpoint_routes(files) -> list:
+    return read_applied(files["state_path"]).endpoints
+
+
+def test_the_engines_endpoints_get_host_routes_once_the_plan_is_up(following):
+    kept, applier, _named, _reads, _clock, files = following
+
+    kept.tick()
+
+    assert applier.calls == [("up", "utun225"), ("add", ["203.0.113.25/32"])]
+    assert endpoint_routes(files) == ["203.0.113.25/32"]
+    assert "203.0.113.25/32" in [
+        route.destination for route in read_applied(files["state_path"]).routes
+    ]
+
+
+def test_an_endpoint_no_longer_named_is_withdrawn_and_a_new_one_added(following):
+    kept, applier, named, _reads, clock, files = following
+    kept.tick()
+
+    named[:] = ["198.51.100.40"]
+    clock.now += ops.TUN_ENDPOINT_REFRESH_S
+    kept.tick()
+
+    assert applier.calls[-2:] == [
+        ("delete", ["203.0.113.25/32"]),
+        ("add", ["198.51.100.40/32"]),
+    ]
+    assert endpoint_routes(files) == ["198.51.100.40/32"]
+
+
+def test_the_engines_are_asked_once_per_refresh_and_nothing_runs_unchanged(
+    following,
+):
+    kept, applier, _named, reads, clock, _files = following
+    kept.tick()
+    kept.tick()
+    kept.tick()
+    assert len(reads) == 1
+
+    clock.now += ops.TUN_ENDPOINT_REFRESH_S
+    kept.tick()
+
+    assert len(reads) == 2
+    assert applier.calls == [("up", "utun225"), ("add", ["203.0.113.25/32"])]
+
+
+def test_an_endpoint_on_the_link_or_already_planned_gets_no_route(following):
+    kept, applier, named, _reads, _clock, files = following
+    named[:] = ["192.168.1.44", "223.5.5.5", "203.0.113.25"]
+
+    kept.tick()
+
+    assert applier.calls[-1] == ("add", ["203.0.113.25/32"])
+    assert endpoint_routes(files) == ["203.0.113.25/32"]
+
+
+def test_a_stop_withdraws_the_endpoint_routes_with_the_plan(following):
+    kept, applier, _named, _reads, _clock, files = following
+    kept.tick()
+
+    kept.child_ended("tun2socks")
+
+    assert applier.calls[-1] == (
+        "down",
+        ["223.5.5.5/32", "0.0.0.0/1", UPPER_HALF, "203.0.113.25/32"],
+    )
+    assert read_applied(files["state_path"]) is None
+
+
+def test_endpoints_that_cannot_be_read_leave_the_routes_as_they_are(following):
+    kept, applier, named, _reads, clock, files = following
+    kept.tick()
+
+    named[:] = [OSError("netbird is not answering")]
+    clock.now += ops.TUN_ENDPOINT_REFRESH_S
+    kept.tick()
+
+    assert applier.calls[-1] == ("add", ["203.0.113.25/32"])
+    assert endpoint_routes(files) == ["203.0.113.25/32"]

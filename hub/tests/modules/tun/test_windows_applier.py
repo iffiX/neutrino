@@ -12,6 +12,7 @@ import pytest
 from neutrino_hub.modules.tun.applied_state import TunAppliedState
 from neutrino_hub.modules.tun.constants import (
     TUN_WINDOWS_DOWN_SCRIPT,
+    TUN_WINDOWS_ROUTES_SCRIPT,
     TUN_WINDOWS_UP_SCRIPT,
 )
 from neutrino_hub.modules.tun.renderer import render_tun_plan
@@ -141,3 +142,26 @@ def test_a_powershell_that_cannot_run_is_raised():
 
     with pytest.raises(OSError):
         TunWindowsApplier(powershell=powershell).bring_up(plan())
+
+
+def test_endpoint_routes_are_added_and_removed_beside_the_plan():
+    powershell = FakePowerShell(
+        {
+            TUN_WINDOWS_ROUTES_SCRIPT: {
+                "added": ["203.0.113.10/32"],
+                "failed": {"prefix": "223.5.5.5/32", "detail": "exists"},
+            }
+        }
+    )
+    applier = TunWindowsApplier(powershell=powershell)
+
+    added, failures = applier.add_routes(list(plan().routes[:2]))
+    notes = applier.delete_routes(added)
+
+    assert powershell.runs == [
+        (TUN_WINDOWS_ROUTES_SCRIPT, {"routes": ROUTES[:2]}),
+        (TUN_WINDOWS_DOWN_SCRIPT, {"routes": ROUTES[:1], "forwarding": []}),
+    ]
+    assert [route.destination for route in added] == ["203.0.113.10/32"]
+    assert failures == ["223.5.5.5/32: exists"]
+    assert notes == ["route 203.0.113.10/32 withdrawn"]
