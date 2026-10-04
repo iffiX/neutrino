@@ -292,6 +292,7 @@
   "ui.nav.credentials_description": "SSH keys, logins and tokens",
   "ui.nav.dashboard": "Dashboard",
   "ui.nav.dashboard_description": "Live throughput, exits and DNS",
+  "ui.nav.dashboard_description_server": "Live throughput and exits",
   "ui.nav.devices": "Devices",
   "ui.nav.devices_description": "LAN hosts and remote actions",
   "ui.nav.files": "Files",

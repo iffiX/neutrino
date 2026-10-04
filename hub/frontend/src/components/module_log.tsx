@@ -34,9 +34,13 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const task = useTaskStream(row.task_id === "" ? null : row.task_id);
+  // Over a module in a state with a journal, a task replaying takes the box
+  // only once it ends in a failure; until then the journal shows.
   const isTaskShown =
     row.task_id !== "" &&
-    (task.isRunning || (task.exitCode !== null && task.exitCode !== 0));
+    (task.isRunning
+      ? !JOURNAL_STATES.includes(row.state)
+      : task.exitCode !== null && task.exitCode !== 0);
   const isJournalShown =
     !isTaskShown && isAgentOnline && JOURNAL_STATES.includes(row.state);
   const journal = usePolledResource<ServiceJournal>(
@@ -77,29 +81,31 @@ export function ModuleLog({ deviceId, row, isAgentOnline }: ModuleLogProps) {
           <StatusDot tone="ok" isPulsing label={t("state.live")} />
         )}
       </div>
-      <pre className="modules_log_output" ref={logRef}>
-        {isTaskShown ? (
-          stripAnsi(task.lines.join("\n"))
-        ) : isJournalShown ? (
-          journalText === null ? (
-            <span className="faint">
-              {journal.isLoading ? "" : t("ui.journal.unavailable")}
-            </span>
-          ) : journalText.trim().length > 0 ? (
-            stripAnsi(journalText)
+      {isJournalShown && journalText === null && journal.isLoading ? (
+        <div className="skeleton modules_log_loading" />
+      ) : (
+        <pre className="modules_log_output" ref={logRef}>
+          {isTaskShown ? (
+            stripAnsi(task.lines.join("\n"))
+          ) : isJournalShown ? (
+            journalText === null ? (
+              <span className="faint">{t("ui.journal.unavailable")}</span>
+            ) : journalText.trim().length > 0 ? (
+              stripAnsi(journalText)
+            ) : (
+              <span className="faint">
+                {t(
+                  hasNoInstances(row)
+                    ? "ui.modules.no_instances"
+                    : "ui.journal.empty",
+                )}
+              </span>
+            )
           ) : (
-            <span className="faint">
-              {t(
-                hasNoInstances(row)
-                  ? "ui.modules.no_instances"
-                  : "ui.journal.empty",
-              )}
-            </span>
-          )
-        ) : (
-          <span className="faint">{t("ui.modules.output_empty")}</span>
-        )}
-      </pre>
+            <span className="faint">{t("ui.modules.output_empty")}</span>
+          )}
+        </pre>
+      )}
       {isTaskShown && task.error !== null && (
         <span className="field_error">{task.error}</span>
       )}

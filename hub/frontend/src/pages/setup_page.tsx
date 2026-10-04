@@ -1048,7 +1048,7 @@ function PortChoice({
             </span>
             {port.has_route && (
               <span className="setup_port_route">
-                {t("ui.setup.way_out_today")}
+                {t("ui.setup.reaches_internet")}
               </span>
             )}
           </button>
@@ -1075,7 +1075,7 @@ function PortList({ ports }: { ports: SetupInterface[] }) {
             </span>
             {port.has_route && (
               <span className="setup_port_route">
-                {t("ui.setup.way_out_today")}
+                {t("ui.setup.reaches_internet")}
               </span>
             )}
           </div>

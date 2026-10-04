@@ -36,8 +36,10 @@ import "./terminals_page.css";
  * hidden, and the page itself stays mounted while other pages show.
  */
 
-/** The account every shell opens as, which is a name rather than a word. */
+/** The account a shell opens as on each system, a name rather than a word:
+ * root, and SYSTEM on Windows, where the agent's service is LocalSystem. */
 const TERMINAL_ACCOUNT = "root";
+const TERMINAL_ACCOUNTS: Record<string, string> = { windows: "SYSTEM" };
 
 /** What one shell's state is called. */
 const STATE_KEYS: Record<TerminalState, string> = {
@@ -304,7 +306,12 @@ export function TerminalsPage() {
       <div className="page_header">
         <div className="page_title_row">
           <h1>{t("ui.terminals.title")}</h1>
-          <span className="badge badge--warn">{TERMINAL_ACCOUNT}</span>
+          {selectedDevice !== null && (
+            <span className="badge badge--warn">
+              {TERMINAL_ACCOUNTS[selectedDevice.platform.os ?? ""] ??
+                TERMINAL_ACCOUNT}
+            </span>
+          )}
         </div>
       </div>
 

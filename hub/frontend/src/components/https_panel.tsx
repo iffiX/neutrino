@@ -23,9 +23,11 @@ import "./https_panel.css";
  * no draft and no restart. A page on HTTP fetches the probe from the HTTPS
  * port to learn whether this browser trusts the certificate, and offers
  * Enable only once it does. A page reached on another port than the hub's
- * HTTP port comes through a forward, where the hub's HTTPS port is not this
- * host's: nothing is probed and Enable is offered. Regenerating is an
- * HTTP-only action, and the new authority downloads from the answer itself.
+ * port for its scheme comes through a forward, where the hub's other port is
+ * not this host's: nothing is probed, Enable is offered, and a switch in
+ * either direction leaves the page where it is and names the port the
+ * forward must reach. Regenerating is an HTTP-only action, and the new
+ * authority downloads from the answer itself.
  */
 
 /** Where the authority downloads, with or without a session. */
@@ -35,10 +37,18 @@ const PROBE_PATH = "/api/hub/setting/https/probe";
 /** How long a probe waits before the certificate counts as untrusted. */
 const PROBE_TIMEOUT_MS = 5000;
 const AUTHORITY_MEDIA_TYPE = "application/x-x509-ca-cert";
-/** The port a page on plain HTTP is on when its address names none. */
+/** The port a page is on when its address names none. */
 const HTTP_SCHEME_PORT = 80;
+const HTTPS_SCHEME_PORT = 443;
 
 type Trust = "checking" | "trusted" | "untrusted";
+
+/** Where a switch through a forward left the panel. */
+interface SwitchedScheme {
+  isOn: boolean;
+  port: number;
+  origin: string;
+}
 
 export function HttpsPanel() {
   // Redrawn when the panel's language changes.
@@ -50,11 +60,15 @@ export function HttpsPanel() {
   const [trust, setTrust] = useState<Trust>("checking");
   const [isAwaitingInstall, setIsAwaitingInstall] = useState(false);
   const [isRegenerated, setIsRegenerated] = useState(false);
+  // The address a switch through a forward left for the person to open.
+  const [switchedTo, setSwitchedTo] = useState<SwitchedScheme | null>(null);
   const view = resource.data;
   const isOnHttps = window.location.protocol === "https:";
   const httpsPort = view?.https_listen_port ?? null;
   const isForwarded =
-    !isOnHttps && view !== null && pagePort() !== view.listen_port;
+    view !== null &&
+    pagePort(isOnHttps) !==
+      (isOnHttps ? view.https_listen_port : view.listen_port);
 
   const probe = useCallback(async () => {
     if (httpsPort === null) {
@@ -87,12 +101,27 @@ export function HttpsPanel() {
     }
     setIsBusy(true);
     setError(null);
+    setSwitchedTo(null);
     try {
       const next = await apiPost<PanelHttpsView>(
         isOn ? "/hub/setting/https/enable" : "/hub/setting/https/disable",
       );
       resource.setData(next);
-      if (isOn && !isOnHttps) {
+      if (isForwarded) {
+        setSwitchedTo(
+          isOn
+            ? {
+                isOn,
+                port: next.https_listen_port,
+                origin: httpsOrigin(next.https_listen_port),
+              }
+            : {
+                isOn,
+                port: next.listen_port,
+                origin: httpOrigin(next.listen_port),
+              },
+        );
+      } else if (isOn && !isOnHttps) {
         window.location.replace(
           `${httpsOrigin(next.https_listen_port)}${here()}`,
         );
@@ -211,12 +240,34 @@ export function HttpsPanel() {
                 <div className="notice_body">{error}</div>
               </div>
             )}
+            {switchedTo !== null && (
+              <div className="notice notice--ok">
+                <Icon name="check" size={15} />
+                <div className="notice_body">
+                  {t(
+                    switchedTo.isOn
+                      ? "ui.settings.https_forwarded_on"
+                      : "ui.settings.https_forwarded_off",
+                    { port: switchedTo.port },
+                  )}
+                  <a href={`${switchedTo.origin}${here()}`}>
+                    {t("ui.settings.https_open_address", {
+                      address: switchedTo.origin,
+                    })}
+                  </a>
+                </div>
+              </div>
+            )}
             <div className="apply_bar_row">
               <span className="field_hint">
-                {isForwarded && !view.is_https_enabled && !isRegenerated
-                  ? t("ui.settings.https_forwarded", {
-                      port: view.https_listen_port,
-                    })
+                {isForwarded && !isRegenerated
+                  ? view.is_https_enabled
+                    ? t("ui.settings.https_forwarded_disable", {
+                        port: view.listen_port,
+                      })
+                    : t("ui.settings.https_forwarded", {
+                        port: view.https_listen_port,
+                      })
                   : t(hintKey(view, isOnHttps, trust, isRegenerated))}
               </span>
               <div className="button_row">
@@ -377,9 +428,12 @@ function downloadAuthority(derBase64: string, fileName: string): void {
 }
 
 /** The port this page is on, from its own address. */
-function pagePort(): number {
+function pagePort(isOnHttps: boolean): number {
   const { port } = window.location;
-  return port === "" ? HTTP_SCHEME_PORT : Number(port);
+  if (port !== "") {
+    return Number(port);
+  }
+  return isOnHttps ? HTTPS_SCHEME_PORT : HTTP_SCHEME_PORT;
 }
 
 /** This page's path, query and fragment, kept across a scheme change. */

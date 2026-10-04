@@ -34,7 +34,8 @@ const PLATFORM_ICONS: Record<string, IconName> = {
  * Resolve a stored device icon name to one this panel can draw.
  *
  * Args:
- *   icon: The annotation value, or null for a device nobody has named yet.
+ *   icon: The annotation value, or null or empty for a device nobody has
+ *     given an icon.
  *   platformOs: The system its agent reports, or null without one.
  *
  * Returns:
@@ -44,13 +45,13 @@ export function toDeviceIconName(
   icon: string | null,
   platformOs: string | null = null,
 ): IconName {
-  if (icon === null) {
+  const candidate = (icon ?? "").trim().toLowerCase();
+  if (candidate === "") {
     return (
       (platformOs === null ? undefined : PLATFORM_ICONS[platformOs]) ??
       "unknown"
     );
   }
-  const candidate = icon.trim().toLowerCase();
   const match = DEVICE_ICON_NAMES.find((name) => name === candidate);
   return match ?? "unknown";
 }

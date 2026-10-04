@@ -9,6 +9,7 @@ import { apiPath, apiPost, describeError } from "../api_client";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
+import { isFailing, useSettledApply } from "../use_settled_apply";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type {
   VscodeConfigUpdate,
@@ -40,6 +41,8 @@ interface VscodePanelsProps {
   /** Where the module answers: `/agent/module/vscode`. */
   basePath: string;
   isEditable: boolean;
+  /** What the hub asks of the module: `running`, `stopped`, or empty. */
+  want: string;
   /** Whether the machine is Windows, which starts each instance with a login. */
   isWindows: boolean;
 }
@@ -51,6 +54,7 @@ export function VscodePanels({
   deviceId,
   basePath,
   isEditable,
+  want,
   isWindows,
 }: VscodePanelsProps) {
   // Redrawn when the panel's language changes.
@@ -68,7 +72,7 @@ export function VscodePanels({
   const { draft, setDraft, isDirty, reset } = useDraft(saved, draftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const settle = useSettledApply(saved, want);
 
   if (resource.error !== null && saved === null) {
     return <ErrorPanel message={resource.error} onRetry={resource.reload} />;
@@ -107,13 +111,13 @@ export function VscodePanels({
   const apply = async () => {
     setIsBusy(true);
     setError(null);
-    setNotice(null);
+    settle.clear();
     const request: VscodeConfigUpdate = { device_id: deviceId, ...draft };
     try {
       resource.setData(
         await apiPost<VscodeDeviceView>(`${basePath}/set`, request),
       );
-      setNotice(t("ui.api.applied"));
+      settle.begin();
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -219,16 +223,18 @@ export function VscodePanels({
         })}
         <ApplyBar
           isDirty={isDirty}
-          isBusy={isBusy}
+          isBusy={isBusy || settle.isSettling}
           label={t("ui.vscode.apply")}
           hint={t("ui.vscode.apply_hint")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
-          notice={isFailing(saved) ? null : notice}
+          notice={
+            settle.isApplied && !isFailing(saved) ? t("ui.api.applied") : null
+          }
           onReset={() => {
             reset();
             setError(null);
-            setNotice(null);
+            settle.clear();
           }}
           onApply={() => void apply()}
         />
@@ -254,13 +260,4 @@ function describeCode(code: string, account: string): string {
   return hasWord(key)
     ? t(key, { account })
     : t("ui.modules.failed_code", { code });
-}
-
-/** Whether the machine reports the module or one of its instances failing,
- * which takes the place of an apply's success notice. */
-function isFailing(view: VscodeDeviceView): boolean {
-  return (
-    view.state === "failed" ||
-    view.instances.some((instance) => instance.code !== "")
-  );
 }

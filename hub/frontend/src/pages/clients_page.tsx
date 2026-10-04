@@ -61,6 +61,10 @@ const DEFAULT_PERMISSION = "default";
 /** What a column shows for a client that has not reported one. */
 const NOTHING = "—";
 
+/** The columns the rename form takes: the name, hostname, platform and
+ * version, so the name and its buttons fit on one line. */
+const RENAME_COLUMN_SPAN = 4;
+
 export function ClientsPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -427,7 +431,7 @@ function ClientRow({
   const presence = presenceOf(client);
   return (
     <tr className={client.is_disabled ? "clients_row--disabled" : ""}>
-      <td>
+      <td colSpan={isRenaming ? RENAME_COLUMN_SPAN : undefined}>
         {isRenaming ? (
           <div className="clients_rename">
             <input
@@ -477,9 +481,13 @@ function ClientRow({
           </div>
         )}
       </td>
-      <td className="mono">{client.hostname || NOTHING}</td>
-      <td>{client.platform_os || NOTHING}</td>
-      <td className="mono">{client.version || NOTHING}</td>
+      {!isRenaming && (
+        <>
+          <td className="mono">{client.hostname || NOTHING}</td>
+          <td>{client.platform_os || NOTHING}</td>
+          <td className="mono">{client.version || NOTHING}</td>
+        </>
+      )}
       <td>
         <StatusDot
           tone={PRESENCE_TONES[presence]}
