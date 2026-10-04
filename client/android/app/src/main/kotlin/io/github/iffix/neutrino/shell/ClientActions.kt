@@ -2,6 +2,7 @@ package io.github.iffix.neutrino.shell
 
 import android.content.Intent
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.forward.LocalPortChoice
@@ -37,8 +38,15 @@ interface ClientActions {
      */
     fun reconnect(bindingId: String)
 
-    /** Refresh every hub, and drop every error line. */
+    /** Refresh every hub, and drop every error line and every notice. */
     fun refresh()
+
+    /**
+     * Take one notice off the Hubs page.
+     *
+     * @param notice The notice.
+     */
+    fun closeNotice(notice: HubNotice)
 
     /**
      * The material one published entry takes from its hub.

@@ -113,8 +113,11 @@ const val CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
 /** The name every network a hub serves resolves to that hub's address on it. */
 const val CLIENT_HUB_NAME = "hub.neutrino.internal"
 
-/** How long a join or a leave may take. */
+/** How long a join or a request to the hub may take. */
 const val CLIENT_REQUEST_TIMEOUT_S = 10L
+
+/** How long telling a hub of a leave may take, after this phone has forgotten the binding. */
+const val CLIENT_LEAVE_TELL_TIMEOUT_S = 5L
 
 /** How long connecting and the handshake on top of it may take together. */
 const val CLIENT_CONNECT_TIMEOUT_S = 10L

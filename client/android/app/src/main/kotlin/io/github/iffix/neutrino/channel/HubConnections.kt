@@ -2,9 +2,9 @@ package io.github.iffix.neutrino.channel
 
 import android.util.Log
 import io.github.iffix.neutrino.CLIENT_LEAVE_PATH
+import io.github.iffix.neutrino.CLIENT_LEAVE_TELL_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.CLIENT_NOTICE_SHOWN_S
-import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.HubBinding
 import java.io.IOException
@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
 
 /**
  * One session per hub this phone joined: joining, leaving, refreshing, and every hub's view.
@@ -83,13 +85,24 @@ class HubConnections(
     fun session(bindingId: String): HubSession? = sessions.value[bindingId]
 
     /**
-     * Refresh every hub that can be: each one's error line goes, and each is asked again.
+     * Refresh every hub that can be: each one's error line and every notice go, and each hub is
+     * asked again.
      *
      * @return Whether any hub entered refreshing.
      */
     fun refresh(): Boolean {
         jobErrors.value = emptyMap()
+        noticeList.value = emptyList()
         return sessions.value.values.map { it.refresh() }.any { it }
+    }
+
+    /**
+     * Take one notice down before its minute is over.
+     *
+     * @param notice The notice.
+     */
+    fun closeNotice(notice: HubNotice) {
+        noticeList.update { it - notice }
     }
 
     /**
@@ -158,8 +171,8 @@ class HubConnections(
     }
 
     /**
-     * Start leaving one hub; the row shows the leave until the hub answers. A second press while
-     * the leave runs is dropped.
+     * Start leaving one hub; the row shows the leave until this phone has forgotten the binding,
+     * which never waits on the hub. A second press while the leave runs is dropped.
      *
      * @param bindingId The binding's id.
      */
@@ -179,35 +192,18 @@ class HubConnections(
     }
 
     /**
-     * Leave one hub: the hub revokes the binding, and this phone forgets it. A binding whose
-     * ticket is unspent is only forgotten.
+     * Leave one hub: this phone forgets the binding at once, then tells the hub once in the
+     * background, and the hub's answer changes nothing. A binding whose ticket is unspent is only
+     * forgotten.
      *
      * @param bindingId The binding's id.
-     * @return Ok once forgotten, or the refusal that kept the binding.
+     * @return Ok once forgotten, or `client_internal {error}` when the file cannot be written.
      */
-    suspend fun leave(bindingId: String): ChannelResult<Unit> {
+    fun leave(bindingId: String): ChannelResult<Unit> {
         val binding = store.get(bindingId) ?: return ChannelResult.Ok(Unit)
-        if (binding.isPending) return forget(bindingId)
-        var refusal: ChannelResult.Refused = ChannelResult.refused("hub_unreachable")
-        for (url in binding.candidateUrls("")) {
-            when (
-                val answer = transport.post(
-                    url,
-                    CLIENT_LEAVE_PATH,
-                    binding.fingerprint,
-                    ChannelFrames.leaveRequest(binding),
-                )
-            ) {
-                is ChannelResult.Ok -> return forget(bindingId)
-
-                is ChannelResult.Refused -> {
-                    if (answer.code == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN) return forget(bindingId)
-                    refusal = answer
-                    if (answer.code != "hub_unreachable") break
-                }
-            }
-        }
-        return refusal
+        val forgotten = forget(bindingId)
+        if (forgotten is ChannelResult.Ok && !binding.isPending) scope.launch { tellLeft(binding) }
+        return forgotten
     }
 
     /** The app came back to the foreground: every hub with no open socket runs a round now. */
@@ -225,6 +221,23 @@ class HubConnections(
         ChannelResult.Ok(Unit)
     } catch (error: IOException) {
         ChannelResult.refused("client_internal", "error" to (error.message ?: "IOException"))
+    }
+
+    private suspend fun tellLeft(binding: HubBinding) {
+        val answer = withTimeoutOrNull(CLIENT_LEAVE_TELL_TIMEOUT_S * 1000) {
+            var last: ChannelResult<JsonObject> = ChannelResult.refused("hub_unreachable")
+            for (url in binding.candidateUrls("")) {
+                last = transport.post(url, CLIENT_LEAVE_PATH, binding.fingerprint, ChannelFrames.leaveRequest(binding))
+                if (last !is ChannelResult.Refused || last.code != "hub_unreachable") break
+            }
+            last
+        }
+        val outcome = when (answer) {
+            null -> "no answer in time"
+            is ChannelResult.Ok -> "ok"
+            is ChannelResult.Refused -> answer.code
+        }
+        Log.i(CLIENT_LOG_TAG, "the hub of ${binding.id} answered the leave: $outcome")
     }
 
     private fun joined(bindingId: String, hubBindingId: String) {
