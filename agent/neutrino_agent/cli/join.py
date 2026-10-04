@@ -3,6 +3,7 @@
 import os
 import sys
 
+from neutrino_agent.cli.start import is_confirmed
 from neutrino_agent.cli.status import service_state
 from neutrino_agent.cli.wording import word_code
 from neutrino_agent.core import enrollment
@@ -32,8 +33,8 @@ def main(link: str, *, is_forced: bool) -> int:
         return 1
     bound_to = enrollment.load_binding().get("gateway_url", "")
     if bound_to and not is_forced:
-        answer = input(f"this machine is bound to {bound_to}; replace it? [y/N] ")
-        if answer.strip().lower() not in ("y", "yes"):
+        question = f"this machine is bound to {bound_to}; replace it? [y/N] "
+        if not is_confirmed(question):
             print("nothing changed")
             return 1
     try:

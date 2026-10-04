@@ -13,6 +13,10 @@ from neutrino_agent.platforms.detect import detect_platform
 
 START_QUESTION = "start the agent's service? [y/N] "
 START_NO_SERVICE = "error: this machine has no agent service to start"
+NO_TERMINAL_LINE = (
+    "error: no terminal to answer on; run it again with --yes to go ahead "
+    "without asking"
+)
 
 
 def main(*, is_forced: bool) -> int:
@@ -50,14 +54,21 @@ def main(*, is_forced: bool) -> int:
 def is_confirmed(question: str) -> bool:
     """Ask one yes-or-no question on the terminal.
 
+    With no terminal on stdin nothing is asked: one line on stderr says that
+    ``--yes`` goes ahead without asking.
+
     Args:
         question: The question, ending in ``[y/N]``.
 
     Returns:
-        True only for ``y`` or ``yes``; no input is a no.
+        True only for ``y`` or ``yes``; no input and no terminal are a no.
     """
+    if sys.stdin is None or not sys.stdin.isatty():
+        print(NO_TERMINAL_LINE, file=sys.stderr)
+        return False
     try:
         answer = input(question)
     except EOFError:
+        print()
         return False
     return answer.strip().lower() in ("y", "yes")

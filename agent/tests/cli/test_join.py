@@ -6,6 +6,8 @@ refusal the hub can give worded on the way out. Nothing here reaches a
 network; the one join POST is answered by the test.
 """
 
+import io
+
 import pytest
 
 import neutrino_agent.cli.entry as entry
@@ -91,7 +93,7 @@ def test_the_join_posts_the_seven_fields(joined_hub):
 
 
 def test_an_existing_binding_is_kept_when_the_prompt_is_declined(
-    monkeypatch, config_path, capsys
+    terminal, monkeypatch, config_path, capsys
 ):
     bind(config_path, url=OLD_GATEWAY_URL)
     asked = []
@@ -100,13 +102,28 @@ def test_an_existing_binding_is_kept_when_the_prompt_is_declined(
         asked.append(prompt)
         return "n"
 
-    monkeypatch.setattr(join_cli, "input", answer_no, raising=False)
+    monkeypatch.setattr("builtins.input", answer_no)
     posted = answer_with(monkeypatch)
 
     assert join_cli.main(LINK, is_forced=False) == 1
 
     assert asked == [f"this machine is bound to {OLD_GATEWAY_URL}; replace it? [y/N] "]
     assert "nothing changed" in capsys.readouterr().out
+    assert posted == []
+    assert enrollment.load_binding()["gateway_url"] == OLD_GATEWAY_URL
+
+
+def test_with_no_terminal_an_existing_binding_is_kept_and_yes_is_named(
+    monkeypatch, config_path, capsys
+):
+    bind(config_path, url=OLD_GATEWAY_URL)
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+    posted = answer_with(monkeypatch)
+
+    assert join_cli.main(LINK, is_forced=False) == 1
+
+    assert "--yes" in capsys.readouterr().err
     assert posted == []
     assert enrollment.load_binding()["gateway_url"] == OLD_GATEWAY_URL
 
