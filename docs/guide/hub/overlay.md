@@ -1,10 +1,10 @@
 ---
-title: Overlay
+title: Access
 ---
 
-# Overlay
+# Access
 
-An overlay is a private network laid over the internet. Through it, a machine outside your building reaches the hub and the LAN behind it. The **Overlay** page runs NetBird, EasyTier, or both at once, each with its own switch and its own settings.
+An overlay is a private network laid over the internet. Through it, a machine outside your building reaches the hub and the LAN behind it. The **Access** page runs NetBird, EasyTier, or both at once, each with its own switch and its own settings.
 
 ## Turn an engine on
 

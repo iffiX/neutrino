@@ -21,7 +21,7 @@ The hub box stacks its layers in the order of the table. Each layer needs only t
 
 Only the router shape takes over the box's interfaces and serves networks of its own. Server and side gateway leave every address and every connection on the box as they are. [Network](./hub/network.md) describes each shape and how to change it.
 
-With both overlay engines on, the hub keeps their networks apart. It rejects an engine whose network overlaps the other one or the box's own with `overlay_subnet_overlap`. It deletes a default route that an overlay pushes and shows `overlay_default_route_refused` on the page. [Overlay](./hub/overlay.md) covers each engine.
+With both overlay engines on, the hub keeps their networks apart. It rejects an engine whose network overlaps the other one or the box's own with `overlay_subnet_overlap`. It deletes a default route that an overlay pushes and shows `overlay_default_route_refused` on the page. [Access](./hub/overlay.md) covers each engine.
 
 ## Providers and consumers
 

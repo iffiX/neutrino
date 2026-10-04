@@ -4,7 +4,7 @@ title: Gitea
 
 # Gitea
 
-With the **Gitea** module, a managed Linux machine runs a private git server, and every client opens it from its list of web entries. The hub fetches a pinned Gitea release for amd64 or arm64, and the agent installs it beside git from the machine's own packages.
+With the **Gitea** module, a managed Linux machine runs a private git server, and every client opens it from its list of web entries. The module's installer fetches a pinned Gitea release for amd64 or arm64 and installs it beside git from the machine's own packages.
 
 Before you start, select **Install** and then **Configure** on the **Gitea** tab of the [Modules](../modules.md) page. The **Access** and **Administrator** sections open under the tab.
 

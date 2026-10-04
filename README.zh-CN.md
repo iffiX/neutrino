@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.3.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
-[![Hub: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
+[![中枢: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 [![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 [![Client: Linux · Windows · macOS](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 
@@ -24,7 +24,7 @@
 | 面板页 | 你能做什么                                                          | 在哪做                       |
 | ------ | ------------------------------------------------------------------- | ---------------------------- |
 | 网络   | 选这台机器的形态，给网口分配角色，决定面板在哪些网络上应答          | 面板 **网络**（Network）     |
-| 虚拟网 | 把中枢接进 NetBird 或 EasyTier，在外面进家里的局域网                | 面板 **虚拟网**（Overlay）   |
+| 外部访问 | 把中枢接进 NetBird 或 EasyTier，在外面进家里的局域网              | 面板 **外部访问**（Access）  |
 | 代理   | 从分享链接导入出口节点，按设备和目标分流，开 SOCKS 端口             | 面板 **代理**（Proxy）       |
 | AI     | 把订阅账号和 API 密钥挂在一个网关地址后面，给每台电脑发自己的密钥   | 面板 **AI**                  |
 | 设备   | 用一条链接或一组 SSH 凭据接入一台机器，重启、唤醒、开 shell、进桌面 | 面板 **设备**（Devices）     |
