@@ -4,8 +4,9 @@ A machine introduces itself: the owner pastes one enrollment link into
 ``nagent join``, the agent spends the link's ticket at the hub, and the hub
 hands back the binding its hello will carry. Nothing else is configured.
 
-The link is ``neutrino://enroll/<payload>`` where the payload is base64url
-over ``{"urls": [...], "token": ..., "fp": ..., "role": "agent"}``. That
+The link is ``neutrino://enroll/<payload>`` where the payload is
+``{"urls": [...], "token": ..., "fp": ..., "role": "agent"}`` as JSON,
+compressed with zlib and written in base64url without padding. That
 alphabet holds no character a shell splits or a URL escapes. ``fp`` pins the
 hub: the SHA-256 fingerprint of the agent port's TLS certificate, checked on
 every connection before anything is sent. A link whose role is not ``agent``
@@ -34,6 +35,7 @@ import json
 import os
 import socket
 import urllib.parse
+import zlib
 
 from neutrino_agent import AGENT_VERSION
 from neutrino_agent.constants import (
@@ -97,14 +99,21 @@ def parse_link(link: str) -> "tuple[list, str, str, str]":
         text = text[len(LINK_PREFIX) :]
     try:
         padded = text + "=" * (-len(text) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        packed = base64.urlsafe_b64decode(padded.encode())
+        payload = json.loads(zlib.decompress(packed))
         urls = [
             str(url).rstrip("/") for url in payload.get("urls", []) if str(url).strip()
         ]
         token = str(payload.get("token", ""))
         fingerprint = str(payload.get("fp", "")).strip().lower()
         role = str(payload.get("role", ""))
-    except (binascii.Error, ValueError, UnicodeDecodeError, AttributeError) as error:
+    except (
+        binascii.Error,
+        zlib.error,
+        ValueError,
+        UnicodeDecodeError,
+        AttributeError,
+    ) as error:
         raise EnrollmentError(
             "that is not an enrollment link; copy the whole line from the "
             "hub's Devices page"
