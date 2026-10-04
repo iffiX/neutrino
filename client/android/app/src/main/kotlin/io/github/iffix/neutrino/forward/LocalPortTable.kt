@@ -4,10 +4,12 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.github.iffix.neutrino.CLIENT_SETTINGS_KEY_LOCAL_PORTS
 import io.github.iffix.neutrino.FORWARD_AUTO_FIRST_PORT
-import io.github.iffix.neutrino.FORWARD_BIND_HOST
 import io.github.iffix.neutrino.FORWARD_FIXED_PORTS
+import io.github.iffix.neutrino.FORWARD_PROBE_HOST_V4
+import io.github.iffix.neutrino.FORWARD_PROBE_HOST_V6
 import io.github.iffix.neutrino.channel.ChannelResult
 import java.io.IOException
+import java.net.BindException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -22,16 +24,13 @@ import kotlinx.serialization.json.Json
 /**
  * The one table of local ports, by entry key `<binding>/<entry>`, kept in the app's settings:
  * each entry is automatic or fixed, and no two entries hold one number. An automatic entry takes
- * its own published port when no other entry holds it and it is free on the loopback, else the
- * first free number from 20000 up, and keeps that pick from then on.
+ * its own published port when no other entry holds it and nothing listens on it, else the first
+ * free number from 20000 up, and keeps that pick from then on.
  *
  * @param preferences Where the table is written.
- * @param isFree Whether a number is free on the loopback now.
+ * @param isFree Whether nothing listens on a number on any address of the phone now.
  */
-class LocalPortTable(
-    private val preferences: SharedPreferences,
-    private val isFree: (Int) -> Boolean = ::isLoopbackFree,
-) {
+class LocalPortTable(private val preferences: SharedPreferences, private val isFree: (Int) -> Boolean = ::isPortFree) {
     private val current = MutableStateFlow(read())
 
     /** Every entry's choice. */
@@ -121,16 +120,26 @@ class LocalPortTable(
         private val serializer = MapSerializer(String.serializer(), LocalPortChoice.serializer())
 
         /**
-         * Whether a number can be bound on the loopback now.
+         * Whether nothing listens on a number on any address of the phone now: a probe binds it on
+         * the IPv4 wildcard address, then on the IPv6 one where the phone has IPv6, with no
+         * address reuse, and closes it.
          *
          * @param port The number.
-         * @return True when a listener could take it.
+         * @return True when both probes could take it.
          */
-        fun isLoopbackFree(port: Int): Boolean = try {
-            ServerSocket().use { it.bind(InetSocketAddress(InetAddress.getByName(FORWARD_BIND_HOST), port)) }
+        fun isPortFree(port: Int): Boolean = canBind(FORWARD_PROBE_HOST_V4, port, isFamilyRequired = true) &&
+            canBind(FORWARD_PROBE_HOST_V6, port, isFamilyRequired = false)
+
+        private fun canBind(host: String, port: Int, isFamilyRequired: Boolean): Boolean = try {
+            ServerSocket().use {
+                it.reuseAddress = false
+                it.bind(InetSocketAddress(InetAddress.getByName(host), port))
+            }
             true
-        } catch (_: IOException) {
+        } catch (_: BindException) {
             false
+        } catch (_: IOException) {
+            !isFamilyRequired
         }
     }
 }

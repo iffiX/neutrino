@@ -195,6 +195,15 @@ const val CLIENT_STREAM_KIND_SHELL = "shell"
 /** A command on a managed machine, such as a shell's resize. */
 const val CLIENT_STREAM_KIND_COMMAND = "command"
 
+/** One TCP connection to a published entry or to the hub's panel, carried by the hub. */
+const val CLIENT_STREAM_KIND_CONNECT = "connect"
+
+/** The refusal of a join while the hub has paused new enrolments; the ticket stays good. */
+const val CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
+
+/** The ways a client's socket reaches its hub, each worded as `ui.through.<way>`. */
+val CLIENT_REACHED_THROUGH: List<String> = listOf("lan", "netbird", "easytier", "relay")
+
 /** The file the bindings are kept in, sealed under the Keystore's key. */
 const val CLIENT_BINDINGS_FILE_NAME = "bindings.sealed"
 
@@ -203,12 +212,16 @@ const val CLIENT_KEYSTORE_ALIAS = "neutrino_client_secrets"
 
 /** Every code the hub may send this app, each worded in both catalogs. */
 val CLIENT_HUB_CODES: List<String> = listOf(
+    "admission_paused",
     "agent_offline",
     "binding_unknown",
     "client_disabled",
+    "connect_failed",
+    "connect_limit",
     "hello_invalid",
     "kind_unknown",
     "permission_denied",
+    "port_not_published",
     "protocol_too_new",
     "protocol_too_old",
     "rdp_not_shared",
@@ -246,13 +259,13 @@ const val CLIENT_HTTP_DEFAULT_PORT = 80
 /** The address every forward listens on. */
 const val FORWARD_BIND_HOST = "127.0.0.1"
 
+/** How long closing a forward waits for its listener to let go of the loopback number. */
+const val FORWARD_CLOSE_WAIT_MILLIS = 1000L
+
 /** The most one read of a forwarded connection copies at once. */
 const val FORWARD_BUFFER_BYTES = 65536
 
-/** How long a forwarded connection may take to reach the published port, as the desktop's relay allows. */
-const val FORWARD_CONNECT_TIMEOUT_MILLIS = 10_000
-
-/** The query parameter a local-only web page takes its token in. */
+/** The query parameter a web page that needs a token takes it in. */
 const val WEB_TOKEN_PARAMETER = "tkn"
 
 /** The name under which a browser resolves every host to the loopback by itself. */
@@ -261,8 +274,20 @@ const val WEB_LOOPBACK_DOMAIN = "localhost"
 /** The numbers a person may fix a local port to. */
 val FORWARD_FIXED_PORTS: IntRange = 1024..65535
 
-/** Where an automatic local port is looked for when the entry's own is taken. */
+/** Where an automatic local port is looked for when the entry's own is taken; the panel starts here. */
 const val FORWARD_AUTO_FIRST_PORT = 20000
+
+/** The IPv4 wildcard address a free-port probe binds. */
+const val FORWARD_PROBE_HOST_V4 = "0.0.0.0"
+
+/** The IPv6 wildcard address a free-port probe binds where the phone has IPv6. */
+const val FORWARD_PROBE_HOST_V6 = "::"
+
+/** The entry part of the panel forward's key, `<binding>/#panel`; no published entry's id holds `#`. */
+const val FORWARD_PANEL_ENTRY = "#panel"
+
+/** The host label the panel opens under is this prefix and the hub's id. */
+const val FORWARD_PANEL_SLUG_PREFIX = "panel-"
 
 /** The notification channel the app core's foreground service posts in. */
 const val CLIENT_CORE_NOTIFICATION_CHANNEL = "connections"
@@ -347,9 +372,6 @@ const val CLIENT_FILES_AUTHORITY = "io.github.iffix.neutrino.files"
 
 /** The file the shares' kept logins are sealed in. */
 const val CLIENT_SHARE_LOGINS_FILE_NAME = "shares.sealed"
-
-/** How long reaching a share's server may take. */
-const val CLIENT_SHARE_CONNECT_TIMEOUT_S = 5L
 
 /** How long one request to a share's server, a read or a write, may take. */
 const val CLIENT_SHARE_IO_TIMEOUT_S = 60L

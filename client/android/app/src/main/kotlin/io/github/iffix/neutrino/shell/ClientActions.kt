@@ -141,14 +141,16 @@ interface ClientActions {
     fun openShare(rootKey: String)
 
     /**
-     * Press Connect on a shared desktop: its material is fetched and the viewer opens.
+     * Press Connect on a shared desktop: its seat password is read, its forward is made, and the
+     * viewer opens on the forward.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param name What the viewer's bar shows.
      * @param platformOs The `platform_os` the entry carries, or empty when it names none.
+     * @param port The entry's own port, which its forward tries first on the loopback.
      */
-    fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String)
+    fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String, port: Int)
 
     /**
      * The codec and quality kept for a shared desktop, as its Configure dialog opens on them.
@@ -172,14 +174,13 @@ interface ClientActions {
     fun closeDesktop()
 
     /**
-     * Press Connect on a port entry: the phone's loopback forwards to it.
+     * Press Connect on a port entry or the AI gateway: the phone's loopback forwards to it through the hub.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
-     * @param host The address the published port answers on.
-     * @param port The published port number.
+     * @param port The entry's own port, which the forward tries first on the loopback.
      */
-    fun connectPort(bindingId: String, entryId: String, host: String, port: Int)
+    fun connectPort(bindingId: String, entryId: String, port: Int)
 
     /**
      * Press Disconnect on a forwarded port entry.
@@ -209,20 +210,19 @@ interface ClientActions {
     fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit>
 
     /**
-     * Press Open locally on a local-only web entry.
+     * Press Open on a web entry: its forward, its token when it needs one, then the browser.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param url The entry's address.
+     * @param isTokenRequired Whether the page opens with a token.
      */
-    fun openLocal(bindingId: String, entryId: String, url: String)
+    fun openWeb(bindingId: String, entryId: String, url: String, isTokenRequired: Boolean)
 
     /**
-     * Press Open on a web entry with `is_token_required`.
+     * Press Panel on a hub's row: the panel's forward, then the browser.
      *
      * @param bindingId The hub.
-     * @param entryId The entry.
-     * @param url The entry's address.
      */
-    fun openWithToken(bindingId: String, entryId: String, url: String)
+    fun openPanel(bindingId: String)
 }

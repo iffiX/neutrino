@@ -26,34 +26,29 @@ import java.net.URI
 import java.net.URISyntaxException
 
 /**
- * The web services the joined hubs publish: Open shows one in the browser, and Open locally
- * forwards a local-only one to this phone's loopback with its token and opens the loopback
- * address, the button showing the job meanwhile. Open on an entry with `is_token_required` reads
- * a fresh token and opens the entry's own address with it, as the same job, with no forward. A local-only row has Configure at its left for
- * the local port, and once forwarded it names its loopback address with Copy and Disconnect, as
- * a Ports row does.
+ * The web services the joined hubs publish. Open forwards the entry to this phone's loopback
+ * through the hub when it has no forward, reads a fresh token for an entry with
+ * `is_token_required`, and opens the browser on the entry's own `.localhost` name, the button
+ * showing the job meanwhile. Configure, at the left, opens the local port dialog while the entry
+ * is not forwarded; a forwarded row names its loopback address with Copy and Disconnect, as a
+ * Ports row does.
  *
  * @param hubs Every hub joined.
- * @param forwards Each local-only entry's forward and job, by entry key.
- * @param onOpen What pressing Open does, with the address.
- * @param onOpenLocal What pressing Open locally does, with the binding id, the entry id and the address.
- * @param onOpenWithToken What pressing Open on an entry with `is_token_required` does, with the
- *   binding id, the entry id and the address.
+ * @param forwards Each entry's forward and job, by entry key.
+ * @param onOpen What pressing Open does, with the binding id, the entry id, the address and
+ *   whether the page opens with a token.
  */
 @Composable
 fun WebScreen(
     hubs: List<HubView>,
     forwards: Map<String, PortForwardRow>,
-    onOpen: (String) -> Unit,
-    onOpenLocal: (String, String, String) -> Unit,
-    onOpenWithToken: (String, String, String) -> Unit,
+    onOpen: (String, String, String, Boolean) -> Unit,
 ) {
     val words = NeutrinoTheme.words
     val actions = LocalClientActions.current
     var configuring by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     ServiceList(hubs, "web", "ui.empty_web") { hub, entry, hasDivider ->
         val url = entry.text("url")
-        val isLocalOnly = entry.flag("is_local_only")
         val isTokenRequired = entry.flag("is_token_required")
         val isHealthy = entry.isHealthy != false
         val row = forwards[PortForwards.keyOf(hub.binding.id, entry.id)] ?: PortForwardRow()
@@ -71,34 +66,20 @@ fun WebScreen(
             marker = entryTone(hub, entry, isBusy = job != null),
             hasDivider = hasDivider,
             actions = {
-                if (isLocalOnly) {
-                    NeutrinoButton(
-                        words.word("ui.configure"),
-                        { configuring = Triple(hub.binding.id, entry.id, entry.title) },
-                        isSmall = true,
-                        isEnabled = isFree && !row.isForwarded,
-                    )
-                }
                 NeutrinoButton(
-                    words.word(
-                        when {
-                            job == PortForwardJob.OPENING -> job.wordKey
-                            isLocalOnly -> "ui.open_local"
-                            else -> "ui.open"
-                        },
-                    ),
-                    {
-                        when {
-                            isTokenRequired -> onOpenWithToken(hub.binding.id, entry.id, url)
-                            isLocalOnly -> onOpenLocal(hub.binding.id, entry.id, url)
-                            else -> onOpen(url)
-                        }
-                    },
+                    words.word("ui.configure"),
+                    { configuring = Triple(hub.binding.id, entry.id, entry.title) },
+                    isSmall = true,
+                    isEnabled = isFree && !row.isForwarded,
+                )
+                NeutrinoButton(
+                    words.word(if (job == PortForwardJob.OPENING) job.wordKey else "ui.open"),
+                    { onOpen(hub.binding.id, entry.id, url, isTokenRequired) },
                     isSmall = true,
                     isBusy = job == PortForwardJob.OPENING,
                     isEnabled = isHealthy && isFree,
                 )
-                if (isLocalOnly && row.isForwarded) {
+                if (row.isForwarded) {
                     if (job == null) CopyButton(isEnabled = isFree) { actions?.copy(loopback) }
                     NeutrinoButton(
                         words.word(job?.takeIf { it == PortForwardJob.DISCONNECTING }?.wordKey ?: "ui.port_disconnect"),
@@ -146,17 +127,10 @@ private fun WebScreenPreview() {
     PreviewHubs.Frame(
         mapOf(
             "ui.machine_provided_by" to "由 {hub}:{device} 提供",
-            "ui.open_local" to "本机打开",
             "ui.open" to "打开",
             "ui.configure" to "配置",
         ),
     ) {
-        WebScreen(
-            PreviewHubs.all,
-            emptyMap(),
-            onOpen = {},
-            onOpenLocal = { _, _, _ -> },
-            onOpenWithToken = { _, _, _ -> },
-        )
+        WebScreen(PreviewHubs.all, emptyMap(), onOpen = { _, _, _, _ -> })
     }
 }

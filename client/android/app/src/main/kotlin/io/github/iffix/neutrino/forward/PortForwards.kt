@@ -5,9 +5,13 @@ import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HTTP_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
+import io.github.iffix.neutrino.FORWARD_PANEL_ENTRY
+import io.github.iffix.neutrino.FORWARD_PANEL_SLUG_PREFIX
 import io.github.iffix.neutrino.WEB_LOOPBACK_DOMAIN
 import io.github.iffix.neutrino.WEB_TOKEN_PARAMETER
+import io.github.iffix.neutrino.channel.ChannelFrames
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelStream
 import io.github.iffix.neutrino.channel.HubView
 import java.io.IOException
 import java.net.URI
@@ -20,29 +24,34 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * The loopback forwards of the app core, by entry key `<binding>/<entry>`: a port entry's
- * Connect and Disconnect, and a local-only web entry's Open locally, which forwards as a port
- * entry does, reads the entry's token on the `service` stream and opens the browser on the
- * entry's own `.localhost` name with the token. A web entry with `is_token_required` has a row
- * here too while its Open reads a token, with no forward. Each forward listens on the number the local port table gives its
- * entry. A forward stops when its hub is left, when its entry leaves the hub's state, and on
- * [stopAll] as the app core's service ends.
+ * The loopback forwards of the app core, by entry key `<binding>/<entry>`. Each forward listens
+ * on `127.0.0.1` at the number the local port table gives its entry, and every connection it
+ * accepts is one `connect` stream to the hub naming the entry. A port entry and the AI gateway
+ * forward from Connect until Disconnect; a web entry from Open until Disconnect, its Open reading
+ * the entry's token on the `service` stream when it needs one and opening the browser on the
+ * entry's own `.localhost` name; a shared desktop from its Connect until its viewer closes; the
+ * hub's panel, keyed `<binding>/#panel`, from the first press of Panel until the hub is left. A
+ * forward stops when its hub is left, when its entry leaves the hub's state, and on [stopAll] as
+ * the app core's service ends.
  *
  * @param material What the hub hands this phone for one entry, by binding id and entry id.
+ * @param streams Opens one `connect` stream on a hub, by binding id and the stream's arguments.
  * @param scope Where the jobs run.
- * @param table The local port of every forwardable entry.
- * @param relayOf A relay to a published host and port, on a loopback number.
+ * @param table The local port of every forwarded entry.
+ * @param relayOf A relay by what the log calls it, how it opens a stream, and its loopback number.
  */
 class PortForwards(
     private val material: suspend (String, String) -> ChannelResult<JsonObject>,
+    private val streams: (String, Map<String, JsonElement>) -> ChannelResult<ChannelStream>,
     private val scope: CoroutineScope,
     private val table: LocalPortTable,
-    private val relayOf: (String, Int, Int) -> PortForwardRelay = { host, port, local ->
-        PortForwardRelay(host, port, local)
+    private val relayOf: (String, () -> ChannelResult<ChannelStream>, Int) -> PortForwardRelay = { name, open, local ->
+        PortForwardRelay(name, open, local)
     },
 ) {
     private val current = MutableStateFlow<Map<String, PortForwardRow>>(emptyMap())
@@ -52,18 +61,17 @@ class PortForwards(
     val rows: StateFlow<Map<String, PortForwardRow>> = current.asStateFlow()
 
     /**
-     * Press Connect on a port entry. A press while the row's job runs is dropped.
+     * Press Connect on a port entry or the AI gateway. A press while the row's job runs is dropped.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
-     * @param host The address the published port answers on.
-     * @param port The published port number.
+     * @param port The entry's own port, which the local port table tries first.
      */
-    fun connect(bindingId: String, entryId: String, host: String, port: Int) {
+    fun connect(bindingId: String, entryId: String, port: Int) {
         val key = keyOf(bindingId, entryId)
         if (!begin(key, PortForwardJob.FORWARDING)) return
         scope.launch {
-            when (val bound = forward(key, host, port)) {
+            when (val bound = forward(key, bindingId, entryArgs(entryId), port)) {
                 is ChannelResult.Refused -> settle(key) { PortForwardRow(error = bound) }
                 is ChannelResult.Ok -> settle(key) { PortForwardRow(localPort = bound.value) }
             }
@@ -86,18 +94,19 @@ class PortForwards(
     }
 
     /**
-     * Press Open locally on a local-only web entry: its address is forwarded to the loopback, its
-     * token is read on the `service` stream, and the browser opens
-     * `http://<slug>.localhost:<local port>/?tkn=<token>`, where the slug is the entry's id with
-     * every character outside letters, digits and hyphens turned into a hyphen. A press while the
-     * row's job runs is dropped.
+     * Press Open on a web entry: its forward is made when it has none, a fresh token is read on
+     * the `service` stream when the entry needs one, and the browser opens
+     * `<scheme>://<slug>.localhost:<local port><path>`, with `?tkn=<token>` for a token entry,
+     * where the slug is the entry's id with every character outside letters, digits and hyphens
+     * turned into a hyphen. A press while the row's job runs is dropped.
      *
      * @param bindingId The hub.
      * @param entryId The entry.
-     * @param url The entry's address.
+     * @param url The entry's address, where it stands on the hub's networks.
+     * @param isTokenRequired Whether the page opens with a token.
      * @param onOpen What opening the loopback address in the browser does.
      */
-    fun openLocal(bindingId: String, entryId: String, url: String, onOpen: (String) -> Unit) {
+    fun open(bindingId: String, entryId: String, url: String, isTokenRequired: Boolean, onOpen: (String) -> Unit) {
         val key = keyOf(bindingId, entryId)
         if (!begin(key, PortForwardJob.OPENING)) return
         scope.launch {
@@ -106,14 +115,19 @@ class PortForwards(
                 settle(key) { it?.copy(job = null, error = UNREADABLE) ?: PortForwardRow(error = UNREADABLE) }
                 return@launch
             }
-            val (host, port, path) = target
-            val bound = when (val forwarded = forward(key, host, port)) {
+            val bound = when (val forwarded = forward(key, bindingId, entryArgs(entryId), target.port)) {
                 is ChannelResult.Refused -> {
                     settle(key) { PortForwardRow(error = forwarded) }
                     return@launch
                 }
 
                 is ChannelResult.Ok -> forwarded.value
+            }
+            val address = "${target.scheme}://${slugOf(entryId)}.$WEB_LOOPBACK_DOMAIN:$bound${target.path}"
+            if (!isTokenRequired) {
+                onOpen(address)
+                settle(key) { PortForwardRow(localPort = bound) }
+                return@launch
             }
             val token = when (val answer = material(bindingId, entryId)) {
                 is ChannelResult.Refused -> {
@@ -127,42 +141,55 @@ class PortForwards(
                 settle(key) { PortForwardRow(localPort = bound, error = ChannelResult.refused("web_token_missing")) }
                 return@launch
             }
-            val query = "$WEB_TOKEN_PARAMETER=${URLEncoder.encode(token, "UTF-8")}"
-            onOpen("http://${slugOf(entryId)}.$WEB_LOOPBACK_DOMAIN:$bound$path?$query")
+            onOpen(tokenUrlOf(address, token))
             settle(key) { PortForwardRow(localPort = bound) }
         }
     }
 
     /**
-     * Press Open on a web entry with `is_token_required`: a fresh token is read on the `service`
-     * stream and the browser opens the entry's own address with `?tkn=<token>`, with no forward. A
-     * press while the row's job runs is dropped.
+     * Press Panel on a hub's row: the panel's forward is made when the hub has none, and the
+     * browser opens `http://panel-<hub id>.localhost:<local port>/`. A press while the job runs is
+     * dropped.
+     *
+     * @param bindingId The hub.
+     * @param hubId The hub's own id, from its welcome.
+     * @param onOpen What opening the loopback address in the browser does.
+     */
+    fun openPanel(bindingId: String, hubId: String, onOpen: (String) -> Unit) {
+        val key = keyOf(bindingId, FORWARD_PANEL_ENTRY)
+        if (!begin(key, PortForwardJob.OPENING)) return
+        scope.launch {
+            val args = ChannelFrames.args("is_panel" to true)
+            when (val bound = forward(key, bindingId, args, 0)) {
+                is ChannelResult.Refused -> settle(key) { PortForwardRow(error = bound) }
+
+                is ChannelResult.Ok -> {
+                    onOpen("http://${panelHostOf(hubId.ifEmpty { bindingId })}:${bound.value}/")
+                    settle(key) { PortForwardRow(localPort = bound.value) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Make an entry's forward for a job of another page, such as a shared desktop's Connect; it
+     * shows on no row and ends with [release].
      *
      * @param bindingId The hub.
      * @param entryId The entry.
-     * @param url The entry's address.
-     * @param onOpen What opening the address in the browser does.
+     * @param port The entry's own port, which the local port table tries first.
+     * @return The loopback number, or `forward_failed`.
      */
-    fun openWithToken(bindingId: String, entryId: String, url: String, onOpen: (String) -> Unit) {
-        val key = keyOf(bindingId, entryId)
-        if (!begin(key, PortForwardJob.OPENING)) return
-        scope.launch {
-            val token = when (val answer = material(bindingId, entryId)) {
-                is ChannelResult.Refused -> {
-                    settle(key) { PortForwardRow(error = answer) }
-                    return@launch
-                }
+    fun hold(bindingId: String, entryId: String, port: Int): ChannelResult<Int> =
+        forward(keyOf(bindingId, entryId), bindingId, entryArgs(entryId), port)
 
-                is ChannelResult.Ok -> (answer.value["token"] as? JsonPrimitive)?.content.orEmpty()
-            }
-            if (token.isEmpty()) {
-                settle(key) { PortForwardRow(error = ChannelResult.refused("web_token_missing")) }
-                return@launch
-            }
-            onOpen(tokenUrlOf(url, token))
-            settle(key) { null }
-        }
-    }
+    /**
+     * End a forward [hold] made.
+     *
+     * @param bindingId The hub.
+     * @param entryId The entry.
+     */
+    fun release(bindingId: String, entryId: String) = stop(keyOf(bindingId, entryId))
 
     /**
      * One entry's local port, as the Configure dialog opens on it.
@@ -200,7 +227,9 @@ class PortForwards(
     }
 
     /**
-     * Take one round of the hubs' state.
+     * Take one round of the hubs' state: a forward stops when its hub is gone, or when its hub
+     * serves this phone and no longer lists its entry; the panel's when its hub no longer lets
+     * this phone open the panel.
      *
      * @param hubs Every hub's view.
      */
@@ -209,7 +238,13 @@ class PortForwards(
         val gone = synchronized(relays) {
             relays.keys.filter { key ->
                 val hub = byId[key.substringBefore('/')]
-                hub == null || (hub.isConnected && hub.services.none { it.id == key.substringAfter('/') })
+                val entryId = key.substringAfter('/')
+                when {
+                    hub == null -> true
+                    !hub.isConnected -> false
+                    entryId == FORWARD_PANEL_ENTRY -> !hub.isPanelAllowed
+                    else -> hub.services.none { it.id == entryId }
+                }
             }
         }
         for (key in gone) stop(key)
@@ -255,13 +290,13 @@ class PortForwards(
         return isStarted
     }
 
-    private fun forward(key: String, host: String, port: Int): ChannelResult<Int> {
+    private fun forward(key: String, bindingId: String, args: Map<String, JsonElement>, port: Int): ChannelResult<Int> {
         synchronized(relays) { relays[key]?.takeIf { it.isActive } }?.let { return ChannelResult.Ok(it.localPort) }
         return try {
-            val relay = relayOf(host, port, table.portFor(key, port))
+            val relay = relayOf(key, { streams(bindingId, args) }, table.portFor(key, port))
             val bound = relay.start()
             synchronized(relays) { relays.put(key, relay) }?.close()
-            Log.i(CLIENT_LOG_TAG, "forwarding $FORWARD_BIND_HOST:$bound to $host:$port")
+            Log.i(CLIENT_LOG_TAG, "forwarding $FORWARD_BIND_HOST:$bound to $key through the hub")
             ChannelResult.Ok(bound)
         } catch (error: IOException) {
             ChannelResult.refused("forward_failed", "detail" to (error.message ?: "IOException").take(200))
@@ -271,7 +306,7 @@ class PortForwards(
     private fun stop(key: String) {
         val relay = synchronized(relays) { relays.remove(key) } ?: return
         relay.close()
-        Log.i(CLIENT_LOG_TAG, "stopped forwarding to ${relay.host}:${relay.port}")
+        Log.i(CLIENT_LOG_TAG, "stopped forwarding to ${relay.name}")
         current.update { rows ->
             val row = rows[key] ?: return@update rows
             val left = row.copy(localPort = 0)
@@ -288,30 +323,46 @@ class PortForwards(
         }
     }
 
-    private fun targetOf(url: String): Triple<String, Int, String>? = try {
+    private fun entryArgs(entryId: String): Map<String, JsonElement> = ChannelFrames.args("id" to entryId)
+
+    private fun targetOf(url: String): WebTarget? = try {
         val address = URI(url)
-        val host = address.host
+        val scheme = address.scheme?.lowercase().orEmpty()
         val port = when {
             address.port > 0 -> address.port
-            address.scheme == "https" -> CLIENT_HTTPS_DEFAULT_PORT
+            scheme == "https" -> CLIENT_HTTPS_DEFAULT_PORT
             else -> CLIENT_HTTP_DEFAULT_PORT
         }
-        if (host.isNullOrEmpty()) null else Triple(host, port, address.rawPath.orEmpty().ifEmpty { "/" })
+        if (scheme.isEmpty() || address.host.isNullOrEmpty()) {
+            null
+        } else {
+            WebTarget(scheme, port, address.rawPath.orEmpty().ifEmpty { "/" })
+        }
     } catch (_: URISyntaxException) {
         null
     }
+
+    private class WebTarget(val scheme: String, val port: Int, val path: String)
 
     companion object {
         private val UNREADABLE = ChannelResult.refused("unknown_request")
         private val SLUG_OUTSIDE = Regex("[^A-Za-z0-9-]")
 
         /**
-         * The host label a local-only entry's page is opened under.
+         * The host label an entry's page is opened under.
          *
          * @param entryId The entry's id.
          * @return The id with every character outside letters, digits and hyphens turned into a hyphen.
          */
         fun slugOf(entryId: String): String = entryId.replace(SLUG_OUTSIDE, "-")
+
+        /**
+         * The host a hub's panel is opened under, so each hub's panel keeps its own cookie.
+         *
+         * @param hubId The hub's id.
+         * @return `panel-<slug of the id>.localhost`.
+         */
+        fun panelHostOf(hubId: String): String = "$FORWARD_PANEL_SLUG_PREFIX${slugOf(hubId)}.$WEB_LOOPBACK_DOMAIN"
 
         /**
          * The key of one entry.
@@ -323,9 +374,17 @@ class PortForwards(
         fun keyOf(bindingId: String, entryId: String): String = "$bindingId/$entryId"
 
         /**
-         * An entry's own address with the token it opens with.
+         * The key of a hub's panel forward.
          *
-         * @param url The entry's address.
+         * @param bindingId The hub.
+         * @return `<binding>/#panel`.
+         */
+        fun panelKeyOf(bindingId: String): String = keyOf(bindingId, FORWARD_PANEL_ENTRY)
+
+        /**
+         * An address with the token it opens with.
+         *
+         * @param url The address.
          * @param token The token the hub handed for this open.
          * @return The address with `tkn=<token>` added to its query.
          */

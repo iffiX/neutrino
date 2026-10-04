@@ -22,15 +22,8 @@ class RemoteDesktopScreenTest {
     }
 
     @Test
-    fun aRowNamesTheEntrysHostBeforeAnyConnect() {
-        assertEquals("192.0.2.5:21118", rowAddress(desktop("""{"host": "192.0.2.5", "port": 21118}"""), null))
-    }
-
-    @Test
-    fun aRowNamesTheDialledAddressWhenTheHubHandedBackAnother() {
-        val entry = desktop("""{"host": "192.0.2.5", "port": 21118}""")
-        assertEquals("198.51.100.7:21118", rowAddress(entry, "198.51.100.7:21118"))
-        assertEquals("192.0.2.5:21118", rowAddress(entry, "192.0.2.5:21118"))
+    fun aRowNamesWhereTheDesktopIsOnTheHubsNetworks() {
+        assertEquals("192.0.2.5:21118", rowAddress(desktop("""{"host": "192.0.2.5", "port": 21118}""")))
     }
 
     @Test

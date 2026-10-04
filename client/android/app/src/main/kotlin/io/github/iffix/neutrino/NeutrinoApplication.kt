@@ -14,7 +14,9 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.KeystoreSecretSealer
+import io.github.iffix.neutrino.channel.ChannelFrames
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelStream
 import io.github.iffix.neutrino.channel.ClientMachine
 import io.github.iffix.neutrino.channel.HubConnections
 import io.github.iffix.neutrino.channel.HubView
@@ -23,6 +25,7 @@ import io.github.iffix.neutrino.files.ShareLoginStore
 import io.github.iffix.neutrino.files.ShareRoot
 import io.github.iffix.neutrino.files.SmbShareClient
 import io.github.iffix.neutrino.forward.LocalPortTable
+import io.github.iffix.neutrino.forward.PortForwardRow
 import io.github.iffix.neutrino.forward.PortForwards
 import io.github.iffix.neutrino.overlay.OverlayController
 import io.github.iffix.neutrino.overlay.OverlayProbe
@@ -54,6 +57,7 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonElement
 
 /** The app's process: what outlives one screen, made once. */
 class NeutrinoApplication : Application() {
@@ -104,22 +108,30 @@ class NeutrinoApplication : Application() {
         ) { bindingId, url, isOnly -> connections.session(bindingId)?.preferAddress(url, isOnly) }
     }
 
-    /** The one state document every screen draws: each hub with its virtual network and its jobs. */
+    /** The one state document every screen draws: each hub with its virtual network, its panel's forward and its jobs. */
     val hubs: StateFlow<List<HubView>> by lazy {
-        combine(connections.views, overlays.lines) { views, lines ->
+        combine(connections.views, overlays.lines, portForwards.rows) { views, lines, forwards ->
             views.map { view ->
                 val line = lines[view.binding.id] ?: view.overlay
-                view.copy(overlay = line, jobs = view.jobs.copy(overlayJob = line.job))
+                val panel = forwards[PortForwards.panelKeyOf(view.binding.id)] ?: PortForwardRow()
+                view.copy(
+                    overlay = line,
+                    panelForward = panel.localPort,
+                    jobError = view.jobError ?: panel.error,
+                    jobs = view.jobs.copy(overlayJob = line.job, isOpeningPanel = panel.job != null),
+                )
             }
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
     }
 
-    /** The remote desktop Connects and the one viewer open. */
+    /** The remote desktop Connects and the one viewer open, each viewer dialling its entry's forward. */
     val remoteDesktops: RemoteDesktopSessions by lazy {
         RemoteDesktopSessions(
             material = { bindingId, entryId ->
                 connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
             },
+            forward = portForwards::hold,
+            release = portForwards::release,
             scope = scope,
             choiceOf = remoteDesktopChoices::get,
         )
@@ -130,12 +142,13 @@ class NeutrinoApplication : Application() {
         RemoteDesktopChoiceStore(getSharedPreferences(CLIENT_SETTINGS_FILE_NAME, Context.MODE_PRIVATE))
     }
 
-    /** The loopback forwards of the port entries and the local-only web entries. */
+    /** The loopback forwards of every forwarded entry and of the hubs' panels, each connection a `connect` stream. */
     val portForwards: PortForwards by lazy {
         PortForwards(
             material = { bindingId, entryId ->
                 connections.session(bindingId)?.openService(entryId) ?: ChannelResult.refused("unknown_hub")
             },
+            streams = ::openConnect,
             scope = scope,
             table = LocalPortTable(getSharedPreferences(CLIENT_SETTINGS_FILE_NAME, Context.MODE_PRIVATE)),
         )
@@ -165,11 +178,10 @@ class NeutrinoApplication : Application() {
     /** The SMB connections the shares are read through. */
     val shares: SmbShareClient by lazy {
         SmbShareClient(
-            CLIENT_SHARE_CONNECT_TIMEOUT_S,
             CLIENT_SHARE_IO_TIMEOUT_S,
             CLIENT_SHARE_IDLE_PROBE_S,
             CLIENT_SHARE_PROBE_TIMEOUT_S,
-        )
+        ) { root -> openConnect(root.bindingId, ChannelFrames.args("id" to root.entryId)) }
     }
 
     /** Every terminal tab. */
@@ -225,6 +237,9 @@ class NeutrinoApplication : Application() {
             Log.w(CLIENT_LOG_TAG, "the app core's service could not start: ${error.message}")
         }
     }
+
+    private fun openConnect(bindingId: String, args: Map<String, JsonElement>): ChannelResult<ChannelStream> =
+        connections.session(bindingId)?.openConnect(args) ?: ChannelResult.refused("unknown_hub")
 
     private suspend fun resolveHubName(): String? = withContext(Dispatchers.IO) {
         withTimeoutOrNull(CLIENT_CONNECT_TIMEOUT_S * 1000) {

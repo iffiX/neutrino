@@ -2,6 +2,7 @@ package io.github.iffix.neutrino.remotedesktop
 
 import io.github.iffix.neutrino.channel.ChannelResult
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -9,94 +10,116 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteDesktopSessionsTest {
-    private val material = JsonObject(
-        mapOf("host" to JsonPrimitive("10.0.0.9"), "port" to JsonPrimitive(21118), "password" to JsonPrimitive("p")),
+    private val material = JsonObject(mapOf("password" to JsonPrimitive("p")))
+    private val held = mutableListOf<Triple<String, String, Int>>()
+    private val released = mutableListOf<Pair<String, String>>()
+    private var bound: ChannelResult<Int> = ChannelResult.Ok(31118)
+
+    private fun sessions(
+        scope: CoroutineScope,
+        answer: suspend (String, String) -> ChannelResult<JsonObject> = { _, _ -> ChannelResult.Ok(material) },
+        choiceOf: (String) -> RemoteDesktopChoice = { RemoteDesktopChoice() },
+    ) = RemoteDesktopSessions(
+        answer,
+        forward = { bindingId, entryId, port ->
+            held += Triple(bindingId, entryId, port)
+            bound
+        },
+        release = { bindingId, entryId -> released += bindingId to entryId },
+        scope = scope,
+        choiceOf = choiceOf,
     )
 
     @Test
-    fun connectIsAJobUntilTheViewerOpens() = runTest {
+    fun connectIsAJobUntilTheViewerOpensOnTheForward() = runTest {
         val answer = CompletableDeferred<ChannelResult<JsonObject>>()
         var asked = 0
-        val sessions = RemoteDesktopSessions({ _, _ ->
+        val sessions = sessions(backgroundScope, { _, _ ->
             asked += 1
             answer.await()
-        }, backgroundScope)
-        sessions.connect("b1", "r1", "Neutrino:desk", "")
-        sessions.connect("b1", "r1", "Neutrino:desk", "")
+        })
+        sessions.connect("b1", "r1", "Neutrino:desk", "", 21118)
+        sessions.connect("b1", "r1", "Neutrino:desk", "", 21118)
         runCurrent()
         assertEquals(setOf("b1/r1"), sessions.connecting.value)
         assertEquals(1, asked)
         answer.complete(ChannelResult.Ok(material))
         runCurrent()
         assertEquals(emptySet<String>(), sessions.connecting.value)
+        assertEquals(listOf(Triple("b1", "r1", 21118)), held)
+        val target = sessions.viewing.value?.second
         assertEquals("b1/r1", sessions.viewing.value?.first)
-        assertEquals(21118, sessions.viewing.value?.second?.port)
+        assertEquals("127.0.0.1", target?.host)
+        assertEquals(31118, target?.port)
+        assertEquals("p", target?.password)
     }
 
     @Test
-    fun theViewerOpensWithTheEntrysKeptChoice() = runTest {
+    fun theViewerOpensWithTheEntrysKeptChoiceAndPlatform() = runTest {
         val kept = RemoteDesktopChoice(RemoteDesktopCodec.H264, RemoteDesktopQuality.LOW)
-        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope) { key ->
-            if (key == "b1/r1") kept else RemoteDesktopChoice()
-        }
-        sessions.connect("b1", "r1", "x", "")
+        val sessions = sessions(backgroundScope, choiceOf = { key ->
+            if (key ==
+                "b1/r1"
+            ) {
+                kept
+            } else {
+                RemoteDesktopChoice()
+            }
+        })
+        sessions.connect("b1", "r1", "x", "linux", 21118)
         runCurrent()
         assertEquals(kept, sessions.viewing.value?.second?.choice)
-    }
-
-    @Test
-    fun theViewerOpensWithTheEntrysPlatform() = runTest {
-        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
-        sessions.connect("b1", "r1", "x", "linux")
-        runCurrent()
         assertEquals("linux", sessions.viewing.value?.second?.platformOs)
     }
 
     @Test
-    fun aRefusedConnectWritesItsCodeUntilARefresh() = runTest {
-        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.refused("rdp_not_shared") }, backgroundScope)
-        sessions.connect("b1", "r1", "x", "")
+    fun aRefusedConnectWritesItsCodeAndMakesNoForward() = runTest {
+        val sessions = sessions(backgroundScope, { _, _ -> ChannelResult.refused("rdp_not_shared") })
+        sessions.connect("b1", "r1", "x", "", 21118)
         runCurrent()
         assertEquals("rdp_not_shared", sessions.errors.value["b1/r1"]?.code)
         assertNull(sessions.viewing.value)
+        assertTrue(held.isEmpty())
         sessions.clearErrors()
         assertEquals(emptyMap<String, ChannelResult.Refused>(), sessions.errors.value)
     }
 
     @Test
-    fun theCoreKeepsTheAddressTheHubHandedBack() = runTest {
-        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
-        assertNull(sessions.dialed.value["b1/r1"])
-        sessions.connect("b1", "r1", "x", "")
+    fun aForwardThatFailsWritesItsCode() = runTest {
+        bound = ChannelResult.refused("forward_failed", "detail" to "no local port is free")
+        val sessions = sessions(backgroundScope)
+        sessions.connect("b1", "r1", "x", "", 21118)
         runCurrent()
-        assertEquals("10.0.0.9:21118", sessions.dialed.value["b1/r1"])
-        assertEquals("10.0.0.9", sessions.viewing.value?.second?.host)
-        sessions.close()
-        assertEquals("10.0.0.9:21118", sessions.dialed.value["b1/r1"])
-        sessions.forget("b1")
-        assertNull(sessions.dialed.value["b1/r1"])
+        assertEquals("forward_failed", sessions.errors.value["b1/r1"]?.code)
+        assertNull(sessions.viewing.value)
     }
 
     @Test
-    fun aRefusedConnectNamesNoAddress() = runTest {
-        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.refused("rdp_not_shared") }, backgroundScope)
-        sessions.connect("b1", "r1", "x", "")
+    fun closingTheViewerEndsTheForward() = runTest {
+        val sessions = sessions(backgroundScope)
+        sessions.connect("b1", "r1", "x", "", 21118)
         runCurrent()
-        assertNull(sessions.dialed.value["b1/r1"])
+        sessions.close()
+        assertNull(sessions.viewing.value)
+        assertEquals(listOf("b1" to "r1"), released)
+        sessions.close()
+        assertEquals(1, released.size)
     }
 
     @Test
     fun leavingTheHubClosesItsViewer() = runTest {
-        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
-        sessions.connect("b1", "r1", "x", "")
+        val sessions = sessions(backgroundScope)
+        sessions.connect("b1", "r1", "x", "", 21118)
         runCurrent()
         sessions.forget("b2")
         assertEquals("b1/r1", sessions.viewing.value?.first)
         sessions.forget("b1")
         assertNull(sessions.viewing.value)
+        assertEquals(listOf("b1" to "r1"), released)
     }
 }

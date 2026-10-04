@@ -17,8 +17,12 @@ import io.github.iffix.neutrino.overlay.OverlayLine
  * @property hasConnected Whether the hub welcomed this phone since the app started.
  * @property droppedAtMillis When the open socket last closed, in the session's clock; 0 while open or before the first.
  * @property jobs The actions running on the hub.
- * @property jobError The code of a leave whose binding could not be forgotten here, kept until the next press on the row or a refresh.
+ * @property jobError The code of a leave whose binding could not be forgotten here, or of a failed Panel, kept
+ *   until the next press on the row or a refresh.
  * @property overlay The hub's virtual network.
+ * @property reachedThrough The way the socket reached the hub as its last state named it, empty before the first.
+ * @property isPanelAllowed Whether the hub's last state lets this phone open its panel.
+ * @property panelForward The loopback number the panel's forward listens on, 0 while it has none.
  */
 data class HubView(
     val binding: HubBinding,
@@ -33,6 +37,9 @@ data class HubView(
     val jobs: HubJobs = HubJobs(),
     val jobError: ChannelResult.Refused? = null,
     val overlay: OverlayLine = OverlayLine(),
+    val reachedThrough: String = "",
+    val isPanelAllowed: Boolean = false,
+    val panelForward: Int = 0,
 ) {
     /** Whether the socket is open and the hub serves this phone. */
     val isConnected: Boolean
