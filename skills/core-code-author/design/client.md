@@ -330,15 +330,29 @@ the row's button is the record's:
 | `failed` | press **Mount** | `pending` | `ui.job.mounting` |
 
 **Configure** opens the row's form in place: a user name (a picker over the
-share's `users`, with typed text accepted), the password, and the mount path
-with **Browse…**, or a drive letter picker on Windows. The form is a
-configurable panel with a dirty frame, **Save** and **Cancel**. **Mount** is
-disabled until the form has a user name and a path, with the reason on the
-row. The default path is `~/nas/<share>` on Linux and `/Volumes/<share>` on
-macOS, where the Finder lists a network volume under the server it came
-from; the mounted row on macOS says so under the path (`ui.mount_finder`,
-with the server's address), so what the row shows and what the Finder shows
-are one thing.
+share's `users`, with typed text accepted), the password, and the place the
+share is mounted, which takes the system's own shape
+(`mount_location_shape` in the state document):
+
+| System | Shape | The form's control | The mounted row |
+| --- | --- | --- | --- |
+| Linux | `path`: a directory under the home | the path with **Browse…**; the default is `~/nas/<share>` | the path |
+| Windows | `drive_letter`: a drive | a picker over the free letters, with the caption that the share appears as that drive in File Explorer | the letter |
+| macOS | `volume`: a network volume the system mounts under `/Volumes` | no control; a caption that the volume appears in the Finder under the server (`ui.mount_volume_caption`, with the server's address) | the mount point the system gave, `/Volumes/<share>` or the next free name, and `ui.mount_finder` under it with the server's address |
+
+The form is a configurable panel with a dirty frame, **Save** and **Cancel**.
+**Mount** is disabled until the form has a user name and, where the shape
+asks for one, a place, with the reason on the row.
+
+On macOS the client does not mount the share itself: it asks the system to
+mount the volume (`mount volume "smb://<user>@<host>/<share>"` through
+`osascript`, the script with the password on its standard input and never on
+an argument), so the volume is the one the Finder's **Connect to Server**
+would make, listed under the server in the Finder's sidebar. The record's
+`path` is empty until the system has mounted the volume and is then read
+back from the mount table; **Unmount** ejects that mount point with
+`diskutil unmount`. A volume the system already has mounted for the same
+share is taken as mounted, not mounted twice.
 
 A phone has no mount. Its row shows **Open in Files**, which makes the share
 a location in the system's Files app through the client's file provider. The
