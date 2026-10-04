@@ -13,7 +13,8 @@ import kotlinx.serialization.json.JsonObject
 
 /**
  * The remote desktop jobs of the app core: a Connect fetching an entry's material, the one
- * viewer open, and the code a failed Connect ended in, each by entry key `<binding>/<entry>`.
+ * viewer open, the code a failed Connect ended in, and the address the hub handed back for the
+ * viewer to dial, each by entry key `<binding>/<entry>`.
  *
  * @param material What the hub hands this phone for one entry, by binding id and entry id.
  * @param scope Where the Connect runs.
@@ -27,6 +28,10 @@ class RemoteDesktopSessions(
     private val connectingKeys = MutableStateFlow<Set<String>>(emptySet())
     private val failures = MutableStateFlow<Map<String, ChannelResult.Refused>>(emptyMap())
     private val open = MutableStateFlow<Pair<String, RemoteDesktopTarget>?>(null)
+    private val addresses = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** The address each entry's viewer dials, `host:port` as the hub last handed it back. */
+    val dialed: StateFlow<Map<String, String>> = addresses.asStateFlow()
 
     /** The entries whose Connect runs. */
     val connecting: StateFlow<Set<String>> = connectingKeys.asStateFlow()
@@ -60,6 +65,7 @@ class RemoteDesktopSessions(
                 is ChannelResult.Refused -> failures.update { it + (key to target) }
 
                 is ChannelResult.Ok -> {
+                    addresses.update { it + (key to "${target.value.host}:${target.value.port}") }
                     open.value = key to target.value.copy(choice = choiceOf(key), platformOs = platformOs)
                 }
             }
@@ -73,13 +79,14 @@ class RemoteDesktopSessions(
     }
 
     /**
-     * A hub is being left: its viewer closes.
+     * A hub is being left: its viewer closes and its addresses go.
      *
      * @param bindingId The hub.
      */
     fun forget(bindingId: String) {
         if (open.value?.first?.startsWith("$bindingId/") == true) open.value = null
         failures.update { errors -> errors.filterKeys { !it.startsWith("$bindingId/") } }
+        addresses.update { dialed -> dialed.filterKeys { !it.startsWith("$bindingId/") } }
     }
 
     /** A refresh: every entry's error goes. */

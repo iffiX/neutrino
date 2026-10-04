@@ -122,6 +122,7 @@ fun AppShell(
     val connecting by desktops.connecting.collectAsStateWithLifecycle()
     val desktopErrors by desktops.errors.collectAsStateWithLifecycle()
     val viewing by desktops.viewing.collectAsStateWithLifecycle()
+    val dialed by desktops.dialed.collectAsStateWithLifecycle()
     val forwardRows by forwards.rows.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val noticeAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -240,6 +241,7 @@ fun AppShell(
                                     connecting = connecting,
                                     errors = desktopErrors,
                                     viewingKey = viewing?.first,
+                                    dialed = dialed,
                                     onConnect = actions::connectDesktop,
                                 )
                             }

@@ -68,6 +68,28 @@ class RemoteDesktopSessionsTest {
     }
 
     @Test
+    fun theRowNamesTheAddressTheHubHandedBackOnceKnown() = runTest {
+        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
+        assertNull(sessions.dialed.value["b1/r1"])
+        sessions.connect("b1", "r1", "x", "")
+        runCurrent()
+        assertEquals("10.0.0.9:21118", sessions.dialed.value["b1/r1"])
+        assertEquals("10.0.0.9", sessions.viewing.value?.second?.host)
+        sessions.close()
+        assertEquals("10.0.0.9:21118", sessions.dialed.value["b1/r1"])
+        sessions.forget("b1")
+        assertNull(sessions.dialed.value["b1/r1"])
+    }
+
+    @Test
+    fun aRefusedConnectNamesNoAddress() = runTest {
+        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.refused("rdp_not_shared") }, backgroundScope)
+        sessions.connect("b1", "r1", "x", "")
+        runCurrent()
+        assertNull(sessions.dialed.value["b1/r1"])
+    }
+
+    @Test
     fun leavingTheHubClosesItsViewer() = runTest {
         val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
         sessions.connect("b1", "r1", "x", "")
