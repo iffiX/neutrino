@@ -29,12 +29,15 @@ const MOUNT_BUSY_STATES = ['queued', 'mounting', 'pending'];
 const CLAUDE_SLOTS = ['default', 'opus', 'sonnet', 'haiku'];
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
-// The licence the client ships under and where its source is; the programs
-// the package carries, each with the key its version is stamped under, its
-// licence, its repository, the tag a version is released under and, for one
-// only a system's package carries, that system.
+// The licence the client ships under and where its source is, by the edition
+// the state names; the programs the package carries, each with the key its
+// version is stamped under, its licence, its repository, the tag a version is
+// released under and, for one only a system's package carries, that system.
 const CLIENT_LICENCE = 'MIT';
-const CLIENT_SOURCE = 'https://github.com/iffiX/neutrino';
+const CLIENT_SOURCES = {
+  intl: 'https://github.com/iffiX/neutrino',
+  cn: 'https://gitee.com/iffiX/neutrino',
+};
 const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([
   { name: 'EasyTier', key: 'easytier', licence: 'LGPL-3.0',
     repository: 'https://github.com/EasyTier/EasyTier', tag: 'v{version}' },
@@ -2474,7 +2477,8 @@ function aboutSection(state) {
   ]);
   const source = t('ui.about_source_link');
   aboutGroup(about, t('ui.about_carried'), [
-    ['Neutrino client ' + state.version, CLIENT_LICENCE, [[source, CLIENT_SOURCE]]],
+    ['Neutrino client ' + state.version, CLIENT_LICENCE,
+      [[source, CLIENT_SOURCES[state.edition] || CLIENT_SOURCES.intl]]],
   ].concat(CARRIED.filter((core) => !core.os || core.os === platform.os)
     .map((core) => {
     const version = versions[core.key];

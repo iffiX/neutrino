@@ -18,7 +18,7 @@ import threading
 import time
 import urllib.parse
 
-from neutrino_client import CLIENT_CARRIED_VERSIONS, CLIENT_VERSION
+from neutrino_client import CLIENT_CARRIED_VERSIONS, CLIENT_VERSION, edition
 from neutrino_client.control import page
 from neutrino_client.core.resident import end_process
 from neutrino_client.exceptions import EnrollmentError, PlatformUnsupportedError
@@ -41,8 +41,9 @@ def state_payload(resident) -> dict:
         resident: The running :class:`~neutrino_client.core.resident.ClientResident`.
 
     Returns:
-        The state document: the machine, the versions of the programs the
-        package carries as ``carried_versions``, empty in a checkout, the
+        The state document: the machine, the edition as ``edition``, the
+        versions of the programs the package carries as
+        ``carried_versions``, empty in a checkout, the
         hubs joined as ``hubs``, each with its connection, its virtual
         network and its jobs, the services they publish as ``services``,
         each with its job, the machines they offer a terminal on and the
@@ -53,6 +54,7 @@ def state_payload(resident) -> dict:
     state = {
         "version": CLIENT_VERSION,
         "carried_versions": dict(CLIENT_CARRIED_VERSIONS),
+        "edition": edition.EDITION,
         "language": resident.language(),
         "theme": resident.theme(),
         "terminal_font_size": resident.terminal_font_size(),

@@ -1445,10 +1445,8 @@ def test_about_is_the_panels_card_of_two_groups_with_no_page_of_its_own():
 
 def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_word():
     about = body_of("aboutSection")
-    assert (
-        "['Neutrino client ' + state.version, CLIENT_LICENCE, [[source, CLIENT_SOURCE]]]"
-        in about
-    )
+    assert "['Neutrino client ' + state.version, CLIENT_LICENCE," in about
+    assert "[[source, CLIENT_SOURCES[state.edition] || CLIENT_SOURCES.intl]]]" in about
     assert "version ? core.name + ' ' + version : core.name" in about
     assert "const source = t('ui.about_source_link');" in about
     assert "text.textContent = (value || '') + (links.length ? ' — ' : '');" in (
@@ -1467,7 +1465,8 @@ def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_wo
     label_rule = PAGE_CSS[PAGE_CSS.index(".section_label {") :]
     assert "text-transform: uppercase" in label_rule[: label_rule.index("}")]
     assert "const CLIENT_LICENCE = 'MIT';" in PAGE_JS
-    assert "const CLIENT_SOURCE = 'https://github.com/iffiX/neutrino';" in PAGE_JS
+    assert "intl: 'https://github.com/iffiX/neutrino'," in PAGE_JS
+    assert "cn: 'https://gitee.com/iffiX/neutrino'," in PAGE_JS
     assert "const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([" in (
         PAGE_JS
     )
