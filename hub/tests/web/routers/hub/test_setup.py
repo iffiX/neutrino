@@ -169,6 +169,40 @@ def test_a_panel_on_the_default_port_keeps_no_port(session):
     assert state["panel_url"] == "https://[fd00::7]"
 
 
+def test_a_forwarded_port_is_kept_for_the_panel_on_the_wizards_scheme(session):
+    """G123: through an ssh forward on 18080 the page was sent to 8080."""
+    session.finish(panel_url="http://10.0.0.5:8080/")
+    client = TestClient(create_setup_app(session))
+
+    state = client.get(
+        f"/api/hub/setup/state?token={session.token}",
+        headers={"host": "127.0.0.1:18080"},
+    ).json()
+
+    assert state["panel_url"] == "http://127.0.0.1:18080/"
+
+
+def test_an_ipv6_origin_with_a_port_carries_both(session):
+    authority = {
+        "url": "http://10.0.0.5:8080/api/hub/setting/https/authority",
+        "file_name": "neutrino-argon-ca.crt",
+        "fingerprint": "ab" * 32,
+        "der": "YQ==",
+    }
+    session.finish(panel_url="https://10.0.0.5:8443", authority=authority)
+    client = TestClient(create_setup_app(session))
+
+    state = client.get(
+        f"/api/hub/setup/state?token={session.token}",
+        headers={"host": "[fd00::7]:18080"},
+    ).json()
+
+    assert state["panel_url"] == "https://[fd00::7]:8443"
+    assert state["authority"]["url"] == (
+        "http://[fd00::7]:18080/api/hub/setting/https/authority"
+    )
+
+
 def test_a_route_nobody_serves_is_missing_rather_than_the_app(client):
     """The page asks whether it is talking to a wizard or to a panel, and a
     shell served with a 200 on it answers neither."""

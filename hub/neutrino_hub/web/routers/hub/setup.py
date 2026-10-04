@@ -49,7 +49,9 @@ def setup_router(session) -> APIRouter:
     def read_state(request: Request):
         if not _guard(request):
             return _denied()
-        return _state_for_origin(session.state(), request.url.hostname or "")
+        return _state_for_origin(
+            session.state(), request.url.scheme, request.url.netloc
+        )
 
     @router.post("/link/create")
     async def read_link(request: Request):
@@ -110,38 +112,50 @@ def _context_for_system(context: dict) -> dict:
     return served
 
 
-def _state_for_origin(state: dict, host: str) -> dict:
-    """The run's state, with every address on the host the browser used.
+def _state_for_origin(state: dict, scheme: str, netloc: str) -> dict:
+    """The run's state, with every address on the origin the browser used.
 
     Args:
         state: What the session reports.
-        host: The host of the request's own origin; empty keeps the
-            addresses as they are.
+        scheme: The scheme of the request's own origin.
+        netloc: The host and port of the request's own origin, as the
+            browser sent them; empty keeps the addresses as they are.
 
     Returns:
-        The same state, ``panel_url`` and the authority's ``url`` naming
-        ``host`` with their own scheme and port.
+        The same state, ``panel_url`` and the authority's ``url`` on the
+        browser's origin where they share its scheme, and on its host with
+        their own port where they do not.
     """
-    if not host:
+    if not netloc:
         return state
-    served = {**state, "panel_url": _on_host(state.get("panel_url", ""), host)}
+    served = {
+        **state,
+        "panel_url": _on_origin(state.get("panel_url", ""), scheme, netloc),
+    }
     authority = state.get("authority")
     if authority:
         served["authority"] = {
             **authority,
-            "url": _on_host(authority.get("url", ""), host),
+            "url": _on_origin(authority.get("url", ""), scheme, netloc),
         }
     return served
 
 
-def _on_host(url: str, host: str) -> str:
-    """``url`` with its host replaced, its scheme, port and path kept."""
+def _on_origin(url: str, scheme: str, netloc: str) -> str:
+    """``url`` moved onto the browser's origin, its path kept.
+
+    A url of the browser's scheme takes the browser's host and port whole;
+    one of another scheme takes the host and keeps its own port.
+    """
     if not url:
         return url
     parts = urlsplit(url)
+    if parts.scheme == scheme:
+        return urlunsplit(parts._replace(netloc=netloc))
+    host = urlsplit(f"//{netloc}").hostname or ""
     name = f"[{host}]" if ":" in host else host
-    netloc = name if parts.port is None else f"{name}:{parts.port}"
-    return urlunsplit(parts._replace(netloc=netloc))
+    moved = name if parts.port is None else f"{name}:{parts.port}"
+    return urlunsplit(parts._replace(netloc=moved))
 
 
 def _denied() -> JSONResponse:
