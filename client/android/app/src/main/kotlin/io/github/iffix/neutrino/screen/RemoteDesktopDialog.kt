@@ -30,7 +30,7 @@ import io.github.iffix.neutrino.remotedesktop.RemoteDesktopQuality
 
 /**
  * The Configure dialog of a shared desktop: a Codec picker (Auto, then each codec the core
- * offers) and a Quality picker, then Save and Cancel; the next Connect asks for the choice.
+ * offers) and a Quality picker, then Cancel and Save; the next Connect asks for the choice.
  *
  * @param title The entry's title.
  * @param codecs The codecs the core offers, Auto first.
@@ -81,7 +81,12 @@ fun RemoteDesktopDialog(
                     onSelect = { quality = RemoteDesktopQuality.of(it) },
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NeutrinoButton(words.word("ui.cancel"), onClose, tier = ButtonTier.GHOST)
                 NeutrinoButton(
                     words.word("ui.save"),
                     {
@@ -90,7 +95,6 @@ fun RemoteDesktopDialog(
                     },
                     tier = ButtonTier.PRIMARY,
                 )
-                NeutrinoButton(words.word("ui.cancel"), onClose, tier = ButtonTier.GHOST)
             }
         }
     }
