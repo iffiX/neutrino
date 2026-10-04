@@ -6,8 +6,9 @@ root-only record per instance; one forwarder runs per record and follows
 it; an account no longer named loses its record and its forwarder; a stop
 closes every forwarder; a restarted agent starts the forwarders again from
 the records; a row runs only while its instance runs and its forwarder
-listens; each system gets its own applier; and a failed download is the
-module's own code.
+listens; each system gets its own applier; a failed download is the
+module's own code; and a refused apply's code is the journal's last line
+until an apply takes.
 """
 
 import ntpath
@@ -16,6 +17,7 @@ import stat
 
 import pytest
 
+import neutrino_agent.modules.base as base_module
 import neutrino_agent.modules.cloudcli.runner as runner_module
 from neutrino_agent.core.engine import _download_refusal
 from neutrino_agent.exceptions import (
@@ -372,3 +374,40 @@ def test_an_install_that_runs_reads_installing_and_its_log_is_the_install_s(
     assert FakeForwarder.made == []
     applier.installing = frozenset()
     assert held.is_installing() is False
+
+
+# --- a refused apply in the journal ---
+
+
+def test_a_refused_apply_is_the_journal_s_last_line_until_an_apply_takes(
+    runner, applier
+):
+    applier.error = ModuleApplyError("cloudcli_claude_missing", {"account": "ann"})
+
+    with pytest.raises(ModuleApplyError):
+        runner.apply(CONFIG)
+
+    assert runner.journal_text(200) == ["cloudcli: cloudcli_claude_missing account=ann"]
+    outcome = runner.command("journal", {"lines": 200})
+    assert outcome["output"].splitlines()[-1] == (
+        "cloudcli: cloudcli_claude_missing account=ann"
+    )
+    applier.error = None
+    runner.apply(CONFIG)
+    assert runner.journal_text(200) == []
+
+
+def test_a_refused_apply_follows_the_units_journal(runner, applier, monkeypatch):
+    monkeypatch.setattr(
+        base_module, "units_journal", lambda units, lines: ["ann: started", "ann: up"]
+    )
+    applier.units = lambda: ["neutrino_cloudcli@ann.service"]
+    applier.error = ModuleApplyError("cloudcli_claude_missing", {"account": "ann"})
+
+    with pytest.raises(ModuleApplyError):
+        runner.apply(CONFIG)
+
+    assert runner.journal_text(2) == [
+        "ann: up",
+        "cloudcli: cloudcli_claude_missing account=ann",
+    ]

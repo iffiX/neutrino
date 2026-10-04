@@ -4,8 +4,10 @@ The agent opens ``package {module}`` for a module's package from the hub's
 cache, and ``package {}`` for its own. It grants credit as it writes each
 piece to a temporary file under its data directory, waits for the hub's
 close, and checks the ``sha256`` the close's params carry against what
-landed. Only a file that matches is handed over; a mismatch, a refusal
-from the hub, or a socket that dropped mid-transfer leaves no file behind.
+landed. Only a file that matches is handed over, renamed from its
+temporary name to its final one when the caller names one; a mismatch, a
+refusal from the hub, or a socket that dropped mid-transfer leaves no file
+behind.
 
 A file is left behind on purpose in one case: the agent's own package
 outlives the process that received it, because the install restarts that
@@ -38,25 +40,30 @@ CODE_UNREACHABLE = "hub_unreachable"
 class PackageStream:
     """One package's bytes, received into a file whose digest is checked."""
 
-    def __init__(self, channel, *, directory: str):
+    def __init__(self, channel, *, directory: str, name: str = ""):
         """
         Args:
             channel: The stream's channel, opened as ``package {...}``.
             directory: Where the file lands, made root-only when missing.
+            name: The file's final name in ``directory``, which an installer
+                that reads the extension needs; empty keeps the temporary
+                name.
         """
         self._channel = channel
         self._directory = directory
+        self._name = name
 
     def receive(self) -> dict:
         """Take every byte, wait for the close, and check the digest.
 
         Returns:
-            ``{"path"}`` naming the file when its digest matched; otherwise
-            ``{"code", "params"}``: the hub's own code when it closed with
-            one, ``package_digest_mismatch`` when the bytes do not match
-            the ``sha256`` the close named, ``hub_unreachable`` when the
-            stream ended without one, and ``write_failed`` when the disk
-            refused. No file remains in any of those cases.
+            ``{"path"}`` naming the file, under its final name when one was
+            given, when its digest matched; otherwise ``{"code", "params"}``:
+            the hub's own code when it closed with one,
+            ``package_digest_mismatch`` when the bytes do not match the
+            ``sha256`` the close named, ``hub_unreachable`` when the stream
+            ended without one, and ``write_failed`` when the disk refused.
+            No file remains in any of those cases.
         """
         try:
             os.makedirs(self._directory, mode=0o700, exist_ok=True)
@@ -92,7 +99,15 @@ class PackageStream:
         if expected != digest.hexdigest():
             _unlink(path)
             return _refusal(CODE_DIGEST_MISMATCH)
-        return {"path": path}
+        if not self._name:
+            return {"path": path}
+        final = os.path.join(self._directory, self._name)
+        try:
+            os.replace(path, final)
+        except OSError as error:
+            _unlink(path)
+            return _refusal("write_failed", path=final, detail=str(error)[:200])
+        return {"path": final}
 
     def _take(self, handle, digest) -> tuple:
         """Write the hub's bytes until its close, granting as each lands.

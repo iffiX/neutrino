@@ -26,7 +26,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_VERB_VALIDATE,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
-from neutrino_agent.modules.log_tail import file_tail
+from neutrino_agent.modules.log_tail import file_tail, mask_secrets
 from neutrino_agent.modules.subprocess_run import units_journal
 
 
@@ -226,13 +226,14 @@ class ModuleRunner:
         return command_outcome(1, "verb_unknown", {"module": self.name, "verb": verb})
 
     def _journal_command(self, args: dict) -> dict:
-        """The tail of the module's log, as the verb answers it."""
+        """The tail of the module's log, its tokens masked, as the verb answers it."""
         try:
             lines = int(args.get("lines", AGENT_MODULE_JOURNAL_LINES))
         except (TypeError, ValueError):
             lines = AGENT_MODULE_JOURNAL_LINES
         lines = max(1, min(lines, AGENT_MODULE_JOURNAL_LINES))
-        return command_outcome(0, output="\n".join(self.journal_text(lines)[-lines:]))
+        text = "\n".join(self.journal_text(lines)[-lines:])
+        return command_outcome(0, output=mask_secrets(text))
 
     def _agent_log_lines(self, lines: int) -> list:
         """The agent's own log lines that name this module, empty in a journal.

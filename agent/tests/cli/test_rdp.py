@@ -111,7 +111,8 @@ def test_a_share_prints_where_a_peer_reaches_it(running_agent, monkeypatch, caps
     assert rdp_cli.main_start() == 0
 
     out = capsys.readouterr().out
-    assert ":21118 — shared" in out
+    assert ":21118 - shared" in out
+    assert out.isascii()
     assert "RustDesk ID 123456789" in out
     assert "hunter2" not in out
 

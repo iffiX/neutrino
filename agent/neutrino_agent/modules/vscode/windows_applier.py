@@ -9,8 +9,11 @@ instance is left running and a changed one is registered again. A task
 Windows cannot sign in reads ``credential_invalid``. The task runs the CLI
 through ``cmd.exe``, its output appended to the account's log file beside
 the CLI. The token file and the log file are reachable by their account,
-SYSTEM and the administrators alone. Every operation is one PowerShell
-script, the passwords on its standard input.
+SYSTEM and the administrators alone. An instance's processes are the ones
+whose command line names its token file and every process they started; a
+stop ends all of them, and an instance runs while one of them listens on
+its port. Every operation is one PowerShell script, the passwords on its
+standard input.
 
 Not pure: runs PowerShell.
 """
@@ -45,10 +48,49 @@ from neutrino_agent.modules.vscode.constants import (
 # The port an instance's arguments name.
 PORT_PATTERN = re.compile(r"--port (\d+)")
 
+# An instance's process tree: every process whose command line names the
+# instance's token file, and their descendants by parent process id, a child
+# never older than its parent. A stop takes the tree before the task stops
+# and ends what is left of it after.
+TREE_FUNCTIONS = """
+function Get-InstanceTree($mark) {
+  $all = @(Get-CimInstance Win32_Process)
+  $tree = @($all | Where-Object { "$($_.CommandLine)".Contains($mark) })
+  for ($n = 0; $n -lt $tree.Count; $n++) {
+    $parent = $tree[$n]
+    foreach ($child in $all) {
+      if ($child.ParentProcessId -eq $parent.ProcessId -and
+          $child.CreationDate -ge $parent.CreationDate -and
+          @($tree | ForEach-Object { $_.ProcessId }) -notcontains $child.ProcessId) {
+        $tree += $child
+      }
+    }
+  }
+  ,$tree
+}
+function Stop-Instance($task, $mark) {
+  $tree = Get-InstanceTree $mark
+  Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
+  foreach ($process in $tree) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+}
+function Test-InstanceListening($mark, $port) {
+  $owners = @(Get-NetTCPConnection -State Listen -LocalPort $port `
+    -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess })
+  if ($owners.Count -eq 0) { return $false }
+  $tree = Get-InstanceTree $mark
+  return (@($tree | Where-Object { $owners -contains $_.ProcessId }).Count -gt 0)
+}
+function Get-TokenFile($task) {
+  Join-Path $d.token_dir "$($task.Substring($d.prefix.Length)).token"
+}
+"""
+
 # Writes the token files, registers the tasks that changed, starts them,
 # opens each instance's port in the firewall, and unregisters the module's
 # tasks no instance names, closing their ports.
-APPLY_SCRIPT = """
+APPLY_SCRIPT = TREE_FUNCTIONS + """
 $notes = @()
 foreach ($i in @($d.instances)) {
   $dir = Split-Path -Parent $i.token_file
@@ -67,7 +109,7 @@ foreach ($i in @($d.instances)) {
   if ($code -ne 0) { throw "icacls refused the log file of $($i.account)" }
   $task = Get-ScheduledTask -TaskName $i.task -ErrorAction SilentlyContinue
   if (-not $task -or "$($task.Description)" -ne $i.description) {
-    if ($task) { Stop-ScheduledTask -TaskName $i.task -ErrorAction SilentlyContinue }
+    if ($task) { Stop-Instance $i.task $i.token_file }
     $action = New-ScheduledTaskAction -Execute $d.program -Argument $i.arguments
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
@@ -86,6 +128,7 @@ foreach ($i in @($d.instances)) {
     $notes += "registered the server of $($i.account)"
   }
   if ((Get-ScheduledTask -TaskName $i.task).State -ne 'Running') {
+    Stop-Instance $i.task $i.token_file
     Start-ScheduledTask -TaskName $i.task
   }
   $rule = Get-NetFirewallRule -Name $i.rule -ErrorAction SilentlyContinue
@@ -101,7 +144,7 @@ foreach ($i in @($d.instances)) {
 }
 foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
   if (@($d.tasks) -notcontains $task.TaskName) {
-    Stop-ScheduledTask -TaskName $task.TaskName -ErrorAction SilentlyContinue
+    Stop-Instance $task.TaskName (Get-TokenFile $task.TaskName)
     Unregister-ScheduledTask -TaskName $task.TaskName -Confirm:$false
     $account = $task.TaskName.Substring($d.prefix.Length)
     $log = Join-Path $d.log_dir "$account$($d.log_suffix)"
@@ -115,9 +158,9 @@ foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction Sil
 
 # Stops the module's tasks; with ``is_removed`` also unregisters them,
 # deletes the token files and closes their ports.
-WITHDRAW_SCRIPT = """
+WITHDRAW_SCRIPT = TREE_FUNCTIONS + """
 foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
-  Stop-ScheduledTask -TaskName $task.TaskName -ErrorAction SilentlyContinue
+  Stop-Instance $task.TaskName (Get-TokenFile $task.TaskName)
   if ($d.is_removed) { Unregister-ScheduledTask -TaskName $task.TaskName -Confirm:$false }
 }
 if ($d.is_removed -and (Test-Path -LiteralPath $d.token_dir)) {
@@ -129,14 +172,20 @@ if ($d.is_removed) {
 '{}'
 """
 
-# Each of the module's tasks: its state, its last result and its arguments.
-STATUS_SCRIPT = """
+# Each of the module's tasks: its state, its last result, its arguments,
+# and whether its process tree listens on the port they name.
+STATUS_SCRIPT = TREE_FUNCTIONS + """
 $tasks = @()
 foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
   $info = Get-ScheduledTaskInfo -TaskName $task.TaskName
+  $arguments = "$(@($task.Actions)[0].Arguments)"
+  $listening = $false
+  if ($arguments -match '--port (\\d+)') {
+    $listening = Test-InstanceListening (Get-TokenFile $task.TaskName) ([int]$Matches[1])
+  }
   $tasks += @{name = $task.TaskName; state = "$($task.State)";
     last_result = [int64]$info.LastTaskResult;
-    arguments = "$(@($task.Actions)[0].Arguments)"}
+    arguments = $arguments; is_listening = $listening}
 }
 @{tasks = $tasks} | ConvertTo-Json -Compress -Depth 4
 """
@@ -276,6 +325,7 @@ class VscodeWindowsApplier:
                 "log_suffix": VSCODE_LOG_SUFFIX,
                 "prefix": VSCODE_TASK_PREFIX,
                 "rule_prefix": VSCODE_WINDOWS_RULE_PREFIX,
+                "token_dir": self._token_dir,
                 "tasks": [entry["task"] for entry in instances],
                 "instances": instances,
             },
@@ -283,7 +333,7 @@ class VscodeWindowsApplier:
         return [str(note) for note in listed(answer.get("notes"))]
 
     def stop(self) -> None:
-        """Stop every instance's task; each starts again at boot.
+        """Stop every task and end its process tree; each starts again at boot.
 
         Raises:
             OSError: When PowerShell fails.
@@ -299,7 +349,7 @@ class VscodeWindowsApplier:
         self._withdraw(is_removed=True)
 
     def states(self, config: "VscodeConfig | None") -> list:
-        """Each instance, whether its task runs, and whether it can sign in.
+        """Each instance, whether its tree listens on its port, and whether it signs in.
 
         Args:
             config: The applied configuration; None reads the instances
@@ -309,7 +359,10 @@ class VscodeWindowsApplier:
             ``[{"account", "port", "url", "is_running", "code"}]``.
         """
         try:
-            read = self._powershell(STATUS_SCRIPT, {"prefix": VSCODE_TASK_PREFIX})
+            read = self._powershell(
+                STATUS_SCRIPT,
+                {"prefix": VSCODE_TASK_PREFIX, "token_dir": self._token_dir},
+            )
         except (OSError, subprocess.SubprocessError, ModuleApplyError):
             read = {}
         tasks = {
@@ -335,7 +388,7 @@ class VscodeWindowsApplier:
                     "account": account,
                     "port": port,
                     "url": f"http://{host}:{port}/" if port else "",
-                    "is_running": str(entry.get("state", "")) == "Running",
+                    "is_running": entry.get("is_listening") is True,
                     "code": (
                         "credential_invalid" if result in VSCODE_LOGON_FAILURES else ""
                     ),

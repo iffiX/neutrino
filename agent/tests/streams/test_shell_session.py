@@ -4,7 +4,8 @@ What these pin: a stream opened with a new id starts a shell under it and a
 held id is attached to; a resumed id the agent does not hold is refused
 ``session_unknown``; a closed stream ends a shell unless it is persistent,
 and a persistent one keeps its output while nobody watches; attaching again
-sends the kept output first, at most 256 KB of it, then resizes the
+sends the kept output first, at most 256 KB of it and without the
+terminal's query sequences, while live output keeps them, then resizes the
 terminal away and back; streams attached together each get the output,
 each one's input reaches the shell, the terminal takes the smallest window,
 and one leaving leaves the others; a shared shell outlives its last stream;
@@ -25,6 +26,7 @@ from neutrino_agent.streams.shell_session import (
     SessionShellStream,
     ShellSession,
     ShellSessionRegistry,
+    strip_queries,
 )
 from tests.streams.fake_channel import FakeChannel
 
@@ -435,3 +437,74 @@ def test_a_stream_without_an_id_keeps_nothing(registry):
 
     assert served.join()["params"] == {"exit_code": 129}
     assert registry.describe() == []
+
+
+# --- the terminal's queries in the replay ---
+
+# What vim 8.2 printed on a pseudo-terminal with TERM=xterm-256color, from its
+# start to its first screen: two cursor position reports, the secondary
+# device attributes and the foreground and background colour queries.
+VIM_START = (
+    b"\x1b[?1049h\x1b[22;0;0t\x1b[>4;2m\x1b[?1h\x1b=\x1b[?2004h\x1b[?1004h"
+    b"\x1b[1;24r\x1b[?12h\x1b[?12l\x1b[22;2t\x1b[22;1t\x1b[27m\x1b[23m\x1b[29m"
+    b"\x1b[m\x1b[H\x1b[2J\x1b[2;1H\xe2\x96\xbd\x1b[6n\x1b[2;1H  \x1b[3;1H"
+    b"\x1bPzz\x1b\\\x1b[0%m\x1b[6n\x1b[3;1H           \x1b[1;1H\x1b[>c"
+    b"\x1b]10;?\x07\x1b]11;?\x07\x1b[?25l\x1b[2;1H\x1b[94m~"
+)
+VIM_START_ANSWERED_NOTHING = (
+    b"\x1b[?1049h\x1b[22;0;0t\x1b[>4;2m\x1b[?1h\x1b=\x1b[?2004h\x1b[?1004h"
+    b"\x1b[1;24r\x1b[?12h\x1b[?12l\x1b[22;2t\x1b[22;1t\x1b[27m\x1b[23m\x1b[29m"
+    b"\x1b[m\x1b[H\x1b[2J\x1b[2;1H\xe2\x96\xbd\x1b[2;1H  \x1b[3;1H"
+    b"\x1bPzz\x1b\\\x1b[0%m\x1b[3;1H           \x1b[1;1H"
+    b"\x1b[?25l\x1b[2;1H\x1b[94m~"
+)
+
+
+def test_the_queries_a_terminal_answers_are_taken_out_of_vims_start():
+    assert strip_queries(VIM_START) == VIM_START_ANSWERED_NOTHING
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        b"\x1b[c",
+        b"\x1b[0c",
+        b"\x1b[>c",
+        b"\x1b[>0c",
+        b"\x1b[=c",
+        b"\x1b[5n",
+        b"\x1b[6n",
+        b"\x1b[?6n",
+        b"\x1b]10;?\x07",
+        b"\x1b]11;?\x1b\\",
+        b"\x1b]12;?\x07",
+        b"\x1b]4;1;?\x07",
+    ],
+)
+def test_each_query_is_taken_out(query):
+    assert strip_queries(b"a" + query + b"b") == b"ab"
+
+
+def test_what_draws_and_what_sets_stays():
+    drawn = b"\x1b[31mred\x1b[m\x1b]0;title\x07\x1b]11;#000000\x07\x1b[2J\x1b[?1;2c"
+
+    assert strip_queries(drawn) == drawn
+
+
+def test_the_replay_has_no_queries_and_the_live_output_keeps_them(registry):
+    terminal = FakeTerminal()
+    first, late = FakeChannel(), FakeChannel()
+    held = serve(registry, terminal, first, session_id="s1")
+    terminal.say(VIM_START)
+    wait_until(lambda: first.output().endswith(b"~"))
+
+    joined = serve(registry, terminal, late, session_id="s1", is_resumed=True)
+    wait_until(lambda: late.output().endswith(b"~"))
+    terminal.say(b"\x1b[c")
+    wait_until(lambda: late.output().endswith(b"\x1b[c"))
+
+    assert late.output() == VIM_START_ANSWERED_NOTHING + b"\x1b[c"
+    assert first.output() == VIM_START + b"\x1b[c"
+    terminal.exit(0)
+    held.join()
+    joined.join()

@@ -99,6 +99,24 @@ def test_reinstall_reports_launched_or_the_refusal():
     outcome = refused.run("agent", "reinstall", {})
     assert (outcome.exit_code, outcome.code) == (1, "agent_package_missing")
     assert outcome.params == {"target": "x"}
+    assert outcome.output == "agent_package_missing\n"
+
+
+def test_a_failed_install_ends_with_its_code_on_the_last_line():
+    failed = DeviceOperator(
+        platform=PowerPlatform(),
+        reinstall=lambda: {
+            "code": "reinstall_failed",
+            "params": {"exit_code": 1, "finished_at": "t"},
+            "output": "installer: Error\n",
+        },
+    )
+
+    outcome = failed.run("agent", "reinstall", {})
+
+    assert outcome.exit_code == 1
+    assert outcome.code == "reinstall_failed"
+    assert outcome.output == "installer: Error\nreinstall_failed: exit status 1\n"
 
 
 def test_without_a_reinstall_the_verb_is_unsupported():

@@ -110,6 +110,32 @@ def test_a_socket_gone_before_the_first_credit_leaves_no_file(tmp_path):
     assert leftovers(tmp_path / "packages") == []
 
 
+def test_a_named_package_is_renamed_from_its_temporary_name(tmp_path):
+    channel = FakeChannel(stream_id=3)
+    channel.feed(("data", b"xar!"))
+    channel.feed(("close", "", {"sha256": sha256(b"xar!")}))
+
+    outcome = PackageStream(
+        channel, directory=str(tmp_path / "packages"), name="neutrino_agent.pkg"
+    ).receive()
+
+    assert outcome == {"path": str(tmp_path / "packages" / "neutrino_agent.pkg")}
+    assert leftovers(tmp_path / "packages") == ["neutrino_agent.pkg"]
+
+
+def test_a_named_package_that_does_not_match_leaves_no_file(tmp_path):
+    channel = FakeChannel(stream_id=3)
+    channel.feed(("data", b"xar!"))
+    channel.feed(("close", "", {"sha256": "0" * 64}))
+
+    outcome = PackageStream(
+        channel, directory=str(tmp_path / "packages"), name="neutrino_agent.pkg"
+    ).receive()
+
+    assert outcome == {"code": "package_digest_mismatch", "params": {}}
+    assert leftovers(tmp_path / "packages") == []
+
+
 def test_the_landing_directory_is_made_root_only(tmp_path):
     outcome, _ = received(tmp_path, [b"x"], ("", {"sha256": sha256(b"x")}))
 

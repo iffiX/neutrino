@@ -1,8 +1,9 @@
-"""The last lines of a log file, for a module's log where no journal keeps it.
+"""The last lines of a log file, and the mask every journal passes through.
 
 Only the end of the file is read. The file is opened for reading alone,
 which on Windows shares it with the handle the agent's logging writes
-through.
+through. :func:`mask_secrets` hides a token in a URL's query and a token
+printed on a line of its own.
 
 Not pure: reads files.
 """
@@ -12,11 +13,39 @@ Not pure: reads files.
 from __future__ import annotations
 
 import os
+import re
 
 from neutrino_agent.constants import (
     AGENT_MODULE_LOG_SEARCH_BYTES,
     AGENT_MODULE_LOG_TAIL_BYTES,
 )
+
+# What a masked token reads as.
+SECRET_MASK = "***"
+# A token in a URL's query: ``?tkn=...``, ``&token=...``.
+SECRET_QUERY_PATTERN = re.compile(
+    r"([?&](?:tkn|token|connection-token)=)[^&#\s\"'<>]+", re.IGNORECASE
+)
+# A token on a line of its own, after the prefix a log puts before the text,
+# which ends in ``: ``: one word of at least 20 letters, digits, ``-`` or
+# ``_`` holding a digit.
+SECRET_LINE_PATTERN = re.compile(
+    r"^((?:.*:[ \t]+)?)(?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{20,}[ \t]*$", re.MULTILINE
+)
+
+
+def mask_secrets(text: str) -> str:
+    """The text with every token it shows replaced by ``***``.
+
+    Args:
+        text: A journal's or an installer's output, one or more lines.
+
+    Returns:
+        The text, a URL's ``tkn``, ``token`` or ``connection-token`` value
+        and a line that is one token after its prefix masked.
+    """
+    text = SECRET_QUERY_PATTERN.sub(r"\1" + SECRET_MASK, text)
+    return SECRET_LINE_PATTERN.sub(r"\1" + SECRET_MASK, text)
 
 
 def file_tail(path: str, lines: int, *, needle: str = "") -> list:
