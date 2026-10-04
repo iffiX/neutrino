@@ -1,4 +1,4 @@
-package io.github.iffix.neutrino.overlay
+package io.github.iffix.neutrino.netbird
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals

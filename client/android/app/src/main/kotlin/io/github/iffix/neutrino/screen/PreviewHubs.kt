@@ -35,7 +35,6 @@ object PreviewHubs {
             fingerprint = "",
             token = "",
             overlays = listOf(
-                ChannelOverlay(provider = "netbird", setupKey = "k"),
                 ChannelOverlay(provider = "easytier", mode = "console", configServer = "tcp://c/t"),
             ),
         ),

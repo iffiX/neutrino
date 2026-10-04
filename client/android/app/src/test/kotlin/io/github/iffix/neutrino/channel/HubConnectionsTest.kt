@@ -42,7 +42,7 @@ class HubConnectionsTest {
         assertEquals("", binding.token)
         assertEquals("https://192.168.100.1:8443", binding.gatewayUrl)
         assertEquals(link.urls, binding.gatewayUrls)
-        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
+        assertEquals(Samples.clientProviders, binding.overlays.map { it.provider })
         assertEquals(binding, store.get(binding.id))
         assertEquals(emptyList<Any>(), transport.posts)
     }
@@ -65,7 +65,7 @@ class HubConnectionsTest {
         assertEquals(HubConnection.PENDING, row.connection)
         assertEquals("ui.state.pending", "ui.state.${row.connection.wireName}")
         assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
-        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
+        assertEquals(Samples.clientProviders, row.binding.overlays.map { it.provider })
     }
 
     @Test
@@ -235,7 +235,7 @@ class HubConnectionsTest {
         assertEquals("ticket-1", binding.ticket)
         assertEquals(Samples.FINGERPRINT, binding.fingerprint)
         assertEquals(link.urls, binding.gatewayUrls)
-        assertEquals(listOf("netbird", "easytier"), binding.overlays.map { it.provider })
+        assertEquals(Samples.clientProviders, binding.overlays.map { it.provider })
         assertEquals(emptyList<Any>(), transport.posts)
     }
 
@@ -248,7 +248,7 @@ class HubConnectionsTest {
         val row = connections.views.first().single()
         assertEquals(HubConnection.PENDING, row.connection)
         assertEquals("https://192.168.100.1:8443", row.binding.gatewayUrl)
-        assertEquals(listOf("netbird", "easytier"), row.binding.overlays.map { it.provider })
+        assertEquals(Samples.clientProviders, row.binding.overlays.map { it.provider })
         assertEquals("ticket-1", store.bindings.value.single().ticket)
     }
 

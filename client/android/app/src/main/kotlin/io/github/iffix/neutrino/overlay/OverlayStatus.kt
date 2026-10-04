@@ -6,7 +6,7 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * What the one running engine last said.
  *
  * @property bindingId The hub whose network it runs.
- * @property provider `netbird` or `easytier`.
+ * @property provider The network's provider, such as `easytier`.
  * @property phase Where it stands.
  * @property address This phone's address on the network with its prefix length, as `10.144.0.7/24`,
  *   empty until it has one; an address without a length counts as /32.

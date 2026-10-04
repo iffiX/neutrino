@@ -13,6 +13,17 @@ plugins {
 val neutrinoVersion: String = providers.gradleProperty("neutrinoVersion").get()
 val repositoryRoot: File = rootDir.resolve("../..")
 
+// The edition, from the root EDITION file: where the app links to, never which features it has.
+val neutrinoEdition: String =
+    repositoryRoot.resolve("EDITION").takeIf { it.isFile }?.readText()?.trim()?.takeIf { it in setOf("intl", "cn") }
+        ?: "intl"
+
+// NetBird's own sources and tests, in a tree that carries them; the mainland tree has neither, and
+// NetBird's core is taken only beside its sources.
+val netbirdSources: File = file("src/netbird/kotlin")
+val netbirdTests: File = file("src/test_netbird/kotlin")
+val hasNetbird: Boolean = netbirdSources.isDirectory
+
 // 0.5.0 is 500: two digits each for the minor and the patch.
 fun versionCodeOf(version: String): Int {
     val (major, minor, patch) = version.substringBefore('-').split('.').map { it.toInt() }
@@ -40,6 +51,12 @@ android {
         targetSdk = 35
         versionName = neutrinoVersion
         versionCode = versionCodeOf(neutrinoVersion)
+        buildConfigField("String", "EDITION", "\"$neutrinoEdition\"")
+    }
+
+    sourceSets {
+        if (hasNetbird) getByName("main").kotlin.srcDir(netbirdSources)
+        if (netbirdTests.isDirectory) getByName("test").kotlin.srcDir(netbirdTests)
     }
 
     signingConfigs {
@@ -203,7 +220,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
-    implementation(files("libs/netbird.aar"))
+    if (hasNetbird) implementation(files("libs/netbird.aar"))
     implementation(libs.zxing.core)
     implementation(libs.smbj)
     implementation(libs.camerax.camera2)

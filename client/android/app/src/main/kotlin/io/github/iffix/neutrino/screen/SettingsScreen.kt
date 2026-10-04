@@ -21,11 +21,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.iffix.neutrino.CLIENT_CARRIED_CORES
 import io.github.iffix.neutrino.CLIENT_LANGUAGES
 import io.github.iffix.neutrino.CLIENT_LICENCE
-import io.github.iffix.neutrino.CLIENT_SOURCE_URL
 import io.github.iffix.neutrino.CLIENT_THEMES
+import io.github.iffix.neutrino.Edition
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.CardHeader
 import io.github.iffix.neutrino.design.NeutrinoButton
@@ -117,13 +116,15 @@ private fun AboutCard(deviceName: String, platform: String, version: String) {
             AboutFact(
                 "${words.word("ui.window.title")} $version",
                 CLIENT_LICENCE,
-                links = listOf(source to CLIENT_SOURCE_URL),
+                links = listOf(source to Edition.sourceUrl),
             ),
         )
-        for (core in CLIENT_CARRIED_CORES) {
+        for (core in Edition.carriedCores) {
             val links = buildList {
                 add(source to core.sourceUrl)
-                if (core.patchUrl.isNotEmpty()) add(patch to core.patchUrl.replace("{version}", version))
+                if (core.patchUrl.isNotEmpty()) {
+                    add(patch to core.patchUrl.replace("{source}", Edition.sourceUrl).replace("{version}", version))
+                }
             }
             add(AboutFact("${core.name} ${core.version}", core.licence, links))
         }

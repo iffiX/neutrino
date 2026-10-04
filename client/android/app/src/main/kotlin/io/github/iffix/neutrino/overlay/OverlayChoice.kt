@@ -1,8 +1,7 @@
 package io.github.iffix.neutrino.overlay
 
 import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
-import io.github.iffix.neutrino.OVERLAY_NETBIRD_NETWORK
-import io.github.iffix.neutrino.OVERLAY_PROVIDER_NETBIRD
+import io.github.iffix.neutrino.Edition
 import io.github.iffix.neutrino.binding.HubBinding
 import io.github.iffix.neutrino.channel.ChannelOverlay
 import java.net.URI
@@ -24,8 +23,8 @@ object OverlayChoice {
     /**
      * The hub's channel address on one of its networks: the hub's own address on it as the
      * material names it; else an address of the hub's list whose host is an IP inside the
-     * network (NetBird's 100.64.0.0/10, or the EasyTier network this phone is on); else the
-     * hub's NetBird name. An address of the hub's list on the chosen host is taken as it is;
+     * network (the network a left-out feature's part names, or the one this phone is on); else
+     * the hub's name the part gives. An address of the hub's list on the chosen host is taken as it is;
      * otherwise the host takes the port the binding last answered on.
      *
      * @param binding The binding.
@@ -36,16 +35,11 @@ object OverlayChoice {
      */
     fun hubUrl(binding: HubBinding, overlay: ChannelOverlay, address: String = "", prefix: Int = 0): String {
         if (overlay.hubAddress.isNotEmpty()) return urlOn(binding, overlay.hubAddress)
-        val (network, length) = if (overlay.provider == OVERLAY_PROVIDER_NETBIRD) {
-            OVERLAY_NETBIRD_NETWORK.split('/').let { it[0] to it[1].toInt() }
-        } else {
-            address to prefix
-        }
+        val part = Edition.overlayPart(overlay.provider)
+        val (network, length) = part?.hubNetwork?.split('/')?.let { it[0] to it[1].toInt() } ?: (address to prefix)
         binding.storedUrls.firstOrNull { isInside(hostOf(it), network, length) }?.let { return it }
-        if (overlay.provider == OVERLAY_PROVIDER_NETBIRD && overlay.fqdn.isNotEmpty()) {
-            return urlOn(binding, overlay.fqdn)
-        }
-        return ""
+        val name = part?.hubName(overlay).orEmpty()
+        return if (name.isNotEmpty()) urlOn(binding, name) else ""
     }
 
     private fun urlOn(binding: HubBinding, host: String): String {

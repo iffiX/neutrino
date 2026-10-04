@@ -77,7 +77,7 @@ class ChannelInboundTest {
         val state = (ChannelInbound.decode(text) as ChannelInbound.State).state
         assertEquals("h2", state.hash)
         assertEquals(listOf("https://a:8443"), state.urls)
-        assertEquals(listOf("netbird"), state.overlays.map { it.provider })
+        assertEquals(Samples.clientProviders - "easytier", state.overlays.map { it.provider })
         assertEquals("http://x", state.services.single().text("url"))
         assertEquals(null, state.services.single().isHealthy)
         assertEquals("Argon", state.terminals.single().name)
