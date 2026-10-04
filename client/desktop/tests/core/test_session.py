@@ -1771,6 +1771,7 @@ TERMINALS = [
 ]
 
 
+@pytest.mark.feature("netbird")
 def test_a_states_overlays_are_kept_on_the_binding(bound, monkeypatch, config_path):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
@@ -1787,11 +1788,11 @@ def test_a_states_overlays_are_kept_on_the_binding(bound, monkeypatch, config_pa
 def test_the_same_overlays_a_second_time_write_nothing(bound, monkeypatch, config_path):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY]))
+    take(session, made, dict(STATE, overlays=[EASYTIER_OVERLAY]))
     written = config_path.read_bytes()
     os.utime(config_path, ns=(0, 0))
 
-    take(session, made, dict(STATE, hash="h2", overlays=[NETBIRD_OVERLAY]))
+    take(session, made, dict(STATE, hash="h2", overlays=[EASYTIER_OVERLAY]))
 
     assert config_path.stat().st_mtime_ns == 0
     assert config_path.read_bytes() == written
@@ -1802,10 +1803,10 @@ def test_an_empty_list_clears_the_overlays_and_a_state_without_one_keeps_them(
 ):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
-    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY]))
+    take(session, made, dict(STATE, overlays=[EASYTIER_OVERLAY]))
 
     take(session, made, dict(STATE))
-    assert session.overlays() == [NETBIRD_OVERLAY]
+    assert session.overlays() == [EASYTIER_OVERLAY]
     take(session, made, dict(STATE, overlays=[]))
 
     assert session.overlays() == []
@@ -1818,9 +1819,10 @@ def test_the_overlay_secret_never_reaches_the_log(monkeypatch, config_path):
     session = session_for(log=lines.append)
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
 
-    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY]))
+    take(session, made, dict(STATE, overlays=[NETBIRD_OVERLAY, EASYTIER_OVERLAY]))
 
     assert lines and not any("KEY-1" in line for line in lines)
+    assert not any("s3cret" in line for line in lines)
 
 
 def test_the_networks_state_and_engine_are_written_onto_the_binding(bound, config_path):

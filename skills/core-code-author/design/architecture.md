@@ -202,6 +202,11 @@ through one table and through no other import.
 | `proxy` | `modules/xray/`, `modules/tun/`, `web/routers/hub/proxy.py`, `web/routers/hub/proxy_node.py`, the **Proxy** page and the panels only it shows |
 | `netbird` | `modules/netbird/`, `web/routers/hub/overlay_netbird.py`, its card on the **Access** page |
 
+| Client | NetBird's own files |
+| --- | --- |
+| desktop | `neutrino_client/netbird/`, the unit `data/services/neutrino_client_netbird.service`, the window's `frontend/parts/netbird.js`, the packaging part `packaging/netbird_payload.py` that `payload.parts()` takes when the tree holds it, and their tests |
+| Android | `app/src/netbird/` and `app/src/test_netbird/`, which the build adds only when they exist, `libs/netbird.aar` taken only beside them, and `packaging/build/build_core_netbird.py` |
+
 Each package that leaves something out has its one table: the hub's is
 `hub/neutrino_hub/edition.py`, the desktop client's
 `client/desktop/neutrino_client/edition.py`, and the Android app's

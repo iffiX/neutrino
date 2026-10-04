@@ -48,8 +48,25 @@ const val ICON_STROKE_WIDTH = 1.6f
 /** The app's licence, for the About card. */
 const val CLIENT_LICENCE = "AGPL-3.0"
 
-/** The app's source. */
-const val CLIENT_SOURCE_URL = "https://github.com/iffiX/neutrino"
+/** The edition released on GitHub, as `BuildConfig.EDITION` names it. */
+const val EDITION_INTL = "intl"
+
+/** The mainland edition, released on Gitee. */
+const val EDITION_CN = "cn"
+
+/** The app's source, by edition: the repository each edition is released from. */
+val CLIENT_SOURCE_URLS: Map<String, String> = mapOf(
+    EDITION_INTL to "https://github.com/iffiX/neutrino",
+    EDITION_CN to "https://gitee.com/iffiX/neutrino",
+)
+
+/** The left-out feature NetBird, by the name `Edition.hasFeature` takes. */
+const val EDITION_FEATURE_NETBIRD = "netbird"
+
+/** Each left-out feature, by the class of its part, an object the edition table loads by name. */
+val EDITION_FEATURE_PARTS: Map<String, String> = mapOf(
+    EDITION_FEATURE_NETBIRD to "io.github.iffix.neutrino.netbird.NetbirdPart",
+)
 
 /** The carried core whose source and patch the About card links. */
 const val CLIENT_RUSTDESK_CORE = "RustDesk"
@@ -57,19 +74,20 @@ const val CLIENT_RUSTDESK_CORE = "RustDesk"
 /** RustDesk's source at the tag the app's core is built from. */
 const val CLIENT_RUSTDESK_SOURCE_URL = "https://github.com/rustdesk/rustdesk/tree/1.4.9"
 
-/** The patch the app's RustDesk core is built with, at the app's release tag `v{version}`. */
-const val CLIENT_RUSTDESK_PATCH_URL =
-    "https://github.com/iffiX/neutrino/blob/v{version}/packaging/build/build_core_rustdesk.patch"
+/**
+ * The patch the app's RustDesk core is built with, under the app's source `{source}` at its release
+ * tag `v{version}`.
+ */
+const val CLIENT_RUSTDESK_PATCH_URL = "{source}/blob/v{version}/packaging/build/build_core_rustdesk.patch"
 
-/** The cores the app carries, for the About card. */
+/** The cores every edition of the app carries, for the About card. */
 val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
-    CarriedCore("NetBird", "0.78.1", "BSD-3-Clause", "https://github.com/netbirdio/netbird/tree/v0.78.1"),
     CarriedCore(
         "EasyTier",
         "2.6.4",
         "LGPL-3.0",
         "https://github.com/EasyTier/EasyTier/tree/v2.6.4",
-        "https://github.com/iffiX/neutrino/blob/v{version}/packaging/build/build_core_easytier.patch",
+        "{source}/blob/v{version}/packaging/build/build_core_easytier.patch",
     ),
     CarriedCore(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0", CLIENT_RUSTDESK_SOURCE_URL, CLIENT_RUSTDESK_PATCH_URL),
 )
@@ -235,9 +253,6 @@ val CLIENT_HUB_CODES: List<String> = listOf(
     "verb_unknown",
 )
 
-/** NetBird's provider name in an overlay object. */
-const val OVERLAY_PROVIDER_NETBIRD = "netbird"
-
 /** EasyTier's provider name in an overlay object. */
 const val OVERLAY_PROVIDER_EASYTIER = "easytier"
 
@@ -331,9 +346,6 @@ const val CLIENT_KEY_SHOWN_PREFIX = 6
 /** How long a connect's `login` stage may take: the engine's start, its login and its address. */
 const val OVERLAY_LOGIN_TIMEOUT_S = 90L
 
-/** The addresses a NetBird network gives its members, where the hub's own is looked for in its list. */
-const val OVERLAY_NETBIRD_NETWORK = "100.64.0.0/10"
-
 /** How long a disconnect waits for the engine to say it stopped. */
 const val OVERLAY_STOP_TIMEOUT_S = 10L
 
@@ -351,9 +363,6 @@ const val OVERLAY_POLL_MILLIS = 1000L
 
 /** The MTU of an EasyTier TUN device. */
 const val OVERLAY_TUN_MTU = 1380
-
-/** NetBird's own management plane, for a hub that names none. */
-const val OVERLAY_NETBIRD_DEFAULT_MANAGEMENT_URL = "https://api.netbird.io:443"
 
 /** The VPN service's action that runs one hub's network. */
 const val OVERLAY_SERVICE_ACTION_START = "io.github.iffix.neutrino.overlay.START"

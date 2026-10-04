@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import io.github.iffix.neutrino.BuildConfig
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
+import io.github.iffix.neutrino.Edition
 import io.github.iffix.neutrino.NeutrinoApplication
 import io.github.iffix.neutrino.OVERLAY_PROVIDER_EASYTIER
 import io.github.iffix.neutrino.OVERLAY_SERVICE_ACTION_START
@@ -57,7 +58,13 @@ class OverlayVpnService : VpnService() {
         end()
         val app = application as NeutrinoApplication
         val overlay = app.bindingStore.get(bindingId)?.overlays?.firstOrNull { it.provider == provider }
-        if (overlay == null) {
+        val dir = File(noBackupFilesDir, "overlay/$provider/$bindingId")
+        val created = if (provider == OVERLAY_PROVIDER_EASYTIER) {
+            EasyTierOverlayEngine(dir, app.deviceName)
+        } else {
+            Edition.overlayPart(provider)?.engine(dir, app.deviceName, BuildConfig.VERSION_NAME)
+        }
+        if (overlay == null || created == null) {
             app.overlays.report(
                 OverlayStatus(
                     bindingId,
@@ -67,12 +74,6 @@ class OverlayVpnService : VpnService() {
                 ),
             )
             return
-        }
-        val dir = File(noBackupFilesDir, "overlay/$provider/$bindingId")
-        val created = if (provider == OVERLAY_PROVIDER_EASYTIER) {
-            EasyTierOverlayEngine(dir, app.deviceName)
-        } else {
-            NetbirdOverlayEngine(dir, app.deviceName, BuildConfig.VERSION_NAME)
         }
         engine = created
         running = bindingId to provider

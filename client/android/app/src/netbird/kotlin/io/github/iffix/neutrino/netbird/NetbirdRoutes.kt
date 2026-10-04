@@ -1,4 +1,4 @@
-package io.github.iffix.neutrino.overlay
+package io.github.iffix.neutrino.netbird
 
 /** The route and search domain lists NetBird's core hands the app, as `;`-joined text. */
 object NetbirdRoutes {

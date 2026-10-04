@@ -10,11 +10,12 @@ That fixes it to one architecture and one glibc: build it in a container of
 the machine it is for, the way the hub's package is built.
 
 The client is a person's application, not a service: the package installs a
-launcher and no autostart entry. The two overlay daemons it carries are
-services: the package registers NetBird's unit and the unit of the client's
-own EasyTier daemon, ``nclient easytier-daemon``, and a purge takes their
-state under /var/lib/neutrino/client. It conflicts
-with the netbird package, which holds the same state and socket.
+launcher and no autostart entry. The overlay daemons it carries are
+services: the package registers the unit of the client's own EasyTier
+daemon, ``nclient easytier-daemon``, and the unit of each daemon a part of
+the payload adds, and a purge takes their state under
+/var/lib/neutrino/client. It conflicts with each distribution package that
+holds the same state and socket as one of them.
 
 The client's services last only as long as it runs, so the maintainer scripts
 ask every resident to quit before they take its files; removing the package
@@ -88,8 +89,7 @@ Section: net
 Priority: optional
 Architecture: {architecture}
 Depends: {depends}
-Conflicts: netbird
-Maintainer: {maintainer}
+{conflicts}Maintainer: {maintainer}
 Description: Neutrino client
  A person's window onto the services a Neutrino Hub publishes for them:
  links, ports forwarded to this machine, shares mounted under their home,
@@ -217,6 +217,9 @@ def _lay_out(tree: Path, version: str, architecture: str, maintainer: str) -> No
         version=version,
         architecture=architecture,
         depends=", ".join(RUNTIME_DEPENDENCIES),
+        conflicts=(
+            f"Conflicts: {', '.join(payload.CONFLICTS)}\n" if payload.CONFLICTS else ""
+        ),
         maintainer=maintainer,
     )
     payload.write(tree / "DEBIAN/control", control)

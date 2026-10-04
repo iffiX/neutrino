@@ -94,8 +94,11 @@ def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path
 
     stamped = {}
     exec((staged / "_version.py").read_text(), stamped)
+    parts = {}
+    for part in payload.parts():
+        parts.update(part.CARRIED_VERSIONS)
     assert stamped["CLIENT_CARRIED_VERSIONS"] == {
-        "netbird": bundled.NETBIRD_VERSION,
+        **parts,
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": bundled.CC_SWITCH_VERSION,
@@ -362,15 +365,17 @@ def test_the_licences_the_package_owes_are_staged(tmp_path):
     payload.stage_licenses(tmp_path)
 
     carried = tmp_path / "usr/share/doc/neutrino-client/licenses"
-    assert sorted(path.name for path in carried.iterdir()) == [
-        "cc_switch.txt",
-        "easytier.txt",
-        "gobject_introspection.txt",
-        "meslolgs_nf.txt",
-        "netbird.txt",
-        "rustdesk.txt",
-        "xterm.txt",
-    ]
+    assert sorted(path.name for path in carried.iterdir()) == sorted(
+        [name for part in payload.parts() for name in part.CARRIED_LICENSES]
+        + [
+            "cc_switch.txt",
+            "easytier.txt",
+            "gobject_introspection.txt",
+            "meslolgs_nf.txt",
+            "rustdesk.txt",
+            "xterm.txt",
+        ]
+    )
     assert "MIT License" in (carried / "cc_switch.txt").read_text()
     assert "AFFERO" in (carried / "rustdesk.txt").read_text()
     assert "LESSER" in (carried / "gobject_introspection.txt").read_text()

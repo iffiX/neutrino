@@ -26,6 +26,18 @@ from neutrino_client.platforms.base import ClientPlatform
 from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
 from neutrino_client.platforms.windows import WindowsPlatform
+from neutrino_client import edition
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip the tests of a left-out feature the tree does not carry."""
+    for item in items:
+        for marker in item.iter_markers(name="feature"):
+            if not edition.has_feature(marker.args[0]):
+                item.add_marker(
+                    pytest.mark.skip(reason=f"this tree has no {marker.args[0]}")
+                )
+
 
 SAME_USER = {"account": "alice", "uid": 1000, "is_same_user": True}
 OTHER_USER = {"account": "bob", "uid": 1001, "is_same_user": False}

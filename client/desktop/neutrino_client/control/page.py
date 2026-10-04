@@ -26,6 +26,10 @@ GUI_SOURCE_DIR = _PACKAGE_DIR.parent / "frontend"
 
 GUI_STYLE_TAG = '<link rel="stylesheet" href="style.css">'
 GUI_SCRIPT_TAG = '<script src="app.js"></script>'
+# Where the parts of the left-out features the tree holds go: every script
+# under ``parts/``, in name order, before the page's own.
+GUI_PARTS_TAG = '<script src="parts.js"></script>'
+GUI_PARTS_DIR_NAME = "parts"
 GUI_WORDS_OPENING = '<script id="words" type="application/json">'
 GUI_WORDS_TAG = GUI_WORDS_OPENING + "{}</script>"
 # The terminal's library, its fit addon and its stylesheet, as the page
@@ -68,6 +72,21 @@ def gui_asset(name: str) -> str:
         The file's content.
     """
     return (gui_dir() / name).read_text(encoding="utf-8")
+
+
+def gui_parts() -> str:
+    """The scripts of the left-out features the tree holds, as one text.
+
+    Returns:
+        Every file of ``parts/`` in name order, one after another; empty
+        when the tree holds none.
+    """
+    directory = gui_dir() / GUI_PARTS_DIR_NAME
+    if not directory.is_dir():
+        return ""
+    return "".join(
+        path.read_text(encoding="utf-8") for path in sorted(directory.glob("*.js"))
+    )
 
 
 def terminal_font_piece(name: str, offset: int) -> dict:
@@ -131,6 +150,7 @@ def control_page_html() -> str:
             json.dumps(words.catalogs(), ensure_ascii=False),
             "</script>",
         ),
+        (GUI_PARTS_TAG, "<script>", gui_parts(), "</script>"),
         (GUI_SCRIPT_TAG, "<script>", gui_asset("app.js"), "</script>"),
     ]:
         if tag not in document:

@@ -51,7 +51,7 @@ import urllib.parse
 import uuid
 import zlib
 
-from neutrino_client import CLIENT_VERSION
+from neutrino_client import CLIENT_VERSION, edition
 from neutrino_client.constants import (
     CLIENT_CONFIG_FILE_NAME,
     CLIENT_HUB_NAME,
@@ -102,17 +102,16 @@ BINDING_TICKET_KEY = "ticket"
 BINDING_PENDING_ID_PREFIX = "pending_"
 # The string fields each overlay object carries, by provider and, for
 # EasyTier, by mode. An EasyTier object that names no mode is a manual one,
-# as a hub before the console mode sends it.
+# as a hub before the console mode sends it. The edition table adds the
+# objects of the engines it carries.
 OVERLAY_FIELDS = {
-    ("netbird", ""): ("setup_key", "management_url", "fqdn", "hub_address"),
     ("easytier", "manual"): ("network_name", "network_secret", "peer", "hub_address"),
     ("easytier", "console"): ("config_server", "hub_address"),
 }
-OVERLAY_DEFAULT_MODES = {"netbird": "", "easytier": "manual"}
-# The fields that may be empty: a NetBird management URL left empty is
-# NetBird's own cloud, a hub whose daemon reports no name has no fqdn, and a
-# hub that does not know its own virtual address names none.
-OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn", "hub_address")
+OVERLAY_DEFAULT_MODES = {"easytier": "manual"}
+# The fields that may be empty: a hub that does not know its own virtual
+# address names none.
+OVERLAY_OPTIONAL_FIELDS = ("hub_address",)
 
 
 def parse_link(link: str) -> "tuple[list, str, str, list]":
@@ -447,11 +446,12 @@ def clean_overlay(value) -> "dict | None":
     """
     if not isinstance(value, dict):
         return None
+    every_fields, default_modes, optional_fields = _overlay_objects()
     provider = str(value.get("provider", "") or "")
-    if provider not in OVERLAY_DEFAULT_MODES:
+    if provider not in default_modes:
         return None
-    mode = str(value.get("mode", "") or "") or OVERLAY_DEFAULT_MODES[provider]
-    fields = OVERLAY_FIELDS.get((provider, mode))
+    mode = str(value.get("mode", "") or "") or default_modes[provider]
+    fields = every_fields.get((provider, mode))
     if fields is None:
         return None
     cleaned = {"provider": provider}
@@ -463,10 +463,28 @@ def clean_overlay(value) -> "dict | None":
         text = str(value.get(field, "") or "").strip()
         if field == "peer":
             text = text.rstrip("/")
-        if not text and field not in OVERLAY_OPTIONAL_FIELDS:
+        if not text and field not in optional_fields:
             return None
         cleaned[field] = text
     return cleaned
+
+
+def _overlay_objects() -> tuple:
+    """The overlay objects a binding keeps: EasyTier's and the table's.
+
+    Returns:
+        ``(fields, default_modes, optional_fields)``, shaped as
+        :data:`OVERLAY_FIELDS`, :data:`OVERLAY_DEFAULT_MODES` and
+        :data:`OVERLAY_OPTIONAL_FIELDS`.
+    """
+    fields = dict(OVERLAY_FIELDS)
+    default_modes = dict(OVERLAY_DEFAULT_MODES)
+    optional_fields = OVERLAY_OPTIONAL_FIELDS
+    for added in edition.hooks("overlay_objects"):
+        fields.update(added["fields"])
+        default_modes.update(added["default_modes"])
+        optional_fields += tuple(added["optional_fields"])
+    return fields, default_modes, optional_fields
 
 
 def clean_urls(value) -> list:

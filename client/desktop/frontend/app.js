@@ -12,6 +12,9 @@ let theme = DEFAULT_THEME;
 // The desktop's own scheme, which 'system' resolves through.
 const DARK_SCHEME = window.matchMedia('(prefers-color-scheme: dark)');
 DARK_SCHEME.addEventListener('change', () => setTheme(theme));
+// What each left-out feature the tree holds adds to the page, from its own
+// file inlined before this one; none in a tree without them.
+const PARTS = window.NEUTRINO_PARTS || [];
 
 // Codes worded through their params' own detail text when they carry one.
 const DETAIL_CODES = [
@@ -26,15 +29,16 @@ const MOUNT_BUSY_STATES = ['queued', 'mounting', 'pending'];
 const CLAUDE_SLOTS = ['default', 'opus', 'sonnet', 'haiku'];
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
-// The licence the client ships under and where its source is; the programs
-// the package carries, each with the key its version is stamped under, its
-// licence, its repository, the tag a version is released under and, for one
-// only a system's package carries, that system.
+// The licence the client ships under and where its source is, by the edition
+// the state names; the programs the package carries, each with the key its
+// version is stamped under, its licence, its repository, the tag a version is
+// released under and, for one only a system's package carries, that system.
 const CLIENT_LICENCE = 'MIT';
-const CLIENT_SOURCE = 'https://github.com/iffiX/neutrino';
-const CARRIED = [
-  { name: 'NetBird', key: 'netbird', licence: 'BSD-3-Clause',
-    repository: 'https://github.com/netbirdio/netbird', tag: 'v{version}' },
+const CLIENT_SOURCES = {
+  intl: 'https://github.com/iffiX/neutrino',
+  cn: 'https://gitee.com/iffiX/neutrino',
+};
+const CARRIED = PARTS.flatMap((part) => part.carried || []).concat([
   { name: 'EasyTier', key: 'easytier', licence: 'LGPL-3.0',
     repository: 'https://github.com/EasyTier/EasyTier', tag: 'v{version}' },
   { name: 'RustDesk', key: 'rustdesk', licence: 'AGPL-3.0',
@@ -44,7 +48,7 @@ const CARRIED = [
   { name: 'tun2socks', key: 'tun2socks', licence: 'MIT',
     repository: 'https://github.com/xjasonlyu/tun2socks', tag: 'v{version}',
     os: 'windows' },
-];
+]);
 
 function fill(template, params) {
   return template.replace(/\{(\w+)\}/g, (whole, key) =>
@@ -313,7 +317,8 @@ const CONNECTION_STATES = [
 // The three states of a hub's virtual network.
 const OVERLAY_STATES = ['off', 'connecting', 'on'];
 // The name each virtual network's engine goes by.
-const OVERLAY_TITLES = { netbird: 'NetBird', easytier: 'EasyTier' };
+const OVERLAY_TITLES = Object.assign(
+  {}, ...PARTS.map((part) => part.overlayTitles || {}), { easytier: 'EasyTier' });
 
 // A status mark: a dot in its tone; 'pulse' is the amber dot of work running.
 function marker(tone) {
@@ -584,7 +589,8 @@ function hubTone(hub) {
 }
 
 // The ways the channel reaches a hub, as the hub's state names them.
-const THROUGH_WAYS = ['lan', 'netbird', 'easytier', 'relay'];
+const THROUGH_WAYS = ['lan'].concat(
+  ...PARTS.map((part) => part.throughWays || []), ['easytier', 'relay']);
 
 // The hub's state word: the job running on it, else its connection's, with
 // the way in once the hub has named it.
@@ -2471,7 +2477,8 @@ function aboutSection(state) {
   ]);
   const source = t('ui.about_source_link');
   aboutGroup(about, t('ui.about_carried'), [
-    ['Neutrino client ' + state.version, CLIENT_LICENCE, [[source, CLIENT_SOURCE]]],
+    ['Neutrino client ' + state.version, CLIENT_LICENCE,
+      [[source, CLIENT_SOURCES[state.edition] || CLIENT_SOURCES.intl]]],
   ].concat(CARRIED.filter((core) => !core.os || core.os === platform.os)
     .map((core) => {
     const version = versions[core.key];

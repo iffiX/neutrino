@@ -607,7 +607,10 @@ client <version>` at the left, `<licence> — Source` at the right), then one
 row per core the client carries (`<name> <version>` at the left, `<licence>
 — Source` at the right, with ` · Patch` after it where the client carries a
 patch), where **Source** and **Patch** are short link words that open the
-repository or the patch in the browser; no URL is ever written out. A row
+repository or the patch in the browser; no URL is ever written out. The
+client's own **Source** and its patches open the repository of the client's
+edition: GitHub for `intl`, Gitee for `cn`; the desktop window reads the
+edition from the `edition` field of its state document. A row
 is the label at the left in the muted colour and the value in mono at the
 right, rows parted by the panel's faint rule. The second card holds a
 **Language** picker, a **Theme** picker (System, Dark, Light), **Save**

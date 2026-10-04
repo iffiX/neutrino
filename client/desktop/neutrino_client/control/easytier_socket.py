@@ -2,7 +2,7 @@
 
 A request is one line of JSON and so is its answer; the connection then
 ends. On Linux and macOS the socket is a Unix socket every account may
-open, mode 0666 like NetBird's; on Windows it is a named pipe whose security
+open, mode 0666; on Windows it is a named pipe whose security
 descriptor admits SYSTEM, the administrators and the accounts logged on at
 the machine, none of which may create an instance of it. What a request may
 do is the daemon's to judge; nothing here reads who asked. The files
@@ -30,7 +30,7 @@ from neutrino_client.constants import (
 # read and write but not FILE_CREATE_PIPE_INSTANCE, so none can stand up a
 # pipe of the same name to take another account's request.
 EASYTIER_PIPE_SDDL = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;IU)"
-# Everyone may open the Unix socket, as NetBird's.
+# Everyone may open the Unix socket.
 EASYTIER_SOCKET_MODE = 0o666
 
 

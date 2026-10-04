@@ -23,6 +23,8 @@ Not pure: downloads interpreters and wheels, compiles, writes package trees.
 """
 
 import hashlib
+import importlib
+import importlib.util
 import re
 import shutil
 import subprocess
@@ -58,13 +60,38 @@ INSTALL_PREFIX = Path("/opt/neutrino/client")
 CLIENT_BINARY_NAME = "nclient"
 MOUNT_HELPER_BINARY_NAME = "mount_helper"
 
-# The two overlay daemons' units, where systemd reads a package's own, and
-# the directory their state lives under. The EasyTier one runs the client's
-# own EasyTier daemon, ``nclient easytier-daemon``.
-OVERLAY_UNITS = ("neutrino_client_netbird.service", "neutrino_client_easytier.service")
+# The parts of the left-out features, by module name beside this one; a part
+# the tree does not hold adds nothing to any package.
+PAYLOAD_PARTS = ("netbird_payload",)
+
+
+def parts() -> tuple:
+    """The packaging parts of the left-out features the tree holds.
+
+    Returns:
+        Each present part's module, in :data:`PAYLOAD_PARTS` order.
+    """
+    return tuple(
+        importlib.import_module(name)
+        for name in PAYLOAD_PARTS
+        if importlib.util.find_spec(name) is not None
+    )
+
+
+# The overlay daemons' units the tree holds, where systemd reads a package's
+# own, and the directory their state lives under. The EasyTier one runs the
+# client's own EasyTier daemon, ``nclient easytier-daemon``.
+OVERLAY_UNITS = tuple(
+    sorted(
+        path.name
+        for path in (CLIENT_ROOT / "neutrino_client/data/services").glob("*.service")
+    )
+)
 SYSTEMD_UNIT_DIR = "usr/lib/systemd/system"
 OVERLAY_STATE_DIR = "/var/lib/neutrino/client"
-NETBIRD_INSTALLED_BINARY = str(INSTALL_PREFIX / "netbird" / "netbird")
+# The distribution packages the Linux packages conflict with: each holds the
+# state and the socket of a daemon a part registers.
+CONFLICTS = tuple(name for part in parts() for name in part.CONFLICTS)
 
 # The interpreter the Linux client is compiled against, pinned by hash. The
 # same build the hub's and the agent's packages carry, and the same minor the
@@ -148,10 +175,9 @@ LINUX_GUI_BUILD_HEADERS = (
 
 # The licences of what the client packages carry, by the file name they have
 # in the repository's own ``licenses/``.
-CARRIED_LICENSES = (
+CARRIED_LICENSES = tuple(name for part in parts() for name in part.CARRIED_LICENSES) + (
     "cc_switch.txt",
     "rustdesk.txt",
-    "netbird.txt",
     "easytier.txt",
     "xterm.txt",
     "meslolgs_nf.txt",
@@ -191,8 +217,8 @@ stop_residents() {
 }
 """
 
-# What both formats run once the files are in place: the two daemons
-# enabled and restarted.
+# What both formats run once the files are in place: the daemons enabled and
+# restarted.
 OVERLAY_UNITS_START = f"""if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
     systemctl enable {" ".join(OVERLAY_UNITS)} >/dev/null 2>&1 || true
@@ -202,13 +228,14 @@ OVERLAY_UNITS_START = f"""if [ -d /run/systemd/system ]; then
 fi
 """
 
-# What both formats run before the package goes: NetBird taken off its
-# network, and the two daemons stopped and disabled.
-OVERLAY_UNITS_STOP = f"""{NETBIRD_INSTALLED_BINARY} down >/dev/null 2>&1 || true
-if [ -d /run/systemd/system ]; then
+# What both formats run before the package goes: what each part runs first,
+# then the daemons stopped and disabled.
+OVERLAY_UNITS_STOP = "".join(part.LINUX_UNITS_STOP for part in parts()) + (
+    f"""if [ -d /run/systemd/system ]; then
     systemctl disable --now {" ".join(OVERLAY_UNITS)} >/dev/null 2>&1 || true
 fi
 """
+)
 
 # What both maintainer scripts run once the package's own files are gone.
 # Uninstalling the client takes every person's configuration with it, and the
@@ -299,8 +326,10 @@ def stage_client_tree(
     )
     import bundled  # bundled imports this module, so not at the top
 
-    carried = {
-        "netbird": bundled.NETBIRD_VERSION,
+    carried = {}
+    for part in parts():
+        carried.update(part.CARRIED_VERSIONS)
+    carried |= {
         "easytier": bundled.EASYTIER_VERSION,
         "rustdesk": bundled.rustdesk_assets.RUSTDESK_VERSION,
         "cc-switch": bundled.CC_SWITCH_VERSION,
@@ -504,7 +533,7 @@ def stage_licenses(tree: Path) -> None:
 
 
 def stage_linux_overlay(tree: Path) -> None:
-    """Put the two daemons' units in a tree.
+    """Put the daemons' units the tree holds in a package tree.
 
     Args:
         tree: The staging directory standing in for the filesystem root.

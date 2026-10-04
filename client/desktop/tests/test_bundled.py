@@ -98,7 +98,6 @@ def test_the_overlay_binaries_resolve_under_the_linux_prefix(monkeypatch, tmp_pa
     monkeypatch.setattr(bundled.os, "name", "posix")
     monkeypatch.setattr(bundled.sys, "platform", "linux")
     for relative in (
-        "netbird/netbird",
         "easytier/easytier-core",
         "easytier/easytier-cli",
     ):
@@ -107,7 +106,6 @@ def test_the_overlay_binaries_resolve_under_the_linux_prefix(monkeypatch, tmp_pa
         binary.write_text("#!/bin/sh\n")
         binary.chmod(0o755)
 
-    assert bundled.bundled_path("netbird") == str(tmp_path / "netbird" / "netbird")
     assert bundled.bundled_path("easytier-core") == str(
         tmp_path / "easytier" / "easytier-core"
     )
@@ -128,8 +126,8 @@ def test_the_overlay_binaries_have_a_place_on_every_platform():
         CLIENT_BUNDLED_PATHS_WINDOWS,
         CLIENT_BUNDLED_PATHS_DARWIN,
     ):
-        assert {"netbird", "easytier-core", "easytier-cli"} <= set(table)
-    assert CLIENT_BUNDLED_PATHS_WINDOWS["netbird"] == "bin\\netbird.exe"
+        assert {"easytier-core", "easytier-cli"} <= set(table)
+    assert CLIENT_BUNDLED_PATHS_WINDOWS["easytier-cli"] == "bin\\easytier-cli.exe"
     assert CLIENT_BUNDLED_PATHS_DARWIN["easytier-cli"] == (
         "Resources/easytier/easytier-cli"
     )

@@ -1,5 +1,7 @@
 package io.github.iffix.neutrino.channel
 
+import io.github.iffix.neutrino.EDITION_FEATURE_NETBIRD
+import io.github.iffix.neutrino.Edition
 import io.github.iffix.neutrino.binding.HubBinding
 import java.io.ByteArrayOutputStream
 import java.util.Base64
@@ -65,6 +67,10 @@ object Samples {
             deflater.end()
         }
     }
+
+    /** The providers of [clientPayload]'s objects the app keeps: NetBird's only where the tree carries it. */
+    val clientProviders: List<String>
+        get() = listOfNotNull("netbird".takeIf { Edition.hasFeature(EDITION_FEATURE_NETBIRD) }, "easytier")
 
     /** A client link with a NetBird and an EasyTier console object. */
     val clientPayload: JsonObject = buildJsonObject {

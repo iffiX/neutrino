@@ -13,7 +13,6 @@ class ConstantsTest {
     @Test
     fun theAboutScreenNamesTheCoresTheBuildScriptsPin() {
         val versions = CLIENT_CARRIED_CORES.associate { (name, version, _) -> name to version }
-        assertEquals(pinnedTag("build/build_core_netbird.py", "NETBIRD_MOBILE_TAG"), versions["NetBird"])
         assertEquals(pinnedTag("build/build_core_easytier.py", "EASYTIER_MOBILE_TAG"), versions["EasyTier"])
         assertEquals(pinnedTag("build/build_core_rustdesk.py", "RUSTDESK_MOBILE_TAG"), versions[CLIENT_RUSTDESK_CORE])
     }
@@ -26,17 +25,15 @@ class ConstantsTest {
 
     @Test
     fun everyCoreLinksItsPinnedSourceAndPatch() {
-        val netbird = CLIENT_CARRIED_CORES.single { it.name == "NetBird" }
         val easytier = CLIENT_CARRIED_CORES.single { it.name == "EasyTier" }
         val rustdesk = CLIENT_CARRIED_CORES.single { it.name == CLIENT_RUSTDESK_CORE }
-        assertEquals("https://github.com/netbirdio/netbird/tree/v${netbird.version}", netbird.sourceUrl)
         assertEquals("https://github.com/EasyTier/EasyTier/tree/v${easytier.version}", easytier.sourceUrl)
         assertEquals(CLIENT_RUSTDESK_SOURCE_URL, rustdesk.sourceUrl)
-        for (core in CLIENT_CARRIED_CORES) {
+        for (core in Edition.carriedCores) {
             val patch = "packaging/build/build_core_${core.name.lowercase()}.patch"
             val hasPatch = RepositoryFiles.file(patch).exists()
             assertEquals(core.name, hasPatch, core.patchUrl.isNotEmpty())
-            if (hasPatch) assertEquals("https://github.com/iffiX/neutrino/blob/v{version}/$patch", core.patchUrl)
+            if (hasPatch) assertEquals("{source}/blob/v{version}/$patch", core.patchUrl)
         }
     }
 

@@ -18,8 +18,8 @@ class EnrollmentLinkTest {
         assertEquals(listOf("https://192.168.100.1:8443", "https://100.72.4.1:8443"), link.urls)
         assertEquals("ticket-1", link.ticket)
         assertEquals(Samples.FINGERPRINT, link.fingerprint)
-        assertEquals(listOf("netbird", "easytier"), link.overlays.map { it.provider })
-        assertEquals("console", link.overlays[1].easyTierMode)
+        assertEquals(Samples.clientProviders, link.overlays.map { it.provider })
+        assertEquals("console", link.overlays.last().easyTierMode)
     }
 
     @Test

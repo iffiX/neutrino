@@ -79,13 +79,13 @@ class HubSessionTest {
         events.trySend(
             ChannelSocketEvent.Text(
                 """{"type":"state","hash":"h9","urls":["https://10.0.0.1:8443"],
-                   "overlays":[{"provider":"netbird","setup_key":"K"}],
+                   "overlays":[{"provider":"easytier","mode":"console","config_server":"tcp://c/t"}],
                    "services":[{"id":"s","type":"port","title":"SSH","payload":{"host":"h","port":22},"source":"declared"}]}""",
             ),
         )
         runCurrent()
         assertEquals(listOf("https://10.0.0.1:8443"), store.get("b1")?.gatewayUrls)
-        assertEquals("netbird", store.get("b1")?.overlays?.single()?.provider)
+        assertEquals("easytier", store.get("b1")?.overlays?.single()?.provider)
         assertEquals("SSH", session.view.value.services.single().title)
         assertEquals("h9", socket.sent("report").last()["state_hash"]!!.jsonPrimitive.content)
     }

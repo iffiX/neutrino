@@ -2,9 +2,10 @@
 
 A virtual network is not a service a hub publishes: it is a way to reach the
 hub, so it lives beside the sessions rather than among the handlers. Each
-hub's state names how to join each of its networks, preferred first:
-NetBird's setup key, or for EasyTier either a manual network's name, secret
-and peer or an EasyTier console's address. Per hub the network is ``off``,
+hub's state names how to join each of its networks, preferred first: for
+EasyTier either a manual network's name, secret and peer or an EasyTier
+console's address, and what each engine the edition table adds takes. Per
+hub the network is ``off``,
 ``connecting`` or ``on``, on the one engine the person chose, and a failure
 is kept as the error while it is off. The daemons the packages register as
 services hold the network itself; this side starts and stops them and asks
@@ -29,13 +30,12 @@ import threading
 import time
 import urllib.parse
 
+from neutrino_client import edition
 from neutrino_client.constants import (
     CLIENT_EASYTIER_RPC_PORTAL,
     CLIENT_OVERLAY_CONNECT_POLL_S,
     CLIENT_OVERLAY_HUB_PROBE_S,
-    CLIENT_OVERLAY_JOIN_TIMEOUT_S,
     CLIENT_OVERLAY_LOGIN_TIMEOUT_S,
-    CLIENT_OVERLAY_NETBIRD_NETWORK,
     CLIENT_OVERLAY_POLL_INTERVAL_S,
     CLIENT_OVERLAY_STATUS_TIMEOUT_S,
 )
@@ -56,14 +56,6 @@ OVERLAY_JOB_DISCONNECTING = "disconnecting"
 # logging in until it has an address, then the hub answering through it.
 OVERLAY_STAGE_LOGIN = "login"
 OVERLAY_STAGE_HUB = "hub"
-# The management server a NetBird setup key names when the hub names none.
-NETBIRD_DEFAULT_MANAGEMENT_URL = "https://api.netbird.io:443"
-# What ``netbird status`` answers when no daemon is listening.
-NETBIRD_DAEMON_DOWN_MARKS = (
-    "failed to connect to daemon",
-    "connection refused",
-    "no such file or directory",
-)
 # What ``easytier-cli`` prints for an instance the daemon does not run, with
 # exit status 0, and for a portal nothing listens on.
 EASYTIER_NO_INSTANCE_MARK = "No instance matches the selector"
@@ -89,24 +81,14 @@ def is_console_material(material: dict) -> bool:
     )
 
 
-def netbird_management_key(url: str) -> str:
-    """A NetBird management URL as one membership key.
-
-    Args:
-        url: The URL the hub named, empty for NetBird's own.
+def overlay_engines() -> dict:
+    """The driver classes the edition table adds beside EasyTier's.
 
     Returns:
-        ``<scheme>://<host>:<port>``, lower-cased, the default port filled.
+        ``{provider: class}``, each class with ``key``, ``network``,
+        ``hub_network`` and ``hub_name``.
     """
-    parts = urllib.parse.urlsplit((url or NETBIRD_DEFAULT_MANAGEMENT_URL).strip())
-    scheme = parts.scheme or "https"
-    try:
-        port = parts.port
-    except ValueError:
-        port = None
-    if port is None:
-        port = 443 if scheme == "https" else 80
-    return f"{scheme}://{(parts.hostname or '').lower()}:{port}"
+    return {driver.provider: driver for driver in edition.hooks("overlay_drivers")}
 
 
 def overlay_key(material: dict) -> str:
@@ -116,11 +98,12 @@ def overlay_key(material: dict) -> str:
         material: The hub's overlay object.
 
     Returns:
-        ``netbird:<management>``, ``easytier:<network name>`` or
-        ``easytier_console:<address>``.
+        ``easytier:<network name>``, ``easytier_console:<address>``, or the
+        key the provider's driver gives.
     """
-    if material["provider"] == "netbird":
-        return "netbird:" + netbird_management_key(material.get("management_url", ""))
+    engine = overlay_engines().get(material["provider"])
+    if engine is not None:
+        return engine.key(material)
     if is_console_material(material):
         return "easytier_console:" + material.get("config_server", "")
     return "easytier:" + material.get("network_name", "")
@@ -133,13 +116,12 @@ def overlay_network(material: dict) -> str:
         material: The hub's overlay object.
 
     Returns:
-        The management server's host for NetBird, the network's name for
-        a manual EasyTier network, the console's host for an EasyTier
-        console.
+        The network's name for a manual EasyTier network, the console's host
+        for an EasyTier console, or the network the provider's driver names.
     """
-    if material["provider"] == "netbird":
-        key = netbird_management_key(material.get("management_url", ""))
-        return urllib.parse.urlsplit(key).hostname or ""
+    engine = overlay_engines().get(material["provider"])
+    if engine is not None:
+        return engine.network(material)
     if is_console_material(material):
         try:
             return (
@@ -157,19 +139,20 @@ def overlay_hub_host(material: dict, urls: list, network: str = "") -> str:
         material: The hub's overlay object.
         urls: The addresses the binding holds, in the hub's order.
         network: The prefix of the network this machine is on, as
-            ``a.b.c.d/n``; empty takes NetBird's own for NetBird and none
-            for EasyTier.
+            ``a.b.c.d/n``; empty takes the one the provider's driver names,
+            and none for EasyTier.
 
     Returns:
         The object's ``hub_address``; else the host of the first of
-        ``urls`` that is an IP address inside the network; else NetBird's
-        name for the hub; empty when there is none of them.
+        ``urls`` that is an IP address inside the network; else the hub's
+        name the provider's driver gives; empty when there is none of them.
     """
     host = _address(material.get("hub_address", ""))
     if host:
         return host
-    if not network and material["provider"] == "netbird":
-        network = CLIENT_OVERLAY_NETBIRD_NETWORK
+    engine = overlay_engines().get(material["provider"])
+    if engine is not None:
+        network = engine.hub_network(network)
     for url in urls:
         try:
             host = urllib.parse.urlsplit(str(url)).hostname or ""
@@ -177,9 +160,7 @@ def overlay_hub_host(material: dict, urls: list, network: str = "") -> str:
             continue
         if _is_inside(host, network):
             return host
-    if material["provider"] == "netbird":
-        return str(material.get("fqdn", "") or "")
-    return ""
+    return engine.hub_name(material) if engine is not None else ""
 
 
 def _nobody(*_args) -> None:
@@ -214,147 +195,6 @@ def _is_inside(host: str, network: str) -> bool:
     try:
         return ipaddress.ip_address(host) in ipaddress.ip_network(network)
     except ValueError:
-        return False
-
-
-class OverlayNetbirdDriver:
-    """NetBird's CLI, run as this person against the packaged daemon."""
-
-    provider = "netbird"
-
-    def __init__(self, *, platform):
-        """
-        Args:
-            platform: The machine's platform, which runs the carried CLI.
-        """
-        self._platform = platform
-
-    def status(self, material: dict) -> dict:
-        """Where this machine stands on the network the object names.
-
-        Args:
-            material: The hub's overlay object.
-
-        Returns:
-            ``{"is_on", "is_other_network", "address", "network",
-            "is_hub_seen"}``; the hub is seen when its peer is
-            ``Connected``.
-
-        Raises:
-            OverlayControlError: ``bundle_missing``, or
-                ``overlay_daemon_down`` when no daemon answers.
-        """
-        result = self._netbird(["status", "--json"], CLIENT_OVERLAY_STATUS_TIMEOUT_S)
-        words = (result.stdout or "") + (result.stderr or "")
-        if any(mark in words.lower() for mark in NETBIRD_DAEMON_DOWN_MARKS):
-            raise OverlayControlError("overlay_daemon_down")
-        try:
-            status = json.loads(result.stdout or "")
-        except ValueError:
-            status = None
-        if not isinstance(status, dict):
-            return {
-                "is_on": False,
-                "is_other_network": False,
-                "address": "",
-                "network": "",
-                "is_hub_seen": False,
-            }
-        management = status.get("management")
-        management = management if isinstance(management, dict) else {}
-        is_connected = bool(management.get("connected"))
-        daemon_status = status.get("daemonStatus")
-        if daemon_status is not None:
-            is_connected = is_connected and daemon_status == "Connected"
-        is_same = netbird_management_key(
-            str(management.get("url", "") or "")
-        ) == netbird_management_key(material.get("management_url", ""))
-        is_on = is_connected and is_same
-        return {
-            "is_on": is_on,
-            "is_other_network": is_connected and not is_same,
-            "address": _address(status.get("netbirdIp")) if is_on else "",
-            "network": CLIENT_OVERLAY_NETBIRD_NETWORK if is_on else "",
-            "is_hub_seen": is_on and self._sees(status, material),
-        }
-
-    def join(self, material: dict, hostname: str) -> None:
-        """Bring the daemon up on the network the setup key names.
-
-        Args:
-            material: The hub's overlay object.
-            hostname: Unused; NetBird names the peer itself.
-
-        Raises:
-            OverlayControlError: ``overlay_other_network`` while the daemon
-                is connected to another management server, which is left
-                alone; ``overlay_join_failed`` with NetBird's words.
-        """
-        if self.status(material)["is_other_network"]:
-            raise OverlayControlError(
-                "overlay_other_network", {"network": overlay_network(material)}
-            )
-        result = self._netbird(
-            [
-                "up",
-                "--setup-key",
-                material["setup_key"],
-                "--management-url",
-                netbird_management_key(material.get("management_url", "")),
-                "--disable-dns",
-            ],
-            CLIENT_OVERLAY_JOIN_TIMEOUT_S,
-        )
-        if result.returncode != 0:
-            raise OverlayControlError(
-                "overlay_join_failed", {"detail": _detail(result)}
-            )
-
-    def leave(self, material: dict) -> None:
-        """Bring the daemon down.
-
-        Args:
-            material: The hub's overlay object.
-
-        Raises:
-            OverlayControlError: ``overlay_leave_failed`` with NetBird's
-                words.
-        """
-        result = self._netbird(["down"], CLIENT_OVERLAY_JOIN_TIMEOUT_S)
-        if result.returncode != 0:
-            raise OverlayControlError(
-                "overlay_leave_failed", {"detail": _detail(result)}
-            )
-
-    def _netbird(self, args: list, timeout_s: float):
-        """Run the carried ``netbird`` as this person.
-
-        Raises:
-            OverlayControlError: ``bundle_missing``, or
-                ``overlay_daemon_down`` when it cannot run or times out.
-        """
-        try:
-            return self._platform.run_overlay("netbird", args, timeout_s)
-        except (OSError, subprocess.SubprocessError) as error:
-            if isinstance(error, OverlayControlError):
-                raise
-            raise OverlayControlError(
-                "overlay_daemon_down", {"detail": str(error)[:200]}
-            )
-
-    def _sees(self, status: dict, material: dict) -> bool:
-        """Whether the hub is among the connected peers, by its address or name."""
-        fqdn = str(material.get("fqdn", "") or "").rstrip(".")
-        address = _address(material.get("hub_address", ""))
-        peers = status.get("peers")
-        details = peers.get("details") if isinstance(peers, dict) else None
-        for peer in details if isinstance(details, list) else []:
-            if not isinstance(peer, dict) or peer.get("status") != "Connected":
-                continue
-            if address and _address(peer.get("netbirdIp")) == address:
-                return True
-            if fqdn and str(peer.get("fqdn", "")).rstrip(".") == fqdn:
-                return True
         return False
 
 
@@ -656,8 +496,8 @@ class OverlayMemberships:
             keep_choice: ``keep_choice(hub_id, is_on, pick)`` writes where
                 the network stands and the engine chosen onto the binding,
                 raising OSError when it cannot; None keeps nothing.
-            drivers: ``{provider: driver}``; None builds the NetBird and
-                EasyTier drivers over the platform.
+            drivers: ``{provider: driver}``; None builds EasyTier's driver
+                and those the edition table adds over the platform.
             start_thread: ``start_thread(target)`` runs a step; None uses a
                 daemon thread. Tests pass one that runs inline.
             clock: Returns the monotonic time; None uses ``time.monotonic``.
@@ -687,7 +527,10 @@ class OverlayMemberships:
             drivers
             if drivers is not None
             else {
-                "netbird": OverlayNetbirdDriver(platform=platform),
+                **{
+                    provider: engine(platform=platform)
+                    for provider, engine in overlay_engines().items()
+                },
                 "easytier": OverlayEasytierDriver(platform=platform),
             }
         )

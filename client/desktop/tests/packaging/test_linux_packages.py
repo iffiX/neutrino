@@ -3,7 +3,7 @@
 Compiling the client and fetching a viewer need a build container; what they
 produce is stood in for here, so what is asserted is the shape around them —
 where the compiled client and the helper go, what the desktop gets, the
-policy that gates the helper, the two overlay daemons' units and what the
+policy that gates the helper, the overlay daemons' units and what the
 maintainer scripts do with them, what the scripts do to a running resident
 and to a person's own configuration, and what the package still asks the
 machine for.
@@ -18,13 +18,10 @@ import build_rpm
 import payload
 
 from neutrino_client.constants import (
-    CLIENT_BUNDLED_PATHS_LINUX,
     CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_SERVICE_LINUX,
     CLIENT_INSTALL_PREFIX_LINUX,
-    CLIENT_NETBIRD_CONFIG_PATH_LINUX,
-    CLIENT_NETBIRD_SERVICE_LINUX,
 )
 from neutrino_client.platforms.linux import CONFIG_DIR_NAME
 
@@ -126,26 +123,20 @@ def test_the_deb_compiles_for_the_machine_and_version_it_is_for(deb, carried):
     ]
 
 
-def test_the_deb_registers_the_two_daemons_and_no_unit_of_the_clients(deb):
-    """The client is a person's application; NetBird and EasyTier are services."""
+def test_the_deb_registers_the_daemons_and_no_unit_of_the_clients(deb):
+    """The client is a person's application; its overlay daemons are services."""
     units = sorted(path.name for path in (deb / "usr/lib/systemd/system").iterdir())
 
-    assert units == sorted(
-        [CLIENT_NETBIRD_SERVICE_LINUX, CLIENT_EASYTIER_SERVICE_LINUX]
-    )
+    assert units == list(payload.OVERLAY_UNITS)
+    assert CLIENT_EASYTIER_SERVICE_LINUX in units
     assert not (deb / "lib/systemd/system").exists()
 
 
 def test_the_units_run_the_carried_daemons_where_the_runtime_looks(deb):
     unit_dir = deb / "usr/lib/systemd/system"
-    netbird = (unit_dir / CLIENT_NETBIRD_SERVICE_LINUX).read_text()
     easytier = (unit_dir / CLIENT_EASYTIER_SERVICE_LINUX).read_text()
     prefix = CLIENT_INSTALL_PREFIX_LINUX
 
-    assert (
-        f"ExecStart={prefix}/{CLIENT_BUNDLED_PATHS_LINUX['netbird']} service run "
-        f"--config {CLIENT_NETBIRD_CONFIG_PATH_LINUX}"
-    ) in netbird
     assert (f"ExecStart={prefix}/nclient {CLIENT_EASYTIER_DAEMON_VERB}\n") in easytier
 
 
@@ -167,10 +158,9 @@ def test_the_deb_enables_the_daemons_and_stops_them_on_remove(deb):
     on_remove = prerm.split('if [ "$1" = remove ]; then')[1]
 
     assert "systemctl daemon-reload" in postinst
-    assert f"systemctl enable {CLIENT_NETBIRD_SERVICE_LINUX} " in postinst
+    assert f"systemctl enable {' '.join(payload.OVERLAY_UNITS)} " in postinst
     assert 'systemctl restart "$unit"' in postinst
     assert "[ -d /run/systemd/system ]" in postinst
-    assert "/opt/neutrino/client/netbird/netbird down" in on_remove
     assert "systemctl disable --now" in on_remove
 
 
@@ -179,10 +169,6 @@ def test_a_purge_takes_the_daemons_configuration(deb):
     on_purge = postrm.split('if [ "$1" = purge ]; then')[1]
 
     assert "rm -rf /var/lib/neutrino/client" in on_purge
-
-
-def test_the_deb_conflicts_with_the_netbird_package(deb):
-    assert "Conflicts: netbird\n" in (deb / "DEBIAN/control").read_text()
 
 
 def test_the_deb_carries_no_overlay_helper_and_no_overlay_action(deb):
@@ -231,15 +217,17 @@ def test_the_deb_carries_the_binaries_the_client_drives(deb):
 def test_the_deb_carries_the_licences_of_everything_in_it(deb):
     carried = deb / "usr/share/doc/neutrino-client/licenses"
 
-    assert sorted(path.name for path in carried.iterdir()) == [
-        "cc_switch.txt",
-        "easytier.txt",
-        "gobject_introspection.txt",
-        "meslolgs_nf.txt",
-        "netbird.txt",
-        "rustdesk.txt",
-        "xterm.txt",
-    ]
+    assert sorted(path.name for path in carried.iterdir()) == sorted(
+        [name for part in payload.parts() for name in part.CARRIED_LICENSES]
+        + [
+            "cc_switch.txt",
+            "easytier.txt",
+            "gobject_introspection.txt",
+            "meslolgs_nf.txt",
+            "rustdesk.txt",
+            "xterm.txt",
+        ]
+    )
 
 
 def test_the_deb_depends_on_every_features_stack_and_no_python(deb):
@@ -322,18 +310,18 @@ def test_the_rpm_lays_the_same_payload_under_the_same_prefix(rpm):
     assert not (rpm / "etc/xdg/autostart/neutrino_client.desktop").exists()
 
 
-def test_the_rpm_registers_the_two_daemons_too(rpm, spec):
+def test_the_rpm_registers_the_daemons_too(rpm, spec):
     files = spec.split("%files")[1].split("%pre")[0]
     after_install = spec.split("%post\n")[1].split("%preun\n")[0]
     before_erase = spec.split("%preun\n")[1].split("%postun\n")[0]
 
     assert (rpm / "usr/lib/systemd/system" / CLIENT_EASYTIER_SERVICE_LINUX).is_file()
-    assert f"/usr/lib/systemd/system/{CLIENT_NETBIRD_SERVICE_LINUX}" in files
     assert f"/usr/lib/systemd/system/{CLIENT_EASYTIER_SERVICE_LINUX}" in files
     assert "com.neutrino.client.overlay" not in spec
     assert "systemctl enable" in after_install
     assert "    systemctl disable --now" in before_erase
-    assert "Conflicts:      netbird" in spec
+    for name in payload.CONFLICTS:
+        assert f"Conflicts:      {name}" in spec
 
 
 def test_the_rpm_names_the_rhel_family_libraries(rpm):

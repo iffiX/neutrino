@@ -7,7 +7,8 @@ package io.github.iffix.neutrino
  * @property version The version it is built from.
  * @property licence Its licence.
  * @property sourceUrl Its source at that version.
- * @property patchUrl The patch it is built with, at the app's release tag `v{version}`; empty for none.
+ * @property patchUrl The patch it is built with, under the app's source `{source}` at its release tag
+ *   `v{version}`; empty for none.
  */
 data class CarriedCore(
     val name: String,

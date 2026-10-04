@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from neutrino_client import edition
 from neutrino_client.control import page, routes
 from neutrino_client.core.resident import ClientResident
 from neutrino_client.exceptions import EnrollmentError
@@ -238,6 +239,7 @@ def test_the_state_names_the_versions_the_package_carries():
     _status, state = routes.dispatch("GET", "/api/state", None, FakeResident())
 
     assert isinstance(state["carried_versions"], dict)
+    assert state["edition"] == edition.EDITION
 
 
 def test_starting_the_session_takes_a_replaced_binding_back():

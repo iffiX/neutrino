@@ -1,11 +1,12 @@
 """The binaries the client packages carry, pinned and unpacked at build time.
 
-Four of them everywhere: the cc-switch CLI, which points a person's AI
+Three of them everywhere: the cc-switch CLI, which points a person's AI
 tools at the hub's gateway; the RustDesk viewer, which opens a desktop the
-fleet shares; and NetBird and EasyTier, whose daemons the packages register
-as services so the client can join a hub's virtual network. Windows adds
-tun2socks, which the files daemon runs on the files adapter, pinned where the
-hub's own package pins it. Each is fetched from its own upstream release and
+fleet shares; and EasyTier, whose daemon the packages register as a service
+so the client can join a hub's virtual network. Each part of a left-out
+feature the tree holds adds its own (:func:`payload.parts`). Windows adds
+tun2socks, which the files daemon runs on the files adapter, at the pin the
+hub's packages share. Each is fetched from its own upstream release and
 checked against a hash recorded here, so a build either produces the
 binaries this project was tested against or fails.
 
@@ -76,38 +77,6 @@ RUSTDESK_BINARY_NAME = "rustdesk"
 # so the client spawns the viewer with no library path set for it.
 RUSTDESK_EXPECTED_RUNPATH = "$ORIGIN/lib"
 
-# NetBird's release: one tarball per machine holding the one binary. The
-# Linux pins are the hub's own.
-NETBIRD_VERSION = "0.78.1"
-NETBIRD_URL = (
-    "https://github.com/netbirdio/netbird/releases/download/"
-    "v{version}/netbird_{version}_{asset}.tar.gz"
-)
-NETBIRD_ASSETS = {
-    ("linux", "x86_64"): (
-        "linux_amd64",
-        "9239c9e37c2acc0612563ef5ce0c3326397460d0eb811b5a59a8e373f1a4ebde",  # scan: allow
-    ),
-    ("linux", "aarch64"): (
-        "linux_arm64",
-        "d686745aa64bb4c597602ce95e76558f5f848d0672c88d63f96397d2507005b2",  # scan: allow
-    ),
-    ("windows", "x86_64"): (
-        "windows_amd64",
-        "c9ad0e7aa778b9ba28b3e2338354d705df7ead94cdf6edbde137bdae79d30eab",  # scan: allow
-    ),
-    ("darwin", "aarch64"): (
-        "darwin_arm64",
-        "8d613dc78aa0e5b9f01b07ec9d02417c27638bf68b829a72399293f76da0fa03",  # scan: allow
-    ),
-    ("darwin", "x86_64"): (
-        "darwin_amd64",
-        "1441be19db0394497866fc19a519d7d0483fbad0fcd4d1adaeb0ed1bded739be",  # scan: allow
-    ),
-}
-NETBIRD_BINARY_NAME = "netbird"
-NETBIRD_WINDOWS_BINARY_NAME = "netbird.exe"
-
 # EasyTier's release: one zip per machine with one directory at its top.
 # Every platform takes the daemon and its CLI out of it, and Windows the TUN
 # driver's DLL beside them. Packet.dll is Npcap's, which may not be
@@ -155,7 +124,6 @@ TUN2SOCKS_MACHINES = {"x86_64": "amd64", "aarch64": "arm64"}
 # resolver in ``neutrino_client.bundled`` looks for.
 CC_SWITCH_INSTALL_PATH = "bin/cc-switch"
 RUSTDESK_INSTALL_DIR = "rustdesk"
-NETBIRD_INSTALL_PATH = "netbird/netbird"
 EASYTIER_INSTALL_DIR = "easytier"
 # Where both land under the app bundle's Contents on macOS.
 DARWIN_RESOURCES_DIR = "Resources"
@@ -177,7 +145,8 @@ def stage_linux_binaries(tree: Path, architecture: str) -> None:
     prefix = tree / str(payload.INSTALL_PREFIX).lstrip("/")
     _stage_cc_switch(prefix / CC_SWITCH_INSTALL_PATH, "linux", machine)
     _stage_rustdesk_host(prefix / RUSTDESK_INSTALL_DIR, machine)
-    _stage_netbird(prefix / NETBIRD_INSTALL_PATH, "linux", machine)
+    for part in payload.parts():
+        part.stage_linux(prefix, machine)
     _stage_easytier(prefix / EASYTIER_INSTALL_DIR, "linux", machine)
 
 
@@ -197,7 +166,8 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
         installed / "bin" / CC_SWITCH_WINDOWS_BINARY_NAME, "windows", machine
     )
     rustdesk_assets.stage_windows_exe(installed / "bin", machine=machine)
-    _stage_netbird(installed / "bin" / NETBIRD_WINDOWS_BINARY_NAME, "windows", machine)
+    for part in payload.parts():
+        part.stage_windows(installed, machine)
     _stage_easytier(installed / "bin", "windows", machine)
     hub_assets.stage_program(
         installed / "bin",
@@ -223,7 +193,8 @@ def stage_darwin_binaries(app_contents: Path, architecture: str) -> None:
     resources = app_contents / DARWIN_RESOURCES_DIR
     _stage_cc_switch(resources / CC_SWITCH_INSTALL_PATH, "darwin", machine)
     rustdesk_assets.stage_darwin_app(resources / RUSTDESK_INSTALL_DIR, machine=machine)
-    _stage_netbird(resources / NETBIRD_INSTALL_PATH, "darwin", machine)
+    for part in payload.parts():
+        part.stage_darwin(resources, machine)
     _stage_easytier(resources / EASYTIER_INSTALL_DIR, "darwin", machine)
 
 
@@ -277,32 +248,6 @@ def _stage_cc_switch(target: Path, os_name: str, machine: str) -> None:
         opened = root / "opened"
         opened.mkdir()
         shutil.unpack_archive(str(archive), str(opened))
-        binary = opened / name
-        if not binary.is_file():
-            raise SystemExit(f"{url} carries no {name}")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(binary, target)
-    target.chmod(0o755)
-
-
-def _stage_netbird(target: Path, os_name: str, machine: str) -> None:
-    """Unpack the pinned NetBird binary to one path.
-
-    Args:
-        target: Where the binary belongs.
-        os_name: ``linux``, ``windows`` or ``darwin``.
-        machine: The interpreter release's name for the machine.
-
-    Raises:
-        SystemExit: When there is no pin, what arrived is not what was
-            pinned, or the tarball carries no binary.
-    """
-    asset, digest = _asset(NETBIRD_ASSETS, os_name, machine, "NetBird")
-    url = NETBIRD_URL.format(version=NETBIRD_VERSION, asset=asset)
-    downloaded = payload.fetch(url, digest, "NetBird")
-    name = NETBIRD_WINDOWS_BINARY_NAME if os_name == "windows" else NETBIRD_BINARY_NAME
-    with tempfile.TemporaryDirectory() as workdir:
-        opened = _unpacked(Path(workdir), url, downloaded)
         binary = opened / name
         if not binary.is_file():
             raise SystemExit(f"{url} carries no {name}")

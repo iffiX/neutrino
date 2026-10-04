@@ -20,6 +20,9 @@ from shared import nuitka_build
 import payload
 from shared import pkg_build
 
+# The licences the parts the tree holds add.
+PARTS_LICENSES = [name for part in payload.parts() for name in part.CARRIED_LICENSES]
+
 
 def darwin_build_machine(monkeypatch, *, machine="arm64", version=(3, 13, 7)):
     """Make this look like the Mac the build runs on."""
@@ -254,14 +257,16 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     assert (contents / "Resources" / "bin" / "cc-switch").is_file()
     assert sorted(
         path.name for path in (contents / "Resources" / "licenses").iterdir()
-    ) == [
-        "cc_switch.txt",
-        "easytier.txt",
-        "meslolgs_nf.txt",
-        "netbird.txt",
-        "rustdesk.txt",
-        "xterm.txt",
-    ]
+    ) == sorted(
+        PARTS_LICENSES
+        + [
+            "cc_switch.txt",
+            "easytier.txt",
+            "meslolgs_nf.txt",
+            "rustdesk.txt",
+            "xterm.txt",
+        ]
+    )
     assert order == [
         "venv",
         "compile",
@@ -278,10 +283,10 @@ def test_the_package_root_carries_the_signed_bundle_and_the_link(monkeypatch, tm
     daemons = sorted(
         path.name for path in (tmp_path / "root/Library/LaunchDaemons").iterdir()
     )
-    assert daemons == [
-        "com.neutrino.client.easytier.plist",
-        "com.neutrino.client.netbird.plist",
-    ]
+    assert daemons == sorted(
+        [f"{daemon['label']}.plist" for daemon in build_client_macos.PART_DAEMONS]
+        + ["com.neutrino.client.easytier.plist"]
+    )
 
 
 def test_the_bundle_is_signed_ad_hoc_and_deep(monkeypatch, tmp_path):
@@ -370,22 +375,6 @@ def daemon(tmp_path, label) -> dict:
     return plistlib.loads(path.read_bytes())
 
 
-def test_netbird_runs_unless_another_daemon_holds_the_socket(tmp_path):
-    job = daemon(tmp_path, "com.neutrino.client.netbird")
-    shell, flag, command = job["ProgramArguments"]
-
-    assert (shell, flag) == ("/bin/sh", "-c")
-    assert command.startswith("[ -S /var/run/netbird.sock ] && exit 0; ")
-    assert (
-        "exec '/Applications/Neutrino Client.app/Contents/Resources/netbird/netbird'"
-        " service run --config"
-        " '/Library/Application Support/Neutrino/client/state/netbird/config.json'"
-        " --log-file console"
-    ) in command
-    assert job["RunAtLoad"] is True
-    assert job["KeepAlive"] == {"SuccessfulExit": False}
-
-
 def test_the_easytier_job_is_the_clients_own_daemon_kept_running(tmp_path):
     """The daemon decides when the core runs; launchd only keeps it up."""
     job = daemon(tmp_path, "com.neutrino.client.easytier")
@@ -414,10 +403,11 @@ def test_the_install_scripts_unload_then_make_the_directories_and_load(tmp_path)
 
 
 def test_each_daemon_writes_into_the_clients_log_directory(tmp_path):
-    netbird = daemon(tmp_path, "com.neutrino.client.netbird")
     easytier = daemon(tmp_path, "com.neutrino.client.easytier")
 
-    assert netbird["StandardOutPath"] == "/Library/Logs/Neutrino/client/netbird.log"
+    for added in build_client_macos.PART_DAEMONS:
+        job = daemon(tmp_path, added["label"])
+        assert job["StandardOutPath"].startswith("/Library/Logs/Neutrino/client/")
     assert easytier["StandardOutPath"] == "/Library/Logs/Neutrino/client/easytier.log"
 
 
@@ -453,14 +443,16 @@ def test_the_compile_names_every_package_the_shell_imports():
 def test_the_licences_travel_inside_the_bundle(tmp_path):
     build_client_macos._stage_licenses(tmp_path / "licenses")
 
-    assert sorted(path.name for path in (tmp_path / "licenses").iterdir()) == [
-        "cc_switch.txt",
-        "easytier.txt",
-        "meslolgs_nf.txt",
-        "netbird.txt",
-        "rustdesk.txt",
-        "xterm.txt",
-    ]
+    assert sorted(path.name for path in (tmp_path / "licenses").iterdir()) == sorted(
+        PARTS_LICENSES
+        + [
+            "cc_switch.txt",
+            "easytier.txt",
+            "meslolgs_nf.txt",
+            "rustdesk.txt",
+            "xterm.txt",
+        ]
+    )
 
 
 def test_the_carried_binaries_land_where_the_runtime_looks():
