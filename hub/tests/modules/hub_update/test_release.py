@@ -141,7 +141,9 @@ def test_nothing_published_reads_as_no_release():
     assert checker.for_version("0.3.0") is None
 
 
-def test_a_release_without_this_boxs_package_is_refused():
+def test_a_release_without_this_boxs_package_is_a_release_with_none():
+    """GitHub answered; the release has no package of this family, which is
+    no error and no unreachable GitHub."""
     checker = HubReleaseChecker(
         asset=ASSET,
         fetch_bytes=answering(
@@ -149,8 +151,12 @@ def test_a_release_without_this_boxs_package_is_refused():
         ),
     )
 
-    with pytest.raises(ValueError):
-        checker.latest()
+    found = checker.latest()
+
+    assert found.version == "0.3.1"
+    assert found.has_package is False
+    assert found.asset_url == ""
+    assert found.asset_size == 0
 
 
 def test_a_reply_that_is_not_a_release_is_refused():

@@ -12,7 +12,7 @@ from neutrino_hub.modules.hub_update.state import HubUpdateRecord, HubUpdateStat
 
 
 class Release:
-    def __init__(self, version: str):
+    def __init__(self, version: str, *, has_package: bool = True):
         self.version = version
         self.tag = f"v{version}"
         self.published_at = "2026-10-01T12:00:00Z"
@@ -22,6 +22,7 @@ class Release:
         self.asset_url = f"https://example.invalid/{self.asset_name}"
         self.asset_size = 100 * 1024 * 1024
         self.checksums_url = "https://example.invalid/SHA256SUMS"
+        self.has_package = has_package
 
 
 class Installer:
@@ -133,6 +134,16 @@ def test_a_new_major_is_not_installed_from_here(box, capsys):
 
     assert update_module.update(is_confirmed=True, package=None) == 2
     assert "upgrade guide" in capsys.readouterr().err
+    assert asked == []
+    assert installer.launched == []
+
+
+def test_a_release_without_this_hubs_package_is_not_installed(box, capsys):
+    installer, _, asked = box
+    installer.checker.latest = lambda: Release("0.3.1", has_package=False)
+
+    assert update_module.update(is_confirmed=True, package=None) == 2
+    assert "carries no package for this hub" in capsys.readouterr().err
     assert asked == []
     assert installer.launched == []
 

@@ -28,7 +28,7 @@ def session():
 
 @pytest.fixture
 def client(session):
-    return TestClient(create_setup_app(session))
+    return TestClient(create_setup_app(session), base_url="http://192.168.8.1:8080")
 
 
 def test_the_questions_need_the_token_the_terminal_printed(client):
@@ -133,6 +133,40 @@ def test_finishing_says_where_the_panel_will_be(client, session):
     assert state["panel_url"] == "http://192.168.8.1:8080"
     # A step still running when the panel takes over never finished.
     assert state["steps"][0]["status"] == "failed"
+
+
+def test_the_panel_address_is_on_the_host_the_browser_came_from(session):
+    """A browser that reached the wizard through another interface is sent
+    back through that one, never to an address picked from an interface."""
+    authority = {
+        "url": "http://10.0.0.5:8080/api/hub/setting/https/authority",
+        "file_name": "neutrino-argon-ca.crt",
+        "fingerprint": "ab" * 32,
+        "der": "YQ==",
+    }
+    session.finish(panel_url="https://10.0.0.5:8443", authority=authority)
+    client = TestClient(
+        create_setup_app(session), base_url="http://192.168.122.127:8080"
+    )
+
+    state = client.get(f"/api/hub/setup/state?token={session.token}").json()
+
+    assert state["panel_url"] == "https://192.168.122.127:8443"
+    assert state["authority"]["url"] == (
+        "http://192.168.122.127:8080/api/hub/setting/https/authority"
+    )
+
+
+def test_a_panel_on_the_default_port_keeps_no_port(session):
+    session.finish(panel_url="https://10.0.0.5")
+    client = TestClient(create_setup_app(session))
+
+    state = client.get(
+        f"/api/hub/setup/state?token={session.token}",
+        headers={"host": "[fd00::7]:8080"},
+    ).json()
+
+    assert state["panel_url"] == "https://[fd00::7]"
 
 
 def test_a_route_nobody_serves_is_missing_rather_than_the_app(client):

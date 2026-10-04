@@ -36,14 +36,15 @@ def parse_share_link(link: str) -> "XrayNodeConfig":
         The parsed node, with ``id`` derived from the server hostname.
 
     Raises:
-        ValueError: If the scheme is unsupported or the link is malformed.
+        ValueError: If the scheme is unsupported or the link is malformed; the
+            message never quotes the link.
     """
     link = link.strip()
     if link.startswith("ss://"):
         return _parse_shadowsocks_link(link)
     if link.startswith("vless://"):
         return _parse_vless_link(link)
-    raise ValueError(f"unsupported share link scheme: {link[:16]!r}")
+    raise ValueError("the share link is neither ss:// nor vless://")
 
 
 @dataclass
@@ -301,8 +302,8 @@ def _parse_shadowsocks_link(link: str) -> XrayNodeConfig:
         credentials, _, host_part = decoded.rpartition("@")
         method, _, password = credentials.partition(":")
     host, _, port = host_part.partition(":")
-    if not host or not port:
-        raise ValueError(f"shadowsocks link has no host:port: {link[:32]!r}")
+    if not host or not port.isdigit():
+        raise ValueError("the shadowsocks link has no host:port")
     return XrayNodeConfig(
         id=_node_id_from_host(host, int(port)),
         name=name or host,
@@ -317,8 +318,12 @@ def _parse_shadowsocks_link(link: str) -> XrayNodeConfig:
 
 def _parse_vless_link(link: str) -> XrayNodeConfig:
     parsed = urlparse(link)
-    if not parsed.hostname or not parsed.port:
-        raise ValueError(f"vless link has no host:port: {link[:32]!r}")
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("the vless link's port is not a number") from error
+    if not parsed.hostname or not port:
+        raise ValueError("the vless link has no host:port")
     query = {key: values[0] for key, values in parse_qs(parsed.query).items()}
     reality = None
     if query.get("security") == "reality":
@@ -356,7 +361,7 @@ def _decode_base64(text: str) -> str:
     try:
         return base64.urlsafe_b64decode(padded).decode("utf-8")
     except (binascii.Error, UnicodeDecodeError) as error:
-        raise ValueError(f"cannot decode base64 segment {text[:24]!r}") from error
+        raise ValueError("a base64 part of the link does not decode") from error
 
 
 def _node_id_from_host(host: str, port: int) -> str:

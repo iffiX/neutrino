@@ -122,6 +122,30 @@ def test_the_engine_cgroups_the_ruleset_already_names_run_nothing(monkeypatch):
     assert passes.passes == 0
 
 
+def test_outside_linux_a_moved_interface_set_runs_one_converge(on_windows, monkeypatch):
+    """The firewall rules are scoped again when an adapter comes back under a
+    new name, from the same pass that follows the overlay devices."""
+    panel, passes = following(
+        monkeypatch, {"easytier": ["tun0"]}, {"easytier": ["tun0"]}
+    )
+    monkeypatch.setattr(runtime_module, "is_interface_set_moved", lambda: True)
+
+    assert panel.follow_overlay_devices() is True
+    assert passes.passes == 1
+
+
+def test_outside_linux_the_interface_set_the_rules_name_runs_nothing(
+    on_windows, monkeypatch
+):
+    panel, passes = following(
+        monkeypatch, {"easytier": ["tun0"]}, {"easytier": ["tun0"]}
+    )
+    monkeypatch.setattr(runtime_module, "is_interface_set_moved", lambda: False)
+
+    assert panel.follow_overlay_devices() is False
+    assert passes.passes == 0
+
+
 def test_the_network_carries_the_devices_the_ruleset_names(monkeypatch):
     panel, _ = following(monkeypatch, {}, {"easytier": ["tun0"]})
 

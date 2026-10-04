@@ -54,9 +54,11 @@ class HubRelease:
         notes: The release's body.
         page_url: The release's page.
         asset_name: The package file's name.
-        asset_url: Where the package downloads from.
+        asset_url: Where the package downloads from; empty without a package.
         asset_size: The package's size in bytes.
         checksums_url: Where the release's digest list downloads from.
+        has_package: Whether the release carries this box's package and its
+            digest list.
     """
 
     version: str
@@ -68,6 +70,7 @@ class HubRelease:
     asset_url: str
     asset_size: int
     checksums_url: str
+    has_package: bool = True
 
 
 def asset_name(version: str, *, asset: str = HUB_PACKAGE_ASSET) -> str:
@@ -158,13 +161,12 @@ class HubReleaseChecker:
         """The newest release, neither a draft nor a pre-release.
 
         Returns:
-            The release with this box's package in it, or None when nothing
-            has been published yet.
+            The release, ``has_package`` False when it carries no package for
+            this box, or None when nothing has been published yet.
 
         Raises:
             OSError: If GitHub cannot be reached.
-            ValueError: If the reply is not a release, or the release carries
-                no package for this box.
+            ValueError: If the reply is not a release.
         """
         return self._release_at(
             HUB_UPDATE_LATEST_URL.format(repository=self._repository)
@@ -177,13 +179,13 @@ class HubReleaseChecker:
             version: The version wanted.
 
         Returns:
-            The release with this box's package in it, or None when no
-            release carries that tag, which a CI build's version does not.
+            The release, ``has_package`` False when it carries no package for
+            this box, or None when no release carries that tag, which a CI
+            build's version does not.
 
         Raises:
             OSError: If GitHub cannot be reached.
-            ValueError: If the reply is not a release, or the release carries
-                no package for this box.
+            ValueError: If the reply is not a release.
         """
         tag = HUB_UPDATE_TAG_PREFIX + version
         return self._release_at(
@@ -224,7 +226,7 @@ class HubReleaseChecker:
 
         Raises:
             OSError: If GitHub cannot be reached.
-            ValueError: If the reply is not a release with this box's package.
+            ValueError: If the reply is not a release.
         """
         try:
             raw = self._read(url)
@@ -251,7 +253,18 @@ class HubReleaseChecker:
         package = assets.get(wanted)
         checksums = assets.get(HUB_UPDATE_CHECKSUMS_NAME)
         if package is None or checksums is None:
-            raise ValueError(f"{tag} carries no {wanted}")
+            return HubRelease(
+                version=version,
+                tag=tag,
+                published_at=str(described.get("published_at") or ""),
+                notes=str(described.get("body") or ""),
+                page_url=str(described.get("html_url") or ""),
+                asset_name=wanted,
+                asset_url="",
+                asset_size=0,
+                checksums_url="",
+                has_package=False,
+            )
         return HubRelease(
             version=version,
             tag=tag,

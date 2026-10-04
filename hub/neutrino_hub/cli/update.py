@@ -140,7 +140,7 @@ def _plan_from_release(installer: HubUpdateInstaller, *, is_confirmed: bool, por
     Raises:
         HubUpdateError: When the staging fails.
         OSError: When GitHub cannot be reached.
-        ValueError: When a reply is not a release with this box's package.
+        ValueError: When a reply is not a release.
     """
     found = installer.checker.latest()
     if found is None:
@@ -151,6 +151,9 @@ def _plan_from_release(installer: HubUpdateInstaller, *, is_confirmed: bool, por
     if standing == HUB_UPDATE_RELATION_CURRENT:
         print("already on the newest release")
         return STATUS_DONE, None
+    if not found.has_package:
+        print(f"{found.version} carries no package for this hub", file=sys.stderr)
+        return STATUS_CANNOT, None
     _print_release(found)
     if standing == HUB_UPDATE_RELATION_MAJOR:
         print(

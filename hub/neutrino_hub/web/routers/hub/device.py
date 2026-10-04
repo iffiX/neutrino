@@ -12,7 +12,11 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.exceptions import (
+    AgentOfflineError,
+    StreamRefusedError,
+    TaskExitStatusError,
+)
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_ROLE_AGENT,
@@ -1235,15 +1239,20 @@ async def _agent_command_stream(
         args: The verb's arguments.
 
     Yields:
-        Each line the agent sends, then the close's output and its code.
+        Each line the agent sends, then the close's output and its code as
+        ``code: details`` text, or its exit status.
+
+    Raises:
+        TaskExitStatusError: When the close carries a code or a non-zero exit
+            status, or the device is offline; the task ends with that status.
     """
     try:
         stream = await runtime.agent_sessions.open_stream(
             key, CHANNEL_STREAM_COMMAND, _command_args(verb, args)
         )
     except AgentOfflineError as error:
-        yield json.dumps({"code": error.code, "params": dict(error.params)}) + "\n"
-        return
+        yield _coded_line(error.code, dict(error.params))
+        raise TaskExitStatusError(1) from error
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     while True:
         item = await stream.recv()
@@ -1256,9 +1265,13 @@ async def _agent_command_stream(
     if output:
         yield output if output.endswith("\n") else output + "\n"
     if info.get("code"):
-        yield json.dumps({"code": info["code"], "params": params}) + "\n"
-    elif "exit_code" in params:
+        yield _coded_line(info["code"], params)
+        raise TaskExitStatusError(_failed_status(params))
+    if "exit_code" in params:
         yield f"[exit {params['exit_code']}]\n"
+        status = _exit_status(params)
+        if status != 0:
+            raise TaskExitStatusError(status)
 
 
 async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[str]:
@@ -1278,13 +1291,14 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
     Yields:
         The command's lines, the agent's return, then its exit status or
         the failure's code, or a typed word when nothing was reported.
+
+    Raises:
+        TaskExitStatusError: When the command or the installer failed, or no
+            report came in time; the task ends with the agent's status.
     """
     before = runtime.agent_sessions.get(key)
     before_failure = _reinstall_failure(before)
     async for line in _agent_command_stream(runtime, key, AGENT_VERB_REINSTALL):
-        if line.startswith("{"):
-            yield line
-            return
         yield line
     loop = asyncio.get_running_loop()
     deadline = loop.time() + WEB_REINSTALL_RETURN_TIMEOUT_S
@@ -1296,8 +1310,8 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
             yield f"agent {runtime.agent_sessions.version_of(key)} reconnected\n"
         failure = _reinstall_failure(session)
         if failure is not None and failure != before_failure:
-            yield json.dumps({"code": CODE_REINSTALL_FAILED, "params": failure}) + "\n"
-            return
+            yield _coded_line(CODE_REINSTALL_FAILED, failure)
+            raise TaskExitStatusError(_failed_status(failure))
         if reconnected_at is not None and session is not None and session.reported_at:
             yield "[exit 0]\n"
             return
@@ -1308,7 +1322,31 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
             yield "reinstalled, no report from this agent\n"
             return
         await asyncio.sleep(WEB_REINSTALL_POLL_S)
-    yield json.dumps({"code": "reinstall_not_reported", "params": {}}) + "\n"
+    yield _coded_line("reinstall_not_reported", {})
+    raise TaskExitStatusError(1)
+
+
+def _coded_line(code: str, params: dict) -> str:
+    """One coded answer as text: the code, then its detail or its values."""
+    detail = str(params.get("detail", "") or "")
+    if not detail:
+        detail = ", ".join(
+            f"{name}={value}" for name, value in params.items() if name != "output"
+        )
+    return f"{code}: {detail}\n" if detail else f"{code}\n"
+
+
+def _exit_status(params: dict) -> int:
+    """The exit status a close names, 1 when it names none that reads."""
+    try:
+        return int(params.get("exit_code", 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _failed_status(params: dict) -> int:
+    """The exit status of a failed answer, never 0."""
+    return _exit_status(params) or 1
 
 
 def _reinstall_failure(session) -> "dict | None":

@@ -2,7 +2,8 @@
 
 ``config/`` is the single source of truth for the appliance, so every read goes
 through here: keys beginning with an underscore are documentation comments in
-the example files and are stripped before the data reaches any library.
+the example files and are stripped before the data reaches any library, and
+so is an example's placeholder id in a list.
 """
 
 import json
@@ -12,7 +13,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
+from neutrino_hub.utils.constants import (
+    UTILS_CONFIG_DIR,
+    UTILS_EXAMPLE_RECORD_PREFIX,
+)
 
 # The one lock every config mutation takes: a read-modify-write re-reads its
 # file inside it, and an operation spanning two files (a provider and its
@@ -80,6 +84,23 @@ def write_config(relative_path: str, data: dict[str, Any]) -> None:
         _config_write_hook(relative_path)
 
 
+def copy_example(example_path: Path, real_path: Path) -> None:
+    """Write a real config file from its example, without the example's records.
+
+    Args:
+        example_path: The committed ``*.example.json``.
+        real_path: The file written, root-only.
+
+    Raises:
+        OSError: If the example cannot be read or the file written.
+        ValueError: If the example is not valid JSON.
+    """
+    data = json.loads(example_path.read_text(encoding="utf-8"))
+    real_path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(_without_example_records(data), indent=2, ensure_ascii=False)
+    _write_atomic(real_path, text + "\n", mode=0o600)
+
+
 def write_generated(path: Path, text: str, *, mode: int = 0o644) -> None:
     """Write a rendered artifact outside the repo, atomically.
 
@@ -99,7 +120,8 @@ def strip_comments(data: Any) -> Any:
         data: Any parsed JSON value.
 
     Returns:
-        The same structure with every underscore-prefixed mapping key removed.
+        The same structure with every underscore-prefixed mapping key removed,
+        and every list item that is an example's placeholder id.
     """
     if isinstance(data, dict):
         return {
@@ -108,8 +130,28 @@ def strip_comments(data: Any) -> Any:
             if not key.startswith("_")
         }
     if isinstance(data, list):
-        return [strip_comments(item) for item in data]
+        return [strip_comments(item) for item in data if not _is_example_id(item)]
     return data
+
+
+def _without_example_records(data: Any) -> Any:
+    """The data with every placeholder record and id removed, comments kept."""
+    if isinstance(data, dict):
+        return {
+            key: _without_example_records(value)
+            for key, value in data.items()
+            if not key.startswith(UTILS_EXAMPLE_RECORD_PREFIX)
+        }
+    if isinstance(data, list):
+        return [
+            _without_example_records(item) for item in data if not _is_example_id(item)
+        ]
+    return data
+
+
+def _is_example_id(value: Any) -> bool:
+    """Whether a list item is an example's placeholder id."""
+    return isinstance(value, str) and value.startswith(UTILS_EXAMPLE_RECORD_PREFIX)
 
 
 def _write_atomic(path: Path, text: str, *, mode: int) -> None:

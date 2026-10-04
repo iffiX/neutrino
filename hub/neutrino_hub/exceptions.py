@@ -153,6 +153,18 @@ class NetworkApplyError(RuntimeError):
         self.failures = failures
 
 
+class TaskExitStatusError(RuntimeError):
+    """Raised by a task's source to end the task with a status of its own.
+
+    Attributes:
+        exit_status: The status the task finishes with.
+    """
+
+    def __init__(self, exit_status: int):
+        super().__init__(f"exit status {exit_status}")
+        self.exit_status = exit_status
+
+
 class WizardAborted(RuntimeError):
     """Raised when the wizard cannot go on.
 

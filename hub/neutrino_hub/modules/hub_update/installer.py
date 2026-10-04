@@ -961,7 +961,8 @@ class HubUpdateInstaller:
         """
         if self._rollback_path(current).is_file():
             return True
-        return self._checker.for_version(current) is not None
+        release = self._checker.for_version(current)
+        return release is not None and release.has_package
 
     def is_rollback_present(self, current: str) -> bool:
         """Whether the running version's package is in the directory.
@@ -1266,7 +1267,7 @@ class HubUpdateInstaller:
             return rollback
         try:
             previous = self._checker.for_version(current)
-            if previous is None:
+            if previous is None or not previous.has_package:
                 say(f"no release carries {rollback.name}; there is no rollback")
                 return None
             digest = self._checker.digest_of(previous)

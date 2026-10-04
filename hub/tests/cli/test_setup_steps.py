@@ -220,6 +220,11 @@ def test_outside_linux_the_service_starts_once_after_the_steps_and_the_password(
     )
     monkeypatch.setattr(setup, "_panel_url", lambda: "http://127.0.0.1:8080")
     monkeypatch.setattr(
+        setup.RouterStateController,
+        "write_system_firewall",
+        lambda self: order.append("firewall") or [],
+    )
+    monkeypatch.setattr(
         setup, "_start_panel", lambda reporter: order.append("service") or True
     )
     monkeypatch.setattr(
@@ -236,11 +241,12 @@ def test_outside_linux_the_service_starts_once_after_the_steps_and_the_password(
     ]
 
     assert setup._setup(_QuietReporter(), steps, _Answers()) == 0
-    assert order[-6:] == [
+    assert order[-7:] == [
         "enable_services",
         "overlay",
         "cliproxyapi",
         "password",
+        "firewall",
         "service",
         "local_agent",
     ]

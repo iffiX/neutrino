@@ -10,10 +10,12 @@ IPv4 address inside, else the link address; IPv6 is never considered.
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
     device_host_for,
+    lan_in_place_of_overlay,
     link_scope,
     scope_of,
     served_scopes,
 )
+from neutrino_hub.modules.tun.constants import TUN_ADDRESS
 from tests.conftest import lan_entry, network_config
 
 LAN = HostScope(
@@ -136,4 +138,40 @@ def test_the_link_scope_is_the_link_address_whatever_was_reported():
 
     assert device_host_for(link_scope("198.51.100.2"), reported, "203.0.113.9") == (
         "203.0.113.9"
+    )
+
+
+# --- the address a device is recorded at ---
+
+
+def test_a_link_address_on_the_overlay_gives_way_to_the_lan_address():
+    """A Windows hub's own agent came back over EasyTier after a restart and
+    the device table showed the overlay address."""
+    reported = [
+        {"name": "neutrino_tun", "mac": "", "addresses": [TUN_ADDRESS]},
+        {"name": "et", "mac": "02:00:00:00:00:01", "addresses": ["100.64.0.9"]},
+        {"name": "lo", "mac": "", "addresses": ["127.0.0.1", "169.254.3.3"]},
+        {
+            "name": "Ethernet",
+            "mac": "aa:bb:cc:dd:ee:01",
+            "addresses": ["192.168.10.105"],
+        },
+    ]
+
+    assert lan_in_place_of_overlay("100.64.0.9", reported, SERVED) == (
+        "192.168.10.105",
+        "aa:bb:cc:dd:ee:01",
+    )
+
+
+def test_a_link_address_off_the_overlay_stands():
+    assert lan_in_place_of_overlay(
+        "192.168.100.7", interfaces("192.168.100.7", "10.0.0.2"), SERVED
+    ) == ("", "")
+
+
+def test_an_overlay_only_device_keeps_its_overlay_address():
+    assert lan_in_place_of_overlay("100.64.9.2", interfaces("100.64.9.2"), SERVED) == (
+        "",
+        "",
     )

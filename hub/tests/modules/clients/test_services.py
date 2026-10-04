@@ -13,7 +13,12 @@ from neutrino_hub.modules.clients import services
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import service_material
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
-from neutrino_hub.modules.services.host_scope import HostScope, link_scope
+from neutrino_hub.modules.services.collector import resolve_entries
+from neutrino_hub.modules.services.host_scope import (
+    HostScope,
+    device_host_for,
+    link_scope,
+)
 
 ENTRY = {
     "id": "web_gitea",
@@ -28,7 +33,13 @@ ENTRY = {
     "record_id": None,
     "detail_code": None,
 }
-RDP_ENTRY = {**ENTRY, "id": "rdp_s1", "type": "rdp", "payload": {"host": "h"}}
+RDP_ENTRY = {
+    **ENTRY,
+    "id": "rdp_s1",
+    "type": "rdp",
+    "payload": {"host": "192.168.100.7", "port": 21118},
+    "device_id": "dev",
+}
 AI_ENTRY = {**ENTRY, "id": "ai", "type": "ai", "payload": {"endpoint": "http://x"}}
 VSCODE_ENTRY = {
     **ENTRY,
@@ -46,11 +57,28 @@ OVERLAY = HostScope(id="overlay", cidr="100.64.0.0/16", hub_address="100.64.0.1"
 
 
 class StubPublishedServices:
-    def __init__(self, entries):
+    """The published list, resolved per scope the way the cache resolves it."""
+
+    def __init__(self, entries, runtime, hub_addresses=()):
         self.entries = list(entries)
+        self.runtime = runtime
+        self.hub_addresses = set(hub_addresses)
 
     def entries_for(self, scope):
-        return list(self.entries)
+        device_hosts = {
+            device_id: device_host_for(
+                scope,
+                self.runtime.device_interfaces.get(device_id, []),
+                self.runtime.device_address.get(device_id, ""),
+            )
+            for device_id in self.runtime.device_address
+        }
+        return resolve_entries(
+            self.entries,
+            device_hosts=device_hosts,
+            hub_addresses=self.hub_addresses,
+            hub_host=scope.hub_address,
+        )
 
 
 class StubDesiredStates:
@@ -69,7 +97,7 @@ class FakeRuntime:
         self.client_scope = {}
         self.device_interfaces = {}
         self.device_address = {}
-        self.published_services = StubPublishedServices(entries)
+        self.published_services = StubPublishedServices(entries, self)
         self.device_shares = DeviceShareRegistry()
         self.desired_states = StubDesiredStates()
         self.served_models = None
@@ -102,6 +130,7 @@ def sharing(runtime) -> None:
         host="192.168.100.7",
         port=21118,
     )
+    runtime.device_address["dev"] = "192.168.100.7"
     runtime.device_interfaces["dev"] = [
         {"name": "wt0", "mac": "", "addresses": ["100.64.9.2"]},
         {"name": "enp1s0", "mac": "", "addresses": ["192.168.100.7"]},
@@ -141,6 +170,40 @@ def test_a_desktops_address_is_the_one_in_the_clients_scope_now(config_dir):
         "192.168.100.7",
         "192.168.100.7",
     )
+
+
+def test_the_row_and_the_connect_answer_name_one_host_for_one_caller(config_dir):
+    """A phone's row named the hub's address in its network while the viewer
+    dialled the address the share was declared at."""
+    runtime = FakeRuntime()
+    runtime.published_services.hub_addresses = {"192.168.10.105"}
+    runtime.device_shares.declare(
+        device_id="dev",
+        share_id="s1",
+        hostname="nmxwin",
+        host="10.200.0.1",
+        port=21118,
+    )
+    runtime.device_address["dev"] = "192.168.10.105"
+    client_id = ClientRegistry().create("phone")
+    caller = HostScope(
+        id="192.168.122.0/24", cidr="192.168.122.0/24", hub_address="192.168.122.127"
+    )
+    runtime.client_scope[client_id] = caller
+
+    (row,) = [
+        entry
+        for entry in runtime.published_services.entries_for(caller)
+        if entry["id"] == "rdp_s1"
+    ]
+    code, answer = service_material(runtime, client_id, "rdp_s1")
+
+    assert code == ""
+    assert (answer["host"], answer["port"]) == (
+        row["payload"]["host"],
+        row["payload"]["port"],
+    )
+    assert answer["host"] == "192.168.122.127"
 
 
 def test_a_desktop_that_stopped_sharing_is_rdp_not_shared(config_dir):

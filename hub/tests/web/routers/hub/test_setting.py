@@ -760,6 +760,26 @@ def test_a_backup_restores_the_vault_it_left_with(client):
     assert stat.S_IMODE(state_key.stat().st_mode) == 0o600
 
 
+def test_a_backup_a_windows_hub_wrote_with_backslashes_restores(client):
+    opened, config_dir = client
+    secret_id = seed_config(config_dir)
+    contents = archive_contents(download_backup(opened))
+    wipe_box(config_dir)
+    windows = {}
+    for name, blob in contents.items():
+        if name == "SHA256SUMS":
+            blob = blob.decode().replace("/", "\\").encode()
+        elif name.startswith("config/"):
+            name = "config/" + name[len("config/") :].replace("/", "\\")
+        windows[name] = blob
+
+    response = upload_restore(opened, repacked(windows), PASSPHRASE)
+
+    assert response.status_code == 200
+    assert SecretVault().open(secret_id) == {"password": SEALED_PASSWORD}
+    assert json.loads((config_dir / "xray" / "nodes.json").read_text()) == {"nodes": []}
+
+
 def test_a_restored_key_replaces_the_one_already_on_the_box(client):
     """The restored store needs its own key, not the key this box was using."""
     opened, config_dir = client
@@ -931,7 +951,7 @@ class _UpdateRuntime:
 
 
 class _Release:
-    def __init__(self, version: str, *, size: int = 100):
+    def __init__(self, version: str, *, size: int = 100, has_package: bool = True):
         self.version = version
         self.tag = f"v{version}"
         self.published_at = "2026-10-01T12:00:00Z"
@@ -941,6 +961,7 @@ class _Release:
         self.asset_url = f"https://example.invalid/{self.asset_name}"
         self.asset_size = size
         self.checksums_url = "https://example.invalid/SHA256SUMS"
+        self.has_package = has_package
 
 
 class _Checker:
@@ -1122,6 +1143,7 @@ def test_a_scan_reads_the_newest_release_and_how_it_stands(update_box):
             "page_url": "https://example.invalid/0.3.1",
             "size_bytes": 100,
         },
+        "has_package": True,
         "is_newer": True,
         "is_major": False,
         "is_rollback_available": True,
@@ -1138,6 +1160,18 @@ def test_a_scan_with_nothing_published_says_so(update_box):
 
     assert body["latest"] is None
     assert body["is_newer"] is False
+
+
+def test_a_release_without_this_hubs_package_is_a_scan_not_an_error(update_box):
+    opened, installer, _ = update_box
+    installer.checker.latest_release = _Release("0.3.1", size=0, has_package=False)
+
+    response = opened.post("/api/hub/setting/release/scan")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["latest"]["version"] == "0.3.1"
+    assert body["has_package"] is False
 
 
 def test_a_scan_singles_out_a_new_major_and_a_missing_rollback(update_box):

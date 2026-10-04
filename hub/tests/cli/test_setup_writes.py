@@ -185,6 +185,59 @@ def test_hardening_ssh_never_restarts_the_unit_it_just_started(monkeypatch, tmp_
     assert "--now" not in [word for command in commands for word in command]
 
 
+def test_outside_linux_setup_writes_the_system_firewall_before_the_service(
+    elsewhere, monkeypatch
+):
+    """A Windows box set up had no hub rule until its first exposure change."""
+    order: list = []
+    monkeypatch.setattr(setup, "store_password", lambda password: None)
+    monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.168.8.1:8080")
+    monkeypatch.setattr(
+        setup.RouterStateController,
+        "write_system_firewall",
+        lambda self: order.append("firewall") or [],
+    )
+    monkeypatch.setattr(
+        setup, "_start_panel", lambda reporter: order.append("service") or True
+    )
+    monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
+    monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
+    monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)
+
+    setup._setup(_SilentReporter(), [], _NoAnswers())
+
+    assert order == ["firewall", "service"]
+
+
+def test_on_linux_setup_leaves_the_firewall_to_the_ruleset(monkeypatch):
+    monkeypatch.setattr(setup, "store_password", lambda password: None)
+    monkeypatch.setattr(setup, "_panel_url", lambda: "http://192.168.8.1:8080")
+    monkeypatch.setattr(
+        setup.RouterStateController,
+        "write_system_firewall",
+        lambda self: pytest.fail("Linux has no system firewall pass"),
+    )
+    monkeypatch.setattr(setup, "_start_panel", lambda reporter: True)
+    monkeypatch.setattr(setup, "_install_local_agent", lambda password, reporter: None)
+    monkeypatch.setattr(setup, "_enrollment_link", lambda password: ("", ""))
+    monkeypatch.setattr(setup.wizard, "finish", lambda **keywords: None)
+
+    assert setup._setup(_SilentReporter(), [], _NoAnswers()) == 0
+
+
+def test_the_config_files_step_copies_no_example_record(tmp_path, monkeypatch):
+    """`clients.json` once came out of setup naming the example's device id in
+    its default permission."""
+    monkeypatch.setattr(setup, "UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(setup, "CONFIG_FILES", ("clients/clients.json",))
+    monkeypatch.setattr(setup, "ensure_hub_identity", lambda: False)
+
+    setup._step_config_files(_SilentReporter())
+
+    written = (tmp_path / "clients" / "clients.json").read_text(encoding="utf-8")
+    assert "_example_" not in written
+
+
 class _Ran:
     is_success = True
     stdout = ""

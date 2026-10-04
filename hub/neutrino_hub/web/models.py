@@ -1479,7 +1479,9 @@ class HubReleaseLatestView(BaseModel):
 class HubReleaseScanView(BaseModel):
     """What a check of the releases found.
 
-    ``latest`` is None when nothing has been published. ``is_major`` names a
+    ``latest`` is None when nothing has been published. ``has_package`` is
+    whether that release carries a package of this hub's family; one without
+    is not installable here and is no error. ``is_major`` names a
     release this panel will not install: a new major is a ``config/`` shape
     the box has to be carried across by hand. ``needed_bytes`` is what the
     update takes on the root with the least room, ``free_bytes`` what that
@@ -1488,6 +1490,7 @@ class HubReleaseScanView(BaseModel):
 
     current: str
     latest: HubReleaseLatestView | None = None
+    has_package: bool = False
     is_newer: bool = False
     is_major: bool = False
     is_rollback_available: bool = False

@@ -31,6 +31,10 @@ FIREWALL_SETTING_AGENT_PORT = "agent_listen_port"
 FIREWALL_GATEWAY_SETTINGS_FILE = "cliproxyapi/cliproxyapi.json"
 FIREWALL_SETTING_GATEWAY_PORT = "listen_port"
 
+# The interfaces the last firewall pass found, by name, so a pass that
+# follows the overlay devices scopes the rules again when the set moved.
+FIREWALL_INTERFACES_PATH = UTILS_GENERATED_DIR / "firewall_interfaces.json"
+
 # What the Windows rules the hub owns are now: name, protocol, port, whether
 # each is enabled and the interfaces it is scoped to ("Any" when none).
 FIREWALL_WINDOWS_READ_SCRIPT = """
