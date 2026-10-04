@@ -554,6 +554,11 @@ class FakeResident:
     def notices(self) -> list:
         return [dict(notice) for notice in self.notices_value]
 
+    def close_notice(self, notice_id: str) -> None:
+        self.notices_value = [
+            notice for notice in self.notices_value if notice.get("id") != notice_id
+        ]
+
     def service_states(self) -> dict:
         return json.loads(json.dumps(self.states))
 

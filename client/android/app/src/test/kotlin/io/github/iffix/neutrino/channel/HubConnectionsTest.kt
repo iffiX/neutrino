@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.channel
 
+import io.github.iffix.neutrino.CLIENT_LEAVE_TELL_TIMEOUT_S
 import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.binding.BindingStore
 import io.github.iffix.neutrino.binding.FakeSecretSealer
@@ -7,6 +8,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -92,56 +94,108 @@ class HubConnectionsTest {
         assertEquals(listOf("b1"), left)
     }
 
+    private val leaveAt = "https://192.168.100.1:8443" to "/api/channel/leave"
+
+    private fun gated(gate: CompletableDeferred<Unit>): HubTransport = object : HubTransport by transport {
+        override suspend fun post(
+            baseUrl: String,
+            path: String,
+            fingerprint: String,
+            body: JsonObject,
+        ): ChannelResult<JsonObject> {
+            gate.await()
+            return transport.post(baseUrl, path, fingerprint, body)
+        }
+    }
+
     @Test
-    fun leavingForgetsTheBindingOnceTheHubAgreesOrNoLongerKnowsIt() = runTest {
+    fun aLeaveForgetsTheBindingBeforeTheHubAnswersAndTellsItOnce() = runTest {
+        for (answer in listOf(ChannelResult.refused("token_rejected"), ChannelResult.refused("hub_untrusted"))) {
+            transport.posts.clear()
+            transport.answers[leaveAt] = answer
+            val gate = CompletableDeferred<Unit>()
+            val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
+            val connections = HubConnections(store, gated(gate), Samples.machine, { null }, backgroundScope)
+            store.put(Samples.binding)
+            assertEquals(ChannelResult.Ok(Unit), connections.leave("b1"))
+            assertNull(store.get("b1"))
+            runCurrent()
+            assertEquals(emptyList<Any>(), transport.posts)
+            gate.complete(Unit)
+            runCurrent()
+            assertNull(store.get("b1"))
+            val told = transport.posts.single()
+            assertEquals(leaveAt, told.first to told.second)
+            assertEquals(emptyList<String>(), GoldenSchema.problems(told.third, "ChannelLeaveRequest"))
+        }
+    }
+
+    @Test
+    fun anUnreachableHubIsToldAtEachAddressAndTheBindingIsGoneAlready() = runTest {
         val (connections, store) = connections()
         store.put(Samples.binding)
-        transport.answers["https://192.168.100.1:8443" to "/api/channel/leave"] =
-            ChannelResult.refused("binding_unknown")
         assertEquals(ChannelResult.Ok(Unit), connections.leave("b1"))
         assertNull(store.get("b1"))
-        assertEquals(emptyList<String>(), GoldenSchema.problems(transport.posts.single().third, "ChannelLeaveRequest"))
+        runCurrent()
+        assertEquals(Samples.binding.storedUrls.size, transport.posts.count { it.second == "/api/channel/leave" })
     }
 
     @Test
-    fun anUnreachableHubKeepsTheBinding() = runTest {
-        val (connections, store) = connections()
-        store.put(Samples.binding)
-        assertEquals("hub_unreachable", (connections.leave("b1") as ChannelResult.Refused).code)
-        assertEquals(Samples.binding, store.get("b1"))
-    }
-
-    @Test
-    fun aLeaveIsAJobOnTheRowAndAFailureIsItsErrorLine() = runTest {
+    fun aHubThatNeverAnswersTheLeaveIsLetGoAfterTheShortTimeout() = runTest {
         val gate = CompletableDeferred<Unit>()
-        val gated = object : HubTransport by transport {
-            override suspend fun post(
-                baseUrl: String,
-                path: String,
-                fingerprint: String,
-                body: JsonObject,
-            ): ChannelResult<JsonObject> {
-                gate.await()
-                return transport.post(baseUrl, path, fingerprint, body)
-            }
-        }
+        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
+        val connections = HubConnections(store, gated(gate), Samples.machine, { null }, backgroundScope)
+        store.put(Samples.binding)
+        connections.leave("b1")
+        advanceTimeBy(CLIENT_LEAVE_TELL_TIMEOUT_S * 1000 + 1)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(emptyList<Any>(), transport.posts)
+        assertNull(store.get("b1"))
+    }
+
+    @Test
+    fun aLeaveIsAJobOnTheRowThatEndsWithTheRowAndNoErrorLine() = runTest {
+        transport.answers[leaveAt] = ChannelResult.refused("token_rejected")
+        val gate = CompletableDeferred<Unit>()
         val store = BindingStore(folder.root.resolve("b.sealed"), FakeSecretSealer())
-        val connections = HubConnections(store, gated, Samples.machine, { null }, backgroundScope)
+        val left = mutableListOf<String>()
+        val connections = HubConnections(store, gated(gate), Samples.machine, { null }, backgroundScope) {
+            left += it
+        }
         store.put(Samples.binding)
         connections.start()
         runCurrent()
         connections.startLeave("b1")
-        runCurrent()
-        assertEquals(true, connections.views.first().single().jobs.isLeaving)
         connections.startLeave("b1")
+        assertEquals(listOf("b1"), left)
+        runCurrent()
+        assertEquals(emptyList<HubView>(), connections.views.first())
         gate.complete(Unit)
+        runCurrent()
+        assertEquals(1, transport.posts.count { it.second == "/api/channel/leave" })
+        store.put(Samples.binding)
         runCurrent()
         val row = connections.views.first().single()
         assertEquals(false, row.jobs.isLeaving)
-        assertEquals("hub_unreachable", row.jobError?.code)
-        assertEquals(Samples.binding.storedUrls.size, transport.posts.count { it.second == "/api/channel/leave" })
+        assertNull(row.jobError)
+    }
+
+    @Test
+    fun aClosedNoticeIsGoneAndARefreshDropsEveryNotice() = runTest {
+        val refusing = FakeHubTransport { FakeHubTransport.refusing("binding_unknown") }
+        val store = BindingStore(folder.root.resolve("b.sealed"), sealer)
+        val connections = HubConnections(store, refusing, Samples.machine, { null }, backgroundScope)
+        store.put(Samples.binding)
+        store.put(Samples.binding.copy(id = "b2"))
+        connections.start()
+        runCurrent()
+        val (first, second) = connections.notices.value
+        assertEquals("binding_unknown", first.refusal.code)
+        connections.closeNotice(first)
+        assertEquals(listOf(second), connections.notices.value)
         connections.refresh()
-        assertNull(connections.views.first().single().jobError)
+        assertEquals(emptyList<HubNotice>(), connections.notices.value)
     }
 
     @Test

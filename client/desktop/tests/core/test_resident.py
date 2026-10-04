@@ -14,7 +14,9 @@ line a step, and lets no step hold up the rest. The state document's jobs:
 a refresh set per hub and cleared by its answer, a leave and a service
 press shown before the work, a duplicate press dropped and never answered
 as ``busy``, a failure kept on the entry until the next press or a refresh,
-the notice a forgotten binding leaves, and the clipboard written.
+the notice a forgotten binding leaves, closed or dropped by a refresh, a
+leave that forgets the binding whatever the hub answers, and the clipboard
+written.
 """
 
 import functools
@@ -35,7 +37,11 @@ from neutrino_client.constants import (
 )
 from neutrino_client.core import enrollment
 from neutrino_client.core.resident import ClientResident
-from neutrino_client.exceptions import GatewayRefused, GatewayRefusedDetail
+from neutrino_client.exceptions import (
+    GatewayRefused,
+    GatewayRefusedDetail,
+    GatewayUnreachable,
+)
 from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.base import ServiceTypeHandler
 from neutrino_client.services.file import mount_record_id
@@ -1834,12 +1840,78 @@ def test_a_forgotten_binding_leaves_a_notice(two_hubs_up, monkeypatch):
 
     office._unbind({"code": "binding_unknown", "params": {}})
 
-    assert resident.notices() == [
-        {"code": "binding_unknown", "params": {"hub": "office"}}
-    ]
+    (notice,) = resident.notices()
+    assert (notice["code"], notice["params"]) == ("binding_unknown", {"hub": "office"})
+    assert notice["id"]
     assert [row["hub_id"] for row in resident.hubs()] == ["h1"]
     wait_until(lambda: resident.notices() == [])
     assert resident.notices() == []
+
+
+def test_a_closed_notice_is_gone_and_a_refresh_drops_every_notice(two_hubs_up):
+    resident, _scripts = two_hubs_up
+    resident._add_notice("binding_unknown", {"hub": "office"})
+    resident._add_notice("binding_unknown", {"hub": "lab"})
+    first, second = resident.notices()
+
+    resident.close_notice(first["id"])
+
+    assert resident.notices() == [second]
+    resident.close_notice("nobody")
+    assert resident.notices() == [second]
+
+    resident.refresh()
+
+    assert resident.notices() == []
+
+
+def leave_with_hub_answering(resident, monkeypatch, answer):
+    """Press Leave on the office hub while the hub answers its leave with
+    ``answer``; returns the binding ids on disk at each post."""
+    seen = []
+
+    def post(self, path, payload):
+        seen.append([binding["id"] for binding in enrollment.bindings()])
+        raise answer
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post, raising=True)
+    resident.leave("h2")
+    wait_until(lambda: seen)
+    return seen
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [GatewayUnreachable("cannot reach hub"), GatewayRefused("401")],
+    ids=["unreachable", "token_rejected"],
+)
+def test_a_leave_forgets_the_binding_and_the_row_whatever_the_hub_answers(
+    two_hubs_up, monkeypatch, answer
+):
+    resident, _scripts = two_hubs_up
+    released_handlers(resident)
+
+    seen = leave_with_hub_answering(resident, monkeypatch, answer)
+
+    assert seen == [["c1"]]
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
+    assert [row["hub_id"] for row in resident.hubs()] == ["h1"]
+    assert all(row["jobs"]["is_leaving"] is False for row in resident.hubs())
+
+
+def test_a_pending_binding_is_forgotten_and_no_hub_is_told(
+    joining_resident, monkeypatch
+):
+    resident, _driver = joining_resident
+    told = []
+    monkeypatch.setattr(resident, "_tell_hub_left", told.append)
+    (row,) = resident.hubs()
+
+    resident.disconnect(row["binding_id"])
+
+    assert resident.hubs() == []
+    assert enrollment.bindings() == []
+    assert told == []
 
 
 def test_the_clipboard_is_written_through_the_platform(two_hubs):

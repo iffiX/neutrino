@@ -533,9 +533,7 @@ function waitCard() {
 function drawHubs(state) {
   const card = document.createElement('div');
   card.className = 'card';
-  for (const notice of state.notices || []) {
-    card.appendChild(errorLine(wordCode(notice.code, notice.params)));
-  }
+  for (const notice of state.notices || []) card.appendChild(noticeLine(notice));
   const hubs = state.hubs || [];
   for (const hub of hubs) card.appendChild(hubRow(hub));
   if (hubs.length === 0) {
@@ -543,6 +541,22 @@ function drawHubs(state) {
   }
   card.appendChild(joinRow());
   return card;
+}
+
+// One page-wide notice: its code's wording and the button that closes it.
+function noticeLine(notice) {
+  const line = document.createElement('div');
+  line.className = 'notice';
+  line.appendChild(errorLine(wordCode(notice.code, notice.params)));
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'notice_close';
+  close.textContent = '×';
+  close.title = t('ui.notice_close');
+  close.setAttribute('aria-label', close.title);
+  close.onclick = () => send('/api/notice/close', { id: notice.id });
+  line.appendChild(close);
+  return line;
 }
 
 // Where one hub stands, as a colour: amber pulsing while anything runs on

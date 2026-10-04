@@ -17,7 +17,7 @@ import io.github.iffix.neutrino.overlay.OverlayLine
  * @property hasConnected Whether the hub welcomed this phone since the app started.
  * @property droppedAtMillis When the open socket last closed, in the session's clock; 0 while open or before the first.
  * @property jobs The actions running on the hub.
- * @property jobError The code the last leave ended in, kept until the next press on the row or a refresh.
+ * @property jobError The code of a leave whose binding could not be forgotten here, kept until the next press on the row or a refresh.
  * @property overlay The hub's virtual network.
  */
 data class HubView(

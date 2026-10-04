@@ -318,6 +318,19 @@ def test_refresh_reaches_the_resident_and_answers_the_state():
     assert [hub["hub_id"] for hub in state["hubs"]] == ["h1", "h2"]
 
 
+def test_closing_a_notice_drops_only_that_one_and_answers_the_state():
+    resident = FakeResident()
+    resident.notices_value = [
+        {"id": "n1", "code": "binding_unknown", "params": {"hub": "home"}},
+        {"id": "n2", "code": "binding_unknown", "params": {"hub": "office"}},
+    ]
+
+    status, state = routes.dispatch("POST", "/api/notice/close", {"id": "n1"}, resident)
+
+    assert status == 200
+    assert [notice["id"] for notice in state["notices"]] == ["n2"]
+
+
 def test_show_reaches_the_resident():
     resident = FakeResident()
 

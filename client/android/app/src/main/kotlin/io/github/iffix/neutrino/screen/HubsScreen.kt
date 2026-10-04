@@ -1,6 +1,9 @@
 package io.github.iffix.neutrino.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
@@ -12,6 +15,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.CLIENT_PERSON_CODES
@@ -19,11 +25,13 @@ import io.github.iffix.neutrino.channel.ChannelOverlay
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubNotice
 import io.github.iffix.neutrino.channel.HubView
+import io.github.iffix.neutrino.design.AppIcon
 import io.github.iffix.neutrino.design.ArmedButton
 import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.DotTone
 import io.github.iffix.neutrino.design.ErrorLine
 import io.github.iffix.neutrino.design.FeatureRow
+import io.github.iffix.neutrino.design.IconGlyph
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PickerField
@@ -43,8 +51,10 @@ import kotlinx.coroutines.delay
  * actions, then the row that opens the Join page.
  *
  * @param hubs Every hub joined.
- * @param notices The hubs that no longer know this phone, for a minute after their row went.
+ * @param notices The hubs that no longer know this phone, each until closed, a refresh, or a
+ *   minute after their row went.
  * @param onJoin What pressing the join row does.
+ * @param onCloseNotice What pressing a notice's close button does, with the notice.
  * @param onLeave What the second press on Leave does, with the binding's id.
  * @param onReconnect What pressing Reconnect does, with the binding's id.
  * @param onOverlayConnect What pressing Connect on a hub's network does, with the binding's id.
@@ -57,6 +67,7 @@ fun HubsScreen(
     hubs: List<HubView>,
     notices: List<HubNotice>,
     onJoin: () -> Unit,
+    onCloseNotice: (HubNotice) -> Unit,
     onLeave: (String) -> Unit,
     onReconnect: (String) -> Unit,
     onOverlayConnect: (String) -> Unit,
@@ -68,10 +79,18 @@ fun HubsScreen(
     val busyNetwork = hubs.firstOrNull { it.overlay.state != OverlayState.OFF }
     ScreenList {
         if (notices.isNotEmpty()) {
-            cardRows(notices, key = { "notice-${it.hubTitle}-${it.refusal.code}" }) { notice, hasDivider ->
+            cardRows(notices, key = { "notice-${it.id}" }) { notice, hasDivider ->
                 FeatureRow(marker = DotTone.BAD, hasDivider = hasDivider) {
-                    BasicText(words.word("ui.hub_forgot", mapOf("hub" to notice.hubTitle)), style = NeutrinoTheme.body)
-                    ErrorLine(notice.refusal)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            BasicText(
+                                words.word("ui.hub_forgot", mapOf("hub" to notice.hubTitle)),
+                                style = NeutrinoTheme.body,
+                            )
+                            ErrorLine(notice.refusal)
+                        }
+                        NoticeClose(words.word("ui.notice_close")) { onCloseNotice(notice) }
+                    }
                 }
             }
             gap()
@@ -102,6 +121,18 @@ fun HubsScreen(
                 BasicText(words.word("ui.join_hint"), style = NeutrinoTheme.note)
             }
         }
+    }
+}
+
+@Composable
+private fun NoticeClose(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .semantics { contentDescription = label }
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(4.dp),
+    ) {
+        IconGlyph(AppIcon.CLOSE, NeutrinoTheme.palette.textMuted, size = 14.dp)
     }
 }
 
@@ -293,6 +324,7 @@ private fun HubsScreenPreview() {
             PreviewHubs.all,
             emptyList(),
             onJoin = {},
+            onCloseNotice = {},
             onLeave = {},
             onReconnect = {},
             onOverlayConnect = {},

@@ -51,6 +51,7 @@ import ipaddress
 import json
 import os
 import socket
+import time
 import urllib.parse
 import uuid
 
@@ -61,6 +62,7 @@ from neutrino_client.constants import (
     CLIENT_HUB_NAME,
     CLIENT_JOIN_PATH,
     CLIENT_LEAVE_PATH,
+    CLIENT_LEAVE_TELL_TIMEOUT_S,
     CLIENT_ROLE,
     CLIENT_SOFTWARE_PREFIX,
     CLIENT_STATE_FILE_NAME,
@@ -73,6 +75,7 @@ from neutrino_client.exceptions import (
     GatewayProtocolRefused,
     GatewayRefused,
     GatewayRefusedDetail,
+    GatewayUnreachable,
 )
 from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.store import ClientServiceStore
@@ -825,9 +828,11 @@ def replace_binding(binding_id: str, binding: dict) -> None:
 
 
 def leave(binding: dict) -> None:
-    """Tell one hub this person is leaving it.
+    """Tell one hub this person is leaving it, once, within
+    ``CLIENT_LEAVE_TELL_TIMEOUT_S``.
 
-    The binding itself stays until the caller removes it.
+    Each address the binding holds is tried in turn until one answers. The
+    binding itself is not touched.
 
     Args:
         binding: The binding to the hub.
@@ -835,12 +840,28 @@ def leave(binding: dict) -> None:
     Raises:
         GatewayUntrusted: When what answers is not the pinned hub.
         GatewayRefused: When the hub rejected the token.
-        GatewayUnreachable: When the hub cannot be reached.
+        GatewayRefusedDetail: When the hub refused with another code.
+        GatewayUnreachable: When no address answered in time.
     """
-    channel = GatewayHttpChannel(
-        gateway_url=binding["gateway_url"], fingerprint=binding["fingerprint"]
-    )
-    channel.post(CLIENT_LEAVE_PATH, {"id": binding["id"], "token": binding["token"]})
+    deadline = time.monotonic() + CLIENT_LEAVE_TELL_TIMEOUT_S
+    unreachable = GatewayUnreachable("the binding holds no address")
+    for url in candidate_urls(binding):
+        left_s = deadline - time.monotonic()
+        if left_s <= 0:
+            break
+        channel = GatewayHttpChannel(
+            gateway_url=url, fingerprint=binding["fingerprint"], timeout=left_s
+        )
+        try:
+            channel.post(
+                CLIENT_LEAVE_PATH, {"id": binding["id"], "token": binding["token"]}
+            )
+            return
+        except GatewayRefusedDetail:
+            raise
+        except GatewayUnreachable as error:
+            unreachable = error
+    raise unreachable
 
 
 def _binding(raw: dict) -> dict:

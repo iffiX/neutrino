@@ -81,7 +81,7 @@ import io.github.iffix.neutrino.terminal.TerminalTabs
  * @param settings The settings in force.
  * @param onSaveSettings What saving the settings does.
  * @param hubs Every hub joined, with its virtual network and its jobs.
- * @param notices The hubs that no longer know this phone, for a minute.
+ * @param notices The hubs that no longer know this phone, until closed, a refresh, or a minute.
  * @param join The join the app core runs.
  * @param actions What the screens can do.
  * @param terminalTabs Every terminal tab.
@@ -188,6 +188,7 @@ fun AppShell(
                                     hubs,
                                     notices,
                                     onJoin = toJoin,
+                                    onCloseNotice = actions::closeNotice,
                                     onLeave = actions::leave,
                                     onReconnect = actions::reconnect,
                                     onOverlayConnect = connectOverlay,

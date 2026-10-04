@@ -365,13 +365,26 @@ class ClientResident:
         """What the page shows above the hubs for a while.
 
         Returns:
-            ``[{code, params}]``, the newest last.
+            ``[{id, code, params}]``, the newest last.
         """
         with self._lock:
             return [
-                {"code": notice["code"], "params": dict(notice["params"])}
+                {
+                    "id": notice["id"],
+                    "code": notice["code"],
+                    "params": dict(notice["params"]),
+                }
                 for notice in self._notices
             ]
+
+    def close_notice(self, notice_id: str) -> None:
+        """Take one notice down before its minute is over; an id no notice
+        holds changes nothing.
+
+        Args:
+            notice_id: The notice's ``id``.
+        """
+        self._drop_notice(notice_id)
 
     def entry_rows(self) -> list:
         """The service entries of every connected hub, each with its job.
@@ -619,8 +632,9 @@ class ClientResident:
     def disconnect(self, hub_id: str = "") -> None:
         """Leave one hub and let go of everything it published.
 
-        The binding goes first and the hub is told after, from a thread of
-        its own; one that cannot be reached does not hold the person there.
+        The binding, the session, its forwards, mounts, viewers and network
+        go here and now; the hub is told once after, from a thread of its
+        own, and its answer, or none, changes nothing.
 
         Args:
             hub_id: The hub to leave, by its id or by its binding's id;
@@ -629,6 +643,8 @@ class ClientResident:
         Raises:
             KeyError: If ``hub_id`` names no hub this person has joined, or
                 is empty while several are.
+            OSError: When the binding file cannot be written; nothing is
+                let go of then.
         """
         session = self._session_for(hub_id)
         binding = session.binding()
@@ -645,7 +661,8 @@ class ClientResident:
         self._log("left the hub")
 
     def leave(self, hub_id: str = "") -> None:
-        """Start leaving one hub: the row shows it at once, and goes once done.
+        """Start leaving one hub: the row shows it at once, and goes once the
+        binding is forgotten, which never waits on the hub.
 
         A second press while the hub is being left is dropped and logged.
 
@@ -673,12 +690,15 @@ class ClientResident:
         Each connected, connecting or down hub loses its error line and its
         virtual network's error, its entries lose theirs, and it waits as
         refreshing until its answer; a replaced or disabled hub is left as
-        it is. A press while any hub still refreshes is dropped and logged.
+        it is. Every notice goes. A press while any hub still refreshes
+        asks no hub again and is logged.
         """
         with self._lock:
             sessions = list(self._sessions.values())
+            self._notices = []
         if any(session.is_refreshing() for session in sessions):
             self._log("a refresh while one runs was dropped")
+            self.notify()
             return
         for session in sessions:
             if not session.refresh():
@@ -1466,11 +1486,12 @@ class ClientResident:
         self.notify()
 
     def _leave_now(self, session: ClientHubSession) -> None:
-        """Leave one hub; a leave that cannot finish puts the row back."""
+        """Leave one hub; only a binding file that cannot be written keeps
+        the row, and a hub already gone is logged."""
         try:
             self.disconnect(session.binding_id)
         except (KeyError, OSError) as error:
-            self._log(f"could not leave the hub: {error}")
+            self._log(f"could not forget the binding here: {error}")
             with self._lock:
                 self._leaving.discard(session.local_key)
             self.notify()

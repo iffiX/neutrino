@@ -158,6 +158,7 @@
   "ui.new_folder_name": "Name of the new folder:",
   "ui.no_hubs": "No hub joined yet",
   "ui.not_attached": "not mounted",
+  "ui.notice_close": "Close this notice",
   "ui.open": "Open",
   "ui.open_local": "Open locally",
   "ui.overlay": "Virtual network",
