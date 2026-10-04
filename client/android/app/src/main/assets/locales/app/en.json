@@ -1,19 +1,14 @@
 {
   "code": {
-    "admission_paused": "The hub has paused new joins; this phone tries again in {retry_after_s} s.",
-    "connect_failed": "The hub could not reach the service ({reason}).",
-    "connect_limit": "This phone already has {limit} connections open through the hub.",
     "disconnect_first": "Disconnect first to change the local port.",
     "forward_failed": "The port could not be forwarded: {detail}",
     "overlay_wish_unsaved": "the virtual network choice could not be saved",
-    "port_not_published": "That machine does not publish port {port} now.",
     "rdp_closed": "The connection ended: {reason}",
     "rdp_core_missing": "This build has no remote desktop.",
     "rdp_login_failed": "The machine refused the access password.",
     "verb_unknown": "the hub does not know this command; update the hub"
   },
   "ui": {
-    "ai_needs_client": "Apps on this phone reach the gateway only while this app runs.",
     "back": "Back",
     "camera_allow": "Allow the camera",
     "camera_refused": "The camera is not allowed; paste the link below.",
@@ -31,7 +26,6 @@
     "open_in_files": "Open in Files",
     "or": "or",
     "overlay_count": "This hub publishes {count} virtual networks",
-    "panel": "Panel",
     "password_not_saved": "Password not saved",
     "paste": "Paste",
     "rdp_codec": "Codec",
@@ -51,15 +45,6 @@
     "scan_press": "Press Scan to use the camera.",
     "share_login_needed": "Give this share's password on the Files screen first.",
     "share_reconnecting": "Reconnecting…",
-    "state": {
-      "connected_through": "Connected · {way}"
-    },
-    "terminal_detached": "Detached; waiting for the hub",
-    "through": {
-      "easytier": "EasyTier",
-      "lan": "LAN",
-      "netbird": "NetBird",
-      "relay": "Relay"
-    }
+    "terminal_detached": "Detached; waiting for the hub"
   }
 }

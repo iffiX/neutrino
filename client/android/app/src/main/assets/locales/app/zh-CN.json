@@ -1,19 +1,14 @@
 {
   "code": {
-    "admission_paused": "中枢暂停了新的加入；本机 {retry_after_s} 秒后再试。",
-    "connect_failed": "中枢连不上那个服务（{reason}）。",
-    "connect_limit": "本机经中枢开着的连接已有 {limit} 条。",
     "disconnect_first": "先断开，才能改本地端口。",
     "forward_failed": "端口没能转发：{detail}",
     "overlay_wish_unsaved": "虚拟网的选择没能保存",
-    "port_not_published": "那台机器现在没有发布端口 {port}。",
     "rdp_closed": "连接已结束：{reason}",
     "rdp_core_missing": "这个版本没有远程桌面。",
     "rdp_login_failed": "对方机器拒绝了访问密码。",
     "verb_unknown": "中枢不认识这个命令，请先更新中枢"
   },
   "ui": {
-    "ai_needs_client": "本机上的应用只有在此应用运行时才能连到网关。",
     "back": "返回",
     "camera_allow": "允许使用相机",
     "camera_refused": "没有相机权限，请在下面粘贴链接。",
@@ -31,7 +26,6 @@
     "open_in_files": "在“文件”中打开",
     "or": "或",
     "overlay_count": "此中枢发布了 {count} 个虚拟网",
-    "panel": "面板",
     "password_not_saved": "未存密码",
     "paste": "粘贴",
     "rdp_codec": "编码",
@@ -51,15 +45,6 @@
     "scan_press": "按“扫码”使用相机。",
     "share_login_needed": "请先在文件页输入这个共享的密码。",
     "share_reconnecting": "正在重新连接…",
-    "state": {
-      "connected_through": "已连接 · {way}"
-    },
-    "terminal_detached": "已断开，正在等待中枢",
-    "through": {
-      "easytier": "EasyTier",
-      "lan": "局域网",
-      "netbird": "NetBird",
-      "relay": "中继"
-    }
+    "terminal_detached": "已断开，正在等待中枢"
   }
 }
