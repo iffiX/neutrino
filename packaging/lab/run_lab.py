@@ -43,10 +43,6 @@ LAB_HUB = "nmxhub"
 LAB_SUITE_DIR = "/opt/integration"
 LAB_LIBVIRT_URI = "qemu:///system"
 
-# The direct resolver the lifecycle run gives the hub. The lab's way out
-# drops UDP queries to the product's default, 223.5.5.5, and this one answers.
-LAB_DIRECT_DNS = "119.29.29.29"  # scan: allow
-
 # What a run prints at the start of each phase.
 PHASE_LINE = re.compile(r"^== .+ ==")
 
@@ -111,7 +107,7 @@ def main() -> int:
         _push_suite(lab, package, environment)
         _say(f"running {script.split()[0]}")
         phases, failed = _run_on_hub(
-            f"NEUTRINO_DIRECT_DNS={LAB_DIRECT_DNS} bash {LAB_SUITE_DIR}/{script}",
+            f"bash {LAB_SUITE_DIR}/{script}",
             environment,
         )
         _say(f"{name} done: {phases} phases, {failed} failed")

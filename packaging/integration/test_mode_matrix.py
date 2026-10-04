@@ -30,6 +30,9 @@ XRAY_CONF = Path("/var/lib/neutrino/hub/generated/xray_config.json")
 LEASE_FILE = Path("/var/lib/misc/dnsmasq.leases")
 STOOD_DOWN = Path("/var/lib/neutrino/hub/stood_down.json")
 SETTLE_LIMIT_S = 30.0
+# The panel reads the uplinks' leases again every half minute.
+RESOLVER_LIMIT_S = 75.0
+FALLBACK_RESOLVERS = ["223.5.5.5", "119.29.29.29"]  # scan: allow
 LEASE_LIMIT_S = 180.0
 
 
@@ -64,6 +67,20 @@ def device_exists(device: str) -> bool:
 
 def dnsmasq_conf() -> str:
     return DNSMASQ_CONF.read_text(encoding="utf-8")
+
+
+def dnsmasq_servers() -> list:
+    return [line for line in dnsmasq_conf().splitlines() if line.startswith("server=")]
+
+
+def lease_resolvers(device: str) -> list:
+    """What the uplink's DHCP lease names as its resolvers, as dhcpcd says."""
+    dump = machine_state.run(["dhcpcd", "--dumplease", "-4", device])
+    for line in dump.splitlines():
+        name, _, value = line.partition("=")
+        if name.strip() == "domain_name_servers":
+            return value.strip().strip("'").split()
+    return []
 
 
 def masquerades_out_of(device: str) -> bool:
@@ -323,6 +340,28 @@ def test_a_client_on_the_served_wire_takes_a_lease(wiring):
             return False
 
     until(leased, limit_s=LEASE_LIMIT_S, message="no lease was ever handed out")
+
+
+def test_the_served_network_resolves_at_the_uplinks_lease(panel, wiring):
+    """With the LAN scope off, dnsmasq forwards to the resolvers the uplink's
+    DHCP lease names, and the Network page shows the same list."""
+    if wiring["lan"] is None:
+        pytest.skip("this box serves no network")
+    put_proxy(panel, is_proxy_enabled=False)
+    leased = lease_resolvers(wiring["way_in"])
+    expected = [f"server={address}#53" for address in leased or FALLBACK_RESOLVERS]
+
+    def shown() -> list:
+        for entry in panel.read("/hub/network")["interfaces"]:
+            if entry["settings"]["name"] == wiring["way_in"]:
+                return entry["link"]["lease_dns"]
+        return []
+
+    until(
+        lambda: dnsmasq_servers() == expected and shown() == leased,
+        limit_s=RESOLVER_LIMIT_S,
+        message=f"dnsmasq forwards to {dnsmasq_servers()}, the lease names {leased}",
+    )
 
 
 def test_the_router_diverts_its_lan_and_itself(panel, wiring):

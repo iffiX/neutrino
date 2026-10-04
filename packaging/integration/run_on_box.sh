@@ -3,9 +3,6 @@
 #
 #   run_on_box.sh <package file> [server|side_gateway|router]
 #
-# NEUTRINO_DIRECT_DNS, when set, is the direct resolver each setup is given
-# afterwards, for a network on which the default one does not answer.
-#
 # The package file keeps its release name, neutrino-hub_<version>_<arch>.deb
 # for a deb: `nhub update --package` reads the version off the name. Push it
 # to /tmp/$(basename "$PACKAGE") rather than to a shorter name.
@@ -77,41 +74,6 @@ panel_scheme() {
     done
     echo "  the HTTP port never answered as $wanted wants"
     return 1
-}
-
-# Name the direct resolver NEUTRINO_DIRECT_DNS gives, through the Proxy page's
-# own routes, the way a person on a network that drops the default one would.
-# Without the variable the box keeps the default.
-direct_dns() {
-    [ -n "${NEUTRINO_DIRECT_DNS:-}" ] || return 0
-    python3 - "$HERE" "$PASSWORD" "$NEUTRINO_DIRECT_DNS" <<'PY'
-import json
-import sys
-import time
-
-sys.path.insert(0, sys.argv[1])
-from panel_client import PanelClient
-
-settings = json.load(open("/etc/neutrino/hub/web/settings.json"))
-panel = PanelClient(base_url=f"http://127.0.0.1:{settings.get('listen_port', 8080)}")
-for attempt in range(60):
-    try:
-        panel.sign_in(sys.argv[2])
-        break
-    except RuntimeError:
-        if attempt == 59:
-            raise
-        time.sleep(1)
-body = dict(panel.read("/hub/proxy"))
-body["direct_dns"] = {"address": sys.argv[3], "port": 53}
-status, answer = panel.call("POST", "/hub/proxy/set", body)
-if status != 200:
-    sys.exit(f"  the proxy settings were refused: {answer}")
-status, answer = panel.call("POST", "/hub/proxy/apply")
-if status != 200 or not answer.get("is_applied"):
-    sys.exit(f"  the apply failed: {answer}")
-print(f"  direct resolver {sys.argv[3]}")
-PY
 }
 
 phase "the machine as it arrived"
@@ -199,8 +161,6 @@ phase "set up as a $MODE"
 write_answers
 nhub setup --stdin < /tmp/answers.json > /tmp/setup.log 2>&1
 ran $?
-direct_dns
-ran $?
 
 phase "the machine is still its own"
 python3 -m pytest "$HERE/test_install_footprint.py" -q
@@ -237,8 +197,6 @@ ran $?
 phase "set up again, on the box that was just handed back"
 write_answers
 nhub setup --stdin < /tmp/answers.json > /tmp/setup2.log 2>&1
-ran $?
-direct_dns
 ran $?
 
 # Last, and it leaves the box a router with a served network on whatever it

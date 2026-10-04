@@ -244,9 +244,29 @@ def test_the_direct_lists_can_be_emptied(panel):
     [{"address": "not.an.address", "port": 53}, {"address": "223.5.5.5", "port": 0}],
 )
 def test_a_resolver_that_cannot_be_asked_is_refused(panel, resolver):
-    body = routing_body(panel, direct_dns=resolver)
+    body = routing_body(panel, direct_dns=[resolver])
 
     assert panel.status("POST", "/hub/proxy/set", body) == 400
+
+
+def test_an_empty_remote_list_is_refused(panel):
+    body = routing_body(panel, remote_dns=[])
+
+    assert panel.status("POST", "/hub/proxy/set", body) == 400
+
+
+def test_both_resolver_lists_keep_several_rows_in_order(panel):
+    rows = [{"address": "8.8.8.8", "port": 53}, {"address": "1.1.1.1", "port": 53}]
+    before = dict(panel.read("/hub/proxy"))
+    body = routing_body(panel, remote_dns=rows, direct_dns=rows[::-1])
+
+    try:
+        assert panel.status("POST", "/hub/proxy/set", body) == 200
+        saved = panel.read("/hub/proxy")
+        assert saved["remote_dns"] == rows
+        assert saved["direct_dns"] == rows[::-1]
+    finally:
+        assert panel.status("POST", "/hub/proxy/set", before) == 200
 
 
 def test_applying_with_nothing_to_apply_succeeds(panel):
