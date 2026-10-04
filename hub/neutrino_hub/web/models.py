@@ -570,6 +570,8 @@ class KeyView(BaseModel):
     has_passphrase: bool
     created_at: str
     device_count: int = 0
+    # Whether config/overlay/relay.json names this key.
+    is_relay_key: bool = False
 
 
 class KeyListView(BaseModel):
@@ -2431,6 +2433,36 @@ class OverlayChoiceRequest(BaseModel):
 
     netbird: OverlayEngineSwitch | None = None
     easytier: OverlayEngineSwitch | None = None
+    relay: OverlayEngineSwitch | None = None
+
+
+class RelayView(BaseModel):
+    """The relay: its settings and where it stands."""
+
+    is_enabled: bool
+    host: str
+    ssh_port: int
+    account: str
+    key_id: str
+    public_port: int
+    # The address the relay adds to ``urls``; empty while not configured.
+    url: str = ""
+    state: str
+    # The recorded host key as ``SHA256:<base64>``; empty when none is.
+    host_key_fingerprint: str = ""
+    last_error: str = ""
+    # The last check's time in ISO 8601; empty before the first.
+    checked_at: str = ""
+
+
+class RelaySetRequest(BaseModel):
+    """The relay's settings, stored at once."""
+
+    host: str
+    ssh_port: int
+    account: str
+    key_id: str
+    public_port: int
 
 
 class NetbirdPeerView(BaseModel):

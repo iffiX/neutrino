@@ -17,6 +17,7 @@ import pytest
 
 from neutrino_hub.cli import run
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
+from neutrino_hub.web.agent_port import AgentPortProtocol
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
 
 TLS = {"ssl_certfile": "/state/cert.pem", "ssl_keyfile": "/state/key.pem"}
@@ -65,6 +66,10 @@ def served(monkeypatch):
     monkeypatch.setattr(run, "_configured_https_port", lambda: 443)
     monkeypatch.setattr(run, "_configured_agent_port", lambda: 8443)
     monkeypatch.setattr(run, "watch_served_context", recorded["watched"].append)
+    monkeypatch.setattr(run, "_agent_port_guard", lambda: "guard")
+    monkeypatch.setattr(
+        run, "agent_port_context", lambda cert, key: f"context of {cert} {key}"
+    )
     return recorded
 
 
@@ -95,7 +100,13 @@ def test_only_the_https_and_agent_ports_speak_tls(served, monkeypatch):
     assert "ssl_certfile" not in http
     assert https["ssl_certfile"] == TLS["ssl_certfile"]
     assert https["ssl_keyfile"] == TLS["ssl_keyfile"]
-    assert agent["ssl_certfile"] == str(run.WEB_AGENT_TLS_CERT_PATH)
+    assert "ssl_certfile" not in agent
+    gate = agent["http"]
+    assert gate.func is AgentPortProtocol
+    assert gate.keywords == {
+        "guard": "guard",
+        "ssl_context": f"context of {run.WEB_AGENT_TLS_CERT_PATH} /state/agent_key.pem",
+    }
 
 
 def test_the_https_context_is_the_one_a_renewal_reloads(served, monkeypatch):

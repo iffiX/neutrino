@@ -146,3 +146,61 @@ def test_linux_hands_out_the_systemd_controller_once(monkeypatch):
     assert isinstance(controller, SystemdServiceController)
     assert isinstance(controller, ProcessController)
     assert detect.process_controller() is controller
+
+
+def test_the_relay_is_a_unit_of_its_own(systemctl):
+    SystemdServiceController().control("relay", "restart")
+
+    assert systemctl == [["systemctl", "restart", "neutrino_hub_relay.service"]]
+
+
+def test_the_process_id_is_the_units_main_pid(monkeypatch):
+    answers = {"MainPID": "4242"}
+
+    def fake_run(command, **keywords):
+        return _Result("".join(f"{key}={value}\n" for key, value in answers.items()))
+
+    monkeypatch.setattr(systemd_ctl, "run", fake_run)
+
+    assert SystemdServiceController().process_id("relay") == 4242
+    answers["MainPID"] = "0"
+    assert SystemdServiceController().process_id("relay") == 0
+
+
+def test_the_run_output_is_the_last_main_process_lines_alone(monkeypatch):
+    calls: list = []
+
+    def fake_run(command, **keywords):
+        calls.append(list(command))
+        if command[0] == "systemctl":
+            return _Result("ExecMainPID=777\n")
+        return _Result("Warning: Permanently added\nrelay@vps: Permission denied\n")
+
+    monkeypatch.setattr(systemd_ctl, "run", fake_run)
+
+    lines = SystemdServiceController().run_output("relay", line_count=20)
+
+    assert lines == ["Warning: Permanently added", "relay@vps: Permission denied"]
+    assert calls[1] == [
+        "journalctl",
+        "_SYSTEMD_UNIT=neutrino_hub_relay.service",
+        "_PID=777",
+        "-n",
+        "20",
+        "--no-pager",
+        "--output",
+        "cat",
+    ]
+
+
+def test_a_unit_that_never_ran_has_no_run_output(monkeypatch):
+    calls: list = []
+
+    def fake_run(command, **keywords):
+        calls.append(list(command))
+        return _Result("ExecMainPID=0\n")
+
+    monkeypatch.setattr(systemd_ctl, "run", fake_run)
+
+    assert SystemdServiceController().run_output("relay", line_count=20) == []
+    assert [call[0] for call in calls] == ["systemctl"]

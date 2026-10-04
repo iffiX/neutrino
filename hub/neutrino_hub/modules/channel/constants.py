@@ -103,6 +103,17 @@ CHANNEL_CONNECT_DIAL_TIMEOUT_S = 10.0
 CHANNEL_CONNECT_STREAMS_MAX = 256
 # The loopback address the hub dials its own gateway and panel on.
 CHANNEL_CONNECT_LOOPBACK = "127.0.0.1"
+# The agent port's limits, each over the whole port and never per peer
+# address (network.md, "The agent port's limits"): a TLS handshake's time,
+# the time from accept to an admitted hello, the connections not yet past
+# hello, the sockets past it, and the failed admissions within the window
+# that pause join.
+CHANNEL_TLS_HANDSHAKE_TIMEOUT_S = 10.0
+CHANNEL_ADMISSION_TIMEOUT_S = 30.0
+CHANNEL_UNADMITTED_MAX = 128
+CHANNEL_SOCKETS_MAX = 512
+CHANNEL_ADMISSION_FAILURES_MAX = 30
+CHANNEL_ADMISSION_WINDOW_S = 60.0
 
 # The codes a refusal or a close carries.
 CHANNEL_CODE_PROTOCOL_TOO_OLD = "protocol_too_old"
@@ -121,6 +132,10 @@ CHANNEL_CODE_TICKET_SPENT = "ticket_spent"
 CHANNEL_CODE_ROLE_MISMATCH = "role_mismatch"
 # A first frame that is late, not text, not a hello, or not one this hub reads.
 CHANNEL_CODE_HELLO_INVALID = "hello_invalid"
+# A hello past the cap on channel sockets, and a join while failed
+# admissions are at their limit.
+CHANNEL_CODE_CHANNEL_FULL = "channel_full"
+CHANNEL_CODE_ADMISSION_PAUSED = "admission_paused"
 # What a request gets when the machine it went to never answered it: the
 # stream ran out of time, or the loop did. It is a display code, worded by
 # the panel as the word for a machine that has not reported.
