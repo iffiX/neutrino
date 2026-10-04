@@ -27,7 +27,7 @@ title: 模块
 | **Gitea**       | amd64 和 arm64                    | 不支持              | 不支持              |
 | **Containers**  | 支持                              | 不支持              | 不支持              |
 | **ZFS storage** | 支持                              | 不支持              | 不支持              |
-| **VS Code**     | amd64 和 arm64，glibc 2.28 及以上 | amd64               | Apple 芯片          |
+| **VS Code**     | amd64 和 arm64，glibc 2.28 及以上 | amd64               | Apple 芯片和 Intel  |
 | **code-server** | amd64 和 arm64，glibc 2.28 及以上 | 不支持              | Apple 芯片和 Intel  |
 | **CloudCLI**    | amd64 和 arm64，glibc 2.28 及以上 | amd64 和 arm64      | Apple 芯片和 Intel  |
 

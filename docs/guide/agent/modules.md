@@ -27,7 +27,7 @@ A module the machine's system cannot run is greyed out in the list and never sho
 | **Gitea**       | amd64 and arm64                           | no                          | no                          |
 | **Containers**  | yes                                       | no                          | no                          |
 | **ZFS storage** | yes                                       | no                          | no                          |
-| **VS Code**     | amd64 and arm64, with glibc 2.28 or newer | amd64                       | Apple silicon               |
+| **VS Code**     | amd64 and arm64, with glibc 2.28 or newer | amd64                       | Apple silicon and Intel     |
 | **code-server** | amd64 and arm64, with glibc 2.28 or newer | no                          | Apple silicon and Intel     |
 | **CloudCLI**    | amd64 and arm64, with glibc 2.28 or newer | amd64 and arm64             | Apple silicon and Intel     |
 

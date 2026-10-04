@@ -10,7 +10,7 @@ The **VS Code** module runs VS Code in the browser on a managed machine, one ins
 | ------- | ----------------------------------------- |
 | Linux   | amd64 and arm64, with glibc 2.28 or newer |
 | Windows | amd64                                     |
-| macOS   | Apple silicon                             |
+| macOS   | Apple silicon and Intel                   |
 
 ## Turn it on
 
