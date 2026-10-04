@@ -11,7 +11,8 @@ configuration directory; a file of
 the older single-binding shape reads as no bindings, and a binding without
 the address list reads as one with none. The candidates of a connection
 round, the hub's name in a stored address's scheme and port, and the notes
-a session writes onto its binding are pinned here too. The link's overlay
+a session writes onto its binding are pinned here too, as is the leave told
+to each address in turn within its short time. The link's overlay
 objects are kept on the binding in the hub's order with only their
 providers' own fields, one per provider, an unknown provider dropped; the
 wish and the pick are kept per binding.
@@ -27,13 +28,22 @@ import neutrino_client.core.channel as channel
 import neutrino_client.core.enrollment as enrollment
 import neutrino_client.core.files as files
 from neutrino_client import CLIENT_VERSION
-from neutrino_client.constants import CLIENT_JOIN_PATH, CLIENT_LEAVE_PATH, PROTOCOL
+from neutrino_client.constants import (
+    CLIENT_JOIN_PATH,
+    CLIENT_LEAVE_PATH,
+    CLIENT_LEAVE_TELL_TIMEOUT_S,
+    PROTOCOL,
+)
 from neutrino_client.core.enrollment import (
     default_source_address,
     parse_link,
     resolve_hub_address,
 )
-from neutrino_client.exceptions import EnrollmentError
+from neutrino_client.exceptions import (
+    EnrollmentError,
+    GatewayRefused,
+    GatewayUnreachable,
+)
 from tests.conftest import BINDING, link_for
 
 SECOND = dict(
@@ -466,11 +476,11 @@ def test_leave_posts_the_id_and_the_token_and_keeps_the_binding(monkeypatch):
     assert enrollment.bindings() == [BINDING]
 
 
-def test_leave_pins_the_bindings_own_fingerprint(monkeypatch):
+def test_leave_pins_the_bindings_own_fingerprint_with_the_short_timeout(monkeypatch):
     made = []
 
-    def __init__(self, *, gateway_url, fingerprint=""):
-        made.append((gateway_url, fingerprint))
+    def __init__(self, *, gateway_url, fingerprint="", timeout=0):
+        made.append((gateway_url, fingerprint, timeout))
         self._gateway_url = gateway_url
         self._fingerprint = fingerprint
 
@@ -479,7 +489,49 @@ def test_leave_pins_the_bindings_own_fingerprint(monkeypatch):
 
     enrollment.leave(dict(SECOND, fingerprint="cd" * 32))
 
-    assert made == [("https://office.lan:8443", "cd" * 32)]
+    ((url, fingerprint, timeout),) = made
+    assert (url, fingerprint) == ("https://office.lan:8443", "cd" * 32)
+    assert 0 < timeout <= CLIENT_LEAVE_TELL_TIMEOUT_S
+
+
+def test_leave_tries_the_next_address_only_while_none_answers(monkeypatch):
+    tried = []
+
+    def post(self, path, payload):
+        tried.append(self._gateway_url)
+        if self._gateway_url == "https://office.lan:8443":
+            raise GatewayUnreachable("cannot reach hub")
+        raise GatewayRefused("401")
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
+    binding = dict(
+        SECOND,
+        fingerprint="cd" * 32,
+        gateway_urls=["https://10.0.0.1:8443", "https://10.0.0.2:8443"],
+    )
+
+    with pytest.raises(GatewayRefused):
+        enrollment.leave(binding)
+
+    assert tried == ["https://office.lan:8443", "https://10.0.0.1:8443"]
+
+
+def test_leave_gives_up_once_its_time_is_spent(monkeypatch):
+    tried = []
+    clock = iter([0.0, 0.0, CLIENT_LEAVE_TELL_TIMEOUT_S + 1])
+
+    def post(self, path, payload):
+        tried.append(self._gateway_url)
+        raise GatewayUnreachable("cannot reach hub")
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
+    monkeypatch.setattr(enrollment.time, "monotonic", lambda: next(clock))
+    binding = dict(SECOND, fingerprint="cd" * 32, gateway_urls=["https://b:8443"])
+
+    with pytest.raises(GatewayUnreachable):
+        enrollment.leave(binding)
+
+    assert tried == ["https://office.lan:8443"]
 
 
 # --- the bindings kept ---

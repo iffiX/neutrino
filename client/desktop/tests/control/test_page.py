@@ -971,9 +971,16 @@ def test_the_join_button_shows_joining_and_a_refusal_under_the_input():
     assert "error: joinError ? wordCode(joinError.code, joinError.params) : ''," in row
 
 
-def test_a_notice_stands_above_the_hubs():
+def test_a_notice_stands_above_the_hubs_with_a_close_button():
     hubs = body_of("drawHubs")
-    assert "for (const notice of state.notices || []) {" in hubs
+    assert (
+        "for (const notice of state.notices || []) card.appendChild(noticeLine(notice));"
+        in hubs
+    )
+    line = body_of("noticeLine")
+    assert "errorLine(wordCode(notice.code, notice.params))" in line
+    assert "close.title = t('ui.notice_close');" in line
+    assert "close.onclick = () => send('/api/notice/close', { id: notice.id });" in line
 
 
 def test_the_hub_stage_shows_the_seconds_waited_by_the_pages_own_clock():

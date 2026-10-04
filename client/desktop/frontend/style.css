@@ -162,6 +162,11 @@ button.danger.armed { border-color: var(--color-error); background: var(--color-
 .overlay_pick .picker_field { padding: 5px 8px 5px 10px; font-size: 12px;
         color: var(--color-text-muted); }
 .err { color: var(--color-error); font-size: 12px; }
+/* A page-wide notice above the hubs, its close button at the end. */
+.notice { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+button.notice_close { padding: 2px 6px; border: none; background: none;
+                      color: var(--color-text-muted); font-size: 14px; }
+button.notice_close:hover { color: var(--color-error); }
 
 /* The terminals page, after the hub panel's: it fills the content's height,
    the machine strip on top and the panel of open shells under it. Each pane

@@ -57,6 +57,8 @@ CLIENT_SHELL_STOP_VERB = "stop_session"
 # How often an unbound resident looks at its configuration again.
 CLIENT_IDLE_POLL_INTERVAL_S = 2
 CLIENT_REQUEST_TIMEOUT_S = 10
+# How long telling a hub of a leave may take in all, after the binding is gone.
+CLIENT_LEAVE_TELL_TIMEOUT_S = 5
 CLIENT_BACKOFF_MIN_S = 5
 CLIENT_BACKOFF_MAX_S = 60
 # How long a refresh waits for a hub's answer before it ends by itself.

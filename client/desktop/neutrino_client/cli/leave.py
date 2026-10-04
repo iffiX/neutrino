@@ -1,9 +1,9 @@
 """``nclient leave``: leave one hub.
 
-The hub is told first, but one that cannot be reached does not hold the
-person: the binding goes either way. The binding file has one writer at a
-time, so a running resident is asked to leave and lets go of everything
-that hub published; with none running the leaving happens here.
+The binding goes first, and the hub is told once after, from a thread of
+its own; its answer, or none, changes nothing. The binding file has one
+writer at a time, so a running resident is asked to leave and lets go of
+everything that hub published; with none running the leaving happens here.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -11,6 +11,7 @@ that hub published; with none running the leaving happens here.
 from __future__ import annotations
 
 import sys
+import threading
 
 from neutrino_client.cli import wording
 from neutrino_client.core import enrollment
@@ -32,6 +33,10 @@ def main(hub: str = "") -> int:
 
     Returns:
         Process exit status: 0 when the hub is left, 1 otherwise.
+
+    Raises:
+        OSError: When no resident runs and the binding file cannot be
+            written.
     """
     state = wording.resident_state()
     if state is None:
@@ -51,13 +56,21 @@ def _leave_here(hub: str) -> int:
     binding = wording.choose_hub(enrollment.bindings(), hub)
     if binding is None:
         return 1
+    enrollment.remove_binding(binding["id"])
+    print(LEAVE_WORDS.format(hub=wording.hub_name(binding)))
+    if binding.get("is_pending") is not True:
+        threading.Thread(
+            target=_tell_hub_left, args=(binding,), name="client_leave"
+        ).start()
+    return 0
+
+
+def _tell_hub_left(binding: dict) -> None:
+    """Post the leave to the hub; any answer, or none, is let go."""
     try:
         enrollment.leave(binding)
     except (GatewayRefused, GatewayUnreachable, GatewayUntrusted):
         pass
-    enrollment.remove_binding(binding["id"])
-    print(LEAVE_WORDS.format(hub=wording.hub_name(binding)))
-    return 0
 
 
 def _leave_through_resident(state: dict, hub: str) -> int:

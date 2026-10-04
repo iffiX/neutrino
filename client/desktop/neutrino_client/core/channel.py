@@ -226,16 +226,24 @@ def _pinned_context() -> ssl.SSLContext:
 class GatewayHttpChannel:
     """Sends JSON requests to the hub and parses its replies."""
 
-    def __init__(self, *, gateway_url: str, fingerprint: str = ""):
+    def __init__(
+        self,
+        *,
+        gateway_url: str,
+        fingerprint: str = "",
+        timeout: float = CLIENT_REQUEST_TIMEOUT_S,
+    ):
         """
         Args:
             gateway_url: Base URL of the hub's agent port, without a trailing
                 slash.
             fingerprint: SHA-256 hex of the hub certificate's DER form.
                 Required for an ``https`` URL; ignored for plain ``http``.
+            timeout: Socket timeout of each request, in seconds.
         """
         self._gateway_url = gateway_url.rstrip("/")
         self._fingerprint = fingerprint.strip().lower()
+        self._timeout = timeout
 
     def post(self, path: str, payload: dict) -> dict:
         """Post a JSON body and return the JSON reply.
@@ -369,11 +377,9 @@ class GatewayHttpChannel:
                 host,
                 parts.port or 443,
                 fingerprint=self._fingerprint,
-                timeout=CLIENT_REQUEST_TIMEOUT_S,
+                timeout=self._timeout,
             )
-        return http.client.HTTPConnection(
-            host, parts.port or 80, timeout=CLIENT_REQUEST_TIMEOUT_S
-        )
+        return http.client.HTTPConnection(host, parts.port or 80, timeout=self._timeout)
 
 
 class _PinnedHttpsConnection(http.client.HTTPSConnection):

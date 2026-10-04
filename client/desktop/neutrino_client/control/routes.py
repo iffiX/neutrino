@@ -122,6 +122,9 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
         if route == "/api/refresh":
             resident.refresh()
             return 200, state_payload(resident)
+        if route == "/api/notice/close":
+            resident.close_notice(str(payload.get("id", "") or ""))
+            return 200, state_payload(resident)
         if route == "/api/exit/set":
             return _set_exit(resident, payload)
         if route == TERMINAL_ATTACH_ROUTE:

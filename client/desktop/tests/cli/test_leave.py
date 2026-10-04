@@ -1,11 +1,14 @@
 """``nclient leave``: leaving one of the hubs a person joined.
 
-Leaving tells the hub first, but a hub that cannot be reached does not hold
-the person: the binding goes either way. Which hub goes is the point: one
+Leaving forgets the binding first and tells the hub after, from a thread of
+its own, so a hub that is slow or cannot be reached holds nobody. Which hub
+goes is the point: one
 joined needs no name, several need ``--hub``, and a name nobody joined is
 refused. A running resident is asked to do it, so one process writes the
 binding file.
 """
+
+import threading
 
 import pytest
 
@@ -14,7 +17,7 @@ import neutrino_client.core.channel as channel
 import neutrino_client.core.enrollment as enrollment
 from neutrino_client.cli import wording
 from neutrino_client.control.server import ControlServer
-from neutrino_client.exceptions import GatewayUnreachable
+from neutrino_client.exceptions import GatewayRefused, GatewayUnreachable
 from tests.conftest import (
     BINDING,
     HUB_ROW,
@@ -23,6 +26,7 @@ from tests.conftest import (
     FakeResident,
     bind,
     discard,
+    link_for,
 )
 
 
@@ -50,7 +54,8 @@ def resident(platform):
 
 
 def posted_to(monkeypatch) -> list:
-    """What a leaving person tells the hub, recorded instead of sent."""
+    """What a leaving person tells the hub, recorded instead of sent; the
+    thread that tells it is waited for, so the list is whole."""
     posted = []
 
     def post(self, path, payload):
@@ -58,7 +63,21 @@ def posted_to(monkeypatch) -> list:
         return {}
 
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
+    monkeypatch.setattr(leave_cli, "main", joined_after(leave_cli.main))
     return posted
+
+
+def joined_after(main):
+    """``main``, then every thread it started telling a hub, finished."""
+
+    def run(*args):
+        status = main(*args)
+        for thread in threading.enumerate():
+            if thread.name == "client_leave":
+                thread.join(timeout=5)
+        return status
+
+    return run
 
 
 # --- with a resident running, it is the one writer ---
@@ -174,6 +193,43 @@ def test_an_unreachable_hub_does_not_hold_the_person(
     assert leave_cli.main() == 0
 
     assert leave_cli.LEAVE_WORDS.format(hub="home") in capsys.readouterr().out
+    assert enrollment.bindings() == []
+
+
+def test_the_binding_is_forgotten_before_the_hub_answers(
+    monkeypatch, platform, config_path, capsys
+):
+    bind(config_path, url="https://hub.lan:8443")
+    seen = []
+    hold = threading.Event()
+
+    def post(self, path, payload):
+        seen.append(enrollment.bindings())
+        hold.wait(timeout=5)
+        raise GatewayRefused("401")
+
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
+
+    status = leave_cli.main()
+    is_held = not hold.is_set()
+    bindings_now = enrollment.bindings()
+    hold.set()
+    joined_after(lambda: None)()
+
+    assert (status, is_held, bindings_now) == (0, True, [])
+    assert seen == [[]]
+    assert leave_cli.LEAVE_WORDS.format(hub="home") in capsys.readouterr().out
+
+
+def test_a_pending_binding_is_forgotten_and_no_hub_is_told(
+    monkeypatch, platform, config_path
+):
+    enrollment.enroll(link_for({"urls": ["https://hub:8443"], "token": "ticket"}))
+    posted = posted_to(monkeypatch)
+
+    assert leave_cli.main() == 0
+
+    assert posted == []
     assert enrollment.bindings() == []
 
 
