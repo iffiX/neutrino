@@ -91,6 +91,7 @@ class RecordingHandler(ServiceTypeHandler):
         cleared: How often it was asked to clear leftovers.
         refreshed: The entries of every refresh, in order.
         released_hubs: Every hub it was asked to let go of, in order.
+        withdrawn: ``(hub_id, entries)`` of every list it was told of.
         is_holding: Set while a release that hangs is held.
     """
 
@@ -107,6 +108,7 @@ class RecordingHandler(ServiceTypeHandler):
         self.cleared = 0
         self.refreshed = []
         self.released_hubs = []
+        self.withdrawn = []
         self.acted = []
         self._log = log
         self._count = count
@@ -136,6 +138,10 @@ class RecordingHandler(ServiceTypeHandler):
 
     def release_hub(self, hub_id: str):
         self.released_hubs.append(hub_id)
+        return 0
+
+    def drop_withdrawn(self, *, hub_id, entries):
+        self.withdrawn.append((hub_id, list(entries)))
         return 0
 
     def let_go(self) -> None:
@@ -328,7 +334,7 @@ def test_the_hub_rows_carry_each_sessions_standing(two_hubs_up):
         "connection": "connected",
         "is_pending": False,
         "last_error": None,
-        "is_exit": True,
+        "is_exit": False,
         "overlay": {
             "network": "",
             "networks": [],
@@ -384,6 +390,22 @@ def test_a_hubs_state_refreshes_the_ai_handler_with_the_merged_list(
 
     # The state, then the socket's end after it, each converge once.
     assert two_hubs._services["ai"].refreshed[0] == with_hub(HUB_SERVICES, "h1")
+
+
+def test_a_hubs_state_and_a_leave_tell_the_shares_what_that_hub_lists(
+    two_hubs_up, monkeypatch, config_path
+):
+    resident, _scripts = two_hubs_up
+    released_handlers(resident)
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    home = resident._sessions["c1"]
+
+    home._dispatch(ScriptedSocket([]), "text", json.dumps(HOME_STATE))
+    listed = home.service_entries()
+    resident.disconnect("h1")
+
+    assert listed
+    assert resident._services["file"].withdrawn == [("h1", listed), ("h1", [])]
 
 
 # --- leaving one hub ---
@@ -577,9 +599,10 @@ def test_disabled_releases_only_that_hubs_entries(two_hubs_up):
     )
 
 
-def test_an_action_naming_no_hub_is_the_exit_hubs(two_hubs_up):
+def test_an_action_naming_no_hub_is_the_exit_hubs(two_hubs_up, config_path):
     resident, _scripts = two_hubs_up
     released_handlers(resident)
+    resident.set_exit("h1")
     home = resident._sessions["c1"]
     made = ScriptedSocket([])
     home._dispatch(made, "text", json.dumps(dict(HOME_STATE, is_disabled=True)))
@@ -608,11 +631,11 @@ def test_an_action_reaches_its_handler_with_the_merged_list(two_hubs_up):
 # --- the exit hub ---
 
 
-def test_the_exit_is_the_chosen_hub_or_else_the_first_joined(two_hubs_up, config_path):
+def test_the_exit_is_the_chosen_hub_and_no_hub_otherwise(two_hubs_up, config_path):
     resident, _scripts = two_hubs_up
 
-    assert resident.exit_hub_id() == "h1"
-    assert [row["is_exit"] for row in resident.hubs()] == [True, False]
+    assert resident.exit_hub_id() == ""
+    assert [row["is_exit"] for row in resident.hubs()] == [False, False]
 
     enrollment.set_exit_hub_id("h2")
     resident._adopt_external_binding()
@@ -621,15 +644,14 @@ def test_the_exit_is_the_chosen_hub_or_else_the_first_joined(two_hubs_up, config
 
     enrollment.set_exit_hub_id("h9")
     resident._adopt_external_binding()
-    assert resident.exit_hub_id() == "h1"
+    assert resident.exit_hub_id() == ""
 
 
-def test_the_first_joined_binding_is_the_exit_and_the_tools_point_there(
-    two_hubs_up,
-):
+def test_the_chosen_exit_is_where_the_tools_point(two_hubs_up, config_path):
     resident, _scripts = two_hubs_up
     handler, switcher = inline_ai(resident)
 
+    assert resident.set_exit("h1") == {}
     assert resident.service_action("ai", {"is_enabled": True}) == {}
 
     assert resident.exit_hub_id() == "h1"
@@ -643,6 +665,7 @@ def test_set_exit_to_a_joined_hub_moves_the_tools_in_one_activation(
 ):
     resident, _scripts = two_hubs_up
     handler, switcher = inline_ai(resident)
+    resident.set_exit("h1")
     resident.service_action("ai", {"is_enabled": True})
 
     assert resident.set_exit("h2") == {}
@@ -677,60 +700,64 @@ def test_a_hub_that_is_not_connected_cannot_be_the_exit(two_hubs_up, config_path
         "code": "unknown_hub",
         "params": {"hub_id": "h9"},
     }
-    assert resident.exit_hub_id() == "h1"
+    assert resident.exit_hub_id() == ""
     assert enrollment.exit_hub_id() == ""
     assert switcher.calls == []
 
 
-def test_removing_the_exit_binding_moves_the_exit_and_the_tools(
+def test_leaving_the_exit_leaves_no_exit_and_puts_the_tools_back(
     two_hubs_up, monkeypatch, config_path
 ):
     resident, _scripts = two_hubs_up
     handler, switcher = inline_ai(resident)
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident.set_exit("h1")
     resident.service_action("ai", {"is_enabled": True})
 
     resident.disconnect("h1")
 
-    assert resident.exit_hub_id() == "h2"
-    assert enrollment.exit_hub_id() == "h2"
-    assert [row["is_exit"] for row in resident.hubs()] == [True]
-    assert switcher.calls == ["activate", "activate"]
-    assert switcher.base_urls == ["http://h1:8080", "http://h2:8080"]
-    assert handler._granted["hub_id"] == "h2"
+    assert resident.exit_hub_id() == ""
+    assert enrollment.exit_hub_id() == ""
+    assert [row["is_exit"] for row in resident.hubs()] == [False]
+    assert switcher.calls == ["activate", "deactivate"]
+    assert handler._granted == {}
 
 
-def test_the_exit_is_pinned_where_it_moved_and_a_rejoin_leaves_it(
+def test_a_rejoin_after_leaving_the_exit_makes_no_hub_the_exit(
     two_hubs_up, monkeypatch, config_path
 ):
     resident, scripts = two_hubs_up
     released_handlers(resident)
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident.set_exit("h1")
     resident.disconnect("h1")
-    assert enrollment.exit_hub_id() == "h2"
+    assert enrollment.exit_hub_id() == ""
 
     enrollment.add_binding(dict(BINDING, gateway_url=HOME_URL))
     resident._adopt_external_binding()
 
     assert list(sessions_of(resident)) == ["c2", "c1"]
-    assert resident.exit_hub_id() == "h2"
-    assert [row["is_exit"] for row in resident.hubs()] == [True, False]
+    assert resident.exit_hub_id() == ""
+    assert [row["is_exit"] for row in resident.hubs()] == [False, False]
 
 
-def test_a_binding_gone_from_the_file_moves_the_pinned_exit(two_hubs_up, config_path):
+def test_a_binding_gone_from_the_file_clears_the_exit(two_hubs_up, config_path):
     resident, _scripts = two_hubs_up
     released_handlers(resident)
+    resident.set_exit("h1")
     time.sleep(0.01)
     bind(config_path, bindings=[dict(OFFICE_BINDING)])
+    enrollment.set_exit_hub_id("h1")
 
     resident._adopt_external_binding()
 
-    assert resident.exit_hub_id() == "h2"
-    assert enrollment.exit_hub_id() == "h2"
+    assert resident.exit_hub_id() == ""
+    assert enrollment.exit_hub_id() == ""
 
 
-def test_binding_unknown_on_the_exit_moves_it(two_hubs, monkeypatch, config_path):
+def test_binding_unknown_on_the_exit_clears_it(two_hubs, monkeypatch, config_path):
     released_handlers(two_hubs)
+    two_hubs._pin_exit("h1")
     sockets_by_hub(
         monkeypatch,
         {
@@ -744,8 +771,8 @@ def test_binding_unknown_on_the_exit_moves_it(two_hubs, monkeypatch, config_path
 
     turn(two_hubs, "c1")
 
-    assert two_hubs.exit_hub_id() == "h2"
-    assert enrollment.exit_hub_id() == "h2"
+    assert two_hubs.exit_hub_id() == ""
+    assert enrollment.exit_hub_id() == ""
 
 
 def test_with_no_joined_hub_the_tools_are_restored(
@@ -754,6 +781,7 @@ def test_with_no_joined_hub_the_tools_are_restored(
     resident, _scripts = two_hubs_up
     handler, switcher = inline_ai(resident)
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    resident.set_exit("h1")
     resident.service_action("ai", {"is_enabled": True})
 
     resident.disconnect("h1")
@@ -761,7 +789,7 @@ def test_with_no_joined_hub_the_tools_are_restored(
 
     assert resident.exit_hub_id() == ""
     assert enrollment.exit_hub_id() == ""
-    assert switcher.calls == ["activate", "activate", "deactivate"]
+    assert switcher.calls == ["activate", "deactivate"]
     assert handler._granted == {}
     assert handler.state()["ai"]["is_enabled"] is True
     assert handler.state()["ai"]["is_active"] is False

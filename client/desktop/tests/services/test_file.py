@@ -6,7 +6,7 @@ from, the login and the path this person typed; what is attached is this
 run's own, so a record of an earlier run waits to be asked for. A declined
 authorization is typed and not retried on the timer. One hub's records are
 let go of without touching another's, two hubs cannot share one mount
-point, and a record an older build wrote without a hub is unmounted by path
+point, a failed record holds none, and a record an older build wrote without a hub is unmounted by path
 and dropped at start. A mount follows the host its entry names now, and a
 record whose entry moved is written back; an absent entry leaves it alone.
 """
@@ -526,6 +526,35 @@ def test_two_hubs_cannot_claim_one_mount_point(service):
     assert refused == {"code": "mountpoint_in_use", "params": {"path": location}}
     assert [record["hub_id"] for record in store.mounts().values()] == ["h1"]
     assert len(platform.attach_calls) == 1
+
+
+def test_a_failed_record_holds_no_place(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+    platform.attach_error = ShareAttachError("share_not_found", "")
+    assert attach(subject, path=location) == {}
+    assert subject.rows()[0]["state"] == "failed"
+    platform.attach_error = None
+
+    assert attach(subject, path=location, hub_id="h2") == {}
+
+    assert [record["hub_id"] for record in store.mounts().values()] == ["h2"]
+    assert platform.attached == {location}
+
+
+def test_a_failed_record_whose_entry_left_the_list_is_dropped(service):
+    subject, platform, store, tmp_path = service
+    platform.attach_error = ShareAttachError("share_not_found", "")
+    assert attach(subject, path=str(tmp_path / "home")) == {}
+    platform.attach_error = None
+    assert attach(subject, path=str(tmp_path / "office"), hub_id="h2") == {}
+
+    assert subject.drop_withdrawn(hub_id="h1", entries=[entry_for(PAYLOAD)]) == 0
+    assert subject.drop_withdrawn(hub_id="h2", entries=[]) == 0
+    assert subject.drop_withdrawn(hub_id="h1", entries=[]) == 1
+
+    assert [record["hub_id"] for record in store.mounts().values()] == ["h2"]
+    assert len(os.listdir(tmp_path / "config" / "mount_credentials")) == 1
 
 
 def test_reconfiguring_the_same_share_at_its_path_is_not_in_use(service):

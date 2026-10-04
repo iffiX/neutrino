@@ -306,17 +306,14 @@ class ClientResident:
         """The hub whose AI gateway this person's tools point at.
 
         Returns:
-            The chosen hub's id when it names a hub joined, otherwise the
-            first hub joined, empty while none has answered. The choice
-            follows a removed exit to that hub and is pinned there.
+            The hub the person chose, while it is a hub joined; empty when
+            nobody chose one or the chosen hub was left.
         """
         with self._lock:
             chosen = self._chosen_exit_hub_id
             sessions = list(self._sessions.values())
         hub_ids = [session.hub_id() for session in sessions]
-        if chosen and chosen in hub_ids:
-            return chosen
-        return hub_ids[0] if hub_ids else ""
+        return chosen if chosen and chosen in hub_ids else ""
 
     def hubs(self) -> list:
         """One row per hub joined, in the order joined.
@@ -1383,11 +1380,15 @@ class ClientResident:
                     table.pop(key, None)
         session.stop()
         self._release_hub(hub_id or session.binding_id, session.local_key)
+        self._services["file"].drop_withdrawn(hub_id=hub_id, entries=[])
         self._services["ai"].refresh(entries=self.service_entries())
         self.notify()
 
     def _hub_services(self, session: ClientHubSession) -> None:
-        """A hub's state arrived: the exit hub's grant and its network may have changed."""
+        """A hub's state arrived: its shares, its exit grant and its network may change."""
+        self._services["file"].drop_withdrawn(
+            hub_id=session.hub_id(), entries=session.service_entries()
+        )
         self._services["ai"].refresh(entries=self.service_entries())
         self._overlay.refresh()
 
@@ -1561,7 +1562,7 @@ class ClientResident:
             self._log(f"could not tell the hub we are leaving: {error}")
 
     def _follow_exit(self) -> None:
-        """Pin the stored choice on the hub the exit moved to, when it moved."""
+        """Clear the stored choice once the hub it names is gone."""
         effective = self.exit_hub_id()
         with self._lock:
             is_moved = effective != self._chosen_exit_hub_id
