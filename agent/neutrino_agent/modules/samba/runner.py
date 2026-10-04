@@ -208,8 +208,8 @@ class SambaNativeServerRunner(ModuleRunner):
     uninstall; the platform's applier converges the shares, the accounts
     and the fence, and loads the fence again when the runner is built. A
     root-only record under the agent's work root lists what the module
-    made. The server's state is read at most every 30 seconds and again
-    after every change.
+    made and which accounts were given a password. The server's state is
+    read at most every 30 seconds and again after every change.
     """
 
     name = "samba"
@@ -311,6 +311,11 @@ class SambaNativeServerRunner(ModuleRunner):
             {
                 "shares": {share.name: share.path for share in parsed.shares},
                 "accounts": accounts,
+                "passworded": [
+                    name
+                    for name in self._read_record()["passworded"]
+                    if name in parsed.users
+                ],
                 "is_served": True,
             }
         )
@@ -342,7 +347,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._applier.withdraw(record, is_removed=True)
         finally:
             self._forget_status()
-        self._write_record(dict(record, shares={}, is_served=False))
+        self._write_record(dict(record, shares={}, passworded=[], is_served=False))
 
     def is_active(self) -> bool:
         """Whether the server runs and serves the module's shares."""
@@ -402,7 +407,8 @@ class SambaNativeServerRunner(ModuleRunner):
             return super().command(verb, args, on_line)
         name = str(args.get("name", ""))
         config = self._config or SambaConfig()
-        if name not in config.users or name not in self._read_record()["accounts"]:
+        record = self._read_record()
+        if name not in config.users or name not in record["accounts"]:
             return command_outcome(1, "user_unknown", {"user": name})
         try:
             self._applier.set_password(name, str(args.get("password", "")))
@@ -412,6 +418,9 @@ class SambaNativeServerRunner(ModuleRunner):
             )
         finally:
             self._forget_status()
+        record = self._read_record()
+        if name not in record["passworded"]:
+            self._write_record(dict(record, passworded=record["passworded"] + [name]))
         return command_outcome(0, output=f"password set for {name}\n")
 
     def _read_status(self) -> dict:
@@ -433,7 +442,10 @@ class SambaNativeServerRunner(ModuleRunner):
             self._status = None
 
     def _read_record(self) -> dict:
-        """The record, ``{"shares", "accounts", "is_served"}``, empty when none."""
+        """The record, ``{"shares", "accounts", "passworded", "is_served"}``.
+
+        Empty when none.
+        """
         try:
             with open(self._record_path, "r", encoding="utf-8") as stream:
                 held = json.load(stream)
@@ -444,6 +456,7 @@ class SambaNativeServerRunner(ModuleRunner):
         return {
             "shares": dict(shares) if isinstance(shares, dict) else {},
             "accounts": [str(name) for name in held.get("accounts") or []],
+            "passworded": [str(name) for name in held.get("passworded") or []],
             "is_served": bool(held.get("is_served", False)),
         }
 

@@ -4,10 +4,14 @@ What these pin: smbd enabled through launchd and started only when launchd
 does not hold it; share points made with ``sharing`` under the module's
 prefix, SMB only, no guest, read-only by ``-R 1`` and never encrypted;
 accounts made without a shell or a home, hidden and put in the SMB group,
-the NT hash turned on before ``dscl -passwd``; folders granted with
-``chmod +a``; the fence a pf sub-anchor loaded from a kept file and loaded
-again at start; foreign names refused before anything is touched; and the
-status read from launchctl, the share list and lsof.
+the account enabled and the NT hash turned on before ``dscl -passwd``, and
+an account the password reaches first made by it; one share point per
+share, kept across applies, the module's duplicates removed and all of a
+name's points withdrawn; folders granted with ``chmod +a``; the fence a pf
+sub-anchor loaded from a kept file and loaded again at start; foreign names
+refused before anything is touched; and the status read from launchctl,
+the share list and lsof, a password counted only once the record says one
+was set.
 """
 
 import json
@@ -83,9 +87,17 @@ class FakeTools:
 
 
 def share_list(*points) -> str:
+    """What ``sharing -l -f json`` prints: an object keyed by record name."""
     return json.dumps(
         {
-            record: {"path": path, "smb": {"name": name, "read-only": read_only}}
+            record: {
+                "path": path,
+                "smb_name": name,
+                "smb_read_only": read_only,
+                "smb_guest_access": 0,
+                "smb_sealed": 0,
+                "smb_shared": 1,
+            }
             for record, path, name, read_only in points
         }
     )
@@ -122,6 +134,9 @@ def test_the_fence_passes_the_allowed_subnets_and_blocks_the_rest():
 def test_the_share_list_is_read_in_either_shape():
     keyed = share_list(("neutrino_media", "/m", "media", 1))
     listed = json.dumps([{"name": "Public", "path": "/Users/a/Public"}])
+    nested = json.dumps(
+        {"neutrino_media": {"path": "/m", "smb": {"name": "media", "read-only": 1}}}
+    )
 
     assert parse_share_points(keyed) == [
         {
@@ -131,6 +146,7 @@ def test_the_share_list_is_read_in_either_shape():
             "is_read_only": True,
         }
     ]
+    assert parse_share_points(nested) == parse_share_points(keyed)
     assert parse_share_points(listed)[0]["smb_name"] == "Public"
     assert parse_share_points("List of Share Points") == []
 
@@ -279,13 +295,95 @@ def test_a_share_point_that_moved_is_made_again_and_a_dropped_one_removed(
     assert "removed share gone" in notes
 
 
-def test_the_nt_hash_goes_on_before_the_password_is_set(applier, tools):
+def test_the_account_is_enabled_and_its_nt_hash_on_before_the_password(applier, tools):
+    tools.failing.discard(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
+
     applier.set_password("ann", "s3cret")
 
     assert tools.calls == [
+        ["dscl", ".", "-read", "/Users/ann", "UniqueID"],
+        ["pwpolicy", "-u", "ann", "-enableuser"],
         ["pwpolicy", "-u", "ann", "-sethashtypes", "SMB-NT", "on"],
         ["dscl", ".", "-passwd", "/Users/ann", "s3cret"],
-        ["pwpolicy", "-u", "ann", "-enableuser"],
+    ]
+
+
+def test_a_password_that_arrives_before_the_account_makes_it_first(applier, tools):
+    applier.set_password("ann", "s3cret")
+
+    (made,) = tools.ran("sysadminctl", "-addUser", "ann")
+    commands = [call[:3] for call in tools.calls]
+    assert commands.index(made[:3]) < commands.index(["dscl", ".", "-passwd"])
+    assert tools.ran("dscl", ".", "-create", "/Users/ann") == [
+        ["dscl", ".", "-create", "/Users/ann", "IsHidden", "1"]
+    ]
+    assert tools.calls[-1] == ["dscl", ".", "-passwd", "/Users/ann", "s3cret"]
+
+
+def test_a_second_apply_adds_no_share_point(applier, tools):
+    applier.apply(CONFIG, {})
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_media", "/Volumes/data/media", "media", 0),
+        ("neutrino_docs", "/Volumes/data/docs", "docs", 1),
+    )
+    tools.calls.clear()
+
+    notes = applier.apply(CONFIG, {"shares": {"media": "/x", "docs": "/y"}})
+
+    assert tools.ran("sharing", "-a") == []
+    assert tools.ran("sharing", "-r") == []
+    assert not any("share" in note for note in notes)
+
+
+def test_duplicate_points_of_a_share_heal_to_one(applier, tools):
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_media-2", "/Volumes/data/media", "media", 0),
+        ("neutrino_media", "/Volumes/data/media", "media", 0),
+        ("neutrino_media-1", "/Volumes/data/media", "media", 0),
+        ("neutrino_docs", "/Volumes/data/docs", "docs", 1),
+    )
+
+    notes = applier.apply(CONFIG, {"shares": {"media": "/x", "docs": "/y"}})
+
+    assert tools.ran("sharing", "-r") == [
+        ["sharing", "-r", "neutrino_media-2"],
+        ["sharing", "-r", "neutrino_media-1"],
+    ]
+    assert tools.ran("sharing", "-a") == []
+    assert "removed share point neutrino_media-1" in notes
+
+
+def test_duplicates_none_of_which_match_are_replaced_by_one(applier, tools):
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_media", "/old/media", "media", 0),
+        ("neutrino_media-1", "/old/media", "media", 0),
+    )
+
+    applier.apply(CONFIG, {"shares": {"media": "/old/media"}})
+
+    assert tools.ran("sharing", "-r") == [
+        ["sharing", "-r", "neutrino_media"],
+        ["sharing", "-r", "neutrino_media-1"],
+    ]
+    assert [call[2] for call in tools.ran("sharing", "-a")] == [
+        "/Volumes/data/media",
+        "/Volumes/data/docs",
+    ]
+
+
+def test_withdrawing_removes_every_point_of_the_module_s_share(applier, tools):
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_media", "/m", "media", 0),
+        ("neutrino_media-1", "/m", "media", 0),
+        ("neutrino_media-2", "/m", "media", 0),
+    )
+
+    applier.withdraw({"shares": {"media": "/m"}}, is_removed=False)
+
+    assert [call[2] for call in tools.ran("sharing", "-r")] == [
+        "neutrino_media",
+        "neutrino_media-1",
+        "neutrino_media-2",
     ]
 
 
@@ -345,7 +443,9 @@ def test_the_status_reads_launchd_the_share_list_and_lsof(applier, tools):
     )
     tools.answers[("pfctl", "-s", "info")] = "Status: Enabled\n"
 
-    status = applier.read_status({"shares": {"media": "/m"}, "accounts": ["ann"]})
+    status = applier.read_status(
+        {"shares": {"media": "/m"}, "accounts": ["ann"], "passworded": ["ann"]}
+    )
 
     assert status["is_present"] and status["is_running"]
     assert status["shares"] == [
@@ -417,3 +517,26 @@ def test_a_log_that_cannot_answer_is_an_os_error(applier, tools):
 
     with pytest.raises(OSError):
         applier.read_server_log(10)
+
+
+def test_a_user_whose_password_was_never_set_has_none(applier, tools):
+    tools.failing.discard(("dscl", ".", "-read", "/Users/ann", "UniqueID"))
+    tools.answers[("dscl", ".", "-read", "/Users/ann", "AuthenticationAuthority")] = (
+        "AuthenticationAuthority: ;ShadowHash;HASHLIST:<SALTED-SHA512-PBKDF2,SMB-NT>\n"
+    )
+
+    status = applier.read_status({"accounts": ["ann"], "passworded": []})
+
+    assert status["users"] == [
+        {"name": "ann", "is_present": True, "has_password": False}
+    ]
+
+
+def test_duplicate_points_are_one_share_in_the_status(applier, tools):
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_media", "/m", "media", 0), ("neutrino_media-1", "/m", "media", 0)
+    )
+
+    status = applier.read_status({"shares": {"media": "/m"}})
+
+    assert [share["name"] for share in status["shares"]] == ["media"]

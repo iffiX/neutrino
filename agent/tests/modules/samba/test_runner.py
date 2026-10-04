@@ -493,6 +493,7 @@ def test_an_apply_keeps_what_it_made_in_the_record(native):
     assert record_of(native) == {
         "shares": {"share": "D:\\share"},
         "accounts": ["ann"],
+        "passworded": [],
         "is_served": True,
     }
     assert native.is_active() is True
@@ -534,10 +535,20 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
 
     assert native.applier.calls[-1] == (
         "withdraw",
-        {"shares": {"share": "D:\\share"}, "accounts": ["ann"], "is_served": True},
+        {
+            "shares": {"share": "D:\\share"},
+            "accounts": ["ann"],
+            "passworded": [],
+            "is_served": True,
+        },
         False,
     )
-    assert record_of(native) == {"shares": {}, "accounts": ["ann"], "is_served": False}
+    assert record_of(native) == {
+        "shares": {},
+        "accounts": ["ann"],
+        "passworded": [],
+        "is_served": False,
+    }
     assert native.is_active() is False
 
 
@@ -561,6 +572,42 @@ def test_a_password_is_set_only_for_an_account_the_module_made(native):
 
     assert outcome["exit_code"] == 0
     assert native.applier.calls[-1] == ("set_password", "ann", "pw")
+
+
+def test_a_password_set_is_recorded_until_its_user_is_removed(native):
+    native.apply(WINDOWS_CONFIG)
+    native.command("set_password", {"name": "ann", "password": "pw"})
+    native.command("set_password", {"name": "ann", "password": "pw2"})
+
+    assert record_of(native)["passworded"] == ["ann"]
+
+    native.apply({**WINDOWS_CONFIG, "users": []})
+    assert record_of(native)["passworded"] == []
+
+    native.apply(WINDOWS_CONFIG)
+    assert record_of(native)["passworded"] == []
+
+
+def test_a_password_the_server_refused_is_not_recorded(native):
+    native.apply(WINDOWS_CONFIG)
+
+    def refuse(name, password):
+        raise OSError("eDSAuthAccountDisabled")
+
+    native.applier.set_password = refuse
+    outcome = native.command("set_password", {"name": "ann", "password": "pw"})
+
+    assert outcome["code"] == "command_failed"
+    assert record_of(native)["passworded"] == []
+
+
+def test_a_removal_forgets_every_password(native):
+    native.apply(WINDOWS_CONFIG)
+    native.command("set_password", {"name": "ann", "password": "pw"})
+
+    native.remove_configuration()
+
+    assert record_of(native)["passworded"] == []
 
 
 def test_the_server_is_read_once_per_half_minute_and_after_each_change(native):
