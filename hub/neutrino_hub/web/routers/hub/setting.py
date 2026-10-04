@@ -643,7 +643,7 @@ def _config_snapshot() -> tuple[list[str], list[tuple[str, bytes]]]:
     directories: list[str] = []
     files: list[tuple[str, bytes]] = []
     for path in sorted(UTILS_CONFIG_DIR.rglob("*")):
-        relative = str(path.relative_to(UTILS_CONFIG_DIR))
+        relative = path.relative_to(UTILS_CONFIG_DIR).as_posix()
         if path.is_dir():
             directories.append(relative)
         elif path.is_file():
@@ -793,7 +793,7 @@ def _read_archive(blob: bytes) -> dict[str, bytes]:
         blob: The uploaded file.
 
     Returns:
-        Member name to bytes, in archive order.
+        Member name, in POSIX form, to bytes, in archive order.
 
     Raises:
         HTTPException: 400 ``backup_unrecognized`` when it does not open as a
@@ -802,7 +802,7 @@ def _read_archive(blob: bytes) -> dict[str, bytes]:
     try:
         with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as archive:
             return {
-                member.name: archive.extractfile(member).read()
+                _posix_name(member.name): archive.extractfile(member).read()
                 for member in archive.getmembers()
                 if member.isreg()
             }
@@ -852,7 +852,7 @@ def _check_digests(contents: dict[str, bytes]) -> None:
         digest, _, path = line.partition("  ")
         if not digest or not path:
             raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
-        listed[path] = digest
+        listed[_posix_name(path)] = digest
     members = {
         name.partition("/")[2]: content
         for name, content in contents.items()
@@ -931,11 +931,16 @@ def _renamed_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     Raises:
         HTTPException: 400 when the member does not live under ``config``.
     """
-    root, _, rest = member.name.partition("/")
+    root, _, rest = _posix_name(member.name).partition("/")
     if root != "config":
         raise _coded_bad_request(BACKUP_ERROR_UNEXPECTED_PATH, path=member.name)
     member.name = UTILS_CONFIG_DIR.name + (f"/{rest}" if rest else "")
     return member
+
+
+def _posix_name(name: str) -> str:
+    """An archive path with a Windows hub's backslashes read as separators."""
+    return name.replace("\\", "/")
 
 
 def _checked_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
@@ -1069,9 +1074,9 @@ async def scan_release() -> HubReleaseScanView:
     """Read the newest release and how it stands to this hub.
 
     Returns:
-        The newest release, or none published; whether it is newer, a new
-        major, and whether a rollback package can be had; the room the
-        update needs and has.
+        The newest release, or none published; whether it carries a package
+        of this hub's family, whether it is newer, a new major, and whether
+        a rollback package can be had; the room the update needs and has.
 
     Raises:
         HTTPException: 409 ``hub_not_packaged`` from a checkout; 502 naming
@@ -1105,6 +1110,7 @@ async def scan_release() -> HubReleaseScanView:
             page_url=found.page_url,
             size_bytes=found.asset_size,
         ),
+        has_package=found.has_package,
         is_newer=standing != HUB_UPDATE_RELATION_CURRENT,
         is_major=standing == HUB_UPDATE_RELATION_MAJOR,
         is_rollback_available=is_rollback_available,
