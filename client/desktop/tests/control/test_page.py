@@ -261,7 +261,7 @@ def test_every_code_the_client_emits_has_a_word():
 
 def test_every_state_token_the_client_emits_has_a_word():
     assert "record.is_attached" in PAGE_JS
-    assert EN_WORDS["ui.not_attached"] == "not mounted"
+    assert EN_WORDS["ui.not_attached"] == "Not mounted"
     worded = catalog_keys("state.") | set(MOUNT_BUSY_STATES) | ATTACH_RENDERED_STATES
 
     missing = emitted_states() - worded
@@ -284,11 +284,32 @@ def test_nothing_of_the_unbind_causes_is_left():
 
 def test_the_one_refusal_that_unbinds_and_the_pin_mismatch_are_worded():
     assert EN_WORDS["code.binding_unknown"] == (
-        "this hub no longer knows this client; join it again with a new link"
+        "This hub no longer knows this client; join it again with a new link"
     )
     assert EN_WORDS["code.hub_untrusted"] == (
-        "the hub's identity changed; if it was reset, join it again"
+        "The hub's identity changed; if it was reset, join it again"
     )
+
+
+def test_every_line_a_code_or_a_row_word_draws_starts_with_a_capital():
+    row_words = (
+        "ui.ai_on",
+        "ui.healthy",
+        "ui.hub_is_exit",
+        "ui.not_attached",
+        "ui.rdp_open",
+        "ui.unhealthy",
+    )
+    for key, wording in EN_WORDS.items():
+        if key.startswith("code.") or key in row_words:
+            assert wording[:1] == wording[:1].upper(), key
+
+
+def test_a_desktop_row_says_its_health_or_that_its_viewer_is_open():
+    desktop = body_of("drawDesktopEntry")
+    assert "isOpen ? t('ui.rdp_open') : t('ui.healthy')" in desktop
+    assert EN_WORDS["ui.healthy"] == "Reachable"
+    assert EN_WORDS["ui.rdp_open"] == "Viewer open"
 
 
 # --- the two sections and the five panels ---
@@ -426,7 +447,7 @@ def test_a_hub_row_carries_no_target_radio_and_names_the_hub_the_tools_use():
     assert "radio" not in PAGE_JS
     assert "ui.hub_exit" not in EN_WORDS
     assert "t('ui.hub_is_exit')" in body
-    assert EN_WORDS["ui.hub_is_exit"] == "the AI tools point at this hub"
+    assert EN_WORDS["ui.hub_is_exit"] == "The AI tools point at this hub"
 
 
 def test_a_hub_is_keyed_by_its_id_and_by_its_binding_before_a_welcome():
@@ -657,8 +678,42 @@ def test_a_redraw_the_person_caused_always_happens():
     assert PAGE_JS.count("settle();") >= 2
 
 
-def test_a_sent_mount_password_is_cleared_from_the_stage():
-    assert "staged.password = '';" in PAGE_JS
+def test_a_sent_mount_keeps_its_form_until_the_share_is_mounted():
+    button = body_of("mountButton")
+    assert "staged.password = '';" not in PAGE_JS
+    assert "delete fileStaged[serviceKey(entry)];" not in button
+    assert "staged.is_open = false;\n      staged.is_sent = true;" in button
+    files = body_of("drawFileEntry")
+    assert (
+        "if (record && record.is_attached && !entry.job && fileStaged[key]\n"
+        "    && fileStaged[key].is_sent && !fileStaged[key].is_open) {\n"
+        "    delete fileStaged[key];" in files
+    )
+
+
+def test_the_files_form_has_save_and_cancel_and_the_button_says_configure():
+    form = body_of("drawFileForm")
+    assert "save.textContent = t('ui.save');" in form
+    assert "cancel.textContent = t('ui.cancel');" in form
+    assert "cancel.onclick = () => { cancelFileForm(key); redraw(); };" in form
+    assert "staged.before = null;" in form
+    assert "Object.assign({}, staged.before, { is_open: false })" in body_of(
+        "cancelFileForm"
+    )
+    assert "t('ui.configure')" in body_of("drawFileEntry")
+    assert "t('ui.configure')" in body_of("drawAiEntry")
+    assert "ui.config'" not in PAGE_JS
+    assert "ui.config" not in EN_WORDS
+    for wording in EN_WORDS.values():
+        assert "Config " not in wording and not wording.endswith("Config")
+
+
+def test_the_reason_line_follows_the_mount_button():
+    reason = body_of("mountReason")
+    assert "if (!mount.disabled || entryWork(hub, entry)) return '';" in reason
+    files = body_of("drawFileEntry")
+    assert "setReasonLine(row, mountReason(state, hub, entry, record, mount));" in files
+    assert "if (line) line.remove();" in body_of("setReasonLine")
 
 
 def test_the_page_offers_no_reassurance_prose():
@@ -831,13 +886,14 @@ def test_the_hub_dot_follows_the_colour_table():
         "if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';"
         in tone
     )
-    assert (
-        "if (hub.connection === 'connecting' || hub.connection === 'pending') "
-        "return 'pulse';" in tone
-    )
+    assert "if (hub.connection === 'connecting') return 'pulse';" in tone
     assert "if (isJoinRefused(hub)) return 'bad';" in tone
     assert "if (hub.connection === 'connected') return 'ok';" in tone
-    assert "return hub.software ? 'wait' : 'off';" in tone
+    # A hub never reached is grey; one down without a code to act on is amber.
+    assert "if (hub.connection === 'pending') return 'off';" in tone
+    assert tone.index("isJoinRefused(hub)") < tone.index("'pending') return 'off'")
+    assert "hub.software" not in tone
+    assert "  }\n  return 'wait';\n}" in tone
     listed = PAGE_JS.split("const PERSON_CODES = [")[1].split("];")[0]
     assert set(re.findall(r"'([a-z_]+)'", listed)) == {
         "hub_untrusted",
@@ -1050,7 +1106,7 @@ def test_a_mount_waits_for_a_user_name_and_a_path():
     assert "!isMountFormFilled(staged, state)" in body_of("drawFileEntry")
     filled = body_of("isMountFormFilled")
     assert "!!staged.username && (!!staged.path || !asksMountPlace(state))" in filled
-    assert "t('ui.reason.mount_form')" in body_of("drawFileEntry")
+    assert "t('ui.reason.mount_form')" in body_of("mountReason")
 
 
 def test_a_volume_form_asks_for_no_place_and_names_the_server():
@@ -1064,17 +1120,19 @@ def test_a_volume_form_asks_for_no_place_and_names_the_server():
     assert "t('ui.mount_volume_caption', { server: server })" in caption
     files = body_of("drawFileEntry")
     assert "drawFileForm(staged, state, payload.host || ''," in files
-    assert "t('ui.reason.mount_form_volume')" in files
+    assert "t('ui.reason.mount_form_volume')" in body_of("mountReason")
     assert EN_WORDS["ui.mount_volume_caption"] == "Appears in the Finder under {server}"
     assert (
-        EN_WORDS["ui.reason.mount_form_volume"] == "Enter a user name in Config first."
+        EN_WORDS["ui.reason.mount_form_volume"]
+        == "Enter a user name in Configure first."
     )
     assert "path" not in EN_WORDS["ui.reason.mount_form_volume"]
 
 
 def test_a_volume_shows_no_path_before_the_system_mounted_it():
-    files = body_of("drawFileEntry")
-    assert "path: record && asksMountPlace(state) ? record.path" in files
+    assert "path: record && asksMountPlace(state) ? record.path" in body_of(
+        "openFileForm"
+    )
     assert "path: asksMountPlace(state) ? record.path : ''," in body_of("mountButton")
     record = body_of("drawMountRecord")
     assert "path.textContent = record.path\n    ? record.path" in record

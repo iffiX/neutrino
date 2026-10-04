@@ -115,6 +115,7 @@ def test_the_compile_is_an_app_bundle_with_the_bindings_named(monkeypatch, tmp_p
     assert "--macos-app-name=Neutrino Client" in command
     assert f"--macos-app-icon={tmp_path / 'bundle.icns'}" in command
     assert "--macos-app-version=9.9.9" in command
+    assert "--macos-signed-app-name=com.neutrino.client" in command
     assert any(
         word.startswith(
             "--macos-app-protected-resource=NSLocalNetworkUsageDescription:"

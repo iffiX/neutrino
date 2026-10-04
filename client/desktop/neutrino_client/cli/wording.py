@@ -106,7 +106,7 @@ CLIENT_CODE_WORDS = {
     "no_endpoint": "the hub has not granted this person a key yet",
     "mountpoint_not_empty": "that folder is not empty",
     "share_login_rejected": (
-        "the share rejected the username or password; open Config and enter "
+        "the share rejected the username or password; open Configure and enter "
         "them again"
     ),
     "share_access_denied": (
