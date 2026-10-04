@@ -64,10 +64,13 @@ hub/
                        subprocess.
     exceptions.py      The package's one exception table; no kind is
                        declared anywhere else.
+    edition.py         The edition table: the one way code outside the
+                       proxy and NetBird reaches them.
     data/              What ships inside the wheel: services/ the unit
                        templates, examples/ the committed *.example.json,
                        manifests/ the device software catalog, one file
-                       per module, cloudcli.json among them, frontend/ the
+                       per module, cloudcli.json and code_server.json
+                       among them, frontend/ the
                        built panel, resources/ the icons the build copies in
                        from images/icons/.
   frontend/          React and TypeScript source. `npm run build` writes into
@@ -97,8 +100,8 @@ agent/
     streams/         Shell and file streams multiplexed over the channel;
                      windows_shell.py runs PowerShell on a pseudo console.
     modules/         What a machine can host: samba/, gitea/, podman/, zfs/,
-                     vscode/, cloudcli/, the RustDesk host, and the
-                     installers they share.
+                     vscode/, cloudcli/, code_server/, the RustDesk host,
+                     and the installers they share.
     rdp/             Sharing this machine's desktop at the seat password the
                      hub set; one seat file per OS reads who is at the screen.
     platforms/       The OS layer: linux.py, windows.py and darwin.py behind
@@ -130,6 +133,8 @@ client/desktop/
                      Win32 helpers.
     bundled.py       Where the carried tools (cc-switch, the RustDesk
                      viewer) are found.
+    edition.py       The edition table: the one way the rest of the client
+                     reaches NetBird.
     data/            Ships inside the package: desktop/ its .desktop entry,
                      polkit/ the policy for the mount helper.
   frontend/          The window's page: plain HTML, CSS and JavaScript, no
@@ -180,8 +185,10 @@ packaging/
                      natively; build_core_<core>.py for each core the phones
                      carry; build_sources.py, build_checksums.py and
                      build_docs.py.
-  ci/                check.py: installs a built package where it runs and
-                     checks it works.
+  ci/                What only the release workflow runs: check.py installs
+                     a built package where it runs and checks it works;
+                     publish_cn.py publishes the mainland release on
+                     Gitee.
   install/           install.sh for macOS and Linux and install.ps1 for
                      Windows: the one-command installers a release
                      publishes.
@@ -299,3 +306,4 @@ editing it should not need to know how the code is arranged.
 | The same on iOS: the app, the Packet Tunnel or the File Provider extension | `client/ios/`, in Swift |
 | A script that builds a core the phones compile in | `packaging/build/build_core_<core>.py` |
 | A script that builds or checks a release target | `packaging/build/build_<target>.py`, `packaging/ci/check.py` |
+| A feature the mainland edition leaves out | its own files, every path listed in `PACKAGING_CN_LEFT_OUT_PATHS`, reached from outside only through the package's `edition.py` ([architecture.md](architecture.md)) |
