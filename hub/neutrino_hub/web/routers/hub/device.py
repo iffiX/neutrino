@@ -1253,13 +1253,29 @@ async def _agent_command_stream(
     except AgentOfflineError as error:
         yield _coded_line(error.code, dict(error.params))
         raise TaskExitStatusError(1) from error
+    async for line in _command_lines(stream):
+        yield line
+    for line in _close_lines(stream.close_info or {}):
+        yield line
+
+
+async def _command_lines(stream) -> AsyncIterator[str]:
+    """Each chunk a command stream sends, decoded, until it closes."""
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     while True:
         item = await stream.recv()
         if item is None:
-            break
+            return
         yield decoder.decode(item[1])
-    info = stream.close_info or {}
+
+
+def _close_lines(info: dict):
+    """A command's close as text: its output, then its code or exit status.
+
+    Raises:
+        TaskExitStatusError: When the close carries a code or a non-zero exit
+            status.
+    """
     params = info.get("params") or {}
     output = str(params.get("output", "") or "")
     if output:
@@ -1278,11 +1294,13 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
     """Reinstall a device's agent and report how it went.
 
     The agent hands the package to a transient unit on the machine and
-    closes the command; the unit runs the package manager, which replaces
-    and restarts the agent. The task follows the reports: the agent that
-    returns and reports no ``reinstall_failed`` error was reinstalled, and
-    an installer that failed without restarting anything reports that
-    error on the socket that stayed.
+    waits for the install's result; the unit runs the package manager,
+    which replaces and restarts the agent, so the command ends either with
+    the result or with the socket dropping. After a drop the task follows
+    the reports: the agent that returns and reports no
+    ``reinstall_failed`` error was reinstalled, and an installer that
+    failed reports that error, from the socket that stayed or from the
+    agent that returned.
 
     Args:
         runtime: The shared runtime, which holds the sockets.
@@ -1298,8 +1316,21 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
     """
     before = runtime.agent_sessions.get(key)
     before_failure = _reinstall_failure(before)
-    async for line in _agent_command_stream(runtime, key, AGENT_VERB_REINSTALL):
+    try:
+        stream = await runtime.agent_sessions.open_stream(
+            key, CHANNEL_STREAM_COMMAND, _command_args(AGENT_VERB_REINSTALL)
+        )
+    except AgentOfflineError as error:
+        yield _coded_line(error.code, dict(error.params))
+        raise TaskExitStatusError(1) from error
+    async for line in _command_lines(stream):
         yield line
+    info = stream.close_info or {}
+    if info.get("code") == AgentOfflineError.code:
+        yield "agent restarting\n"
+    else:
+        for line in _close_lines(info):
+            yield line
     loop = asyncio.get_running_loop()
     deadline = loop.time() + WEB_REINSTALL_RETURN_TIMEOUT_S
     reconnected_at = None
@@ -1310,6 +1341,9 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
             yield f"agent {runtime.agent_sessions.version_of(key)} reconnected\n"
         failure = _reinstall_failure(session)
         if failure is not None and failure != before_failure:
+            output = str(failure.get("output", "") or "")
+            if output:
+                yield output if output.endswith("\n") else output + "\n"
             yield _coded_line(CODE_REINSTALL_FAILED, failure)
             raise TaskExitStatusError(_failed_status(failure))
         if reconnected_at is not None and session is not None and session.reported_at:

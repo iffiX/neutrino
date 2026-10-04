@@ -151,7 +151,8 @@ async def serve_package_stream(
 
     ``{module}`` names a module's package from the hub's cache; ``{}`` is
     the agent's own package for its platform. The bytes go down under the
-    agent's credit and the close carries their ``sha256``.
+    agent's credit and the close carries their ``sha256`` and the file's
+    own ``name``, the release's file name with no directory.
 
     Args:
         runtime: The shared runtime.
@@ -207,7 +208,7 @@ async def serve_package_stream(
     except OSError:
         await stream.close("module_artifact_missing", {})
         return
-    await stream.close("", {"sha256": digest.hexdigest()})
+    await stream.close("", {"sha256": digest.hexdigest(), "name": path.name})
 
 
 async def serve_log_stream(

@@ -149,7 +149,7 @@ class FakeRuntime:
         self.served_models = StubServedModels()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
-        self.package_path = tmp_path / "agent.deb"
+        self.package_path = tmp_path / "neutrino-agent-0.5.0-amd64.deb"
         self.package_path.write_bytes(b"agent package bytes " * 3000)
         self.agent_packages = StubPackages(self.package_path)
         self.agent_modules = StubModules(self.package_path)
@@ -673,6 +673,7 @@ def test_only_a_sockets_first_report_adopts(api):
 
 
 def test_a_package_stream_is_served_under_credit_with_its_digest_in_the_close(api):
+    """G137: the close names the release file, which msiexec reinstalls from."""
     client, runtime = api
     device_id, token = bound_device()
     socket = welcomed(client, device_id, token)
@@ -703,7 +704,10 @@ def test_a_package_stream_is_served_under_credit_with_its_digest_in_the_close(ap
             "type": "close",
             "stream": 1,
             "code": "",
-            "params": {"sha256": hashlib.sha256(expected).hexdigest()},
+            "params": {
+                "sha256": hashlib.sha256(expected).hexdigest(),
+                "name": "neutrino-agent-0.5.0-amd64.deb",
+            },
         }
         assert runtime.agent_packages.asked == [("deb", "amd64")]
     finally:
@@ -729,7 +733,7 @@ def test_a_package_stream_naming_a_module_is_served_from_the_module_cache(api):
             received += socket.receive_bytes()[4:]
         close = socket.receive_json()
 
-        assert close["params"] == {"sha256": hashlib.sha256(expected).hexdigest()}
+        assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
         assert runtime.agent_modules.asked == [("samba", PLATFORM)]
     finally:
         socket.__exit__(None, None, None)
