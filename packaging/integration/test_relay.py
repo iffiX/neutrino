@@ -22,11 +22,24 @@ import time
 
 import pytest
 
-from connect_probe import Channel, join, parse_client_link, take_state
-from neutrino_agent.core.channel import BindingHttpClient
-
 RELAY_HOST_ENV = "NEUTRINO_RELAY_HOST"
 RELAY_KEY_FILE_ENV = "NEUTRINO_RELAY_KEY_FILE"
+
+if not os.environ.get(RELAY_HOST_ENV) or not os.environ.get(RELAY_KEY_FILE_ENV):
+    pytest.skip(
+        f"no relay server for this run: set {RELAY_HOST_ENV} and {RELAY_KEY_FILE_ENV}",
+        allow_module_level=True,
+    )
+connect_probe = pytest.importorskip(
+    "connect_probe",
+    reason="no neutrino_agent package in the checkout or the installed agent",
+)
+Channel = connect_probe.Channel
+join = connect_probe.join
+parse_client_link = connect_probe.parse_client_link
+take_state = connect_probe.take_state
+BindingHttpClient = connect_probe.BindingHttpClient
+
 RELAY_ACCOUNT_ENV = "NEUTRINO_RELAY_ACCOUNT"
 RELAY_SSH_PORT_ENV = "NEUTRINO_RELAY_SSH_PORT"
 RELAY_PUBLIC_PORT_ENV = "NEUTRINO_RELAY_PUBLIC_PORT"
@@ -37,10 +50,8 @@ CLIENT_NAME = "integration-relay"
 @pytest.fixture
 def relay(panel):
     """The relay on and pointed at the tester's server; off and keyless after."""
-    host = os.environ.get(RELAY_HOST_ENV, "")
-    key_file = os.environ.get(RELAY_KEY_FILE_ENV, "")
-    if not host or not key_file:
-        pytest.skip(f"set {RELAY_HOST_ENV} and {RELAY_KEY_FILE_ENV}")
+    host = os.environ[RELAY_HOST_ENV]
+    key_file = os.environ[RELAY_KEY_FILE_ENV]
     with open(key_file, encoding="utf-8") as stream:
         private_key = stream.read()
     status, key = panel.call(
