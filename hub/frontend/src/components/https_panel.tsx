@@ -22,8 +22,10 @@ import "./https_panel.css";
  * Both ports are always served, so turning HTTPS on or off is one press with
  * no draft and no restart. A page on HTTP fetches the probe from the HTTPS
  * port to learn whether this browser trusts the certificate, and offers
- * Enable only once it does. Regenerating is an HTTP-only action, and the new
- * authority downloads from the answer itself.
+ * Enable only once it does. A page reached on another port than the hub's
+ * HTTP port comes through a forward, where the hub's HTTPS port is not this
+ * host's: nothing is probed and Enable is offered. Regenerating is an
+ * HTTP-only action, and the new authority downloads from the answer itself.
  */
 
 /** Where the authority downloads, with or without a session. */
@@ -33,6 +35,8 @@ const PROBE_PATH = "/api/hub/setting/https/probe";
 /** How long a probe waits before the certificate counts as untrusted. */
 const PROBE_TIMEOUT_MS = 5000;
 const AUTHORITY_MEDIA_TYPE = "application/x-x509-ca-cert";
+/** The port a page on plain HTTP is on when its address names none. */
+const HTTP_SCHEME_PORT = 80;
 
 type Trust = "checking" | "trusted" | "untrusted";
 
@@ -49,6 +53,8 @@ export function HttpsPanel() {
   const view = resource.data;
   const isOnHttps = window.location.protocol === "https:";
   const httpsPort = view?.https_listen_port ?? null;
+  const isForwarded =
+    !isOnHttps && view !== null && pagePort() !== view.listen_port;
 
   const probe = useCallback(async () => {
     if (httpsPort === null) {
@@ -61,10 +67,10 @@ export function HttpsPanel() {
   }, [httpsPort]);
 
   useEffect(() => {
-    if (!isOnHttps) {
+    if (!isOnHttps && !isForwarded) {
       void probe();
     }
-  }, [isOnHttps, probe]);
+  }, [isOnHttps, isForwarded, probe]);
 
   useEffect(() => {
     if (isOnHttps || !isAwaitingInstall) {
@@ -127,7 +133,8 @@ export function HttpsPanel() {
       onConfirm: () => void regenerate(),
     });
 
-  const isTrustedHere = isOnHttps || (trust === "trusted" && !isRegenerated);
+  const isTrustedHere =
+    isOnHttps || isForwarded || (trust === "trusted" && !isRegenerated);
 
   return (
     <section className="card">
@@ -206,7 +213,11 @@ export function HttpsPanel() {
             )}
             <div className="apply_bar_row">
               <span className="field_hint">
-                {t(hintKey(view, isOnHttps, trust, isRegenerated))}
+                {isForwarded && !view.is_https_enabled && !isRegenerated
+                  ? t("ui.settings.https_forwarded", {
+                      port: view.https_listen_port,
+                    })
+                  : t(hintKey(view, isOnHttps, trust, isRegenerated))}
               </span>
               <div className="button_row">
                 <button
@@ -363,6 +374,12 @@ function downloadAuthority(derBase64: string, fileName: string): void {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+/** The port this page is on, from its own address. */
+function pagePort(): number {
+  const { port } = window.location;
+  return port === "" ? HTTP_SCHEME_PORT : Number(port);
 }
 
 /** This page's path, query and fragment, kept across a scheme change. */

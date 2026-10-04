@@ -85,6 +85,7 @@ export function FilesPage() {
         <FileBrowser
           key={selectedDevice.device_id}
           deviceId={selectedDevice.device_id}
+          platformOs={selectedDevice.platform.os ?? ""}
         />
       )}
     </div>

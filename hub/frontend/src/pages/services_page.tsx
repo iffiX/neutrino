@@ -15,6 +15,7 @@ import type {
   DeclaredServiceCreate,
   PublishedService,
   PublishedServiceType,
+  NetworkView,
   ServiceSharesResponse,
   ServicesResponse,
 } from "../api_types";
@@ -30,20 +31,29 @@ import "./services_page.css";
  * list, resolved per caller, is what every device's catalog carries.
  */
 
-const GROUP_ORDER: PublishedServiceType[] = ["web", "port", "ai", "file"];
+const GROUP_ORDER: PublishedServiceType[] = [
+  "web",
+  "port",
+  "ai",
+  "file",
+  "rdp",
+];
 const GROUP_TITLE_KEYS: Record<PublishedServiceType, string> = {
   web: "ui.services.group_web",
   port: "ui.services.group_port",
   ai: "ui.services.group_ai",
   file: "ui.services.group_file",
+  rdp: "ui.services.group_rdp",
 };
 
 // One fixed word set per source: a module row is the module's own state, a
-// declared row is what the last probe measured.
+// declared row is what the last probe measured, a device row is a machine
+// saying it shares its desktop.
 const MODULE_STATE_KEYS: Record<"ok" | "error", string> = {
   ok: "ui.services.state_serving",
   error: "state.not_serving",
 };
+const DEVICE_STATE_KEY = "state.shared";
 const DECLARED_STATE_KEYS: Record<
   "ok" | "error" | "idle" | "unchecked",
   string
@@ -81,19 +91,18 @@ const DESCRIPTION_KEYS: Record<string, string> = {
 const SOURCE_KEYS: Record<PublishedService["source"], string> = {
   module: "state.module",
   declared: "ui.services.source_declared",
+  device: "ui.services.source_device",
 };
 // Who published the row: the hub's own module in the accent, the operator's
 // own entry in the secondary. Health is the dot's and the state word's.
 const SOURCE_TONES: Record<PublishedService["source"], string> = {
   module: "badge--accent",
   declared: "badge--secondary",
+  device: "badge--secondary",
 };
 
 /** The example a share field shows, which is a name rather than a word. */
 const SHARES_PLACEHOLDER = "media";
-
-/** The example a host field shows. */
-const HOST_PLACEHOLDER = "192.168.100.7";
 
 /** The port a file service takes when the field is left blank. */
 const FILE_PORT_PLACEHOLDER = "445";
@@ -134,6 +143,7 @@ export function ServicesPage() {
   const resource = useApiResource<ServicesResponse>("/hub/service", {
     invalidateOn: INVALIDATE_ON,
   });
+  const network = useApiResource<NetworkView>("/hub/network");
   const [isDeclaring, setIsDeclaring] = useState(false);
   const services = resource.data?.services ?? [];
 
@@ -191,6 +201,7 @@ export function ServicesPage() {
 
       {isDeclaring && (
         <DeclareForm
+          hostPlaceholder={hubAddress(network.data)}
           onSaved={(next) => {
             handleChanged(next);
             setIsDeclaring(false);
@@ -265,9 +276,11 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
   const declaredState =
     tone === "idle" && service.detail_code !== null ? "unchecked" : tone;
   const stateLabel = t(
-    service.source === "module"
-      ? MODULE_STATE_KEYS[tone === "idle" ? "error" : tone]
-      : DECLARED_STATE_KEYS[declaredState],
+    service.source === "device"
+      ? DEVICE_STATE_KEY
+      : service.source === "module"
+        ? MODULE_STATE_KEYS[tone === "idle" ? "error" : tone]
+        : DECLARED_STATE_KEYS[declaredState],
   );
   const detailKey =
     service.detail_code === null
@@ -369,11 +382,13 @@ function ServiceRow({ service, onChanged }: ServiceRowProps) {
 }
 
 interface DeclareFormProps {
+  /** One of the hub's own addresses, as the example a host field shows. */
+  hostPlaceholder: string;
   onSaved: (services: PublishedService[]) => void;
   onCancel: () => void;
 }
 
-function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
+function DeclareForm({ hostPlaceholder, onSaved, onCancel }: DeclareFormProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [name, setName] = useState("");
@@ -480,7 +495,7 @@ function DeclareForm({ onSaved, onCancel }: DeclareFormProps) {
           <input
             className="input"
             value={host}
-            placeholder={HOST_PLACEHOLDER}
+            placeholder={hostPlaceholder}
             spellCheck={false}
             onChange={(event) => setHost(event.target.value)}
           />
@@ -603,6 +618,15 @@ function payloadLine(service: PublishedService): string {
     return `//${service.payload.host ?? ""}/${service.payload.share ?? ""}`;
   }
   return `${service.payload.host ?? ""}:${service.payload.port ?? ""}`;
+}
+
+/** The first address one of the hub's own interfaces holds, without its
+ * prefix length; empty while none does. */
+function hubAddress(network: NetworkView | null): string {
+  const address =
+    network?.interfaces.find((entry) => entry.link.ipv4_address !== null)?.link
+      .ipv4_address ?? "";
+  return address.split("/")[0] ?? "";
 }
 
 /** The reason inside a failed share scan, or null for any other failure. */

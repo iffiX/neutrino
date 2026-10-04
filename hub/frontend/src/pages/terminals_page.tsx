@@ -348,10 +348,11 @@ export function TerminalsPage() {
               role="tablist"
               aria-label={t("ui.terminals.tabs_label")}
             >
-              {tabs.map((tab) => (
+              {tabs.map((tab, index) => (
                 <TerminalTab
                   key={tab.sessionId}
                   tab={tab}
+                  label={tabLabel(tabs, index)}
                   row={rows[tab.sessionId]}
                   flags={shownFlags(tab, rows[tab.sessionId], pendingFlags)}
                   isOn={tab.sessionId === activeId}
@@ -449,6 +450,8 @@ export function TerminalsPage() {
 
 interface TerminalTabProps {
   tab: ShellTab;
+  /** The tab's name, numbered where another tab has the same machine. */
+  label: string;
   row: TerminalSessionView | undefined;
   flags: PersistFlags;
   isOn: boolean;
@@ -461,6 +464,7 @@ interface TerminalTabProps {
 
 function TerminalTab({
   tab,
+  label,
   row,
   flags,
   isOn,
@@ -475,7 +479,7 @@ function TerminalTab({
       : isArmed
         ? "ui.terminals.end_again"
         : "ui.terminals.end",
-    { title: tab.title },
+    { title: label },
   );
   const attachedCount = row?.attached_count ?? 0;
   return (
@@ -488,7 +492,7 @@ function TerminalTab({
         onClick={onSelect}
       >
         <Icon name="terminal" size={13} />
-        {tab.isEnded ? t("ui.terminals.ended") : tab.title}
+        {tab.isEnded ? t("ui.terminals.ended") : label}
         {!tab.isEnded && flags.is_persistent && (
           <span className="badge">{t("ui.terminals.badge_kept")}</span>
         )}
@@ -512,6 +516,21 @@ function TerminalTab({
       </button>
     </div>
   );
+}
+
+/** What a tab is called: its machine's name, numbered from the second tab
+ * on the same machine. */
+function tabLabel(tabs: ShellTab[], index: number): string {
+  const tab = tabs[index];
+  if (tab === undefined) {
+    return "";
+  }
+  const number =
+    tabs.slice(0, index).filter((other) => other.title === tab.title).length +
+    1;
+  return number === 1
+    ? tab.title
+    : t("ui.terminals.tab_numbered", { name: tab.title, number });
 }
 
 /** The tabs after one read of the list: listed sessions with no tab added at

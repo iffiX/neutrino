@@ -27,6 +27,7 @@ import type {
   DeviceEnrollmentView,
   DevicesResponse,
   DeviceView,
+  NetworkView,
 } from "../api_types";
 
 import "./devices_page.css";
@@ -95,6 +96,9 @@ export function DevicesPage() {
   const resource = useApiResource<DevicesResponse>("/hub/device", {
     invalidateOn: INVALIDATE_ON,
   });
+  const network = useApiResource<NetworkView>("/hub/network");
+  // The neighbour sweep is a Linux hub's; elsewhere a scan finds nothing.
+  const canScan = network.data?.hub_os === "linux";
 
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [filter, setFilter] = useState<DeviceFilter>("all");
@@ -215,15 +219,17 @@ export function DevicesPage() {
             <Icon name="link" size={14} />
             {t("ui.devices.add_by_link")}
           </button>
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={() => void handleScan()}
-            disabled={isScanning}
-          >
-            <Icon name="search" size={14} />
-            {isScanning ? t("ui.devices.scanning") : t("ui.devices.scan")}
-          </button>
+          {canScan && (
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => void handleScan()}
+              disabled={isScanning}
+            >
+              <Icon name="search" size={14} />
+              {isScanning ? t("ui.devices.scanning") : t("ui.devices.scan")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -283,7 +289,9 @@ export function DevicesPage() {
       ) : devices.length === 0 ? (
         <div className="placeholder">
           <span>{t("ui.devices.none_title")}</span>
-          <span className="faint">{t("ui.devices.none_hint")}</span>
+          <span className="faint">
+            {t(canScan ? "ui.devices.none_hint" : "ui.devices.none_hint_link")}
+          </span>
         </div>
       ) : (
         <>

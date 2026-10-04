@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 
@@ -9,17 +9,15 @@ import { DevicePick } from "../components/device_pick";
 import { ErrorPanel } from "../components/error_panel";
 import { GiteaPanels } from "../components/gitea_panels";
 import { Icon } from "../components/icon";
+import { ModuleLog } from "../components/module_log";
 import { ModulePicker } from "../components/module_picker";
 import { SambaPanels } from "../components/samba_panels";
 import { Spinner } from "../components/spinner";
-import { StatusDot } from "../components/status_dot";
 import { TabStrip } from "../components/tab_strip";
 import { VscodePanels } from "../components/vscode_panels";
 import { ZfsPanels } from "../components/zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
-import { stripAnsi } from "../strip_ansi";
 import { useApiResource } from "../use_api_resource";
-import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
 import {
   HUB_EVENT_CONFIG,
@@ -28,7 +26,6 @@ import {
   HUB_EVENT_TASK,
 } from "../use_hub_events";
 import { usePageMemory } from "../use_page_memory";
-import { useTaskStream } from "../use_task_stream";
 import type { IconName } from "../components/icon";
 import type { PickableModule } from "../components/module_picker";
 import type { StatusTone } from "../components/status_dot";
@@ -40,7 +37,6 @@ import type {
   DeviceOnlineView,
   DeviceRequest,
   DevicesOnlineResponse,
-  ServiceJournal,
 } from "../api_types";
 
 import "./modules_page.css";
@@ -195,9 +191,6 @@ const DEVICE_QUERY = "device";
 /** How tall the tab row is while the first list is still on its way. */
 const SKELETON_HEIGHT_PX = 120;
 
-/** How much of the module's journal the output box shows. */
-const JOURNAL_LINES = 200;
-
 export function ModulesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -268,42 +261,15 @@ export function ModulesPage() {
 
   const activeRow = activeModule === null ? undefined : rows[activeModule];
   const isAgentOnline = modules.data?.is_agent_online ?? false;
-  const task = useTaskStream(
-    activeRow === undefined || activeRow.task_id === ""
-      ? null
-      : activeRow.task_id,
-  );
-  // The task's lines while it runs and after it fails; the machine's own
-  // journal for the module otherwise, once the software is on the machine.
-  const isTaskShown =
-    activeRow !== undefined &&
-    activeRow.task_id !== "" &&
-    (task.isRunning || (task.exitCode !== null && task.exitCode !== 0));
-  const isJournalShown =
-    !isTaskShown &&
-    activeRow !== undefined &&
-    isAgentOnline &&
-    activeModule !== null &&
-    deviceId !== null &&
-    (PRESENT_STATES.includes(activeRow.state) || activeRow.state === "failed");
-  const journal = usePolledResource<ServiceJournal>(
-    isJournalShown
-      ? apiPath("/agent/module/journal", {
-          device_id: deviceId,
-          module: activeModule,
-          lines: JOURNAL_LINES,
-        })
-      : null,
-  );
-  const journalText = journal.data?.text ?? null;
-  const logRef = useRef<HTMLPreElement | null>(null);
 
+  // With one machine there is nothing to pick.
+  const onlyDeviceId =
+    devices.length === 1 ? (devices[0]?.device_id ?? null) : null;
   useEffect(() => {
-    const node = logRef.current;
-    if (node !== null) {
-      node.scrollTop = node.scrollHeight;
+    if (onlyDeviceId !== null && askedDeviceId === null) {
+      setSelectedId(onlyDeviceId);
     }
-  }, [task.lines, journalText]);
+  }, [onlyDeviceId, askedDeviceId, setSelectedId]);
 
   const noteShown = (shown: string[]) => {
     if (online.data === null || deviceId === null) {
@@ -477,53 +443,20 @@ export function ModulesPage() {
                     </div>
                   </div>
                 )}
-                <div className="modules_log">
-                  <div className="modules_log_head">
-                    <span className="section_label">
-                      {isJournalShown
-                        ? t("ui.journal.label", { lines: JOURNAL_LINES })
-                        : t("ui.modules.output")}
-                    </span>
-                    {isTaskShown && (
-                      <StatusDot
-                        tone={taskTone(task.isRunning, task.exitCode)}
-                        isPulsing={task.isRunning}
-                        label={t(taskKey(task.isRunning, task.exitCode))}
-                      />
-                    )}
-                    {isJournalShown && journalText !== null && (
-                      <StatusDot tone="ok" isPulsing label={t("state.live")} />
-                    )}
+                {activeRow.state === "failed" && (
+                  <div className="notice notice--error">
+                    <Icon name="alert" size={15} />
+                    <div className="notice_body">
+                      {describeFailure(activeRow)}
+                    </div>
                   </div>
-                  <pre className="modules_log_output" ref={logRef}>
-                    {isTaskShown ? (
-                      stripAnsi(task.lines.join("\n"))
-                    ) : isJournalShown ? (
-                      journalText === null ? (
-                        <span className="faint">
-                          {journal.isLoading ? "" : t("ui.journal.unavailable")}
-                        </span>
-                      ) : journalText.trim().length > 0 ? (
-                        journalText
-                      ) : (
-                        <span className="faint">
-                          {t(
-                            hasNoInstances(activeRow)
-                              ? "ui.modules.no_instances"
-                              : "ui.journal.empty",
-                          )}
-                        </span>
-                      )
-                    ) : (
-                      <span className="faint">
-                        {t("ui.modules.output_empty")}
-                      </span>
-                    )}
-                  </pre>
-                  {isTaskShown && task.error !== null && (
-                    <span className="field_error">{task.error}</span>
-                  )}
-                </div>
+                )}
+                <ModuleLog
+                  key={`${deviceId}:${activeRow.name}`}
+                  deviceId={deviceId}
+                  row={activeRow}
+                  isAgentOnline={isAgentOnline}
+                />
                 <div className="modules_actions">
                   <ActionButton
                     action="install"
@@ -590,14 +523,6 @@ export function ModulesPage() {
                   <div className="notice notice--error">
                     <Icon name="alert" size={15} />
                     <div className="notice_body">{actionError}</div>
-                  </div>
-                )}
-                {activeRow.state === "failed" && (
-                  <div className="notice notice--error">
-                    <Icon name="alert" size={15} />
-                    <div className="notice_body">
-                      {describeFailure(activeRow)}
-                    </div>
                   </div>
                 )}
               </>
@@ -706,12 +631,6 @@ function toTab(row: DeviceModuleView): StripTab {
   };
 }
 
-/** Whether the module runs as one unit per instance and has none yet. */
-function hasNoInstances(row: DeviceModuleView): boolean {
-  const instances = row.details.instances;
-  return Array.isArray(instances) && instances.length === 0;
-}
-
 function dotTone(row: DeviceModuleView): StatusTone {
   if (row.state === "running" || (row.state === "installed" && row.is_active)) {
     return "ok";
@@ -751,21 +670,4 @@ function asParams(params: Record<string, unknown>): Record<string, string> {
     }
   }
   return named;
-}
-
-function taskTone(isRunning: boolean, exitCode: number | null): StatusTone {
-  if (isRunning) {
-    return "warn";
-  }
-  if (exitCode === 0) {
-    return "ok";
-  }
-  return exitCode === null ? "idle" : "error";
-}
-
-function taskKey(isRunning: boolean, exitCode: number | null): string {
-  if (isRunning) {
-    return "ui.modules.task_running";
-  }
-  return exitCode === 0 ? "ui.modules.task_done" : "ui.modules.task_failed";
 }

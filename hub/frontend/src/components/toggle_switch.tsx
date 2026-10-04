@@ -14,6 +14,8 @@ interface ToggleSwitchProps {
   isOn: boolean;
   onChange: (isOn: boolean) => void;
   label?: string;
+  /** The switch's name where a title beside it already shows it. */
+  ariaLabel?: string;
   description?: string;
   /** A tag beside the label, for a state this switch does not set. */
   badge?: ReactNode;
@@ -24,6 +26,7 @@ export function ToggleSwitch({
   isOn,
   onChange,
   label,
+  ariaLabel,
   description,
   badge,
   isDisabled = false,
@@ -37,7 +40,7 @@ export function ToggleSwitch({
       type="button"
       role="switch"
       aria-checked={isOn}
-      aria-label={label}
+      aria-label={label ?? ariaLabel}
       className={`toggle_switch ${isOn ? "toggle_switch--on" : ""}`}
       disabled={isDisabled}
       onClick={handleClick}

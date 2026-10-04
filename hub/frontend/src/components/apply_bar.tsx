@@ -83,7 +83,7 @@ export function ApplyBar({
 
       <div className="apply_bar_row">
         <span className="field_hint">
-          {blockedHint ?? (isDirty ? hint : t("ui.apply_bar.clean"))}
+          {blockedHint ?? (isDirty || isBusy ? hint : t("ui.apply_bar.clean"))}
         </span>
         <div className="button_row">
           <button

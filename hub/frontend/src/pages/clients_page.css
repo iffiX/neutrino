@@ -14,6 +14,12 @@
   justify-content: flex-end;
 }
 
+.clients_rename {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 /* The table scrolls here; the page body never scrolls sideways. */
 .clients_table_scroll {
   overflow-x: auto;
@@ -51,7 +57,7 @@
 }
 
 .clients_col--actions {
-  width: 280px;
+  width: 360px;
 }
 
 .clients_table th {

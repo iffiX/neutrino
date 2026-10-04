@@ -12,7 +12,7 @@
   "ui.settings.about_unavailable": "版本信息读不到",
   "ui.settings.about_uptime": "运行时长",
   "ui.settings.backup_downloaded": "备份已下载。",
-  "ui.settings.backup_hint": "恢复时会要求输入保险库主口令。",
+  "ui.settings.backup_hint": "恢复时会要求输入保险库口令。",
   "ui.settings.backup_title": "配置存档",
   "ui.settings.cancel": "取消",
   "ui.settings.change_password": "修改密码",
@@ -29,6 +29,7 @@
   "ui.settings.https_enable": "开启 HTTPS",
   "ui.settings.https_expires": "证书到期于",
   "ui.settings.https_fingerprint": "颁发机构 SHA-256",
+  "ui.settings.https_forwarded": "这个页面经转发的端口打开。打开 HTTPS 后，请经转发到 {port} 的端口打开面板。",
   "ui.settings.https_hint": "在每个浏览器里装上这个 hub 的颁发机构，重启浏览器，再开启 HTTPS。",
   "ui.settings.https_issued": "证书签发于",
   "ui.settings.https_names": "证书上的名字",
@@ -118,7 +119,7 @@
   "ui.settings.update_room": "需要 {needed}，可用 {free}",
   "ui.settings.update_room_short": "更新需要 {needed} 可用空间，磁盘只有 {free}；请先腾出空间。",
   "ui.settings.update_title": "更新",
-  "ui.settings.vault_password": "保险库主口令",
-  "ui.settings.vault_password_hint": "这份备份取自的那个保险库的主口令。",
+  "ui.settings.vault_passphrase": "保险库口令",
+  "ui.settings.vault_passphrase_hint": "这份备份封存时用的保险库口令。",
   "ui.settings.wrong_file": "这不是 .tar.gz 文件。"
 }

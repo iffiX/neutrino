@@ -55,6 +55,8 @@ interface FileBrowserProps {
   onCancel?: () => void;
   /** Where a pick starts; the root when empty or when it cannot be read. */
   startPath?: string;
+  /** The system the machine's agent reports, which names its account. */
+  platformOs?: string;
 }
 
 export function FileBrowser({
@@ -62,6 +64,7 @@ export function FileBrowser({
   onPickDirectory,
   onCancel,
   startPath = "",
+  platformOs = "",
 }: FileBrowserProps) {
   const isPicking = onPickDirectory !== undefined;
   // Redrawn when the panel's language changes.
@@ -515,7 +518,11 @@ export function FileBrowser({
         <div className="file_browser_status">
           {deleteName !== null
             ? t("ui.files.deleting", { name: deleteName })
-            : t("ui.files.root")}
+            : t(
+                platformOs === "windows"
+                  ? "ui.files.root_windows"
+                  : "ui.files.root",
+              )}
         </div>
       )}
     </div>

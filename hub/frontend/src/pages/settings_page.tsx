@@ -313,7 +313,11 @@ export function SettingsPage() {
               <div className="section_label">{t("ui.settings.about_host")}</div>
               <AboutRow
                 label={t("ui.settings.about_system")}
-                value={`${ABOUT_OS_NAMES[about.data.os]} ${about.data.os_version}`}
+                value={
+                  about.data.os_version === about.data.kernel
+                    ? ABOUT_OS_NAMES[about.data.os]
+                    : `${ABOUT_OS_NAMES[about.data.os]} ${about.data.os_version}`
+                }
               />
               <AboutRow
                 label={t("ui.settings.about_kernel")}
@@ -885,7 +889,7 @@ function RestoreArchiveModal({
             <div className="settings_restore_fields">
               <label className="field">
                 <span className="field_label">
-                  {t("ui.settings.vault_password")}
+                  {t("ui.settings.vault_passphrase")}
                 </span>
                 <PasswordInput
                   value={passphrase}
@@ -893,7 +897,7 @@ function RestoreArchiveModal({
                   autoFocus
                 />
                 <span className="field_hint">
-                  {t("ui.settings.vault_password_hint")}
+                  {t("ui.settings.vault_passphrase_hint")}
                 </span>
               </label>
               {error !== null && (

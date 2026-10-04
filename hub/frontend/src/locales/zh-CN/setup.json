@@ -14,7 +14,7 @@
   "ui.setup.language_label": "语言",
   "ui.setup.secrets_lead": "恢复备份时还要输入保险库口令，请妥善保存。",
   "ui.setup.panel_password": "面板密码",
-  "ui.setup.vault_passphrase": "保险库主口令",
+  "ui.setup.vault_passphrase": "保险库口令",
   "ui.setup.ports_server_lead": "每个网口保留现有地址，并在上面提供服务。",
   "ui.setup.machine_ports": "这台机器的网口",
   "ui.setup.way_out_today": "当前出网口",

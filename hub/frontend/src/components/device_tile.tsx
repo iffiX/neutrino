@@ -79,7 +79,10 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
     >
       <div className="device_tile_head">
         <span className="device_tile_icon">
-          <Icon name={toDeviceIconName(device.icon)} size={19} />
+          <Icon
+            name={toDeviceIconName(device.icon, client?.platform_os ?? null)}
+            size={19}
+          />
         </span>
         <span className="device_tile_identity">
           <span className="device_tile_name">
@@ -105,7 +108,7 @@ export function DeviceTile({ device, onOpen }: DeviceTileProps) {
         {reach === "none" && (
           <span className="badge">{t("state.scanned")}</span>
         )}
-        {reach !== "none" && (
+        {device.has_ssh && (
           <span className="badge badge--accent">{t("state.ssh")}</span>
         )}
         {reach === "agent" && (
