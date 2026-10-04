@@ -144,21 +144,22 @@ AGENT_PACKAGE_NAME = _runtime(_AGENT_PACKAGE_MODULE, "package_name")
 AGENT_PLATFORM_KEY = _runtime(_AGENT_PACKAGE_MODULE, "platform_key")
 AGENT_PACKAGE_FAMILY = _runtime(_AGENT_PACKAGE_MODULE, "package_family")
 AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
-# The families whose files the hub's package carries in its cache. The Windows
-# and macOS installers are named in the manifest alone, and a hub fetches one
-# from the release the first time a machine asks for it.
-AGENT_CACHED_FAMILIES = ("deb", "rpm")
+# The agent package family each hub package carries one file of, by the
+# hub package's own kind. The Arch package carries none, because no agent
+# package is published for Arch.
+AGENT_FAMILY_OF_HUB_KIND = {"deb": "deb", "rpm": "rpm", "pkg": ""}
+# What builds the agent's own package of each family, when no directory of
+# packages already built is given.
+AGENT_BUILD_SCRIPTS = {"deb": "build_deb.py", "rpm": "build_rpm.py"}
 
-# Where a release publishes the agent packages this build seeds, so an
-# installed hub can serve a platform this build did not make. A build that is
-# not a release names none, and the manifest then carries the seeded entries
-# alone.
+# Where a release publishes the agent packages, so an installed hub can fetch
+# a platform its package does not carry. A build that is not a release names
+# none, and the manifest then carries the seeded entry alone.
 AGENT_PACKAGE_URL_BASE_ENV = "NEUTRINO_AGENT_PACKAGE_URL_BASE"
 
 # A directory of agent packages already built, every family and machine the
-# release makes, seeded into the cache as they are. A release builds the agent
-# once per machine and hands the hub's builds the results; without it the
-# hub's build makes the agent for its own machine and seeds that alone.
+# release makes. The build reads every one into the manifest and seeds the
+# one of its own platform; without it the hub's build makes that one itself.
 AGENT_PACKAGES_DIR_ENV = "NEUTRINO_AGENT_PACKAGES_DIR"
 
 # What every package declares it needs, read from the hub's own constants so a
@@ -347,7 +348,9 @@ def version_stamp(version: str, asset: str) -> str:
     )
 
 
-def build_environment(tree: Path, version: str, machine: str, *, asset: str) -> None:
+def build_environment(
+    tree: Path, version: str, machine: str, *, kind: str, asset: str
+) -> None:
     """Stage the interpreter the package carries and install the hub into it.
 
     Args:
@@ -355,6 +358,8 @@ def build_environment(tree: Path, version: str, machine: str, *, asset: str) -> 
         version: The version being packaged, stamped into the tree.
         machine: The architecture, named however the packaging format names
             it; :data:`MACHINE_NAMES` maps it to the interpreter's own name.
+        kind: ``deb``, ``rpm`` or ``pkg``, the package being built, which
+            names the agent package it carries.
         asset: The file name this build writes, with ``{version}`` left
             open, stamped beside the version.
 
@@ -390,7 +395,9 @@ def build_environment(tree: Path, version: str, machine: str, *, asset: str) -> 
     trim_interpreter(staged_python)
     compile_bytecode(staged_python, PYTHON_DIR)
     strip_build_paths(staged_python, tree)
-    stage_agent_cache(tree, staged_python, machine)
+    stage_agent_cache(
+        tree, staged_python, machine, family=AGENT_FAMILY_OF_HUB_KIND[kind]
+    )
     stage_vendored(tree, machine)
     stage_licenses(tree)
     require_glibc_floor(tree)
@@ -413,34 +420,32 @@ def stage_icons() -> None:
         shutil.copyfile(source, ICONS_PACKAGE_DIR / source.name)
 
 
-def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
-    """Seed the agent package cache and stamp the manifest that reads it.
+def stage_agent_cache(
+    tree: Path, staged_python: Path, machine: str, *, family: str
+) -> None:
+    """Seed the hub's own agent package and stamp the manifest that reads it.
 
     Built from the same checkout, so the hub and the agent it hands out
-    cannot drift. The files land where an installed hub looks for them, so a
-    Linux enrollment and a Linux self-update need no network at all.
+    cannot drift. The one file lands where an installed hub looks for it, so
+    the hub's own agent and every device of its platform need no network.
 
-    A release hands this build the agent packages it made for every machine,
-    through :data:`AGENT_PACKAGES_DIR_ENV`, so a hub of either architecture
-    can enroll a device of either. A build given none makes the agent for its
-    own machine and seeds that alone; a hub serving the other architecture
-    then fetches it from the release the manifest names, or is given it by
-    hand under ``config/devices/packages``. The release's ``.msi`` and
-    ``.pkg`` enter the manifest and not the cache.
-
-    The build container carries ``dpkg-dev``, ``rpm`` and the headers the
-    agent's bindings compile against.
+    A release hands this build every agent package it made, through
+    :data:`AGENT_PACKAGES_DIR_ENV`: each enters the manifest with its hash and
+    its URL, and the one of this package's family and machine enters the
+    cache. A build given none makes that one agent package itself.
 
     Args:
         tree: The staging directory.
         staged_python: The interpreter tree the hub was installed into.
         machine: The architecture, named however the packaging format names
             it.
+        family: ``deb`` or ``rpm``, the agent package this hub package
+            carries; empty carries none.
 
     Raises:
         SystemExit: When a file's platform cannot be read from its name,
-            which would seed the cache under a key nothing asks for, or the
-            directory given holds no agent package at all.
+            the directory given holds no agent package at all, or none of
+            this package's family and machine.
     """
     cache = tree / str(AGENT_PACKAGE_CACHE_DIR).lstrip("/")
     cache.mkdir(parents=True, exist_ok=True)
@@ -457,26 +462,31 @@ def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
                 raise SystemExit(f"no agent package under {prebuilt}")
             for path in found:
                 shutil.copyfile(path, built / path.name)
-        else:
-            for script in ("build_deb.py", "build_rpm.py"):
-                run(
-                    [
-                        str(staged_python / "bin" / "python3"),
-                        str(AGENT_ROOT / "packaging" / script),
-                        "--output-dir",
-                        str(built),
-                        "--architecture",
-                        machine,
-                    ],
-                    cwd=AGENT_ROOT,
-                )
-        manifest = agent_cache_entries(sorted(built.iterdir()), _agent_url_base())
-        for path in sorted(built.iterdir()):
-            if AGENT_PACKAGE_FAMILY(path.name) not in AGENT_CACHED_FAMILIES:
-                continue
-            key = AGENT_PLATFORM_KEY(*_agent_platform(path.name))
-            target = cache / AGENT_PACKAGE_NAME(manifest[key])
-            shutil.copyfile(path, target)
+        elif family:
+            run(
+                [
+                    str(staged_python / "bin" / "python3"),
+                    str(AGENT_ROOT / "packaging" / AGENT_BUILD_SCRIPTS[family]),
+                    "--output-dir",
+                    str(built),
+                    "--architecture",
+                    machine,
+                ],
+                cwd=AGENT_ROOT,
+            )
+        seeded = AGENT_PLATFORM_KEY(family, AGENT_PACKAGE_MACHINE(machine))
+        manifest = agent_manifest(
+            sorted(built.iterdir()), _agent_url_base(), seeded=seeded
+        )
+        if seeded and seeded not in manifest:
+            raise SystemExit(
+                f"no agent {family} for {machine} among the agent packages; "
+                "build it first and pass its directory"
+            )
+        if seeded:
+            name = AGENT_PACKAGE_NAME(manifest[seeded])
+            target = cache / name
+            shutil.copyfile(built / name, target)
             target.chmod(0o644)
 
     site_packages = next((staged_python / "lib").glob("python*/site-packages"))
@@ -484,6 +494,30 @@ def stage_agent_cache(tree: Path, staged_python: Path, machine: str) -> None:
         site_packages / "neutrino_hub" / "data" / AGENT_PACKAGE_MANIFEST_NAME,
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
     )
+
+
+def agent_manifest(paths: list, url_base: str, *, seeded: str) -> dict:
+    """What a hub package's manifest names, beside the one file it carries.
+
+    Args:
+        paths: Every agent package the build was given or made.
+        url_base: Where the release publishes them, empty for a build that
+            publishes nothing.
+        seeded: The platform key of the file the package carries, empty for
+            none.
+
+    Returns:
+        Platform key to ``{name, url, sha256, size}``: every platform for a
+        release, and the seeded one alone for a build with no URL base, so a
+        platform nothing published is refused by name.
+
+    Raises:
+        SystemExit: When a file's name says no family or no machine.
+    """
+    entries = agent_cache_entries(paths, url_base)
+    if url_base:
+        return entries
+    return {key: entry for key, entry in entries.items() if key == seeded}
 
 
 def agent_cache_entries(paths: list, url_base: str) -> dict:

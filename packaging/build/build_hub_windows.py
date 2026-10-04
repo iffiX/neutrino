@@ -17,8 +17,9 @@ tun2socks, with EasyTier's ``wintun.dll`` and the stand-in ``packet.dll``
 beside them. The
 geodata and the agent's ``.msi`` land under the state directory in
 ``C:\\ProgramData\\Neutrino\\hub``, which the installer creates open to SYSTEM
-and the administrators alone, every agent package in the directory named
-in the manifest.
+and the administrators alone. With ``--agent-package-url-base`` every agent
+package in the directory is named in the manifest; without it, the
+agent's ``.msi`` alone.
 
 The installer registers the ``neutrino_hub`` service, run as LocalSystem at
 boot with ``service run`` and recovered when it ends, and starts it, on a

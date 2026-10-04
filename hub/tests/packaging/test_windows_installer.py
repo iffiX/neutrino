@@ -229,7 +229,7 @@ def test_the_compile_is_a_console_program_with_its_version(laid_out):
     assert "--include-package=neutrino_hub" in options
 
 
-def test_the_state_seeds_the_agents_installer_and_the_manifest_names_all(
+def test_the_state_seeds_the_agents_installer_and_a_build_with_no_release_names_it_alone(
     tmp_path, laid_out
 ):
     staged, _calls = laid_out
@@ -244,7 +244,7 @@ def test_the_state_seeds_the_agents_installer_and_the_manifest_names_all(
             staged["payload"] / "neutrino_hub" / "data" / "agent_packages.json"
         ).read_text()
     )
-    assert sorted(manifest) == ["deb-arm64", "msi-amd64", "pkg-arm64"]
+    assert sorted(manifest) == ["msi-amd64"]
     assert manifest["msi-amd64"]["url"] == ""
     stamp = (tmp_path / "work" / "tree" / "neutrino_hub" / "_version.py").read_text()
     assert 'HUB_PACKAGE_ASSET = "neutrino-hub-{version}-windows-amd64.msi"' in stamp

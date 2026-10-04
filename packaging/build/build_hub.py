@@ -9,9 +9,11 @@ carries has no standard library of its own and the compiled wheels in it fix
 the architecture. ``--architecture arm64`` on an x86-64 machine runs the
 container under emulation and needs QEMU registered with binfmt_misc first.
 
-The hub package carries the agent packages for its own machine:
-``--agent-packages`` seeds them from a directory built before, and without
-it the hub's build makes its own.
+Each hub package carries one agent package, the one of its own family and
+machine, and the Arch package none. ``--agent-packages`` names a directory
+holding every agent package of the release, which the manifest names with
+their hashes; without it the hub's build makes its own one and names that
+alone. ``--agent-package-url-base`` is where the release publishes them.
 
 Not pure: runs container and packaging tools.
 """
@@ -25,14 +27,14 @@ sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import container_build  # noqa: E402
 
 # What builds the hub for each distribution family, and what that family needs
-# installed first. Each is run inside a container of that family, because the
+# installed first, the agent package of the same family among it. Each is run inside a container of that family, because the
 # environment the package carries has no standard library of its own and the
 # compiled wheels in it fix the architecture.
 HUB_BUILDS = {
     "debian": {
         "image": "debian:12",
         "install": "apt-get -qq update >/dev/null 2>&1 && "
-        "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev rpm cpio "
+        "apt-get -qq install -y python3 python3-venv python3-pip dpkg-dev "
         "pkg-config build-essential libgirepository1.0-dev libcairo2-dev "
         "ca-certificates >/dev/null 2>&1",
         "script": "build_deb.py",
@@ -40,7 +42,7 @@ HUB_BUILDS = {
     },
     "rhel": {
         "image": "fedora:41",
-        "install": "dnf -q -y install python3 python3-pip rpm-build dpkg gcc "
+        "install": "dnf -q -y install python3 python3-pip rpm-build cpio gcc "
         "pkgconf-pkg-config gobject-introspection-devel cairo-devel "
         "cairo-gobject-devel libffi-devel >/dev/null 2>&1",
         "script": "build_rpm.py",
@@ -49,7 +51,7 @@ HUB_BUILDS = {
     "arch": {
         "image": "archlinux:latest",
         "install": "pacman -Sy --noconfirm --needed python python-pip base-devel "
-        "dpkg rpm-tools gobject-introspection cairo libffi >/dev/null 2>&1 && "
+        "gobject-introspection cairo libffi >/dev/null 2>&1 && "
         "useradd -m builder 2>/dev/null || true",
         "script": "build_pkg.py",
         "architecture": "{pkg_arch}",
@@ -110,8 +112,8 @@ def main() -> int:
     parser.add_argument(
         "--agent-packages",
         default="",
-        help="a directory of agent packages already built, for every machine, "
-        "seeded into the hub's cache instead of building the hub's own",
+        help="a directory of every agent package of the release; the hub "
+        "package carries the one of its own family and machine",
     )
     arguments = parser.parse_args()
     if container_build.container_engine() is None:

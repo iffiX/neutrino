@@ -12,13 +12,13 @@ and the manifest pins the hash of each. Because the name says nothing about
 what is inside it, a held file is believed only while it still hashes to what
 the manifest pins; one that does not is a stale fetch and is fetched again.
 
-The hub's package seeds this directory with the Linux builds it was made
-from, which is what keeps a Linux install and a Linux self-update offline.
-The Windows ``.msi`` and the macOS ``.pkg`` are named in the manifest and not
-seeded, so the hub's own package does not carry them. A platform it seeded
-none for is fetched once from the release the manifest names, checked
-against the hash the manifest pins, and kept. A platform with neither is
-refused by name rather than served the wrong machine's build.
+The hub's package seeds this directory with one agent package, the one of its
+own system, machine and package family, which keeps the hub's own agent and
+every device of the same platform offline. Every other platform the release
+publishes is named in the manifest with its URL and its hash, fetched once
+the first time a device needs it, checked against that hash, and kept. A
+platform with neither, or an entry that pins no hash, is refused by name
+rather than served the wrong machine's build or an unchecked one.
 
 A build dropped under ``config/devices/packages`` wins over both.
 
@@ -188,7 +188,7 @@ class AgentPackageCache:
             architecture: The machine the device reported.
 
         Returns:
-            True when the package is pinned, on disk, or fetchable.
+            True when the package is pinned, held, or fetchable.
         """
         if self._pinned(family=family, architecture=architecture) is not None:
             return True
@@ -196,7 +196,7 @@ class AgentPackageCache:
         entry = self.manifest().get(key)
         if not isinstance(entry, dict):
             return False
-        return self._file(entry) is not None or bool(entry.get("url"))
+        return self._held(entry) is not None or self._is_fetchable(entry)
 
     def package(self, *, family: str, architecture: str) -> Path:
         """The agent package for one family and machine.
@@ -227,21 +227,19 @@ class AgentPackageCache:
         if held is not None:
             return held
 
-        url = str(entry.get("url", "") or "")
-        name = package_name(entry)
-        if not url or not name:
+        if not self._is_fetchable(entry):
             raise AgentArtifactFetchError("agent_package_missing", platform=key)
-        content = self._fetch(url)
-        pinned_digest = str(entry.get("sha256", "") or "").lower()
+        content = self._fetch(str(entry["url"]))
+        pinned_digest = str(entry["sha256"]).lower()
         received = hashlib.sha256(content).hexdigest()
-        if pinned_digest and pinned_digest != received:
+        if pinned_digest != received:
             raise AgentArtifactFetchError(
                 "agent_package_sha256_mismatch",
                 platform=key,
                 expected=pinned_digest,
                 received=received,
             )
-        path = self._root / name
+        path = self._root / package_name(entry)
         self._write(path, content)
         return path
 
@@ -257,6 +255,18 @@ class AgentPackageCache:
         except (OSError, ValueError):
             return {}
         return loaded if isinstance(loaded, dict) else {}
+
+    @staticmethod
+    def _is_fetchable(entry: dict) -> bool:
+        """Whether one entry names a file, where it is published, and its hash.
+
+        Args:
+            entry: The manifest's entry for a platform.
+
+        Returns:
+            True when all three are there; a fetch is never kept unchecked.
+        """
+        return bool(package_name(entry) and entry.get("url") and entry.get("sha256"))
 
     def _file(self, entry: dict) -> "Path | None":
         """Where one entry's package would be, when a file is there.

@@ -175,7 +175,7 @@ def seed_agent_cache(
     machine: str,
     url_base: str = "",
 ) -> Path:
-    """Name every agent package in the manifest and seed the hub's own.
+    """Seed the hub's own agent package and name the release's in the manifest.
 
     Args:
         agent_packages: The directory the release's agent builds are in.
@@ -202,8 +202,8 @@ def seed_agent_cache(
     )
     if not found:
         raise SystemExit(f"no agent package under {agent_packages}")
-    manifest = venv_tree.agent_cache_entries(found, url_base)
     key = venv_tree.AGENT_PLATFORM_KEY(family, machine)
+    manifest = venv_tree.agent_manifest(found, url_base, seeded=key)
     if key not in manifest:
         raise SystemExit(
             f"no agent {family} for {machine} under {agent_packages}; "
