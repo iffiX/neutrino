@@ -234,3 +234,69 @@ def test_the_linux_hub_check_reads_dnf_scriptlet_words_from_its_error_stream(
     package.write_bytes(b"rpm")
     check.check_linux(package)
     assert calls[0][-1].startswith("dnf -y install ")
+
+
+def _macos_agent_check(check, monkeypatch, tmp_path, *, is_foreign_taken):
+    """Run the macOS agent check with the Mac stood in for.
+
+    ``nagent service uninstall`` is faked to delete the module's plist, the
+    command and, when asked, the hub's plist too.
+    """
+    added = tmp_path / "com.neutrino.check.plist"
+    foreign = tmp_path / "com.neutrino.hub_check.plist"
+    command = tmp_path / "nagent"
+    command.write_text("")
+    ran = []
+
+    def sudo(arguments):
+        ran.append(arguments)
+        if arguments[0] == "cp":
+            Path(arguments[2]).write_text(Path(arguments[1]).read_text())
+        if arguments[1:] == ["service", "uninstall", "--yes"]:
+            added.unlink()
+            command.unlink()
+            if is_foreign_taken:
+                foreign.unlink()
+
+    monkeypatch.setattr(check, "AGENT_MACOS_ADDED_PLIST", added)
+    monkeypatch.setattr(check, "AGENT_MACOS_FOREIGN_PLIST", foreign)
+    monkeypatch.setattr(check, "AGENT_MACOS_COMMAND", str(command))
+    monkeypatch.setattr(check, "AGENT_MACOS_ROOT_MODES", {})
+    monkeypatch.setattr(check, "_require_host", lambda platform, name: None)
+    monkeypatch.setattr(check, "_sudo", sudo)
+    monkeypatch.setattr(check, "_answer", lambda command: "state = running")
+    monkeypatch.setattr(check, "_wait_for_job_gone", lambda job: True)
+    monkeypatch.setattr(
+        check.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=1)
+    )
+    check.check_agent_macos(tmp_path / "agent.pkg")
+    return ran
+
+
+def test_the_macos_agent_is_removed_by_its_own_command(check, monkeypatch, tmp_path):
+    ran = _macos_agent_check(check, monkeypatch, tmp_path, is_foreign_taken=False)
+
+    assert [str(tmp_path / "nagent"), "service", "uninstall", "--yes"] in ran
+    assert not any(arguments[:2] == ["launchctl", "bootout"] for arguments in ran)
+
+
+def test_the_macos_agent_check_fails_when_the_hubs_job_was_taken(
+    check, monkeypatch, tmp_path
+):
+    with pytest.raises(SystemExit) as failed:
+        _macos_agent_check(check, monkeypatch, tmp_path, is_foreign_taken=True)
+
+    assert "wrong LaunchDaemons" in str(failed.value)
+
+
+def test_the_windows_agent_check_plants_a_task_and_rules_named_both_ways(check):
+    names = {
+        "task": check.AGENT_WINDOWS_ADDED_TASK,
+        "rule": check.AGENT_WINDOWS_ADDED_RULE,
+        "foreign": check.AGENT_WINDOWS_FOREIGN_RULE,
+    }
+    planted = check.AGENT_WINDOWS_PLANT_SCRIPT.format(**names)
+
+    assert "Register-ScheduledTask -TaskName neutrino_check_task" in planted
+    assert "'neutrino_check_rule', 'neutrino_hub_check_rule'" in planted
+    assert check.AGENT_WINDOWS_FOREIGN_RULE.startswith("neutrino_hub_")

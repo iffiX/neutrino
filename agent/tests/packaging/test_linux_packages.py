@@ -5,6 +5,9 @@ in for here, so what is asserted is the shape around it — where the payload
 goes, what runs it, and what the package still asks the machine for.
 """
 
+import os
+import subprocess
+
 import pytest
 
 import build_deb
@@ -104,6 +107,45 @@ def test_the_deb_starts_the_desktop_host_and_stops_it_on_removal(tmp_path, carri
 
     assert "systemctl enable --now rustdesk.service" in postinst
     assert "systemctl stop rustdesk.service" in prerm
+
+
+@pytest.mark.parametrize(
+    "argument, is_removed",
+    [("remove", True), ("upgrade", False), ("deconfigure", False)],
+)
+def test_the_deb_takes_away_what_the_modules_added_on_a_removal_alone(
+    tmp_path, carried, argument, is_removed
+):
+    """`nagent service uninstall` runs after the agent is stopped and before
+    its files go, and an upgrade keeps the modules' units."""
+    build_deb._lay_out(tmp_path / "tree", "9.9.9", "amd64", "somebody")
+
+    calls = _run_with_fakes(tmp_path, tmp_path / "tree/DEBIAN/prerm", argument)
+
+    uninstall = "nagent service uninstall --yes"
+    assert (uninstall in calls) is is_removed
+    if is_removed:
+        assert calls.index("systemctl stop neutrino_agent.service") < calls.index(
+            uninstall
+        )
+
+
+@pytest.mark.parametrize("count, is_removed", [("0", True), ("1", False)])
+def test_the_rpm_takes_away_what_the_modules_added_on_a_removal_alone(
+    tmp_path, count, is_removed
+):
+    preun = _spec().split("%preun\n")[1].split("\n%postun")[0]
+    script = tmp_path / "preun"
+    script.write_text("#!/bin/sh\n" + preun)
+
+    calls = _run_with_fakes(tmp_path, script, count)
+
+    uninstall = "nagent service uninstall --yes"
+    assert (uninstall in calls) is is_removed
+    if is_removed:
+        assert calls.index("systemctl stop neutrino_agent.service") < calls.index(
+            uninstall
+        )
 
 
 def test_the_deb_restarts_a_running_desktop_host_on_an_upgrade(tmp_path, carried):
@@ -266,3 +308,26 @@ def test_the_packages_replace_the_upstream_rustdesk_package():
 
 def test_the_rpm_build_allows_the_viewers_upstream_runpath_and_nothing_else():
     assert build_rpm.RPMBUILD_ENVIRONMENT == {"QA_RPATHS": "0x0002"}
+
+
+def _run_with_fakes(tmp_path, script, argument):
+    """Run one maintainer script with nagent and systemctl recording calls.
+
+    Args:
+        tmp_path: Where the fakes and their record go.
+        script: The script to run.
+        argument: Its first argument.
+
+    Returns:
+        The commands it ran, one line each.
+    """
+    fakes = tmp_path / "fakes"
+    fakes.mkdir()
+    record = tmp_path / "calls"
+    for name in ("nagent", "systemctl"):
+        fake = fakes / name
+        fake.write_text(f'#!/bin/sh\necho "{name} $*" >>"{record}"\n')
+        fake.chmod(0o755)
+    environment = dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin")
+    subprocess.run(["sh", str(script), argument], env=environment, check=True)
+    return record.read_text().splitlines() if record.exists() else []

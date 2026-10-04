@@ -17,6 +17,11 @@ calls it with ``--silent-install``, which puts it under
 ``%ProgramFiles%\\RustDesk``, registers its ``RustDesk`` service and opens its
 firewall rules. Removing the agent runs ``--uninstall``; an upgrade keeps it.
 
+Removing the agent also runs ``nagent service uninstall --yes`` before its
+files go, which unregisters the scheduled tasks and removes the firewall
+rules its modules added, the file share's fence among them. Shares and
+accounts stay, and an upgrade runs neither action.
+
 Needs WiX 6 and its Util extension: ``dotnet tool install --global wix
 --version 6.0.2`` and ``wix extension add -g WixToolset.Util.wixext/6.0.2``.
 
@@ -67,9 +72,12 @@ UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
 # whose own grants let every account read.
 DATA_FOLDER_SDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
-# RustDesk is taken away when the agent is removed, and kept through an
-# upgrade, whose removal of the old version carries the upgrading code.
-RUSTDESK_REMOVED_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+# RustDesk and what the modules added are taken away when the agent is
+# removed, and kept through an upgrade, whose removal of the old version
+# carries the upgrading code.
+AGENT_REMOVED_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+# What the removal runs the agent with to take away what its modules added.
+AGENT_UNINSTALL_ARGUMENTS = "service uninstall --yes"
 
 # What the service control manager does when the agent ends without being
 # stopped: start it again.
@@ -135,14 +143,18 @@ WIX_BODY = r"""
 
     @INSTALL_RUSTDESK@
     @UNINSTALL_RUSTDESK@
+    @UNINSTALL_ADDED@
 
     <InstallExecuteSequence>
       <Custom Action="InstallRustDesk"
               After="InstallFiles"
               Condition="NOT REMOVE" />
+      <Custom Action="UninstallAdded"
+              Before="UninstallRustDesk"
+              Condition="@AGENT_REMOVED@" />
       <Custom Action="UninstallRustDesk"
               Before="RemoveFiles"
-              Condition="@RUSTDESK_REMOVED@" />
+              Condition="@AGENT_REMOVED@" />
     </InstallExecuteSequence>
 
     <Feature Id="Main" Title="Neutrino Agent" Level="1" AllowAbsent="no">
@@ -267,6 +279,12 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         FileRef="RustDeskInstaller",
         ExeCommand="--uninstall",
     )
+    uninstall_added = wix_build.custom_action(
+        "UninstallAdded",
+        is_failure_ignored=True,
+        FileRef="AgentServiceFile",
+        ExeCommand=AGENT_UNINSTALL_ARGUMENTS,
+    )
     body = wix_build.fill(
         WIX_BODY,
         {
@@ -274,13 +292,14 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
             "RUSTDESK": staged["rustdesk"],
             "RUSTDESK_NAME": RUSTDESK_INSTALLER_NAME,
             "DATA_SDDL": DATA_FOLDER_SDDL,
-            "RUSTDESK_REMOVED": RUSTDESK_REMOVED_CONDITION,
+            "AGENT_REMOVED": AGENT_REMOVED_CONDITION,
         },
     )
     body = (
         body.replace("@SERVICE_COMPONENT@", service)
         .replace("@INSTALL_RUSTDESK@", install_rustdesk)
         .replace("@UNINSTALL_RUSTDESK@", uninstall_rustdesk)
+        .replace("@UNINSTALL_ADDED@", uninstall_added)
     )
     return wix_build.package_source(
         name="Neutrino Agent",

@@ -17,7 +17,9 @@ the ``com.carriez.RustDesk_service`` daemon and the
 ``com.carriez.RustDesk_server`` agent in every session at the screen. The
 preinstall script unloads the running jobs; the postinstall script loads
 all three, the session agent into the session at the screen when there is
-one.
+one. A package on macOS has no uninstaller: ``sudo nagent service
+uninstall`` removes the agent, RustDesk and what the agent's modules added,
+and keeps the configuration and the state.
 
 The standalone tree is read back with ``otool`` and refused when a file of
 it loads a library from outside the system, then signed ad hoc, file by
