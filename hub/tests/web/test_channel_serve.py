@@ -14,6 +14,7 @@ binding offline.
 """
 
 import hashlib
+import os
 import time
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
+    CHANNEL_CHUNK_BYTES,
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_CREDIT_BYTES,
@@ -711,6 +713,50 @@ def test_a_package_stream_is_served_under_credit_with_its_digest_in_the_close(ap
             },
         }
         assert runtime.agent_packages.asked == [("deb", "amd64")]
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_a_package_is_read_from_its_file_and_sent_in_64_kb_pieces(api, monkeypatch):
+    client, runtime = api
+    big = runtime.package_path
+    expected = b"!<arch>" + os.urandom(300 * 1024)
+    big.write_bytes(expected)
+    reads: list = []
+    real_open = Path.open
+
+    def recording_open(path, *args, **kwargs):
+        handle = real_open(path, *args, **kwargs)
+        if path == big:
+            real_read = handle.read
+
+            def read(size=-1):
+                reads.append(size)
+                return real_read(size)
+
+            handle.read = read
+        return handle
+
+    monkeypatch.setattr(Path, "open", recording_open)
+    device_id, token = bound_device()
+    socket = welcomed(client, device_id, token)
+    try:
+        socket.send_json(report())
+        socket.receive_json()
+
+        socket.send_json({"type": "open", "stream": 1, "kind": "package"})
+        socket.receive_json()
+        socket.send_json({"type": "credit", "stream": 1, "bytes": len(expected)})
+        pieces: list = []
+        while sum(len(piece) for piece in pieces) < len(expected):
+            pieces.append(socket.receive_bytes()[4:])
+        close = socket.receive_json()
+
+        assert b"".join(pieces) == expected
+        assert close["params"]["sha256"] == hashlib.sha256(expected).hexdigest()
+        assert reads and set(reads) == {CHANNEL_CHUNK_BYTES}
+        assert max(len(piece) for piece in pieces) <= CHANNEL_CHUNK_BYTES
+        assert len(pieces) >= len(expected) // CHANNEL_CHUNK_BYTES
     finally:
         socket.__exit__(None, None, None)
 

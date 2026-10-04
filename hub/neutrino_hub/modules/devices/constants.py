@@ -64,6 +64,9 @@ AGENT_MODULE_FETCH_TIMEOUT_S = 300
 AGENT_MODULE_FETCH_LIMIT_BYTES = 512 * 1024 * 1024
 AGENT_MODULE_KEY_DIGEST_CHARS = 16
 AGENT_MODULE_FETCH_CHUNK_BYTES = 64 * 1024
+# How much of a download's start is kept for the check of what kind of file
+# it is.
+AGENT_MODULE_HEAD_BYTES = 512
 # A download's progress line is written every this many percent, or after
 # this many seconds when the percent moves slower or the size is unknown.
 AGENT_MODULE_PROGRESS_PERCENT_STEP = 5
