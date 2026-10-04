@@ -10,6 +10,7 @@ stops a wrong file, and the one sentence each refusal prints.
 import hashlib
 import sys
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -110,7 +111,13 @@ def stand_ins(tmp_path):
         release_file = tmp_path / "os-release"
         release_file.write_text(OS_RELEASES[os_release])
         functions = tmp_path / "functions.sh"
-        text = script.read_text().replace('EDITION="intl"', f'EDITION="{edition}"', 1)
+        text = re.sub(
+            r'^EDITION="[a-z]+"$',
+            f'EDITION="{edition}"' if edition else r"\g<0>",
+            script.read_text(),
+            count=1,
+            flags=re.MULTILINE,
+        )
         assert text.rstrip().endswith('main "$@"')
         functions.write_text(text.rstrip()[: -len('main "$@"')])
         env = {
@@ -341,8 +348,10 @@ def test_a_release_that_cannot_be_reached_stops_with_one_sentence(stand_ins):
     )
 
 
-def test_the_committed_script_is_the_intl_edition():
-    assert '\nEDITION="intl"\n' in SCRIPT.read_text()
+def test_the_script_names_the_edition_of_its_tree():
+    edition = (SCRIPT.parents[2] / "EDITION").read_text().strip()
+
+    assert f'\nEDITION="{edition}"\n' in SCRIPT.read_text()
 
 
 def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(stand_ins):
@@ -394,6 +403,13 @@ def test_a_cn_release_with_its_files_not_yet_uploaded_stops_with_one_sentence(
     assert _installs(asked) == []
 
 
+# The mainland tree is written from the intl checkout, and from nothing else.
+from_intl_tree = pytest.mark.skipif(
+    (Path(__file__).resolve().parents[3] / "EDITION").read_text().strip() != "intl",
+    reason="the mainland tree is written from the intl checkout",
+)
+
+
 @pytest.fixture(scope="module")
 def mainland_tree(tmp_path_factory):
     """The mainland tree ``build_sources.py --edition cn --tree`` writes."""
@@ -413,6 +429,7 @@ def mainland_tree(tmp_path_factory):
     return target
 
 
+@from_intl_tree
 def test_the_mainland_tree_stamps_both_scripts_cn(mainland_tree):
     install = mainland_tree / "packaging" / "install"
 
@@ -420,11 +437,12 @@ def test_the_mainland_tree_stamps_both_scripts_cn(mainland_tree):
     assert "\n$script:NeutrinoEdition = 'cn'\n" in (install / "install.ps1").read_text()
 
 
+@from_intl_tree
 def test_the_mainland_script_installs_from_gitee(stand_ins, mainland_tree):
     (stand_ins.served / "latest").write_text('{"tag_name": "v9.9.9"}')
 
     result, asked = stand_ins(
-        script=mainland_tree / "packaging" / "install" / "install.sh"
+        edition=None, script=mainland_tree / "packaging" / "install" / "install.sh"
     )
 
     assert result.returncode == 0, result.stderr

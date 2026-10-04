@@ -555,7 +555,7 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
     ],
 )
 def test_a_package_off_linux_credits_what_it_adds(monkeypatch, system, added):
-    from neutrino_hub.modules.tun.constants import TUN_VERSION
+    from neutrino_hub import HUB_CARRIED_VERSIONS
 
     monkeypatch.setattr(settings_router, "hub_os", lambda: system)
     names = [credit.name for credit in settings_router._acknowledgements()]
@@ -566,7 +566,7 @@ def test_a_package_off_linux_credits_what_it_adds(monkeypatch, system, added):
     )
 
     assert [name for name in names if name in ("tun2socks", "Wintun")] == added
-    assert tun2socks.version == TUN_VERSION
+    assert tun2socks.version == HUB_CARRIED_VERSIONS.get("tun2socks", "")
 
 
 def test_a_tree_without_the_proxy_or_netbird_credits_neither(monkeypatch):

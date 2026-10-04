@@ -68,6 +68,32 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     # The Android app: the NetBird core and the script that builds it.
 )
 
+# tun2socks, which the hub's macOS and Windows packages carry for the
+# proxy's TUN and the client's Windows package carries for its files adapter
+# in both editions: the release, the asset each system and machine takes and
+# its hash, the program's name inside each archive, and its licence under
+# licenses/. A hub learns the version only from its _version.py stamp.
+PACKAGING_TUN2SOCKS_VERSION = "2.7.0"
+PACKAGING_TUN2SOCKS_RELEASE_URL = (
+    "https://github.com/xjasonlyu/tun2socks/releases/download/v{version}/{asset}"
+)
+PACKAGING_TUN2SOCKS_ASSETS = {
+    ("darwin", "amd64"): (
+        "tun2socks-darwin-amd64.zip",
+        "6e654da8bab9ca1645862f0e251a69980e0966680713011feea7b1e5901b2a95",  # scan: allow
+    ),
+    ("darwin", "arm64"): (
+        "tun2socks-darwin-arm64.zip",
+        "7c5ebfe2ffb60ecf6e958cc5bbf3e06e74b8b33575ffbb4ba4f6f785a647f1ad",  # scan: allow
+    ),
+    ("windows", "amd64"): (
+        "tun2socks-windows-amd64.zip",
+        "c5d46e9452f6c9cc7c15ab9158d6d6a0169ceecd6bca019ce476b49337d2be43",  # scan: allow
+    ),
+}
+PACKAGING_TUN2SOCKS_ASSET_MEMBER = "tun2socks-{os_name}-{machine}"
+PACKAGING_TUN2SOCKS_LICENSE = "tun2socks.txt"
+
 # The line naming the edition in each one-command install script, which the
 # mainland source tree stamps `cn`.
 PACKAGING_INSTALL_EDITION_LINES = {

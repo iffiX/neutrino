@@ -310,6 +310,9 @@ def test_the_stamp_carries_the_version_and_the_file_name_with_the_version_open()
     assert namespace["HUB_PACKAGE_ASSET"].format(version="0.4.0") == (
         venv_tree.asset_name("deb", "0.4.0", "amd64")
     )
+    assert namespace["HUB_CARRIED_VERSIONS"] == (
+        venv_tree.hub_assets.stamped_versions()
+    )
 
 
 def test_the_builds_read_the_naming_tables_the_packaging_owns():

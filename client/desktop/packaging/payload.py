@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
+from shared.constants import PACKAGING_TUN2SOCKS_LICENSE  # noqa: E402
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
 
@@ -157,11 +158,11 @@ CARRIED_LICENSES = (
 )
 # The Windows installer also carries EasyTier's wintun.dll, under WireGuard's
 # prebuilt binaries licence, the stand-in packet.dll, which says what it is,
-# and tun2socks, under the GPL-3.0.
+# and tun2socks, under the MIT licence.
 WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + (
     "wintun.txt",
     "packet_stub.txt",
-    "tun2socks.txt",
+    PACKAGING_TUN2SOCKS_LICENSE,
 )
 # The Linux packages also install :data:`LINUX_GUI_CARRIED_LIBRARY`, which is
 # under the LGPL and has no counterpart in the Windows and macOS packages.
