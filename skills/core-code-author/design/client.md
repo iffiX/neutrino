@@ -475,8 +475,10 @@ word. The controls:
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is healthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
 
-The row's mono line is the address the viewer dials, the one the hub handed
-back for this client, so the row and the viewer never name two addresses.
+The row's mono line is the entry's host and port, and the viewer dials the
+same address: the hub chooses the entry's host and the connect answer's host
+by one rule, the address in the caller's network, so the row and the viewer
+never name two addresses.
 The row's state word is the entry's health, and `ui.rdp_open` while the
 viewer runs.
 
