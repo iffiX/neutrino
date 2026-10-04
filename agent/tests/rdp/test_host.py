@@ -7,6 +7,8 @@ and what a peer would wait on come from the seat the host is given, a fake
 here; each platform's own seat is pinned in its own file.
 """
 
+import subprocess
+
 import pytest
 
 from neutrino_agent.core.store import MachineStateStore
@@ -16,6 +18,7 @@ from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.rdp.host import RdpShareHost
 
 INSTALLED = {"rustdesk": {"state": "installed"}}
+REAL_CONTROL_SERVICE = rustdesk.control_service
 ABSENT = {"rustdesk": {"state": "absent"}}
 
 
@@ -30,6 +33,10 @@ class FakeSeat:
         self.connected = 0
         self.attention = ""
         self.attention_homes = []
+        self.asked = []
+
+    def ask_for_permissions(self, account):
+        self.asked.append(account)
 
     def graphical_accounts(self):
         return self.seated() if callable(self.seated) else self.seated
@@ -75,7 +82,13 @@ def share_host(tmp_path, monkeypatch):
         "write_config",
         lambda path, options: made.written.__setitem__(path, dict(options)),
     )
-    monkeypatch.setattr(rustdesk, "control_service", made.services.append)
+    made.service_accounts = []
+
+    def control_service(action, account=""):
+        made.services.append(action)
+        made.service_accounts.append(account)
+
+    monkeypatch.setattr(rustdesk, "control_service", control_service)
     monkeypatch.setattr(rustdesk, "set_password", made.passwords.append)
     monkeypatch.setattr(rustdesk, "read_id", lambda: "123456789")
     monkeypatch.setattr(rustdesk, "binary_path", lambda: "/usr/bin/rustdesk")
@@ -140,6 +153,94 @@ def test_the_service_is_stopped_around_the_write_and_started_after(share_host):
 
     # A write underneath a running service is one it overwrites as it exits.
     assert share_host.services == ["stop", "start"]
+
+
+def test_the_service_is_driven_with_the_account_whose_session_job_goes_with_it(
+    share_host,
+):
+    """On a Mac the account's own RustDesk job serves the connections and is
+    stopped and started with the service."""
+    share_host.share("pat")
+
+    assert share_host.service_accounts == ["pat", "pat"]
+
+
+def test_a_share_asks_the_seat_for_the_permissions_once_configured(share_host):
+    order = []
+    share_host.seat.ask_for_permissions = lambda account: order.append(
+        ("asked", account, list(share_host.services))
+    )
+
+    assert share_host.share("pat") == {}
+
+    assert order == [("asked", "pat", ["stop", "start"])]
+
+
+def test_a_refused_share_asks_nobody_for_anything(share_host):
+    share_host.seat.seated = []
+
+    assert share_host.share("pat") == {
+        "code": "rdp_wrong_seat",
+        "params": {"account": "pat"},
+    }
+    assert share_host.seat.asked == []
+
+
+def test_a_share_that_could_not_be_configured_asks_nobody(share_host, monkeypatch):
+    def refuse(path, options):
+        raise InstallError("read-only file system")
+
+    monkeypatch.setattr(rustdesk, "write_config", refuse)
+
+    assert share_host.share("pat")["code"] == "rdp_configure_failed"
+    assert share_host.seat.asked == []
+
+
+def test_on_a_mac_both_jobs_are_stopped_around_the_write_and_started_after(
+    share_host, monkeypatch
+):
+    """The session's job pushes what it holds to the service and reads its
+    configuration only as it starts, so both are out while the two copies
+    are written, and the service is up again before the job."""
+    timeline = []
+
+    def launchctl(command, **kwargs):
+        timeline.append(tuple(command[:3]))
+        # launchd no longer has a job once it is booted out.
+        returncode = 113 if command[1] == "print" else 0
+        return subprocess.CompletedProcess(command, returncode, stdout="")
+
+    class Accounts:
+        @staticmethod
+        def getpwnam(name):
+            return type("Entry", (), {"pw_uid": 501})()
+
+    monkeypatch.setattr(rustdesk.sys, "platform", "darwin")
+    monkeypatch.setattr(rustdesk, "pwd", Accounts)
+    monkeypatch.setattr(rustdesk.subprocess, "run", launchctl)
+    monkeypatch.setattr(rustdesk, "control_service", REAL_CONTROL_SERVICE)
+    monkeypatch.setattr(
+        rustdesk,
+        "write_config",
+        lambda path, options: timeline.append(("write", path)),
+    )
+
+    assert share_host.share("pat") == {}
+
+    session = "gui/501/com.carriez.RustDesk_server"
+    service = "system/com.carriez.RustDesk_service"
+    assert timeline == [
+        ("launchctl", "bootout", session),
+        ("launchctl", "print", session),
+        ("launchctl", "bootout", service),
+        ("launchctl", "print", service),
+        ("write", "/var/root/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml"),
+        ("write", "/home/pat/Library/Preferences/com.carriez.RustDesk/RustDesk2.toml"),
+        ("launchctl", "bootstrap", "system"),
+        ("launchctl", "bootstrap", "gui/501"),
+        ("launchctl", "kickstart", session),
+    ]
+    assert share_host.seat.asked == ["pat"]
 
 
 def test_the_seat_password_is_the_hubs_and_is_set_into_rustdesk(share_host, tmp_path):
@@ -472,11 +573,11 @@ def test_a_baseline_the_machine_cannot_take_is_logged_and_not_raised(
 
 def test_a_seated_screen_answers_with_the_seats_own_attention(share_host):
     """What a seated screen makes a peer wait on is the platform's: a Wayland
-    dialog, a Mac's privacy grants, nothing on Windows."""
+    dialog, nothing on Windows or a Mac."""
     share_host.seat.seated = ["pat"]
-    share_host.seat.attention = "rdp_permissions_needed"
+    share_host.seat.attention = "rdp_screen_not_allowed"
 
-    assert share_host.attention("pat") == "rdp_permissions_needed"
+    assert share_host.attention("pat") == "rdp_screen_not_allowed"
     assert share_host.seat.attention_homes == ["/home/pat"]
 
 

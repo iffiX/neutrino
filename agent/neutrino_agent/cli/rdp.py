@@ -21,10 +21,18 @@ from neutrino_agent.rdp.seat import seat_for
 
 RDP_NOT_SHARED = "this machine's desktop is not shared"
 RDP_ID_LABEL = "RustDesk ID"
+RDP_MAC_PERMISSIONS_LINE = (
+    "on this Mac, turn on Screen Recording and Accessibility for RustDesk in "
+    "System Settings, Privacy & Security, or anyone connecting sees a black "
+    "screen and cannot use the mouse"
+)
 
 
 def main_start(*, user: str = "") -> int:
     """Share this machine's desktop behind the hub's seat password.
+
+    On a Mac a second line names the two permissions RustDesk needs, the
+    ones the dialog on the screen names too.
 
     Args:
         user: Whose desktop; empty resolves the seat.
@@ -40,6 +48,8 @@ def main_start(*, user: str = "") -> int:
     if reply is None:
         return 1
     print(share_line(reply))
+    if platform_tuple()["os"] == "darwin":
+        print(RDP_MAC_PERMISSIONS_LINE)
     return 0
 
 

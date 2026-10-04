@@ -1,42 +1,46 @@
-"""The seat on macOS: the console's owner, netstat, and the privacy grants.
+"""The seat on macOS: the console's owner, netstat, and the permissions dialog.
 
 The account at the screen owns ``/dev/console``; at the login window root
 does. The connected peers are the established rows ``netstat`` prints for
 the direct port. A Mac shows a peer nothing until RustDesk holds both screen
-recording and accessibility, which only somebody at that Mac can grant, so
-the grants are read from the system's privacy database and a share says
-``rdp_permissions_needed`` until both are there. A database this process
-cannot read says the same: the share never claims a grant it did not see.
+recording and accessibility, which only somebody at that Mac can grant, and
+the privacy database that records them is closed to root, so the seat reads
+no grant and says nothing a peer would wait on. A share start puts a dialog
+naming the two permissions on the screen instead, and opens the Screen
+Recording pane of the system settings, both as the account in its session.
 
-Not pure: runs stat and netstat and reads the privacy database.
+Not pure: runs stat and netstat, and the dialog and the settings pane.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import sqlite3
 import subprocess
+import threading
+
+try:
+    import pwd
+except ImportError:
+    pwd = None
 
 from neutrino_agent.rdp.constants import (
-    RDP_ATTENTION_PERMISSIONS_NEEDED,
+    RDP_DARWIN_CHROOT,
     RDP_DARWIN_CONSOLE_OWNER_COMMAND,
+    RDP_DARWIN_DIALOG_SCRIPT,
+    RDP_DARWIN_DIALOG_TIMEOUT_S,
     RDP_DARWIN_ESTABLISHED,
+    RDP_DARWIN_LAUNCHCTL,
     RDP_DARWIN_LOGIN_WINDOW_OWNER,
     RDP_DARWIN_NETSTAT_COMMAND,
-    RDP_DARWIN_RUSTDESK_BUNDLE_ID,
-    RDP_DARWIN_TCC_ALLOWED,
-    RDP_DARWIN_TCC_DATABASE,
-    RDP_DARWIN_TCC_SERVICES,
+    RDP_DARWIN_OPEN,
+    RDP_DARWIN_OPEN_TIMEOUT_S,
+    RDP_DARWIN_OSASCRIPT,
+    RDP_DARWIN_SCREEN_RECORDING_PANE,
+    RDP_DARWIN_SESSION_PATH,
     RDP_SESSION_TIMEOUT_S,
 )
 from neutrino_agent.rdp.netstat import established_count
-
-# The grants RustDesk holds among the two it needs.
-DARWIN_TCC_QUERY = (
-    "SELECT service FROM access WHERE lower(client) = ? AND auth_value = ? "
-    "AND service IN ({})".format(", ".join("?" for _ in RDP_DARWIN_TCC_SERVICES))
-)
 
 
 def _printed(command) -> "str | None":
@@ -53,44 +57,55 @@ def _printed(command) -> "str | None":
     return result.stdout if result.returncode == 0 else None
 
 
-def granted_services(database: str) -> "set | None":
-    """The privacy grants RustDesk holds among the two it needs.
+def in_session(uid: int, gid: int, account: str, command: list) -> list:
+    """One command run as an account inside its own GUI session.
+
+    ``launchctl asuser`` puts the command in the session, and ``chroot``
+    onto ``/`` drops it to the account and its primary group alone; both
+    take root, which the agent is.
 
     Args:
-        database: The privacy database.
+        uid: The account's uid.
+        gid: The account's primary group.
+        account: The account's name.
+        command: The argument vector to run.
 
     Returns:
-        The granted service names, None when the database cannot be read.
+        The full argument vector.
     """
+    return [
+        RDP_DARWIN_LAUNCHCTL,
+        "asuser",
+        str(uid),
+        RDP_DARWIN_CHROOT,
+        "-u",
+        account,
+        "-g",
+        str(gid),
+        "-G",
+        str(gid),
+        "/",
+        *command,
+    ]
+
+
+def _run_quietly(command: list, environment: dict, timeout_s: int) -> None:
+    """Run one command to its end or its timeout, whatever it answers."""
     try:
-        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
-    except sqlite3.Error:
-        return None
-    try:
-        rows = connection.execute(
-            DARWIN_TCC_QUERY,
-            (
-                RDP_DARWIN_RUSTDESK_BUNDLE_ID,
-                RDP_DARWIN_TCC_ALLOWED,
-                *RDP_DARWIN_TCC_SERVICES,
-            ),
-        ).fetchall()
-    except sqlite3.Error:
-        return None
-    finally:
-        connection.close()
-    return {row[0] for row in rows}
+        subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+            timeout=timeout_s,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
 
 
 class DarwinSeat:
     """The macOS seat, behind the seat seam the share host reads."""
-
-    def __init__(self, *, tcc_database: str = RDP_DARWIN_TCC_DATABASE):
-        """
-        Args:
-            tcc_database: The privacy database the grants are read from.
-        """
-        self._tcc_database = tcc_database
 
     def graphical_accounts(self) -> "list | None":
         """The account that owns the console.
@@ -129,16 +144,53 @@ class DarwinSeat:
         )
 
     def screen_attention(self, account_home: str) -> str:
-        """Whether RustDesk holds both privacy grants a peer needs.
+        """What a peer would wait on at a seated screen: nothing a Mac lets
+        root read.
 
         Args:
             account_home: The home of the account the share is for.
 
         Returns:
-            Empty when both are granted, ``rdp_permissions_needed`` when
-            either is missing or the database cannot be read.
+            Empty.
         """
-        granted = granted_services(self._tcc_database)
-        if granted is None or not set(RDP_DARWIN_TCC_SERVICES) <= granted:
-            return RDP_ATTENTION_PERMISSIONS_NEEDED
         return ""
+
+    def ask_for_permissions(self, account: str) -> None:
+        """Put the permissions dialog and the Screen Recording pane on the
+        account's screen, and return without waiting for either.
+
+        Args:
+            account: The account at the screen.
+        """
+        if not account or pwd is None:
+            return
+        try:
+            entry = pwd.getpwnam(account)
+        except KeyError:
+            return
+        environment = {
+            "HOME": entry.pw_dir,
+            "USER": account,
+            "LOGNAME": account,
+            "PATH": RDP_DARWIN_SESSION_PATH,
+        }
+        asked = (
+            (
+                [RDP_DARWIN_OSASCRIPT, "-e", RDP_DARWIN_DIALOG_SCRIPT],
+                RDP_DARWIN_DIALOG_TIMEOUT_S,
+            ),
+            (
+                [RDP_DARWIN_OPEN, RDP_DARWIN_SCREEN_RECORDING_PANE],
+                RDP_DARWIN_OPEN_TIMEOUT_S,
+            ),
+        )
+        for command, timeout_s in asked:
+            threading.Thread(
+                target=_run_quietly,
+                args=(
+                    in_session(entry.pw_uid, entry.pw_gid, account, command),
+                    environment,
+                    timeout_s,
+                ),
+                daemon=True,
+            ).start()

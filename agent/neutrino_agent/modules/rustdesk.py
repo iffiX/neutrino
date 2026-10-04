@@ -37,6 +37,11 @@ import subprocess
 import sys
 import time
 
+try:
+    import pwd
+except ImportError:
+    pwd = None
+
 from neutrino_agent.constants import AGENT_RUSTDESK_BINARY_PATH
 from neutrino_agent.exceptions import InstallError
 from neutrino_agent.platforms.detect import OS_NAMES
@@ -91,7 +96,9 @@ RUSTDESK_WINDOWS_STOPPED_PATTERN = re.compile(r"STATE\s*:\s*1\b")
 RUSTDESK_WINDOWS_STOP_POLL_S = 0.5
 
 # On macOS: the app bundle, root's own configuration, the copy under a
-# seated account's home, and the launchd job the service runs as.
+# seated account's home, the launchd job the service runs as, and the
+# signed-in session's own ``--server`` job, which serves the connections
+# and pushes its own configuration to the service.
 RUSTDESK_DARWIN_BINARY_PATH = "/Applications/RustDesk.app/Contents/MacOS/RustDesk"
 RUSTDESK_DARWIN_ROOT_CONFIG = "/var/root/Library/Preferences/com.carriez.RustDesk"
 RUSTDESK_DARWIN_ACCOUNT_RELATIVE = "Library/Preferences/com.carriez.RustDesk"
@@ -99,6 +106,14 @@ RUSTDESK_DARWIN_SERVICE_LABEL = "com.carriez.RustDesk_service"
 RUSTDESK_DARWIN_SERVICE_PLIST = (
     "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist"
 )
+RUSTDESK_DARWIN_SESSION_LABEL = "com.carriez.RustDesk_server"
+RUSTDESK_DARWIN_SESSION_PLIST = (
+    "/Library/LaunchAgents/com.carriez.RustDesk_server.plist"
+)
+# How long a booted-out job is waited for to be gone, and how often launchd
+# is asked.
+RUSTDESK_DARWIN_UNLOAD_TIMEOUT_S = 30
+RUSTDESK_DARWIN_UNLOAD_POLL_S = 0.5
 
 RUSTDESK_ACTION_START = "start"
 RUSTDESK_ACTION_STOP = "stop"
@@ -412,15 +427,27 @@ def _password_refusal(binary: str, password: str) -> str:
     return ""
 
 
-def control_service(action: str) -> None:
+def control_service(action: str, account: str = "") -> None:
     """Start, stop or restart the RustDesk service the platform's own way.
 
     systemd on Linux, the service control manager on Windows, launchd on
     macOS. A stop on Windows waits for the service to have stopped, since
     it rewrites its configuration as it exits.
 
+    **On macOS the signed-in session's job goes with the service.** The
+    ``--server`` job of the account at the screen serves the connections,
+    reads its configuration once as it starts, and pushes what it holds to
+    the service whenever that changes, so a file written under it running
+    is overwritten. A stop takes that job out first and the service after,
+    each waited for until launchd no longer has it; a start brings the
+    service up first, so the job reads the service's configuration when it
+    comes up.
+
     Args:
         action: ``start``, ``stop`` or ``restart``.
+        account: The account at the screen, whose session job is driven
+            with the service on macOS; empty, or any other system, drives
+            the service alone.
 
     Raises:
         InstallError: If the service manager cannot be run.
@@ -434,16 +461,72 @@ def control_service(action: str) -> None:
             _run_service_command(["sc", "start", RUSTDESK_WINDOWS_SERVICE])
         return
     if os_name == "darwin":
-        if action in (RUSTDESK_ACTION_STOP, RUSTDESK_ACTION_RESTART):
-            _run_service_command(
-                ["launchctl", "bootout", f"system/{RUSTDESK_DARWIN_SERVICE_LABEL}"]
-            )
-        if action in (RUSTDESK_ACTION_START, RUSTDESK_ACTION_RESTART):
-            _run_service_command(
-                ["launchctl", "bootstrap", "system", RUSTDESK_DARWIN_SERVICE_PLIST]
-            )
+        _control_darwin(action, _darwin_uid(account))
         return
     _run_service_command(["systemctl", action, RUSTDESK_UNIT])
+
+
+def _control_darwin(action: str, uid: "int | None") -> None:
+    """Drive the service, and the session's job when there is a uid for it.
+
+    Args:
+        action: ``start``, ``stop`` or ``restart``.
+        uid: The uid of the account at the screen, None for the service
+            alone.
+
+    Raises:
+        InstallError: If launchctl cannot be run.
+    """
+    service_target = f"system/{RUSTDESK_DARWIN_SERVICE_LABEL}"
+    session_domain = f"gui/{uid}"
+    session_target = f"{session_domain}/{RUSTDESK_DARWIN_SESSION_LABEL}"
+    if action in (RUSTDESK_ACTION_STOP, RUSTDESK_ACTION_RESTART):
+        if uid is not None:
+            _run_service_command(["launchctl", "bootout", session_target])
+            _wait_for_darwin_unload(session_target)
+        _run_service_command(["launchctl", "bootout", service_target])
+        _wait_for_darwin_unload(service_target)
+    if action in (RUSTDESK_ACTION_START, RUSTDESK_ACTION_RESTART):
+        _run_service_command(
+            ["launchctl", "bootstrap", "system", RUSTDESK_DARWIN_SERVICE_PLIST]
+        )
+        if uid is not None:
+            _run_service_command(
+                [
+                    "launchctl",
+                    "bootstrap",
+                    session_domain,
+                    RUSTDESK_DARWIN_SESSION_PLIST,
+                ]
+            )
+            # A job launchd still had loaded is not started by a bootstrap.
+            _run_service_command(["launchctl", "kickstart", session_target])
+
+
+def _darwin_uid(account: str) -> "int | None":
+    """One account's uid, None when there is no account or no such one."""
+    if not account or pwd is None:
+        return None
+    try:
+        return pwd.getpwnam(account).pw_uid
+    except KeyError:
+        return None
+
+
+def _wait_for_darwin_unload(target: str) -> None:
+    """Wait until launchd no longer holds one job.
+
+    Args:
+        target: The job's ``<domain>/<label>``.
+
+    Raises:
+        InstallError: If launchctl cannot be run.
+    """
+    deadline = time.monotonic() + RUSTDESK_DARWIN_UNLOAD_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if _service_command_status(["launchctl", "print", target]) != 0:
+            return
+        time.sleep(RUSTDESK_DARWIN_UNLOAD_POLL_S)
 
 
 def _run_service_command(command: list) -> str:
@@ -468,6 +551,30 @@ def _run_service_command(command: list) -> str:
     except (OSError, subprocess.SubprocessError) as error:
         raise InstallError(f"{command[0]} could not run: {error}")
     return result.stdout or ""
+
+
+def _service_command_status(command: list) -> int:
+    """Run one service manager command, its exit status returned.
+
+    Args:
+        command: The argument vector.
+
+    Returns:
+        The exit status.
+
+    Raises:
+        InstallError: If the command cannot be run.
+    """
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=RUSTDESK_SERVICE_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise InstallError(f"{command[0]} could not run: {error}")
+    return result.returncode
 
 
 def _wait_for_windows_stop() -> None:

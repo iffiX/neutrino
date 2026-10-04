@@ -116,6 +116,43 @@ def test_a_share_prints_where_a_peer_reaches_it(running_agent, monkeypatch, caps
     assert "hunter2" not in out
 
 
+def test_a_share_on_a_mac_names_the_two_permissions(running_agent, monkeypatch, capsys):
+    monkeypatch.setenv("SUDO_USER", "alice")
+    monkeypatch.setattr(rdp_cli, "platform_tuple", lambda: {"os": "darwin"})
+    running_agent.share.update(
+        {"is_shared": True, "state": "starting", "account": "alice"}
+    )
+
+    assert rdp_cli.main_start() == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[-1] == rdp_cli.RDP_MAC_PERMISSIONS_LINE
+    assert "Screen Recording and Accessibility" in lines[-1]
+
+
+def test_a_share_off_a_mac_prints_no_permissions_line(
+    running_agent, monkeypatch, capsys
+):
+    monkeypatch.setenv("SUDO_USER", "alice")
+    monkeypatch.setattr(rdp_cli, "platform_tuple", lambda: {"os": "linux"})
+    running_agent.share.update({"is_shared": True, "state": "sharing"})
+
+    assert rdp_cli.main_start() == 0
+
+    assert rdp_cli.RDP_MAC_PERMISSIONS_LINE not in capsys.readouterr().out
+
+
+def test_a_refused_share_on_a_mac_prints_no_permissions_line(
+    running_agent, monkeypatch, capsys
+):
+    monkeypatch.setattr(rdp_cli, "platform_tuple", lambda: {"os": "darwin"})
+    running_agent.rdp_reply = {"code": "rdp_wrong_seat", "params": {"account": "x"}}
+
+    assert rdp_cli.main_start(user="x") == 1
+
+    assert rdp_cli.RDP_MAC_PERMISSIONS_LINE not in capsys.readouterr().out
+
+
 def test_a_refusal_is_worded_and_nothing_is_printed_as_a_share(
     running_agent, monkeypatch, capsys
 ):

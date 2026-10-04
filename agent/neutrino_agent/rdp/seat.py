@@ -2,7 +2,8 @@
 
 A seat says who is signed in at the screen, whether there is a desktop to
 share, how many peers are connected to the direct port, and what a peer
-would wait on at a seated screen. Each platform has its own.
+would wait on at a seated screen, and asks the seated person for what
+RustDesk needs granted there. Each platform has its own.
 """
 
 from neutrino_agent.rdp.darwin_seat import DarwinSeat

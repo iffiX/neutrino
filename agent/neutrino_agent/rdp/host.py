@@ -98,7 +98,9 @@ class RdpShareHost:
         """Configure RustDesk for direct connection and declare the share.
 
         A machine shares one seat at a time: naming another account closes
-        the copy the previous one was shared through.
+        the copy the previous one was shared through. Once RustDesk is
+        configured the seat asks the person at the screen for whatever
+        RustDesk needs granted there, without waiting for an answer.
 
         Args:
             account: The account sitting at the machine's screen.
@@ -128,6 +130,7 @@ class RdpShareHost:
                 rustdesk.set_password(seat_password)
         except InstallError as error:
             return {"code": "rdp_configure_failed", "params": {"detail": str(error)}}
+        self._seat.ask_for_permissions(account)
         self._store.set_rdp_share(
             {
                 "share_id": share_id,
@@ -251,9 +254,8 @@ class RdpShareHost:
         """What somebody has to do at this machine before a peer sees it.
 
         Wayland hands screen capture out through a dialog on the shared
-        machine's own screen, and a Mac through two permissions granted in
-        its settings. Until then a peer that dials waits on something it
-        cannot see.
+        machine's own screen. Until then a peer that dials waits on
+        something it cannot see.
 
         Believed for :data:`RDP_ATTENTION_TTL_S`: the heartbeat asks every
         few seconds and the answer costs the session table and a file.
@@ -320,7 +322,8 @@ class RdpShareHost:
         """Write RustDesk's configuration everywhere it is read.
 
         The service is stopped first: it rewrites its own file as it exits,
-        and a write underneath a running service is one it overwrites.
+        and a write underneath a running service is one it overwrites. On a
+        Mac the account's session job is stopped and started with it.
 
         Args:
             account: The account sitting at the machine, for the session's
@@ -331,11 +334,11 @@ class RdpShareHost:
         Raises:
             InstallError: If a file cannot be written.
         """
-        rustdesk.control_service(rustdesk.RUSTDESK_ACTION_STOP)
+        rustdesk.control_service(rustdesk.RUSTDESK_ACTION_STOP, account)
         for path in rustdesk.config_paths(self._account_home(account)):
             rustdesk.write_config(path, options)
         if is_restarted:
-            rustdesk.control_service(rustdesk.RUSTDESK_ACTION_START)
+            rustdesk.control_service(rustdesk.RUSTDESK_ACTION_START, account)
 
     def _account_home(self, account: str) -> str:
         """One account's home, empty when it cannot be resolved."""

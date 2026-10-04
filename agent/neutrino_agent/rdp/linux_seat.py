@@ -259,3 +259,11 @@ class LinuxSeat:
         if has_screen_permission(account_home):
             return ""
         return RDP_ATTENTION_SCREEN_NOT_ALLOWED
+
+    def ask_for_permissions(self, account: str) -> None:
+        """Ask the seated person for what RustDesk needs: nothing up front on
+        Linux, where Wayland asks on the first connection.
+
+        Args:
+            account: The account the share is for.
+        """

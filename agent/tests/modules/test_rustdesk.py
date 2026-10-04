@@ -528,31 +528,146 @@ def test_a_stop_on_windows_waits_for_the_service_to_have_stopped(monkeypatch):
     assert run.commands.count(["sc", "query", "RustDesk"]) == 3
 
 
-@pytest.mark.parametrize(
-    "action, commands",
-    [
-        (
-            "start",
-            [
-                [
-                    "launchctl",
-                    "bootstrap",
-                    "system",
-                    "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist",
-                ]
-            ],
-        ),
-        ("stop", [["launchctl", "bootout", "system/com.carriez.RustDesk_service"]]),
-    ],
-)
-def test_on_a_mac_launchd_drives_it(monkeypatch, action, commands):
-    run = ServiceCommands()
+class FakeLaunchd:
+    """subprocess.run for launchctl: jobs load on bootstrap and go on bootout.
+
+    ``lingering`` is how many ``print`` calls still find a booted-out job.
+    """
+
+    def __init__(self, loaded=(), lingering=0):
+        self.commands = []
+        self.loaded = set(loaded)
+        self.lingering = lingering
+
+    def __call__(self, command, **kwargs):
+        self.commands.append(list(command))
+        verb = command[1]
+        returncode = 0
+        if verb == "bootout":
+            self.loaded.discard(command[2])
+        elif verb == "bootstrap":
+            label = command[3].rsplit("/", 1)[-1][: -len(".plist")]
+            self.loaded.add(f"{command[2]}/{label}")
+        elif verb == "print":
+            if self.lingering > 0:
+                self.lingering -= 1
+            elif command[2] not in self.loaded:
+                returncode = 113
+        return subprocess.CompletedProcess(command, returncode, stdout="", stderr="")
+
+
+SERVICE = "system/com.carriez.RustDesk_service"
+SESSION = "gui/501/com.carriez.RustDesk_server"
+SERVICE_PLIST = "/Library/LaunchDaemons/com.carriez.RustDesk_service.plist"
+SESSION_PLIST = "/Library/LaunchAgents/com.carriez.RustDesk_server.plist"
+
+
+class _Accounts:
+    """The account database: pat is uid 501."""
+
+    @staticmethod
+    def getpwnam(name):
+        if name != "pat":
+            raise KeyError(name)
+        return type("Entry", (), {"pw_uid": 501})()
+
+
+@pytest.fixture()
+def on_a_mac(monkeypatch):
     monkeypatch.setattr(rustdesk.sys, "platform", "darwin")
+    monkeypatch.setattr(rustdesk, "pwd", _Accounts)
+    monkeypatch.setattr(rustdesk.time, "sleep", lambda seconds: None)
+
+
+def test_on_a_mac_a_start_with_nobody_named_drives_the_service_alone(
+    monkeypatch, on_a_mac
+):
+    run = FakeLaunchd()
     monkeypatch.setattr(rustdesk.subprocess, "run", run)
 
-    rustdesk.control_service(action)
+    rustdesk.control_service("start")
 
-    assert run.commands == commands
+    assert run.commands == [["launchctl", "bootstrap", "system", SERVICE_PLIST]]
+
+
+def test_on_a_mac_a_stop_with_nobody_named_takes_the_service_out(monkeypatch, on_a_mac):
+    run = FakeLaunchd(loaded={SERVICE})
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service("stop")
+
+    assert run.commands == [
+        ["launchctl", "bootout", SERVICE],
+        ["launchctl", "print", SERVICE],
+    ]
+
+
+def test_on_a_mac_a_stop_takes_the_sessions_job_out_before_the_service(
+    monkeypatch, on_a_mac
+):
+    """The session's job pushes what it holds to the service, so it goes
+    first and the service is gone before anything is written."""
+    run = FakeLaunchd(loaded={SERVICE, SESSION})
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service("stop", "pat")
+
+    assert run.commands == [
+        ["launchctl", "bootout", SESSION],
+        ["launchctl", "print", SESSION],
+        ["launchctl", "bootout", SERVICE],
+        ["launchctl", "print", SERVICE],
+    ]
+    assert run.loaded == set()
+
+
+def test_on_a_mac_a_start_brings_the_service_up_before_the_sessions_job(
+    monkeypatch, on_a_mac
+):
+    """The session's job reads the service's configuration as it comes up."""
+    run = FakeLaunchd()
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service("start", "pat")
+
+    assert run.commands == [
+        ["launchctl", "bootstrap", "system", SERVICE_PLIST],
+        ["launchctl", "bootstrap", "gui/501", SESSION_PLIST],
+        ["launchctl", "kickstart", SESSION],
+    ]
+    assert run.loaded == {SERVICE, SESSION}
+
+
+def test_on_a_mac_a_stop_waits_until_launchd_no_longer_has_the_job(
+    monkeypatch, on_a_mac
+):
+    run = FakeLaunchd(loaded={SERVICE}, lingering=2)
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service("stop")
+
+    assert run.commands.count(["launchctl", "print", SERVICE]) == 3
+
+
+def test_on_a_mac_an_account_it_does_not_have_drives_the_service_alone(
+    monkeypatch, on_a_mac
+):
+    run = FakeLaunchd()
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service("restart", "nobody-here")
+
+    assert all("gui/" not in " ".join(command) for command in run.commands)
+
+
+def test_off_a_mac_the_account_changes_nothing(monkeypatch):
+    run = ServiceCommands()
+    monkeypatch.setattr(rustdesk.sys, "platform", "linux")
+    monkeypatch.setattr(rustdesk.subprocess, "run", run)
+
+    rustdesk.control_service("stop", "pat")
+
+    assert run.commands == [["systemctl", "stop", "rustdesk"]]
 
 
 def test_on_linux_systemd_drives_it(monkeypatch):
