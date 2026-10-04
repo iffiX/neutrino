@@ -433,6 +433,62 @@ class HubSessionTest {
     }
 
     @Test
+    fun aPausedAdmissionKeepsTheTicketAndJoinsAgainAfterTheSecondsItNames() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] =
+            ChannelResult.Refused("admission_paused", JsonObject(mapOf("retry_after_s" to JsonPrimitive(42))))
+        val (session, store) = session(transport, binding = pending)
+        assertEquals(42L, session.runOnce())
+        assertEquals(HubConnection.PENDING, session.view.value.connection)
+        assertEquals("admission_paused", session.view.value.lastError?.code)
+        assertEquals(false, session.view.value.isJoinRefused)
+        assertEquals(pending, store.get("b1"))
+        transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = spent()
+        served(session)
+        assertEquals(2, transport.posts.size)
+        assertEquals("t9", store.get("b1")?.token)
+    }
+
+    @Test
+    fun theStateNamesTheWayInAndWhetherThePanelMayOpen() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport)
+        served(session)
+        assertEquals("", session.view.value.reachedThrough)
+        val (_, _, events) = transport.dialled.single()
+        events.trySend(
+            ChannelSocketEvent.Text(
+                """{"type":"state","hash":"h2","is_panel_allowed":true,"reached_through":"relay"}""",
+            ),
+        )
+        runCurrent()
+        assertEquals("relay", session.view.value.reachedThrough)
+        assertEquals(true, session.view.value.isPanelAllowed)
+    }
+
+    @Test
+    fun aConnectStreamCarriesBytesBothWaysAndOpensWithAWindow() = runTest {
+        val transport = FakeHubTransport { FakeHubTransport.welcoming }
+        val (session, _) = session(transport)
+        served(session)
+        val (_, socket, _) = transport.dialled.single()
+        val stream = (session.openConnect(ChannelFrames.args("is_panel" to true)) as ChannelResult.Ok).value
+        val open = socket.sent("open").single()
+        assertEquals("connect", open["kind"]!!.jsonPrimitive.content)
+        assertEquals(true, open["is_panel"]!!.jsonPrimitive.boolean)
+        assertEquals(stream.id, socket.sent("credit").single()["stream"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun aConnectStreamWithNoSocketIsUnreachable() = runTest {
+        val (session, _) = session(FakeHubTransport { FakeHubTransport.welcoming })
+        assertEquals(
+            "hub_unreachable",
+            (session.openConnect(ChannelFrames.args("id" to "p1")) as ChannelResult.Refused).code,
+        )
+    }
+
+    @Test
     fun aRefusedTicketIsDownWithItsCodeAndNoRoundRunsAfter() = runTest {
         val transport = FakeHubTransport { FakeHubTransport.welcoming }
         transport.answers["https://192.168.100.1:8443" to "/api/channel/join"] = ChannelResult.refused("ticket_spent")

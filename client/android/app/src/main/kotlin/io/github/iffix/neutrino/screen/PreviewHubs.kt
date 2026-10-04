@@ -60,7 +60,7 @@ object PreviewHubs {
                 "w3",
                 "web",
                 "VS Code",
-                payload("url" to "http://127.0.0.1:8000", "is_local_only" to true),
+                payload("url" to "http://192.168.10.20:8000", "is_token_required" to true),
                 deviceName = "Argon",
             ),
             ChannelServiceEntry(

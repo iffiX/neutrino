@@ -1,8 +1,14 @@
 package io.github.iffix.neutrino.forward
 
+import android.util.Log
+import io.github.iffix.neutrino.CLIENT_LOG_TAG
+import io.github.iffix.neutrino.ConnectRefusedException
 import io.github.iffix.neutrino.FORWARD_BIND_HOST
 import io.github.iffix.neutrino.FORWARD_BUFFER_BYTES
-import io.github.iffix.neutrino.FORWARD_CONNECT_TIMEOUT_MILLIS
+import io.github.iffix.neutrino.FORWARD_CLOSE_WAIT_MILLIS
+import io.github.iffix.neutrino.channel.ChannelConnectSocket
+import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelStream
 import java.io.Closeable
 import java.io.IOException
 import java.net.InetAddress
@@ -12,24 +18,22 @@ import java.net.Socket
 import kotlin.concurrent.thread
 
 /**
- * One listening loopback port relayed to one published port, as the desktop client's relay
- * does: each accepted connection opens a plain socket to the published host and port, which the
- * virtual network or the LAN carries, and the two are copied into each other until both ends
- * close.
+ * One listening loopback port whose every accepted connection is one `connect` stream to the
+ * hub: the two are copied into each other, and when either ends, what was read is written and
+ * both close. No connection dials a device address; the stream's open names the far end.
  *
- * @property host The address the published port answers on.
- * @property port The published port number.
+ * @property name What the log calls the far end.
+ * @param open Opens one `connect` stream for one accepted connection.
  * @param requestedPort The loopback number to listen on; 0 for any free one.
- * @param connectTimeoutMillis How long reaching the published port may take for one connection.
  */
 open class PortForwardRelay(
-    val host: String,
-    val port: Int,
+    val name: String,
+    private val open: () -> ChannelResult<ChannelStream>,
     private val requestedPort: Int,
-    private val connectTimeoutMillis: Int = FORWARD_CONNECT_TIMEOUT_MILLIS,
 ) : Closeable {
     private val connections = mutableSetOf<Socket>()
     private var listener: ServerSocket? = null
+    private var acceptor: Thread? = null
 
     @Volatile
     private var isClosed = false
@@ -52,11 +56,11 @@ open class PortForwardRelay(
         val bound = bind(requestedPort)
         listener = bound
         localPort = bound.localPort
-        thread(isDaemon = true, name = "forward-$localPort") { accept(bound) }
+        acceptor = thread(isDaemon = true, name = "forward-$localPort") { accept(bound) }
         return localPort
     }
 
-    /** Stop listening and close every open connection. */
+    /** Stop listening and close every open connection; the loopback number is free once it returns. */
     override fun close() {
         isClosed = true
         try {
@@ -64,6 +68,7 @@ open class PortForwardRelay(
         } catch (_: IOException) {
             // The listener was already gone.
         }
+        acceptor?.takeIf { it != Thread.currentThread() }?.join(FORWARD_CLOSE_WAIT_MILLIS)
         val open = synchronized(connections) { connections.toList().also { connections.clear() } }
         for (socket in open) closeQuietly(socket)
     }
@@ -94,12 +99,12 @@ open class PortForwardRelay(
     }
 
     private fun serve(client: Socket) {
-        val upstream = Socket()
+        val upstream = ChannelConnectSocket(open)
         try {
-            upstream.connect(InetSocketAddress(host, port), connectTimeoutMillis)
-        } catch (_: IOException) {
+            upstream.open()
+        } catch (error: IOException) {
+            Log.i(CLIENT_LOG_TAG, "a connection to $name was not opened: ${error.message}")
             closeQuietly(client)
-            closeQuietly(upstream)
             return
         }
         synchronized(connections) {
@@ -118,8 +123,6 @@ open class PortForwardRelay(
             connections -= client
             connections -= upstream
         }
-        closeQuietly(client)
-        closeQuietly(upstream)
     }
 
     private fun pump(source: Socket, destination: Socket) {
@@ -133,14 +136,13 @@ open class PortForwardRelay(
                 output.write(buffer, 0, count)
                 output.flush()
             }
+        } catch (error: ConnectRefusedException) {
+            Log.i(CLIENT_LOG_TAG, "the hub ended a connection to $name: ${error.code}")
         } catch (_: IOException) {
-            // One side closed; the end of stream is passed on below.
+            // One side closed; both close below.
         }
-        try {
-            destination.shutdownOutput()
-        } catch (_: IOException) {
-            // The other side is gone already.
-        }
+        closeQuietly(source)
+        closeQuietly(destination)
     }
 
     private fun closeQuietly(socket: Socket) {

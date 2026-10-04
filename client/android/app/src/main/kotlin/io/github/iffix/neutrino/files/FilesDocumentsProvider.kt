@@ -15,10 +15,12 @@ import android.provider.DocumentsProvider
 import android.system.ErrnoException
 import android.system.OsConstants
 import android.webkit.MimeTypeMap
+import io.github.iffix.neutrino.ConnectRefusedException
 import io.github.iffix.neutrino.NeutrinoApplication
 import io.github.iffix.neutrino.R
 import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
+import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.words.WordCatalog
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -191,7 +193,14 @@ class FilesDocumentsProvider : DocumentsProvider() {
 
     private fun wordOf(error: IOException): String = when (error) {
         is ShareRefusedException -> words().refusal(error.code)
+
         is ShareUnreachableException -> words().refusal("share_unreachable")
+
+        is ConnectRefusedException -> words().refusal(
+            error.code,
+            ChannelResult.Refused(error.code, error.params).wordParams,
+        )
+
         else -> error.message.orEmpty()
     }
 

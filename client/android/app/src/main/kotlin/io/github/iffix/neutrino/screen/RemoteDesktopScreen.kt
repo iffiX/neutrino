@@ -24,18 +24,17 @@ import io.github.iffix.neutrino.shell.LocalClientActions
 
 /**
  * The desktops the machines of the joined hubs share, each with Connect: the button shows the
- * job while the address and seat password come from the hub, then the viewer opens. Configure,
- * at its left, keeps the codec and the quality the next Connect asks for. A Mac's entry carries a
- * standing hint that a black picture or a mouse that does nothing means RustDesk lacks its
- * permissions there.
+ * job while the seat password comes from the hub and the entry's forward is made, then the
+ * viewer opens on the forward. Configure, at its left, keeps the codec and the quality the next
+ * Connect asks for. A Mac's entry carries a standing hint that a black picture or a mouse that
+ * does nothing means RustDesk lacks its permissions there.
  *
  * @param hubs Every hub joined.
  * @param connecting The entries whose Connect runs, by entry key.
  * @param errors The code each entry's last Connect ended in, by entry key.
  * @param viewingKey The entry the open viewer shows, or null.
- * @param dialed The address each entry's viewer dials, by entry key, once the hub handed it back.
- * @param onConnect What pressing Connect does, with the binding id, the entry id, the viewer's title
- *   and the entry's `platform_os`.
+ * @param onConnect What pressing Connect does, with the binding id, the entry id, the viewer's title,
+ *   the entry's `platform_os` and its port.
  */
 @Composable
 fun RemoteDesktopScreen(
@@ -43,8 +42,7 @@ fun RemoteDesktopScreen(
     connecting: Set<String>,
     errors: Map<String, ChannelResult.Refused>,
     viewingKey: String?,
-    dialed: Map<String, String>,
-    onConnect: (String, String, String, String) -> Unit,
+    onConnect: (String, String, String, String, Int) -> Unit,
 ) {
     val words = NeutrinoTheme.words
     val actions = LocalClientActions.current
@@ -76,7 +74,7 @@ fun RemoteDesktopScreen(
                     label = words.word(if (isBusy) "ui.job.connecting" else "ui.rdp_connect"),
                     onClick = {
                         val name = hub.binding.title + ":" + entry.deviceName.ifEmpty { entry.title }
-                        onConnect(hub.binding.id, entry.id, name, entry.text("platform_os"))
+                        onConnect(hub.binding.id, entry.id, name, entry.text("platform_os"), entry.number("port") ?: 0)
                     },
                     isEnabled = reason == null && !isBusy && !hub.jobs.isRefreshing,
                     isBusy = isBusy,
@@ -86,7 +84,7 @@ fun RemoteDesktopScreen(
         ) {
             BasicText(entry.title, style = NeutrinoTheme.rowTitle)
             if (viewingKey == key) BasicText(words.word("ui.rdp_open"), style = NeutrinoTheme.note)
-            BasicText(rowAddress(entry, dialed[key]), style = NeutrinoTheme.mono)
+            BasicText(rowAddress(entry), style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
             if (hasMacHint(entry)) BasicText(words.word("ui.rdp_mac_hint"), style = NeutrinoTheme.note)
             ErrorLine(errors[key])
@@ -115,17 +113,12 @@ fun RemoteDesktopScreen(
 internal fun hasMacHint(entry: ChannelServiceEntry): Boolean = entry.text("platform_os") == CLIENT_PLATFORM_OS_DARWIN
 
 /**
- * The row's mono line: the entry's `host:port`, or the address the viewer last dialled where the
- * hub handed back another.
+ * The row's mono line: where the desktop is on the hub's networks, which the viewer never dials.
  *
  * @param entry The desktop entry.
- * @param dialed The address the viewer last dialled for it, or null before any Connect.
- * @return The address the row names.
+ * @return The entry's `host:port`.
  */
-internal fun rowAddress(entry: ChannelServiceEntry, dialed: String?): String {
-    val own = "${entry.text("host")}:${entry.number("port") ?: ""}"
-    return dialed?.takeIf { it != own } ?: own
-}
+internal fun rowAddress(entry: ChannelServiceEntry): String = "${entry.text("host")}:${entry.number("port") ?: ""}"
 
 @Preview(widthDp = 400, heightDp = 600)
 @Composable
@@ -137,6 +130,6 @@ private fun RemoteDesktopScreenPreview() {
             "ui.unhealthy" to "当前无法访问",
         ),
     ) {
-        RemoteDesktopScreen(PreviewHubs.all, emptySet(), emptyMap(), null, emptyMap(), onConnect = { _, _, _, _ -> })
+        RemoteDesktopScreen(PreviewHubs.all, emptySet(), emptyMap(), null, onConnect = { _, _, _, _, _ -> })
     }
 }
