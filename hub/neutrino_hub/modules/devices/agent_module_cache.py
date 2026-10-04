@@ -35,7 +35,6 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_CACHE_DIR,
     AGENT_MODULE_EDITION_CN,
     AGENT_MODULE_EDITION_INTL,
-    AGENT_MODULE_FETCH_CHUNK_BYTES,
     AGENT_MODULE_FETCH_LIMIT_BYTES,
     AGENT_MODULE_FETCH_TIMEOUT_S,
     AGENT_MODULE_GITHUB_API,
@@ -43,6 +42,11 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_LISTING_LIMIT_BYTES,
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
+)
+from neutrino_hub.modules.devices.streamed_file import (
+    DownloadedFile,
+    file_sha256,
+    stream_to_file,
 )
 from neutrino_hub.utils.tls_trust import public_ssl_context
 
@@ -62,38 +66,6 @@ class AgentModuleArtifact:
     path: Path
     digest: str
     package_kind: str
-
-
-def read_in_chunks(response, progress: "AgentModuleFetchProgress | None") -> bytes:
-    """A response's body, read in 64 KB chunks up to one byte past the limit.
-
-    Args:
-        response: What ``urlopen`` answered; its ``Content-Length`` header,
-            when present, is the total ``progress`` is told.
-        progress: Told the byte count after each chunk and once at the end;
-            None tells nobody.
-
-    Returns:
-        The bytes read.
-    """
-    try:
-        total = int(response.headers.get("Content-Length", "") or 0)
-    except (AttributeError, ValueError):
-        total = 0
-    chunks = []
-    received = 0
-    ceiling = AGENT_MODULE_FETCH_LIMIT_BYTES + 1
-    while received < ceiling:
-        chunk = response.read(min(AGENT_MODULE_FETCH_CHUNK_BYTES, ceiling - received))
-        if not chunk:
-            break
-        chunks.append(chunk)
-        received += len(chunk)
-        if progress is not None:
-            progress.note(received, total)
-    if progress is not None:
-        progress.note(received, total, is_done=True)
-    return b"".join(chunks)
 
 
 def platform_keys(platform: dict) -> list:
@@ -414,9 +386,9 @@ class AgentModuleCache:
                         source=str(manifest.get("source", "") or ""),
                         on_line=on_progress,
                     )
-                content = self._fetch(entry, progress=progress)
-                self._write(path, content)
-                held = hashlib.sha256(content).hexdigest()
+                download = self._fetch(entry, progress=progress)
+                self._place(download, path)
+                held = download.sha256
             elif on_progress is not None:
                 on_progress(f"hub: {title} is in the cache")
             return AgentModuleArtifact(
@@ -504,49 +476,46 @@ class AgentModuleCache:
     def _read_held(path: Path) -> "str | None":
         """The digest of an artifact already on disk, or None."""
         try:
-            with open(path, "rb") as stream:
-                return hashlib.sha256(stream.read()).hexdigest()
+            return file_sha256(path)
         except OSError:
             return None
 
     @staticmethod
-    def _write(path: Path, content: bytes) -> None:
-        """Put an artifact in place whole, never half-written.
+    def _place(download: DownloadedFile, path: Path) -> None:
+        """Put a checked download in place with one rename.
 
         Args:
+            download: The download, beside its place.
             path: Where it belongs.
-            content: The bytes.
 
         Raises:
-            AgentArtifactFetchError: If the cache cannot be written.
+            AgentArtifactFetchError: ``module_cache_unwritable``; the
+                download is gone.
         """
-        temporary = path.with_name(path.name + ".partial")
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary.write_bytes(content)
-            temporary.replace(path)
+            download.place(path)
         except OSError as error:
-            temporary.unlink(missing_ok=True)
             raise AgentArtifactFetchError(
                 "module_cache_unwritable", detail=str(error)[:200]
             ) from error
 
     def _fetch(
         self, entry: dict, *, progress: "AgentModuleFetchProgress | None" = None
-    ) -> bytes:
-        """Get one module's bytes.
+    ) -> DownloadedFile:
+        """Get one module's file, written beside its place in the cache and checked.
 
         A ``cn`` hub fetches from the entry's ``cn_url`` where it names one;
         when that mirror no longer carries the pinned file and the entry
         names ``cn_latest_url``, the mirror's current release is taken
-        instead, checked by HTTPS alone.
+        instead, checked by HTTPS alone. A download that is refused leaves
+        nothing on disk.
 
         Args:
             entry: The manifest's entry for this platform.
             progress: Told the byte count after each chunk; None tells nobody.
 
         Returns:
-            The package.
+            The download, not yet in its place.
 
         Raises:
             AgentArtifactFetchError: With the typed reason; a payload that does
@@ -562,29 +531,47 @@ class AgentModuleCache:
             )
         is_pinned = True
         if self._edition == AGENT_MODULE_EDITION_CN and entry.get("cn_url"):
-            content, is_pinned = self._fetch_from_mirror(entry, progress=progress)
+            download, is_pinned = self._fetch_from_mirror(entry, progress=progress)
         elif not url:
             raise AgentArtifactFetchError("no_download_named")
         else:
-            content = self._fetch_plain(url, progress=progress)
-        if len(content) > AGENT_MODULE_FETCH_LIMIT_BYTES:
+            download = self._fetch_plain(url, progress=progress)
+        try:
+            self._judge(download, entry, is_pinned=is_pinned)
+        except AgentArtifactFetchError:
+            download.discard()
+            raise
+        return download
+
+    @staticmethod
+    def _judge(download: DownloadedFile, entry: dict, *, is_pinned: bool) -> None:
+        """Refuse a download past the limit, of the wrong kind, or off its pin.
+
+        Args:
+            download: The download.
+            entry: The manifest's entry for this platform.
+            is_pinned: Whether the entry's ``sha256`` covers the download.
+
+        Raises:
+            AgentArtifactFetchError: ``module_fetch_too_large``,
+                ``module_fetch_failed`` or ``module_sha256_mismatch``.
+        """
+        if download.size > AGENT_MODULE_FETCH_LIMIT_BYTES:
             raise AgentArtifactFetchError(
                 "module_fetch_too_large",
                 limit_mb=AGENT_MODULE_FETCH_LIMIT_BYTES // (1024 * 1024),
             )
         package_kind = str(entry.get("package_kind", "") or "")
-        if not looks_like_package(content, package_kind):
+        if not looks_like_package(download.head, package_kind):
             raise AgentArtifactFetchError(
                 "module_fetch_failed",
                 detail=f"the download does not open like a {package_kind} package",
             )
         pinned = str(entry.get("sha256", "") or "").lower()
-        received = hashlib.sha256(content).hexdigest()
-        if is_pinned and pinned and pinned != received:
+        if is_pinned and pinned and pinned != download.sha256:
             raise AgentArtifactFetchError(
-                "module_sha256_mismatch", expected=pinned, received=received
+                "module_sha256_mismatch", expected=pinned, received=download.sha256
             )
-        return content
 
     def _fetch_from_mirror(
         self, entry: dict, *, progress: "AgentModuleFetchProgress | None" = None
@@ -597,8 +584,8 @@ class AgentModuleCache:
             progress: Told the byte count after each chunk; None tells nobody.
 
         Returns:
-            ``(content, is_pinned)``: whether the content is the pinned file,
-            which its ``sha256`` checks.
+            ``(download, is_pinned)``: whether the download is the pinned
+            file, which its ``sha256`` checks.
 
         Raises:
             AgentArtifactFetchError: ``module_fetch_failed`` when the mirror
@@ -649,30 +636,33 @@ class AgentModuleCache:
             ) from error
         return body.decode("utf-8", "replace")
 
-    @staticmethod
     def _fetch_plain(
-        url: str, *, progress: "AgentModuleFetchProgress | None" = None
-    ) -> bytes:
-        """Fetch directly, with ordinary browser headers, in 64 KB chunks.
+        self, url: str, *, progress: "AgentModuleFetchProgress | None" = None
+    ) -> DownloadedFile:
+        """Fetch directly, with ordinary browser headers, into a file in the cache.
 
         Args:
             url: What the manifest names.
             progress: Told the byte count after each chunk; None tells nobody.
 
         Returns:
-            The body, at most one byte past the fetch limit.
+            The download, at most one byte past the fetch limit.
 
         Raises:
-            AgentArtifactFetchError: ``module_fetch_failed``.
+            AgentArtifactFetchError: ``module_fetch_failed`` when the source
+                does not answer or the body breaks off, with ``status`` for
+                an HTTP refusal; ``module_cache_unwritable`` when the cache
+                cannot be written.
         """
+        try:
+            self._root.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise AgentArtifactFetchError(
+                "module_cache_unwritable", detail=str(error)[:200]
+            ) from error
         request = urllib.request.Request(url, headers=AGENT_MODULE_BROWSER_HEADERS)
         try:
-            with urllib.request.urlopen(
-                request,
-                timeout=AGENT_MODULE_FETCH_TIMEOUT_S,
-                context=public_ssl_context(),
-            ) as response:
-                return read_in_chunks(response, progress)
+            response = self._open(request)
         except urllib.error.HTTPError as error:
             raise AgentArtifactFetchError(
                 "module_fetch_failed", detail=str(error)[:200], status=error.code
@@ -681,6 +671,40 @@ class AgentModuleCache:
             raise AgentArtifactFetchError(
                 "module_fetch_failed", detail=str(error)[:200]
             ) from error
+        with response:
+            try:
+                return stream_to_file(
+                    response,
+                    self._root,
+                    limit=AGENT_MODULE_FETCH_LIMIT_BYTES,
+                    on_chunk=progress.note if progress is not None else None,
+                )
+            except ConnectionError as error:
+                raise AgentArtifactFetchError(
+                    "module_fetch_failed", detail=str(error)[:200]
+                ) from error
+            except OSError as error:
+                raise AgentArtifactFetchError(
+                    "module_cache_unwritable", detail=str(error)[:200]
+                ) from error
+
+    @staticmethod
+    def _open(request: urllib.request.Request):
+        """Open one download over the public internet.
+
+        Args:
+            request: The request.
+
+        Returns:
+            The response, to be read and closed by the caller.
+
+        Raises:
+            OSError: When the source does not answer, an HTTP refusal
+                included.
+        """
+        return urllib.request.urlopen(
+            request, timeout=AGENT_MODULE_FETCH_TIMEOUT_S, context=public_ssl_context()
+        )
 
     @staticmethod
     def _resolve_github_asset(repo: str, asset_pattern: str) -> str:

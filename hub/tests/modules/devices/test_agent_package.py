@@ -11,6 +11,7 @@ neither is refused by name.
 import hashlib
 import io
 import json
+import os
 
 import pytest
 
@@ -233,7 +234,7 @@ def test_a_release_that_serves_something_else_is_refused_and_kept_nowhere(
 
     assert refused.value.code == "agent_package_sha256_mismatch"
     assert refused.value.params["received"] == DEB_DIGEST
-    assert list((tmp_path / "agent_cache").glob("*")) == []
+    assert os.listdir(tmp_path / "agent_cache") == []
 
 
 def test_a_platform_with_no_url_and_nothing_held_is_refused_by_name(cache, tmp_path):
@@ -392,3 +393,47 @@ def test_a_held_file_that_no_longer_hashes_right_is_fetched_again(
 
     assert served == [MSI_URL]
     assert path.read_bytes() == MSI_BYTES
+
+
+class BrokenResponse(io.BytesIO):
+    """A body that breaks off after its first chunk."""
+
+    def read(self, size=-1):
+        if self.tell() > 0:
+            raise ConnectionResetError("the peer went away")
+        return super().read(size)
+
+
+def test_a_release_that_breaks_off_is_refused_and_leaves_nothing_behind(
+    cache, tmp_path, monkeypatch
+):
+    body = b"!<arch>" + b"x" * (1024 * 1024)
+    write_manifest(
+        tmp_path / "agent_packages.json",
+        {"deb-arm64": entry(DEB_ARM_NAME, url=RELEASE_URL, content=body)},
+    )
+    monkeypatch.setattr(
+        agent_package.urllib.request,
+        "urlopen",
+        lambda url, timeout=None, context=None: BrokenResponse(body),
+    )
+
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        cache.package(family="deb", architecture="arm64")
+
+    assert refused.value.code == "agent_package_fetch_failed"
+    assert os.listdir(tmp_path / "agent_cache") == []
+
+
+def test_a_large_release_lands_whole_under_its_name(cache, tmp_path, monkeypatch):
+    body = b"!<arch>" + os.urandom(3 * 1024 * 1024)
+    write_manifest(
+        tmp_path / "agent_packages.json",
+        {"deb-arm64": entry(DEB_ARM_NAME, url=RELEASE_URL, content=body)},
+    )
+    answers(monkeypatch, body)
+
+    path = cache.package(family="deb", architecture="arm64")
+
+    assert path.read_bytes() == body
+    assert os.listdir(tmp_path / "agent_cache") == [DEB_ARM_NAME]
