@@ -1,5 +1,6 @@
 """`nhub update`: what it says, when it asks, and what it hands to systemd."""
 
+import io
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -60,7 +61,7 @@ class Installer:
 
 
 @pytest.fixture
-def box(monkeypatch, tmp_path):
+def box(terminal, monkeypatch, tmp_path):
     """The command over a stub installer, a fast wait and a recorded prompt."""
     state = HubUpdateStateFile(path=tmp_path / "state.json")
     installer = Installer(state)
@@ -178,6 +179,20 @@ def test_a_missing_rollback_is_said_before_the_question(box, capsys):
     update_module.update(is_confirmed=False, package=None)
 
     assert "nothing can be put back" in capsys.readouterr().out
+
+
+def test_with_no_terminal_it_names_yes_and_installs_nothing(box, monkeypatch, capsys):
+    installer, _, asked = box
+    installer.checker.latest = lambda: Release("0.3.1")
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+
+    assert update_module.update(is_confirmed=False, package=None) == 1
+
+    assert asked == []
+    assert installer.prepared == []
+    error = capsys.readouterr().err
+    assert error.strip().count("\n") == 0
+    assert "--yes" in error
 
 
 def test_too_little_room_is_refused_without_asking(box, monkeypatch, capsys):

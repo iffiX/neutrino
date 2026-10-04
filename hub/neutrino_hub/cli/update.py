@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from neutrino_hub import HUB_VERSION
+from neutrino_hub.cli.start import is_confirmed_on_terminal
 from neutrino_hub.exceptions import HubUpdateError
 from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_REASON_PACKAGE_MISSING,
@@ -172,7 +173,9 @@ def _plan_from_release(installer: HubUpdateInstaller, *, is_confirmed: bool, por
             f"no release carries the package of {HUB_VERSION}: nothing can be put "
             f"back if {found.version} does not come up"
         )
-    if not is_confirmed and not _asked(f"install {found.version} over {HUB_VERSION}?"):
+    if not is_confirmed and not is_confirmed_on_terminal(
+        f"install {found.version} over {HUB_VERSION}?"
+    ):
         return STATUS_FAILED, None
     plan = installer.prepare(
         found,
@@ -198,7 +201,9 @@ def _plan_from_file(
     """
     if not package.is_file():
         raise HubUpdateError(HUB_UPDATE_REASON_PACKAGE_MISSING, path=str(package))
-    if not is_confirmed and not _asked(f"install {package.name} over {HUB_VERSION}?"):
+    if not is_confirmed and not is_confirmed_on_terminal(
+        f"install {package.name} over {HUB_VERSION}?"
+    ):
         return STATUS_FAILED, None
     plan = installer.plan_for_file(
         package,
@@ -265,12 +270,6 @@ def _print_release(found: HubRelease) -> None:
         if len(lines) > UPDATE_NOTES_LINES:
             print("  …")
         print()
-
-
-def _asked(question: str) -> bool:
-    """One yes-or-no question on the terminal."""
-    answer = input(f"{question} [y/N] ").strip().lower()
-    return answer in ("y", "yes")
 
 
 def _worded(error: HubUpdateError) -> str:

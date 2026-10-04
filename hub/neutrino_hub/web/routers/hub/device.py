@@ -5,8 +5,6 @@ import base64
 import codecs
 import ipaddress
 import json
-import secrets
-import time
 import zlib
 from collections.abc import AsyncIterator
 
@@ -22,6 +20,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
     CHANNEL_STREAM_COMMAND,
+    ENROLLMENT_TTL_S,
 )
 from neutrino_hub.modules.clients.ai_keys import revoke_device_key
 from neutrino_hub.modules.clients.registry import ClientRegistry
@@ -105,10 +104,6 @@ LOGIN_KIND = "login"
 AUTH_KEY = "key"
 AUTH_PASSWORD = "password"  # scan: allow
 
-ENROLLMENT_TOKEN_BYTES = 18
-# Long enough to walk to another machine and paste it, short enough that a
-# forgotten link is not a standing invitation.
-ENROLLMENT_TTL_S = 30 * 60
 ENROLLMENT_LINK_PREFIX = "neutrino://enroll/"
 ENROLLMENT_LINK_ZLIB_LEVEL = 9
 
@@ -474,9 +469,8 @@ def generate_enrollment_link(
     """One ticket and the link that carries it, however the join begins.
 
     The panel's link button and the SSH install generate here alike, so both
-    joins walk the same enrollment path. Lapsed tickets are swept on the way
-    past: a ticket nobody was ever shown is a join secret lying around, and
-    one that has expired is the same thing an hour later.
+    joins walk the same enrollment path. The ticket replaces the open device
+    ticket, and lapsed tickets leave the store with it.
 
     Args:
         runtime: The shared runtime, which holds the open tickets.
@@ -492,17 +486,12 @@ def generate_enrollment_link(
             nothing for a machine to reach the panel at; 409 with
             ``{"code": "agent_tls_missing"}`` when the channel has no
             certificate to pin.
+        OSError: When the ticket file cannot be written.
     """
     urls, fingerprint = enrollment_link_parts(runtime)
-    # One open invitation at a time: generating replaces whatever device link
-    # was out, so only the machine the link was just made for can join on it.
-    clear_enrollments(runtime, kind=None)
-    token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
-    runtime.enrollments[token] = {
-        "name": name.strip(),
-        "device_id": device_id or None,
-        "expires_at": time.time() + ENROLLMENT_TTL_S,
-    }
+    token, _ = runtime.enrollments.make(
+        kind=CHANNEL_ROLE_AGENT, name=name.strip(), device_id=device_id
+    )
     return enrollment_link(urls, token, fingerprint), token
 
 
@@ -560,21 +549,6 @@ def enrollment_body(
     if role == CHANNEL_ROLE_CLIENT:
         body["overlays"] = list(overlays or [])
     return body
-
-
-def clear_enrollments(runtime: PanelRuntime, *, kind: "str | None") -> None:
-    """Drop every open ticket of one kind.
-
-    Args:
-        runtime: The shared runtime.
-        kind: The ticket kind to drop; None drops the device tickets.
-    """
-    for token in [
-        token
-        for token, ticket in runtime.enrollments.items()
-        if ticket.get("kind") == kind
-    ]:
-        runtime.enrollments.pop(token, None)
 
 
 @router.get("/service", response_model=DeviceServicesView)

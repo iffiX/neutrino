@@ -13,6 +13,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
 )
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 
@@ -32,11 +33,11 @@ class ChannelBinding:
     name: str = ""
 
 
-def spend_ticket(tickets: dict, token: str, role: str) -> dict:
+def spend_ticket(tickets: ChannelTicketRegistry, token: str, role: str) -> dict:
     """Take a ticket out of the store and judge it.
 
     Args:
-        tickets: The open tickets, by token.
+        tickets: The open tickets.
         token: The ticket the join names.
         role: The role the join claims.
 
@@ -48,10 +49,10 @@ def spend_ticket(tickets: dict, token: str, role: str) -> dict:
         ValueError: When the ticket was made for the other role; the ticket
             is spent all the same.
     """
-    ticket = tickets.pop(token, None)
-    if ticket is None or float(ticket.get("expires_at", 0)) < time.time():
+    ticket = tickets.spend(token)
+    if ticket is None or ticket["expires_at"] < time.time():
         raise KeyError("no live ticket")
-    ticket_role = str(ticket.get("kind") or CHANNEL_ROLE_AGENT)
+    ticket_role = ticket["kind"]
     if ticket_role != role:
         raise ValueError(f"a {ticket_role} ticket cannot join as {role}")
     return ticket

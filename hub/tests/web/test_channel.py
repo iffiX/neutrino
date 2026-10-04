@@ -18,6 +18,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CLOSE_REFUSED,
     CHANNEL_CLOSE_REPLACED,
@@ -47,7 +48,7 @@ class FakeRuntime:
 
     def __init__(self):
         self.events = PanelEventBus()
-        self.enrollments: dict = {}
+        self.enrollments = ChannelTicketRegistry()
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}
@@ -99,12 +100,10 @@ def api(monkeypatch, tmp_path):
 
 
 def ticket(runtime, token: str, **fields) -> None:
-    runtime.enrollments[token] = {
-        "name": "",
-        "device_id": None,
-        "expires_at": time.time() + 600,
-        **fields,
-    }
+    runtime.enrollments.put(
+        token,
+        **{"kind": "agent", "expires_at": time.time() + 600, **fields},
+    )
 
 
 def join_body(**fields) -> dict:
@@ -202,7 +201,7 @@ def test_a_blank_ticket_lands_on_a_new_row_with_a_token(api):
     assert device.machine_id == MACHINE
     assert device.name == "box"
     assert DeviceRegistry().find_by_token(binding["token"]).id == binding["id"]
-    assert runtime.enrollments == {}
+    assert runtime.enrollments.entries() == []
     assert runtime.device_platform[binding["id"]] == PLATFORM
     assert runtime.device_hostname[binding["id"]] == "box"
     assert runtime.device_address[binding["id"]] == "testclient"
@@ -240,6 +239,24 @@ def test_a_ticket_is_spent_once(api):
     assert again.json()["detail"] == {"code": "ticket_spent", "params": {}}
 
 
+def test_a_ticket_made_before_a_restart_joins_once_after_it(api):
+    client, runtime = api
+    client_id = ClientRegistry().create("alice")
+    ticket(runtime, "c1", kind="client", client_id=client_id)
+    runtime.enrollments = ChannelTicketRegistry()
+
+    first = client.post("/api/channel/join", json=join_body(ticket="c1", role="client"))
+    runtime.enrollments = ChannelTicketRegistry()
+    second = client.post(
+        "/api/channel/join", json=join_body(ticket="c1", role="client")
+    )
+
+    assert first.status_code == 200, first.json()
+    assert first.json()["id"] == client_id
+    assert second.status_code == 401
+    assert second.json()["detail"]["code"] == "ticket_spent"
+
+
 def test_an_unknown_or_expired_ticket_is_ticket_spent(api):
     client, runtime = api
     ticket(runtime, "old", expires_at=time.time() - 1)
@@ -249,7 +266,7 @@ def test_an_unknown_or_expired_ticket_is_ticket_spent(api):
 
     assert unknown.status_code == expired.status_code == 401
     assert expired.json()["detail"]["code"] == "ticket_spent"
-    assert runtime.enrollments == {}
+    assert runtime.enrollments.entries() == []
 
 
 def test_no_route_hands_out_a_tickets_link(api):
@@ -260,7 +277,7 @@ def test_no_route_hands_out_a_tickets_link(api):
     answer = client.get("/api/channel/enroll", params={"ticket": "c1"})
 
     assert answer.status_code == 404
-    assert "c1" in runtime.enrollments
+    assert runtime.enrollments.get("c1") is not None
 
 
 def test_a_rejected_protocol_spends_no_ticket(api):
@@ -276,7 +293,7 @@ def test_a_rejected_protocol_spends_no_ticket(api):
         "code": "protocol_too_new",
         "params": {"peer": PROTOCOL + 1, "hub": PROTOCOL, "min": PROTOCOL_MIN},
     }
-    assert "t1" in runtime.enrollments
+    assert runtime.enrollments.get("t1") is not None
     assert DeviceRegistry().all_stored() == []
 
 
@@ -309,7 +326,7 @@ def test_a_device_ticket_refuses_a_client_and_the_other_way_round(api):
     }
     assert as_agent.json()["detail"]["params"] == {"role": "agent"}
     assert as_nothing.json()["detail"]["code"] == "role_mismatch"
-    assert runtime.enrollments == {}
+    assert runtime.enrollments.entries() == []
 
 
 def test_a_client_joins_on_its_link_and_the_row_records_what_it_said(api):

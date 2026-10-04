@@ -15,12 +15,19 @@ from neutrino_hub.modules.channel.bindings import (
     resolve_token,
     spend_ticket,
 )
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 
 
-def ticket(**fields) -> dict:
-    return {"name": "", "device_id": None, "expires_at": time.time() + 600, **fields}
+def store(**tickets) -> ChannelTicketRegistry:
+    """A store holding each named ticket, one of each kind."""
+    registry = ChannelTicketRegistry()
+    for token, fields in tickets.items():
+        registry.put(
+            token, **{"kind": "agent", "expires_at": time.time() + 600, **fields}
+        )
+    return registry
 
 
 @pytest.fixture
@@ -33,16 +40,16 @@ def config_dir(tmp_path, monkeypatch):
 
 
 def test_a_ticket_is_taken_out_of_the_store_and_handed_back():
-    tickets = {"t1": ticket(name="laptop")}
+    tickets = store(t1={"name": "laptop"})
 
     spent = spend_ticket(tickets, "t1", "agent")
 
     assert spent["name"] == "laptop"
-    assert tickets == {}
+    assert tickets.entries() == []
 
 
 def test_a_ticket_spent_once_is_dead_the_second_time():
-    tickets = {"t1": ticket()}
+    tickets = store(t1={})
     spend_ticket(tickets, "t1", "agent")
 
     with pytest.raises(KeyError):
@@ -50,27 +57,27 @@ def test_a_ticket_spent_once_is_dead_the_second_time():
 
 
 def test_an_unknown_or_expired_ticket_reads_the_same():
-    tickets = {"old": ticket(expires_at=time.time() - 1)}
+    tickets = store(old={"expires_at": time.time() - 1})
 
     with pytest.raises(KeyError):
         spend_ticket(tickets, "nonsense", "agent")
     with pytest.raises(KeyError):
         spend_ticket(tickets, "old", "agent")
-    assert tickets == {}
+    assert tickets.entries() == []
 
 
 def test_a_ticket_for_the_other_role_is_refused_and_spent_all_the_same():
-    tickets = {"c1": ticket(kind="client", client_id="x"), "d1": ticket()}
+    tickets = store(c1={"kind": "client", "client_id": "x"}, d1={})
 
     with pytest.raises(ValueError):
         spend_ticket(tickets, "c1", "agent")
     with pytest.raises(ValueError):
         spend_ticket(tickets, "d1", "client")
-    assert tickets == {}
+    assert tickets.entries() == []
 
 
 def test_a_client_ticket_joins_as_a_client():
-    tickets = {"c1": ticket(kind="client", client_id="x")}
+    tickets = store(c1={"kind": "client", "client_id": "x"})
 
     assert spend_ticket(tickets, "c1", "client")["client_id"] == "x"
 

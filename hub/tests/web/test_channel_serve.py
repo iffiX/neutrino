@@ -21,6 +21,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,
     CHANNEL_ROLE_CLIENT,
@@ -132,7 +133,7 @@ class FakeRuntime:
     def __init__(self, tmp_path: Path):
         self.events = RecordingEvents()
         self.tasks = TaskStreamRegistry()
-        self.enrollments: dict = {}
+        self.enrollments = ChannelTicketRegistry()
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}

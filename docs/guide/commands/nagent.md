@@ -12,7 +12,7 @@ Every subcommand runs as root on Linux and macOS, and in a terminal opened as ad
 
 ## Subcommands
 
-The **Asks first** column marks the subcommands that ask one `[y/N]` question before they act; `--yes` answers it, and a `no` prints `nothing changed` and exits with status 1.
+The **Asks first** column marks the subcommands that ask one `[y/N]` question before they act; `--yes` answers it, and a `no` prints `nothing changed` and exits with status 1. With no terminal on stdin and no `--yes`, nothing is asked: one line on stderr names `--yes`, and the answer is a no.
 
 | Command              | Arguments and flags                                                                                                                                               | Asks first                             | What it does                                                                                                                                                                                                                         |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

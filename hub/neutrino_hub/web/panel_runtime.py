@@ -30,6 +30,7 @@ from neutrino_hub.modules.router.controller import (
     rendered_overlay_devices,
     router_lock,
 )
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
@@ -203,10 +204,8 @@ class PanelRuntime:
         # The most recent error each agent reported, keyed by device id:
         # ``{"code", "params"}``.
         self.device_last_error: dict[str, dict] = {}
-        # Enrollment tickets a machine can join with, by token. Held in memory
-        # and short-lived on purpose: a join secret that survives a restart is
-        # a join secret lying around, and generating another takes one click.
-        self.enrollments: dict[str, dict] = {}
+        # The open enrolment tickets, read back from the state root.
+        self.enrollments = ChannelTicketRegistry()
         # A cable, a lease or a radio moving is a change nothing writes, so
         # it is sampled. The application starts it; a CLI run builds a runtime
         # and never wants the thread.

@@ -1,6 +1,9 @@
 """What every command test shares: the first run's lock, token and mark kept
 under the test's own directory."""
 
+import io
+import sys
+
 import pytest
 
 from neutrino_hub.cli import setup
@@ -26,3 +29,16 @@ def setup_files(monkeypatch, tmp_path):
         setup, "WEB_SETUP_LOCAL_AGENT_PATH", directory / "setup_local_agent"
     )
     return directory
+
+
+class TerminalStdin(io.StringIO):
+    """A stdin that is a terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.fixture
+def terminal(monkeypatch):
+    """A terminal on stdin, for a command that asks before it acts."""
+    monkeypatch.setattr(sys, "stdin", TerminalStdin())

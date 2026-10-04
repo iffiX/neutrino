@@ -5,6 +5,8 @@ The walk runs once per service manager: systemd, the Windows service control
 manager and launchd, each faked by the block's ``service_manager``.
 """
 
+import io
+
 import neutrino_agent.cli.entry as entry
 import neutrino_agent.cli.start as start_cli
 from tests.conftest import (
@@ -30,7 +32,7 @@ def answer(reply: str):
     return ask
 
 
-def test_a_yes_starts_the_service(service_manager, monkeypatch, capsys):
+def test_a_yes_starts_the_service(terminal, service_manager, monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", answer("y"))
 
     assert start_cli.main(is_forced=False) == 0
@@ -48,7 +50,7 @@ def test_yes_on_the_command_line_skips_the_question(service_manager, monkeypatch
     assert service_manager.is_running
 
 
-def test_a_no_changes_nothing(service_manager, monkeypatch, capsys):
+def test_a_no_changes_nothing(terminal, service_manager, monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", answer(""))
 
     assert start_cli.main(is_forced=False) == 1
@@ -56,6 +58,24 @@ def test_a_no_changes_nothing(service_manager, monkeypatch, capsys):
     assert START_COMMANDS[type(service_manager)] not in service_manager.calls
     assert not service_manager.is_running
     assert "nothing changed" in capsys.readouterr().out
+
+
+def test_with_no_terminal_it_names_yes_and_changes_nothing(
+    service_manager, monkeypatch, capsys
+):
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+
+    assert start_cli.main(is_forced=False) == 1
+
+    assert service_manager.is_running is False
+    printed = capsys.readouterr()
+    assert printed.err.strip().count("\n") == 0
+    assert "--yes" in printed.err
+
+
+def refuse_to_ask(prompt):
+    raise AssertionError("asked with no terminal")
 
 
 def test_a_running_service_is_left_alone_without_a_question(

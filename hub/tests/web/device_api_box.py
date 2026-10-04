@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import (
     DeviceClientInfo,
@@ -84,7 +85,7 @@ class BoxRuntime:
         self.device_address = {}
         self.device_last_error = {}
         self.pending = {}
-        self.enrollments = {}
+        self.enrollments = ChannelTicketRegistry()
         self.device_shares = DeviceShareRegistry()
         self.agent_sessions = FakeChannelSessions()
         self.desired_states = DesiredStateStore()
