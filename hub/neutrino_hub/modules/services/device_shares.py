@@ -41,6 +41,8 @@ class DeviceShare:
             clock; a share older than the online window is gone.
         account: Whose desktop is shared, as the machine named it.
         connected_count: How many viewers the machine has right now.
+        platform_os: The sharing machine's system, ``linux``, ``windows``
+            or ``darwin`` as its agent reported it; empty until it has.
     """
 
     share_id: str
@@ -52,6 +54,7 @@ class DeviceShare:
     attention: str = ""
     account: str = ""
     connected_count: int = 0
+    platform_os: str = ""
 
 
 class DeviceShareRegistry:
@@ -79,6 +82,7 @@ class DeviceShareRegistry:
         attention: str = "",
         account: str = "",
         connected_count: int = 0,
+        platform_os: str = "",
         now: "float | None" = None,
     ) -> None:
         """Record that one machine is sharing its desktop.
@@ -93,6 +97,7 @@ class DeviceShareRegistry:
                 is shown its desktop; empty when nothing stands in the way.
             account: Whose desktop is shared.
             connected_count: How many viewers the machine has right now.
+            platform_os: The machine's system, as its agent reported it.
             now: The monotonic reading to stamp with; None reads the clock.
         """
         if not device_id or not share_id or not host:
@@ -107,6 +112,7 @@ class DeviceShareRegistry:
                 attention=str(attention or ""),
                 account=str(account or ""),
                 connected_count=int(connected_count or 0),
+                platform_os=str(platform_os or ""),
                 declared_at=time.monotonic() if now is None else now,
             )
 

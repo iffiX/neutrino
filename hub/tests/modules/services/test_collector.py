@@ -463,7 +463,18 @@ def test_a_declaring_machine_publishes_one_rdp_entry():
         "host": "192.168.100.5",
         "port": 21118,
         "attention": "",
+        "platform_os": "",
     }
+
+
+def test_an_rdp_entry_names_the_sharing_machines_system():
+    """A client shows its Mac hint by this, since no Mac reports a grant."""
+    mac = share()
+    mac.platform_os = "darwin"
+
+    entry = collect(device_shares=[mac])[0]
+
+    assert entry["payload"]["platform_os"] == "darwin"
 
 
 def test_an_rdp_entry_says_it_came_from_a_device():

@@ -155,6 +155,7 @@ class ServiceListCollector:
                     "host": share.host,
                     "port": share.port,
                     "attention": share.attention,
+                    "platform_os": share.platform_os,
                 },
                 is_healthy=True,
                 description=SERVICES_RDP_DESCRIPTION.format(

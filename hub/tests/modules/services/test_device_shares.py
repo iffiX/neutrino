@@ -64,6 +64,24 @@ def test_a_share_naming_neither_carries_an_empty_account_and_no_viewers():
     assert share.connected_count == 0
 
 
+def test_a_share_carries_the_machines_system():
+    registry = DeviceShareRegistry(window_s=30)
+
+    registry.declare(
+        device_id=DEVICE,
+        share_id="s1",
+        hostname="mac",
+        host="192.168.100.5",
+        port=21118,
+        platform_os="darwin",
+        now=0.0,
+    )
+    declared(registry, device=OTHER, share_id="s2")
+
+    systems = {share.device_id: share.platform_os for share in registry.live(now=0.0)}
+    assert systems == {DEVICE: "darwin", OTHER: ""}
+
+
 def test_declaring_again_replaces_the_machines_one_share():
     registry = DeviceShareRegistry(window_s=30)
 
