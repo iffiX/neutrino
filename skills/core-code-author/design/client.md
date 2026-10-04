@@ -108,6 +108,7 @@ languages, and the English column is the wording the English catalog holds.
 | `ui.job.forwarding` | Forwarding… |
 | `ui.job.switching` | Switching tools… |
 | `ui.job.opening` | Opening… |
+| `ui.job.clearing` | Clearing… |
 
 The dot follows [visual.md](visual.md):
 
@@ -395,7 +396,7 @@ switches at the right and nothing else.
 | The chips name every machine with a terminal, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
 | **New terminal** is disabled with no chip picked or with the picked machine offline, with the reason under the chips. | Nothing opens on a machine that cannot answer. |
 | Keys reach the machine in the order they were pressed: a tab has one sender that writes its bytes in sequence, on every client. | A letter that overtakes the one before it types another word. |
-| **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
+| **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. While it drops, the terminal's own box shows `ui.job.clearing` where the output would be, and the word goes when the dropping ends. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
 | A plain session ends when its tab closes; a persistent or shared session's **×** arms and the second press ends the session with `stop_session`. | Ending a session others can see takes two presses, like every destructive action. |
 
 ### The session list
