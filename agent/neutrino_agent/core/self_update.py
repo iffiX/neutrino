@@ -46,9 +46,11 @@ PACKAGE_FILE_STEM = "neutrino_agent"
 # The package kind a machine installs by its operating system alone.
 OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
 
-# How the Windows install is started: with no console, and outside any job
-# the service runs in, so stopping the service does not end it.
-WINDOWS_DETACHED_PROCESS = 0x00000008
+# How the Windows install is started: with a console that has no window,
+# and outside any job the service runs in, so stopping the service does not
+# end it. A process started detached from every console never writes the
+# result.
+WINDOWS_CREATE_NO_WINDOW = 0x08000000
 WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 # The PowerShell the Windows install runs in: msiexec, its verbose log, and
@@ -57,7 +59,7 @@ WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 _WINDOWS_SCRIPT = """$ErrorActionPreference = 'Continue'
 $log = {log}
 $started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-$run = Start-Process -FilePath msiexec.exe -Wait -PassThru -WindowStyle Hidden -ArgumentList {arguments}
+$run = Start-Process -FilePath msiexec.exe -Wait -PassThru -NoNewWindow -ArgumentList {arguments}
 $code = $run.ExitCode
 $finished = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $output = ''
@@ -291,10 +293,10 @@ def run_update(package_path: str, *, kind: str, state_dir: str) -> None:
 
 
 def _start_detached(command: list) -> None:
-    """Start the Windows install with no console and outside the service's job.
+    """Start the Windows install with no window and outside the service's job.
 
     A job that refuses breakaway refuses the start; the install is then
-    started with no console alone.
+    started with no window alone.
 
     Args:
         command: The argument vector.
@@ -303,8 +305,8 @@ def _start_detached(command: list) -> None:
         OSError: When the process cannot be started at all.
     """
     for flags in (
-        WINDOWS_DETACHED_PROCESS | WINDOWS_CREATE_BREAKAWAY_FROM_JOB,
-        WINDOWS_DETACHED_PROCESS,
+        WINDOWS_CREATE_NO_WINDOW | WINDOWS_CREATE_BREAKAWAY_FROM_JOB,
+        WINDOWS_CREATE_NO_WINDOW,
     ):
         try:
             subprocess.Popen(
@@ -332,7 +334,9 @@ def _windows_install_command(path: str, *, state_dir: str) -> list:
         The argument vector.
     """
     log = ntpath.join(state_dir, AGENT_REINSTALL_LOG_NAME)
-    arguments = f'/i "{path}" /qn /norestart /l*v "{log}"'
+    arguments = (
+        f'/i "{path}" REINSTALL=ALL REINSTALLMODE=vomus /qn /norestart /l*v "{log}"'
+    )
     script = _WINDOWS_SCRIPT.format(
         log=_powershell_quote(log),
         arguments=_powershell_quote(arguments),

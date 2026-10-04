@@ -655,8 +655,11 @@ def test_the_msi_runs_quietly_in_powershell_and_writes_the_same_result():
     script = command[6]
     assert "Start-Process -FilePath msiexec.exe -Wait" in script
     assert (
-        f'\'/i "{package}" /qn /norestart /l*v "{state_dir}\\reinstall.log"\'' in script
+        f'\'/i "{package}" REINSTALL=ALL REINSTALLMODE=vomus /qn /norestart '
+        f'/l*v "{state_dir}\\reinstall.log"\'' in script
     )
+    assert "-NoNewWindow" in script
+    assert "-WindowStyle" not in script
     assert f"'{state_dir}\\reinstall.json'" in script
     assert "package = 'neutrino-agent-0.4.0-windows-amd64.msi'" in script
     assert "kind = 'msi'" in script
@@ -673,7 +676,7 @@ def test_a_quote_in_a_path_cannot_end_the_powershell_string():
     assert "'C:\\it''s\\reinstall.json'" in command[6]
 
 
-def test_the_msi_is_started_detached_and_outside_the_services_job(
+def test_the_msi_is_started_with_no_window_and_outside_the_services_job(
     monkeypatch, tmp_path
 ):
     started = []
@@ -690,17 +693,20 @@ def test_the_msi_is_started_detached_and_outside_the_services_job(
 
     command, flags = started[0]
     assert command[0] == "powershell.exe"
-    assert flags == 0x00000008 | 0x01000000
+    assert self_update.WINDOWS_CREATE_NO_WINDOW == 0x08000000
+    assert flags == 0x08000000 | 0x01000000
     assert package.exists()
 
 
-def test_a_job_that_refuses_breakaway_still_starts_the_install_detached(
+def test_a_job_that_refuses_breakaway_still_starts_the_install_with_no_window(
     monkeypatch, tmp_path
 ):
+    tried = []
     started = []
 
     class Popen:
         def __init__(self, command, **kwargs):
+            tried.append(kwargs["creationflags"])
             if kwargs["creationflags"] & 0x01000000:
                 raise PermissionError("access denied")
             started.append(kwargs["creationflags"])
@@ -711,7 +717,8 @@ def test_a_job_that_refuses_breakaway_still_starts_the_install_detached(
 
     self_update.run_update(str(package), kind="msi", state_dir=str(tmp_path))
 
-    assert started == [0x00000008]
+    assert tried == [0x08000000 | 0x01000000, 0x08000000]
+    assert started == [0x08000000]
 
 
 def test_an_msi_that_cannot_be_started_is_coded_and_cleaned_up(monkeypatch, tmp_path):
