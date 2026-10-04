@@ -47,7 +47,7 @@ ran() {
 }
 
 # Turn the panel's HTTPS on or off through its own Settings route, and wait
-# for the HTTP port to redirect or serve. The first argument is the scheme
+# for the HTTPS port to serve or close. The first argument is the scheme
 # wanted; both ports come from the box's settings.
 PANEL_AUTHORITY=/etc/neutrino/hub/web/panel_tls/authority.pem
 panel_scheme() {
@@ -69,11 +69,18 @@ panel_scheme() {
     curl -s -f --cacert "$PANEL_AUTHORITY" -b "$jar" -X POST \
         "$base/api/hub/setting/https/$verb" -o /dev/null || return 1
     rm -f "$jar"
+    # The panel answers loopback over plain HTTP whatever the switch says, so
+    # the HTTPS port is what shows the switch: it serves once HTTPS is on and
+    # is closed once it is off.
     for _ in $(seq 1 60); do
-        status=$(curl -s -o /dev/null -w '%{http_code}' \
-            "http://127.0.0.1:$http_port/api/hub/display")
-        [ "$wanted" = https ] && [ "$status" = 301 ] && return 0
-        [ "$wanted" = http ] && [ "$status" = 200 ] && return 0
+        status=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$PANEL_AUTHORITY" \
+            "https://127.0.0.1:$https_port/api/hub/display")
+        [ "$wanted" = https ] && [ "$status" = 200 ] && return 0
+        if [ "$wanted" = http ] && [ "$status" = 000 ]; then
+            status=$(curl -s -o /dev/null -w '%{http_code}' \
+                "http://127.0.0.1:$http_port/api/hub/display")
+            [ "$status" = 200 ] && return 0
+        fi
         sleep 1
     done
     echo "  the HTTP port never answered as $wanted wants"
