@@ -33,7 +33,8 @@ import io.github.iffix.neutrino.shell.LocalClientActions
  * @param connecting The entries whose Connect runs, by entry key.
  * @param errors The code each entry's last Connect ended in, by entry key.
  * @param viewingKey The entry the open viewer shows, or null.
- * @param onConnect What pressing Connect does, with the binding id, the entry id and the viewer's title.
+ * @param onConnect What pressing Connect does, with the binding id, the entry id, the viewer's title
+ *   and the entry's `platform_os`.
  */
 @Composable
 fun RemoteDesktopScreen(
@@ -41,7 +42,7 @@ fun RemoteDesktopScreen(
     connecting: Set<String>,
     errors: Map<String, ChannelResult.Refused>,
     viewingKey: String?,
-    onConnect: (String, String, String) -> Unit,
+    onConnect: (String, String, String, String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
     val actions = LocalClientActions.current
@@ -73,7 +74,7 @@ fun RemoteDesktopScreen(
                     label = words.word(if (isBusy) "ui.job.connecting" else "ui.rdp_connect"),
                     onClick = {
                         val name = hub.binding.title + ":" + entry.deviceName.ifEmpty { entry.title }
-                        onConnect(hub.binding.id, entry.id, name)
+                        onConnect(hub.binding.id, entry.id, name, entry.text("platform_os"))
                     },
                     isEnabled = reason == null && !isBusy && !hub.jobs.isRefreshing,
                     isBusy = isBusy,
@@ -121,6 +122,6 @@ private fun RemoteDesktopScreenPreview() {
             "ui.unhealthy" to "当前无法访问",
         ),
     ) {
-        RemoteDesktopScreen(PreviewHubs.all, emptySet(), emptyMap(), null, onConnect = { _, _, _ -> })
+        RemoteDesktopScreen(PreviewHubs.all, emptySet(), emptyMap(), null, onConnect = { _, _, _, _ -> })
     }
 }

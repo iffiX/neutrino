@@ -109,7 +109,9 @@ fun RemoteDesktopViewer(
     var viewport by remember(target) { mutableStateOf(RemoteDesktopViewport()) }
     var held by remember(target) { mutableStateOf(emptySet<RemoteDesktopKey>()) }
     val scope = rememberCoroutineScope()
-    val sender = remember(target, core) { RemoteDesktopInputSender(core, scope) { keys -> held = keys } }
+    val sender = remember(target, core) {
+        RemoteDesktopInputSender(core, target.platformOs, scope) { keys -> held = keys }
+    }
     val context = LocalContext.current
     val input = remember(sender) { RemoteDesktopInputView(context).apply { this.sender = sender } }
     val copied = rememberUpdatedState(onCopied)

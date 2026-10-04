@@ -77,6 +77,9 @@ val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
 /** The `platform_os` a desktop entry carries when the sharing machine is a Mac. */
 const val CLIENT_PLATFORM_OS_DARWIN = "darwin"
 
+/** The `platform_os` a desktop entry carries when the sharing machine runs Linux. */
+const val CLIENT_PLATFORM_OS_LINUX = "linux"
+
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
 const val PROTOCOL = 3
 
@@ -434,3 +437,6 @@ const val RDP_STATE_CLOSED = 3
 
 /** The pause between two typed characters, so a Linux desktop types one before the next arrives. */
 const val RDP_TYPE_PACE_MILLIS = 40L
+
+/** The last character of ASCII; text with any character above it goes to a Linux host as a paste. */
+const val RDP_ASCII_LAST = 0x7F

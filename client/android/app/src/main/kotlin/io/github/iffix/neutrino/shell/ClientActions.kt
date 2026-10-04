@@ -146,8 +146,9 @@ interface ClientActions {
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param name What the viewer's bar shows.
+     * @param platformOs The `platform_os` the entry carries, or empty when it names none.
      */
-    fun connectDesktop(bindingId: String, entryId: String, name: String)
+    fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String)
 
     /**
      * The codec and quality kept for a shared desktop, as its Configure dialog opens on them.

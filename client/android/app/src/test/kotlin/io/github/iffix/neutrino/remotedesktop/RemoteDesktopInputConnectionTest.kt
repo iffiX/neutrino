@@ -18,7 +18,7 @@ class RemoteDesktopInputConnectionTest {
     private lateinit var connection: RemoteDesktopInputConnection
 
     private fun inputTest(body: suspend TestScope.() -> Unit) = runTest {
-        sender = RemoteDesktopInputSender(core, backgroundScope) {}
+        sender = RemoteDesktopInputSender(core, "", backgroundScope) {}
         connection = RemoteDesktopInputConnection(View(null), sender)
         body()
     }
