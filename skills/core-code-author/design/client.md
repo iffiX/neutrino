@@ -177,7 +177,7 @@ The row's controls, from left to right:
 | the network picker | when `overlay.networks` has two or more entries | in overlay `off` only | writes the chosen engine to the binding |
 | the network button | always | as the overlay table gives it | Connect, Cancel or Disconnect |
 | **Reconnect** | in `replaced` only | always | takes the binding back and starts a round |
-| **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding, stops that hub's forwards, mounts and viewers, and leaves its network when no other hub uses it; the row shows `ui.job.leaving` and goes when the core has forgotten the binding |
+| **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding at once, whether or not the hub answers: the core stops that hub's forwards, mounts and viewers, leaves its network when no other hub uses it, forgets the binding, and only then tells the hub once, in the background, with a short timeout, a refusal or an unreachable hub changing nothing; the row shows `ui.job.leaving` and goes when the core has forgotten the binding, which never waits on the hub |
 
 The row of the hub whose gateway the AI tools point at shows `ui.hub_is_exit`
 under its mono line; the AI page sets it.
