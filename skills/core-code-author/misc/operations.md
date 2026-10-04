@@ -134,8 +134,8 @@ In router mode the hub writes `/etc/resolv.conf`, and before the first write
 it copies the file it found to `/var/lib/neutrino/hub/resolv.conf.original`.
 `nhub reset all` links the file to the stub of `systemd-resolved` when that
 unit is enabled, puts the copy back when there is one, and otherwise writes
-the `direct_dns` address from `config/xray/routing.json`. The reset prints
-which of the three it did.
+the network's resolvers the last apply used, one `nameserver` line each. The
+reset prints which of the three it did.
 
 ## Logs
 
