@@ -114,8 +114,10 @@ def _core_scripts() -> list:
 
 
 def _run_core(script: str, *arguments: str) -> str:
-    """Run one core script of the edition being built, which puts its core
-    into the app.
+    """Run one core script, which puts its core into the app.
+
+    The core scripts take no edition: a core is the same in both, and the
+    script's own bytes are what its cache name digests.
 
     Args:
         script: The script's name in this directory.
@@ -127,8 +129,7 @@ def _run_core(script: str, *arguments: str) -> str:
     Raises:
         SystemExit: When it fails.
     """
-    edition = ["--edition", edition_build.build_edition()]
-    command = [sys.executable, str(BUILD_DIR / script), *edition, *arguments]
+    command = [sys.executable, str(BUILD_DIR / script), *arguments]
     result = subprocess.run(
         command, capture_output=bool(arguments), text=True, check=False
     )

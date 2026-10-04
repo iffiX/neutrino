@@ -1044,12 +1044,16 @@ jobs:
         working-directory: cn
         run: echo "key=$(python3 packaging/build/build_client_android.py --edition cn --cache-key)" >> "$GITHUB_OUTPUT"
 
+      # The mainland tree names no NetBird core, so its key differs from the
+      # intl one; any cache of the cores restores the EasyTier and RustDesk
+      # builds, which are the same in both editions.
       - name: Cache the phone cores
         id: cores
         uses: actions/cache@v6
         with:
           path: ~/.cache/neutrino/cores
           key: ${{ steps.cores_key.outputs.key }}
+          restore-keys: cores-
 
       - name: Install the NDK and CMake the app builds with
         run: sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"

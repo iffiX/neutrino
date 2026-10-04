@@ -34,7 +34,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
-from shared import edition_build  # noqa: E402
 from shared import cores_cache  # noqa: E402
 
 # --- the pinned source ---
@@ -145,7 +144,6 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    edition_build.add_edition_argument(parser)
     parser.add_argument(
         "--output",
         default=str(NETBIRD_MOBILE_OUTPUT),
@@ -161,7 +159,6 @@ def main() -> int:
         "--cache-key", action="store_true", help="print the cache name and stop"
     )
     arguments = parser.parse_args()
-    edition_build.require_edition_tree(arguments.edition)
     if arguments.cache_key:
         print(
             cores_cache.cache_key(
