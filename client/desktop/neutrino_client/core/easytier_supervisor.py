@@ -1,5 +1,7 @@
 """The one easytier-core process the EasyTier daemon runs, as its own child.
 
+The files daemon runs its tun2socks under the same supervisor, by name.
+
 The core runs only while its command is not None, which is while at least
 one manual network or a console is configured. A change restarts it at
 once; a core that ends by itself is started again after a wait that doubles
@@ -70,6 +72,7 @@ class EasytierCoreSupervisor:
         start_process=None,
         on_started=None,
         clock=None,
+        name: str = "easytier-core",
     ):
         """
         Args:
@@ -83,7 +86,9 @@ class EasytierCoreSupervisor:
             on_started: Called with each process once started; the Windows
                 daemon ties the core to its own life here.
             clock: Returns the time in seconds; None is ``time.monotonic``.
+            name: The program's name in every log line.
         """
+        self._name = name
         self._command_of = command_of
         self._log = log
         self._core_log = core_log if core_log is not None else _nobody
@@ -136,7 +141,7 @@ class EasytierCoreSupervisor:
                     self._wait_s = CLIENT_EASYTIER_RESTART_MIN_S
                 self._restart_at = now + self._wait_s
                 self._log(
-                    f"easytier-core ended with {status}; "
+                    f"{self._name} ended with {status}; "
                     f"starting it again in {self._wait_s} s"
                 )
                 self._wait_s = min(self._wait_s * 2, CLIENT_EASYTIER_RESTART_MAX_S)
@@ -165,7 +170,7 @@ class EasytierCoreSupervisor:
             try:
                 self.tick()
             except Exception as error:  # noqa: BLE001 - the watch must survive
-                self._log(f"easytier-core could not be watched: {error}")
+                self._log(f"{self._name} could not be watched: {error}")
 
     def _start(self) -> None:
         """Start a core when one is wanted; a failed start waits like an end."""
@@ -176,17 +181,17 @@ class EasytierCoreSupervisor:
         try:
             process = self._start_process(list(argv), dict(env))
         except OSError as error:
-            self._log(f"easytier-core could not start: {error}")
+            self._log(f"{self._name} could not start: {error}")
             self._restart_at = self._clock() + self._wait_s
             self._wait_s = min(self._wait_s * 2, CLIENT_EASYTIER_RESTART_MAX_S)
             return
         self._process = process
         self._started_at = self._clock()
-        self._log(f"easytier-core started as {getattr(process, 'pid', '?')}")
+        self._log(f"{self._name} started as {getattr(process, 'pid', '?')}")
         try:
             self._on_started(process)
         except OSError as error:
-            self._log(f"easytier-core could not be tied to the daemon: {error}")
+            self._log(f"{self._name} could not be tied to the daemon: {error}")
         stream = getattr(process, "stdout", None)
         if stream is not None:
             threading.Thread(
@@ -216,4 +221,4 @@ class EasytierCoreSupervisor:
             process.wait(timeout=CLIENT_EASYTIER_STOP_TIMEOUT_S)
         except OSError:
             pass
-        self._log("easytier-core stopped")
+        self._log(f"{self._name} stopped")
