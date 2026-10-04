@@ -61,6 +61,8 @@ def downloads(monkeypatch):
 
     def fetch(url, digest, what=""):
         asked.append(url)
+        if "tun2socks" in url:
+            return _zip("tun2socks-windows-amd64.exe")
         if "netbird" in url:
             return _tarball("netbird.exe" if "windows" in url else "netbird")
         if "easytier" in url:
@@ -73,6 +75,7 @@ def downloads(monkeypatch):
 
     monkeypatch.setattr(bundled.payload, "fetch", fetch)
     monkeypatch.setattr(rustdesk_assets, "_fetch", fetch)
+    monkeypatch.setattr(bundled.hub_assets, "fetch", fetch)
     return asked
 
 
@@ -265,6 +268,17 @@ def test_the_windows_staging_puts_both_under_bin(tmp_path, downloads):
         assert not (tmp_path / "bin" / name).exists(), name
 
 
+def test_the_windows_staging_carries_tun2socks_at_the_hubs_own_pin(tmp_path, downloads):
+    bundled.stage_windows_binaries(tmp_path, "x64")
+
+    assert (tmp_path / "bin" / "tun2socks.exe").read_text() == "bin"
+    assert (tmp_path / "bin" / "tun2socks.exe").stat().st_mode & 0o111
+    url, _digest = bundled.hub_assets.pinned("tun2socks", "windows", "amd64")
+    assert url in downloads
+    assert f"/v{bundled.hub_assets.pinned_version('tun2socks')}/" in url
+    assert not (tmp_path / "bin" / "tun2socks-windows-amd64.exe").exists()
+
+
 def test_the_macos_staging_puts_both_under_the_bundles_resources(
     tmp_path, downloads, attached_image
 ):
@@ -360,6 +374,9 @@ def test_the_install_paths_are_the_ones_the_runtime_resolver_reads():
     assert CLIENT_BUNDLED_PATHS_WINDOWS["rustdesk"] == (
         f"bin\\{rustdesk_assets.RUSTDESK_WINDOWS_BINARY_NAME}"
     )
+    assert CLIENT_BUNDLED_PATHS_WINDOWS["tun2socks"] == "bin\\tun2socks.exe"
+    assert "tun2socks" not in CLIENT_BUNDLED_PATHS_LINUX
+    assert "tun2socks" not in CLIENT_BUNDLED_PATHS_DARWIN
     assert CLIENT_BUNDLED_PATHS_DARWIN["cc-switch"] == (
         f"{bundled.DARWIN_RESOURCES_DIR}/{bundled.CC_SWITCH_INSTALL_PATH}"
     )

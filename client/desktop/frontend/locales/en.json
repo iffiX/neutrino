@@ -15,6 +15,7 @@
   "code.credentials_missing": "The saved login is gone; enter it again with Configure",
   "code.enroll_no_token": "The hub sent no token back",
   "code.enroll_refused": "The hub refused this link; it may have expired, so generate a fresh one",
+  "code.files_adapter_unavailable": "The files adapter could not start: {detail}",
   "code.fs_refused": "This account may not use that folder",
   "code.gui_webkitgtk_missing": "The window needs WebKitGTK; install it: sudo apt install {packages}",
   "code.gui_webview2_missing": "The window needs {runtime}; install it and try again",

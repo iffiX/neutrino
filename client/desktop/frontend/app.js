@@ -28,7 +28,8 @@ const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
 // The licence the client ships under and where its source is; the programs
 // the package carries, each with the key its version is stamped under, its
-// licence, its repository and the tag a version is released under.
+// licence, its repository, the tag a version is released under and, for one
+// only a system's package carries, that system.
 const CLIENT_LICENCE = 'MIT';
 const CLIENT_SOURCE = 'https://github.com/iffiX/neutrino';
 const CARRIED = [
@@ -40,6 +41,9 @@ const CARRIED = [
     repository: 'https://github.com/rustdesk/rustdesk', tag: '{version}' },
   { name: 'cc-switch', key: 'cc-switch', licence: 'MIT',
     repository: 'https://github.com/SaladDay/cc-switch-cli', tag: 'v{version}' },
+  { name: 'tun2socks', key: 'tun2socks', licence: 'MIT',
+    repository: 'https://github.com/xjasonlyu/tun2socks', tag: 'v{version}',
+    os: 'windows' },
 ];
 
 function fill(template, params) {
@@ -2409,7 +2413,8 @@ function aboutSection(state) {
   const source = t('ui.about_source_link');
   aboutGroup(about, t('ui.about_carried'), [
     ['Neutrino client ' + state.version, CLIENT_LICENCE, [[source, CLIENT_SOURCE]]],
-  ].concat(CARRIED.map((core) => {
+  ].concat(CARRIED.filter((core) => !core.os || core.os === platform.os)
+    .map((core) => {
     const version = versions[core.key];
     return [version ? core.name + ' ' + version : core.name, core.licence,
       [[source, carriedSource(core, version)]]];

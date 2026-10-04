@@ -140,6 +140,7 @@ CLIENT_BUNDLED_PATHS_WINDOWS = {
     "netbird": "bin\\netbird.exe",
     "easytier-core": "bin\\easytier-core.exe",
     "easytier-cli": "bin\\easytier-cli.exe",
+    "tun2socks": "bin\\tun2socks.exe",
 }
 # Under the app bundle's Contents directory, beside the MacOS directory the
 # compiled package runs from.
@@ -283,3 +284,38 @@ CLIENT_EASYTIER_RESTART_MAX_S = 60
 CLIENT_EASYTIER_STABLE_S = 60
 # How long a stopped core is given to end before it is killed.
 CLIENT_EASYTIER_STOP_TIMEOUT_S = 10
+
+# The files adapter on Windows: a wintun adapter whose SMB connections reach
+# the hub. The daemon is a service of this package run as SYSTEM, the only
+# thing that runs tun2socks; it answers one JSON request per connection on
+# a pipe with the EasyTier daemon's security descriptor.
+CLIENT_FILES_DAEMON_VERB = "files-daemon"
+CLIENT_FILES_SERVICE_WINDOWS = "NeutrinoClientFiles"
+CLIENT_FILES_PIPE_WINDOWS = "\\\\.\\pipe\\neutrino_client_files"
+# The adapter, its own address and network, and the addresses the machines
+# that provide a share take on it, from the second up. The range is set
+# aside for benchmarking, whose first block the hub's own TUN takes.
+CLIENT_FILES_ADAPTER_NAME = "neutrino_files"
+CLIENT_FILES_NETWORK = "198.19.255.0/24"  # scan: allow
+CLIENT_FILES_ADAPTER_ADDRESS = "198.19.255.1"  # scan: allow
+CLIENT_FILES_ADAPTER_MTU = 1500
+# Windows prefers the lowest metric; this one never wins a tie.
+CLIENT_FILES_ADAPTER_METRIC = 9999
+# How long the adapter may take to appear once tun2socks starts.
+CLIENT_FILES_ADAPTER_WAIT_S = 15
+# How long giving the adapter its address may take in all.
+CLIENT_FILES_ADAPTER_SCRIPT_TIMEOUT_S = 60
+# The one port the SMB client dials, and the one the endpoint accepts.
+CLIENT_FILES_SHARE_PORT = 445
+# What tun2socks prints: warnings and worse.
+CLIENT_FILES_TUN2SOCKS_LOG_LEVEL = "warn"
+# The daemon's own log and tun2socks's output, under the client's log root.
+CLIENT_FILES_DAEMON_LOG_NAME = "files.log"
+CLIENT_FILES_TUN2SOCKS_LOG_NAME = "tun2socks.log"
+# How often the daemon looks whether a restarted tun2socks needs the
+# adapter's address again.
+CLIENT_FILES_DAEMON_TICK_S = 1
+# How long a SOCKS client may take to say where it goes.
+CLIENT_FILES_SOCKS_HANDSHAKE_TIMEOUT_S = 10
+# The most one relay read takes from either side.
+CLIENT_FILES_RELAY_CHUNK_BYTES = 64 * 1024

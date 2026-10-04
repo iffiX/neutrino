@@ -3,9 +3,10 @@
 The file is the person's own, mode 0600, under the client's configuration
 directory. It holds this installation's id, the language this person
 reads, the palette the window draws in, the terminal's font size, the AI
-tool choices, the local port each forwardable entry takes, and the mount
-records: the hub and entry a share came from, its host, its login name and
-where it goes. Nothing about a service standing on is here; that is the
+tool choices, the local port each forwardable entry takes, the address
+each machine that provides a share takes on the Windows files adapter, and
+the mount records: the hub and entry a share came from, its host, its login
+name and where it goes. Nothing about a service standing on is here; that is the
 running client's own and starts clean.
 
 Secrets never enter it: a mount's password lives in that record's own
@@ -81,6 +82,26 @@ def _local_port(raw) -> "dict | None":
     return None
 
 
+def _files_address(raw) -> "dict | None":
+    """One files adapter address record, None for one of an unusable shape.
+
+    Args:
+        raw: What the file held for one address under ``files_addresses``.
+
+    Returns:
+        ``{"hub_id", "machine"}``.
+    """
+    if not isinstance(raw, dict):
+        return None
+    hub_id = raw.get("hub_id")
+    machine = raw.get("machine")
+    if not isinstance(hub_id, str) or not isinstance(machine, str):
+        return None
+    if not hub_id or not machine:
+        return None
+    return {"hub_id": hub_id, "machine": machine}
+
+
 def _record(raw: dict) -> dict:
     """One mount record with only the fields the store keeps.
 
@@ -142,7 +163,8 @@ def _kept(data: dict) -> dict:
     Returns:
         ``{"machine_id": str, "language": str, "theme": str,
         "terminal_font_size": int, "ai": {"tool_configs": {...}},
-        "local_ports": {service key: record}, "mounts": {id: record}}``.
+        "local_ports": {service key: record}, "files_addresses": {address:
+        record}, "mounts": {id: record}}``.
     """
     ai = data.get("ai")
     mounts = data.get("mounts")
@@ -155,6 +177,13 @@ def _kept(data: dict) -> dict:
         record = _local_port(raw)
         if record is not None:
             kept_ports[str(key)] = record
+    files_addresses = data.get("files_addresses")
+    files_addresses = files_addresses if isinstance(files_addresses, dict) else {}
+    kept_addresses = {}
+    for address, raw in files_addresses.items():
+        record = _files_address(raw)
+        if record is not None:
+            kept_addresses[str(address)] = record
     machine_id = data.get("machine_id")
     return {
         "machine_id": machine_id if isinstance(machine_id, str) else "",
@@ -163,6 +192,7 @@ def _kept(data: dict) -> dict:
         "terminal_font_size": _font_size(data.get("terminal_font_size")),
         "ai": {"tool_configs": _tool_configs(ai.get("tool_configs"))},
         "local_ports": kept_ports,
+        "files_addresses": kept_addresses,
         "mounts": {
             str(record_id): _record(record)
             for record_id, record in mounts.items()
@@ -314,6 +344,48 @@ class ClientServiceStore:
 
         def change(data: dict) -> None:
             data["local_ports"][key] = record
+
+        self._mutate(change)
+
+    def files_addresses(self) -> dict:
+        """The address each machine that provides a share takes on the files adapter.
+
+        Returns:
+            Address to ``{"hub_id", "machine"}``.
+        """
+        return self._read()["files_addresses"]
+
+    def set_files_address(self, address: str, hub_id: str, machine: str) -> None:
+        """Keep one machine's address, replacing whatever held it.
+
+        Args:
+            address: The address on the adapter's network.
+            hub_id: The hub the machine is reached through.
+            machine: The machine: an entry's device id, or a declared
+                record's host.
+
+        Raises:
+            ValueError: When the hub or the machine is empty.
+        """
+        record = _files_address({"hub_id": hub_id, "machine": machine})
+        if record is None:
+            raise ValueError("a files address names a hub and a machine")
+
+        def change(data: dict) -> None:
+            data["files_addresses"][address] = record
+
+        self._mutate(change)
+
+    def remove_files_addresses(self, addresses: list) -> None:
+        """Drop the records of some addresses.
+
+        Args:
+            addresses: The addresses.
+        """
+
+        def change(data: dict) -> None:
+            for address in addresses:
+                data["files_addresses"].pop(address, None)
 
         self._mutate(change)
 
