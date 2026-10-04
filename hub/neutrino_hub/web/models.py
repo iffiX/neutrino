@@ -1517,6 +1517,9 @@ class DeviceEnrollmentRequest(BaseModel):
 
     name: str = ""
     device_id: str | None = None
+    # Whether the link is for the agent on the hub's own machine, which is
+    # given loopback first.
+    is_hub: bool = False
 
 
 class DeviceEnrollmentView(BaseModel):

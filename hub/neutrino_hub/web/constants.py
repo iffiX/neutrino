@@ -136,6 +136,9 @@ WEB_PANEL_TLS_PERMITTED_NETWORKS = (
 )
 WEB_PANEL_TLS_PERMITTED_DOMAINS = ("localhost", "neutrino.internal", "netbird.cloud")
 WEB_PANEL_TLS_LOOPBACK_NAMES = ("127.0.0.1", "localhost")
+# The address the hub's own agent reaches the agent port at, whatever is
+# exposed.
+WEB_AGENT_LOOPBACK_HOST = "127.0.0.1"
 WEB_PANEL_TLS_AUTHORITY_ORGANIZATION = "Neutrino"
 # The most characters an X.509 common name holds (RFC 5280, ub-common-name).
 WEB_PANEL_TLS_COMMON_NAME_MAX_CHARS = 64

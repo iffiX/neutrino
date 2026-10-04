@@ -14,7 +14,10 @@ from neutrino_hub.modules.overlay.relay_ops import is_relay_configured
 from neutrino_hub.modules.router.constants import ROUTER_OVERLAY_NETBIRD
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.web.agent_tls import certificate_fingerprint
-from neutrino_hub.web.constants import WEB_DEFAULT_AGENT_LISTEN_PORT
+from neutrino_hub.web.constants import (
+    WEB_AGENT_LOOPBACK_HOST,
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
+)
 
 
 def channel_urls(runtime) -> list[str]:
@@ -35,6 +38,24 @@ def channel_urls(runtime) -> list[str]:
     if relay and relay not in urls:
         urls.append(relay)
     return urls
+
+
+def own_agent_urls(runtime) -> list[str]:
+    """The addresses the hub's own agent is given: loopback first.
+
+    The agent on the hub's machine reaches the agent port over loopback
+    whatever is exposed, so its list holds loopback even when nothing is.
+
+    Args:
+        runtime: The shared runtime, for the network configuration and the
+            port.
+
+    Returns:
+        ``https://127.0.0.1:<agent port>``, then :func:`channel_urls`.
+    """
+    port = runtime.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+    loopback = f"https://{WEB_AGENT_LOOPBACK_HOST}:{port}"
+    return [loopback, *(url for url in channel_urls(runtime) if url != loopback)]
 
 
 def relay_url() -> str:
@@ -105,11 +126,14 @@ def overlay_name(network) -> str:
     return part().name()
 
 
-def enrollment_link_parts(runtime) -> tuple[list, str]:
+def enrollment_link_parts(runtime, *, is_hub: bool = False) -> tuple[list, str]:
     """What every enrollment link carries besides its ticket.
 
     Args:
         runtime: The shared runtime.
+        is_hub: Whether the link is for the agent on the hub's own machine,
+            which is given loopback first and is never refused for want of
+            an exposed address.
 
     Returns:
         The agent channel's URLs and the certificate fingerprint.
@@ -120,7 +144,7 @@ def enrollment_link_parts(runtime) -> tuple[list, str]:
             ``{"code": "agent_tls_missing"}`` when the channel has no
             certificate to pin.
     """
-    urls = channel_urls(runtime)
+    urls = own_agent_urls(runtime) if is_hub else channel_urls(runtime)
     if not urls:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

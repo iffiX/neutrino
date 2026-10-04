@@ -217,3 +217,53 @@ def test_the_carried_package_installs_with_no_network(box, monkeypatch, tmp_path
 
     assert manager.installed == [(str(cache_dir / name),)]
     assert reporter.done_notes == ["installed and joined"]
+
+
+class FakeAnswer:
+    """One panel answer, as ``_post`` returns it."""
+
+    def __init__(self, body: dict, cookie: str = ""):
+        self._body = body
+        self.headers = {"set-cookie": cookie}
+
+    def read(self) -> bytes:
+        return json.dumps(self._body).encode()
+
+
+def test_the_link_asked_of_the_panel_is_the_hubs_own(monkeypatch):
+    """The hub's own agent is given loopback first, so the ask says whose
+    link it is."""
+    asked: list = []
+
+    def post(url, body, *, cookie=""):
+        asked.append((url, body))
+        if url.endswith(setup.SETUP_LOGIN_PATH):
+            return FakeAnswer({}, "session=s; Path=/")
+        return FakeAnswer({"link": "neutrino://own"})
+
+    monkeypatch.setattr(setup, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(setup, "_loopback_url", lambda: "http://127.0.0.1:8080")
+    monkeypatch.setattr(setup, "_post", post)
+
+    assert setup._enrollment_link("panel-password") == ("neutrino://own", "")
+    assert asked[-1] == (
+        f"http://127.0.0.1:8080{setup.SETUP_ENROLLMENT_PATH}",
+        {"name": "", "is_hub": True},
+    )
+
+
+def test_the_link_the_panel_mints_for_its_first_run_is_the_hubs_own(monkeypatch):
+    from neutrino_hub.web import app
+    from neutrino_hub.web.routers.hub import device
+
+    minted: list = []
+
+    def generate(runtime, *, name, device_id, is_hub=False):
+        minted.append((name, device_id, is_hub))
+        return "neutrino://own", "ticket"
+
+    monkeypatch.setattr(app, "shared_runtime", lambda: object())
+    monkeypatch.setattr(device, "generate_enrollment_link", generate)
+
+    assert setup._minted_link() == ("neutrino://own", "")
+    assert minted == [("", None, True)]
