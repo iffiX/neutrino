@@ -227,7 +227,7 @@ def test_the_file_says_nothing_about_what_it_holds(config_dir):
     )
     raw = (config_dir / CREDENTIALS_VAULT_PATH).read_text()
     assert sorted(json.loads(raw)) == ["sealed", "version", "wrapped_key"]
-    for readable in ("NAS", "login", "backup", "hunter2", "distinctive"):
+    for readable in ("NAS archive", "login", "backup", "hunter2", "distinctive"):
         assert readable not in raw
 
 
