@@ -138,6 +138,36 @@ def test_attach_rides_pkexec_and_the_helper_with_the_credentials_file(
     assert "s3cret" not in " ".join(recorder.commands[0])  # scan: allow
 
 
+def test_a_forwarded_share_names_its_port_to_the_helper(monkeypatch, tmp_path):
+    credentials = tmp_path / "r1.credentials"
+    credentials.write_text("username=media\npassword=s3cret\n")  # scan: allow
+    recorder = CommandRecorder()
+    monkeypatch.setattr(linux_module.subprocess, "run", recorder)
+
+    LinuxPlatform().attach_share(
+        share_url="//127.0.0.1/media",
+        port=20445,
+        location="/home/alice/nas/media",
+        credentials_path=str(credentials),
+    )
+
+    assert recorder.commands == [
+        [
+            "pkexec",
+            CLIENT_MOUNT_HELPER_PATH,
+            "mount",
+            "--share",
+            "//127.0.0.1/media",
+            "--port",
+            "20445",
+            "--location",
+            "/home/alice/nas/media",
+            "--credentials",
+            str(credentials),
+        ]
+    ]
+
+
 def test_detach_rides_pkexec_and_the_helper(monkeypatch):
     recorder = CommandRecorder()
     monkeypatch.setattr(linux_module.subprocess, "run", recorder)

@@ -39,11 +39,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import functools
 import hashlib
 import ipaddress
 import json
 import os
 import socket
+import threading
 import time
 import urllib.parse
 import uuid
@@ -284,6 +286,23 @@ def find_binding(needle: str) -> "dict | None":
     return None
 
 
+# Held while one writer of this process reads, changes and writes the binding
+# file, so no two of its threads write over each other.
+BINDING_WRITE_LOCK = threading.RLock()
+
+
+def _one_writer(change):
+    """``change`` run while no other thread of this process writes the file."""
+
+    @functools.wraps(change)
+    def run(*args, **kwargs):
+        with BINDING_WRITE_LOCK:
+            return change(*args, **kwargs)
+
+    return run
+
+
+@_one_writer
 def add_binding(binding: dict) -> None:
     """Keep one binding; one with the same ``id`` is replaced in place.
 
@@ -309,6 +328,7 @@ def add_binding(binding: dict) -> None:
     save_config(config)
 
 
+@_one_writer
 def remove_binding(binding_id: str) -> None:
     """Drop one binding; an id nobody holds changes nothing.
 
@@ -571,6 +591,7 @@ def exit_hub_id() -> str:
     return load_config()["exit_hub_id"]
 
 
+@_one_writer
 def set_exit_hub_id(hub_id: str) -> None:
     """Choose the hub whose AI gateway this person's tools point at.
 
@@ -684,6 +705,7 @@ def complete_join(binding: dict, gateway_url: str) -> dict:
     return completed
 
 
+@_one_writer
 def replace_binding(binding_id: str, binding: dict) -> None:
     """Put a completed binding where a pending one was.
 
@@ -772,6 +794,7 @@ def _binding(raw: dict) -> dict:
     return binding
 
 
+@_one_writer
 def _note(binding_id: str, **fields) -> None:
     """Write fields onto one binding; an id nobody holds changes nothing."""
     config = load_config()

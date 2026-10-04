@@ -6,6 +6,8 @@ exit marked. The running resident is asked first over its socket; the
 binding file answers only when nothing does.
 """
 
+import json
+
 import pytest
 
 from neutrino_client import CLIENT_VERSION
@@ -178,3 +180,47 @@ def test_a_resident_of_another_account_reads_as_none(platform, config_path, caps
         server.stop()
 
     assert f"resident {status_cli.RESIDENT_NOT_RUNNING}" in printed(capsys)
+
+
+# --- the same account as one JSON object ---
+
+
+def test_json_carries_every_hub_and_its_way_in(resident, capsys):
+    resident.hubs_value[0]["reached_through"] = "relay"
+
+    assert status_cli.main(is_json=True) == 0
+
+    status = json.loads(capsys.readouterr().out)
+    assert status["version"] == CLIENT_VERSION
+    assert status["is_running"] is True
+    home, office = status["hubs"]
+    assert home == {
+        "hub_id": "h1",
+        "hub_name": "home",
+        "gateway_url": GATEWAY_URL,
+        "connection": "connected",
+        "reached_through": "relay",
+        "is_exit": True,
+        "last_error": None,
+    }
+    assert office["reached_through"] == ""
+
+
+def test_json_with_no_resident_reads_the_binding_file(platform, config_path, capsys):
+    bind(config_path, bindings=[dict(BINDING), dict(OFFICE_BINDING)])
+
+    assert status_cli.main(is_json=True) == 1
+
+    status = json.loads(capsys.readouterr().out)
+    assert status["is_running"] is False
+    assert [hub["hub_name"] for hub in status["hubs"]] == ["home", "office"]
+    assert {hub["connection"] for hub in status["hubs"]} == {""}
+
+
+def test_json_of_a_connecting_hub_is_not_a_clean_status(resident, capsys):
+    resident.hubs_value[1]["connection"] = "connecting"
+
+    assert status_cli.main(is_json=True) == 1
+    assert json.loads(capsys.readouterr().out)["hubs"][1]["connection"] == (
+        "connecting"
+    )

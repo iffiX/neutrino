@@ -249,12 +249,13 @@ class ClientPlatform:
         return None
 
     def attach_share(
-        self, *, share_url: str, location: str, credentials_path: str
+        self, *, share_url: str, location: str, credentials_path: str, port: int = 0
     ) -> str:
         """Attach a published share at a location with a kept login.
 
         Args:
             share_url: The share, as ``//host/name``.
+            port: The port the server answers SMB on; 0 for its own.
             location: Where the share appears; empty where the system picks.
             credentials_path: The credentials file the login is read from.
 

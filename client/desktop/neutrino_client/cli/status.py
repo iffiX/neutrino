@@ -10,6 +10,8 @@ point at, then the resident's.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import json
+
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.cli import wording
 from neutrino_client.core import enrollment
@@ -24,18 +26,82 @@ RESIDENT_NOT_RUNNING = "not running; open it: nclient gui"
 EXIT_MARK = "exit"
 
 
-def main() -> int:
+def main(is_json: bool = False) -> int:
     """Report the three things that break independently.
+
+    Args:
+        is_json: Print one JSON object instead of the lines.
 
     Returns:
         Process exit status: 0 when bound, running and every hub connected,
         1 otherwise.
     """
+    if is_json:
+        return _status_as_json()
     print(f"neutrino-client {CLIENT_VERSION}")
     state = wording.resident_state()
     if state is not None:
         return _status_from_resident(state)
     return _status_from_bindings()
+
+
+def _status_as_json() -> int:
+    """Print the status as one JSON object.
+
+    The object is ``{"version", "is_running", "hubs"}``, each hub
+    ``{"hub_id", "hub_name", "gateway_url", "connection",
+    "reached_through", "is_exit", "last_error"}``; ``connection`` and
+    ``reached_through`` are empty and ``last_error`` None when no resident
+    runs to say them.
+
+    Returns:
+        Process exit status, as for the lines.
+    """
+    state = wording.resident_state()
+    if state is None:
+        exit_hub_id = enrollment.exit_hub_id()
+        hubs = [
+            {
+                "hub_id": str(binding.get("hub_id", "")),
+                "hub_name": str(binding.get("hub_name", "")),
+                "gateway_url": str(binding.get("gateway_url", "")),
+                "connection": "",
+                "reached_through": "",
+                "is_exit": bool(exit_hub_id) and binding.get("hub_id") == exit_hub_id,
+                "last_error": None,
+            }
+            for binding in enrollment.bindings()
+        ]
+    else:
+        hubs = [
+            {
+                "hub_id": str(hub.get("hub_id", "")),
+                "hub_name": str(hub.get("hub_name", "")),
+                "gateway_url": str(hub.get("gateway_url", "")),
+                "connection": str(hub.get("connection", "")),
+                "reached_through": str(hub.get("reached_through", "") or ""),
+                "is_exit": bool(hub.get("is_exit")),
+                "last_error": hub.get("last_error") or None,
+            }
+            for hub in state.get("hubs") or []
+            if isinstance(hub, dict)
+        ]
+    print(
+        json.dumps(
+            {
+                "version": CLIENT_VERSION,
+                "is_running": state is not None,
+                "hubs": hubs,
+            },
+            sort_keys=True,
+        )
+    )
+    is_clean = state is not None and bool(hubs)
+    return (
+        0
+        if is_clean and all(hub["connection"] == CONNECTION_CONNECTED for hub in hubs)
+        else 1
+    )
 
 
 def _status_from_bindings() -> int:

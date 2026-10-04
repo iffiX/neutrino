@@ -309,12 +309,13 @@ class WindowsPlatform(ClientPlatform):
         return None
 
     def attach_share(
-        self, *, share_url: str, location: str, credentials_path: str
+        self, *, share_url: str, location: str, credentials_path: str, port: int = 0
     ) -> str:
         """Map a share in this person's own session.
 
         Args:
             share_url: The share, as ``//host/name``.
+            port: The port the server answers SMB on; 0 for its own.
             location: The drive letter.
             credentials_path: The credentials file the login is read from.
 

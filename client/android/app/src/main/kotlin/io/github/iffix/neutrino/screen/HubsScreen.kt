@@ -282,7 +282,7 @@ private fun HubRow(
             }
             if (hub.isPanelAllowed) {
                 NeutrinoButton(
-                    words.word(if (hub.jobs.isOpeningPanel) "ui.job.opening" else "ui.panel"),
+                    words.word(if (hub.jobs.isOpeningPanel) "ui.job.opening" else "ui.hub_panel"),
                     { onOpenPanel(id) },
                     isSmall = true,
                     isBusy = hub.jobs.isOpeningPanel,

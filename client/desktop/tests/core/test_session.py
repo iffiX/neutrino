@@ -623,6 +623,56 @@ def test_a_service_stream_goes_up_odd_and_its_close_comes_back(bound, monkeypatc
     assert answered == MATERIAL
 
 
+def test_the_state_names_the_way_in_and_the_panel(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    assert (session.reached_through(), session.is_panel_allowed()) == ("", False)
+
+    for way in ("lan", "netbird", "easytier", "relay"):
+        take(session, made, dict(STATE, reached_through=way, is_panel_allowed=True))
+        assert (session.reached_through(), session.is_panel_allowed()) == (way, True)
+
+    take(session, made, dict(STATE, is_panel_allowed="yes"))
+    assert (session.reached_through(), session.is_panel_allowed()) == ("", False)
+
+
+def test_a_connect_stream_carries_bytes_both_ways_under_credit(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    stream = session.open_connect({"id": "svc_tcp"})
+    take(session, made, {"type": "credit", "stream": stream.stream_id, "bytes": 4})
+    stream.send(b"ping")
+    take(session, made, stream.stream_id.to_bytes(4, "big") + b"pong")
+
+    assert made.sent[-3:] == [
+        {"type": "open", "stream": 1, "kind": "connect", "id": "svc_tcp"},
+        {"type": "credit", "stream": 1, "bytes": 1048576},
+        (1, b"ping"),
+    ]
+    assert stream.read(1) == b"pong"
+    take(session, made, {"type": "close", "stream": 1, "code": "", "params": {}})
+    assert stream.read(1) == b""
+
+
+def test_a_connect_stream_for_the_panel_names_it(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    session.open_connect({"is_panel": True})
+
+    assert {"type": "open", "stream": 1, "kind": "connect", "is_panel": True} in (
+        made.sent
+    )
+
+
+def test_a_connect_stream_needs_the_socket(bound):
+    session, _listener = bound
+
+    with pytest.raises(GatewayUnreachable):
+        session.open_connect({"id": "svc_tcp"})
+
+
 def test_a_second_stream_takes_the_next_odd_id(bound, monkeypatch):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))
@@ -2307,6 +2357,32 @@ def test_a_refused_join_is_down_with_its_code_and_runs_no_more_rounds(
     assert script.hosts == ["192.0.2.1"]
     assert script.made[0].sent == []
     assert stored_binding(config_path)["is_pending"] is True
+
+
+def test_a_paused_admission_keeps_the_join_pending_and_tries_again_after_its_wait(
+    pending_session, monkeypatch, config_path
+):
+    session, _lines = pending_session
+    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
+    desk = JoinDesk(script)
+    desk.refusal = EnrollmentError("admission_paused", {"retry_after_s": 42})
+    monkeypatch.setattr(enrollment, "complete_join", desk)
+
+    delay = session.run_once()
+
+    assert delay == 42
+    assert session.connection() == "pending"
+    assert session.last_error() == {
+        "code": "admission_paused",
+        "params": {"retry_after_s": 42},
+    }
+    assert stored_binding(config_path)["is_pending"] is True
+    assert stored_binding(config_path)["ticket"]
+
+    desk.refusal = None
+    session.run_once()
+
+    assert script.hosts == ["192.0.2.1", "192.0.2.1"]
 
 
 def test_an_address_that_stops_answering_mid_join_lets_the_round_go_on(

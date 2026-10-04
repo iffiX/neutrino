@@ -1,7 +1,10 @@
 """The AI service: one person's apply, converged on the exit hub's grant.
 
-The credential comes from the exit hub's ``ai`` entry over its ``service``
-stream, opened on every reconcile; the staged choices are what each tool is
+The key comes from the exit hub's ``ai`` entry over its ``service`` stream,
+opened on every reconcile, and the tools are pointed at the entry's forward
+on the loopback, ``http://127.0.0.1:<local port><path>``, never at the
+gateway's own address; the forward is made at activation and ends when the
+tools are pointed away or the exit moves. The staged choices are what each tool is
 pointed with, and the grant's model is only the prefill default for a slot
 nobody has chosen. The store never holds a key and never holds the toggle:
 a handler starts with the tools pointed nowhere, restore puts them back the
@@ -24,6 +27,8 @@ from neutrino_client.services.ai import (
     AiServiceHandler,
     ai_entry_id,
     clean_tool_configs,
+    endpoint_port,
+    local_base_url,
     resolved_configs,
 )
 from neutrino_client.services.store import ClientServiceStore
@@ -49,11 +54,32 @@ ENTRY = {
     "source": "module",
     "description": "",
 }
-CREDENTIAL = {
-    "base_url": "http://hub:8080",
-    "api_key": "key-1",
-    "model": "m1",
-}  # scan: allow
+CREDENTIAL = {"api_key": "key-1", "model": "m1"}  # scan: allow
+# Where the forward of each hub's gateway listens, as the fake registry
+# hands it out.
+HOME_LOCAL = "http://127.0.0.1:21001"
+OFFICE_LOCAL = "http://127.0.0.1:21002"
+
+
+class FakeForwards:
+    """The forward registry, its ports handed out by hub and nothing listening."""
+
+    PORTS = {"h1": 21001, "h2": 21002}
+
+    def __init__(self):
+        self.running = {}
+        self.ensured = []
+        self.error = None
+
+    def ensure(self, *, hub_id, entry_id, own_port, kind, local_port=0):
+        if self.error is not None:
+            raise self.error
+        self.ensured.append((hub_id, entry_id, own_port, kind))
+        self.running[(hub_id, entry_id)] = self.PORTS[hub_id]
+        return self.PORTS[hub_id]
+
+    def stop(self, hub_id, entry_id):
+        return self.running.pop((hub_id, entry_id), None) is not None
 
 
 class FakeHub:
@@ -137,11 +163,13 @@ def subject(tmp_path):
     store = ClientServiceStore(path=str(tmp_path / "state.json"))
     fake = FakeSwitcher()
     hub = FakeHub()
+    hub.forwards = FakeForwards()
     handler = AiServiceHandler(
         store=store,
         original_dir=str(tmp_path / "original"),
         open_service=hub.open_service,
         exit_hub_id=hub.exit,
+        forwards=hub.forwards,
         log=discard,
         switcher_module=fake,
         start_thread=run_inline,
@@ -163,7 +191,9 @@ def test_apply_opens_the_entrys_stream_and_activates_with_the_prefill_default(
     assert outcome == {}
     assert hub.opened == [("h1", "ai")]
     kind, base_url, api_key, tool_configs = fake.calls[-1]
-    assert (kind, base_url, api_key) == ("activate", "http://hub:8080", "key-1")
+    assert (kind, base_url, api_key) == ("activate", HOME_LOCAL, "key-1")
+    assert hub.forwards.ensured == [("h1", "ai", 8080, "ai")]
+    assert hub.forwards.running == {("h1", "ai"): 21001}
     assert tool_configs["claude"] == {
         "default": "m1",
         "opus": "m1",
@@ -251,14 +281,15 @@ def test_moving_the_exit_is_one_activation_at_the_new_hub(subject):
     office = dict(ENTRY, hub_id="h2")
     handler.act(entries=[ENTRY, office], body={"is_enabled": True})
     hub.exit_hub_id = "h2"
-    hub.reply = dict(CREDENTIAL, base_url="http://office:8080")
+    hub.reply = dict(CREDENTIAL)
 
     handler.refresh(entries=[ENTRY, office])
 
     assert hub.opened == [("h1", "ai"), ("h2", "ai")]
     assert [call[0] for call in fake.calls] == ["activate", "activate"]
-    assert fake.calls[-1][1] == "http://office:8080"
+    assert fake.calls[-1][1] == OFFICE_LOCAL
     assert handler._granted["hub_id"] == "h2"
+    assert hub.forwards.running == {("h2", "ai"): 21002}
 
 
 def test_two_exit_switches_leave_one_adopt_record_and_the_endpoint_follows(
@@ -269,7 +300,7 @@ def test_two_exit_switches_leave_one_adopt_record_and_the_endpoint_follows(
     handler.act(entries=[ENTRY, office], body={"is_enabled": True})
 
     hub.exit_hub_id = "h2"
-    hub.reply = dict(CREDENTIAL, base_url="http://office:8080")
+    hub.reply = dict(CREDENTIAL)
     handler.refresh(entries=[ENTRY, office])
     hub.exit_hub_id = "h1"
     hub.reply = dict(CREDENTIAL)
@@ -280,13 +311,14 @@ def test_two_exit_switches_leave_one_adopt_record_and_the_endpoint_follows(
     assert fake.provider == "neutrino"
     assert handler._granted == {
         "hub_id": "h1",
-        "base_url": "http://hub:8080",
+        "entry_id": "ai",
+        "base_url": HOME_LOCAL,
         "model": "m1",
     }
     assert [call[1] for call in activations(fake)] == [
-        "http://hub:8080",
-        "http://office:8080",
-        "http://hub:8080",
+        HOME_LOCAL,
+        OFFICE_LOCAL,
+        HOME_LOCAL,
     ]
 
 
@@ -297,7 +329,7 @@ def test_letting_go_of_the_exit_leaves_the_tools_for_the_refresh_to_move(subject
     office = dict(ENTRY, hub_id="h2")
     handler.act(entries=[ENTRY, office], body={"is_enabled": True})
     hub.exit_hub_id = "h2"
-    hub.reply = dict(CREDENTIAL, base_url="http://office:8080")
+    hub.reply = dict(CREDENTIAL)
 
     assert handler.release_hub("h1") == 0
     assert [call for call in fake.calls if call[0] == "deactivate"] == []
@@ -308,7 +340,8 @@ def test_letting_go_of_the_exit_leaves_the_tools_for_the_refresh_to_move(subject
     assert [call[0] for call in fake.calls] == ["activate", "activate"]
     assert handler._granted == {
         "hub_id": "h2",
-        "base_url": "http://office:8080",
+        "entry_id": "ai",
+        "base_url": OFFICE_LOCAL,
         "model": "m1",
     }
     assert fake.records == {"claude": {"previous": "official"}}
@@ -325,7 +358,7 @@ def test_letting_go_of_the_exit_with_the_toggle_off_restores_the_tools(subject):
     assert handler.release_hub("h1") == 0
 
     assert [call for call in fake.calls if call[0] == "deactivate"] == [
-        ("deactivate", "http://hub:8080")
+        ("deactivate", HOME_LOCAL)
     ]
     assert handler._granted == {}
 
@@ -341,7 +374,7 @@ def test_letting_go_of_the_hub_the_tools_point_at_restores_them(subject):
     assert handler.release_hub("h1") == 0
 
     assert [call for call in fake.calls if call[0] == "deactivate"] == [
-        ("deactivate", "http://hub:8080")
+        ("deactivate", HOME_LOCAL)
     ]
     assert handler.state()["ai"]["is_enabled"] is True
     assert handler.state()["ai"]["is_active"] is False
@@ -349,7 +382,7 @@ def test_letting_go_of_the_hub_the_tools_point_at_restores_them(subject):
 
 def test_a_grant_with_no_endpoint_is_no_endpoint(subject):
     handler, _store, fake, hub = subject
-    hub.reply = {"base_url": "", "api_key": "", "model": "m1"}
+    hub.reply = {"api_key": "", "model": "m1"}
 
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
@@ -422,12 +455,12 @@ def test_an_already_pointed_person_is_looked_at_and_left_as_they_stand(subject):
     """Every tool is asked each time, so an upgrade that changes one tool's
     endpoint reaches a person whose Claude Code already stood on the hub."""
     handler, _store, fake, _hub = subject
-    fake.active = ("http://hub:8080", "key-1", "m1")
+    fake.active = (HOME_LOCAL, "key-1", "m1")
 
     handler.act(entries=[ENTRY], body={"is_enabled": True})
 
     assert activations(fake)
-    assert fake.active == ("http://hub:8080", "key-1", "m1")
+    assert fake.active == (HOME_LOCAL, "key-1", "m1")
     assert handler.state()["ai"]["is_active"] is True
 
 
@@ -438,7 +471,7 @@ def test_disabling_uses_the_endpoint_the_activation_granted(subject):
     outcome = handler.act(entries=[ENTRY], body={"is_enabled": False})
 
     assert outcome == {}
-    assert ("deactivate", "http://hub:8080") in fake.calls
+    assert ("deactivate", HOME_LOCAL) in fake.calls
     assert handler.state()["ai"]["is_active"] is False
     assert hub.opened == [("h1", "ai")]
 
@@ -466,7 +499,7 @@ def test_restore_puts_the_tools_back_and_keeps_the_choice(subject):
     handler.restore()
 
     assert [call for call in fake.calls if call[0] == "deactivate"] == [
-        ("deactivate", "http://hub:8080")
+        ("deactivate", HOME_LOCAL)
     ]
     assert handler.state()["ai"]["is_enabled"] is True
     assert handler.state()["ai"]["is_active"] is False
@@ -530,6 +563,7 @@ def test_the_toggle_of_a_previous_run_is_not_kept(subject, tmp_path):
         original_dir=str(tmp_path / "original"),
         open_service=hub.open_service,
         exit_hub_id=hub.exit,
+        forwards=FakeForwards(),
         log=discard,
         switcher_module=fake,
         start_thread=run_inline,
@@ -632,3 +666,41 @@ def test_resolved_configs_fill_every_claude_slot():
     }
     assert resolved["codex"] == {"model": "", "model_reasoning_effort": ""}
     assert resolved["gemini"] == {"model": ""}
+
+
+def test_the_tools_get_the_endpoints_own_path_on_the_forward():
+    assert local_base_url("http://hub:8080", 21001) == "http://127.0.0.1:21001"
+    assert local_base_url("http://hub:8317/v1/", 20000) == "http://127.0.0.1:20000/v1"
+    assert endpoint_port("http://hub:8317/v1") == 8317
+    assert endpoint_port("http://hub/v1") == 0
+    assert endpoint_port("http://hub:port/") == 0
+
+
+def test_pointing_the_tools_away_ends_the_forward(subject):
+    handler, _store, _fake, hub = subject
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+    assert hub.forwards.running == {("h1", "ai"): 21001}
+
+    handler.act(entries=[ENTRY], body={"is_enabled": False})
+
+    assert hub.forwards.running == {}
+
+
+def test_restoring_the_tools_ends_the_forward(subject):
+    handler, _store, _fake, hub = subject
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    handler.restore()
+
+    assert hub.forwards.running == {}
+
+
+def test_a_forward_that_cannot_listen_points_no_tool(subject):
+    handler, _store, fake, hub = subject
+    hub.forwards.error = OSError("no free loopback port")
+
+    handler.act(entries=[ENTRY], body={"is_enabled": True})
+
+    row = handler.state()["ai"]
+    assert (row["code"], row["is_active"]) == ("forward_failed", False)
+    assert activations(fake) == []

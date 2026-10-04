@@ -24,6 +24,11 @@ from neutrino_client.platforms.detect import detect_platform
 NOT_JOINED = "this person has joined no hub"
 NOT_RUNNING = "the client is not running"
 QUIT_ASKED = "asked the client to quit"
+NOTHING_CHANGED = "nothing changed"
+NO_TERMINAL_LINE = (
+    "error: no terminal to answer on; run it again with --yes to go ahead "
+    "without asking"
+)
 
 # What each typed refusal or failure code says on this surface.
 CLIENT_CODE_WORDS = {
@@ -35,6 +40,12 @@ CLIENT_CODE_WORDS = {
     "unknown_terminal": "the hub offers no terminal on {device_id}",
     "permission_denied": "the hub does not allow this client to use {kind}",
     "agent_offline": "that machine is not connected to the hub right now",
+    "connect_failed": "the hub could not reach that service ({reason})",
+    "connect_limit": "this client has too many connections open through the hub "
+    "({limit})",
+    "port_not_published": "that machine does not publish port {port} now",
+    "admission_paused": "the hub has paused new joins; this client tries again in "
+    "{retry_after_s} s",
     "shell_unknown": "the hub no longer has that terminal open",
     "session_not_owned": "only the client that opened this session can change it",
     "session_unknown": "the machine no longer keeps this session",
@@ -346,6 +357,29 @@ def ask_secret(prompt: str) -> str:
     if stream is None or not stream.isatty():
         return (stream.readline() if stream is not None else "").rstrip("\r\n")
     return getpass.getpass(prompt)
+
+
+def is_confirmed(question: str) -> bool:
+    """Ask one yes-or-no question on the terminal.
+
+    With no terminal on stdin nothing is asked: one line on stderr says that
+    ``--yes`` goes ahead without asking.
+
+    Args:
+        question: The question, ending in ``[y/N]``.
+
+    Returns:
+        True only for ``y`` or ``yes``; no input and no terminal are a no.
+    """
+    if sys.stdin is None or not sys.stdin.isatty():
+        print(NO_TERMINAL_LINE, file=sys.stderr)
+        return False
+    try:
+        answer = input(question)
+    except EOFError:
+        print()
+        return False
+    return answer.strip().lower() in ("y", "yes")
 
 
 def _fill(template: str, params: dict) -> str:

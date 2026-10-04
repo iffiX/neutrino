@@ -337,6 +337,31 @@ def test_the_window_is_pushed_the_state_after_every_change(
     assert "services" in pushed[0]
 
 
+def test_a_terminals_output_its_clearing_and_its_end_are_pushed(
+    platform, residents, monkeypatch
+):
+    pushed = []
+
+    def fake_shell(*, on_push_ready, **rest):
+        on_push_ready(pushed.append)
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+    assert gui_cli.main() == 0
+    (resident,) = residents.made
+
+    resident.on_terminal_output({"id": "t1", "data": b"$ "})
+    resident.on_terminal_output({"id": "t1", "clearing": True})
+    resident.on_terminal_output({"id": "t1", "clearing": False})
+    resident.on_terminal_output({"id": "t1", "end": {"exit_code": 0}})
+
+    assert pushed == [
+        {"terminal": {"id": "t1", "data": "JCA="}},
+        {"terminal": {"id": "t1", "clearing": True}},
+        {"terminal": {"id": "t1", "clearing": False}},
+        {"terminal": {"id": "t1", "end": {"exit_code": 0}}},
+    ]
+
+
 def test_the_resident_writes_its_lines_to_a_file_and_turns_it(tmp_path):
     path = tmp_path / "logs" / "client.log"
     log = gui_cli.ResidentLog(path=str(path))

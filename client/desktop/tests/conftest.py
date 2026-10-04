@@ -13,6 +13,7 @@ each entry stamped with its ``hub_id``.
 import base64
 import json
 import os
+import socket
 import subprocess
 import threading
 import zlib
@@ -378,10 +379,11 @@ class FakeClientPlatform(ClientPlatform):
     def has_mount_tooling(self) -> bool:
         return self.has_tooling
 
-    def attach_share(self, *, share_url, location, credentials_path) -> str:
+    def attach_share(self, *, share_url, location, credentials_path, port=0) -> str:
         self.attach_calls.append(
             {
                 "share_url": share_url,
+                "port": port,
                 "location": location,
                 "credentials_path": credentials_path,
             }
@@ -418,6 +420,119 @@ class FakeClientPlatform(ClientPlatform):
         if self.on_answer is not None:
             self.on_answer(list(argv))
         return 0, self.answer_output
+
+
+class FakeConnectHub:
+    """The hub's end of ``connect`` streams, played over real loopback sockets.
+
+    Every open is recorded as ``(hub_id, args)``. The far end the hub would
+    dial is ``far_port`` on the loopback, whatever the entry's payload names,
+    so a byte that comes back proves it went through the stream and not to
+    a device address. ``refusal`` closes every stream at once with that
+    code, as the hub does when it judges the open; ``error`` is raised
+    instead of opening, as for a hub that is not connected.
+    """
+
+    def __init__(self, far_port: int = 0):
+        self.far_port = far_port
+        self.opens = []
+        self.refusal = ""
+        self.error = None
+        self.closed_here = []
+        self._lock = threading.Lock()
+        self._next_id = 1
+
+    def open_connect(self, hub_id: str, args: dict):
+        from neutrino_client.core.streams import ClientStream
+
+        if self.error is not None:
+            raise self.error
+        with self._lock:
+            stream_id = self._next_id
+            self._next_id += 2
+        self.opens.append((hub_id, dict(args)))
+        if self.refusal:
+            stream = ClientStream(stream_id=stream_id, kind="connect")
+            stream.take_close(code=self.refusal, params={"service_id": "x"})
+            return stream
+        far = socket.create_connection(("127.0.0.1", self.far_port), timeout=5)
+        far.settimeout(None)
+
+        def send_bytes(frame: bytes) -> None:
+            far.sendall(frame[4:])
+
+        def close() -> None:
+            self.closed_here.append(stream_id)
+            try:
+                far.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            far.close()
+
+        stream = ClientStream(
+            stream_id=stream_id,
+            kind="connect",
+            send_bytes=send_bytes,
+            grant=lambda nbytes: None,
+            close=close,
+        )
+        stream.take_credit(1 << 30)
+
+        def pump() -> None:
+            while True:
+                try:
+                    data = far.recv(65536)
+                except OSError:
+                    break
+                if not data:
+                    break
+                stream.take_bytes(data)
+            stream.take_close(code="", params={})
+
+        threading.Thread(target=pump, daemon=True).start()
+        return stream
+
+
+def echo_server():
+    """A real echo server on a loopback port of its own: ``(port, close)``."""
+    server = socket.create_server(("127.0.0.1", 0))
+    port = server.getsockname()[1]
+
+    def echo(connection) -> None:
+        while True:
+            try:
+                data = connection.recv(4096)
+            except OSError:
+                break
+            if not data:
+                break
+            connection.sendall(data)
+        connection.close()
+
+    def serve() -> None:
+        while True:
+            try:
+                connection, _address = server.accept()
+            except OSError:
+                return
+            threading.Thread(target=echo, args=(connection,), daemon=True).start()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return port, server.close
+
+
+def round_trip(port: int, payload: bytes) -> bytes:
+    """Send bytes to a loopback port and read the same number back."""
+    client = socket.create_connection(("127.0.0.1", port), timeout=5)
+    client.sendall(payload)
+    received = b""
+    while len(received) < len(payload):
+        chunk = client.recv(65536)
+        if not chunk:
+            break
+        received += chunk
+    client.close()
+    return received
 
 
 class FakeProcess:
@@ -467,6 +582,8 @@ class FakeResident:
         self.overlay_reply = {}
         self.forward_settings = []
         self.forward_reply = {}
+        self.panel_opens = []
+        self.panel_reply = {}
         self.clipboard_reply = {"text": "echo pasted\n"}
         self.clipboard_written = []
         self.clipboard_write_reply = {}
@@ -476,8 +593,9 @@ class FakeResident:
         self.session_reply = {}
         self.typed = []
         self.shown = [b"$ "]
+        # The loopback port each forwarded entry listens on, by service key.
+        self.forward_ports = {"h1/svc_tcp": 5432}
         self.states = {
-            "forwards": {"h1/svc_tcp": {"local_port": 5432, "is_active": True}},
             "mounts": [
                 {
                     "record_id": "r1",
@@ -555,7 +673,14 @@ class FakeResident:
 
     def entry_rows(self) -> list:
         return [
-            dict(entry, job="", last_error=None) for entry in self.service_entries()
+            dict(
+                entry,
+                job="",
+                last_error=None,
+                local_port="auto",
+                forward=self.forward_ports.get(f"{entry['hub_id']}/{entry['id']}"),
+            )
+            for entry in self.service_entries()
         ]
 
     def notices(self) -> list:
@@ -651,6 +776,16 @@ class FakeResident:
             return {"code": "unknown_terminal", "params": {}}
         self.typed.append(data)
         return {}
+
+    def clear_terminal(self, terminal_id: str) -> dict:
+        self.terminal_calls.append(("clear", terminal_id))
+        if not self.has_terminal(terminal_id):
+            return {"code": "unknown_terminal", "params": {}}
+        return {}
+
+    def open_panel(self, hub_id: str) -> dict:
+        self.panel_opens.append(hub_id)
+        return dict(self.panel_reply)
 
     def close_terminal(self, terminal_id: str) -> dict:
         self.terminal_calls.append(("close", terminal_id))

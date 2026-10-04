@@ -18,7 +18,6 @@ from __future__ import annotations
 import sys
 
 from neutrino_client.cli import wording
-from neutrino_client.services.base import service_key
 
 SERVICE_KIND_TITLES = (
     ("web", "Web"),
@@ -121,13 +120,13 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0, hub: str = "")
     if entry is None:
         return 2
     forward = _forward_of(state, entry)
-    if is_enabled and forward.get("is_active"):
-        print(f"{FORWARD_HOST}:{forward.get('local_port')}")
+    if is_enabled and forward:
+        print(f"{FORWARD_HOST}:{forward}")
         return 0
     if is_enabled and not entry.get("is_healthy"):
         print(f"{entry.get('title', '')}: {SERVICE_UNHEALTHY}", file=sys.stderr)
         return 1
-    if not is_enabled and not forward.get("is_active"):
+    if not is_enabled and not forward:
         print(f"no forward is running for {entry.get('title', '')}")
         return 0
     body = dict(_address(entry), is_enabled=is_enabled)
@@ -137,10 +136,9 @@ def main_port(ref: str, *, is_enabled: bool, local_port: int = 0, hub: str = "")
     if reply is None:
         return 1
     if is_enabled:
-        fresh = _forward_of(reply, entry)
-        print(f"{FORWARD_HOST}:{fresh.get('local_port')}")
+        print(f"{FORWARD_HOST}:{_forward_of(reply, entry)}")
     else:
-        print(f"closed {FORWARD_HOST}:{forward.get('local_port')}")
+        print(f"closed {FORWARD_HOST}:{forward}")
     return 0
 
 
@@ -554,10 +552,16 @@ def _address(entry: dict) -> dict:
     return {"hub_id": entry.get("hub_id", ""), "id": entry.get("id", "")}
 
 
-def _forward_of(state: dict, entry: dict) -> dict:
-    """One entry's forward row, empty when none runs."""
-    key = service_key(str(entry.get("hub_id", "")), str(entry.get("id", "")))
-    return (state.get("forwards") or {}).get(key) or {}
+def _forward_of(state: dict, entry: dict) -> int:
+    """The loopback port one entry's forward listens on, 0 when none runs."""
+    for row in state.get("services") or []:
+        if (
+            isinstance(row, dict)
+            and row.get("hub_id") == entry.get("hub_id")
+            and row.get("id") == entry.get("id")
+        ):
+            return int(row.get("forward") or 0)
+    return 0
 
 
 def _entries(state: dict, kind: str = "", hub_id: "str | None" = None) -> list:
@@ -649,8 +653,8 @@ def _entry_line(state: dict, kind: str, entry: dict, title_width: int) -> str:
     elif kind == "port":
         essence = f"{payload.get('host', '')}:{payload.get('port', '')}"
         forward = _forward_of(state, entry)
-        if forward.get("is_active"):
-            essence += f" -> {FORWARD_HOST}:{forward.get('local_port')}"
+        if forward:
+            essence += f" -> {FORWARD_HOST}:{forward}"
     elif kind == "ai":
         essence = str(payload.get("endpoint", ""))
     elif kind == "rdp":

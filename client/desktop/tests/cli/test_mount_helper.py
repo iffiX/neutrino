@@ -105,6 +105,42 @@ def test_a_good_mount_carries_the_callers_uid_and_gid(caller, ready):
     ]
 
 
+def test_a_forwarded_share_is_mounted_at_its_port(caller, ready):
+    location, credentials = ready
+    recorder = CommandRecorder()
+    argv = mount_argv(location, credentials, share="//127.0.0.1/media")
+    argv[3:3] = ["--port", "20445"]
+
+    status = helper.run(argv, {"PKEXEC_UID": str(os.getuid())}, run_command=recorder)
+
+    assert status == 0
+    assert recorder.commands == [
+        [
+            "mount",
+            "-t",
+            "cifs",
+            "//127.0.0.1/media",
+            os.path.realpath(location),
+            "-o",
+            f"credentials={os.path.realpath(credentials)},"
+            f"uid={os.getuid()},gid={os.getgid()},port=20445",
+        ]
+    ]
+
+
+@pytest.mark.parametrize("port", ["0", "65536", "445,uid=0", "-1", "２"])
+def test_a_port_that_is_not_a_tcp_port_is_usage(caller, ready, port):
+    location, credentials = ready
+    recorder = CommandRecorder()
+    argv = mount_argv(location, credentials, share="//127.0.0.1/media")
+    argv[3:3] = ["--port", port]
+
+    status = helper.run(argv, {"PKEXEC_UID": str(os.getuid())}, run_command=recorder)
+
+    assert status == helper.EXIT_USAGE
+    assert recorder.commands == []
+
+
 def test_without_pkexec_uid_nothing_runs(caller, ready):
     location, credentials = ready
     recorder = CommandRecorder()
