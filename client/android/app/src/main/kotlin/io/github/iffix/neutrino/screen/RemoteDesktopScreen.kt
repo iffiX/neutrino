@@ -33,6 +33,8 @@ import io.github.iffix.neutrino.shell.LocalClientActions
  * @param connecting The entries whose Connect runs, by entry key.
  * @param errors The code each entry's last Connect ended in, by entry key.
  * @param viewingKey The entry the open viewer shows, or null.
+ * @param dialed The address each entry's viewer dials, by entry key, once the hub handed it back;
+ *   the row's mono line, absent until then.
  * @param onConnect What pressing Connect does, with the binding id, the entry id, the viewer's title
  *   and the entry's `platform_os`.
  */
@@ -42,6 +44,7 @@ fun RemoteDesktopScreen(
     connecting: Set<String>,
     errors: Map<String, ChannelResult.Refused>,
     viewingKey: String?,
+    dialed: Map<String, String>,
     onConnect: (String, String, String, String) -> Unit,
 ) {
     val words = NeutrinoTheme.words
@@ -84,7 +87,7 @@ fun RemoteDesktopScreen(
         ) {
             BasicText(entry.title, style = NeutrinoTheme.rowTitle)
             if (viewingKey == key) BasicText(words.word("ui.rdp_open"), style = NeutrinoTheme.note)
-            BasicText("$host:${entry.number("port") ?: ""}", style = NeutrinoTheme.mono)
+            dialed[key]?.let { BasicText(it, style = NeutrinoTheme.mono) }
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
             if (hasMacHint(entry)) BasicText(words.word("ui.rdp_mac_hint"), style = NeutrinoTheme.note)
             ErrorLine(errors[key])
@@ -122,6 +125,6 @@ private fun RemoteDesktopScreenPreview() {
             "ui.unhealthy" to "当前无法访问",
         ),
     ) {
-        RemoteDesktopScreen(PreviewHubs.all, emptySet(), emptyMap(), null, onConnect = { _, _, _, _ -> })
+        RemoteDesktopScreen(PreviewHubs.all, emptySet(), emptyMap(), null, emptyMap(), onConnect = { _, _, _, _ -> })
     }
 }

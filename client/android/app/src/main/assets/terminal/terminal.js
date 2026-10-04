@@ -3,7 +3,8 @@
 (function () {
   "use strict";
 
-  const FONT = '"MesloLGS NF", ui-monospace, monospace';
+  const FONT = '"MesloLGS NF", "Neutrino Symbols 2", "Neutrino Symbols", ui-monospace, monospace';
+  const CLEAR_DROP_MS = 1000;
   const SCROLLBACK_LINES = 5000;
   const SETTLE_MS = 150;
   const LONG_PRESS_MS = 500;
@@ -140,6 +141,26 @@
     );
   }
 
+  // Output reaches xterm.js one chunk at a time, the next once the last is
+  // parsed; the chunks not yet handed over wait in pane.queue.
+  function pump(pane) {
+    if (pane.isWriting || pane.queue.length === 0) return;
+    pane.isWriting = true;
+    pane.term.write(pane.queue.shift(), () => {
+      pane.isWriting = false;
+      pump(pane);
+    });
+  }
+
+  // Clear: the app sends Ctrl+C and drops what arrives in the next second;
+  // the page drops what waits to be drawn and what arrives meanwhile.
+  function clearPane(id, pane) {
+    pane.queue.length = 0;
+    pane.dropUntil = Date.now() + CLEAR_DROP_MS;
+    window.NeutrinoBridge.clear(id);
+    pane.term.clear();
+  }
+
   const menu = document.createElement("div");
   menu.className = "menu";
   menu.hidden = true;
@@ -163,14 +184,7 @@
         },
       ],
       [labels.selectAll, true, () => pane.term.selectAll()],
-      [
-        labels.clear,
-        true,
-        () => {
-          window.NeutrinoBridge.input(id, toBase64("\x03"));
-          pane.term.clear();
-        },
-      ],
+      [labels.clear, true, () => clearPane(id, pane)],
     ];
     menu.replaceChildren();
     for (const [label, isEnabled, act] of items) {
@@ -226,7 +240,17 @@
       term.loadAddon(fit);
       term.open(element);
       element.appendChild(bar);
-      const pane = { element: element, bar: bar, term: term, fit: fit, timer: 0, sent: "" };
+      const pane = {
+        element: element,
+        bar: bar,
+        term: term,
+        fit: fit,
+        timer: 0,
+        sent: "",
+        queue: [],
+        isWriting: false,
+        dropUntil: 0,
+      };
       new ResizeObserver(() => report(id)).observe(element);
       term.onData((data) => window.NeutrinoBridge.input(id, toBase64(withModifiers(data))));
       term.onScroll(() => drawBar(pane));
@@ -244,7 +268,10 @@
       }
     },
     write(id, encoded) {
-      if (panes[id]) panes[id].term.write(fromBase64(encoded));
+      const pane = panes[id];
+      if (!pane || Date.now() < pane.dropUntil) return;
+      pane.queue.push(fromBase64(encoded));
+      pump(pane);
     },
     close(id) {
       const pane = panes[id];

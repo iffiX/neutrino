@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.AppIcon
 import io.github.iffix.neutrino.design.ArmedButton
@@ -34,6 +35,7 @@ import io.github.iffix.neutrino.design.InputField
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
 import io.github.iffix.neutrino.design.PickerField
+import io.github.iffix.neutrino.design.ReasonLine
 import io.github.iffix.neutrino.files.ShareLogin
 import io.github.iffix.neutrino.files.ShareRoot
 import kotlinx.coroutines.launch
@@ -99,6 +101,7 @@ fun FilesScreen(
             if (entry.isHealthy == false) BasicText(words.word("ui.unhealthy"), style = NeutrinoTheme.note)
             BasicText("smb://${root.host}/${root.share}", style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, root.host), style = NeutrinoTheme.note)
+            if (!hub.jobs.isRefreshing) ReasonLine(openInFilesReasonKey(entry)?.let { words.word(it) })
             if (asking == root.key) {
                 LoginForm(root, onLogin, onDone = {
                     asking = ""
@@ -108,6 +111,15 @@ fun FilesScreen(
         }
     }
 }
+
+/**
+ * Why Open in Files is disabled on a share's row.
+ *
+ * @param entry The share's entry.
+ * @return `ui.reason.unhealthy` while the share is not reachable, else null.
+ */
+internal fun openInFilesReasonKey(entry: ChannelServiceEntry): String? =
+    "ui.reason.unhealthy".takeIf { entry.isHealthy == false }
 
 @Composable
 private fun LoginForm(
@@ -181,7 +193,12 @@ private fun LoginForm(
             )
             BasicText(words.word("ui.remember"), style = NeutrinoTheme.body)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NeutrinoButton(words.word("ui.cancel"), onCancel, tier = ButtonTier.GHOST, isEnabled = !isTrying)
             NeutrinoButton(
                 words.word(if (isTrying) "ui.job.connecting" else "ui.port_connect"),
                 { connect() },
@@ -189,7 +206,6 @@ private fun LoginForm(
                 isEnabled = password.isNotEmpty() && user.isNotEmpty() && !isTrying,
                 isBusy = isTrying,
             )
-            NeutrinoButton(words.word("ui.cancel"), onCancel, tier = ButtonTier.GHOST, isEnabled = !isTrying)
         }
         refusal?.let {
             BasicText(words.refusal(it.code, it.wordParams), style = NeutrinoTheme.note.copy(color = palette.error))

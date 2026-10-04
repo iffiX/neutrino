@@ -12,12 +12,13 @@ import androidx.compose.ui.graphics.toArgb
 import io.github.iffix.neutrino.CLIENT_TERMINAL_BRIDGE
 import io.github.iffix.neutrino.CLIENT_TERMINAL_PAGE
 import io.github.iffix.neutrino.design.NeutrinoPalette
+import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 
 /**
  * The WebView the terminals are drawn in: xterm.js from the app's assets, one pane per tab, each
  * scrolled by touch with a thin bar, and a long press opening Copy, Paste, Select all and Clear
- * through the system clipboard.
+ * through the system clipboard. A write handed to the page before a tab's Clear is not drawn.
  *
  * @param context The window's context.
  * @param tabs The tabs whose output it draws and whose input it sends.
@@ -28,6 +29,7 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
     WebView(context) {
     private val opened = mutableSetOf<String>()
     private val clipboard = context.getSystemService(ClipboardManager::class.java)
+    private val clearCounts = ConcurrentHashMap<String, Int>()
     private var isReady = false
     private var pending: (() -> Unit)? = null
 
@@ -150,7 +152,8 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
                 pending = null
                 tabs.watch { id, bytes ->
                     val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                    post { call("neutrino.write('$id','$encoded')") }
+                    val clears = clearCounts[id] ?: 0
+                    post { if ((clearCounts[id] ?: 0) == clears) call("neutrino.write('$id','$encoded')") }
                 }
             }
         }
@@ -158,6 +161,12 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
         @JavascriptInterface
         fun input(sessionId: String, encoded: String) {
             tabs.input(sessionId, Base64.decode(encoded, Base64.DEFAULT))
+        }
+
+        @JavascriptInterface
+        fun clear(sessionId: String) {
+            clearCounts.merge(sessionId, 1, Int::plus)
+            tabs.clear(sessionId)
         }
 
         @JavascriptInterface

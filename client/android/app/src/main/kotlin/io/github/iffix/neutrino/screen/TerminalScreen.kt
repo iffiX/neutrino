@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,9 +43,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.iffix.neutrino.CLIENT_TERMINAL_CARD_IME_MIN_HEIGHT_DP
 import io.github.iffix.neutrino.CLIENT_TERMINAL_CARD_MIN_HEIGHT_DP
 import io.github.iffix.neutrino.channel.ChannelTerminal
 import io.github.iffix.neutrino.channel.HubView
@@ -75,7 +80,8 @@ import io.github.iffix.neutrino.terminal.TerminalView
  * column. Beside the sidebar New terminal is the header's action instead. The terminal's card is as
  * tall as the window under the top bar, the keyboard excluded, and never under its minimum, so one
  * screen holds it with its keys where the window allows and the page scrolls where it does not; nothing
- * collapses behind a tap.
+ * collapses behind a tap. While the keyboard is shown the page stays scrolled to its end, so the key
+ * row sits right above the keyboard and the terminal's last line right above the status line.
  *
  * @param hubs Every hub joined.
  * @param tabs Every terminal tab.
@@ -85,6 +91,11 @@ import io.github.iffix.neutrino.terminal.TerminalView
 fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     val words = NeutrinoTheme.words
     val palette = NeutrinoTheme.palette
+    val scroll = rememberScrollState()
+    val isImeShown = WindowInsets.isImeVisible
+    LaunchedEffect(isImeShown) {
+        if (isImeShown) snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) }
+    }
     val open by tabs.tabs.collectAsStateWithLifecycle()
     val active by tabs.active.collectAsStateWithLifecycle()
     val pick by tabs.picked.collectAsStateWithLifecycle()
@@ -99,11 +110,11 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
     ) { picked?.let { (hub, machine) -> tabs.create(hub.binding.id, machine.deviceId, machine.name) } }
     val isNewInHeader = offerPageAction(newTerminal)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().imePadding()) {
-        val cardHeight = maxOf(maxHeight - 32.dp, CLIENT_TERMINAL_CARD_MIN_HEIGHT_DP.dp)
+        val cardHeight = terminalCardHeight(maxHeight, isImeShown)
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -166,6 +177,19 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
             }
         }
     }
+}
+
+/**
+ * The height of the terminal's card: the window under the top bar less the page's gutters, and
+ * never under its minimum, which is smaller while the keyboard is shown.
+ *
+ * @param windowHeight The page's height, the keyboard excluded.
+ * @param isImeShown Whether the keyboard is shown.
+ * @return The card's height.
+ */
+internal fun terminalCardHeight(windowHeight: Dp, isImeShown: Boolean): Dp {
+    val least = if (isImeShown) CLIENT_TERMINAL_CARD_IME_MIN_HEIGHT_DP else CLIENT_TERMINAL_CARD_MIN_HEIGHT_DP
+    return maxOf(windowHeight - 32.dp, least.dp)
 }
 
 @Composable

@@ -29,12 +29,14 @@ import io.github.iffix.neutrino.design.ButtonTier
 import io.github.iffix.neutrino.design.InputField
 import io.github.iffix.neutrino.design.NeutrinoButton
 import io.github.iffix.neutrino.design.NeutrinoTheme
+import io.github.iffix.neutrino.design.ReasonLine
 import io.github.iffix.neutrino.design.SelectedMark
 import io.github.iffix.neutrino.forward.LocalPortChoice
 
 /**
  * The Configure dialog of a forwardable entry: one choice, Local port, Auto or Fixed with a
- * number from 1024 to 65535, then Save and Cancel. A refused Save stays open with its reason.
+ * number from 1024 to 65535, then Cancel and Save. A refused Save stays open with its reason, and a
+ * disabled Save has its reason under the field.
  *
  * @param title The entry's title.
  * @param initial The entry's local port as the table holds it.
@@ -54,7 +56,7 @@ fun LocalPortDialog(
     var number by remember { mutableStateOf(if (initial.isFixed) initial.port.toString() else "") }
     var refusal by remember { mutableStateOf<ChannelResult.Refused?>(null) }
     val fixed = number.toIntOrNull()?.takeIf { it in FORWARD_FIXED_PORTS }
-    val isValid = !isFixed || fixed != null
+    val reasonKey = localPortReasonKey(isFixed, number)
     val shape = RoundedCornerShape(10.dp)
     Dialog(onDismissRequest = onClose) {
         Column(
@@ -98,7 +100,13 @@ fun LocalPortDialog(
                     style = NeutrinoTheme.note.copy(color = palette.error),
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (refusal == null) ReasonLine(reasonKey?.let { words.word(it) })
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NeutrinoButton(words.word("ui.cancel"), onClose, tier = ButtonTier.GHOST)
                 NeutrinoButton(
                     words.word("ui.save"),
                     {
@@ -116,13 +124,23 @@ fun LocalPortDialog(
                         }
                     },
                     tier = ButtonTier.PRIMARY,
-                    isEnabled = isValid,
+                    isEnabled = reasonKey == null,
                 )
-                NeutrinoButton(words.word("ui.cancel"), onClose, tier = ButtonTier.GHOST)
             }
         }
     }
 }
+
+/**
+ * Why Save is disabled in the local port dialog.
+ *
+ * @param isFixed Whether Fixed is chosen.
+ * @param number The number typed.
+ * @return `ui.reason.port_range` while Fixed is chosen and the number is not one from 1024 to
+ *   65535, else null.
+ */
+internal fun localPortReasonKey(isFixed: Boolean, number: String): String? =
+    "ui.reason.port_range".takeIf { isFixed && number.toIntOrNull()?.takeIf { it in FORWARD_FIXED_PORTS } == null }
 
 @Composable
 private fun Chip(label: String, isSelected: Boolean, onSelect: () -> Unit) {
