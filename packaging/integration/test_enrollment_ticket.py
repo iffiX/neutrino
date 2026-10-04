@@ -94,6 +94,8 @@ def client_link(panel):
     status, made = panel.call(
         "POST", "/hub/client/enrollment/create", {"name": "integration-ticket"}
     )
+    if status == 400 and made.get("detail", {}).get("code") == "no_reachable_address":
+        pytest.skip("this box exposes no address a client could be sent to")
     assert status == 200, made
     payload = link_payload(made["link"])
     yield payload

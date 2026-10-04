@@ -40,7 +40,11 @@ phase() {
         printf '   [this box cannot resolve names]\n'
     fi
 }
-ran() { [ "$1" -eq 0 ] || FAILURES=$((FAILURES + 1)); }
+ran() {
+    [ "$1" -eq 0 ] && return
+    FAILURES=$((FAILURES + 1))
+    printf '   [this phase failed: exit %s]\n' "$1"
+}
 
 # Turn the panel's HTTPS on or off through its own Settings route, and wait
 # for the HTTP port to redirect or serve. The first argument is the scheme
