@@ -144,6 +144,9 @@ class RecordingHandler(ServiceTypeHandler):
         self.withdrawn.append((hub_id, list(entries)))
         return 0
 
+    def machines(self) -> set:
+        return set()
+
     def let_go(self) -> None:
         """Let a hanging release finish, so the test leaves no thread behind."""
         self._held.set()
@@ -979,7 +982,11 @@ def test_a_started_resident_adopts_the_file_on_its_own(config_path, monkeypatch)
     resident.start()
     try:
         bind(config_path, url=HOME_URL)
-        wait_until(lambda: "c1" in resident._sessions)
+        # The session is held before its thread is published: wait for both.
+        wait_until(
+            lambda: "c1" in resident._sessions
+            and resident._sessions["c1"]._thread is not None
+        )
 
         assert list(sessions_of(resident)) == ["c1"]
         assert resident._sessions["c1"]._thread is not None
@@ -2198,3 +2205,201 @@ def test_clear_sends_ctrl_c_and_drops_the_output_until_the_stream_is_quiet(
     assert (1, b"\x03") in made.sent
     assert resident.clear_terminal("nobody")["code"] == "unknown_terminal"
     resident.close_terminal(terminal_id)
+
+
+# --- a share on Windows, through the files adapter ---
+
+FILES_PIPE = "\\\\.\\pipe\\neutrino_client_files"
+FIRST_FILES_ADDRESS = "198.19.255.2"  # scan: allow
+STRANGER_FILES_ADDRESS = "198.19.255.9"  # scan: allow
+
+
+class DrivePlatform(FakeClientPlatform):
+    """A platform that maps a share to a drive letter through the files daemon."""
+
+    os_name = "windows"
+    mount_location_shape = "drive_letter"
+
+    def validate_mount_location(self, *, location: str) -> "dict | None":
+        return None
+
+    def prepare_mount_location(self, *, location: str) -> "dict | None":
+        return None
+
+    def files_daemon_address(self) -> str:
+        return FILES_PIPE
+
+
+class FilesDaemon:
+    """The files daemon behind its pipe, scripted."""
+
+    def __init__(self):
+        self.verbs = []
+        self.refusal = None
+        self.serving = 0
+
+    def __call__(self, address, request):
+        assert address == FILES_PIPE
+        self.verbs.append(request["verb"])
+        if self.refusal is not None and request["verb"] == "up":
+            return dict(self.refusal)
+        if request["verb"] == "up":
+            self.serving = request["port"]
+        if request["verb"] == "down":
+            self.serving = 0
+        return {"is_up": bool(self.serving), "port": self.serving}
+
+
+@pytest.fixture
+def windows_hub(config_path, monkeypatch):
+    """A Windows resident whose home hub is connected and publishes a share."""
+    bind(config_path, bindings=[dict(BINDING, gateway_url=HOME_URL)])
+    platform = DrivePlatform()
+    resident = ClientResident(log=discard, platform=platform, start_thread=run_inline)
+    daemon = FilesDaemon()
+    resident._files_adapter._ask = daemon
+    scripts = sockets_by_hub(monkeypatch, {"hub.lan": [HOME_WELCOME, HOME_STATE]})
+    session = resident._sessions["c1"]
+    made = scripts(host="hub.lan")
+    session._connect(made)
+    kind, payload = made.recv()
+    session._dispatch(made, kind, payload)
+    yield resident, platform, daemon, made
+    resident.shutdown()
+
+
+def mount_z(resident) -> None:
+    """Mount the home hub's share at Z:, the worker's pass run by hand."""
+    assert (
+        resident.service_action(
+            "file",
+            {
+                "action": "mount",
+                "hub_id": "h1",
+                "id": "share_media",
+                "username": "media",
+                "password": "pw",
+                "path": "Z:",
+            },
+        )
+        == {}
+    )
+    resident._services["file"].reconcile()
+
+
+def socks_to(port: int, user: str, password: str, address: str) -> socket.socket:
+    """A SOCKS5 client past the login, asking for ``address:445``."""
+    client = socket.create_connection(("127.0.0.1", port), timeout=5)
+    client.sendall(b"\x05\x01\x02")
+    assert client.recv(2) == b"\x05\x02"
+    client.sendall(
+        bytes((1, len(user)))
+        + user.encode()
+        + bytes((len(password),))
+        + password.encode()
+    )
+    assert client.recv(2) == b"\x01\x00"
+    client.sendall(b"\x05\x01\x00\x01" + socket.inet_aton(address) + b"\x01\xbd")
+    return client
+
+
+def test_a_windows_mount_maps_the_machines_address_and_rides_a_connect_stream(
+    windows_hub,
+):
+    resident, platform, daemon, made = windows_hub
+
+    mount_z(resident)
+
+    (call,) = platform.attach_calls
+    assert call["share_url"] == f"//{FIRST_FILES_ADDRESS}/media"
+    assert (call["location"], call["port"]) == ("Z:", 0)
+    assert daemon.verbs == ["up"]
+    endpoint = resident._files_adapter._endpoint
+    client = socks_to(
+        endpoint.port, endpoint.user, endpoint.password, FIRST_FILES_ADDRESS
+    )
+    assert client.recv(10)[:2] == b"\x05\x00"
+    wait_until(lambda: any(frame.get("kind") == "connect" for frame in list(made.sent)))
+    (opened,) = [frame for frame in made.sent if frame.get("kind") == "connect"]
+    assert opened["id"] == "share_media"
+    session = resident._sessions["c1"]
+    session._streams.take_credit(
+        {"type": "credit", "stream": opened["stream"], "bytes": 64}
+    )
+    client.sendall(b"smb")
+    wait_until(lambda: (opened["stream"], b"smb") in list(made.sent))
+    assert (opened["stream"], b"smb") in made.sent
+    client.close()
+
+
+def test_the_endpoint_refuses_another_port_or_address(windows_hub):
+    resident, _platform, _daemon, made = windows_hub
+    mount_z(resident)
+    endpoint = resident._files_adapter._endpoint
+
+    stranger = socks_to(
+        endpoint.port, endpoint.user, endpoint.password, STRANGER_FILES_ADDRESS
+    )
+
+    assert stranger.recv(10)[:2] == b"\x05\x02"
+    assert not any(frame.get("kind") == "connect" for frame in made.sent)
+    stranger.close()
+
+
+def test_unmounting_the_last_drive_takes_the_adapter_down(windows_hub):
+    resident, _platform, daemon, _made = windows_hub
+    mount_z(resident)
+    (row,) = resident._services["file"].rows()
+
+    assert (
+        resident.service_action(
+            "file", {"action": "unmount", "record_id": row["record_id"]}
+        )
+        == {}
+    )
+
+    assert daemon.verbs == ["up", "status", "down"]
+
+
+def test_a_daemon_that_refuses_fails_the_row_with_the_adapters_code(windows_hub):
+    resident, platform, daemon, _made = windows_hub
+    daemon.refusal = {"code": "adapter_failed", "params": {"detail": "no wintun"}}
+
+    mount_z(resident)
+
+    (row,) = resident._services["file"].rows()
+    assert (row["state"], row["code"]) == ("failed", "files_adapter_unavailable")
+    assert row["params"] == {"detail": "no wintun"}
+    assert platform.attach_calls == []
+
+
+def test_leaving_a_hub_forgets_the_files_addresses_no_record_names(
+    windows_hub, monkeypatch
+):
+    resident, _platform, daemon, _made = windows_hub
+    monkeypatch.setattr(channel.GatewayHttpChannel, "post", lambda *a: {})
+    daemon.refusal = {"code": "adapter_failed", "params": {"detail": "no wintun"}}
+    mount_z(resident)
+    assert list(resident._store.files_addresses()) == [FIRST_FILES_ADDRESS]
+
+    resident.disconnect("h1")
+
+    assert resident._store.mounts() == {}
+    assert resident._store.files_addresses() == {}
+
+
+def test_a_kept_record_holds_its_machines_address(windows_hub):
+    resident, _platform, _daemon, _made = windows_hub
+    mount_z(resident)
+
+    assert resident._held_files_addresses() == {FIRST_FILES_ADDRESS}
+
+
+def test_a_quit_takes_the_adapter_down_and_stops_the_endpoint(windows_hub):
+    resident, _platform, daemon, _made = windows_hub
+    mount_z(resident)
+
+    resident.shutdown()
+
+    assert daemon.verbs[-1] == "down"
+    assert resident._files_adapter._endpoint.is_running is False

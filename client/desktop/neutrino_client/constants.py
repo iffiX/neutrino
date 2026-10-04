@@ -29,6 +29,9 @@ CLIENT_SOFTWARE_PREFIX = "neutrino_client/"
 CLIENT_PROTOCOL_REFUSAL_CODES = ("protocol_too_old", "protocol_too_new")
 # The one refusal that unbinds: the hub holds no such binding.
 CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
+# The one refusal of a join that keeps the ticket: the hub paused new
+# enrolments, and the join runs again after the seconds it names.
+CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
 
 # What the hub answers as in its welcome.
 CLIENT_HUB_ROLE = "hub"

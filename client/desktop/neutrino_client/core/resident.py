@@ -67,8 +67,14 @@ from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.ai import AiServiceHandler
 from neutrino_client.services.base import service_key
 from neutrino_client.services.file import MOUNT_SHAPE_ADAPTER, FileServiceHandler
+from neutrino_client.services.files_adapter import (
+    FilesAdapter,
+    FilesAddressPlan,
+    FilesSocksEndpoint,
+)
 from neutrino_client.services.forward import (
     FORWARD_PANEL_ID,
+    ConnectStreamSocket,
     ForwardListenerRegistry,
     PortLocalTable,
 )
@@ -219,6 +225,21 @@ class ClientResident:
             log=log,
             on_change=self.notify,
         )
+        # The files adapter a Windows mount goes through.
+        self._files_plan = FilesAddressPlan(
+            store=self._store, held_of=self._held_files_addresses
+        )
+        self._files_adapter = FilesAdapter(
+            platform=self.platform,
+            plan=self._files_plan,
+            endpoint=FilesSocksEndpoint(
+                plan=self._files_plan,
+                connector=self._files_connector,
+                entries_of=self.service_entries,
+                log=log,
+            ),
+            log=log,
+        )
         # Whoever draws the state, told after every change of it; the
         # announcements of one burst are folded into one.
         self._watchers: list = []
@@ -254,6 +275,8 @@ class ClientResident:
                     log=log,
                     on_change=self.notify,
                     entries_of=self.service_entries,
+                    adapter_host=self._files_adapter.host,
+                    on_adapter_idle=self._files_adapter.down,
                 ),
                 RdpViewerHandler(
                     platform=self.platform,
@@ -1300,8 +1323,9 @@ class ClientResident:
 
         The order is the one that leaves the machine as it was found: the
         sockets closed, the virtual networks counted and kept, the tools
-        restored, the shares unmounted, the forwards and the web forwards
-        closed, the viewers closed. The steps share
+        restored, the shares unmounted, the viewers closed, the forwards
+        closed, then the files adapter taken down and its endpoint stopped.
+        The steps share
         ``CLIENT_SHUTDOWN_DEADLINE_S``; a step past its part of what is left
         is given up and the next runs.
         """
@@ -1316,6 +1340,7 @@ class ClientResident:
             session.stop()
         self._overlay.stop()
         self._release_in_time()
+        self._files_adapter.stop()
         thread = self._thread
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=SHUTDOWN_JOIN_TIMEOUT_S)
@@ -1501,6 +1526,8 @@ class ClientResident:
         session.stop()
         self._release_hub(hub_id or session.binding_id, session.local_key)
         self._services["file"].drop_withdrawn(hub_id=hub_id, entries=[])
+        if hub_id:
+            self._files_plan.forget_hub(hub_id)
         self._services["ai"].refresh(entries=self.service_entries())
         self.notify()
 
@@ -1738,6 +1765,24 @@ class ClientResident:
         if session is None:
             raise GatewayUnreachable("this person has not joined that hub")
         return session.open_connect(args)
+
+    def _files_connector(self, hub_id: str, entry_id: str) -> ConnectStreamSocket:
+        """One ``connect`` stream to a file entry, as the files endpoint takes it.
+
+        Raises:
+            GatewayUnreachable: When this person has not joined that hub or
+                its socket is not up.
+        """
+        return ConnectStreamSocket(self.open_connect(hub_id, entry_id))
+
+    def _held_files_addresses(self) -> set:
+        """The files adapter addresses a kept mount record names."""
+        machines = self._services["file"].machines()
+        return {
+            address
+            for address, record in self._store.files_addresses().items()
+            if (record["hub_id"], record["machine"]) in machines
+        }
 
     def _open_panel_now(self, session: ClientHubSession) -> None:
         """Make the panel's forward when the hub has none and open the browser at it."""

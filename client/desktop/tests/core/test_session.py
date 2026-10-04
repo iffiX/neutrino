@@ -2359,6 +2359,32 @@ def test_a_refused_join_is_down_with_its_code_and_runs_no_more_rounds(
     assert stored_binding(config_path)["is_pending"] is True
 
 
+def test_a_paused_admission_keeps_the_join_pending_and_tries_again_after_its_wait(
+    pending_session, monkeypatch, config_path
+):
+    session, _lines = pending_session
+    script = addresses_of(monkeypatch, {"192.0.2.1": [WELCOME]})
+    desk = JoinDesk(script)
+    desk.refusal = EnrollmentError("admission_paused", {"retry_after_s": 42})
+    monkeypatch.setattr(enrollment, "complete_join", desk)
+
+    delay = session.run_once()
+
+    assert delay == 42
+    assert session.connection() == "pending"
+    assert session.last_error() == {
+        "code": "admission_paused",
+        "params": {"retry_after_s": 42},
+    }
+    assert stored_binding(config_path)["is_pending"] is True
+    assert stored_binding(config_path)["ticket"]
+
+    desk.refusal = None
+    session.run_once()
+
+    assert script.hosts == ["192.0.2.1", "192.0.2.1"]
+
+
 def test_an_address_that_stops_answering_mid_join_lets_the_round_go_on(
     pending_session, monkeypatch
 ):

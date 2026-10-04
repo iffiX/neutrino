@@ -17,6 +17,7 @@ import pytest
 from neutrino_client.exceptions import GatewayUnreachable
 from neutrino_client.services.forward import (
     FORWARD_PANEL_ID,
+    ConnectStreamSocket,
     ForwardListenerRegistry,
     PortLocalTable,
     is_port_free,
@@ -200,6 +201,33 @@ def test_relay_socket_carries_one_connection_for_any_caller(hub, far):
     assert received == b"over the stream"
     assert not worker.is_alive()
     assert stream.is_done
+
+
+# --- a connect stream with a socket's face, for the files endpoint ---
+
+
+def test_the_socket_face_sends_and_receives_in_the_sizes_asked(hub):
+    far = ConnectStreamSocket(hub.open_connect("h1", {"id": "share"}))
+
+    far.sendall(b"abcdef")
+    received = b""
+    while len(received) < 6:
+        received += far.recv(4)
+
+    assert received == b"abcdef"
+    far.close()
+
+
+def test_a_close_from_another_thread_ends_a_waiting_recv(hub):
+    far = ConnectStreamSocket(hub.open_connect("h1", {"id": "share"}))
+    got = []
+    reader = threading.Thread(target=lambda: got.append(far.recv(10)))
+    reader.start()
+
+    far.close()
+    reader.join(timeout=5)
+
+    assert got == [b""]
 
 
 # --- the registry over every hub ---

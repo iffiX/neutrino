@@ -122,6 +122,53 @@ def relay_socket(connection, stream, log=print) -> None:
         pass
 
 
+class ConnectStreamSocket:
+    """An open ``connect`` stream with a socket's ``recv``, ``sendall`` and ``close``.
+
+    A ``close`` from another thread ends a ``recv`` that waits.
+    """
+
+    def __init__(self, stream):
+        """
+        Args:
+            stream: The open ``connect`` stream, credit granted.
+        """
+        self._stream = stream
+        self._held = b""
+
+    def recv(self, size: int) -> bytes:
+        """Up to ``size`` bytes the far end sent.
+
+        Args:
+            size: The most to return.
+
+        Returns:
+            The bytes; empty once the stream is over.
+        """
+        while not self._held:
+            data = self._stream.read(FORWARD_STREAM_WAIT_S)
+            if data is None:
+                continue
+            if not data:
+                return b""
+            self._held = data
+        data, self._held = self._held[:size], self._held[size:]
+        return data
+
+    def sendall(self, data: bytes) -> None:
+        """Send every byte, under the hub's credit.
+
+        Raises:
+            GatewayUnreachable: When the stream or the socket has ended.
+            TimeoutError: When the hub grants no credit in time.
+        """
+        self._stream.send(data)
+
+    def close(self) -> None:
+        """End the stream from this side. Idempotent."""
+        self._stream.close()
+
+
 def _socket_to_stream(connection, stream) -> None:
     """Send what the connection reads until its end, then close the stream."""
     while True:

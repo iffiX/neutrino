@@ -49,6 +49,7 @@ from neutrino_client.constants import (
     CLIENT_IDLE_POLL_INTERVAL_S,
     CLIENT_PROTOCOL_REFUSAL_CODES,
     CLIENT_REFRESH_TIMEOUT_S,
+    CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
@@ -997,7 +998,14 @@ class ClientHubSession:
         self._log(f"joined the hub at {url}")
 
     def _on_join_refused(self, error: EnrollmentError) -> int:
-        """Take the hub's refusal of a pending join: down, and no more rounds."""
+        """Take the hub's refusal of a pending join: down, and no more rounds.
+
+        ``admission_paused`` is the one refusal that keeps the ticket: the
+        binding stays pending with the code, and the join runs again after
+        the ``retry_after_s`` it names.
+        """
+        if error.code == CLIENT_REFUSAL_CODE_ADMISSION_PAUSED:
+            return self._on_admission_paused(error)
         with self._lock:
             self._is_join_refused = True
             self._is_down = True
@@ -1006,6 +1014,24 @@ class ClientHubSession:
         self._log(f"the hub refused the join: {error.code}")
         self._on_change()
         return CLIENT_IDLE_POLL_INTERVAL_S
+
+    def _on_admission_paused(self, error: EnrollmentError) -> int:
+        """Keep a join the hub paused: pending with the code, tried again later.
+
+        Returns:
+            The hub's ``retry_after_s``, at least ``CLIENT_ROTATE_DELAY_S``.
+        """
+        try:
+            delay = float(error.params.get("retry_after_s") or 0)
+        except (TypeError, ValueError):
+            delay = 0
+        delay = max(delay, CLIENT_ROTATE_DELAY_S)
+        with self._lock:
+            self._is_refreshing = False
+            self._last_error = {"code": error.code, "params": dict(error.params)}
+        self._log(f"the hub paused admissions; joining again in {delay:g}s")
+        self._on_change()
+        return delay
 
     def _redirect_round(self) -> None:
         """End a round in progress, its connect aborted, and start the next one now."""

@@ -26,7 +26,6 @@ import pytest
 from neutrino_client.exceptions import ShareAttachError
 from neutrino_client.services.file import (
     FileServiceHandler,
-    files_adapter_host,
     mount_record_id,
 )
 from neutrino_client.services.store import ClientServiceStore
@@ -888,8 +887,32 @@ def test_an_adapter_that_cannot_be_made_fails_the_record_once(tmp_path):
     assert platform.attach_calls == []
 
 
-def test_the_adapter_stands_in_until_the_glue_names_it():
-    with pytest.raises(ShareAttachError) as refused:
-        files_adapter_host("h1", "d_nas")
+def test_the_last_unmount_lets_the_adapter_go(tmp_path):
+    idle = []
+    platform = FakeDrivePlatform()
+    subject = FileServiceHandler(
+        platform=platform,
+        store=ClientServiceStore(path=str(tmp_path / "state.json")),
+        credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
+        log=discard,
+        adapter_host=lambda hub_id, machine: "198.19.255.2",  # scan: allow
+        on_adapter_idle=lambda: idle.append(1),
+    )
+    assert attach(subject, path="Z:") == {}
+    assert attach(subject, path="Y:", hub_id="h2") == {}
+    first, second = sorted(subject.rows(), key=lambda row: row["path"])
 
-    assert refused.value.code == "files_adapter_unavailable"
+    assert subject.detach(record_id=first["record_id"]) == {}
+    assert idle == []
+    assert subject.detach(record_id=second["record_id"]) == {}
+
+    assert idle == [1]
+
+
+def test_a_handler_with_no_adapter_refuses_the_windows_mount(tmp_path):
+    subject, platform = drive_service(tmp_path)
+
+    assert attach(subject, path="Z:") == {}
+
+    assert subject.rows()[0]["code"] == "files_adapter_unavailable"

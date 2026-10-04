@@ -44,6 +44,8 @@ CLIENT_CODE_WORDS = {
     "connect_limit": "this client has too many connections open through the hub "
     "({limit})",
     "port_not_published": "that machine does not publish port {port} now",
+    "admission_paused": "the hub has paused new joins; this client tries again in "
+    "{retry_after_s} s",
     "shell_unknown": "the hub no longer has that terminal open",
     "session_not_owned": "only the client that opened this session can change it",
     "session_unknown": "the machine no longer keeps this session",
