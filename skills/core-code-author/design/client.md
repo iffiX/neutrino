@@ -395,7 +395,7 @@ switches at the right and nothing else.
 | The chips name every machine with a terminal, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
 | **New terminal** is disabled with no chip picked or with the picked machine offline, with the reason under the chips. | Nothing opens on a machine that cannot answer. |
 | Keys reach the machine in the order they were pressed: a tab has one sender that writes its bytes in sequence, on every client. | A letter that overtakes the one before it types another word. |
-| **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and drops what arrives in the next second. | A clear that is followed by the rest of the flood clears nothing. |
+| **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and goes on dropping what arrives until the stream has been quiet for half a second, for twenty seconds at most. | A clear that is followed by the rest of the flood clears nothing, and how long the flood's tail takes to cross the hub is not a number a client can know. |
 | A plain session ends when its tab closes; a persistent or shared session's **×** arms and the second press ends the session with `stop_session`. | Ending a session others can see takes two presses, like every destructive action. |
 
 ### The session list
@@ -459,7 +459,7 @@ attaches receives the kept output first, then the live stream.
 | Rule | Reason |
 | --- | --- |
 | A key row sits above the keyboard: Esc, Tab, Ctrl, Shift, Alt, the four arrows; a modifier is sticky for one key and shows pressed while held. | The system keyboard has none of them. |
-| With the keyboard shown, the terminal's box shrinks to the space left above the key row, which stays above the keyboard, and the terminal refits its rows; the prompt line stays in view and nothing collapses. | A key row under the keyboard cannot be pressed, and a prompt below the fold cannot be read. |
+| With the keyboard shown, the terminal and its key row are what the screen holds: the box takes the space between the top bar and the key row, which sits on the keyboard, and refits its rows; the status line under the terminal is not drawn while the keyboard is up, and in a landscape window the top bar is not drawn either, so the prompt line is in view in both orientations. Nothing collapses behind a tap. | A key row under the keyboard cannot be pressed, and a prompt that is off the screen cannot be read; a landscape phone has room for the terminal or for the chrome. |
 | The font falls back to a face that has the box-drawing, geometric and powerline symbols for every glyph the monospace face lacks. | A prompt in boxes is unreadable. |
 | The terminal's viewport scrolls by touch and shows a thin bar; the view follows output only at the bottom. | History on a phone is reached by the finger, and a bar says there is some. |
 | A long press opens the same menu as the desktop's right click, with **Copy** and **Paste** through the system clipboard. | The phone's clipboard is the system's. |
