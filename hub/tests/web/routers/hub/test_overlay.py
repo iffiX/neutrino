@@ -225,6 +225,7 @@ def test_the_relay_row_says_when_the_machine_has_no_ssh(box, monkeypatch):
 # --- Switching --------------------------------------------------------------
 
 
+@pytest.mark.feature("netbird")
 def test_turning_the_relay_on_writes_its_file_and_converges(box):
     client, runtime = box
     write_relay(OverlayRelayConfig(host="vps", account="relay", key_id="k1"))

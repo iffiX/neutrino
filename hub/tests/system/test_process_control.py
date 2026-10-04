@@ -424,6 +424,7 @@ def test_a_held_service_still_restarts_into_the_panel(controller, service):
     assert service.calls == ["restart"]
 
 
+@pytest.mark.feature("proxy")
 def test_a_running_child_has_its_process_id(controller):
     controller.supervise({"xray": XRAY})
 
