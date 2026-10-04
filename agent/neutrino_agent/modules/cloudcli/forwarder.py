@@ -39,24 +39,20 @@ Not pure: opens sockets.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import base64
 import binascii
 import hashlib
 import hmac
 import http.client
 import json
-import os
 import socket
-import socketserver
 import threading
 import time
 import urllib.parse
 
+from neutrino_agent.constants import AGENT_FORWARD_TOKEN_PARAMETER
 from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_BLOCKED_PATHS,
     CLOUDCLI_COOKIE_PREFIX,
-    CLOUDCLI_HEAD_LIMIT_BYTES,
-    CLOUDCLI_IDLE_TIMEOUT_S,
     CLOUDCLI_LISTEN_HOST,
     CLOUDCLI_LOGIN_LIFETIME_S,
     CLOUDCLI_LOGIN_PATH,
@@ -64,49 +60,31 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_READY_POLL_S,
     CLOUDCLI_REGISTER_PATH,
     CLOUDCLI_REGISTER_RETRY_S,
-    CLOUDCLI_RELAY_CHUNK_BYTES,
     CLOUDCLI_STATUS_PATH,
     CLOUDCLI_STORAGE_KEY,
-    CLOUDCLI_TOKEN_EXPIRY_BYTES,
-    CLOUDCLI_TOKEN_HORIZON_S,
-    CLOUDCLI_TOKEN_MAC_BYTES,
-    CLOUDCLI_TOKEN_NONCE_BYTES,
-    CLOUDCLI_TOKEN_PARAMETER,
     CLOUDCLI_UPSTREAM_HOST,
     CLOUDCLI_UPSTREAM_TIMEOUT_S,
 )
 from neutrino_agent.modules.cloudcli.config import jwt_secret, username_of
+from neutrino_agent.modules.http_forward import (
+    ForwarderServer,
+    answer,
+    mint_token,
+    parse_head,
+    read_head,
+    relay,
+    split_target,
+    take_token,
+    unpadded_decode,
+)
 
-HEAD_END = b"\r\n\r\n"
-# The answers the forwarder writes itself.
-STATUS_LINES = {
-    200: b"HTTP/1.1 200 OK",
-    401: b"HTTP/1.1 401 Unauthorized",
-    411: b"HTTP/1.1 411 Length Required",
-    502: b"HTTP/1.1 502 Bad Gateway",
-}
+__all__ = ["CloudcliForwarder", "cookie_name", "is_login_valid", "mint_token"]
+
 # The page that keeps CloudCLI's login and goes to CloudCLI's own.
 EXCHANGE_PAGE = (
     '<!doctype html><meta charset="utf-8"><title>CloudCLI</title>'
     "<script>localStorage.setItem(%s, %s);location.replace('/');</script>"
 )
-
-
-def mint_token(secret: str, *, expiry: int, nonce: bytes) -> str:
-    """One token for an instance, as the hub mints it.
-
-    Args:
-        secret: The instance's token secret.
-        expiry: When it stops working, in seconds since the epoch.
-        nonce: Random bytes, as many as a token carries.
-
-    Returns:
-        ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``
-        without padding.
-    """
-    body = int(expiry).to_bytes(CLOUDCLI_TOKEN_EXPIRY_BYTES, "big") + bytes(nonce)
-    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(body + mac).rstrip(b"=").decode("ascii")
 
 
 def is_login_valid(login: str, secret: str, now: float) -> bool:
@@ -125,9 +103,9 @@ def is_login_valid(login: str, secret: str, now: float) -> bool:
     if len(parts) != 3:
         return False
     try:
-        header = json.loads(_unpadded_decode(parts[0]))
-        payload = json.loads(_unpadded_decode(parts[1]))
-        signature = _unpadded_decode(parts[2])
+        header = json.loads(unpadded_decode(parts[0]))
+        payload = json.loads(unpadded_decode(parts[1]))
+        signature = unpadded_decode(parts[2])
     except (ValueError, binascii.Error):
         return False
     if not isinstance(header, dict) or header.get("alg") != "HS256":
@@ -148,135 +126,12 @@ def cookie_name(port: int) -> str:
     return f"{CLOUDCLI_COOKIE_PREFIX}{int(port)}"
 
 
-def _unpadded_decode(text: str) -> bytes:
-    """base64url without its padding, decoded."""
-    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
-
-
-def _read_head(client: socket.socket) -> tuple:
-    """``(head, rest)`` of a request; head None when it ended or ran past the limit."""
-    received = b""
-    while HEAD_END not in received:
-        if len(received) > CLOUDCLI_HEAD_LIMIT_BYTES:
-            return None, b""
-        chunk = client.recv(CLOUDCLI_RELAY_CHUNK_BYTES)
-        if not chunk:
-            return None, b""
-        received += chunk
-    head, _, rest = received.partition(HEAD_END)
-    return head + HEAD_END, rest
-
-
-def _parse_head(head: bytes) -> "tuple | None":
-    """The method, the target and the headers of a request's head."""
-    lines = head.decode("latin-1").split("\r\n")
-    words = lines[0].split(" ")
-    if len(words) != 3:
-        return None
-    headers = []
-    for line in lines[1:]:
-        if not line:
-            continue
-        name, separator, value = line.partition(":")
-        if not separator:
-            return None
-        headers.append((name.strip(), value.strip()))
-    return words[0], words[1], headers
-
-
-def _header(headers: list, name: str) -> str:
-    """The first value of one header, empty when the request has none."""
-    for held, value in headers:
-        if held.lower() == name:
-            return value
-    return ""
-
-
-def _split_target(target: str) -> tuple:
-    """The path and the query of a request's target, in either form a client sends."""
-    if "://" in target.split("?", 1)[0]:
-        parts = urllib.parse.urlsplit(target)
-        return parts.path or "/", parts.query
-    path, _, query = target.partition("?")
-    return path, query
-
-
 def _normal_path(path: str) -> str:
     """A path as CloudCLI's router matches it: decoded, lower case, slashes collapsed."""
     decoded = urllib.parse.unquote(path).lower()
     while "//" in decoded:
         decoded = decoded.replace("//", "/")
     return decoded.rstrip("/") or "/"
-
-
-def _closing_head(head: bytes) -> bytes:
-    """A request's head with ``Connection: close`` in place of its own."""
-    lines = head[: -len(HEAD_END)].split(b"\r\n")
-    kept = [lines[0]] + [
-        line
-        for line in lines[1:]
-        if line.split(b":", 1)[0].strip().lower() not in (b"connection", b"keep-alive")
-    ]
-    return b"\r\n".join(kept + [b"Connection: close"]) + HEAD_END
-
-
-def _answer(
-    client: socket.socket,
-    status: int,
-    body: bytes = b"",
-    *,
-    content_type: str = "text/plain; charset=utf-8",
-    extra: "list | None" = None,
-) -> None:
-    """Write one whole answer of the forwarder's own and close the exchange."""
-    if not body:
-        body = STATUS_LINES[status].split(b" ", 1)[1] + b"\n"
-    lines = [
-        STATUS_LINES[status],
-        f"Content-Type: {content_type}".encode("latin-1"),
-        f"Content-Length: {len(body)}".encode("latin-1"),
-        b"Connection: close",
-    ]
-    lines += [f"{name}: {value}".encode("latin-1") for name, value in extra or []]
-    client.sendall(b"\r\n".join(lines) + HEAD_END + body)
-
-
-def _copy(source: socket.socket, target: socket.socket) -> None:
-    """Copy bytes one way until the source ends or either side fails."""
-    try:
-        while True:
-            chunk = source.recv(CLOUDCLI_RELAY_CHUNK_BYTES)
-            if not chunk:
-                return
-            target.sendall(chunk)
-    except OSError:
-        return
-
-
-def _relay_both_ways(client: socket.socket, upstream: socket.socket) -> None:
-    """Relay a WebSocket both ways until either side closes."""
-    client.settimeout(CLOUDCLI_IDLE_TIMEOUT_S)
-    upstream.settimeout(CLOUDCLI_IDLE_TIMEOUT_S)
-    sender = threading.Thread(
-        target=_copy_then_shut, args=(client, upstream), daemon=True
-    )
-    sender.start()
-    _copy_then_shut(upstream, client)
-    sender.join(timeout=1.0)
-
-
-def _copy_then_shut(source: socket.socket, target: socket.socket) -> None:
-    """Copy one way, then end the target's sending side."""
-    _copy(source, target)
-    _shut(target)
-
-
-def _shut(connection: socket.socket) -> None:
-    """End one socket's sending side, as a relay does when its source ends."""
-    try:
-        connection.shutdown(socket.SHUT_WR)
-    except OSError:
-        return
 
 
 class CloudcliForwarder:
@@ -328,7 +183,7 @@ class CloudcliForwarder:
         self._retry_s = retry_s
         self._lock = threading.Lock()
         self._closed = threading.Event()
-        self._server: "_ForwarderServer | None" = None
+        self._server: "ForwarderServer | None" = None
         self._spent: dict = {}
         self._code = ""
         self._params: dict = {}
@@ -394,26 +249,26 @@ class CloudcliForwarder:
         """
         client.settimeout(CLOUDCLI_UPSTREAM_TIMEOUT_S)
         try:
-            head, rest = _read_head(client)
+            head, rest = read_head(client)
         except OSError:
             return
         if head is None:
             return
-        request = _parse_head(head)
+        request = parse_head(head)
         if request is None:
             return
         method, target, headers = request
-        path, query_text = _split_target(target)
+        path, query_text = split_target(target)
         query = urllib.parse.parse_qs(query_text, keep_blank_values=True)
         try:
             if _normal_path(path) in CLOUDCLI_BLOCKED_PATHS:
-                _answer(client, 401)
-            elif CLOUDCLI_TOKEN_PARAMETER in query:
-                self._exchange(client, query[CLOUDCLI_TOKEN_PARAMETER][0])
+                answer(client, 401)
+            elif AGENT_FORWARD_TOKEN_PARAMETER in query:
+                self._exchange(client, query[AGENT_FORWARD_TOKEN_PARAMETER][0])
             elif self._has_login(headers, query):
                 self._relay(client, head, rest, headers)
             else:
-                _answer(client, 401)
+                answer(client, 401)
         except OSError:
             return
 
@@ -428,32 +283,11 @@ class CloudcliForwarder:
             expiry is ahead and no further than the horizon, and whose
             nonce was not accepted before.
         """
-        try:
-            raw = _unpadded_decode(token)
-        except (ValueError, binascii.Error):
-            return False
-        body_size = CLOUDCLI_TOKEN_EXPIRY_BYTES + CLOUDCLI_TOKEN_NONCE_BYTES
-        if len(raw) != body_size + CLOUDCLI_TOKEN_MAC_BYTES:
-            return False
-        body, mac = raw[:body_size], raw[body_size:]
-        expected = hmac.new(
-            self._token_secret.encode("utf-8"), body, hashlib.sha256
-        ).digest()
-        if not hmac.compare_digest(expected, mac):
-            return False
-        expiry = int.from_bytes(body[:CLOUDCLI_TOKEN_EXPIRY_BYTES], "big")
-        nonce = body[CLOUDCLI_TOKEN_EXPIRY_BYTES:]
         now = self._clock()
-        if not now < expiry <= now + CLOUDCLI_TOKEN_HORIZON_S:
-            return False
         with self._lock:
-            for held, until in list(self._spent.items()):
-                if until <= now:
-                    del self._spent[held]
-            if nonce in self._spent:
-                return False
-            self._spent[nonce] = expiry
-        return True
+            return take_token(
+                token, secret=self._token_secret, now=now, spent=self._spent
+            )
 
     def settle_account(self) -> bool:
         """Register CloudCLI's administrator when it has none, and sign in.
@@ -490,7 +324,7 @@ class CloudcliForwarder:
                 self._closed.wait(self._retry_s)
                 continue
             try:
-                server = _ForwarderServer((self._listen_host, self.port), self)
+                server = ForwarderServer((self._listen_host, self.port), self.handle)
             except OSError:
                 self._fail(
                     "cloudcli_port_taken", {"account": self.account, "port": self.port}
@@ -517,14 +351,14 @@ class CloudcliForwarder:
     def _exchange(self, client: socket.socket, token: str) -> None:
         """Trade a token for CloudCLI's login, kept in the browser."""
         if not self.take_token(token):
-            _answer(client, 401)
+            answer(client, 401)
             return
         try:
             login = self._login()
         except OSError:
             login = ""
         if not login:
-            _answer(client, 502)
+            answer(client, 502)
             return
         page = EXCHANGE_PAGE % (
             json.dumps(CLOUDCLI_STORAGE_KEY),
@@ -534,7 +368,7 @@ class CloudcliForwarder:
             f"{cookie_name(self.port)}={login}; Path=/; HttpOnly; "
             f"SameSite=Lax; Max-Age={CLOUDCLI_LOGIN_LIFETIME_S}"
         )
-        _answer(
+        answer(
             client,
             200,
             page.encode("utf-8"),
@@ -571,40 +405,14 @@ class CloudcliForwarder:
         self, client: socket.socket, head: bytes, rest: bytes, headers: list
     ) -> None:
         """Pass one request on to CloudCLI and its answer back."""
-        is_upgrade = _header(headers, "upgrade") != "" and "upgrade" in [
-            token.strip().lower() for token in _header(headers, "connection").split(",")
-        ]
-        if not is_upgrade and _header(headers, "transfer-encoding"):
-            _answer(client, 411)
-            return
-        try:
-            upstream = socket.create_connection(
-                (self._upstream_host, self.upstream_port),
-                timeout=CLOUDCLI_UPSTREAM_TIMEOUT_S,
-            )
-        except OSError:
-            _answer(client, 502)
-            return
-        with upstream:
-            if is_upgrade:
-                upstream.sendall(head + rest)
-                _relay_both_ways(client, upstream)
-                return
-            try:
-                length = int(_header(headers, "content-length") or 0)
-            except ValueError:
-                _answer(client, 411)
-                return
-            upstream.sendall(_closing_head(head) + rest[:length])
-            remaining = length - min(len(rest), length)
-            while remaining > 0:
-                chunk = client.recv(min(remaining, CLOUDCLI_RELAY_CHUNK_BYTES))
-                if not chunk:
-                    return
-                upstream.sendall(chunk)
-                remaining -= len(chunk)
-            upstream.settimeout(CLOUDCLI_IDLE_TIMEOUT_S)
-            _copy(upstream, client)
+        relay(client, head, rest, headers, self._connect_upstream)
+
+    def _connect_upstream(self) -> socket.socket:
+        """A connection to CloudCLI on loopback; OSError when it does not answer."""
+        return socket.create_connection(
+            (self._upstream_host, self.upstream_port),
+            timeout=CLOUDCLI_UPSTREAM_TIMEOUT_S,
+        )
 
     def _login(self) -> str:
         """CloudCLI's login for the administrator, empty when it refuses; OSError when it does not answer."""
@@ -644,20 +452,3 @@ class CloudcliForwarder:
         except (UnicodeDecodeError, ValueError):
             answer = {}
         return status, answer if isinstance(answer, dict) else {}
-
-
-class _ForwarderServer(socketserver.ThreadingTCPServer):
-    """One listening socket whose every connection the forwarder judges."""
-
-    # Windows lets a second socket take a port held with this set.
-    allow_reuse_address = os.name != "nt"
-    daemon_threads = True
-
-    def __init__(self, address, forwarder: "CloudcliForwarder"):
-        self.forwarder = forwarder
-        super().__init__(address, _ForwarderConnection)
-
-
-class _ForwarderConnection(socketserver.BaseRequestHandler):
-    def handle(self) -> None:
-        self.server.forwarder.handle(self.request)

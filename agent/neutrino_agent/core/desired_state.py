@@ -59,7 +59,7 @@ from neutrino_agent.streams.log import LogStream
 from neutrino_agent.streams.package import PackageStream
 
 # The order modules apply in: storage first, then what serves from it.
-APPLY_ORDER = ("zfs", "samba", "gitea", "podman", "vscode", "cloudcli")
+APPLY_ORDER = ("zfs", "samba", "gitea", "podman", "vscode", "code_server", "cloudcli")
 
 # The wants under which the software must be there.
 PRESENT_WANTS = (AGENT_WANT_INSTALLED, AGENT_WANT_STOPPED, AGENT_WANT_RUNNING)

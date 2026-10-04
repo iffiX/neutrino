@@ -636,3 +636,31 @@ def test_each_cloudcli_instance_is_a_web_entry_opened_with_a_token():
     assert alice["description_code"] == "cloudcli_module"
     assert alice["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
     assert alice["device_id"] == DEVICE
+
+
+def test_each_code_server_instance_is_a_web_entry_opened_with_a_token():
+    entries = collect(
+        device_modules=[
+            {
+                **hosting(),
+                "code_server": {
+                    "instances": [
+                        {"account": "alice", "port": 8443, "is_healthy": True}
+                    ]
+                },
+            }
+        ]
+    )
+
+    (alice,) = entries
+    assert alice["id"] == "code_server_device-one_alice"
+    assert alice["type"] == "web"
+    assert alice["title"] == "code-server (alice)"
+    assert alice["payload"] == {
+        "url": f"http://{DEVICE_HOST}:8443/",
+        "is_token_required": True,
+    }
+    assert alice["is_healthy"] is True
+    assert alice["description_code"] == "code_server_module"
+    assert alice["description_params"] == {"host": DEVICE_HOST, "account": "alice"}
+    assert alice["device_id"] == DEVICE

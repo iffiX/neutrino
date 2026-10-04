@@ -270,7 +270,7 @@ class PublishedServiceCache:
         Returns:
             One entry per device whose report names a hosted module, each
             ``{"device_id", "host", "samba", "gitea", "podman", "vscode",
-            "cloudcli"}``.
+            "code_server", "cloudcli"}``.
         """
         if self._agent_sessions is None:
             return []
@@ -289,8 +289,8 @@ class PublishedServiceCache:
     def _hosted(self, key: str, name: str, status) -> "dict | None":
         """One device's module as the list needs it, None while not served.
 
-        A VS Code or CloudCLI instance is listed only while the device
-        reports it running.
+        A VS Code, code-server or CloudCLI instance is listed only while the
+        device reports it running.
         """
         if not isinstance(status, dict):
             return None
@@ -350,7 +350,7 @@ class PublishedServiceCache:
                     and str(instance["account"]) in running
                 ],
             }
-        if name == "cloudcli":
+        if name in ("cloudcli", "code_server"):
             return {
                 "instances": [
                     {
@@ -358,7 +358,7 @@ class PublishedServiceCache:
                         "port": int(instance["port"]),
                         "is_healthy": True,
                     }
-                    for instance in self._desired_states.read(key, "cloudcli").get(
+                    for instance in self._desired_states.read(key, name).get(
                         "instances"
                     )
                     or []

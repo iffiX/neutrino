@@ -403,6 +403,7 @@ def test_vscode_is_stopped_and_uninstalled_without_its_terms(api, monkeypatch):
 SUPPORTED_OFF_LINUX = {
     "anydesk": (True, True),
     "cloudcli": (True, True),
+    "code_server": (False, True),
     "gitea": (False, False),
     "podman": (False, False),
     "samba": (True, True),

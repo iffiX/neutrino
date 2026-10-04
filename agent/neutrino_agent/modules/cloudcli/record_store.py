@@ -27,12 +27,14 @@ RECORD_FIELDS = ("account", "port", "upstream_port", "web_password", "token_secr
 class CloudcliRecordStore:
     """One root-only file per instance, by account."""
 
-    def __init__(self, *, directory: str):
+    def __init__(self, *, directory: str, fields: tuple = RECORD_FIELDS):
         """
         Args:
             directory: Where the records live.
+            fields: The fields one record holds; ``account`` names its file.
         """
         self.directory = directory
+        self._fields = tuple(fields)
 
     def read_all(self) -> list:
         """Every record held, by account.
@@ -48,7 +50,7 @@ class CloudcliRecordStore:
             except (OSError, ValueError):
                 continue
             if isinstance(held, dict):
-                records.append({name: held.get(name) for name in RECORD_FIELDS})
+                records.append({name: held.get(name) for name in self._fields})
         return records
 
     def read(self, account: str) -> dict:
@@ -79,7 +81,7 @@ class CloudcliRecordStore:
         handle, temporary = tempfile.mkstemp(dir=self.directory, prefix=".record_")
         try:
             with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                json.dump({name: record.get(name) for name in RECORD_FIELDS}, stream)
+                json.dump({name: record.get(name) for name in self._fields}, stream)
             os.chmod(temporary, 0o600)
             os.replace(temporary, self._path(str(record["account"])))
         except BaseException:

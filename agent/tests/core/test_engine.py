@@ -957,6 +957,23 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
     assert received == ["vscode"]
 
 
+def test_code_server_runs_on_a_mac_beside_vs_code_and_not_on_windows(tmp_path):
+    class MacHubPackagesPlatform(HubPackagesPlatform):
+        os_name = "darwin"
+
+    mac = ModuleEngine(
+        platform=MacHubPackagesPlatform(str(tmp_path / "Neutrino")),
+        configured_dir=str(tmp_path / "configured"),
+    )
+    windows = ModuleEngine(
+        platform=HubPackagesPlatform(str(tmp_path / "Neutrino")),
+        configured_dir=str(tmp_path / "configured"),
+    )
+
+    assert "code_server" in mac.module_runners
+    assert "code_server" not in windows.module_runners
+
+
 def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
     class PackagesPlatform(FakePlatform):
         capabilities = frozenset({"packages"})
@@ -971,5 +988,6 @@ def test_a_platform_with_packages_builds_the_vs_code_runner(tmp_path):
         "podman",
         "zfs",
         "vscode",
+        "code_server",
         "cloudcli",
     }

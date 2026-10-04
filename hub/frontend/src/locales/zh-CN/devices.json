@@ -350,6 +350,7 @@
   "ui.services.delete_title": "删除 {name}",
   "ui.services.description_ai_gateway": "由 AI 网关发布",
   "ui.services.description_cloudcli_module": "由 {host} 上的 cloudcli 模块为 {account} 发布",
+  "ui.services.description_code_server_module": "由 {host} 上的 code_server 模块为 {account} 发布",
   "ui.services.description_container": "由容器 {image} 发布",
   "ui.services.description_declared": "手动声明",
   "ui.services.description_device_share": "来自 {device} 的共享",

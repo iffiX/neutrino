@@ -274,3 +274,24 @@ AGENT_DARWIN_PROGRAM_DIR = "/Library/Application Support/Neutrino/agent/app"
 AGENT_DARWIN_LINK_PATH = "/usr/local/bin/nagent"
 AGENT_DARWIN_PACKAGE_ID = "com.neutrino.agent"
 AGENT_DARWIN_RUSTDESK_APP = "/Applications/RustDesk.app"
+# The forwarders the agent keeps in front of a module's page (CloudCLI,
+# code-server): how one request's head is read, how bytes are relayed, and
+# how long a relayed connection may stay quiet.
+AGENT_FORWARD_HEAD_LIMIT_BYTES = 65536
+AGENT_FORWARD_CHUNK_BYTES = 65536
+AGENT_FORWARD_UPSTREAM_TIMEOUT_S = 10.0
+AGENT_FORWARD_IDLE_TIMEOUT_S = 3600.0
+# The token a client opens such a page with: ``?tkn=`` holding
+# ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``,
+# the expiry eight bytes big-endian in seconds since the epoch. A token
+# whose expiry is further ahead than the horizon is refused, so the nonces
+# held stay few.
+AGENT_FORWARD_TOKEN_PARAMETER = "tkn"
+AGENT_FORWARD_TOKEN_EXPIRY_BYTES = 8
+AGENT_FORWARD_TOKEN_NONCE_BYTES = 16
+AGENT_FORWARD_TOKEN_MAC_BYTES = 32
+AGENT_FORWARD_TOKEN_HORIZON_S = 300
+# The archive kinds a module's software from the hub comes in, as its
+# manifest names them.
+AGENT_PACKAGE_KIND_TAR = "tar"
+AGENT_PACKAGE_KIND_ZIP = "zip"

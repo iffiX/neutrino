@@ -1,0 +1,68 @@
+{
+  "_comment": "code-server, hub-tier: the module's installer fetches Coder's standalone release at one pinned version, which carries its own Node.js, and the agent unpacks it under its own root and runs it once per account. Each url is the publisher's GitHub release, each cn_url the same file on the USTC mirror, and each sha256 is ours, computed from the publisher's archives, since the publisher ships no checksum file. The mirror keeps its latest release alone, listed at cn_latest_url. The Linux builds need glibc 2.28 and GLIBCXX_3.4.21.",
+  "name": "code_server",
+  "title": "code-server",
+  "kind": "code_server",
+  "installer": "hub",
+  "source": "Coder",
+  "version": "4.140.0",
+  "license": "MIT",
+  "corresponding_source": "https://github.com/coder/code-server/tree/v4.140.0", "_source_scan": "scan: allow",
+  "description": "VS Code in the browser from code-server, one per account, opened from a client with a token",
+  "platforms": {
+    "linux-amd64": {
+      "url": "https://github.com/coder/code-server/releases/download/v4.140.0/code-server-4.140.0-linux-amd64.tar.gz", "_url_scan": "scan: allow",
+      "cn_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/v4.140.0/code-server-4.140.0-linux-amd64.tar.gz", "_cn_url_scan": "scan: allow",
+      "cn_latest_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/LatestRelease/", "_cn_latest_url_scan": "scan: allow",
+      "sha256": "864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48", "_sha256_scan": "scan: allow",
+      "package_kind": "tar",
+      "min_version": "2.28",
+      "verify": "/var/lib/neutrino/agent/code_server/release/lib/node --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "linux-arm64": {
+      "url": "https://github.com/coder/code-server/releases/download/v4.140.0/code-server-4.140.0-linux-arm64.tar.gz", "_url_scan": "scan: allow",
+      "cn_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/v4.140.0/code-server-4.140.0-linux-arm64.tar.gz", "_cn_url_scan": "scan: allow",
+      "cn_latest_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/LatestRelease/", "_cn_latest_url_scan": "scan: allow",
+      "sha256": "ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200", "_sha256_scan": "scan: allow",
+      "package_kind": "tar",
+      "min_version": "2.28",
+      "verify": "/var/lib/neutrino/agent/code_server/release/lib/node --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "darwin-amd64": {
+      "url": "https://github.com/coder/code-server/releases/download/v4.140.0/code-server-4.140.0-macos-amd64.tar.gz", "_url_scan": "scan: allow",
+      "cn_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/v4.140.0/code-server-4.140.0-macos-amd64.tar.gz", "_cn_url_scan": "scan: allow",
+      "cn_latest_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/LatestRelease/", "_cn_latest_url_scan": "scan: allow",
+      "sha256": "a5393b6eed4aa68b084e724c3c565f805abd996c609356043119f0323e40cf52", "_sha256_scan": "scan: allow",
+      "package_kind": "tar",
+      "verify": "\"/Library/Application Support/Neutrino/agent/state/code_server/release/lib/node\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/coder/code-server/releases/download/v4.140.0/code-server-4.140.0-macos-arm64.tar.gz", "_url_scan": "scan: allow",
+      "cn_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/v4.140.0/code-server-4.140.0-macos-arm64.tar.gz", "_cn_url_scan": "scan: allow",
+      "cn_latest_url": "https://mirrors.ustc.edu.cn/github-release/coder/code-server/LatestRelease/", "_cn_latest_url_scan": "scan: allow",
+      "sha256": "82c7144406ac31c373acfa786b6705c7c5463d895f728fde2cb94402b945b301", "_sha256_scan": "scan: allow",
+      "package_kind": "tar",
+      "verify": "\"/Library/Application Support/Neutrino/agent/state/code_server/release/lib/node\" --version",
+      "uninstall": {
+        "packages": [],
+        "post_uninstall": [],
+        "is_data_kept": true
+      }
+    }
+  }
+}

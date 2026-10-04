@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { apiPath, apiPost, describeError } from "../api_client";
 import { CloudcliPanels } from "../components/cloudcli_panels";
+import { CodeServerPanels } from "../components/code_server_panels";
 import { ContainersPanels } from "../components/containers_panels";
 import { DevicePick } from "../components/device_pick";
 import { ErrorPanel } from "../components/error_panel";
@@ -112,6 +113,14 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isEditable={target.isEditable}
       want={target.want}
       isWindows={target.platformOs === WINDOWS_OS}
+    />
+  ),
+  code_server: (target) => (
+    <CodeServerPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+      want={target.want}
     />
   ),
   cloudcli: (target) => (
