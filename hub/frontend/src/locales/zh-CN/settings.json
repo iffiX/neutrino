@@ -94,6 +94,8 @@
   "ui.settings.update_lost": "面板一直没有回来。到盒子上看发生了什么：journalctl -u neutrino_hub_update",
   "ui.settings.update_lost_installer": "面板一直没有回来。到盒子上看 {path} 下这次更新的日志。",
   "ui.settings.update_major": "{version} 是新的大版本，请按升级指南手动升级。",
+  "ui.settings.update_no_package": "{version} 没有适用于这个系统的安装包。",
+  "ui.settings.update_no_package_family": "{version} 没有 {family} 安装包。",
   "ui.settings.update_none_published": "还没有发布过任何版本。",
   "ui.settings.update_notes": "发行说明",
   "ui.settings.update_on_newest": "这个 hub 已经是最新版本。",

@@ -94,6 +94,8 @@
   "ui.settings.update_lost": "The panel never came back. On the box, read what happened with: journalctl -u neutrino_hub_update",
   "ui.settings.update_lost_installer": "The panel never came back. On the box, read what happened in the update's log under {path}.",
   "ui.settings.update_major": "{version} is a new major version; upgrade by hand with the upgrade guide.",
+  "ui.settings.update_no_package": "{version} has no package for this system.",
+  "ui.settings.update_no_package_family": "{version} has no {family} package.",
   "ui.settings.update_none_published": "No release has been published yet.",
   "ui.settings.update_notes": "Release notes",
   "ui.settings.update_on_newest": "This hub is on the newest version.",
