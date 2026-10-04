@@ -692,8 +692,9 @@ class Agent:
         and read back here.
 
         Returns:
-            ``{"code", "params"}`` naming the exit status, or None when no
-            record stands there or the install went through.
+            ``{"code", "params"}`` naming the exit status, the finish time
+            and the installer's masked log tail as ``output``, or None when
+            no record stands there or the install went through.
         """
         result = self_update.read_reinstall_result(self._var_dir)
         if result is None or result["exit_code"] == 0:
@@ -703,6 +704,7 @@ class Agent:
             "params": {
                 "exit_code": result["exit_code"],
                 "finished_at": result["finished_at"],
+                "output": result["output"],
             },
         }
 
