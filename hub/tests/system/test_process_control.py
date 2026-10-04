@@ -248,6 +248,7 @@ def test_every_name_the_service_runs_has_a_status(controller):
         *(["netbird"] if edition.has_feature("netbird") else []),
         "cliproxyapi",
         "easytier",
+        "relay",
     ]
 
 
@@ -421,3 +422,24 @@ def test_a_held_service_still_restarts_into_the_panel(controller, service):
     controller.restart("web")
 
     assert service.calls == ["restart"]
+
+
+def test_a_running_child_has_its_process_id(controller):
+    controller.supervise({"xray": XRAY})
+
+    assert controller.process_id("xray") == 0
+    controller.enable("xray")
+
+    assert controller.process_id("xray") == 1000
+
+
+def test_a_command_outside_the_service_reads_no_process_id(tmp_path, service):
+    assert _command(tmp_path, service).process_id("relay") == 0
+
+
+def test_the_run_output_is_the_tail_of_the_childs_log(controller, tmp_path):
+    log = tmp_path / "log" / "relay.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    assert controller.run_output("relay", line_count=2) == ["two", "three"]

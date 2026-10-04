@@ -4,6 +4,7 @@ import { EasyTierSection } from "../components/easytier_panels";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
 import { OverlayModePanel } from "../components/overlay_mode_panel";
+import { RelaySection } from "../components/relay_panels";
 import { NetbirdCard } from "../edition";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -21,6 +22,7 @@ import "./overlay_page.css";
 /** The engines by the key `config/` names them. */
 const PROVIDER_NETBIRD = "netbird";
 const PROVIDER_EASYTIER = "easytier";
+const PROVIDER_RELAY = "relay";
 
 // What moves the switches: any write to the hub's own configuration.
 const OVERLAY_INVALIDATE_ON = [{ type: HUB_EVENT_CONFIG }];
@@ -120,6 +122,8 @@ export function OverlayPage() {
       {selected === PROVIDER_EASYTIER && isEnabled(PROVIDER_EASYTIER) && (
         <EasyTierSection />
       )}
+
+      {selected === PROVIDER_RELAY && <RelaySection />}
     </div>
   );
 }

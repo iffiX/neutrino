@@ -37,10 +37,24 @@ from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.easytier.renderer import render_arguments
 from neutrino_hub.modules.easytier.renderer import render_config as render_easytier
 from neutrino_hub.modules.easytier.renderer import render_dropin
-from neutrino_hub.system.constants import SYSTEM_SYSTEMD_DIR
+from neutrino_hub.system.constants import (
+    SYSTEM_START_LINE_DROPIN_NAME,
+    SYSTEM_SYSTEMD_DIR,
+)
+from neutrino_hub.system.systemd_ctl import start_line_dropin
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
+from neutrino_hub.modules.overlay.constants import OVERLAY_RELAY_UNIT
 from neutrino_hub.modules.overlay.ops import OverlaySwitcher, overlay_devices
+from neutrino_hub.modules.overlay.relay_config import read_relay
+from neutrino_hub.modules.overlay.relay_ops import (
+    OverlayRelayApplier,
+    is_relay_configured,
+    known_hosts_path,
+    ssh_path,
+)
+from neutrino_hub.modules.overlay.relay_ops import key_path as relay_key_path
+from neutrino_hub.modules.overlay.relay_renderer import OverlayRelayRenderer
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNSMASQ_PATH,
     ROUTER_NFT_PATH,
@@ -65,7 +79,7 @@ from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR, UTILS_GENERATED_DIR
-from neutrino_hub.platforms.detect import is_linux
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.system.units import SystemdUnitInstaller
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_GENERATED_NAME
@@ -77,6 +91,7 @@ from neutrino_hub.modules.cliproxyapi.management_key import (
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_IDENTITY_FILE,
     WEB_PANEL_TLS_SERVED_CERT_PATH,
 )
@@ -239,6 +254,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             print("easytier: nothing configured, skipping")
         else:
             artifacts["easytier"] = easytier
+        artifacts["relay"] = read_relay()
     return artifacts
 
 
@@ -289,6 +305,20 @@ def _print_artifacts(artifacts: dict) -> None:
             overlay, config_server="<console address>", config_path=str(network_path)
         )
         print(render_dropin(arguments, core_path=str(EASYTIER_CORE_PATH)), end="")
+    if "relay" in artifacts:
+        relay = artifacts["relay"]
+        if not relay.is_enabled or not is_relay_configured(relay):
+            print("\n--- relay: off or not configured ---")
+        else:
+            argv = OverlayRelayRenderer(
+                ssh_path=ssh_path() or "ssh",
+                key_path=str(relay_key_path()),
+                known_hosts_path=str(known_hosts_path()),
+                agent_port=_agent_port(),
+            ).render(relay)
+            dropin = SYSTEM_SYSTEMD_DIR / f"{OVERLAY_RELAY_UNIT}.d"
+            print(f"\n--- {dropin / SYSTEM_START_LINE_DROPIN_NAME} ---")
+            print(start_line_dropin(argv, {}, None), end="")
 
 
 def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:
@@ -346,8 +376,22 @@ def _apply(artifacts: dict) -> None:
     if "overlay" in artifacts:
         for note in switcher.stop(artifacts["overlay"]):
             print(note)
+    if "relay" in artifacts:
+        change = OverlayRelayApplier(
+            controller=process_controller(), agent_port=_agent_port()
+        ).apply(artifacts["relay"])
+        print(change or "relay unchanged")
     if router_failure:
         raise RuntimeError(router_failure)
+
+
+def _agent_port() -> int:
+    """The agent channel's port, from the panel's settings or the default."""
+    try:
+        settings = read_config("web/settings.json")
+    except (FileNotFoundError, ValueError):
+        return WEB_DEFAULT_AGENT_LISTEN_PORT
+    return int(settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT))
 
 
 if __name__ == "__main__":

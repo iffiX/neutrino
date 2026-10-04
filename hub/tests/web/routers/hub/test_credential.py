@@ -17,6 +17,11 @@ from fastapi.testclient import TestClient
 
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.modules.overlay.relay_config import (
+    OverlayRelayConfig,
+    read_relay,
+    write_relay,
+)
 from neutrino_hub.web.app import _vault_locked
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import credential as credentials_router
@@ -421,3 +426,71 @@ def test_a_token_of_another_kind_is_not_addressable(client):
         ).status_code
         == 404
     )
+
+
+class ConvergingRuntime:
+    """A runtime whose converge step is counted."""
+
+    def __init__(self):
+        self.is_config_dirty = False
+        self.converged = 0
+
+    async def converge_network(self, *, only=None):
+        self.converged += 1
+        return []
+
+
+def stored_key(client) -> str:
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    created = client.post(
+        "/api/hub/credential/ssh_key/add",
+        json={"name": "relay", "private_key": key.export_private_key().decode()},
+    )
+    return created.json()["id"]
+
+
+def test_the_key_the_relay_names_is_marked(client):
+    key_id = stored_key(client)
+    other_id = stored_key(client)
+    write_relay(
+        OverlayRelayConfig(is_enabled=True, host="vps", account="r", key_id=key_id)
+    )
+
+    listed = client.get("/api/hub/credential/ssh_key").json()["keys"]
+
+    marks = {item["id"]: item["is_relay_key"] for item in listed}
+    assert marks == {key_id: True, other_id: False}
+
+
+def test_deleting_the_relays_key_clears_it_from_the_relay_and_converges(client):
+    runtime = ConvergingRuntime()
+    client.app.dependency_overrides[get_runtime] = lambda: runtime
+    key_id = stored_key(client)
+    write_relay(
+        OverlayRelayConfig(is_enabled=True, host="vps", account="r", key_id=key_id)
+    )
+
+    response = client.post(
+        "/api/hub/credential/ssh_key/remove", json={"key_id": key_id}
+    )
+
+    assert response.status_code == 200
+    relay = read_relay()
+    assert relay.key_id == ""
+    assert (relay.is_enabled, relay.host) == (True, "vps")
+    assert runtime.converged == 1
+
+
+def test_deleting_another_key_leaves_the_relay_and_converges_nothing(client):
+    runtime = ConvergingRuntime()
+    client.app.dependency_overrides[get_runtime] = lambda: runtime
+    key_id = stored_key(client)
+    other_id = stored_key(client)
+    write_relay(
+        OverlayRelayConfig(is_enabled=True, host="vps", account="r", key_id=key_id)
+    )
+
+    client.post("/api/hub/credential/ssh_key/remove", json={"key_id": other_id})
+
+    assert read_relay().key_id == key_id
+    assert runtime.converged == 0

@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT, PROTOCOL
+from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
@@ -52,6 +53,7 @@ class FakeRuntime:
     def __init__(self):
         self.settings: dict = {}
         self.events = PanelEventBus()
+        self.channel_port = ChannelPortGuard()
         self.sessions = StubSessions()
         self.device_metrics = {}
         self.device_modules = {}

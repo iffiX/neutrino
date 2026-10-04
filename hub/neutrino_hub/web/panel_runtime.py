@@ -36,6 +36,7 @@ from neutrino_hub.modules.router.controller import (
     rendered_overlay_devices,
     router_lock,
 )
+from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
@@ -47,6 +48,11 @@ from neutrino_hub.modules.overlay.ops import (
     engine_devices,
     overlay_devices,
 )
+from neutrino_hub.modules.overlay.relay_config import read_relay
+from neutrino_hub.modules.overlay.relay_ops import (
+    OverlayRelayApplier,
+    OverlayRelayMonitor,
+)
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.modules.router.share_fence import share_subnets
 from neutrino_hub.modules.services.probe import DeclaredServiceProbe
@@ -55,6 +61,7 @@ from neutrino_hub.modules.services.host_scope import HostScope, served_scopes
 from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
+    WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_EVENT_AI_USAGE,
     WEB_EVENT_CLIENTS,
     WEB_EVENT_CONFIG,
@@ -81,6 +88,7 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.web.auth import SessionStore, session_secret
 from neutrino_hub.web import channel_state
 from neutrino_hub.web.address_sampler import PanelAddressSampler
+from neutrino_hub.web.agent_tls import certificate_fingerprint
 from neutrino_hub.web.channel_addresses import channel_urls
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
@@ -211,6 +219,14 @@ class PanelRuntime:
         self.device_last_error: dict[str, dict] = {}
         # The open enrolment tickets, read back from the state root.
         self.enrollments = ChannelTicketRegistry()
+        # The agent port's open handshakes, admitted sockets and failed
+        # admissions, over the whole port.
+        self.channel_port = ChannelPortGuard()
+        # Where the relay stands: its process and the check of its public
+        # address. The application starts it; a CLI run never wants it.
+        self.relay_monitor = OverlayRelayMonitor(
+            controller=self.services, fingerprint_of=certificate_fingerprint
+        )
         # A cable, a lease or a radio moving is a change nothing writes, so
         # it is sampled. The application starts it; a CLI run builds a runtime
         # and never wants the thread.
@@ -609,6 +625,18 @@ class PanelRuntime:
             changes += self._push_desired_states()
             channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
             switcher.stop(network)
+            try:
+                relay_change = self.apply_relay()
+                if relay_change:
+                    changes.append({"code": relay_change, "params": {}})
+            except (subprocess.SubprocessError, OSError, ValueError) as error:
+                failures.append(f"relay: {command_failure_text(error)}")
+                failed.append(
+                    {
+                        "code": "relay_apply_failed",
+                        "params": {"detail": command_failure_text(error)},
+                    }
+                )
             self.check_overlay_routes()
         router_failure = failure_text(results)
         if router_failure:
@@ -618,6 +646,32 @@ class PanelRuntime:
             raise NetworkApplyError("; ".join(failures), failed)
         self.is_config_dirty = False
         return switcher.changes + changes
+
+    def apply_relay(self, *, is_restarted: bool = False) -> str:
+        """Make the stored relay the one that runs.
+
+        Args:
+            is_restarted: Whether a running relay is started again anyway.
+
+        Returns:
+            ``relay_started`` or ``relay_stopped``, empty when nothing
+            changed.
+
+        Raises:
+            OSError: If a file cannot be written.
+            ValueError: If ``relay.json`` is not JSON.
+            subprocess.SubprocessError: If the system refuses the unit.
+        """
+        note = OverlayRelayApplier(
+            controller=self.services,
+            agent_port=int(
+                self.settings.get("agent_listen_port", WEB_DEFAULT_AGENT_LISTEN_PORT)
+            ),
+        ).apply(read_relay(), is_restarted=is_restarted)
+        if note:
+            LOGGER.info("relay: %s", note)
+            self.relay_monitor.restart_checks()
+        return note
 
     def desired_state_for(self, device) -> tuple[str, dict]:
         """What a device should host, and the hash the agent compares against.

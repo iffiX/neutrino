@@ -13,6 +13,9 @@ even its name. Replacing a credential is adding the new one, pointing its
 consumers at it, and deleting the old.
 """
 
+import logging
+import subprocess
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub import edition
@@ -24,6 +27,7 @@ from neutrino_hub.modules.credentials.vault import (
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.devices.key_registry import KeyRecord, KeyRegistry
+from neutrino_hub.modules.overlay.relay_config import read_relay, write_relay
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -41,6 +45,8 @@ from neutrino_hub.web.models import (
     TokenListView,
     TokenView,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 LOGIN_KIND = "login"
 TOKEN_KIND = "token"
@@ -99,19 +105,58 @@ def create_key(request: KeyCreate) -> KeyView:
 
 
 @router.post("/ssh_key/remove")
-def delete_key(request: CredentialKeyRequest) -> dict:
+async def delete_key(
+    request: CredentialKeyRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> dict:
     """Remove a key and its material, clearing every device reference to it.
+
+    A key the relay names is cleared from the relay too, and the converge
+    step stops it.
 
     Args:
         request: The key's identifier.
+        runtime: The shared runtime.
 
     Returns:
         Under ``cleared``, how many devices lost the key.
     """
     with CONFIG_WRITE_LOCK:
         device_count = _clear_key_on_devices(request.key_id)
+        is_relay_cleared = _clear_key_on_relay(request.key_id)
         KeyRegistry().delete(request.key_id)
+    if is_relay_cleared:
+        try:
+            await runtime.converge_network()
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            RuntimeError,
+            TimeoutError,
+            ValueError,
+        ) as error:
+            LOGGER.warning("the relay was not stopped: %s", error)
     return {"cleared": {"device_count": device_count}}
+
+
+def _relay_key_id() -> str:
+    """The key the relay names, empty when none."""
+    try:
+        return read_relay().key_id
+    except ValueError:
+        return ""
+
+
+def _clear_key_on_relay(key_id: str) -> bool:
+    """Take a key off the relay when it names it."""
+    try:
+        relay = read_relay()
+    except ValueError:
+        return False
+    if not key_id or relay.key_id != key_id:
+        return False
+    relay.key_id = ""
+    write_relay(relay)
+    return True
 
 
 def _device_counts() -> dict[str, int]:
@@ -144,6 +189,7 @@ def _key_view(record: KeyRecord, counts: dict[str, int]) -> KeyView:
         has_passphrase=record.has_passphrase,
         created_at=record.created_at,
         device_count=counts.get(record.id, 0),
+        is_relay_key=bool(record.id) and record.id == _relay_key_id(),
     )
 
 

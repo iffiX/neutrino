@@ -14,6 +14,7 @@ import androidx.core.net.toUri
 import io.github.iffix.neutrino.CLIENT_CLIP_SENSITIVE_EXTRA
 import io.github.iffix.neutrino.CLIENT_FILES_AUTHORITY
 import io.github.iffix.neutrino.CLIENT_LOG_TAG
+import io.github.iffix.neutrino.ConnectRefusedException
 import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
 import io.github.iffix.neutrino.channel.ChannelResult
@@ -120,6 +121,8 @@ class ClientController(
                 ChannelResult.refused(error.code)
             } catch (_: ShareUnreachableException) {
                 ChannelResult.refused("share_unreachable")
+            } catch (error: ConnectRefusedException) {
+                ChannelResult.Refused(error.code, error.params)
             } catch (error: IOException) {
                 ChannelResult.refused("client_internal", "error" to (error.message ?: "IOException"))
             }
@@ -154,8 +157,8 @@ class ClientController(
         }
     }
 
-    override fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String) =
-        desktops.connect(bindingId, entryId, name, platformOs)
+    override fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String, port: Int) =
+        desktops.connect(bindingId, entryId, name, platformOs, port)
 
     override fun remoteDesktopChoiceOf(bindingId: String, entryId: String): RemoteDesktopChoice =
         desktopChoices.get(RemoteDesktopSessions.keyOf(bindingId, entryId))
@@ -165,8 +168,7 @@ class ClientController(
 
     override fun closeDesktop() = desktops.close()
 
-    override fun connectPort(bindingId: String, entryId: String, host: String, port: Int) =
-        forwards.connect(bindingId, entryId, host, port)
+    override fun connectPort(bindingId: String, entryId: String, port: Int) = forwards.connect(bindingId, entryId, port)
 
     override fun disconnectPort(bindingId: String, entryId: String) = forwards.disconnect(bindingId, entryId)
 
@@ -176,13 +178,13 @@ class ClientController(
     override fun configurePort(bindingId: String, entryId: String, choice: LocalPortChoice): ChannelResult<Unit> =
         forwards.configure(bindingId, entryId, choice)
 
-    override fun openLocal(bindingId: String, entryId: String, url: String) =
-        forwards.openLocal(bindingId, entryId, url) { address ->
-            ContextCompat.getMainExecutor(context).execute { openUrl(address) }
-        }
+    override fun openWeb(bindingId: String, entryId: String, url: String, isTokenRequired: Boolean) =
+        forwards.open(bindingId, entryId, url, isTokenRequired, ::openOnMain)
 
-    override fun openWithToken(bindingId: String, entryId: String, url: String) =
-        forwards.openWithToken(bindingId, entryId, url) { address ->
-            ContextCompat.getMainExecutor(context).execute { openUrl(address) }
-        }
+    override fun openPanel(bindingId: String) {
+        val hubId = connections.session(bindingId)?.view?.value?.binding?.hubId.orEmpty()
+        forwards.openPanel(bindingId, hubId, ::openOnMain)
+    }
+
+    private fun openOnMain(address: String) = ContextCompat.getMainExecutor(context).execute { openUrl(address) }
 }

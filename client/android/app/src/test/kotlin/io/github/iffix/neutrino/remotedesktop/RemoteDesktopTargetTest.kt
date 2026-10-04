@@ -8,33 +8,20 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class RemoteDesktopTargetTest {
-    private fun material(vararg values: Pair<String, Any>) = ChannelResult.Ok(
-        JsonObject(
-            values.associate { (name, value) ->
-                name to if (value is Int) JsonPrimitive(value) else JsonPrimitive(value.toString())
-            },
-        ),
-    )
-
     @Test
-    fun theHubsMaterialIsTheTarget() {
+    fun theViewerDialsTheForwardWithTheHubsSeatPassword() {
         val answer = RemoteDesktopTarget.of(
             "home:Argon",
-            material("host" to "100.72.4.21", "port" to 21118, "password" to "seat"),
+            ChannelResult.Ok(JsonObject(mapOf("password" to JsonPrimitive("seat")))),
+            21118,
         )
-        assertEquals(ChannelResult.Ok(RemoteDesktopTarget("home:Argon", "100.72.4.21", 21118, "seat")), answer)
+        assertEquals(ChannelResult.Ok(RemoteDesktopTarget("home:Argon", "127.0.0.1", 21118, "seat")), answer)
     }
 
     @Test
     fun theHubsRefusalIsKept() {
         val refusal = ChannelResult.refused("rdp_not_shared", "service_id" to "rdp_s1")
-        assertEquals(refusal, RemoteDesktopTarget.of("home:Argon", refusal))
-    }
-
-    @Test
-    fun materialWithoutAnAddressIsRefused() {
-        assertEquals(ChannelResult.refused("rdp_no_address"), RemoteDesktopTarget.of("a", material("port" to 21118)))
-        assertEquals(ChannelResult.refused("rdp_no_address"), RemoteDesktopTarget.of("a", material("host" to "h")))
+        assertEquals(refusal, RemoteDesktopTarget.of("home:Argon", refusal, 21118))
     }
 
     @Test

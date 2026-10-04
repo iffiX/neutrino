@@ -52,6 +52,7 @@ from neutrino_hub.web.routers.hub import (
     network,
     overlay,
     overlay_easytier,
+    overlay_relay,
     service,
     setting,
 )
@@ -66,6 +67,7 @@ API_ROUTERS = (
     network.router,
     overlay.router,
     overlay_easytier.router,
+    overlay_relay.router,
     *edition.hooks("api_routers"),
     ai.router,
     ai_gateway.router,
@@ -228,6 +230,7 @@ def _start_samplers() -> None:
     runtime.address_sampler.start()
     if runtime.proxy is not None:
         runtime.proxy.start()
+    runtime.relay_monitor.start()
 
 
 def _mount_frontend(app: FastAPI) -> None:

@@ -91,6 +91,7 @@ from neutrino_hub.utils.constants import (
     is_dev_root_set,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
+from neutrino_hub.web.agent_port import agent_port_context, agent_port_protocol
 from neutrino_hub.web.agent_tls import ensure_certificate, write_served_key
 from neutrino_hub.web.constants import (
     WEB_AGENT_TLS_CERT_PATH,
@@ -500,26 +501,48 @@ def _serve_panel(arguments) -> int:
         servers.append(uvicorn.Server(https_config))
     agent_key_path = _agent_key()
     if agent_key_path is not None:
-        servers.append(
-            uvicorn.Server(
-                uvicorn.Config(
-                    AGENT_APPLICATION_PATH,
-                    factory=True,
-                    host=arguments.host,
-                    port=_configured_agent_port(),
-                    log_level="info",
-                    access_log=False,
-                    ssl_certfile=str(WEB_AGENT_TLS_CERT_PATH),
-                    ssl_keyfile=str(agent_key_path),
-                    timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
-                    ws_ping_interval=CHANNEL_PING_INTERVAL_S,
-                    ws_ping_timeout=CHANNEL_PING_TIMEOUT_S,
-                )
-            )
-        )
+        servers.append(uvicorn.Server(_agent_config(arguments.host, agent_key_path)))
     _finish_first_run()
     asyncio.run(_serve_together(servers))
     return 0
+
+
+def _agent_config(host: str, key_path) -> uvicorn.Config:
+    """The agent port's listener.
+
+    uvicorn listens over TCP and the port's own protocol runs each TLS
+    handshake under the port's limits before uvicorn's HTTP protocol takes
+    the connection.
+
+    Args:
+        host: The address to bind.
+        key_path: The agent certificate's unsealed key.
+
+    Returns:
+        The server's configuration.
+    """
+    return uvicorn.Config(
+        AGENT_APPLICATION_PATH,
+        factory=True,
+        host=host,
+        port=_configured_agent_port(),
+        log_level="info",
+        access_log=False,
+        http=agent_port_protocol(
+            guard=_agent_port_guard(),
+            ssl_context=agent_port_context(str(WEB_AGENT_TLS_CERT_PATH), str(key_path)),
+        ),
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
+        ws_ping_interval=CHANNEL_PING_INTERVAL_S,
+        ws_ping_timeout=CHANNEL_PING_TIMEOUT_S,
+    )
+
+
+def _agent_port_guard():
+    """The runtime's counts of the agent port, which its routes read too."""
+    from neutrino_hub.web.app import shared_runtime
+
+    return shared_runtime().channel_port
 
 
 def _finish_first_run() -> None:

@@ -15,8 +15,11 @@ import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File
+import io.github.iffix.neutrino.ConnectRefusedException
 import io.github.iffix.neutrino.ShareRefusedException
 import io.github.iffix.neutrino.ShareUnreachableException
+import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelStream
 import java.io.Closeable
 import java.io.IOException
 import java.util.EnumSet
@@ -25,28 +28,21 @@ import java.util.concurrent.TimeUnit
 /**
  * SMB over smbj. Browsing runs on one held connection per root, and every file the system's
  * Files opens gets a connection of its own, so a long copy and a listing never close each other.
- * Connecting is bounded short so an unreachable server is an answer, not a hang, and each request
- * is bounded long so a slow transfer is not taken for a dead server. Signing follows the server;
- * SMB 2.0.2 to 3.1.1 are offered.
+ * Every connection is a `connect` stream to the root's hub naming its `file` entry, so no
+ * connection dials the share's own address. Each request is bounded long so a slow transfer is
+ * not taken for a dead server. Signing follows the server; SMB 2.0.2 to 3.1.1 are offered.
  *
- * @param connectTimeoutSeconds How long reaching a server may take.
  * @param ioTimeoutSeconds How long one request, a read or a write may take.
  * @param idleProbeSeconds How long a held connection may sit unused before it is probed.
  * @param probeTimeoutSeconds How long the probe of a held connection may take.
+ * @param streams Opens one `connect` stream for a root's connection.
  */
 class SmbShareClient(
-    connectTimeoutSeconds: Long,
-    ioTimeoutSeconds: Long,
+    private val ioTimeoutSeconds: Long,
     idleProbeSeconds: Long,
     private val probeTimeoutSeconds: Long,
+    private val streams: (ShareRoot) -> ChannelResult<ChannelStream>,
 ) {
-    private val config = SmbConfig.builder()
-        .withTimeout(ioTimeoutSeconds, TimeUnit.SECONDS)
-        .withSoTimeout(ioTimeoutSeconds, TimeUnit.SECONDS)
-        .withSocketFactory(
-            ShareSocketFactory((connectTimeoutSeconds * 1000).toInt(), (ioTimeoutSeconds * 1000).toInt()),
-        )
-        .build()
     private val pool = ShareConnectionPool(
         open = ::connect,
         probe = ::answers,
@@ -63,6 +59,7 @@ class SmbShareClient(
      * @param document The folder.
      * @return Its entries, without `.` and `..`.
      * @throws ShareUnreachableException When the server cannot be reached.
+     * @throws ConnectRefusedException When the hub refuses the connection to the share.
      * @throws ShareRefusedException When the server refuses the login, the access or the name.
      */
     fun list(root: ShareRoot, login: ShareLogin, document: ShareDocumentId): List<ShareEntry> =
@@ -85,6 +82,7 @@ class SmbShareClient(
      * @param document The file or folder; the share itself for an empty path.
      * @return Its entry.
      * @throws ShareUnreachableException When the server cannot be reached.
+     * @throws ConnectRefusedException When the hub refuses the connection to the share.
      * @throws ShareRefusedException When the server refuses.
      */
     fun stat(root: ShareRoot, login: ShareLogin, document: ShareDocumentId): ShareEntry = call(root, login) { share ->
@@ -108,6 +106,7 @@ class SmbShareClient(
      * @param isWrite Whether it is opened to write, made when missing and emptied first.
      * @return The open file, closed by the caller.
      * @throws ShareUnreachableException When the server cannot be reached.
+     * @throws ConnectRefusedException When the hub refuses the connection to the share.
      * @throws ShareRefusedException When the server refuses.
      */
     fun open(root: ShareRoot, login: ShareLogin, document: ShareDocumentId, isWrite: Boolean): ShareFile =
@@ -120,6 +119,7 @@ class SmbShareClient(
      * @param login Its login.
      * @param document The new folder.
      * @throws ShareUnreachableException When the server cannot be reached.
+     * @throws ConnectRefusedException When the hub refuses the connection to the share.
      * @throws ShareRefusedException When the server refuses.
      */
     fun mkdir(root: ShareRoot, login: ShareLogin, document: ShareDocumentId) =
@@ -132,6 +132,7 @@ class SmbShareClient(
      * @param login Its login.
      * @param document The file or folder.
      * @throws ShareUnreachableException When the server cannot be reached.
+     * @throws ConnectRefusedException When the hub refuses the connection to the share.
      * @throws ShareRefusedException When the server refuses.
      */
     fun delete(root: ShareRoot, login: ShareLogin, document: ShareDocumentId) = call(root, login) { share ->
@@ -160,12 +161,21 @@ class SmbShareClient(
     } catch (error: ShareUnreachableException) {
         throw error
     } catch (error: IOException) {
-        throw ShareUnreachableException("${root.host} does not answer", error)
+        throw refusedOf(error) ?: ShareUnreachableException("${root.host} does not answer", error)
     } catch (error: SMBRuntimeException) {
-        throw ShareUnreachableException("${root.host} does not answer", error)
+        throw refusedOf(error) ?: ShareUnreachableException("${root.host} does not answer", error)
     }
 
+    private fun refusedOf(error: Throwable): ConnectRefusedException? =
+        generateSequence(error) { it.cause }.filterIsInstance<ConnectRefusedException>().firstOrNull()
+
     private fun connect(root: ShareRoot, login: ShareLogin): SmbLink {
+        val sockets = ShareSocketFactory { streams(root) }
+        val config = SmbConfig.builder()
+            .withTimeout(ioTimeoutSeconds, TimeUnit.SECONDS)
+            .withSoTimeout(ioTimeoutSeconds, TimeUnit.SECONDS)
+            .withSocketFactory(sockets)
+            .build()
         val client = SMBClient(config)
         try {
             val connection = client.connect(root.host)
@@ -175,7 +185,7 @@ class SmbShareClient(
             return SmbLink(client, connection, share)
         } catch (error: Exception) {
             client.close()
-            throw error
+            throw sockets.refusal?.let { ConnectRefusedException(it.code, it.params) } ?: error
         }
     }
 

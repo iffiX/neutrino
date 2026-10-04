@@ -8,13 +8,15 @@ import io.github.iffix.neutrino.overlay.OverlayJob
  * @property isRefreshing Whether a refresh waits for the hub's state frame, a code or its 10 s.
  * @property overlayJob What the virtual network's button is doing.
  * @property isLeaving Whether a leave waits for the hub.
+ * @property isOpeningPanel Whether Panel makes the panel's forward and opens the browser.
  */
 data class HubJobs(
     val isRefreshing: Boolean = false,
     val overlayJob: OverlayJob = OverlayJob.NONE,
     val isLeaving: Boolean = false,
+    val isOpeningPanel: Boolean = false,
 ) {
     /** Whether any job runs on the hub. */
     val isAnyRunning: Boolean
-        get() = isRefreshing || isLeaving || overlayJob != OverlayJob.NONE
+        get() = isRefreshing || isLeaving || isOpeningPanel || overlayJob != OverlayJob.NONE
 }

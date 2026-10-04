@@ -358,7 +358,9 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
   const handleDelete = () =>
     confirm.ask({
       title: t("ui.credentials.delete_title", { name: value.name }),
-      body: keyDeleteBody(value.device_count),
+      body: value.is_relay_key
+        ? `${keyDeleteBody(value.device_count)} ${t("ui.credentials.key_delete_relay")}`
+        : keyDeleteBody(value.device_count),
       confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteKey(),
     });
@@ -400,6 +402,11 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
         >
           {deviceUsage(value.device_count)}
         </span>
+        {value.is_relay_key && (
+          <span className="key_card_tag key_card_tag--used">
+            {t("ui.overlay.relay_title")}
+          </span>
+        )}
         {value.created_at.length > 0 && (
           <span className="key_card_added">
             {t("ui.credentials.added", {

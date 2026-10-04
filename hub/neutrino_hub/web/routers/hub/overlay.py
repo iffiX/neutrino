@@ -12,8 +12,19 @@ import subprocess
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.overlay.config import enabled_providers, set_enabled
-from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
+from neutrino_hub.modules.overlay.constants import (
+    OVERLAY_ENGINES,
+    OVERLAY_RELAY,
+    OVERLAY_RELAY_STATE_CONNECTED,
+    OVERLAY_RELAY_TITLE,
+)
 from neutrino_hub.modules.overlay.ops import engine_devices, overlay_subnets
+from neutrino_hub.modules.overlay.relay_config import (
+    OverlayRelayConfig,
+    read_relay,
+    write_relay,
+)
+from neutrino_hub.modules.overlay.relay_ops import ssh_path
 from neutrino_hub.modules.overlay.route_check import find_subnet_overlap
 from neutrino_hub.modules.registry import MODULE_SPECS
 from neutrino_hub.modules.router.link_status import device_addresses
@@ -63,7 +74,9 @@ async def update_choice(
     Raises:
         HTTPException: 400 for an engine this hub does not run yet, that has
             no build for this machine, or whose network overlaps one this box
-            is already on; 502 when the converge step that follows fails.
+            is already on, and ``relay_ssh_missing`` for the relay on a
+            machine with no OpenSSH client; 502 when the converge step that
+            follows fails.
     """
     network = runtime.network()
     is_changed = False
@@ -80,11 +93,14 @@ async def update_choice(
         )
     if set(enabled_providers(network)) - was_enabled:
         _refuse_overlap(network)
+    relay = _relay_switched(request)
     # Written before the engines are touched: what the box is a member of is
     # the stored fact, and a daemon started against a configuration that was
     # never written is a machine on an overlay nothing records.
     if is_changed:
         runtime.write_network(network)
+    if relay is not None:
+        write_relay(relay)
     try:
         await runtime.converge_network()
     except (
@@ -137,6 +153,38 @@ def _refuse_overlap(network) -> None:
     subnet_overlap_refusal(network, overlay_subnets(enabled_providers(network)))
 
 
+def _relay_switched(request: OverlayChoiceRequest) -> "OverlayRelayConfig | None":
+    """The stored relay with the request's switch, when the switch moves it.
+
+    Args:
+        request: The switches.
+
+    Returns:
+        The relay to store, None when the request leaves it as it is.
+
+    Raises:
+        HTTPException: 400 ``relay_ssh_missing`` when it is turned on and
+            this machine has no OpenSSH client.
+    """
+    if request.relay is None:
+        return None
+    relay = _stored_relay()
+    if request.relay.is_enabled == relay.is_enabled:
+        return None
+    if request.relay.is_enabled and not ssh_path():
+        raise _bad_request("relay_ssh_missing")
+    relay.is_enabled = request.relay.is_enabled
+    return relay
+
+
+def _stored_relay() -> OverlayRelayConfig:
+    """The stored relay; a file that does not read is a relay never set."""
+    try:
+        return read_relay()
+    except ValueError:
+        return OverlayRelayConfig()
+
+
 def _switches(request: OverlayChoiceRequest) -> dict:
     """The engines the request names, by key, in the engine table's order."""
     named = {key: getattr(request, key, None) for key in OVERLAY_ENGINES}
@@ -173,6 +221,7 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
                 ),
             )
         )
+    kinds.append(_relay_kind(runtime, peers))
     return OverlayChoiceView(
         kinds=kinds,
         route_conflicts=[
@@ -192,6 +241,42 @@ def _view(runtime: PanelRuntime) -> OverlayChoiceView:
             for conflict in runtime.overlay_route_conflicts
         ],
     )
+
+
+def _relay_kind(runtime: PanelRuntime, peers: list) -> OverlayKindView:
+    """The relay's row, after the engines'.
+
+    Args:
+        runtime: The shared runtime, for where the relay stands.
+        peers: Where each online client's socket comes from.
+
+    Returns:
+        The row: installed when the system has an OpenSSH client, active
+        while it is ``connected``, and counting the clients whose socket
+        comes from loopback.
+    """
+    relay = _stored_relay()
+    return OverlayKindView(
+        key=OVERLAY_RELAY,
+        title=OVERLAY_RELAY_TITLE,
+        is_enabled=relay.is_enabled,
+        is_integrated=True,
+        is_supported=True,
+        is_installed=bool(ssh_path()),
+        is_active=runtime.relay_monitor.view()["state"]
+        == OVERLAY_RELAY_STATE_CONNECTED,
+        client_count=(
+            sum(1 for peer in peers if _is_loopback(peer)) if relay.is_enabled else 0
+        ),
+    )
+
+
+def _is_loopback(peer: str) -> bool:
+    """Whether a socket's address is a loopback one."""
+    try:
+        return ipaddress.ip_address(peer).is_loopback
+    except ValueError:
+        return False
 
 
 def _client_count(provider: str, addresses: dict, peers: list) -> int:

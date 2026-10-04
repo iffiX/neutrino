@@ -33,6 +33,9 @@ SYSTEM_OPTIONAL_UNITS = {
     # The other overlay: a network of your own machines with no management
     # plane at all, LGPL-3.0 and carried the same way.
     "easytier": "neutrino_hub_easytier.service",
+    # The third way in: the system's OpenSSH client holding a reverse forward
+    # to a server the person owns, started from a drop-in the panel renders.
+    "relay": "neutrino_hub_relay.service",
 }
 
 SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
@@ -45,6 +48,7 @@ SYSTEM_SUPERVISED_NAMES = (
     *(name for names in edition.hooks("supervised_names") for name in names),
     "cliproxyapi",
     "easytier",
+    "relay",
 )
 # A child that runs only while another one runs: it starts once that one
 # runs and is stopped before that one stops, restarts or is found ended.
@@ -141,6 +145,8 @@ SYSTEM_RUNTIME_PACKAGES = (
     # service is judged healthy. It is the client tool: a hub that publishes
     # no shares of its own still points devices at somebody else's NAS.
     "smbclient",
+    # The relay's reverse forward runs the system's own OpenSSH client.
+    "openssh-client",
 )
 
 # Wanted only by a machine that serves Wi-Fi, which is why it is a
@@ -176,12 +182,14 @@ SYSTEM_PACKAGE_NAMES = {
     },
     "rhel": {
         "iproute2": "iproute",
+        "openssh-client": "openssh-clients",
         "smbclient": "samba-client",
         "wpasupplicant": "wpa_supplicant",
         # RHEL builds venv into the interpreter rather than splitting it out.
         "python3-venv": None,
     },
     "arch": {
+        "openssh-client": "openssh",
         "wpasupplicant": "wpa_supplicant",
         "python3-venv": None,
     },
