@@ -174,6 +174,11 @@ DEVICE_VSCODE_TERMS_URL = "https://aka.ms/vscode-server-license"
 # administrator signs in with, and the secret the instance's tokens are
 # signed with.
 DEVICE_CLOUDCLI_MODULE = "cloudcli"
+# The npm registry each edition's agents install CloudCLI from.
+DEVICE_CLOUDCLI_NPM_REGISTRIES = {
+    "intl": "https://registry.npmjs.org",
+    "cn": "https://registry.npmmirror.com",
+}
 DEVICE_CLOUDCLI_LOGIN_KEY = "login_id"
 DEVICE_CLOUDCLI_PASSWORD_KEY = "web_password_sealed"  # scan: allow
 DEVICE_CLOUDCLI_SECRET_KEY = "token_secret_sealed"  # scan: allow

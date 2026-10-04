@@ -14,17 +14,17 @@ them is part of making the box true, and a unit already current is left
 alone.
 
 The apply runs the panel's converge steps in the panel's order: the enabled
-overlays start, then the routing state, dnsmasq and xray, and the overlays
-turned off stop last. The two pushes to devices and clients are the panel's;
+overlays start, then the routing state, dnsmasq and, where the tree carries
+the proxy, xray, and the overlays turned off stop last. The two pushes to devices and clients are the panel's;
 a peer is handed its state when it next reports to a running panel.
 """
 
 import argparse
-import json
 import subprocess
 import sys
 from socket import gethostname
 
+from neutrino_hub import edition
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.easytier.constants import (
@@ -50,13 +50,14 @@ from neutrino_hub.modules.router.controller import (
     RouterStateController,
     engine_cgroups,
     failure_text,
+    proxy_uid,
+    read_proxy_routing,
 )
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.modules.router.routes import (
     install_dnsmasq,
-    lookup_xray_uid,
     read_network_resolvers,
     record_network_resolvers,
 )
@@ -82,16 +83,13 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.web.panel_tls import ensure_served
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.modules.tun.ops import egress_interface
-from neutrino_hub.modules.xray.apply import XrayConfigApplier
-from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
-from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH
-from neutrino_hub.modules.xray.node_config import XrayNodeList
-from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
-from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
 
 # --- config ---
-COMPONENTS = ("router", "xray", "dnsmasq", "cliproxyapi", "overlay")
+# The proxy core's component comes from the edition table.
+PROXY_COMPONENTS = {
+    component.name: component for component in edition.hooks("apply_components")
+}
+COMPONENTS = ("router", *PROXY_COMPONENTS, "dnsmasq", "cliproxyapi", "overlay")
 
 
 def main() -> int:
@@ -200,29 +198,23 @@ def main() -> int:
 
 def _render(selected: tuple[str, ...]) -> dict:
     network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
-    routing = read_config("xray/routing.json")
+    routing = read_proxy_routing()
     artifacts: dict = {}
-    if "xray" in selected or "dnsmasq" in selected:
+    proxies = [name for name in PROXY_COMPONENTS if name in selected]
+    if proxies or "dnsmasq" in selected:
         artifacts["network_resolvers"] = read_network_resolvers(network)
 
-    if "xray" in selected:
-        node_list = XrayNodeList.from_dict(read_config("xray/nodes.json"))
-        resolve_node_secrets(node_list)
-        artifacts["xray"] = XrayConfigRenderer(
-            node_list=node_list,
-            routing=routing,
-            down_tags=_down_tags(),
-            is_transparent=is_linux(),
-            egress_interface=egress_interface(routing),
-            network_resolvers=artifacts["network_resolvers"],
-        ).render()
+    for name in proxies:
+        artifacts[name] = PROXY_COMPONENTS[name]().render(
+            routing=routing, network_resolvers=artifacts["network_resolvers"]
+        )
     if "router" in selected and not is_linux():
         artifacts["router"] = ""
     elif "router" in selected:
         artifacts["router"] = RouterNftRenderer(
             network=network,
             routing=routing,
-            xray_uid=lookup_xray_uid(),
+            xray_uid=proxy_uid(),
             overlay_devices=overlay_devices(network),
             engine_cgroups=list(engine_cgroups(routing)),
         ).render()
@@ -250,13 +242,6 @@ def _render(selected: tuple[str, ...]) -> dict:
     return artifacts
 
 
-def _down_tags() -> set[str]:
-    """The outbound tags whose newest stored measurement failed."""
-    store = XrayNodeHealthStore()
-    store.load()
-    return {tag for tag, health in store.health().items() if health.is_down}
-
-
 def _forget_orphan_device_dirs() -> list:
     """Delete every ``config/devices/`` directory no stored device names."""
     stored = {device.id for device in DeviceRegistry().all_stored()}
@@ -269,9 +254,9 @@ def _print_artifacts(artifacts: dict) -> None:
         print("--- the network's resolvers ---")
         print(", ".join(f"{row['address']}#{row['port']}" for row in rows))
         print()
-    if "xray" in artifacts:
-        print(f"--- {XRAY_CONFIG_PATH} ---")
-        print(json.dumps(artifacts["xray"], indent=2))
+    for name, component in PROXY_COMPONENTS.items():
+        if name in artifacts:
+            print(component().describe(artifacts[name]))
     if artifacts.get("router"):
         print(f"\n--- {ROUTER_NFT_PATH} ---")
         print(artifacts["router"])
@@ -317,11 +302,12 @@ def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:
     """
     if "network_resolvers" in artifacts:
         record_network_resolvers(artifacts["network_resolvers"])
-    if "xray" in artifacts:
-        # Validates before writing, and must happen even with --skip-apply:
-        # the xray unit points at this file, so systemd cannot start the
-        # service until it exists.
-        XrayConfigApplier().write(artifacts["xray"])
+    for name, component in PROXY_COMPONENTS.items():
+        if name in artifacts:
+            # Validates before writing, and must happen even with
+            # --skip-apply: the xray unit points at this file, so systemd
+            # cannot start the service until it exists.
+            component().write(artifacts[name])
     if "dnsmasq" in artifacts and is_apply_skipped:
         write_generated(ROUTER_DNSMASQ_PATH, artifacts["dnsmasq"])
 
@@ -347,9 +333,10 @@ def _apply(artifacts: dict) -> None:
             if install_dnsmasq(artifacts["dnsmasq"])
             else "dnsmasq unchanged"
         )
-    if "xray" in artifacts:
-        # _write already validated and installed the config.
-        XrayConfigApplier().restart()
+    for name, component in PROXY_COMPONENTS.items():
+        if name in artifacts:
+            # _write already validated and installed the config.
+            component().restart()
     if "cliproxyapi" in artifacts:
         # The applier renders again with the key the belt above put in place,
         # writes the YAML with the served fingerprint, and restarts — the same

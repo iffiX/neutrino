@@ -8,7 +8,7 @@ their hash, and the address sampler pushes both when it changes.
 
 from fastapi import HTTPException, status
 
-from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
+from neutrino_hub.modules.overlay.ops import overlay_parts
 from neutrino_hub.modules.router.constants import ROUTER_OVERLAY_NETBIRD
 from neutrino_hub.modules.router.link_status import device_addresses
 from neutrino_hub.web.agent_tls import certificate_fingerprint
@@ -76,9 +76,10 @@ def overlay_name(network) -> str:
         exposed, not running, or has no name.
     """
     overlay = network.overlay(ROUTER_OVERLAY_NETBIRD)
-    if overlay is None or not overlay.is_exposed:
+    part = overlay_parts().get(ROUTER_OVERLAY_NETBIRD)
+    if overlay is None or not overlay.is_exposed or part is None:
         return ""
-    return str(NetbirdStatusReader().survey().fqdn or "")
+    return part().name()
 
 
 def enrollment_link_parts(runtime) -> tuple[list, str]:

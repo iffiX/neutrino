@@ -43,6 +43,8 @@ TUN_DEVICE_NAMES = {"darwin": "utun225", "windows": "neutrino_tun"}
 # no served network or overlay uses.
 TUN_ADDRESS = "198.18.0.1"  # scan: allow
 TUN_PREFIX_LENGTH = 30
+# The device's network, which an agent's report never counts as its own.
+TUN_NETWORK = f"{TUN_ADDRESS}/{TUN_PREFIX_LENGTH}"
 TUN_MTU = 1500
 TUN_LOG_LEVEL = "warn"
 # The two halves of the address space, sent to the device. Each is longer

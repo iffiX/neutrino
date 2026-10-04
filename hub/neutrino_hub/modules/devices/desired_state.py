@@ -31,6 +31,7 @@ import shutil
 import string
 import time
 
+from neutrino_hub.edition import EDITION
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.credentials.vault import (
     SecretVault,
@@ -43,6 +44,7 @@ from neutrino_hub.modules.devices.catalog import resolved_modules
 from neutrino_hub.modules.devices.constants import (
     DEVICE_CLOUDCLI_LOGIN_KEY,
     DEVICE_CLOUDCLI_MODULE,
+    DEVICE_CLOUDCLI_NPM_REGISTRIES,
     DEVICE_CLOUDCLI_PASSWORD_AAD,
     DEVICE_CLOUDCLI_PASSWORD_KEY,
     DEVICE_CLOUDCLI_SECRET_AAD,
@@ -127,7 +129,9 @@ def vscode_agent_config(stored: dict, platform: dict) -> dict:
     return {"address": "", "instances": instances}
 
 
-def cloudcli_agent_config(stored: dict, platform: dict, gateway: dict) -> dict:
+def cloudcli_agent_config(
+    stored: dict, platform: dict, gateway: dict, *, edition: str = EDITION
+) -> dict:
     """What the agent is sent for CloudCLI.
 
     Args:
@@ -137,11 +141,13 @@ def cloudcli_agent_config(stored: dict, platform: dict, gateway: dict) -> dict:
             sent a password.
         gateway: ``{gateway_url, gateway_key}``: the AI gateway as the
             device reaches it, and the device's own key.
+        edition: The hub's edition, whose npm registry the agent installs
+            CloudCLI from.
 
     Returns:
-        ``{gateway_url, gateway_key, instances: [{account, port,
-        web_password, token_secret, password}]}``, both secrets opened and
-        the password taken from the instance's login.
+        ``{gateway_url, gateway_key, npm_registry, instances: [{account,
+        port, web_password, token_secret, password}]}``, both secrets opened
+        and the password taken from the instance's login.
     """
     is_windows = platform.get("os") == VSCODE_PASSWORD_OS
     instances = []
@@ -166,6 +172,7 @@ def cloudcli_agent_config(stored: dict, platform: dict, gateway: dict) -> dict:
     return {
         "gateway_url": str(gateway.get("gateway_url", "") or ""),
         "gateway_key": str(gateway.get("gateway_key", "") or ""),
+        "npm_registry": DEVICE_CLOUDCLI_NPM_REGISTRIES[edition],
         "instances": instances,
     }
 

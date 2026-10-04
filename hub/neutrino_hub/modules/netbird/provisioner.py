@@ -247,3 +247,20 @@ class NetbirdProvisioner:
             NETBIRD_BINARY_PATH.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(Path(workdir) / NETBIRD_BINARY_NAME), NETBIRD_BINARY_PATH)
         NETBIRD_BINARY_PATH.chmod(0o755)
+
+
+# NetBird's entry of the modules the panel installs, reached through the
+# edition table as ``(key, ModuleSpec fields)``.
+NETBIRD_MODULE_SPEC = (
+    "netbird",
+    {
+        "unit": NETBIRD_UNIT,
+        "provisioner": NetbirdProvisioner,
+        "architectures": NETBIRD_SUPPORTED_ARCHITECTURES,
+        "install_note": (
+            "remote access to this gateway from anywhere "
+            "(the client is in the package)"
+        ),
+        "data_description": "this machine's peer identity",
+    },
+)

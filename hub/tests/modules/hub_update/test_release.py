@@ -134,6 +134,47 @@ def test_the_latest_release_names_this_boxs_package():
     assert found.page_url.endswith("/v0.3.1")
 
 
+def test_a_mainland_hub_reads_its_release_off_gitee():
+    """Gitee's reply names no page and no publish time, only when the release
+    was made, and its files under its own download address."""
+    gitee = "https://gitee.com/iffiX/neutrino/releases/download/{tag}/{name}"
+    name = ASSET.format(version="0.3.1")
+    reply = {
+        "tag_name": "v0.3.1",
+        "created_at": "2026-10-01T20:00:00+08:00",
+        "body": "## Changes",
+        "assets": [
+            {
+                "name": entry,
+                "browser_download_url": gitee.format(tag="v0.3.1", name=entry),
+            }
+            for entry in (name, "SHA256SUMS")
+        ],
+    }
+    checker = HubReleaseChecker(
+        asset=ASSET,
+        edition="cn",
+        fetch_bytes=answering(
+            {
+                "https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest": (
+                    json.dumps(reply).encode("utf-8")
+                )
+            }
+        ),
+    )
+
+    found = checker.latest()
+
+    assert found.asset_url == gitee.format(tag="v0.3.1", name=name)
+    assert found.checksums_url == gitee.format(tag="v0.3.1", name="SHA256SUMS")
+    assert found.published_at == "2026-10-01T20:00:00+08:00"
+    assert found.page_url == "https://gitee.com/iffiX/neutrino/releases/tag/v0.3.1"
+    assert (
+        HubReleaseChecker(asset=ASSET, edition="cn", fetch_bytes=answering({})).latest()
+        is None
+    )
+
+
 def test_nothing_published_reads_as_no_release():
     checker = HubReleaseChecker(asset=ASSET, fetch_bytes=answering({}))
 

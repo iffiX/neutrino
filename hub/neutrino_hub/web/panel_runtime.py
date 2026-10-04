@@ -8,12 +8,12 @@ by itself.
 
 import asyncio
 import ipaddress
-import json
 import logging
 import re
 import subprocess
 import threading
 
+from neutrino_hub import edition
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.routes import (
     install_dnsmasq,
@@ -31,6 +31,7 @@ from neutrino_hub.modules.router.controller import (
     failure_codes,
     engine_cgroups,
     failure_text,
+    read_proxy_routing,
     rendered_engine_cgroups,
     rendered_overlay_devices,
     router_lock,
@@ -95,25 +96,6 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.web.task_stream import TaskStreamRegistry
-from neutrino_hub.modules.xray.apply import XrayConfigApplier
-from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
-from neutrino_hub.modules.tun.ops import egress_interface
-from neutrino_hub.modules.xray.constants import (
-    XRAY_CONFIG_PATH,
-    XRAY_DIRECT_DNS_FIELD,
-    XRAY_SCOPE_SWITCHES,
-)
-from neutrino_hub.modules.xray.resolvers import (
-    direct_resolvers,
-    read_resolvers,
-    with_resolver_lists,
-)
-from neutrino_hub.modules.xray.exit_controller import XrayExitController
-from neutrino_hub.modules.xray.node_config import XrayNodeList
-from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
-from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
-from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
-from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 
 from neutrino_hub.modules.router.constants import ROUTER_NFT_PATH
 
@@ -137,21 +119,26 @@ class PanelRuntime:
         self.tasks = TaskStreamRegistry(on_change=self._publish_task)
         self.services = process_controller()
         self.listening_ports = ListeningPortReader()
-        self.stats = XrayStatsClient()
-        self.node_probe = XrayNodeProbe(resolver_of=self._direct_resolver)
-        # Every node's measurement window, and the one thing that measures
-        # them and pins the exit. Built here and started by the application;
-        # a CLI run builds a runtime and never wants the thread.
-        self.node_health = XrayNodeHealthStore()
-        self.exit_controller = XrayExitController(
-            probe=self.node_probe,
-            store=self.node_health,
-            api=self.stats,
-            node_list_of=self.node_list,
-            routing_of=self.routing,
-            rendered_config_of=self.rendered_xray_config,
-            on_change=self._publish_nodes,
-            on_out_of_sync=self._mark_config_dirty,
+        # The proxy's part, from the edition table: its stats client, its
+        # probe, every node's measurement window, and the one thing that
+        # measures them and pins the exit. Built here and started by the
+        # application; a CLI run builds a runtime and never wants the
+        # thread. None in a tree without the proxy, and so are the four
+        # names the proxy's own routes reach them by.
+        part = edition.hook("panel_proxy")
+        self.proxy = (
+            None
+            if part is None
+            else part(
+                on_change=self._publish_nodes,
+                on_out_of_sync=self._mark_config_dirty,
+            )
+        )
+        self.stats = self.proxy.stats if self.proxy is not None else None
+        self.node_probe = self.proxy.node_probe if self.proxy is not None else None
+        self.node_health = self.proxy.node_health if self.proxy is not None else None
+        self.exit_controller = (
+            self.proxy.exit_controller if self.proxy is not None else None
         )
         self.declared_probe = DeclaredServiceProbe()
         self.served_models = CliproxyApiServedModelCache()
@@ -192,7 +179,7 @@ class PanelRuntime:
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
         # The bytes a module's ``package`` stream serves, fetched once and
         # kept; the agent installs them by the recipe its state carries.
-        self.agent_modules = AgentModuleCache()
+        self.agent_modules = AgentModuleCache(edition=edition.EDITION)
         # The hub's own agent packages, seeded by its package and topped up
         # from the release for a platform it was not built for.
         self.agent_packages = AgentPackageCache()
@@ -262,7 +249,7 @@ class PanelRuntime:
         """
         try:
             network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
-            routing = read_config("xray/routing.json")
+            routing = read_proxy_routing()
         except (FileNotFoundError, ValueError):
             return False
         found = overlay_devices(network)
@@ -346,19 +333,9 @@ class PanelRuntime:
 
         Returns:
             Parsed ``config/xray/routing.json``, its two resolver fields read
-            as lists.
+            as lists; empty in a tree without the proxy.
         """
-        return with_resolver_lists(read_config("xray/routing.json"))
-
-    def _direct_resolver(self) -> tuple:
-        """The first direct resolver, for the lookups the proxy makes for itself.
-
-        Returns:
-            ``(address, port)`` of the first row of ``direct_dns``, else of
-            the network's resolvers the last render used.
-        """
-        first = direct_resolvers(self.routing(), rendered_network_resolvers())[0]
-        return str(first["address"]), int(first["port"])
+        return self.proxy.routing() if self.proxy is not None else {}
 
     def follow_network_resolvers(self) -> bool:
         """Converge again when the network's resolvers moved.
@@ -376,7 +353,11 @@ class PanelRuntime:
             routing = self.routing()
         except (FileNotFoundError, ValueError):
             return False
-        if not is_linux() and read_resolvers(routing, XRAY_DIRECT_DNS_FIELD):
+        if (
+            not is_linux()
+            and self.proxy is not None
+            and self.proxy.has_direct_resolvers(routing)
+        ):
             return False
         found = read_network_resolvers(network)
         if found == rendered_network_resolvers():
@@ -394,26 +375,16 @@ class PanelRuntime:
             LOGGER.warning("network resolvers not applied: %s", error)
         return True
 
-    def node_list(self) -> XrayNodeList:
-        """Read the current node list.
+    def node_list(self):
+        """Read the current node list, for the proxy's own routes.
 
         Returns:
             Parsed ``config/xray/nodes.json``.
-        """
-        return XrayNodeList.from_dict(read_config("xray/nodes.json"))
-
-    def rendered_xray_config(self) -> dict:
-        """Read the xray configuration the last apply installed.
-
-        Returns:
-            The parsed generated file. Only its outbound tags are read by the
-            exit controller; the file itself carries every node's secret.
 
         Raises:
-            OSError: If the generated file cannot be read.
-            ValueError: If it does not parse as JSON.
+            AttributeError: In a tree without the proxy.
         """
-        return json.loads(XRAY_CONFIG_PATH.read_text(encoding="utf-8"))
+        return self.proxy.node_list()
 
     def link_status(self) -> RouterLinkStatus:
         """Build a reader for the live state of the interfaces.
@@ -440,8 +411,10 @@ class PanelRuntime:
             serves only its SOCKS ports is ``ports``, not ``lan``: reporting
             a diversion there would answer a question that mode never poses.
             When nothing has been applied yet, the configured intention is
-            the best available answer.
+            the best available answer. ``off`` in a tree without the proxy.
         """
+        if self.proxy is None:
+            return WEB_PROXY_SCOPE_OFF
         routing = self.routing()
         network = self.network()
         try:
@@ -575,23 +548,11 @@ class PanelRuntime:
             FileNotFoundError: When the box is not set up.
         """
         network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
-        node_list = self.node_list()
-        routing = self._settled_routing(node_list)
-        resolve_node_secrets(node_list)
         network_resolvers = read_network_resolvers(network)
         record_network_resolvers(network_resolvers)
-        xray_config = XrayConfigRenderer(
-            node_list=node_list,
-            routing=routing,
-            down_tags={
-                tag
-                for tag, health in self.exit_controller.healths().items()
-                if health.is_down
-            },
-            is_transparent=is_linux(),
-            egress_interface=egress_interface(routing),
-            network_resolvers=network_resolvers,
-        ).render()
+        proxy_config = (
+            self.proxy.render(network_resolvers) if self.proxy is not None else None
+        )
         switcher = OverlaySwitcher()
         changes: list[dict] = []
         failures: list[str] = []
@@ -619,17 +580,11 @@ class PanelRuntime:
             if is_linux() and install_dnsmasq(self._dnsmasq_config(network_resolvers)):
                 changes.append({"code": "dnsmasq_restarted", "params": {}})
             # A refused xray configuration stops none of the other steps.
-            try:
-                if XrayConfigApplier().apply_if_changed(xray_config):
-                    changes.append({"code": "xray_restarted", "params": {}})
-            except (subprocess.SubprocessError, OSError, RuntimeError) as error:
-                failures.append(f"xray: {command_failure_text(error)}")
-                failed.append(
-                    {
-                        "code": "xray_refused",
-                        "params": {"detail": command_failure_text(error)},
-                    }
-                )
+            if self.proxy is not None:
+                proxy_changes, proxy_failed, sentences = self.proxy.apply(proxy_config)
+                changes += proxy_changes
+                failed += proxy_failed
+                failures += sentences
             changes += self._push_desired_states()
             channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
             switcher.stop(network)
@@ -742,27 +697,6 @@ class PanelRuntime:
         """Say the AI gateway's counters or served list moved."""
         self.events.publish(WEB_EVENT_AI_USAGE)
 
-    def _settled_routing(self, node_list: XrayNodeList) -> dict:
-        """The routing options, with the scopes switched off if they cannot run.
-
-        A scope with no enabled node has nothing to leave through and renders
-        as off. Writing that back means the panel and the box agree about it
-        rather than the page showing switches that do nothing.
-
-        Args:
-            node_list: The nodes as they are now.
-
-        Returns:
-            The routing options as they will be rendered.
-        """
-        routing = self.routing()
-        is_scoped = any(routing.get(switch, False) for switch in XRAY_SCOPE_SWITCHES)
-        if is_scoped and not node_list.enabled_nodes:
-            for switch in XRAY_SCOPE_SWITCHES:
-                routing[switch] = False
-            write_config("xray/routing.json", routing)
-        return routing
-
     def _dnsmasq_config(self, network_resolvers: list[dict]) -> str:
         """The dnsmasq configuration every apply path installs.
 
@@ -778,7 +712,7 @@ class PanelRuntime:
         """
         return RouterDnsmasqRenderer(
             network=self.network(),
-            routing=self._settled_routing(self.node_list()),
+            routing=(self.proxy.settled_routing() if self.proxy is not None else {}),
             network_resolvers=network_resolvers,
         ).render()
 

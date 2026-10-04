@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
+from neutrino_hub import edition
 from neutrino_hub.platforms.detect import is_linux
 from neutrino_hub.system.constants import SYSTEM_CORE_UNITS
 from neutrino_hub.utils.subprocess_run import run
@@ -281,10 +281,12 @@ class DnsLogReader:
             router configures on loopback, ``direct`` for every other.
         """
         address, _, port = server.partition("#")
+        inbound = edition.hook("proxy_dns_inbound")
         # Older dnsmasq builds log the resolver without its port.
-        is_xray_resolver = address == XRAY_DNS_LISTEN and port in (
-            "",
-            str(XRAY_DNS_PORT),
+        is_xray_resolver = (
+            inbound is not None
+            and address == inbound[0]
+            and port in ("", str(inbound[1]))
         )
         return WEB_DNS_OUTBOUND_XRAY if is_xray_resolver else WEB_DNS_OUTBOUND_DIRECT
 

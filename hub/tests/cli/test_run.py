@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.cli import run
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
@@ -175,12 +176,22 @@ class _Controller:
 
 @pytest.fixture
 def service_roots(monkeypatch, tmp_path):
-    for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT", "UTILS_STATE_ROOT"):
+    for name in ("UTILS_LOG_ROOT", "UTILS_RUNTIME_ROOT"):
         monkeypatch.setattr(run, name, tmp_path / name.lower())
     monkeypatch.setattr(run, "CLIPROXYAPI_DIR", tmp_path / "state" / "cliproxyapi")
     monkeypatch.setattr(run, "reload_firewall", lambda: None)
-    monkeypatch.setattr(run, "withdraw_tun", lambda: [])
+    _start_hooks(monkeypatch, lambda: None)
     return tmp_path
+
+
+def _start_hooks(monkeypatch, on_start):
+    """Stand one function in for what the edition table runs as the service starts."""
+    hooks = edition.hooks
+
+    def replaced(point):
+        return (on_start,) if point == "service_start" else hooks(point)
+
+    monkeypatch.setattr(edition, "hooks", replaced)
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
@@ -196,21 +207,20 @@ def test_the_service_serves_the_panel_and_supervises_the_children(
     monkeypatch.setattr(
         run, "reload_firewall", lambda: controller.asked.append(("firewall",))
     )
-    monkeypatch.setattr(
-        run, "withdraw_tun", lambda: controller.asked.append(("tun_withdrawn",))
-    )
+    _start_hooks(monkeypatch, lambda: controller.asked.append(("started",)))
 
     assert run._supervise(argparse.Namespace()) == 0
     assert controller.asked == [
         ("firewall",),
-        ("tun_withdrawn",),
-        ("supervise", ["cliproxyapi", "netbird", "xray"]),
+        ("started",),
+        ("supervise", sorted(run.child_start_lines())),
         ("panel",),
         ("shutdown",),
     ]
     assert (service_roots / "utils_runtime_root").is_dir()
 
 
+@pytest.mark.feature("proxy")
 def test_the_service_hands_every_ended_child_to_the_tun_keeper(
     monkeypatch, service_roots
 ):
@@ -223,7 +233,7 @@ def test_the_service_hands_every_ended_child_to_the_tun_keeper(
 
     run._supervise(argparse.Namespace())
 
-    assert isinstance(controller.watcher, run.TunRouteKeeper)
+    assert type(controller.watcher).__name__ == "TunRouteKeeper"
 
 
 def test_a_firewall_anchor_that_does_not_load_leaves_the_service_running(
@@ -259,13 +269,6 @@ def test_the_children_stop_when_the_panel_fails(monkeypatch, service_roots):
     assert controller.asked[-1] == ("shutdown",)
 
 
-def test_the_proxy_core_starts_with_its_rendered_configuration_and_geodata():
-    line = run.child_start_lines()["xray"]
-
-    assert line.argv == [run.XRAY_BINARY, "run", "-config", str(run.XRAY_CONFIG_PATH)]
-    assert line.env == {run.XRAY_ASSET_ENV: str(run.XRAY_ASSET_DIR)}
-
-
 def test_the_ai_gateway_starts_in_its_own_directory():
     line = run.child_start_lines()["cliproxyapi"]
 
@@ -276,41 +279,20 @@ def test_the_ai_gateway_starts_in_its_own_directory():
     assert line.cwd == str(run.CLIPROXYAPI_DIR)
 
 
-@pytest.mark.parametrize(
-    ("system", "address"),
-    [
-        ("darwin", "unix:///var/run/neutrino/hub/netbird.sock"),
-        ("win32", "tcp://127.0.0.1:41732"),
-    ],
-)
-def test_netbird_runs_on_the_hubs_own_address_and_log(monkeypatch, system, address):
-    from pathlib import Path
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
+def test_the_service_runs_the_proxy_core_and_netbird_where_the_tree_carries_them():
+    assert sorted(run.child_start_lines()) == ["cliproxyapi", "netbird", "xray"]
 
-    monkeypatch.setattr(run.sys, "platform", system)
-    monkeypatch.setattr(
-        "neutrino_hub.utils.constants.UTILS_RUNTIME_ROOT", Path("/var/run/neutrino/hub")
-    )
-    monkeypatch.setattr(run, "UTILS_STATE_ROOT", Path("/state"))
-    monkeypatch.setattr(run, "UTILS_LOG_ROOT", Path("/log"))
 
-    line = run.child_start_lines()["netbird"]
-
-    assert line.argv[1:] == [
-        "service",
-        "run",
-        "--config",
-        str(Path("/state/netbird/config.json")),
-        "--log-file",
-        str(Path("/log/netbird.log")),
-        "--daemon-addr",
-        address,
-    ]
-    assert line.log_name == "netbird_console"
+@pytest.mark.feature("proxy")
+def test_a_plain_run_on_linux_starts_the_proxy_core_first():
+    assert list(run._run_children()) == ["xray", "cliproxyapi"]
 
 
 def test_the_only_forms_are_refused_outside_linux(monkeypatch, capsys):
     monkeypatch.setattr(run.sys, "platform", "darwin")
-    monkeypatch.setattr(run.sys, "argv", ["nhub run", "--only-xray"])
+    monkeypatch.setattr(run.sys, "argv", ["nhub run", "--only-dnsmasq"])
 
     assert run.main() == 2
     assert "systemd unit" in capsys.readouterr().err
@@ -326,7 +308,8 @@ def test_linux_without_only_supervises_as_it_always_did(monkeypatch):
     )
 
     assert run._supervise(argparse.Namespace()) == 0
-    assert started == ["xray", "cliproxyapi"]
+    assert started == list(run._run_children())
+    assert started[-1] == "cliproxyapi"
 
 
 @pytest.fixture

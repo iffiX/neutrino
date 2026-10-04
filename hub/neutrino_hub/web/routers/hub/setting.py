@@ -28,6 +28,7 @@ from fastapi import (
 from fastapi.responses import Response, StreamingResponse
 from cryptography import x509
 
+from neutrino_hub import edition
 from neutrino_hub.exceptions import (
     HubUpdateError,
     PasswordRefusedError,
@@ -112,18 +113,12 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub import HUB_PACKAGE_ASSET, HUB_VERSION
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os
+from neutrino_hub.modules.router.constants import (
+    ROUTER_MODE_ROUTER,
+    ROUTER_MODES_KEYS,
+)
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
-from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
-from neutrino_hub.modules.xray import geodata
-from neutrino_hub.modules.tun.constants import TUN_VERSION
-from neutrino_hub.modules.xray.constants import (
-    XRAY_BINARY,
-    XRAY_GEODATA,
-    XRAY_GEODATA_GEOIP_FILE,
-    XRAY_GEODATA_GEOSITE_FILE,
-    XRAY_VERSION,
-)
 
 router = APIRouter(
     prefix="/api/hub/setting", tags=["setting"], dependencies=[Depends(require_session)]
@@ -159,6 +154,10 @@ BACKUP_ERROR_PASSPHRASE_WRONG = "vault_passphrase_wrong"
 BACKUP_ERROR_TOO_LARGE = "backup_too_large"
 BACKUP_ERROR_UNEXPECTED_PATH = "backup_unexpected_path"
 BACKUP_ERROR_UNEXPECTED_MEMBER = "backup_unexpected_member"
+BACKUP_ERROR_MODE_UNAVAILABLE = "backup_mode_unavailable"
+# The member naming the network mode, which a hub restores only when it
+# offers that mode.
+BACKUP_NETWORK_MEMBER = "config/router/network.json"
 # The 422s the page words when it is asked for a language or a theme nobody
 # ships.
 SETTINGS_ERROR_LANGUAGE_UNKNOWN = "language_unknown"
@@ -697,8 +696,10 @@ async def restore(
     Raises:
         HTTPException: 400 when the file is too large, is not named like a
             backup, does not carry this panel's manifest, fails a digest,
-            holds a member that would land outside ``config/``, or the
-            passphrase is missing or wrong. This endpoint unpacks as root, so
+            holds a member that would land outside ``config/``, sets the
+            hub up in a network mode this hub does not offer, or the
+            passphrase is missing or wrong. The files of a feature this
+            tree leaves out are restored and read by nothing. This endpoint unpacks as root, so
             where each member resolves to is checked rather than where its
             name appears to start.
     """
@@ -711,6 +712,7 @@ async def restore(
     contents = _read_archive(blob)
     _check_manifest(contents)
     _check_digests(contents)
+    _check_mode(contents)
     data_key = _unwrapped_key(contents, vault_passphrase)
     with CONFIG_WRITE_LOCK:
         try:
@@ -871,6 +873,30 @@ def _check_digests(contents: dict[str, bytes]) -> None:
             raise _coded_bad_request(BACKUP_ERROR_CORRUPT)
 
 
+def _check_mode(contents: dict[str, bytes]) -> None:
+    """Confirm the backup's network mode is one this hub offers.
+
+    A backup made on a hub with the proxy may set the box up as a side
+    gateway, a mode a hub without the proxy does not offer.
+
+    Args:
+        contents: The archive's regular members.
+
+    Raises:
+        HTTPException: 400 ``backup_mode_unavailable {mode}`` when the
+            stored mode is not one of :data:`ROUTER_MODES_KEYS`.
+    """
+    stored = contents.get(BACKUP_NETWORK_MEMBER)
+    if stored is None:
+        return
+    try:
+        mode = json.loads(stored).get("mode", ROUTER_MODE_ROUTER)
+    except (ValueError, AttributeError) as error:
+        raise _coded_bad_request(BACKUP_ERROR_CORRUPT) from error
+    if mode not in ROUTER_MODES_KEYS:
+        raise _coded_bad_request(BACKUP_ERROR_MODE_UNAVAILABLE, mode=str(mode))
+
+
 def _unwrapped_key(contents: dict[str, bytes], vault_passphrase: str) -> bytes:
     """Open the archive's wrapped data key with the passphrase.
 
@@ -976,19 +1002,6 @@ def _checked_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     return member
 
 
-def _geodata_installed() -> str:
-    """Name the release behind each geodata database the box loads.
-
-    Returns:
-        One `database release` pair per file, in name order. A box that has
-        never taken a newer release names what the package carries.
-    """
-    return " · ".join(
-        f"{name.removesuffix('.dat')} {release}"
-        for name, release in sorted(geodata.installed().releases.items())
-    )
-
-
 @router.get("/about", response_model=AboutView)
 def about() -> AboutView:
     """Read the version of every carried component, and host uptime.
@@ -996,16 +1009,18 @@ def about() -> AboutView:
     Returns:
         A version string per carried component, the acknowledgements the
         licenses of what this hub conveys oblige, plus the system, its
-        version, the kernel and uptime.
+        version, the kernel and uptime. xray's and the geodata's versions
+        are empty in a tree without the proxy.
     """
-    xray_version = run([XRAY_BINARY, "version"], is_checked=False).stdout
+    versions = {}
+    for about_versions in edition.hooks("about_versions"):
+        versions.update(about_versions())
     system = hub_os()
     return AboutView(
-        xray_version=(xray_version.splitlines() or ["not installed"])[0],
+        **versions,
         gateway_version=GATEWAY_VERSION,
         cliproxyapi_version=CLIPROXYAPI_VERSION,
         python_version=sys.version.split()[0],
-        geodata_version=_geodata_installed(),
         kernel=platform.release(),
         os=system,
         os_version=_os_version(system),
@@ -1311,27 +1326,14 @@ def _unreachable(error: Exception) -> HTTPException:
 # What the hub package itself carries, credited with the exact tag each
 # binary was built from, and the systems whose package carries it: None for
 # every system. The agent and the client carry RustDesk and cc-switch and
-# credit those in their own packages.
+# credit those in their own packages. What the proxy and NetBird carry comes
+# from the edition table.
 CARRIED_COMPONENTS = (
-    (
-        "Xray-core",
-        XRAY_VERSION,
-        "MPL-2.0",
-        "https://github.com/XTLS/Xray-core/tree/v{}",
-        None,
-    ),
     (
         "CLIProxyAPI",
         CLIPROXYAPI_VERSION,
         "MIT",
         "https://github.com/router-for-me/CLIProxyAPI/tree/v{}",
-        None,
-    ),
-    (
-        "NetBird",
-        NETBIRD_VERSION,
-        "BSD-3-Clause",
-        "https://github.com/netbirdio/netbird/tree/v{}",
         None,
     ),
     (
@@ -1342,32 +1344,11 @@ CARRIED_COMPONENTS = (
         None,
     ),
     (
-        "tun2socks",
-        TUN_VERSION,
-        "MIT",
-        "https://github.com/xjasonlyu/tun2socks/tree/v{}",
-        (PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS),
-    ),
-    (
         "Wintun",
         "",
         "Wintun Prebuilt Binaries License",
         "https://git.zx2c4.com/wintun/",
         (PLATFORM_OS_WINDOWS,),
-    ),
-    (
-        "v2fly geoip",
-        XRAY_GEODATA[XRAY_GEODATA_GEOIP_FILE]["url"].split("/")[-2],
-        "CC-BY-SA-4.0",
-        "https://github.com/v2fly/geoip/tree/{}",
-        None,
-    ),
-    (
-        "v2fly domain-list-community",
-        XRAY_GEODATA[XRAY_GEODATA_GEOSITE_FILE]["url"].split("/")[-2],
-        "MIT",
-        "https://github.com/v2fly/domain-list-community/tree/{}",
-        None,
     ),
 )
 
@@ -1376,9 +1357,15 @@ def _acknowledgements() -> list[AcknowledgementView]:
     """Every component this hub's package carries on this system.
 
     Returns:
-        The acknowledgements, in the order of :data:`CARRIED_COMPONENTS`,
-        each with the exact tag it was built from.
+        The acknowledgements, in the order of :data:`CARRIED_COMPONENTS`
+        and then the edition table's, each with the exact tag it was built
+        from.
     """
+    components = CARRIED_COMPONENTS + tuple(
+        component
+        for components in edition.hooks("about_components")
+        for component in components
+    )
     system = hub_os()
     return [
         AcknowledgementView(
@@ -1387,6 +1374,6 @@ def _acknowledgements() -> list[AcknowledgementView]:
             license=license_name,
             corresponding_source=source.format(version),
         )
-        for name, version, license_name, source, systems in CARRIED_COMPONENTS
+        for name, version, license_name, source, systems in components
         if systems is None or system in systems
     ]

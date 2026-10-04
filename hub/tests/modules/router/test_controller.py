@@ -7,6 +7,7 @@ appliers, which are replaced here by recorders.
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.modules.router import controller, routes
 from neutrino_hub.modules.router.constants import (
     ROUTER_CODE_COMMAND_FAILED,
@@ -106,7 +107,10 @@ def box(monkeypatch, tmp_path):
     kernel = Kernel()
     Interfaces.built, Interfaces.results, Interfaces.calls = [], [], []
     monkeypatch.setattr(controller, "read_config", lambda name: files[name])
-    monkeypatch.setattr(controller, "lookup_xray_uid", lambda: 0)
+    monkeypatch.setattr(
+        controller, "read_proxy_routing", lambda: files["xray/routing.json"]
+    )
+    monkeypatch.setattr(controller, "proxy_uid", lambda: 0)
     monkeypatch.setattr(controller, "ROUTER_NFT_PATH", tmp_path / "router.nft")
     monkeypatch.setattr(
         controller, "write_generated", lambda path, text: path.write_text(text)
@@ -114,15 +118,24 @@ def box(monkeypatch, tmp_path):
     monkeypatch.setattr(controller, "RouterInterfaceApplier", Interfaces)
     monkeypatch.setattr(controller, "admin_up_interfaces", lambda: {"enp1s0", "wlp3s0"})
     monkeypatch.setattr(routes, "run", kernel)
-    monkeypatch.setattr(controller, "NetbirdInboundGate", _Gate)
+    gated(monkeypatch, _Gate)
     return files, kernel
 
 
 class _Gate:
-    """A NetBird daemon that already agrees."""
+    """NetBird's part, its daemon already agreeing."""
 
-    def converge(self, *, is_blocked):
+    def gate(self, *, is_blocked):
         return ""
+
+
+def gated(monkeypatch, part):
+    """Stand a part in for NetBird's own."""
+
+    def parts():
+        return {"netbird": part}
+
+    monkeypatch.setattr(controller, "overlay_parts", parts)
 
 
 def pass_of(**keywords) -> RouterStateController:
@@ -133,6 +146,7 @@ def names(results) -> list[str]:
     return [result.name for result in results]
 
 
+@pytest.mark.feature("proxy")
 def test_the_firewall_comes_first_and_the_served_routes_after_the_ports(box):
     order = []
     Interfaces.results = [RouterStepResult(name="interface enp1s0", state="applied")]
@@ -241,6 +255,7 @@ def test_the_ruleset_is_recorded_only_after_the_kernel_takes_it(box, monkeypatch
     assert order == ["loaded", "wrote"]
 
 
+@pytest.mark.feature("proxy")
 def test_a_missing_policy_route_keeps_the_ruleset_the_kernel_holds(box):
     """A diverting ruleset with no policy route sends what it diverts
     nowhere."""
@@ -270,6 +285,7 @@ def test_with_no_table_at_all_the_ruleset_loads_anyway(box):
     assert kernel.loads() == 1
 
 
+@pytest.mark.feature("proxy")
 def test_only_limits_the_interfaces_and_runs_every_other_step(box):
     results = pass_of().reconcile(only="enp1s0")
 
@@ -408,15 +424,18 @@ def server_elsewhere(elsewhere, box, monkeypatch):
         handed.append(("tun", network.overlay_device_names, routing))
         return []
 
-    monkeypatch.setattr(controller, "lookup_xray_uid", refuse)
+    monkeypatch.setattr(controller, "proxy_uid", refuse)
     monkeypatch.setattr(controller, "converge_firewall", firewall)
-    monkeypatch.setattr(controller, "converge_tun", tun)
+    if edition.has_feature("proxy"):
+        monkeypatch.setattr("neutrino_hub.modules.tun.ops.converge_tun", tun)
     monkeypatch.setattr(
         controller, "overlay_devices", lambda network: {"netbird": ["utun4"]}
     )
     return kernel, handed
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
     server_elsewhere, fake_controller, monkeypatch
 ):
@@ -424,11 +443,11 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
     gates = []
 
     class Gate:
-        def converge(self, *, is_blocked):
+        def gate(self, *, is_blocked):
             gates.append(is_blocked)
             return ""
 
-    monkeypatch.setattr(controller, "NetbirdInboundGate", Gate)
+    gated(monkeypatch, Gate)
     ready = []
     results = pass_of(on_base_ready=lambda: ready.append(True)).reconcile()
 
@@ -445,6 +464,8 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_gate_alone(
     assert fake_controller.calls == []
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
     server_elsewhere, monkeypatch
 ):
@@ -461,6 +482,8 @@ def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_elsewhere_a_refused_rule_is_named_beside_the_firewall_that_applied(
     server_elsewhere, monkeypatch
 ):
@@ -487,13 +510,15 @@ def test_elsewhere_a_refused_rule_is_named_beside_the_firewall_that_applied(
     ]
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_elsewhere_a_tun_route_that_failed_is_named_by_its_own_code(
     server_elsewhere, monkeypatch
 ):
     def refuse(network, routing):
         raise OSError("route -n add -host 203.0.113.7 192.168.1.1: File exists")
 
-    monkeypatch.setattr(controller, "converge_tun", refuse)
+    monkeypatch.setattr("neutrino_hub.modules.tun.ops.converge_tun", refuse)
 
     results = pass_of().reconcile()
 
@@ -506,11 +531,13 @@ def test_elsewhere_a_tun_route_that_failed_is_named_by_its_own_code(
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_elsewhere_a_tun_that_changed_says_so_in_its_own_code(
     server_elsewhere, monkeypatch
 ):
     monkeypatch.setattr(
-        controller, "converge_tun", lambda network, routing: ["tun device up"]
+        "neutrino_hub.modules.tun.ops.converge_tun",
+        lambda network, routing: ["tun device up"],
     )
 
     results = pass_of().reconcile()

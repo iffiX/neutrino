@@ -14,6 +14,7 @@ gateway in place, and will not take it away.
 from dataclasses import dataclass
 from typing import Callable
 
+from neutrino_hub import edition
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_SUPPORTED_ARCHITECTURES,
     CLIPROXYAPI_UNIT,
@@ -24,11 +25,6 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_UNIT,
 )
 from neutrino_hub.modules.easytier.provisioner import EasyTierProvisioner
-from neutrino_hub.modules.netbird.constants import (
-    NETBIRD_SUPPORTED_ARCHITECTURES,
-    NETBIRD_UNIT,
-)
-from neutrino_hub.modules.netbird.provisioner import NetbirdProvisioner
 
 
 @dataclass
@@ -53,17 +49,9 @@ class ModuleSpec:
     data_description: str
 
 
+# NetBird's entry is NetBird's own, and present where the tree carries it.
 MODULE_SPECS = {
-    "netbird": ModuleSpec(
-        unit=NETBIRD_UNIT,
-        provisioner=NetbirdProvisioner,
-        architectures=NETBIRD_SUPPORTED_ARCHITECTURES,
-        install_note=(
-            "remote access to this gateway from anywhere "
-            "(the client is in the package)"
-        ),
-        data_description="this machine's peer identity",
-    ),
+    **{key: ModuleSpec(**fields) for key, fields in edition.hooks("module_specs")},
     "easytier": ModuleSpec(
         unit=EASYTIER_UNIT,
         provisioner=EasyTierProvisioner,

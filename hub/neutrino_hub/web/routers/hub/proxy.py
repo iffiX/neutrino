@@ -11,29 +11,57 @@ skip the proxy for whatever is sent to it.
 
 The databases that split reads are here too: which release of each the box
 holds, and taking the newest one published.
+
+The proxy's live objects and its part of the panel's converge step live
+here as well, as :class:`ProxyPanelPart`, which the panel's runtime takes
+from the edition table; so do the About card's versions and credits of what
+the proxy carries.
 """
 
 import asyncio
+import json
 import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.router.network_resolvers import resolver_refusal
+from neutrino_hub.modules.router.routes import rendered_network_resolvers
+from neutrino_hub.modules.tun.constants import TUN_VERSION
 from neutrino_hub.modules.xray import geodata
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
+from neutrino_hub.modules.xray.apply_part import XrayApplyComponent
 from neutrino_hub.modules.xray.constants import (
+    XRAY_BINARY,
     XRAY_BINARY_NAME,
+    XRAY_CONFIG_PATH,
+    XRAY_DIRECT_DNS_FIELD,
+    XRAY_GEODATA,
     XRAY_GEODATA_GEOIP_FILE,
     XRAY_GEODATA_GEOSITE_FILE,
+    XRAY_NODES_FILE,
     XRAY_REMOTE_DNS_FIELD,
+    XRAY_ROUTING_FILE,
+    XRAY_SCOPE_SWITCHES,
+    XRAY_VERSION,
 )
+from neutrino_hub.modules.xray.exit_controller import XrayExitController
 from neutrino_hub.modules.xray.geodata import XrayGeodataState
+from neutrino_hub.modules.xray.node_config import XrayNodeList
+from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
+from neutrino_hub.modules.xray.node_probe import XrayNodeProbe
+from neutrino_hub.modules.xray.resolvers import (
+    direct_resolvers,
+    read_resolvers,
+    with_resolver_lists,
+)
 from neutrino_hub.modules.xray.routing_rules import (
     check_direct_address,
     check_direct_domain,
 )
-from neutrino_hub.utils.json_file import write_config
-from neutrino_hub.utils.subprocess_run import command_failure_text
+from neutrino_hub.modules.xray.stats_client import XrayStatsClient
+from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS
+from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.exceptions import NetworkApplyError
@@ -50,6 +78,39 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 
 # One update at a time: both jobs write the same two files.
 GEODATA_TASK_LABEL = "geodata_update"
+# What the hub package carries for the proxy, credited on the About card with
+# the exact tag each was built from, and the systems whose package carries
+# it: None for every system.
+PROXY_ABOUT_COMPONENTS = (
+    (
+        "Xray-core",
+        XRAY_VERSION,
+        "MPL-2.0",
+        "https://github.com/XTLS/Xray-core/tree/v{}",
+        None,
+    ),
+    (
+        "tun2socks",
+        TUN_VERSION,
+        "MIT",
+        "https://github.com/xjasonlyu/tun2socks/tree/v{}",
+        (PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS),
+    ),
+    (
+        "v2fly geoip",
+        XRAY_GEODATA[XRAY_GEODATA_GEOIP_FILE]["url"].split("/")[-2],
+        "CC-BY-SA-4.0",
+        "https://github.com/v2fly/geoip/tree/{}",
+        None,
+    ),
+    (
+        "v2fly domain-list-community",
+        XRAY_GEODATA[XRAY_GEODATA_GEOSITE_FILE]["url"].split("/")[-2],
+        "MIT",
+        "https://github.com/v2fly/domain-list-community/tree/{}",
+        None,
+    ),
+)
 
 router = APIRouter(
     prefix="/api/hub/proxy", tags=["proxy"], dependencies=[Depends(require_session)]
@@ -142,7 +203,7 @@ def update_settings(
                 raise _refusal(
                     "direct_rule_invalid", value=entry, detail=str(error)
                 ) from error
-    write_config("xray/routing.json", settings.model_dump())
+    write_config(XRAY_ROUTING_FILE, settings.model_dump())
     runtime.is_config_dirty = True
     return ProxyView(
         **settings.model_dump(), geodata=_geodata_view(geodata.installed())
@@ -313,3 +374,195 @@ def _refusal(code: str, **params) -> HTTPException:
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={"code": code, "params": params},
     )
+
+
+def about_versions() -> dict:
+    """The About card's versions of what the proxy carries.
+
+    Returns:
+        ``xray_version``, the first line ``xray version`` prints or ``not
+        installed``, and ``geodata_version``, one ``database release`` pair
+        per file in name order.
+    """
+    printed = run([XRAY_BINARY, "version"], is_checked=False).stdout
+    return {
+        "xray_version": (printed.splitlines() or ["not installed"])[0],
+        "geodata_version": _geodata_line(geodata.installed()),
+    }
+
+
+class ProxyPanelPart:
+    """The proxy's live objects and its part of the panel's converge step.
+
+    The panel's runtime holds one, from the edition table: the stats client,
+    the probe, the measurements and the exit controller, built here and
+    started with the application; and the render and the restart of xray
+    each converge runs.
+
+    Attributes:
+        stats: Reads xray's traffic counters.
+        node_probe: Measures one exit node.
+        node_health: Every node's measurement window.
+        exit_controller: Measures the nodes and pins the exit.
+    """
+
+    def __init__(self, *, on_change, on_out_of_sync):
+        """
+        Args:
+            on_change: Called with the round's status when the pinned exit
+                moved.
+            on_out_of_sync: Called with the round's status when xray does
+                not carry the exits the render names.
+        """
+        self.stats = XrayStatsClient()
+        self.node_probe = XrayNodeProbe(resolver_of=self.direct_resolver)
+        self.node_health = XrayNodeHealthStore()
+        self.exit_controller = XrayExitController(
+            probe=self.node_probe,
+            store=self.node_health,
+            api=self.stats,
+            node_list_of=self.node_list,
+            routing_of=self.routing,
+            rendered_config_of=self.rendered_config,
+            on_change=on_change,
+            on_out_of_sync=on_out_of_sync,
+        )
+
+    def start(self) -> None:
+        """Start measuring the nodes, as the application starts."""
+        self.exit_controller.start()
+
+    def routing(self) -> dict:
+        """Read the current routing options.
+
+        Returns:
+            Parsed ``config/xray/routing.json``, its two resolver fields read
+            as lists.
+
+        Raises:
+            FileNotFoundError: When the box is not set up.
+            ValueError: When the file is not valid JSON.
+        """
+        return with_resolver_lists(read_config(XRAY_ROUTING_FILE))
+
+    def node_list(self) -> XrayNodeList:
+        """Read the current node list.
+
+        Returns:
+            Parsed ``config/xray/nodes.json``.
+
+        Raises:
+            FileNotFoundError: When the box is not set up.
+            ValueError: When the file is not valid JSON.
+        """
+        return XrayNodeList.from_dict(read_config(XRAY_NODES_FILE))
+
+    def rendered_config(self) -> dict:
+        """Read the xray configuration the last apply installed.
+
+        Returns:
+            The parsed generated file. Only its outbound tags are read by the
+            exit controller; the file itself carries every node's secret.
+
+        Raises:
+            OSError: If the generated file cannot be read.
+            ValueError: If it does not parse as JSON.
+        """
+        return json.loads(XRAY_CONFIG_PATH.read_text(encoding="utf-8"))
+
+    def direct_resolver(self) -> tuple:
+        """The first direct resolver, for the lookups the proxy makes for itself.
+
+        Returns:
+            ``(address, port)`` of the first row of ``direct_dns``, else of
+            the network's resolvers the last render used.
+        """
+        first = direct_resolvers(self.routing(), rendered_network_resolvers())[0]
+        return str(first["address"]), int(first["port"])
+
+    def has_direct_resolvers(self, routing: dict) -> bool:
+        """Whether the proxy names direct resolvers of its own.
+
+        Args:
+            routing: The routing options.
+
+        Returns:
+            True when ``direct_dns`` lists any row.
+        """
+        return bool(read_resolvers(routing, XRAY_DIRECT_DNS_FIELD))
+
+    def settled_routing(self, node_list: "XrayNodeList | None" = None) -> dict:
+        """The routing options, with the scopes switched off if they cannot run.
+
+        A scope with no enabled node has nothing to leave through and renders
+        as off. Writing that back means the panel and the box agree about it
+        rather than the page showing switches that do nothing.
+
+        Args:
+            node_list: The nodes as they are now; None reads them.
+
+        Returns:
+            The routing options as they will be rendered.
+
+        Raises:
+            FileNotFoundError: When the box is not set up.
+            ValueError: When a file is not valid JSON.
+        """
+        node_list = node_list if node_list is not None else self.node_list()
+        routing = self.routing()
+        is_scoped = any(routing.get(switch, False) for switch in XRAY_SCOPE_SWITCHES)
+        if is_scoped and not node_list.enabled_nodes:
+            for switch in XRAY_SCOPE_SWITCHES:
+                routing[switch] = False
+            write_config(XRAY_ROUTING_FILE, routing)
+        return routing
+
+    def render(self, network_resolvers: list) -> dict:
+        """Render xray's configuration for one converge.
+
+        Args:
+            network_resolvers: The network's resolvers, as read for this
+                apply.
+
+        Returns:
+            The configuration, the outbounds measured down left out.
+
+        Raises:
+            FileNotFoundError: When the box is not set up.
+            ValueError: When a file is not valid JSON.
+        """
+        node_list = self.node_list()
+        return XrayApplyComponent().render(
+            routing=self.settled_routing(node_list),
+            network_resolvers=network_resolvers,
+            node_list=node_list,
+            down_tags={
+                tag
+                for tag, health in self.exit_controller.healths().items()
+                if health.is_down
+            },
+        )
+
+    def apply(self, config: dict) -> tuple:
+        """Install the rendered configuration and restart xray when it changed.
+
+        Args:
+            config: What :meth:`render` returned.
+
+        Returns:
+            ``(changes, failed, sentences)``: ``xray_restarted`` among the
+            changes when it restarted; ``xray_refused {detail}`` among the
+            failed, and its sentence, when xray would not take it. A refused
+            configuration stops none of the other steps.
+        """
+        try:
+            if XrayApplyComponent().apply_if_changed(config):
+                return [{"code": "xray_restarted", "params": {}}], [], []
+        except (subprocess.SubprocessError, OSError, RuntimeError) as error:
+            detail = command_failure_text(error)
+            return (
+                [],
+                [{"code": "xray_refused", "params": {"detail": detail}}],
+                [f"xray: {detail}"],
+            )
+        return [], [], []

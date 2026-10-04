@@ -342,3 +342,20 @@ async def _drained(source) -> list:
         The lines, in order.
     """
     return [line async for line in source]
+
+
+def test_the_proxys_own_lookups_ask_the_first_direct_resolver(monkeypatch):
+    """A direct field in the one-row shape at the former default reads as no
+    list, so the proxy asks the first of the resolvers the last render used."""
+    from neutrino_hub.modules.router import routes
+
+    routes.record_network_resolvers([{"address": "192.168.1.1", "port": 53}])
+    monkeypatch.setattr(
+        proxy_router,
+        "read_config",
+        lambda name: {"direct_dns": {"address": "223.5.5.5", "port": 53}},
+    )
+    part = object.__new__(proxy_router.ProxyPanelPart)
+
+    assert part.routing()["direct_dns"] == []
+    assert part.direct_resolver() == ("192.168.1.1", 53)

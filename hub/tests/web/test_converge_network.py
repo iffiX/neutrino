@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.exceptions import StreamRefusedError
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.overlay.config import enabled_providers, set_enabled
@@ -103,6 +104,25 @@ class _ExitController:
         return {"node_hk1": _Health(is_down=True), "node_hk2": _Health(is_down=False)}
 
 
+def xray_applier(monkeypatch, applier) -> None:
+    """Stand one of these in for xray, where the tree carries the proxy."""
+    if edition.has_feature("proxy"):
+        monkeypatch.setattr(
+            "neutrino_hub.modules.xray.apply_part.XrayConfigApplier", applier
+        )
+
+
+def proxy_part(files: dict):
+    """The proxy's part reading the files the test holds; None without it."""
+    if not edition.has_feature("proxy"):
+        return None
+    from neutrino_hub.web.routers.hub.proxy import ProxyPanelPart
+
+    part = object.__new__(ProxyPanelPart)
+    part.exit_controller = _ExitController()
+    return part
+
+
 class _Sessions:
     """The live sockets: who is online, and what each was handed."""
 
@@ -168,7 +188,15 @@ def applied(monkeypatch):
         runtime_module, "read_config", lambda name: copy.deepcopy(files[name])
     )
     monkeypatch.setattr(runtime_module, "write_config", lambda name, data: None)
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _RefusingApplier)
+    if edition.has_feature("proxy"):
+        monkeypatch.setattr(
+            "neutrino_hub.web.routers.hub.proxy.read_config",
+            lambda name: copy.deepcopy(files[name]),
+        )
+        monkeypatch.setattr(
+            "neutrino_hub.web.routers.hub.proxy.write_config", lambda name, data: None
+        )
+    xray_applier(monkeypatch, _RefusingApplier)
     monkeypatch.setattr(runtime_module, "RouterStateController", Controller)
     monkeypatch.setattr(runtime_module, "OverlaySwitcher", Switcher)
 
@@ -195,7 +223,7 @@ def applied(monkeypatch):
         lambda runtime, role: written.append(("pushed states", role)),
     )
     panel = object.__new__(PanelRuntime)
-    panel.exit_controller = _ExitController()
+    panel.proxy = proxy_part(files)
     panel.is_config_dirty = True
     panel.settings = {}
     panel.agent_sessions = _Sessions([])
@@ -215,9 +243,10 @@ def steps_of(written) -> list:
 # --- the order --------------------------------------------------------------
 
 
+@pytest.mark.feature("proxy")
 def test_the_steps_run_in_their_order(applied, monkeypatch):
     panel, written, _, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
     panel.agent_sessions = _Sessions(["aa:bb:cc:dd:ee:ff"])
 
     changes = panel.converge_network_blocking()
@@ -234,6 +263,7 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
     assert {"code": "devices_pushed", "params": {"count": 1}} in changes
 
 
+@pytest.mark.feature("proxy")
 def test_the_networks_resolvers_reach_dnsmasq_and_xray_and_are_recorded(
     applied, monkeypatch
 ):
@@ -245,7 +275,7 @@ def test_the_networks_resolvers_reach_dnsmasq_and_xray_and_are_recorded(
             rendered["xray"] = config
             return True
 
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", Applier)
+    xray_applier(monkeypatch, Applier)
 
     panel.converge_network_blocking()
 
@@ -282,7 +312,7 @@ def test_the_steps_run_under_the_router_lock(applied, monkeypatch):
             held.append(False)
 
     monkeypatch.setattr(runtime_module, "router_lock", Lock)
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
 
     panel.converge_network_blocking()
 
@@ -292,6 +322,7 @@ def test_the_steps_run_under_the_router_lock(applied, monkeypatch):
 # --- a step that fails stops none of the others ------------------------------
 
 
+@pytest.mark.feature("proxy")
 def test_a_refused_xray_config_does_not_take_the_firewall_or_dns_with_it(applied):
     panel, written, _, _ = applied
 
@@ -317,7 +348,7 @@ def test_a_refused_apply_leaves_the_configuration_dirty(applied):
 
 def test_an_engine_that_will_not_start_stops_none_of_the_rest(applied, monkeypatch):
     panel, written, _, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
 
     class Switcher:
         changes: list = []
@@ -346,7 +377,7 @@ def test_an_engine_that_will_not_start_stops_none_of_the_rest(applied, monkeypat
 
 def test_a_failed_routing_step_reaches_the_page_by_name(applied, monkeypatch):
     panel, written, results, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
     results[:] = [
         RouterStepResult(
             name="interface enp1s0",
@@ -371,7 +402,7 @@ def test_a_failed_routing_step_reaches_the_page_by_name(applied, monkeypatch):
 
 def test_a_step_waiting_on_a_lease_is_not_a_failure(applied, monkeypatch):
     panel, _, results, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
     results[:] = [
         RouterStepResult(
             name="interface enp2s0",
@@ -405,7 +436,7 @@ def test_dnsmasq_is_restarted_only_when_its_configuration_moved(applied, monkeyp
     """A restart empties a thousand cached names, and a converge that changed
     nothing about DNS has no reason to."""
     panel, _, _, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
 
     first = panel.converge_network_blocking()
     second = panel.converge_network_blocking()
@@ -422,7 +453,7 @@ def test_every_online_device_is_handed_its_state(applied, monkeypatch):
     so a network change that never reaches a device leaves its shares
     refusing a network that was just opened."""
     panel, _, _, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
     panel.agent_sessions = _Sessions(["aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"])
 
     changes = panel.converge_network_blocking()
@@ -441,7 +472,7 @@ def test_a_device_that_will_not_take_the_push_does_not_fail_the_converge(
     """The network is applied by then; a socket that did not answer in time
     is named in the changes rather than raised."""
     panel, written, _, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
     panel.agent_sessions = _Sessions(
         ["aa:bb:cc:dd:ee:ff"], refusing=["aa:bb:cc:dd:ee:ff"]
     )
@@ -458,13 +489,14 @@ def test_a_device_that_will_not_take_the_push_does_not_fail_the_converge(
 LOCALES_DIR = Path(__file__).resolve().parents[2] / "frontend/src/locales"
 
 
+@pytest.mark.feature("proxy")
 def test_every_change_an_apply_answers_with_is_a_code_both_languages_word(
     applied, monkeypatch
 ):
     """The page words the answer itself, so an apply that changed every step
     there is answers only with codes each catalog has a sentence for."""
     panel, _, results, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
     results[:] = [
         RouterStepResult(
             name=f"{kind} enp1s0", state=ROUTER_STEP_APPLIED, changes=["x"]
@@ -504,6 +536,7 @@ def test_every_change_an_apply_answers_with_is_a_code_both_languages_word(
             assert f"code.{change['code']}" in worded, (language, change)
 
 
+@pytest.mark.feature("proxy")
 def test_the_nodes_measured_down_reach_the_renderer(applied, monkeypatch):
     panel, _, _, _ = applied
     seen = {}
@@ -515,8 +548,10 @@ def test_the_nodes_measured_down_reach_the_renderer(applied, monkeypatch):
         def render(self) -> dict:
             return {}
 
-    monkeypatch.setattr(runtime_module, "XrayConfigRenderer", Renderer)
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    monkeypatch.setattr(
+        "neutrino_hub.modules.xray.apply_part.XrayConfigRenderer", Renderer
+    )
+    xray_applier(monkeypatch, _AcceptingApplier)
 
     panel.converge_network_blocking()
 
@@ -538,6 +573,7 @@ class _LinkStatus:
         return [self._Link(name, address) for name, address in ADDRESSES.items()]
 
 
+@pytest.mark.feature("proxy")
 def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
     """EasyTier on, NetBird off, NetBird on, EasyTier off: after each, the
     firewall, the proxy's configuration, the devices' share fence and the
@@ -565,7 +601,7 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
         seen[role] = enabled_providers(runtime.network())
 
     monkeypatch.setattr(runtime_module, "RouterStateController", Controller)
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", Applier)
+    xray_applier(monkeypatch, Applier)
     monkeypatch.setattr(runtime_module.channel_state, "push_states", push_states)
     monkeypatch.setattr(runtime_module, "RouterLinkStatus", _LinkStatus)
     monkeypatch.setattr(runtime_module, "device_addresses", lambda: dict(ADDRESSES))
@@ -595,12 +631,7 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
                 network=fresh, routing=files["xray/routing.json"], xray_uid=999
             ).render()
         )
-        assert (
-            seen["xray"]
-            == runtime_module.XrayConfigRenderer(
-                node_list=panel.node_list(), routing=files["xray/routing.json"]
-            ).render()
-        )
+        assert seen["xray"] == xray_render(panel, files["xray/routing.json"])
         fence = share_subnets(
             network=fresh,
             link_addresses=dict(ADDRESSES),
@@ -620,7 +651,7 @@ def test_every_switch_leaves_what_a_fresh_render_would(applied, monkeypatch):
 @pytest.mark.parametrize("system", ["darwin", "win32"])
 def test_macos_and_windows_run_no_dnsmasq(applied, monkeypatch, system):
     panel, written, _, _ = applied
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", _AcceptingApplier)
+    xray_applier(monkeypatch, _AcceptingApplier)
     monkeypatch.setattr("sys.platform", system)
     monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt())
 
@@ -635,6 +666,7 @@ def test_macos_and_windows_run_no_dnsmasq(applied, monkeypatch, system):
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_macos_and_windows_render_xray_without_the_transparent_inbound(
     applied, monkeypatch, elsewhere
 ):
@@ -647,7 +679,7 @@ def test_macos_and_windows_render_xray_without_the_transparent_inbound(
             handed.append(config)
             return True
 
-    monkeypatch.setattr(runtime_module, "XrayConfigApplier", Recording)
+    xray_applier(monkeypatch, Recording)
 
     panel.converge_network_blocking()
 
@@ -655,3 +687,10 @@ def test_macos_and_windows_render_xray_without_the_transparent_inbound(
     tags = [inbound["tag"] for inbound in config["inbounds"]]
     assert "tproxy_in" not in tags
     assert "dns_in" in tags
+
+
+def xray_render(panel, routing: dict) -> dict:
+    """What rendering the stored proxy configuration from nothing gives."""
+    from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
+
+    return XrayConfigRenderer(node_list=panel.node_list(), routing=routing).render()

@@ -2,7 +2,7 @@
 
     sudo nhub run                     # the panel, the proxy core, the AI gateway
     sudo nhub run --only-web          # one of them; this is what each unit starts
-    sudo nhub run --only-xray
+    sudo nhub run --only-xray         # where the tree carries the proxy
     sudo nhub run --only-cliproxyapi
     sudo nhub run --only-dnsmasq
     sudo nhub run --only-router       # keeps the routing state as configured
@@ -50,6 +50,7 @@ try:
 except ImportError:
     pwd = None
 
+from neutrino_hub import edition
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_DIR,
@@ -74,28 +75,19 @@ from neutrino_hub.modules.router.constants import (
 )
 from neutrino_hub.modules.router.controller import RouterStateController, router_lock
 from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fingerprint
-from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.firewall.ops import reload_firewall
-from neutrino_hub.modules.tun.ops import TunRouteKeeper, withdraw_tun
 from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
-from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
+from neutrino_hub.platforms.detect import is_linux, process_controller
 from neutrino_hub.platforms.windows import quiet_connection_resets
 from neutrino_hub.system.child_supervisor import ChildStartLine
 from neutrino_hub.system.systemd_ctl import notify_ready, take_notify_address
 from neutrino_hub.utils.subprocess_run import command_failure_text
-from neutrino_hub.modules.xray.constants import (
-    XRAY_ASSET_DIR,
-    XRAY_ASSET_ENV,
-    XRAY_BINARY,
-    XRAY_CONFIG_PATH,
-)
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
     UTILS_GENERATED_DIR,
     UTILS_LOG_ROOT,
     UTILS_RUNTIME_ROOT,
-    UTILS_STATE_ROOT,
     is_dev_root_set,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import resolve_management_key
@@ -142,11 +134,6 @@ SUPPLICANT_DRIVERS = "nl80211,wext"
 _SERVING: list = []
 # Set once a stop is asked, so a stop that comes before the servers start holds.
 _STOP_ASKED = threading.Event()
-# The hub's own NetBird daemon outside Linux: its profile under the state
-# root, its log file, and where its own output goes, which is not that file.
-NETBIRD_CONFIG_RELATIVE = ("netbird", "config.json")
-NETBIRD_LOG_NAME = "netbird.log"
-NETBIRD_CONSOLE_LOG_NAME = "netbird_console"
 
 
 def main() -> int:
@@ -171,7 +158,7 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group()
     for name in (
         "web",
-        "xray",
+        *_run_only(),
         "cliproxyapi",
         "dnsmasq",
         "supplicant",
@@ -194,8 +181,8 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    if arguments.only == "xray":
-        return _exec_xray()
+    if arguments.only in _run_only():
+        return _run_only()[arguments.only]()
     if arguments.only == "cliproxyapi":
         return _exec_cliproxyapi()
     if arguments.only == "dnsmasq":
@@ -268,16 +255,13 @@ def child_start_lines() -> dict:
     """How the service starts each daemon whose start line it knows itself.
 
     EasyTier's is not among them: its module hands it over through the
-    process controller.
+    process controller. The proxy core's and NetBird's come from the
+    edition table.
 
     Returns:
         Name to :class:`ChildStartLine`.
     """
-    return {
-        "xray": ChildStartLine(
-            argv=[XRAY_BINARY, "run", "-config", str(XRAY_CONFIG_PATH)],
-            env={XRAY_ASSET_ENV: str(XRAY_ASSET_DIR)},
-        ),
+    lines = {
         "cliproxyapi": ChildStartLine(
             argv=[
                 str(CLIPROXYAPI_BINARY_PATH),
@@ -286,21 +270,10 @@ def child_start_lines() -> dict:
             ],
             cwd=str(CLIPROXYAPI_DIR),
         ),
-        "netbird": ChildStartLine(
-            argv=[
-                str(NETBIRD_BINARY_PATH),
-                "service",
-                "run",
-                "--config",
-                str(UTILS_STATE_ROOT.joinpath(*NETBIRD_CONFIG_RELATIVE)),
-                "--log-file",
-                str(UTILS_LOG_ROOT / NETBIRD_LOG_NAME),
-                "--daemon-addr",
-                hub_platform().netbird_daemon_address(),
-            ],
-            log_name=NETBIRD_CONSOLE_LOG_NAME,
-        ),
     }
+    for start_lines in edition.hooks("child_start_lines"):
+        lines.update(start_lines())
+    return lines
 
 
 def _is_set_up() -> bool:
@@ -312,19 +285,30 @@ def _is_set_up() -> bool:
     return is_password_set()
 
 
-def _exec_xray() -> int:
-    """Become the proxy core.
-
-    Replaces this process rather than forking one, so the unit's account and
-    capabilities carry straight into the binary and nothing lingers between
-    systemd and the daemon it is watching.
+def _run_only() -> dict:
+    """The ``--only`` forms a left-out feature adds, from the edition table.
 
     Returns:
-        Never; the process is replaced.
+        Name to the function that becomes that daemon.
     """
-    os.environ[XRAY_ASSET_ENV] = XRAY_ASSET_DIR
-    os.execv(XRAY_BINARY, [XRAY_BINARY, "run", "-config", str(XRAY_CONFIG_PATH)])
-    return 1
+    forms = {}
+    for found in edition.hooks("run_only"):
+        forms.update(found)
+    return forms
+
+
+def _run_children() -> dict:
+    """The children a plain ``nhub run`` starts on Linux, by binary.
+
+    Returns:
+        Name to the binary it needs: the proxy core's from the edition
+        table, then the AI gateway's.
+    """
+    children = {}
+    for found in edition.hooks("run_children"):
+        children.update(found)
+    children["cliproxyapi"] = str(CLIPROXYAPI_BINARY_PATH)
+    return children
 
 
 def _exec_cliproxyapi() -> int:
@@ -660,7 +644,7 @@ def _supervise(arguments) -> int:
     if not is_linux():
         return _supervise_service(arguments)
     children = []
-    for name in ("xray", "cliproxyapi"):
+    for name in _run_children():
         started = _start_child(name)
         if started is not None:
             children.append(started)
@@ -703,12 +687,7 @@ def _supervise_service(arguments) -> int:
         Process exit status.
     """
     _log_to_service_file()
-    for directory in (
-        UTILS_LOG_ROOT,
-        UTILS_RUNTIME_ROOT,
-        UTILS_STATE_ROOT.joinpath(*NETBIRD_CONFIG_RELATIVE).parent,
-        CLIPROXYAPI_DIR,
-    ):
+    for directory in (UTILS_LOG_ROOT, UTILS_RUNTIME_ROOT, CLIPROXYAPI_DIR):
         directory.mkdir(parents=True, exist_ok=True)
     try:
         reload_firewall()
@@ -717,12 +696,11 @@ def _supervise_service(arguments) -> int:
             f"warning: firewall anchor not loaded: {command_failure_text(error)}",
             file=sys.stderr,
         )
-    try:
-        withdraw_tun()
-    except OSError as error:
-        print(f"warning: tun routes not withdrawn: {error}", file=sys.stderr)
+    for on_start in edition.hooks("service_start"):
+        on_start()
     controller = process_controller()
-    keeper = TunRouteKeeper(is_running=controller.is_active)
+    watcher = edition.hook("service_watcher")
+    keeper = watcher(is_running=controller.is_active) if watcher is not None else None
     controller.supervise(child_start_lines(), watcher=keeper)
     try:
         return _serve_panel(arguments)
@@ -734,12 +712,12 @@ def _start_child(name: str):
     """Start one daemon as a child of this process.
 
     Args:
-        name: ``xray`` or ``cliproxyapi``.
+        name: A key of :func:`_run_children`.
 
     Returns:
         The process, or None when its binary is not installed.
     """
-    binary = XRAY_BINARY if name == "xray" else str(CLIPROXYAPI_BINARY_PATH)
+    binary = _run_children()[name]
     if not os.path.isfile(binary):
         print(f"  {name}: {binary} is not there, so it is not started")
         return None

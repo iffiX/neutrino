@@ -8,15 +8,18 @@ hub's one service once, after the password and before this machine's agent.
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.cli import setup
 from tests.cli.test_setup_local_agent import FakeReporter
 
+# The proxy core's step and its unit, where the tree carries the proxy.
+XRAY = ["xray"] if edition.has_feature("proxy") else []
 EVERY_STEP = [
     "required_packages",
     "fail2ban",
     "users_and_dirs",
     "python_env",
-    "xray_core",
+    *[f"{name}_core" for name in XRAY],
     "config_files",
     "agent_tls",
     "panel_tls",
@@ -128,8 +131,13 @@ def test_a_missing_carried_program_asks_for_a_reinstall(monkeypatch, tmp_path):
 @pytest.mark.parametrize("system", ["darwin", "win32"])
 def test_directories_are_made_and_no_account(monkeypatch, tmp_path, system):
     monkeypatch.setattr(setup.sys, "platform", system)
-    for name in ("UTILS_CONFIG_DIR", "UTILS_GENERATED_DIR", "UTILS_GEODATA_DIR"):
+    for name in ("UTILS_CONFIG_DIR", "UTILS_GENERATED_DIR"):
         monkeypatch.setattr(setup, name, tmp_path / name.lower())
+    if edition.has_feature("proxy"):
+        monkeypatch.setattr(
+            "neutrino_hub.modules.xray.setup_part.UTILS_GEODATA_DIR",
+            tmp_path / "geodata",
+        )
     monkeypatch.setattr(setup, "UTILS_LOG_DIR", tmp_path / "log")
     monkeypatch.setattr(setup, "run", lambda *a, **k: pytest.fail("no useradd"))
 
@@ -146,7 +154,7 @@ def test_the_core_children_are_enabled_through_the_controller(
 
     setup._step_enable_services(FakeReporter())
 
-    assert controller.asked == [("enable", "xray"), ("enable", "cliproxyapi")]
+    assert controller.asked == [("enable", name) for name in [*XRAY, "cliproxyapi"]]
 
 
 @pytest.mark.parametrize("system", ["darwin", "win32"])
@@ -157,7 +165,7 @@ def test_children_the_stopped_service_does_not_run_yet_are_enabled(monkeypatch, 
 
     setup._step_enable_services(FakeReporter())
 
-    assert controller.asked == [("enable", "xray"), ("enable", "cliproxyapi")]
+    assert controller.asked == [("enable", name) for name in [*XRAY, "cliproxyapi"]]
 
 
 def test_linux_enables_its_core_units_through_the_controller(monkeypatch, controller):
@@ -166,10 +174,7 @@ def test_linux_enables_its_core_units_through_the_controller(monkeypatch, contro
     setup._step_enable_services(FakeReporter())
 
     assert controller.asked == [
-        ("enable", "router"),
-        ("enable", "xray"),
-        ("enable", "dnsmasq"),
-        ("enable", "web"),
+        ("enable", name) for name in ["router", *XRAY, "dnsmasq", "web"]
     ]
 
 

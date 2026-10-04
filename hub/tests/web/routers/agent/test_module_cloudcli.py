@@ -124,6 +124,7 @@ def test_a_set_is_checked_as_the_agent_receives_it_with_the_devices_key(api, tmp
     assert checked == {
         "gateway_url": f"http://{HUB}:8317",
         "gateway_key": held.open_key(),
+        "npm_registry": "https://registry.npmjs.org",
         "instances": [
             {
                 "account": "alice",

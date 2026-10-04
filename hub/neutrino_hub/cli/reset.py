@@ -24,8 +24,8 @@ from neutrino_hub.cli.password import (
     read_new_password,
     store_password,
 )
+from neutrino_hub import edition
 from neutrino_hub.modules.firewall.ops import hand_back_firewall
-from neutrino_hub.modules.tun.ops import withdraw_tun
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.routes import hand_back
@@ -220,10 +220,12 @@ def _hand_back_network() -> list:
         firewall rule or program taken away.
     """
     if not is_linux():
-        try:
-            notes = withdraw_tun()
-        except OSError as error:
-            notes = [f"tun routes not withdrawn: {error}"]
+        notes = []
+        for withdraw in edition.hooks("reset_withdraw"):
+            try:
+                notes += withdraw()
+            except OSError as error:
+                notes.append(f"tun routes not withdrawn: {error}")
         try:
             return notes + hand_back_firewall()
         except (OSError, subprocess.SubprocessError) as error:

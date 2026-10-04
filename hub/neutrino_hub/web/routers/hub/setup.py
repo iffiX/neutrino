@@ -14,8 +14,8 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
+from neutrino_hub import edition
 from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
-from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX
 from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.web.constants import WEB_CODE_SETUP_IN_PROGRESS
@@ -53,24 +53,28 @@ def setup_router(session) -> APIRouter:
             session.state(), request.url.scheme, request.url.netloc
         )
 
-    @router.post("/link/create")
-    async def read_link(request: Request):
-        """What the hub makes of one share link.
+    # The proxy screen's link reader, where the tree carries the proxy.
+    wizard_proxy = edition.hook("wizard_proxy")
+    if wizard_proxy is not None:
 
-        The browser has no parser of its own and must not grow one: a second
-        reading of the same link is a second thing to keep in step. It asks
-        instead, and gets back either the node's name or the reason there
-        isn't one.
-        """
-        if not _guard(request):
-            return _denied()
-        body = await request.json()
-        try:
-            node = parse_share_link(str(body.get("link", "")))
-        except (ValueError, TypeError) as error:
-            # A link somebody mistyped is an answer to give back, not a fault.
-            return {"name": "", "detail": str(error)}
-        return {"name": node.name or node.id, "detail": ""}
+        @router.post("/link/create")
+        async def read_link(request: Request):
+            """What the hub makes of one share link.
+
+            The browser has no parser of its own and must not grow one: a second
+            reading of the same link is a second thing to keep in step. It asks
+            instead, and gets back either the node's name or the reason there
+            isn't one.
+            """
+            if not _guard(request):
+                return _denied()
+            body = await request.json()
+            try:
+                node = wizard_proxy.parse_share_link(str(body.get("link", "")))
+            except (ValueError, TypeError) as error:
+                # A link somebody mistyped is an answer to give back, not a fault.
+                return {"name": "", "detail": str(error)}
+            return {"name": node.name or node.id, "detail": ""}
 
     @router.post("/answer/set")
     async def write_answers(request: Request):

@@ -12,7 +12,6 @@ import pytest
 from neutrino_hub.modules.easytier import ops as easytier_ops
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
-from neutrino_hub.modules.netbird.ops import NetbirdState
 from neutrino_hub.modules.overlay import ops
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
@@ -312,8 +311,11 @@ def routed(monkeypatch):
             deselected.append(cidr)
             return True
 
+    def parts():
+        return {OVERLAY_NETBIRD: Selector}
+
     monkeypatch.setattr(ops, "run", run)
-    monkeypatch.setattr(ops, "NetbirdRouteSelector", Selector)
+    monkeypatch.setattr(ops, "overlay_parts", parts)
     monkeypatch.setattr(
         ops,
         "engine_devices",
@@ -458,10 +460,13 @@ def test_elsewhere_netbird_rides_on_the_device_holding_its_address(
     elsewhere, monkeypatch
 ):
     class Reader:
-        def survey(self):
-            return NetbirdState(is_installed=True, netbird_ip="100.92.10.4")
+        def address(self):
+            return "100.92.10.4"
 
-    monkeypatch.setattr(ops, "NetbirdStatusReader", Reader)
+    def parts():
+        return {OVERLAY_NETBIRD: Reader}
+
+    monkeypatch.setattr(ops, "overlay_parts", parts)
     monkeypatch.setattr(
         ops,
         "device_addresses",

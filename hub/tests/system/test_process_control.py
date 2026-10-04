@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.platforms.constants import (
     PLATFORM_SERVICE_RUNNING,
     PLATFORM_SERVICE_STOPPED,
@@ -232,7 +233,13 @@ def test_an_action_outside_the_list_is_refused(controller):
 def test_every_name_the_service_runs_has_a_status(controller):
     names = [status.name for status in controller.status_all()]
 
-    assert names == ["web", "xray", "cliproxyapi", "netbird", "easytier", "tun2socks"]
+    assert names == [
+        "web",
+        *(["xray", "tun2socks"] if edition.has_feature("proxy") else []),
+        *(["netbird"] if edition.has_feature("netbird") else []),
+        "cliproxyapi",
+        "easytier",
+    ]
 
 
 def test_a_command_enables_into_services_json_alone(controller, popen, tmp_path):

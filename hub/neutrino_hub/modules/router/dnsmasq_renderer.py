@@ -1,14 +1,11 @@
 """Rendering the dnsmasq configuration that serves the LAN.
 
-dnsmasq owns DHCP and DNS on the LAN interfaces only. With the LAN scope on,
-its upstream is the xray DNS inbound on loopback, so a LAN name is resolved
-at the exit node and no plaintext query ever leaves a WAN interface. With it
-off, its upstreams are the network's resolvers.
+dnsmasq owns DHCP and DNS on the LAN interfaces only. Its upstreams are the
+network's resolvers, unless the proxy takes the LAN's traffic: then the
+proxy's part, from the edition table, names where queries go.
 """
 
-from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
-from neutrino_hub.modules.xray.resolvers import direct_resolvers
-
+from neutrino_hub import edition
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNS_CACHE_SIZE,
     ROUTER_DNS_MIN_CACHE_TTL_S,
@@ -44,9 +41,8 @@ class RouterDnsmasqRenderer:
         Args:
             network: The parsed router configuration. Every interface with the
                 LAN role gets served; the rest are not mentioned at all.
-            routing: Parsed ``config/xray/routing.json``. Only the LAN proxy
-                switch, the fallback switch and the direct resolvers are
-                read, to decide where queries go.
+            routing: The proxy's routing options, which its part reads to
+                decide where queries go; empty in a tree without the proxy.
             network_resolvers: The network's resolvers as ``{address, port}``,
                 in the order they are asked; None is the built-in fallbacks.
         """
@@ -144,49 +140,20 @@ class RouterDnsmasqRenderer:
         return lines
 
     def _render_upstream(self) -> list[str]:
-        """Where queries go, which follows the LAN proxy switch.
+        """Where queries go: the proxy's upstream while it takes the LAN.
 
-        LAN queries belong to the LAN scope, so they go where LAN traffic
-        goes. With it on, the only upstream is the xray DNS inbound, so a name
-        is resolved at the exit node and no plaintext query ever leaves by an
-        uplink. With it off, sending queries through xray anyway would be both
-        pointless and fragile — the answer would come from the exit node for
-        traffic that is not going there, and the LAN would lose DNS entirely
-        whenever xray was stopped. So they go straight to the network's
-        resolvers, and the box works as a plain router with xray not running
-        at all.
+        With the LAN not proxied, queries go straight to the network's
+        resolvers, and the box works as a plain router with the proxy not
+        running at all.
         """
-        if self._routing.get("is_proxy_enabled", True):
-            lines = [
-                "# The first upstream is the xray DNS inbound, so queries resolve at",
-                "# the exit node instead of leaking to whatever DNS the WAN handed us.",
-                "no-resolv",
-            ]
-            if self._routing.get("is_direct_fallback_enabled", False):
-                lines += [
-                    "#",
-                    "# And a second one behind it, tried only when the first does not",
-                    "# answer: a dead exit is a dead resolver, and without this the",
-                    "# LAN loses every name rather than the proxied ones. strict-order",
-                    "# is what makes it a fallback instead of a race — dnsmasq would",
-                    "# otherwise ask both and leak every query to the direct resolver.",
-                    "#",
-                    "# The direct resolvers rather than the remote ones: the remote",
-                    "# is reached in plaintext once the proxy is out of the path,",
-                    "# which is exactly where it is answered wrongly.",
-                    "strict-order",
-                ]
-            lines.append(f"server={XRAY_DNS_LISTEN}#{XRAY_DNS_PORT}")
-            if self._routing.get("is_direct_fallback_enabled", False):
-                direct = direct_resolvers(self._routing, self._network_resolvers)
-                lines += _server_lines(direct)
-            lines.append("")
-            return lines
+        upstream = edition.hook("router_dnsmasq")
+        if upstream is not None:
+            lines = upstream(self._routing, self._network_resolvers)
+            if lines is not None:
+                return lines
         return [
             "# LAN traffic is not proxied, so queries go to the network's",
-            "# resolvers. Routing them through xray would resolve them at an exit",
-            "# node the traffic is not using, and would take DNS off the LAN",
-            "# entirely whenever xray was stopped.",
+            "# resolvers.",
             "no-resolv",
             *_server_lines(self._network_resolvers),
             "",

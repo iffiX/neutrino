@@ -174,18 +174,23 @@ def test_the_kept_anchor_is_loaded_again_on_macos_only(elsewhere, recorder):
         assert recorder.handed == []
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_macos_allows_the_programs_of_the_enabled_overlays(
     on_darwin, recorder, monkeypatch
 ):
+    from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
+    from neutrino_hub.modules.xray.constants import XRAY_BINARY
+
     monkeypatch.setattr(ops, "read_config", lambda name: {})
 
     ops.converge_firewall(NETWORK, routing=ROUTING)
 
     (verb, programs), _ = recorder.handed
     assert programs[1:] == [
-        ops.XRAY_BINARY,
+        XRAY_BINARY,
         str(ops.CLIPROXYAPI_BINARY_PATH),
-        str(ops.NETBIRD_BINARY_PATH),
+        str(NETBIRD_BINARY_PATH),
     ]
 
 
@@ -207,7 +212,12 @@ def test_a_pass_records_the_interfaces_it_scoped_the_rules_to(
     assert ops.is_interface_set_moved() is True
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_a_reset_takes_everything_away(elsewhere, recorder):
+    from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
+    from neutrino_hub.modules.xray.constants import XRAY_BINARY
+
     notes = ops.hand_back_firewall()
 
     verb, *handed = recorder.handed[0]
@@ -216,9 +226,9 @@ def test_a_reset_takes_everything_away(elsewhere, recorder):
         assert notes == ["removed", "flushed"]
         assert recorder.handed[1] == ("flush_anchor",)
         assert handed[0][1:] == [
-            ops.XRAY_BINARY,
+            XRAY_BINARY,
             str(ops.CLIPROXYAPI_BINARY_PATH),
-            str(ops.NETBIRD_BINARY_PATH),
+            str(NETBIRD_BINARY_PATH),
             str(ops.EASYTIER_CORE_PATH),
         ]
     else:

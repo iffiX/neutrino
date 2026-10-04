@@ -83,7 +83,7 @@ class StubRuntime:
         self.served_models = None
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
-        self.exit_controller = StubExitController()
+        self.proxy = StubExitController()
 
     def publish_ai_usage(self) -> None:
         return None

@@ -165,7 +165,7 @@ def test_elsewhere_an_apply_renders_no_ruleset(elsewhere, tmp_path, monkeypatch)
     def refuse():
         raise AssertionError("looked up the xray account")
 
-    monkeypatch.setattr(apply, "lookup_xray_uid", refuse)
+    monkeypatch.setattr(apply, "proxy_uid", refuse)
 
     assert apply._render(("router",)) == {"router": ""}
 
