@@ -44,7 +44,6 @@ CLIENT_CODE_WORDS = {
     "connect_limit": "this client has too many connections open through the hub "
     "({limit})",
     "port_not_published": "that machine does not publish port {port} now",
-    "files_adapter_unavailable": "the files adapter could not be made: {detail}",
     "shell_unknown": "the hub no longer has that terminal open",
     "session_not_owned": "only the client that opened this session can change it",
     "session_unknown": "the machine no longer keeps this session",
@@ -134,6 +133,10 @@ CLIENT_CODE_WORDS = {
         "the saved login is gone; enter it again: nclient service file config"
     ),
     "fs_refused": "this account may not use that folder",
+    "files_adapter_unavailable": (
+        "the files adapter could not start: {detail}; check the "
+        "NeutrinoClientFiles service"
+    ),
     "mountpoint_invalid": "give a folder under your home, like ~/nas/share",
     "mountpoint_not_drive_letter": "give an unused drive letter, like N:",
     "service_unknown": "the hub no longer publishes that service",

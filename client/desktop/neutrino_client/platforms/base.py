@@ -5,7 +5,8 @@ and log live; which language this machine is set up in; where the control socket
 and who its peer is; judge a proposed mount location; attach, detach and
 query a share at a location; open a link; start a windowed program; run
 the carried overlay CLIs and say where the EasyTier daemon answers and keeps
-its state; put this process's terminal in raw mode, and open the system's
+its state; say where the files daemon answers and give its adapter an
+address, on Windows; put this process's terminal in raw mode, and open the system's
 own terminal. A new platform is a new class, and nothing above this seam
 changes. The client runs as the person, so every file operation is the
 standard library's own on the person's home; the EasyTier daemon alone runs
@@ -500,6 +501,27 @@ class ClientPlatform:
         Raises:
             OSError: When it cannot be tied.
         """
+
+    def files_daemon_address(self) -> str:
+        """Where the files daemon answers on this machine.
+
+        Returns:
+            Its pipe name.
+
+        Raises:
+            PlatformUnsupportedError: Everywhere but Windows, whose SMB
+                client alone needs the files adapter.
+        """
+        raise PlatformUnsupportedError("no files adapter here")
+
+    def configure_files_adapter(self) -> None:
+        """Give the files adapter tun2socks opened its address, metric and DNS settings.
+
+        Raises:
+            PlatformUnsupportedError: Everywhere but Windows.
+            OSError: When the adapter does not appear or refuses a setting.
+        """
+        raise PlatformUnsupportedError("no files adapter here")
 
     def raw_terminal(self):
         """This process's terminal in raw mode, for a ``with`` block.

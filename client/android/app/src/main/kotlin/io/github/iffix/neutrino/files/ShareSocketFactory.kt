@@ -1,39 +1,37 @@
 package io.github.iffix.neutrino.files
 
+import io.github.iffix.neutrino.channel.ChannelConnectSocket
+import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelStream
 import java.net.InetAddress
-import java.net.InetSocketAddress
 import java.net.Socket
-import java.net.SocketAddress
 import javax.net.SocketFactory
 
 /**
- * The sockets a share is reached over: a connect bounded short, so an unreachable server fails
- * fast, and each read bounded long, so a slow large transfer is not taken for a dead server.
+ * The sockets one share is reached over: each is a `connect` stream to the hub naming the share's
+ * `file` entry, whatever host and port the SMB library asks for, so no connection dials the
+ * share's own address.
  *
- * @property connectTimeoutMillis How long reaching the server may take.
- * @property readTimeoutMillis How long one read may wait for the server.
+ * @param opener Opens one `connect` stream for the share.
  */
-class ShareSocketFactory(val connectTimeoutMillis: Int, val readTimeoutMillis: Int) : SocketFactory() {
-    override fun createSocket(): Socket = Bounded()
+class ShareSocketFactory(private val opener: () -> ChannelResult<ChannelStream>) : SocketFactory() {
+    private val made = mutableListOf<ChannelConnectSocket>()
 
-    override fun createSocket(host: String, port: Int): Socket = Bounded().apply {
-        connect(InetSocketAddress(host, port))
-    }
+    /** The code the first of its streams the hub ended ended in, or null while none was. */
+    val refusal: ChannelResult.Refused?
+        get() = synchronized(made) { made.firstNotNullOfOrNull { it.refusal } }
+
+    override fun createSocket(): Socket = socket()
+
+    override fun createSocket(host: String, port: Int): Socket = socket().also { it.open() }
 
     override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
         createSocket(host, port)
 
-    override fun createSocket(host: InetAddress, port: Int): Socket =
-        Bounded().apply { connect(InetSocketAddress(host, port)) }
+    override fun createSocket(host: InetAddress, port: Int): Socket = socket().also { it.open() }
 
     override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket =
         createSocket(address, port)
 
-    private inner class Bounded : Socket() {
-        init {
-            soTimeout = readTimeoutMillis
-        }
-
-        override fun connect(endpoint: SocketAddress) = connect(endpoint, connectTimeoutMillis)
-    }
+    private fun socket(): ChannelConnectSocket = ChannelConnectSocket(opener).also { synchronized(made) { made += it } }
 }

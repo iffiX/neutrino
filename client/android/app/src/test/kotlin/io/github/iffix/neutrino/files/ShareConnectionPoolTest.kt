@@ -8,7 +8,7 @@ import org.junit.Test
 
 class ShareConnectionPoolTest {
     private val root =
-        ShareRoot(key = "r1", title = "media", host = "10.0.0.5", share = "media", users = emptyList(), summary = "")
+        ShareRoot("r1", "media", "10.0.0.5", "media", emptyList(), "", bindingId = "b1", entryId = "f1")
     private val login = ShareLogin("alice", "secret")
     private var now = 0L
     private var made = 0

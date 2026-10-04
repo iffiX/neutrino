@@ -1473,6 +1473,11 @@ def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_wo
         ("cc-switch", "MIT"),
     ):
         assert f"name: '{name}'" in PAGE_JS and f"licence: '{licence}'" in PAGE_JS
+    assert "{ name: 'tun2socks', key: 'tun2socks', licence: 'MIT'," in PAGE_JS
+    assert "os: 'windows' }" in PAGE_JS
+    assert "CARRIED.filter((core) => !core.os || core.os === platform.os)" in (
+        body_of("aboutSection")
+    )
     assert "core.repository + '/tree/' + fill(core.tag, { version: version })" in (
         body_of("carriedSource")
     )

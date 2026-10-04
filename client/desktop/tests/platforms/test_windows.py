@@ -722,3 +722,75 @@ def test_a_clipboard_another_program_holds_refuses_the_write(monkeypatch):
     with pytest.raises(OSError):
         api.set_clipboard_text("x")
     assert libraries.calls == [("OpenClipboard", None)]
+
+
+def test_the_files_daemon_answers_on_its_own_pipe(platform):
+    assert platform.files_daemon_address() == "\\\\.\\pipe\\neutrino_client_files"
+
+
+def script_of(command):
+    """The PowerShell script an encoded command carries."""
+    import base64
+
+    assert command[-2] == "-EncodedCommand"
+    return base64.b64decode(command[-1]).decode("utf-16-le")
+
+
+def test_the_adapter_gets_its_address_with_no_gateway_and_no_dns(monkeypatch):
+    monkeypatch.setenv("SystemRoot", "C:\\Windows")
+    command = windows_module.files_adapter_command()
+    script = script_of(command)
+
+    assert command[0] == os.path.join(
+        "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
+    )
+    assert command[1:6] == [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+    ]
+    assert "$alias = 'neutrino_files'" in script
+    assert "AddSeconds(15)" in script
+    assert "$adapter.Status -eq 'Up'" in script
+    assert "-InterfaceMetric 9999" in script
+    assert "-IPAddress '198.19.255.1'" in script  # scan: allow
+    assert "-PrefixLength 24 -PolicyStore ActiveStore" in script
+    assert "-RegisterThisConnectionsAddress $false" in script
+    assert "-ResetServerAddresses" in script
+    assert "DefaultGateway" not in script and "NextHop" not in script
+    assert "@" not in script.replace("@{", "")
+
+
+def test_giving_the_adapter_its_address_runs_the_script(platform, monkeypatch):
+    recorder = CommandRecorder([completed()])
+    monkeypatch.setattr(windows_module, "run_quietly", recorder)
+
+    platform.configure_files_adapter()
+
+    assert recorder.commands == [windows_module.files_adapter_command()]
+
+
+def test_an_adapter_that_refuses_says_what_failed(platform, monkeypatch):
+    recorder = CommandRecorder(
+        [completed(returncode=1, stdout="the adapter neutrino_files is not up\r\n")]
+    )
+    monkeypatch.setattr(windows_module, "run_quietly", recorder)
+
+    with pytest.raises(OSError) as raised:
+        platform.configure_files_adapter()
+
+    assert str(raised.value) == "the adapter neutrino_files is not up"
+
+
+def test_a_script_that_runs_out_its_time_is_an_os_error(platform, monkeypatch):
+    def hang(command, **kwargs):
+        raise windows_module.subprocess.TimeoutExpired(command, 60)
+
+    monkeypatch.setattr(windows_module, "run_quietly", hang)
+
+    with pytest.raises(OSError) as raised:
+        platform.configure_files_adapter()
+
+    assert "PowerShell did not finish" in str(raised.value)

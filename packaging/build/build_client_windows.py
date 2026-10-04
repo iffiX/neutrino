@@ -18,10 +18,13 @@ build machine's Python is pinned to a minor here and checked.
 
 The client is a person's application, not a service and not an autostart: it
 runs when the person opens it. The two overlay daemons it carries are
-services that start with Windows: NetBird's, and the client's own EasyTier
+services that start with Windows: NetBird's, the client's own EasyTier
 daemon, ``nclient.exe easytier-daemon --service`` as SYSTEM, which runs
 EasyTier's core as its child only while a network or a console is
-configured. Beside EasyTier's core and CLI ride wintun.dll and a stand-in
+configured, and the files daemon, ``nclient.exe files-daemon --service`` as
+SYSTEM, which runs tun2socks on the files adapter only while a resident
+asks for it. Beside EasyTier's core and CLI ride tun2socks, wintun.dll and a
+stand-in
 packet.dll: the core does not start without a Packet.dll to load, Npcap's
 may not be carried, and the stand-in, built from
 ``client/desktop/packaging/packet_stub.c`` with MSVC before this script
@@ -78,6 +81,8 @@ from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 from neutrino_client.constants import (  # noqa: E402
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_SERVICE_WINDOWS,
+    CLIENT_FILES_DAEMON_VERB,
+    CLIENT_FILES_SERVICE_WINDOWS,
     CLIENT_NETBIRD_SERVICE_WINDOWS,
 )
 
@@ -259,8 +264,10 @@ NETBIRD_SERVICE_ARGUMENTS = (
     ' --log-file "[CommonAppDataFolder]Neutrino\\client\\log\\netbird.log"'
 )
 EASYTIER_DAEMON_ARGUMENTS = f"{CLIENT_EASYTIER_DAEMON_VERB} --service"
-# What the service control manager does when the EasyTier daemon ends without
-# being stopped: start it again, as the agent's service does.
+# The files daemon is the same console program run with its own verb.
+FILES_DAEMON_ARGUMENTS = f"{CLIENT_FILES_DAEMON_VERB} --service"
+# What the service control manager does when either daemon of the client
+# ends without being stopped: start it again, as the agent's service does.
 EASYTIER_DAEMON_RECOVERY = (
     '<util:ServiceConfig FirstFailureActionType="restart" '
     'SecondFailureActionType="restart" ThirdFailureActionType="restart" '
@@ -614,11 +621,13 @@ def main() -> int:
 
 
 def daemons_source(payload_dir: Path) -> str:
-    """The two overlay daemons as services, and the folder NetBird's state is in.
+    """The two overlay daemons and the files daemon as services, and the
+    folder NetBird's state is in.
 
     Args:
         payload_dir: The staged payload: ``bin`` holds NetBird, and the
-            console client, which is the EasyTier daemon, is at its top.
+            console client, which is the EasyTier daemon and the files
+            daemon, is at its top.
 
     Returns:
         The ``Daemons`` component group.
@@ -670,6 +679,14 @@ def daemons_source(payload_dir: Path) -> str:
         description="The daemon that runs EasyTier for the Neutrino client",
         arguments=EASYTIER_DAEMON_ARGUMENTS,
         permissions=(EASYTIER_DAEMON_RECOVERY,),
+        also=wix_build.service_entries(
+            entry_id="FilesDaemon",
+            service_name=CLIENT_FILES_SERVICE_WINDOWS,
+            display_name="Neutrino Client Files",
+            description="The daemon that runs the files adapter for the Neutrino client",
+            arguments=FILES_DAEMON_ARGUMENTS,
+            permissions=(EASYTIER_DAEMON_RECOVERY,),
+        ),
     )
     folder = wix_build.element(
         "Component",
@@ -774,7 +791,7 @@ def _lay_out(
     # what the compiler is pointed at; the checkout itself is never what
     # ships.
     tree = root / "tree"
-    package = payload.stage_client_tree(tree, version)
+    package = payload.stage_client_tree(tree, version, is_windows=True)
 
     python = _make_build_environment(root / "venv", machine)
     dist = _compile(python, tree, root / "build", version)

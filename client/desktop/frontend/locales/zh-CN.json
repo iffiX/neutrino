@@ -17,7 +17,7 @@
   "code.credentials_missing": "保存的登录信息已丢失，请用配置重新填写",
   "code.enroll_no_token": "中枢没有返回令牌",
   "code.enroll_refused": "中枢拒绝了这个链接，它可能已过期，请重新生成一个",
-  "code.files_adapter_unavailable": "文件网卡建不起来：{detail}",
+  "code.files_adapter_unavailable": "文件适配器无法启动：{detail}",
   "code.fs_refused": "此账户不能使用那个文件夹",
   "code.gui_webkitgtk_missing": "窗口需要 WebKitGTK，请安装：sudo apt install {packages}",
   "code.gui_webview2_missing": "窗口需要 {runtime}，请安装后再试",
