@@ -63,7 +63,7 @@ To join another hub, select **Join a hub** again with that hub's link. Each hub 
 
 The **Hubs** screen holds one row per hub: its name, its state, its address and the package it runs. In portrait, a bar at the bottom opens **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops** and **Settings**. In landscape, and on a tablet at least 720 dp wide, a sidebar replaces the bar.
 
-While the channel is open, the state names the way it reached the hub: **Connected · LAN**, **Connected · NetBird**, **Connected · EasyTier** or **Connected · Relay**.
+While the channel is open, the state names the way it reached the hub: **Connected · LAN**, **Connected · NetBird**, **Connected · EasyTier** or **Connected · Relay**. Relay means the phone reached the public port of a server the hub's owner set up, as [Relay](../hub/relay.md) describes.
 
 ### Leave and reconnect
 
@@ -99,8 +99,9 @@ A screen whose forward cannot reach its service shows the code on the row:
 | `connect_failed`     | the hub or the machine could not connect to the service: `refused` (nothing listens on the port), `timeout` or `unreachable` |
 | `agent_offline`      | the machine that provides the entry is not connected to the hub                                                              |
 | `port_not_published` | the machine does not publish that port now                                                                                   |
-| `connect_limit`      | this phone has 256 connections open through the hub                                                                          |
+| `connect_limit`      | this phone has 256 connections open through the hub; close some and try again                                                |
 | `permission_denied`  | the hub's **Clients** page does not let this phone use that kind of entry, or that machine                                   |
+| `service_unknown`    | the hub no longer publishes the entry                                                                                        |
 
 ## Web
 
@@ -110,7 +111,7 @@ Select **Open** on a row. The app makes the entry's forward and opens the page i
 
 ## Ports
 
-The **Ports** screen lists each port the hubs publish, with the address it has on the hub's network.
+The **Ports** screen lists each port the hubs publish, with the machine's address and the port for reference.
 
 1. Select **Connect** on the entry. The row adds `→ 127.0.0.1:` and the local port, and the button reads **Disconnect**.
 1. Select **Copy** to copy that loopback address, and paste it into the app on the phone that uses the port.
@@ -119,7 +120,7 @@ The **Ports** screen lists each port the hubs publish, with the address it has o
 
 The **AI** screen holds one row per hub that runs an AI gateway. Select **Connect** to forward the gateway to the phone, and **Copy** beside **Disconnect** copies its loopback address. Under the row, **This client's key** shows the key behind an eye button, with **Copy**.
 
-Paste the address and the key into an app on the phone that takes an OpenAI-compatible endpoint. The line under the row reads **The tools reach the gateway only while this client runs.** When the hub cannot open this phone's key, the row shows `vault_locked`.
+Paste the address and the key into an app on the phone that takes an OpenAI-compatible endpoint. The line under the row reads **The tools reach the gateway only while this client runs.**: the loopback address answers only while the app holds the forward. When the hub cannot open this phone's key, the row shows `vault_locked`.
 
 ## Files
 

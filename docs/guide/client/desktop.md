@@ -6,7 +6,7 @@ title: Desktop client
 
 With the desktop client installed on a Linux, Windows or macOS computer, the services of every hub you joined open from one window. A link from each hub joins the computer to it. The window then shows that hub's web pages, ports, AI gateway, shares, terminals and remote desktops. The same work runs from a terminal through the commands in [nclient commands](../commands/nclient.md).
 
-Every page reaches its service through the hub. The client listens on a port of this computer's loopback address, `127.0.0.1`, and sends each connection there to the hub's port 8443. The hub connects it to the service, on its own box or through the agent of the machine that provides it.
+Every page reaches its service through the hub. The client listens on a port of this computer's loopback address, `127.0.0.1`, and passes each connection to that port on to the hub's port 8443. The hub connects it to the service, on its own box or through the agent of the machine that provides it.
 
 ## Install the client
 
@@ -108,9 +108,9 @@ The dot before the name shows the state:
 | **Reconnect** | on a row reading **Replaced by another client**      | takes the hub back from the other client and connects                                                                                        |
 | **Leave**     | always                                               | reads **Press again to leave**; a second press within five seconds leaves the hub                                                            |
 
-**Panel** opens the panel from anywhere the client reaches the hub, so the panel's own ports can stay on the LAN. The browser opens `http://panel-<hub-id>.localhost:<local-port>/`, or `http://127.0.0.1:<local-port>/` on macOS, where `<hub-id>` is the hub's id and `<local-port>` the forward's port. The forward stays until you leave the hub or quit the client.
+**Panel** opens the panel from anywhere the client reaches the hub, so the panel's own ports can stay on the LAN. **Hub panel** is on by default; a hub that turned it off has to turn it on again from the LAN. The browser opens `http://panel-<hub-id>.localhost:<local-port>/`, or `http://127.0.0.1:<local-port>/` on macOS, where `<hub-id>` is the hub's id and `<local-port>` the forward's port. The forward stays until you leave the hub or quit the client.
 
-Leaving removes the row at once, whether the hub is reachable or not. It undoes what the hub published on this computer: its forwards, the panel's forward among them, its mounts, its viewers, and a virtual network no other hub names.
+From a terminal, `nclient leave --yes` leaves without the question, and `nclient status --json` prints the state of every hub as JSON. Leaving removes the row at once, whether the hub is reachable or not. It undoes what the hub published on this computer: its forwards, the panel's forward among them, its mounts, its viewers, and a virtual network no other hub names.
 
 After a refusal, the row stays and shows the code, and the client connects again with up to a minute between tries. One code removes the row:
 
@@ -123,7 +123,7 @@ After a refusal, the row stays and shows the code, and the client connects again
 
 ### Virtual network
 
-The pages of the client need only the hub's port 8443, so a virtual network is one way in among the others. A hub that publishes NetBird or EasyTier, to a client its **Clients** page lets use one, shows a **Virtual network** line under its row. The line reads the state and, while on, this computer's address on that network.
+The pages of the client need only the hub's port 8443, so a virtual network is one way in among the others. When a hub publishes NetBird or EasyTier, and its **Clients** page lets this client use a virtual network, the row has a **Virtual network** line. The line reads the state and, while on, this computer's address on that network.
 
 To join the network, select **Connect** on the row:
 
@@ -251,15 +251,15 @@ The client keeps the login in a credentials file only your account reads, so the
 
 ### How each system mounts
 
-| System  | The mount                                                                                                                                                                                             |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Linux   | the client's mount helper runs under `pkexec` and mounts `//127.0.0.1/` and the share at the forward's port; polkit asks for your password once                                                       |
-| macOS   | the system mounts the volume from the forward, as the Finder's **Connect to Server** does; the first mount asks you to confirm the server, and the row names the mount point under `/Volumes`         |
-| Windows | the files adapter gives the machine that provides the share an address of its own, from `198.19.255.2` up, and Windows maps the drive to that address; the drive letter keeps naming the same machine |
+| System  | The mount                                                                                                                                                                                                                  |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux   | the client's mount helper runs under `pkexec` and mounts `//127.0.0.1/` and the share at the forward's port; polkit asks for your password once                                                                            |
+| macOS   | the system mounts the volume from the forward, as the Finder's **Connect to Server** does; the first mount asks you to confirm the server, and the row names the mount point under `/Volumes`                              |
+| Windows | the files adapter gives the machine that provides the share an address of its own, from `198.19.255.2` up, and Windows maps the drive to that address; the drive letter keeps naming the same machine <!-- scan: allow --> |
 
 On macOS the system shows its own dialogs: a wrong password opens the system's login dialog, and **Cancel** there gives `mount_not_authorized`. When the system has not finished after ten minutes, the row shows `mount_timed_out`.
 
-On Windows the adapter is a network adapter named `neutrino_files`, run by the `NeutrinoClientFiles` service. It connects to no network, and it sends only the shares' connections to the hub. When the service is missing, stopped or failing, the mount fails with `files_adapter_unavailable` and the service's own words after it, and nothing else on the computer changes. Reinstall the client to register the service again.
+On Windows the adapter is a network adapter named `neutrino_files`, run by the `NeutrinoClientFiles` service. It connects to no network, and it sends only the shares' connections to the hub. When the service is missing, stopped or failing, the mount fails with `files_adapter_unavailable` and the service's own words after it, and nothing else on the computer changes. Start **Neutrino Client Files** in the Windows **Services** console, or reinstall the client to register the service again.
 
 ![The mapped drive in File Explorer](/guide/os/win_explorer_mapped.webp)
 
@@ -275,7 +275,7 @@ On Windows the adapter is a network adapter named `neutrino_files`, run by the `
 | `share_not_found`             | the host has no share by that name                                                 |
 | `share_unreachable`           | the host does not answer; the client mounts again when it does                     |
 | `share_session_conflict`      | Windows holds a connection to that server under another login; disconnect it first |
-| `files_adapter_unavailable`   | on Windows, the files adapter could not start                                      |
+| `files_adapter_unavailable`   | on Windows, the `NeutrinoClientFiles` service is missing, stopped or failing       |
 | `mount_not_authorized`        | the polkit prompt or the macOS login dialog was dismissed                          |
 | `mount_tooling_missing`       | on Linux, the computer has no `mount.cifs`                                         |
 

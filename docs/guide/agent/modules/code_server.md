@@ -12,7 +12,7 @@ The **code-server** module runs code-server, the browser build of VS Code that C
 | macOS   | Apple silicon and Intel                   |
 | Windows | none; the tab is greyed out               |
 
-In the mainland edition the installer fetches the same release from the USTC mirror, `mirrors.ustc.edu.cn`. That mirror keeps only Coder's latest release. When it no longer has the pinned version, the installer takes the mirror's current release, checked by HTTPS alone.
+In the mainland edition the installer fetches the same release from the USTC mirror, `mirrors.ustc.edu.cn`. That mirror keeps only Coder's latest release. The installer checks the pinned version against its SHA-256. When the mirror no longer has that version, the installer takes the mirror's current release, checked by HTTPS alone.
 
 ## Turn it on
 
@@ -30,7 +30,7 @@ The line at the top of the section reads **You install code-server, Coder's MIT-
 
 Each instance runs as its account, so the files it creates belong to that account. Its settings and extensions are in code-server's own folders under the account's home. Its row reads **running** or **not running**, and a reason appears under the row when the machine reports one.
 
-The port is where the agent's forwarder listens on the machine's loopback. code-server itself listens on a socket that only its account and root can open.
+The port is where the agent's forwarder listens on the managed machine's loopback, apart from the hub's own port 8443. code-server itself listens on a socket that only its account and root can open.
 
 ## Extensions
 
@@ -51,4 +51,4 @@ The editor installs extensions from Open VSX, code-server's own extension galler
 
 ## Open it from a client
 
-Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled **code-server** with the account in parentheses. On the client's **Web** page, **Open** makes a forward through the hub and opens the instance in the browser with a fresh token. The token works once, within 60 seconds. The forwarder then sets a login cookie in that browser, which lasts seven days.
+Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled **code-server** with the account in parentheses. A client opens it when the hub's **Clients** page allows it **Web pages** on that machine. On the client's **Web** page, **Open** makes a forward through the hub and opens the instance in the browser with a fresh token. The token works once, within 60 seconds. The forwarder then sets a login cookie in that browser, which lasts seven days; after that, select **Open** again.
