@@ -9,13 +9,16 @@ whose peer identity comes from pipe impersonation and must be the same
 account. An EasyTier network is asked of the EasyTier daemon, a service
 running as SYSTEM, over its named pipe; the daemon keeps its state under
 ProgramData in a directory only SYSTEM and the administrators may open, and
-ties the core it starts to its own life with a job object.
+ties the core it starts to its own life with a job object. The files
+daemon, a service running as SYSTEM too, answers on a pipe of its own and
+gives the wintun adapter tun2socks opens its address through PowerShell.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
 # client still imports on Python 3.9.
 from __future__ import annotations
 
+import base64
 import ctypes
 import getpass
 import os
@@ -30,6 +33,13 @@ from neutrino_client.constants import (
     CLIENT_DEFAULT_LANGUAGE,
     CLIENT_EASYTIER_PIPE_WINDOWS,
     CLIENT_EASYTIER_STATE_NAME_WINDOWS,
+    CLIENT_FILES_ADAPTER_ADDRESS,
+    CLIENT_FILES_ADAPTER_METRIC,
+    CLIENT_FILES_ADAPTER_NAME,
+    CLIENT_FILES_ADAPTER_SCRIPT_TIMEOUT_S,
+    CLIENT_FILES_ADAPTER_WAIT_S,
+    CLIENT_FILES_NETWORK,
+    CLIENT_FILES_PIPE_WINDOWS,
     CLIENT_LOG_SUBDIR_WINDOWS,
     CLIENT_STATE_SUBDIR_WINDOWS,
 )
@@ -56,6 +66,7 @@ from neutrino_client.words import language_for_tag
 WINDOWS_CLIENT_DIR_PARTS = ("Neutrino", "client")
 WINDOWS_MOUNT_TIMEOUT_S = 60
 WINDOWS_PROGRAM_DATA_DEFAULT = "C:\\ProgramData"
+WINDOWS_SYSTEM_ROOT_DEFAULT = "C:\\Windows"
 
 # A share that File Explorer never hears about stands there as a disconnected
 # drive while every other program reaches it; the shell is told after a
@@ -94,6 +105,72 @@ SHARE_REFUSALS = {
 # The EasyTier daemon's state directory: SYSTEM and the administrators alone,
 # every file in it the same, nothing taken from ProgramData above it.
 EASYTIER_STATE_SDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+
+# Gives the files adapter its address once tun2socks has opened it: waits
+# for the adapter to be up, puts its metric past every other, adds the
+# address in the active store alone, and keeps it out of DNS. No gateway, so
+# no default route. A failure prints its message alone and exits 1.
+FILES_ADAPTER_SCRIPT = """
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+try {
+  $alias = '@NAME@'
+  $deadline = (Get-Date).AddSeconds(@WAIT@)
+  while ($true) {
+    $adapter = Get-NetAdapter -Name $alias -ErrorAction SilentlyContinue
+    $ipv4 = Get-NetIPInterface -InterfaceAlias $alias -AddressFamily IPv4 `
+      -ErrorAction SilentlyContinue
+    if ($adapter -and $adapter.Status -eq 'Up' -and $ipv4) { break }
+    if ((Get-Date) -gt $deadline) { throw "the adapter $alias is not up" }
+    Start-Sleep -Milliseconds 200
+  }
+  Set-NetIPInterface -InterfaceAlias $alias -AddressFamily IPv4 `
+    -InterfaceMetric @METRIC@
+  $present = Get-NetIPAddress -InterfaceAlias $alias -AddressFamily IPv4 `
+    -IPAddress '@ADDRESS@' -ErrorAction SilentlyContinue
+  if (-not $present) {
+    New-NetIPAddress -InterfaceAlias $alias -IPAddress '@ADDRESS@' `
+      -PrefixLength @PREFIX@ -PolicyStore ActiveStore | Out-Null
+  }
+  Set-DnsClient -InterfaceAlias $alias -RegisterThisConnectionsAddress $false
+  Set-DnsClientServerAddress -InterfaceAlias $alias -ResetServerAddresses
+} catch {
+  [Console]::Out.WriteLine($_.Exception.Message)
+  exit 1
+}
+"""
+
+
+def files_adapter_command() -> list:
+    """How PowerShell gives the files adapter its address, metric and DNS settings.
+
+    Returns:
+        The argument vector; the script travels encoded, so no quoting of the
+        command line can change it.
+    """
+    script = (
+        FILES_ADAPTER_SCRIPT.replace("@NAME@", CLIENT_FILES_ADAPTER_NAME)
+        .replace("@WAIT@", str(CLIENT_FILES_ADAPTER_WAIT_S))
+        .replace("@METRIC@", str(CLIENT_FILES_ADAPTER_METRIC))
+        .replace("@ADDRESS@", CLIENT_FILES_ADAPTER_ADDRESS)
+        .replace("@PREFIX@", CLIENT_FILES_NETWORK.rsplit("/", 1)[1])
+    )
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    return [
+        _powershell_path(),
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+        encoded,
+    ]
+
+
+def _powershell_path() -> str:
+    """Windows PowerShell under ``%SystemRoot%``, whatever the service's PATH."""
+    root = os.environ.get("SystemRoot", "") or WINDOWS_SYSTEM_ROOT_DEFAULT
+    return os.path.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
 
 
 class WindowsPlatform(ClientPlatform):
@@ -379,6 +456,28 @@ class WindowsPlatform(ClientPlatform):
         """
         os.makedirs(path, exist_ok=True)
         self._win32().protect_directory(path, EASYTIER_STATE_SDDL)
+
+    def files_daemon_address(self) -> str:
+        """The pipe named ``neutrino_client_files``."""
+        return CLIENT_FILES_PIPE_WINDOWS
+
+    def configure_files_adapter(self) -> None:
+        """Give the files adapter its address, metric and DNS settings.
+
+        Raises:
+            OSError: When PowerShell cannot run, runs out its time, or says
+                what failed.
+        """
+        try:
+            result = run_quietly(
+                files_adapter_command(),
+                timeout_s=CLIENT_FILES_ADAPTER_SCRIPT_TIMEOUT_S,
+            )
+        except subprocess.SubprocessError as error:
+            raise OSError(f"PowerShell did not finish: {error}")
+        if result.returncode != 0:
+            words = (result.stdout or "").strip() or (result.stderr or "").strip()
+            raise OSError(words or f"PowerShell exited {result.returncode}")
 
     def bind_child_process(self, process) -> None:
         """Put a child in a job that ends it when the daemon ends.

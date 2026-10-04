@@ -52,7 +52,7 @@ In router mode, each interface has a tab, and its **Role** is one of these:
 | **Split**    | A trunk sliced into VLANs    |
 | **Disabled** | Left alone                   |
 
-A WAN interface takes its address by **DHCP** from the upstream network, or by **Static** with an **Address**, a **Prefix length** and a **Gateway**. Under **Priority**, **Automatic** lets the gateway rank the uplinks, and **Prefer this one** puts this one first. **Backup only** keeps it for when no other uplink is left, and **Clone MAC** replaces its hardware address.
+A WAN interface takes its address by **DHCP** from the upstream network, or by **Static** with an **Address**, a **Prefix length** and a **Gateway**. A DHCP uplink's form shows the resolvers its lease names. A static uplink has a **DNS** list under the gateway, one address or `<address>:<port>` per row. An empty list reads **Built-in resolvers: 223.5.5.5, 119.29.29.29**. Under **Priority**, **Automatic** lets the gateway rank the uplinks, and **Prefer this one** puts this one first. **Backup only** keeps it for when no other uplink is left, and **Clone MAC** replaces its hardware address.
 
 A LAN interface has a **Gateway address** and a **Prefix length**; the first served network is `192.168.8.0/24` with the box at `192.168.8.1` unless you change it. Select **Apply to** followed by the interface's name to apply one tab.
 
@@ -71,6 +71,8 @@ On each served network the box gives its DHCP clients its own address as their g
 | **Lease time**                       | a dnsmasq duration such as `12h`, `30m` or `1d`; `12h` by default                      |
 
 The box answers DNS on every served network whether or not DHCP is on. On each of them, the name `hub.neutrino.internal` resolves to the box's address on that network. A server-mode box serves no network, so it runs neither DHCP nor DNS for others.
+
+The box forwards those queries to the uplinks' resolvers: a DHCP uplink's come from its lease, and a static uplink's are its **DNS** rows. With several uplinks, each one's resolvers follow the uplinks' priority. When no uplink names a resolver, the built-in `223.5.5.5` and `119.29.29.29` answer. The two lists on the [Proxy](./proxy.md) page apply only to traffic a proxy scope covers.
 
 **Fixed addresses** binds a MAC address to one address in a network that hands out addresses:
 

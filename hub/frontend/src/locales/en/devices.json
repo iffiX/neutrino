@@ -85,6 +85,7 @@
   "ui.clients.kind_ai": "AI gateway",
   "ui.clients.kind_file": "Files",
   "ui.clients.kind_overlay": "Virtual network",
+  "ui.clients.kind_panel": "Hub panel",
   "ui.clients.kind_port": "Ports",
   "ui.clients.kind_rdp": "Remote desktops",
   "ui.clients.kind_terminal": "Terminals",

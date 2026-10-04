@@ -45,7 +45,7 @@ A person creates the link on the hub's **Clients** page for a client and on **De
 | Field      | Holds                                                                                                                                                                                                     |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `urls`     | every address the hub is exposed at on the agent port; a program tries them in order, since one of them is on the joining machine's network                                                               |
-| `token`    | the enrolment ticket, valid for thirty minutes and spent once                                                                                                                                               |
+| `token`    | the enrolment ticket, valid for thirty minutes and spent once                                                                                                                                             |
 | `fp`       | the fingerprint to pin                                                                                                                                                                                    |
 | `role`     | `client` or `agent`                                                                                                                                                                                       |
 | `overlays` | a client link only: the same list as the client state's `overlays`, taken for the default permission when the link is created; empty when that permission leaves out `overlay` or no overlay has material |
@@ -132,14 +132,16 @@ Every action is a stream: its `open` is the request, its `close` is the reply, a
 
 The hub sends a client its `state` on any report whose `state_hash` differs from the hub's or that says `is_refresh: true`, and whenever the hub's own changes.
 
-| Section       | Holds                                                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `hash`        | an opaque string the client names back in every report                                                           |
-| `is_disabled` | `true` after **Disable** on **Clients**: the lists are empty and every action is rejected with `client_disabled` |
-| `services`    | the published entries this client is allowed, resolved for the address its socket came from                      |
-| `urls`        | every address the hub serves the channel on, which the client keeps for its next reconnect                       |
-| `overlays`    | what the client joins each of the hub's overlays with, the preferred first                                       |
-| `terminals`   | the managed machines the client is allowed to open a shell on, each `{device_id, name, is_online, sessions}`     |
+| Section            | Holds                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `hash`             | an opaque string the client names back in every report                                                                    |
+| `is_disabled`      | `true` after **Disable** on **Clients**: the lists are empty and every action is rejected with `client_disabled`          |
+| `services`         | the published entries this client is allowed, resolved for the address its socket came from                               |
+| `urls`             | every address the hub serves the channel on, which the client keeps for its next reconnect                                |
+| `overlays`         | what the client joins each of the hub's overlays with, the preferred first                                                |
+| `terminals`        | the managed machines the client is allowed to open a shell on, each `{device_id, name, is_online, sessions}`              |
+| `is_panel_allowed` | `true` while the client is switched on and its permission includes `panel`: it may open the hub's panel through `connect` |
+| `reached_through`  | the way this client's socket reached the hub: `lan`, `netbird`, `easytier` or `relay`                                     |
 
 ### Overlays
 
@@ -211,23 +213,23 @@ A report goes up after the welcome, every 30 seconds after that, and after each 
 
 Each entry of `services` is `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}`.
 
-| `type` | `payload`                                                                           |
-| ------ | ----------------------------------------------------------------------------------- |
-| `web`  | `{url, is_local_only}`; `is_local_only` is present and true on a VS Code entry only |
-| `port` | `{host, port}`                                                                      |
-| `ai`   | `{endpoint, protocol, models}`, `protocol` being `openai`                           |
-| `file` | `{protocol, host, share, users}`, `protocol` being `smb`                            |
-| `rdp`  | `{protocol, host, port, attention}`, `protocol` being `rustdesk`                    |
+| `type` | `payload`                                                                                                                                         |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web`  | `{url, is_token_required}`; `is_token_required` is present and true on a VS Code, code-server or CloudCLI instance only                           |
+| `port` | `{host, port}`                                                                                                                                    |
+| `ai`   | `{endpoint, protocol, models}`, `protocol` being `openai`                                                                                         |
+| `file` | `{protocol, host, share, users}`, `protocol` being `smb`                                                                                          |
+| `rdp`  | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` |
 
-An entry with `is_local_only` opens only through a port forwarded to the client's own `127.0.0.1`, so a phone shows it as desktop only. `attention` on an `rdp` entry is what somebody must do at the sharing machine first: `rdp_nobody_seated`, `rdp_screen_not_allowed`, or empty. `users` on a `file` entry lists the accounts that can open the share, so a phone offers the user name and asks only for the password. It is empty on a declared share, and a hub before 0.5.0 sends none.
+Every `host`, `port`, `url` and `endpoint` in a payload is where the service stands on the hub's networks, resolved for the address the client's socket came from. A client shows it to the person and dials none of it; every byte to a service travels over a `connect` stream. `attention` on an `rdp` entry is what somebody must do at the sharing machine first: `rdp_nobody_seated`, `rdp_screen_not_allowed`, or empty. `users` on a `file` entry lists the accounts that can open the share, so a phone offers the user name and asks only for the password. It is empty on a declared share, and a hub before 0.5.0 sends none.
 
-| Field                | Holds                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `is_healthy`         | the last probe's result, `null` where nothing probed it                                                                                                 |
-| `source`             | `module`, `declared` or `device`                                                                                                                        |
-| `description_code`   | the provenance as a code a program words itself: `ai_gateway`, `container`, `declared`, `device_share`, `gitea_module`, `samba_module`, `vscode_module` |
-| `description_params` | the values that sentence names; `vscode_module` takes `{host, account}`                                                                                 |
-| `device_name`        | the name of the machine providing the entry, empty when no machine on the record of the hub provides it                                                 |
+| Field                | Holds                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `is_healthy`         | the last probe's result, `null` where nothing probed it                                                                                                                                          |
+| `source`             | `module`, `declared` or `device`                                                                                                                                                                 |
+| `description_code`   | the provenance as a code a program words itself: `ai_gateway`, `container`, `declared`, `device_share`, `gitea_module`, `samba_module`, `vscode_module`, `code_server_module`, `cloudcli_module` |
+| `description_params` | the values that sentence names; `vscode_module`, `code_server_module` and `cloudcli_module` take `{host, account}`                                                                               |
+| `device_name`        | the name of the machine providing the entry, empty when no machine on the record of the hub provides it                                                                                          |
 
 ## The streams a client opens
 
@@ -235,23 +237,49 @@ An entry with `is_local_only` opens only through a port forwarded to the client'
 
 `open {kind: service, id}` asks for what one entry takes from the hub. The checks run in this order, and the first that fails gives the close its code:
 
-| `code`              | Given when                                                                         |
-| ------------------- | ---------------------------------------------------------------------------------- |
-| `binding_unknown`   | no client row has this socket's binding id                                         |
-| `client_disabled`   | the client is switched off on **Clients**                                          |
-| `service_unknown`   | the id names no entry in the list resolved for this client                         |
-| `permission_denied` | the entry's type, or the machine providing it, is outside this client's permission |
-| `rdp_not_shared`    | the entry's machine stopped sharing its desktop                                    |
-| `vault_locked`      | the hub's vault is locked, so the AI key or the VS Code token cannot be opened     |
+| `code`              | Given when                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `binding_unknown`   | no client row has this socket's binding id                                                                          |
+| `client_disabled`   | the client is switched off on **Clients**                                                                           |
+| `service_unknown`   | the id names no entry in the list resolved for this client                                                          |
+| `permission_denied` | the entry's type, or the machine providing it, is outside this client's permission                                  |
+| `rdp_not_shared`    | the entry's machine stopped sharing its desktop                                                                     |
+| `vault_locked`      | the hub's vault is locked, so the AI key, the VS Code token, or the code-server or CloudCLI secret cannot be opened |
 
-A close with no code carries the material:
+A close with no code carries the material. A client opens a `web` entry with `is_token_required` at its own forward's address with `?tkn=<token>` added, never at the entry's address:
 
-| Entry                                         | The close's `params`                                                                                                    |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `rdp`                                         | `{host, port, password}`: the address as it resolves now and the seat password                                          |
-| `ai`                                          | `{base_url, api_key, model}`: the gateway, this client's own key, and the first model the gateway serves                |
-| `web` with `description_code` `vscode_module` | `{token}`; the client forwards the entry's port to its own `127.0.0.1` and opens `http://127.0.0.1:<port>/?tkn=<token>` |
-| other `web`, `port`, `file`                   | empty; the payload is all the client needs                                                                              |
+| Entry                                                                   | The close's `params`                                                                                                         |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `rdp`                                                                   | `{password}`: the seat password of the machine sharing the desktop                                                           |
+| `ai`                                                                    | `{api_key, model}`: this client's own key, which the gateway checks on every request, and the first model the gateway serves |
+| `web` with `description_code` `vscode_module`                           | `{token}`: the instance's connection token                                                                                   |
+| `web` with `description_code` `code_server_module` or `cloudcli_module` | `{token}`: a token the hub mints for this answer alone, valid for 60 seconds and for one use                                 |
+| other `web`, `port`, `file`                                             | empty; the payload is all the client needs                                                                                   |
+
+### The connect stream
+
+`open {kind: connect, id}` carries one TCP connection to one published entry, and `open {kind: connect, is_panel: true}` carries one to the hub's own panel. A client opens one stream for each connection its local listener accepts, and it dials no address an entry's payload names. The hub runs the service stream's checks with the stream limit among them; `vault_locked` has no place here:
+
+| `code`                         | Given when                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `binding_unknown`              | no client row has this socket's binding id                                                           |
+| `client_disabled`              | the client is switched off on **Clients**                                                            |
+| `connect_limit {limit}`        | the socket already holds 256 open `connect` streams                                                  |
+| `service_unknown {service_id}` | the id names no entry in the list resolved for this client                                           |
+| `permission_denied {kind}`     | the entry's type, or `panel` for the panel, is outside this client's permission                      |
+| `rdp_not_shared {service_id}`  | the entry's machine stopped sharing its desktop                                                      |
+| `agent_offline {device}`       | the machine that provides the entry has no channel, or its channel ended under the stream            |
+| `connect_failed {reason}`      | the dial to the far end failed; `reason` is `refused`, `timeout` (after 10 seconds) or `unreachable` |
+| `port_not_published {port}`    | the machine that provides the entry no longer publishes the port                                     |
+
+| The entry                     | Where the hub connects the stream                                   |
+| ----------------------------- | ------------------------------------------------------------------- |
+| provided by a managed machine | that machine's agent, which dials the port on its own loopback      |
+| a declared record             | the record's own address, dialled by the hub                        |
+| `ai`                          | the gateway on the hub's loopback                                   |
+| the panel                     | the panel's HTTP port on the hub's loopback, with no HTTPS redirect |
+
+Bytes travel as binary frames both ways under credit, with the window and frame size of a `shell` stream. End of file on either end closes the stream with empty params once everything read is sent, and the side that receives the close writes what it holds and closes its own socket. A stream has no half-close, and a client socket that ends ends every `connect` stream on it.
 
 ### The shell and command streams
 
@@ -277,7 +305,7 @@ An agent's documents carry these sections; the `modules` entries come from the h
 | `urls`    | every address the hub serves the channel on    |                                                                           |
 | `error`   |                                                | `{code, params}`: the agent's most recent failure worth showing           |
 
-An agent reports every 5 seconds. The hub opens `shell`, `file` and `command` streams to it, and the agent opens `log` and `package` streams to the hub.
+An agent reports every 5 seconds. The hub opens `shell`, `file`, `command` and `connect` streams to it, and the agent opens `log` and `package` streams to the hub. A `connect {port}` stream is one TCP connection the agent dials on `127.0.0.1`, or on the one address a container port is published on; a port the machine does not publish at that moment closes with `port_not_published {port}`, and a failed dial with `connect_failed {reason}`.
 
 ## Refusals and the binding
 

@@ -71,8 +71,12 @@ def controls(source) -> dict:
     }
 
 
-def test_the_installer_registers_the_two_daemons_and_no_other_service(source):
-    assert set(services(source)) == {"NeutrinoClientNetbird", "NeutrinoClientEasytier"}
+def test_the_installer_registers_the_three_daemons_and_no_other_service(source):
+    assert set(services(source)) == {
+        "NeutrinoClientNetbird",
+        "NeutrinoClientEasytier",
+        "NeutrinoClientFiles",
+    }
     for element in services(source).values():
         assert element.get("Account") == "LocalSystem"
     assert "gui" not in " ".join(
@@ -80,8 +84,12 @@ def test_the_installer_registers_the_two_daemons_and_no_other_service(source):
     )
 
 
-def test_both_daemons_start_with_windows_and_go_with_the_client(source):
-    for name in ("NeutrinoClientNetbird", "NeutrinoClientEasytier"):
+def test_every_daemon_starts_with_windows_and_goes_with_the_client(source):
+    for name in (
+        "NeutrinoClientNetbird",
+        "NeutrinoClientEasytier",
+        "NeutrinoClientFiles",
+    ):
         assert services(source)[name].get("Start") == "auto"
         assert controls(source)[name].get("Start") == "install"
         assert controls(source)[name].get("Stop") == "both"
@@ -110,6 +118,29 @@ def test_the_easytier_service_is_the_client_run_as_its_daemon(source):
     assert components["EasytierDaemon"].get("Subdirectory") is None
     assert "easytier-core" not in source.split("<Files")[0]
     assert "--config-dir" not in source
+
+
+def test_the_files_service_is_the_client_run_as_its_files_daemon(source):
+    """The same nclient.exe as the EasyTier daemon, so the same component."""
+    root = xml.etree.ElementTree.fromstring(source)
+    components = {
+        component.get("Id"): component for component in root.iter(f"{WXS}Component")
+    }
+    files = services(source)["NeutrinoClientFiles"]
+
+    assert files.get("Arguments") == "files-daemon --service"
+    assert files.get("Account") == "LocalSystem"
+    installs = [
+        element.get("Name")
+        for element in components["EasytierDaemon"].iter(f"{WXS}ServiceInstall")
+    ]
+    assert installs == ["NeutrinoClientEasytier", "NeutrinoClientFiles"]
+    assert len(list(components["EasytierDaemon"].iter(f"{WXS}File"))) == 1
+    assert "tun2socks" not in source.split("<Files")[0]
+    (recovery,) = files.iter(f"{UTIL}ServiceConfig")
+    assert recovery.get("FirstFailureActionType") == "restart"
+    children = list(files.iter())[1:]
+    assert [child.tag for child in children] == [f"{UTIL}ServiceConfig"]
 
 
 def test_the_easytier_daemon_is_restarted_after_every_failure(source):
@@ -523,6 +554,7 @@ def test_the_licences_travel_beside_the_payload(tmp_path):
         "netbird.txt",
         "packet_stub.txt",
         "rustdesk.txt",
+        "tun2socks.txt",
         "wintun.txt",
         "xterm.txt",
     ]

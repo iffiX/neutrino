@@ -59,10 +59,12 @@ title: 代理
 
 **更新 geodata**（Update geodata）查询 geoip 和 geosite 两份数据库有没有新发行版，有就装上。按钮旁写着数据库是 **随安装包携带**（as the package carries them）还是 **取自发行版**（taken from a release）。
 
-**DNS** 有两个解析器，各填地址和端口：
+**DNS** 有两个解析器列表，每行填一个地址，或 `<address>:<port>`；不写端口就是 53。查询按行的顺序发出：
 
-- **远程解析器（走代理的域名）**（Remote resolver (proxied names)）解析不在直连列表里的域名，查询经出口节点到达它。
-- **直连解析器（绕过代理的域名）**（Direct resolver (bypassed names)）解析直连列表里的域名、出口节点自己的域名和探测主机。代理关闭时，它解析所有域名。
+- **远程解析器（走代理的域名）**（Remote resolvers (proxied names)）解析不在直连列表里的域名，查询经出口节点到达。这个列表至少要有一行；列表空着时，应用返回 `resolver_required`。
+- **直连解析器（绕过代理的域名）**（Direct resolvers (bypassed names)）解析直连列表里的域名、出口节点自己的域名和探测主机。列表空着时写着 **跟随网络层的解析器**（Follows the network's resolvers），这些域名交给 [网络](./network.md) 页上行线路的解析器。
+
+代理范围之外的域名不经过这两个列表：局域网开关关闭时，服务网络的域名也由网络层的解析器解析。
 
 选择 **应用分流**（Apply route），重写路由规则。
 

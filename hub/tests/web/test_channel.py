@@ -59,6 +59,7 @@ class FakeRuntime:
         self.device_scope = {}
         self.device_last_error = {}
         self.client_scope = {}
+        self.client_reached: dict = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.desired_states = StubDesiredStates()
@@ -69,6 +70,9 @@ class FakeRuntime:
 
     def host_scopes(self):
         return []
+
+    def overlay_networks(self):
+        return {}
 
     def desired_state_for(self, device):
         return self.desired

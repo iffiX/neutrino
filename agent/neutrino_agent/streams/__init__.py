@@ -14,6 +14,7 @@ carries when it did what it was asked:
 | hub | ``shell`` | ``{cols, rows}``, with ``{session_id, is_resumed}`` for a kept shell, or ``{module: podman, container}`` | ``{exit_code}``; empty for a kept shell that runs on |
 | hub | ``file`` | ``{op, path, ...}``; ``op`` is ``list``, ``download``, ``upload``, ``rename``, ``remove``, ``directory_create`` or ``directory_download`` | the operation's own |
 | hub | ``command`` | ``{module, verb, ...args}`` | ``{exit_code, output, result}`` |
+| hub | ``connect`` | ``{port}``, a port this machine publishes now | empty, once either end ended |
 | agent | ``log`` | ``{module}``, for an install or an uninstall | ``{state}`` |
 | agent | ``package`` | ``{module}``, or ``{}`` for the agent's own | ``{sha256}``, from the hub |
 
@@ -32,10 +33,13 @@ STREAM_KIND_FILE = "file"
 STREAM_KIND_COMMAND = "command"
 STREAM_KIND_LOG = "log"
 STREAM_KIND_PACKAGE = "package"
+STREAM_KIND_CONNECT = "connect"
 
 # The kinds the hub opens, each to what serves it, called with
 # ``(channel, args)``. The command kind is bound to what runs commands by
-# the session that serves it.
+# the session that serves it, and the connect kind,
+# :class:`~neutrino_agent.streams.connect.ConnectStream`, to what the machine
+# publishes by the agent that opens the session.
 STREAM_KINDS = {
     STREAM_KIND_SHELL: open_shell_stream,
     STREAM_KIND_FILE: open_file_stream,

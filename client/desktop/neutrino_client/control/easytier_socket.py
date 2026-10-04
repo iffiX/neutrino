@@ -5,7 +5,8 @@ ends. On Linux and macOS the socket is a Unix socket every account may
 open, mode 0666 like NetBird's; on Windows it is a named pipe whose security
 descriptor admits SYSTEM, the administrators and the accounts logged on at
 the machine, none of which may create an instance of it. What a request may
-do is the daemon's to judge; nothing here reads who asked.
+do is the daemon's to judge; nothing here reads who asked. The files
+daemon answers on a pipe of its own through the same server.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -97,7 +98,7 @@ def ask_easytier_daemon(
         connection.close()
     answer = json.loads(line.decode("utf-8") or "null")
     if not isinstance(answer, dict):
-        raise ValueError("the EasyTier daemon answered with no object")
+        raise ValueError("the daemon answered with no object")
     return answer
 
 
@@ -110,7 +111,7 @@ class _EasytierRequestHandler(socketserver.StreamRequestHandler):
         daemon = self.server.easytier_daemon
         line = self.rfile.readline(CLIENT_EASYTIER_REQUEST_LIMIT_BYTES + 1)
         if len(line) > CLIENT_EASYTIER_REQUEST_LIMIT_BYTES:
-            answer = {"code": "overlay_request_invalid", "params": {}}
+            answer = {"code": self.server.easytier_invalid_code, "params": {}}
         else:
             try:
                 request = json.loads(line.decode("utf-8"))
@@ -152,14 +153,27 @@ def _unix_server(address: str, handler) -> socketserver.BaseServer:
 class EasytierSocketServer:
     """Serves the daemon's requests on its socket or pipe."""
 
-    def __init__(self, *, daemon, address: str, log=print, pipe_api=None):
+    def __init__(
+        self,
+        *,
+        daemon,
+        address: str,
+        log=print,
+        pipe_api=None,
+        invalid_code: str = "overlay_request_invalid",
+    ):
         """
         Args:
-            daemon: The :class:`~neutrino_client.core.easytier_daemon.EasytierDaemon`.
+            daemon: What answers each request through ``handle(request)``:
+                the :class:`~neutrino_client.core.easytier_daemon.EasytierDaemon`
+                or the files daemon.
             address: The socket path or pipe name to serve on.
             log: Callable used for progress messages.
             pipe_api: The Win32 pipe seam; None uses the real one.
+            invalid_code: The code a request over the size limit is answered
+                with.
         """
+        self._invalid_code = invalid_code
         self._daemon = daemon
         self._address = address
         self._log = log
@@ -203,6 +217,7 @@ class EasytierSocketServer:
             os.chmod(self._address, EASYTIER_SOCKET_MODE)
         server.easytier_daemon = self._daemon
         server.easytier_log = self._log
+        server.easytier_invalid_code = self._invalid_code
         self._server = server
 
     def start(self) -> None:

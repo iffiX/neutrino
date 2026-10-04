@@ -8,9 +8,12 @@ cookie, so a browser holds a session on one port at a time and a ``Secure``
 cookie never stays behind to block a plain login, which a browser refuses to
 overwrite. The setting is read from the runtime on every request, so turning
 HTTPS on or off restarts nothing. The authority's download and the trust probe
-are served on both ports.
+are served on both ports. A plain request from loopback, the hub's own
+forward of a client's panel, is served on the HTTP port whatever the
+setting says.
 """
 
+import ipaddress
 from urllib.parse import urlsplit
 
 from neutrino_hub.web.constants import (
@@ -79,6 +82,17 @@ def _location(
     return f"{location}?{query}" if query else location
 
 
+def _is_loopback_peer(scope) -> bool:
+    """Whether a request comes from this machine's own loopback."""
+    client = scope.get("client")
+    if not client:
+        return False
+    try:
+        return ipaddress.ip_address(str(client[0])).is_loopback
+    except ValueError:
+        return False
+
+
 class PanelHttpsRedirectMiddleware:
     """Answers requests on the port the panel is not on with a 301 to the other."""
 
@@ -137,6 +151,8 @@ class PanelHttpsRedirectMiddleware:
         if scope.get("path") in PORT_SHARED_PATHS:
             return False
         is_secure = scope.get("scheme") in SECURE_SCHEMES
+        if not is_secure and _is_loopback_peer(scope):
+            return False
         is_on = bool(self._runtime.settings.get(WEB_SETTING_HTTPS, False))
         return is_secure != is_on
 

@@ -25,7 +25,6 @@ A build dropped under ``config/devices/packages`` wins over both.
 Not pure: fetches over the network and writes under the state root.
 """
 
-import hashlib
 import json
 import urllib.request
 from pathlib import Path
@@ -37,6 +36,11 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_PACKAGE_FETCH_TIMEOUT_S,
     AGENT_PACKAGE_MANIFEST_PATH,
     DEVICE_PACKAGES_DIR_NAME,
+)
+from neutrino_hub.modules.devices.streamed_file import (
+    DownloadedFile,
+    file_sha256,
+    stream_to_file,
 )
 from neutrino_hub.utils.constants import UTILS_CONFIG_DIR
 from neutrino_hub.utils.tls_trust import public_ssl_context
@@ -229,18 +233,23 @@ class AgentPackageCache:
 
         if not self._is_fetchable(entry):
             raise AgentArtifactFetchError("agent_package_missing", platform=key)
-        content = self._fetch(str(entry["url"]))
+        download = self._fetch(str(entry["url"]))
         pinned_digest = str(entry["sha256"]).lower()
-        received = hashlib.sha256(content).hexdigest()
-        if pinned_digest != received:
+        if pinned_digest != download.sha256:
+            download.discard()
             raise AgentArtifactFetchError(
                 "agent_package_sha256_mismatch",
                 platform=key,
                 expected=pinned_digest,
-                received=received,
+                received=download.sha256,
             )
         path = self._root / package_name(entry)
-        self._write(path, content)
+        try:
+            download.place(path)
+        except OSError as error:
+            raise AgentArtifactFetchError(
+                "agent_package_cache_unwritable", detail=str(error)[:200]
+            ) from error
         return path
 
     def manifest(self) -> dict:
@@ -300,7 +309,7 @@ class AgentPackageCache:
         if not digest:
             return None
         try:
-            held = hashlib.sha256(path.read_bytes()).hexdigest()
+            held = file_sha256(path)
         except OSError:
             return None
         return path if held == digest else None
@@ -333,53 +342,52 @@ class AgentPackageCache:
             if path.is_file() and package_family(path.name)
         ]
 
-    @staticmethod
-    def _write(path: Path, content: bytes) -> None:
-        """Put a package in place whole, never half-written.
-
-        Args:
-            path: Where it belongs.
-            content: The bytes.
-
-        Raises:
-            AgentArtifactFetchError: ``agent_package_cache_unwritable``.
-        """
-        temporary = path.with_name(path.name + ".partial")
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary.write_bytes(content)
-            temporary.replace(path)
-        except OSError as error:
-            temporary.unlink(missing_ok=True)
-            raise AgentArtifactFetchError(
-                "agent_package_cache_unwritable", detail=str(error)[:200]
-            ) from error
-
-    @staticmethod
-    def _fetch(url: str) -> bytes:
-        """Download one package from where the manifest publishes it.
+    def _fetch(self, url: str) -> DownloadedFile:
+        """Download one package from where the manifest publishes it, into the cache.
 
         Args:
             url: What the manifest names.
 
         Returns:
-            The file's bytes.
+            The download beside its place, not yet checked against its pin.
 
         Raises:
-            AgentArtifactFetchError: ``agent_package_fetch_failed``.
+            AgentArtifactFetchError: ``agent_package_fetch_failed`` when the
+                release cannot be read or the file is past the limit,
+                ``agent_package_cache_unwritable`` when the cache cannot be
+                written; nothing is left on disk.
         """
         try:
-            with urllib.request.urlopen(
+            self._root.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise AgentArtifactFetchError(
+                "agent_package_cache_unwritable", detail=str(error)[:200]
+            ) from error
+        try:
+            response = urllib.request.urlopen(
                 url, timeout=AGENT_PACKAGE_FETCH_TIMEOUT_S, context=public_ssl_context()
-            ) as response:
-                content = response.read(AGENT_PACKAGE_FETCH_LIMIT_BYTES + 1)
+            )
         except OSError as error:
             raise AgentArtifactFetchError(
                 "agent_package_fetch_failed", detail=str(error)[:200]
             ) from error
-        if len(content) > AGENT_PACKAGE_FETCH_LIMIT_BYTES:
+        with response:
+            try:
+                download = stream_to_file(
+                    response, self._root, limit=AGENT_PACKAGE_FETCH_LIMIT_BYTES
+                )
+            except ConnectionError as error:
+                raise AgentArtifactFetchError(
+                    "agent_package_fetch_failed", detail=str(error)[:200]
+                ) from error
+            except OSError as error:
+                raise AgentArtifactFetchError(
+                    "agent_package_cache_unwritable", detail=str(error)[:200]
+                ) from error
+        if download.size > AGENT_PACKAGE_FETCH_LIMIT_BYTES:
+            download.discard()
             raise AgentArtifactFetchError(
                 "agent_package_fetch_failed",
                 detail=f"the download is past {AGENT_PACKAGE_FETCH_LIMIT_BYTES} bytes",
             )
-        return content
+        return download

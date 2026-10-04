@@ -1869,6 +1869,11 @@ class ChannelClientState(BaseModel):
     # One per running overlay with material, the preferred first.
     overlays: list[ChannelOverlay] = Field(default_factory=list)
     terminals: list[ChannelTerminal] = Field(default_factory=list)
+    # Whether the client may open the hub's panel through ``connect``.
+    is_panel_allowed: bool = False
+    # How the client's socket reached the hub: ``lan``, ``netbird``,
+    # ``easytier`` or ``relay``.
+    reached_through: str = ""
 
 
 class ChannelClientMachine(BaseModel):

@@ -15,6 +15,8 @@ from dataclasses import dataclass
 
 from neutrino_hub import edition
 from neutrino_hub.modules.services.constants import (
+    SERVICES_REACHED_LAN,
+    SERVICES_REACHED_RELAY,
     SERVICES_SCOPE_LINK,
     SERVICES_SCOPE_OVERLAY,
 )
@@ -89,6 +91,37 @@ def scope_of(
             if address in ipaddress.ip_network(scope.cidr):
                 return scope
     return link_scope(reached_address)
+
+
+def reached_through(peer_address: str, overlay_networks: dict) -> str:
+    """The way a caller's socket reached the hub.
+
+    Args:
+        peer_address: Where the caller's socket comes from.
+        overlay_networks: Overlay engine key to the addresses, each with its
+            prefix length, that the engine's devices hold on this box.
+
+    Returns:
+        ``relay`` for a peer on loopback; the key of the first engine one of
+        whose networks holds the peer; ``lan`` for anything else.
+    """
+    address = _ipv4_of(peer_address)
+    if address is None:
+        try:
+            address = ipaddress.ip_address(peer_address)
+        except ValueError:
+            return SERVICES_REACHED_LAN
+    if address.is_loopback:
+        return SERVICES_REACHED_RELAY
+    for provider, held in overlay_networks.items():
+        for text in held:
+            try:
+                network = ipaddress.ip_interface(str(text)).network
+            except ValueError:
+                continue
+            if address.version == network.version and address in network:
+                return provider
+    return SERVICES_REACHED_LAN
 
 
 def link_scope(reached_address: str) -> HostScope:

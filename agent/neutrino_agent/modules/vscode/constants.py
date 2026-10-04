@@ -16,9 +16,9 @@ VSCODE_TOKEN_DIR_NAME = "tokens"
 
 # What every instance runs after the CLI's path.
 VSCODE_SERVE_ARGUMENTS = ("serve-web", "--accept-server-license-terms")
-# The address an instance listens on when the hub names none.
-VSCODE_ANY_ADDRESS = "0.0.0.0"
-# The address a reported url names for servers on every address.
+# The address an instance listens on and a reported url names when the
+# hub names none: loopback, where the agent's end of a ``connect`` stream
+# reaches it.
 VSCODE_LOOPBACK_ADDRESS = "127.0.0.1"
 VSCODE_PORT_MIN = 1024
 VSCODE_PORT_MAX = 65535
@@ -50,9 +50,9 @@ VSCODE_DARWIN_LOG_PREFIX = "vscode_"
 VSCODE_TASK_PREFIX = "neutrino_vscode_"
 VSCODE_TASK_MARKER = "neutrino:"
 VSCODE_WINDOWS_SHELL = "cmd.exe"
-# The inbound firewall rule of one instance's port, named by its account.
+# The name an older build gave the inbound firewall rule of an instance's
+# port; an apply removes every rule under it.
 VSCODE_WINDOWS_RULE_PREFIX = "neutrino_vscode_port_"
-VSCODE_WINDOWS_RULE_TITLE = "Neutrino VS Code ({account})"
 # What a task's last result is when Windows could not sign its account in.
 VSCODE_LOGON_FAILURES = (0x8007052E,)
 

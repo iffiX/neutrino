@@ -67,7 +67,13 @@ from neutrino_agent.exceptions import (
 )
 from neutrino_agent.platforms.detect import detect_platform
 from neutrino_agent.rdp.host import RdpShareHost
-from neutrino_agent.streams import STREAM_KIND_PACKAGE, STREAM_KIND_SHELL, STREAM_KINDS
+from neutrino_agent.streams import (
+    STREAM_KIND_CONNECT,
+    STREAM_KIND_PACKAGE,
+    STREAM_KIND_SHELL,
+    STREAM_KINDS,
+)
+from neutrino_agent.streams.connect import ConnectStream, published_ports
 from neutrino_agent.streams.package import remove_stale
 from neutrino_agent.streams.shell import open_shell_stream
 from neutrino_agent.streams.shell_session import ShellSessionRegistry
@@ -507,9 +513,22 @@ class Agent:
                 **{
                     STREAM_KIND_SHELL: functools.partial(
                         open_shell_stream, sessions=self._shells
-                    )
+                    ),
+                    STREAM_KIND_CONNECT: functools.partial(
+                        ConnectStream, published=self._published_ports
+                    ),
                 },
             ),
+        )
+
+    def _published_ports(self) -> dict:
+        """Every port this machine publishes now, each to the address it is
+        dialled on, as :func:`published_ports` reads them."""
+        modules = self._desired.latest().get("modules")
+        return published_ports(
+            self._engine.report(),
+            modules if isinstance(modules, dict) else {},
+            self.rdp_declaration(),
         )
 
     def _take_state(self, document: dict) -> None:

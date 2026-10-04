@@ -304,7 +304,7 @@ def test_the_list_prefers_the_live_session_over_the_record(api):
     )
 
 
-ALL_KINDS = ["web", "port", "ai", "file", "rdp", "overlay", "terminal"]
+ALL_KINDS = ["web", "port", "ai", "file", "rdp", "overlay", "terminal", "panel"]
 
 
 def test_the_list_carries_the_default_and_every_kind(api):
@@ -419,6 +419,10 @@ def test_a_filter_on_a_kind_that_takes_none_or_an_unknown_device_is_a_coded_400(
         "/api/hub/client/default_permission/set",
         json={"kinds": ["overlay"], "devices": {"overlay": []}},
     )
+    panel = client.post(
+        "/api/hub/client/permission/set",
+        json={"client_id": alice, "kinds": ["panel"], "devices": {"panel": ["d1"]}},
+    )
     unknown = client.post(
         "/api/hub/client/permission/set",
         json={"client_id": alice, "kinds": ["web"], "devices": {"web": ["gone"]}},
@@ -428,6 +432,11 @@ def test_a_filter_on_a_kind_that_takes_none_or_an_unknown_device_is_a_coded_400(
     assert overlay.json()["detail"] == {
         "code": "permission_kind_unknown",
         "params": {"kind": "overlay"},
+    }
+    assert panel.status_code == 400
+    assert panel.json()["detail"] == {
+        "code": "permission_kind_unknown",
+        "params": {"kind": "panel"},
     }
     assert unknown.status_code == 400
     assert unknown.json()["detail"] == {

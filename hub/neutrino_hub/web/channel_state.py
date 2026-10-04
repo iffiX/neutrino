@@ -5,7 +5,8 @@ An agent's state is what its device is to host, composed from
 resolved for the scope its socket arrived from, whether it is switched
 off, the join material of every running overlay and the machines it may
 open a shell on,
-each as far as its permission allows; every entry names the machine that
+each as far as its permission allows, whether it may open the hub's panel
+and the way its socket reached the hub; every entry names the machine that
 provides it. Both name every address the hub answers the channel on. Each
 carries the hash the peer's reports name back; a client's is computed on the
 resolved list, so the same list hashes differently for two scopes. An agent
@@ -21,6 +22,7 @@ import socket
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT
 from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_OVERLAY,
+    CLIENT_PERMISSION_PANEL,
     CLIENT_PERMISSION_TERMINAL,
 )
 from neutrino_hub.modules.clients.permissions import (
@@ -39,6 +41,7 @@ from neutrino_hub.modules.services.constants import SERVICES_SOURCE_DECLARED
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
     link_scope,
+    reached_through,
     scope_of,
 )
 from neutrino_hub.web import channel_overlay
@@ -70,10 +73,12 @@ def client_state(runtime, client_id: str) -> dict:
             its permission allows by kind and by the device providing them,
             the overlays' join material when it is allowed ``overlay``, and
             the managed machines its ``terminal`` permission allows, each
-            with the sessions :func:`sessions_for` gives it there.
+            with the sessions :func:`sessions_for` gives it there, and
+            whether it may open the hub's panel.
 
     Returns:
-        ``{hash, is_disabled, services, urls, overlays, terminals}``.
+        ``{hash, is_disabled, services, urls, overlays, terminals,
+        is_panel_allowed, reached_through}``.
     """
     registry = ClientRegistry()
     client = registry.get(client_id)
@@ -81,6 +86,7 @@ def client_state(runtime, client_id: str) -> dict:
     services = []
     overlays = []
     terminals = []
+    is_panel_allowed = False
     if not is_disabled:
         kinds = permitted_kinds(registry, client)
         devices = permitted_devices(registry, client)
@@ -114,12 +120,15 @@ def client_state(runtime, client_id: str) -> dict:
                     devices, CLIENT_PERMISSION_TERMINAL, terminal["device_id"]
                 )
             ]
+        is_panel_allowed = CLIENT_PERMISSION_PANEL in kinds
     body = {
         "is_disabled": is_disabled,
         "services": services,
         "urls": channel_urls(runtime),
         "overlays": overlays,
         "terminals": terminals,
+        "is_panel_allowed": is_panel_allowed,
+        "reached_through": runtime.client_reached.get(client_id, ""),
     }
     serialized = json.dumps(body, sort_keys=True).encode("utf-8")
     return {"hash": hashlib.sha256(serialized).hexdigest()[:16], **body}
@@ -128,7 +137,8 @@ def client_state(runtime, client_id: str) -> dict:
 def note_client_scope(
     runtime, client_id: str, *, peer_host: str, reached_host: str
 ) -> HostScope:
-    """Settle and keep the scope a client's socket arrived from.
+    """Settle and keep the scope a client's socket arrived from, and the
+    way it reached the hub.
 
     Args:
         runtime: The shared runtime.
@@ -141,6 +151,9 @@ def note_client_scope(
     """
     scope = scope_of(peer_host, reached_host, runtime.host_scopes())
     runtime.client_scope[client_id] = scope
+    runtime.client_reached[client_id] = reached_through(
+        peer_host, runtime.overlay_networks()
+    )
     return scope
 
 

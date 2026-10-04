@@ -12,13 +12,15 @@ import "./device_drawer.css";
 
 /**
  * The kinds one client, or the default, is allowed: a switch per kind, a
- * device filter beside each kind but the overlay, and one apply bar. A
+ * device filter beside each kind but the overlay and the panel, and one
+ * apply bar. A
  * client's drawer adds a switch that follows the default.
  */
 
 /** The order the switches stand in; a kind not named here comes last. */
 const KIND_DISPLAY_ORDER = [
   "overlay",
+  "panel",
   "web",
   "port",
   "ai",
@@ -27,8 +29,8 @@ const KIND_DISPLAY_ORDER = [
   "rdp",
 ];
 
-/** The kind that belongs to the hub alone and takes no device filter. */
-const KIND_OVERLAY = "overlay";
+/** The kinds that belong to the hub alone and take no device filter. */
+const HUB_KINDS = ["overlay", "panel"];
 
 /** Device ids by kind; a kind with no list allows every device. */
 export type PermissionDevices = Record<string, string[]>;
@@ -198,7 +200,7 @@ export function ClientPermissionDrawer({
                       label={t(`ui.clients.kind_${kind}`)}
                       isDisabled={isKindLocked}
                     />
-                    {kind !== KIND_OVERLAY && (
+                    {!HUB_KINDS.includes(kind) && (
                       <button
                         type="button"
                         className="button button--small button--ghost client_permission_filter"
@@ -273,7 +275,7 @@ function ordered(kinds: string[], chosen: string[]): string[] {
   return kinds.filter((kind) => chosen.includes(kind));
 }
 
-/** A device filter in kind order, without the overlay or an empty list. */
+/** A device filter in kind order, without the hub's kinds or an empty list. */
 function filtersOf(
   kinds: string[],
   devices: PermissionDevices,
@@ -281,7 +283,7 @@ function filtersOf(
   const filters: PermissionDevices = {};
   for (const kind of kinds) {
     const chosen = [...new Set(devices[kind] ?? [])].sort();
-    if (kind !== KIND_OVERLAY && chosen.length > 0) {
+    if (!HUB_KINDS.includes(kind) && chosen.length > 0) {
       filters[kind] = chosen;
     }
   }

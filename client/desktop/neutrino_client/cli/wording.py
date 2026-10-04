@@ -124,6 +124,10 @@ CLIENT_CODE_WORDS = {
         "the saved login is gone; enter it again: nclient service file config"
     ),
     "fs_refused": "this account may not use that folder",
+    "files_adapter_unavailable": (
+        "the files adapter could not start: {detail}; check the "
+        "NeutrinoClientFiles service"
+    ),
     "mountpoint_invalid": "give a folder under your home, like ~/nas/share",
     "mountpoint_not_drive_letter": "give an unused drive letter, like N:",
     "service_unknown": "the hub no longer publishes that service",

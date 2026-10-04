@@ -205,6 +205,15 @@ class DesiredStateApplier:
                 lambda: self._pending is None and not self._is_applying, timeout_s
             )
 
+    def latest(self) -> dict:
+        """The last state taken from the hub, as it was kept.
+
+        Returns:
+            The document, ``{hash, modules, desktop}``; empty when none was
+            ever taken.
+        """
+        return self._store.read()
+
     def take(self, document: dict) -> None:
         """Keep one state from the hub and apply it when it is news.
 
