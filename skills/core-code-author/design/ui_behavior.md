@@ -245,8 +245,9 @@ which caps at 2000 lines, replays from line one when the socket comes back, and
 gives up after one reconnect. Anything a shell wrote goes through `stripAnsi`
 before it is rendered, and so does every journal and every module log box: no
 control code reaches the page. A module's log box belongs to the tab that
-shows it: switching the tab fetches that module's journal, and the box never
-holds another module's text. A module that failed shows the agent's code as
+shows it: switching the tab fetches that module's journal at once and shows
+the loading state until it arrives, and the box never holds another module's
+text. A module that failed shows the agent's code as
 its error line under its state, and an apply that ended in a failure shows
 no success notice.
 
