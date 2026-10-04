@@ -194,8 +194,9 @@ A **modal** is for one interaction that must finish before anything else: a
 confirmation, a terminal session, a file transfer, an install consent. Anything
 that is merely detail is a drawer. A QR code in a dialog is an image, an
 `<img>` from a PNG data URL, so a long press on a phone and a right click on
-a desktop save it; it is drawn at 240 px or more, scaled with its module
-count, and in a portrait layout it sits at the bottom of the dialog,
+a desktop save it; it is drawn at four pixels per module at least and never
+under 240 px, so the whole enrolment link scans from a screen, and in a
+portrait layout it sits at the bottom of the dialog,
 centred, on the desktop and on the phone alike. Every modal closes on Escape, closing only
 itself — the layer underneath stays — and one that tells the reader so must
 mean it. The exception is a modal that captures the keyboard: a terminal's

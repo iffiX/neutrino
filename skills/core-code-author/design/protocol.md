@@ -650,7 +650,10 @@ two documents and which streams each side opens.
 
 ### The link and the two endpoints
 
-A link is `neutrino://enroll/<base64url>` over one JSON object:
+A link is `neutrino://enroll/<base64url>`: one JSON object, written with no
+spaces, compressed with zlib (RFC 1950, level 9), and the compressed bytes in
+base64url without padding. Every link is this form, the one a QR code carries
+and the one a person pastes, and a reader inflates before it parses:
 
 ```json
 {"urls": ["https://192.168.100.1:8443", "..."], "token": "...", "fp": "<sha256-hex>", "role": "client", "overlays": [{"provider": "netbird", "...": "..."}]}
@@ -668,28 +671,14 @@ or `client`, read on the pasting side before the first request. A client
 rejects a device link with `link_not_for_client` and an agent rejects a client
 link with `link_not_for_agent`, each code's `params` naming the link's `role`.
 The base64url alphabet has no character a shell splits or a URL escapes, so
-the link pastes anywhere unquoted.
-
-A QR code carries the short form of the same link,
-`neutrino://enroll/<ticket>@<host>:<port>/<sha256-hex>`: the ticket, the
-hub's agent-port address on the network the panel was reached from, and the
-fingerprint. The `@` tells it from the long form, whose alphabet has none.
-A peer that reads it fetches the long form's object from
-`GET /api/channel/enroll?ticket=<ticket>` at that address, with the
-fingerprint pinned, and goes on as with a pasted link. The route answers
-while the ticket is alive and unspent, and spends nothing; 401
-`ticket_spent` otherwise, and the same for a device ticket, which carries
-no object. A peer stores a short link's binding at once and fetches the object in
-its rounds; while no round reaches the address the binding stays pending,
-as a long link's does when no address answers. The long form carries the
-overlays' join material itself, so a peer that can reach the hub only over
-an overlay it has not joined yet needs the long form. The short form is an added form and
-keeps `PROTOCOL`; `POST /api/hub/client/enrollment/create` returns it as
-`qr_link` beside `link`.
+the link pastes anywhere unquoted. Compressed, a client link with two
+overlays is about 550 characters and a QR code of 89 modules a side; the QR
+code is that link and nothing less, so a phone that can reach the hub only
+over an overlay it has not joined yet still has what it needs. The panel
+draws the code at four pixels per module at least ([ui_behavior.md](ui_behavior.md)).
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
-| `GET /api/channel/enroll` | `?ticket=` | the long link's object for a short link's ticket, while the ticket is alive and unspent; 401 `ticket_spent` otherwise |
 | `POST /api/channel/join` | `{ticket, role, protocol, machine_id, name, software, platform}` | `{id, token}`; admission by `protocol` runs first and a rejected protocol spends no ticket, then the ticket is spent |
 | `POST /api/channel/leave` | `{id, token}` | the binding removed: a device's row stays with its `config/devices/<id>/` and drops its token, a client's row is deleted with its gateway key |
 | `WS /api/channel/socket` | | everything after |

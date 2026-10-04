@@ -184,22 +184,21 @@ under its mono line; the AI page sets it.
 
 The join row is an input for the link and a **Join** button. On a phone the
 row opens the Join page: a camera view that scans the hub's QR, and under it
-the same input. The QR carries the short link ([protocol.md](protocol.md),
-"The link and the two endpoints"): the app stores the binding at once from
-what the short link holds (the one address, the ticket, the fingerprint),
-and fetches the long link's object in the channel's rounds, with the
-fingerprint pinned, before the round that spends the ticket; the fetched
-`urls` and `overlays` are merged into the binding. The button shows
-`ui.job.joining` while the link is checked and the binding written; a
-success adds the row in `pending`; a failure writes the code
-(`link_unreadable`, `hub_untrusted`) under the input. A hub the short link's
-address does not reach yet keeps the row pending, as a long link's does.
+the same input. The QR carries the whole link ([protocol.md](protocol.md),
+"The link and the two endpoints"), the same compressed form a person
+pastes, so a scan and a paste are one path: the app inflates it, stores the
+binding at once with every address and the overlays' material, and the
+channel's rounds do the rest. The button shows `ui.job.joining` while the
+link is checked and the binding written; a success adds the row in
+`pending`; a failure writes the code (`link_unreadable`, `hub_untrusted`)
+under the input. A hub none of the link's addresses reaches yet keeps the
+row pending.
 
 ### Joining before the hub is reached
 
 | Rule | Reason |
 | --- | --- |
-| A join (a scanned QR, a pasted link, short or long) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state word is `ui.state.pending` ("Joined; the hub has not been reached yet"), the mono line is the link's first address, and the virtual network line is live from the link's `overlays` once the binding has them, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. A long link carries the network's material at once; a short link's binding gets it on the first round that reaches the hub's address. |
+| A join (a scanned QR or a pasted link) stores the binding at once, with the link's ticket kept and no token yet, and the Hubs page shows the hub's row in the same frame: the state word is `ui.state.pending` ("Joined; the hub has not been reached yet"), the mono line is the link's first address, and the virtual network line is live from the link's `overlays` once the binding has them, with its picker and **Connect**. | Nothing a person pastes or scans is refused for the hub being out of reach at that moment: a phone on 4G adds the hub now and reaches it later. A long link carries the network's material at once; a short link's binding gets it on the first round that reaches the hub's address. |
 | The channel's rounds run as for any hub. The first time an address answers with the pinned certificate, the client spends the ticket there (`POST /api/channel/join`), keeps the token, and only then sends `hello`; from then on the binding is ordinary. | The join and the first channel share one reachable address, whichever path gave it. |
 | A ticket the hub refuses (`ticket_spent`, or any refusal of the join) puts the row in `down` with that code, **Leave** as its only action, and no further rounds; the person scans again. | A dead ticket cannot be revived; a loop on it is a hang with a name. |
 | A ticket lives 30 minutes, which the Clients page says beside the QR. | A phone that has to raise a network first needs more than five minutes. |
@@ -403,7 +402,7 @@ attaches receives the kept output first, then the live stream.
 
 | Rule | Reason |
 | --- | --- |
-| A right click opens a menu at the pointer: **Copy** (enabled with a selection), **Paste**, **Select all**, **Clear**. Escape or a press elsewhere closes it. | A menu is what a right click opens on every desktop. |
+| A right click opens a menu at the pointer: **Copy** (enabled with a selection), **Paste**, **Select all**, **Clear**. **Clear** sends Ctrl+C first and then clears the screen, so a command that is still pouring output stops with it. Escape or a press elsewhere closes it. | A menu is what a right click opens on every desktop; a clear that leaves the flood running clears nothing. |
 | Ctrl+Shift+C copies the selection and Ctrl+Shift+V pastes; on macOS Cmd+C and Cmd+V do the same. On Linux a middle click pastes the selection. | Each system's own terminal habit holds. |
 | The copy goes through the resident with `POST /api/clipboard`, and the paste reads `GET /api/clipboard`. | The web view's clipboard permission differs by system; the resident's does not. |
 | The wheel and the scrollbar move through the scrollback; the view follows new output only when it is at the bottom; Shift+PageUp and Shift+PageDown page. | Reading history while a build prints is the common case. |

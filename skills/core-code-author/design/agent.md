@@ -279,7 +279,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
 | Refused | nothing | stepping down, packages | stepping down, packages |
 | Kill | SIGTERM, then SIGKILL after two seconds | `OpenProcess` with `PROCESS_TERMINATE` and `TerminateProcess` | SIGTERM, then SIGKILL after two seconds |
-| Shell stream | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH` | PowerShell on a pseudo console, in a job that kills it on close | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux |
+| Shell stream | the login shell on a pseudo-terminal, which is its controlling terminal so a resize reaches it as `SIGWINCH`, started in root's home | PowerShell on a pseudo console, in a job that kills it on close, started in the signed-in account's profile directory and in the system drive's root when nobody is signed in, never in the service's own directory | `zsh -il` on a pseudo-terminal, its controlling terminal as on Linux, started in root's home |
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
 | RustDesk | `/usr/lib/neutrino/agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
 | File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the state root at every apply and when the agent starts |
@@ -503,7 +503,10 @@ invitation at a time. The machine the link was made for is the only one that
 can join, and refreshing the page quietly retires the link before it. A hub
 restart forgets tickets entirely.
 
-The link is `neutrino://enroll/<base64url payload>` over one JSON object:
+The link is `neutrino://enroll/<base64url payload>`, the payload one JSON
+object written with no spaces, compressed with zlib and encoded base64url
+without padding ([protocol.md](protocol.md), "The link and the two
+endpoints"); `nagent join` inflates it before it reads:
 
 ```json
 {"urls": ["https://192.168.93.1:8443", "..."], "token": "...", "fp": "<sha256 hex>", "role": "agent"}
