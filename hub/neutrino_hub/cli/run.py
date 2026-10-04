@@ -62,6 +62,7 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.router.constants import (
     ROUTER_DEBOUNCE_MAX_S,
     ROUTER_DEBOUNCE_QUIET_S,
+    ROUTER_DHCP_BINARIES,
     ROUTER_DNSMASQ_PATH,
     ROUTER_STEP_APPLIED,
     ROUTER_STEP_UNCHANGED,
@@ -134,7 +135,6 @@ DNSMASQ_USER = "dnsmasq"
 # as dnsmasq above: PATH under a unit is not reliable, and the families
 # disagree about sbin.
 SUPPLICANT_BINARIES = ("/usr/sbin/wpa_supplicant", "/usr/bin/wpa_supplicant")
-DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
 # The driver to ask for first. nl80211 is what every current card uses; wext
 # is the twenty-year-old fallback, and naming both lets the supplicant pick.
 SUPPLICANT_DRIVERS = "nl80211,wext"
@@ -418,7 +418,7 @@ def _exec_dhcpcd(interface: str) -> int:
         Never; the process is replaced. 1 when dhcpcd is not there or nothing
         has been rendered for this uplink.
     """
-    binary = _first_binary(DHCP_BINARIES, "dhcpcd")
+    binary = _first_binary(ROUTER_DHCP_BINARIES, "dhcpcd")
     if binary is None:
         return 1
     config = router_dhcp_config_path(interface)

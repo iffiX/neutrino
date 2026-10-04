@@ -26,10 +26,21 @@ from tests.conftest import (
 )
 
 
-def render(*entries, routing: dict | None = None, **rest) -> str:
+def render(
+    *entries,
+    routing: dict | None = None,
+    network_resolvers: list | None = None,
+    **rest,
+) -> str:
     return RouterDnsmasqRenderer(
-        network=network_config(*entries, **rest), routing=routing
+        network=network_config(*entries, **rest),
+        routing=routing,
+        network_resolvers=network_resolvers,
     ).render()
+
+
+def servers_of(rendered: str) -> list:
+    return [line for line in rendered.splitlines() if line.startswith("server=")]
 
 
 def test_one_lan_serves_its_own_interface(tmp_path):
@@ -155,27 +166,47 @@ def test_queries_go_through_xray_while_the_proxy_is_on(tmp_path):
     validate_dnsmasq(config, tmp_path)
 
 
-def test_queries_go_direct_while_the_proxy_is_off(tmp_path):
+def test_queries_go_to_the_networks_resolvers_while_the_proxy_is_off(tmp_path):
     """Resolving through xray for traffic that is not going there is worse twice.
 
     The answer would come from an exit node the traffic never touches, and the
     LAN would lose DNS entirely whenever xray was stopped — which is a likely
-    thing to do while the proxy is deliberately off.
+    thing to do while the proxy is deliberately off. The proxy's direct list
+    is an override for what a scope covers, so it is not asked here.
     """
-    config = RouterDnsmasqRenderer(
-        network=network_config(lan_entry("enp1s0", address="192.168.100.1")),
+    config = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
         routing={
             "is_proxy_enabled": False,
-            "direct_dns": {"address": "223.5.5.5", "port": 53},
+            "direct_dns": [{"address": "9.9.9.9", "port": 53}],
         },
-    ).render()
+        network_resolvers=[
+            {"address": "192.168.1.1", "port": 53},
+            {"address": "192.0.2.53", "port": 5353},
+        ],
+    )
 
-    assert "server=223.5.5.5#53" in config
+    assert servers_of(config) == [
+        "server=192.168.1.1#53",
+        "server=192.0.2.53#5353",
+    ]
     assert "15353" not in without_comments(config)
     validate_dnsmasq(config, tmp_path)
 
 
-def test_the_fallback_puts_the_direct_resolver_behind_xray():
+def test_with_no_resolvers_known_the_built_in_fallbacks_answer():
+    rendered = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={"is_proxy_enabled": False},
+    )
+
+    assert servers_of(rendered) == [
+        "server=223.5.5.5#53",
+        "server=119.29.29.29#53",
+    ]
+
+
+def test_the_fallback_puts_the_direct_resolvers_behind_xray():
     """A dead exit is a dead resolver, and without a second upstream the LAN
     loses every name rather than the proxied ones."""
     rendered = render(
@@ -183,15 +214,39 @@ def test_the_fallback_puts_the_direct_resolver_behind_xray():
         routing={
             "is_proxy_enabled": True,
             "is_direct_fallback_enabled": True,
-            "direct_dns": {"address": "223.5.5.5", "port": 53},
+            "direct_dns": [
+                {"address": "119.29.29.29", "port": 53},
+                {"address": "192.0.2.53", "port": 5353},
+            ],
         },
+        network_resolvers=[{"address": "192.168.1.1", "port": 53}],
     )
-    servers = [line for line in rendered.splitlines() if line.startswith("server=")]
 
-    assert servers == ["server=127.0.0.1#15353", "server=223.5.5.5#53"]
+    assert servers_of(rendered) == [
+        "server=127.0.0.1#15353",
+        "server=119.29.29.29#53",
+        "server=192.0.2.53#5353",
+    ]
     # Ordered rather than raced: without this dnsmasq asks both at once and
     # every query leaks to the direct resolver.
     assert "strict-order" in rendered
+
+
+def test_an_empty_direct_list_puts_the_networks_resolvers_behind_xray():
+    rendered = render(
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing={
+            "is_proxy_enabled": True,
+            "is_direct_fallback_enabled": True,
+            "direct_dns": [],
+        },
+        network_resolvers=[{"address": "192.168.1.1", "port": 53}],
+    )
+
+    assert servers_of(rendered) == [
+        "server=127.0.0.1#15353",
+        "server=192.168.1.1#53",
+    ]
 
 
 def test_without_the_fallback_xray_is_the_only_upstream():

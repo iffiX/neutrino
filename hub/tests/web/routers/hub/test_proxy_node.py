@@ -60,8 +60,8 @@ class FakeRuntime:
                 "direct_ips": [],
                 "is_local_proxy_enabled": False,
                 "socks_ports": [],
-                "remote_dns": {"address": "1.1.1.1", "port": 53},
-                "direct_dns": {"address": "223.5.5.5", "port": 53},
+                "remote_dns": [{"address": "1.1.1.1", "port": 53}],
+                "direct_dns": [{"address": "223.5.5.5", "port": 53}],
             },
         }
         self.is_config_dirty = False
@@ -280,17 +280,57 @@ def test_many_listeners_are_kept_in_the_order_they_were_given(client):
         {"address": "1.1.1.1", "port": 70000},
     ],
 )
-def test_a_resolver_the_proxy_cannot_use_is_refused(client, resolver):
-    """Both resolvers are written straight into the xray config. A bad one is
-    a proxy that will not start, found at the next Apply rather than here."""
+@pytest.mark.parametrize("field", ["remote_dns", "direct_dns"])
+def test_a_resolver_the_proxy_cannot_use_is_refused(client, resolver, field):
+    """Every row of both lists is written straight into the xray config. A
+    bad one is a proxy that will not start, found at the next Apply rather
+    than here."""
+    opened, runtime = client
+    rows = [{"address": "192.0.2.53", "port": 53}, resolver]
+
+    response = opened.post(
+        "/api/hub/proxy/set",
+        json=dict(runtime.files["xray/routing.json"], **{field: rows}),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] in (
+        "resolver_address_invalid",
+        "port_out_of_range",
+    )
+
+
+def test_an_empty_remote_list_is_refused_by_name(client):
     opened, runtime = client
 
     response = opened.post(
         "/api/hub/proxy/set",
-        json=dict(runtime.files["xray/routing.json"], direct_dns=resolver),
+        json=dict(runtime.files["xray/routing.json"], remote_dns=[]),
     )
 
     assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "resolver_required",
+        "params": {"field": "remote_dns"},
+    }
+
+
+def test_an_empty_direct_list_is_saved_and_follows_the_network(client):
+    opened, runtime = client
+    rows = [
+        {"address": "8.8.8.8", "port": 53},
+        {"address": "1.1.1.1", "port": 5353},
+    ]
+
+    response = opened.post(
+        "/api/hub/proxy/set",
+        json=dict(runtime.files["xray/routing.json"], remote_dns=rows, direct_dns=[]),
+    )
+
+    assert response.status_code == 200
+    assert runtime.files["xray/routing.json"]["remote_dns"] == rows
+    assert runtime.files["xray/routing.json"]["direct_dns"] == []
+    assert response.json()["direct_dns"] == []
 
 
 @pytest.mark.parametrize(

@@ -171,6 +171,14 @@ XRAY_NODE_DOMAIN_STRATEGY = "UseIP"
 # once puts two packets on a new UDP flow within microseconds, and a NAT
 # router in front of the uplink was measured dropping the second.
 XRAY_DNS_QUERY_STRATEGY = "UseIPv4"
+# The proxy's two resolver lists in routing.json. A file that names no remote
+# list reads as the default one. A file written before the lists holds one
+# address under the direct field, and the former default there reads as an
+# empty list.
+XRAY_REMOTE_DNS_FIELD = "remote_dns"
+XRAY_DIRECT_DNS_FIELD = "direct_dns"
+XRAY_REMOTE_DNS_DEFAULT = ({"address": "1.1.1.1", "port": 53},)
+XRAY_FORMER_DIRECT_DNS = "223.5.5.5"
 
 # Statistics and handler API, loopback only.
 XRAY_API_LISTEN = "127.0.0.1"

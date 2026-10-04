@@ -160,6 +160,16 @@ ROUTER_CGROUP_ROOT = Path("/sys/fs/cgroup")
 ROUTER_SERVICE_SLICE = "system.slice"
 ROUTER_ENGINE_CGROUPS_PATH = UTILS_GENERATED_DIR / "router_engine_cgroups.json"
 
+# --- the network's resolvers ---
+# What answers when no uplink names a resolver, in this order.
+ROUTER_FALLBACK_RESOLVERS = ("223.5.5.5", "119.29.29.29")
+ROUTER_RESOLVER_PORT = 53
+# The network's resolvers the last render used, read by the hub's own
+# lookups between two renders.
+ROUTER_NETWORK_RESOLVERS_PATH = UTILS_GENERATED_DIR / "router_network_resolvers.json"
+# The variable dhcpcd's lease dump names the lease's resolvers in.
+ROUTER_LEASE_DNS_KEY = "domain_name_servers"
+
 # --- the resident reconciler ---
 # The one lock every writer of the routing state takes, so the resident unit
 # and an apply never interleave.
@@ -304,6 +314,11 @@ def router_supplicant_config_path(interface: str):
 # on, dhcpcd is not an engine that fetches a lease, it is a second manager
 # with opinions about the resolver, the hostname and the clock.
 ROUTER_DHCP_UNIT = "neutrino_hub_dhcpcd@{interface}.service"
+# Where dhcpcd is, in the order the families put it: PATH under a unit is not
+# reliable, and the families disagree about sbin.
+ROUTER_DHCP_BINARIES = ("/usr/sbin/dhcpcd", "/usr/bin/dhcpcd")
+# How long reading one uplink's lease may take.
+ROUTER_LEASE_READ_TIMEOUT_S = 5.0
 
 # --- what the hub stood down ---
 # Which units the hub stopped so it could drive the interfaces itself. State

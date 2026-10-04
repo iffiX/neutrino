@@ -2,8 +2,9 @@
 
 The first sample is not itself news, a set equal to the last says nothing,
 and a set that moved runs the converge step once, which hands both roles
-their state. A sample whose overlay devices moved has converged already. Every sample hands the set to the
-panel's certificate, which is issued again when its names moved.
+their state. A sample whose overlay devices or network resolvers moved has
+converged already. Every sample hands the set to the panel's certificate,
+which is issued again when its names moved.
 """
 
 from neutrino_hub.web import address_sampler as sampler_module
@@ -17,10 +18,15 @@ class StubRuntime:
         self.urls = ["https://192.168.100.1:8443"]
         self.calls: list = []
         self.is_device_moved = False
+        self.is_resolver_moved = False
 
     def follow_overlay_devices(self) -> bool:
         self.calls.append("follow")
         return self.is_device_moved
+
+    def follow_network_resolvers(self) -> bool:
+        self.calls.append("resolvers")
+        return self.is_resolver_moved
 
     def check_overlay_routes(self) -> list:
         self.calls.append("routes")
@@ -92,7 +98,35 @@ def test_each_sample_follows_the_overlay_devices_before_reading(monkeypatch):
 
     watcher.sample_once()
 
-    assert runtime.calls == ["follow", "routes", "urls", ("certificate", runtime.urls)]
+    assert runtime.calls == [
+        "follow",
+        "resolvers",
+        "routes",
+        "urls",
+        ("certificate", runtime.urls),
+    ]
+
+
+def test_a_sample_whose_overlay_devices_moved_reads_no_resolvers(monkeypatch):
+    """That converge recorded the resolvers it read already."""
+    watcher, runtime = sampler(monkeypatch)
+    runtime.is_device_moved = True
+
+    watcher.sample_once()
+
+    assert "resolvers" not in runtime.calls
+
+
+def test_resolvers_that_moved_are_not_converged_on_twice(monkeypatch):
+    """A lease naming new resolvers converges once, in the follow step."""
+    watcher, runtime = sampler(monkeypatch)
+    watcher.sample_once()
+    runtime.is_resolver_moved = True
+
+    runtime.urls = ["https://192.168.100.1:8443", "https://10.126.126.1:8443"]
+
+    assert watcher.sample_once() is True
+    assert "converge" not in runtime.calls
 
 
 def test_every_sample_checks_the_overlays_routes(monkeypatch):

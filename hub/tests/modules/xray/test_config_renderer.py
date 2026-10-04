@@ -68,8 +68,8 @@ def render(*, is_resolved: bool = True, **routing) -> dict:
         "is_geoip_split_enabled": True,
         "direct_domains": ["geosite:cn"],
         "direct_ips": ["geoip:cn"],
-        "remote_dns": {"address": "1.1.1.1", "port": 53},
-        "direct_dns": {"address": "223.5.5.5", "port": 53},
+        "remote_dns": [{"address": "1.1.1.1", "port": 53}],
+        "direct_dns": [{"address": "223.5.5.5", "port": 53}],
         **routing,
     }
     node_list = XrayNodeList.from_dict(NODES)
@@ -411,6 +411,75 @@ def test_the_remote_resolver_keeps_the_port_it_was_given():
     assert inbound["settings"]["port"] == 5353
 
 
+def test_every_direct_resolver_answers_the_direct_names_in_order():
+    config = render(
+        direct_dns=[
+            {"address": "119.29.29.29", "port": 53},
+            {"address": "192.0.2.53", "port": 5353},
+        ]
+    )
+
+    pinned = [
+        (server["address"], server["port"])
+        for server in config["dns"]["servers"]
+        if server.get("domains") == ["geosite:cn"]
+    ]
+    assert pinned == [("119.29.29.29", 53), ("192.0.2.53", 5353)]
+
+
+def test_an_empty_direct_list_follows_the_networks_resolvers():
+    settings = {
+        "is_proxy_enabled": True,
+        "socks_ports": [],
+        "is_geoip_split_enabled": True,
+        "direct_domains": ["geosite:cn"],
+        "remote_dns": [{"address": "1.1.1.1", "port": 53}],
+        "direct_dns": [],
+    }
+    config = XrayConfigRenderer(
+        node_list=resolved_nodes(),
+        routing=settings,
+        network_resolvers=[{"address": "192.168.1.1", "port": 53}],
+    ).render()
+
+    assert config["dns"]["servers"] == [
+        {
+            "address": "192.168.1.1",
+            "port": 53,
+            "domains": ["geosite:cn"],
+            "skipFallback": True,
+        },
+        {"address": "1.1.1.1", "port": 53},
+    ]
+
+
+def test_with_no_network_resolvers_given_the_built_in_fallbacks_answer():
+    config = render(direct_dns=[])
+
+    pinned = [
+        server["address"]
+        for server in config["dns"]["servers"]
+        if server.get("domains") == ["geosite:cn"]
+    ]
+    assert pinned == ["223.5.5.5", "119.29.29.29"]
+
+
+def test_every_remote_resolver_is_asked_in_order():
+    config = render(
+        remote_dns=[
+            {"address": "8.8.8.8", "port": 53},
+            {"address": "1.1.1.1", "port": 5353},
+        ]
+    )
+
+    assert config["dns"]["servers"][-2:] == [
+        {"address": "8.8.8.8", "port": 53},
+        {"address": "1.1.1.1", "port": 5353},
+    ]
+    inbound = next(entry for entry in config["inbounds"] if entry["tag"] == "dns_in")
+    assert inbound["settings"]["address"] == "8.8.8.8"
+
+
 # --- the nodes xray holds, and the one it sends traffic to --------------------
 
 
@@ -607,8 +676,8 @@ def render_with_exit(address: str, **routing) -> dict:
         "is_proxy_enabled": True,
         "socks_ports": [],
         "is_geoip_split_enabled": False,
-        "remote_dns": {"address": "1.1.1.1", "port": 53},
-        "direct_dns": {"address": "223.5.5.5", "port": 53},
+        "remote_dns": [{"address": "1.1.1.1", "port": 53}],
+        "direct_dns": [{"address": "223.5.5.5", "port": 53}],
         **routing,
     }
     return XrayConfigRenderer(node_list=node_list, routing=settings).render()
@@ -757,8 +826,14 @@ def render_for_golden(
         "is_geoip_split_enabled": True,
         "direct_domains": ["geosite:cn"],
         "direct_ips": ["geoip:cn"],
-        "remote_dns": {"address": "1.1.1.1", "port": 53},
-        "direct_dns": {"address": "223.5.5.5", "port": 53},
+        "remote_dns": [
+            {"address": "1.1.1.1", "port": 53},
+            {"address": "8.8.8.8", "port": 53},
+        ],
+        "direct_dns": [
+            {"address": "223.5.5.5", "port": 53},
+            {"address": "119.29.29.29", "port": 53},
+        ],
     }
     return XrayConfigRenderer(
         node_list=resolved_nodes(),

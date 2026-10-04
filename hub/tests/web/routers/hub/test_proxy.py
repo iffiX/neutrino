@@ -36,8 +36,8 @@ ROUTING = {
     "direct_ips": [],
     "is_local_proxy_enabled": False,
     "socks_ports": [],
-    "remote_dns": {"address": "1.1.1.1", "port": 53},
-    "direct_dns": {"address": "223.5.5.5", "port": 53},
+    "remote_dns": [{"address": "1.1.1.1", "port": 53}],
+    "direct_dns": [{"address": "223.5.5.5", "port": 53}],
 }
 NODES = {
     "nodes": [

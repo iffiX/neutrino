@@ -2,12 +2,13 @@
 
 Everything with a system effect in the router layer lives here: the interface
 roles made real with ``ip``, ``wpa_supplicant`` and ``dhcpcd``, the default
-route shared between uplinks,
+route shared between uplinks, the network's resolvers read off the leases,
 forwarding sysctls, the policy route TPROXY needs, and loading the nftables
 ruleset. The renderers stay pure so they can be tested without root.
 """
 
 import ipaddress
+import json
 import subprocess
 
 # Unix's alone; the proxy core's account exists on Linux alone.
@@ -35,7 +36,8 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_RESOLVER_TO_FALLBACK,
     ROUTER_RESOLVER_TO_ORIGINAL,
     ROUTER_RESOLVER_TO_RESOLVED,
-    ROUTER_ROUTING_FILE,
+    ROUTER_NETWORK_RESOLVERS_PATH,
+    ROUTER_RESOLVER_PORT,
     ROUTER_STEP_PENDING,
     ROUTER_STEP_UNCHANGED,
     ROUTER_TRIGGER_APPLY,
@@ -55,6 +57,11 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_WAN_METHOD_STATIC,
 )
 from neutrino_hub.modules.router.interfaces import RouterInterface, RouterNetworkConfig
+from neutrino_hub.modules.router.network_resolvers import (
+    compose_network_resolvers,
+    fallback_resolvers,
+    parse_recorded_resolvers,
+)
 from neutrino_hub.modules.router.link_status import (
     LINK_KIND_WIFI,
     RouterLinkStatus,
@@ -74,6 +81,7 @@ from neutrino_hub.system.constants import (
     SYSTEM_UNIT_STATE_ACTIVATING,
     SYSTEM_UNIT_STATE_ACTIVE,
 )
+from neutrino_hub.platforms.detect import hub_platform
 from neutrino_hub.system.systemd_ctl import is_unit_startable, unit_state
 
 XRAY_SERVICE_USER = "xray"
@@ -227,24 +235,88 @@ def hand_back(network: RouterNetworkConfig) -> list[str]:
     # whether it is enabled. Asked in the other order it is never handed back
     # at all, and the box goes on resolving at a dnsmasq nobody is running.
     changes += stack.stand_up()
-    direct = _direct_resolver_address()
-    handed = resolver.hand_back(fallback_address=direct)
+    addresses = [
+        entry["address"]
+        for entry in rendered_network_resolvers()
+        if entry["port"] == ROUTER_RESOLVER_PORT
+    ]
+    handed = resolver.hand_back(fallback_addresses=addresses)
     if handed == ROUTER_RESOLVER_TO_RESOLVED:
         changes.append("name resolution is systemd-resolved's again")
     elif handed == ROUTER_RESOLVER_TO_ORIGINAL:
         changes.append("the machine's own resolver file is back")
     elif handed == ROUTER_RESOLVER_TO_FALLBACK:
-        changes.append(f"name resolution points at the direct resolver {direct}")
+        changes.append(
+            "name resolution points at the network's resolvers " + ", ".join(addresses)
+        )
     return changes
 
 
-def _direct_resolver_address() -> str:
-    """The direct resolver the routing configuration names, empty if none."""
+def read_network_resolvers(
+    network: RouterNetworkConfig, *, status: RouterLinkStatus | None = None
+) -> list[dict]:
+    """Read the network's resolvers as the machine has them now.
+
+    In router mode, each carrying DHCP uplink's lease is read and each
+    static uplink gives its rows, in the uplinks' order of priority.
+    Elsewhere they are the system's own.
+
+    Args:
+        network: The parsed router configuration.
+        status: An existing link reader to reuse.
+
+    Returns:
+        Each resolver once as ``{address, port}``, the built-in fallbacks
+        when none is named.
+    """
+    if not network.is_addressing_owned:
+        return compose_network_resolvers(
+            network=network,
+            uplink_order=[],
+            lease_dns={},
+            system_resolvers=hub_platform().system_resolvers(),
+        )
+    plan = build_uplink_plan(network=network, status=status)
+    lease_dns = {}
+    for planned in plan.uplinks:
+        interface = network.interface(planned.name)
+        if interface is None or interface.wan.method == ROUTER_WAN_METHOD_STATIC:
+            continue
+        if planned.facts.is_carrying:
+            device = interface.device_name
+            lease_dns[device] = RouterDhcpClient(interface=device).lease_dns()
+    return compose_network_resolvers(
+        network=network,
+        uplink_order=[planned.name for planned in plan.uplinks],
+        lease_dns=lease_dns,
+        system_resolvers=[],
+    )
+
+
+def record_network_resolvers(resolvers: list[dict]) -> None:
+    """Keep the network's resolvers a render used.
+
+    Args:
+        resolvers: The ``{address, port}`` rows.
+
+    Raises:
+        OSError: If the record cannot be written.
+    """
+    write_generated(ROUTER_NETWORK_RESOLVERS_PATH, json.dumps(resolvers))
+
+
+def rendered_network_resolvers() -> list[dict]:
+    """The network's resolvers the last render used.
+
+    Returns:
+        The recorded ``{address, port}`` rows; the built-in fallbacks when
+        no render recorded any.
+    """
     try:
-        routing = read_config(ROUTER_ROUTING_FILE)
-    except (FileNotFoundError, ValueError):
-        return ""
-    return str((routing.get("direct_dns") or {}).get("address", ""))
+        text = ROUTER_NETWORK_RESOLVERS_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return fallback_resolvers()
+    return parse_recorded_resolvers(text)
 
 
 def build_uplink_plan(

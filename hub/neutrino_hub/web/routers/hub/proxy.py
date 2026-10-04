@@ -14,17 +14,18 @@ holds, and taking the newest one published.
 """
 
 import asyncio
-import ipaddress
 import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub.modules.router.network_resolvers import resolver_refusal
 from neutrino_hub.modules.xray import geodata
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.constants import (
     XRAY_BINARY_NAME,
     XRAY_GEODATA_GEOIP_FILE,
     XRAY_GEODATA_GEOSITE_FILE,
+    XRAY_REMOTE_DNS_FIELD,
 )
 from neutrino_hub.modules.xray.geodata import XrayGeodataState
 from neutrino_hub.modules.xray.routing_rules import (
@@ -86,7 +87,8 @@ def update_settings(
 
     Raises:
         HTTPException: 400 when a proxied scope is switched on with
-            nothing to go out through, when a resolver is not an address, when two listeners
+            nothing to go out through, when the remote resolver list is
+            empty, when a resolver is not an address, when two listeners
             want one port, when a listener wants a port something on the box
             already holds, or when a direct list holds a line xray will not
             load. Each of these reaches the xray config, where a bad value is a
@@ -102,20 +104,16 @@ def update_settings(
     )
     if is_exit_needed and not runtime.node_list().enabled_nodes:
         raise _refusal("no_exit_node_enabled")
-    for resolver in (settings.remote_dns, settings.direct_dns):
-        try:
-            ipaddress.ip_address(resolver.address)
-        except ValueError as error:
-            raise _refusal(
-                "resolver_address_invalid", address=resolver.address
-            ) from error
-        if not WEB_PORT_MIN <= resolver.port <= WEB_PORT_MAX:
-            raise _refusal(
-                "port_out_of_range",
-                minimum=WEB_PORT_MIN,
-                maximum=WEB_PORT_MAX,
-                value=resolver.port,
-            )
+    if not settings.remote_dns:
+        raise _refusal("resolver_required", field=XRAY_REMOTE_DNS_FIELD)
+    refusal = resolver_refusal(
+        [row.model_dump() for row in settings.remote_dns + settings.direct_dns],
+        port_min=WEB_PORT_MIN,
+        port_max=WEB_PORT_MAX,
+    )
+    if refusal is not None:
+        code, params = refusal
+        raise _refusal(code, **params)
     seen = [entry.port for entry in settings.socks_ports]
     if len(set(seen)) != len(seen):
         raise _refusal("socks_ports_share_a_port")

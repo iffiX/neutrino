@@ -45,9 +45,11 @@ ROUTING = {
     "direct_ips": [],
     "is_local_proxy_enabled": False,
     "socks_ports": [],
-    "remote_dns": {"address": "1.1.1.1", "port": 53},
-    "direct_dns": {"address": "223.5.5.5", "port": 53},
+    "remote_dns": [{"address": "1.1.1.1", "port": 53}],
+    "direct_dns": [],
 }
+# The network's resolvers the converge reads.
+NETWORK_RESOLVERS = [{"address": "192.0.2.1", "port": 53}]
 
 ROUTER_NETWORK = {
     "mode": "router",
@@ -178,6 +180,16 @@ def applied(monkeypatch):
     monkeypatch.setattr(runtime_module, "install_dnsmasq", install_dnsmasq)
     monkeypatch.setattr(runtime_module, "OverlayRouteGuard", Guard)
     monkeypatch.setattr(
+        runtime_module,
+        "read_network_resolvers",
+        lambda network: copy.deepcopy(NETWORK_RESOLVERS),
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "record_network_resolvers",
+        lambda rows: files.__setitem__("recorded resolvers", rows),
+    )
+    monkeypatch.setattr(
         runtime_module.channel_state,
         "push_states",
         lambda runtime, role: written.append(("pushed states", role)),
@@ -220,6 +232,27 @@ def test_the_steps_run_in_their_order(applied, monkeypatch):
     ]
     assert {"code": "xray_restarted", "params": {}} in changes
     assert {"code": "devices_pushed", "params": {"count": 1}} in changes
+
+
+def test_the_networks_resolvers_reach_dnsmasq_and_xray_and_are_recorded(
+    applied, monkeypatch
+):
+    panel, written, _, files = applied
+    rendered = {}
+
+    class Applier:
+        def apply_if_changed(self, config) -> bool:
+            rendered["xray"] = config
+            return True
+
+    monkeypatch.setattr(runtime_module, "XrayConfigApplier", Applier)
+
+    panel.converge_network_blocking()
+
+    (dnsmasq,) = [config for step, config in written if step == "installed dnsmasq"]
+    assert "server=192.0.2.1#53" in dnsmasq.splitlines()
+    assert files["recorded resolvers"] == NETWORK_RESOLVERS
+    assert "xray" in rendered
 
 
 def test_every_peer_is_pushed_before_an_engine_stops(applied):

@@ -36,6 +36,18 @@ from tests.conftest import (
 )
 
 UPSTREAM_GATEWAY = "198.51.100.129"
+# What each uplink's DHCP lease names as its resolvers.
+LEASE_DNS = {"enp2s0": ["198.51.100.129", "223.5.5.5"]}
+
+
+class FakeDhcpClient:
+    """The lease client, answering from :data:`LEASE_DNS`."""
+
+    def __init__(self, *, interface: str):
+        self._interface = interface
+
+    def lease_dns(self) -> list[str]:
+        return list(LEASE_DNS.get(self._interface, []))
 
 
 class FakeRuntime:
@@ -103,6 +115,7 @@ def box(monkeypatch):
     # wants to see the hand-back swaps this for a recorder of its own.
     monkeypatch.setattr(network_router, "hand_back", lambda network: [])
     monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
+    monkeypatch.setattr(network_router, "RouterDhcpClient", FakeDhcpClient)
 
     app = FastAPI()
     app.include_router(network_router.router)
@@ -280,6 +293,72 @@ def test_a_static_uplink_gateway_must_sit_in_its_own_subnet(box):
     assert response.json()["detail"]["code"] == "uplink_gateway_outside"
 
 
+def link_of(client, name: str) -> dict:
+    payload = client.get("/api/hub/network").json()
+    for entry in payload["interfaces"]:
+        if entry["settings"]["name"] == name:
+            return entry["link"]
+    raise AssertionError(f"no interface {name} in the view")
+
+
+def test_a_dhcp_uplink_shows_the_resolvers_its_lease_names(box):
+    client, _, _ = box
+
+    assert link_of(client, "enp2s0")["lease_dns"] == LEASE_DNS["enp2s0"]
+    assert link_of(client, "enp1s0")["lease_dns"] == []
+
+
+def test_a_static_uplink_shows_no_lease_and_keeps_its_resolver_rows(box):
+    client, runtime, _ = box
+    draft = settings_of(client, "enp2s0")
+    rows = [
+        {"address": "198.51.100.129", "port": 53},
+        {"address": "192.0.2.53", "port": 5353},
+    ]
+    draft["wan"].update(
+        {
+            "method": "static",
+            "address": "198.51.100.203",
+            "prefix_len": 25,
+            "gateway": UPSTREAM_GATEWAY,
+            "dns": rows,
+        }
+    )
+
+    response = client.post("/api/hub/network/interface/set", json=draft)
+
+    assert response.status_code == 200
+    assert runtime.network().interface("enp2s0").wan.dns == rows
+    assert settings_of(client, "enp2s0")["wan"]["dns"] == rows
+    assert link_of(client, "enp2s0")["lease_dns"] == []
+
+
+@pytest.mark.parametrize(
+    ("row", "code"),
+    [
+        ({"address": "dns.example.net", "port": 53}, "resolver_address_invalid"),
+        ({"address": "192.0.2.53", "port": 0}, "port_out_of_range"),
+    ],
+)
+def test_a_static_uplink_resolver_that_cannot_be_asked_is_refused(box, row, code):
+    client, _, _ = box
+    draft = settings_of(client, "enp2s0")
+    draft["wan"].update(
+        {
+            "method": "static",
+            "address": "198.51.100.203",
+            "prefix_len": 25,
+            "gateway": UPSTREAM_GATEWAY,
+            "dns": [row],
+        }
+    )
+
+    response = client.post("/api/hub/network/interface/set", json=draft)
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == code
+
+
 def test_a_static_uplink_without_a_gateway_is_refused(box):
     client, _, _ = box
     draft = settings_of(client, "enp2s0")
@@ -421,6 +500,7 @@ def guest_box(monkeypatch):
     )
     monkeypatch.setattr(network_router, "hand_back", lambda network: [])
     monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
+    monkeypatch.setattr(network_router, "RouterDhcpClient", FakeDhcpClient)
 
     app = FastAPI()
     app.include_router(network_router.router)
@@ -1277,6 +1357,7 @@ def windows_server(on_windows, monkeypatch):
     runtime = FakeRuntime(config, RouterLinkStatus())
     runtime.overlay_devices = {"netbird": ["wt0"]}
     monkeypatch.setattr(network_router, "admin_up_interfaces", lambda: {"wt0"})
+    monkeypatch.setattr(network_router, "RouterDhcpClient", FakeDhcpClient)
 
     app = FastAPI()
     app.include_router(network_router.router)

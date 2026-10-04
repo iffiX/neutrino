@@ -7,6 +7,7 @@ children.
 """
 
 import ctypes
+import ipaddress
 import os
 import subprocess
 import time
@@ -24,11 +25,13 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_SERVICE_WAIT_S,
     PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK,
     PLATFORM_WINDOWS_CREATE_NO_WINDOW,
+    PLATFORM_WINDOWS_RESOLVERS_SCRIPT,
     PLATFORM_WINDOWS_SERVICE_NAME,
     PLATFORM_WINDOWS_SERVICE_STATES,
     PLATFORM_WINDOWS_SHELL,
     PLATFORM_WINDOWS_STATE_PATTERN,
 )
+from neutrino_hub.system.powershell_run import listed, run_powershell
 
 
 def drop_connection_reset(loop, context: dict) -> None:
@@ -309,6 +312,30 @@ class WindowsHubPlatform(HubPlatform):
             A ``tcp://`` address.
         """
         return f"tcp://127.0.0.1:{PLATFORM_NETBIRD_DAEMON_PORT_WINDOWS}"
+
+    def system_resolvers(self) -> list:
+        """The resolvers the system itself asks.
+
+        Every connected adapter's IPv4 resolvers, the adapter with the
+        lowest interface metric first.
+
+        Returns:
+            The addresses in that order, each once, loopback left out;
+            empty when PowerShell does not answer.
+        """
+        try:
+            answer = run_powershell(PLATFORM_WINDOWS_RESOLVERS_SCRIPT, {})
+        except OSError:
+            return []
+        addresses = []
+        for value in listed(answer.get("servers")):
+            try:
+                address = ipaddress.ip_address(str(value))
+            except ValueError:
+                continue
+            if not address.is_loopback and str(address) not in addresses:
+                addresses.append(str(address))
+        return addresses
 
     def tie_to_service(self, process) -> None:
         """Put one child in the job that ends it with the service.

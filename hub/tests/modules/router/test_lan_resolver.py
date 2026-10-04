@@ -223,7 +223,7 @@ def test_without_resolved_the_kept_file_is_put_back_and_deleted(
     resolv_conf.write_text("nameserver 192.0.2.53\n")
     resolver.point_at("192.168.8.1")
 
-    handed = resolver.hand_back(fallback_address="223.5.5.5")
+    handed = resolver.hand_back(fallback_addresses=["223.5.5.5"])
 
     assert handed == ROUTER_RESOLVER_TO_ORIGINAL
     assert resolv_conf.read_text() == "nameserver 192.0.2.53\n"
@@ -251,10 +251,13 @@ def test_with_no_kept_file_and_no_resolved_the_fallback_is_written(
     resolver.point_at("192.168.8.1")
     assert not kept_original.exists()
 
-    handed = resolver.hand_back(fallback_address="223.5.5.5")
+    handed = resolver.hand_back(fallback_addresses=["192.168.1.1", "223.5.5.5"])
 
     assert handed == ROUTER_RESOLVER_TO_FALLBACK
-    assert "nameserver 223.5.5.5" in resolv_conf.read_text()
+    assert resolv_conf.read_text().splitlines()[1:] == [
+        "nameserver 192.168.1.1",
+        "nameserver 223.5.5.5",
+    ]
     assert "192.168.8.1" not in resolv_conf.read_text()
 
 
@@ -274,14 +277,14 @@ def test_resolved_comes_before_the_kept_file(
     resolver.point_at("192.168.8.1")
     is_resolved_enabled["is_enabled"] = True
 
-    handed = resolver.hand_back(fallback_address="223.5.5.5")
+    handed = resolver.hand_back(fallback_addresses=["223.5.5.5"])
 
     assert handed == ROUTER_RESOLVER_TO_RESOLVED
     assert resolv_conf.readlink() == resolver.RESOLVER_RESOLVED_STUB
     assert not kept_original.exists()
 
 
-def test_handing_back_passes_the_direct_resolver_as_the_fallback(monkeypatch):
+def test_handing_back_passes_the_networks_resolvers_as_the_fallback(monkeypatch):
     handed = {}
 
     def hand_back(**keywords):
@@ -293,11 +296,17 @@ def test_handing_back_passes_the_direct_resolver_as_the_fallback(monkeypatch):
     monkeypatch.setattr(routes.resolver, "hand_back", hand_back)
     monkeypatch.setattr(
         routes,
-        "read_config",
-        lambda name: {"direct_dns": {"address": "223.5.5.5", "port": 53}},
+        "rendered_network_resolvers",
+        lambda: [
+            {"address": "192.168.1.1", "port": 53},
+            {"address": "192.0.2.53", "port": 5353},
+            {"address": "223.5.5.5", "port": 53},
+        ],
     )
 
     changes = routes.hand_back(RouterNetworkConfig(mode=ROUTER_MODE_ROUTER))
 
-    assert handed == {"fallback_address": "223.5.5.5"}
-    assert changes[-1] == "name resolution points at the direct resolver 223.5.5.5"
+    assert handed == {"fallback_addresses": ["192.168.1.1", "223.5.5.5"]}
+    assert changes[-1] == (
+        "name resolution points at the network's resolvers 192.168.1.1, 223.5.5.5"
+    )

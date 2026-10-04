@@ -100,8 +100,13 @@ ROUTING = {
     "is_proxy_enabled": False,
     "is_overlay_proxy_enabled": False,
     "is_local_proxy_enabled": False,
-    "direct_dns": {"address": "223.5.5.5", "port": 53},
+    "direct_dns": [{"address": "223.5.5.5", "port": 53}],
 }
+# The system's own resolvers, as the last render recorded them.
+SYSTEM_RESOLVERS = [
+    {"address": "192.0.2.53", "port": 53},
+    {"address": "198.51.100.53", "port": 53},
+]
 
 
 class FakeNetbirdReader:
@@ -137,6 +142,7 @@ def machine(monkeypatch):
     monkeypatch.setattr(ops, "_config", lambda name: json.loads(json.dumps(NODES)))
     monkeypatch.setattr(ops, "resolve_node_secrets", resolve_secrets)
     monkeypatch.setattr(ops, "resolve_direct", resolve)
+    monkeypatch.setattr(ops, "rendered_network_resolvers", lambda: SYSTEM_RESOLVERS)
     monkeypatch.setattr(ops.socket, "getaddrinfo", _no_system_answer)
     monkeypatch.setattr(ops, "NetbirdStatusReader", FakeNetbirdReader)
     monkeypatch.setattr(
@@ -407,6 +413,34 @@ def test_the_endpoint_names_are_resolved_once_until_they_age(machine, monkeypatc
         "192.0.2.70",
     ]
     assert {server for _, server, _ in machine.asked} == {"223.5.5.5"}
+
+
+def test_an_empty_direct_list_keeps_the_systems_resolvers_out(machine, monkeypatch):
+    """Each direct resolver gets its host route, and with the direct list
+    empty those are the system's own, asked in order."""
+    network = machine("darwin", has_overlays=False)
+    monkeypatch.setitem(ANSWERS, "exit.example.net", None)
+
+    def resolve(name, *, server, port):
+        machine.asked.append((name, server, port))
+        if server == "198.51.100.53" and name == "exit.example.net":
+            return "203.0.113.10"
+        return ANSWERS.get(name)
+
+    monkeypatch.setattr(ops, "resolve_direct", resolve)
+    rendered = ops.plan_tun(network, {**ROUTING, **SCOPES["hub"], "direct_dns": []})
+
+    routed = [
+        route["destination"]
+        for route in rendered.to_dict()["routes"]
+        if route["device"] == "en0"
+    ]
+    assert "192.0.2.53/32" in routed
+    assert "198.51.100.53/32" in routed
+    assert "203.0.113.10/32" in routed
+    assert [
+        server for name, server, _ in machine.asked if name == "exit.example.net"
+    ] == ["192.0.2.53", "198.51.100.53"]
 
 
 # --- the routing pass ----------------------------------------------------------
