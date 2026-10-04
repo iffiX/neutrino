@@ -5,7 +5,9 @@ cache, and ``package {}`` for its own. It grants credit as it writes each
 piece to a temporary file under its data directory, waits for the hub's
 close, and checks the ``sha256`` the close's params carry against what
 landed. Only a file that matches is handed over, renamed from its
-temporary name to its final one when the caller names one; a mismatch, a
+temporary name to its final one when the caller names one: the ``name``
+the close carries when it is a plain file name with the same extension,
+the caller's name otherwise. A mismatch, a
 refusal from the hub, or a socket that dropped mid-transfer leaves no file
 behind.
 
@@ -24,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
+import re
 import tempfile
 
 from neutrino_agent.constants import AGENT_WS_STREAM_CREDIT_BYTES
@@ -35,6 +38,9 @@ PACKAGE_SUFFIX = ".part"
 # and when the socket went away under it.
 CODE_DIGEST_MISMATCH = "package_digest_mismatch"
 CODE_UNREACHABLE = "hub_unreachable"
+# A release file name the close may carry: one plain name, no directory, no
+# drive, nothing a shell or msiexec reads as syntax.
+RELEASE_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+~-]{0,199}")
 
 
 class PackageStream:
@@ -47,7 +53,8 @@ class PackageStream:
             directory: Where the file lands, made root-only when missing.
             name: The file's final name in ``directory``, which an installer
                 that reads the extension needs; empty keeps the temporary
-                name.
+                name. A safe ``name`` in the close's params with the same
+                extension takes its place.
         """
         self._channel = channel
         self._directory = directory
@@ -58,7 +65,8 @@ class PackageStream:
 
         Returns:
             ``{"path"}`` naming the file, under its final name when one was
-            given, when its digest matched; otherwise ``{"code", "params"}``:
+            given (the release's own name when the close carried a safe
+            one), when its digest matched; otherwise ``{"code", "params"}``:
             the hub's own code when it closed with one,
             ``package_digest_mismatch`` when the bytes do not match the
             ``sha256`` the close named, ``hub_unreachable`` when the stream
@@ -101,7 +109,9 @@ class PackageStream:
             return _refusal(CODE_DIGEST_MISMATCH)
         if not self._name:
             return {"path": path}
-        final = os.path.join(self._directory, self._name)
+        final = os.path.join(
+            self._directory, release_name(params.get("name"), fallback=self._name)
+        )
         try:
             os.replace(path, final)
         except OSError as error:
@@ -131,6 +141,27 @@ class PackageStream:
             handle.write(item[1])
             digest.update(item[1])
             self._channel.offer_credit(len(item[1]))
+
+
+def release_name(name, *, fallback: str) -> str:
+    """The file name a received package takes. Pure.
+
+    Args:
+        name: The ``name`` the close carried, of any type.
+        fallback: The caller's own final name.
+
+    Returns:
+        ``name`` when it is one plain file name (no separator, drive,
+        ``..`` or leading dot) ending in ``fallback``'s extension;
+        ``fallback`` otherwise.
+    """
+    if not isinstance(name, str) or not RELEASE_NAME_PATTERN.fullmatch(name):
+        return fallback
+    if ".." in name:
+        return fallback
+    if os.path.splitext(name)[1] != os.path.splitext(fallback)[1]:
+        return fallback
+    return name
 
 
 def remove_stale(directory: str) -> None:

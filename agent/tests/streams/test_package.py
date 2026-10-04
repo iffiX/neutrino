@@ -136,6 +136,16 @@ def test_a_named_package_that_does_not_match_leaves_no_file(tmp_path):
     assert leftovers(tmp_path / "packages") == []
 
 
+def test_a_module_package_keeps_its_temporary_name_whatever_the_close_names(
+    tmp_path,
+):
+    outcome, _ = received(
+        tmp_path, [b"x"], ("", {"sha256": sha256(b"x"), "name": "code.tar.gz"})
+    )
+
+    assert os.path.basename(outcome["path"]).startswith(".package.")
+
+
 def test_the_landing_directory_is_made_root_only(tmp_path):
     outcome, _ = received(tmp_path, [b"x"], ("", {"sha256": sha256(b"x")}))
 
