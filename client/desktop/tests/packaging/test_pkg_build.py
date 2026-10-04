@@ -64,6 +64,7 @@ def test_a_daemon_lands_under_launch_daemons_started_and_kept_alive(tmp_path):
         "ProgramArguments": ["/usr/local/bin/nagent", "run"],
         "RunAtLoad": True,
         "KeepAlive": True,
+        "EnvironmentVariables": {"LANG": "en_US.UTF-8"},
         "StandardOutPath": "/Library/Logs/neutrino_agent.log",
         "StandardErrorPath": "/Library/Logs/neutrino_agent.log",
     }

@@ -358,10 +358,14 @@ address a caller is given").
 
 On a Mac the connections land in the `RustDesk --server` job of the signed-in
 session (the LaunchAgent `com.carriez.RustDesk_server`), not in the root
-service alone, and that job writes its own copy of the configuration back
-when it exits. So the host configures a Mac by stopping that job together
-with the service, writing both copies, and starting both again, and the
-share is declared only once the direct port answers, as everywhere.
+service alone. That job takes its configuration from the root service once,
+when it starts, and from then on pushes what it holds in memory back to the
+service whenever that changes, so a file written under a running job is
+overwritten within a second. So the host configures a Mac by stopping the
+job and then the service, writing both copies, and starting the service and
+then the job; the baseline, which names no account, drives the service
+alone. The share is declared only once the direct port answers, as
+everywhere.
 
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants, and the privacy
