@@ -33,8 +33,7 @@ import io.github.iffix.neutrino.shell.LocalClientActions
  * @param connecting The entries whose Connect runs, by entry key.
  * @param errors The code each entry's last Connect ended in, by entry key.
  * @param viewingKey The entry the open viewer shows, or null.
- * @param dialed The address each entry's viewer dials, by entry key, once the hub handed it back;
- *   the row's mono line, absent until then.
+ * @param dialed The address each entry's viewer dials, by entry key, once the hub handed it back.
  * @param onConnect What pressing Connect does, with the binding id, the entry id, the viewer's title
  *   and the entry's `platform_os`.
  */
@@ -87,7 +86,7 @@ fun RemoteDesktopScreen(
         ) {
             BasicText(entry.title, style = NeutrinoTheme.rowTitle)
             if (viewingKey == key) BasicText(words.word("ui.rdp_open"), style = NeutrinoTheme.note)
-            dialed[key]?.let { BasicText(it, style = NeutrinoTheme.mono) }
+            BasicText(rowAddress(entry, dialed[key]), style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
             if (hasMacHint(entry)) BasicText(words.word("ui.rdp_mac_hint"), style = NeutrinoTheme.note)
             ErrorLine(errors[key])
@@ -114,6 +113,19 @@ fun RemoteDesktopScreen(
  * @return True when the sharing machine is a Mac.
  */
 internal fun hasMacHint(entry: ChannelServiceEntry): Boolean = entry.text("platform_os") == CLIENT_PLATFORM_OS_DARWIN
+
+/**
+ * The row's mono line: the entry's `host:port`, or the address the viewer last dialled where the
+ * hub handed back another.
+ *
+ * @param entry The desktop entry.
+ * @param dialed The address the viewer last dialled for it, or null before any Connect.
+ * @return The address the row names.
+ */
+internal fun rowAddress(entry: ChannelServiceEntry, dialed: String?): String {
+    val own = "${entry.text("host")}:${entry.number("port") ?: ""}"
+    return dialed?.takeIf { it != own } ?: own
+}
 
 @Preview(widthDp = 400, heightDp = 600)
 @Composable

@@ -68,7 +68,7 @@ class RemoteDesktopSessionsTest {
     }
 
     @Test
-    fun theRowNamesTheAddressTheHubHandedBackOnceKnown() = runTest {
+    fun theCoreKeepsTheAddressTheHubHandedBack() = runTest {
         val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
         assertNull(sessions.dialed.value["b1/r1"])
         sessions.connect("b1", "r1", "x", "")
