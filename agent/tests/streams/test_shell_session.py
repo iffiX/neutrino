@@ -4,8 +4,9 @@ What these pin: a stream opened with a new id starts a shell under it and a
 held id is attached to; a resumed id the agent does not hold is refused
 ``session_unknown``; a closed stream ends a shell unless it is persistent,
 and a persistent one keeps its output while nobody watches; attaching again
-sends the kept output first, at most 256 KB of it and without the
-terminal's query sequences, while live output keeps them, then resizes the
+sends the kept output first, at most 256 KB of it and without any sequence
+that asks the terminal to answer, nor the rest of one its cut start split,
+while live output keeps them, then resizes the
 terminal away and back; streams attached together each get the output,
 each one's input reaches the shell, the terminal takes the smallest window,
 and one leaving leaves the others; a shared shell outlives its last stream;
@@ -491,20 +492,171 @@ def test_what_draws_and_what_sets_stays():
     assert strip_queries(drawn) == drawn
 
 
+# What the same vim printed once its secondary device attributes were
+# answered as xterm.js answers them: the XTGETTCAP requests it sends next.
+VIM_TERMCAP = (
+    b"\x1b[1;1H\x1b[?25h\x1bP+q436f\x1b\\\x1bP+q6b75\x1b\\\x1bP+q6b64\x1b\\"
+    b"\x1bP+q6b72\x1b\\\x1bP+q6b6c\x1b\\\x1bP+q2332\x1b\\\x1bP+q2334\x1b\\"
+    b"\x1bP+q2569\x1b\\\x1bP+q2a37\x1b\\\x1bP+q6b31\x1b\\\x1b[27m\x1b[23m"
+    b"\x1b[29m\x1b[m\x1b[H\x1b[2J\x1b[?25l\x1b[2;1H\x1b[94m~"
+)
+VIM_TERMCAP_ANSWERED_NOTHING = (
+    b"\x1b[1;1H\x1b[?25h\x1b[27m\x1b[23m"
+    b"\x1b[29m\x1b[m\x1b[H\x1b[2J\x1b[?25l\x1b[2;1H\x1b[94m~"
+)
+# The cursor blink mode request vim 9 sends on macOS, answered ``ESC[?12;2$y``.
+VIM_MODE_REQUEST = b"\x1b[?12$p"
+# What htop 3 printed on the same terminal from its start: nothing it asks.
+HTOP_START = (
+    b"\x1b[?1049h\x1b[22;0;0t\x1b[1;24r\x1b(B\x1b[m\x1b[4l\x1b[?7h\x1b[?1h"
+    b"\x1b=\x1b[?25l\x1b[39;49m\x1b[?1006;1000h\x1b[39;49m\x1b(B\x1b[m\x1b[H"
+    b"\x1b[2J\x1b[2d  \x1b[36m  0\x1b[39m\x1b(B\x1b[0;1m[\x1b(B\x1b[0m\x1b[31m3"
+    b"\x1b[33m3\x1b(B\x1b[0;1m\x1b[90m.\x1b[39m]\x1b(B\x1b[m"
+)
+
+
+def test_vims_capability_requests_are_taken_out():
+    assert strip_queries(VIM_TERMCAP) == VIM_TERMCAP_ANSWERED_NOTHING
+
+
+def test_vims_mode_request_is_taken_out_and_the_rest_of_its_start_stays():
+    replay = strip_queries(VIM_START + VIM_MODE_REQUEST + VIM_TERMCAP)
+
+    assert replay == VIM_START_ANSWERED_NOTHING + VIM_TERMCAP_ANSWERED_NOTHING
+    assert b"$p" not in replay
+
+
+def test_htops_start_asks_nothing_and_stays_whole():
+    assert strip_queries(HTOP_START) == HTOP_START
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        b"\x1b[?15n",
+        b"\x1b[?26n",
+        b"\x1b[?996n",
+        b"\x1b[2$p",
+        b"\x1b[20$p",
+        b"\x1b[?1049$p",
+        b"\x1b[?2026$p",
+        b"\x1b[>q",
+        b"\x1b[>0q",
+        b"\x1b[?u",
+        b"\x1b[11t",
+        b"\x1b[13t",
+        b"\x1b[13;2t",
+        b"\x1b[14t",
+        b"\x1b[14;2t",
+        b"\x1b[16t",
+        b"\x1b[18t",
+        b"\x1b[19t",
+        b"\x1b[20t",
+        b"\x1b[21t",
+        b"\x1bP$q m\x1b\\",
+        b'\x1bP$q"q\x1b\\',
+        b"\x1bP$qr\x07",
+        b"\x1bP+q544e\x1b\\",
+        b"\x1bP+q436f;6b75\x1b\\",
+        b"\x1b]10;?;?\x07",
+        b"\x1b]17;?\x1b\\",
+        b"\x1b]19;?\x07",
+        b"\x1b]4;1;?;2;?\x07",
+        b"\x1b]5;0;?\x1b\\",
+        b"\x1b]52;c;?\x07",
+        b"\x1b]52;;?\x1b\\",
+    ],
+)
+def test_each_family_of_request_is_taken_out(query):
+    replay = strip_queries(b"a" + query + b"b")
+
+    assert replay == b"ab", query
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        b"\x1b[?64;1;2;6;9;15;18;21;22c",
+        b"\x1b[>0;276;0c",
+        b"\x1b[0n",
+        b"\x1b[3;1R",
+        b"\x1b[?12;2$y",
+        b"\x1b[12;2$y",
+        b"\x1bP>|XTerm(380)\x1b\\",
+        b"\x1b[?1u",
+        b"\x1b[>1u",
+        b"\x1b[8;24;80t",
+        b"\x1b[4;600;800t",
+        b"\x1b[22;0;0t",
+        b"\x1b[23;0;0t",
+        b"\x1bP1$r0m\x1b\\",
+        b"\x1bP1+r544e=787465726d\x1b\\",
+        b"\x1b]11;rgb:0000/0000/0000\x07",
+        b"\x1b]4;1;rgb:cdcd/0000/0000\x1b\\",
+        b"\x1b]52;c;aGVsbG8=\x07",
+        b"\x1b[?1;2c",
+    ],
+)
+def test_answers_and_settings_stay(answer):
+    assert strip_queries(b"a" + answer + b"b") == b"a" + answer + b"b"
+
+
+@pytest.mark.parametrize(
+    "rest",
+    [b"[?12$p", b"?12$p", b"12$p", b"$p", b"+q6b75\x1b\\", b"]11;?\x07", b"6n"],
+)
+def test_the_rest_of_a_request_the_cut_split_is_dropped(rest):
+    replay = strip_queries(rest + b"\x1b[31mred\r\nnext", is_cut=True)
+
+    assert replay == b"\x1b[31mred\r\nnext"
+
+
+def test_an_uncut_head_is_kept_whole():
+    assert strip_queries(b"12$p\x1b[31mred", is_cut=False) == b"12$p\x1b[31mred"
+
+
+def test_a_cut_head_that_starts_a_sequence_is_kept():
+    assert strip_queries(b"\x1b[31mred", is_cut=True) == b"\x1b[31mred"
+
+
+def test_the_replay_drops_a_request_the_window_cut_in_two(registry, monkeypatch):
+    monkeypatch.setattr(session_module, "AGENT_SHELL_KEPT_BYTES", 16)
+    terminal = FakeTerminal()
+    first = FakeChannel()
+    served = serve(registry, terminal, first, session_id="s1")
+    registry.persist("s1", True)
+    terminal.say(b"\x1b[?12$p\x1b[31mred\r\n$ ")
+    wait_until(lambda: first.output().endswith(b"$ "))
+    first.close_from_hub()
+    served.join()
+
+    second = FakeChannel()
+    again = serve(registry, terminal, second, session_id="s1", is_resumed=True)
+    wait_until(lambda: second.output() != b"")
+
+    assert second.output() == b"\x1b[31mred\r\n$ "
+    terminal.exit(0)
+    again.join()
+
+
 def test_the_replay_has_no_queries_and_the_live_output_keeps_them(registry):
+    started = VIM_START + VIM_MODE_REQUEST + VIM_TERMCAP
+    live = VIM_MODE_REQUEST + VIM_TERMCAP + b"\x1b[c"
     terminal = FakeTerminal()
     first, late = FakeChannel(), FakeChannel()
     held = serve(registry, terminal, first, session_id="s1")
-    terminal.say(VIM_START)
+    terminal.say(started)
     wait_until(lambda: first.output().endswith(b"~"))
 
     joined = serve(registry, terminal, late, session_id="s1", is_resumed=True)
     wait_until(lambda: late.output().endswith(b"~"))
-    terminal.say(b"\x1b[c")
+    terminal.say(live)
     wait_until(lambda: late.output().endswith(b"\x1b[c"))
 
-    assert late.output() == VIM_START_ANSWERED_NOTHING + b"\x1b[c"
-    assert first.output() == VIM_START + b"\x1b[c"
+    assert late.output() == (
+        VIM_START_ANSWERED_NOTHING + VIM_TERMCAP_ANSWERED_NOTHING + live
+    )
+    assert first.output() == started + live
     terminal.exit(0)
     held.join()
     joined.join()

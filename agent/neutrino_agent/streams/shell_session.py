@@ -5,9 +5,9 @@ reads everything the terminal prints, and the latest 256 KB of that output.
 Any number of ``shell`` streams attach to it at once: each gets every byte
 of output, each one's input reaches the shell, and the terminal's size is
 the smallest attached window's columns and rows. A stream that attaches to
-a running shell is sent the kept output first, with the terminal's query
-sequences taken out, then the terminal is resized away and back so a
-full-screen program draws itself again.
+a running shell is sent the kept output first, with every sequence that
+asks the terminal to answer taken out, then the terminal is resized away
+and back so a full-screen program draws itself again.
 
 A stream opened with a ``session_id`` names its session in the agent's
 :class:`ShellSessionRegistry`: an id the registry holds is attached to, and
@@ -46,27 +46,48 @@ SESSION_POLL_S = 0.5
 TITLE_PATTERN = re.compile(rb"\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)")
 TITLE_LIMIT = 200
 # What a terminal answers when it reads it: device attributes (``ESC [ c``,
-# ``ESC [ > c``, ``ESC [ = c``), a status or cursor position report
-# (``ESC [ 5 n``, ``ESC [ 6 n``, ``ESC [ ? 6 n``), and the OSC colour queries
-# (``ESC ] 10 ; ?`` to ``ESC ] 19 ; ?``, ``ESC ] 4 ; <n> ; ?`` and
-# ``ESC ] 5 ; <n> ; ?``) ended by BEL or ST.
+# ``ESC [ > c``, ``ESC [ = c``); status reports (``ESC [ 5 n``, ``ESC [ 6 n``,
+# ``ESC [ ? <n> n``); mode requests (``ESC [ <n> $ p``, ``ESC [ ? <n> $ p``);
+# the version request (``ESC [ > q``); the kitty keyboard query
+# (``ESC [ ? u``); window reports (``ESC [ <n> t`` for 11, 13 to 16 and 18 to
+# 21); DECRQSS and XTGETTCAP (``ESC P $ q`` and ``ESC P + q`` up to ST); and
+# the OSC queries for the colours 10 to 19, the palette (4 and 5) and the
+# clipboard (52), ended by BEL or ST.
 QUERY_PATTERN = re.compile(
     rb"\x1b\[[>=]?0?c"
-    rb"|\x1b\[\??[56]n"
-    rb"|\x1b\](?:1[0-9]|[45];[0-9]+);\?(?:\x07|\x1b\\)"
+    rb"|\x1b\[(?:[56]|\?[0-9]+)n"
+    rb"|\x1b\[\??[0-9]+\$p"
+    rb"|\x1b\[>0?q"
+    rb"|\x1b\[\?u"
+    rb"|\x1b\[(?:1[13-689]|2[01]|1[34];2)t"
+    rb"|\x1bP[$+]q[^\x1b\x07]*(?:\x07|\x1b\\)"
+    rb"|\x1b\](?:1[0-9](?:;\?)+|[45](?:;[0-9]+;\?)+|52;[A-Za-z0-9]*;\?)"
+    rb"(?:\x07|\x1b\\)"
 )
+# The head of kept output whose start was cut away: everything before the
+# first ESC or line feed, and an ST that ends it, which may be the rest of a
+# sequence.
+CUT_HEAD_PATTERN = re.compile(rb"[^\x1b\n]*(?:\x1b\\)?")
 
 
-def strip_queries(output: bytes) -> bytes:
+def strip_queries(output: bytes, *, is_cut: bool = False) -> bytes:
     """Kept output with the sequences a terminal answers taken out.
 
     Args:
         output: The output as the shell printed it.
+        is_cut: Whether older output was dropped from its start, so its
+            first bytes may be the rest of a sequence; those bytes, up to
+            the first ESC or line feed and with an ST that ends them, are
+            dropped too.
 
     Returns:
-        The output without its device attribute, status report and colour
-        queries; everything else as it was.
+        The output without any sequence that asks the terminal to answer;
+        everything else as it was.
     """
+    if is_cut:
+        head = CUT_HEAD_PATTERN.match(output).end()
+        if head < len(output):
+            output = output[head:]
     return QUERY_PATTERN.sub(b"", output)
 
 
@@ -203,6 +224,7 @@ class ShellSession:
         self._on_end = on_end
         self._lock = threading.Lock()
         self._kept = bytearray()
+        self._is_kept_cut = False
         self._attachments: list = []
         self._size_lock = threading.Lock()
         self._size: "tuple | None" = None
@@ -237,7 +259,11 @@ class ShellSession:
         """
         with self._lock:
             attachment = ShellAttachment(
-                strip_queries(bytes(self._kept)) if is_resumed else b"",
+                (
+                    strip_queries(bytes(self._kept), is_cut=self._is_kept_cut)
+                    if is_resumed
+                    else b""
+                ),
                 cols=cols,
                 rows=rows,
             )
@@ -337,7 +363,10 @@ class ShellSession:
                 break
             with self._lock:
                 self._kept += chunk
-                del self._kept[: max(0, len(self._kept) - AGENT_SHELL_KEPT_BYTES)]
+                excess = len(self._kept) - AGENT_SHELL_KEPT_BYTES
+                if excess > 0:
+                    del self._kept[:excess]
+                    self._is_kept_cut = True
                 is_retitled = self._take_title(chunk)
                 attachments = list(self._attachments)
                 for attachment in attachments:
