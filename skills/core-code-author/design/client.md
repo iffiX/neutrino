@@ -63,7 +63,7 @@ A row is the unit every page is made of:
 | Body, line 1 | the title: the hub's name, the share's name, the machine's name |
 | Body, line 2 | the state word, as the tables on this page give it |
 | Body, line 3 | the mono line: an address, a path, `by <hub>:<device>:<module>` |
-| Body, line 4 | the error line, when the row's last action or its state has a code; the faint reason line, when a button is disabled |
+| Body, line 4 | the error line, when the row's last action or its state has a code, removed the moment a new action starts; the faint reason line, when a button is disabled |
 | Right | the row's actions, in one line; a red-outlined action, when the row has one, is the rightmost |
 
 On a phone the actions wrap under the body, right-aligned, in the same order.
@@ -303,7 +303,7 @@ address as the mono line. The desktop controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **AI tools use this gateway** (a chip) | when the entry is healthy, the hub is not disabled and no switch runs | job `ui.job.switching`: points Claude Code, Codex and Gemini at this gateway with this client's key; one hub is the exit at a time, and the chip of the other hub turns off in the same push |
+| **AI tools use this gateway** (a chip) | when the entry is healthy, the hub is not disabled and no switch runs | job `ui.job.switching`: points Claude Code, Codex and Gemini at this gateway with this client's key; one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push |
 | **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
 
 A phone shows the gateway address with a **Copy** button, and this client's
@@ -324,10 +324,11 @@ the row's button is the record's:
 | none | press **Mount** | `pending` | `ui.job.mounting` |
 | `pending` | the core takes it | `queued`, then `mounting` | `ui.job.mounting` |
 | `mounting` | the system mounts it | `mounted` | **Unmount** |
-| `mounting` | a code | `failed`, with the error line | **Mount** |
+| `mounting` | a code | `failed`, with the error line; the form keeps its values | **Mount** |
 | `mounted` | press **Unmount** | `unmounting`, then none | `ui.job.unmounting` |
 | `mounted` | the entry turns unhealthy | `mounted` | **Unmount**; the state word is `ui.unhealthy` |
 | `failed` | press **Mount** | `pending` | `ui.job.mounting` |
+| `failed` | its entry leaves the hub's list, or another record is set to mount at the same place | none | a failed record is dropped and holds no place |
 
 **Configure** opens the row's form in place: a user name (a picker over the
 share's `users`, with typed text accepted), the password, and the place the
@@ -372,7 +373,8 @@ person mounts again. The script's errors map to the refusals: `-5014` and
 `-43` are `share_not_found`; `-128`, the person cancelling the system's
 dialog, is `mount_not_authorized`; `-5023` and `-5000` are the login
 refusals; `-36` and "Connection failed" are `share_unreachable`; anything
-else is `mount_failed` with the script's words, the password masked. On a
+else is `mount_failed` with the script's words, the password masked; a script that ran out its ten minutes is
+`mount_timed_out`, a `failed` the timer never retries by itself. On a
 Mac the empty form's reason is `ui.reason.mount_form_volume`, which asks for
 a user name only.
 
@@ -384,14 +386,16 @@ password** on the row arms and removes it.
 ## The Terminals page
 
 The page is, from top to bottom: a card with the machine chips, the tab
-strip, the terminal, and the status line. The status line holds the hint
-`ui.terminal_keys` at the left and the two switches at the right.
+strip, the terminal, and the status line. The status line holds the two
+switches at the right and nothing else.
 
 | Rule | Reason |
 | --- | --- |
 | Tabs stay mounted while hidden; switching tabs loses no output. | A terminal redrawn from scratch loses its scrollback. |
 | The chips name every machine with a terminal, each with its provider line; the picked chip is the one a new terminal opens on. | The person opens a terminal on a machine, and the machine is the first choice to make. |
 | **New terminal** is disabled with no chip picked or with the picked machine offline, with the reason under the chips. | Nothing opens on a machine that cannot answer. |
+| Keys reach the machine in the order they were pressed: a tab has one sender that writes its bytes in sequence, on every client. | A letter that overtakes the one before it types another word. |
+| **Clear**, wherever a client offers it, sends Ctrl+C, clears the screen, drops what had arrived and was not yet drawn, and drops what arrives in the next second. | A clear that is followed by the rest of the flood clears nothing. |
 | A plain session ends when its tab closes; a persistent or shared session's **×** arms and the second press ends the session with `stop_session`. | Ending a session others can see takes two presses, like every destructive action. |
 
 ### The session list
@@ -455,10 +459,10 @@ attaches receives the kept output first, then the live stream.
 | Rule | Reason |
 | --- | --- |
 | A key row sits above the keyboard: Esc, Tab, Ctrl, Shift, Alt, the four arrows; a modifier is sticky for one key and shows pressed while held. | The system keyboard has none of them. |
-| With the keyboard shown, the chips card and the tab strip collapse into one line (the machine, the tab, an expand arrow), and the terminal takes the rest and refits its rows. | The terminal is the page's reason; the chrome is not. |
+| With the keyboard shown, the terminal's box shrinks to the space left above the key row, which stays above the keyboard, and the terminal refits its rows; the prompt line stays in view and nothing collapses. | A key row under the keyboard cannot be pressed, and a prompt below the fold cannot be read. |
+| The font falls back to a face that has the box-drawing, geometric and powerline symbols for every glyph the monospace face lacks. | A prompt in boxes is unreadable. |
 | The terminal's viewport scrolls by touch and shows a thin bar; the view follows output only at the bottom. | History on a phone is reached by the finger, and a bar says there is some. |
 | A long press opens the same menu as the desktop's right click, with **Copy** and **Paste** through the system clipboard. | The phone's clipboard is the system's. |
-| In a landscape window under 480 dp tall, the chips card and the tab strip collapse as they do under the keyboard, and the expand arrow brings them back. | A short window has room for the terminal or for the chrome, and the terminal is the page's reason. |
 
 ## The Remote desktops page
 
@@ -467,9 +471,14 @@ word. The controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer with the seat password; on a phone opens the viewer page |
+| **Connect** | when the entry is healthy, the hub is not disabled and no viewer runs on it | job `ui.job.connecting`: on a desktop starts the viewer and hands it the seat password off every argument vector, then follows the viewer process, on Windows the copy the bundled viewer starts of itself from its own data directory; on a phone opens the viewer page |
 | the viewer | | on a desktop a separate window, and the row then shows `ui.rdp_open`; on a phone a page of the app whose three round buttons open the keyboard, the key bar of Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and close the session |
 | **Configure** | on a phone, when the entry is healthy | the dialog of the inline-form idiom with two pickers: **Codec** (Auto, then each codec the core offers) and **Quality** (Balanced, Low bandwidth, Best); **Save** and **Cancel**; the choice is kept per entry in the app's settings and applied at the next connect |
+
+The row's mono line is the address the viewer dials, the one the hub handed
+back for this client, so the row and the viewer never name two addresses.
+The row's state word is the entry's health, and `ui.rdp_open` while the
+viewer runs.
 
 The phone's viewer page is built for the picture first:
 

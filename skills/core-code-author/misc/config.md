@@ -24,6 +24,10 @@ Every configurable file ships as `config/<module>/<name>.example.json`, which is
 `.gitignore`d and never committed, so no node password, admin hash or device
 key ever reaches git history.
 
+An example's records are placeholders: a step that writes a real file from
+an example copies its shape and none of its records, so no `_example_` id
+of `clients.example.json` is ever a client.
+
 | Real file (read at runtime) | Committed example | Secret? |
 | --- | --- | --- |
 | `config/xray/nodes.json` | `nodes.example.json` | no — secrets live in the vault |

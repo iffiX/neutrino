@@ -283,8 +283,8 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Seat | `loginctl`, `/proc/net/tcp`, the Wayland token | the console session's user through WTS, `netstat` | the owner of `/dev/console`, `netstat`, the privacy grants |
 | RustDesk | `/usr/lib/neutrino/agent/rustdesk/rustdesk`, unit `rustdesk`, root's and the seat's `RustDesk2.toml` | `%ProgramFiles%\RustDesk\rustdesk.exe`, service `RustDesk`, LocalService's `RustDesk2.toml` | `/Applications/RustDesk.app`, job `com.carriez.RustDesk_service`, root's and the seat's `RustDesk2.toml` |
 | File share | Samba, `smb.conf` rendered whole | the SMB server through one PowerShell script per operation, JSON in and out and the password on standard input: shares whose description starts `neutrino:`, local accounts in no group, hidden from the sign-in screen and denied the console and RDP through `LsaAddAccountRights`, folders granted with `icacls`, and the block rule `neutrino_smb_fence` for TCP 445 from every address outside the allowed subnets | Apple's smbd through `launchctl enable` and `kickstart`: share points made with `sharing` under the record prefix `neutrino_`, SMB only, no guest, no encryption; accounts made with `sysadminctl` without a shell or a home, hidden, in `com.apple.access_smb` where it exists, the NT hash turned on before `dscl -passwd`; folders granted with `chmod +a`; the pf sub-anchor `com.apple/neutrino_smb`, loaded from a file under the state root at every apply and when the agent starts |
-| VS Code | the CLI in `/var/lib/neutrino/agent/vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/var/lib/neutrino/agent/vscode/tokens`, and `/etc/sysctl.d/90-neutrino-vscode.conf` when the machine's inotify watch or instance limit is under the module's floor (524288 and 512), since a served home directory runs a distribution's default out | the CLI in `%ProgramData%\Neutrino\agent\state\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token | the CLI in `/Library/Application Support/Neutrino/agent/state/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
-| Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer` |
+| VS Code | the CLI in `/var/lib/neutrino/agent/vscode`, the unit `neutrino_vscode@<account>.service` with `User=`, environment and token files in `/var/lib/neutrino/agent/vscode/tokens`, and `/etc/sysctl.d/90-neutrino-vscode.conf` when the machine's inotify watch or instance limit is under the module's floor (524288 and 512), since a served home directory runs a distribution's default out | the CLI in `%ProgramData%\Neutrino\agent\state\vscode`, the task `neutrino_vscode_<account>` registered with the account's login, at startup, no time limit, a limited token; a stop ends the task's whole process tree, so the port is free for the next start | the CLI in `/Library/Application Support/Neutrino/agent/state/vscode`, the LaunchDaemon `com.neutrino.vscode.<account>` with `UserName` |
+| Self-update | `systemd-run` of `dpkg` or `dnf` | a detached PowerShell running `msiexec` | `launchctl submit` of `installer`. On every system the package the hub streamed is renamed from its temporary name to its final name before the installer sees it, and a refused reinstall ends with its code on the output's last line and a non-zero exit |
 
 Every system reports the same metrics document: CPU in total and per core,
 memory, the system disk, a temperature where one is readable, the load
@@ -299,7 +299,9 @@ skipping `lo`, and on every system a missing or all-zero MAC is recorded as
 **A shell can outlive its stream.** A `shell` stream opened with a
 `session_id` attaches to a shell the agent keeps under that id, or starts
 one there. The agent reads the shell's output all the time, keeps its last
-256 KB, and sends it first to a stream that attaches. Any number of streams
+256 KB, and sends it first to a stream that attaches, with the terminal's
+query sequences (DA `ESC[c` and `ESC[>c`, DSR `ESC[6n`, the OSC colour
+queries) taken out, since a terminal answers each one again. Any number of streams
 attach to one shell at once: each receives all the output, input from any
 reaches the shell, and the terminal takes the smallest window's size. A
 shell that `persist` marked persistent or shared keeps running when its last
@@ -345,7 +347,10 @@ and `StandardErrorPath` name `/Library/Logs/Neutrino/agent/vscode_<account>.log`
 A source that cannot be read leaves one line in the agent's log naming it,
 so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
-at most the number of lines the verb asked for.
+at most the number of lines the verb asked for. A journal never shows a
+secret: a token in a URL (`?tkn=`) or on a line of its own is masked before
+the text leaves the agent, and a reinstall's output goes through the same
+mask.
 
 The hub's own machine on macOS and Windows runs the local agent
 `nhub setup` installs ([install_and_dev.md](install_and_dev.md)), so its

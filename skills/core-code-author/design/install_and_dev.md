@@ -56,7 +56,9 @@ post-install and the install script print the address with it for a box
 nobody sits at. The terminal path is `nhub setup`. Whichever path starts the
 steps first holds the setup lock, and the other is refused with
 `setup_in_progress`. When the steps finish, the service process exits and
-comes back as the panel on the same port.
+comes back as the panel on the same port. A browser that ran the wizard is
+sent to the panel at the address it used, its own origin, never at an
+address the hub picked from an interface.
 
 Neither way is the source of truth for the questions: both build the same
 answers document `nhub setup --stdin` reads, and `wizard.from_document` is
@@ -94,7 +96,7 @@ macOS and Windows").
 | Applying interface roles | by the mode | skipped |
 | The network mode | asks for one of three | `server`, with no question |
 | The hub's own traffic through the proxy | asked | asked; it diverts through the TUN there ([modules/proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
-| Starting services | each unit | the service is already running; the steps before this one write `services.json`, and the service starts each child as the file names it. From the terminal path this step is a restart of the service into the panel, after the panel password and before the local agent; from the browser path the service restarts itself |
+| Starting services | each unit | the service is already running; the steps before this one write `services.json`, and the service starts each child as the file names it. From the terminal path this step is a restart of the service into the panel, after the panel password and before the local agent; from the browser path the service restarts itself; on macOS and Windows this step also writes the system firewall once, so the panel answers through it from the first minute |
 | The local agent | from the cache by `AGENT_PACKAGE_FAMILY_OF_PLATFORM` | from the cache by `AGENT_PACKAGE_FAMILY_OF_OS`: `installer -pkg <file> -target /` or `msiexec /i <file> /qn /norestart`, then `nagent join <link> --yes` |
 
 `nhub start`, `nhub stop` and `nhub status` drive that one service. The
