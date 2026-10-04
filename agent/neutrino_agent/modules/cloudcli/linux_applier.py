@@ -196,7 +196,12 @@ class CloudcliLinuxApplier:
             claudes[instance.account] = self._find_claude(instance.account)
         notes = []
         for instance in config.instances:
-            if self._install_app(instance.account, homes[instance.account], node):
+            if self._install_app(
+                instance.account,
+                homes[instance.account],
+                node,
+                registry=config.npm_registry,
+            ):
                 notes.append(f"installed CloudCLI for {instance.account}")
         os.makedirs(self._etc_dir, mode=0o700, exist_ok=True)
         is_template_new = write_if_changed(
@@ -296,7 +301,9 @@ class CloudcliLinuxApplier:
             raise ModuleApplyError("cloudcli_claude_missing", {"account": account})
         return found
 
-    def _install_app(self, account: str, home: str, node: str) -> bool:
+    def _install_app(
+        self, account: str, home: str, node: str, *, registry: str = ""
+    ) -> bool:
         """Install CloudCLI into the account's app directory unless it is there."""
         app = installer.app_dir(home, "linux")
         if installer.installed_version(app) == CLOUDCLI_VERSION:
@@ -309,7 +316,7 @@ class CloudcliLinuxApplier:
                 "USER": account,
                 "LOGNAME": account,
                 "PATH": f"{node_bin}:/usr/bin:/bin",
-                **installer.npm_environment(app),
+                **installer.npm_environment(app, registry=registry),
             }
             prefix = ["runuser", "-u", account, "--", "env", "-i"] + [
                 f"{name}={value}" for name, value in environment.items()

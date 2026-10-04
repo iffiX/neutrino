@@ -214,7 +214,12 @@ class CloudcliDarwinApplier:
         }
         notes = []
         for instance in config.instances:
-            if self._install_app(instance.account, entries[instance.account], node):
+            if self._install_app(
+                instance.account,
+                entries[instance.account],
+                node,
+                registry=config.npm_registry,
+            ):
                 notes.append(f"installed CloudCLI for {instance.account}")
         os.makedirs(self._log_dir, mode=0o755, exist_ok=True)
         wanted = {instance.account for instance in config.instances}
@@ -338,7 +343,9 @@ class CloudcliDarwinApplier:
             raise ModuleApplyError("cloudcli_claude_missing", {"account": account})
         return found
 
-    def _install_app(self, account: str, entry: tuple, node: str) -> bool:
+    def _install_app(
+        self, account: str, entry: tuple, node: str, *, registry: str = ""
+    ) -> bool:
         """Install CloudCLI into the account's app directory unless it is there."""
         home = entry[2]
         app = installer.app_dir(home, "darwin")
@@ -352,7 +359,7 @@ class CloudcliDarwinApplier:
                 "USER": account,
                 "LOGNAME": account,
                 "PATH": f"{node_bin}:{ACCOUNT_PATH}",
-                **installer.npm_environment(app),
+                **installer.npm_environment(app, registry=registry),
             }
             npm = installer.npm_path(os.path.dirname(node_bin), "darwin")
             self._log(f"cloudcli: installing CloudCLI for {account}")

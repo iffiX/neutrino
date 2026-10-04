@@ -264,6 +264,19 @@ def test_a_task_windows_cannot_sign_in_reads_so(applier, powershell):
     }
 
 
+def test_the_install_script_names_the_registry_the_state_names():
+    text = render_install_script(
+        app="C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\cloudcli\\app",
+        node="C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n\\node.exe",
+        npm="C:\\ProgramData\\Neutrino\\agent\\state\\cloudcli\\n\\npm-cli.js",
+        registry="https://registry.npmmirror.com",
+    )
+
+    assert 'set "npm_config_registry=https://registry.npmmirror.com"' in text.split(
+        "\r\n"
+    )
+
+
 def test_the_install_script_checks_the_native_modules_after_npm():
     text = render_install_script(
         app="C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\cloudcli\\app",
