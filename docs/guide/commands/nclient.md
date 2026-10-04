@@ -8,7 +8,7 @@ From a terminal, `nclient` drives the desktop client on Linux, Windows or macOS 
 
 ## Privileges
 
-Run as root, every subcommand prints `root_refused` and exits with status 2. No subcommand asks a `[y/N]` question.
+Run as root, every subcommand prints `root_refused` and exits with status 2. `nclient leave` asks a `[y/N]` question before it leaves, and `--yes` leaves without asking. Without a terminal it asks nothing, prints that `--yes` goes ahead, and exits with status 1.
 
 ## Choosing a hub
 
@@ -21,8 +21,8 @@ In the `service` rows, `<ref>` is the entry's number under its hub in `nclient s
 | Command                                 | Arguments and flags                                                                                                                                                                                                                                                                          | What it does                                                                                                                                   |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `nclient join <link>`                   | `<link>` is the `neutrino://enroll/` link from a hub's **Clients** page; omitted, the command reads it at a prompt                                                                                                                                                                           | Joins the hub the link names, beside every hub already joined.                                                                                 |
-| `nclient leave`                         | `--hub <name>`                                                                                                                                                                                                                                                                               | Leaves one hub and undoes what it published on this computer.                                                                                  |
-| `nclient status`                        |                                                                                                                                                                                                                                                                                              | Prints the version, one line per hub joined, and whether the client runs.                                                                      |
+| `nclient leave`                         | `--hub <name>`; `--yes` leaves without the question                                                                                                                                                                                                                                          | Leaves one hub and undoes what it published on this computer: its forwards, mounts and viewers.                                                |
+| `nclient status`                        | `--json` prints one JSON object                                                                                                                                                                                                                                                              | Prints the version, one line per hub joined, and whether the client runs.                                                                      |
 | `nclient gui`                           | `--hidden` starts without showing the window                                                                                                                                                                                                                                                 | Runs the client and its window.                                                                                                                |
 | `nclient quit`                          |                                                                                                                                                                                                                                                                                              | Stops the running client. With none running, it prints `resident_not_running`.                                                                 |
 | `nclient terminal <machine>`            | `<machine>` is a machine's name or id; `--session <id>` attaches to a shell session the machine keeps; `--hub <name>`                                                                                                                                                                        | Opens a shell on that machine in this terminal. Exits with status 0 after the shell closes, 1 on a refusal, and 2 for a machine no hub offers. |
@@ -59,3 +59,25 @@ resident   running
 ```
 
 Each hub line holds the hub's name, the address its channel last connected through, the channel's state, and the last code that channel returned. `exit` marks the hub this person's AI tools point at. The last line is the client itself, `running` or `not running`. The exit status is 0 while every hub reads `connected` and the client runs, and 1 otherwise.
+
+With `--json`, the command prints one object instead, and exits with the same status:
+
+```json
+{
+  "hubs": [
+    {
+      "connection": "connected",
+      "gateway_url": "https://192.168.100.1:8443",
+      "hub_id": "f3c1",
+      "hub_name": "home",
+      "is_exit": true,
+      "last_error": null,
+      "reached_through": "lan"
+    }
+  ],
+  "is_running": true,
+  "version": "0.5.0"
+}
+```
+
+`reached_through` is the way the channel reached the hub: `lan`, `netbird`, `easytier` or `relay`. With no client running, `connection` and `reached_through` are empty and `is_running` is `false`.

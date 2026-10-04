@@ -4,7 +4,9 @@ title: Android app
 
 # Android app
 
-The Android app joins a phone to your hubs with the client link from each hub's **Clients** page. The hub's virtual network, web pages, ports, AI gateway, shares and terminals then open on the phone. The hub side of the link, and what each client can use, is on [Clients](../hub/clients.md).
+The Android app joins a phone to your hubs with the client link from each hub's **Clients** page. The hub's web pages, ports, AI gateway, shares, terminals and remote desktops then open on the phone. The hub side of the link, and what each client can use, is on [Clients](../hub/clients.md).
+
+Every screen reaches its service through the hub. The app listens on the phone's loopback address, `127.0.0.1`, and sends each connection to the hub's port 8443, which connects it to the service. The phone needs that one port of the hub, on the LAN or from outside.
 
 ## Install the app
 
@@ -12,13 +14,15 @@ Before you start, check the phone:
 
 - It runs Android 8.0 or newer.
 - It has a 64-bit ARM processor. The release has one `arm64-v8a` apk.
-- It reaches port 8443 on the hub.
+- It reaches port 8443 on the hub: on the LAN, or from outside through one of the ways in that [Access](../hub/overlay.md) lists.
 
 To install:
 
 1. On the phone, download `neutrino-client-0.5.0-android.apk` from the release.
 1. Open the file. If Android shows a prompt, allow your browser or file manager to install apps.
 1. Select **Install**, then open **Neutrino**.
+
+The apk of the mainland edition comes from the Gitee release page and has no NetBird core.
 
 The project signs every release apk with its own key, and Android updates an installed app only from an apk with the same key. To check a downloaded apk on a computer with the Android SDK build tools, run:
 
@@ -39,7 +43,7 @@ If the digest differs, delete the apk. The release workflow checks the same dige
 
 ## Join a hub
 
-Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for the phone, and select **Create link**. The notice shows the link with **Copy** and a QR code of the same link beside them. The link works for thirty minutes.
+Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for the phone, and select **Create link**. The notice shows the link with **Copy** and a QR code of the same link beside them. The link works for thirty minutes, also across a restart of the hub.
 
 To join:
 
@@ -49,49 +53,77 @@ To join:
 
 ![The QR scanner on the Join a hub screen](/guide/en/app_join_scan.webp)
 
-To paste instead, put the link into the field under **or** and select **Join**. The app rejects a link from the hub's **Devices** page with `link_not_for_client`, and an expired or spent link with `enroll_refused`.
+To paste instead, put the link into the field under **or** and select **Join**. The field rejects a link from the hub's **Devices** page with `link_not_for_client`.
+
+The hub's row appears at once. On mobile data far from home, it reads **Joined; the hub has not been reached yet** until one address in the link answers. A spent or expired link puts the row in **Not connected** with `ticket_spent`; leave the hub and scan a fresh link. After too many failed joins on the hub, the row shows `admission_paused` and the app joins again after the seconds that code names.
 
 To join another hub, select **Join a hub** again with that hub's link. Each hub keeps its own name for the phone and publishes its own services.
 
 ## Hubs
 
-The **Hubs** screen holds one row per hub: its name, its state, its address and the package it runs. In portrait, a bar at the bottom opens **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops** and **Settings**. In a wide horizontal window, a sidebar replaces the bar.
+The **Hubs** screen holds one row per hub: its name, its state, its address and the package it runs. In portrait, a bar at the bottom opens **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals**, **Remote desktops** and **Settings**. In landscape, and on a tablet at least 720 dp wide, a sidebar replaces the bar.
+
+While the channel is open, the state names the way it reached the hub: **Connected · LAN**, **Connected · NetBird**, **Connected · EasyTier** or **Connected · Relay**.
 
 ### Leave and reconnect
 
-**Leave** on a row opens a confirmation, which names the hub and warns that the phone forgets its link and its key. Select **Leave** again to remove the hub, or **Cancel** to keep it. A row reading **Replaced by another client** also has **Reconnect**.
+**Leave** on a row reads **Press again to leave** after one press, and a second press within five seconds removes the hub. The phone forgets the hub's link and key, and the hub's forwards and shares on the phone end. A row reading **Replaced by another client** also has **Reconnect**.
+
+### Panel
+
+When the hub's **Clients** page allows **Hub panel**, the row has **Panel**. Select it to open the hub's panel in the phone's browser, through a forward on the phone, and sign in with the panel password. The panel opens wherever the app reaches the hub, so its own ports can stay on the LAN.
 
 ### Virtual network
 
-A hub that publishes a virtual network shows a chip on its row. Select the chip to join, and select it again to leave. The first join opens Android's VPN connection request; select **OK** so the app can run NetBird or EasyTier inside Android's VPN service.
+The screens of the app need only the hub's port 8443, so a virtual network is one way in among the others. A hub that publishes NetBird or EasyTier shows a **Virtual network** line under its row, with **Connect**.
 
-![A hub row with its virtual network chip](/guide/en/app_hub.webp)
+![A hub row with its virtual network line](/guide/en/app_hub.webp)
 
-The chip reads **joining…**, then **on** with NetBird or EasyTier and the phone's address on that network. The top bar of every screen shows **Virtual network** with that address, or **off**. When the join fails, the chip reads **failed** and the code shows under it.
+1. Select **Connect**. The first time, Android shows its VPN connection request.
+1. Select **OK** in that request, so the app can run NetBird or EasyTier inside Android's VPN service.
 
-The phone is on one hub's network at a time. Turning on the chip of a second hub turns off the first hub's chip.
+The line reads **Connecting…** with **Logging in to** and the engine under it, then **Waiting for the hub** with the seconds counted. It reads **Connected ·** and the phone's address when the hub is reachable through the network, and the button becomes **Disconnect**. **Cancel** stops a connect that is still running. A failure returns the line to **Not connected** with the code under it.
 
-When the hub publishes more than one network, a picker beside the chip names the one in use, NetBird or EasyTier. Picking the other moves the phone to it. When the hub's channel stays lost for 30 seconds, the app moves the phone to the hub's next network.
+The phone is on one hub's network at a time. While one hub's network is on, **Connect** on another hub is greyed with the reason `overlay_other_network`. When the hub publishes both engines, a picker beside the button names the one to use, and it changes only while the line reads **Not connected**.
+
+## Forwards
+
+A forward is the port on the phone's `127.0.0.1` that the app opens for one entry. A foreground service of the app holds every forward and every hub connection, so they keep running while you use other apps; its notification reads **Connected to** and the number of hubs. A forwarded row shows `→ 127.0.0.1:` and the port.
+
+On the **Web** and **Ports** screens, **Configure** on a row sets the **Local port**: **Auto** keeps the entry's own port when it is free and otherwise takes one from 20000 up, and **Fixed** takes a number from 1024 to 65535. **Configure** is greyed while the entry is forwarded.
+
+A screen whose forward cannot reach its service shows the code on the row:
+
+| Code                 | Meaning                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `connect_failed`     | the hub or the machine could not connect to the service: `refused` (nothing listens on the port), `timeout` or `unreachable` |
+| `agent_offline`      | the machine that provides the entry is not connected to the hub                                                              |
+| `port_not_published` | the machine does not publish that port now                                                                                   |
+| `connect_limit`      | this phone has 256 connections open through the hub                                                                          |
+| `permission_denied`  | the hub's **Clients** page does not let this phone use that kind of entry, or that machine                                   |
 
 ## Web
 
-The **Web** screen lists the web pages the joined hubs publish. Select a row to open its address in the phone's browser.
+The **Web** screen lists the web pages the joined hubs publish: Gitea, VS Code, code-server, CloudCLI and addresses declared on the hub's **Services** page.
 
-A VS Code entry opens only from a desktop client, through that computer's localhost. On the phone its row is greyed, shows the **Desktop only** badge, and does not open.
+Select **Open** on a row. The app makes the entry's forward and opens the page in the phone's browser on `127.0.0.1`. A VS Code, code-server or CloudCLI entry gets a fresh token from the hub on every **Open**. **Disconnect** ends the forward.
 
 ## Ports
 
-The **Ports** screen lists each port the hubs publish, with its address and port number. The phone forwards nothing: a program on the phone connects to that address directly. Select **Copy** to copy the address and port.
+The **Ports** screen lists each port the hubs publish, with the address it has on the hub's network.
+
+1. Select **Connect** on the entry. The row adds `→ 127.0.0.1:` and the local port, and the button reads **Disconnect**.
+1. Select **Copy** to copy that loopback address, and paste it into the app on the phone that uses the port.
 
 ## AI
 
-The **AI** screen shows one card per hub that runs an AI gateway. Each card holds the **Gateway address** and **This client's key**, each with **Copy**. The key shows its first six characters; the eye button shows or hides the rest.
+The **AI** screen holds one row per hub that runs an AI gateway. Select **Connect** to forward the gateway to the phone, and **Copy** beside **Disconnect** copies its loopback address. Under the row, **This client's key** shows the key behind an eye button, with **Copy**.
 
-Under them, a QR code holds the address, the key and the first model the gateway serves. A third-party chat app that takes an OpenAI-compatible endpoint can scan it. When the hub cannot open this phone's key, the card shows `vault_locked`.
+Paste the address and the key into an app on the phone that takes an OpenAI-compatible endpoint. The line under the row reads **The tools reach the gateway only while this client runs.** When the hub cannot open this phone's key, the row shows `vault_locked`.
 
 ## Files
 
-The **Files** screen turns each share the hubs publish into a location in Android's Files app. A row without a saved password shows the **Password not saved** badge.
+The **Files** screen turns each share the hubs publish into a location in Android's Files app. The app reaches the share through the hub, so a share opens wherever the hub's row reads **Connected**. A row without a saved password shows the **Password not saved** badge.
 
 1. On the **Files** screen, select **Open in Files** on the share.
 1. Pick or type the **Share username**, and type the **Share password**.
@@ -100,7 +132,7 @@ The **Files** screen turns each share the hubs publish into a location in Androi
 
 ![A share as a location in the Files app](/guide/en/app_files_provider.webp)
 
-In Files, the share's location has the share's name, with the hub and the machine under it. You can open, write, create and delete files there, and a video plays while it reads. A share without a password reads **Give this share's password on the Files screen first.** A host that does not answer returns `share_unreachable`.
+In Files, the share's location has the share's name, with the hub and the machine under it. You can open, write, create and delete files there, and a video plays while it reads. A share without a password reads **Give this share's password on the Files screen first.** A host that does not answer returns `share_unreachable`. **Forget password** on the row reads **Press again to forget**, and a second press removes the saved password.
 
 ## Terminals
 
@@ -111,9 +143,18 @@ The **Terminals** screen opens a shell on a machine a hub manages. The hub's **C
 
 ![A terminal with the key row](/guide/en/app_terminal.webp)
 
-The shell opens in a tab named after the machine and a number. Under it, a row adds the keys a phone keyboard lacks: **Esc**, **Tab**, **Ctrl**, the four arrows and **Paste**. **Ctrl** stays lit until the next key you type, which it modifies. **Paste** sends the clipboard's text to the shell.
+The shell opens in a tab named after the machine and a number. Above the keyboard, a row adds the keys a phone keyboard lacks: **Esc**, **Tab**, **Ctrl**, **Shift**, **Alt** and the four arrows. A modifier stays lit until the next key you type, which it modifies. A long press on the shell opens **Copy**, **Paste** and **Clear**. **Clear** sends Ctrl+C and empties the screen, and the terminal reads **Clearing…** until the shell's output has been quiet for half a second.
 
-The **Persistent** switch under the shell keeps the session on the machine while the phone is away. A persistent tab returns when the app starts again, with the line **Detached; it attaches again once the hub answers.** Its **×** opens a confirmation; **End** stops the shell on the machine, and **Cancel** keeps it. [Terminals](../agent/terminals.md) covers the same sessions in the panel.
+The **Persistent** switch under the shell keeps the session on the machine while the phone is away. A persistent tab returns when the app starts again, with the line **Detached; waiting for the hub**. Its **×** reads **Press again to end** after one press, and a second press ends the shell on the machine. [Terminals](../agent/terminals.md) covers the same sessions in the panel.
+
+## Remote desktops
+
+The **Remote desktops** screen opens the desktop a managed machine shares with `sudo nagent rdp start`.
+
+1. Optional: select **Configure** on the entry, pick the **Codec** and the **Quality**, and select **Save**.
+1. Select **Connect**. The viewer opens on the whole screen.
+
+Three round buttons at the top right stay on the picture: the first raises the keyboard, the second shows the key bar with Esc, Tab, Ctrl, Shift, Alt, Win, **Paste** and the arrows, and the third ends the session. Pinch and drag with two fingers to reach the part of the picture the keyboard covers.
 
 ## Settings
 

@@ -6,6 +6,8 @@ title: Desktop client
 
 With the desktop client installed on a Linux, Windows or macOS computer, the services of every hub you joined open from one window. A link from each hub joins the computer to it. The window then shows that hub's web pages, ports, AI gateway, shares, terminals and remote desktops. The same work runs from a terminal through the commands in [nclient commands](../commands/nclient.md).
 
+Every page reaches its service through the hub. The client listens on a port of this computer's loopback address, `127.0.0.1`, and sends each connection there to the hub's port 8443. The hub connects it to the service, on its own box or through the agent of the machine that provides it.
+
 ## Install the client
 
 Before you start, check the computer:
@@ -16,7 +18,7 @@ Before you start, check the computer:
   - Windows 10 version 1809 or newer, or Windows 11, on x86-64
   - macOS 12.3 or newer on Apple silicon
 - You run the client from your own account. The client rejects root with `root_refused`.
-- It reaches port 8443 on every hub it joins.
+- It reaches port 8443 on every hub it joins: on the LAN, or from outside through one of the ways in that [Access](../hub/overlay.md) lists.
 
 Download the package for your system from the release and install it. On a 64-bit ARM Linux machine, the file name says `arm64` for the `.deb` and `aarch64` for the `.rpm`.
 
@@ -52,22 +54,24 @@ On Windows, double-clicking the `.msi` runs the same installer. Its **Add the Ne
 
 On macOS, the installer puts **Neutrino Client** in `/Applications` and links `nclient` into `/usr/local/bin`. The app has an ad hoc signature, so Gatekeeper shows a confirmation the first time it opens.
 
-Every package also registers two system services for virtual networks: the NetBird daemon and the client's own EasyTier daemon. On Linux the package conflicts with the `netbird` package. On macOS, a NetBird already installed stays in use as it is.
+Every package also registers system services for virtual networks: the NetBird daemon and the client's own EasyTier daemon. The mainland edition's package has the EasyTier daemon alone. On Linux the package conflicts with the `netbird` package. On macOS, a NetBird already installed stays in use as it is.
+
+On Windows the package registers one more service, `NeutrinoClientFiles`. It runs the files adapter that puts a share on a drive letter, as [Files](#files) describes.
 
 ## Join a hub
 
-Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for this computer, and select **Create link**. The link works for thirty minutes and joins one computer. [Clients](../hub/clients.md) sets what the computer can use.
+Before you start, create a client link in the hub's panel. Open **Clients**, select **New client link**, type a name for this computer, and select **Create link**. The link works for thirty minutes, also across a restart of the hub, and joins one computer. [Clients](../hub/clients.md) sets what the computer can use.
 
 To join:
 
 1. Open the client: **Neutrino Client** in the application menu on Linux, the Start menu on Windows, or the app on macOS. The **Hubs** page reads **No hub joined yet**, with a **Join a hub** row under it.
 1. Paste the link into the field of that row and select **Join**.
 
-The hub gets a row reading **Connected**, with its address and the package it runs.
+The hub gets a row at once. It reads **Joined; the hub has not been reached yet** until one address in the link answers, then **Connected · LAN** or the name of another way in, with the hub's address and the package it runs.
 
 ![The client window joined to a hub](/guide/en/client_connected.webp)
 
-The client rejects a link from the hub's **Devices** page with `link_not_for_client`, and an expired or spent link with `enroll_refused`.
+The field rejects a link from the hub's **Devices** page with `link_not_for_client`, and a cut-off paste with `link_unreadable`. A link that is spent or expired puts the row in **Not connected** with `ticket_spent`; select **Leave** on the row and join with a fresh link. After too many failed joins on the hub, the row shows `admission_paused` and joins again after the seconds that code names.
 
 To join a second hub, create a link in that hub's panel and paste it into the same **Join a hub** row. Each hub keeps its own name for this computer and publishes its own services. Every service page lists the hubs in the order you joined them.
 
@@ -77,17 +81,36 @@ The window, titled **Neutrino client**, has a sidebar with **Hubs**, **Web**, **
 
 ### Row states
 
-On the **Hubs** page, each row holds one hub: its name, its state, its address and the package it runs. The dot before the name shows the state:
+On the **Hubs** page, each row holds one hub: its name, its state, its address and the package it runs. While the channel is open, the state names the way it reached the hub:
+
+| State                    | The channel reached the hub through       |
+| ------------------------ | ----------------------------------------- |
+| **Connected · LAN**      | the hub's address on a network it serves  |
+| **Connected · NetBird**  | the hub's NetBird address                 |
+| **Connected · EasyTier** | the hub's EasyTier address                |
+| **Connected · Relay**    | the public port of the hub's relay server |
+
+The dot before the name shows the state:
 
 | Dot            | Meaning                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------- |
 | green          | the channel is open                                                                               |
-| amber, turning | the client is reconnecting to a hub it reached before                                             |
+| amber, pulsing | the client is connecting, or a job runs on the row                                                |
 | amber          | the hub is out of reach and nothing is broken, for example `hub_unreachable` or `client_disabled` |
 | red            | a person has to change something, for example `hub_untrusted` or `binding_unknown`                |
 | grey           | the client has not reached the hub yet                                                            |
 
-Each row has **Leave**, which removes the row at once. Leaving undoes what the hub published on this computer: its mounts, port forwards, viewers, and a virtual network no other hub names. A row reading **Replaced by another client** also has **Reconnect**.
+### Row buttons
+
+| Button        | Shown                                                | What it does                                                                                                                                 |
+| ------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Panel**     | when the hub's **Clients** page allows **Hub panel** | reads **Opening…**, then opens the hub's panel in your browser through a forward on this computer, where you sign in with the panel password |
+| **Reconnect** | on a row reading **Replaced by another client**      | takes the hub back from the other client and connects                                                                                        |
+| **Leave**     | always                                               | reads **Press again to leave**; a second press within five seconds leaves the hub                                                            |
+
+**Panel** opens the panel from anywhere the client reaches the hub, so the panel's own ports can stay on the LAN. The browser opens `http://panel-<hub-id>.localhost:<local-port>/`, or `http://127.0.0.1:<local-port>/` on macOS, where `<hub-id>` is the hub's id and `<local-port>` the forward's port. The forward stays until you leave the hub or quit the client.
+
+Leaving removes the row at once, whether the hub is reachable or not. It undoes what the hub published on this computer: its forwards, the panel's forward among them, its mounts, its viewers, and a virtual network no other hub names.
 
 After a refusal, the row stays and shows the code, and the client connects again with up to a minute between tries. One code removes the row:
 
@@ -100,23 +123,24 @@ After a refusal, the row stays and shows the code, and the client connects again
 
 ### Virtual network
 
-A hub that publishes a virtual network, to a client its **Clients** page lets use one, shows a **Virtual network** chip on its row. The chip reads the state and, when the network has given one, this computer's address on it.
+The pages of the client need only the hub's port 8443, so a virtual network is one way in among the others. A hub that publishes NetBird or EasyTier, to a client its **Clients** page lets use one, shows a **Virtual network** line under its row. The line reads the state and, while on, this computer's address on that network.
 
-Select the chip to join the network, and select it again to leave. The client keeps your choice for each hub, so the computer rejoins after the client restarts. The daemons are system services: the computer stays on the network after the client quits.
+To join the network, select **Connect** on the row:
 
-| State                       | Meaning                                                                                              |
-| --------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **off**                     | this computer is not on the network                                                                  |
-| **joining…**, **leaving…**  | a step is running and the chip is grey                                                               |
-| **Waiting for the console** | the hub's EasyTier console holds this computer but has not attached it to a network; attach it there |
-| **on**                      | this computer is on the network                                                                      |
-| **failed**                  | the last step failed, and the code shows under the hub's name                                        |
+| The line reads                                           | Meaning                                                                                              | The button     |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------- |
+| **Not connected**                                        | this computer is not on the network                                                                  | **Connect**    |
+| **Connecting…**, with **Logging in to NetBird** under it | the engine starts and logs in, for 90 seconds at most                                                | **Cancel**     |
+| **Connecting…**, with **Waiting for the hub** under it   | the computer has an address, and the client counts the seconds until the hub is reachable through it | **Cancel**     |
+| **Connected ·** and this computer's address              | the hub is reachable through the network                                                             | **Disconnect** |
 
-When the hub publishes more than one network, a picker beside the chip names the network in use, NetBird or EasyTier. Picking the other one leaves the current network and joins the picked one.
+In EasyTier's console mode, the reason line reads **This machine is registered with the console. Attach it to a network there.** until the console's owner attaches it. A failure returns the line to **Not connected** with the code under it, and the client tries nothing again by itself. A computer that was connected rejoins once when the client starts.
+
+When the hub publishes both engines, a picker beside the button names the engine to use. The picker changes only while the line reads **Not connected**.
 
 ![The virtual network picker on a hub row](/guide/en/client_network_picker.webp)
 
-When the hub's channel stays lost for 30 seconds, the client leaves the current network and joins the hub's next one. It moves on again after each further 30 seconds until the channel opens.
+The daemons are system services: the computer stays on the network after the client quits.
 
 | Code                      | Meaning                                                                                       |
 | ------------------------- | --------------------------------------------------------------------------------------------- |
@@ -124,17 +148,62 @@ When the hub's channel stays lost for 30 seconds, the client leaves the current 
 | `overlay_daemon_down`     | the NetBird or EasyTier daemon is not running; reinstall the client                           |
 | `bundle_missing`          | this install has no NetBird or EasyTier; reinstall the client                                 |
 | `overlay_join_failed`     | NetBird or EasyTier rejected the join, with its own words after the code                      |
+| `overlay_no_address`      | the engine gave this computer no address within 90 seconds                                    |
 | `overlay_console_invalid` | EasyTier cannot use the console address the hub named                                         |
+
+## Forwards
+
+A forward is the port on `127.0.0.1` that the client opens for one entry. Each connection to it becomes a stream to the hub, and the hub connects that stream to the service. A forwarded row shows `→ 127.0.0.1:` and the port.
+
+| Page                | The forward listens                                             |
+| ------------------- | --------------------------------------------------------------- |
+| **Web**             | from **Open** until **Disconnect**                              |
+| **Ports**           | from **Connect** until **Disconnect**                           |
+| **AI**              | while the client runs and the tools point at that hub           |
+| **Files**           | on Linux and macOS, from **Mount** until the share is unmounted |
+| **Remote desktops** | from **Connect** until the viewer closes                        |
+
+Every program and every account on this computer can reach a forward while it listens. Quitting the client ends every forward.
+
+### Local port
+
+On the **Web** and **Ports** pages, **Configure** on a row opens the **Local port** choice:
+
+- **Auto** takes the entry's own port when nothing on this computer listens on it, on any address. Otherwise it takes the first free port from 20000 up. The client keeps that port for the entry, also after a restart.
+- **Fixed** takes the number you type, from 1024 to 65535. A number another entry holds is rejected with **Another entry holds port** and the number.
+
+**Configure** is greyed while the entry is forwarded, with the reason **Disconnect first to change the local port.**
+
+### Codes on a forwarded row
+
+A page whose forward cannot reach its service shows one of these codes on the row:
+
+| Code                 | Meaning                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `connect_failed`     | the hub or the machine could not connect to the service: `refused` (nothing listens on the port), `timeout` or `unreachable` |
+| `agent_offline`      | the machine that provides the entry is not connected to the hub                                                              |
+| `port_not_published` | the machine does not publish that port now, for example because the container or the instance stopped                        |
+| `connect_limit`      | this client has 256 connections open through the hub; close some and try again                                               |
+| `permission_denied`  | the hub's **Clients** page does not let this client use that kind of entry, or that machine                                  |
+| `service_unknown`    | the hub no longer publishes the entry                                                                                        |
 
 ## Web
 
-The **Web** page lists every web address the joined hubs publish: Gitea, VS Code, and addresses declared by hand on a hub's **Services** page. The line under each address names the hub, the machine and the module, such as **from Neutrino:Argon:Gitea**. **Open** opens the address in your default browser.
+The **Web** page lists every web address the joined hubs publish: Gitea, VS Code, code-server, CloudCLI, and addresses declared by hand on a hub's **Services** page. The line under each address names the hub, the machine and the module, such as **from Neutrino:Argon:Gitea**.
 
-A VS Code entry opens only through localhost, and its button reads **Open locally**. Selecting it forwards the entry's address to `127.0.0.1` on this computer and takes a token from the hub. Your browser then opens the forward with that token.
+Each row has three buttons:
 
-The forward closes when the client quits. When the hub sends no token, the row shows `web_token_missing`.
+| Button         | What it does                                                                                       |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| **Open**       | reads **Opening…**, makes the entry's forward when it has none, and opens the page in your browser |
+| **Configure**  | sets the forward's local port                                                                      |
+| **Disconnect** | shown while the entry is forwarded; ends the forward                                               |
 
-An entry the hub cannot reach is greyed and reads **not reachable now**. A page with no entry reads **no web service is offered**.
+The browser opens `http://` followed by a name under `.localhost` and the local port, so two instances keep their logins apart. On macOS the name is `127.0.0.1`, since Safari resolves no `.localhost` name.
+
+A VS Code, code-server or CloudCLI entry opens only with a token. **Open** takes a fresh token from the hub on every press and adds it to the address. A code-server or CloudCLI token works once, within 60 seconds. When the hub sends no token, the row shows `web_token_missing`.
+
+An entry the hub cannot reach is greyed and reads **Not reachable now**. A page with no entry reads **No web services yet**.
 
 ## Ports
 
@@ -142,19 +211,21 @@ The **Ports** page relays a port a hub publishes to this computer's loopback add
 
 - Select **Connect** on the entry.
 
-The row shows `127.0.0.1` and the local port, and the button reads **Disconnect**. The local port is the entry's own number when that number is free, and any free port otherwise. Every program and every account on this computer can reach the relay until you select **Disconnect**, leave the hub, or quit the client.
+The button reads **Forwarding…**, then **Disconnect**, and the row adds `→ 127.0.0.1:` with the local port. Point any program on this computer at that address. Select **Disconnect** to end the forward.
 
 ## AI
 
-The **AI** page points Claude Code, Codex and Gemini CLI on this computer at one hub's AI gateway. Each hub with a gateway has one entry, with **Config** and a **The AI tools use this gateway** switch. One switch at most is on.
+The **AI** page points Claude Code, Codex and Gemini CLI on this computer at one hub's AI gateway. Each hub with a gateway has one entry, with **Configure** and a **The AI tools use this gateway** switch. One switch at most is on.
 
-Select the switch on the gateway you want. The entry reads **switching the tools…**, then **the tools point at the hub**, and the switch that was on goes off. The bundled cc-switch rewrites each tool's own configuration, and a failure in one tool leaves all three unchanged. Select the switch again to restore each tool's configuration from before the first switch.
+Select the switch on the gateway you want. The entry reads **Switching tools…**, then **The tools point at the hub**, and the switch that was on goes off. The client makes the gateway's forward and points each tool at `http://127.0.0.1:` and the local port, with this client's key. The bundled cc-switch rewrites each tool's own configuration, and a failure in one tool leaves all three unchanged. Select the switch again to restore each tool's configuration from before the first switch.
+
+The line under the entry reads **The tools reach the gateway only while this client runs.** Keep the client running, in the tray, while you use the tools.
 
 The switch works only on a connected hub; otherwise the client returns `no_exit_hub`. A hub that has issued this client no key returns `no_endpoint`, and its **AI** page issues one.
 
 To choose the models:
 
-1. Select **Config** on the entry. The **AI tool configuration** dialog opens.
+1. Select **Configure** on the entry. The **AI tool configuration** dialog opens.
 1. Under **Claude Code**, pick the **Default model**, **Opus slot**, **Sonnet slot** and **Haiku slot**.
 1. Under **Codex**, pick the **Model** and the **Reasoning effort**: `minimal`, `low`, `medium` or `high`.
 1. Under **Gemini**, pick the **Model**.
@@ -164,35 +235,49 @@ Each picker also offers **gateway default**, and the models listed are that hub'
 
 ## Files
 
-The **Files** page mounts an SMB share a hub publishes: under your home on Linux and macOS, or on a drive letter on Windows. An entry is a share of the Samba module on a managed machine, or a share declared by hand on the hub's **Services** page.
+The **Files** page mounts an SMB share a hub publishes: in a folder under your home on Linux, as a volume in the Finder on macOS, or on a drive letter on Windows. An entry is a share of the file share module on a managed machine, or a share declared by hand on the hub's **Services** page.
 
 To mount a share:
 
-1. Select **Config** on the entry.
+1. Select **Configure** on the entry. A form opens under the row.
 1. Type the **Share username** and **Share password** the share accepts.
-1. On Linux and macOS, keep or change the **Mount path**, a folder under your home such as `~/nas/media`. **Browse…** picks or creates the folder. On Windows, pick the **Drive**.
-1. Select **Mount**. The button reads **waiting to mount…**, then **mounting…**, then **Unmount**.
+1. On Linux, keep or change the **Mount path**, a folder under your home such as `~/nas/media`. **Browse…** picks or creates the folder. On Windows, pick the **Drive**. On macOS, the form has no place to pick.
+1. Select **Save**.
+1. Select **Mount**. The button reads **Mounting…**, then **Unmount**.
 
 ![The Files page with a share mounted](/guide/en/client_files_mounted.webp)
 
-![The mapped drive in File Explorer](/guide/os/win_explorer_mapped.webp)
-
 The client keeps the login in a credentials file only your account reads, so the next **Mount** uses the saved password. **Unmount** detaches the share and keeps the login.
 
-| Code                          | Meaning                                                                                   |
-| ----------------------------- | ----------------------------------------------------------------------------------------- |
-| `mountpoint_invalid`          | the path is outside your home                                                             |
-| `mountpoint_not_empty`        | the folder holds files                                                                    |
-| `mountpoint_not_drive_letter` | on Windows, the drive is not an unused letter                                             |
-| `mountpoint_in_use`           | another entry, from any hub, mounts at that path                                          |
-| `credentials_missing`         | the saved login is gone; type it again in **Config**                                      |
-| `share_login_rejected`        | the username or password is wrong; **Mount** opens **Config** with the username filled in |
-| `share_access_denied`         | the share accepts the login but does not admit that account                               |
-| `share_not_found`             | the host has no share by that name                                                        |
-| `share_unreachable`           | the host does not answer; the client mounts again when it does                            |
-| `share_session_conflict`      | Windows holds a connection to that server under another login; disconnect it first        |
+### How each system mounts
 
-On Linux a CIFS mount needs root, so the client runs its own mount helper under `pkexec`, and polkit shows its password prompt once. Dismissing that prompt gives `mount_not_authorized`, and a machine without `mount.cifs` gives `mount_tooling_missing`. On macOS the client mounts with `mount_smbfs` as you, and on Windows as a mapped drive.
+| System  | The mount                                                                                                                                                                                             |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux   | the client's mount helper runs under `pkexec` and mounts `//127.0.0.1/` and the share at the forward's port; polkit asks for your password once                                                       |
+| macOS   | the system mounts the volume from the forward, as the Finder's **Connect to Server** does; the first mount asks you to confirm the server, and the row names the mount point under `/Volumes`         |
+| Windows | the files adapter gives the machine that provides the share an address of its own, from `198.19.255.2` up, and Windows maps the drive to that address; the drive letter keeps naming the same machine |
+
+On macOS the system shows its own dialogs: a wrong password opens the system's login dialog, and **Cancel** there gives `mount_not_authorized`. When the system has not finished after ten minutes, the row shows `mount_timed_out`.
+
+On Windows the adapter is a network adapter named `neutrino_files`, run by the `NeutrinoClientFiles` service. It connects to no network, and it sends only the shares' connections to the hub. When the service is missing, stopped or failing, the mount fails with `files_adapter_unavailable` and the service's own words after it, and nothing else on the computer changes. Reinstall the client to register the service again.
+
+![The mapped drive in File Explorer](/guide/os/win_explorer_mapped.webp)
+
+| Code                          | Meaning                                                                            |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| `mountpoint_invalid`          | the path is outside your home                                                      |
+| `mountpoint_not_empty`        | the folder holds files                                                             |
+| `mountpoint_not_drive_letter` | on Windows, the drive is not an unused letter                                      |
+| `mountpoint_in_use`           | another entry, from any hub, mounts at that path                                   |
+| `credentials_missing`         | the saved login is gone; type it again in **Configure**                            |
+| `share_login_rejected`        | the username or password is wrong; **Configure** opens with the username filled in |
+| `share_access_denied`         | the share accepts the login but does not admit that account                        |
+| `share_not_found`             | the host has no share by that name                                                 |
+| `share_unreachable`           | the host does not answer; the client mounts again when it does                     |
+| `share_session_conflict`      | Windows holds a connection to that server under another login; disconnect it first |
+| `files_adapter_unavailable`   | on Windows, the files adapter could not start                                      |
+| `mount_not_authorized`        | the polkit prompt or the macOS login dialog was dismissed                          |
+| `mount_tooling_missing`       | on Linux, the computer has no `mount.cifs`                                         |
 
 ## Terminals
 
@@ -207,9 +292,11 @@ The shell opens in a new tab, and every key you type goes to the machine. The wi
 
 To paste, press the right mouse button on the shell, or press Ctrl+Shift+V, or Cmd+V on macOS. When the client cannot read the clipboard, the line under the shell shows `clipboard_unreadable`.
 
+**Clear** in the right-click menu sends Ctrl+C to the shell and empties the screen. Until the shell's output has been quiet for half a second, twenty seconds at most, the terminal drops what arrives and reads **Clearing…**.
+
 The **Persistent** switch is at the end of the line under the shell. When it is on, the machine keeps the session while no window is attached, for example after the client quits.
 
-A kept session shows as a tab with a grey dot. Select that tab to attach, and the shell's recent output appears first. When a hub's channel drops and comes back, each tab whose session the machine still keeps attaches again by itself. A tab whose session is gone reads **Ended**. The **×** on a persistent tab reads **End session?** after one press, and a second press ends the shell on the machine. [Terminals](../agent/terminals.md) covers the same sessions in the panel.
+A kept session shows as a tab with a grey dot. Select that tab to attach, and the shell's recent output appears first. When a hub's channel drops and comes back, each tab whose session the machine still keeps attaches again by itself. A tab whose session is gone reads **Ended**. The **×** on a persistent tab reads **Press again to end** after one press, and a second press ends the shell on the machine. [Terminals](../agent/terminals.md) covers the same sessions in the panel.
 
 | Code                | Meaning                                                                  |
 | ------------------- | ------------------------------------------------------------------------ |
@@ -225,17 +312,16 @@ The **Remote desktops** page opens another machine's screen in the RustDesk view
 
 - Select **Connect** on the entry.
 
-The button reads **connecting…**, the viewer opens on that desktop, and the row reads **viewer open**. The hub sets the seat password and hands it to the viewer with that one press. The viewer connects straight to port 21118 of that machine.
+The button reads **Connecting…**, the viewer opens on that desktop, and the row reads **Viewer open**. The hub sets the seat password and gives it to the viewer with that one press. The viewer connects to the entry's forward on `127.0.0.1`, and the forward ends when the viewer closes.
 
-Text copied on either machine pastes on the other. To copy a file to the remote machine, choose **Transfer file** in the viewer's toolbar and drop the file on the remote side of that window.
+Text copied on either machine pastes on the other. To copy a file to the remote machine, choose **Transfer file** in the viewer's toolbar and drop the file on the remote side of that window. Under a Mac's entry, a line says that a black picture or a dead mouse means that Mac has not given RustDesk **Screen Recording** and **Accessibility**.
 
-| What you see                                             | Cause                                                    |
-| -------------------------------------------------------- | -------------------------------------------------------- |
-| the page reads **no remote desktop is shared right now** | no machine is sharing, or the sharing machine is offline |
-| `rdp_not_shared`                                         | the machine stopped sharing                              |
-| `rdp_no_address`                                         | the machine published no address this computer reaches   |
-| `rdp_no_desktop`                                         | this session has no screen to open a viewer on           |
-| `rdp_launch_failed`                                      | the viewer did not start, with the reason after the code |
+| What you see                                     | Cause                                                    |
+| ------------------------------------------------ | -------------------------------------------------------- |
+| the page reads **No shared remote desktops yet** | no machine is sharing, or the sharing machine is offline |
+| `rdp_not_shared`                                 | the machine stopped sharing                              |
+| `rdp_no_desktop`                                 | this session has no screen to open a viewer on           |
+| `rdp_launch_failed`                              | the viewer did not start, with the reason after the code |
 
 ## Settings
 
@@ -245,10 +331,10 @@ Text copied on either machine pastes on the other. To copy a file to the remote 
 
 The language and theme belong to this window; the panel keeps its own.
 
-The **About** card under the settings lists this computer's name, its platform, the client's version, the licence and the source links.
+The **About** card lists this computer's name and platform, the client's version and licence, and each program the client includes with its version, licence and **Source** link.
 
 ## The tray
 
-Closing the window hides it, and the client keeps every hub connected. The tray icon is in the taskbar corner on Windows, the indicator area of the top bar on Linux, and the menu bar on macOS. Its menu has **Open**, which shows the window, and **Quit**, which stops the client.
+Closing the window hides it, and the client keeps every hub connected and every forward listening. The tray icon is in the taskbar corner on Windows, the indicator area of the top bar on Linux, and the menu bar on macOS. Its menu has **Open**, which shows the window, and **Quit**, which stops the client.
 
 ![The tray menu on Windows](/guide/os/win_tray_flyout.webp)
