@@ -5,8 +5,9 @@ reads everything the terminal prints, and the latest 256 KB of that output.
 Any number of ``shell`` streams attach to it at once: each gets every byte
 of output, each one's input reaches the shell, and the terminal's size is
 the smallest attached window's columns and rows. A stream that attaches to
-a running shell is sent the kept output first, then the terminal is resized
-away and back so a full-screen program draws itself again.
+a running shell is sent the kept output first, with the terminal's query
+sequences taken out, then the terminal is resized away and back so a
+full-screen program draws itself again.
 
 A stream opened with a ``session_id`` names its session in the agent's
 :class:`ShellSessionRegistry`: an id the registry holds is attached to, and
@@ -44,6 +45,29 @@ SESSION_POLL_S = 0.5
 # A title a program sets with OSC 0 or OSC 2.
 TITLE_PATTERN = re.compile(rb"\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)")
 TITLE_LIMIT = 200
+# What a terminal answers when it reads it: device attributes (``ESC [ c``,
+# ``ESC [ > c``, ``ESC [ = c``), a status or cursor position report
+# (``ESC [ 5 n``, ``ESC [ 6 n``, ``ESC [ ? 6 n``), and the OSC colour queries
+# (``ESC ] 10 ; ?`` to ``ESC ] 19 ; ?``, ``ESC ] 4 ; <n> ; ?`` and
+# ``ESC ] 5 ; <n> ; ?``) ended by BEL or ST.
+QUERY_PATTERN = re.compile(
+    rb"\x1b\[[>=]?0?c"
+    rb"|\x1b\[\??[56]n"
+    rb"|\x1b\](?:1[0-9]|[45];[0-9]+);\?(?:\x07|\x1b\\)"
+)
+
+
+def strip_queries(output: bytes) -> bytes:
+    """Kept output with the sequences a terminal answers taken out.
+
+    Args:
+        output: The output as the shell printed it.
+
+    Returns:
+        The output without its device attribute, status report and colour
+        queries; everything else as it was.
+    """
+    return QUERY_PATTERN.sub(b"", output)
 
 
 def _started_at(described: dict) -> int:
@@ -203,7 +227,8 @@ class ShellSession:
 
         Args:
             is_resumed: Whether the shell ran before this stream: its kept
-                output is sent first and the terminal is nudged to redraw.
+                output, without the terminal's queries, is sent first and
+                the terminal is nudged to redraw.
             cols: The stream's terminal width.
             rows: The stream's terminal height.
 
@@ -212,7 +237,9 @@ class ShellSession:
         """
         with self._lock:
             attachment = ShellAttachment(
-                bytes(self._kept) if is_resumed else b"", cols=cols, rows=rows
+                strip_queries(bytes(self._kept)) if is_resumed else b"",
+                cols=cols,
+                rows=rows,
             )
             if self._result is not None:
                 attachment.end(self._result)
