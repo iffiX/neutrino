@@ -8,6 +8,7 @@ that install's log.
 
 import asyncio
 
+from neutrino_hub.exceptions import TaskExitStatusError
 from neutrino_hub.web.task_stream import FINISHED_TASK_LIMIT, TaskStreamRegistry
 
 
@@ -72,3 +73,21 @@ def test_a_running_job_is_never_evicted():
 
     assert held is not None
     assert still_running == [held.id]
+
+
+def test_a_source_ends_its_task_with_a_status_of_its_own():
+    """A refused reinstall read "exit 0" because only a raise failed a task."""
+
+    async def refused():
+        yield "reinstall_failed: exit_code=2\n"
+        raise TaskExitStatusError(2)
+
+    async def run():
+        stream = TaskStreamRegistry().start(label="reinstall", source=refused())
+        await _settle()
+        return stream
+
+    stream = asyncio.run(run())
+
+    assert stream.exit_code == 2
+    assert "task failed" not in "".join(stream.buffer)

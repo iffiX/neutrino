@@ -403,6 +403,29 @@ def test_an_added_link_seals_its_secret_and_stores_the_reference(client):
     assert SecretVault().open(stored["secret_id"]) == {"value": "secret"}
 
 
+@pytest.mark.parametrize(
+    "link",
+    [
+        "ss://YWVzLTI1Ni1nY206S0VZS0VZ@203.0.113.10",  # scan: allow
+        "ss://YWVzLTI1Ni1nY206S0VZS0VZ@203.0.113.10:KEYKEY",  # scan: allow
+        "ss://KEYKEY!!!",
+        "vless://KEYKEY-0000@203.0.113.10:KEYKEY",  # scan: allow
+        "trojan://KEYKEY@203.0.113.10:443",  # scan: allow
+    ],
+)
+def test_a_link_that_does_not_parse_is_never_echoed_back(client, link):
+    """A real link carries its key; the refusal says why, without the link."""
+    opened, _ = client
+
+    response = opened.post("/api/hub/proxy/node/add", json={"link": link})
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "share_link_unreadable"
+    assert response.json()["detail"]["params"]["detail"]
+    assert "KEYKEY" not in response.text
+    assert "S0VZS0VZ" not in response.text
+
+
 def test_removing_a_node_takes_its_vault_object_with_it(client):
     opened, runtime = client
     opened.post(

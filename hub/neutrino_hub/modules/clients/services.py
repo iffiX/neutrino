@@ -37,7 +37,6 @@ from neutrino_hub.modules.services.constants import (
 )
 from neutrino_hub.modules.services.host_scope import (
     HostScope,
-    device_host_for,
     link_scope,
 )
 
@@ -77,7 +76,7 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         if not is_device_permitted(devices, entry["type"], provider):
             return CLIENT_CODE_PERMISSION_DENIED, {"kind": entry["type"]}
     if entry["type"] == SERVICES_TYPE_RDP:
-        return _rdp_material(runtime, scope, entry_id)
+        return _rdp_material(runtime, entry)
     if entry["type"] == SERVICES_TYPE_AI:
         credential = client_credential(
             registry,
@@ -151,17 +150,14 @@ def _raw_entry(runtime, scope: HostScope, entry_id: str) -> dict:
     return {}
 
 
-def _rdp_material(runtime, scope: HostScope, entry_id: str) -> tuple:
-    """A shared desktop's address in the client's scope, and its seat password."""
-    share_id = entry_id[len(CLIENT_RDP_SERVICE_PREFIX) :]
+def _rdp_material(runtime, entry: dict) -> tuple:
+    """A shared desktop's host and port as its entry names them for the client, and its seat password."""
+    share_id = entry["id"][len(CLIENT_RDP_SERVICE_PREFIX) :]
     for share in runtime.device_shares.live():
         if share.share_id == share_id:
-            host = device_host_for(
-                scope, runtime.device_interfaces.get(share.device_id, []), share.host
-            )
             return "", {
-                "host": host,
-                "port": share.port,
+                "host": entry["payload"]["host"],
+                "port": entry["payload"]["port"],
                 "password": runtime.desired_states.seat_password(share.device_id),
             }
-    return CLIENT_CODE_RDP_NOT_SHARED, {"service_id": entry_id}
+    return CLIENT_CODE_RDP_NOT_SHARED, {"service_id": entry["id"]}

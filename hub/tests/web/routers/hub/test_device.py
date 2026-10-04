@@ -17,6 +17,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from neutrino_hub.exceptions import TaskExitStatusError
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
@@ -1198,11 +1199,17 @@ def drain_reinstall(monkeypatch, presence, **overrides):
     for name, value in overrides.items():
         monkeypatch.setattr(devices_router, name, value)
     runtime = SimpleNamespace(agent_sessions=presence)
+    lines: list = []
 
     async def drain():
-        return [line async for line in devices_router._reinstall_stream(runtime, "dev")]
+        async for line in devices_router._reinstall_stream(runtime, "dev"):
+            lines.append(line)
 
-    return asyncio.run(drain())
+    try:
+        asyncio.run(drain())
+    except TaskExitStatusError as error:
+        lines.append(error.exit_status)
+    return lines
 
 
 def test_a_returning_agent_reporting_no_failure_was_reinstalled(monkeypatch):
@@ -1223,10 +1230,10 @@ def test_a_failed_install_is_reported_on_the_socket_that_stayed(monkeypatch):
     )
 
     assert "agent 9.9.9 reconnected\n" not in lines
-    assert lines[-1] == (
-        '{"code": "reinstall_failed", "params": '
-        '{"exit_code": 1, "finished_at": "2026-09-10T00:00:04Z"}}\n'
-    )
+    assert lines[-2:] == [
+        "reinstall_failed: exit_code=1, finished_at=2026-09-10T00:00:04Z\n",
+        1,
+    ]
 
 
 def test_a_failure_from_before_the_launch_is_not_the_answer(monkeypatch):
@@ -1256,7 +1263,30 @@ def test_nothing_reported_in_time_is_typed(monkeypatch):
         monkeypatch, Presence([(old, None)]), WEB_REINSTALL_RETURN_TIMEOUT_S=0.0
     )
 
-    assert lines[-1] == '{"code": "reinstall_not_reported", "params": {}}\n'
+    assert lines[-2:] == ["reinstall_not_reported\n", 1]
+
+
+def test_a_refused_reinstall_is_worded_and_ends_with_the_agents_status(monkeypatch):
+    """The output box printed the close as JSON under an exit 0 title."""
+    presence = Presence([(Session(), None)])
+    closed = _ClosedStream(presence.outcome)
+    closed.close_info = {
+        "code": "reinstall_failed",
+        "params": {"exit_code": 3, "output": "reinstall_failed: exit status 3\n"},
+    }
+
+    async def open_stream(key, kind, args):
+        return closed
+
+    presence.open_stream = open_stream
+
+    lines = drain_reinstall(monkeypatch, presence)
+
+    assert lines == [
+        "reinstall_failed: exit status 3\n",
+        "reinstall_failed: exit_code=3\n",
+        3,
+    ]
 
 
 # --- the box: forgetting, renaming, the remote desktop, the enrolment link ---

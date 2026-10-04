@@ -12,6 +12,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from neutrino_hub.exceptions import TaskExitStatusError
+
 TASK_ID_BYTES = 8
 BUFFER_LINE_LIMIT = 2000
 # How many finished jobs keep their output. A drawer reopened after an install
@@ -186,6 +188,8 @@ class TaskStreamRegistry:
         try:
             async for chunk in source:
                 stream.publish(chunk)
+        except TaskExitStatusError as error:
+            exit_code = error.exit_status
         except (
             Exception
         ) as error:  # noqa: BLE001 - surfaced to the panel, not swallowed
