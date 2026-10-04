@@ -47,6 +47,7 @@ from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_MARKER
 from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.rdp.windows_seat import WindowsSeat
 
 try:
     import winreg
@@ -164,6 +165,11 @@ WINDOWS_GPU_ADAPTERS_TTL_S = 300.0
 WINDOWS_GPU_QUERY_RETRY_S = 300.0
 WINDOWS_BYTES_PER_MB = 1024 * 1024
 
+# The variable naming the drive Windows is installed on, and the drive taken
+# when it is unset.
+WINDOWS_SYSTEM_DRIVE_VARIABLE = "SystemDrive"
+WINDOWS_SYSTEM_DRIVE_DEFAULT = "C:"
+
 
 def windows_agent_dir(name: str) -> str:
     """One of the agent's roots under ``%ProgramData%\\Neutrino\\agent``.
@@ -176,6 +182,18 @@ def windows_agent_dir(name: str) -> str:
     """
     program_data = os.environ.get("ProgramData") or AGENT_WINDOWS_PROGRAM_DATA_DEFAULT
     return ntpath.join(program_data, *AGENT_WINDOWS_AGENT_SUBDIR, name)
+
+
+def system_drive_root() -> str:
+    """The root of the drive Windows is installed on, such as ``C:\\``.
+
+    Returns:
+        The absolute directory path.
+    """
+    drive = (
+        os.environ.get(WINDOWS_SYSTEM_DRIVE_VARIABLE) or WINDOWS_SYSTEM_DRIVE_DEFAULT
+    )
+    return drive.rstrip("\\") + "\\"
 
 
 def _mac_of(text: str) -> str:
@@ -250,7 +268,7 @@ class WindowsPlatform(AgentPlatform):
         }
     )
 
-    def __init__(self, *, kernel32=None, shell32=None, powershell=None):
+    def __init__(self, *, kernel32=None, shell32=None, powershell=None, seat=None):
         """
         Args:
             kernel32: The bound kernel32; None binds the real one on first
@@ -259,9 +277,12 @@ class WindowsPlatform(AgentPlatform):
                 use.
             powershell: Called with ``(script, document)``; returns the JSON
                 object the script printed. None runs PowerShell.
+            seat: Names the account signed in at the console; None reads
+                the console session.
         """
         self._kernel32 = kernel32
         self._shell32 = shell32
+        self._seat = seat if seat is not None else WindowsSeat()
         self._powershell = powershell if powershell is not None else run_powershell
         self._metrics_reader = WindowsHostMetricsReader(
             kernel32=kernel32, powershell=powershell
@@ -338,6 +359,23 @@ class WindowsPlatform(AgentPlatform):
         if not read.get("is_present") or not home:
             raise KeyError(account)
         return home
+
+    def shell_start_dir(self) -> str:
+        """Where a shell here starts.
+
+        Returns:
+            The profile directory of the account signed in at the console;
+            the system drive's root when nobody is signed in, or the
+            profile cannot be read or does not exist.
+        """
+        for account in self._seat.graphical_accounts() or []:
+            try:
+                home = self.account_home(account)
+            except (KeyError, OSError):
+                continue
+            if os.path.isdir(home):
+                return home
+        return system_drive_root()
 
     def control_socket_path(self) -> str:
         """The named pipe the control channel serves on.
