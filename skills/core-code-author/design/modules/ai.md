@@ -88,6 +88,16 @@ own format. What the client owns is the order of operations, because
 cc-switch replaces a tool's file whole when it switches and would otherwise
 drop what the person had in it.
 
+The endpoint a tool is given is the client's own local port,
+`http://127.0.0.1:<local-port><path>`, `<path>` being the path of the `ai`
+entry's `endpoint`, empty for the endpoint the hub publishes. The client listens there while it runs and the
+hub is the exit of any tool, and sends each connection to the gateway as a
+`connect` stream ([../protocol.md](../protocol.md), "The connect stream").
+The key is this client's own gateway key from the `service` stream, and the
+gateway checks it on every request. A tool works only while the client
+runs, and the client's AI page says so ([../client.md](../client.md), "The
+AI page").
+
 Before the hub is ever made current for a tool, the client hands cc-switch
 what the person already had, through cc-switch's own stores:
 

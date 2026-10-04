@@ -50,7 +50,10 @@ session on one port at a time and no `Secure` cookie stays to block a plain
 login, which a browser refuses to overwrite. A login whose cookie the
 browser still refused reads as no session, and the login page offers the
 HTTPS address, whose 301 removes the old cookie. The running app reads the
-setting at every request, so turning it on or off restarts nothing. The certificate is signed by the hub's
+setting at every request, so turning it on or off restarts nothing. A
+request whose peer is on loopback is served on the HTTP port with no 301,
+whatever the setting says: it is the hub's own forward of a client's
+**Panel** ("The connect stream"), which the channel already encrypts. The certificate is signed by the hub's
 own certificate authority: EC P-256, valid for ten years, `CA:TRUE` with a
 path length of 0, and name constraints that permit `10.0.0.0/8`,
 `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `127.0.0.0/8` and the
@@ -190,7 +193,7 @@ it has none:
 | HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `online`/`offline`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `expand`, `replace`, `scrub`: none has a reverse operation |
 | Path depth | the same for the same function: `channel/join`/`leave`; `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `zfs/dataset/share`/`unshare`; `zfs/pool/create`/`destroy` | |
 | Channel frames | `hello`/`welcome`; `open`/`close`; `state`/`report` | `refused`, `credit` |
-| Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `file`, `command`, `package`, `log`, `service`, `desktop` |
+| Stream kinds | none; installing and uninstalling follow from `want` | `shell`, `file`, `command`, `package`, `log`, `service`, `connect` |
 | CLI | `nhub start`/`stop`, `nagent start`/`stop`, `nagent join`/`leave`, `nclient join`/`leave`, `nagent rdp start`/`stop`, `nclient service ... mount`/`unmount`, `nclient service port forward`/`unforward` | `status`, `sync`, `run`, `gui`, `quit` |
 
 ### The page, its members and its writes
@@ -454,9 +457,10 @@ moved. Its steps and their order are [network.md](modules/network.md),
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices}`, `kinds` null to follow the default, `devices` optional | that client's own permission; its `state` is pushed |
 
 A permission kind is a published service type (`web`, `port`, `ai`, `file`,
-`rdp`), `overlay` or `terminal`, `CLIENT_PERMISSION_KINDS` in
-`modules/clients/constants.py`. A permission may narrow each kind but
-`overlay` to the entries some devices provide: `devices` maps a kind to a list
+`rdp`), `overlay`, `terminal` or `panel`, `CLIENT_PERMISSION_KINDS` in
+`modules/clients/constants.py`. `panel` is the hub's own panel, opened from
+a client through `connect {is_panel: true}`. A permission may narrow each
+kind but `overlay` and `panel` to the entries some devices provide: `devices` maps a kind to a list
 of device ids, and a kind with no list, or an empty one, allows every device.
 `config/clients/clients.json` holds `default_permission: {kinds, devices}`
 beside `clients`, and each client a `permission` that is null or `{kinds,
@@ -468,10 +472,12 @@ address, and one at no device's address passes only a kind with no list. A
 client's `services` section holds only the entries whose type and device it
 is allowed, its `terminals` only the machines its `terminal` list allows, and
 a `shell` on a machine outside that list is refused `permission_denied {kind:
-terminal}`. Taking `ai` away revokes its gateway key. Deleting a device takes
+terminal}`. A `connect` is judged as the `service` stream is, and a panel
+`connect` without `panel` is refused `permission_denied {kind: panel}`.
+Taking `ai` away revokes its gateway key. Deleting a device takes
 its id out of every list, the default's and each client's, turns off each kind
 whose list named only that device, and pushes every client its state. A kind
-outside the set, or `overlay` given a list, is
+outside the set, or `overlay` or `panel` given a list, is
 refused 400 `permission_kind_unknown {kind}`, and a device id no stored device
 has is refused 400 `permission_device_unknown {device_id}`.
 
@@ -538,7 +544,8 @@ module as `{address, instances: [{account, port, token, password}]}`, the
 token opened, `password` the login's own and sent only to a Windows machine,
 and no seal and no login id. Each instance a running module serves is
 published as one `web` entry, `vscode_<device id>_<account>`, titled
-`VS Code (<account>)`, at `http://<device>:<port>/` with `is_local_only`.
+`VS Code (<account>)`, at `http://<device>:<port>/` with
+`is_token_required: true`.
 
 The CloudCLI block, `routers/agent/module_cloudcli.py`, is shaped like
 `module_vscode.py`: the instances are `{account, port}`, with a vault login
@@ -551,8 +558,7 @@ mints that device's gateway key, and withdrawing it revokes the key
 passwords and token secrets opened, as it carries a VS Code token, the
 login's password for a Windows machine, the gateway's address and the
 device's key. No token enters the state. Each instance a running module serves is
-published as one `web` entry with `is_local_only: false` and
-`is_token_required: true`.
+published as one `web` entry with `is_token_required: true`.
 
 #### `/api/agent/terminal`
 
@@ -618,7 +624,6 @@ A session is started by opening `/ws/agent/terminal` with a new
 | `/ws/hub/task` | `?task_id=` | one task's output |
 | `/ws/agent/terminal` | `?device_id=&session_id=&is_resumed=&is_shared=` | a shell on the device, in the session the page generated `session_id` for, a uuid4 as 32 hex characters, which the hub opens stamped `owner: hub` and with `is_shared`, false when absent; with `is_resumed=true`, as the page opens a session the machine listed, it attaches to that session beside any other stream and its kept output comes first, and a session the machine no longer holds closes the socket with `session_unknown`. The browser sends `{type: input, data}`, `{type: resize, cols, rows}` and `{type: persist, is_persistent, is_shared}`, each resize and persist a `command` stream to the agent, a persist naming only the flags it carries; a persist on a session the machine reports under another owner opens nothing and is answered `{type: refused, code: session_not_owned, params: {session_id}}` with the socket left open. It receives `{type: output, data}` and `{type: exit, code}`, and a refusal closes the socket 1011 with the code as its reason. Closing the socket closes the agent's `shell` stream, which ends the session when no other stream is attached and it is neither persistent nor shared |
 | `/ws/agent/terminal` | `?device_id=&container=` | a shell inside one of its containers |
-| `/ws/agent/desktop` | `?device_id=` | reserved with the `desktop` kind; unimplemented |
 
 ### The channel endpoints
 
@@ -778,14 +783,18 @@ the three packages, named here so that changing one is a change to this table.
 | keepalive | `CHANNEL_PING_INTERVAL_S` 20, `CHANNEL_PING_TIMEOUT_S` 20 | | |
 | silence before the socket is dead | | `AGENT_WS_SILENCE_TIMEOUT_S` 45 | `CLIENT_WS_SILENCE_TIMEOUT_S` 45 |
 | reconnect backoff | | `AGENT_BACKOFF_MIN_S` 5, doubled to `AGENT_BACKOFF_MAX_S` 60 | `CLIENT_BACKOFF_MIN_S` 5, doubled to `CLIENT_BACKOFF_MAX_S` 60 |
-| a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | `CLIENT_STREAM_CREDIT_BYTES` 1 MiB, on a `shell` stream only |
-| one binary frame | `CHANNEL_CHUNK_BYTES` 64 KiB | `AGENT_WS_CHUNK_BYTES` 64 KiB | `CLIENT_WS_CHUNK_BYTES`, on a `shell` stream only |
-| a stream waiting on credit | | `AGENT_WS_CREDIT_TIMEOUT_S` 60 | |
+| a stream's credit window | `CHANNEL_STREAM_CREDIT_BYTES` 1 MiB | `AGENT_WS_STREAM_CREDIT_BYTES` 1 MiB | `CLIENT_STREAM_CREDIT_BYTES` 1 MiB |
+| one binary frame | `CHANNEL_CHUNK_BYTES` 64 KiB | `AGENT_WS_CHUNK_BYTES` 64 KiB | `CLIENT_WS_CHUNK_BYTES` 64 KiB |
+| a stream waiting on credit | | `AGENT_WS_CREDIT_TIMEOUT_S` 60 | `CLIENT_WS_CREDIT_TIMEOUT_S` 60 |
 | a stream waiting for its close | | | `CLIENT_STREAM_TIMEOUT_S` 15 |
+| dialling the far end of a `connect` stream | `CHANNEL_CONNECT_DIAL_TIMEOUT_S` 10 | `AGENT_CONNECT_DIAL_TIMEOUT_S` 10 | |
+| open `connect` streams on one client socket | `CHANNEL_CONNECT_STREAMS_MAX` 256 | | |
 | a hub thread's call onto the loop | `CHANNEL_CALL_TIMEOUT_S` 15 | | |
 | address rotation: the pause before the next address of the set | | `AGENT_ROTATE_DELAY_S` 1 | `CLIENT_ROTATE_DELAY_S` 1 |
 
-Every number is seconds except the two rows in bytes. The hub's ping interval
+Every number is seconds except the two rows in bytes and the count of
+streams. The client's credit and frame size hold on every stream that
+has binary frames, `shell` and `connect` alike. The hub's ping interval
 is inside both silence windows, so a socket with nothing to say is kept open
 by the pings alone, and a peer that reaches its window closes and reconnects.
 A refused `hello` is retried at the backoff's maximum, the minute named under
@@ -810,6 +819,8 @@ and platform, which change between releases.
 | `urls` | `["https://<address>:<port>", ...]` | | the same list | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
 | `terminals` | | | `[{device_id, name, is_online, sessions}]`: the managed machines it may open a `shell` on, each with the sessions this client sees there | |
+| `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
+| `reached_through` | | | `lan`, `netbird`, `easytier` or `relay`: the way this client's socket reached the hub | |
 | `error` | | `{code, params}` | | |
 
 The `error` section is the agent's most recent failure worth showing: the last
@@ -864,6 +875,12 @@ switched off, or its permission does not allow `overlay`. The state is
 pushed to every client by the converge step, which every write of a key, a
 setting or an engine's switch runs, and a client reached through an engine
 being turned off is pushed before that engine stops.
+
+`is_panel_allowed` is true while the client is switched on and its
+permission allows `panel`. `reached_through` is settled at `hello` from the
+socket's peer address ("The address a caller is given") and names the word
+the client's Hubs row shows. Both are in the state's hash, so a client that
+reconnects another way is pushed its state.
 
 `terminals` lists every managed machine, the hub's own among them, online or
 not, with `is_online` read from its socket; it is empty unless the client's
@@ -1004,6 +1021,7 @@ the whole file back.
 | ZFS | pools, vdevs and datasets; there is no wanted pool list, so nothing is imported |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 | VS Code | each server's account, port, url and whether it runs; nothing is imported |
+| code-server | each instance's account, port and whether it runs; nothing is imported |
 | Samba on Windows and macOS | only the shares the module made, in the Linux shape with `params` `comment`, `read only` and `valid users`; the accounts it made; the sessions; and `fence {is_present, is_enabled, blocked}` |
 
 On Windows and macOS an agent with the `smb_server` capability runs the
@@ -1021,9 +1039,9 @@ account the module made signs in once `set_password` has set its password.
 
 The `vscode` module runs Microsoft's standalone CLI, `code serve-web`, once
 per account. Its configuration is `{address, instances: [{account, port,
-token, password}]}`: `address` is empty, and the servers listen on every
-address, so a client reaches an instance over whichever network the hub
-names for its scope ("The address a caller is given"); `token` is the instance's connection token,
+token, password}]}`: `address` is empty, and every server listens on
+`127.0.0.1` alone, where the agent's end of a `connect` stream reaches it
+("The connect stream"); `token` is the instance's connection token,
 which the hub keeps sealed and sends in the clear inside the state; and
 `password` is the account's login, sent only to a Windows machine, where a
 task that runs as an account signs in with it. Its recipe is `{kind:
@@ -1050,6 +1068,19 @@ The `cloudcli` module runs CloudCLI once per account
 `cloudcli_native_module_failed`; an instance whose account has no `claude`
 reports `cloudcli_claude_missing {account}`.
 
+The `code_server` module runs code-server once per account, on Linux and
+macOS ([agent.md](agent.md), "code-server"). Its configuration is
+`{instances: [{account, port, secret}]}`, `secret` the instance's token
+secret, which the hub generates the first time, keeps sealed in
+`config/devices/<id>/code_server.json` and sends opened inside the state,
+as it sends CloudCLI's. Its recipe names the release
+`data/manifests/code_server.json` pins for the platform, which the agent
+opens `package {module: code_server}` for. `details` is `{instances:
+[{account, port, is_running, code}]}`. An apply refuses `account_invalid`,
+`account_duplicate`, `port_invalid`, `port_duplicate` and `secret_missing`,
+each naming the `account` or the `port`, and `account_unknown {account}`
+for an account the machine does not have.
+
 Package bytes come to the agent down a `package {module}` stream it opens, the
 same stream that serves its own upgrade. An install's or an uninstall's output
 goes up a `log {module}` stream line by line, and the Modules page shows it
@@ -1062,7 +1093,7 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_local_only, is_token_required}`, `is_local_only` present and true only on a VS Code instance, `is_token_required` present and true only on a CloudCLI instance, an added field that keeps `PROTOCOL` | a device's Gitea module reports a URL, a device's VS Code or CloudCLI module runs an instance, or an `http` record is declared |
+| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server or CloudCLI instance, whose page opens with a token the `service` stream hands | a device's Gitea module reports a URL, a device's VS Code, code-server or CloudCLI module runs an instance, or an `http` record is declared |
 | `port` | `{host, port}` | a device's Podman container publishes a host port, or a `generic_tcp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
@@ -1070,6 +1101,10 @@ what the entry's `payload` names:
 
 The five types are closed, `SERVICES_TYPES` in
 `modules/services/constants.py`; a sixth is a row here in the same change.
+Every `host`, `port`, `url` and `endpoint` in a payload is where the
+service is on the hub's networks, resolved for the client's scope ("The
+address a caller is given"). A client shows it to the person and dials none
+of it: every byte to a service goes over a `connect` stream.
 `source` is `module`, `declared` or `device`. `is_healthy` is the module's own
 health, the declared record's last probe, or true for a share a machine is
 reporting now, and empty on a record no probe has reached.
@@ -1088,6 +1123,7 @@ its own language:
 | `samba_module` | `{host}` |
 | `vscode_module` | `{host, account}`; the entry exists only while the device reports the instance running |
 | `cloudcli_module` | `{host, account}`; the same |
+| `code_server_module` | `{host, account}`; the same |
 
 A declared record whose person wrote a line of their own gets that line and an
 empty `description_code`, because those are already their words.
@@ -1114,7 +1150,8 @@ is added without a change to the protocol; a kind is added by a row here.
 | client, to the hub | `service` | `{id}`: one published entry. The close is the whole answer, its `params` the material that entry takes from the hub and its `code` the reason it takes none; a new service type adds no kind |
 | client, to the hub | `shell` | `{device_id, cols, rows, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`, and relays terminal bytes both ways, each side under the other's credit; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (no `terminal`, or a machine outside its device list) or `agent_offline {device}` before any agent stream opens |
 | client, to the hub | `command` | `{module: agent, verb: resize, shell, cols, rows}`, `shell` being the client's own `shell` stream id, which the hub maps to the agent's; closed empty once sent on, `shell_unknown {shell}` when no such shell is open. `{module: agent, verb: persist, session_id, is_persistent, is_shared}` and `{module: agent, verb: stop_session, session_id}` go unchanged to the machine holding the session, the one this client's open `shell` names for the id or else the online machine whose report lists it, and close with the agent's close; `session_unknown {session_id}` when no machine holds it, `session_not_owned {session_id}` for a `persist` on a session the machine reports under another owner, and the `shell` stream's permission refusals for that machine. A `persist` names only the flags it carries. `verb_unknown` for any other module or verb. A hub before 0.4.0 closes both kinds `kind_unknown`, which a client reads as a refusal |
-| hub, to an agent | `desktop` | reserved and unimplemented: no arguments, the agent connects to the machine's RustDesk direct port 21118 and relays bytes both ways for `/ws/agent/desktop`; the name says the purpose, the mechanism is the port |
+| client, to the hub | `connect` | `{id}`, one published entry by the id a `service` stream takes, or `{is_panel: true}`, the hub's own panel: one TCP connection to that service. Bytes both ways under credit; closed empty when either end's socket ends, or with a refusal's code. "The connect stream" has the checks, the far ends and the codes |
+| hub, to an agent | `connect` | `{port}`: one TCP connection to `127.0.0.1:<port>` on the machine, a port the machine publishes now; bytes both ways under credit; closed empty when either socket ends, `port_not_published {port}` for any other port, `connect_failed {reason}` when the dial fails |
 
 Installing and uninstalling are no kind and no verb: they follow from `want`.
 
@@ -1173,7 +1210,7 @@ first that fails gives the close its code:
 | `service_unknown` | the id names no entry in the list resolved for this client |
 | `permission_denied` | the entry's type is not among the kinds this client is allowed, or the device providing it is not in that kind's device list |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
-| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open |
+| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, or a code-server or CloudCLI instance whose secret does not open |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
 `service_id`, `permission_denied` puts the entry's type in `params` as
@@ -1182,11 +1219,65 @@ first that fails gives the close its code:
 
 | `type` | The material |
 | --- | --- |
-| `rdp` | `{host, port, password}`: where the desktop answers, and the seat password of the machine sharing it |
-| `ai` | `{base_url, api_key, model}`: the gateway on the address this client reaches it at, this client's own key, and the first model the gateway serves |
-| `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token. The client forwards the entry's port to its own `127.0.0.1` and opens `http://127.0.0.1:<port>/?tkn=<token>` there, never the entry's address |
-| `web` with `description_code` `cloudcli_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own ([agent.md](agent.md), "CloudCLI"); it works once. The client opens `http://<device address>:<port>/?tkn=<token>` at the entry's own address, with no forward |
+| `rdp` | `{password}`: the seat password of the machine sharing the desktop |
+| `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
+| `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
+| `web` with `description_code` `code_server_module` or `cloudcli_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead and `secret` the instance's own ([agent.md](agent.md), "CloudCLI"); it works once |
 | `web`, `port`, `file` | empty: the entry's `payload` is already everything the client needs |
+
+A client opens every `web` entry with `is_token_required` at its forward's
+own address with `?tkn=<token>` added ([client.md](client.md), "The Web
+page"), and never at the entry's address.
+
+### The connect stream
+
+A `connect` stream carries the bytes of one TCP connection between a client
+and one service the hub publishes, or the hub's own panel. With it a client
+reaches every service through the hub's agent port and dials nothing else.
+A client opens one stream per connection its local listener accepts
+([client.md](client.md), "The local port table").
+
+The hub judges the `open` before it dials anything. The checks are the
+`service` stream's, in its order, with the stream limit among them;
+`vault_locked` has no place, since a `connect` opens no secret. The first
+check that fails closes the stream with its code:
+
+| `code` | Given when |
+| --- | --- |
+| `binding_unknown` | no client row has the id this socket is bound to |
+| `client_disabled` | that row is switched off on the Clients page |
+| `connect_limit {limit}` | the socket already holds `CHANNEL_CONNECT_STREAMS_MAX` open `connect` streams |
+| `service_unknown {service_id}` | the id names no entry in the list resolved for this client |
+| `permission_denied {kind}` | the entry's type, or `panel` for the panel, is not among this client's kinds, or the device providing the entry is not in that kind's device list |
+| `rdp_not_shared {service_id}` | the entry is an `rdp` one and its machine has stopped reporting the share |
+
+The far end follows from where the entry is, and the hub alone dials it:
+
+| The entry | The hub connects the stream to |
+| --- | --- |
+| provided by a managed machine, `source` `module` or `device` | that machine's agent, with `connect {port}`; `agent_offline {device}` when the machine has no socket, and the same code when its socket ends under an open stream |
+| a declared record, `source` `declared` | the record's own host and port, dialled by the hub itself, since the hub is on the LAN of the machines it serves |
+| the `ai` entry | the gateway on `127.0.0.1` at its `listen_port` |
+| the panel | the panel's HTTP port on `127.0.0.1`, over plain HTTP; the panel's login guards it as on the LAN ("The panel ports") |
+
+The port is the entry's own: a `web` entry's url port, 80 or 443 by its
+scheme when the url names none; a `port` or `rdp` entry's `port`; 445 for a
+`file` entry. A dial that fails closes the stream `connect_failed
+{reason}`, `reason` being `refused`, `timeout` (after
+`CHANNEL_CONNECT_DIAL_TIMEOUT_S`) or `unreachable`. A stream to an agent
+closes with whatever the agent closed it with.
+
+The agent's end dials `127.0.0.1:<port>`, or the host address a container
+port is published on when it names one, and only a port the machine
+publishes at that moment ([agent.md](agent.md), "The connect stream"); any
+other port is refused `port_not_published {port}`.
+
+| Concern | Rule |
+| --- | --- |
+| Bytes | Binary frames both ways, each at most the sender's chunk size, under the receiver's credit, with the `shell` stream's window and chunk sizes. The hub relays each side under the other's credit, as it does a client's `shell`. |
+| End | End of file on either end's socket closes the stream with empty params once everything read from that socket is sent. The side that receives the close writes what it holds and closes its own socket. There is no half-close. |
+| A dropped socket | A client socket that ends ends every `connect` stream on it, and the hub closes the far ends. |
+| Transport | TCP alone. |
 
 ### The rules the details settle
 
@@ -1282,9 +1373,9 @@ address is the fallback when that is empty, and it is recorded.
 
 ### The address a caller is given
 
-The hub chooses a device's address by the scope a client's socket arrived
-from. Each published service still has one `host`, and the client chooses
-nothing:
+The hub chooses the address an entry names by the scope a client's socket
+arrived from. Each published service still has one `host`, which the client
+shows and never dials, since its bytes go over `connect`:
 
 1. At `hello`, the hub takes the socket's peer address, afresh on every
    connection.
@@ -1293,7 +1384,9 @@ nothing:
    one `overlay` scope per overlay interface holding an IPv4 address, told
    apart by the CIDR that address and its prefix name. The first scope whose
    network holds the peer is the answer. Anything else (an exposed WAN, the
-   interface in server mode, a client behind NAT) is `link`.
+   interface in server mode, a client behind NAT) is `link`. A peer on
+   loopback came through the relay: it is `link` with no hub address of its
+   own, so every entry keeps the host it was composed with.
 1. `device_host_for(scope, interfaces, link_address)` takes the first of the
    device's reported `interfaces[].addresses` inside that scope, the link
    address first when it is among them. With none inside, it takes
@@ -1304,12 +1397,21 @@ nothing:
 1. The push fingerprint is computed on the unresolved list and the client's
    `state.hash` on the resolved one. A client that reconnects from another
    network gets other hosts.
-1. The `host` in a `service` stream's close is computed the same way at that
-   moment, never from a stored address.
 1. Every hub a client is bound to resolves for itself.
 
-A client behind NAT gets the link address, which can be unreachable from
-there. That is the documented outcome, with no mechanism behind it.
+A client behind NAT gets the link address, which it only shows.
+
+The same peer address settles the client's `reached_through`:
+
+| The peer | `reached_through` |
+| --- | --- |
+| on loopback | `relay` |
+| inside the network of a NetBird device the box holds an address on | `netbird` |
+| inside the network of an EasyTier device the box holds an address on | `easytier` |
+| anywhere else: a served LAN, the interface in server mode, an exposed WAN | `lan` |
+
+An engine's devices are the ones the Overlay page's `client_count` counts
+by, so the word and the count agree.
 
 The hub's own address, for a peer, is a set and a name. `hub.neutrino.internal`
 is the hub's name on every served network: dnsmasq answers it with the hub's
