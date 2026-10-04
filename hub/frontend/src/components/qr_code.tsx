@@ -12,8 +12,8 @@ import "./qr_code.css";
 
 /** The light border around the code, in modules, as scanners expect. */
 const QR_QUIET_MODULES = 4;
-/** The pixels one module takes in the image. */
-const QR_MODULE_PX = 6;
+/** The fewest pixels one module takes in the image. */
+const QR_MODULE_PX = 4;
 /** The image's smallest side, in pixels. */
 const QR_MIN_PX = 240;
 

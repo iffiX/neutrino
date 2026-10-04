@@ -11,6 +11,7 @@ log sink.
 import base64
 import json
 import subprocess
+import zlib
 
 import pytest
 
@@ -65,7 +66,9 @@ class Clock:
 
 
 def link_for(payload: dict) -> str:
-    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    """The link a hub writes: compact JSON, zlib level 9, unpadded base64url."""
+    text = json.dumps(payload, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(zlib.compress(text, 9)).decode()
     return "neutrino://enroll/" + encoded.rstrip("=")
 
 

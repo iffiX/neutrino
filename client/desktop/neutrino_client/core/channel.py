@@ -1,6 +1,6 @@
 """Talking to the hub with the standard library, pinned over TLS.
 
-The HTTP channel serves a short link's fetch, joining and leaving; the one live socket in
+The HTTP channel serves joining and leaving; the one live socket in
 ``ws_client`` connects the same way and carries everything else.
 
 An ``https`` hub is verified by fingerprint alone: the handshake runs with
@@ -266,29 +266,6 @@ class GatewayHttpChannel:
                 error status, or unparseable reply.
         """
         _, data, _ = self._post(path, payload)
-        return _parsed(data)
-
-    def get(self, path: str) -> dict:
-        """Ask for a JSON document and return it.
-
-        Args:
-            path: Path below the hub URL, starting with a slash, with its
-                query.
-
-        Returns:
-            The parsed reply, or an empty object when the reply has no body.
-
-        Raises:
-            GatewayUntrusted: When the hub's certificate is not the pinned
-                one; nothing was sent.
-            GatewayRefused: On a 401 or 403.
-            GatewayProtocolRefused: On a 409 naming a protocol number.
-            GatewayRefusedDetail: On a 409 carrying another code.
-            GatewayUnreachable: On any network error, timeout, other HTTP
-                error status, or unparseable reply.
-        """
-        status, data, _ = self._request("GET", f"{self._gateway_url}{path}")
-        _judge(status, data, path)
         return _parsed(data)
 
     def _post(self, path: str, payload: dict):

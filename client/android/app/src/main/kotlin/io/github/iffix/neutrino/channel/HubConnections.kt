@@ -117,16 +117,9 @@ class HubConnections(
         }
         joining.value = HubJoin(isJoining = true)
         scope.launch {
-            val answer = if (ShortEnrollmentLink.isShort(text)) {
-                when (val parsed = ShortEnrollmentLink.parse(text)) {
-                    is ChannelResult.Refused -> parsed
-                    is ChannelResult.Ok -> join(parsed.value.link, isObjectPending = true)
-                }
-            } else {
-                when (val parsed = EnrollmentLink.parse(text)) {
-                    is ChannelResult.Refused -> parsed
-                    is ChannelResult.Ok -> join(parsed.value)
-                }
+            val answer = when (val parsed = EnrollmentLink.parse(text)) {
+                is ChannelResult.Refused -> parsed
+                is ChannelResult.Ok -> join(parsed.value)
             }
             joining.value = when (answer) {
                 is ChannelResult.Ok -> HubJoin(joinedId = answer.value.id)
@@ -145,11 +138,9 @@ class HubConnections(
      * address that answers. A link whose ticket a binding already holds is that binding.
      *
      * @param link The link.
-     * @param isObjectPending Whether the link is a short link's: the session fetches the long
-     *   link's object before it spends the ticket.
      * @return The binding kept, or `client_internal {error}` when the file cannot be written.
      */
-    fun join(link: EnrollmentLink, isObjectPending: Boolean = false): ChannelResult<HubBinding> {
+    fun join(link: EnrollmentLink): ChannelResult<HubBinding> {
         store.bindings.value.firstOrNull { it.ticket == link.ticket }?.let { return ChannelResult.Ok(it) }
         val binding = HubBinding(
             id = UUID.randomUUID().toString().replace("-", ""),
@@ -159,7 +150,6 @@ class HubConnections(
             fingerprint = link.fingerprint,
             token = "",
             ticket = link.ticket,
-            isObjectPending = isObjectPending,
             overlays = link.overlays,
         )
         return try {

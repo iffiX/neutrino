@@ -4,7 +4,6 @@ import io.github.iffix.neutrino.CHANNEL_STREAM_ID_BYTES
 import io.github.iffix.neutrino.CLIENT_BACKOFF_MAX_S
 import io.github.iffix.neutrino.CLIENT_BACKOFF_MIN_S
 import io.github.iffix.neutrino.CLIENT_CONNECT_TIMEOUT_S
-import io.github.iffix.neutrino.CLIENT_ENROLL_PATH
 import io.github.iffix.neutrino.CLIENT_HTTPS_DEFAULT_PORT
 import io.github.iffix.neutrino.CLIENT_HUB_ROLE
 import io.github.iffix.neutrino.CLIENT_IDLE_POLL_INTERVAL_S
@@ -23,7 +22,6 @@ import io.github.iffix.neutrino.binding.HubBinding
 import java.io.IOException
 import java.net.URI
 import java.net.URISyntaxException
-import java.net.URLEncoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -263,13 +261,7 @@ class HubSession(
             if (index > 0) delay(CLIENT_ROTATE_DELAY_S * 1000)
             if (isRoundCut) return cutRound()
             if (binding.isPending) {
-                val ready = if (binding.isObjectPending) fetchObject(binding, url) else ChannelResult.Ok(binding)
-                val spent = when (ready) {
-                    is ChannelResult.Ok -> spend(ready.value, url)
-                    is ChannelResult.Refused -> ready
-                }
-                if (ready is ChannelResult.Ok) binding = ready.value
-                when (spent) {
+                when (val spent = spend(binding, url)) {
                     is ChannelResult.Ok -> binding = spent.value
 
                     is ChannelResult.Refused -> when (spent.code) {
@@ -316,31 +308,6 @@ class HubSession(
         }
         untrusted?.let { return onRejected(it) }
         return onUnreachable(failure ?: ChannelResult.refused("hub_unreachable", "detail" to "no address"))
-    }
-
-    private suspend fun fetchObject(binding: HubBinding, url: String): ChannelResult<HubBinding> {
-        val query = URLEncoder.encode(binding.ticket, Charsets.UTF_8.name())
-        val link = when (val fetched = transport.get(url, "$CLIENT_ENROLL_PATH?ticket=$query", binding.fingerprint)) {
-            is ChannelResult.Refused -> return fetched
-
-            is ChannelResult.Ok -> when (val read = EnrollmentLink.fromObject(fetched.value)) {
-                is ChannelResult.Refused -> return read
-                is ChannelResult.Ok -> read.value
-            }
-        }
-        val kept = try {
-            store.update(bindingId) {
-                it.copy(
-                    gatewayUrls = (it.storedUrls + link.urls).distinct(),
-                    overlays = link.overlays,
-                    isObjectPending = false,
-                )
-            }
-        } catch (error: IOException) {
-            return ChannelResult.refused("client_internal", "error" to (error.message ?: "IOException"))
-        } ?: return ChannelResult.refused("client_internal", "error" to "the binding is gone")
-        current.update { it.copy(binding = kept) }
-        return ChannelResult.Ok(kept)
     }
 
     private suspend fun spend(binding: HubBinding, url: String): ChannelResult<HubBinding> {

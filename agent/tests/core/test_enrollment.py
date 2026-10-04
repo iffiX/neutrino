@@ -1,7 +1,7 @@
 """Joining and leaving: the link, the join body, the binding file, the leave.
 
-The link rides base64url so it holds no character a shell splits or a URL
-escapes; a link made for a client is refused here. The join posts the seven
+The link is compact JSON compressed with zlib in unpadded base64url, so it
+holds no character a shell splits or a URL escapes; a link made for a client is refused here. The join posts the seven
 fields and stores the binding with every address the link carried; a file
 missing any field but the address list is an unbound agent, so a 0.2.x
 file expires by itself and a 0.3.0 file reads as a binding with no list.
@@ -12,11 +12,13 @@ whether or not the hub answered. The one HTTP call each way is answered by
 the test; nothing here reaches a network.
 """
 
+import base64
 import json
 import os
 import stat
 import subprocess
 import sys
+import zlib
 
 import pytest
 
@@ -187,6 +189,18 @@ def test_a_link_without_a_fingerprint_carries_an_empty_one():
 def test_what_is_not_a_link_is_refused(text):
     with pytest.raises(EnrollmentError):
         parse_link(text)
+
+
+def test_a_payload_that_does_not_inflate_or_parse_is_unreadable():
+    body = json.dumps({"urls": ["https://hub:8443"], "token": "t", "role": "agent"})
+    plain = base64.urlsafe_b64encode(body.encode()).decode().rstrip("=")
+    garbled = base64.urlsafe_b64encode(zlib.compress(b"{not json", 9)).decode()
+
+    for text in (plain, garbled.rstrip("=")):
+        with pytest.raises(EnrollmentError) as refused:
+            parse_link("neutrino://enroll/" + text)
+        assert "not an enrollment link" in str(refused.value)
+        assert refused.value.code == ""
 
 
 def test_a_payload_missing_its_half_is_refused():

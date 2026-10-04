@@ -6,17 +6,6 @@ import kotlinx.serialization.json.JsonObject
 /** How this phone reaches a hub's pinned port: the HTTP calls, and the socket. */
 interface HubTransport {
     /**
-     * One JSON read from the hub, over a connection checked against the pin before a byte leaves.
-     *
-     * @param baseUrl The hub's address, `https://host:port`.
-     * @param path The route, with its query.
-     * @param fingerprint The pinned SHA-256.
-     * @return The answer's JSON, or the refusal: the `detail {code, params}` of an error answer,
-     *   `hub_untrusted` for another certificate, `hub_unreachable` for anything on the way.
-     */
-    suspend fun get(baseUrl: String, path: String, fingerprint: String): ChannelResult<JsonObject>
-
-    /**
      * One JSON request to the hub, over a connection checked against the pin before a byte leaves.
      *
      * @param baseUrl The hub's address, `https://host:port`.

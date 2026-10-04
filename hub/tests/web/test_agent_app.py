@@ -88,7 +88,6 @@ def route_set(app) -> set:
 
 
 CHANNEL_ROUTES = {
-    ("GET", "/api/channel/enroll"),
     ("POST", "/api/channel/join"),
     ("POST", "/api/channel/leave"),
     ("WS", "/api/channel/socket"),
@@ -100,7 +99,6 @@ def test_the_agent_app_serves_the_channel_routes_and_nothing_else(factories):
 
     assert route_set(app) == CHANNEL_ROUTES
     assert api_paths(app) == {
-        "/api/channel/enroll",
         "/api/channel/join",
         "/api/channel/leave",
     }

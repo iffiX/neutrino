@@ -1,7 +1,9 @@
 package io.github.iffix.neutrino.channel
 
 import io.github.iffix.neutrino.binding.HubBinding
+import java.io.ByteArrayOutputStream
 import java.util.Base64
+import java.util.zip.Deflater
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -33,7 +35,7 @@ object Samples {
     )
 
     /**
-     * A link over one payload.
+     * A link over one payload, as a hub writes it: the JSON compressed with zlib at level 9.
      *
      * @param payload The object.
      * @param isPadded Whether the base64 keeps its `=` padding.
@@ -41,7 +43,27 @@ object Samples {
      */
     fun link(payload: JsonObject, isPadded: Boolean = false): String {
         val encoder = if (isPadded) Base64.getUrlEncoder() else Base64.getUrlEncoder().withoutPadding()
-        return "neutrino://enroll/" + encoder.encodeToString(payload.toString().toByteArray())
+        return "neutrino://enroll/" + encoder.encodeToString(deflate(payload.toString().toByteArray()))
+    }
+
+    /**
+     * Bytes compressed with zlib at level 9, as a hub compresses a link's payload.
+     *
+     * @param bytes The bytes.
+     * @return The zlib stream.
+     */
+    fun deflate(bytes: ByteArray): ByteArray {
+        val deflater = Deflater(Deflater.BEST_COMPRESSION)
+        try {
+            deflater.setInput(bytes)
+            deflater.finish()
+            val out = ByteArrayOutputStream()
+            val chunk = ByteArray(1024)
+            while (!deflater.finished()) out.write(chunk, 0, deflater.deflate(chunk))
+            return out.toByteArray()
+        } finally {
+            deflater.end()
+        }
     }
 
     /** A client link with a NetBird and an EasyTier console object. */

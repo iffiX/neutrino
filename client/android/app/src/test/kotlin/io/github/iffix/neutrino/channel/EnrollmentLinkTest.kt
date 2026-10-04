@@ -1,5 +1,6 @@
 package io.github.iffix.neutrino.channel
 
+import java.util.Base64
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -40,6 +41,22 @@ class EnrollmentLinkTest {
     fun somethingElseIsLinkUnreadable() {
         assertEquals("link_unreadable", refusalOf("https://example.com"))
         assertEquals("link_unreadable", refusalOf("neutrino://enroll/!!!"))
+    }
+
+    @Test
+    fun aPayloadThatDoesNotInflateOrParseIsLinkUnreadable() {
+        val encoder = Base64.getUrlEncoder().withoutPadding()
+        val plain = encoder.encodeToString(Samples.clientPayload.toString().toByteArray())
+        val garbled = encoder.encodeToString(Samples.deflate("{not json".toByteArray()))
+        val cut = Samples.link(Samples.clientPayload).dropLast(8)
+        assertEquals("link_unreadable", refusalOf("neutrino://enroll/$plain"))
+        assertEquals("link_unreadable", refusalOf("neutrino://enroll/$garbled"))
+        assertEquals("link_unreadable", refusalOf(cut))
+    }
+
+    @Test
+    fun theOldShortFormIsLinkUnreadable() {
+        assertEquals("link_unreadable", refusalOf("neutrino://enroll/t@192.168.100.1:8443/${Samples.FINGERPRINT}"))
     }
 
     @Test

@@ -9,6 +9,8 @@ exposed interface, whatever its role, and every exposed overlay.
 
 import base64
 import json
+import re
+import zlib
 
 import pytest
 from fastapi import FastAPI
@@ -48,7 +50,7 @@ def client_for(runtime) -> TestClient:
 def decoded(link: str) -> dict:
     payload_text = link.removeprefix("neutrino://enroll/")
     padded = payload_text + "=" * (-len(payload_text) % 4)
-    return json.loads(base64.urlsafe_b64decode(padded))
+    return json.loads(zlib.decompress(base64.urlsafe_b64decode(padded)))
 
 
 def urls_of(runtime) -> list:
@@ -242,17 +244,38 @@ def test_a_box_with_nothing_exposed_has_no_link_to_give(fingerprinted, live_addr
     assert answer.json()["detail"]["code"] == "no_reachable_address"
 
 
-def test_the_short_link_takes_the_address_on_the_host_named_else_the_first():
+def test_a_link_is_the_compact_json_compressed_at_level_9_in_unpadded_base64url():
     urls = ["https://192.168.8.1:9443", "https://10.0.0.1:9443"]
+    overlays = [{"provider": "netbird", "setup_key": "k"}]  # scan: allow
 
-    named = devices_router.enrollment_short_link(
-        urls, "Tk_-9", FINGERPRINT, host="10.0.0.1"
-    )
-    unknown = devices_router.enrollment_short_link(
-        urls, "Tk_-9", FINGERPRINT, host="203.0.113.7"
+    link = devices_router.enrollment_link(
+        urls, "Tk_-9", FINGERPRINT, role="client", overlays=overlays
     )
 
-    assert named == f"neutrino://enroll/Tk_-9@10.0.0.1:9443/{FINGERPRINT}"
-    assert unknown == f"neutrino://enroll/Tk_-9@192.168.8.1:9443/{FINGERPRINT}"
-    with pytest.raises(ValueError):
-        devices_router.enrollment_short_link([], "Tk_-9", FINGERPRINT)
+    body = {
+        "urls": urls,
+        "token": "Tk_-9",
+        "fp": FINGERPRINT,
+        "role": "client",
+        "overlays": overlays,
+    }
+    text = json.dumps(body, separators=(",", ":")).encode()
+    payload = link.removeprefix("neutrino://enroll/")
+    assert decoded(link) == body
+    assert payload == base64.urlsafe_b64encode(zlib.compress(text, 9)).decode().rstrip(
+        "="
+    )
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", payload)
+
+
+def test_a_device_link_round_trips_without_overlays():
+    link = devices_router.enrollment_link(
+        ["https://192.168.8.1:9443"], "Tk_-9", FINGERPRINT
+    )
+
+    assert decoded(link) == {
+        "urls": ["https://192.168.8.1:9443"],
+        "token": "Tk_-9",
+        "fp": FINGERPRINT,
+        "role": "agent",
+    }

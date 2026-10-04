@@ -1,5 +1,4 @@
-"""The channel's routes on the agent port: the short link's fetch, join, leave,
-and the socket.
+"""The channel's routes on the agent port: join, leave, and the socket.
 
 These are the only routes without a session: a peer authenticates with the
 ticket its link carried at ``join`` and with the token that join handed it
@@ -9,7 +8,6 @@ else, and every link carries the certificate fingerprint the peer pins.
 
 import asyncio
 import contextlib
-import time
 
 from fastapi import (
     APIRouter,
@@ -52,7 +50,6 @@ from neutrino_hub.web.constants import WEB_EVENT_CLIENTS
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.identity import hub_id, hub_name
 from neutrino_hub.web.models import (
-    ChannelEnrollView,
     ChannelHello,
     ChannelJoinRequest,
     ChannelJoinView,
@@ -109,33 +106,6 @@ def join(
     else:
         binding_id, token = _join_client(runtime, request, ticket)
     return ChannelJoinView(id=binding_id, token=token)
-
-
-@router.get("/enroll", response_model=ChannelEnrollView)
-def enroll(
-    ticket: str, runtime: PanelRuntime = Depends(get_runtime)
-) -> ChannelEnrollView:
-    """The long link's object for a short link's ticket; the ticket is not spent.
-
-    Args:
-        ticket: The ticket the short link carries.
-        runtime: The shared runtime, which holds the open tickets.
-
-    Returns:
-        ``{urls, token, fp, role, overlays}``, as the long link carries it.
-
-    Raises:
-        HTTPException: 401 ``ticket_spent`` when the ticket is unknown,
-            expired, or has no long link.
-    """
-    record = runtime.enrollments.get(ticket)
-    if (
-        record is None
-        or float(record.get("expires_at", 0)) < time.time()
-        or not isinstance(record.get("link_body"), dict)
-    ):
-        raise _ticket_spent()
-    return ChannelEnrollView(**record["link_body"])
 
 
 @router.post("/leave")

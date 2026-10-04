@@ -65,30 +65,6 @@ class OkHttpHubTransportTest {
     }
 
     @Test
-    fun aGetOnThePinnedCertificateIsAnsweredAndARefusalKeepsItsCode() = runBlocking {
-        server.enqueue(MockResponse().setBody("""{"token":"t1"}"""))
-        server.enqueue(
-            MockResponse().setResponseCode(401).setBody("""{"detail":{"code":"ticket_spent","params":{}}}"""),
-        )
-        val path = "/api/channel/enroll?ticket=t1"
-        val answer = transport.get(baseUrl, path, pinned)
-        val spent = transport.get(baseUrl, path, pinned)
-        assertEquals("t1", (answer as ChannelResult.Ok).value["token"]?.jsonPrimitive?.content)
-        assertEquals("ticket_spent", (spent as ChannelResult.Refused).code)
-        val request = server.takeRequest()
-        assertEquals("GET", request.method)
-        assertEquals(path, request.path)
-    }
-
-    @Test
-    fun aGetOnAnotherCertificateIsUntrustedAndNothingIsSent() = runBlocking {
-        server.enqueue(MockResponse().setBody("{}"))
-        val answer = transport.get(baseUrl, "/api/channel/enroll?ticket=t1", "00".repeat(32))
-        assertEquals("hub_untrusted", (answer as ChannelResult.Refused).code)
-        assertEquals(0, server.requestCount)
-    }
-
-    @Test
     fun theSocketOpensOnThePinAndCarriesText() = runBlocking {
         server.enqueue(
             MockResponse().withWebSocketUpgrade(
