@@ -4,7 +4,7 @@ title: VS Code
 
 # VS Code
 
-The **VS Code** module runs VS Code in the browser on a managed machine, one instance per account. A desktop client opens each instance through a port forwarded to its own `127.0.0.1`. You install VS Code Server on the machine under Microsoft's license terms: the module's installer fetches Microsoft's standalone VS Code CLI at one pinned build, and the agent runs it.
+The **VS Code** module runs VS Code in the browser on a managed machine, one instance per account. A desktop client or the Android app opens each instance through a forward on its own `127.0.0.1`. You install VS Code Server on the machine under Microsoft's license terms: the module's installer fetches Microsoft's standalone VS Code CLI at one pinned build, and the agent runs it.
 
 | System  | Machines that run it                      |
 | ------- | ----------------------------------------- |
@@ -51,4 +51,4 @@ When the account's password changes on Windows, the agent reports `credential_in
 
 ## Open it from a client
 
-Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled with **VS Code** and the account. The row is for reference; only a desktop client opens the instance. The client's **Web** panel shows **Open locally**, which forwards the instance's port to `127.0.0.1` and opens it in the browser with the instance's token. The Android app lists the entry greyed out with a desktop-only badge.
+Each running instance is a row under **Web** on the [Services](../../hub/services.md) page, titled with **VS Code** and the account. The instance listens on its machine's loopback alone, so a browser does not open the row's address. On the client's **Web** page, **Open** makes a forward through the hub and opens the instance in the browser with a fresh token. The desktop client and the Android app both open it.
