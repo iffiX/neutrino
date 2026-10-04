@@ -24,6 +24,7 @@ imported from ``agent/`` in this checkout or from an installed agent.
 
 import argparse
 import base64
+import glob
 import json
 import os
 import platform
@@ -37,7 +38,26 @@ import uuid
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "agent"))
+# Where the agent package is: the checkout beside this script, else the
+# installed agent's own environment on a box.
+AGENT_PACKAGE_PLACES = (
+    os.path.join(HERE, "..", "..", "agent"),
+    "/opt/neutrino/agent/python/lib/python3.*/site-packages",
+    "/opt/neutrino_agent/python/lib/python3.*/site-packages",
+)
+
+
+def agent_package_place() -> str:
+    """The first directory holding the ``neutrino_agent`` package, empty for none."""
+    for pattern in AGENT_PACKAGE_PLACES:
+        for place in sorted(glob.glob(pattern)):
+            if os.path.isfile(os.path.join(place, "neutrino_agent", "__init__.py")):
+                return place
+    return ""
+
+
+if agent_package_place():
+    sys.path.append(agent_package_place())
 
 from neutrino_agent.constants import AGENT_WS_PATH, PROTOCOL  # noqa: E402
 from neutrino_agent.core.channel import BindingHttpClient  # noqa: E402
