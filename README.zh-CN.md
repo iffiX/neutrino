@@ -5,9 +5,9 @@
 [English](README.md) · 简体中文
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
-[![中枢: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
-[![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
+[![Version](https://img.shields.io/badge/version-0.5.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![中枢: Linux · macOS · Windows](https://img.shields.io/badge/hub-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
+[![Agent: Linux · Windows · macOS](https://img.shields.io/badge/agent-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 [![Client: Linux · Windows · macOS](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#什么跑在哪里)
 
 微子能穿透一切，却什么也不碰。<br/>
@@ -17,14 +17,14 @@
 
 ## 它是什么，能干什么
 
-中枢管理你的机器，把它们提供的服务集中发布。客户端无论在家里的局域网，还是从外面经虚拟网连上中枢，拿到的都是同一份服务。
+中枢管理你的机器，把它们提供的服务集中发布。客户端无论在家里的局域网，还是从外面经 NetBird、EasyTier 或你自己的中继服务器连上中枢，拿到的都是同一份服务。
 
-中枢装在一台常开的 Linux 机器上，负责网络、虚拟网、代理和 AI 网关。被控端装在每台要管理的 Linux 机器上，把那台机器的共享、git、容器、存储和桌面提供出来。客户端装在每台你坐在前面的电脑上，把这些服务变成窗口里的按钮。
+中枢装在一台常开的机器上，负责网络、外部访问、代理和 AI 网关：Linux 上可以用任何网络形态，Mac 和 Windows 电脑上用服务器形态。被控端装在每台要管理的 Linux、Windows 或 macOS 机器上，把那台机器的共享、git、容器、存储和桌面提供出来。客户端装在每台你坐在前面的电脑上，把这些服务变成窗口里的按钮。每个按钮都经中枢连到服务，所以客户端只要连得上中枢的 8443 端口。
 
 | 面板页 | 你能做什么                                                          | 在哪做                       |
 | ------ | ------------------------------------------------------------------- | ---------------------------- |
 | 网络   | 选这台机器的形态，给网口分配角色，决定面板在哪些网络上应答          | 面板 **网络**（Network）     |
-| 外部访问 | 把中枢接进 NetBird 或 EasyTier，在外面进家里的局域网              | 面板 **外部访问**（Access）  |
+| 外部访问 | 经 NetBird、EasyTier 或你自己服务器上的中继，从外面连回中枢       | 面板 **外部访问**（Access）  |
 | 代理   | 从分享链接导入出口节点，按设备和目标分流，开 SOCKS 端口             | 面板 **代理**（Proxy）       |
 | AI     | 把订阅账号和 API 密钥挂在一个网关地址后面，给每台电脑发自己的密钥   | 面板 **AI**                  |
 | 设备   | 用一条链接或一组 SSH 凭据接入一台机器，重启、唤醒、开 shell、进桌面 | 面板 **设备**（Devices）     |
@@ -42,20 +42,40 @@
 | Debian 12 及以上、Ubuntu 22.04 及以上、Raspberry Pi OS 64 位 | x86-64、ARM64 | `.deb`              |
 | Fedora 41 及以上、RHEL 9 系（AlmaLinux、Rocky）              | x86-64、ARM64 | `.rpm`，先启用 EPEL |
 | Arch、EndeavourOS、Manjaro                                   | x86-64        | `.pkg.tar.zst`      |
+| Windows 10 1809 及以上、Windows 11，服务器形态               | x86-64        | `.msi`              |
+| macOS 12.3 及以上，服务器形态                                | ARM64、x86-64 | `.pkg`              |
+
+中枢在 Linux 上可以用任何网络形态运行，在 macOS 和 Windows 上以服务器形态运行。
 
 | 被控端 `neutrino-agent`                                      | 架构          | 包     |
 | ------------------------------------------------------------ | ------------- | ------ |
 | Debian 12 及以上、Ubuntu 22.04 及以上、Raspberry Pi OS 64 位 | x86-64、ARM64 | `.deb` |
 | Fedora 41 及以上、RHEL 9 系                                  | x86-64、ARM64 | `.rpm` |
+| Windows 10 1809 及以上、Windows 11                           | x86-64        | `.msi` |
+| macOS 12.3 及以上                                            | ARM64、x86-64 | `.pkg` |
 
-| 客户端 `neutrino-client`                          | 架构          | 包     |
-| ------------------------------------------------- | ------------- | ------ |
-| Debian 12 及以上、Ubuntu 22.04 及以上，带桌面会话 | x86-64、ARM64 | `.deb` |
+| 客户端 `neutrino-client`                                    | 架构          | 包     |
+| ----------------------------------------------------------- | ------------- | ------ |
+| Debian 12 及以上、Ubuntu 22.04 及以上，带桌面会话           | x86-64、ARM64 | `.deb` |
 | RHEL 9 系（AlmaLinux、Rocky）、Fedora 41 及以上，带桌面会话 | x86-64、ARM64 | `.rpm` |
-| Windows 10 1809 及以上、Windows 11                | x86-64        | `.msi` |
-| macOS 12.3 及以上，Apple 芯片                     | ARM64         | `.pkg` |
+| Windows 10 1809 及以上、Windows 11                          | x86-64        | `.msi` |
+| macOS 12.3 及以上                                           | ARM64、x86-64 | `.pkg` |
+
+国内版每个包只发 `.deb`、Windows 的 `.msi` 和 Apple 芯片的 `.pkg`，另有 Android 的 apk。
 
 ## 安装
+
+每次发布都从同一份源码编出两个版本。完整版在 [GitHub](https://github.com/iffiX/neutrino/releases) 上。国内版在 [Gitee](https://gitee.com/iffiX/neutrino) 上：除代理和 NetBird 以外功能都有，各项下载走国内镜像。每个版本只从自己的发布页更新。用一条命令安装国内版：
+
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+```
+
+```powershell
+irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
+```
+
+下面的命令安装的是完整版。文件名里的 `<version>` 指发布页上的版本号。
 
 > [!WARNING]
 > 不要用 `dpkg -i` 或 `rpm -i` 安装：它们不装任何依赖。如果已经装了，运行 `sudo apt -f install`（Debian 系）或 `sudo dnf install <它列出的包>`（Fedora 系）完成安装。
@@ -64,7 +84,7 @@
 <summary><b>中枢</b> · Debian、Ubuntu、Raspberry Pi OS</summary>
 
 ```bash
-sudo apt install ./neutrino-hub_0.3.0_amd64.deb
+sudo apt install ./neutrino-hub_<version>_amd64.deb
 sudo nhub setup
 ```
 
@@ -76,7 +96,7 @@ sudo nhub setup
 
 ```bash
 sudo dnf install -y epel-release
-sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-<version>-1.x86_64.rpm
 sudo nhub setup
 ```
 
@@ -87,7 +107,7 @@ sudo nhub setup
 <summary><b>中枢</b> · Arch、EndeavourOS、Manjaro</summary>
 
 ```bash
-sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-<version>-1-x86_64.pkg.tar.zst
 sudo nhub setup
 ```
 
@@ -95,21 +115,32 @@ sudo nhub setup
 </details>
 
 <details>
+<summary><b>中枢</b> · macOS、Windows，服务器形态</summary>
+
+```bash
+sudo installer -pkg neutrino-hub-<version>-macos-arm64.pkg -target /   # Apple 芯片的 macOS
+msiexec /i neutrino-hub-<version>-windows-amd64.msi                    # Windows
+```
+
+Intel 芯片的 Mac 上，文件名以 `macos-amd64.pkg` 结尾。安装程序登记中枢的服务；之后从开始菜单或 `/Applications` 打开 **Neutrino Hub**，浏览器里就是设置向导。
+</details>
+
+<details>
 <summary><b>被控端</b> · Debian 系</summary>
 
 ```bash
-sudo apt install ./neutrino-agent_0.3.0_amd64.deb
+sudo apt install ./neutrino-agent_<version>_amd64.deb
 sudo nagent join '<enroll-link>'
 ```
 
-链接来自面板设备页的 **用链接添加**（Add by link），五分钟内有效。
+链接来自面板设备页的 **用链接添加**（Add by link），三十分钟内有效。
 </details>
 
 <details>
 <summary><b>被控端</b> · Fedora、RHEL 系</summary>
 
 ```bash
-sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm
+sudo dnf install ./neutrino-agent-<version>-1.x86_64.rpm
 sudo nagent join '<enroll-link>'
 ```
 
@@ -117,10 +148,21 @@ sudo nagent join '<enroll-link>'
 </details>
 
 <details>
+<summary><b>被控端</b> · Windows、macOS</summary>
+
+```bash
+msiexec /i neutrino-agent-<version>-windows-amd64.msi                    # Windows，以管理员身份
+sudo installer -pkg neutrino-agent-<version>-macos-arm64.pkg -target /  # Apple 芯片的 macOS
+```
+
+Intel 芯片的 Mac 上，文件名以 `macos-amd64.pkg` 结尾。装好后用 **用链接添加** 给的链接运行 `nagent join '<enroll-link>'`：Windows 上以管理员身份运行，macOS 上加 `sudo`。
+</details>
+
+<details>
 <summary><b>客户端</b> · Debian 系</summary>
 
 ```bash
-sudo apt install ./neutrino-client_0.3.0_amd64.deb
+sudo apt install ./neutrino-client_<version>_amd64.deb
 nclient gui
 ```
 
@@ -131,7 +173,7 @@ nclient gui
 <summary><b>客户端</b> · Fedora、RHEL 系</summary>
 
 ```bash
-sudo dnf install ./neutrino-client-0.3.0-1.x86_64.rpm
+sudo dnf install ./neutrino-client-<version>-1.x86_64.rpm
 nclient gui
 ```
 
@@ -142,7 +184,7 @@ nclient gui
 <summary><b>客户端</b> · Windows</summary>
 
 ```powershell
-msiexec /i neutrino-client-0.3.0-windows-amd64.msi
+msiexec /i neutrino-client-<version>-windows-amd64.msi
 ```
 
 安装程序显示一个把 `nclient` 加进 PATH 的选项；装完从开始菜单打开 Neutrino Client，图标进任务栏角落。
@@ -152,10 +194,10 @@ msiexec /i neutrino-client-0.3.0-windows-amd64.msi
 <summary><b>客户端</b> · macOS</summary>
 
 ```bash
-sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
+sudo installer -pkg neutrino-client-<version>-macos-arm64.pkg -target /
 ```
 
-也可以右键 pkg 选“打开”；应用装在 /Applications，点图标即打开窗口。
+Intel 芯片的 Mac 上，文件名以 `macos-amd64.pkg` 结尾。也可以右键 pkg 选“打开”；应用装在 /Applications，点图标即打开窗口。
 </details>
 
 每个包的完整安装步骤在文档站：[安装中枢](https://neutrino.beyond-infinity.top/zh-CN/hub/install.html)、[安装被控端](https://neutrino.beyond-infinity.top/zh-CN/agent/install.html)、[安装客户端](https://neutrino.beyond-infinity.top/zh-CN/client/install.html)。
@@ -170,9 +212,9 @@ sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 
 | 面板     | 条目从哪来                               | 客户端上的按钮   |
 | -------- | ---------------------------------------- | ---------------- |
-| 网页     | Gitea 模块，手动声明的网址               | 打开             |
+| 网页     | Gitea、VS Code、code-server、CloudCLI，手动声明的网址 | 打开             |
 | 端口     | 容器发布的端口，手动声明的 TCP 端口      | 连接、断开       |
-| AI       | 中枢的 AI 网关                           | 配置、应用       |
+| AI       | 中枢的 AI 网关                           | 配置、AI 工具使用此网关 |
 | 文件     | Samba 模块，手动声明的共享               | 配置、挂载、卸载 |
 | 远程桌面 | 机器自己用 `nagent rdp start` 共享的桌面 | 连接             |
 
@@ -220,14 +262,14 @@ sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 
 | 包                | 装在哪                                | 以什么身份运行       | 干什么                                                                 |
 | ----------------- | ------------------------------------- | -------------------- | ---------------------------------------------------------------------- |
-| `neutrino-hub`    | 一台常开的 Linux 机器                 | root，面板加几个服务 | 路由、代理、DNS、虚拟网、AI 网关、设备发现、客户端和凭据的管理         |
-| `neutrino-agent`  | 每台要管的 Linux 机器                 | root，无窗口         | 在这台机器上跑 Samba、Gitea、Podman、ZFS 和 RustDesk 主机              |
+| `neutrino-hub`    | 一台常开的机器：Linux 上任何网络形态，或服务器形态的 macOS、Windows | root，面板加几个服务；Windows 上是 SYSTEM 服务 | 路由、代理、DNS、外部访问、AI 网关、设备发现、客户端和凭据的管理 |
+| `neutrino-agent`  | 每台要管的 Linux、Windows 或 macOS 机器 | root，Windows 上是 SYSTEM 服务，无窗口 | 按各系统所能，在这台机器上运行文件共享、Gitea、Podman、ZFS、VS Code、code-server、CloudCLI 和 RustDesk 主机 |
 | `neutrino-client` | 每个人的 Linux、Windows 或 macOS 电脑 | 这个人的普通账户     | 一个托盘和一个窗口：打开网页、转发端口、切换 AI 工具、挂载共享、连桌面 |
 
 ## 安全
 
 - 面板走明文 HTTP，只在局域网或虚拟网里应答：口令挡不住在线路上监听的人，所以面板只放在自己的网络里。口令挡得住猜：免费试 5 次，之后每次失败按 30 秒、60 秒、5 分钟、1 小时、1 天递增锁定登录；fail2ban 用同一套阶梯封禁狂敲 SSH 的地址。
-- 中枢与被控端、客户端之间全部走 TLS。加入链接 5 分钟内有效、只能用一次，通道按链接里的指纹锁定中枢的证书，加入过的机器只认它加入的那台中枢。
+- 中枢与被控端、客户端之间全部走 TLS。加入链接 30 分钟内有效、只能用一次，通道按链接里的指纹锁定中枢的证书，加入过的机器只认它加入的那台中枢。
 - SSH 密钥、登录信息和令牌保存在保险库里，用初始化时设定的主口令封存；面板只显示名字和类型。
 - 客户端以普通账户运行，`nclient` 拒绝 root。中枢只在安装被控端时通过 SSH 登录设备，之后不再主动连接设备。
 
@@ -258,7 +300,7 @@ sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /
 | 目录              | 内容                                                                                                                   |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `hub/`            | `neutrino_hub` 包：`modules/` 每个功能一个模块，`web/` FastAPI 面板，`cli/` 全部 `nhub` 子命令，`frontend/` React 源码 |
-| `agent/`          | `neutrino_agent` 包：纯标准库，Linux，root，无窗口                                                                     |
+| `agent/`          | `neutrino_agent` 包：纯标准库，Linux、Windows、macOS，root，无窗口                                                                     |
 | `client/desktop/` | `neutrino_client` 包：托盘和窗口，`packaging/` 里是 deb、rpm、msi、pkg 的构建脚本                                      |
 
 </details>

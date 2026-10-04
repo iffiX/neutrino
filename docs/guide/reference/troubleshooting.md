@@ -68,6 +68,7 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 | EasyTier reads **No machine has joined yet.**                                                  | the other machine's network name or secret differs                                             | copy the command again with **Copy with the secret**                                                                   |
 | an EasyTier peer joins and the LAN is unreachable                                              | the subnet is not exported                                                                     | add it under **Exported networks** and apply                                                                           |
 | the box is silent on the overlay with either engine                                            | the overlay is not in **Exposure**                                                             | tick it under **Exposure** on **Network**                                                                              |
+| the **Relay** card's **Status** reads anything but **Connected**                               | the hub's SSH forward to your server is down, or the public port is closed                     | read the status table on [Relay](../hub/relay.md#read-the-status); each status there has its fix                       |
 
 ## A terminal closes
 
@@ -80,60 +81,75 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 
 ## The client does not connect
 
-| Symptom                 | Cause                                                                  | Fix                                                                    |
-| ----------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `hub_unreachable`       | port 8443 on the hub is not reachable from this computer               | check the network or the overlay, and **Exposure** on the hub          |
-| `enroll_refused`        | the link expired or was used                                           | create a fresh link on **Clients**; a link is valid for thirty minutes |
-| `link_unreadable`       | the paste was cut short                                                | copy the whole line from the hub                                       |
-| `link_not_for_client`   | the link is from **Devices**                                           | create one on **Clients**                                              |
-| `client_disabled`       | the client is switched off on **Clients**                              | select **Enable** on its row there                                     |
-| `permission_denied`     | the client's permission leaves out that kind of entry, or that machine | widen the client's permission on **Clients**                           |
-| `gui_webkitgtk_missing` | WebKitGTK is absent on Linux                                           | install the packages the message names, then start the client again    |
-| `gui_webview2_missing`  | WebView2 is absent on Windows                                          | install the runtime the message names, then start the client again     |
-| `root_refused`          | the client was started with `sudo`                                     | start it from your own account                                         |
+| Symptom                 | Cause                                                                  | Fix                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `hub_unreachable`       | port 8443 on the hub is not reachable from this computer               | check the network, the way in on **Access** (NetBird, EasyTier or the relay), and **Exposure** on the hub   |
+| `ticket_spent`          | the link expired or was used                                           | leave the hub in the client and join with a fresh link from **Clients**; a link is valid for thirty minutes |
+| `admission_paused`      | the hub paused new joins after too many failed ones                    | wait; the client joins again after the seconds the code names                                               |
+| `link_unreadable`       | the paste was cut short                                                | copy the whole line from the hub                                                                            |
+| `link_not_for_client`   | the link is from **Devices**                                           | create one on **Clients**                                                                                   |
+| `client_disabled`       | the client is switched off on **Clients**                              | select **Enable** on its row there                                                                          |
+| `permission_denied`     | the client's permission leaves out that kind of entry, or that machine | widen the client's permission on **Clients**                                                                |
+| `gui_webkitgtk_missing` | WebKitGTK is absent on Linux                                           | install the packages the message names, then start the client again                                         |
+| `gui_webview2_missing`  | WebView2 is absent on Windows                                          | install the runtime the message names, then start the client again                                          |
+| `root_refused`          | the client was started with `sudo`                                     | start it from your own account                                                                              |
+
+## A client page cannot reach its service
+
+The client opens every page through the hub, so these codes come from the hub or from the agent of the machine that provides the entry. The client shows the code on the entry's row.
+
+| Symptom                             | Cause                                                                                     | Fix                                                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `connect_failed` with `refused`     | nothing listens on the service's port on that machine                                     | start the service, or the module, on that machine                                            |
+| `connect_failed` with `timeout`     | the service did not respond within 10 seconds                                             | check that the machine and the service are up                                                |
+| `connect_failed` with `unreachable` | the hub has no route to a service declared by hand on **Services**                        | check the declared address, and that the hub's LAN reaches it                                |
+| `agent_offline`                     | the machine that provides the entry is not connected to the hub                           | on the machine, run `sudo nagent status`, then `sudo nagent start` if the service is stopped |
+| `port_not_published`                | the machine stopped publishing the port: the container, the instance or the share stopped | start it again on the **Modules** page                                                       |
+| `connect_limit`                     | the client has 256 connections open through the hub                                       | close forwards or programs the client does not need                                          |
 
 ## A share does not mount on a computer
 
-| Symptom                                  | Cause                                                              | Fix                                                         |
-| ---------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `mountpoint_invalid`                     | the path is outside your home                                      | give a folder under your home, such as `~/nas/media`        |
-| `mountpoint_not_drive_letter`            | Windows mounts a share at a drive letter                           | pick an unused letter, such as `N:`                         |
-| `mountpoint_not_empty`                   | the folder holds files                                             | pick an empty folder                                        |
-| `mount_not_authorized`                   | the polkit prompt was dismissed, or you are not at the console     | select **Mount** again and confirm the prompt               |
-| `mount_tooling_missing`                  | the root helper or `mount.cifs` is absent                          | reinstall the client package, which depends on `cifs-utils` |
-| `credentials_missing`                    | the saved credentials file is gone                                 | select **Config** and type the password again               |
-| `share_login_rejected`                   | the share rejected the username or the password                    | select **Config** and enter both again                      |
-| the row is greyed, **not reachable now** | the serving machine is off, or this network is not in **Exposure** | bring the machine back, or expose the network on the hub    |
+| Symptom                                  | Cause                                                                                                  | Fix                                                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `mountpoint_invalid`                     | the path is outside your home                                                                          | give a folder under your home, such as `~/nas/media`                                                                  |
+| `mountpoint_not_drive_letter`            | Windows mounts a share at a drive letter                                                               | pick an unused letter, such as `N:`                                                                                   |
+| `mountpoint_not_empty`                   | the folder holds files                                                                                 | pick an empty folder                                                                                                  |
+| `mount_not_authorized`                   | the polkit prompt was dismissed, or you are not at the console                                         | select **Mount** again and confirm the prompt                                                                         |
+| `mount_tooling_missing`                  | the root helper or `mount.cifs` is absent                                                              | reinstall the client package, which depends on `cifs-utils`                                                           |
+| `credentials_missing`                    | the saved credentials file is gone                                                                     | select **Configure** and type the password again                                                                      |
+| `share_login_rejected`                   | the share rejected the username or the password                                                        | select **Configure** and enter both again                                                                             |
+| `files_adapter_unavailable` on Windows   | the `NeutrinoClientFiles` service is missing, stopped or failing, so the files adapter could not start | read the words after the code, run `sc query NeutrinoClientFiles`, and reinstall the client if the service is missing |
+| the row is greyed, **Not reachable now** | the serving machine is off or not connected to the hub                                                 | bring the machine back                                                                                                |
 
 ## A share is unreachable on a phone
 
 The system's Files app shows the Android app's shares, and reports a failure as the code's sentence.
 
-| Symptom                                                               | Cause                                                                             | Fix                                                                                                                                              |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `share_unreachable`, with the phone away from the LAN                 | the phone's virtual network is off                                                | in the app, select the **Virtual network** chip on the hub's row and wait for it to read **on**                                                  |
-| `share_unreachable` while the virtual network is **on**               | the overlay is not in **Exposure**, or the overlay does not route the share's LAN | tick the overlay under **Exposure** on **Network**; for EasyTier add the LAN under **Exported networks**, for NetBird add a route and its policy |
-| Files reads **Give this share's password on the Files screen first.** | the share has no login on this phone yet                                          | open the share on the app's Files screen, enter the username and password, and select **Connect**                                                |
+| Symptom                                                               | Cause                                                                | Fix                                                                                                            |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `share_unreachable`, with the hub's row not **Connected**             | the phone cannot reach the hub's port 8443                           | bring the hub's row to **Connected** through any way in on **Access**: the LAN, NetBird, EasyTier or the relay |
+| `share_unreachable` while the hub's row reads **Connected**           | the machine that serves the share is off or not connected to the hub | bring the machine back                                                                                         |
+| Files reads **Give this share's password on the Files screen first.** | the share has no login on this phone yet                             | open the share on the app's Files screen, enter the username and password, and select **Connect**              |
 
 ## An AI tool ignores the gateway
 
-| Symptom                                               | Cause                                                       | Fix                                                                                                                    |
-| ----------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `no_endpoint`                                         | the hub has issued this client no key                       | on the hub's **AI** page, revoke the client's key so a new one is issued, or join the client again                     |
-| the tools keep their own configuration after **Save** | **Save** in **Config** keeps the choices and points nothing | switch on **The AI tools use this gateway** on the entry's row; `nclient service ai show` prints where the tools point |
-| the panel reads `gateway_unreachable`                 | the gateway process is down                                 | run `systemctl status neutrino_hub_cliproxyapi` on the box                                                             |
-| a tool reaches nothing after the port was changed     | the endpoint on the machine names the old port              | apply the entry again on each client, and paste the new endpoint into tools configured by hand                         |
+| Symptom                                               | Cause                                                                                            | Fix                                                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `no_endpoint`                                         | the hub has issued this client no key                                                            | on the hub's **AI** page, revoke the client's key so a new one is issued, or join the client again                     |
+| the tools keep their own configuration after **Save** | **Save** in **Config** keeps the choices and points nothing                                      | switch on **The AI tools use this gateway** on the entry's row; `nclient service ai show` prints where the tools point |
+| the panel reads `gateway_unreachable`                 | the gateway process is down                                                                      | run `systemctl status neutrino_hub_cliproxyapi` on the box                                                             |
+| a tool reaches nothing                                | the tools point at the client's forward on `127.0.0.1`, which listens only while the client runs | start the client, or keep it running in the tray                                                                       |
 
 ## Where the logs are
 
-| What                           | Where                                                                                                                                                                          |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| the setup run                  | `/var/log/neutrino/setup.log` on the box                                                                                                                                       |
-| the hub's own logs             | `/var/log/neutrino/` on the box                                                                                                                                                |
-| a hub unit                     | `journalctl -u neutrino_hub_web -n 200`, and likewise `neutrino_hub_xray`, `neutrino_hub_dnsmasq`, `neutrino_hub_cliproxyapi`, `neutrino_hub_netbird`, `neutrino_hub_easytier` |
-| a hub update                   | `journalctl -u neutrino_hub_update` on the box                                                                                                                                 |
-| the agent on Linux             | `journalctl -u neutrino_agent -n 200` on that machine                                                                                                                          |
-| the agent on Windows           | `%ProgramData%\Neutrino\agent\agent.log`                                                                                                                                       |
-| the agent on macOS             | `/Library/Logs/neutrino_agent.log`                                                                                                                                             |
-| the AI gateway, from the panel | **Journal** on the **AI** page                                                                                                                                                 |
-| what a render produces         | `sudo nhub apply --dry-run` on the box                                                                                                                                         |
+| What                           | Where                                                                                                                                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the setup run                  | `/var/log/neutrino/setup.log` on the box                                                                                                                                                             |
+| the hub's own logs             | `/var/log/neutrino/` on the box                                                                                                                                                                      |
+| a hub unit                     | `journalctl -u neutrino_hub_web -n 200`, and likewise `neutrino_hub_xray`, `neutrino_hub_dnsmasq`, `neutrino_hub_cliproxyapi`, `neutrino_hub_netbird`, `neutrino_hub_easytier`, `neutrino_hub_relay` |
+| a hub update                   | `journalctl -u neutrino_hub_update` on the box                                                                                                                                                       |
+| the agent on Linux             | `journalctl -u neutrino_agent -n 200` on that machine                                                                                                                                                |
+| the agent on Windows           | `C:\ProgramData\Neutrino\agent\log\agent.log`                                                                                                                                                        |
+| the agent on macOS             | `/Library/Logs/Neutrino/agent/agent.log`                                                                                                                                                             |
+| the AI gateway, from the panel | **Journal** on the **AI** page                                                                                                                                                                       |
+| what a render produces         | `sudo nhub apply --dry-run` on the box                                                                                                                                                               |

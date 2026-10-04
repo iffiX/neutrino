@@ -7,9 +7,9 @@
 **English** · [中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
-[![Hub: Linux](https://img.shields.io/badge/hub-Linux%20x86--64%20%C2%B7%20ARM64-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
-[![Agent: Linux](https://img.shields.io/badge/agent-Linux-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
+[![Version](https://img.shields.io/badge/version-0.5.0-0a0e14?labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![Hub: Linux · macOS · Windows](https://img.shields.io/badge/hub-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
+[![Agent: Linux · Windows · macOS](https://img.shields.io/badge/agent-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
 [![Client: Linux · Windows · macOS](https://img.shields.io/badge/client-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-0a0e14?labelColor=0a0e14&color=a78bfa)](#what-runs-where)
 
 A neutrino passes through walls without touching them.<br/>
@@ -21,14 +21,14 @@ The wall is still there. It just stops being yours.
 
 ## What it does
 
-In one line: the hub manages your machines and publishes the services they provide; a client on your LAN, or one that reaches the hub from outside through the overlay, gets the same services.
+In one line: the hub manages your machines and publishes the services they provide; a client on your LAN, or one that reaches the hub from outside through NetBird, EasyTier or a relay server of your own, gets the same services.
 
-Each part has its place. The hub runs on one always-on Linux box and handles the network, the overlay, the proxy and the AI gateway. The agent runs on every Linux machine you manage and provides that machine's shares, git server, containers, storage and desktop. The client runs on every computer you sit at and turns those services into buttons in a window.
+Each part has its place. The hub runs on one always-on box and handles the network, the ways in from outside, the proxy and the AI gateway: on Linux in every network mode, or on a Mac or a Windows PC in server mode. The agent runs on every Linux, Windows or macOS machine you manage and provides that machine's shares, git server, containers, storage and desktop. The client runs on every computer you sit at and turns those services into buttons in a window. Every button reaches its service through the hub, so a client needs only the hub's port 8443.
 
 | What you can do                                                                                                           | Where           |
 | ------------------------------------------------------------------------------------------------------------------------- | --------------- |
 | Pick the box's shape (server, side gateway, router), give each interface a role, choose the networks the panel listens on | **Network**     |
-| Join a NetBird network or create an EasyTier one, and reach the LAN through the box from outside                          | **Access**      |
+| Reach the hub from outside through NetBird, EasyTier, or a relay on a server you own                                     | **Access**      |
 | Import exit nodes from `ss://` and `vless://` links, open SOCKS ports, split traffic by device and destination            | **Proxy**       |
 | Put API providers and subscription accounts behind one endpoint, with a key per client                                    | **AI**          |
 | Enroll a machine by link or over SSH, read its vitals, reboot or wake it, open its shared desktop                         | **Devices**     |
@@ -46,20 +46,40 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 | Debian family   | Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit (bookworm and newer) | x86-64, ARM64 | `.deb`         |
 | Fedora and RHEL | Fedora 41 and newer; RHEL 9 family (AlmaLinux, Rocky) with EPEL                          | x86-64, ARM64 | `.rpm`         |
 | Arch family     | Arch, EndeavourOS, Manjaro                                                               | x86-64        | `.pkg.tar.zst` |
+| Windows         | Windows 10 version 1809 and newer, Windows 11; server mode                               | x86-64        | `.msi`         |
+| macOS           | macOS 12.3 and newer; server mode                                                        | ARM64, x86-64 | `.pkg`         |
+
+On Linux the hub runs in every network mode. On macOS and Windows it runs in server mode.
 
 | Agent           | Versions                                                            | Architectures | Package |
 | --------------- | ------------------------------------------------------------------- | ------------- | ------- |
 | Debian family   | Debian 12 and newer, Ubuntu 22.04 and newer, Raspberry Pi OS 64-bit | x86-64, ARM64 | `.deb`  |
 | Fedora and RHEL | Fedora 41 and newer; RHEL 9 family                                  | x86-64, ARM64 | `.rpm`  |
-
-| Client          | Versions                                                            | Architectures | Package |
-| --------------- | ------------------------------------------------------------------- | ------------- | ------- |
-| Debian family   | Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session | x86-64, ARM64 | `.deb`  |
-| Fedora and RHEL | RHEL 9 family (AlmaLinux, Rocky), Fedora 41 and newer, with a desktop session | x86-64, ARM64 | `.rpm`  |
 | Windows         | Windows 10 version 1809 and newer, Windows 11                       | x86-64        | `.msi`  |
-| macOS           | macOS 12.3 and newer, Apple silicon                                 | ARM64         | `.pkg`  |
+| macOS           | macOS 12.3 and newer                                                | ARM64, x86-64 | `.pkg`  |
+
+| Client          | Versions                                                                      | Architectures | Package |
+| --------------- | ----------------------------------------------------------------------------- | ------------- | ------- |
+| Debian family   | Debian 12 and newer, Ubuntu 22.04 and newer, with a desktop session           | x86-64, ARM64 | `.deb`  |
+| Fedora and RHEL | RHEL 9 family (AlmaLinux, Rocky), Fedora 41 and newer, with a desktop session | x86-64, ARM64 | `.rpm`  |
+| Windows         | Windows 10 version 1809 and newer, Windows 11                                 | x86-64        | `.msi`  |
+| macOS           | macOS 12.3 and newer                                                          | ARM64, x86-64 | `.pkg`  |
+
+The mainland edition publishes the `.deb`, the Windows `.msi` and the Apple silicon `.pkg` of each package, and the Android apk.
 
 ## Install
+
+Every release comes in two editions from one source. The full edition is on [GitHub](https://github.com/iffiX/neutrino/releases). The mainland edition is on [Gitee](https://gitee.com/iffiX/neutrino): it has every feature except the proxy and NetBird, and fetches its downloads from mirrors in mainland China. Each edition updates from its own release page. To install the mainland edition with one command:
+
+```bash
+curl -fsSL https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.sh | sh
+```
+
+```powershell
+irm https://gitee.com/iffiX/neutrino/raw/main/packaging/install/install.ps1 | iex
+```
+
+The commands below install the full edition. In each file name, `<version>` stands for the version on the release page.
 
 > [!WARNING]
 > Do not install with `dpkg -i` or `rpm -i`: they install none of the dependencies. If you already did, run `sudo apt -f install` (Debian family) or `sudo dnf install <the packages it named>` (Fedora family) to finish the install.
@@ -67,7 +87,7 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 <details><summary><b>Hub · Debian, Ubuntu, Raspberry Pi OS</b></summary>
 
 ```bash
-sudo apt install ./neutrino-hub_0.3.0_amd64.deb
+sudo apt install ./neutrino-hub_<version>_amd64.deb
 sudo nhub setup
 ```
 
@@ -76,7 +96,7 @@ sudo nhub setup
 <details><summary><b>Hub · Fedora, RHEL, AlmaLinux, Rocky</b></summary>
 
 ```bash
-sudo dnf install ./neutrino-hub-0.3.0-1.x86_64.rpm
+sudo dnf install ./neutrino-hub-<version>-1.x86_64.rpm
 sudo nhub setup
 ```
 
@@ -85,40 +105,58 @@ On RHEL, AlmaLinux and Rocky, run `sudo dnf install -y epel-release` first: fail
 <details><summary><b>Hub · Arch, EndeavourOS, Manjaro</b></summary>
 
 ```bash
-sudo pacman -U neutrino-hub-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U neutrino-hub-<version>-1-x86_64.pkg.tar.zst
 sudo nhub setup
 ```
 
 Setup runs the same six-screen wizard, and the panel is at `http://<hub>:8080` afterwards.
 </details>
+<details><summary><b>Hub · macOS and Windows, server mode</b></summary>
+
+```bash
+sudo installer -pkg neutrino-hub-<version>-macos-arm64.pkg -target /   # macOS on Apple silicon
+msiexec /i neutrino-hub-<version>-windows-amd64.msi                    # Windows
+```
+
+On an Intel Mac the file ends in `macos-amd64.pkg`. The installer registers the hub's one service; **Neutrino Hub** in the Start menu or in `/Applications` then opens the setup wizard in the browser.
+</details>
 <details><summary><b>Agent · Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL</b></summary>
 
 ```bash
-sudo apt install ./neutrino-agent_0.3.0_amd64.deb      # Debian family
-sudo dnf install ./neutrino-agent-0.3.0-1.x86_64.rpm   # Fedora family
+sudo apt install ./neutrino-agent_<version>_amd64.deb      # Debian family
+sudo dnf install ./neutrino-agent-<version>-1.x86_64.rpm   # Fedora family
 sudo nagent join '<link>'
 ```
 
-`<link>` is what **Add by link** on the **Devices** page shows; it is valid for five minutes, and the machine then appears under **Managed devices**.
+`<link>` is what **Add by link** on the **Devices** page shows; it is valid for thirty minutes, and the machine then appears under **Managed devices**.
+</details>
+<details><summary><b>Agent · Windows 10 and 11, macOS</b></summary>
+
+```bash
+msiexec /i neutrino-agent-<version>-windows-amd64.msi                    # Windows, as administrator
+sudo installer -pkg neutrino-agent-<version>-macos-arm64.pkg -target /  # macOS on Apple silicon
+```
+
+On an Intel Mac the file ends in `macos-amd64.pkg`. Then run `nagent join '<link>'` with the link from **Add by link**, as administrator on Windows and with `sudo` on macOS.
 </details>
 <details><summary><b>Client · Debian, Ubuntu, Fedora, RHEL</b></summary>
 
 ```bash
-sudo apt install ./neutrino-client_0.3.0_amd64.deb      # Debian family
-sudo dnf install ./neutrino-client-0.3.0-1.x86_64.rpm   # Fedora family
+sudo apt install ./neutrino-client_<version>_amd64.deb      # Debian family
+sudo dnf install ./neutrino-client-<version>-1.x86_64.rpm   # Fedora family
 nclient gui
 ```
 
 Run the client from your own account, then paste the link from the **Clients** page into the window.
 </details>
-<details><summary><b>Client · Windows 10 and 11, macOS on Apple silicon</b></summary>
+<details><summary><b>Client · Windows 10 and 11, macOS</b></summary>
 
 ```bash
-msiexec /i neutrino-client-0.3.0-windows-amd64.msi                    # Windows
-sudo installer -pkg neutrino-client-0.3.0-macos-arm64.pkg -target /  # macOS
+msiexec /i neutrino-client-<version>-windows-amd64.msi                    # Windows
+sudo installer -pkg neutrino-client-<version>-macos-arm64.pkg -target /  # macOS
 ```
 
-Opening the `.msi` from Explorer, or the `.pkg` from its context menu with **Open**, runs the same installer. The Windows installer offers to put `nclient` on `PATH`. The client then sits in the taskbar corner on Windows or in the menu bar on macOS.
+On an Intel Mac the file ends in `macos-amd64.pkg`. Opening the `.msi` from Explorer, or the `.pkg` from its context menu with **Open**, runs the same installer. The Windows installer offers to put `nclient` on `PATH`. The client then sits in the taskbar corner on Windows or in the menu bar on macOS.
 </details>
 
 Every file is on the [releases page](https://github.com/iffiX/neutrino/releases), and the site's install pages have the screenshots: [the hub](https://neutrino.beyond-infinity.top/hub/install.html), [the agent](https://neutrino.beyond-infinity.top/agent/install.html) and [the client](https://neutrino.beyond-infinity.top/client/install.html).
@@ -131,10 +169,10 @@ Every file is on the [releases page](https://github.com/iffiX/neutrino/releases)
 
 | Client panel    | What the hub publishes         | Where the entry comes from                        | The button            |
 | --------------- | ------------------------------ | ------------------------------------------------- | --------------------- |
-| Web             | a link                         | the Gitea module, or declared by hand             | **Open**              |
+| Web             | a link                         | Gitea, VS Code, code-server, CloudCLI, or declared by hand | **Open**              |
 | Ports           | a TCP port                     | a container's published port, or declared by hand | **Connect**           |
-| AI              | the gateway endpoint and a key | the AI gateway on the hub                         | **Config**, **Apply** |
-| Files           | an SMB share                   | the Samba module, or declared by hand             | **Config**, **Mount** |
+| AI              | the gateway endpoint and a key | the AI gateway on the hub                         | **Configure**, **The AI tools use this gateway** |
+| Files           | an SMB share                   | the Samba module, or declared by hand             | **Configure**, **Mount** |
 | Remote desktops | a desktop the machine shares   | `sudo nagent rdp start` on that machine           | **Connect**           |
 
 <table>
@@ -187,11 +225,11 @@ The panel has a dark palette and a light one. The choice is in Settings, and `Sy
 
 | Package           | Runs on                             | Runs as                            | Does                                                                                           |
 | ----------------- | ----------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `neutrino-hub`    | one Linux box, x86-64 or ARM64      | root, the panel and its units      | the router (xray, nftables, dnsmasq), the AI gateway, the overlay, devices, clients, the vault |
-| `neutrino-agent`  | every Linux machine the hub manages | root, headless, listens on nothing | Samba, Gitea, Podman, ZFS and the RustDesk host on that machine                                |
+| `neutrino-hub`    | one box: Linux in every network mode, or macOS or Windows in server mode | root, the panel and its units; a SYSTEM service on Windows | the router (xray, nftables, dnsmasq), the AI gateway, the ways in, devices, clients, the vault |
+| `neutrino-agent`  | every Linux, Windows or macOS machine the hub manages | root, a SYSTEM service on Windows, headless, listens on nothing | the file share, Gitea, Podman, ZFS, VS Code, code-server, CloudCLI and the RustDesk host, as each system allows |
 | `neutrino-client` | Linux, Windows and macOS            | a person's session                 | the tray and the window: open, forward, mount, view a desktop, switch the AI tools             |
 
-The three packages share one version number, and the panel marks an agent or a client on another version for upgrade. The hub's own machine runs an agent too, as one device among the others. Every module runs under an agent on the machine that has the disk or the GPU, so the hub box stays small.
+The three packages share one version number. What has to match between them is the protocol number each build speaks, and an agent updates itself to its hub's version. The hub's own machine runs an agent too, as one device among the others. Every module runs under an agent on the machine that has the disk or the GPU, so the hub box stays small.
 
 ## Security
 
@@ -199,7 +237,7 @@ The three packages share one version number, and the panel marks an agent or a c
 
 - The hub and the agent run as root; the client runs as the person, and its one privileged step is a polkit helper that mounts a share.
 - The panel is plain HTTP, for the LAN and the overlay: the password is not protected from someone reading the wire, so keep the panel on a network you own. It is protected from guessing: five free attempts, then each failure locks login for 30 s, 60 s, 5 min, an hour, a day; and fail2ban bans an address that hammers SSH on the same ladder.
-- Everything between the hub and its agents and clients is TLS. An enrollment link is valid for five minutes and is consumed once, and the channel pins the hub's certificate by the fingerprint inside that link, so a machine that joined speaks only to the hub it joined.
+- Everything between the hub and its agents and clients is TLS. An enrollment link is valid for thirty minutes and is consumed once, and the channel pins the hub's certificate by the fingerprint inside that link, so a machine that joined speaks only to the hub it joined.
 - The vault is sealed under the passphrase set during setup.
 
 ## Why I built it

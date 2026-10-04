@@ -225,16 +225,23 @@ def test_a_mac_takes_tun2socks_under_its_plain_name(tmp_path, fetched, machine):
     assert [path.name for path in written] == hub_assets.carried_names("darwin")
 
 
-@pytest.mark.feature("proxy")
-def test_the_tun2socks_pins_are_the_tun_modules_own():
-    from neutrino_hub.modules.tun import constants as tun
+def test_the_tun2socks_pins_are_the_packaging_s_own():
+    from shared import constants
 
-    for (os_name, machine), (asset, digest) in tun.TUN_ASSETS.items():
+    for (os_name, machine), (
+        asset,
+        digest,
+    ) in constants.PACKAGING_TUN2SOCKS_ASSETS.items():
         assert hub_assets.pinned("tun2socks", os_name, machine) == (
-            tun.TUN_RELEASE_URL.format(version=tun.TUN_VERSION, asset=asset),
+            constants.PACKAGING_TUN2SOCKS_RELEASE_URL.format(
+                version=constants.PACKAGING_TUN2SOCKS_VERSION, asset=asset
+            ),
             digest,
         )
-    assert sorted(tun.TUN_ASSETS) == [
+    assert hub_assets.pinned_version("tun2socks") == (
+        constants.PACKAGING_TUN2SOCKS_VERSION
+    )
+    assert sorted(constants.PACKAGING_TUN2SOCKS_ASSETS) == [
         ("darwin", "amd64"),
         ("darwin", "arm64"),
         ("windows", "amd64"),
@@ -302,3 +309,64 @@ def test_a_download_that_is_not_what_was_pinned_stops_the_build(monkeypatch):
         hub_assets.fetch("https://example.invalid/netbird.tar.gz", "0" * 64, "netbird")
 
     assert "not the pinned" in str(refused.value)
+
+
+@pytest.fixture
+def mainland_tree(tmp_path, monkeypatch):
+    """A hub tree holding the modules the mainland edition keeps, and not
+    xray, NetBird or the proxy TUN."""
+    for module in ("cliproxyapi", "easytier"):
+        directory = tmp_path / "hub" / "neutrino_hub" / "modules" / module
+        directory.mkdir(parents=True)
+        (directory / "constants.py").write_text("")
+    monkeypatch.setattr(hub_assets, "HUB_ROOT", tmp_path / "hub")
+
+
+@pytest.mark.parametrize("os_name", ["linux", "darwin", "windows"])
+def test_a_program_whose_module_the_tree_lacks_is_not_carried(
+    tmp_path, fetched, mainland_tree, os_name
+):
+    binaries = tmp_path / "bin"
+
+    written = hub_assets.stage_programs(binaries, os_name, "amd64")
+
+    names = sorted(path.name.removesuffix(".exe") for path in written)
+    assert names == sorted(
+        ["cli-proxy-api", "easytier-cli", "easytier-core"]
+        + (["wintun.dll"] if os_name == "windows" else [])
+    )
+    assert not any(
+        "Xray" in url or "netbird" in url or "tun2socks" in url for url in fetched
+    )
+    assert sorted(hub_assets.carried_names(os_name)) == sorted(
+        path.name for path in written
+    )
+
+
+def test_no_geodata_is_carried_without_the_xray_module(
+    tmp_path, fetched, mainland_tree
+):
+    assert hub_assets.stage_geodata(tmp_path / "geodata") == []
+    assert not (tmp_path / "geodata").exists()
+    assert fetched == []
+
+
+def test_a_tree_without_the_tun_module_still_stages_the_client_s_tun2socks(
+    tmp_path, fetched, mainland_tree
+):
+    written = hub_assets.stage_program(tmp_path, "tun2socks", "windows", "amd64")
+
+    assert [path.name for path in written] == ["tun2socks.exe"]
+    assert hub_assets.pinned_version("tun2socks")
+    assert "tun2socks.exe" not in hub_assets.carried_names("windows")
+    assert hub_assets.stamped_versions() == {}
+
+
+@pytest.mark.feature("proxy")
+def test_the_full_tree_stamps_the_tun2socks_version_the_build_pins():
+    from shared.constants import PACKAGING_TUN2SOCKS_VERSION
+
+    assert hub_assets.stamped_versions() == {"tun2socks": PACKAGING_TUN2SOCKS_VERSION}
+    assert "tun2socks.exe" in hub_assets.carried_names("windows")
+    assert "tun2socks" in hub_assets.carried_names("darwin")
+    assert "tun2socks" not in hub_assets.carried_names("linux")

@@ -24,9 +24,9 @@ import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from neutrino_hub import HUB_CARRIED_VERSIONS
 from neutrino_hub.modules.router.network_resolvers import resolver_refusal
 from neutrino_hub.modules.router.routes import rendered_network_resolvers
-from neutrino_hub.modules.tun.constants import TUN_VERSION
 from neutrino_hub.modules.xray import geodata
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.apply_part import XrayApplyComponent
@@ -91,7 +91,7 @@ PROXY_ABOUT_COMPONENTS = (
     ),
     (
         "tun2socks",
-        TUN_VERSION,
+        HUB_CARRIED_VERSIONS.get("tun2socks", ""),
         "MIT",
         "https://github.com/xjasonlyu/tun2socks/tree/v{}",
         (PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS),

@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
 
 
 def main() -> int:
@@ -24,10 +26,12 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument(
         "--output-dir", default="dist", help="the directory holding the packages"
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     if not output_dir.is_dir():
         raise SystemExit(f"{output_dir} is not a directory of packages")

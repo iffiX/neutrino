@@ -13,7 +13,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from shared.constants import PACKAGING_ARCHITECTURE_NAMES
+from shared.constants import PACKAGING_ARCHITECTURE_NAMES, PACKAGING_EDITION_ENV
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -72,6 +72,7 @@ def build_in_container(
     *,
     agent_package_url_base: str = "",
     agent_packages: str = "",
+    edition: str = "intl",
 ) -> None:
     """Run one packaging build inside a container of its own family.
 
@@ -89,6 +90,7 @@ def build_in_container(
         agent_packages: A directory of agent packages already built, mounted
             into the container for the hub's build to seed from; empty has
             the hub's build make its own machine's.
+        edition: The edition being built, handed in as ``NEUTRINO_EDITION``.
 
     Raises:
         SystemExit: If the architecture is not one the packages are published
@@ -108,11 +110,9 @@ def build_in_container(
             "and compiled extensions, so both are built on their baseline "
             "distribution"
         )
-    stamp = (
-        ["-e", f"{AGENT_PACKAGE_URL_BASE_ENV}={agent_package_url_base}"]
-        if agent_package_url_base
-        else []
-    )
+    stamp = ["-e", f"{PACKAGING_EDITION_ENV}={edition}"]
+    if agent_package_url_base:
+        stamp += ["-e", f"{AGENT_PACKAGE_URL_BASE_ENV}={agent_package_url_base}"]
     if agent_packages:
         stamp += [
             "-v",

@@ -73,6 +73,19 @@ def test_the_client_tree_is_staged_with_its_version_stamped_in(tmp_path):
     assert 'CLIENT_VERSION = "9.9.9"' in (staged / "_version.py").read_text()
 
 
+@pytest.mark.parametrize("edition", ["intl", "cn"])
+def test_the_edition_the_build_was_asked_for_is_stamped_beside_it(
+    tmp_path, monkeypatch, edition
+):
+    monkeypatch.setenv("NEUTRINO_EDITION", edition)
+    namespace = {}
+
+    staged = payload.stage_client_tree(tmp_path / "site-packages", "9.9.9")
+
+    exec((staged / "_version.py").read_text(), namespace)  # noqa: S102
+    assert namespace["EDITION"] == edition
+
+
 def test_the_versions_of_what_the_package_carries_are_stamped_beside_it(tmp_path):
     import bundled
     from shared import rustdesk_assets
@@ -103,7 +116,7 @@ def test_the_windows_tree_also_stamps_the_tun2socks_it_carries(tmp_path):
     stamped = {}
     exec((staged / "_version.py").read_text(), stamped)
     assert stamped["CLIENT_CARRIED_VERSIONS"]["tun2socks"] == (
-        bundled.TUN2SOCKS_VERSION
+        bundled.hub_assets.pinned_version("tun2socks")
     )
 
 

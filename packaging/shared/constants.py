@@ -77,9 +77,56 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "packaging/build/build_core_netbird.py",
 )
 
+# tun2socks, which the hub's macOS and Windows packages carry for the
+# proxy's TUN and the client's Windows package carries for its files adapter
+# in both editions: the release, the asset each system and machine takes and
+# its hash, the program's name inside each archive, and its licence under
+# licenses/. A hub learns the version only from its _version.py stamp.
+PACKAGING_TUN2SOCKS_VERSION = "2.7.0"
+PACKAGING_TUN2SOCKS_RELEASE_URL = (
+    "https://github.com/xjasonlyu/tun2socks/releases/download/v{version}/{asset}"
+)
+PACKAGING_TUN2SOCKS_ASSETS = {
+    ("darwin", "amd64"): (
+        "tun2socks-darwin-amd64.zip",
+        "6e654da8bab9ca1645862f0e251a69980e0966680713011feea7b1e5901b2a95",  # scan: allow
+    ),
+    ("darwin", "arm64"): (
+        "tun2socks-darwin-arm64.zip",
+        "7c5ebfe2ffb60ecf6e958cc5bbf3e06e74b8b33575ffbb4ba4f6f785a647f1ad",  # scan: allow
+    ),
+    ("windows", "amd64"): (
+        "tun2socks-windows-amd64.zip",
+        "c5d46e9452f6c9cc7c15ab9158d6d6a0169ceecd6bca019ce476b49337d2be43",  # scan: allow
+    ),
+}
+PACKAGING_TUN2SOCKS_ASSET_MEMBER = "tun2socks-{os_name}-{machine}"
+PACKAGING_TUN2SOCKS_LICENSE = "tun2socks.txt"
+
 # The line naming the edition in each one-command install script, which the
 # mainland source tree stamps `cn`.
 PACKAGING_INSTALL_EDITION_LINES = {
     "packaging/install/install.sh": 'EDITION="{edition}"',
     "packaging/install/install.ps1": "$script:NeutrinoEdition = '{edition}'",
 }
+
+# The variable a build in a container reads its edition from.
+PACKAGING_EDITION_ENV = "NEUTRINO_EDITION"
+
+# The mainland release's repository on Gitee, where its API is, where the
+# tree is pushed, and the SSH host key gitee.com publishes, which the push
+# is checked against.
+PACKAGING_GITEE_REPOSITORY = "iffiX/neutrino"
+PACKAGING_GITEE_API = "https://gitee.com/api/v5"
+PACKAGING_GITEE_PUSH_URL = "git@gitee.com:iffiX/neutrino.git"
+PACKAGING_GITEE_SSH_HOST_KEY = (
+    "gitee.com ssh-ed25519 "
+    "AAAAC3NzaC1lZDI1NTE5AAAAIEKxHSJ7084RmkJ4YdEi5tngynE8aZe2uEoVVsB/OvYN"  # scan: allow
+)
+
+# Gitee's limits in bytes: one release attachment, all attachments of the
+# repository, one file in the repository, and the repository's git data.
+PACKAGING_GITEE_ATTACHMENT_BYTES_MAX = 100_000_000
+PACKAGING_GITEE_ATTACHMENTS_BYTES_MAX = 1_000_000_000
+PACKAGING_GITEE_FILE_BYTES_MAX = 50_000_000
+PACKAGING_GITEE_REPOSITORY_BYTES_MAX = 500_000_000

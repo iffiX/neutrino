@@ -4,7 +4,7 @@ title: Modules
 
 # Modules
 
-A module is one piece of server software that the hub installs, runs and configures on a managed machine. The **Modules** page drives the modules of one machine at a time.
+A module is one piece of server software on a managed machine: you install it there from its publisher, under the publisher's terms, and the agent runs and configures it as the hub orders. The **Modules** page drives the modules of one machine at a time.
 
 Before you start, the machine runs the agent and is online. While its agent is offline, the page reads **The agent is offline** and every button is unavailable.
 
@@ -13,7 +13,7 @@ Before you start, the machine runs the agent and is online. While its agent is o
 1. Under **Which machine**, select a machine.
 1. Under **Modules on this machine**, select a tab.
 
-Each tab shows the module's title, a dot and a state word. The titles come from the hub's module catalog and read the same in every panel language: **File share**, **Gitea**, **Containers**, **VS Code** and **ZFS storage**.
+Each tab shows the module's title, a dot and a state word. The titles come from the hub's module catalog and read the same in every panel language: **File share**, **Gitea**, **Containers**, **VS Code**, **code-server**, **CloudCLI** and **ZFS storage**.
 
 The **+** at the end of the tab row opens the list of modules. A check adds that module's tab for this machine, and clearing it removes the tab. A machine with no choice saved shows a tab for every module its agent reported on.
 
@@ -27,7 +27,9 @@ A module the machine's system cannot run is greyed out in the list and never sho
 | **Gitea**       | amd64 and arm64                           | no                          | no                          |
 | **Containers**  | yes                                       | no                          | no                          |
 | **ZFS storage** | yes                                       | no                          | no                          |
-| **VS Code**     | amd64 and arm64, with glibc 2.28 or newer | amd64                       | Apple silicon               |
+| **VS Code**     | amd64 and arm64, with glibc 2.28 or newer | amd64                       | Apple silicon and Intel     |
+| **code-server** | amd64 and arm64, with glibc 2.28 or newer | no                          | Apple silicon and Intel     |
+| **CloudCLI**    | amd64 and arm64, with glibc 2.28 or newer | amd64 and arm64             | Apple silicon and Intel     |
 
 The catalog also lists AnyDesk and TeamViewer. Neither appears on this page: the remote desktop panel in a device's drawer on the [Devices](../hub/devices.md) page reads and sets them up.
 
@@ -57,6 +59,8 @@ The box under the tabs shows **Output** while an install or an uninstall runs, w
 
 A module the catalog has no build of for the machine's platform is rejected with `no_platform_build`.
 
+On the **VS Code** tab, Microsoft's terms come first, as [VS Code](./modules/vscode.md) describes. The **code-server** and **CloudCLI** tabs go straight to **Install**.
+
 ## Uninstall
 
 **Uninstall** opens a confirmation naming the module and the machine, and nothing is removed until you confirm.
@@ -64,6 +68,8 @@ A module the catalog has no build of for the machine's platform is rejected with
 ::: warning
 The software is removed and the configuration the hub wrote is deleted. Pools, share folders, repositories and container volumes stay on the machine.
 :::
+
+Removing the agent itself from a machine also leaves its shares and its accounts in place. It takes away the services, scheduled tasks and firewall rules the modules added, as `nagent service uninstall` on [nagent commands](../commands/nagent.md) lists.
 
 ## Configure
 
@@ -77,6 +83,8 @@ When the hub holds no configuration for a module, the first **Configure** takes 
 | **Containers**  | the containers already there, with their images, ports, volumes and environment, and the registry mirrors                             |
 | **Gitea**       | the instance the hub installed; a Gitea installed by hand reports its port and keeps its own settings                                 |
 | **VS Code**     | nothing                                                                                                                               |
+| **code-server** | nothing                                                                                                                               |
+| **CloudCLI**    | nothing                                                                                                                               |
 | **ZFS storage** | nothing; the sections show what the machine reports about its disks                                                                   |
 
 From then on the hub's copy is the only truth, and every apply writes the whole configuration back to the machine.
@@ -89,4 +97,6 @@ From then on the hub's copy is the only truth, and every apply writes the whole 
 | **Gitea**       | Access, Administrator                              |
 | **Containers**  | Running now, Registry mirrors, Declared containers |
 | **VS Code**     | Instances                                          |
+| **code-server** | Instances                                          |
+| **CloudCLI**    | Instances                                          |
 | **ZFS storage** | Topology, Pools, Datasets                          |

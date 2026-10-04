@@ -32,3 +32,8 @@ except ImportError:
         HUB_VERSION = version("neutrino-hub")
     except PackageNotFoundError:
         HUB_VERSION = _checkout_version()
+
+try:  # The versions of the carried programs the build pins, by name.
+    from neutrino_hub._version import HUB_CARRIED_VERSIONS
+except ImportError:
+    HUB_CARRIED_VERSIONS: dict = {}

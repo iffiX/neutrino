@@ -75,6 +75,7 @@ def downloads(monkeypatch):
 
     monkeypatch.setattr(bundled.payload, "fetch", fetch)
     monkeypatch.setattr(rustdesk_assets, "_fetch", fetch)
+    monkeypatch.setattr(bundled.hub_assets, "fetch", fetch)
     return asked
 
 
@@ -265,17 +266,14 @@ def test_the_windows_staging_puts_both_under_bin(tmp_path, downloads):
         assert not (tmp_path / "bin" / name).exists(), name
 
 
-def test_the_windows_staging_carries_tun2socks_at_its_pin(tmp_path, downloads):
+def test_the_windows_staging_carries_tun2socks_at_the_hubs_own_pin(tmp_path, downloads):
     bundled.stage_windows_binaries(tmp_path, "x64")
 
     assert (tmp_path / "bin" / "tun2socks.exe").read_text() == "bin"
     assert (tmp_path / "bin" / "tun2socks.exe").stat().st_mode & 0o111
-    url = bundled.TUN2SOCKS_URL.format(
-        version=bundled.TUN2SOCKS_VERSION,
-        asset=bundled.TUN2SOCKS_ASSETS[("windows", "x86_64")][0],
-    )
+    url, _digest = bundled.hub_assets.pinned("tun2socks", "windows", "amd64")
     assert url in downloads
-    assert url.endswith("/v2.7.0/tun2socks-windows-amd64.zip")
+    assert f"/v{bundled.hub_assets.pinned_version('tun2socks')}/" in url
     assert not (tmp_path / "bin" / "tun2socks-windows-amd64.exe").exists()
 
 
@@ -425,16 +423,3 @@ def test_an_easytier_release_without_its_daemon_is_refused(tmp_path, monkeypatch
         bundled._stage_easytier(tmp_path / "easytier", "linux", "x86_64")
 
     assert "easytier-core" in str(refused.value)
-
-
-def test_the_tun2socks_pin_is_the_one_the_hubs_proxy_carries():
-    """The mainland tree has no proxy; a tree that has one pins one release."""
-    from shared import hub_assets
-
-    if not (hub_assets.HUB_ROOT / "neutrino_hub" / "modules" / "tun").is_dir():
-        pytest.skip("this tree has no proxy")
-    asset, digest = bundled.TUN2SOCKS_ASSETS[("windows", "x86_64")]
-    url = bundled.TUN2SOCKS_URL.format(version=bundled.TUN2SOCKS_VERSION, asset=asset)
-
-    assert hub_assets.pinned("tun2socks", "windows", "amd64") == (url, digest)
-    assert hub_assets.pinned_version("tun2socks") == bundled.TUN2SOCKS_VERSION

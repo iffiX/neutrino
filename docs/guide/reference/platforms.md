@@ -62,7 +62,9 @@ A module the machine's system cannot run is greyed out in the **Modules** page's
 | Gitea                                                  | x86-64 and ARM64                                    | no                          | no                          |
 | Containers                                             | Podman from the distribution's packages             | no                          | no                          |
 | ZFS storage                                            | OpenZFS from the repository each family keeps it in | no                          | no                          |
-| VS Code                                                | x86-64 and ARM64, glibc 2.28 and newer              | x86-64                      | Apple silicon               |
+| VS Code                                                | x86-64 and ARM64, glibc 2.28 and newer              | x86-64                      | Apple silicon and Intel     |
+| code-server                                            | x86-64 and ARM64, glibc 2.28 and newer              | no                          | Apple silicon and Intel     |
+| CloudCLI                                               | x86-64 and ARM64, glibc 2.28 and newer              | x86-64 and ARM64            | Apple silicon and Intel     |
 | AnyDesk, TeamViewer, as remote desktops on **Devices** | detected when a person installed it                 | the same                    | the same                    |
 
 The agent reads its modules at these versions of what the machine provides:

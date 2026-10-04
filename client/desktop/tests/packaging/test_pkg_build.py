@@ -120,6 +120,37 @@ def test_scripts_are_handed_to_pkgbuild(monkeypatch, tmp_path):
     ]
 
 
+@pytest.mark.parametrize(
+    "min_os_version, expected",
+    [("", []), ("12.3", ["--compression", "latest", "--min-os-version", "12.3"])],
+)
+def test_a_floor_given_takes_the_strongest_compression_it_reads(
+    monkeypatch, tmp_path, min_os_version, expected
+):
+    commands = []
+
+    def run(command):
+        commands.append(list(command))
+        Path(command[-1]).write_bytes(b"xar!")
+
+    monkeypatch.setattr(pkg_build, "_run", run)
+    monkeypatch.setattr(pkg_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    pkg_build.build(
+        tmp_path / "root",
+        tmp_path / "out.pkg",
+        identifier="com.neutrino.hub",
+        version="9.9.9",
+        min_os_version=min_os_version,
+    )
+
+    pkgbuild = commands[0]
+    found = pkgbuild[
+        pkgbuild.index("--version") + 2 : pkgbuild.index("--install-location")
+    ]
+    assert found == expected
+
+
 def test_a_homebrew_library_is_a_foreign_link():
     assert pkg_build.foreign_links(HOMEBREW_LISTING) == [
         "/usr/local/opt/openssl@3/lib/libssl.3.dylib",

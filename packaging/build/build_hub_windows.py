@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hub" / "packaging"
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import compiled_tree  # noqa: E402
 from constants import HUB_ICON_NAME  # noqa: E402
+from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared import wix_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
@@ -181,6 +182,10 @@ WIX_BODY = r"""
 """
 
 
+# The cabinet compression of the mainland hub package: WiX's strongest.
+HUB_MSI_CN_COMPRESSION = "high"
+
+
 def main() -> int:
     """Build the installer.
 
@@ -188,6 +193,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--output-dir", default="dist", help="where to write the .msi")
     parser.add_argument(
         "--architecture", default="x64", help="the architecture to build for"
@@ -219,6 +225,7 @@ def main() -> int:
         help="write and check the payload, then stop before wix",
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     _check_tools(arguments.stage_only)
 
     version = venv_tree.version()
@@ -330,6 +337,9 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         version=version,
         upgrade_code=UPGRADE_CODE,
         body=body,
+        compression_level=(
+            HUB_MSI_CN_COMPRESSION if edition_build.build_edition() == "cn" else ""
+        ),
     )
 
 

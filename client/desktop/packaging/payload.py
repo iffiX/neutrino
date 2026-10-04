@@ -36,7 +36,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
+from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
+from shared.constants import PACKAGING_TUN2SOCKS_LICENSE  # noqa: E402
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
 
@@ -182,11 +184,11 @@ CARRIED_LICENSES = tuple(name for part in parts() for name in part.CARRIED_LICEN
 )
 # The Windows installer also carries EasyTier's wintun.dll, under WireGuard's
 # prebuilt binaries licence, the stand-in packet.dll, which says what it is,
-# and tun2socks, under the GPL-3.0.
+# and tun2socks, under the MIT licence.
 WINDOWS_CARRIED_LICENSES = CARRIED_LICENSES + (
     "wintun.txt",
     "packet_stub.txt",
-    "tun2socks.txt",
+    PACKAGING_TUN2SOCKS_LICENSE,
 )
 # The Linux packages also install :data:`LINUX_GUI_CARRIED_LIBRARY`, which is
 # under the LGPL and has no counterpart in the Windows and macOS packages.
@@ -300,7 +302,8 @@ def stage_client_tree(
     No packaging format installs a ``.dist-info`` for the client, so
     ``importlib.metadata`` cannot answer for a packaged one; the hub compares
     the stamped value against its own. The versions of the programs the
-    package carries are stamped beside it, for the About card.
+    package carries are stamped beside it, for the About card, and the
+    edition the build was asked for.
 
     Args:
         parent: The directory the ``neutrino_client`` package belongs in.
@@ -310,6 +313,9 @@ def stage_client_tree(
 
     Returns:
         The copied package directory.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
     package_dir = parent / "neutrino_client"
     parent.mkdir(parents=True, exist_ok=True)
@@ -329,11 +335,14 @@ def stage_client_tree(
         "cc-switch": bundled.CC_SWITCH_VERSION,
     }
     if is_windows:
-        carried["tun2socks"] = bundled.TUN2SOCKS_VERSION
+        carried["tun2socks"] = bundled.hub_assets.pinned_version(
+            bundled.TUN2SOCKS_PROGRAM
+        )
     (package_dir / "_version.py").write_text(
         '"""Written by the packaging build. Do not edit."""\n\n'
         f'CLIENT_VERSION = "{package_version}"\n'
-        f"CLIENT_CARRIED_VERSIONS = {carried!r}\n",
+        f"CLIENT_CARRIED_VERSIONS = {carried!r}\n"
+        f'EDITION = "{edition_build.build_edition()}"\n',
         encoding="utf-8",
     )
     stage_gui(package_dir)

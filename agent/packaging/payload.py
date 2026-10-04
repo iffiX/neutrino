@@ -18,12 +18,19 @@ import hashlib
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
 from pathlib import Path
 
 from constants import PACKAGING_GLIBC_FLOOR
+
+# The repository's packaging directory, for what every package's build shares.
+SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
+if str(SHARED_PACKAGING_DIR) not in sys.path:
+    sys.path.insert(0, str(SHARED_PACKAGING_DIR))
+from shared import edition_build  # noqa: E402
 
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = AGENT_ROOT.parent
@@ -207,7 +214,8 @@ def stage_agent_tree(parent: Path, package_version: str) -> Path:
 
     No packaging format installs a ``.dist-info`` for the agent, so
     ``importlib.metadata`` cannot answer for a packaged one; the hub compares
-    the stamped value against its own.
+    the stamped value against its own. The edition the build was asked for
+    is stamped beside it.
 
     Args:
         parent: The directory the ``neutrino_agent`` package belongs in.
@@ -215,6 +223,9 @@ def stage_agent_tree(parent: Path, package_version: str) -> Path:
 
     Returns:
         The copied package directory.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
     package_dir = parent / "neutrino_agent"
     parent.mkdir(parents=True, exist_ok=True)
@@ -225,7 +236,8 @@ def stage_agent_tree(parent: Path, package_version: str) -> Path:
     )
     (package_dir / "_version.py").write_text(
         '"""Written by the packaging build. Do not edit."""\n\n'
-        f'AGENT_VERSION = "{package_version}"\n',
+        f'AGENT_VERSION = "{package_version}"\n'
+        f'EDITION = "{edition_build.build_edition()}"\n',
         encoding="utf-8",
     )
 

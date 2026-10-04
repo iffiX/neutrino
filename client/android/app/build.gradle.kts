@@ -13,10 +13,10 @@ plugins {
 val neutrinoVersion: String = providers.gradleProperty("neutrinoVersion").get()
 val repositoryRoot: File = rootDir.resolve("../..")
 
-// The edition, from the root EDITION file: where the app links to, never which features it has.
+// The edition, intl or cn, from the file the repository's root holds.
 val neutrinoEdition: String =
-    repositoryRoot.resolve("EDITION").takeIf { it.isFile }?.readText()?.trim()?.takeIf { it in setOf("intl", "cn") }
-        ?: "intl"
+    repositoryRoot.resolve("EDITION").takeIf { it.isFile }?.readText()?.trim()
+        ?: error("the repository holds no EDITION file at its root")
 
 // NetBird's own sources and tests, in a tree that carries them; the mainland tree has neither, and
 // NetBird's core is taken only beside its sources.
@@ -85,6 +85,14 @@ android {
             reset()
             include("arm64-v8a", "x86_64")
             isUniversalApk = false
+        }
+    }
+
+    // The native libraries are stored compressed, which halves the apk; the
+    // phone unpacks them at install.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 

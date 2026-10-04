@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
 IOS_DIR = REPO_ROOT / "client" / "ios"
 
 # What the build will run, once there is a project to run it on.
@@ -34,8 +36,10 @@ def main() -> int:
         The process exit status: 1, since nothing is built yet.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--output-dir", default="dist", help="where to write the .ipa")
-    parser.parse_args()
+    arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     if sys.platform != "darwin":
         raise SystemExit(f"{Path(__file__).name} runs on macOS; this is {sys.platform}")
     if shutil.which("xcodebuild") is None:

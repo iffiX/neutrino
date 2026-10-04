@@ -4,18 +4,26 @@ title: Access
 
 # Access
 
-An overlay is a private network laid over the internet. Through it, a machine outside your building reaches the hub and the LAN behind it. The **Access** page runs NetBird, EasyTier, or both at once, each with its own switch and its own settings.
+The **Access** page holds the ways a client or an agent outside your network reaches the hub: NetBird, EasyTier and Relay. NetBird and EasyTier are overlays, private networks laid over the internet. The relay is a server you rent or own that forwards one public port to the hub, as [Relay](./relay.md) describes. Each way in has its own card, switch and settings, and any of them can run at once.
+
+## What a client needs from outside
+
+A client away from home needs one thing: the hub's agent port, 8443, through any one way in. Every page of the client goes through that port, and the hub connects each request to the machine that serves it. The client's hub row names the way it came in, such as **Connected · Relay**.
+
+By default the hub advertises its LAN routes on each overlay. The client's pages do not use them. A route matters to a peer that reaches a LAN machine by its own address, such as an SSH session from a laptop on NetBird.
+
+The mainland edition has the EasyTier and Relay cards, and no NetBird card.
 
 ## Turn an engine on
 
 ![The two engine cards, both switched on](/guide/en/overlay_switches.webp)
 
-**Engine** holds one card per engine. The switch on a card, **Run NetBird** or **Run EasyTier**, says whether the engine runs. Selecting the card itself only picks which engine's settings show under the cards.
+**Engine** holds one card per way in. The **Enable** switch on a card says whether that engine runs. Selecting the card itself only picks which settings show under the cards. The **Relay** card's settings are on [Relay](./relay.md).
 
 1. Turn on the engine's switch.
 1. Select **Apply overlays**. The hub installs the engine when it is absent, starts the engines turned on, then stops the ones turned off.
 
-A card marked **active** has its engine running. A card that reads **No build for this machine** cannot be turned on. With no engine on, the page reads **No overlay runs, so nothing reaches this box from outside.**
+A card marked **active** has its engine running. A card that reads **No build for this machine** cannot be turned on. With no engine on, the page reads **No overlay is running. Turn one on above.**, and only machines on your own network reach the hub.
 
 The hub rejects turning an engine on with `overlay_subnet_overlap` when its network overlaps another network. That is the other overlay's network, or any network this box holds an address on. NetBird's network is `100.64.0.0/10`. EasyTier's is the network of this box's address on it.
 

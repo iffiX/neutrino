@@ -61,7 +61,11 @@ left-out feature is reached through one table").
 
 Every script under `packaging/build/` takes `--edition intl` or
 `--edition cn`, `intl` when absent; a build that runs in a container passes
-it in as `NEUTRINO_EDITION`. A package of an edition upgrades only to a
+it in as `NEUTRINO_EDITION`. The three phone core scripts,
+`build_core_netbird.py`, `build_core_easytier.py` and
+`build_core_rustdesk.py`, take none: a core is the same in both editions,
+and its cache is named by the digest of the script's own bytes, so an
+option added to them would rebuild every core. A package of an edition upgrades only to a
 package of the same edition, because each edition's release is the only one
 its update check and its install scripts read.
 
@@ -250,7 +254,11 @@ administrator on Windows and under `sudo` on macOS.
 
 The client runs in a person's own session, never as root, on Linux, Windows
 and macOS. It is compiled with Nuitka, so the packages carry no interpreter
-of their own; each carries cc-switch and the RustDesk viewer. The Linux
+of their own; each carries cc-switch and the RustDesk viewer. The Windows
+packages of both editions also carry tun2socks for the files adapter. Its
+pin is `PACKAGING_TUN2SOCKS_*` in `packaging/shared/constants.py`, which the
+mainland tree holds, and the hub's macOS and Windows packages of `intl` take
+the same pin for the proxy's TUN. The Linux
 packages depend on the WebKitGTK stack and the appindicator library for the
 window and the tray.
 

@@ -5,8 +5,8 @@ tools at the hub's gateway; the RustDesk viewer, which opens a desktop the
 fleet shares; and EasyTier, whose daemon the packages register as a service
 so the client can join a hub's virtual network. Each part of a left-out
 feature the tree holds adds its own (:func:`payload.parts`). Windows adds
-tun2socks, which the files daemon runs on the files adapter, at the release
-the hub's proxy carries. Each is fetched from its own upstream release and
+tun2socks, which the files daemon runs on the files adapter, at the pin the
+hub's packages share. Each is fetched from its own upstream release and
 checked against a hash recorded here, so a build either produces the
 binaries this project was tested against or fails.
 
@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
 import payload  # noqa: E402
+from shared import hub_assets  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
 
 # The AI tool switcher, published as one static binary per machine. The musl
@@ -113,24 +114,11 @@ EASYTIER_CARRIED = ("easytier-core", "easytier-cli")
 EASYTIER_WINDOWS_CARRIED = ("easytier-core.exe", "easytier-cli.exe", "wintun.dll")
 EASYTIER_CORE_NAME = "easytier-core"
 
-# tun2socks on Windows, under the name the runtime resolver looks for; it
-# opens its adapter with EasyTier's wintun.dll beside it. The release the
-# hub's proxy carries, pinned here too, since the mainland tree has no proxy
-# and keeps the files adapter. The archive names the program after the
-# machine as Go does.
-TUN2SOCKS_VERSION = "2.7.0"
-TUN2SOCKS_URL = (
-    "https://github.com/xjasonlyu/tun2socks/releases/download/v{version}/{asset}"
-)
-TUN2SOCKS_ASSETS = {
-    ("windows", "x86_64"): (
-        "tun2socks-windows-amd64.zip",
-        "c5d46e9452f6c9cc7c15ab9158d6d6a0169ceecd6bca019ce476b49337d2be43",  # scan: allow
-    ),
-}
-TUN2SOCKS_MEMBER = "tun2socks-windows-{machine}.exe"
+# tun2socks on Windows, at the pin the hub's packages share, under the name the runtime
+# resolver looks for; it opens its adapter with EasyTier's wintun.dll beside
+# it. The pin names machines as Go does.
+TUN2SOCKS_PROGRAM = "tun2socks"
 TUN2SOCKS_MACHINES = {"x86_64": "amd64", "aarch64": "arm64"}
-TUN2SOCKS_WINDOWS_BINARY_NAME = "tun2socks.exe"
 
 # Where each lands under the install prefix, matching what the runtime
 # resolver in ``neutrino_client.bundled`` looks for.
@@ -181,7 +169,12 @@ def stage_windows_binaries(installed: Path, architecture: str) -> None:
     for part in payload.parts():
         part.stage_windows(installed, machine)
     _stage_easytier(installed / "bin", "windows", machine)
-    _stage_tun2socks(installed / "bin" / TUN2SOCKS_WINDOWS_BINARY_NAME, machine)
+    hub_assets.stage_program(
+        installed / "bin",
+        TUN2SOCKS_PROGRAM,
+        "windows",
+        TUN2SOCKS_MACHINES.get(machine, machine),
+    )
 
 
 def stage_darwin_binaries(app_contents: Path, architecture: str) -> None:
@@ -295,30 +288,6 @@ def _stage_easytier(target_dir: Path, os_name: str, machine: str) -> None:
                 raise SystemExit(f"{url} carries no {item.name}")
             shutil.copyfile(item, target_dir / item.name)
             (target_dir / item.name).chmod(0o755)
-
-
-def _stage_tun2socks(target: Path, machine: str) -> None:
-    """Unpack the pinned Windows tun2socks to one path.
-
-    Args:
-        target: Where the binary belongs.
-        machine: The interpreter release's name for the machine.
-
-    Raises:
-        SystemExit: When there is no pin, what arrived is not what was
-            pinned, or the archive carries no program.
-    """
-    asset, digest = _asset(TUN2SOCKS_ASSETS, "windows", machine, "tun2socks")
-    url = TUN2SOCKS_URL.format(version=TUN2SOCKS_VERSION, asset=asset)
-    downloaded = payload.fetch(url, digest, "tun2socks")
-    name = TUN2SOCKS_MEMBER.format(machine=TUN2SOCKS_MACHINES.get(machine, machine))
-    with tempfile.TemporaryDirectory() as workdir:
-        binary = _unpacked(Path(workdir), url, downloaded) / name
-        if not binary.is_file():
-            raise SystemExit(f"{url} carries no {name}")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(binary, target)
-    target.chmod(0o755)
 
 
 def _unpacked(workdir: Path, url: str, downloaded: bytes) -> Path:

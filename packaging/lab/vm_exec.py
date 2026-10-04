@@ -8,11 +8,14 @@ through the hypervisor. That matters here: what these VMs exist to test is a
 hub that reconfigures networking, and a command channel that goes down with
 the thing under test is no channel at all.
 
-Exits with the guest command's own status.
+Exits with the guest command's own status. A command may run for half an
+hour; ``NEUTRINO_VM_EXEC_LIMIT_S`` names another limit, in seconds, for a host
+too slow for that.
 """
 
 import base64
 import json
+import os
 import subprocess
 import sys
 import time
@@ -20,7 +23,8 @@ from pathlib import Path
 
 URI = "qemu:///system"
 POLL_INTERVAL_S = 0.4
-POLL_LIMIT_S = 1800
+POLL_LIMIT_ENV = "NEUTRINO_VM_EXEC_LIMIT_S"
+POLL_LIMIT_S = int(os.environ.get(POLL_LIMIT_ENV, "1800"))
 
 
 def agent(domain: str, command: dict) -> dict:

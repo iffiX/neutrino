@@ -9,7 +9,9 @@ sentence each refusal says. Skipped where ``pwsh`` is not on the path.
 
 import hashlib
 import json
+import re
 import shutil
+import sys
 import subprocess
 from pathlib import Path
 
@@ -18,6 +20,8 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.ps1"
 LAST_LINE = "Install-Neutrino @args"
 RELEASE = "https://github.com/iffiX/neutrino/releases"
+CN_RELEASE = "https://gitee.com/iffiX/neutrino/releases"
+CN_LATEST = "https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest"
 
 PACKAGES = (
     "neutrino-hub-9.9.9-windows-amd64.msi",
@@ -54,12 +58,26 @@ def run(tmp_path):
         (served / name).write_bytes(name.encode())
         lines.append(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}")
     (served / "SHA256SUMS").write_text("\n".join(lines) + "\n")
-    text = SCRIPT.read_text()
-    assert text.rstrip().endswith(LAST_LINE)
-    functions = tmp_path / "functions.ps1"
-    functions.write_text(text.rstrip()[: -len(LAST_LINE)])
 
-    def invoke(*arguments, architecture="AMD64", is_admin=True, exit_code=0, env=None):
+    def invoke(
+        *arguments,
+        architecture="AMD64",
+        is_admin=True,
+        exit_code=0,
+        env=None,
+        edition="intl",
+        script=SCRIPT,
+    ):
+        text = re.sub(
+            r"^\$script:NeutrinoEdition = '[a-z]+'$",
+            f"$script:NeutrinoEdition = '{edition}'" if edition else r"\g<0>",
+            script.read_text(),
+            count=1,
+            flags=re.MULTILINE,
+        )
+        assert text.rstrip().endswith(LAST_LINE)
+        functions = tmp_path / "functions.ps1"
+        functions.write_text(text.rstrip()[: -len(LAST_LINE)])
         driver = tmp_path / "driver.ps1"
         quoted = ", ".join(f"'{argument}'" for argument in arguments)
         driver.write_text(
@@ -166,3 +184,72 @@ def test_a_reboot_owed_is_still_an_install(run):
     outcome, _asked = run(exit_code=3010)
 
     assert outcome == "ok"
+
+
+def test_the_script_names_the_edition_of_its_tree():
+    edition = (SCRIPT.parents[2] / "EDITION").read_text().strip()
+
+    assert f"\n$script:NeutrinoEdition = '{edition}'\n" in SCRIPT.read_text()
+
+
+def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(run):
+    (run.served / "latest").write_text('{"id": 7, "tag_name": "v9.9.9"}')
+
+    outcome, asked = run(edition="cn")
+
+    assert outcome == "ok"
+    assert asked[:3] == [
+        f"fetch {CN_LATEST}",
+        f"fetch {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
+        f"fetch {CN_RELEASE}/download/v9.9.9/neutrino-hub-9.9.9-windows-amd64.msi",
+    ]
+
+
+def test_a_cn_script_given_a_version_asks_the_api_nothing(run):
+    outcome, asked = run(edition="cn", env={"NEUTRINO_VERSION": "v9.9.9"})
+
+    assert outcome == "ok"
+    assert asked[0] == f"fetch {CN_RELEASE}/download/v9.9.9/SHA256SUMS"
+
+
+def test_a_cn_latest_release_with_no_tag_is_one_sentence(run):
+    (run.served / "latest").write_text("{}")
+
+    outcome, _asked = run(edition="cn")
+
+    assert outcome == f"The latest release at {CN_LATEST} names no tag."
+
+
+# The mainland tree is written from the intl checkout, and from nothing else.
+from_intl_tree = pytest.mark.skipif(
+    (Path(__file__).resolve().parents[3] / "EDITION").read_text().strip() != "intl",
+    reason="the mainland tree is written from the intl checkout",
+)
+
+
+@from_intl_tree
+def test_the_mainland_script_installs_from_gitee(run, tmp_path):
+    target = tmp_path / "mainland"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT.parents[1] / "build" / "build_sources.py"),
+            "--edition",
+            "cn",
+            "--tree",
+            str(target),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (run.served / "latest").write_text('{"tag_name": "v9.9.9"}')
+
+    outcome, asked = run(
+        edition=None, script=target / "packaging" / "install" / "install.ps1"
+    )
+
+    assert outcome == "ok"
+    assert asked[:2] == [
+        f"fetch {CN_LATEST}",
+        f"fetch {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
+    ]
