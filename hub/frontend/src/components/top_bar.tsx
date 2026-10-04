@@ -5,6 +5,7 @@ import type { StatusTone } from "./status_dot";
 import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
+import { hasFeature } from "../edition";
 import type { CliproxyApiStatusView, NetworkView } from "../api_types";
 import { NAV_ITEMS } from "../nav_items";
 import type { NavItem } from "../nav_items";
@@ -52,6 +53,9 @@ const CHIP_NETWORK_KEY = "ui.shell.chip_network";
 const CHIP_PROXY_KEY = "ui.shell.chip_proxy";
 const CHIP_AI_KEY = "ui.shell.chip_ai";
 const CHIP_DEVICES_KEY = "ui.shell.chip_devices";
+
+/** Whether the tree carries the proxy, whose chip the strip shows. */
+const IS_PROXY_CARRIED = hasFeature("proxy");
 
 /** What a chip shows when nothing has answered yet. */
 const CHIP_NOTHING = "—";
@@ -109,10 +113,12 @@ export function TopBar() {
           <span className="top_bar_chip_value">{describeMode(mode)}</span>
         </span>
 
-        <span className={`top_bar_chip top_bar_chip--${proxy.tone}`}>
-          <span className="top_bar_chip_key">{t(CHIP_PROXY_KEY)}</span>
-          <span className="top_bar_chip_value">{proxy.label}</span>
-        </span>
+        {IS_PROXY_CARRIED && (
+          <span className={`top_bar_chip top_bar_chip--${proxy.tone}`}>
+            <span className="top_bar_chip_key">{t(CHIP_PROXY_KEY)}</span>
+            <span className="top_bar_chip_value">{proxy.label}</span>
+          </span>
+        )}
 
         <span className="top_bar_chip">
           <span className="top_bar_chip_key">{t(CHIP_AI_KEY)}</span>

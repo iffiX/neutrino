@@ -29,6 +29,7 @@ import type {
   SetupState,
 } from "../setup_api";
 import { readSetupLink, readSetupState, sendSetupAnswers } from "../setup_api";
+import { hasFeature } from "../edition";
 
 import "./setup_page.css";
 
@@ -61,6 +62,10 @@ const SCREEN_SHAPE = 2;
 const SCREEN_PORTS = 3;
 const SCREEN_PROXY = 4;
 const SCREEN_REVIEW = SCREEN_TITLES.length - 1;
+/** Whether the tree carries the proxy; without it the proxy screen is
+ * never shown and the counter does not count it. */
+const IS_PROXY_CARRIED = hasFeature("proxy");
+const SCREEN_COUNT = SCREEN_TITLES.length - (IS_PROXY_CARRIED ? 0 : 1);
 
 /** The product's own name, which is the same in every language. */
 const SETUP_BRAND_NAME = "Neutrino Hub";
@@ -321,11 +326,11 @@ export function SetupPage({ token, context }: SetupPageProps) {
 
   const back = () => {
     setError(null);
-    setIndex((current) => current - 1);
+    setIndex((current) => skipped(current - 1, -1));
   };
   const next = () => {
     setError(null);
-    setIndex((current) => current + 1);
+    setIndex((current) => skipped(current + 1, 1));
   };
 
   if (index < 0) {
@@ -398,8 +403,8 @@ export function SetupPage({ token, context }: SetupPageProps) {
 
   return (
     <SetupFrame
-      step={index + 1}
-      total={SCREEN_TITLES.length}
+      step={index + 1 - (!IS_PROXY_CARRIED && index > SCREEN_PROXY ? 1 : 0)}
+      total={SCREEN_COUNT}
       title={t(SCREEN_TITLES[index] ?? "")}
       actions={actions}
     >
@@ -773,19 +778,38 @@ export function SetupPage({ token, context }: SetupPageProps) {
             {isSideGateway && (
               <Row name={t("ui.setup.review_upstream")} value={upstream} />
             )}
-            <Row
-              name={t("ui.setup.review_proxy")}
-              value={
-                isProxyWanted && named.length > 0
-                  ? named.join(", ")
-                  : t("state.not_used")
-              }
-            />
+            {IS_PROXY_CARRIED && (
+              <Row
+                name={t("ui.setup.review_proxy")}
+                value={
+                  isProxyWanted && named.length > 0
+                    ? named.join(", ")
+                    : t("state.not_used")
+                }
+              />
+            )}
           </dl>
         </div>
       )}
     </SetupFrame>
   );
+}
+
+/**
+ * The screen a step lands on, past the proxy screen in a tree without the
+ * proxy.
+ *
+ * Args:
+ *   index: The screen the step would land on.
+ *   direction: 1 going on, -1 stepping back.
+ *
+ * Returns:
+ *   The screen to show.
+ */
+function skipped(index: number, direction: number): number {
+  return !IS_PROXY_CARRIED && index === SCREEN_PROXY
+    ? index + direction
+    : index;
 }
 
 /**

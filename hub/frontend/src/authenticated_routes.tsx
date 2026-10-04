@@ -7,13 +7,13 @@ import { ClientsPage } from "./pages/clients_page";
 import { CredentialsPage } from "./pages/credentials_page";
 import { DashboardPage } from "./pages/dashboard_page";
 import { DevicesPage } from "./pages/devices_page";
+import { ProxyPage } from "./edition";
 import { FilesPage } from "./pages/files_page";
 import { LoginPage } from "./pages/login_page";
 import { ModulesPage } from "./pages/modules_page";
 import { NetworkPage } from "./pages/network_page";
 import { NotFoundPage } from "./pages/not_found_page";
 import { OverlayPage } from "./pages/overlay_page";
-import { ProxyPage } from "./pages/proxy_page";
 import { ServicesPage } from "./pages/services_page";
 import { SettingsPage } from "./pages/settings_page";
 import { useAuth } from "./use_auth";
@@ -54,7 +54,7 @@ export function AuthenticatedRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="network" element={<NetworkPage />} />
         <Route path="overlay" element={<OverlayPage />} />
-        <Route path="proxy" element={<ProxyPage />} />
+        {ProxyPage !== null && <Route path="proxy" element={<ProxyPage />} />}
         <Route path="ai" element={<AiPage />} />
         <Route path="devices" element={<DevicesPage />} />
         <Route path="clients" element={<ClientsPage />} />

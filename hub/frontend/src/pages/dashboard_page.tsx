@@ -20,6 +20,7 @@ import { RangeSwitch } from "../components/range_switch";
 import { StatTile } from "../components/stat_tile";
 import { StatusDot } from "../components/status_dot";
 import { computeActiveExits } from "../active_exits";
+import { hasFeature } from "../edition";
 import { apiPath } from "../api_client";
 import { formatByteRate, formatBytes } from "../format_bytes";
 import { formatCompact } from "../format_compact";
@@ -75,6 +76,9 @@ const AXIS_STYLE = {
 const CHART_MARGIN = { top: 8, right: 8, bottom: 0, left: 0 };
 const LOAD_WARN_PERCENT = 70;
 const LOAD_ERROR_PERCENT = 90;
+
+/** Whether the tree carries the proxy, whose exits the page shows. */
+const IS_PROXY_CARRIED = hasFeature("proxy");
 
 export function DashboardPage() {
   // Redrawn when the panel's language changes.
@@ -147,7 +151,7 @@ export function DashboardPage() {
         />
       )}
 
-      <DeadExitsNotice />
+      {IS_PROXY_CARRIED && <DeadExitsNotice />}
 
       <div className="stat_tile_grid dashboard_tiles">
         <StatTile
@@ -188,16 +192,18 @@ export function DashboardPage() {
             detail={t("ui.dashboard.tile_in_recent_log")}
           />
         )}
-        <StatTile
-          label={t("ui.dashboard.tile_proxy_exits")}
-          value={activeExits.length}
-          format={formatCount}
-          icon="nodes"
-          tone="ok"
-          detail={t("ui.dashboard.tile_probed", {
-            count: stats?.nodes.length ?? 0,
-          })}
-        />
+        {IS_PROXY_CARRIED && (
+          <StatTile
+            label={t("ui.dashboard.tile_proxy_exits")}
+            value={activeExits.length}
+            format={formatCount}
+            icon="nodes"
+            tone="ok"
+            detail={t("ui.dashboard.tile_probed", {
+              count: stats?.nodes.length ?? 0,
+            })}
+          />
+        )}
         <StatTile
           label={t("ui.dashboard.tile_ai_tokens")}
           value={aiTokensToday ?? 0}
@@ -463,46 +469,48 @@ export function DashboardPage() {
         </div>
 
         <div className="dashboard_column">
-          <section className="card dashboard_exits_card">
-            <div className="card_header">
-              <div className="card_title">
-                <h2>{t("ui.dashboard.exits_title")}</h2>
+          {IS_PROXY_CARRIED && (
+            <section className="card dashboard_exits_card">
+              <div className="card_header">
+                <div className="card_title">
+                  <h2>{t("ui.dashboard.exits_title")}</h2>
+                </div>
               </div>
-            </div>
-            {activeExits.length === 0 ? (
-              <div className="placeholder">
-                <span>{t("ui.dashboard.exits_empty")}</span>
-              </div>
-            ) : (
-              <div className="dashboard_exits">
-                {activeExits.map((exit) => (
-                  <div
-                    key={exit.tag}
-                    className={`dashboard_exit ${exit.is_alive ? "" : "dashboard_exit--dead"}`}
-                  >
-                    <StatusDot
-                      tone={exit.is_alive ? "ok" : "error"}
-                      isPulsing={exit.is_alive}
-                      isLarge
-                    />
-                    <div>
-                      <div className="dashboard_exit_tag">{exit.tag}</div>
-                      <div className="dashboard_exit_meta">
-                        <span className="dashboard_exit_latency">
-                          {formatLatency(exit.delayMs)}
-                        </span>
-                        <span>
-                          {t("ui.dashboard.exit_window", {
-                            bytes: formatBytes(exit.totalBytes),
-                          })}
-                        </span>
+              {activeExits.length === 0 ? (
+                <div className="placeholder">
+                  <span>{t("ui.dashboard.exits_empty")}</span>
+                </div>
+              ) : (
+                <div className="dashboard_exits">
+                  {activeExits.map((exit) => (
+                    <div
+                      key={exit.tag}
+                      className={`dashboard_exit ${exit.is_alive ? "" : "dashboard_exit--dead"}`}
+                    >
+                      <StatusDot
+                        tone={exit.is_alive ? "ok" : "error"}
+                        isPulsing={exit.is_alive}
+                        isLarge
+                      />
+                      <div>
+                        <div className="dashboard_exit_tag">{exit.tag}</div>
+                        <div className="dashboard_exit_meta">
+                          <span className="dashboard_exit_latency">
+                            {formatLatency(exit.delayMs)}
+                          </span>
+                          <span>
+                            {t("ui.dashboard.exit_window", {
+                              bytes: formatBytes(exit.totalBytes),
+                            })}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {isDnsLogShown && (
             <section className="card dashboard_dns_card">
