@@ -11,9 +11,13 @@
   @font-face { font-family: "Neutrino Symbols"; src: url("fonts/NotoSansSymbols-Regular.ttf"); }
   html, body { height: 100%; margin: 0; overflow: hidden; background: transparent; }
   .pane { position: fixed; inset: 6px; }
-  .pane[hidden], .bar[hidden], .menu[hidden] { display: none; }
+  .pane[hidden], .bar[hidden], .note[hidden], .menu[hidden] { display: none; }
   .xterm-viewport { scrollbar-width: none; }
   .xterm-viewport::-webkit-scrollbar { display: none; }
+  .note {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: var(--note, #888); pointer-events: none;
+  }
   .bar { position: absolute; right: 2px; width: 3px; border-radius: 2px; background: var(--bar, #888); opacity: 0.7; }
   .menu {
     position: fixed; z-index: 10; min-width: 140px; padding: 4px; box-sizing: border-box;

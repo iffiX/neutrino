@@ -3,7 +3,8 @@ package io.github.iffix.neutrino.terminal
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_COMMAND
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SHELL
 import io.github.iffix.neutrino.CLIENT_STREAM_TIMEOUT_S
-import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_DROP_MS
+import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_MAX_MS
+import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_QUIET_MS
 import io.github.iffix.neutrino.CLIENT_TERMINAL_KEPT_BYTES
 import io.github.iffix.neutrino.channel.ChannelFrames
 import io.github.iffix.neutrino.channel.ChannelResult
@@ -13,6 +14,7 @@ import java.io.ByteArrayOutputStream
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +34,7 @@ import kotlinx.coroutines.launch
  *
  * @param opener The stream opener of one hub, by binding id, or null while it is not connected.
  * @param scope Where the shells' readers, the tabs' senders and the lists' follower run.
- * @param clock The time in milliseconds that Clear's drop window is measured by.
+ * @param clock The time in milliseconds that Clear's dropping is measured by.
  */
 class TerminalTabs(
     private val opener: (String) -> StreamOpener?,
@@ -47,7 +49,8 @@ class TerminalTabs(
     private val sizes = mutableMapOf<String, Pair<Int, Int>>()
     private val dismissed = mutableSetOf<String>()
     private val senders = mutableMapOf<String, Channel<ByteArray>>()
-    private val dropUntil = mutableMapOf<String, Long>()
+    private val drops = mutableMapOf<String, Drop>()
+    private val dropping = MutableStateFlow<Set<String>>(emptySet())
     private var sink: ((String, ByteArray) -> Unit)? = null
 
     /** Every tab, in the order made. */
@@ -58,6 +61,9 @@ class TerminalTabs(
 
     /** The machine a new terminal opens on, as binding id and device id, or null for none picked. */
     val picked: StateFlow<Pair<String, String>?> = machine.asStateFlow()
+
+    /** The tabs whose Clear is still dropping what arrives. */
+    val clearing: StateFlow<Set<String>> = dropping.asStateFlow()
 
     /**
      * Follow the hubs' session lists from now on.
@@ -166,17 +172,20 @@ class TerminalTabs(
 
     /**
      * Clear a tab: Ctrl+C goes to the shell after what was typed before it, the kept output is
-     * dropped, and so is every byte that arrives in the next [CLIENT_TERMINAL_CLEAR_DROP_MS]
-     * milliseconds.
+     * dropped, and so is what arrives until the stream has been quiet for
+     * [CLIENT_TERMINAL_CLEAR_QUIET_MS], for [CLIENT_TERMINAL_CLEAR_MAX_MS] at most.
      *
      * @param sessionId The tab.
      */
     fun clear(sessionId: String) {
-        synchronized(outputs) {
-            dropUntil[sessionId] = clock() + CLIENT_TERMINAL_CLEAR_DROP_MS
+        val drop = synchronized(outputs) {
             outputs.remove(sessionId)
+            val now = clock()
+            Drop(since = now, last = now).also { drops[sessionId] = it }
         }
+        dropping.update { it + sessionId }
         input(sessionId, byteArrayOf(CTRL_C))
+        scope.launch { endDrop(sessionId, drop) }
     }
 
     /**
@@ -251,7 +260,7 @@ class TerminalTabs(
         synchronized(streams) { streams.remove(sessionId) }?.close()
         synchronized(outputs) {
             outputs.remove(sessionId)
-            dropUntil.remove(sessionId)
+            stopDropping(sessionId)
         }
         synchronized(senders) { senders.remove(sessionId) }?.close()
         val before = current.value.indexOfFirst { it.sessionId == sessionId }
@@ -300,9 +309,7 @@ class TerminalTabs(
         while (true) {
             val bytes = stream.read() ?: break
             synchronized(outputs) {
-                val until = dropUntil[sessionId]
-                if (until != null && clock() < until) return@synchronized
-                dropUntil.remove(sessionId)
+                if (isDropped(sessionId)) return@synchronized
                 val kept = outputs.getOrPut(sessionId) { ByteArrayOutputStream() }
                 kept.write(bytes)
                 if (kept.size() > CLIENT_TERMINAL_KEPT_BYTES) {
@@ -332,6 +339,34 @@ class TerminalTabs(
         }
     }
 
+    private fun isDropped(sessionId: String): Boolean {
+        val drop = drops[sessionId] ?: return false
+        val now = clock()
+        if (now < drop.endsAt()) {
+            drop.last = now
+            return true
+        }
+        stopDropping(sessionId)
+        return false
+    }
+
+    private suspend fun endDrop(sessionId: String, drop: Drop) {
+        while (true) {
+            val left = synchronized(outputs) {
+                if (drops[sessionId] !== drop) return
+                drop.endsAt() - clock()
+            }
+            if (left <= 0) break
+            delay(left)
+        }
+        synchronized(outputs) { if (drops[sessionId] === drop) stopDropping(sessionId) }
+    }
+
+    private fun stopDropping(sessionId: String) {
+        drops.remove(sessionId)
+        dropping.update { it - sessionId }
+    }
+
     private fun command(tab: TerminalTab, verb: String, vararg args: Pair<String, Any>) {
         val hub = opener(tab.bindingId) ?: return
         val all = ChannelFrames.args("module" to "agent", "verb" to verb, *args)
@@ -356,6 +391,10 @@ class TerminalTabs(
 
     private fun change(sessionId: String, transform: (TerminalTab) -> TerminalTab) {
         current.update { list -> list.map { if (it.sessionId == sessionId) transform(it) else it } }
+    }
+
+    private class Drop(val since: Long, var last: Long) {
+        fun endsAt(): Long = minOf(last + CLIENT_TERMINAL_CLEAR_QUIET_MS, since + CLIENT_TERMINAL_CLEAR_MAX_MS)
     }
 
     private companion object {

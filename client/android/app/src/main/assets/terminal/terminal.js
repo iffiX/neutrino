@@ -4,7 +4,8 @@
   "use strict";
 
   const FONT = '"MesloLGS NF", "Neutrino Symbols 2", "Neutrino Symbols", ui-monospace, monospace';
-  const CLEAR_DROP_MS = 1000;
+  const CLEAR_QUIET_MS = 500;
+  const CLEAR_MAX_MS = 20000;
   const SCROLLBACK_LINES = 5000;
   const SETTLE_MS = 150;
   const LONG_PRESS_MS = 500;
@@ -16,7 +17,7 @@
   let active = "";
   let held = { ctrl: false, shift: false, alt: false };
   let theme = {};
-  let labels = { copy: "Copy", paste: "Paste", selectAll: "Select all", clear: "Clear" };
+  let labels = { copy: "Copy", paste: "Paste", selectAll: "Select all", clear: "Clear", clearing: "Clearing…" };
 
   function toBase64(text) {
     let binary = "";
@@ -152,13 +153,34 @@
     });
   }
 
-  // Clear: the app sends Ctrl+C and drops what arrives in the next second;
-  // the page drops what waits to be drawn and what arrives meanwhile.
+  // Clear: the app sends Ctrl+C; the app and the page drop what arrives until
+  // the stream has been quiet for CLEAR_QUIET_MS, for CLEAR_MAX_MS at most, and
+  // the page drops what waits to be drawn. The note shows until the app says
+  // its dropping ended.
   function clearPane(id, pane) {
     pane.queue.length = 0;
-    pane.dropUntil = Date.now() + CLEAR_DROP_MS;
+    const now = Date.now();
+    pane.drop = { since: now, last: now };
+    showNote(pane, true);
     window.NeutrinoBridge.clear(id);
     pane.term.clear();
+  }
+
+  function showNote(pane, isShown) {
+    pane.note.textContent = labels.clearing;
+    pane.note.hidden = !isShown;
+  }
+
+  function isDropped(pane) {
+    const drop = pane.drop;
+    if (!drop) return false;
+    const now = Date.now();
+    if (now - drop.last < CLEAR_QUIET_MS && now - drop.since < CLEAR_MAX_MS) {
+      drop.last = now;
+      return true;
+    }
+    pane.drop = null;
+    return false;
   }
 
   const menu = document.createElement("div");
@@ -228,6 +250,10 @@
       const bar = document.createElement("div");
       bar.className = "bar";
       bar.hidden = true;
+      const note = document.createElement("div");
+      note.className = "note";
+      note.style.fontFamily = FONT;
+      note.hidden = true;
       const term = new Terminal({
         fontFamily: FONT,
         fontSize: 13,
@@ -240,16 +266,18 @@
       term.loadAddon(fit);
       term.open(element);
       element.appendChild(bar);
+      element.appendChild(note);
       const pane = {
         element: element,
         bar: bar,
+        note: note,
         term: term,
         fit: fit,
         timer: 0,
         sent: "",
         queue: [],
         isWriting: false,
-        dropUntil: 0,
+        drop: null,
       };
       new ResizeObserver(() => report(id)).observe(element);
       term.onData((data) => window.NeutrinoBridge.input(id, toBase64(withModifiers(data))));
@@ -269,7 +297,7 @@
     },
     write(id, encoded) {
       const pane = panes[id];
-      if (!pane || Date.now() < pane.dropUntil) return;
+      if (!pane || isDropped(pane)) return;
       pane.queue.push(fromBase64(encoded));
       pump(pane);
     },
@@ -294,6 +322,10 @@
     },
     labels(json) {
       labels = JSON.parse(json);
+    },
+    clearing(json) {
+      const ids = JSON.parse(json);
+      for (const key of Object.keys(panes)) showNote(panes[key], ids.includes(key));
     },
   };
 

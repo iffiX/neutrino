@@ -1,7 +1,8 @@
 package io.github.iffix.neutrino.terminal
 
 import io.github.iffix.neutrino.CHANNEL_STREAM_ID_BYTES
-import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_DROP_MS
+import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_MAX_MS
+import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_QUIET_MS
 import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.channel.ChannelInbound
 import io.github.iffix.neutrino.channel.ChannelStreamRegistry
@@ -20,6 +21,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -224,9 +226,8 @@ class TerminalTabsTest {
     }
 
     @Test
-    fun clearDropsTheKeptOutputAndWhatArrivesInTheNextSecond() = runTest {
-        var now = 5_000L
-        val tabs = TerminalTabs({ opener }, backgroundScope, clock = { now })
+    fun clearDropsAFloodWholeAndDrawsTheFirstOutputAfterTheQuiet() = runTest {
+        val tabs = TerminalTabs({ opener }, backgroundScope, clock = { testScheduler.currentTime })
         val id = tabs.create("b1", "d1", "Argon")
         tabs.sized(id, 80, 24)
         val seen = StringBuilder()
@@ -234,14 +235,79 @@ class TerminalTabsTest {
         output("flood ")
         assertEquals("flood ", seen.toString())
         tabs.clear(id)
-        now += CLIENT_TERMINAL_CLEAR_DROP_MS - 1
-        output("late ")
-        now += 1
+        repeat(50) {
+            advanceTimeBy(100)
+            output("y ")
+        }
+        advanceTimeBy(CLIENT_TERMINAL_CLEAR_QUIET_MS - 1)
+        output("tail ")
+        advanceTimeBy(CLIENT_TERMINAL_CLEAR_QUIET_MS)
         output("$ ")
         assertEquals("flood $ ", seen.toString())
         val again = StringBuilder()
         tabs.watch { _, bytes -> again.append(String(bytes)) }
         assertEquals("$ ", again.toString())
+    }
+
+    @Test
+    fun aStreamThatNeverGoesQuietIsDrawnAgainAfterTheCap() = runTest {
+        val tabs = TerminalTabs({ opener }, backgroundScope, clock = { testScheduler.currentTime })
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        val seen = StringBuilder()
+        tabs.watch { _, bytes -> seen.append(String(bytes)) }
+        val end = testScheduler.currentTime + CLIENT_TERMINAL_CLEAR_MAX_MS
+        tabs.clear(id)
+        val step = CLIENT_TERMINAL_CLEAR_QUIET_MS / 5
+        while (testScheduler.currentTime + step < end) {
+            advanceTimeBy(step)
+            output("y ")
+        }
+        assertEquals("", seen.toString())
+        advanceTimeBy(end - testScheduler.currentTime)
+        output("still ")
+        assertEquals("still ", seen.toString())
+    }
+
+    @Test
+    fun clearingShowsUntilTheStreamIsQuiet() = runTest {
+        val tabs = TerminalTabs({ opener }, backgroundScope, clock = { testScheduler.currentTime })
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        tabs.watch { _, _ -> }
+        assertEquals(emptySet<String>(), tabs.clearing.value)
+        tabs.clear(id)
+        assertEquals(setOf(id), tabs.clearing.value)
+        repeat(30) {
+            advanceTimeBy(100)
+            output("y ")
+            assertEquals(setOf(id), tabs.clearing.value)
+        }
+        advanceTimeBy(CLIENT_TERMINAL_CLEAR_QUIET_MS - 1)
+        runCurrent()
+        assertEquals(setOf(id), tabs.clearing.value)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(emptySet<String>(), tabs.clearing.value)
+    }
+
+    @Test
+    fun clearingEndsAtTheCap() = runTest {
+        val tabs = TerminalTabs({ opener }, backgroundScope, clock = { testScheduler.currentTime })
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        tabs.watch { _, _ -> }
+        val end = testScheduler.currentTime + CLIENT_TERMINAL_CLEAR_MAX_MS
+        tabs.clear(id)
+        val step = CLIENT_TERMINAL_CLEAR_QUIET_MS / 5
+        while (testScheduler.currentTime + step < end) {
+            advanceTimeBy(step)
+            output("y ")
+        }
+        assertEquals(setOf(id), tabs.clearing.value)
+        advanceTimeBy(end - testScheduler.currentTime)
+        runCurrent()
+        assertEquals(emptySet<String>(), tabs.clearing.value)
     }
 
     @Test

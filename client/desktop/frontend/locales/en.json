@@ -124,6 +124,7 @@
   "ui.healthy": "Reachable",
   "ui.hub_is_exit": "The AI tools point at this hub",
   "ui.hub_software": "runs {software}",
+  "ui.job.clearing": "Clearing…",
   "ui.job.connecting": "Connecting…",
   "ui.job.disconnecting": "Disconnecting…",
   "ui.job.forwarding": "Forwarding…",

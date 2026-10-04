@@ -366,8 +366,11 @@ const val CLIENT_SHARE_HOLD_S = 60L
 /** The output a terminal tab keeps to draw again in a new view: the agent keeps as much. */
 const val CLIENT_TERMINAL_KEPT_BYTES = 256 * 1024
 
-/** How long, after Clear, a terminal tab drops the output that arrives. */
-const val CLIENT_TERMINAL_CLEAR_DROP_MS = 1000L
+/** How long a terminal tab's stream must be quiet before Clear stops dropping what arrives. */
+const val CLIENT_TERMINAL_CLEAR_QUIET_MS = 500L
+
+/** The longest a terminal tab drops what arrives after Clear. */
+const val CLIENT_TERMINAL_CLEAR_MAX_MS = 20_000L
 
 /** The least height, in dp, of the terminal's card, so a short window scrolls instead of squeezing the terminal. */
 const val CLIENT_TERMINAL_CARD_MIN_HEIGHT_DP = 420
