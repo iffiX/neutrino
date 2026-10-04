@@ -251,6 +251,7 @@ python3 -m pytest "$HERE" -q --ignore="$HERE/test_install_footprint.py" \
     --ignore="$HERE/test_mode_matrix.py" \
     --ignore="$HERE/test_install_a_module.py" \
     --ignore="$HERE/test_device_lifecycle.py" \
+    --ignore="$HERE/test_agent_removal.py" \
     --ignore="$HERE/test_agent_channel.py"
 ran $?
 
@@ -273,6 +274,12 @@ ran $?
 # its own archive with the lines coming back up the channel.
 phase "installing a module on a managed machine"
 python3 -m pytest "$HERE/test_install_a_module.py" -q
+ran $?
+
+# The agent's package removed from the same machine and installed again:
+# the modules' units go, the share stays and is reported once.
+phase "removing the agent from a managed machine"
+python3 -m pytest "$HERE/test_agent_removal.py" -q
 ran $?
 
 # The walks above leave the box a router whose resolver file is the hub's.
