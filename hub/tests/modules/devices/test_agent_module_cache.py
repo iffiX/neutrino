@@ -358,7 +358,7 @@ def test_versions_compare_part_by_part(version, floor, is_below):
     assert is_version_below(version, floor) is is_below
 
 
-# --- progress lines while the hub downloads ---
+# --- progress lines while the artifact is fetched ---
 
 MEGABYTE = 1024 * 1024
 

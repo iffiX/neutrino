@@ -28,7 +28,7 @@ Each part has its place. The hub runs on one always-on Linux box and handles the
 | What you can do                                                                                                           | Where           |
 | ------------------------------------------------------------------------------------------------------------------------- | --------------- |
 | Pick the box's shape (server, side gateway, router), give each interface a role, choose the networks the panel listens on | **Network**     |
-| Join a NetBird network or create an EasyTier one, and reach the LAN through the box from outside                          | **Overlay**     |
+| Join a NetBird network or create an EasyTier one, and reach the LAN through the box from outside                          | **Access**      |
 | Import exit nodes from `ss://` and `vless://` links, open SOCKS ports, split traffic by device and destination            | **Proxy**       |
 | Put API providers and subscription accounts behind one endpoint, with a key per client                                    | **AI**          |
 | Enroll a machine by link or over SSH, read its vitals, reboot or wake it, open its shared desktop                         | **Devices**     |

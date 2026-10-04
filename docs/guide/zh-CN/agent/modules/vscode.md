@@ -4,7 +4,7 @@ title: VS Code
 
 # VS Code
 
-**VS Code** 模块在被控端机器上运行浏览器版 VS Code，每个账户一个实例。桌面客户端把实例的端口转发到自己的 `127.0.0.1`，再打开它。被控端运行的是微软的独立版 VS Code CLI，hub 下载的是一个固定的构建。
+**VS Code** 模块在被控端机器上运行浏览器版 VS Code，每个账户一个实例。桌面客户端把实例的端口转发到自己的 `127.0.0.1`，再打开它。你按微软的许可条款在这台机器上安装 VS Code Server：模块的安装程序取来微软独立版 VS Code CLI 的一个固定构建，由被控端运行。
 
 | 系统    | 能运行它的机器                    |
 | ------- | --------------------------------- |
@@ -14,10 +14,11 @@ title: VS Code
 
 ## 启用
 
-1. 在[模块](../modules.md)页的 **VS Code** 标签下，选择 **安装**（Install）。
+1. 在[模块](../modules.md)页的 **VS Code** 标签下，选择 **打开并接受条款**（Open and accept the terms）。微软的条款在浏览器新标签页里打开，这一按即记下你在这台机器上接受了条款。按钮随后变为 **已接受条款**（Terms accepted），标签的其余内容出现在它下面。
+1. 选择 **安装**（Install）。
 1. 选择 **配置**（Configure）。标签下面随即展开 **实例**（Instances）分区。
 
-VS Code 运行的是微软自己的构建，适用微软的许可条款；启用这个模块即表示接受这些条款。分区上方的 **阅读条款**（Read the terms）打开 `https://code.visualstudio.com/license`。
+每台机器只问一次。条款接受之前，中枢拒绝在这台机器上安装、启动或配置 VS Code，返回 `terms_not_accepted`。
 
 ![VS Code 标签，一个实例和它的账户](/guide/zh/vscode_panel.webp)
 

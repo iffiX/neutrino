@@ -45,6 +45,8 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_INSTALLER_USER,
     DEVICE_CLOUDCLI_MODULE,
+    DEVICE_VSCODE_MODULE,
+    DEVICE_VSCODE_TERMS_KEY,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
@@ -76,6 +78,7 @@ CODE_MODULE_UNKNOWN = "module_unknown"
 CODE_MODULE_NOT_OPTIONAL = "module_not_optional"
 CODE_NO_PLATFORM_BUILD = "no_platform_build"
 CODE_MODULE_CONFIGURED = "module_configured"
+CODE_TERMS_NOT_ACCEPTED = "terms_not_accepted"
 
 # What a module reads as until its agent has said.
 STATE_UNKNOWN = "unknown"
@@ -222,8 +225,9 @@ def install_module(
             404 ``device_unknown`` for an id no device has, 400
             ``module_not_optional`` for a module the person installs
             themselves, 409 ``no_platform_build`` when the manifest offers
-            the device's platform nothing, 409 ``agent_offline`` when the
-            device has no socket.
+            the device's platform nothing, 409 ``terms_not_accepted`` for
+            VS Code on a machine whose terms the person has not accepted,
+            409 ``agent_offline`` when the device has no socket.
     """
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_INSTALLED)
 
@@ -554,6 +558,24 @@ def store_config(
     _recompose_published(runtime, context.module)
 
 
+def require_terms(runtime: PanelRuntime, key: str, module: str) -> None:
+    """Refuse VS Code on a machine whose terms the person has not accepted.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The module name; every module but VS Code passes.
+
+    Raises:
+        HTTPException: 409 ``terms_not_accepted`` when the module is VS Code
+            and its file holds no acceptance.
+    """
+    if module != DEVICE_VSCODE_MODULE:
+        return
+    if not runtime.desired_states.read(key, module).get(DEVICE_VSCODE_TERMS_KEY):
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_TERMS_NOT_ACCEPTED, module=module)
+
+
 def push_state(runtime: PanelRuntime, key: str) -> None:
     """Hand one device the state it should hold now.
 
@@ -651,8 +673,10 @@ def _set_want(
             404 ``device_unknown`` for an id no device has, 400
             ``module_not_optional`` for a user-tier module, 409
             ``no_platform_build`` when the manifest offers the device's
-            platform nothing, 409 ``agent_offline`` when the device has no
-            socket, 502 when the socket did not take the state in time.
+            platform nothing, 409 ``terms_not_accepted`` when installing or
+            starting VS Code on a machine whose terms are not accepted, 409
+            ``agent_offline`` when the device has no socket, 502 when the
+            socket did not take the state in time.
     """
     manifest = load_module_manifests().get(request.module)
     module = request.module
@@ -667,6 +691,8 @@ def _set_want(
     _, entry = resolve_platform_entry(manifest, platform)
     if entry is None and platform:
         raise _refusal(status.HTTP_409_CONFLICT, CODE_NO_PLATFORM_BUILD, module=module)
+    if want in (CHANNEL_MODULE_STATE_INSTALLED, CHANNEL_MODULE_STATE_RUNNING):
+        require_terms(runtime, key, module)
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
     runtime.desired_states.set_want(key, module, want)

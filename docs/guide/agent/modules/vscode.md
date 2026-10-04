@@ -4,7 +4,7 @@ title: VS Code
 
 # VS Code
 
-The **VS Code** module runs VS Code in the browser on a managed machine, one instance per account. A desktop client opens each instance through a port forwarded to its own `127.0.0.1`. The agent runs Microsoft's standalone VS Code CLI, which the hub fetches at one pinned build.
+The **VS Code** module runs VS Code in the browser on a managed machine, one instance per account. A desktop client opens each instance through a port forwarded to its own `127.0.0.1`. You install VS Code Server on the machine under Microsoft's license terms: the module's installer fetches Microsoft's standalone VS Code CLI at one pinned build, and the agent runs it.
 
 | System  | Machines that run it                      |
 | ------- | ----------------------------------------- |
@@ -14,10 +14,11 @@ The **VS Code** module runs VS Code in the browser on a managed machine, one ins
 
 ## Turn it on
 
-1. On the **VS Code** tab of the [Modules](../modules.md) page, select **Install**.
+1. On the **VS Code** tab of the [Modules](../modules.md) page, select **Open and accept the terms**. Microsoft's terms open in a new browser tab, and the press records that you accept them for this machine. The button then reads **Terms accepted**, and the rest of the tab appears under it.
+1. Select **Install**.
 1. Select **Configure**. The **Instances** section opens under the tab.
 
-VS Code runs Microsoft's own build under Microsoft's license terms, and turning the module on accepts them. **Read the terms** above the section opens them at `https://code.visualstudio.com/license`.
+Each machine asks once. Until its terms are accepted, the hub refuses to install, start or configure VS Code there with `terms_not_accepted`.
 
 ![The VS Code tab with one instance and its account](/guide/en/vscode_panel.webp)
 

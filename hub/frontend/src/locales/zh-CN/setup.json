@@ -104,6 +104,6 @@
   "ui.setup.install_fingerprint": "SHA-256 {fingerprint}",
   "ui.setup.review_https_on": "开启",
   "ui.setup.review_https_off": "关闭",
-  "ui.setup.token_missing_lead": "在这台机器上从 Neutrino Hub 应用打开，或打开安装时打印的地址。",
+  "ui.setup.token_missing_lead": "在这台机器上从微子·中枢应用打开，或打开安装时打印的地址。",
   "ui.setup.token_missing_hint": "也可以在这台机器上以管理员身份运行 nhub open。"
 }

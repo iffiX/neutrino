@@ -1,10 +1,10 @@
 ---
-title: 安装 hub
+title: 安装中枢
 ---
 
-# 安装 hub
+# 安装中枢
 
-hub 装在一台常开的 Linux 机器上：装一个包，运行一次 `sudo nhub setup`，回答六屏问题，然后登录面板。面板的 HTTP 默认在 `8080` 端口，HTTPS 默认在 `443` 端口，向导里都可以改。
+中枢装在一台常开的 Linux 机器上：装一个包，运行一次 `sudo nhub setup`，回答六屏问题，然后登录面板。面板的 HTTP 默认在 `8080` 端口，HTTPS 默认在 `443` 端口，向导里都可以改。
 
 ## 开始之前
 
@@ -69,7 +69,7 @@ ARM64 机器用 `neutrino-hub_0.5.0_arm64.deb` 或 `neutrino-hub-0.5.0-1.aarch64
 1. 输入两遍 **保险库主口令**（Vault master passphrase），至少 16 个字符，要有小写字母、大写字母、数字和符号。
 1. 可选：打开 **面板使用 HTTPS**（HTTPS for the panel）。
 
-主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。开了 HTTPS，HTTP 端口会把每个浏览器转到 HTTPS 端口。无论开不开，hub 都生成面板证书；之后在[设置](./settings.md#https)页随时切换。
+主口令封存这台机器保管的每一份凭据，恢复备份时还要再输一次。开了 HTTPS，HTTP 端口会把每个浏览器转到 HTTPS 端口。无论开不开，中枢都生成面板证书；之后在[设置](./settings.md#https)页随时切换。
 
 ### 形态
 
@@ -115,7 +115,7 @@ ARM64 机器用 `neutrino-hub_0.5.0_arm64.deb` 或 `neutrino-hub-0.5.0-1.aarch64
 
 ## 看着步骤跑完
 
-页面标题变成 **正在配置**（Making it so），逐条列出正在跑的步骤，从 **检查中枢需要的软件包**（Checking the packages the hub needs）到 **安装本机被控端**（Installing this machine's agent）。**生成面板证书**（Generating the panel's certificates）这一步每次都跑，生成 hub 自己的证书颁发机构和面板证书。终端里显示同样的步骤。
+页面标题变成 **正在配置**（Making it so），逐条列出正在跑的步骤，从 **检查中枢需要的软件包**（Checking the packages the hub needs）到 **安装本机被控端**（Installing this machine's agent）。**生成面板证书**（Generating the panel's certificates）这一步每次都跑，生成中枢自己的证书颁发机构和面板证书。终端里显示同样的步骤。
 
 ![完成页，提供证书下载](/guide/zh/setup_done.webp)
 

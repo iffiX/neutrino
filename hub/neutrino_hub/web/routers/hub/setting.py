@@ -115,9 +115,15 @@ from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
 from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
-from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.xray import geodata
-from neutrino_hub.modules.xray.constants import XRAY_BINARY, XRAY_VERSION
+from neutrino_hub.modules.tun.constants import TUN_VERSION
+from neutrino_hub.modules.xray.constants import (
+    XRAY_BINARY,
+    XRAY_GEODATA,
+    XRAY_GEODATA_GEOIP_FILE,
+    XRAY_GEODATA_GEOSITE_FILE,
+    XRAY_VERSION,
+)
 
 router = APIRouter(
     prefix="/api/hub/setting", tags=["setting"], dependencies=[Depends(require_session)]
@@ -1303,70 +1309,84 @@ def _unreachable(error: Exception) -> HTTPException:
 
 
 # What the hub package itself carries, credited with the exact tag each
-# binary was built from. The agent and the client carry RustDesk and
-# cc-switch and credit those in their own packages.
+# binary was built from, and the systems whose package carries it: None for
+# every system. The agent and the client carry RustDesk and cc-switch and
+# credit those in their own packages.
 CARRIED_COMPONENTS = (
     (
         "Xray-core",
         XRAY_VERSION,
         "MPL-2.0",
         "https://github.com/XTLS/Xray-core/tree/v{}",
+        None,
     ),
     (
         "CLIProxyAPI",
         CLIPROXYAPI_VERSION,
         "MIT",
         "https://github.com/router-for-me/CLIProxyAPI/tree/v{}",
+        None,
     ),
     (
         "NetBird",
         NETBIRD_VERSION,
         "BSD-3-Clause",
         "https://github.com/netbirdio/netbird/tree/v{}",
+        None,
     ),
     (
         "EasyTier",
         EASYTIER_VERSION,
         "LGPL-3.0",
         "https://github.com/EasyTier/EasyTier/tree/v{}",
+        None,
+    ),
+    (
+        "tun2socks",
+        TUN_VERSION,
+        "MIT",
+        "https://github.com/xjasonlyu/tun2socks/tree/v{}",
+        (PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS),
+    ),
+    (
+        "Wintun",
+        "",
+        "Wintun Prebuilt Binaries License",
+        "https://git.zx2c4.com/wintun/",
+        (PLATFORM_OS_WINDOWS,),
+    ),
+    (
+        "v2fly geoip",
+        XRAY_GEODATA[XRAY_GEODATA_GEOIP_FILE]["url"].split("/")[-2],
+        "CC-BY-SA-4.0",
+        "https://github.com/v2fly/geoip/tree/{}",
+        None,
+    ),
+    (
+        "v2fly domain-list-community",
+        XRAY_GEODATA[XRAY_GEODATA_GEOSITE_FILE]["url"].split("/")[-2],
+        "MIT",
+        "https://github.com/v2fly/domain-list-community/tree/{}",
+        None,
     ),
 )
 
 
 def _acknowledgements() -> list[AcknowledgementView]:
-    """Everything this hub conveys that names a license.
-
-    The components the hub package carries come first, with the exact tag
-    each binary was built from. Then every module manifest naming a
-    ``license``: software whose bytes this hub fetches and hands to a
-    machine. A module the person installs themselves names none and is
-    credited in its own row and nowhere else.
+    """Every component this hub's package carries on this system.
 
     Returns:
-        The acknowledgements, the carried components first and then the
-        modules by title.
+        The acknowledgements, in the order of :data:`CARRIED_COMPONENTS`,
+        each with the exact tag it was built from.
     """
-    credited = [
+    system = hub_os()
+    return [
         AcknowledgementView(
             name=name,
             version=version,
             license=license_name,
             corresponding_source=source.format(version),
         )
-        for name, version, license_name, source in CARRIED_COMPONENTS
+        for name, version, license_name, source, systems in CARRIED_COMPONENTS
+        if systems is None or system in systems
     ]
-    for name, manifest in sorted(load_module_manifests().items()):
-        license_name = str(manifest.get("license", "") or "")
-        if not license_name:
-            continue
-        credited.append(
-            AcknowledgementView(
-                name=str(manifest.get("title", name)),
-                version=str(manifest.get("version", "") or ""),
-                license=license_name,
-                corresponding_source=str(
-                    manifest.get("corresponding_source", "") or ""
-                ),
-            )
-        )
-    return credited

@@ -33,7 +33,8 @@ SSH_UNREACHABLE_STATUS = 255
 SSH_UNSUPPORTED_OS_STATUS = 95
 
 # Who puts a module on a machine. platform: the OS carries it and the hub
-# switches it. hub: the hub fetches an artifact and the agent installs it.
+# switches it. hub: the module's installer fetches an artifact and the
+# agent installs it.
 # user: the person installs it themselves and the hub only detects and
 # manages it, so no ``want`` is ever written for a user-tier module.
 AGENT_MODULE_INSTALLER_TIERS = ("platform", "hub", "user")
@@ -42,7 +43,7 @@ AGENT_MODULE_INSTALLER_USER = "user"
 # itself carries, such as Windows' and macOS's own SMB servers: nothing is
 # downloaded or installed, and the agent's runner checks for it itself.
 AGENT_MODULE_INSTALLER_BUILTIN = "builtin"
-# The branch fields that say the hub or the agent fetches or installs
+# The branch fields that say the module's installer fetches or installs
 # something, none of which a builtin branch may name.
 AGENT_MODULE_DOWNLOAD_FIELDS = (
     "url",
@@ -54,8 +55,8 @@ AGENT_MODULE_DOWNLOAD_FIELDS = (
     "pre_install",
 )
 
-# The agent module cache: what the hub presents when it fetches a module for
-# a managed machine, and what it accepts back. The ceiling is generous —
+# The agent module cache: what the hub presents when a module's installer
+# fetches an artifact for a managed machine, and what it accepts back. The ceiling is generous —
 # remote desktop packages run past 100 MB — and exists so a mirror serving
 # something endless cannot fill the panel's memory.
 AGENT_MODULE_CACHE_DIR = UTILS_STATE_ROOT / "agent_module_cache"
@@ -148,6 +149,11 @@ DEVICE_VSCODE_MODULE = "vscode"
 DEVICE_VSCODE_TOKEN_KEY = "token_sealed"  # scan: allow
 DEVICE_VSCODE_LOGIN_KEY = "login_id"
 DEVICE_VSCODE_TOKEN_AAD = b"device_vscode:token"
+# When the person accepted Microsoft's VS Code Server license terms for the
+# machine, an ISO 8601 time in the same file; absent until they do. The
+# address of those terms, as the VS Code CLI names it.
+DEVICE_VSCODE_TERMS_KEY = "terms_accepted_at"
+DEVICE_VSCODE_TERMS_URL = "https://aka.ms/vscode-server-license"
 # CloudCLI, once per account. Each instance in its file holds, beside its
 # account and port, the vault login a Windows machine runs it as and two
 # secrets the hub generates once and keeps sealed: the password CloudCLI's

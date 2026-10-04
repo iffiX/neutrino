@@ -4,7 +4,7 @@ title: nhub 命令
 
 # nhub 命令
 
-hub 这台机器上的命令行是 `nhub`，随 hub 的安装包一起装上。下表的子命令顺序与 `nhub --help` 的输出一致。
+中枢这台机器上的命令行是 `nhub`，随中枢的安装包一起装上。下表的子命令顺序与 `nhub --help` 的输出一致。
 
 ## 子命令
 
@@ -13,23 +13,23 @@ hub 这台机器上的命令行是 `nhub`，随 hub 的安装包一起装上。�
 | 子命令              | 参数                                                                                                                                                                           | root | 先确认 | 作用                                                                                                                                                                                                   |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `nhub setup`        | `--stdin` 从标准输入读一个 JSON 对象，作为全部回答；`--json <path>` 从文件读；两者互斥                                                                                         | 是   | 否     | 初始化这台机器，只做一次，用浏览器向导或终端里的问答。其中一问是面板用不用 HTTPS。                                                                                                                     |
-| `nhub run`          | `--host`、`--port`、`--reload`、`--interface`；`--only-web`、`--only-xray`、`--only-cliproxyapi`、`--only-dnsmasq`、`--only-supplicant`、`--only-dhcpcd`、`--only-router` 之一 | 否   | 否     | 在前台运行一个 hub 进程。每个 `neutrino_hub_*` 单元运行的就是它；平时用 `start` 和 `stop` 控制单元。                                                                                                   |
-| `nhub start`        | `--interface`；`--yes`；`--only-router`、`--only-xray`、`--only-dnsmasq`、`--only-cliproxyapi`、`--only-web`、`--only-supplicant`、`--only-dhcpcd` 之一                        | 是   | 是     | 启动 hub 已启用的全部单元，先路由状态，最后面板；或只启动指定的一个服务。已在运行的单元不动。`--only-supplicant` 和 `--only-dhcpcd` 要配 `--interface`。                                               |
-| `nhub stop`         | `--interface`；`--only-web`、`--only-cliproxyapi`、`--only-dnsmasq`、`--only-xray`、`--only-router`、`--only-supplicant`、`--only-dhcpcd` 之一                                 | 是   | 否     | 停下 hub 在这台机器上运行的服务，先面板，最后路由状态；或只停指定的一个。可选模块照常运行，下次开机所有单元重新启动。                                                                                  |
+| `nhub run`          | `--host`、`--port`、`--reload`、`--interface`；`--only-web`、`--only-xray`、`--only-cliproxyapi`、`--only-dnsmasq`、`--only-supplicant`、`--only-dhcpcd`、`--only-router` 之一 | 否   | 否     | 在前台运行一台中枢进程。每个 `neutrino_hub_*` 单元运行的就是它；平时用 `start` 和 `stop` 控制单元。                                                                                                    |
+| `nhub start`        | `--interface`；`--yes`；`--only-router`、`--only-xray`、`--only-dnsmasq`、`--only-cliproxyapi`、`--only-web`、`--only-supplicant`、`--only-dhcpcd` 之一                        | 是   | 是     | 启动中枢已启用的全部单元，先路由状态，最后面板；或只启动指定的一个服务。已在运行的单元不动。`--only-supplicant` 和 `--only-dhcpcd` 要配 `--interface`。                                                |
+| `nhub stop`         | `--interface`；`--only-web`、`--only-cliproxyapi`、`--only-dnsmasq`、`--only-xray`、`--only-router`、`--only-supplicant`、`--only-dhcpcd` 之一                                 | 是   | 否     | 停下中枢在这台机器上运行的服务，先面板，最后路由状态；或只停指定的一个。可选模块照常运行，下次开机所有单元重新启动。                                                                                   |
 | `nhub apply`        | `--only <component>`，取 `router`、`xray`、`dnsmasq`、`cliproxyapi` 或 `overlay`，可重复；`--dry-run` 只打印渲染结果，不改任何东西；`--skip-apply` 写文件但不重启服务          | 是   | 否     | 从 `config/` 渲染每份生成的配置，校验后应用，顺序与面板的收敛步骤相同。                                                                                                                                |
 | `nhub unlock`       |                                                                                                                                                                                | 是   | 否     | 解除面板的登录锁定和 fail2ban 的全部 SSH 封禁。                                                                                                                                                        |
-| `nhub reset`        | `all` 或 `password`；`--stdin` 从标准输入读新密码                                                                                                                              | 是   | 否     | `password` 存入新的面板密码，登出所有会话。`all` 交还网络，`config/` 里每个文件回到示例，删掉这台机器收集的密钥、令牌和证书，然后停下 hub 的服务。不带目标时列出这两项，返回 2。                       |
+| `nhub reset`        | `all` 或 `password`；`--stdin` 从标准输入读新密码                                                                                                                              | 是   | 否     | `password` 存入新的面板密码，登出所有会话。`all` 交还网络，`config/` 里每个文件回到示例，删掉这台机器收集的密钥、令牌和证书，然后停下中枢的服务。不带目标时列出这两项，返回 2。                        |
 | `nhub update`       | `--yes`；`--package <file>` 装指定的包文件，不装最新发行版本                                                                                                                   | 是   | 是     | 通过 `neutrino_hub_update` 单元装最新发行版本，打印结果。这个单元守着健康检查，失败时装回原版本。可用内存低于 300 MiB 时，它在解包前停下面板和 AI 网关。新版本通过检查后，它重装这台机器自己的被控端。 |
 | `nhub vault rekey`  | `--stdin` 从标准输入读新口令                                                                                                                                                   | 是   | 否     | 用新的主口令重新封存保险库的数据密钥。已加密的内容不重新加密。                                                                                                                                         |
 | `nhub scan-secrets` | `--staged`、`--history`、`--no-entropy`、`--no-vendor`、`--quiet`                                                                                                              | 否   | 否     | 检查工作区、暂存区或全部提交里有没有凭据。开发用的命令。                                                                                                                                               |
 
 ## 全局参数
 
-| 参数        | 位置                 | 作用                                                                         |
-| ----------- | -------------------- | ---------------------------------------------------------------------------- |
-| `--version` | `nhub`               | 打印包版本后退出。                                                           |
-| `--dev`     | `nhub`，写在子命令前 | 在工作副本的 `hub_dev_root/` 下运行，免去 root 检查。包安装的 hub 报错退出。 |
-| `-h`        | 每一级               | 打印这一级的帮助后退出。                                                     |
+| 参数        | 位置                 | 作用                                                                        |
+| ----------- | -------------------- | --------------------------------------------------------------------------- |
+| `--version` | `nhub`               | 打印包版本后退出。                                                          |
+| `--dev`     | `nhub`，写在子命令前 | 在工作副本的 `hub_dev_root/` 下运行，免去 root 检查。包安装的中枢报错退出。 |
+| `-h`        | 每一级               | 打印这一级的帮助后退出。                                                    |
 
 ## 退出码
 

@@ -4,7 +4,7 @@ title: ZFS storage
 
 # ZFS storage
 
-**ZFS storage** 标签管理被控端 Linux 机器上的 ZFS 存储：建存储池和数据集，看每块磁盘的健康状况。hub 不保存想要的池清单。标签里显示的是机器自报的磁盘情况，每个按钮都在你按下时当场在机器上执行。
+**ZFS storage** 标签管理被控端 Linux 机器上的 ZFS 存储：建存储池和数据集，看每块磁盘的健康状况。中枢不保存想要的池清单。标签里显示的是机器自报的磁盘情况，每个按钮都在你按下时当场在机器上执行。
 
 开始之前，在[模块](../modules.md)页的 **ZFS storage** 标签下依次选择 **安装**（Install）和 **配置**（Configure）。安装时一并装上 smartmontools，用来读磁盘健康。标签下面随即展开 **拓扑**（Topology）、**存储池**（Pools）和 **数据集**（Datasets）三个分区。
 

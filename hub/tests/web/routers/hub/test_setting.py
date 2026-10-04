@@ -505,21 +505,24 @@ def test_the_release_names_the_package_family_the_build_stamped(
 
 
 def test_the_hub_credits_every_component_it_carries(monkeypatch):
-    """The binaries in the hub package first, at the exact tag each was
-    built from; the modules a manifest licenses after them."""
+    """The binaries in the hub package, at the exact tag each was built from,
+    and the geodata it ships; nothing a module installs on a machine."""
     from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
     from neutrino_hub.modules.easytier.constants import EASYTIER_VERSION
     from neutrino_hub.modules.netbird.constants import NETBIRD_VERSION
     from neutrino_hub.modules.xray.constants import XRAY_VERSION
 
+    monkeypatch.setattr(settings_router, "hub_os", lambda: "linux")
     credits = settings_router._acknowledgements()
     by_name = {credit.name: credit for credit in credits}
 
-    assert [credit.name for credit in credits[:4]] == [
+    assert [credit.name for credit in credits] == [
         "Xray-core",
         "CLIProxyAPI",
         "NetBird",
         "EasyTier",
+        "v2fly geoip",
+        "v2fly domain-list-community",
     ]
     assert by_name["Xray-core"].version == XRAY_VERSION
     assert by_name["Xray-core"].corresponding_source.endswith(f"/tree/v{XRAY_VERSION}")
@@ -528,7 +531,38 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
     assert by_name["NetBird"].license == "BSD-3-Clause"
     assert by_name["EasyTier"].version == EASYTIER_VERSION
     assert by_name["EasyTier"].license == "LGPL-3.0"
-    assert "Gitea" in by_name
+    assert by_name["v2fly geoip"].corresponding_source.endswith(
+        f"/tree/{by_name['v2fly geoip'].version}"
+    )
+
+
+@pytest.mark.parametrize(
+    "system, added",
+    [
+        ("darwin", ["tun2socks"]),
+        ("windows", ["tun2socks", "Wintun"]),
+    ],
+)
+def test_a_package_off_linux_credits_what_it_adds(monkeypatch, system, added):
+    from neutrino_hub.modules.tun.constants import TUN_VERSION
+
+    monkeypatch.setattr(settings_router, "hub_os", lambda: system)
+    names = [credit.name for credit in settings_router._acknowledgements()]
+    tun2socks = next(
+        credit
+        for credit in settings_router._acknowledgements()
+        if credit.name == "tun2socks"
+    )
+
+    assert [name for name in names if name in ("tun2socks", "Wintun")] == added
+    assert tun2socks.version == TUN_VERSION
+
+
+def test_no_module_a_machine_installs_is_credited(monkeypatch):
+    monkeypatch.setattr(settings_router, "hub_os", lambda: "linux")
+    names = {credit.name for credit in settings_router._acknowledgements()}
+
+    assert not names & {"Gitea", "VS Code", "code-server", "CloudCLI"}
 
 
 # --- backup and restore: what the archive carries, and what unpacking checks ---

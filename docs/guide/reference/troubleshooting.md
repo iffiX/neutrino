@@ -60,7 +60,7 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 | Symptom                                                                                        | Cause                                                                                          | Fix                                                                                                                    |
 | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | turning an engine on, or saving an EasyTier address, is rejected with `overlay_subnet_overlap` | the engine's network overlaps the other engine's or a network the box holds an address on      | change EasyTier's **Overlay address** or the LAN's address on **Network**; NetBird's network is always `100.64.0.0/10` |
-| the **Overlay** page shows `overlay_default_route_refused` in red                              | a peer or the console gave the box a default route through the overlay, and the hub deleted it | remove the exit route for the hub in the NetBird or EasyTier console; the box keeps its own uplink as the way out      |
+| the **Access** page shows `overlay_default_route_refused` in red                               | a peer or the console gave the box a default route through the overlay, and the hub deleted it | remove the exit route for the hub in the NetBird or EasyTier console; the box keeps its own uplink as the way out      |
 | `overlay_route_overlap` with **The hub cannot take it away**                                   | an overlay route overlaps one of the box's networks, and the hub could not deselect it         | change or remove that route where the overlay is managed                                                               |
 | NetBird's badge reads **management unreachable**                                               | the hub cannot reach the management plane from where it sits                                   | switch on **Send Neutrino Hub's own traffic through the proxy** on **Proxy**                                           |
 | NetBird's **Peers** is empty                                                                   | no other device has logged in                                                                  | log in on the other device with the NetBird app                                                                        |
@@ -80,17 +80,17 @@ An agent shows these codes in `nagent status`, and a desktop client on its hub's
 
 ## The client does not connect
 
-| Symptom                 | Cause                                                                  | Fix                                                                  |
-| ----------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `hub_unreachable`       | port 8443 on the hub is not reachable from this computer               | check the network or the overlay, and **Exposure** on the hub        |
+| Symptom                 | Cause                                                                  | Fix                                                                    |
+| ----------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `hub_unreachable`       | port 8443 on the hub is not reachable from this computer               | check the network or the overlay, and **Exposure** on the hub          |
 | `enroll_refused`        | the link expired or was used                                           | create a fresh link on **Clients**; a link is valid for thirty minutes |
-| `link_unreadable`       | the paste was cut short                                                | copy the whole line from the hub                                     |
-| `link_not_for_client`   | the link is from **Devices**                                           | create one on **Clients**                                            |
-| `client_disabled`       | the client is switched off on **Clients**                              | select **Enable** on its row there                                   |
-| `permission_denied`     | the client's permission leaves out that kind of entry, or that machine | widen the client's permission on **Clients**                         |
-| `gui_webkitgtk_missing` | WebKitGTK is absent on Linux                                           | install the packages the message names, then start the client again  |
-| `gui_webview2_missing`  | WebView2 is absent on Windows                                          | install the runtime the message names, then start the client again   |
-| `root_refused`          | the client was started with `sudo`                                     | start it from your own account                                       |
+| `link_unreadable`       | the paste was cut short                                                | copy the whole line from the hub                                       |
+| `link_not_for_client`   | the link is from **Devices**                                           | create one on **Clients**                                              |
+| `client_disabled`       | the client is switched off on **Clients**                              | select **Enable** on its row there                                     |
+| `permission_denied`     | the client's permission leaves out that kind of entry, or that machine | widen the client's permission on **Clients**                           |
+| `gui_webkitgtk_missing` | WebKitGTK is absent on Linux                                           | install the packages the message names, then start the client again    |
+| `gui_webview2_missing`  | WebView2 is absent on Windows                                          | install the runtime the message names, then start the client again     |
+| `root_refused`          | the client was started with `sudo`                                     | start it from your own account                                         |
 
 ## A share does not mount on a computer
 

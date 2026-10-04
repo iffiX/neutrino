@@ -29,9 +29,6 @@ import "./vscode_panels.css";
  * Credentials page.
  */
 
-/** Microsoft's license terms, which enabling the module accepts. */
-const LICENSE_URL = "https://code.visualstudio.com/license";
-
 /** The port a new instance is offered: the one after the highest in use. */
 const FIRST_PORT = 8000;
 
@@ -127,16 +124,6 @@ export function VscodePanels({
 
   return (
     <>
-      <div className="notice">
-        <Icon name="alert" size={15} />
-        <div className="notice_body">
-          {t("ui.vscode.license")}{" "}
-          <a href={LICENSE_URL} target="_blank" rel="noreferrer">
-            {t("ui.vscode.license_link")}
-          </a>
-        </div>
-      </div>
-
       <section
         className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >

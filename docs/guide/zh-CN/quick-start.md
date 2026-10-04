@@ -4,18 +4,18 @@ title: 快速上手
 
 # 快速上手
 
-大约半小时后，你手上会有一套能用的环境：一台 Linux 机器以服务器形态运行 hub，第二台 Linux 机器归 hub 管理，那台机器上的一个目录经桌面客户端挂到你的笔记本上。
+大约半小时后，你手上会有一套能用的环境：一台 Linux 机器以服务器形态运行中枢，第二台 Linux 机器归中枢管理，那台机器上的一个目录经桌面客户端挂到你的笔记本上。
 
 ## 你需要什么
 
-- 一台装 hub 的 Linux 机器，本页叫它 `home-hub`。它是 x86-64，系统是 Debian 12 及以上或 Ubuntu 22.04 及以上，能访问互联网，你有它的 root 权限。
+- 一台装中枢的 Linux 机器，本页叫它 `home-hub`。它是 x86-64，系统是 Debian 12 及以上或 Ubuntu 22.04 及以上，能访问互联网，你有它的 root 权限。
 - 第二台同类的 Linux 机器装被控端，本页叫它 `studio`。
 - 一台带桌面环境的 Linux 电脑装客户端，本页叫它 `laptop`。
 - 0.5.0 版的三个安装包，从 [Releases](https://github.com/iffiX/neutrino/releases) 下载：`neutrino-hub_0.5.0_amd64.deb`、`neutrino-agent_0.5.0_amd64.deb` 和 `neutrino-client_0.5.0_amd64.deb`。
 
 三台机器在同一个局域网里。服务器形态保留 `home-hub` 的所有地址，你网络里的其他部分保持原样。
 
-## 安装 hub
+## 安装中枢
 
 1. 在 `home-hub` 上安装包：
 
@@ -58,7 +58,7 @@ title: 快速上手
 1. 在**这台机器已是网关**屏，选择**打开面板**（Open the panel）。
 1. 在**面板密码**里填你设的密码，选择**登录**（Sign in）。
 
-面板打开**总览**（Dashboard）页。侧栏分两组：**Hub** 和**被控端**（Agent）。
+面板打开**总览**（Dashboard）页。侧栏分两组：**中枢** 和**被控端**（Agent）。
 
 ## 把 studio 加为受管机器
 
@@ -68,7 +68,7 @@ title: 快速上手
    sudo apt install ./neutrino-agent_0.5.0_amd64.deb
    ```
 
-1. 在面板的 **Hub** 组里，打开**设备**（Devices）。
+1. 在面板的 **中枢** 组里，打开**设备**（Devices）。
 1. 选择**用链接添加**（Add by link）。通知里显示一条链接，三十分钟内有效。
 1. 选择**复制**（Copy）。
 1. 在 `studio` 上运行下面的命令，把 `<enroll-link>` 换成刚复制的链接：
@@ -79,7 +79,7 @@ title: 快速上手
 
 `studio` 出现在**已管理的设备**（Managed devices）里，旁边是 `home-hub`。`home-hub` 的被控端由向导装好。
 
-## 让客户端加入 hub
+## 让客户端加入中枢
 
 1. 在 `laptop` 上安装客户端：
 
@@ -91,9 +91,9 @@ title: 快速上手
 1. 名称填 `laptop`，选择**创建链接**（Create link）。
 1. 选择**复制**。链接三十分钟内有效。
 1. 在 `laptop` 上以你自己的账户运行 `nclient gui`，不加 `sudo`。**微子·客户端**（Neutrino client）窗口打开，停在**中枢**（Hubs）页。
-1. 在**加入 hub**（Join a hub）下，把链接粘进输入框，选择**加入**（Join）。
+1. 在**加入中枢**（Join a hub）下，把链接粘进输入框，选择**加入**（Join）。
 
-新出现的 hub 一行显示**已连接**（Connected），下面是 hub 的地址和“运行 neutrino_hub/0.5.0”。
+新出现的中枢一行显示**已连接**（Connected），下面是中枢的地址和“运行 neutrino_hub/0.5.0”。
 
 ## 在 studio 上安装共享模块
 

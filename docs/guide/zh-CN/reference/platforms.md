@@ -4,9 +4,9 @@ title: 支持的平台
 
 # 支持的平台
 
-微子 0.5.0 发布 hub、被控端、桌面客户端和 Android 应用四样东西，下面每张表列出其中一样能装在哪些系统上，以及对应的发布文件。所有文件都在[发布页](https://github.com/iffiX/neutrino/releases)上，旁边有 `SHA256SUMS` 和源码包。所有组件都只有 64 位版本。
+微子 0.5.0 发布中枢、被控端、桌面客户端和 Android 应用四样东西，下面每张表列出其中一样能装在哪些系统上，以及对应的发布文件。所有文件都在[发布页](https://github.com/iffiX/neutrino/releases)上，旁边有 `SHA256SUMS` 和源码包。所有组件都只有 64 位版本。
 
-## Hub
+## 中枢
 
 | 系统                                                                            | 架构   | 文件                                      |
 | ------------------------------------------------------------------------------- | ------ | ----------------------------------------- |
@@ -16,7 +16,7 @@ title: 支持的平台
 | 同上                                                                            | ARM64  | `neutrino-hub-0.5.0-1.aarch64.rpm`        |
 | Arch、EndeavourOS、Manjaro                                                      | x86-64 | `neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst` |
 
-hub 的安装包自带 Python，依赖 systemd、nftables、dnsmasq、iproute2、wpa_supplicant、dhcpcd、fail2ban、iw、arp-scan、vnstat、curl 和 smbclient。要发 Wi-Fi 的机器还推荐装 hostapd。Debian 系上 dhcpcd 的依赖写作 `dhcpcd-base | dhcpcd5`，因为 Ubuntu 22.04 上这个程序叫后一个名字。
+中枢的安装包自带 Python，依赖 systemd、nftables、dnsmasq、iproute2、wpa_supplicant、dhcpcd、fail2ban、iw、arp-scan、vnstat、curl 和 smbclient。要发 Wi-Fi 的机器还推荐装 hostapd。Debian 系上 dhcpcd 的依赖写作 `dhcpcd-base | dhcpcd5`，因为 Ubuntu 22.04 上这个程序叫后一个名字。
 
 ## 被控端
 
@@ -54,7 +54,7 @@ Android 8.0 对应 API 级别 26，即应用声明的 `minSdk`；系统更旧的
 
 ## 各系统能用的模块
 
-机器的系统跑不了的模块，在**模块**（Modules）页的选择器里显示为灰色，写着**这台机器的系统不支持**（This machine's system cannot run it）。下表来自 hub 自带的模块清单。
+机器的系统跑不了的模块，在**模块**（Modules）页的选择器里显示为灰色，写着**这台机器的系统不支持**（This machine's system cannot run it）。下表来自中枢自带的模块清单。
 
 | 模块                                                     | Linux                              | Windows             | macOS               |
 | -------------------------------------------------------- | ---------------------------------- | ------------------- | ------------------- |
