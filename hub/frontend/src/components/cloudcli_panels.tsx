@@ -29,9 +29,6 @@ import "./cloudcli_panels.css";
  * Credentials page.
  */
 
-/** CloudCLI's source, which its AGPL-3.0 license names. */
-const SOURCE_URL = "https://github.com/siteboon/claudecodeui";
-
 /** The port a new instance is offered: the one after the highest in use. */
 const FIRST_PORT = 3001;
 
@@ -130,16 +127,6 @@ export function CloudcliPanels({
 
   return (
     <>
-      <div className="notice">
-        <Icon name="alert" size={15} />
-        <div className="notice_body">
-          {t("ui.cloudcli.license")}{" "}
-          <a href={SOURCE_URL} target="_blank" rel="noreferrer">
-            {t("ui.cloudcli.license_link")}
-          </a>
-        </div>
-      </div>
-
       <section
         className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
       >

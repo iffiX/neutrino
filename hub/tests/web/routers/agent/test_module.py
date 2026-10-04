@@ -356,6 +356,48 @@ def test_a_module_with_no_build_for_the_platform_is_refused(api, tmp_path):
     assert modules_file(tmp_path) == {}
 
 
+@pytest.mark.parametrize("press", ["install", "start"])
+def test_vscode_is_not_installed_or_started_before_its_terms_are_accepted(
+    api, monkeypatch, tmp_path, press
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_platform[DEVICE] = WINDOWS
+
+    refused = client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "vscode"}
+    )
+    (tmp_path / "devices" / DEVICE).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "devices" / DEVICE / "vscode.json").write_text(
+        json.dumps({"terms_accepted_at": "2026-10-05T08:00:00+00:00"})
+    )
+    taken = client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "vscode"}
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "terms_not_accepted",
+        "params": {"module": "vscode"},
+    }
+    assert taken.status_code == 200
+    assert list(modules_file(tmp_path)) == ["vscode"]
+
+
+def test_vscode_is_stopped_and_uninstalled_without_its_terms(api, monkeypatch):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_platform[DEVICE] = WINDOWS
+
+    for press in ("stop", "uninstall"):
+        answer = client.post(
+            f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "vscode"}
+        )
+        assert answer.status_code == 200, press
+
+
 # What each shipped manifest offers a Windows machine and a Mac: the modules
 # the picker lets a person choose there.
 SUPPORTED_OFF_LINUX = {

@@ -9,6 +9,9 @@ instances sharing an account or a port, a login the vault does not hold, and
 a Windows instance with no login are each refused by code before the agent
 is asked; the state the agent is sent holds each instance's opened token,
 the password of its login on Windows only, and never a seal or a login's id.
+The terms: the view says whether the person accepted Microsoft's terms on the
+machine and where they are; the acceptance is recorded once with its time,
+withdrawn by a false, kept across sets, and a set before it is refused.
 """
 
 import json
@@ -24,14 +27,27 @@ from tests.web.module_api_box import DEVICE, module_box
 BASE = "/api/agent/module/vscode"
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
 LINUX = {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"}
+ACCEPTED_AT = "2026-10-05T08:00:00+00:00"
 
 
 @pytest.fixture
-def api(monkeypatch, tmp_path):
+def bare(monkeypatch, tmp_path):
+    """The block, on a machine whose terms nobody accepted yet."""
     unlock_vault(monkeypatch, tmp_path)
     client, runtime = module_box(monkeypatch, tmp_path, module_vscode.router)
     with client:
         yield client, runtime
+
+
+@pytest.fixture
+def api(bare):
+    """The block, on a machine whose terms the person accepted."""
+    DesiredStateStore().write(DEVICE, "vscode", {"terms_accepted_at": ACCEPTED_AT})
+    return bare
+
+
+def stored_file(tmp_path) -> dict:
+    return json.loads((tmp_path / "devices" / DEVICE / "vscode.json").read_text())
 
 
 def stored(tmp_path) -> list:
@@ -234,3 +250,85 @@ def test_the_agent_is_sent_each_opened_token_and_on_windows_the_password(
     assert module["config"] == {"address": "", "instances": [expected]}
     assert module["install"]["kind"] == "vscode"
     assert module["install"]["package_kind"] == ("zip" if has_password else "tar")
+
+
+def test_the_view_says_the_terms_are_not_accepted_and_where_they_are(bare):
+    client, _ = bare
+
+    view = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    assert view["is_terms_accepted"] is False
+    assert view["terms_url"] == "https://aka.ms/vscode-server-license"
+
+
+def test_the_press_records_the_acceptance_once_with_its_time(bare, tmp_path):
+    client, runtime = bare
+
+    first = client.post(
+        f"{BASE}/terms/set", json={"device_id": DEVICE, "is_accepted": True}
+    )
+    recorded = stored_file(tmp_path)["terms_accepted_at"]
+    again = client.post(
+        f"{BASE}/terms/set", json={"device_id": DEVICE, "is_accepted": True}
+    )
+
+    assert first.status_code == 200 and first.json()["is_terms_accepted"] is True
+    assert again.json()["is_terms_accepted"] is True
+    assert stored_file(tmp_path)["terms_accepted_at"] == recorded
+    assert recorded.endswith("+00:00")
+    assert runtime.agent_sessions.pushes == []
+
+
+def test_false_withdraws_the_acceptance_and_keeps_the_instances(api, tmp_path):
+    client, _ = api
+    client.post(
+        f"{BASE}/set",
+        json={"device_id": DEVICE, "instances": [{"account": "alice", "port": 8000}]},
+    )
+
+    answer = client.post(
+        f"{BASE}/terms/set", json={"device_id": DEVICE, "is_accepted": False}
+    )
+
+    assert answer.json()["is_terms_accepted"] is False
+    assert "terms_accepted_at" not in stored_file(tmp_path)
+    assert stored_file(tmp_path)["instances"][0]["account"] == "alice"
+
+
+def test_a_set_keeps_the_acceptance(api, tmp_path):
+    client, _ = api
+
+    client.post(
+        f"{BASE}/set",
+        json={"device_id": DEVICE, "instances": [{"account": "alice", "port": 8000}]},
+    )
+
+    assert stored_file(tmp_path)["terms_accepted_at"] == ACCEPTED_AT
+
+
+def test_a_set_before_the_terms_are_accepted_is_refused(bare, tmp_path):
+    client, runtime = bare
+
+    answer = client.post(
+        f"{BASE}/set",
+        json={"device_id": DEVICE, "instances": [{"account": "alice", "port": 8000}]},
+    )
+
+    assert answer.status_code == 409
+    assert answer.json()["detail"] == {
+        "code": "terms_not_accepted",
+        "params": {"module": "vscode"},
+    }
+    assert runtime.agent_sessions.validations == []
+    assert not (tmp_path / "devices" / DEVICE / "vscode.json").exists()
+
+
+def test_the_terms_of_an_unknown_device_are_refused(bare):
+    client, _ = bare
+
+    answer = client.post(
+        f"{BASE}/terms/set", json={"device_id": "nope", "is_accepted": True}
+    )
+
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "device_unknown"

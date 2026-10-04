@@ -1401,13 +1401,8 @@ class PanelDisplay(BaseModel):
 
 
 class AcknowledgementView(BaseModel):
-    """One carried component, credited with its license and source.
-
-    Only software whose bytes pass through this hub's hands is listed: a
-    module the hub fetches and hands to a machine is conveyed by this hub,
-    and a copyleft license obliges naming the license and where the exact
-    source is.
-    """
+    """One component the hub's package carries, with its license and the
+    address of its exact source."""
 
     name: str
     version: str
@@ -1926,9 +1921,10 @@ class DeviceModuleView(BaseModel):
     description: str = ""
     # The manifest kind; the SSH server's uninstall confirmation keys on it.
     kind: str = ""
-    # Who installs it: platform (the OS carries it), hub (the hub fetches
-    # it), or user (the person installs it; the hub only detects and
-    # manages). A user-tier row offers no install or uninstall button.
+    # Who installs it: platform (the OS carries it), hub (the module's
+    # installer fetches it), or user (the person installs it; the hub only
+    # detects and manages). A user-tier row offers no install or uninstall
+    # button.
     installer: str = ""
     is_supported: bool = True
     # The platform carries this natively: worded built in, no button.
@@ -2163,6 +2159,10 @@ class VscodeDeviceView(ModuleDeviceFields):
     # The human accounts the machine last reported, for the account field.
     accounts: list[str] = Field(default_factory=list)
     is_active: bool = False
+    # Whether the person accepted Microsoft's terms for this machine.
+    is_terms_accepted: bool = False
+    # The address of Microsoft's VS Code Server license terms.
+    terms_url: str = ""
 
 
 class VscodeConfigUpdate(BaseModel):
@@ -2170,6 +2170,13 @@ class VscodeConfigUpdate(BaseModel):
 
     device_id: str
     instances: list[VscodeInstance] = Field(default_factory=list)
+
+
+class VscodeTermsUpdate(BaseModel):
+    """The person's acceptance of Microsoft's terms for one machine."""
+
+    device_id: str
+    is_accepted: bool
 
 
 class GiteaConfigUpdate(BaseModel):

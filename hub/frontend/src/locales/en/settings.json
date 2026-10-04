@@ -1,7 +1,7 @@
 {
   "ui.settings.about_carried": "Carried software",
   "ui.settings.about_credits": "Acknowledgements",
-  "ui.settings.about_credits_hint": "Open-source software this hub downloads and hands to managed machines.",
+  "ui.settings.about_credits_hint": "Open-source software inside this hub's package.",
   "ui.settings.about_credits_source": "source",
   "ui.settings.about_geodata": "Geodata",
   "ui.settings.about_host": "This machine",
@@ -62,7 +62,7 @@
   "ui.settings.new_password": "New password",
   "ui.settings.not_a_backup": "This is not a Neutrino backup.",
   "ui.settings.password_changed": "Password changed.",
-  "ui.settings.password_refused": "The gateway refused the change.",
+  "ui.settings.password_refused": "The hub refused the change.",
   "ui.settings.password_title": "Panel password",
   "ui.settings.preparing": "Preparing…",
   "ui.settings.restore": "Restore",

@@ -9,7 +9,8 @@ instead of shipping. Comment keys are stripped the same way the rest of
 
 **They come back in the order both surfaces draw them**: the tiers in the
 order a person trusts them — what the machine's own package manager
-provides, then what this hub fetches from a public repository, then what
+provides, then what the module's installer fetches from a public
+repository, then what
 somebody installs from a vendor themselves — and by title inside each. The
 panel and the agent's page read this same order, so the two lists agree
 without either of them sorting.

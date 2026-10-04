@@ -33,8 +33,9 @@ PREFIXES = (
 )
 SEGMENT_PATTERN = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 # Singular nouns that end in an ``s``; every other ``s`` ending is a plural.
+# ``terms`` names one document, a publisher's license terms.
 SINGULAR_S_NOUNS = frozenset(
-    {"status", "access", "address", "process", "dns", "zfs", "https"}
+    {"status", "access", "address", "process", "dns", "zfs", "https", "terms"}
 )
 # Reads whose last segment is a word of the verb table used as a noun, each
 # a row of protocol.md's route tables.

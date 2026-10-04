@@ -25,3 +25,8 @@
 .vscode_instance_error {
   flex: 1 0 100%;
 }
+
+/* The terms notice above the tab: its one button sits under the sentence. */
+.vscode_terms .button {
+  align-self: flex-start;
+}

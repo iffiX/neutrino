@@ -20,8 +20,8 @@ from neutrino_hub.modules.devices.agent_module_cache import (
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 
-# The fields that mean the hub downloads something. A user-tier manifest
-# carrying any of them is one the hub would fetch for after all.
+# The fields that mean the module's installer fetches something. A
+# user-tier manifest carrying any of them is one fetched for after all.
 DOWNLOAD_FIELDS = ("url", "github_repo", "asset_pattern", "download")
 
 GITEA_VERSION = "1.27.3"
@@ -104,8 +104,8 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
 
 
 def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
-    """What the machine carries, then what this hub fetches, then what a
-    person installs themselves, and by title inside each tier."""
+    """What the machine carries, then what the module's installer fetches,
+    then what a person installs themselves, and by title inside each tier."""
     assert list(load_module_manifests()) == [
         "podman",
         "samba",
@@ -350,9 +350,9 @@ def test_the_resolved_module_carries_the_installer_tier():
     assert resolved["installer"] == "hub"
 
 
-def test_every_module_the_hub_conveys_names_its_license_and_source():
-    """Hub-tier means this hub fetches the bytes and hands them on, which is
-    what obliges the license and the directions to the source."""
+def test_every_hub_tier_module_names_its_license_and_source():
+    """A hub-tier module's installer fetches its bytes from a public release,
+    and its manifest names their license and where their source is."""
     for name, manifest in load_module_manifests().items():
         if manifest["installer"] != "hub":
             assert "license" not in manifest, name

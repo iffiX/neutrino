@@ -15,6 +15,7 @@ import { SambaPanels } from "../components/samba_panels";
 import { Spinner } from "../components/spinner";
 import { TabStrip } from "../components/tab_strip";
 import { VscodePanels } from "../components/vscode_panels";
+import { VscodeTerms } from "../components/vscode_terms";
 import { ZfsPanels } from "../components/zfs_panels";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
@@ -37,6 +38,7 @@ import type {
   DeviceOnlineView,
   DeviceRequest,
   DevicesOnlineResponse,
+  VscodeDeviceView,
 } from "../api_types";
 
 import "./modules_page.css";
@@ -55,8 +57,10 @@ import "./modules_page.css";
  * the module, and Configure, which opens the module's own panels and closes
  * them on the next press. The first Configure on a
  * module the hub holds no configuration for imports what the machine already
- * has, so the first push changes nothing on it. The machine, the tab and the
- * sections open are kept between visits, until a reload.
+ * has, so the first push changes nothing on it. VS Code's tab shows
+ * Microsoft's terms on top, and nothing else until they are accepted for the
+ * machine. The machine, the tab and the sections open are kept between
+ * visits, until a reload.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -136,6 +140,9 @@ const LINUX_OS = "linux";
 
 /** The system that starts VS Code and CloudCLI as an account only with its login. */
 const WINDOWS_OS = "windows";
+
+/** The module whose tab opens only once its terms are accepted. */
+const TERMS_MODULE = "vscode";
 
 /** The modules whose block imports what the machine already has. */
 const IMPORTING_MODULES = ["samba", "gitea", "podman"];
@@ -247,6 +254,14 @@ export function ModulesPage() {
               { type: HUB_EVENT_TASK },
             ],
     },
+  );
+
+  // VS Code's terms, read while its tab is the current one.
+  const terms = useApiResource<VscodeDeviceView>(
+    deviceId === null || activeModule !== TERMS_MODULE
+      ? null
+      : apiPath(`/agent/module/${TERMS_MODULE}`, { device_id: deviceId }),
+    { invalidateOn: [{ type: HUB_EVENT_CONFIG }] },
   );
 
   const rows = rowsByName(modules.data);
@@ -384,6 +399,12 @@ export function ModulesPage() {
   const canAct = activeRow !== undefined && isAgentOnline && !isBusy;
   const isPresent =
     activeRow !== undefined && PRESENT_STATES.includes(activeRow.state);
+  const termsView =
+    terms.data !== null && terms.data.device_id === deviceId
+      ? terms.data
+      : null;
+  const isTermsGated =
+    activeModule === TERMS_MODULE && termsView?.is_terms_accepted !== true;
 
   return (
     <div className="page">
@@ -437,7 +458,26 @@ export function ModulesPage() {
               />
             </div>
 
-            {activeRow !== undefined && (
+            {activeRow !== undefined && activeModule === TERMS_MODULE && (
+              <>
+                {termsView !== null ? (
+                  <VscodeTerms
+                    deviceId={deviceId}
+                    view={termsView}
+                    onRecorded={terms.setData}
+                  />
+                ) : terms.error !== null ? (
+                  <ErrorPanel message={terms.error} onRetry={terms.reload} />
+                ) : (
+                  <div
+                    className="skeleton"
+                    style={{ height: SKELETON_HEIGHT_PX }}
+                  />
+                )}
+              </>
+            )}
+
+            {activeRow !== undefined && !isTermsGated && (
               <>
                 {!isAgentOnline && (
                   <div className="notice notice--warn">
@@ -541,18 +581,21 @@ export function ModulesPage() {
         )}
       </section>
 
-      {deviceId !== null && panels !== undefined && isConfiguring && (
-        <fieldset className="modules_config" disabled={!isAgentOnline}>
-          {panels({
-            deviceId,
-            basePath: `/agent/module/${activeModule}`,
-            isEditable: isAgentOnline,
-            platformOs: selectedDevice?.platform.os ?? "",
-            isInstalling: activeRow?.state === "installing",
-            want: activeRow?.want ?? "",
-          })}
-        </fieldset>
-      )}
+      {deviceId !== null &&
+        panels !== undefined &&
+        isConfiguring &&
+        !isTermsGated && (
+          <fieldset className="modules_config" disabled={!isAgentOnline}>
+            {panels({
+              deviceId,
+              basePath: `/agent/module/${activeModule}`,
+              isEditable: isAgentOnline,
+              platformOs: selectedDevice?.platform.os ?? "",
+              isInstalling: activeRow?.state === "installing",
+              want: activeRow?.want ?? "",
+            })}
+          </fieldset>
+        )}
 
       {confirm.modal}
     </div>

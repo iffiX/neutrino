@@ -6,8 +6,12 @@ and keeps sealed in the device's ``vscode.json``. A Windows machine starts an
 instance as its account only with that account's password, so each instance
 there names a login from the Credentials page. Each instance is published to
 clients as a web entry they open only through their own loopback, with the
-token the ``service`` stream hands them.
+token the ``service`` stream hands them. The module opens on a machine only
+once the person has accepted Microsoft's terms for it, recorded in the same
+file as ``terms_accepted_at``.
 """
+
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -15,6 +19,8 @@ from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_LOGIN_KEY,
     DEVICE_VSCODE_MODULE,
+    DEVICE_VSCODE_TERMS_KEY,
+    DEVICE_VSCODE_TERMS_URL,
     DEVICE_VSCODE_TOKEN_KEY,
 )
 from neutrino_hub.modules.devices.desired_state import vscode_agent_config
@@ -23,12 +29,14 @@ from neutrino_hub.web.models import (
     VscodeConfigUpdate,
     VscodeDeviceView,
     VscodeInstanceView,
+    VscodeTermsUpdate,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
     DeviceModuleContext,
     device_context,
     module_router,
+    require_terms,
     store_config,
 )
 
@@ -54,8 +62,8 @@ def device_view(
 
     Returns:
         The instances as configured, each with the login it runs as, whether
-        the machine reports it running and why not, and the human accounts
-        the machine last reported.
+        the machine reports it running and why not, the human accounts the
+        machine last reported, and whether the person accepted the terms.
     """
     reported = {
         str(instance.get("account", "")): instance
@@ -82,12 +90,47 @@ def device_view(
         instances=instances,
         accounts=[str(name) for name in runtime.device_accounts.get(context.key, [])],
         is_active=context.is_active,
+        is_terms_accepted=bool(context.config.get(DEVICE_VSCODE_TERMS_KEY)),
+        terms_url=DEVICE_VSCODE_TERMS_URL,
     )
 
 
 router: APIRouter = module_router(
     MODULE, view_model=VscodeDeviceView, build_view=device_view
 )
+
+
+@router.post("/terms/set", response_model=VscodeDeviceView)
+def update_terms(
+    update: VscodeTermsUpdate,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> VscodeDeviceView:
+    """Record or withdraw the person's acceptance of the terms on one machine.
+
+    An acceptance already recorded keeps its first time.
+
+    Args:
+        update: The device, and whether the terms are accepted.
+        runtime: The shared runtime.
+
+    Returns:
+        The device's view afterwards.
+
+    Raises:
+        HTTPException: 404 ``device_unknown`` when no managed device has the
+            id.
+    """
+    context = device_context(runtime, MODULE, update.device_id)
+    stored = dict(context.config)
+    if not update.is_accepted:
+        stored.pop(DEVICE_VSCODE_TERMS_KEY, None)
+    elif not stored.get(DEVICE_VSCODE_TERMS_KEY):
+        stored[DEVICE_VSCODE_TERMS_KEY] = datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        )
+    runtime.desired_states.write(context.key, MODULE, stored)
+    context.config = stored
+    return device_view(runtime, context)
 
 
 @router.post("/set", response_model=VscodeDeviceView)
@@ -113,11 +156,14 @@ def update_settings(
         HTTPException: 400 ``account_duplicate`` or ``port_duplicate`` for
             two instances sharing one, ``unknown_credential`` for a login
             the vault does not hold, ``credential_missing`` for an instance
-            of a Windows machine with no login; 409 ``agent_offline``; 400
-            with the agent's code when it refuses the configuration.
+            of a Windows machine with no login; 409 ``terms_not_accepted``
+            before the person accepted the terms on this machine; 409
+            ``agent_offline``; 400 with the agent's code when it refuses the
+            configuration.
         VaultLockedError: If a token has to be made and the vault is locked.
     """
     context = device_context(runtime, MODULE, update.device_id)
+    require_terms(runtime, context.key, MODULE)
     is_windows = runtime.device_platform.get(context.key, {}).get("os") == OS_WINDOWS
     vault = SecretVault()
     accounts: set = set()
@@ -136,6 +182,7 @@ def update_settings(
         elif is_windows:
             raise _refusal(CODE_CREDENTIAL_MISSING, account=instance.account)
     stored = {
+        DEVICE_VSCODE_TERMS_KEY: context.config[DEVICE_VSCODE_TERMS_KEY],
         "instances": [
             {
                 "account": instance.account,
@@ -146,7 +193,7 @@ def update_settings(
                 ),
             }
             for instance in update.instances
-        ]
+        ],
     }
     sent = vscode_agent_config(stored, runtime.device_platform.get(context.key, {}))
     store_config(runtime, context, sent, stored=stored)

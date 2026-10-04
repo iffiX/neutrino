@@ -1292,12 +1292,8 @@ export interface PanelDisplay {
   theme: string;
 }
 
-/**
- * One carried component, credited with its license and exact source.
- *
- * Only software whose bytes pass through the hub's hands is listed: what
- * the hub fetches and hands to a machine, it conveys.
- */
+/** One component the hub's package carries, with its license and exact
+ * source. */
 export interface Acknowledgement {
   name: string;
   version: string;
@@ -1467,11 +1463,21 @@ export interface VscodeDeviceView extends ModuleDeviceState {
   /** The human accounts the machine last reported. */
   accounts: string[];
   is_active: boolean;
+  /** Whether the person accepted Microsoft's terms for this machine. */
+  is_terms_accepted: boolean;
+  /** The address of Microsoft's VS Code Server license terms. */
+  terms_url: string;
 }
 
 export interface VscodeConfigUpdate {
   device_id: string;
   instances: VscodeInstance[];
+}
+
+/** The person's acceptance of Microsoft's terms for one machine. */
+export interface VscodeTermsUpdate {
+  device_id: string;
+  is_accepted: boolean;
 }
 
 /** One CloudCLI instance: the account it runs as, the port its forwarder
