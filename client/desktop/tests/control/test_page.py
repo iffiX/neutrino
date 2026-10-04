@@ -1040,6 +1040,15 @@ def test_a_desktop_connects_once_while_no_viewer_runs():
     assert "jobButton(t('ui.rdp_connect'), entry.job)" in desktop
 
 
+def test_a_mac_desktop_carries_a_standing_hint_under_the_provider_line():
+    """No Mac reports whether RustDesk was granted its permissions, so the
+    hint stands on every Mac entry, healthy or not."""
+    desktop = body_of("drawDesktopEntry")
+    assert "payload.platform_os === 'darwin'" in desktop
+    assert "noteLine(t('ui.rdp_mac_hint'))" in desktop
+    assert "[connect], reason, extras)" in desktop
+
+
 # --- the terminals ---
 
 

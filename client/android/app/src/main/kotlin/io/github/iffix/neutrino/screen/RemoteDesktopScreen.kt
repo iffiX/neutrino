@@ -8,7 +8,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
+import io.github.iffix.neutrino.CLIENT_PLATFORM_OS_DARWIN
 import io.github.iffix.neutrino.channel.ChannelResult
+import io.github.iffix.neutrino.channel.ChannelServiceEntry
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.design.ErrorLine
 import io.github.iffix.neutrino.design.FeatureRow
@@ -23,7 +25,9 @@ import io.github.iffix.neutrino.shell.LocalClientActions
 /**
  * The desktops the machines of the joined hubs share, each with Connect: the button shows the
  * job while the address and seat password come from the hub, then the viewer opens. Configure,
- * at its left, keeps the codec and the quality the next Connect asks for.
+ * at its left, keeps the codec and the quality the next Connect asks for. A Mac's entry carries a
+ * standing hint that a black picture or a mouse that does nothing means RustDesk lacks its
+ * permissions there.
  *
  * @param hubs Every hub joined.
  * @param connecting The entries whose Connect runs, by entry key.
@@ -81,6 +85,7 @@ fun RemoteDesktopScreen(
             if (viewingKey == key) BasicText(words.word("ui.rdp_open"), style = NeutrinoTheme.note)
             BasicText("$host:${entry.number("port") ?: ""}", style = NeutrinoTheme.mono)
             BasicText(providedBy(hub, entry, host), style = NeutrinoTheme.note)
+            if (hasMacHint(entry)) BasicText(words.word("ui.rdp_mac_hint"), style = NeutrinoTheme.note)
             ErrorLine(errors[key])
             ReasonLine(reason)
         }
@@ -97,6 +102,14 @@ fun RemoteDesktopScreen(
         )
     }
 }
+
+/**
+ * Whether a desktop entry carries the standing Mac hint under its provider line.
+ *
+ * @param entry The desktop entry.
+ * @return True when the sharing machine is a Mac.
+ */
+internal fun hasMacHint(entry: ChannelServiceEntry): Boolean = entry.text("platform_os") == CLIENT_PLATFORM_OS_DARWIN
 
 @Preview(widthDp = 400, heightDp = 600)
 @Composable

@@ -74,6 +74,9 @@ val CLIENT_CARRIED_CORES: List<CarriedCore> = listOf(
     CarriedCore(CLIENT_RUSTDESK_CORE, "1.4.9", "AGPL-3.0", CLIENT_RUSTDESK_SOURCE_URL, CLIENT_RUSTDESK_PATCH_URL),
 )
 
+/** The `platform_os` a desktop entry carries when the sharing machine is a Mac. */
+const val CLIENT_PLATFORM_OS_DARWIN = "darwin"
+
 /** The protocol number this build speaks; no prefix, one number has one name in every package. */
 const val PROTOCOL = 3
 

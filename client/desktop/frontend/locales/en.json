@@ -178,6 +178,7 @@
   "ui.port_disconnect": "Disconnect",
   "ui.provided_by": "from {hub}:{device}:{module}",
   "ui.rdp_connect": "Connect",
+  "ui.rdp_mac_hint": "A black picture or a mouse that does nothing means that Mac has not given RustDesk Screen Recording and Accessibility.",
   "ui.rdp_open": "viewer open",
   "ui.reason.console_waiting": "This machine is registered with the console. Attach it to a network there.",
   "ui.reason.disabled": "The hub has switched this client off.",

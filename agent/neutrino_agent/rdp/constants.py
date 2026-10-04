@@ -62,9 +62,6 @@ RDP_GREETER_ACCOUNTS = ("gdm", "gdm-greeter", "sddm", "lightdm", "greetd")
 # each surface words them itself.
 RDP_ATTENTION_NOBODY_SEATED = "rdp_nobody_seated"
 RDP_ATTENTION_SCREEN_NOT_ALLOWED = "rdp_screen_not_allowed"
-# A Mac shows a peer nothing until RustDesk holds both screen recording and
-# accessibility, granted in its settings by somebody at that Mac.
-RDP_ATTENTION_PERMISSIONS_NEEDED = "rdp_permissions_needed"
 
 # Where Windows lists its connections, and how it spells an established one.
 RDP_WINDOWS_NETSTAT_COMMAND = ("netstat", "-an", "-p", "TCP")
@@ -80,9 +77,31 @@ RDP_DARWIN_CONSOLE_OWNER_COMMAND = ("stat", "-f", "%Su", "/dev/console")
 RDP_DARWIN_LOGIN_WINDOW_OWNER = "root"
 RDP_DARWIN_NETSTAT_COMMAND = ("netstat", "-an", "-p", "tcp")
 RDP_DARWIN_ESTABLISHED = "ESTABLISHED"
-# The database macOS keeps its privacy grants in, the two services RustDesk
-# needs, and what a granted row holds.
-RDP_DARWIN_TCC_DATABASE = "/Library/Application Support/com.apple.TCC/TCC.db"
-RDP_DARWIN_TCC_SERVICES = ("kTCCServiceScreenCapture", "kTCCServiceAccessibility")
-RDP_DARWIN_TCC_ALLOWED = 2
-RDP_DARWIN_RUSTDESK_BUNDLE_ID = "com.carriez.rustdesk"
+# What a share start puts on a Mac's screen: a dialog naming the two
+# permissions RustDesk needs, and the Screen Recording pane of the system
+# settings. Both run as the account in its own session, never waited for.
+RDP_DARWIN_PERMISSIONS_TEXT = (
+    "Before anyone connecting can see and use this Mac, RustDesk needs two "
+    "permissions: Screen Recording and Accessibility. Turn both on for "
+    "RustDesk in System Settings, Privacy & Security."
+)
+RDP_DARWIN_DIALOG_TITLE = "Neutrino"
+RDP_DARWIN_DIALOG_GIVE_UP_S = 60
+RDP_DARWIN_DIALOG_SCRIPT = (
+    f'display dialog "{RDP_DARWIN_PERMISSIONS_TEXT}" '
+    f'with title "{RDP_DARWIN_DIALOG_TITLE}" buttons {{"OK"}} '
+    f'default button "OK" with icon caution '
+    f"giving up after {RDP_DARWIN_DIALOG_GIVE_UP_S}"
+)
+RDP_DARWIN_SCREEN_RECORDING_PANE = (
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+)
+RDP_DARWIN_LAUNCHCTL = "/bin/launchctl"
+RDP_DARWIN_CHROOT = "/usr/sbin/chroot"
+RDP_DARWIN_OSASCRIPT = "/usr/bin/osascript"
+RDP_DARWIN_OPEN = "/usr/bin/open"
+RDP_DARWIN_SESSION_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+# How long the dialog and the settings pane are each let run before they
+# are ended.
+RDP_DARWIN_DIALOG_TIMEOUT_S = RDP_DARWIN_DIALOG_GIVE_UP_S + 15
+RDP_DARWIN_OPEN_TIMEOUT_S = 15

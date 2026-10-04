@@ -111,6 +111,13 @@ class WindowsSeat:
         """
         return ""
 
+    def ask_for_permissions(self, account: str) -> None:
+        """Ask the seated person for what RustDesk needs: nothing on Windows.
+
+        Args:
+            account: The account the share is for.
+        """
+
     def _bound(self) -> tuple:
         """kernel32 and wtsapi32, bound on first use."""
         if self._kernel32 is None or self._wtsapi32 is None:

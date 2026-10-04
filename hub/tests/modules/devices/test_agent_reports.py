@@ -338,6 +338,30 @@ def test_a_report_declaring_a_share_records_it_at_the_held_address(box):
     assert runtime.published_services.refreshes == 1
 
 
+def test_a_share_carries_the_system_the_machine_reported(box):
+    runtime, device = box
+    runtime.device_address[DEVICE] = "192.168.100.7"
+    mac = report(desktop={"is_shared": True, "share_id": "s1"})
+    mac["machine"]["platform"] = {"os": "darwin", "family": "", "arch": "arm64"}
+
+    agent_reports.record_report(runtime, device, mac)
+
+    (share,) = runtime.device_shares.live()
+    assert share.platform_os == "darwin"
+
+
+def test_a_share_from_a_machine_with_no_reported_system_carries_none(box):
+    runtime, device = box
+    runtime.device_address[DEVICE] = "192.168.100.7"
+    bare = report(desktop={"is_shared": True, "share_id": "s1"})
+    bare["machine"].pop("platform")
+
+    agent_reports.record_report(runtime, device, bare)
+
+    (share,) = runtime.device_shares.live()
+    assert share.platform_os == ""
+
+
 def test_a_share_that_names_no_account_or_viewers_carries_neither(box):
     runtime, device = box
     runtime.device_address[DEVICE] = "192.168.100.7"

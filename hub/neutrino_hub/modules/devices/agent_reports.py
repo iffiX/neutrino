@@ -163,6 +163,7 @@ def record_desktop_share(runtime, device, share: dict, host: str) -> None:
             attention=str(share.get("attention", "") or ""),
             account=str(share.get("account", "") or ""),
             connected_count=int(share.get("connected_count") or 0),
+            platform_os=str(runtime.device_platform.get(key, {}).get("os", "") or ""),
         )
     else:
         runtime.device_shares.withdraw(key)
