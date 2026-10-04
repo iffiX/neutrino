@@ -160,7 +160,11 @@ export function ProxyPage() {
     );
   }
 
-  if (draft === null || saved === null) {
+  // The split's switches depend on the network view: the mode says whether
+  // the LAN switch is drawn and the system says whether two of them are one
+  // setting, so the page waits for it rather than redrawing the switches.
+  const isNetworkPending = network.data === null && network.error === null;
+  if (draft === null || saved === null || isNetworkPending) {
     return (
       <div className="page">
         <h1>{t("ui.proxy.title")}</h1>
