@@ -864,7 +864,7 @@ def test_every_word_of_client_md_is_in_both_catalogs_as_written():
     for key, english in CLIENT_MD_WORDS.items():
         assert EN_WORDS[key] == english
         assert CATALOGS["zh-CN"][key]
-    assert CATALOGS["zh-CN"]["ui.state.disabled"] == "已被 hub 停用"
+    assert CATALOGS["zh-CN"]["ui.state.disabled"] == "已被中枢停用"
     assert CATALOGS["zh-CN"]["ui.overlay.on"] == "已连接 · {address}"
 
 
@@ -979,7 +979,7 @@ def test_a_join_the_hub_refused_offers_only_leave():
     refused = refused[: refused.index("\n  }\n")]
     assert "actions: [leaveButton(hub)]," in refused
     assert EN_WORDS["ui.state.pending"] == "Joined; the hub has not been reached yet"
-    assert CATALOGS["zh-CN"]["ui.state.pending"] == "已加入，尚未连上 hub"
+    assert CATALOGS["zh-CN"]["ui.state.pending"] == "已加入，尚未连上中枢"
 
 
 def test_leave_arms_on_the_first_press_and_shows_its_job():

@@ -6,7 +6,7 @@
     "rdp_closed": "连接已结束：{reason}",
     "rdp_core_missing": "这个版本没有远程桌面。",
     "rdp_login_failed": "对方机器拒绝了访问密码。",
-    "verb_unknown": "hub 不认识这个命令，请先更新 hub"
+    "verb_unknown": "中枢不认识这个命令，请先更新中枢"
   },
   "ui": {
     "ai_qr_hint": "第三方聊天 app 扫这个码，就能用这个网关。",
@@ -18,7 +18,7 @@
     "copied": "已复制",
     "copy": "复制",
     "core_channel": "连接",
-    "core_notice": "已连接 {count} 个 hub",
+    "core_notice": "已连接 {count} 台中枢",
     "forget_password": "忘掉密码",
     "forget_password_arm": "再按一次以忘掉",
     "gateway_address": "网关地址",
@@ -28,7 +28,7 @@
     "key_show": "显示密钥",
     "open_in_files": "在“文件”中打开",
     "or": "或",
-    "overlay_count": "此 hub 发布了 {count} 个虚拟网",
+    "overlay_count": "此中枢发布了 {count} 个虚拟网",
     "password_not_saved": "未存密码",
     "paste": "粘贴",
     "qr": "二维码",
@@ -45,10 +45,10 @@
     "reason_viewer_open": "查看器已打开。",
     "remember": "记住",
     "scan": "扫码",
-    "scan_hint": "对准 hub 客户端页面上的二维码",
+    "scan_hint": "对准中枢客户端页面上的二维码",
     "scan_press": "按“扫码”使用相机。",
     "share_login_needed": "请先在文件页输入这个共享的密码。",
     "share_reconnecting": "正在重新连接…",
-    "terminal_detached": "已断开，正在等待 hub"
+    "terminal_detached": "已断开，正在等待中枢"
   }
 }
