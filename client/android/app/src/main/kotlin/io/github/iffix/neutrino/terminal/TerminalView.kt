@@ -13,6 +13,7 @@ import io.github.iffix.neutrino.CLIENT_TERMINAL_BRIDGE
 import io.github.iffix.neutrino.CLIENT_TERMINAL_PAGE
 import io.github.iffix.neutrino.design.NeutrinoPalette
 import java.util.concurrent.ConcurrentHashMap
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -94,6 +95,7 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
             .put("cyan", hex(palette.accent))
         val chrome = JSONObject()
             .put("bar", hex(palette.textMuted))
+            .put("note", hex(palette.textMuted))
             .put("menu-ground", hex(palette.bg))
             .put("menu-border", hex(palette.border))
             .put("menu-text", hex(palette.text))
@@ -112,10 +114,26 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
      * @param paste Paste's label.
      * @param selectAll Select all's label.
      * @param clear Clear's label.
+     * @param clearing The word a pane shows while its Clear drops output.
      */
-    fun labels(copy: String, paste: String, selectAll: String, clear: String) {
-        val labels = JSONObject().put("copy", copy).put("paste", paste).put("selectAll", selectAll).put("clear", clear)
+    fun labels(copy: String, paste: String, selectAll: String, clear: String, clearing: String) {
+        val labels = JSONObject()
+            .put("copy", copy)
+            .put("paste", paste)
+            .put("selectAll", selectAll)
+            .put("clear", clear)
+            .put("clearing", clearing)
         run { call("neutrino.labels(${JSONObject.quote(labels.toString())})") }
+    }
+
+    /**
+     * Show the clearing word on the panes whose Clear is dropping output, and on no other.
+     *
+     * @param sessionIds The tabs still dropping.
+     */
+    fun clearing(sessionIds: Set<String>) {
+        val ids = JSONArray(sessionIds.toList()).toString()
+        run { call("neutrino.clearing(${JSONObject.quote(ids)})") }
     }
 
     /** Stop drawing output; the tabs keep it for the next view. */

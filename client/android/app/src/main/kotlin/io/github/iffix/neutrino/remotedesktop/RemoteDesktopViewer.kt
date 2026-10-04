@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -96,6 +98,7 @@ private enum class TwoFingerMode { UNDECIDED, PINCH, SCROLL }
  * @param onCopied What text copied on the remote machine does: it goes on the phone's clipboard.
  * @param onClose What Close and Back do.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RemoteDesktopViewer(
     target: RemoteDesktopTarget,
@@ -118,8 +121,7 @@ fun RemoteDesktopViewer(
     val isShowing = state == RemoteDesktopState.Showing
     var isKeyBarShown by remember { mutableStateOf(false) }
     val view = LocalView.current
-    val keyboardHeight = WindowInsets.ime.getBottom(LocalDensity.current)
-    val isKeyboardUp = keyboardHeight > 0
+    val keyboard = RemoteDesktopKeyboard(WindowInsets.isImeVisible, WindowInsets.ime.getBottom(LocalDensity.current))
     BackHandler(onBack = onClose)
     DisposableEffect(view) {
         val bars = view.context.findActivity()?.window?.let { WindowCompat.getInsetsController(it, view) }
@@ -129,8 +131,8 @@ fun RemoteDesktopViewer(
     }
     DisposableEffect(input) { onDispose { input.hideKeyboard() } }
     DisposableEffect(sender) { onDispose { sender.close() } }
-    LaunchedEffect(keyboardHeight) { viewport = viewport.coveredBy(keyboardHeight.toFloat()) }
-    LaunchedEffect(isKeyboardUp) { if (!isKeyboardUp) input.releaseFocus() }
+    LaunchedEffect(keyboard.height) { viewport = viewport.coveredBy(keyboard.height.toFloat()) }
+    LaunchedEffect(keyboard.isFocusKept) { if (!keyboard.isFocusKept) input.releaseFocus() }
     SideEffect { input.holdFocus() }
     DisposableEffect(target, core) {
         core.connect(
@@ -251,11 +253,11 @@ fun RemoteDesktopViewer(
             for (button in RemoteDesktopButton.entries) {
                 RoundButton(
                     button,
-                    isActive = button.isActive(keyboardHeight, isKeyBarShown),
+                    isActive = button.isActive(keyboard, isKeyBarShown),
                     isEnabled = isShowing || button == RemoteDesktopButton.CLOSE,
                 ) {
                     button.press(
-                        keyboardHeight,
+                        keyboard,
                         isKeyBarShown,
                         onKeyboard = { isUp -> if (isUp) input.showKeyboard() else input.hideKeyboard() },
                         onKeyBar = { isShown -> isKeyBarShown = isShown },

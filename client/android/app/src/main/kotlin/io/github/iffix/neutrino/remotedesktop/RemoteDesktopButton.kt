@@ -18,12 +18,13 @@ enum class RemoteDesktopButton(val wordKey: String, val icon: AppIcon, val isDan
     /**
      * Whether the button shows as active.
      *
-     * @param keyboardHeight The height the phone's keyboard covers, 0 when it is down.
+     * @param keyboard The phone's keyboard.
      * @param isKeyBarShown Whether the key bar shows.
-     * @return True for Keyboard while the keyboard is up and for Keys while the key bar shows.
+     * @return True for Keyboard while the system shows the keyboard, floating or not, and for Keys
+     *     while the key bar shows.
      */
-    fun isActive(keyboardHeight: Int, isKeyBarShown: Boolean): Boolean = when (this) {
-        KEYBOARD -> keyboardHeight > 0
+    fun isActive(keyboard: RemoteDesktopKeyboard, isKeyBarShown: Boolean): Boolean = when (this) {
+        KEYBOARD -> keyboard.isShown
         KEYS -> isKeyBarShown
         CLOSE -> false
     }
@@ -32,21 +33,21 @@ enum class RemoteDesktopButton(val wordKey: String, val icon: AppIcon, val isDan
      * What a press does: Keyboard raises or puts away the keyboard, Keys shows or hides the key
      * bar, Close ends the session.
      *
-     * @param keyboardHeight The height the phone's keyboard covers, 0 when it is down.
+     * @param keyboard The phone's keyboard.
      * @param isKeyBarShown Whether the key bar shows.
      * @param onKeyboard Called with whether the keyboard is to be up.
      * @param onKeyBar Called with whether the key bar is to show.
      * @param onClose Called to end the session.
      */
     fun press(
-        keyboardHeight: Int,
+        keyboard: RemoteDesktopKeyboard,
         isKeyBarShown: Boolean,
         onKeyboard: (Boolean) -> Unit,
         onKeyBar: (Boolean) -> Unit,
         onClose: () -> Unit,
     ) {
         when (this) {
-            KEYBOARD -> onKeyboard(!isActive(keyboardHeight, isKeyBarShown))
+            KEYBOARD -> onKeyboard(!isActive(keyboard, isKeyBarShown))
             KEYS -> onKeyBar(!isKeyBarShown)
             CLOSE -> onClose()
         }

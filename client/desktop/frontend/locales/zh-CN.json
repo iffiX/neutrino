@@ -124,6 +124,7 @@
   "ui.healthy": "可以访问",
   "ui.hub_is_exit": "AI 工具指向此 hub",
   "ui.hub_software": "运行 {software}",
+  "ui.job.clearing": "清屏中…",
   "ui.job.connecting": "连接中…",
   "ui.job.disconnecting": "断开中…",
   "ui.job.forwarding": "转发中…",

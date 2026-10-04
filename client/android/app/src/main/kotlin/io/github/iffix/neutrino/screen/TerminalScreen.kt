@@ -380,11 +380,14 @@ private fun TerminalPane(
             paste = words.word("ui.menu.paste"),
             selectAll = words.word("ui.menu.select_all"),
             clear = words.word("ui.menu.clear"),
+            clearing = words.word("ui.job.clearing"),
         )
     }
     LaunchedEffect(live) { view.panes(live) }
     LaunchedEffect(active, live) { view.show(active) }
     LaunchedEffect(modifiers) { view.modifiers(modifiers) }
+    val clearing by tabs.clearing.collectAsStateWithLifecycle()
+    LaunchedEffect(clearing, live) { view.clearing(clearing) }
     AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
 }
 
