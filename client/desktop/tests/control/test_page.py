@@ -725,6 +725,16 @@ def test_keys_go_one_request_at_a_time_and_output_comes_as_pushed_pieces():
     assert "earlyOutput[piece.id]" in piece
 
 
+def test_the_menus_clear_sends_ctrl_c_before_it_clears_the_screen():
+    menu = function_body("function openTerminalMenu(tab, x, y)")
+    clear = function_body("function clearTerminal(tab)")
+
+    assert "[t('ui.menu.clear'), false, () => clearTerminal(tab)]," in menu
+    assert clear.index("sendShellKeys(tab, '\\x03');") < clear.index(
+        "tab.term.clear();"
+    )
+
+
 def test_the_shells_panes_outlive_a_redraw():
     surface = function_body("function shellSurfaceElement()")
 
