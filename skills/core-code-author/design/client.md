@@ -442,7 +442,11 @@ The phone's viewer page is built for the picture first:
 | Typing goes through an input connection of the page's own, not through a text field that is diffed: the text the keyboard commits is sent as text, the text it is still composing is sent nowhere, a delete is sent as Backspace, Enter as Enter, and a single key with a modifier held is sent as that key. The connection keeps the focus while the keyboard is up. No ASCII-only keyboard type, no autocorrect, no suggestions. | The person's own keyboard, in its own language, is the input; a Chinese keyboard composes before it commits, and a field diffed on every change sends the composition and loses the focus when the page redraws. |
 
 A row whose entry is unhealthy shows the code's wording on the reason line:
-`rdp_nobody_seated`, `rdp_screen_not_allowed`.
+`rdp_nobody_seated`, `rdp_screen_not_allowed`. A row whose entry's
+`platform_os` is `darwin` shows a standing hint under the provider line,
+`ui.rdp_mac_hint`: a black picture or a mouse that does nothing means that
+Mac has not granted RustDesk screen recording and accessibility; the agent
+cannot read those grants, so the client says it every time.
 
 The viewer shares the clipboard both ways: text copied on the remote machine
 is on this device's clipboard, and a paste in the viewer sends this device's

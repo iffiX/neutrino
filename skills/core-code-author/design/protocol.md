@@ -1077,7 +1077,7 @@ what the entry's `payload` names:
 | `port` | `{host, port}` | a device's Podman container publishes a host port, or a `generic_tcp` record is declared |
 | `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users}`, `protocol` being `smb`; `users` is the share's `valid_users`, or every user of the device's Samba module when the share names none, and empty on a declared record; it is an added field, absent from a hub before 0.5.0, and keeps `PROTOCOL` | a device's Samba module reports the share, or a `samba` record is declared |
-| `rdp` | `{protocol, host, port, attention}`, `protocol` being `rustdesk` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way |
+| `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
 
 The five types are closed, `SERVICES_TYPES` in
 `modules/services/constants.py`; a sixth is a row here in the same change.

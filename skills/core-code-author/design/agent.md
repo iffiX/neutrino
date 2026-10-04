@@ -356,11 +356,23 @@ system; its token is what admits a browser, and the hub names the address a
 client opens by that client's scope ([protocol.md](protocol.md), "The
 address a caller is given").
 
+On a Mac the connections land in the `RustDesk --server` job of the signed-in
+session (the LaunchAgent `com.carriez.RustDesk_server`), not in the root
+service alone, and that job writes its own copy of the configuration back
+when it exits. So the host configures a Mac by stopping that job together
+with the service, writing both copies, and starting both again, and the
+share is declared only once the direct port answers, as everywhere.
+
 A Mac shows a peer nothing until RustDesk holds both screen recording and
-accessibility, which only somebody at that Mac grants. The seat reads the
-grants from the system's privacy database, and its attention is
-`rdp_permissions_needed` until both are there; a database root cannot read
-reports the same.
+accessibility, which only somebody at that Mac grants, and the privacy
+database that records them is closed to root, so the seat does not read it:
+its attention is empty. Instead, starting a share from `nagent rdp start`
+or from the panel puts a dialog on that Mac's screen, in the signed-in
+session, naming the two permissions, prints the same line in the terminal,
+and opens the Screen Recording pane of the system settings; RustDesk is
+started whether or not the person has granted them yet. The hub's `rdp`
+entry carries the machine's `platform_os`, and a client shows a standing
+hint under a Mac's entry ([client.md](client.md)).
 
 ### CloudCLI
 
