@@ -22,12 +22,20 @@ import subprocess
 import time
 
 from neutrino_agent.constants import (
+    AGENT_ADDED_LAUNCHD_PREFIX,
+    AGENT_ADDED_NAME_PREFIX,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_SOCKET_PATH_DARWIN,
+    AGENT_DARWIN_LINK_PATH,
     AGENT_DARWIN_LOG_PATH,
+    AGENT_DARWIN_PACKAGE_ID,
+    AGENT_DARWIN_PROGRAM_DIR,
+    AGENT_DARWIN_RUSTDESK_APP,
     AGENT_DATA_DIR_DARWIN,
+    AGENT_LAUNCHD_DAEMON_DIR,
     AGENT_LAUNCHD_LABEL,
     AGENT_LAUNCHD_PLIST_PATH,
+    AGENT_PF_PARENT_ANCHOR,
     AGENT_VAR_DIR_DARWIN,
 )
 from neutrino_agent.core.metrics import (
@@ -37,9 +45,12 @@ from neutrino_agent.core.metrics import (
     busiest_processes,
     gpu_vendor,
 )
-from neutrino_agent.modules.samba.constants import SAMBA_DARWIN_PF_RULES_NAME
+from neutrino_agent.modules.samba.constants import (
+    SAMBA_DARWIN_PF_ANCHOR,
+    SAMBA_DARWIN_PF_RULES_NAME,
+)
 from neutrino_agent.modules.samba.darwin_applier import SambaDarwinApplier
-from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 
 try:
     import pwd
@@ -60,6 +71,10 @@ DARWIN_POWER_COMMANDS = {
 DARWIN_LAUNCHD_TARGET = f"system/{AGENT_LAUNCHD_LABEL}"
 DARWIN_LAUNCHD_STATE_PATTERN = re.compile(r"^\s*state\s*=\s*(\S+)", re.MULTILINE)
 DARWIN_COMMAND_TIMEOUT_S = 10
+# How long one launchctl bootout, pfctl or rm of a removal may take.
+DARWIN_REMOVAL_TIMEOUT_S = 60
+DARWIN_PLIST_SUFFIX = ".plist"
+DARWIN_CONSOLE_PATH = "/dev/console"
 
 DARWIN_LOOPBACK_NAME = "lo0"
 DARWIN_INTERFACE_HEADER = re.compile(r"^([A-Za-z0-9_.]+): flags=")
@@ -128,6 +143,24 @@ def _run(command) -> str:
     except (OSError, subprocess.SubprocessError):
         return ""
     return (result.stdout or "") if result.returncode == 0 else ""
+
+
+def _run_removal(command: list) -> None:
+    """Run one step of a removal; a step that fails or is missing is skipped."""
+    try:
+        subprocess.run(
+            command, capture_output=True, timeout=DARWIN_REMOVAL_TIMEOUT_S, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def _unlink(path: str) -> None:
+    """Delete one file or link; a missing one is no error."""
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
 
 
 def parse_ifconfig(text: str) -> list:
@@ -274,6 +307,8 @@ class DarwinPlatform(AgentPlatform):
             "machine_id",
             "smb_server",
             "hub_packages",
+            "removal",
+            "self_removal",
         }
     )
 
@@ -397,6 +432,97 @@ class DarwinPlatform(AgentPlatform):
             timeout=30,
             check=False,
         )
+
+    def remove_added(self) -> list:
+        """Unload and delete the launchd jobs the agent's modules wrote, and
+        empty the file share's fence.
+
+        A job is the modules' when its plist under ``/Library/LaunchDaemons``
+        is named as :func:`is_added_name` says. The fence is every
+        ``com.apple`` sub-anchor whose name starts ``neutrino_``, emptied,
+        and its rules file under the state root, deleted. Share points and
+        accounts stay, and so does the agent's own job.
+
+        Returns:
+            What was removed, one line each.
+        """
+        removed = []
+        try:
+            entries = sorted(os.listdir(AGENT_LAUNCHD_DAEMON_DIR))
+        except OSError:
+            entries = []
+        for name in entries:
+            if not name.endswith(DARWIN_PLIST_SUFFIX):
+                continue
+            label = name[: -len(DARWIN_PLIST_SUFFIX)]
+            if not is_added_name(label, AGENT_ADDED_LAUNCHD_PREFIX):
+                continue
+            _run_removal(["launchctl", "bootout", f"system/{label}"])
+            _unlink(os.path.join(AGENT_LAUNCHD_DAEMON_DIR, name))
+            removed.append(label)
+        anchors = {SAMBA_DARWIN_PF_ANCHOR}
+        listed = _run(["pfctl", "-a", AGENT_PF_PARENT_ANCHOR, "-s", "Anchors"])
+        for line in listed.splitlines():
+            anchor = line.strip()
+            if not anchor:
+                continue
+            if "/" not in anchor:
+                anchor = f"{AGENT_PF_PARENT_ANCHOR}/{anchor}"
+            if is_added_name(anchor.rsplit("/", 1)[-1], AGENT_ADDED_NAME_PREFIX):
+                anchors.add(anchor)
+        for anchor in sorted(anchors):
+            _run_removal(["pfctl", "-a", anchor, "-F", "all"])
+            removed.append(f"pf anchor {anchor}")
+        _unlink(os.path.join(self.agent_var_dir(), SAMBA_DARWIN_PF_RULES_NAME))
+        return removed
+
+    def remove_agent_program(self) -> list:
+        """Remove the agent from this Mac, which has no uninstaller.
+
+        RustDesk's two jobs and the agent's own are unloaded, their plists,
+        RustDesk, the program and its link are deleted, and the package's
+        receipt is forgotten. The configuration, the state and the log stay,
+        as a Linux package's removal leaves them, so an install that comes
+        after finds the binding and the file share's record.
+
+        Returns:
+            What was removed, one line each.
+        """
+        from neutrino_agent.modules.rustdesk import (
+            RUSTDESK_DARWIN_SERVICE_LABEL,
+            RUSTDESK_DARWIN_SERVICE_PLIST,
+            RUSTDESK_DARWIN_SESSION_LABEL,
+            RUSTDESK_DARWIN_SESSION_PLIST,
+        )
+
+        try:
+            seat = os.stat(DARWIN_CONSOLE_PATH).st_uid
+        except OSError:
+            seat = 0
+        if seat != 0:
+            _run_removal(
+                ["launchctl", "bootout", f"gui/{seat}/{RUSTDESK_DARWIN_SESSION_LABEL}"]
+            )
+        _run_removal(
+            ["launchctl", "bootout", f"system/{RUSTDESK_DARWIN_SERVICE_LABEL}"]
+        )
+        _run_removal(["launchctl", "bootout", DARWIN_LAUNCHD_TARGET])
+        for path in (
+            RUSTDESK_DARWIN_SESSION_PLIST,
+            RUSTDESK_DARWIN_SERVICE_PLIST,
+            AGENT_LAUNCHD_PLIST_PATH,
+            AGENT_DARWIN_LINK_PATH,
+        ):
+            _unlink(path)
+        _run_removal(["pkgutil", "--forget", AGENT_DARWIN_PACKAGE_ID])
+        _run_removal(["rm", "-rf", AGENT_DARWIN_RUSTDESK_APP, AGENT_DARWIN_PROGRAM_DIR])
+        return [
+            AGENT_LAUNCHD_LABEL,
+            RUSTDESK_DARWIN_SERVICE_LABEL,
+            RUSTDESK_DARWIN_SESSION_LABEL,
+            AGENT_DARWIN_RUSTDESK_APP,
+            AGENT_DARWIN_PROGRAM_DIR,
+        ]
 
     def agent_service_start_hint(self) -> str:
         """The launchctl command that loads the agent's own job."""

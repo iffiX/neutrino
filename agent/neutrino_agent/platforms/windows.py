@@ -24,6 +24,7 @@ import subprocess
 import time
 
 from neutrino_agent.constants import (
+    AGENT_ADDED_NAME_PREFIX,
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
     AGENT_WINDOWS_AGENT_SUBDIR,
@@ -46,7 +47,7 @@ from neutrino_agent.modules.powershell_run import listed, run_powershell
 from neutrino_agent.modules.samba.constants import SAMBA_WINDOWS_MARKER
 from neutrino_agent.modules.samba.windows_applier import SambaWindowsApplier
 from neutrino_agent.platforms import win32
-from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 from neutrino_agent.rdp.windows_seat import WindowsSeat
 
 try:
@@ -116,6 +117,44 @@ WINDOWS_OPEN_TO_ACCOUNTS_SCRIPT = """
 $code = Invoke-Icacls $d.directory '/grant' '*S-1-5-32-545:(OI)(CI)RX'
 if ($code -ne 0) { throw "icacls exited $code" }
 @{is_open = $true} | ConvertTo-Json -Compress
+"""
+# The scheduled tasks and the firewall rules whose names carry a prefix.
+WINDOWS_ADDED_LIST_SCRIPT = """
+$tasks = @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue |
+  ForEach-Object { [string]$_.TaskName })
+$rules = @(Get-NetFirewallRule -Name "$($d.prefix)*" -ErrorAction SilentlyContinue |
+  ForEach-Object { [string]$_.Name })
+@{tasks = $tasks; rules = $rules} | ConvertTo-Json -Compress -Depth 3
+"""
+# Stops and unregisters the tasks named, ends every process whose command
+# line or program lies under the state root and their descendants, a child
+# never older than its parent, and removes the rules named.
+WINDOWS_ADDED_REMOVE_SCRIPT = """
+foreach ($name in @($d.tasks)) {
+  Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+}
+$all = @(Get-CimInstance Win32_Process)
+$tree = @($all | Where-Object {
+  "$($_.CommandLine)|$($_.ExecutablePath)".IndexOf(
+    $d.state_root, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+for ($n = 0; $n -lt $tree.Count; $n++) {
+  $parent = $tree[$n]
+  foreach ($child in $all) {
+    if ($child.ParentProcessId -eq $parent.ProcessId -and
+        $child.CreationDate -ge $parent.CreationDate -and
+        @($tree | ForEach-Object { $_.ProcessId }) -notcontains $child.ProcessId) {
+      $tree += $child
+    }
+  }
+}
+foreach ($process in $tree) {
+  Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+}
+foreach ($name in @($d.rules)) {
+  Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue
+}
+@{is_removed = $true} | ConvertTo-Json -Compress
 """
 # The accounts Windows makes for itself, by their lower-case names.
 WINDOWS_BUILTIN_ACCOUNTS = frozenset(
@@ -265,6 +304,7 @@ class WindowsPlatform(AgentPlatform):
             "smb_server",
             "hub_packages",
             "process_terminate",
+            "removal",
         }
     )
 
@@ -527,6 +567,45 @@ class WindowsPlatform(AgentPlatform):
             self._powershell(WINDOWS_OPEN_TO_ACCOUNTS_SCRIPT, {"directory": directory})
         except subprocess.SubprocessError as error:
             raise OSError(f"powershell did not answer: {error}") from error
+
+    def remove_added(self) -> list:
+        """Unregister the scheduled tasks and remove the firewall rules the
+        agent's modules added, the file share's fence among them.
+
+        A task or a rule is the modules' when :func:`is_added_name` says so;
+        the hub's and the client's are not touched. Every process running
+        from under the state root is ended with its descendants, so no
+        instance outlives its task. Shares and accounts stay.
+
+        Returns:
+            What was removed, one line each.
+
+        Raises:
+            OSError: When PowerShell cannot run or fails.
+        """
+        try:
+            found = self._powershell(
+                WINDOWS_ADDED_LIST_SCRIPT, {"prefix": AGENT_ADDED_NAME_PREFIX}
+            )
+            tasks = sorted(
+                str(name)
+                for name in listed(found.get("tasks"))
+                if is_added_name(str(name), AGENT_ADDED_NAME_PREFIX)
+            )
+            rules = sorted(
+                str(name)
+                for name in listed(found.get("rules"))
+                if is_added_name(str(name), AGENT_ADDED_NAME_PREFIX)
+            )
+            self._powershell(
+                WINDOWS_ADDED_REMOVE_SCRIPT,
+                {"tasks": tasks, "rules": rules, "state_root": self.agent_var_dir()},
+            )
+        except subprocess.SubprocessError as error:
+            raise OSError(f"powershell did not answer: {error}") from error
+        return [f"task {name}" for name in tasks] + [
+            f"firewall rule {name}" for name in rules
+        ]
 
     def smb_server_applier(self) -> SambaWindowsApplier:
         """The applier that drives Windows' own SMB server.

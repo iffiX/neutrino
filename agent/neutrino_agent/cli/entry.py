@@ -9,6 +9,7 @@
     nagent rdp start [--user <name>] | stop
     nagent run
     nagent service run
+    nagent service uninstall [--yes]
 
 The shape is settled in ../../../docs/cli.md.
 """
@@ -78,7 +79,8 @@ def main() -> int:
         "the LaunchDaemon start; use start and stop otherwise",
     )
     service_parser = subparsers.add_parser(
-        "service", help="the agent as the Windows service"
+        "service",
+        help="the entries the service manager and the package's removal run",
     )
     service_actions = service_parser.add_subparsers(
         dest="service_command", metavar="<action>"
@@ -87,6 +89,14 @@ def main() -> int:
         "run",
         help="the foreground entry the service control manager starts; use "
         "start and stop otherwise",
+    )
+    uninstall_parser = service_actions.add_parser(
+        "uninstall",
+        help="take away the units, tasks and firewall rules the modules added, "
+        "the entry the package's removal runs; on macOS, remove the agent",
+    )
+    uninstall_parser.add_argument(
+        "--yes", action="store_true", help="remove without asking first"
     )
     rdp_parser = _add_rdp_parser(subparsers)
 
@@ -115,6 +125,8 @@ def main() -> int:
     if arguments.command == "service":
         if arguments.service_command == "run":
             return service.main_run()
+        if arguments.service_command == "uninstall":
+            return service.main_uninstall(is_forced=arguments.yes)
         service_parser.print_help()
         return 2
     return status.main()

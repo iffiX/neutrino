@@ -45,11 +45,13 @@ CONTRACT_CALLS = {
     "uninstall_package": ("packages", ("apt-get remove -y app",), {}),
     "smb_server_applier": ("smb_server", (), {}),
     "terminate_process": ("process_terminate", (4242,), {}),
+    "remove_added": ("removal", (), {}),
+    "remove_agent_program": ("self_removal", (), {}),
 }
 
-# Capabilities only a system that carries its own server, or has no
-# signals, has; Linux has every other one.
-NOT_ON_LINUX = {"smb_server", "hub_packages", "process_terminate"}
+# Capabilities only a system that carries its own server, has no signals,
+# or has no uninstaller has; Linux has every other one.
+NOT_ON_LINUX = {"smb_server", "hub_packages", "process_terminate", "self_removal"}
 
 # Contract methods the base class answers for everyone.
 BASE_IMPLEMENTED = {
@@ -156,3 +158,49 @@ def test_base_account_home_refuses_rather_than_reading_the_environment(monkeypat
         AgentPlatform().account_home("alice")
 
     assert caught.value.code == "unsupported_platform"
+
+
+@pytest.mark.parametrize(
+    "name, prefix",
+    [
+        ("neutrino_vscode@ann.service", "neutrino_"),
+        ("neutrino_vscode@.service", "neutrino_"),
+        ("neutrino_cloudcli@ann.service", "neutrino_"),
+        ("neutrino_code_server@ann.service", "neutrino_"),
+        ("neutrino_gitea.service", "neutrino_"),
+        ("neutrino_vscode_ann", "neutrino_"),
+        ("neutrino_cloudcli_install_ann", "neutrino_"),
+        ("neutrino_cloudcli_port_ann", "neutrino_"),
+        ("neutrino_smb_fence", "neutrino_"),
+        ("NEUTRINO_VSCODE_ann", "neutrino_"),
+        ("com.neutrino.vscode.ann", "com.neutrino."),
+        ("com.neutrino.cloudcli.ann", "com.neutrino."),
+        ("com.neutrino.code_server.ann", "com.neutrino."),
+    ],
+)
+def test_a_name_a_module_gives_what_it_adds_is_taken_with_the_agent(name, prefix):
+    assert base_module.is_added_name(name, prefix) is True
+
+
+@pytest.mark.parametrize(
+    "name, prefix",
+    [
+        ("neutrino_agent.service", "neutrino_"),
+        ("neutrino_agent_update.service", "neutrino_"),
+        ("neutrino_agent", "neutrino_"),
+        ("neutrino_hub_web.service", "neutrino_"),
+        ("neutrino_hub_dhcpcd@eth1.service", "neutrino_"),
+        ("neutrino_hub_firewall_panel", "neutrino_"),
+        ("neutrino_client.service", "neutrino_"),
+        ("neutrino_client_netbird.service", "neutrino_"),
+        ("neutrino_", "neutrino_"),
+        ("rustdesk.service", "neutrino_"),
+        ("smbd.service", "neutrino_"),
+        ("com.neutrino.agent", "com.neutrino."),
+        ("com.neutrino.hub", "com.neutrino."),
+        ("com.neutrino.client.netbird", "com.neutrino."),
+        ("com.carriez.RustDesk_service", "com.neutrino."),
+    ],
+)
+def test_the_hub_the_client_and_the_agent_itself_are_left_alone(name, prefix):
+    assert base_module.is_added_name(name, prefix) is False

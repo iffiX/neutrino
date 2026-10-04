@@ -11,7 +11,9 @@ The targets:
 
 - ``agent_windows``: the .msi installs, the ``neutrino_agent`` and
   ``RustDesk`` services run, ``nagent --version`` answers, and removing it
-  takes both services away. Windows.
+  takes both services away, with a scheduled task and a firewall rule named
+  as a module names them, and leaves a rule named as the hub names its
+  own. Windows.
 - ``client_windows``: the .msi installs, ``nclient --version`` answers,
   ``nclient status`` exits 1 unbound, the folder is on PATH, ``packet.dll``
   lies beside EasyTier's core, the EasyTier daemon runs, answers on its
@@ -19,7 +21,9 @@ The targets:
   it takes the folder and the daemon away. Windows.
 - ``agent_macos``: the .pkg installs, its LaunchDaemon runs, ``nagent
   --version`` answers, its ``config`` is root's alone and its ``state`` open
-  to every account, and removing it leaves no job. macOS.
+  to every account, and ``nagent service uninstall --yes`` leaves no job,
+  no ``nagent``, no receipt and no LaunchDaemon named as a module names
+  them, and keeps one named as the hub names its own. macOS.
 - ``client_macos``: the .pkg installs, ``nclient --version`` answers and
   ``nclient status`` exits 1 unbound. macOS.
 - ``hub_windows``: the .msi installs, ``nhub --version`` answers, the
@@ -30,7 +34,7 @@ The targets:
   installs the same file again from a directory up to ``nhub --version``.
   Windows.
 - ``hub_macos``: the same with the .pkg, its ``com.neutrino.hub`` job
-  loaded and running, removed by hand as the agent's is, and
+  loaded and running, removed by hand, and
   ``install.sh``. macOS.
 - ``client_android``: the apk installs on the running emulator, its main
   activity starts and its process is alive ten seconds later. Any host with
@@ -86,6 +90,28 @@ MACHINE_ENVIRONMENT_KEY = (
 HUB_WINDOWS_FOLDER = PROGRAM_FILES / "Neutrino" / "hub"
 HUB_WINDOWS_SERVICE = "neutrino_hub"
 UNINSTALL_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+# A task and a rule named as a module names them, which removing the agent
+# takes away, and a rule named as the hub names its own, which it leaves.
+AGENT_WINDOWS_ADDED_TASK = "neutrino_check_task"
+AGENT_WINDOWS_ADDED_RULE = "neutrino_check_rule"
+AGENT_WINDOWS_FOREIGN_RULE = "neutrino_hub_check_rule"
+AGENT_WINDOWS_PLANT_SCRIPT = (
+    "Register-ScheduledTask -TaskName {task} -User SYSTEM -Force "
+    "-Action (New-ScheduledTaskAction -Execute cmd.exe -Argument '/c exit') "
+    "| Out-Null; "
+    "foreach ($rule in @('{rule}', '{foreign}')) {{ "
+    "New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Inbound "
+    "-Action Allow -Protocol TCP -LocalPort 59999 | Out-Null }}"
+)
+AGENT_WINDOWS_FOUND_SCRIPT = (
+    "$task = [bool](Get-ScheduledTask -TaskName {task} -ErrorAction "
+    "SilentlyContinue); "
+    "$rule = [bool](Get-NetFirewallRule -Name {rule} -ErrorAction "
+    "SilentlyContinue); "
+    "$foreign = [bool](Get-NetFirewallRule -Name {foreign} -ErrorAction "
+    "SilentlyContinue); "
+    'Write-Output "$task $rule $foreign"'
+)
 
 # --- macOS ---
 AGENT_MACOS_JOB = "system/com.neutrino.agent"
@@ -106,6 +132,19 @@ AGENT_MACOS_LEFTOVERS = (
     "/Library/LaunchAgents/com.carriez.RustDesk_server.plist",
 )
 AGENT_MACOS_PACKAGE_ID = "com.neutrino.agent"
+AGENT_MACOS_COMMAND = "/usr/local/bin/nagent"
+# A LaunchDaemon named as a module names its jobs, which removing the agent
+# takes away, and one named as the hub names its own, which it leaves.
+AGENT_MACOS_ADDED_PLIST = Path("/Library/LaunchDaemons/com.neutrino.check.plist")
+AGENT_MACOS_FOREIGN_PLIST = Path("/Library/LaunchDaemons/com.neutrino.hub_check.plist")
+AGENT_MACOS_CHECK_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>{label}</string>
+<key>ProgramArguments</key><array><string>/usr/bin/true</string></array>
+</dict></plist>
+"""
 HUB_MACOS_JOB = "system/com.neutrino.hub"
 HUB_MACOS_COMMAND = "/usr/local/bin/nhub"
 HUB_MACOS_PLIST = Path("/Library/LaunchDaemons/com.neutrino.hub.plist")
@@ -224,14 +263,30 @@ def check_agent_windows(msi: Path) -> None:
         if "RUNNING" not in state:
             raise SystemExit(f"{service} is not running")
     print(f"nagent {_answer([str(AGENT_WINDOWS_FOLDER / 'nagent.exe'), '--version'])}")
+    names = {
+        "task": AGENT_WINDOWS_ADDED_TASK,
+        "rule": AGENT_WINDOWS_ADDED_RULE,
+        "foreign": AGENT_WINDOWS_FOREIGN_RULE,
+    }
+    _powershell(AGENT_WINDOWS_PLANT_SCRIPT.format(**names))
+    if _powershell(AGENT_WINDOWS_FOUND_SCRIPT.format(**names)) != "True True True":
+        raise SystemExit("the task and the rules to remove were not made")
 
     log = Path(tempfile.gettempdir()) / "agent_remove.log"
     print(f"msiexec /x exited {_msiexec('/x', msi, log)}")
-    _print_log(log, ("UninstallRustDesk", "return value 3"), 12)
+    _print_log(log, ("UninstallRustDesk", "UninstallAdded", "return value 3"), 12)
     for service in AGENT_WINDOWS_SERVICES:
         if not _wait_for_service(service, is_running=False):
             raise SystemExit(f"{service} outlived the uninstaller")
         print(f"{service} is gone")
+    found = _powershell(AGENT_WINDOWS_FOUND_SCRIPT.format(**names))
+    _powershell(f"Remove-NetFirewallRule -Name {AGENT_WINDOWS_FOREIGN_RULE}")
+    if found != "False False True":
+        raise SystemExit(
+            f"after the removal the task, the rule and the hub's rule read {found}; "
+            "expected False False True"
+        )
+    print("the module's task and rule are gone, the hub's rule stays")
 
 
 def check_client_windows(msi: Path) -> None:
@@ -295,14 +350,31 @@ def check_agent_macos(pkg: Path) -> None:
         found = os.stat(directory).st_mode & 0o777
         if found != mode:
             raise SystemExit(f"{directory} is mode {found:o}, expected {mode:o}")
-    _sudo(["launchctl", "bootout", AGENT_MACOS_JOB])
-    subprocess.run(
-        ["sudo", "launchctl", "bootout", "system/com.carriez.RustDesk_service"]
-    )
-    _sudo(["rm", "-rf", *AGENT_MACOS_LEFTOVERS])
-    _sudo(["pkgutil", "--forget", AGENT_MACOS_PACKAGE_ID])
+    for plist in (AGENT_MACOS_ADDED_PLIST, AGENT_MACOS_FOREIGN_PLIST):
+        written = Path(tempfile.gettempdir()) / plist.name
+        written.write_text(AGENT_MACOS_CHECK_PLIST.format(label=plist.stem))
+        _sudo(["cp", str(written), str(plist)])
+
+    _sudo([AGENT_MACOS_COMMAND, "service", "uninstall", "--yes"])
     if not _wait_for_job_gone(AGENT_MACOS_JOB):
         raise SystemExit("the agent's job outlived its removal")
+    is_forgotten = (
+        subprocess.run(
+            ["pkgutil", "--pkg-info", AGENT_MACOS_PACKAGE_ID], capture_output=True
+        ).returncode
+        != 0
+    )
+    is_added_gone = not AGENT_MACOS_ADDED_PLIST.exists()
+    is_foreign_kept = AGENT_MACOS_FOREIGN_PLIST.exists()
+    _sudo(["rm", "-f", str(AGENT_MACOS_FOREIGN_PLIST)])
+    _sudo(["rm", "-rf", *AGENT_MACOS_LEFTOVERS])
+    if Path(AGENT_MACOS_COMMAND).exists() or not is_forgotten:
+        raise SystemExit("nagent or its receipt outlived nagent service uninstall")
+    if not is_added_gone or not is_foreign_kept:
+        raise SystemExit(
+            "nagent service uninstall took the wrong LaunchDaemons: "
+            f"the module's gone {is_added_gone}, the hub's kept {is_foreign_kept}"
+        )
 
 
 def check_client_macos(pkg: Path) -> None:
@@ -739,6 +811,22 @@ def _machine_path() -> str:
 
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, MACHINE_ENVIRONMENT_KEY) as key:
         return winreg.QueryValueEx(key, "Path")[0]
+
+
+def _powershell(script: str) -> str:
+    """Run one PowerShell command line and return what it printed, stripped.
+
+    Raises:
+        SystemExit: When it fails.
+    """
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"powershell exited {result.returncode}: {result.stderr}")
+    return result.stdout.strip()
 
 
 def _sudo(command: list) -> None:

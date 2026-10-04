@@ -344,3 +344,79 @@ def test_linux_machine_id_is_empty_when_no_file_holds_one(monkeypatch, tmp_path)
     )
 
     assert LinuxPlatform().read_machine_id() == ""
+
+
+def test_linux_removal_takes_the_modules_units_and_leaves_the_rest(
+    monkeypatch, tmp_path
+):
+    """Loaded instances and unit files alike, their drop-ins and their wants
+    links; the hub's units, the agent's own and RustDesk's stay."""
+    units = tmp_path / "system"
+    wants = units / "multi-user.target.wants"
+    wants.mkdir(parents=True)
+    for name in (
+        "neutrino_vscode@.service",
+        "neutrino_gitea.service",
+        "neutrino_hub_router.service",
+        "rustdesk.service",
+    ):
+        (units / name).write_text("[Service]\n")
+    (units / "neutrino_gitea.service.d").mkdir()
+    (units / "neutrino_gitea.service.d" / "override.conf").write_text("")
+    for name in (
+        "neutrino_vscode@ann.service",
+        "neutrino_gitea.service",
+        "neutrino_hub_router.service",
+    ):
+        (wants / name).symlink_to(units / name.replace("ann", ""))
+    calls = []
+
+    def answer(command, **kwargs):
+        calls.append(list(command))
+        stdout = ""
+        if command[1] == "list-units":
+            stdout = (
+                "neutrino_agent.service loaded active running Neutrino agent\n"
+                "neutrino_vscode@ann.service loaded active running VS Code\n"
+                "neutrino_cloudcli@bob.service loaded failed failed CloudCLI\n"
+                "neutrino_hub_web.service loaded active running panel\n"
+            )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(linux_module.subprocess, "run", answer)
+    monkeypatch.setattr(linux_module, "AGENT_SYSTEMD_UNIT_DIR", str(units))
+
+    removed = LinuxPlatform().remove_added()
+
+    assert removed == [
+        "neutrino_cloudcli@bob.service",
+        "neutrino_gitea.service",
+        "neutrino_vscode@.service",
+        "neutrino_vscode@ann.service",
+    ]
+    for unit in removed:
+        assert ["systemctl", "disable", "--now", unit] in calls
+        assert ["systemctl", "reset-failed", unit] in calls
+    assert calls.index(["systemctl", "daemon-reload"]) > calls.index(
+        ["systemctl", "disable", "--now", "neutrino_vscode@ann.service"]
+    )
+    assert sorted(path.name for path in units.iterdir()) == [
+        "multi-user.target.wants",
+        "neutrino_hub_router.service",
+        "rustdesk.service",
+    ]
+    assert [path.name for path in wants.iterdir()] == ["neutrino_hub_router.service"]
+    touched = {call[-1] for call in calls if call[1] in ("disable", "reset-failed")}
+    assert not touched & {"neutrino_agent.service", "neutrino_hub_web.service"}
+
+
+def test_linux_removal_with_no_systemctl_and_no_unit_dir_removes_nothing(
+    monkeypatch, tmp_path
+):
+    def missing(command, **kwargs):
+        raise FileNotFoundError(command[0])
+
+    monkeypatch.setattr(linux_module.subprocess, "run", missing)
+    monkeypatch.setattr(linux_module, "AGENT_SYSTEMD_UNIT_DIR", str(tmp_path / "no"))
+
+    assert LinuxPlatform().remove_added() == []

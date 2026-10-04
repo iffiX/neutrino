@@ -77,6 +77,29 @@ def test_service_run_reaches_the_service_command(monkeypatch):
     assert called == ["run"]
 
 
+@pytest.mark.parametrize("argv, is_forced", [(["--yes"], True), ([], False)])
+def test_service_uninstall_reaches_the_service_command(monkeypatch, argv, is_forced):
+    called = []
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "service", "uninstall", *argv])
+    monkeypatch.setattr(
+        entry.service,
+        "main_uninstall",
+        lambda *, is_forced: called.append(is_forced) or 0,
+    )
+
+    assert entry.main() == 0
+    assert called == [is_forced]
+
+
+def test_service_uninstall_is_roots_alone(monkeypatch, capsys):
+    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(entry.sys, "argv", ["nagent", "service", "uninstall"])
+
+    assert entry.main() == 2
+    assert "sudo nagent service uninstall" in capsys.readouterr().err
+
+
 def test_the_version_answers_any_account(monkeypatch, capsys):
     monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
     monkeypatch.setattr(entry.sys, "argv", ["nagent", "--version"])

@@ -130,6 +130,30 @@ def test_rustdesk_is_uninstalled_on_a_removal_and_kept_through_an_upgrade(docume
     )
 
 
+def test_a_removal_runs_the_agent_to_take_away_what_its_modules_added(document):
+    """The agent's own binary runs while it is still on disk, as the system,
+    on a removal alone: an upgrade keeps the tasks and the firewall rules."""
+    _source, root = document
+
+    action = by_id(root, WXS + "CustomAction", "UninstallAdded")
+    assert action.get("FileRef") == "AgentServiceFile"
+    assert action.get("ExeCommand") == "service uninstall --yes"
+    assert action.get("Execute") == "deferred"
+    assert action.get("Impersonate") == "no"
+    assert action.get("Return") == "ignore"
+
+    scheduled = [
+        node
+        for node in root.iter(WXS + "Custom")
+        if node.get("Action") == "UninstallAdded"
+    ]
+    assert len(scheduled) == 1
+    assert scheduled[0].get("Before") == "UninstallRustDesk"
+    assert scheduled[0].get("Condition") == (
+        'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+    )
+
+
 def test_the_data_folder_admits_system_and_the_administrators_alone(document):
     _source, root = document
 

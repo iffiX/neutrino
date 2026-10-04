@@ -512,3 +512,119 @@ def test_the_roots_and_the_socket_are_the_macs_own():
     assert "hub_packages" in DarwinPlatform.capabilities
     assert platform.control_socket_path() == "/var/run/neutrino/agent/agent.sock"
     assert platform.agent_log_path() == "/Library/Logs/Neutrino/agent/agent.log"
+
+
+def test_darwin_removal_takes_the_modules_jobs_and_empties_the_fence(
+    monkeypatch, tmp_path
+):
+    """Every module's LaunchDaemon, code-server's included, goes; the agent's
+    own job, the hub's, the client's and RustDesk's stay. The fence's anchors
+    are emptied and its rules file deleted."""
+    daemons = tmp_path / "LaunchDaemons"
+    daemons.mkdir()
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "samba_pf.conf").write_text("block in proto tcp to any port 445\n")
+    for label in (
+        "com.neutrino.vscode.ann",
+        "com.neutrino.cloudcli.ann",
+        "com.neutrino.code_server.bob",
+        "com.neutrino.agent",
+        "com.neutrino.hub",
+        "com.neutrino.client.netbird",
+        "com.carriez.RustDesk_service",
+    ):
+        (daemons / f"{label}.plist").write_text("<plist/>")
+    (daemons / "com.neutrino.vscode.notes.txt").write_text("")
+    calls = []
+    answering(
+        monkeypatch,
+        {
+            ("launchctl", "bootout"): completed(),
+            ("pfctl", "-a"): completed(
+                "  com.apple/250.ApplicationFirewall\n  com.apple/neutrino_smb\n"
+            ),
+        },
+        calls,
+    )
+    monkeypatch.setattr(darwin_module, "AGENT_LAUNCHD_DAEMON_DIR", str(daemons))
+    monkeypatch.setattr(darwin_module, "AGENT_VAR_DIR_DARWIN", str(state))
+
+    removed = DarwinPlatform().remove_added()
+
+    assert removed == [
+        "com.neutrino.cloudcli.ann",
+        "com.neutrino.code_server.bob",
+        "com.neutrino.vscode.ann",
+        "pf anchor com.apple/neutrino_smb",
+    ]
+    for label in removed[:3]:
+        assert ["launchctl", "bootout", f"system/{label}"] in calls
+    assert ["pfctl", "-a", "com.apple/neutrino_smb", "-F", "all"] in calls
+    assert [
+        "pfctl",
+        "-a",
+        "com.apple/250.ApplicationFirewall",
+        "-F",
+        "all",
+    ] not in calls
+    assert sorted(path.name for path in daemons.iterdir()) == [
+        "com.carriez.RustDesk_service.plist",
+        "com.neutrino.agent.plist",
+        "com.neutrino.client.netbird.plist",
+        "com.neutrino.hub.plist",
+        "com.neutrino.vscode.notes.txt",
+    ]
+    assert not (state / "samba_pf.conf").exists()
+
+
+def test_darwin_removal_empties_the_fence_even_when_pfctl_lists_nothing(
+    monkeypatch, tmp_path
+):
+    calls = []
+    answering(monkeypatch, {("pfctl", "-a"): completed("")}, calls)
+    monkeypatch.setattr(darwin_module, "AGENT_LAUNCHD_DAEMON_DIR", str(tmp_path / "no"))
+    monkeypatch.setattr(darwin_module, "AGENT_VAR_DIR_DARWIN", str(tmp_path))
+
+    assert DarwinPlatform().remove_added() == ["pf anchor com.apple/neutrino_smb"]
+    assert ["pfctl", "-a", "com.apple/neutrino_smb", "-F", "all"] in calls
+
+
+def test_darwin_removes_the_agent_itself_and_keeps_its_configuration_and_state(
+    monkeypatch, tmp_path
+):
+    """The jobs are unloaded before their files go, the program directory is
+    the last thing deleted, and nothing under config or state is named."""
+    link = tmp_path / "nagent"
+    link.write_text("")
+    calls = []
+    answering(
+        monkeypatch,
+        {
+            ("launchctl", "bootout"): completed(),
+            ("pkgutil", "--forget"): completed(),
+            ("rm", "-rf"): completed(),
+        },
+        calls,
+    )
+    monkeypatch.setattr(darwin_module, "AGENT_DARWIN_LINK_PATH", str(link))
+    monkeypatch.setattr(darwin_module, "DARWIN_CONSOLE_PATH", str(tmp_path / "none"))
+
+    removed = DarwinPlatform().remove_agent_program()
+
+    assert "com.neutrino.agent" in removed
+    assert calls[:2] == [
+        ["launchctl", "bootout", "system/com.carriez.RustDesk_service"],
+        ["launchctl", "bootout", "system/com.neutrino.agent"],
+    ]
+    assert ["pkgutil", "--forget", "com.neutrino.agent"] in calls
+    assert calls[-1] == [
+        "rm",
+        "-rf",
+        "/Applications/RustDesk.app",
+        "/Library/Application Support/Neutrino/agent/app",
+    ]
+    assert not link.exists()
+    named = " ".join(" ".join(call) for call in calls)
+    assert "agent/config" not in named
+    assert "agent/state" not in named

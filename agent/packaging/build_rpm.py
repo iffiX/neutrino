@@ -115,6 +115,10 @@ fi
 if [ "$1" = 0 ]; then
     systemctl stop neutrino_agent.service >/dev/null 2>&1 || true
     systemctl disable neutrino_agent.service >/dev/null 2>&1 || true
+    # What the modules added in order to run goes with the agent: their
+    # units. Shares, accounts and the modules' data stay. An upgrade runs
+    # this scriptlet with 1 and keeps them.
+    nagent service uninstall --yes >/dev/null 2>&1 || true
     systemctl stop {rustdesk_unit} >/dev/null 2>&1 || true
     systemctl disable {rustdesk_unit} >/dev/null 2>&1 || true
 fi
