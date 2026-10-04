@@ -927,6 +927,12 @@ export interface ClientListView {
   permission_kinds: string[];
 }
 
+/** A client's new name. */
+export interface ClientUpdate {
+  client_id: string;
+  name: string;
+}
+
 export interface ClientDefaultPermissionRequest {
   kinds: string[];
   /** Device ids by kind; a kind not named allows every device. */
@@ -1149,7 +1155,7 @@ export interface DeviceModuleRequest {
 
 // --- Services ---
 
-export type PublishedServiceType = "web" | "port" | "ai" | "file";
+export type PublishedServiceType = "web" | "port" | "ai" | "file" | "rdp";
 
 /** The type's own payload; each entry fills the fields its type has. */
 export interface PublishedServicePayload {
@@ -1161,6 +1167,10 @@ export interface PublishedServicePayload {
   models?: string[];
   share?: string;
   users?: string[];
+  /** rdp: what somebody must do at the sharing machine, as a code. */
+  attention?: string;
+  /** rdp: the sharing machine's `linux`, `windows` or `darwin`. */
+  platform_os?: string;
 }
 
 /**
@@ -1175,7 +1185,9 @@ export interface PublishedService {
   title: string;
   payload: PublishedServicePayload;
   is_healthy: boolean | null;
-  source: "module" | "declared";
+  /** A hub module, a person's declaration, or a machine sharing its
+   * desktop. */
+  source: "module" | "declared" | "device";
   /** The English provenance line, shown where no code words it. */
   description: string;
   /** Where the entry comes from, worded by the page; `""` on a declared

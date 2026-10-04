@@ -29,6 +29,7 @@
   "ui.settings.https_enable": "Enable HTTPS",
   "ui.settings.https_expires": "Certificate expires",
   "ui.settings.https_fingerprint": "Authority SHA-256",
+  "ui.settings.https_forwarded": "This page comes through a forwarded port. Once HTTPS is on, open the panel through the port forwarded to {port}.",
   "ui.settings.https_hint": "Install this hub's authority in each browser, restart the browser, then enable HTTPS.",
   "ui.settings.https_issued": "Certificate issued",
   "ui.settings.https_names": "Certificate names",

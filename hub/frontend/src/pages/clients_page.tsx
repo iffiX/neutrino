@@ -20,6 +20,7 @@ import { HUB_EVENT_CLIENTS } from "../use_hub_events";
 import type {
   ClientEnrollmentView,
   ClientListView,
+  ClientUpdate,
   ClientView,
   DeviceView,
   DevicesResponse,
@@ -77,6 +78,9 @@ export function ClientsPage() {
     name: string;
     view: ClientEnrollmentView;
   } | null>(null);
+  // The client whose name is being edited in its row, and the name typed.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
   // Whose permissions the drawer edits: a client's id, or the default's.
   const [permissionOf, setPermissionOf] = useState<string | null>(null);
 
@@ -118,6 +122,32 @@ export function ClientsPage() {
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const handleRename = async (client: ClientView) => {
+    const wanted = newName.trim();
+    if (wanted.length === 0 || wanted === client.name) {
+      setRenamingId(null);
+      return;
+    }
+    setIsBusy(true);
+    setError(null);
+    const update: ClientUpdate = { client_id: client.id, name: wanted };
+    try {
+      resource.setData(
+        await apiPost<ClientListView>(`${CLIENTS_PATH}/set`, update),
+      );
+      setRenamingId(null);
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const startRename = (client: ClientView) => {
+    setRenamingId(client.id);
+    setNewName(client.name);
   };
 
   const handleDelete = async (client: ClientView) => {
@@ -311,6 +341,12 @@ export function ClientsPage() {
                   key={client.id}
                   client={client}
                   isBusy={isBusy}
+                  isRenaming={renamingId === client.id}
+                  newName={newName}
+                  onNewName={setNewName}
+                  onRename={() => startRename(client)}
+                  onRenameSave={() => void handleRename(client)}
+                  onRenameCancel={() => setRenamingId(null)}
                   onToggle={() => void handleToggle(client)}
                   onPermission={() => setPermissionOf(client.id)}
                   onDelete={() => askDelete(client)}
@@ -361,6 +397,13 @@ export function ClientsPage() {
 interface ClientRowProps {
   client: ClientView;
   isBusy: boolean;
+  /** Whether the name cell holds the rename form. */
+  isRenaming: boolean;
+  newName: string;
+  onNewName: (name: string) => void;
+  onRename: () => void;
+  onRenameSave: () => void;
+  onRenameCancel: () => void;
   onToggle: () => void;
   onPermission: () => void;
   onDelete: () => void;
@@ -369,6 +412,12 @@ interface ClientRowProps {
 function ClientRow({
   client,
   isBusy,
+  isRenaming,
+  newName,
+  onNewName,
+  onRename,
+  onRenameSave,
+  onRenameCancel,
   onToggle,
   onPermission,
   onDelete,
@@ -379,17 +428,54 @@ function ClientRow({
   return (
     <tr className={client.is_disabled ? "clients_row--disabled" : ""}>
       <td>
-        <div className="clients_name">
-          {client.name}
-          {client.is_disabled && (
-            <span className="badge badge--warn">
-              {t("ui.clients.disabled")}
-            </span>
-          )}
-          {client.permission !== null && (
-            <span className="badge">{t("ui.clients.permission_custom")}</span>
-          )}
-        </div>
+        {isRenaming ? (
+          <div className="clients_rename">
+            <input
+              className="input"
+              value={newName}
+              aria-label={t("ui.clients.header_name")}
+              autoFocus
+              onChange={(event) => onNewName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  onRenameSave();
+                } else if (event.key === "Escape") {
+                  onRenameCancel();
+                }
+              }}
+            />
+            <div className="clients_add_actions">
+              <button
+                type="button"
+                className="button button--small button--ghost"
+                onClick={onRenameCancel}
+              >
+                {t("ui.clients.cancel")}
+              </button>
+              <button
+                type="button"
+                className="button button--small button--primary"
+                disabled={isBusy || newName.trim().length === 0}
+                onClick={onRenameSave}
+              >
+                <Icon name="check" size={13} />
+                {t("ui.clients.save")}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="clients_name">
+            {client.name}
+            {client.is_disabled && (
+              <span className="badge badge--warn">
+                {t("ui.clients.disabled")}
+              </span>
+            )}
+            {client.permission !== null && (
+              <span className="badge">{t("ui.clients.permission_custom")}</span>
+            )}
+          </div>
+        )}
       </td>
       <td className="mono">{client.hostname || NOTHING}</td>
       <td>{client.platform_os || NOTHING}</td>
@@ -405,6 +491,14 @@ function ClientRow({
       </td>
       <td>
         <div className="clients_actions">
+          <button
+            type="button"
+            className="button button--small button--ghost"
+            disabled={isBusy || isRenaming}
+            onClick={onRename}
+          >
+            {t("ui.clients.rename")}
+          </button>
           <button
             type="button"
             className="button button--small button--ghost"

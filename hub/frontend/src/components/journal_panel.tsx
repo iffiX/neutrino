@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { StatusDot } from "./status_dot";
 import { apiPath } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { stripAnsi } from "../strip_ansi";
 import { usePolledResource } from "../use_polled_resource";
 import type { ServiceJournal } from "../api_types";
 
@@ -64,7 +65,7 @@ export function JournalPanel({ path, isOpen }: JournalPanelProps) {
       )}
       {text !== null && (
         <pre ref={outputRef} className="journal_panel_output">
-          {text.trim().length > 0 ? text : t("ui.journal.empty")}
+          {text.trim().length > 0 ? stripAnsi(text) : t("ui.journal.empty")}
         </pre>
       )}
     </div>

@@ -224,7 +224,7 @@ export function VscodePanels({
           hint={t("ui.vscode.apply_hint")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
-          notice={notice}
+          notice={isFailing(saved) ? null : notice}
           onReset={() => {
             reset();
             setError(null);
@@ -254,4 +254,13 @@ function describeCode(code: string, account: string): string {
   return hasWord(key)
     ? t(key, { account })
     : t("ui.modules.failed_code", { code });
+}
+
+/** Whether the machine reports the module or one of its instances failing,
+ * which takes the place of an apply's success notice. */
+function isFailing(view: VscodeDeviceView): boolean {
+  return (
+    view.state === "failed" ||
+    view.instances.some((instance) => instance.code !== "")
+  );
 }
