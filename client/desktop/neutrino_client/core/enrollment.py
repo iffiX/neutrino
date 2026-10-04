@@ -1,39 +1,32 @@
 """Joining a hub as one person, leaving it, and the bindings kept in between.
 
-The link is ``neutrino://enroll/<payload>`` where the payload is base64url
-over ``{"urls": [...], "token": ..., "fp": ..., "role": "client", "overlays":
-[...]}``. That alphabet holds no character a shell splits or a URL escapes. ``fp`` pins the
-hub: it is the SHA-256 fingerprint of the agent port's TLS certificate,
-checked on every connection before anything is sent. A link whose ``role``
-is not ``client`` was made for a device agent and is refused.
-
-A QR code carries the short form, ``neutrino://enroll/<ticket>@<host>:<port>/
-<fp>``; the ``@`` tells it apart. Its binding is stored at once with that
-one address and ``is_object_pending``; the session fetches the long form's
-object from ``GET /api/channel/enroll?ticket=`` at the address that answers
-with ``fp`` pinned, before it spends the ticket, and merges its addresses and
-overlays into the binding.
+The link is ``neutrino://enroll/<payload>`` where the payload is ``{"urls":
+[...], "token": ..., "fp": ..., "role": "client", "overlays": [...]}`` as
+JSON, compressed with zlib and written in base64url without padding. That
+alphabet holds no character a shell splits or a URL escapes. A QR code
+carries the same link. ``fp`` pins the hub: it is the SHA-256 fingerprint of
+the agent port's TLS certificate, checked on every connection before
+anything is sent. A link whose ``role`` is not ``client`` was made for a
+device agent and is refused.
 
 The bindings live in ``client.json`` in the person's own configuration
-directory, mode 0600, one per hub joined:
-``{"bindings": [{id, name, hub_id, hub_name, gateway_url, gateway_urls,
-fingerprint, token, ticket, is_pending, is_object_pending, overlays,
-is_overlay_on, overlay_pick}], "exit_hub_id"}``, ``ticket`` and
-``is_pending`` only on a pending join, ``is_object_pending`` only on a short
-link's pending join whose object is not fetched yet. A file without
-``bindings`` reads as none. A join stores its binding at once,
-``is_pending`` with the link's ``ticket``, no token and an id of this
-machine's own; the session spends the ticket at the first
-address that answers, and the binding then holds the hub's id and token and
-no ticket. ``gateway_urls`` is every address the hub answers on, from the
-link and then from each ``state`` frame; ``gateway_url`` is the one that last
-answered. A binding written by 0.3.0 has no list and reads as one with none.
-``overlays`` is how this machine joins each of the hub's virtual networks,
-the hub's preferred first, from the link and then from each ``state``: one
-provider's own fields each, the secret among them, which is why the file is
-0600. ``is_overlay_on`` is whether the hub's virtual network was last
-``on``, which a start connects once, and ``overlay_pick`` the provider the
-person chose, empty for the first.
+directory, mode 0600, one per hub joined: ``{"bindings": [{id, name, hub_id,
+hub_name, gateway_url, gateway_urls, fingerprint, token, ticket, is_pending,
+overlays, is_overlay_on, overlay_pick}], "exit_hub_id"}``, ``ticket`` and
+``is_pending`` only on a pending join. A file without ``bindings`` reads as
+none. A join stores its binding at once, ``is_pending`` with the link's
+``ticket``, no token and an id of this machine's own; the session spends the
+ticket at the first address that answers, and the binding then holds the
+hub's id and token and no ticket. ``gateway_urls`` is every address the hub
+answers on, from the link and then from each ``state`` frame;
+``gateway_url`` is the one that last answered. A binding written by 0.3.0
+has no list and reads as one with none. ``overlays`` is how this machine
+joins each of the hub's virtual networks, the hub's preferred first, from
+the link and then from each ``state``: one provider's own fields each, the
+secret among them, which is why the file is 0600. ``is_overlay_on`` is
+whether the hub's virtual network was last ``on``, which a start connects
+once, and ``overlay_pick`` the provider the person chose, empty for the
+first.
 
 A connection round is the addresses in ``candidate_urls`` order: the address
 ``hub.neutrino.internal`` resolves to on the network this machine stands on,
@@ -54,11 +47,11 @@ import socket
 import time
 import urllib.parse
 import uuid
+import zlib
 
 from neutrino_client import CLIENT_VERSION
 from neutrino_client.constants import (
     CLIENT_CONFIG_FILE_NAME,
-    CLIENT_ENROLL_PATH,
     CLIENT_HUB_NAME,
     CLIENT_JOIN_PATH,
     CLIENT_LEAVE_PATH,
@@ -81,10 +74,8 @@ from neutrino_client.platforms.detect import detect_platform, platform_tuple
 from neutrino_client.services.store import ClientServiceStore
 
 LINK_PREFIX = "neutrino://enroll/"
-# What marks a short link: the base64url alphabet of a long one has no ``@``.
-LINK_SHORT_MARK = "@"
 # What one binding keeps: every field a string but the list of every address
-# the hub answers on, the list of overlay objects and the three flags.
+# the hub answers on, the list of overlay objects and the two flags.
 BINDING_KEYS = (
     "id",
     "name",
@@ -96,7 +87,6 @@ BINDING_KEYS = (
     "token",
     "ticket",
     "is_pending",
-    "is_object_pending",
     "overlays",
     "is_overlay_on",
     "overlay_pick",
@@ -105,7 +95,6 @@ BINDING_URLS_KEY = "gateway_urls"
 BINDING_OVERLAYS_KEY = "overlays"
 BINDING_OVERLAY_ON_KEY = "is_overlay_on"
 BINDING_PENDING_KEY = "is_pending"
-BINDING_OBJECT_PENDING_KEY = "is_object_pending"
 BINDING_TICKET_KEY = "ticket"
 # What a pending binding's own id starts with, before the hub names one.
 BINDING_PENDING_ID_PREFIX = "pending_"
@@ -126,9 +115,6 @@ OVERLAY_OPTIONAL_FIELDS = ("management_url", "fqdn", "hub_address")
 
 def parse_link(link: str) -> "tuple[list, str, str, list]":
     """Pull the addresses, ticket, fingerprint and overlays out of a link.
-
-    A short link asks nothing of the hub: it gives its one address, its
-    ticket, its fingerprint and no overlays.
 
     Args:
         link: What the person pasted; the bare payload without its scheme
@@ -151,30 +137,14 @@ def parse_link(link: str) -> "tuple[list, str, str, list]":
         raise EnrollmentError("link_missing")
     if text.startswith(LINK_PREFIX):
         text = text[len(LINK_PREFIX) :]
-    if LINK_SHORT_MARK in text:
-        ticket, gateway_url, fingerprint = parse_short_link(text)
-        return [gateway_url], ticket, fingerprint, []
     return read_link_object(_decoded(text))
 
 
-def is_short_link(link: str) -> bool:
-    """Whether a link is the short form a QR code carries.
-
-    Args:
-        link: What the person pasted or scanned.
-
-    Returns:
-        True when it holds the short form's ``@``.
-    """
-    return LINK_SHORT_MARK in link
-
-
 def read_link_object(payload: dict) -> "tuple[list, str, str, list]":
-    """Pull the addresses, ticket, fingerprint and overlays out of a long link's object.
+    """Pull the addresses, ticket, fingerprint and overlays out of a link's object.
 
     Args:
-        payload: The object a long link carries, or the one fetched for a
-            short link.
+        payload: The object a link carries.
 
     Returns:
         The same four as :func:`parse_link`.
@@ -198,85 +168,6 @@ def read_link_object(payload: dict) -> "tuple[list, str, str, list]":
     if role != CLIENT_ROLE:
         raise EnrollmentError("link_not_for_client", {"role": role})
     return urls, token, fingerprint, overlays
-
-
-def parse_short_link(text: str) -> "tuple[str, str, str]":
-    """Split a short link into its ticket, its address and its fingerprint.
-
-    Args:
-        text: The short link without its scheme,
-            ``<ticket>@<host>:<port>/<fingerprint>``.
-
-    Returns:
-        The ticket, the base URL ``https://<host>:<port>``, and the
-        fingerprint in lower case.
-
-    Raises:
-        EnrollmentError: ``link_unreadable`` when a part is missing or the
-            fingerprint is not 64 hex characters.
-    """
-    ticket, _, rest = text.partition(LINK_SHORT_MARK)
-    address, _, fingerprint = rest.rpartition("/")
-    fingerprint = fingerprint.strip().lower()
-    try:
-        parts = urllib.parse.urlsplit(f"https://{address}")
-        port = parts.port
-    except ValueError as error:
-        raise EnrollmentError("link_unreadable") from error
-    is_hex = len(fingerprint) == 64 and all(
-        char in "0123456789abcdef" for char in fingerprint
-    )
-    if not ticket or not parts.hostname or port is None or not is_hex:
-        raise EnrollmentError("link_unreadable")
-    return ticket, f"https://{address}", fingerprint
-
-
-def fetch_link_object(binding: dict, gateway_url: str) -> dict:
-    """Fetch a short link's object and merge it into its pending binding.
-
-    Args:
-        binding: The pending binding whose object is not fetched yet.
-        gateway_url: The address whose certificate matched the pin.
-
-    Returns:
-        The binding with the object's addresses after its own and the
-        object's overlays, the ticket kept, no longer awaiting the object.
-
-    Raises:
-        EnrollmentError: When the hub refused the ticket: ``ticket_spent``
-            or another code it named, ``enroll_refused`` for one it did
-            not, the protocol refusals with their numbers; or when the
-            object is not one a client can join with, as for
-            :func:`read_link_object`.
-        GatewayUntrusted: When what answers is not the pinned hub.
-        GatewayUnreachable: When the address does not answer.
-    """
-    channel = GatewayHttpChannel(
-        gateway_url=gateway_url, fingerprint=binding["fingerprint"]
-    )
-    query = urllib.parse.urlencode({"ticket": binding["ticket"]})
-    try:
-        payload = channel.get(f"{CLIENT_ENROLL_PATH}?{query}")
-    except GatewayProtocolRefused as error:
-        raise EnrollmentError(
-            error.code,
-            {"peer": error.peer, "hub": error.hub, "min": error.minimum},
-        ) from error
-    except GatewayRefused as error:
-        raise EnrollmentError(error.code or "enroll_refused", error.params) from error
-    except GatewayRefusedDetail as error:
-        raise EnrollmentError(error.code, error.params) from error
-    if not isinstance(payload, dict):
-        raise EnrollmentError("link_unreadable")
-    urls, _, _, overlays = read_link_object(payload)
-    return _binding(
-        dict(
-            binding,
-            gateway_urls=stored_urls(binding) + urls,
-            overlays=overlays,
-            is_object_pending=False,
-        )
-    )
 
 
 def config_path() -> str:
@@ -722,8 +613,7 @@ def enroll(link: str) -> dict:
 
     Returns:
         The binding stored: pending, with the link's ticket, its first
-        address, every address and its overlays, and an id of its own; a
-        short link's also awaits its object.
+        address, every address and its overlays, and an id of its own.
 
     Raises:
         EnrollmentError: If the link is unusable.
@@ -739,7 +629,6 @@ def enroll(link: str) -> dict:
             "fingerprint": fingerprint,
             "ticket": ticket,
             BINDING_PENDING_KEY: True,
-            BINDING_OBJECT_PENDING_KEY: is_short_link(link),
             "overlays": overlays,
         }
     )
@@ -866,9 +755,8 @@ def leave(binding: dict) -> None:
 
 def _binding(raw: dict) -> dict:
     """One binding with every kept field, each a string but the lists and the
-    flags; the ticket and the pending flag only while the join is pending, the
-    object flag only while the object is awaited."""
-    flags = (BINDING_OVERLAY_ON_KEY, BINDING_PENDING_KEY, BINDING_OBJECT_PENDING_KEY)
+    flags; the ticket and the pending flag only while the join is pending."""
+    flags = (BINDING_OVERLAY_ON_KEY, BINDING_PENDING_KEY)
     binding = {
         key: str(raw.get(key, "") or "")
         for key in BINDING_KEYS
@@ -881,9 +769,6 @@ def _binding(raw: dict) -> dict:
     if not binding[BINDING_PENDING_KEY]:
         binding.pop(BINDING_PENDING_KEY)
         binding.pop(BINDING_TICKET_KEY)
-        binding[BINDING_OBJECT_PENDING_KEY] = False
-    if not binding[BINDING_OBJECT_PENDING_KEY]:
-        binding.pop(BINDING_OBJECT_PENDING_KEY)
     return binding
 
 
@@ -907,15 +792,16 @@ def _is_complete(binding: dict) -> bool:
 
 
 def _decoded(text: str) -> dict:
-    """The object a long link's base64url payload holds.
+    """The object a link's payload holds, inflated from its base64url.
 
     Raises:
         EnrollmentError: ``link_unreadable`` when it is not one.
     """
     try:
         padded = text + "=" * (-len(text) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode()))
-    except (binascii.Error, ValueError, UnicodeDecodeError) as error:
+        packed = base64.urlsafe_b64decode(padded.encode())
+        payload = json.loads(zlib.decompress(packed))
+    except (binascii.Error, zlib.error, ValueError, UnicodeDecodeError) as error:
         raise EnrollmentError("link_unreadable") from error
     if not isinstance(payload, dict):
         raise EnrollmentError("link_unreadable")

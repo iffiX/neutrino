@@ -6,10 +6,9 @@ wrong one is refused before a single request byte is sent, and a bound
 client connecting against the wrong certificate unbinds the way a refused
 token does. The status mappings replace ``_request`` with a canned answer:
 a 409 naming a protocol number the hub does not speak is the typed
-protocol refusal with its three numbers. A short link is stored pending
-without a word to the hub; the first round that reaches it fetches the
-object on the pin, merges it and joins; a spent ticket puts the row down and
-another certificate is untrusted.
+protocol refusal with its three numbers. A scanned link is stored pending
+without a word to the hub; the first round that reaches it joins at once,
+and another certificate is untrusted.
 """
 
 import hashlib
@@ -27,7 +26,6 @@ import neutrino_client.core.enrollment as enrollment
 import neutrino_client.core.session as session_module
 from neutrino_client.constants import (
     CLIENT_BACKOFF_MAX_S,
-    CLIENT_ENROLL_PATH,
     CLIENT_JOIN_PATH,
     CLIENT_LEAVE_PATH,
 )
@@ -51,18 +49,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
     """Answers every request with its canned body and records the path."""
 
     requests: list = []
-    # What a GET answers, the status and the body, and what a POST answers.
-    get_answer: tuple = (200, b"{}")
     post_answer: bytes = b"{}"
-
-    def do_GET(self):
-        RecordingHandler.requests.append((self.path, b""))
-        status, answer = RecordingHandler.get_answer
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(answer)))
-        self.end_headers()
-        self.wfile.write(answer)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -116,7 +103,6 @@ def tls_server(tmp_path):
     fingerprint = hashlib.sha256(der).hexdigest()
 
     RecordingHandler.requests = []
-    RecordingHandler.get_answer = (200, b"{}")
     RecordingHandler.post_answer = b"{}"
     server = QuietTlsServer(("127.0.0.1", 0), RecordingHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -299,12 +285,7 @@ def test_post_a_dead_port_raises_unreachable():
         made.post(CLIENT_JOIN_PATH, {})
 
 
-# --- the short link ---
-
-
-def short_link(url: str, fingerprint: str, ticket: str = "c1") -> str:
-    """A short link naming the server's address."""
-    return f"neutrino://enroll/{ticket}@{url.removeprefix('https://')}/{fingerprint}"
+# --- the link a QR code carries ---
 
 
 NETBIRD = {
@@ -316,6 +297,18 @@ NETBIRD = {
 }
 
 
+def scanned_link(url: str, fingerprint: str, ticket: str = "c1") -> str:
+    """The whole link a QR code carries, naming the server's address."""
+    return link_for(
+        {
+            "urls": [url, "https://10.0.0.1:8443"],
+            "token": ticket,
+            "fp": fingerprint,
+            "overlays": [NETBIRD],
+        }
+    )
+
+
 def dead_url() -> str:
     """An address on this machine where nothing listens."""
     probe = socket.socket()
@@ -325,8 +318,8 @@ def dead_url() -> str:
     return f"https://127.0.0.1:{port}"
 
 
-def short_session(link: str) -> ClientHubSession:
-    """The binding a short link stores, and the session over it."""
+def scanned_session(link: str) -> ClientHubSession:
+    """The binding a scanned link stores, and the session over it."""
     enrollment.enroll(link)
     (binding,) = enrollment.bindings()
     return ClientHubSession(
@@ -334,88 +327,55 @@ def short_session(link: str) -> ClientHubSession:
     )
 
 
-def test_a_short_link_is_stored_pending_at_once_and_asks_nothing(tls_server):
+def test_a_scanned_link_is_stored_pending_at_once_and_asks_nothing(tls_server):
     url, fingerprint = tls_server
 
-    binding = enrollment.enroll(short_link(url, fingerprint))
+    binding = enrollment.enroll(scanned_link(url, fingerprint))
 
-    assert (binding["gateway_url"], binding["gateway_urls"]) == (url, [url])
+    assert binding["gateway_url"] == url
+    assert binding["gateway_urls"] == [url, "https://10.0.0.1:8443"]
     assert (binding["ticket"], binding["fingerprint"]) == ("c1", fingerprint)
-    assert (binding["is_pending"], binding["is_object_pending"]) == (True, True)
-    assert binding["overlays"] == [] and binding["token"] == ""
+    assert binding["is_pending"] is True and "is_object_pending" not in binding
+    assert binding["overlays"] == [NETBIRD] and binding["token"] == ""
     assert enrollment.bindings() == [binding]
     assert RecordingHandler.requests == []
 
 
-def test_a_short_link_whose_hub_does_not_answer_stays_pending(config_path):
-    session = short_session(short_link(dead_url(), WRONG_FINGERPRINT))
+def test_a_scanned_link_whose_hub_does_not_answer_stays_pending(config_path):
+    session = scanned_session(scanned_link(dead_url(), WRONG_FINGERPRINT))
 
     session.run_once()
 
     assert session.connection() == "pending"
     (stored,) = json.loads(config_path.read_text())["bindings"]
-    assert (stored["is_pending"], stored["is_object_pending"]) == (True, True)
+    assert stored["is_pending"] is True and stored["overlays"] == [NETBIRD]
 
 
-def test_a_round_that_reaches_the_hub_fetches_the_object_then_joins(
+def test_a_round_that_reaches_the_hub_joins_with_nothing_fetched_first(
     tls_server, monkeypatch, config_path
 ):
     url, fingerprint = tls_server
-    body = {
-        "urls": ["https://10.0.0.1:8443", url],
-        "token": "c1",
-        "fp": fingerprint,
-        "role": "client",
-        "overlays": [NETBIRD],
-    }
-    RecordingHandler.get_answer = (200, json.dumps(body).encode())
     RecordingHandler.post_answer = b'{"id": "h-c1", "token": "tok"}'
-    session = short_session(short_link(url, fingerprint))
+    session = scanned_session(scanned_link(url, fingerprint))
     sockets = SocketScript([WELCOME])
     monkeypatch.setattr(session_module, "WebSocketClient", sockets)
 
     session.run_once()
 
     paths = [path for path, _ in RecordingHandler.requests]
-    assert paths == [f"{CLIENT_ENROLL_PATH}?ticket=c1", CLIENT_JOIN_PATH]
-    assert json.loads(RecordingHandler.requests[1][1])["ticket"] == "c1"
+    assert paths == [CLIENT_JOIN_PATH]
+    assert json.loads(RecordingHandler.requests[0][1])["ticket"] == "c1"
     (stored,) = json.loads(config_path.read_text())["bindings"]
     assert (stored["id"], stored["token"]) == ("h-c1", "tok")
-    assert stored["gateway_urls"] == [url, "https://10.0.0.1:8443"]
-    assert stored["overlays"] == [NETBIRD]
-    assert "is_object_pending" not in stored and "ticket" not in stored
+    assert stored["overlays"] == [NETBIRD] and "ticket" not in stored
     assert sockets.made[0].sent[0]["type"] == "hello"
 
 
-def test_a_spent_ticket_on_the_fetch_puts_the_row_down(
-    tls_server, monkeypatch, config_path
-):
-    url, fingerprint = tls_server
-    RecordingHandler.get_answer = (
-        401,
-        b'{"detail": {"code": "ticket_spent", "params": {}}}',
-    )
-    session = short_session(short_link(url, fingerprint))
-    sockets = SocketScript([WELCOME])
-    monkeypatch.setattr(session_module, "WebSocketClient", sockets)
-
-    session.run_once()
-    session.run_once()
-
-    assert session.connection() == "down"
-    assert session.last_error() == {"code": "ticket_spent", "params": {}}
-    paths = [path for path, _ in RecordingHandler.requests]
-    assert paths == [f"{CLIENT_ENROLL_PATH}?ticket=c1"]
-    assert sockets.made[0].sent == []
-    (stored,) = json.loads(config_path.read_text())["bindings"]
-    assert stored["is_object_pending"] is True
-
-
-def test_a_fetch_on_another_certificate_is_untrusted_and_asks_nothing(
+def test_a_scanned_link_on_another_certificate_is_untrusted_and_asks_nothing(
     tls_server, monkeypatch
 ):
     url, _ = tls_server
-    session = short_session(short_link(url, WRONG_FINGERPRINT))
+    session = scanned_session(scanned_link(url, WRONG_FINGERPRINT))
     sockets = SocketScript([WELCOME])
     monkeypatch.setattr(session_module, "WebSocketClient", sockets)
 

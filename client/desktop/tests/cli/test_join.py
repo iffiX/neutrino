@@ -177,11 +177,7 @@ def test_an_empty_prompt_gives_up_in_words(monkeypatch, capsys):
     [
         ("not-a-link", "link_unreadable"),
         (
-            "neutrino://enroll/"
-            + __import__("base64")
-            .urlsafe_b64encode(b'{"urls": ["http://h"], "token": "t", "role": "agent"}')
-            .decode()
-            .rstrip("="),
+            link_for({"urls": ["http://h"], "token": "t", "role": "agent"}),
             "link_not_for_client",
         ),
     ],

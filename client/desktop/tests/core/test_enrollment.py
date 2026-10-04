@@ -1,26 +1,27 @@
 """Enrollment as one person: the link, the join, and the bindings kept.
 
-The payload rides base64url so the link holds no character a shell splits
-or a URL escapes; a link whose role is not ``client`` is refused; a join
-stores a pending binding at once, with the link's ticket, its first
-address, every address and its overlays, and asks no hub; completing it
-posts the protocol's seven fields, names no MAC, and puts the hub's id and
-token in the pending binding's place, with no ticket; a refusal is typed by
-the hub's code; the file is written atomically and 0600 in the person's own
-configuration directory; a file of
-the older single-binding shape reads as no bindings, and a binding without
-the address list reads as one with none. The candidates of a connection
-round, the hub's name in a stored address's scheme and port, and the notes
-a session writes onto its binding are pinned here too, as is the leave told
-to each address in turn within its short time. The link's overlay
-objects are kept on the binding in the hub's order with only their
-providers' own fields, one per provider, an unknown provider dropped; the
-wish and the pick are kept per binding.
+The payload is compact JSON compressed with zlib in unpadded base64url, so
+the link holds no character a shell splits or a URL escapes; a link whose
+role is not ``client`` is refused; a join stores a pending binding at once,
+with the link's ticket, its first address, every address and its overlays,
+and asks no hub; completing it posts the protocol's seven fields, names no
+MAC, and puts the hub's id and token in the pending binding's place, with no
+ticket; a refusal is typed by the hub's code; the file is written atomically
+and 0600 in the person's own configuration directory; a file of the older
+single-binding shape reads as no bindings, and a binding without the address
+list reads as one with none. The candidates of a connection round, the hub's
+name in a stored address's scheme and port, and the notes a session writes
+onto its binding are pinned here too, as is the leave told to each address
+in turn within its short time. The link's overlay objects are kept on the
+binding in the hub's order with only their providers' own fields, one per
+provider, an unknown provider dropped; the wish and the pick are kept per
+binding.
 """
 
 import base64
 import json
 import os
+import zlib
 
 import pytest
 
@@ -138,104 +139,39 @@ def test_a_payload_missing_its_half_is_refused():
 
 def test_a_device_agents_link_is_refused():
     body = {"urls": ["http://gateway"], "token": "t", "fp": "", "role": "agent"}
-    encoded = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
 
     with pytest.raises(EnrollmentError) as caught:
-        parse_link("neutrino://enroll/" + encoded.rstrip("="))
+        parse_link(link_for(body))
 
     assert caught.value.code == "link_not_for_client"
     assert caught.value.params == {"role": "agent"}
 
 
 def test_a_link_naming_no_role_is_refused():
-    body = {"urls": ["http://gateway"], "token": "t", "kind": "client"}
-    encoded = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
+    body = {"urls": ["http://gateway"], "token": "t", "kind": "client", "role": ""}
 
     with pytest.raises(EnrollmentError) as caught:
-        parse_link("neutrino://enroll/" + encoded.rstrip("="))
+        parse_link(link_for(body))
 
     assert caught.value.code == "link_not_for_client"
 
 
-def test_a_short_link_splits_into_its_ticket_address_and_fingerprint():
-    parts = enrollment.parse_short_link("Tk_-9@192.168.100.1:8443/" + "AB" * 32)
+def test_a_link_that_does_not_inflate_or_parse_is_unreadable():
+    body = {"urls": ["http://gateway"], "token": "t", "role": "client"}
+    plain = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
+    garbled = base64.urlsafe_b64encode(zlib.compress(b"{not json", 9)).decode()
 
-    assert parts == ("Tk_-9", "https://192.168.100.1:8443", "ab" * 32)
+    for text in (plain, garbled):
+        with pytest.raises(EnrollmentError) as caught:
+            parse_link("neutrino://enroll/" + text.rstrip("="))
+        assert caught.value.code == "link_unreadable"
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "@192.168.100.1:8443/" + "ab" * 32,
-        "t@192.168.100.1/" + "ab" * 32,
-        "t@192.168.100.1:x/" + "ab" * 32,
-        "t@192.168.100.1:8443/" + "ab" * 31,
-        "t@192.168.100.1:8443/" + "zz" * 32,
-    ],
-)
-def test_a_short_link_missing_a_part_is_unreadable(text):
+def test_the_old_short_form_is_unreadable():
     with pytest.raises(EnrollmentError) as caught:
-        enrollment.parse_short_link(text)
+        parse_link("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
 
     assert caught.value.code == "link_unreadable"
-
-
-def test_a_short_link_reads_as_its_one_address_and_asks_the_hub_nothing(
-    monkeypatch,
-):
-    asked = []
-    monkeypatch.setattr(
-        channel.GatewayHttpChannel, "get", lambda self, path: asked.append(path)
-    )
-
-    parsed = parse_link("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
-
-    assert parsed == (["https://192.168.100.1:8443"], "t", "ab" * 32, [])
-    assert asked == []
-
-
-def test_the_fetched_object_is_merged_into_the_pending_binding(monkeypatch):
-    asked = []
-
-    def get(self, path):
-        asked.append((self._gateway_url, self._fingerprint, path))
-        return {
-            "urls": ["https://203.0.113.5:8443", "https://192.168.100.1:8443"],
-            "token": "t",
-            "fp": "cd" * 32,
-            "role": "client",
-            "overlays": [NETBIRD],
-        }
-
-    monkeypatch.setattr(channel.GatewayHttpChannel, "get", get)
-    binding = enrollment.enroll("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
-
-    fetched = enrollment.fetch_link_object(binding, "https://192.168.100.1:8443")
-
-    assert asked == [
-        ("https://192.168.100.1:8443", "ab" * 32, "/api/channel/enroll?ticket=t")
-    ]
-    assert fetched["gateway_urls"] == [
-        "https://192.168.100.1:8443",
-        "https://203.0.113.5:8443",
-    ]
-    assert fetched["overlays"] == [NETBIRD]
-    assert (fetched["ticket"], fetched["fingerprint"]) == ("t", "ab" * 32)
-    assert fetched["is_pending"] is True and "is_object_pending" not in fetched
-
-
-def test_a_fetched_object_for_a_device_is_refused(monkeypatch):
-    monkeypatch.setattr(
-        channel.GatewayHttpChannel,
-        "get",
-        lambda self, path: {"urls": ["https://h"], "token": "t", "role": "agent"},
-    )
-    binding = enrollment.enroll("neutrino://enroll/t@192.168.100.1:8443/" + "ab" * 32)
-
-    with pytest.raises(EnrollmentError) as caught:
-        enrollment.fetch_link_object(binding, "https://192.168.100.1:8443")
-
-    assert caught.value.code == "link_not_for_client"
 
 
 def answer_with(monkeypatch, *, reply=None, error=None):

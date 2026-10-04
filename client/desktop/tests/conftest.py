@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import threading
+import zlib
 
 import pytest
 
@@ -189,9 +190,11 @@ class Clock:
 
 
 def link_for(payload: dict) -> str:
-    """An enrollment link over one payload; ``role`` defaults to client."""
+    """An enrollment link over one payload as a hub writes it: compact JSON,
+    zlib level 9, unpadded base64url; ``role`` defaults to client."""
     body = {"role": "client", **payload}
-    encoded = base64.urlsafe_b64encode(json.dumps(body).encode()).decode()
+    text = json.dumps(body, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(zlib.compress(text, 9)).decode()
     return "neutrino://enroll/" + encoded.rstrip("=")
 
 
