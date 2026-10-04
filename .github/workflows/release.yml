@@ -1,25 +1,41 @@
 name: release
 
-# A tag builds everything and opens a draft; the notes are written by a person.
-# workflow_dispatch builds the same packages and attaches them as artifacts
-# without touching releases, which is how the pipeline is tried out.
+# A tag builds everything in both editions and opens the intl draft; the
+# notes are written by a person. The cn packages are built from the mainland
+# source tree and left as the artifact release_dist_cn, which publish.yml
+# takes to Gitee. workflow_dispatch builds the same packages and attaches
+# them as artifacts without touching releases, which is how the pipeline is
+# tried out; its editions input cuts a trial to one edition.
 #
 # Each job sets up its host, then runs one script under packaging/build and
 # checks what it built with packaging/ci/check.py; both run the same way on a
-# workstation of the same kind.
+# workstation of the same kind. A cn job does the same inside the unpacked
+# mainland tree, with --edition cn, for the platforms the cn release carries.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      editions:
+        description: "the editions to build"
+        type: choice
+        options: [both, intl, cn]
+        default: both
+      agent_package_url_base:
+        description: "where a trial's hubs fetch the agent packages they do not carry, such as a test release's download address; empty stamps none"
+        type: string
+        default: ""
 
 permissions:
   contents: write
 
-# Where a tag's release publishes its files, stamped into each hub package's
-# agent manifest so the hub can fetch an agent package it does not carry. The
-# one place a build names the release; a dispatch build names none.
+# Where each edition's release publishes its files, stamped into each hub
+# package's agent manifest so the hub can fetch an agent package it does not
+# carry. The one place a build names the release; a dispatch build names the
+# address its input gives, or none.
 env:
-  AGENT_PACKAGE_URL_BASE: ${{ startsWith(github.ref, 'refs/tags/') && format('https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name) || '' }}
+  AGENT_PACKAGE_URL_BASE: ${{ startsWith(github.ref, 'refs/tags/') && format('https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name) || inputs.agent_package_url_base }}
+  AGENT_PACKAGE_URL_BASE_CN: ${{ startsWith(github.ref, 'refs/tags/') && format('https://gitee.com/iffiX/neutrino/releases/download/{0}', github.ref_name) || inputs.agent_package_url_base }}
 
 jobs:
   # After every agent: the hub package carries the agent package of its own
@@ -27,6 +43,7 @@ jobs:
   # release with its hash, so the build reads them all.
   hub:
     name: hub .deb, .rpm and Arch (${{ matrix.architecture }})
+    if: inputs.editions != 'cn'
     needs: [agent, agent_windows, agent_macos]
     runs-on: ubuntu-24.04
     strategy:
@@ -83,6 +100,7 @@ jobs:
 
   agent:
     name: agent .deb and .rpm (${{ matrix.architecture }})
+    if: inputs.editions != 'cn'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -115,6 +133,7 @@ jobs:
   # x64 only: RustDesk publishes no Windows arm64 build to carry.
   agent_windows:
     name: agent installer (Windows x64)
+    if: inputs.editions != 'cn'
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
@@ -143,6 +162,7 @@ jobs:
   # is native, so each package comes off a runner of its own machine.
   agent_macos:
     name: agent installer (macOS ${{ matrix.arch }})
+    if: inputs.editions != 'cn'
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -173,6 +193,7 @@ jobs:
   # own machine and names every agent package in its manifest.
   hub_macos:
     name: hub installer (macOS ${{ matrix.arch }})
+    if: inputs.editions != 'cn'
     needs: [agent, agent_windows, agent_macos]
     runs-on: ${{ matrix.runs-on }}
     strategy:
@@ -228,6 +249,7 @@ jobs:
   # x64 only, as the agent it carries is.
   hub_windows:
     name: hub installer (Windows x64)
+    if: inputs.editions != 'cn'
     needs: [agent, agent_windows, agent_macos]
     runs-on: windows-2025
     steps:
@@ -294,6 +316,7 @@ jobs:
   # native.
   client:
     name: client .deb and .rpm (${{ matrix.architecture }})
+    if: inputs.editions != 'cn'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -325,6 +348,7 @@ jobs:
   # is nothing to carry for that machine.
   client_windows:
     name: client installer (Windows x64)
+    if: inputs.editions != 'cn'
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
@@ -368,6 +392,7 @@ jobs:
   # Both Macs, as the agent's job builds them.
   client_macos:
     name: client installer (macOS ${{ matrix.arch }})
+    if: inputs.editions != 'cn'
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -400,6 +425,7 @@ jobs:
   # installed and launched once in an emulator.
   client_android:
     name: client .apk (Android)
+    if: inputs.editions != 'cn'
     runs-on: ubuntu-24.04
     env:
       # The release certificate's SHA-256, as apksigner prints it.
@@ -496,6 +522,7 @@ jobs:
   # built from.
   sources:
     name: source archive
+    if: inputs.editions != 'cn'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -510,6 +537,7 @@ jobs:
 
   draft:
     name: checksums and draft release
+    if: inputs.editions != 'cn'
     needs:
       [
         hub,
@@ -526,10 +554,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Every artifact of the run but the cn ones.
       - uses: actions/download-artifact@v8
         with:
-          path: dist
-          merge-multiple: true
+          path: artifacts
+
+      - name: Collect the intl files
+        run: |
+          mkdir dist
+          for artifact in artifacts/*/; do
+            case "$(basename "$artifact")" in
+              cn_* | *_cn) continue ;;
+            esac
+            cp "$artifact"* dist/
+          done
 
       # The two install scripts are release assets beside the packages.
       - run: cp packaging/install/install.sh packaging/install/install.ps1 dist/
@@ -559,3 +597,557 @@ jobs:
             --title "${GITHUB_REF_NAME}" \
             --notes "" \
             dist/*
+
+  # The mainland source tree: this tree without what cn leaves out, stamped
+  # cn, with the source of what the cn packages carry. Every cn job below
+  # unpacks it and builds inside it.
+  sources_cn:
+    name: mainland source tree
+    if: inputs.editions != 'intl'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: python3 packaging/build/build_sources.py --edition cn --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_sources
+          path: dist/*-cn-source.tar.gz
+          if-no-files-found: error
+
+  agent_cn:
+    name: cn agent .deb (${{ matrix.architecture }})
+    needs: [sources_cn]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [amd64, arm64]
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: docker/setup-qemu-action@v4
+        if: matrix.architecture != 'amd64'
+
+      - run: >
+          python3 packaging/build/build_agent.py
+          --edition cn
+          --architecture ${{ matrix.architecture }}
+          --families debian
+          --output-dir dist
+        working-directory: cn
+
+      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_agent_${{ matrix.architecture }}
+          path: cn/dist/*.deb
+          if-no-files-found: error
+
+  agent_windows_cn:
+    name: cn agent installer (Windows x64)
+    needs: [sources_cn]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        shell: bash
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: dotnet tool install --global wix --version 6.0.2
+      - run: wix extension add -g WixToolset.Util.wixext/6.0.2
+
+      - run: python packaging/build/build_agent_windows.py --edition cn --output-dir dist --architecture x64
+        working-directory: cn
+
+      - run: python packaging/ci/check.py agent_windows dist/*.msi
+        shell: bash
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_agent_windows_amd64
+          path: cn/dist/*.msi
+          if-no-files-found: error
+
+  # Apple silicon alone: the cn release carries no Intel Mac package.
+  agent_macos_cn:
+    name: cn agent installer (macOS arm64)
+    needs: [sources_cn]
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: python3 packaging/build/build_agent_macos.py --edition cn --output-dir dist --architecture arm64
+        working-directory: cn
+
+      - run: python3 packaging/ci/check.py agent_macos dist/*.pkg
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_agent_macos_arm64
+          path: cn/dist/*.pkg
+          if-no-files-found: error
+
+  hub_cn:
+    name: cn hub .deb (${{ matrix.architecture }})
+    needs: [agent_cn, agent_windows_cn, agent_macos_cn]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [amd64, arm64]
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cn_agent_*
+          path: agent_packages
+          merge-multiple: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cn/hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: cn/hub/frontend
+
+      - run: npm run build
+        working-directory: cn/hub/frontend
+
+      - uses: docker/setup-qemu-action@v4
+        if: matrix.architecture != 'amd64'
+
+      - run: >
+          python3 packaging/build/build_hub.py
+          --edition cn
+          --architecture ${{ matrix.architecture }}
+          --families debian
+          --output-dir dist
+          --agent-packages ../agent_packages
+          ${{ env.AGENT_PACKAGE_URL_BASE_CN
+              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE_CN)
+              || '' }}
+        working-directory: cn
+
+      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_hub_${{ matrix.architecture }}
+          path: cn/dist/*.deb
+          if-no-files-found: error
+
+  hub_macos_cn:
+    name: cn hub installer (macOS arm64)
+    needs: [agent_cn, agent_windows_cn, agent_macos_cn]
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cn_agent_*
+          path: agent_packages
+          merge-multiple: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cn/hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: cn/hub/frontend
+
+      - run: npm run build
+        working-directory: cn/hub/frontend
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: >
+          python3 packaging/build/build_hub_macos.py
+          --edition cn
+          --output-dir dist
+          --architecture arm64
+          --agent-packages ../agent_packages
+          ${{ env.AGENT_PACKAGE_URL_BASE_CN
+              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE_CN)
+              || '' }}
+        working-directory: cn
+
+      - run: python3 packaging/ci/check.py hub_macos dist/*.pkg
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_hub_macos_arm64
+          path: cn/dist/*.pkg
+          if-no-files-found: error
+
+  hub_windows_cn:
+    name: cn hub installer (Windows x64)
+    needs: [agent_cn, agent_windows_cn, agent_macos_cn]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        shell: bash
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cn_agent_*
+          path: agent_packages
+          merge-multiple: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cn/hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: cn/hub/frontend
+
+      - run: npm run build
+        working-directory: cn/hub/frontend
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: dotnet tool install --global wix --version 6.0.2
+      - run: wix extension add -g WixToolset.Util.wixext/6.0.2
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build the stand-in packet.dll
+        shell: pwsh
+        working-directory: cn
+        run: |
+          New-Item -ItemType Directory -Force build/packet_stub | Out-Null
+          cl /nologo /O2 /LD client/desktop/packaging/packet_stub.c /Fe:build/packet_stub/packet.dll /Fo:build/packet_stub/
+          if ($LASTEXITCODE -ne 0) { throw "cl exited $LASTEXITCODE" }
+
+      - run: >
+          python packaging/build/build_hub_windows.py
+          --edition cn
+          --output-dir dist
+          --architecture x64
+          --agent-packages ../agent_packages
+          --packet-dll build/packet_stub/packet.dll
+          ${{ env.AGENT_PACKAGE_URL_BASE_CN
+              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE_CN)
+              || '' }}
+        working-directory: cn
+
+      - run: python packaging/ci/check.py hub_windows dist/*.msi
+        shell: bash
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_hub_windows_amd64
+          path: cn/dist/*.msi
+          if-no-files-found: error
+
+  client_cn:
+    name: cn client .deb (${{ matrix.architecture }})
+    needs: [sources_cn]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - run: >
+          python3 packaging/build/build_client_desktop.py
+          --edition cn
+          --architecture ${{ matrix.architecture }}
+          --families debian
+          --output-dir dist
+        working-directory: cn
+
+      - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_client_${{ matrix.architecture }}
+          path: cn/dist/*.deb
+          if-no-files-found: error
+
+  client_windows_cn:
+    name: cn client installer (Windows x64)
+    needs: [sources_cn]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        shell: bash
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: dotnet tool install --global wix --version 6.0.2
+      - run: wix extension add -g WixToolset.Util.wixext/6.0.2
+      - run: wix extension add -g WixToolset.UI.wixext/6.0.2
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build the stand-in packet.dll
+        shell: pwsh
+        working-directory: cn
+        run: |
+          New-Item -ItemType Directory -Force build/packet_stub | Out-Null
+          cl /nologo /O2 /LD client/desktop/packaging/packet_stub.c /Fe:build/packet_stub/packet.dll /Fo:build/packet_stub/
+          if ($LASTEXITCODE -ne 0) { throw "cl exited $LASTEXITCODE" }
+
+      - run: python packaging/build/build_client_windows.py --edition cn --output-dir dist --architecture x64 --packet-dll build/packet_stub/packet.dll
+        working-directory: cn
+
+      - run: python packaging/ci/check.py client_windows dist/*.msi
+        shell: bash
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_client_windows_amd64
+          path: cn/dist/*.msi
+          if-no-files-found: error
+
+  client_macos_cn:
+    name: cn client installer (macOS arm64)
+    needs: [sources_cn]
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: python3 packaging/build/build_client_macos.py --edition cn --output-dir dist --architecture arm64
+        working-directory: cn
+
+      - run: python3 packaging/ci/check.py client_macos dist/*.pkg
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_client_macos_arm64
+          path: cn/dist/*.pkg
+          if-no-files-found: error
+
+  # The apk without the NetBird core, signed and checked as the intl one is.
+  client_android_cn:
+    name: cn client .apk (Android)
+    needs: [sources_cn]
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_RELEASE_CERT_SHA256: 0e20b8b4542f329c4d3ed91632f3ea90730cb99472c46c31585780d046ee612d  # scan: allow
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Name the cores
+        id: cores_key
+        working-directory: cn
+        run: echo "key=$(python3 packaging/build/build_client_android.py --edition cn --cache-key)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the phone cores
+        id: cores
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/neutrino/cores
+          key: ${{ steps.cores_key.outputs.key }}
+
+      - name: Install the NDK and CMake the app builds with
+        run: sdkmanager "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - name: Install what building the cores needs
+        if: steps.cores.outputs.cache-hit != 'true'
+        run: |
+          sdkmanager "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          cargo install cargo-ndk --locked
+          sudo apt-get install -y nasm
+
+      - name: Build the apk
+        working-directory: cn
+        env:
+          ANDROID_KEYSTORE_B64: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEYSTORE_B64 || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          ANDROID_KEY_PASSWORD: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEY_PASSWORD || '' }}
+          ANDROID_KEY_ALIAS: ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && secrets.ANDROID_KEY_ALIAS || '' }}
+        run: >
+          python3 packaging/build/build_client_android.py
+          --edition cn
+          --variant ${{ (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && 'release' || 'debug' }}
+          --output-dir dist
+
+      - name: Check the release signature
+        if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
+        working-directory: cn
+        run: |
+          apksigner="$(ls "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)"
+          digest="$("${apksigner}" verify --print-certs dist/*-android.apk \
+            | sed -n -E 's/^(Signer #1|V[0-9.]+ Signer:) certificate SHA-256 digest: //p' | head -1)"
+          echo "signed by ${digest}"
+          test "${digest}" = "${ANDROID_RELEASE_CERT_SHA256}"
+
+      - name: Allow the emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and launch once in an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          working-directory: cn
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: python3 packaging/ci/check.py client_android dist/neutrino-client-*-android-x86_64.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_client_android
+          path: cn/dist/*-android.apk
+          if-no-files-found: error
+
+  # SHA256SUMS over the cn packages, the cn install scripts and the mainland
+  # source tree, the limits Gitee holds them to, and the one artifact
+  # publish.yml takes to Gitee. Nothing of cn is attached to the GitHub
+  # release.
+  draft_cn:
+    name: cn checksums and Gitee limits
+    needs:
+      [
+        sources_cn,
+        agent_cn,
+        hub_cn,
+        hub_macos_cn,
+        hub_windows_cn,
+        client_cn,
+        client_windows_cn,
+        client_macos_cn,
+        client_android_cn,
+      ]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cn_*
+          path: dist_cn
+          merge-multiple: true
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf dist_cn/*-cn-source.tar.gz -C cn --strip-components=1
+
+      # The install scripts the mainland tree holds, stamped cn.
+      - run: cp cn/packaging/install/install.sh cn/packaging/install/install.ps1 dist_cn/
+
+      - run: python3 packaging/build/build_checksums.py --edition cn --output-dir ../dist_cn
+        working-directory: cn
+
+      - run: python3 packaging/ci/publish_cn.py --check-only --dist ../dist_cn
+        working-directory: cn
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release_dist_cn
+          path: dist_cn/*
+          if-no-files-found: error

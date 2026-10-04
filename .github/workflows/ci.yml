@@ -172,3 +172,93 @@ jobs:
       # `npm run build` runs `tsc -b` first, so this is the type check too.
       - run: npm run build
         working-directory: hub/frontend
+
+  # The mainland tree build_sources.py --edition cn writes: the same suite
+  # again where the features cn leaves out are not there.
+  mainland_tree:
+    name: mainland source tree
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: python3 packaging/build/build_sources.py --edition cn --output-dir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cn_sources
+          path: dist/*-cn-source.tar.gz
+          if-no-files-found: error
+
+  mainland_python:
+    name: mainland tree, hub and agent tests
+    needs: [mainland_tree]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - run: pip install -e "cn/hub[dev]"
+
+      - run: sudo apt-get install -y --no-install-recommends dnsmasq-base
+
+      - run: pytest -q
+        working-directory: cn/hub
+
+      - run: pytest -q
+        working-directory: cn/agent
+
+  mainland_client:
+    name: mainland tree, client tests
+    needs: [mainland_tree]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pip install -e cn/client/desktop pytest
+
+      - run: pytest -q
+        working-directory: cn/client/desktop
+
+  mainland_frontend:
+    name: mainland tree, frontend build
+    needs: [mainland_tree]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: cn_sources
+          path: cn_sources
+
+      - name: Unpack the mainland source tree
+        run: mkdir cn && tar -xzf cn_sources/*-cn-source.tar.gz -C cn --strip-components=1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cn/hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: cn/hub/frontend
+
+      - run: npm run build
+        working-directory: cn/hub/frontend
