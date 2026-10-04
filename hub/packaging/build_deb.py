@@ -16,7 +16,7 @@ Ubuntu 22.04:
 
     podman run --rm --network=host -v "$PWD:/src:ro" -v "$PWD/dist:/out" \
         debian:12 sh -c 'apt-get -qq update && apt-get -qq install -y \
-        python3 python3-venv python3-pip dpkg-dev rpm && cp -r /src /build && \
+        python3 python3-venv python3-pip dpkg-dev && cp -r /src /build && \
         cd /build && python3 hub/packaging/build_deb.py --output-dir /out'
 
 Not pure: creates a virtual environment, installs into it, runs dpkg-deb.
@@ -180,6 +180,7 @@ def main() -> int:
             tree,
             package_version,
             arguments.architecture,
+            kind="deb",
             asset=asset_name("deb", "{version}", arguments.architecture),
         )
         _lay_out(tree, package_version, arguments.architecture, arguments.maintainer)

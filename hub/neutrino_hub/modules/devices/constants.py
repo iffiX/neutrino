@@ -70,16 +70,17 @@ AGENT_MODULE_PROGRESS_INTERVAL_S = 2.0
 AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
 
 # The hub's own agent packages, which are not third-party modules: the hub's
-# package lands the builds it was made with here, and a platform it carries
-# none for is fetched from the release the manifest names. A file is named the
-# way the release publishes it, so one name addresses a package here, in the
-# manifest and in the release.
+# package lands the one of its own platform here, and every other platform is
+# fetched from the release the manifest names. A file is named the way the
+# release publishes it, so one name addresses a package here, in the manifest
+# and in the release.
 AGENT_PACKAGE_CACHE_DIR = UTILS_STATE_ROOT / "agent_cache"
 
 # Per platform key, ``{name, url, sha256, size}``. Stamped by the build that
-# seeded the cache: a release stamps the URL its assets are published at, and
-# a local build stamps none, which is what makes a platform it did not seed
-# refuse rather than reach for a file nobody published.
+# seeded the cache: a release names every platform it publishes, with the URL
+# and the hash of each, and a local build names the one it seeded alone, which
+# is what makes another platform refuse rather than reach for a file nobody
+# published.
 AGENT_PACKAGE_MANIFEST_NAME = "agent_packages.json"
 AGENT_PACKAGE_MANIFEST_PATH = UTILS_DATA_DIR / AGENT_PACKAGE_MANIFEST_NAME
 

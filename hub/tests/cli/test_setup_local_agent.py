@@ -8,9 +8,13 @@ the join uses a link minted for it, and that a machine this hub has no agent
 for is said out loud instead of failing the run.
 """
 
+import hashlib
+import json
+
 import pytest
 
 from neutrino_hub.cli import setup
+from neutrino_hub.modules.devices import agent_package
 
 
 class FakeReporter:
@@ -163,3 +167,53 @@ def test_a_refusal_from_the_package_manager_is_reported(box, monkeypatch):
 
     assert reporter.failures
     assert reporter.done_notes == []
+
+
+def test_the_carried_package_installs_with_no_network(box, monkeypatch, tmp_path):
+    """The real cache over what a release's deb hub lays down: its own file
+    in the cache, every other platform named in the manifest. Nothing is
+    downloaded."""
+    manager, commands = box
+    content = b"!<arch>the carried agent"
+    name = "neutrino-agent_0.5.0_amd64.deb"
+    cache_dir = tmp_path / "agent_cache"
+    cache_dir.mkdir()
+    (cache_dir / name).write_bytes(content)
+    manifest = tmp_path / "agent_packages.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "deb-amd64": {
+                    "name": name,
+                    "url": f"https://example.invalid/{name}",
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "size": len(content),
+                },
+                "msi-amd64": {
+                    "name": "neutrino-agent-0.5.0-windows-amd64.msi",
+                    "url": "https://example.invalid/x.msi",
+                    "sha256": "0" * 64,
+                    "size": 1,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def offline(*args, **kwargs):
+        raise AssertionError("the local agent was downloaded")
+
+    monkeypatch.setattr(agent_package.urllib.request, "urlopen", offline)
+    monkeypatch.setattr(
+        setup,
+        "AgentPackageCache",
+        lambda: agent_package.AgentPackageCache(
+            root=cache_dir, manifest_path=manifest, pinned_dir=tmp_path / "none"
+        ),
+    )
+    reporter = FakeReporter()
+
+    setup._install_local_agent("panel-password", reporter)
+
+    assert manager.installed == [(str(cache_dir / name),)]
+    assert reporter.done_notes == ["installed and joined"]

@@ -15,10 +15,16 @@ on:
 permissions:
   contents: write
 
+# Where a tag's release publishes its files, stamped into each hub package's
+# agent manifest so the hub can fetch an agent package it does not carry. The
+# one place a build names the release; a dispatch build names none.
+env:
+  AGENT_PACKAGE_URL_BASE: ${{ startsWith(github.ref, 'refs/tags/') && format('https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name) || '' }}
+
 jobs:
-  # After the agent: the hub seeds its cache with the agent packages of
-  # both machines rather than building the agent again for its own, and
-  # names the Windows and macOS installers in its manifest.
+  # After every agent: the hub package carries the agent package of its own
+  # family and machine, and its manifest names every agent package of the
+  # release with its hash, so the build reads them all.
   hub:
     name: hub .deb, .rpm and Arch (${{ matrix.architecture }})
     needs: [agent, agent_windows, agent_macos]
@@ -55,15 +61,13 @@ jobs:
       - uses: docker/setup-qemu-action@v4
         if: matrix.architecture != 'amd64'
 
-      # A tag stamps the hub's agent manifest with where the release
-      # publishes each package; a dispatch build carries no URL.
       - run: >
           python3 packaging/build/build_hub.py
           --architecture ${{ matrix.architecture }}
           --output-dir dist
           --agent-packages agent_packages
-          ${{ startsWith(github.ref, 'refs/tags/')
-              && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
+          ${{ env.AGENT_PACKAGE_URL_BASE
+              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE)
               || '' }}
 
       - run: for package in dist/*; do python3 packaging/ci/check.py linux "$package"; done
@@ -209,8 +213,8 @@ jobs:
           --output-dir dist
           --architecture ${{ matrix.arch }}
           --agent-packages agent_packages
-          ${{ startsWith(github.ref, 'refs/tags/')
-              && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
+          ${{ env.AGENT_PACKAGE_URL_BASE
+              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE)
               || '' }}
 
       - run: python3 packaging/ci/check.py hub_macos dist/*.pkg
@@ -272,8 +276,8 @@ jobs:
           --architecture x64
           --agent-packages agent_packages
           --packet-dll build/packet_stub/packet.dll
-          ${{ startsWith(github.ref, 'refs/tags/')
-              && format('--agent-package-url-base https://github.com/{0}/releases/download/{1}', github.repository, github.ref_name)
+          ${{ env.AGENT_PACKAGE_URL_BASE
+              && format('--agent-package-url-base {0}', env.AGENT_PACKAGE_URL_BASE)
               || '' }}
 
       - run: python packaging/ci/check.py hub_windows dist/*.msi

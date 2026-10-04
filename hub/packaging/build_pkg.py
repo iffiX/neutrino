@@ -168,6 +168,7 @@ def main() -> int:
             payload,
             package_version,
             arguments.architecture,
+            kind="pkg",
             asset=asset_name("pkg", "{version}", arguments.architecture),
         )
         write(

@@ -180,7 +180,9 @@ def test_the_linux_hub_check_reads_the_address_from_nhub_open(
         check.subprocess,
         "run",
         _fake_container_run(
-            "\n  Neutrino Hub installed. Set it up in a browser at:\n\nnhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
+            "\n  Neutrino Hub installed. Set it up in a browser at:\n\n"
+            "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
+            "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
         ),
     )
@@ -189,7 +191,46 @@ def test_the_linux_hub_check_reads_the_address_from_nhub_open(
     check.check_linux(package)
     script = calls[0][-1]
     assert script.startswith("dnf -y install ")
+    assert check.HUB_AGENT_CACHE_DIR in script
     assert script.endswith(" && nhub --version && nhub open --print")
+
+
+@pytest.mark.parametrize(
+    ("hub", "agent"),
+    [
+        ("neutrino-hub_0.5.0_arm64.deb", ["neutrino-agent_0.5.0_arm64.deb"]),
+        ("neutrino-hub-0.5.0-1.aarch64.rpm", ["neutrino-agent-0.5.0-1.aarch64.rpm"]),
+        ("neutrino-hub-0.5.0-1-x86_64.pkg.tar.zst", []),
+    ],
+)
+def test_a_linux_hub_carries_the_agent_package_of_its_own_platform(check, hub, agent):
+    assert check.hub_agent_cache(hub) == agent
+
+
+def test_the_linux_hub_check_fails_when_the_cache_holds_another_platform(
+    check, monkeypatch, tmp_path
+):
+    calls = []
+    monkeypatch.setattr(
+        check.shutil,
+        "which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        check.subprocess,
+        "run",
+        _fake_container_run(
+            "  Neutrino Hub installed.\n"
+            "agent cache: neutrino-agent_0.5.0_amd64.deb\n"
+            "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
+            "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
+            calls,
+        ),
+    )
+    package = tmp_path / "neutrino-hub_0.5.0_amd64.deb"
+    package.write_bytes(b"deb")
+    with pytest.raises(SystemExit, match="agent cache holds"):
+        check.check_linux(package)
 
 
 def test_the_linux_hub_check_fails_when_the_install_hid_its_address(
@@ -225,6 +266,7 @@ def test_the_linux_hub_check_reads_dnf_scriptlet_words_from_its_error_stream(
         check.subprocess,
         "run",
         _fake_container_run(
+            "agent cache: neutrino-agent-0.5.0-1.x86_64.rpm\n"
             "nhub 0.5.0\nhttp://10.0.0.2:8080/?token=abc\n",
             calls,
             stderr=">>> Scriptlet output:\n>>>   Neutrino Hub installed. Set it up in a browser at:\n",

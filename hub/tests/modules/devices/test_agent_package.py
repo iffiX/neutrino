@@ -1,9 +1,10 @@
 """Which agent package the hub hands a device, and where it comes from.
 
-The hub's own package seeds the cache with the builds it was made from, so
-the ordinary answer is a file already on disk, under the name the release
-publishes it as. A platform it seeded none for is fetched once from the
-release the manifest names and kept under that same name. A platform with
+The hub's own package seeds the cache with the one package of its own
+platform, so for that platform the answer is a file already on disk, under
+the name the release publishes it as. Every other platform is fetched once
+from the release the manifest names, checked against the manifest's hash,
+and kept under that same name. A platform with
 neither is refused by name.
 """
 
@@ -311,3 +312,83 @@ def test_an_unreadable_manifest_is_a_hub_that_knows_no_platform(cache, tmp_path)
 
     assert cache.manifest() == {}
     assert not cache.has_packages()
+
+
+# --- another platform's package comes from the release ---------------------
+
+MSI_NAME = "neutrino-agent-0.1.0-windows-amd64.msi"
+MSI_BYTES = b"MZ an agent installer"
+MSI_URL = f"https://example.invalid/{MSI_NAME}"
+
+
+def test_a_deb_hub_fetches_the_windows_installer_and_checks_it(
+    cache, tmp_path, monkeypatch
+):
+    """The hub carries its own platform's package alone; a Windows agent
+    updating itself is served the release's file once it hashes right."""
+    write_manifest(
+        tmp_path / "agent_packages.json",
+        {
+            "deb-amd64": entry(DEB_NAME, url=RELEASE_URL),
+            "msi-amd64": entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES),
+        },
+    )
+    seed(tmp_path / "agent_cache", DEB_NAME, DEB_BYTES)
+    served = answers(monkeypatch, MSI_BYTES)
+
+    assert cache.package(family="deb", architecture="amd64").name == DEB_NAME
+    path = cache.package(family="msi", architecture="amd64")
+
+    assert served == [MSI_URL]
+    assert path == tmp_path / "agent_cache" / MSI_NAME
+    assert path.read_bytes() == MSI_BYTES
+
+
+def test_an_entry_that_pins_no_hash_is_never_fetched(cache, tmp_path):
+    """A fetch is kept only once it matches; with nothing to match it against
+    the platform is refused by name and nothing is downloaded."""
+    unpinned = entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES)
+    unpinned["sha256"] = ""
+    write_manifest(tmp_path / "agent_packages.json", {"msi-amd64": unpinned})
+
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        cache.package(family="msi", architecture="amd64")
+
+    assert refused.value.code == "agent_package_missing"
+    assert not cache.serves(family="msi", architecture="amd64")
+
+
+def test_an_unreachable_release_is_refused_with_its_own_code(
+    cache, tmp_path, monkeypatch
+):
+    write_manifest(
+        tmp_path / "agent_packages.json",
+        {"msi-amd64": entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES)},
+    )
+
+    def unreachable(*args, **kwargs):
+        raise OSError("Name or service not known")
+
+    monkeypatch.setattr(agent_package.urllib.request, "urlopen", unreachable)
+
+    with pytest.raises(AgentArtifactFetchError) as refused:
+        cache.package(family="msi", architecture="amd64")
+
+    assert refused.value.code == "agent_package_fetch_failed"
+    assert list((tmp_path / "agent_cache").glob("*")) == []
+
+
+def test_a_held_file_that_no_longer_hashes_right_is_fetched_again(
+    cache, tmp_path, monkeypatch
+):
+    write_manifest(
+        tmp_path / "agent_packages.json",
+        {"msi-amd64": entry(MSI_NAME, url=MSI_URL, content=MSI_BYTES)},
+    )
+    seed(tmp_path / "agent_cache", MSI_NAME, b"MZ a truncated download")
+    served = answers(monkeypatch, MSI_BYTES)
+
+    path = cache.package(family="msi", architecture="amd64")
+
+    assert served == [MSI_URL]
+    assert path.read_bytes() == MSI_BYTES

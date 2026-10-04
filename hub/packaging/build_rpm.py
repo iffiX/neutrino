@@ -185,6 +185,7 @@ def main() -> int:
             payload,
             package_version,
             arguments.architecture,
+            kind="rpm",
             asset=asset_name("rpm", "{version}", arguments.architecture),
         )
         write(

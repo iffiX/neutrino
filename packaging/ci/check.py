@@ -37,8 +37,9 @@ The targets:
   ``adb`` and one emulator attached.
 - ``linux``: a hub, agent or client .deb, .rpm or Arch package installs in a
   fresh container of its family and its command answers ``--version``; the
-  hub's install prints the setup wizard's address with its token. Linux
-  with podman or docker; another architecture needs QEMU registered with
+  hub's install prints the setup wizard's address with its token, and its
+  agent cache holds the agent package of its own family and machine alone,
+  none for Arch. Linux with podman or docker; another architecture needs QEMU registered with
   binfmt_misc.
 
 Not pure: installs and removes packages.
@@ -149,6 +150,12 @@ LINUX_INSTALLS = {
 # The sentence the hub's post-install prints, which the package manager must
 # let through for the address beside it to be seen.
 HUB_INSTALLED_SENTENCE = "Neutrino Hub installed"
+# Where an installed Linux hub carries its one agent package, and the prefix
+# each file in it is listed under.
+HUB_AGENT_CACHE_DIR = "/var/lib/neutrino/hub/agent_cache"
+HUB_AGENT_CACHE_LINE = "agent cache: "
+# The hub package kinds that carry an agent package of their own family.
+HUB_AGENT_CARRYING_SUFFIXES = (".deb", ".rpm")
 # The command each package puts on the path.
 LINUX_COMMANDS = {
     "neutrino-hub": "nhub",
@@ -447,7 +454,13 @@ def check_linux(package: Path) -> None:
     machine = match.group(2)
     image, install = LINUX_INSTALLS[suffix]
     inside = f"/package/{package.name}"
-    script = f"{install.format(package=inside)} && {command} --version"
+    script = install.format(package=inside)
+    if command == LINUX_COMMANDS["neutrino-hub"]:
+        script += (
+            f" && {{ ls -1 {HUB_AGENT_CACHE_DIR} 2>/dev/null || true; }}"
+            f" | sed 's/^/{HUB_AGENT_CACHE_LINE}/'"
+        )
+    script += f" && {command} --version"
     if command == LINUX_COMMANDS["neutrino-hub"]:
         script += f" && {command} open --print"
     print(f"installing {package.name} in {image}")
@@ -485,8 +498,35 @@ def check_linux(package: Path) -> None:
         # on standard output.
         if HUB_INSTALLED_SENTENCE not in result.stdout + result.stderr:
             raise SystemExit("the hub's install printed no setup wizard address")
+        carried = [
+            line[len(HUB_AGENT_CACHE_LINE) :]
+            for line in result.stdout.splitlines()
+            if line.startswith(HUB_AGENT_CACHE_LINE)
+        ]
+        expected = hub_agent_cache(package.name)
+        if carried != expected:
+            raise SystemExit(
+                f"the hub's agent cache holds {carried or 'nothing'}, "
+                f"not {expected or 'nothing'}"
+            )
+        print(f"agent cache: {', '.join(carried) or 'empty'}")
     else:
         print(f"{command} {result.stdout.strip().splitlines()[-1]}")
+
+
+def hub_agent_cache(name: str) -> list:
+    """The agent package a Linux hub package carries, by the hub file's name.
+
+    Args:
+        name: The hub package's file name.
+
+    Returns:
+        The one agent file of the same version, family and machine, or
+        nothing for the Arch package.
+    """
+    if not name.endswith(HUB_AGENT_CARRYING_SUFFIXES):
+        return []
+    return [name.replace("neutrino-hub", "neutrino-agent", 1)]
 
 
 def _set_up_hub(nhub: list) -> None:
