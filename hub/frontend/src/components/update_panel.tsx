@@ -114,6 +114,7 @@ export function UpdatePanel() {
   const isInstallable =
     scan !== null &&
     latest !== null &&
+    scan.has_package &&
     scan.is_newer &&
     !scan.is_major &&
     scan.is_space_enough;
@@ -206,7 +207,12 @@ export function UpdatePanel() {
               {scanError !== null && (
                 <span className="field_error">{scanError}</span>
               )}
-              {scan !== null && <ScanResult scan={scan} />}
+              {scan !== null && (
+                <ScanResult
+                  scan={scan}
+                  packageFamily={view?.package_family ?? ""}
+                />
+              )}
             </>
           )}
         </div>
@@ -232,9 +238,11 @@ export function UpdatePanel() {
 
 interface ScanResultProps {
   scan: HubReleaseScanView;
+  /** The kind of package this hub was installed from; empty when unknown. */
+  packageFamily: HubPackageFamily;
 }
 
-function ScanResult({ scan }: ScanResultProps) {
+function ScanResult({ scan, packageFamily }: ScanResultProps) {
   const latest = scan.latest;
   if (latest === null) {
     return (
@@ -266,6 +274,19 @@ function ScanResult({ scan }: ScanResultProps) {
           </a>
         )}
       </div>
+      {!scan.has_package && (
+        <div className="notice notice--warn">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">
+            {packageFamily === ""
+              ? t("ui.settings.update_no_package", { version: latest.version })
+              : t("ui.settings.update_no_package_family", {
+                  version: latest.version,
+                  family: packageFamily,
+                })}
+          </div>
+        </div>
+      )}
       {scan.is_major && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />

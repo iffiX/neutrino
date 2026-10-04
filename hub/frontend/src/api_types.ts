@@ -1361,6 +1361,8 @@ export interface HubReleaseLatest {
 export interface HubReleaseScanView {
   current: string;
   latest: HubReleaseLatest | null;
+  /** Whether the newest release carries a package of this hub's family. */
+  has_package: boolean;
   is_newer: boolean;
   is_major: boolean;
   is_rollback_available: boolean;
