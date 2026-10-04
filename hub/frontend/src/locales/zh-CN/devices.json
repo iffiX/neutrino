@@ -113,6 +113,7 @@
   "ui.credentials.key_delete_many": "{count} 台设备会失去这个密钥，需要换一个新的。",
   "ui.credentials.key_delete_none": "私钥会从这台机器上删除。",
   "ui.credentials.key_delete_one": "有一台设备会失去这个密钥，需要换一个新的。",
+  "ui.credentials.key_delete_relay": "中继用着这个密钥，会停止。",
   "ui.credentials.key_hint": "保存后不会再次显示。",
   "ui.credentials.keys_empty": "还没有密钥",
   "ui.credentials.keys_empty_hint": "在这里添加密钥，配置设备的 SSH 时就能选到它。",
