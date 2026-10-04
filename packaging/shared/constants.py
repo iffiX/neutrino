@@ -20,3 +20,57 @@ PACKAGING_ARCHITECTURE_NAMES = {
     "amd64": {"debian": "amd64", "rhel": "x86_64", "arch": "x86_64"},
     "arm64": {"debian": "arm64", "rhel": "aarch64", "arch": "aarch64"},
 }
+
+# The two editions, and the file at the root of a tree naming its own.
+PACKAGING_EDITIONS = ("intl", "cn")
+PACKAGING_EDITION_FILE = "EDITION"
+
+# Every repository path that exists for a feature the mainland edition `cn`
+# leaves out, the proxy and NetBird, and for nothing else: its packages, their
+# mirrored tests, its frontend files, its examples and unit templates, and the
+# scripts that build its programs. Deleting these from the tree is the whole of
+# what makes the mainland tree. The one list of what `cn` leaves out.
+PACKAGING_CN_LEFT_OUT_PATHS = (
+    # The hub: the proxy.
+    "hub/neutrino_hub/modules/xray",
+    "hub/neutrino_hub/modules/tun",
+    "hub/neutrino_hub/web/routers/hub/proxy.py",
+    "hub/neutrino_hub/web/routers/hub/proxy_node.py",
+    "hub/neutrino_hub/data/examples/xray",
+    "hub/neutrino_hub/data/services/neutrino_hub_xray.service",
+    "hub/tests/modules/xray",
+    "hub/tests/modules/tun",
+    "hub/tests/web/routers/hub/test_proxy.py",
+    "hub/tests/web/routers/hub/test_proxy_node.py",
+    # The hub: NetBird.
+    "hub/neutrino_hub/modules/netbird",
+    "hub/neutrino_hub/web/routers/hub/overlay_netbird.py",
+    "hub/neutrino_hub/data/examples/netbird",
+    "hub/neutrino_hub/data/services/neutrino_hub_netbird.service",
+    "hub/tests/modules/netbird",
+    "hub/tests/web/routers/hub/test_overlay_netbird.py",
+    # The panel: the Proxy page and the panels only it shows.
+    "hub/frontend/src/pages/proxy_page.tsx",
+    "hub/frontend/src/pages/proxy_page.css",
+    "hub/frontend/src/components/nodes_panel.tsx",
+    "hub/frontend/src/components/nodes_panel.css",
+    "hub/frontend/src/components/node_card.tsx",
+    "hub/frontend/src/components/node_card.css",
+    "hub/frontend/src/node_draft.ts",
+    "hub/frontend/src/components/geodata_panel.tsx",
+    "hub/frontend/src/components/geodata_panel.css",
+    "hub/frontend/src/components/socks_ports_panel.tsx",
+    "hub/frontend/src/components/socks_ports_panel.css",
+    # The panel: NetBird's card on the Access page.
+    "hub/frontend/src/components/netbird_card.tsx",
+    "hub/frontend/src/components/netbird_card.css",
+    # The desktop client: NetBird and the daemon that runs it.
+    # The Android app: the NetBird core and the script that builds it.
+)
+
+# The line naming the edition in each one-command install script, which the
+# mainland source tree stamps `cn`.
+PACKAGING_INSTALL_EDITION_LINES = {
+    "packaging/install/install.sh": 'EDITION="{edition}"',
+    "packaging/install/install.ps1": "$script:NeutrinoEdition = '{edition}'",
+}

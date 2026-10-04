@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from neutrino_hub import edition
 from neutrino_hub.platforms.constants import (
     PLATFORM_SERVICE_RUNNING,
     PLATFORM_SERVICE_STOPPED,
@@ -112,6 +113,7 @@ def _state(tmp_path) -> dict:
     return json.loads((tmp_path / "state" / "services.json").read_text())
 
 
+@pytest.mark.feature("proxy")
 def test_enabling_writes_services_json_and_starts_the_child(
     controller, popen, tmp_path
 ):
@@ -125,6 +127,7 @@ def test_enabling_writes_services_json_and_starts_the_child(
     assert controller.is_enabled("xray")
 
 
+@pytest.mark.feature("proxy")
 def test_disabling_takes_it_out_and_stops_the_child(controller, popen, tmp_path):
     controller.supervise({"xray": XRAY})
     controller.enable("xray")
@@ -136,6 +139,8 @@ def test_disabling_takes_it_out_and_stops_the_child(controller, popen, tmp_path)
     assert not controller.is_active("xray")
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_service_starts_every_enabled_child(tmp_path, controller, popen):
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "services.json").write_text(
@@ -167,6 +172,7 @@ def test_a_start_line_handed_over_is_kept_for_the_next_start(
     assert child.cwd == "/w"
 
 
+@pytest.mark.feature("proxy")
 def test_the_services_own_start_line_wins_over_a_kept_one(tmp_path, controller, popen):
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "services.json").write_text(
@@ -180,6 +186,7 @@ def test_the_services_own_start_line_wins_over_a_kept_one(tmp_path, controller, 
     assert popen.started[0].argv == XRAY.argv
 
 
+@pytest.mark.feature("proxy")
 def test_restarting_a_child_inside_the_service_restarts_that_child(controller, popen):
     controller.supervise({"xray": XRAY})
     controller.enable("xray")
@@ -190,6 +197,7 @@ def test_restarting_a_child_inside_the_service_restarts_that_child(controller, p
     assert len(popen.started) == 2
 
 
+@pytest.mark.feature("proxy")
 def test_restarting_the_panel_inside_the_service_exits_it(controller, popen, exits):
     controller.supervise({"xray": XRAY})
     controller.enable("xray")
@@ -201,6 +209,8 @@ def test_restarting_the_panel_inside_the_service_exits_it(controller, popen, exi
     assert popen.started[0].is_terminated
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_journal_is_the_tail_of_the_log_file(tmp_path, controller):
     (tmp_path / "log").mkdir()
     (tmp_path / "log" / "netbird.log").write_text(
@@ -234,15 +244,15 @@ def test_every_name_the_service_runs_has_a_status(controller):
 
     assert names == [
         "web",
-        "xray",
+        *(["xray", "tun2socks"] if edition.has_feature("proxy") else []),
+        *(["netbird"] if edition.has_feature("netbird") else []),
         "cliproxyapi",
-        "netbird",
         "easytier",
         "relay",
-        "tun2socks",
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_a_command_enables_into_services_json_alone(controller, popen, tmp_path):
     controller.enable("xray")
 
@@ -269,6 +279,7 @@ def test_a_command_records_a_child_while_the_service_is_stopped(
     assert popen.started == []
 
 
+@pytest.mark.feature("proxy")
 def test_a_command_starting_a_child_leaves_the_running_service_alone(
     controller, service, tmp_path
 ):
@@ -290,6 +301,7 @@ def test_a_command_restarting_a_child_of_the_running_service_restarts_it(
     assert service.calls == ["restart"]
 
 
+@pytest.mark.feature("proxy")
 def test_the_service_starts_a_child_another_process_enabled(
     controller, service, popen, tmp_path
 ):
@@ -302,6 +314,7 @@ def test_the_service_starts_a_child_another_process_enabled(
     assert controller.is_active("xray")
 
 
+@pytest.mark.feature("proxy")
 def test_the_service_stops_a_child_another_process_disabled(
     controller, service, popen, tmp_path
 ):
@@ -316,6 +329,7 @@ def test_the_service_stops_a_child_another_process_disabled(
     assert not controller.is_active("xray")
 
 
+@pytest.mark.feature("proxy")
 def test_a_child_started_here_without_enabling_is_left_running(controller, popen):
     controller.supervise({"xray": XRAY})
     controller.start("xray")
@@ -338,6 +352,7 @@ def test_a_start_line_another_process_kept_is_held_and_started(
     assert [child.argv for child in popen.started] == [["/app/bin/easytier-core"]]
 
 
+@pytest.mark.feature("proxy")
 def test_the_service_follows_services_json_on_its_timer(tmp_path, popen, service):
     supervisor = ChildProcessSupervisor(
         log_dir=tmp_path / "log", base_env={}, start_process=popen, log=print
@@ -361,6 +376,7 @@ def test_the_service_follows_services_json_on_its_timer(tmp_path, popen, service
     assert [child.argv for child in popen.started] == [XRAY.argv]
 
 
+@pytest.mark.feature("proxy")
 def test_a_command_cannot_stop_one_child(controller, service):
     with pytest.raises(RuntimeError):
         controller.stop("xray")
@@ -374,6 +390,7 @@ def test_a_command_reads_the_panel_from_the_service(controller, service):
     assert controller.status("web").is_active
 
 
+@pytest.mark.feature("netbird")
 def test_a_command_reads_an_enabled_child_as_running_with_the_service(
     controller, service
 ):
@@ -407,6 +424,7 @@ def test_a_held_service_still_restarts_into_the_panel(controller, service):
     assert service.calls == ["restart"]
 
 
+@pytest.mark.feature("proxy")
 def test_a_running_child_has_its_process_id(controller):
     controller.supervise({"xray": XRAY})
 

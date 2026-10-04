@@ -77,7 +77,24 @@ def fetched(monkeypatch):
     return asked
 
 
-@pytest.mark.parametrize("program", sorted(hub_assets.HUB_ASSET_PROGRAMS))
+# The programs of a left-out feature, by that feature.
+PROGRAM_FEATURES = {"xray": "proxy", "tun2socks": "proxy", "netbird": "netbird"}
+
+
+@pytest.mark.parametrize(
+    "program",
+    [
+        pytest.param(
+            program,
+            marks=(
+                [pytest.mark.feature(PROGRAM_FEATURES[program])]
+                if program in PROGRAM_FEATURES
+                else []
+            ),
+        )
+        for program in sorted(hub_assets.HUB_ASSET_PROGRAMS)
+    ],
+)
 def test_every_system_a_hub_is_built_for_has_a_pin(program):
     systems = hub_assets.HUB_ASSET_SYSTEMS.get(program, ("linux", "darwin", "windows"))
     for os_name, machine in (
@@ -95,6 +112,8 @@ def test_every_system_a_hub_is_built_for_has_a_pin(program):
         assert SHA256.match(digest)
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_the_linux_rows_are_the_files_the_linux_constants_name():
     """A Linux package carries what the panel reports and a checkout fetches."""
     from neutrino_hub.modules.easytier import constants as easytier
@@ -131,6 +150,8 @@ def test_the_linux_rows_are_the_files_the_linux_constants_name():
         )
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_every_asset_that_names_a_version_names_its_own():
     """xray's and tun2socks's assets name no version; every other release
     names its own."""
@@ -143,6 +164,7 @@ def test_every_asset_that_names_a_version_names_its_own():
             assert version in name, (program, name)
 
 
+@pytest.mark.feature("netbird")
 def test_a_system_nothing_is_pinned_for_stops_the_build():
     with pytest.raises(SystemExit) as refused:
         hub_assets.pinned("netbird", "windows", "arm64")
@@ -150,6 +172,8 @@ def test_a_system_nothing_is_pinned_for_stops_the_build():
     assert "windows amd64" in str(refused.value)
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_linux_takes_the_five_programs_and_nothing_beside_them(tmp_path, fetched):
     written = hub_assets.stage_programs(tmp_path, "linux", "amd64")
 
@@ -167,6 +191,8 @@ def test_linux_takes_the_five_programs_and_nothing_beside_them(tmp_path, fetched
     assert any("easytier-linux-x86_64" in url for url in fetched)
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_an_intel_mac_takes_the_x86_64_builds(tmp_path, fetched):
     hub_assets.stage_programs(tmp_path, "darwin", "amd64")
 
@@ -185,6 +211,7 @@ def test_an_intel_mac_takes_the_x86_64_builds(tmp_path, fetched):
     assert (tmp_path / "netbird").read_bytes() == b"client"
 
 
+@pytest.mark.feature("proxy")
 @pytest.mark.parametrize("machine", ["amd64", "arm64"])
 def test_a_mac_takes_tun2socks_under_its_plain_name(tmp_path, fetched, machine):
     """The archive names the program after the system and machine; the
@@ -198,6 +225,7 @@ def test_a_mac_takes_tun2socks_under_its_plain_name(tmp_path, fetched, machine):
     assert [path.name for path in written] == hub_assets.carried_names("darwin")
 
 
+@pytest.mark.feature("proxy")
 def test_the_tun2socks_pins_are_the_tun_modules_own():
     from neutrino_hub.modules.tun import constants as tun
 
@@ -213,6 +241,8 @@ def test_the_tun2socks_pins_are_the_tun_modules_own():
     ]
 
 
+@pytest.mark.feature("proxy")
+@pytest.mark.feature("netbird")
 def test_windows_takes_the_executables_and_easytiers_tun_driver(tmp_path, fetched):
     """wintun.dll comes out of EasyTier's archive, never xray's, and Npcap's
     Packet.dll stays behind."""
@@ -233,6 +263,7 @@ def test_windows_takes_the_executables_and_easytiers_tun_driver(tmp_path, fetche
     assert not (tmp_path / "Packet.dll").exists()
 
 
+@pytest.mark.feature("proxy")
 def test_an_archive_without_the_program_stops_the_build(tmp_path, monkeypatch):
     monkeypatch.setattr(
         hub_assets, "fetch", lambda url, digest, what: _zip({"README.md": b""})
@@ -244,6 +275,7 @@ def test_an_archive_without_the_program_stops_the_build(tmp_path, monkeypatch):
     assert "carries no xray" in str(refused.value)
 
 
+@pytest.mark.feature("proxy")
 def test_the_databases_are_the_pinned_pair(tmp_path, fetched):
     written = hub_assets.stage_geodata(tmp_path)
 

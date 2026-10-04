@@ -116,7 +116,9 @@ def test_the_relation_orders_by_number_and_singles_out_a_new_major(
 
 def test_the_latest_release_names_this_boxs_package():
     checker = HubReleaseChecker(
-        asset=ASSET, fetch_bytes=answering({LATEST_URL: release_json("0.3.1")})
+        asset=ASSET,
+        edition="intl",
+        fetch_bytes=answering({LATEST_URL: release_json("0.3.1")}),
     )
 
     found = checker.latest()
@@ -134,8 +136,49 @@ def test_the_latest_release_names_this_boxs_package():
     assert found.page_url.endswith("/v0.3.1")
 
 
+def test_a_mainland_hub_reads_its_release_off_gitee():
+    """Gitee's reply names no page and no publish time, only when the release
+    was made, and its files under its own download address."""
+    gitee = "https://gitee.com/iffiX/neutrino/releases/download/{tag}/{name}"
+    name = ASSET.format(version="0.3.1")
+    reply = {
+        "tag_name": "v0.3.1",
+        "created_at": "2026-10-01T20:00:00+08:00",
+        "body": "## Changes",
+        "assets": [
+            {
+                "name": entry,
+                "browser_download_url": gitee.format(tag="v0.3.1", name=entry),
+            }
+            for entry in (name, "SHA256SUMS")
+        ],
+    }
+    checker = HubReleaseChecker(
+        asset=ASSET,
+        edition="cn",
+        fetch_bytes=answering(
+            {
+                "https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest": (
+                    json.dumps(reply).encode("utf-8")
+                )
+            }
+        ),
+    )
+
+    found = checker.latest()
+
+    assert found.asset_url == gitee.format(tag="v0.3.1", name=name)
+    assert found.checksums_url == gitee.format(tag="v0.3.1", name="SHA256SUMS")
+    assert found.published_at == "2026-10-01T20:00:00+08:00"
+    assert found.page_url == "https://gitee.com/iffiX/neutrino/releases/tag/v0.3.1"
+    assert (
+        HubReleaseChecker(asset=ASSET, edition="cn", fetch_bytes=answering({})).latest()
+        is None
+    )
+
+
 def test_nothing_published_reads_as_no_release():
-    checker = HubReleaseChecker(asset=ASSET, fetch_bytes=answering({}))
+    checker = HubReleaseChecker(asset=ASSET, edition="intl", fetch_bytes=answering({}))
 
     assert checker.latest() is None
     assert checker.for_version("0.3.0") is None
@@ -146,6 +189,7 @@ def test_a_release_without_this_boxs_package_is_a_release_with_none():
     no error and no unreachable GitHub."""
     checker = HubReleaseChecker(
         asset=ASSET,
+        edition="intl",
         fetch_bytes=answering(
             {LATEST_URL: release_json("0.3.1", assets=["neutrino-hub_0.3.1_arm64.deb"])}
         ),
@@ -161,7 +205,7 @@ def test_a_release_without_this_boxs_package_is_a_release_with_none():
 
 def test_a_reply_that_is_not_a_release_is_refused():
     checker = HubReleaseChecker(
-        asset=ASSET, fetch_bytes=answering({LATEST_URL: b"<html>"})
+        asset=ASSET, edition="intl", fetch_bytes=answering({LATEST_URL: b"<html>"})
     )
 
     with pytest.raises(ValueError):
@@ -172,7 +216,7 @@ def test_an_unreachable_github_is_an_os_error():
     def down(url: str) -> bytes:
         raise urllib.error.URLError("no route")
 
-    checker = HubReleaseChecker(asset=ASSET, fetch_bytes=down)
+    checker = HubReleaseChecker(asset=ASSET, edition="intl", fetch_bytes=down)
 
     with pytest.raises(OSError):
         checker.latest()
@@ -181,6 +225,7 @@ def test_an_unreachable_github_is_an_os_error():
 def test_the_release_of_one_version_is_read_by_its_tag():
     checker = HubReleaseChecker(
         asset=ASSET,
+        edition="intl",
         fetch_bytes=answering({TAG_URL.format(tag="v0.3.0"): release_json("0.3.0")}),
     )
 
@@ -197,6 +242,7 @@ def test_the_digest_is_the_line_of_the_checksums_that_names_the_package():
     ).encode("utf-8")
     checker = HubReleaseChecker(
         asset=ASSET,
+        edition="intl",
         fetch_bytes=answering(
             {
                 LATEST_URL: release_json("0.3.1"),
@@ -211,6 +257,7 @@ def test_the_digest_is_the_line_of_the_checksums_that_names_the_package():
 def test_a_checksums_file_without_the_package_is_refused():
     checker = HubReleaseChecker(
         asset=ASSET,
+        edition="intl",
         fetch_bytes=answering(
             {
                 LATEST_URL: release_json("0.3.1"),
@@ -226,6 +273,7 @@ def test_a_checksums_file_without_the_package_is_refused():
 def test_a_line_that_is_not_a_digest_is_refused():
     checker = HubReleaseChecker(
         asset=ASSET,
+        edition="intl",
         fetch_bytes=answering(
             {
                 LATEST_URL: release_json("0.3.1"),

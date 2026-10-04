@@ -19,6 +19,7 @@ import threading
 from pathlib import Path
 from dataclasses import dataclass, field
 
+from neutrino_hub import edition
 from neutrino_hub.cli.password import read_new_password, worded_refusal
 from neutrino_hub.exceptions import PasswordRefusedError, WizardAborted
 from neutrino_hub.utils.passwords import (
@@ -30,8 +31,6 @@ from neutrino_hub.utils.passwords import (
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os, is_linux
-from neutrino_hub.modules.xray.constants import XRAY_SOCKS_PORT
-from neutrino_hub.modules.xray.node_config import parse_share_link
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LANGUAGE,
@@ -54,6 +53,10 @@ from neutrino_hub.modules.router.modes import (
 )
 
 # --- config ---
+# The proxy screen's defaults and its link reader, from the edition table;
+# None in a tree without the proxy, which asks no proxy screen.
+WIZARD_PROXY = edition.hook("wizard_proxy")
+WIZARD_SOCKS_PORT = WIZARD_PROXY.socks_port if WIZARD_PROXY is not None else 0
 WIZARD_WIDTH = 72
 WIZARD_WORDMARK = "NEUTRINO"
 # The headline's rule, and what draws it where the console cannot.
@@ -133,9 +136,9 @@ class WizardProxy:
     nodes: tuple = ()
     is_local: bool = False
     is_socks_proxy_enabled: bool = False
-    socks_proxy_port: int = XRAY_SOCKS_PORT
+    socks_proxy_port: int = WIZARD_SOCKS_PORT
     is_socks_direct_enabled: bool = False
-    socks_direct_port: int = XRAY_SOCKS_PORT
+    socks_direct_port: int = WIZARD_SOCKS_PORT
 
 
 @dataclass
@@ -351,7 +354,8 @@ def _proxy_from(given, mode: str) -> WizardProxy:
         What the proxy screen would have collected.
 
     Raises:
-        WizardAborted: On a key this does not know, or a link it cannot read.
+        WizardAborted: On a key this does not know, a link it cannot read, or
+            a link given to a hub without the proxy.
     """
     if not isinstance(given, dict):
         raise WizardAborted("'proxy' must be an object")
@@ -359,12 +363,14 @@ def _proxy_from(given, mode: str) -> WizardProxy:
     links = given.get("links", [])
     if not links:
         return WizardProxy()
+    if WIZARD_PROXY is None:
+        raise WizardAborted("this hub has no proxy, so 'proxy' takes no links")
     try:
-        nodes = tuple(parse_share_link(link) for link in links)
+        nodes = tuple(WIZARD_PROXY.parse_share_link(link) for link in links)
     except ValueError as error:
         raise WizardAborted(str(error)) from error
     is_serving = mode != ROUTER_MODE_SERVER
-    port = given.get("socks_proxy_port", XRAY_SOCKS_PORT)
+    port = given.get("socks_proxy_port", WIZARD_SOCKS_PORT)
     return WizardProxy(
         is_enabled=True,
         nodes=nodes,
@@ -374,7 +380,7 @@ def _proxy_from(given, mode: str) -> WizardProxy:
         is_socks_proxy_enabled=not is_serving,
         socks_proxy_port=port,
         is_socks_direct_enabled=bool(given.get("is_socks_direct_enabled", False)),
-        socks_direct_port=given.get("socks_direct_port", XRAY_SOCKS_PORT),
+        socks_direct_port=given.get("socks_direct_port", WIZARD_SOCKS_PORT),
     )
 
 
@@ -463,7 +469,8 @@ class SetupWizard:
         asked = [
             (title, screen)
             for title, screen in zip(WIZARD_TITLES, screens)
-            if is_linux() or screen != self._ask_mode
+            if (is_linux() or screen != self._ask_mode)
+            and (WIZARD_PROXY is not None or screen != self._ask_proxy)
         ]
         index = 0
         try:
@@ -812,7 +819,7 @@ class SetupWizard:
             if not answer:
                 break
             try:
-                nodes.append(parse_share_link(answer))
+                nodes.append(WIZARD_PROXY.parse_share_link(answer))
             except ValueError as error:
                 self._say(f"{error}")
                 continue
@@ -917,7 +924,9 @@ class SetupWizard:
                 if interface.lan.upstream_gateway:
                     line += f"   via {interface.lan.upstream_gateway}"
             self._say(line)
-        if self._proxy.is_enabled:
+        if WIZARD_PROXY is None:
+            pass
+        elif self._proxy.is_enabled:
             self._say(f"  proxy          {len(self._proxy.nodes)} exit nodes")
             if self._proxy.is_socks_proxy_enabled:
                 self._say(
@@ -925,7 +934,7 @@ class SetupWizard:
                     f"through the proxy"
                 )
             if self._proxy.is_socks_direct_enabled:
-                self._say(f"                 SOCKS {XRAY_SOCKS_PORT}, direct")
+                self._say(f"                 SOCKS {WIZARD_SOCKS_PORT}, direct")
             if self._proxy.is_local:
                 self._say("                 this box's own traffic too")
         else:
@@ -1145,8 +1154,8 @@ def context() -> dict:
             "address": ROUTER_MODE_DEFAULT_LAN_ADDRESS,
             "prefix_len": ROUTER_MODE_DEFAULT_PREFIX_LEN,
             "lan_vlan_id": ROUTER_MODE_DEFAULT_LAN_VLAN,
-            "socks_proxy_port": XRAY_SOCKS_PORT,
-            "socks_direct_port": XRAY_SOCKS_PORT,
+            "socks_proxy_port": WIZARD_SOCKS_PORT,
+            "socks_direct_port": WIZARD_SOCKS_PORT,
             "listen_port": WEB_DEFAULT_LISTEN_PORT,
             "https_listen_port": WEB_DEFAULT_HTTPS_LISTEN_PORT,
         },

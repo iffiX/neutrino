@@ -62,6 +62,7 @@ def test_every_topology_renders_a_ruleset_nft_accepts(entries, routing):
     validate_nft(render(*entries, routing=routing))
 
 
+@pytest.mark.feature("proxy")
 def test_only_lan_traffic_is_diverted_into_the_proxy():
     ruleset = render(wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1"))
 
@@ -69,6 +70,7 @@ def test_only_lan_traffic_is_diverted_into_the_proxy():
     assert "tproxy ip to 127.0.0.1:12345" in ruleset
 
 
+@pytest.mark.feature("proxy")
 def test_both_lans_are_named_wherever_one_would_be():
     ruleset = render(
         wan_entry("enp2s0"),
@@ -95,6 +97,7 @@ def test_every_uplink_is_masqueraded():
     assert 'oifname { "enp2s0", "wlp3s0" } masquerade' in ruleset
 
 
+@pytest.mark.feature("netbird")
 def test_an_uplink_answers_nothing_until_it_is_exposed():
     """Remote access arrives over the overlay. An uplink that answers is one
     somebody asked to answer, and then it answers with everything this box
@@ -124,6 +127,7 @@ def test_an_exposed_uplink_is_not_told_twice_about_its_lease():
     assert "udp dport 68" not in ruleset
 
 
+@pytest.mark.feature("netbird")
 def test_the_overlay_answers_on_a_box_that_exposes_nothing():
     """Otherwise closing the last interface is a lockout with no way back."""
     ruleset = render(
@@ -133,6 +137,7 @@ def test_the_overlay_answers_on_a_box_that_exposes_nothing():
     assert 'iifname { "wt0" } accept' in ruleset
 
 
+@pytest.mark.feature("netbird")
 def test_a_configuration_with_no_overlays_block_still_answers_on_one():
     """The firewall accepted the overlay unconditionally before it was
     configurable, so a box upgrading into this must find nothing changed. Who
@@ -203,6 +208,7 @@ def test_a_console_overlay_is_forwarded_to_and_from_on_the_device_found():
     assert 'iifname { "enp1s0" } oifname { "tun0" } accept' in ruleset
 
 
+@pytest.mark.feature("proxy")
 def test_the_overlay_scope_diverts_the_console_device_found():
     ruleset = render_console(
         wan_entry("enp2s0"),
@@ -259,6 +265,7 @@ def render_both(*entries, routing=None, devices=None) -> str:
     ).render()
 
 
+@pytest.mark.feature("netbird")
 def test_two_overlays_answer_and_knock_on_both_devices_and_ports():
     ruleset = render_both(
         wan_entry("enp2s0"), lan_entry("enp1s0", address="192.168.100.1")
@@ -269,6 +276,8 @@ def test_two_overlays_answer_and_knock_on_both_devices_and_ports():
     assert 'iifname { "enp1s0" } oifname { "wt0", "easytier" } accept' in ruleset
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_overlay_scope_diverts_both_overlays():
     ruleset = render_both(
         wan_entry("enp2s0"),
@@ -279,6 +288,7 @@ def test_the_overlay_scope_diverts_both_overlays():
     assert 'iifname != { "enp1s0", "wt0", "easytier" } return' in ruleset
 
 
+@pytest.mark.feature("netbird")
 def test_nothing_is_forwarded_from_one_overlay_to_the_other():
     """A peer of one overlay is not a peer of the other, and the box between
     them is not a bridge. The drops sit in a chain ahead of forward, since
@@ -294,6 +304,8 @@ def test_nothing_is_forwarded_from_one_overlay_to_the_other():
     assert 'iifname { "easytier" } oifname { "wt0" } drop' in fence
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_fence_follows_a_console_device_found():
     ruleset = render_both(
         wan_entry("enp2s0"),
@@ -305,6 +317,7 @@ def test_the_fence_follows_a_console_device_found():
     assert '"easytier"' not in ruleset
 
 
+@pytest.mark.feature("netbird")
 def test_a_box_that_routes_nothing_still_fences_two_overlays():
     ruleset = render_both()
 
@@ -342,6 +355,7 @@ def test_two_overlays_render_a_ruleset_nft_accepts():
     )
 
 
+@pytest.mark.feature("proxy")
 def test_the_local_proxy_chain_cannot_loop_back_into_itself():
     """xray's own egress must never be diverted into xray."""
     ruleset = render(
@@ -371,6 +385,8 @@ def render_with_engines(routing: dict, cgroups=ENGINE_CGROUPS) -> str:
     ).render()
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_hubs_own_engines_are_accepted_before_the_mark():
     """Through xray an engine's handshakes leave from the exit's address."""
     ruleset = render_with_engines(ROUTING_LOCAL_PROXY)
@@ -387,6 +403,8 @@ def test_the_hubs_own_engines_are_accepted_before_the_mark():
     assert rules.index("meta skuid 999 return") < netbird < easytier < mark
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_an_engine_not_running_is_not_named():
     ruleset = render_with_engines(ROUTING_LOCAL_PROXY, cgroups=ENGINE_CGROUPS[:1])
 
@@ -425,6 +443,7 @@ def test_an_unconfigured_box_renders_no_empty_sets():
     assert "masquerade" not in body
 
 
+@pytest.mark.feature("netbird")
 def test_a_box_with_no_uplink_still_serves_and_firewalls_its_lan():
     ruleset = render(lan_entry("enp1s0", address="192.168.100.1"))
 
@@ -451,6 +470,7 @@ def test_the_lan_switch_off_stops_the_firewall_diverting():
     assert 'oifname { "enp2s0" } masquerade' in body
 
 
+@pytest.mark.feature("proxy")
 def test_the_hub_scope_outlives_the_lan_switch():
     """The scopes stand alone: the box's own traffic is still diverted with
     the LAN switch off, and the LAN's is still not."""
@@ -466,6 +486,8 @@ def test_the_hub_scope_outlives_the_lan_switch():
     assert "iifname !=" not in body
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_fenced_lans_cannot_reach_each_other():
     """With the inter-LAN switch off, the drop policy holds between networks."""
     entries = (
@@ -486,6 +508,7 @@ def test_fenced_lans_cannot_reach_each_other():
     assert f'{lan_set} oifname {{ "wt0" }} accept' in fenced
 
 
+@pytest.mark.feature("proxy")
 def test_the_untagged_main_names_the_port_itself():
     """The firewall matches the trunk port, not the panel-side main name."""
     ruleset = render(
@@ -531,6 +554,7 @@ def test_a_closed_lan_is_still_served_its_lease_and_names():
     assert 'iifname { "enp1s0" } accept' not in ruleset
 
 
+@pytest.mark.feature("netbird")
 def test_an_exposed_lan_needs_no_extra_serving_rules():
     ruleset = render(
         wan_entry("enp2s0"),
@@ -542,6 +566,7 @@ def test_an_exposed_lan_needs_no_extra_serving_rules():
     assert "tcp dport 8443" not in ruleset
 
 
+@pytest.mark.feature("netbird")
 def test_the_agent_port_is_open_on_the_exposed_set_and_nowhere_else():
     """Exposure is the only control plane for the agent port: a served
     network nobody exposed gets its lease and its names and no more, and an
@@ -562,6 +587,7 @@ def test_the_agent_port_is_open_on_the_exposed_set_and_nowhere_else():
     assert 'iifname { "enp1s0" } accept' not in ruleset
 
 
+@pytest.mark.feature("proxy")
 def test_what_tproxy_diverted_is_accepted_from_a_closed_lan():
     """The diverted packet is delivered to the input chain with the mark on
     it; a served network nobody exposed has no other rule that takes it."""
@@ -586,6 +612,8 @@ def test_the_mark_is_not_accepted_while_nothing_diverts():
     assert f"meta mark {hex(ROUTER_FWMARK_TPROXY)} accept" not in ruleset
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_overlay_scope_diverts_the_exposed_overlay_beside_the_lan():
     """An overlay whose members use this box as their exit node is taken the
     way the served networks are, under a switch of its own."""
@@ -607,6 +635,7 @@ SERVER_OVERLAY_PREROUTING = """    chain prerouting {
     }"""
 
 
+@pytest.mark.feature("proxy")
 @pytest.mark.parametrize("is_proxy_enabled", [True, False], ids=["lan on", "lan off"])
 def test_a_server_diverts_its_exposed_overlay_and_nothing_else(is_proxy_enabled):
     """Server mode serves no network, so the served networks' switch reads
@@ -631,6 +660,8 @@ def test_a_server_diverts_its_exposed_overlay_and_nothing_else(is_proxy_enabled)
     assert "meta mark 0x1 accept" in ruleset
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_overlay_scope_alone_diverts_only_the_overlay():
     ruleset = render(
         wan_entry("enp2s0"),

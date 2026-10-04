@@ -11,6 +11,9 @@
 set -eu
 
 RELEASES="https://github.com/iffiX/neutrino/releases"
+# The edition this script installs; the mainland source tree stamps it cn.
+# shellcheck disable=SC2034
+EDITION="intl"
 OS_RELEASE=/etc/os-release
 
 fail() {

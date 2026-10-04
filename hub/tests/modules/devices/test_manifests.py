@@ -616,6 +616,20 @@ def test_code_server_pins_coders_release_per_platform_with_its_mirror():
         )
 
 
+NODE_MIRROR = "https://registry.npmmirror.com/-/binary/node/"
+
+
+def test_cloudclis_node_names_the_same_file_on_npmmirror():
+    """A mainland hub fetches Node.js from npmmirror, which keeps every
+    release, so one pin checks both addresses."""
+    manifest = load_module_manifests()["cloudcli"]
+
+    for key, entry in manifest["platforms"].items():
+        path = entry["url"].split("/dist/", 1)[1]
+        assert entry["cn_url"] == f"{NODE_MIRROR}{path}", key
+        assert "cn_latest_url" not in entry
+
+
 def test_code_server_has_no_windows_branch_and_needs_glibc_2_28():
     manifest = load_module_manifests()["code_server"]
     windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
@@ -632,3 +646,15 @@ def test_an_archive_package_is_recognised_by_its_compressor():
     assert looks_like_package(b"\x1f\x8b\x08", "tar")
     assert looks_like_package(b"PK\x03\x04", "zip")
     assert not looks_like_package(b"<!doctype html>", "zip")
+
+
+@pytest.mark.parametrize(
+    ("edition", "registry"),
+    [("intl", "https://registry.npmjs.org"), ("cn", "https://registry.npmmirror.com")],
+)
+def test_cloudclis_state_names_the_npm_registry_of_the_hubs_edition(edition, registry):
+    from neutrino_hub.modules.devices.desired_state import cloudcli_agent_config
+
+    sent = cloudcli_agent_config({}, {}, {}, edition=edition)
+
+    assert sent["npm_registry"] == registry

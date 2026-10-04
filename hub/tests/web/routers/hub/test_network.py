@@ -522,6 +522,7 @@ def test_the_view_reports_which_mode_the_box_is_in(guest_box):
     assert client.get("/api/hub/network").json()["mode"] == "server"
 
 
+@pytest.mark.feature("proxy")
 def test_the_view_offers_every_mode(guest_box, monkeypatch):
     """Switching asks for no port, so there is nothing a machine can be too
     small for: a router on one wire is a router whose port is a trunk."""
@@ -598,6 +599,7 @@ def test_an_interface_this_machine_does_not_have_cannot_be_opened(guest_box):
     assert response.status_code == 400
 
 
+@pytest.mark.feature("netbird")
 def test_the_view_lists_every_overlay_this_box_is_a_member_of(box, monkeypatch):
     client, _, _ = box
     monkeypatch.setattr(
@@ -617,6 +619,7 @@ def test_the_view_lists_every_overlay_this_box_is_a_member_of(box, monkeypatch):
     ]
 
 
+@pytest.mark.feature("netbird")
 def test_an_overlay_that_is_not_up_is_listed_with_no_address(box, monkeypatch):
     """It is still configured, and hiding the row would leave the switch
     nowhere while the daemon is restarting."""
@@ -679,6 +682,7 @@ def test_a_console_overlay_with_no_device_found_is_not_up(box, monkeypatch):
     assert overlay["address"] == ""
 
 
+@pytest.mark.feature("netbird")
 def test_a_row_counts_the_devices_reaching_the_hub_across_it(box, monkeypatch):
     """What closing it would end, so the warning can say so before the press
     rather than after it."""
@@ -702,6 +706,7 @@ def test_a_row_counts_the_devices_reaching_the_hub_across_it(box, monkeypatch):
     assert served["link"]["device_count"] == 1
 
 
+@pytest.mark.feature("netbird")
 def test_an_overlay_closes_and_reopens_through_the_same_write(box):
     client, runtime, _ = box
 
@@ -718,6 +723,7 @@ def test_an_overlay_closes_and_reopens_through_the_same_write(box):
     assert runtime.network().exposed_overlay_device_names == ["wt0"]
 
 
+@pytest.mark.feature("netbird")
 def test_a_write_that_says_nothing_about_overlays_leaves_them_alone(box):
     """A caller that has never heard of overlays must not be able to cut the
     way back into this box by not mentioning them."""
@@ -847,6 +853,7 @@ def test_leaving_a_mode_with_trunks_takes_the_VLANs_with_it(box, monkeypatch):
     assert removed == ["enp1s0.main"]
 
 
+@pytest.mark.feature("proxy")
 def test_becoming_a_side_gateway_joins_the_network_it_is_already_on(guest_box):
     """The port carrying the way out is the network it forwards for, and the
     address it holds there is the one to keep: nobody types an address for a
@@ -1184,6 +1191,7 @@ def test_an_interface_this_machine_does_not_have_is_refused(box):
     assert response.status_code == 400
 
 
+@pytest.mark.feature("proxy")
 def test_a_side_gateway_joins_a_network_even_with_no_route_out(box, monkeypatch):
     """With nothing carrying a default route — an uplink that is down, or a
     machine the panel has just taken every role from — picking no network at
@@ -1367,6 +1375,7 @@ def windows_server(on_windows, monkeypatch):
         yield client, runtime
 
 
+@pytest.mark.feature("netbird")
 def test_a_windows_server_lists_its_interfaces_and_whether_each_answers(
     windows_server,
 ):
@@ -1392,6 +1401,7 @@ def test_a_windows_server_lists_its_interfaces_and_whether_each_answers(
     ]
 
 
+@pytest.mark.feature("netbird")
 def test_closing_an_interface_nobody_named_stores_it_closed(windows_server):
     client, runtime = windows_server
 

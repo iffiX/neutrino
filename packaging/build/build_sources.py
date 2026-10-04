@@ -1,12 +1,19 @@
-"""Write the release's one source archive.
+"""Write a release's source archive, of either edition.
 
     python3 packaging/build/build_sources.py --output-dir dist/
+    python3 packaging/build/build_sources.py --edition cn --output-dir dist/
+    python3 packaging/build/build_sources.py --edition cn --tree build/cn
 
 Runs on: any machine with git and Python 3.11 or newer.
 
 ``neutrino-<version>-source.tar.gz`` is this tree at the current commit, with
 the source of everything the packages carry beside it under
 ``third_party/``, so a release attaches a single file.
+``neutrino-<version>-cn-source.tar.gz`` is the mainland tree: the same
+commit without the paths ``PACKAGING_CN_LEFT_OUT_PATHS`` lists, ``EDITION``
+naming ``cn`` and both install scripts stamped ``cn``, with the source of
+what the ``cn`` packages carry. ``--tree`` writes the mainland tree
+unpacked, without ``third_party/``, for a build or a test run from it.
 
 Not pure: runs git, downloads, writes the archive.
 """
@@ -24,6 +31,13 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared.constants import PACKAGING_EDITIONS  # noqa: E402
+from shared.edition_tree import make_cn_tree  # noqa: E402
+
+# The upstream source the mainland packages do not carry, left out of its
+# archive's third_party/.
+CN_LEFT_OUT_SOURCES = ("netbird-", "xray-core-")
 
 # The source of everything the packages carry, pinned to the archive at the
 # tag the binaries were built from: RustDesk (AGPL-3.0) in the agent and the
@@ -72,48 +86,62 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output-dir", default="dist", help="where to write it")
+    parser.add_argument(
+        "--edition",
+        choices=PACKAGING_EDITIONS,
+        default="intl",
+        help="which edition's source archive (default: intl)",
+    )
+    parser.add_argument(
+        "--tree",
+        default="",
+        help="write the cn tree unpacked into this new directory, and no archive",
+    )
     arguments = parser.parse_args()
     if shutil.which("git") is None:
         raise SystemExit("git is needed and is not on the path")
+    if arguments.tree:
+        if arguments.edition != "cn":
+            raise SystemExit("--tree writes the mainland tree; pass --edition cn")
+        write_cn_tree((REPO_ROOT / arguments.tree).resolve())
+        return 0
     output_dir = (REPO_ROOT / arguments.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    write_source_archive(output_dir)
+    write_source_archive(output_dir, edition=arguments.edition)
     return 0
 
 
-def write_source_archive(output_dir: Path) -> None:
-    """Write the release's one source archive.
+def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
+    """Write one edition's source archive.
 
     ``neutrino-<version>/`` holds this tree as git carries it at the current
-    commit, and ``neutrino-<version>/third_party/`` the pinned upstream
-    archives as they were fetched.
+    commit, the mainland tree for ``cn``, and ``neutrino-<version>/third_party/``
+    the pinned upstream archives of what that edition's packages carry, as
+    they were fetched.
 
     Args:
         output_dir: The directory holding the packages.
+        edition: ``intl`` or ``cn``.
 
     Raises:
-        SystemExit: When an upstream archive is not the one pinned, or the
-            tree is not a git checkout.
+        SystemExit: When an upstream archive is not the one pinned, the tree
+            is not a git checkout, or the mainland tree cannot be made.
     """
     package_version = version()
     root = f"neutrino-{package_version}"
-    target = output_dir / f"{root}-source.tar.gz"
+    suffix = "-cn-source.tar.gz" if edition == "cn" else "-source.tar.gz"
+    target = output_dir / f"{root}{suffix}"
     with tempfile.TemporaryDirectory() as workdir:
         tree = Path(workdir) / root
-        tree.mkdir()
-        archived = subprocess.run(
-            ["git", "archive", "--format=tar", "HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-        )
-        if archived.returncode != 0:
-            raise SystemExit(archived.stderr.decode(errors="replace").strip())
-        with tarfile.open(fileobj=io.BytesIO(archived.stdout)) as bundle:
-            bundle.extractall(tree, filter="data")
+        unpack_head(tree)
+        if edition == "cn":
+            make_cn_tree(tree)
 
         third_party = tree / "third_party"
         third_party.mkdir()
         for name, url, digest in SOURCE_ARCHIVES:
+            if edition == "cn" and name.startswith(CN_LEFT_OUT_SOURCES):
+                continue
             print(f"  fetching {name}")
             with urllib.request.urlopen(url, timeout=600) as response:
                 data = response.read()
@@ -125,6 +153,44 @@ def write_source_archive(output_dir: Path) -> None:
         with tarfile.open(target, "w:gz") as archive:
             archive.add(tree, arcname=root)
     print(f"wrote {target} ({target.stat().st_size // 1024 // 1024} MiB)")
+
+
+def write_cn_tree(target: Path) -> None:
+    """Write the mainland tree, unpacked and without third_party/.
+
+    Args:
+        target: A directory that does not exist yet.
+
+    Raises:
+        SystemExit: When the directory exists, the tree is not a git
+            checkout, or the mainland tree cannot be made.
+    """
+    if target.exists():
+        raise SystemExit(f"{target} exists; the mainland tree goes into a new one")
+    unpack_head(target)
+    make_cn_tree(target)
+    print(f"wrote the mainland tree at {target}")
+
+
+def unpack_head(tree: Path) -> None:
+    """Unpack this tree as git carries it at the current commit.
+
+    Args:
+        tree: The directory to unpack into, made here.
+
+    Raises:
+        SystemExit: When the tree is not a git checkout.
+    """
+    tree.mkdir(parents=True)
+    archived = subprocess.run(
+        ["git", "archive", "--format=tar", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+    )
+    if archived.returncode != 0:
+        raise SystemExit(archived.stderr.decode(errors="replace").strip())
+    with tarfile.open(fileobj=io.BytesIO(archived.stdout)) as bundle:
+        bundle.extractall(tree, filter="data")
 
 
 def version() -> str:

@@ -8,7 +8,9 @@ read the vault and touch nothing else, so the renderer itself stays pure.
 
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.credentials.vault import SecretVault
+from neutrino_hub.modules.xray.constants import XRAY_NODES_FILE
 from neutrino_hub.modules.xray.node_config import XrayNodeConfig, XrayNodeList
+from neutrino_hub.utils.json_file import read_config, write_config
 
 
 def store_node_secret(node: XrayNodeConfig, vault: SecretVault | None = None) -> None:
@@ -79,3 +81,50 @@ def delete_node_secret(node: XrayNodeConfig, vault: SecretVault | None = None) -
     except ValueError:
         # An object already gone leaves the node deletable.
         pass
+
+
+def node_secret_counts() -> dict[str, int]:
+    """How many nodes name each vault secret.
+
+    Returns:
+        Secret id to the number of nodes naming it; empty before setup.
+
+    Raises:
+        ValueError: When the node list is not valid JSON.
+    """
+    try:
+        node_list = XrayNodeList.from_dict(read_config(XRAY_NODES_FILE))
+    except FileNotFoundError:
+        return {}
+    counts: dict[str, int] = {}
+    for node in node_list.nodes:
+        if node.secret_id:
+            counts[node.secret_id] = counts.get(node.secret_id, 0) + 1
+    return counts
+
+
+def clear_node_secret(secret_id: str) -> int:
+    """Take one vault secret off every node naming it, and switch those off.
+
+    Args:
+        secret_id: The secret being deleted.
+
+    Returns:
+        How many nodes named it.
+
+    Raises:
+        ValueError: When the node list is not valid JSON.
+    """
+    try:
+        node_list = XrayNodeList.from_dict(read_config(XRAY_NODES_FILE))
+    except FileNotFoundError:
+        return 0
+    cleared = 0
+    for node in node_list.nodes:
+        if node.secret_id == secret_id:
+            node.secret_id = None
+            node.is_enabled = False
+            cleared += 1
+    if cleared:
+        write_config(XRAY_NODES_FILE, node_list.to_dict())
+    return cleared

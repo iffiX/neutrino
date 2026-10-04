@@ -228,13 +228,14 @@ def render_script(environment: dict, *, node: str, server: str) -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
-def render_install_script(*, app: str, node: str, npm: str) -> str:
+def render_install_script(*, app: str, node: str, npm: str, registry: str = "") -> str:
     """The script an account's install task runs.
 
     Args:
         app: The account's app directory.
         node: The Node.js interpreter.
         npm: npm's script.
+        registry: The registry npm installs from; empty for npm's own.
 
     Returns:
         The ``.cmd`` text, CRLF line ends: the app directory and the empty
@@ -243,7 +244,7 @@ def render_install_script(*, app: str, node: str, npm: str) -> str:
     """
     environment = {
         "PATH": ";".join([ntpath.dirname(node), *CLOUDCLI_WINDOWS_NPM_PATH]),
-        **installer.npm_environment(app, join=ntpath.join),
+        **installer.npm_environment(app, join=ntpath.join, registry=registry),
     }
     lines = ["@echo off", f'if not exist "{app}" mkdir "{app}"']
     lines.append(f'type nul > "{environment["npm_config_userconfig"]}"')
@@ -361,6 +362,7 @@ class CloudcliWindowsApplier:
                     homes[instance.account],
                     node,
                     tasks.get(CLOUDCLI_INSTALL_TASK_PREFIX + instance.account),
+                    registry=config.npm_registry,
                 )
                 if step == INSTALL_RUNNING:
                     running.append(instance.account)
@@ -503,7 +505,15 @@ class CloudcliWindowsApplier:
             if isinstance(entry, dict)
         }
 
-    def _install_app(self, instance, home: str, node: str, task: "dict | None") -> str:
+    def _install_app(
+        self,
+        instance,
+        home: str,
+        node: str,
+        task: "dict | None",
+        *,
+        registry: str = "",
+    ) -> str:
         """Judge an account's install task, or start one when CloudCLI is not there.
 
         Returns:
@@ -533,7 +543,9 @@ class CloudcliWindowsApplier:
                 "password": instance.password,
                 "task": name,
                 "script": script,
-                "script_text": render_install_script(app=app, node=node, npm=npm),
+                "script_text": render_install_script(
+                    app=app, node=node, npm=npm, registry=registry
+                ),
                 "log": log_file,
                 "program": CLOUDCLI_WINDOWS_SHELL,
                 "arguments": task_arguments(script, [], log_file),

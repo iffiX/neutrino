@@ -17,6 +17,7 @@ Pure: builds a configuration object and touches nothing.
 import ipaddress
 from dataclasses import dataclass
 
+from neutrino_hub import edition
 from neutrino_hub.modules.router.constants import (
     ROUTER_LAYOUT_ONE_ARM,
     ROUTER_MODE_ROUTER,
@@ -100,15 +101,13 @@ class RouterMode:
 # In the order they are offered: what changes least about the machine first,
 # then what needs something of the network it plugs into, then what takes the
 # machine over — with the one-wire router beside the router it is one of.
+# ``side_gateway`` is the proxy's, and offered where the tree carries it.
 ROUTER_MODES = (
     RouterMode(
         key=ROUTER_MODE_SERVER,
         summary="Routes nothing; answers where it is reached.",
     ),
-    RouterMode(
-        key=ROUTER_MODE_SIDE_GATEWAY,
-        summary="Forwards for hosts that name it as their gateway.",
-    ),
+    *(RouterMode(**fields) for fields in edition.hooks("router_modes")),
     RouterMode(
         key=ROUTER_MODE_ROUTER,
         summary="Routes between uplinks and the networks it serves.",

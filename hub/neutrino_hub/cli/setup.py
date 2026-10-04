@@ -34,19 +34,17 @@ import base64
 import hashlib
 import json
 import os
-import shutil
 import signal
 import socket
 import ssl
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.request
-import zipfile
 from functools import partial
 from pathlib import Path
 
+from neutrino_hub import edition
 from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
@@ -61,7 +59,6 @@ from neutrino_hub.system.constants import (
     SYSTEM_RUNTIME_PACKAGES,
     SYSTEM_FAIL2BAN_JAIL,
     SYSTEM_FAIL2BAN_JAIL_PATH,
-    SYSTEM_XRAY_USER,
 )
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_BINARY_PATH
 from neutrino_hub.modules.cliproxyapi.provisioner import CliproxyApiProvisioner
@@ -74,14 +71,9 @@ from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
 )
-from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.ops import OverlaySwitcher
-from neutrino_hub.system.machine import (
-    distribution_family,
-    machine_architecture,
-    require_architecture,
-)
+from neutrino_hub.system.machine import distribution_family, machine_architecture
 from neutrino_hub.system.installation import (
     is_packaged,
     project_root,
@@ -103,7 +95,6 @@ from neutrino_hub.utils.constants import (
     is_dev_root_set,
     UTILS_CONFIG_DIR,
     UTILS_EXAMPLES_DIR,
-    UTILS_GEODATA_DIR,
     UTILS_GENERATED_DIR,
     UTILS_LOG_DIR,
     UTILS_PACKAGE_ROOT,
@@ -112,18 +103,6 @@ from neutrino_hub.utils.constants import (
 from neutrino_hub.utils.json_file import copy_example, read_config, write_config
 from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
-from neutrino_hub.modules.xray.node_config import XrayNodeList
-from neutrino_hub.modules.xray.node_secrets import store_node_secret
-from neutrino_hub.modules.xray.constants import (
-    XRAY_ASSET_ARCHITECTURES,
-    XRAY_BINARY,
-    XRAY_BINARY_NAME,
-    XRAY_DOWNLOAD_URL,
-    XRAY_GEODATA,
-    XRAY_SHA256,
-    XRAY_SUPPORTED_ARCHITECTURES,
-    XRAY_VERSION,
-)
 
 from neutrino_hub.modules.router import links
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
@@ -176,7 +155,8 @@ SETUP_PANEL_POLL_S = 1.0
 SETUP_BROWSER_HOST = "0.0.0.0"
 # What starting the services means. In a browser the panel is left out and
 # started last, because until then the wizard is what holds its port.
-SETUP_CORE_SERVICES = ("router", "xray", "dnsmasq", "web")
+# The proxy core's unit is the proxy's, from the edition table.
+SETUP_CORE_SERVICES = ("router", *edition.hooks("services"), "dnsmasq", "web")
 # Where a signed-in user's session bus lives on Linux; the opener steps down
 # to reach it, because setup runs as root and root has no browser session.
 SETUP_USER_RUNTIME_ROOT = Path(PLATFORM_LINUX_USER_RUNTIME_ROOT)
@@ -200,21 +180,19 @@ SETUP_AGENT_JOIN_TIMEOUT_S = 120
 # Asking for this port is asking the operating system for whichever one is
 # free, which is what the wizard falls back to when the panel's is taken.
 SETUP_BROWSER_ANY_PORT = 0
-SETUP_SERVICES_BEFORE_PANEL = ("router", "xray", "dnsmasq")
+SETUP_SERVICES_BEFORE_PANEL = SETUP_CORE_SERVICES[:-1]
 # What the macOS and Windows package carries, which their setup checks for
 # in place of system packages.
 SETUP_CARRIED_PROGRAMS = (
-    XRAY_BINARY,
+    *edition.hooks("setup_carried_programs"),
     CLIPROXYAPI_BINARY_PATH,
-    NETBIRD_BINARY_PATH,
     EASYTIER_CORE_PATH,
     EASYTIER_CLI_PATH,
 )
 # The setup lock this process takes, by the browser's answers or its own.
 SETUP_LOCK = SetupLock()
 CONFIG_FILES = (
-    "xray/nodes.json",
-    "xray/routing.json",
+    *(name for names in edition.hooks("setup_config_files") for name in names),
     "router/network.json",
     "router/connections.json",
     "web/settings.json",
@@ -757,7 +735,8 @@ def _setup(
             try:
                 SecretVault().initialize(answers.vault_passphrase)
                 write_config("router/network.json", answers.network.to_dict())
-                _write_proxy(answers.proxy)
+                for write_answers in edition.hooks("setup_answers"):
+                    write_answers(answers.proxy)
                 _write_panel_settings(
                     answers.listen_port,
                     answers.https_listen_port,
@@ -1050,37 +1029,6 @@ def _write_panel_settings(
     write_config("web/settings.json", settings)
 
 
-def _write_proxy(proxy) -> None:
-    """Put the proxy screen's answers into `config/xray/`.
-
-    Args:
-        proxy: What the wizard collected.
-    """
-    # Read and replace rather than build: the list carries the measurement
-    # settings, which are the example's to state and not the wizard's.
-    nodes = XrayNodeList.from_dict(read_config("xray/nodes.json"))
-    nodes.nodes = list(proxy.nodes)
-    for node in nodes.nodes:
-        store_node_secret(node)
-    write_config("xray/nodes.json", nodes.to_dict())
-    routing = read_config("xray/routing.json")
-    routing["is_proxy_enabled"] = proxy.is_enabled
-    routing["is_local_proxy_enabled"] = proxy.is_enabled and proxy.is_local
-    if not is_linux():
-        routing["is_overlay_proxy_enabled"] = routing["is_local_proxy_enabled"]
-    # Two questions, one list: a listener is a port and which way what
-    # arrives there leaves, and the wizard asks about one of each kind.
-    ports = []
-    if proxy.is_socks_proxy_enabled:
-        ports.append({"port": proxy.socks_proxy_port, "is_proxied": True})
-    if proxy.is_socks_direct_enabled and proxy.socks_direct_port != (
-        proxy.socks_proxy_port if proxy.is_socks_proxy_enabled else 0
-    ):
-        ports.append({"port": proxy.socks_direct_port, "is_proxied": False})
-    routing["socks_ports"] = ports
-    write_config("xray/routing.json", routing)
-
-
 def _enrollment_link(password: str) -> tuple:
     """One enrollment link, generated by the panel that has just started.
 
@@ -1299,38 +1247,15 @@ def _step_fail2ban(reporter: InstallReporter) -> str:
 
 
 def _step_users_and_dirs(reporter: InstallReporter) -> str:
-    is_changed = False
     if not is_linux():
         return _make_directories() or "present"
-    if not run(["id", SYSTEM_XRAY_USER], is_checked=False).is_success:
-        run(
-            [
-                "useradd",
-                "--system",
-                "--no-create-home",
-                "--shell",
-                "/usr/sbin/nologin",
-                SYSTEM_XRAY_USER,
-            ]
-        )
-        is_changed = True
     # The layout is in skills/core-code-author/design/files.md: configuration under
     # /etc, everything a render produces or a service accumulates under
     # /var/lib, logs under /var/log.
-    for directory in (
-        UTILS_CONFIG_DIR,
-        UTILS_GENERATED_DIR,
-        UTILS_GEODATA_DIR,
-        UTILS_LOG_DIR,
-    ):
-        if not directory.exists():
-            directory.mkdir(parents=True, exist_ok=True)
-            is_changed = True
-    shutil.chown(UTILS_LOG_DIR, user=SYSTEM_XRAY_USER)
-    # The service writes these as the xray user. Anything root left behind here
-    # would be unopenable to it, so ownership is corrected rather than assumed.
-    for log_path in UTILS_LOG_DIR.glob("xray_*.log"):
-        shutil.chown(log_path, user=SYSTEM_XRAY_USER)
+    is_changed = bool(_make_directories())
+    # The proxy core's account and directory are the proxy's.
+    for ensure_service_user in edition.hooks("setup_service_user"):
+        is_changed = ensure_service_user() or is_changed
     return "created user and directories" if is_changed else "present"
 
 
@@ -1341,15 +1266,13 @@ def _make_directories() -> str:
         What was done, empty when every one was there.
     """
     is_made = False
-    for directory in (
-        UTILS_CONFIG_DIR,
-        UTILS_GENERATED_DIR,
-        UTILS_GEODATA_DIR,
-        UTILS_LOG_DIR,
-    ):
+    for directory in (UTILS_CONFIG_DIR, UTILS_GENERATED_DIR, UTILS_LOG_DIR):
         if not directory.exists():
             directory.mkdir(parents=True, exist_ok=True)
             is_made = True
+    if not is_linux():
+        for ensure_service_user in edition.hooks("setup_service_user"):
+            is_made = ensure_service_user() or is_made
     return "created directories" if is_made else ""
 
 
@@ -1389,87 +1312,6 @@ def _step_python_env(reporter: InstallReporter) -> str:
         timeout_s=900,
     )
     return "environment ready"
-
-
-def _step_xray_core(reporter: InstallReporter) -> str:
-    is_changed = False
-    if not Path(XRAY_BINARY).is_file():
-        if is_packaged():
-            raise FileNotFoundError(
-                f"the package should carry xray at {XRAY_BINARY} and it is not "
-                f"there; reinstall the package rather than fetching one"
-            )
-        reporter.note(f"downloading xray-core {XRAY_VERSION} (~15 MB)")
-        _fetch_xray_binary()
-        is_changed = True
-    for file_name, pin in XRAY_GEODATA.items():
-        if (UTILS_GEODATA_DIR / file_name).is_file():
-            continue
-        if is_packaged():
-            raise FileNotFoundError(
-                f"the package should carry {file_name} in {UTILS_GEODATA_DIR} "
-                f"and it is not there; reinstall the package"
-            )
-        reporter.note(f"downloading {file_name}")
-        _fetch_pinned(pin["url"], pin["sha256"], UTILS_GEODATA_DIR / file_name)
-        is_changed = True
-    if not is_changed:
-        version = run([XRAY_BINARY, "version"], is_checked=False).stdout
-        return version.splitlines()[0] if version else "present"
-    return f"xray {XRAY_VERSION} and the databases"
-
-
-def _fetch_xray_binary() -> None:
-    """Put the pinned xray release where the package would have put it.
-
-    A checkout has no package to carry it. The vendor's install script is
-    GPL-3.0 and installs under /usr/local, which is neither the hub's to use
-    nor a licence it may distribute, so the release archive is taken directly.
-
-    Raises:
-        RuntimeError: On a machine the vendor publishes no build for.
-    """
-    require_architecture(XRAY_SUPPORTED_ARCHITECTURES, "xray")
-    architecture = machine_architecture()
-    target = Path(XRAY_BINARY)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as workdir:
-        archive = Path(workdir) / "xray.zip"
-        _fetch_pinned(
-            XRAY_DOWNLOAD_URL.format(
-                version=XRAY_VERSION,
-                asset_arch=XRAY_ASSET_ARCHITECTURES[architecture],
-            ),
-            XRAY_SHA256[architecture],
-            archive,
-        )
-        with zipfile.ZipFile(archive) as bundle:
-            # Only the binary: the databases beside it in the release are a
-            # different set from the one the hub carries.
-            bundle.extract(XRAY_BINARY_NAME, workdir)
-        shutil.move(str(Path(workdir) / XRAY_BINARY_NAME), target)
-    target.chmod(0o755)
-
-
-def _fetch_pinned(url: str, sha256: str, target: Path) -> None:
-    """Download one file and refuse anything but the pinned bytes.
-
-    Args:
-        url: What to fetch.
-        sha256: The digest the file must have.
-        target: Where to write it.
-
-    Raises:
-        ValueError: If what arrives is not what was pinned.
-    """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as workdir:
-        staged = Path(workdir) / target.name
-        run(["curl", "-fL", "--retry", "2", "-o", str(staged), url], timeout_s=600)
-        digest = hashlib.sha256(staged.read_bytes()).hexdigest()
-        if digest != sha256:
-            raise ValueError(f"{url} came back as {digest}, not {sha256}")
-        shutil.move(str(staged), target)
 
 
 def _step_config_files(reporter: InstallReporter) -> str:
@@ -1667,7 +1509,8 @@ def _step_start_services(
 SETUP_STEPS_THE_BOX_SURVIVES = (_step_fail2ban, _step_overlay, _step_cliproxyapi)
 
 # Defined here, after the functions it names. Everything the appliance is not
-# itself without: routing, the proxy core and the AI gateway. An overlay is
+# itself without: routing, the proxy core where the tree carries it, and the
+# AI gateway. An overlay is
 # chosen on the Overlay page or on the services screen; what a device hosts is
 # the agent's.
 CORE_STEPS = (
@@ -1679,7 +1522,7 @@ CORE_STEPS = (
     ("fail2ban", "Guarding SSH with fail2ban", _step_fail2ban),
     ("users_and_dirs", "Creating service user and directories", _step_users_and_dirs),
     ("python_env", "Preparing the Python environment", _step_python_env),
-    ("xray_core", "Installing xray-core and geodata", _step_xray_core),
+    *(step for steps in edition.hooks("setup_steps") for step in steps),
     ("config_files", "Preparing config/ from examples", _step_config_files),
     ("agent_tls", "Generating the agent channel certificate", _step_agent_tls),
     ("panel_tls", "Generating the panel's certificates", _step_panel_tls),

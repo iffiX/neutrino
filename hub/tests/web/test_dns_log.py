@@ -190,6 +190,7 @@ def test_the_tail_is_newest_first(journal, reader):
     assert [entry.domain for entry in reader.tail()] == ["weibo.com", "github.com"]
 
 
+@pytest.mark.feature("proxy")
 def test_a_lookup_sent_to_the_proxy_resolver_is_proxy(journal, reader):
     journal.write(*LOOKUP)
 
@@ -214,6 +215,7 @@ def test_an_answer_dnsmasq_gave_itself_is_config(journal, reader):
     assert reader.tail()[0].outbound == "config"
 
 
+@pytest.mark.feature("proxy")
 def test_a_repeated_forward_still_makes_one_entry(journal, reader):
     """dnsmasq writes a forwarded line per server it tries."""
     journal.write(
@@ -229,6 +231,7 @@ def test_a_repeated_forward_still_makes_one_entry(journal, reader):
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_interleaved_lookups_each_get_their_own_answer(journal, reader):
     """Two clients resolving at once put the answers out of order behind the
     queries. Each name has to find its own."""
@@ -248,6 +251,7 @@ def test_interleaved_lookups_each_get_their_own_answer(journal, reader):
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_a_reply_answers_a_query_that_was_not_forwarded_again(journal, reader):
     """dnsmasq writes no second forwarded line while an identical query is in
     flight, so the second lookup's only answer line is its reply. It is
@@ -278,6 +282,7 @@ def test_a_reverse_lookup_settles_without_an_answer_line(journal, reader):
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_an_a_and_an_aaaa_of_one_name_take_their_own_answers(journal, reader):
     """NODATA-IPv6 names the AAAA, so the A is still open for the line that
     says where it went. Pairing on the name alone gives one the other's."""
@@ -296,6 +301,7 @@ def test_an_a_and_an_aaaa_of_one_name_take_their_own_answers(journal, reader):
     ]
 
 
+@pytest.mark.feature("proxy")
 def test_a_query_read_before_its_answer_pairs_on_the_next_read(journal, reader):
     """A read can land between the query and the line saying where it went.
     The entry waits rather than going out as pending for good."""

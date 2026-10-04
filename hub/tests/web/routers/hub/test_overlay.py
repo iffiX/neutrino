@@ -146,6 +146,7 @@ def kinds_of(payload: dict) -> dict:
 # --- Reading ----------------------------------------------------------------
 
 
+@pytest.mark.feature("netbird")
 def test_the_view_has_one_switch_per_engine_then_the_relay_and_no_none(box):
     client, _ = box
 
@@ -161,6 +162,7 @@ def test_the_view_has_one_switch_per_engine_then_the_relay_and_no_none(box):
     assert kinds[OVERLAY_EASYTIER]["is_enabled"] is False
 
 
+@pytest.mark.feature("netbird")
 def test_a_running_engine_reads_as_running(box):
     client, _ = box
 
@@ -171,6 +173,7 @@ def test_a_running_engine_reads_as_running(box):
     assert kinds[OVERLAY_EASYTIER]["title"] == "EasyTier"
 
 
+@pytest.mark.feature("netbird")
 def test_the_clients_reaching_the_hub_through_an_engine_are_counted(box):
     """The apply bar's warning names how many people turning it off
     disconnects: a client counts when its socket comes from the engine's
@@ -222,6 +225,7 @@ def test_the_relay_row_says_when_the_machine_has_no_ssh(box, monkeypatch):
 # --- Switching --------------------------------------------------------------
 
 
+@pytest.mark.feature("netbird")
 def test_turning_the_relay_on_writes_its_file_and_converges(box):
     client, runtime = box
     write_relay(OverlayRelayConfig(host="vps", account="relay", key_id="k1"))
@@ -261,6 +265,7 @@ def test_turning_the_relay_off_needs_no_ssh(box, monkeypatch):
     assert read_relay().is_enabled is False
 
 
+@pytest.mark.feature("netbird")
 def test_turning_a_second_engine_on_keeps_the_first(box):
     client, runtime = box
 
@@ -272,6 +277,7 @@ def test_turning_a_second_engine_on_keeps_the_first(box):
     assert runtime.converged == [[OVERLAY_NETBIRD, OVERLAY_EASYTIER]]
 
 
+@pytest.mark.feature("netbird")
 def test_turning_every_engine_off_keeps_the_rows(box):
     client, runtime = box
 
@@ -287,6 +293,7 @@ def test_turning_every_engine_off_keeps_the_rows(box):
     assert runtime.network().overlays[0].is_enabled is False
 
 
+@pytest.mark.feature("netbird")
 def test_setting_what_is_stored_still_makes_the_machine_agree(box):
     client, runtime = box
 
@@ -295,6 +302,7 @@ def test_setting_what_is_stored_still_makes_the_machine_agree(box):
     assert runtime.converged == [[OVERLAY_NETBIRD]]
 
 
+@pytest.mark.feature("netbird")
 def test_the_rows_are_written_before_the_converge(box):
     client, runtime = box
     runtime.refusal = OSError("the daemon refused")
@@ -409,6 +417,7 @@ def test_an_engine_whose_network_overlaps_one_this_box_is_on_is_refused(
     assert runtime.network().overlay(OVERLAY_EASYTIER) is None
 
 
+@pytest.mark.feature("netbird")
 def test_two_overlays_on_one_network_are_refused(box, monkeypatch):
     client, _ = box
     monkeypatch.setattr(
@@ -449,6 +458,7 @@ def test_turning_an_engine_off_is_never_refused_for_an_overlap(box, monkeypatch)
 # --- Routes the hub refused -------------------------------------------------
 
 
+@pytest.mark.feature("netbird")
 def test_the_refused_routes_are_named_on_the_page(box):
     client, runtime = box
     runtime.overlay_route_conflicts = [

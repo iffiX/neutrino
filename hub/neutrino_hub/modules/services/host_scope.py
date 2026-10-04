@@ -13,13 +13,13 @@ arguments.
 import ipaddress
 from dataclasses import dataclass
 
+from neutrino_hub import edition
 from neutrino_hub.modules.services.constants import (
     SERVICES_REACHED_LAN,
     SERVICES_REACHED_RELAY,
     SERVICES_SCOPE_LINK,
     SERVICES_SCOPE_OVERLAY,
 )
-from neutrino_hub.modules.tun.constants import TUN_ADDRESS, TUN_PREFIX_LENGTH
 
 
 @dataclass(frozen=True)
@@ -192,7 +192,10 @@ def lan_in_place_of_overlay(
     link = _ipv4_of(link_address)
     if link is None or not any(link in network for network in overlays):
         return "", ""
-    tun = ipaddress.ip_network(f"{TUN_ADDRESS}/{TUN_PREFIX_LENGTH}", strict=False)
+    hidden = [
+        ipaddress.ip_network(network, strict=False)
+        for network in edition.hooks("hidden_networks")
+    ]
     for interface in interfaces:
         if not isinstance(interface, dict):
             continue
@@ -200,7 +203,7 @@ def lan_in_place_of_overlay(
             address = _ipv4_of(str(text))
             if address is None or address.is_loopback or address.is_link_local:
                 continue
-            if address in tun or any(address in network for network in overlays):
+            if any(address in network for network in hidden + overlays):
                 continue
             return str(address), str(interface.get("mac", "") or "")
     return "", ""

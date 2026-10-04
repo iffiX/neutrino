@@ -28,9 +28,9 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 
 import neutrino_hub.utils.json_file
+from neutrino_hub import edition
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_VERSION
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.modules.xray.geodata import XrayGeodataState
 from neutrino_hub.web import auth as web_auth
 from neutrino_hub.web import identity
 from neutrino_hub.web.auth import SessionStore, hash_password
@@ -398,6 +398,11 @@ def about_payload(monkeypatch, xray_stdout: str = XRAY_OUTPUT) -> dict:
         "run",
         lambda *args, **kwargs: SimpleNamespace(stdout=xray_stdout),
     )
+    if edition.has_feature("proxy"):
+        monkeypatch.setattr(
+            "neutrino_hub.web.routers.hub.proxy.run",
+            lambda *args, **kwargs: SimpleNamespace(stdout=xray_stdout),
+        )
     app = FastAPI()
     app.include_router(settings_router.router)
     app.dependency_overrides[require_session] = lambda: None
@@ -412,10 +417,9 @@ def test_every_carried_component_reports_a_version(monkeypatch):
 
     carried = [
         "gateway_version",
-        "xray_version",
         "cliproxyapi_version",
         "python_version",
-        "geodata_version",
+        *(["xray_version", "geodata_version"] if edition.has_feature("proxy") else []),
     ]
     assert all(payload[field] != "" for field in carried)
 
@@ -432,12 +436,14 @@ def test_the_interpreter_is_the_one_running_the_panel(monkeypatch):
     assert payload["python_version"] == sys.version.split()[0]
 
 
+@pytest.mark.feature("proxy")
 def test_the_geodata_line_names_the_release_each_database_is(monkeypatch):
     """What the box loads, which on a box that has taken a newer release is
     not what the package carries."""
+    from neutrino_hub.modules.xray.geodata import XrayGeodataState
+
     monkeypatch.setattr(
-        settings_router.geodata,
-        "installed",
+        "neutrino_hub.modules.xray.geodata.installed",
         lambda: XrayGeodataState(
             releases={"geoip.dat": "202609050329", "geosite.dat": "20260914091725"},
             source="release",
@@ -449,12 +455,14 @@ def test_the_geodata_line_names_the_release_each_database_is(monkeypatch):
     assert payload["geodata_version"] == "geoip 202609050329 · geosite 20260914091725"
 
 
+@pytest.mark.feature("proxy")
 def test_xray_answers_with_its_first_line(monkeypatch):
     payload = about_payload(monkeypatch)
 
     assert payload["xray_version"] == XRAY_OUTPUT.splitlines()[0]
 
 
+@pytest.mark.feature("proxy")
 def test_an_absent_xray_binary_is_reported_not_blank(monkeypatch):
     payload = about_payload(monkeypatch, xray_stdout="")
 
@@ -504,6 +512,8 @@ def test_the_release_names_the_package_family_the_build_stamped(
     assert body["package_family"] == family
 
 
+@pytest.mark.feature("netbird")
+@pytest.mark.feature("proxy")
 def test_the_hub_credits_every_component_it_carries(monkeypatch):
     """The binaries in the hub package, at the exact tag each was built from,
     and the geodata it ships; nothing a module installs on a machine."""
@@ -517,12 +527,12 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
     by_name = {credit.name: credit for credit in credits}
 
     assert [credit.name for credit in credits] == [
-        "Xray-core",
         "CLIProxyAPI",
-        "NetBird",
         "EasyTier",
+        "Xray-core",
         "v2fly geoip",
         "v2fly domain-list-community",
+        "NetBird",
     ]
     assert by_name["Xray-core"].version == XRAY_VERSION
     assert by_name["Xray-core"].corresponding_source.endswith(f"/tree/v{XRAY_VERSION}")
@@ -536,11 +546,12 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
     )
 
 
+@pytest.mark.feature("proxy")
 @pytest.mark.parametrize(
     "system, added",
     [
         ("darwin", ["tun2socks"]),
-        ("windows", ["tun2socks", "Wintun"]),
+        ("windows", ["Wintun", "tun2socks"]),
     ],
 )
 def test_a_package_off_linux_credits_what_it_adds(monkeypatch, system, added):
@@ -556,6 +567,15 @@ def test_a_package_off_linux_credits_what_it_adds(monkeypatch, system, added):
 
     assert [name for name in names if name in ("tun2socks", "Wintun")] == added
     assert tun2socks.version == TUN_VERSION
+
+
+def test_a_tree_without_the_proxy_or_netbird_credits_neither(monkeypatch):
+    monkeypatch.setattr(settings_router, "hub_os", lambda: "windows")
+    monkeypatch.setattr(edition, "has_feature", lambda name: False)
+
+    names = [credit.name for credit in settings_router._acknowledgements()]
+
+    assert names == ["CLIProxyAPI", "EasyTier", "Wintun"]
 
 
 def test_no_module_a_machine_installs_is_credited(monkeypatch):
@@ -812,6 +832,51 @@ def test_a_backup_a_windows_hub_wrote_with_backslashes_restores(client):
     assert response.status_code == 200
     assert SecretVault().open(secret_id) == {"password": SEALED_PASSWORD}
     assert json.loads((config_dir / "xray" / "nodes.json").read_text()) == {"nodes": []}
+
+
+def test_a_backup_in_a_mode_this_hub_does_not_offer_writes_nothing(client, monkeypatch):
+    """A side gateway's backup on a hub without the proxy, which offers
+    router and server alone: refused by name before anything is written."""
+    opened, config_dir = client
+    seed_config(config_dir)
+    (config_dir / "router").mkdir()
+    (config_dir / "router" / "network.json").write_text(
+        json.dumps({"mode": "side_gateway", "interfaces": []})
+    )
+    archive_bytes = download_backup(opened)
+    wipe_box(config_dir)
+    monkeypatch.setattr(settings_router, "ROUTER_MODES_KEYS", ("server", "router"))
+
+    response = upload_restore(opened, archive_bytes, PASSPHRASE)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "backup_mode_unavailable",
+        "params": {"mode": "side_gateway"},
+    }
+    assert list(config_dir.rglob("*")) == []
+
+
+def test_a_backup_holding_a_left_out_features_files_restores_them_unread(
+    client, monkeypatch
+):
+    """The proxy's and NetBird's files land beside the rest, and a hub
+    without either reads none of them."""
+    opened, config_dir = client
+    seed_config(config_dir)
+    (config_dir / "netbird").mkdir()
+    (config_dir / "netbird" / "netbird.json").write_text(json.dumps({}))
+    (config_dir / "router").mkdir()
+    (config_dir / "router" / "network.json").write_text(
+        json.dumps({"mode": "router", "interfaces": []})
+    )
+    archive_bytes = download_backup(opened)
+    wipe_box(config_dir)
+    monkeypatch.setattr(settings_router, "ROUTER_MODES_KEYS", ("server", "router"))
+
+    assert upload_restore(opened, archive_bytes, PASSPHRASE).status_code == 200
+    assert (config_dir / "xray" / "nodes.json").is_file()
+    assert (config_dir / "netbird" / "netbird.json").is_file()
 
 
 def test_a_restored_key_replaces_the_one_already_on_the_box(client):

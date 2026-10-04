@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from neutrino_hub import edition
 from neutrino_hub.utils.constants import UTILS_LOG_ROOT, UTILS_STATE_ROOT
 
 # Units the panel shows and controls. The key is what the panel displays; the
@@ -10,8 +11,9 @@ from neutrino_hub.utils.constants import UTILS_LOG_ROOT, UTILS_STATE_ROOT
 # of them is down, so the panel shows their state and their logs but offers no
 # way to stop them: a gateway with dnsmasq disabled is not a gateway with a
 # feature turned off, it is a broken gateway.
+# The proxy core's unit is the proxy's, present where the tree carries it.
 SYSTEM_CORE_UNITS = {
-    "xray": "neutrino_hub_xray.service",
+    **dict(edition.hooks("core_units")),
     "router": "neutrino_hub_router.service",
     "dnsmasq": "neutrino_hub_dnsmasq.service",
     "web": "neutrino_hub_web.service",
@@ -25,13 +27,9 @@ SYSTEM_CORE_UNITS = {
 # Each is off until asked for, and enabling one is what makes its page appear
 # in the sidebar — so the panel stays as small as the appliance actually is.
 SYSTEM_OPTIONAL_UNITS = {
-    # Remote access: a LAN-shaped network over the wide one. A gateway routes,
-    # resolves and serves without it, so it is a capability rather than a
-    # premise. The client is BSD-3-Clause and travels in these packages, so
-    # this is the hub's own unit in front of the carried binary rather than
-    # the one the vendor's package generates. The name is spelled out because
-    # system/ names units and never imports a module to be told one.
-    "netbird": "neutrino_hub_netbird.service",
+    # Remote access: a LAN-shaped network over the wide one, NetBird's own
+    # and present where the tree carries it.
+    **dict(edition.hooks("optional_units")),
     # The other overlay: a network of your own machines with no management
     # plane at all, LGPL-3.0 and carried the same way.
     "easytier": "neutrino_hub_easytier.service",
@@ -47,18 +45,20 @@ SYSTEM_MANAGED_UNITS = {**SYSTEM_CORE_UNITS, **SYSTEM_OPTIONAL_UNITS}
 SYSTEM_SUPERVISED_WEB = "web"
 SYSTEM_SUPERVISED_NAMES = (
     "web",
-    "xray",
+    *(name for names in edition.hooks("supervised_names") for name in names),
     "cliproxyapi",
-    "netbird",
     "easytier",
     "relay",
-    "tun2socks",
 )
 # A child that runs only while another one runs: it starts once that one
 # runs and is stopped before that one stops, restarts or is found ended.
-SYSTEM_CHILD_REQUIREMENTS = {"tun2socks": "xray"}
+SYSTEM_CHILD_REQUIREMENTS = {
+    child: parent
+    for requirements in edition.hooks("child_requirements")
+    for child, parent in requirements.items()
+}
 # The daemons the service runs whether or not a module enabled them.
-SYSTEM_SUPERVISED_CORE = ("xray", "cliproxyapi")
+SYSTEM_SUPERVISED_CORE = (*edition.hooks("services"), "cliproxyapi")
 # Which children the service runs and the start lines it was handed.
 SYSTEM_SERVICES_STATE_PATH = UTILS_STATE_ROOT / "services.json"
 SYSTEM_CHILD_LOG_DIR = UTILS_LOG_ROOT

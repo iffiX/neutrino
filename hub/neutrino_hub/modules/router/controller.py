@@ -18,11 +18,9 @@ import subprocess
 import time
 from pathlib import Path
 
+from neutrino_hub import edition
 from neutrino_hub.modules.firewall.ops import converge_firewall
-from neutrino_hub.modules.netbird.ops import NetbirdInboundGate
-from neutrino_hub.modules.overlay.ops import overlay_devices
-from neutrino_hub.modules.tun.constants import TUN_CODE_ROUTE_FAILED, TUN_STEP_NAME
-from neutrino_hub.modules.tun.ops import converge_tun
+from neutrino_hub.modules.overlay.ops import overlay_devices, overlay_parts
 from neutrino_hub.platforms.detect import hub_platform, is_linux
 from neutrino_hub.modules.router.constants import (
     ROUTER_CGROUP_ROOT,
@@ -38,8 +36,6 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_NFT_DIVERT_MARKER,
     ROUTER_NFT_PATH,
     ROUTER_OVERLAY_DEVICES_PATH,
-    ROUTER_OVERLAY_NETBIRD,
-    ROUTER_ROUTING_FILE,
     ROUTER_SERVICE_SLICE,
     ROUTER_STEP_CHANGE_CODES,
     ROUTER_STEP_FAILED,
@@ -52,7 +48,6 @@ from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.modules.router.routes import (
     RouterInterfaceApplier,
     RouterRulesetApplier,
-    lookup_xray_uid,
     served_networks,
 )
 from neutrino_hub.modules.router.steps import RouterStepResult, run_step
@@ -153,7 +148,7 @@ class RouterStateController:
             RuntimeError: When the proxy core's account does not exist yet.
         """
         network = RouterNetworkConfig.from_dict(read_config(ROUTER_NETWORK_FILE))
-        routing = read_config(ROUTER_ROUTING_FILE)
+        routing = read_proxy_routing()
         if only is not None and network.interface(only) is None:
             raise ValueError(f"{only!r} is not a configured interface")
         if not is_linux():
@@ -163,7 +158,7 @@ class RouterStateController:
         ruleset = RouterNftRenderer(
             network=network,
             routing=routing,
-            xray_uid=lookup_xray_uid(),
+            xray_uid=proxy_uid(),
             overlay_devices=devices,
             engine_cgroups=list(cgroups),
         ).render()
@@ -219,26 +214,19 @@ class RouterStateController:
             return []
         with router_lock(path=self._lock_path):
             network = RouterNetworkConfig.from_dict(read_config(ROUTER_NETWORK_FILE))
-            routing = read_config(ROUTER_ROUTING_FILE)
+            routing = read_proxy_routing()
             found = network.with_overlay_devices(overlay_devices(network))
             return _firewall_steps(found, routing)
 
     def _reconcile_firewall(
         self, network: RouterNetworkConfig, routing: dict
     ) -> list[RouterStepResult]:
-        """The pass on macOS and Windows: the firewall, the TUN and the overlays."""
+        """The pass on macOS and Windows: the firewall, the proxy's TUN and the overlays."""
         devices = overlay_devices(network)
         found = network.with_overlay_devices(devices)
         results = _firewall_steps(found, routing)
-        tun = run_step(TUN_STEP_NAME, lambda: converge_tun(found, routing))
-        if tun.is_failed:
-            tun = RouterStepResult(
-                name=tun.name,
-                state=tun.state,
-                code=TUN_CODE_ROUTE_FAILED,
-                detail=tun.detail,
-            )
-        results.append(tun)
+        for tun_step in edition.hooks("router_tun_step"):
+            results.append(tun_step(found, routing))
         write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
         if self._on_base_ready is not None:
             self._on_base_ready()
@@ -270,6 +258,34 @@ class RouterStateController:
                 )
             ]
         return applier.apply_steps(only)
+
+
+def read_proxy_routing() -> dict:
+    """The proxy's routing options, for the passes and renderers that read them.
+
+    Returns:
+        Parsed ``config/xray/routing.json``; empty in a tree without the
+        proxy.
+
+    Raises:
+        FileNotFoundError: When the box is not set up.
+        ValueError: When the file is not valid JSON.
+    """
+    reader = edition.hook("proxy_routing")
+    return reader() if reader is not None else {}
+
+
+def proxy_uid() -> int:
+    """The uid of the proxy core's account, which its chains never divert.
+
+    Returns:
+        The numeric uid; 0 in a tree without the proxy.
+
+    Raises:
+        RuntimeError: When the proxy core's account does not exist yet.
+    """
+    lookup = edition.hook("proxy_uid")
+    return lookup() if lookup is not None else 0
 
 
 def is_forwarding(network: RouterNetworkConfig) -> bool:
@@ -505,15 +521,17 @@ def _converge_overlays(network: RouterNetworkConfig) -> list[RouterStepResult]:
         network: The parsed router configuration.
 
     Returns:
-        One result per running NetBird overlay.
+        One result per running overlay whose engine keeps a gate of its own.
     """
     results = []
+    parts = overlay_parts()
     for overlay in network.enabled_overlays:
-        if overlay.provider != ROUTER_OVERLAY_NETBIRD:
+        part = parts.get(overlay.provider)
+        if part is None:
             continue
 
-        def converge(overlay=overlay) -> list[str]:
-            note = NetbirdInboundGate().converge(is_blocked=not overlay.is_exposed)
+        def converge(overlay=overlay, part=part) -> list[str]:
+            note = part().gate(is_blocked=not overlay.is_exposed)
             return [note] if note else []
 
         results.append(run_step(f"overlay_gate {overlay.title}", converge))

@@ -7,6 +7,7 @@ in ``config/router/network.json`` instead.
 
 from pathlib import Path
 
+from neutrino_hub import edition
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES, OVERLAY_NETBIRD
 from neutrino_hub.utils.constants import (
     UTILS_GENERATED_DIR,
@@ -27,9 +28,10 @@ ROUTER_NFT_FAMILY = "inet"
 ROUTER_MODE_ROUTER = "router"
 ROUTER_MODE_SIDE_GATEWAY = "side_gateway"
 ROUTER_MODE_SERVER = "server"
+# ``side_gateway`` is the proxy's, and offered where the tree carries it.
 ROUTER_MODES_KEYS = (
     ROUTER_MODE_SERVER,
-    ROUTER_MODE_SIDE_GATEWAY,
+    *(mode["key"] for mode in edition.hooks("router_modes")),
     ROUTER_MODE_ROUTER,
 )
 # The mode in which this box addresses its own interfaces. The other two
@@ -330,7 +332,6 @@ ROUTER_STACK_RECORD_PATH = UTILS_STATE_ROOT / "stood_down.json"
 # reads them by name rather than through the panel's runtime.
 ROUTER_NETWORK_FILE = "router/network.json"
 ROUTER_CONNECTIONS_FILE = "router/connections.json"
-ROUTER_ROUTING_FILE = "xray/routing.json"
 ROUTER_DHCP_STATE_DIR = UTILS_STATE_ROOT / "dhcpcd"
 
 

@@ -20,6 +20,7 @@ import ipaddress
 import socket
 import json
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -33,13 +34,11 @@ from neutrino_hub.modules.easytier.constants import (
 )
 from neutrino_hub.modules.easytier.ops import EasyTierStatusReader
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
-from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
 from neutrino_hub.modules.overlay.config import enabled_providers
-from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
-from neutrino_hub.modules.router.constants import (
-    ROUTER_NETWORK_FILE,
-    ROUTER_ROUTING_FILE,
-)
+from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER
+from neutrino_hub.modules.overlay.ops import overlay_parts
+from neutrino_hub.modules.router.constants import ROUTER_NETWORK_FILE
+from neutrino_hub.modules.router.steps import RouterStepResult, run_step
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.routes import rendered_network_resolvers
 from neutrino_hub.modules.router.link_status import (
@@ -54,6 +53,7 @@ from neutrino_hub.modules.tun.applied_state import (
 )
 from neutrino_hub.modules.tun.constants import (
     TUN_BINARY_PATH,
+    TUN_CODE_ROUTE_FAILED,
     TUN_DEVICE_NAMES,
     TUN_DIVERTED_PREFIXES,
     TUN_ENDPOINT_NAME_TTL_S,
@@ -61,6 +61,7 @@ from neutrino_hub.modules.tun.constants import (
     TUN_PLAN_PATH,
     TUN_RETRY_S,
     TUN_STATE_PATH,
+    TUN_STEP_NAME,
     TUN_SUPERVISED_NAME,
 )
 from neutrino_hub.modules.tun.darwin_applier import TunDarwinApplier
@@ -74,6 +75,8 @@ from neutrino_hub.modules.tun.renderer import (
 from neutrino_hub.modules.tun.windows_applier import TunWindowsApplier
 from neutrino_hub.modules.xray.constants import (
     XRAY_LOCAL_SOCKS_PORT,
+    XRAY_NODES_FILE,
+    XRAY_ROUTING_FILE,
     XRAY_SCOPE_OVERLAY,
 )
 from neutrino_hub.modules.xray.node_config import XrayNodeList
@@ -104,7 +107,7 @@ def plan_tun(network: RouterNetworkConfig, routing: dict) -> "TunPlan | None":
     """
     if is_linux():
         return None
-    node_list = XrayNodeList.from_dict(_config("xray/nodes.json"))
+    node_list = XrayNodeList.from_dict(_config(XRAY_NODES_FILE))
     resolve_node_secrets(node_list)
     has_exit = any(
         node.is_enabled and node.has_secret_material for node in node_list.nodes
@@ -203,6 +206,28 @@ def converge_tun(
     return notes
 
 
+def converge_tun_step(network: RouterNetworkConfig, routing: dict) -> RouterStepResult:
+    """The routing pass's TUN step on macOS and Windows.
+
+    Args:
+        network: The parsed router configuration, carrying the overlays'
+            devices found at run time.
+        routing: Parsed ``config/xray/routing.json``.
+
+    Returns:
+        The step's result; a failure carries ``tun_route_failed``.
+    """
+    step = run_step(TUN_STEP_NAME, lambda: converge_tun(network, routing))
+    if not step.is_failed:
+        return step
+    return RouterStepResult(
+        name=step.name,
+        state=step.state,
+        code=TUN_CODE_ROUTE_FAILED,
+        detail=step.detail,
+    )
+
+
 def egress_interface(routing: dict) -> str:
     """The uplink xray's direct and node outbounds are bound to while the TUN runs.
 
@@ -266,6 +291,17 @@ def withdraw_tun(*, state_path: Path = TUN_STATE_PATH) -> list:
     ).withdraw()
 
 
+def withdraw_tun_on_start() -> None:
+    """Withdraw what an ended service left applied, as the service starts.
+
+    A failure is said on standard error and the start goes on.
+    """
+    try:
+        withdraw_tun()
+    except OSError as error:
+        print(f"warning: tun routes not withdrawn: {error}", file=sys.stderr)
+
+
 class TunEndpointSource:
     """Where the running overlay engines reach their peers and servers now."""
 
@@ -290,7 +326,7 @@ class TunEndpointSource:
             ValueError: When the router or routing configuration is not JSON.
         """
         network = RouterNetworkConfig.from_dict(_config(ROUTER_NETWORK_FILE))
-        resolvers = _direct_resolvers(_config(ROUTER_ROUTING_FILE))
+        resolvers = _direct_resolvers(_config(XRAY_ROUTING_FILE))
         now = self._clock()
         names = {}
         for name in overlay_endpoint_hosts(network):
@@ -591,8 +627,9 @@ def _overlay_server_hosts(network: RouterNetworkConfig) -> list:
     """
     providers = enabled_providers(network)
     urls = []
-    if OVERLAY_NETBIRD in providers:
-        urls += NetbirdStatusReader().survey().server_urls
+    for provider, part in overlay_parts().items():
+        if provider in providers:
+            urls += part().server_urls()
     if OVERLAY_EASYTIER in providers:
         config = read_easytier()
         urls += list(config.peers)
@@ -622,9 +659,10 @@ def overlay_endpoint_hosts(network: RouterNetworkConfig) -> list:
     """
     providers = enabled_providers(network)
     urls = []
-    if OVERLAY_NETBIRD in providers:
-        state = NetbirdStatusReader().survey()
-        urls += state.server_urls + state.peer_endpoints
+    for provider, part in overlay_parts().items():
+        if provider in providers:
+            engine = part()
+            urls += engine.server_urls() + engine.peer_endpoints()
     if OVERLAY_EASYTIER in providers:
         urls += EasyTierStatusReader().endpoints()
     return [host for host in map(_host_of, urls) if host]

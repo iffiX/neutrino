@@ -28,6 +28,8 @@ import sys
 
 import pytest
 
+from neutrino_hub import edition
+
 # What a test may run: the program, and the verbs of it that only read. A
 # program not listed here is refused outright; one listed is refused unless
 # the first word of it that is not an option is one of these.
@@ -249,7 +251,14 @@ from neutrino_hub.modules.router.uplink_plan import UplinkFacts
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip the tests that need privileges the current run does not have."""
+    """Skip the tests that need privileges the current run does not have,
+    and the tests of a left-out feature the tree does not carry."""
+    for item in items:
+        for marker in item.iter_markers(name="feature"):
+            if not edition.has_feature(marker.args[0]):
+                item.add_marker(
+                    pytest.mark.skip(reason=f"this tree has no {marker.args[0]}")
+                )
     if os.geteuid() == 0:
         return
     skip = pytest.mark.skip(reason="needs root: `nft -c` cannot open netlink")

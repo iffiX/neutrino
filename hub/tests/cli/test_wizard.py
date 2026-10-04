@@ -369,6 +369,7 @@ class _OnePort:
         return []
 
 
+@pytest.mark.feature("proxy")
 def test_a_one_port_machine_is_not_offered_a_mode_needing_two(monkeypatch):
     """Offering router and then refusing it teaches nothing the list could
     have said first."""
@@ -516,6 +517,7 @@ def test_a_document_without_a_proxy_skips_it():
     assert answers.proxy.nodes == ()
 
 
+@pytest.mark.feature("proxy")
 def test_a_serving_mode_routes_its_devices_and_publishes_no_socks():
     """Everything the devices send goes through; a SOCKS port is a separate
     ask, and nothing here is worked out from the mode."""
@@ -534,6 +536,7 @@ def test_a_serving_mode_routes_its_devices_and_publishes_no_socks():
     assert not answers.proxy.is_local
 
 
+@pytest.mark.feature("proxy")
 def test_a_server_has_a_socks_port_for_its_whole_proxy():
     """It diverts nothing, so there is no transparent path to be on."""
     answers = wizard.from_document(
@@ -549,6 +552,7 @@ def test_a_server_has_a_socks_port_for_its_whole_proxy():
     assert answers.proxy.socks_proxy_port == 1081
 
 
+@pytest.mark.feature("proxy")
 def test_this_boxs_own_traffic_is_asked_for_rather_than_assumed():
     """Both readings were defensible, which is why neither is guessed."""
     document = {
@@ -575,6 +579,7 @@ def test_a_link_that_cannot_be_read_is_refused():
         )
 
 
+@pytest.mark.feature("proxy")
 def test_both_socks_ports_are_asked_for_rather_than_fixed():
     """One was a constant and the other a question, which read as an
     oversight because it was one."""
@@ -770,6 +775,7 @@ def test_macos_and_windows_take_a_server_alone(monkeypatch, system):
     assert wizard.from_document(document).network.mode == "server"
 
 
+@pytest.mark.feature("proxy")
 @pytest.mark.parametrize("system", ["linux", "darwin", "win32"])
 def test_every_system_takes_this_boxs_own_traffic(monkeypatch, system):
     """The TUN device carries the hub's own scope on macOS and Windows."""
@@ -784,6 +790,7 @@ def test_every_system_takes_this_boxs_own_traffic(monkeypatch, system):
     assert wizard.from_document(document).proxy.is_local
 
 
+@pytest.mark.feature("proxy")
 @pytest.mark.parametrize("system", ["darwin", "win32"])
 def test_macos_and_windows_ask_no_mode(monkeypatch, system):
     monkeypatch.setattr(wizard.sys, "platform", system)
@@ -813,6 +820,7 @@ def test_macos_and_windows_offer_the_browser_a_server_alone(monkeypatch, system)
     assert [mode["key"] for mode in wizard.context()["modes"]] == ["server"]
 
 
+@pytest.mark.feature("proxy")
 @pytest.mark.parametrize("system", ["linux", "darwin", "win32"])
 def test_the_proxy_screen_asks_about_this_box_on_every_system(monkeypatch, system):
     monkeypatch.setattr(wizard.sys, "platform", system)

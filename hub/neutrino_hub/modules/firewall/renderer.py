@@ -158,7 +158,8 @@ def render_programs(
 
     Args:
         hub_program: ``nhub``, which serves the panel and the agent channel.
-        xray_program: xray, which serves the SOCKS ports.
+        xray_program: xray, which serves the SOCKS ports; empty in a
+            tree without the proxy.
         ai_gateway_program: ``cli-proxy-api``, which serves the AI gateway.
         overlay_programs: Overlay key to the program its daemon runs.
         overlays: The enabled overlays' keys.
@@ -166,7 +167,11 @@ def render_programs(
     Returns:
         The program paths, the hub first.
     """
-    programs = [hub_program, xray_program, ai_gateway_program]
+    programs = [
+        program
+        for program in (hub_program, xray_program, ai_gateway_program)
+        if program
+    ]
     for provider in OVERLAY_ENGINES:
         if provider in overlays and provider in overlay_programs:
             programs.append(overlay_programs[provider])

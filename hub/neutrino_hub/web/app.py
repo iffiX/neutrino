@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 
+from neutrino_hub import edition
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.web import ws
@@ -51,27 +52,23 @@ from neutrino_hub.web.routers.hub import (
     network,
     overlay,
     overlay_easytier,
-    overlay_netbird,
     overlay_relay,
-    proxy,
-    proxy_node,
     service,
     setting,
 )
 from neutrino_hub.web.routers.hub import client as hub_client
 
-# The hub group in sidebar order, then the agent group.
+# The hub group in sidebar order, then the agent group. NetBird's and the
+# proxy's routers come from the edition table.
 API_ROUTERS = (
     auth.router,
     display.router,
     dashboard.router,
     network.router,
     overlay.router,
-    overlay_netbird.router,
     overlay_easytier.router,
     overlay_relay.router,
-    proxy.router,
-    proxy_node.router,
+    *edition.hooks("api_routers"),
     ai.router,
     ai_gateway.router,
     device.router,
@@ -216,7 +213,8 @@ def _start_samplers() -> None:
     """The process-wide background readers, started with the panel application.
 
     Each watches something no write announces: what the gateway metered, what
-    the interfaces are doing, and what every exit node measures. Each
+    the interfaces are doing, and, with the proxy, what every exit node
+    measures. Each
     publishes an event when its reading moves, so no page has to ask on a
     timer.
     """
@@ -230,7 +228,8 @@ def _start_samplers() -> None:
         _usage_collector.start()
     runtime.link_sampler.start()
     runtime.address_sampler.start()
-    runtime.exit_controller.start()
+    if runtime.proxy is not None:
+        runtime.proxy.start()
     runtime.relay_monitor.start()
 
 

@@ -1422,11 +1422,9 @@ class AcknowledgementView(BaseModel):
 class AboutView(BaseModel):
     """Versions and uptime for the Settings tab."""
 
-    xray_version: str
     gateway_version: str
     cliproxyapi_version: str
     python_version: str
-    geodata_version: str
     kernel: str
     # The system the hub runs on, the word NetworkView.hub_os uses, and its
     # version: the macOS release, the Windows build, the kernel on Linux.
@@ -1434,6 +1432,10 @@ class AboutView(BaseModel):
     os_version: str
     uptime_s: int
     acknowledgements: list[AcknowledgementView] = Field(default_factory=list)
+    # The proxy core's and its databases' versions; empty in a tree without
+    # the proxy.
+    xray_version: str = ""
+    geodata_version: str = ""
 
 
 class HubUpdateRecordView(BaseModel):

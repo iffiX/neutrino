@@ -123,6 +123,16 @@ def test_removing_the_module_takes_the_read_only_tree(tmp_path):
     assert not root.exists()
 
 
+def test_npm_installs_from_the_registry_the_state_names():
+    """A mainland hub names npmmirror; with none named npm keeps its own."""
+    app = "/home/ann/.local/share/neutrino/agent/cloudcli/app"
+
+    named = installer.npm_environment(app, registry="https://registry.npmmirror.com")
+
+    assert named["npm_config_registry"] == "https://registry.npmmirror.com"
+    assert "npm_config_registry" not in installer.npm_environment(app)
+
+
 def test_npm_keeps_to_the_app_directory():
     app = "/home/ann/.local/share/neutrino/agent/cloudcli/app"
 

@@ -11,6 +11,7 @@ Not pure: drives the appliers.
 
 import json
 
+from neutrino_hub import edition
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_BINARY_PATH,
     CLIPROXYAPI_DEFAULT_PORT,
@@ -31,16 +32,13 @@ from neutrino_hub.modules.firewall.renderer import (
     render_programs,
 )
 from neutrino_hub.modules.firewall.windows_applier import FirewallWindowsApplier
-from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import (
     OVERLAY_EASYTIER,
     OVERLAY_ENGINES,
-    OVERLAY_NETBIRD,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import device_addresses
-from neutrino_hub.modules.xray.constants import XRAY_BINARY
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os, hub_platform
 from neutrino_hub.utils.json_file import read_config, write_generated
@@ -58,7 +56,8 @@ def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> tuple:
     Args:
         network: The parsed router configuration, carrying the overlays'
             devices found at run time.
-        routing: Parsed ``config/xray/routing.json``, for the SOCKS ports.
+        routing: The proxy's routing options, for the SOCKS ports; empty
+            in a tree without the proxy.
 
     Returns:
         The notes, one line per rule, program or anchor changed, empty when
@@ -187,10 +186,10 @@ def _programs(overlays: list) -> list:
     """The programs macOS allows for these overlays."""
     return render_programs(
         hub_program=hub_platform().hub_command()[0],
-        xray_program=XRAY_BINARY,
+        xray_program=edition.hook("proxy_program") or "",
         ai_gateway_program=str(CLIPROXYAPI_BINARY_PATH),
         overlay_programs={
-            OVERLAY_NETBIRD: str(NETBIRD_BINARY_PATH),
+            **dict(edition.hooks("overlay_programs")),
             OVERLAY_EASYTIER: str(EASYTIER_CORE_PATH),
         },
         overlays=overlays,
