@@ -8,14 +8,23 @@ import org.junit.Test
 class RemoteDesktopButtonTest {
     private val pressed = mutableListOf<String>()
 
-    private fun press(button: RemoteDesktopButton, keyboardHeight: Int = 0, isKeyBarShown: Boolean = false) =
-        button.press(
-            keyboardHeight,
-            isKeyBarShown,
-            onKeyboard = { pressed += "keyboard $it" },
-            onKeyBar = { pressed += "keys $it" },
-            onClose = { pressed += "close" },
-        )
+    private val down = RemoteDesktopKeyboard(isShown = false, height = 0)
+
+    private val docked = RemoteDesktopKeyboard(isShown = true, height = 640)
+
+    private val floating = RemoteDesktopKeyboard(isShown = true, height = 0)
+
+    private fun press(
+        button: RemoteDesktopButton,
+        keyboard: RemoteDesktopKeyboard = down,
+        isKeyBarShown: Boolean = false,
+    ) = button.press(
+        keyboard,
+        isKeyBarShown,
+        onKeyboard = { pressed += "keyboard $it" },
+        onKeyBar = { pressed += "keys $it" },
+        onClose = { pressed += "close" },
+    )
 
     @Test
     fun theButtonsReadKeyboardKeysClose() {
@@ -28,20 +37,32 @@ class RemoteDesktopButtonTest {
 
     @Test
     fun noneIsActiveAtTheStart() {
-        for (button in RemoteDesktopButton.entries) assertFalse(button.isActive(0, false))
+        for (button in RemoteDesktopButton.entries) assertFalse(button.isActive(down, false))
     }
 
     @Test
     fun keyboardIsActiveWhileTheKeyboardCoversThePicture() {
-        assertTrue(RemoteDesktopButton.KEYBOARD.isActive(640, false))
-        assertFalse(RemoteDesktopButton.KEYBOARD.isActive(0, true))
+        assertTrue(RemoteDesktopButton.KEYBOARD.isActive(docked, false))
+        assertFalse(RemoteDesktopButton.KEYBOARD.isActive(down, true))
+    }
+
+    @Test
+    fun aFloatingKeyboardReadsAsShown() {
+        assertTrue(floating.isShown)
+        assertTrue(RemoteDesktopButton.KEYBOARD.isActive(floating, false))
     }
 
     @Test
     fun keyboardRaisesOrPutsAwayTheKeyboard() {
-        press(RemoteDesktopButton.KEYBOARD, keyboardHeight = 0)
-        press(RemoteDesktopButton.KEYBOARD, keyboardHeight = 640)
+        press(RemoteDesktopButton.KEYBOARD, down)
+        press(RemoteDesktopButton.KEYBOARD, docked)
         assertEquals(listOf("keyboard true", "keyboard false"), pressed)
+    }
+
+    @Test
+    fun keyboardPutsAwayAFloatingKeyboard() {
+        press(RemoteDesktopButton.KEYBOARD, floating)
+        assertEquals(listOf("keyboard false"), pressed)
     }
 
     @Test
@@ -49,13 +70,13 @@ class RemoteDesktopButtonTest {
         press(RemoteDesktopButton.KEYS, isKeyBarShown = false)
         press(RemoteDesktopButton.KEYS, isKeyBarShown = true)
         assertEquals(listOf("keys true", "keys false"), pressed)
-        assertTrue(RemoteDesktopButton.KEYS.isActive(0, true))
+        assertTrue(RemoteDesktopButton.KEYS.isActive(down, true))
     }
 
     @Test
     fun closeEndsTheSession() {
-        press(RemoteDesktopButton.CLOSE, keyboardHeight = 640, isKeyBarShown = true)
+        press(RemoteDesktopButton.CLOSE, docked, isKeyBarShown = true)
         assertEquals(listOf("close"), pressed)
-        assertFalse(RemoteDesktopButton.CLOSE.isActive(640, true))
+        assertFalse(RemoteDesktopButton.CLOSE.isActive(docked, true))
     }
 }
