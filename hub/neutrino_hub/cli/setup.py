@@ -50,7 +50,11 @@ from pathlib import Path
 from neutrino_hub.exceptions import WizardAborted
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
-from neutrino_hub.modules.router.controller import router_lock
+from neutrino_hub.modules.router.controller import (
+    RouterStateController,
+    failure_text,
+    router_lock,
+)
 from neutrino_hub.modules.router.routes import RouterInterfaceApplier
 from neutrino_hub.system.constants import (
     SYSTEM_CHECKOUT_PACKAGES,
@@ -105,7 +109,7 @@ from neutrino_hub.utils.constants import (
     UTILS_PACKAGE_ROOT,
     UTILS_SETUP_LOG_PATH,
 )
-from neutrino_hub.utils.json_file import read_config, write_config
+from neutrino_hub.utils.json_file import copy_example, read_config, write_config
 from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.modules.xray.node_config import XrayNodeList
@@ -264,8 +268,14 @@ def main() -> int:
         return 1
 
     steps = [step for step in CORE_STEPS if step[2] not in _skipped_steps()]
-    # The password and this machine's agent; outside Linux, the service too.
-    step_count = len(steps) + 3 + (0 if is_linux() or is_dev_root_set() else 1)
+    # The password and this machine's agent; outside Linux, the system
+    # firewall and the service too.
+    step_count = (
+        len(steps)
+        + 3
+        + (0 if is_linux() else 1)
+        + (0 if is_linux() or is_dev_root_set() else 1)
+    )
     is_coloured = not os.environ.get("NO_COLOR") and sys.stdout.isatty()
     if server is None:
         reporter = InstallReporter(
@@ -336,7 +346,7 @@ def serve_until_set_up(stop) -> int:
             continue
         reporter = InstallSessionReporter(
             session=session,
-            total_step_count=len(steps) + 2,
+            total_step_count=len(steps) + 2 + (0 if is_linux() else 1),
             is_color_enabled=False,
             log_path=UTILS_SETUP_LOG_PATH,
         )
@@ -773,6 +783,8 @@ def _setup(
 
     panel_url = _panel_url()
     authority = _authority(_panel_http_url()) if answers.is_https_enabled else None
+    if not is_linux():
+        _write_system_firewall(reporter)
     if server is not None:
         return _hand_over(
             server,
@@ -795,6 +807,24 @@ def _setup(
         is_waiting=sys.stdin.isatty(),
     )
     return 0
+
+
+def _write_system_firewall(reporter) -> None:
+    """Write the system firewall once on macOS and Windows, before the service starts.
+
+    A failure is reported as a note and the run goes on.
+
+    Args:
+        reporter: Where the step is reported.
+    """
+    reporter.start("Opening the hub's ports", code=SETUP_STEP_START_SERVICE)
+    try:
+        failed = failure_text(RouterStateController().write_system_firewall())
+    except (TimeoutError, ValueError, OSError) as error:
+        failed = command_failure_text(error)
+    if failed:
+        reporter.note(f"the system firewall was not written: {failed}")
+    reporter.done("system firewall written" if not failed else "")
 
 
 def _authority(panel_url: str) -> "dict | None":
@@ -1455,9 +1485,7 @@ def _step_config_files(reporter: InstallReporter) -> str:
         )
         if not example_path.is_file():
             raise FileNotFoundError(f"missing example config {example_path}")
-        real_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(example_path, real_path)
-        real_path.chmod(0o600)
+        copy_example(example_path, real_path)
         created.append(relative_path)
     if created:
         reporter.note(f"copied from examples: {', '.join(created)}")

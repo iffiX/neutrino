@@ -8,6 +8,7 @@ the steps are refused with ``setup_in_progress``.
 """
 
 import secrets
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -48,7 +49,7 @@ def setup_router(session) -> APIRouter:
     def read_state(request: Request):
         if not _guard(request):
             return _denied()
-        return session.state()
+        return _state_for_origin(session.state(), request.url.hostname or "")
 
     @router.post("/link/create")
     async def read_link(request: Request):
@@ -107,6 +108,40 @@ def _context_for_system(context: dict) -> dict:
             if mode.get("key") == ROUTER_MODE_SERVER
         ]
     return served
+
+
+def _state_for_origin(state: dict, host: str) -> dict:
+    """The run's state, with every address on the host the browser used.
+
+    Args:
+        state: What the session reports.
+        host: The host of the request's own origin; empty keeps the
+            addresses as they are.
+
+    Returns:
+        The same state, ``panel_url`` and the authority's ``url`` naming
+        ``host`` with their own scheme and port.
+    """
+    if not host:
+        return state
+    served = {**state, "panel_url": _on_host(state.get("panel_url", ""), host)}
+    authority = state.get("authority")
+    if authority:
+        served["authority"] = {
+            **authority,
+            "url": _on_host(authority.get("url", ""), host),
+        }
+    return served
+
+
+def _on_host(url: str, host: str) -> str:
+    """``url`` with its host replaced, its scheme, port and path kept."""
+    if not url:
+        return url
+    parts = urlsplit(url)
+    name = f"[{host}]" if ":" in host else host
+    netloc = name if parts.port is None else f"{name}:{parts.port}"
+    return urlunsplit(parts._replace(netloc=netloc))
 
 
 def _denied() -> JSONResponse:

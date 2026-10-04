@@ -96,6 +96,8 @@ UTILS_DATA_DIR = UTILS_PACKAGE_ROOT / "data"
 # machine's first config is a copy from here. They ship inside the package
 # rather than beside the real files, which are not in git at all.
 UTILS_EXAMPLES_DIR = UTILS_DATA_DIR / "examples"
+# How an example names a placeholder record, as a key or as an id in a list.
+UTILS_EXAMPLE_RECORD_PREFIX = "_example_"
 
 # Where the real configuration lives. An installed hub keeps it under /etc; a
 # checkout keeps it beside the source so development needs no setup. The

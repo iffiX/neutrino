@@ -203,29 +203,33 @@ class RouterStateController:
         results += _converge_overlays(network)
         return results
 
+    def write_system_firewall(self) -> list[RouterStepResult]:
+        """Write the system firewall alone on macOS and Windows, under the lock.
+
+        Returns:
+            The firewall step's result and one per rule Windows refused;
+            empty on Linux.
+
+        Raises:
+            TimeoutError: When another writer holds the lock too long.
+            ValueError: When the configuration is invalid.
+            FileNotFoundError: When the box is not set up.
+        """
+        if is_linux():
+            return []
+        with router_lock(path=self._lock_path):
+            network = RouterNetworkConfig.from_dict(read_config(ROUTER_NETWORK_FILE))
+            routing = read_config(ROUTER_ROUTING_FILE)
+            found = network.with_overlay_devices(overlay_devices(network))
+            return _firewall_steps(found, routing)
+
     def _reconcile_firewall(
         self, network: RouterNetworkConfig, routing: dict
     ) -> list[RouterStepResult]:
         """The pass on macOS and Windows: the firewall, the TUN and the overlays."""
         devices = overlay_devices(network)
         found = network.with_overlay_devices(devices)
-        refused = []
-
-        def firewall() -> list:
-            notes, failed = converge_firewall(found, routing=routing)
-            refused.extend(failed)
-            return notes
-
-        results = [run_step("firewall", firewall)]
-        results += [
-            RouterStepResult(
-                name=f"firewall {entry['rule']}",
-                state=ROUTER_STEP_FAILED,
-                code=ROUTER_CODE_COMMAND_FAILED,
-                detail=entry["detail"],
-            )
-            for entry in refused
-        ]
+        results = _firewall_steps(found, routing)
         tun = run_step(TUN_STEP_NAME, lambda: converge_tun(found, routing))
         if tun.is_failed:
             tun = RouterStepResult(
@@ -386,6 +390,27 @@ def failure_codes(results: list[RouterStepResult]) -> list[dict]:
         {"code": result.code, "params": {"detail": result.detail}}
         for result in results
         if result.is_failed
+    ]
+
+
+def _firewall_steps(found: RouterNetworkConfig, routing: dict) -> list:
+    """The system firewall step, and one failed step per rule Windows refused."""
+    refused = []
+
+    def firewall() -> list:
+        notes, failed = converge_firewall(found, routing=routing)
+        refused.extend(failed)
+        return notes
+
+    results = [run_step("firewall", firewall)]
+    return results + [
+        RouterStepResult(
+            name=f"firewall {entry['rule']}",
+            state=ROUTER_STEP_FAILED,
+            code=ROUTER_CODE_COMMAND_FAILED,
+            detail=entry["detail"],
+        )
+        for entry in refused
     ]
 
 

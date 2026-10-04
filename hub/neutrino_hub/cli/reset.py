@@ -31,7 +31,7 @@ from neutrino_hub.modules.router.controller import router_lock
 from neutrino_hub.modules.router.routes import hand_back
 from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.system.systemd_ctl import SystemdServiceController
-from neutrino_hub.utils.json_file import read_config
+from neutrino_hub.utils.json_file import copy_example, read_config
 from neutrino_hub.utils.subprocess_run import command_failure_text
 from neutrino_hub.utils.constants import (
     UTILS_CONFIG_DIR,
@@ -290,7 +290,7 @@ def _forget_logs() -> list:
 
 
 def _restore_examples() -> int:
-    """Copy every committed example over the real file beside it.
+    """Write every committed example, without its records, over its real file.
 
     Returns:
         How many files were written.
@@ -305,9 +305,7 @@ def _restore_examples() -> int:
         real_path = UTILS_CONFIG_DIR / relative.with_name(
             relative.name.replace(RESET_EXAMPLE_SUFFIX, ".json")
         )
-        real_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(example_path, real_path)
-        real_path.chmod(0o600)
+        copy_example(example_path, real_path)
         written += 1
     return written
 
