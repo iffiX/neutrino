@@ -1257,6 +1257,48 @@ def test_an_agent_that_returns_and_never_reports_is_named(monkeypatch):
     assert lines[-1] == "reinstalled, no report from this agent\n"
 
 
+def dropped(presence):
+    presence.outcome = {"code": "agent_offline", "device": "dev"}
+    return presence
+
+
+def test_a_socket_dropped_by_the_install_is_not_the_answer(monkeypatch):
+    """A reinstall that went through ended "exit 1" on ``agent_offline``."""
+    old, new = Session(), Session()
+    lines = drain_reinstall(
+        monkeypatch, dropped(Presence([(old, None), (None, None), (new, None)]))
+    )
+
+    assert not any(str(line).startswith("agent_offline") for line in lines)
+    assert "agent 9.9.9 reconnected\n" in lines
+    assert lines[-1] == "[exit 0]\n"
+
+
+def test_a_failure_the_returned_agent_reports_ends_the_task(monkeypatch):
+    old, new = Session(), Session()
+    failure = dict(FAILURE, exit_code=3, output="dpkg: error\n")
+    lines = drain_reinstall(
+        monkeypatch, dropped(Presence([(old, None), (None, None), (new, failure)]))
+    )
+
+    assert lines[-3:] == [
+        "dpkg: error\n",
+        "reinstall_failed: exit_code=3, finished_at=2026-09-10T00:00:04Z\n",
+        3,
+    ]
+
+
+def test_a_dropped_agent_that_never_returns_is_typed(monkeypatch):
+    old = Session()
+    lines = drain_reinstall(
+        monkeypatch,
+        dropped(Presence([(old, None), (None, None)])),
+        WEB_REINSTALL_RETURN_TIMEOUT_S=0.05,
+    )
+
+    assert lines[-2:] == ["reinstall_not_reported\n", 1]
+
+
 def test_nothing_reported_in_time_is_typed(monkeypatch):
     old = Session()
     lines = drain_reinstall(
