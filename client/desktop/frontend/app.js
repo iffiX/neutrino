@@ -470,6 +470,13 @@ function errorLine(text) {
   return line;
 }
 
+function noteLine(text) {
+  const line = document.createElement('div');
+  line.className = 'note muted';
+  line.textContent = text;
+  return line;
+}
+
 function reasonLine(text) {
   const line = document.createElement('div');
   line.className = 'reason';
@@ -1067,9 +1074,10 @@ function drawDesktopEntry(card, state, hub, entry) {
   }
   const reason = connect.disabled && !entryWork(hub, entry) && !isOpen
     ? entryReason(hub, entry, true) : '';
+  const extras = payload.platform_os === 'darwin' ? [noteLine(t('ui.rdp_mac_hint'))] : [];
   card.appendChild(entryRow(hub, entry,
     (payload.host || '') + ':' + (payload.port || ''),
-    isOpen ? t('ui.rdp_open') : '', [connect], reason));
+    isOpen ? t('ui.rdp_open') : '', [connect], reason, extras));
 }
 
 // --- the AI panel: one gateway per hub, one of them the tools' ---
