@@ -122,6 +122,7 @@ SCAN_SAFE_ADDRESS_PREFIXES = (
     "9.9.9.9",
     "223.5.5.5",
     "114.114.114.114",
+    "119.29.29.29",
 )
 
 _PRIVATE_172 = tuple(f"172.{octet}." for octet in range(16, 32))

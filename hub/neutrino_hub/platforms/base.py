@@ -3,15 +3,20 @@
 The contract names what differs between Linux, macOS and Windows and
 nothing else: whether this process may act on the installed hub, running
 ``nhub`` elevated, the controller of the daemons the hub runs, the one
-service on macOS and Windows, opening a page, a lock on a file, and the
-commands the hub runs of itself and of its agent. A new system is a new
-class.
+service on macOS and Windows, opening a page, a lock on a file, the
+commands the hub runs of itself and of its agent, and the system's own
+resolvers. A new system is a new class.
 """
 
+import ipaddress
 import os
 import sys
+from pathlib import Path
 
-from neutrino_hub.platforms.constants import PLATFORM_AGENT_COMMANDS
+from neutrino_hub.platforms.constants import (
+    PLATFORM_AGENT_COMMANDS,
+    PLATFORM_RESOLVER_FILES,
+)
 
 
 def is_compiled() -> bool:
@@ -213,3 +218,50 @@ class HubPlatform:
             A ``--daemon-addr`` value; empty for NetBird's own default.
         """
         return ""
+
+    def system_resolvers(self) -> list:
+        """The resolvers the system itself asks, where the hub does not
+        address the machine.
+
+        Read from systemd-resolved's list of its upstreams when it runs, else
+        from ``/etc/resolv.conf``, which macOS keeps current too.
+
+        Returns:
+            The addresses in the order the file lists them, loopback and
+            link-local left out; empty when neither file names one.
+        """
+        for path in PLATFORM_RESOLVER_FILES:
+            try:
+                text = Path(path).read_text(encoding="utf-8")
+            except OSError:
+                continue
+            addresses = parse_resolv_conf(text)
+            if addresses:
+                return addresses
+        return []
+
+
+def parse_resolv_conf(text: str) -> list:
+    """The resolvers a ``resolv.conf`` names.
+
+    Args:
+        text: The file.
+
+    Returns:
+        Each ``nameserver`` address in order, once; a loopback stub, a
+        link-local address and a line that is not an address are left out.
+    """
+    addresses = []
+    for line in text.splitlines():
+        words = line.split()
+        if len(words) < 2 or words[0] != "nameserver":
+            continue
+        try:
+            address = ipaddress.ip_address(words[1])
+        except ValueError:
+            continue
+        if address.is_loopback or address.is_link_local:
+            continue
+        if str(address) not in addresses:
+            addresses.append(str(address))
+    return addresses

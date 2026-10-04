@@ -186,6 +186,7 @@
   "code.release_unreachable": "GitHub's reply could not be read.",
   "code.replaced": "This agent connected to the hub again from somewhere else.",
   "code.resolver_address_invalid": "{address} is not an address for a resolver.",
+  "code.resolver_required": "The remote resolvers need at least one row.",
   "code.role_mismatch": "That link is not for a {role}.",
   "code.rollback_fetch_failed": "The running version's own package could not be fetched to fall back on: {detail}",
   "code.samba_config_rejected": "Samba will not take that configuration: {detail}",

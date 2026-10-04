@@ -54,7 +54,12 @@ from neutrino_hub.modules.router.controller import (
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
-from neutrino_hub.modules.router.routes import install_dnsmasq, lookup_xray_uid
+from neutrino_hub.modules.router.routes import (
+    install_dnsmasq,
+    lookup_xray_uid,
+    read_network_resolvers,
+    record_network_resolvers,
+)
 from neutrino_hub.modules.router.supplicant import (
     write_config as write_supplicant_config,
 )
@@ -197,6 +202,8 @@ def _render(selected: tuple[str, ...]) -> dict:
     network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
     routing = read_config("xray/routing.json")
     artifacts: dict = {}
+    if "xray" in selected or "dnsmasq" in selected:
+        artifacts["network_resolvers"] = read_network_resolvers(network)
 
     if "xray" in selected:
         node_list = XrayNodeList.from_dict(read_config("xray/nodes.json"))
@@ -207,6 +214,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             down_tags=_down_tags(),
             is_transparent=is_linux(),
             egress_interface=egress_interface(routing),
+            network_resolvers=artifacts["network_resolvers"],
         ).render()
     if "router" in selected and not is_linux():
         artifacts["router"] = ""
@@ -220,7 +228,9 @@ def _render(selected: tuple[str, ...]) -> dict:
         ).render()
     if "dnsmasq" in selected:
         artifacts["dnsmasq"] = RouterDnsmasqRenderer(
-            network=network, routing=routing
+            network=network,
+            routing=routing,
+            network_resolvers=artifacts["network_resolvers"],
         ).render()
     if "cliproxyapi" in selected:
         gateway = CliproxyApiConfigApplier()
@@ -254,6 +264,11 @@ def _forget_orphan_device_dirs() -> list:
 
 
 def _print_artifacts(artifacts: dict) -> None:
+    if "network_resolvers" in artifacts:
+        rows = artifacts["network_resolvers"]
+        print("--- the network's resolvers ---")
+        print(", ".join(f"{row['address']}#{row['port']}" for row in rows))
+        print()
     if "xray" in artifacts:
         print(f"--- {XRAY_CONFIG_PATH} ---")
         print(json.dumps(artifacts["xray"], indent=2))
@@ -300,6 +315,8 @@ def _write(artifacts: dict, *, is_apply_skipped: bool) -> None:
             written here only then, because the apply installs it through
             `install_dnsmasq`, which writes and restarts in one step.
     """
+    if "network_resolvers" in artifacts:
+        record_network_resolvers(artifacts["network_resolvers"])
     if "xray" in artifacts:
         # Validates before writing, and must happen even with --skip-apply:
         # the xray unit points at this file, so systemd cannot start the

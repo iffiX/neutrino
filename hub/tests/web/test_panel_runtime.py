@@ -5,14 +5,17 @@ The devices page is told, the published list is recomposed, and every
 client is handed its state, whose terminals list each machine's presence,
 so a client's dots follow the machines at once rather than at its next
 report. An overlay device found at run time that the loaded ruleset does not
-name yet runs one converge step, and nothing else does.
+name yet runs one converge step, and nothing else does; so do network
+resolvers the last render did not use.
 """
 
 import json
 import threading
 
+import pytest
+
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
-from neutrino_hub.modules.router import controller
+from neutrino_hub.modules.router import controller, routes
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.constants import WEB_EVENT_DEVICES
 from neutrino_hub.web.panel_runtime import PanelRuntime
@@ -150,3 +153,61 @@ def test_the_network_carries_the_devices_the_ruleset_names(monkeypatch):
     panel, _ = following(monkeypatch, {}, {"easytier": ["tun0"]})
 
     assert panel.network().exposed_overlay_device_names == ["tun0"]
+
+
+# --- the network's resolvers --------------------------------------------------
+
+LEASED = [{"address": "192.168.1.1", "port": 53}]
+
+
+def following_resolvers(monkeypatch, routing: dict, found: list) -> tuple:
+    """A runtime whose network's resolvers are read as given."""
+    files = {"router/network.json": {"mode": "router"}, "xray/routing.json": routing}
+    monkeypatch.setattr(runtime_module, "read_config", lambda name: dict(files[name]))
+    monkeypatch.setattr(runtime_module, "read_network_resolvers", lambda network: found)
+    passes = CountingConverge()
+    panel = object.__new__(PanelRuntime)
+    panel.converge_network_blocking = passes
+    return panel, passes
+
+
+def test_a_lease_naming_new_resolvers_runs_one_converge(monkeypatch):
+    routes.record_network_resolvers([{"address": "223.5.5.5", "port": 53}])
+    panel, passes = following_resolvers(monkeypatch, {"direct_dns": []}, LEASED)
+
+    assert panel.follow_network_resolvers() is True
+    assert passes.passes == 1
+
+
+def test_the_resolvers_the_last_render_used_run_nothing(monkeypatch):
+    routes.record_network_resolvers(LEASED)
+    panel, passes = following_resolvers(monkeypatch, {"direct_dns": []}, LEASED)
+
+    assert panel.follow_network_resolvers() is False
+    assert passes.passes == 0
+
+
+def test_outside_linux_a_direct_list_of_its_own_reads_nothing(on_windows, monkeypatch):
+    """No dnsmasq runs there, so the network's resolvers matter only while
+    the direct list follows them."""
+    panel, passes = following_resolvers(
+        monkeypatch, {"direct_dns": [{"address": "119.29.29.29", "port": 53}]}, LEASED
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "read_network_resolvers",
+        lambda network: pytest.fail("read with a direct list of its own"),
+    )
+
+    assert panel.follow_network_resolvers() is False
+    assert passes.passes == 0
+
+
+def test_the_proxys_own_lookups_ask_the_first_direct_resolver(monkeypatch):
+    routes.record_network_resolvers(LEASED)
+    panel, _ = following_resolvers(
+        monkeypatch, {"direct_dns": {"address": "223.5.5.5", "port": 53}}, LEASED
+    )
+
+    assert panel.routing()["direct_dns"] == []
+    assert panel._direct_resolver() == ("192.168.1.1", 53)

@@ -371,3 +371,34 @@ def test_a_fixed_address_survives_a_round_trip_and_a_blank_one_is_dropped():
         ("aa:bb:cc:dd:ee:ff", "192.168.100.50", "argon"),
         ("aa:bb:cc:dd:ee:fe", "192.168.100.51", ""),
     ]
+
+
+# --- A static uplink's resolvers ----------------------------------------------
+
+
+def test_a_static_uplinks_resolver_rows_survive_a_round_trip():
+    rows = [
+        {"address": "192.0.2.53", "port": 5353},
+        {"address": "192.168.1.1", "port": 53},
+    ]
+    config = network_config(wan_entry("enp2s0", method="static", dns=rows))
+
+    assert config.interface("enp2s0").wan.dns == rows
+    assert config.to_dict()["interfaces"][0]["wan"]["dns"] == rows
+
+
+def test_a_file_from_before_the_rows_reads_no_resolvers():
+    config = network_config(wan_entry("enp2s0", method="static"))
+
+    assert config.interface("enp2s0").wan.dns == []
+
+
+def test_a_row_with_no_address_is_dropped_and_a_bad_port_reads_as_53():
+    config = network_config(
+        wan_entry(
+            "enp2s0",
+            dns=[{"address": ""}, {"address": "192.0.2.53", "port": "x"}, "junk"],
+        )
+    )
+
+    assert config.interface("enp2s0").wan.dns == [{"address": "192.0.2.53", "port": 53}]

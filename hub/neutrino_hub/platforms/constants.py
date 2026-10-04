@@ -37,6 +37,22 @@ PLATFORM_ROOTS = {
     },
 }
 
+# Where a Unix system names the resolvers it asks, first match wins:
+# systemd-resolved's list of its upstreams, then the file every resolver
+# library reads, which on such a machine names only resolved's stub.
+PLATFORM_RESOLVER_FILES = ("/run/systemd/resolve/resolv.conf", "/etc/resolv.conf")
+# The resolvers Windows asks: every connected adapter's, by interface metric.
+PLATFORM_WINDOWS_RESOLVERS_SCRIPT = """
+$metric = @{}
+Get-NetIPInterface -AddressFamily IPv4 -ConnectionState Connected |
+    ForEach-Object { $metric[$_.InterfaceIndex] = $_.InterfaceMetric }
+$servers = @(Get-DnsClientServerAddress -AddressFamily IPv4 |
+    Where-Object { $metric.ContainsKey($_.InterfaceIndex) } |
+    Sort-Object { $metric[$_.InterfaceIndex] } |
+    ForEach-Object { $_.ServerAddresses })
+@{ servers = $servers } | ConvertTo-Json -Compress
+"""
+
 # The one service the hub registers on macOS and Windows.
 PLATFORM_DARWIN_SERVICE_LABEL = "com.neutrino.hub"
 PLATFORM_DARWIN_SERVICE_TARGET = f"system/{PLATFORM_DARWIN_SERVICE_LABEL}"

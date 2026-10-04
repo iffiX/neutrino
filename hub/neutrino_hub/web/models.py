@@ -38,7 +38,7 @@ class SessionView(BaseModel):
 
 
 class DnsServerView(BaseModel):
-    """One DNS server the router forwards to."""
+    """One resolver: an address, and the port it answers on."""
 
     address: str
     port: int = 53
@@ -234,6 +234,8 @@ class WanInterfaceSettings(BaseModel):
     gateway: str | None = None
     intent: str = "auto"
     cloned_mac: str | None = None
+    # A static uplink's resolvers, in the order they are asked.
+    dns: list[DnsServerView] = Field(default_factory=list)
 
 
 class LanInterfaceSettings(BaseModel):
@@ -311,6 +313,9 @@ class InterfaceLink(BaseModel):
     gateway: str | None = None
     is_ap_capable: bool = True
     device_count: int = 0
+    # The resolvers a DHCP uplink's lease names; empty for a static uplink
+    # and for an interface holding no lease.
+    lease_dns: list[str] = Field(default_factory=list)
 
 
 class InterfaceView(BaseModel):
@@ -525,8 +530,10 @@ class ProxySettings(BaseModel):
     direct_ips: list[str]
     is_local_proxy_enabled: bool
     socks_ports: list[SocksPortView] = Field(default_factory=list)
-    remote_dns: DnsServerView
-    direct_dns: DnsServerView
+    # Each asked in order. An empty direct list follows the network's
+    # resolvers.
+    remote_dns: list[DnsServerView]
+    direct_dns: list[DnsServerView] = Field(default_factory=list)
 
 
 class GeodataReleaseView(BaseModel):

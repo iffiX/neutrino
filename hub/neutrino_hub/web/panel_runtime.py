@@ -15,7 +15,12 @@ import subprocess
 import threading
 
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
-from neutrino_hub.modules.router.routes import install_dnsmasq
+from neutrino_hub.modules.router.routes import (
+    install_dnsmasq,
+    read_network_resolvers,
+    record_network_resolvers,
+    rendered_network_resolvers,
+)
 from neutrino_hub.modules.router.connections import RouterConnectionSet
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
@@ -93,7 +98,16 @@ from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.config_renderer import XrayConfigRenderer
 from neutrino_hub.modules.tun.ops import egress_interface
-from neutrino_hub.modules.xray.constants import XRAY_CONFIG_PATH, XRAY_SCOPE_SWITCHES
+from neutrino_hub.modules.xray.constants import (
+    XRAY_CONFIG_PATH,
+    XRAY_DIRECT_DNS_FIELD,
+    XRAY_SCOPE_SWITCHES,
+)
+from neutrino_hub.modules.xray.resolvers import (
+    direct_resolvers,
+    read_resolvers,
+    with_resolver_lists,
+)
 from neutrino_hub.modules.xray.exit_controller import XrayExitController
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
@@ -331,14 +345,54 @@ class PanelRuntime:
         """Read the current routing configuration.
 
         Returns:
-            Parsed ``config/xray/routing.json``.
+            Parsed ``config/xray/routing.json``, its two resolver fields read
+            as lists.
         """
-        return read_config("xray/routing.json")
+        return with_resolver_lists(read_config("xray/routing.json"))
 
     def _direct_resolver(self) -> tuple:
-        """The direct resolver, for the lookups the proxy makes for itself."""
-        direct = self.routing().get("direct_dns") or {}
-        return str(direct.get("address", "223.5.5.5")), int(direct.get("port", 53))
+        """The first direct resolver, for the lookups the proxy makes for itself.
+
+        Returns:
+            ``(address, port)`` of the first row of ``direct_dns``, else of
+            the network's resolvers the last render used.
+        """
+        first = direct_resolvers(self.routing(), rendered_network_resolvers())[0]
+        return str(first["address"]), int(first["port"])
+
+    def follow_network_resolvers(self) -> bool:
+        """Converge again when the network's resolvers moved.
+
+        A DHCP uplink's lease names them, and a lease arrives or changes with
+        no write to ``config/``.
+
+        Returns:
+            True when the resolvers read now differ from the ones the last
+            render used and a converge ran; False otherwise, and on a box
+            not set up.
+        """
+        try:
+            network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+            routing = self.routing()
+        except (FileNotFoundError, ValueError):
+            return False
+        if not is_linux() and read_resolvers(routing, XRAY_DIRECT_DNS_FIELD):
+            return False
+        found = read_network_resolvers(network)
+        if found == rendered_network_resolvers():
+            return False
+        LOGGER.info("network resolvers moved: %s", found)
+        try:
+            self.converge_network_blocking()
+        except (
+            TimeoutError,
+            ValueError,
+            OSError,
+            RuntimeError,
+            subprocess.SubprocessError,
+        ) as error:
+            LOGGER.warning("network resolvers not applied: %s", error)
+        return True
 
     def node_list(self) -> XrayNodeList:
         """Read the current node list.
@@ -524,6 +578,8 @@ class PanelRuntime:
         node_list = self.node_list()
         routing = self._settled_routing(node_list)
         resolve_node_secrets(node_list)
+        network_resolvers = read_network_resolvers(network)
+        record_network_resolvers(network_resolvers)
         xray_config = XrayConfigRenderer(
             node_list=node_list,
             routing=routing,
@@ -534,6 +590,7 @@ class PanelRuntime:
             },
             is_transparent=is_linux(),
             egress_interface=egress_interface(routing),
+            network_resolvers=network_resolvers,
         ).render()
         switcher = OverlaySwitcher()
         changes: list[dict] = []
@@ -559,7 +616,7 @@ class PanelRuntime:
             # to bind it, or the restart fails with nothing to listen on.
             results = self._router_controller().reconcile_locked(only=only)
             changes += change_codes(results)
-            if is_linux() and install_dnsmasq(self._dnsmasq_config()):
+            if is_linux() and install_dnsmasq(self._dnsmasq_config(network_resolvers)):
                 changes.append({"code": "dnsmasq_restarted", "params": {}})
             # A refused xray configuration stops none of the other steps.
             try:
@@ -706,11 +763,15 @@ class PanelRuntime:
             write_config("xray/routing.json", routing)
         return routing
 
-    def _dnsmasq_config(self) -> str:
+    def _dnsmasq_config(self, network_resolvers: list[dict]) -> str:
         """The dnsmasq configuration every apply path installs.
 
         Rendered from the settled routing, so a network apply and a full apply
         produce the same file instead of each overwriting the other's.
+
+        Args:
+            network_resolvers: The network's resolvers, as read for this
+                apply.
 
         Returns:
             The rendered configuration.
@@ -718,6 +779,7 @@ class PanelRuntime:
         return RouterDnsmasqRenderer(
             network=self.network(),
             routing=self._settled_routing(self.node_list()),
+            network_resolvers=network_resolvers,
         ).render()
 
     def _router_controller(self) -> RouterStateController:

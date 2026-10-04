@@ -41,6 +41,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_ROUTING_FILE,
 )
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.routes import rendered_network_resolvers
 from neutrino_hub.modules.router.link_status import (
     device_addresses,
     system_default_routes,
@@ -78,6 +79,7 @@ from neutrino_hub.modules.xray.constants import (
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.modules.xray.node_probe import resolve_direct
 from neutrino_hub.modules.xray.node_secrets import resolve_node_secrets
+from neutrino_hub.modules.xray.resolvers import direct_resolvers
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os, is_linux, process_controller
 from neutrino_hub.utils.json_file import read_config, write_generated
@@ -113,14 +115,14 @@ def plan_tun(network: RouterNetworkConfig, routing: dict) -> "TunPlan | None":
     uplink = _uplink(device)
     if uplink is None:
         return None
-    server, port = _direct_dns(routing)
+    resolvers = _direct_resolvers(routing)
     names = [node.address for node in node_list.nodes]
     names.append(urllib.parse.urlsplit(node_list.reference_url).hostname or "")
     names += _overlay_server_hosts(network)
-    kept_out = [server]
+    kept_out = list(dict.fromkeys(entry["address"] for entry in resolvers))
     for name in dict.fromkeys(names):
-        address = _resolved(name, server=server, port=port)
-        if address:
+        address = _resolved(name, resolvers=resolvers)
+        if address and address not in kept_out:
             kept_out.append(address)
     forwarding = []
     if routing.get(XRAY_SCOPE_OVERLAY, False):
@@ -288,13 +290,13 @@ class TunEndpointSource:
             ValueError: When the router or routing configuration is not JSON.
         """
         network = RouterNetworkConfig.from_dict(_config(ROUTER_NETWORK_FILE))
-        server, port = _direct_dns(_config(ROUTER_ROUTING_FILE))
+        resolvers = _direct_resolvers(_config(ROUTER_ROUTING_FILE))
         now = self._clock()
         names = {}
         for name in overlay_endpoint_hosts(network):
             address, expires = self._names.get(name, ("", 0.0))
             if now >= expires:
-                address = _resolved(name, server=server, port=port)
+                address = _resolved(name, resolvers=resolvers)
                 expires = now + TUN_ENDPOINT_NAME_TTL_S
             names[name] = (address, expires)
         self._names = names
@@ -552,13 +554,13 @@ def _uplink(device: str) -> "dict | None":
     return None
 
 
-def _resolved(name: str, *, server: str, port: int) -> str:
+def _resolved(name: str, *, resolvers: list) -> str:
     """One name as an IPv4 address; empty when no resolver has one.
 
-    The direct resolver is asked first, the system's when it has no answer:
-    an exit left without its host route would still leave by the uplink,
-    bound to it, but the route is what keeps it there when the binding
-    cannot.
+    The direct resolvers are asked in order, the system's when none has an
+    answer: an exit left without its host route would still leave by the
+    uplink, bound to it, but the route is what keeps it there when the
+    binding cannot.
     """
     if not name:
         return ""
@@ -566,12 +568,13 @@ def _resolved(name: str, *, server: str, port: int) -> str:
         return str(ipaddress.ip_address(name))
     except ValueError:
         pass
-    try:
-        address = resolve_direct(name, server=server, port=port) or ""
-    except OSError:
-        address = ""
-    if address:
-        return address
+    for entry in resolvers:
+        try:
+            address = resolve_direct(name, server=entry["address"], port=entry["port"])
+        except OSError:
+            address = None
+        if address:
+            return address
     try:
         found = socket.getaddrinfo(name, None, socket.AF_INET, socket.SOCK_STREAM)
     except OSError:
@@ -647,10 +650,13 @@ def _host_of(text: str) -> str:
         return ""
 
 
-def _direct_dns(routing: dict) -> tuple:
-    """The direct resolver's address and port."""
-    direct = routing.get("direct_dns", {})
-    return str(direct.get("address", "223.5.5.5")), int(direct.get("port", 53))
+def _direct_resolvers(routing: dict) -> list:
+    """The direct resolvers, as ``{address, port}`` rows.
+
+    ``direct_dns``, else the network's resolvers the last render used, which
+    on macOS and Windows are the system's own.
+    """
+    return direct_resolvers(routing, rendered_network_resolvers())
 
 
 def _local_networks(device: str) -> list:

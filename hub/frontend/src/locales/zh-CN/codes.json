@@ -186,6 +186,7 @@
   "code.release_unreachable": "读不懂 GitHub 的回答。",
   "code.replaced": "这个被控端从别处重新连上了中枢。",
   "code.resolver_address_invalid": "{address} 不是解析器地址。",
+  "code.resolver_required": "远程解析器至少要有一行。",
   "code.role_mismatch": "这个链接不是给{role}用的。",
   "code.rollback_fetch_failed": "取不到正在运行版本的安装包，没有东西可以回退：{detail}",
   "code.samba_config_rejected": "Samba 不接受这份配置：{detail}",

@@ -11,7 +11,7 @@
       "is_exposed": false,
       "role": "wan",
       "wan": {
-        "_comment_method": "'dhcp' or 'static'. address, prefix_len and gateway are read only when static.",
+        "_comment_method": "'dhcp' or 'static'. address, prefix_len, gateway and dns are read only when static. dns lists the uplink's resolvers as {address, port}, asked in order; with none listed, 223.5.5.5 and 119.29.29.29 answer. A DHCP uplink uses the resolvers its lease names.",
         "method": "dhcp",
         "address": null,
         "prefix_len": 24,
@@ -19,7 +19,8 @@
         "_comment_intent": "There is no ranking here. The gateway works out which uplink carries traffic from what it can see: uplinks reaching the same next hop are one line and only the first of them is used, and beyond that it prefers wired over wireless and faster over slower. 'intent' says only what cannot be inferred \u2014 'auto' to let it decide, 'primary' to pin this one first, 'backup_only' to keep it dark until nothing else is left (which is what a metered mobile link wants, however fast it benchmarks).",
         "intent": "auto",
         "_comment_mac": "A MAC to present upstream, for networks that register a device by hardware address (campus, hotel). null keeps the real one.",
-        "cloned_mac": null
+        "cloned_mac": null,
+        "dns": []
       },
       "lan": {
         "address": "",

@@ -45,6 +45,7 @@ from neutrino_hub.modules.router.interfaces import (
 )
 from neutrino_hub.modules.router.connections import RouterConnection
 from neutrino_hub.modules.router.credentials import RouterCredentialReader
+from neutrino_hub.modules.router.dhcp_client import RouterDhcpClient
 from neutrino_hub.modules.router.link_status import (
     LINK_KIND_ETHERNET,
     LINK_KIND_WIFI,
@@ -53,6 +54,7 @@ from neutrino_hub.modules.router.link_status import (
     admin_up_interfaces,
     device_addresses,
 )
+from neutrino_hub.modules.router.network_resolvers import resolver_refusal
 from neutrino_hub.modules.router.modes import (
     ROUTER_MODE_DEFAULT_PREFIX_LEN,
     ROUTER_MODES_BY_KEY,
@@ -72,6 +74,7 @@ from neutrino_hub.modules.router.wifi import (
 from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX
 from neutrino_hub.platforms.detect import hub_os
 from neutrino_hub.utils.subprocess_run import command_failure_text
+from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     SavedNetworkListView,
@@ -916,6 +919,30 @@ def _overlay_views(
     return views
 
 
+def _lease_dns(
+    interface: RouterInterface, *, network: RouterNetworkConfig, link: LinkStatus
+) -> list[str]:
+    """The resolvers a DHCP uplink's lease names.
+
+    Args:
+        interface: The interface.
+        network: The whole configuration, for whether the hub addresses it.
+        link: What the interface is doing now.
+
+    Returns:
+        The lease's resolvers; empty for anything but a DHCP uplink the hub
+        drives that holds an address.
+    """
+    if (
+        not network.is_addressing_owned
+        or not interface.is_wan
+        or interface.wan.method == ROUTER_WAN_METHOD_STATIC
+        or not link.ipv4_address
+    ):
+        return []
+    return RouterDhcpClient(interface=interface.device_name).lease_dns()
+
+
 def _build_view(runtime: PanelRuntime) -> NetworkView:
     network = runtime.network()
     status_reader = runtime.link_status()
@@ -960,6 +987,7 @@ def _build_view(runtime: PanelRuntime) -> NetworkView:
                     gateway=status_reader.gateway_for(interface.device_name),
                     is_ap_capable=link.is_ap_capable,
                     device_count=_count_reaching(reaching, link.ipv4_address or ""),
+                    lease_dns=_lease_dns(interface, network=network, link=link),
                 ),
             )
         )
@@ -1335,6 +1363,14 @@ def _validate_wan(settings: InterfaceSettings) -> None:
     wan = settings.wan
     if wan.intent not in ROUTER_INTENTS:
         raise _bad_request("uplink_intent_unknown", intent=wan.intent)
+    refusal = resolver_refusal(
+        [row.model_dump() for row in wan.dns],
+        port_min=WEB_PORT_MIN,
+        port_max=WEB_PORT_MAX,
+    )
+    if refusal is not None:
+        code, params = refusal
+        raise _bad_request(code, **params)
     if wan.method != ROUTER_WAN_METHOD_STATIC:
         return
     _require_prefix_len(wan.prefix_len)

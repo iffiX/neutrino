@@ -252,6 +252,8 @@ export interface WanInterfaceSettings {
   gateway: string | null;
   intent: UplinkIntent;
   cloned_mac: string | null;
+  /** A static uplink's resolvers, in the order they are asked. */
+  dns: DnsServer[];
 }
 
 export interface LanInterfaceSettings {
@@ -322,6 +324,11 @@ export interface InterfaceLink {
    * what closing it would end. Live, so a device that is off is not counted.
    */
   device_count: number;
+  /**
+   * The resolvers a DHCP uplink's lease names; empty for a static uplink and
+   * for an interface holding no lease.
+   */
+  lease_dns: string[];
 }
 
 export interface InterfaceView {
@@ -488,8 +495,9 @@ export interface ProxySettings {
   direct_ips: string[];
   is_local_proxy_enabled: boolean;
   socks_ports: SocksPort[];
-  remote_dns: DnsServer;
-  direct_dns: DnsServer;
+  /** Each asked in order; an empty direct list follows the network's. */
+  remote_dns: DnsServer[];
+  direct_dns: DnsServer[];
 }
 
 /** The release each of the two databases is taken from. */

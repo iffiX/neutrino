@@ -26,6 +26,7 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_DNS_QUERY_STRATEGY,
     XRAY_DNS_TAG,
     XRAY_EGRESS_MARK,
+    XRAY_REMOTE_DNS_FIELD,
     XRAY_LOCAL_DNS_PORT,
     XRAY_LOCAL_SOCKS_LISTEN,
     XRAY_LOCAL_SOCKS_PORT,
@@ -53,11 +54,13 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_TPROXY_PORT,
     XRAY_TPROXY_TAG,
 )
+from neutrino_hub.modules.router.network_resolvers import fallback_resolvers
 from neutrino_hub.modules.xray.node_config import (
     SHADOWSOCKS_PROTOCOL,
     XrayNodeConfig,
     XrayNodeList,
 )
+from neutrino_hub.modules.xray.resolvers import direct_resolvers, read_resolvers
 
 
 class XrayConfigRenderer:
@@ -81,12 +84,12 @@ class XrayConfigRenderer:
         down_tags: frozenset | set = frozenset(),
         is_transparent: bool = True,
         egress_interface: str = "",
+        network_resolvers: list[dict] | None = None,
     ):
         """
         Args:
             node_list: Parsed ``config/xray/nodes.json``.
             routing: Parsed ``config/xray/routing.json``.
-                daemons look up, resolved at the direct resolver.
             down_tags: Outbound tags whose newest measurement failed, left
                 out of the balancer's selector.
             is_transparent: Whether the firewall diverts into ``tproxy_in``
@@ -97,6 +100,9 @@ class XrayConfigRenderer:
             egress_interface: The uplink the direct and node outbounds are
                 bound to while ``socks_local_in`` is rendered, so what they
                 send does not enter the TUN device; empty binds nothing.
+            network_resolvers: The network's resolvers as ``{address, port}``,
+                asked for direct names while ``direct_dns`` is empty; None is
+                the built-in fallbacks.
         """
         self._is_transparent = is_transparent
         # Every node whose secret resolved is resident: an outbound and a
@@ -145,6 +151,11 @@ class XrayConfigRenderer:
         self._node_list = node_list
         self._routing = routing
         self._down_tags = frozenset(down_tags)
+        self._remote_resolvers = read_resolvers(routing, XRAY_REMOTE_DNS_FIELD)
+        self._direct_resolvers = direct_resolvers(
+            routing,
+            fallback_resolvers() if network_resolvers is None else network_resolvers,
+        )
 
     @property
     def _is_anything_proxied(self) -> bool:
@@ -196,46 +207,43 @@ class XrayConfigRenderer:
         }
 
     def _render_dns(self) -> dict:
-        remote = self._routing.get("remote_dns", {})
-        direct = self._routing.get("direct_dns", {})
+        # The remote list is the catch-all, asked in order; each direct
+        # resolver answers only the names pinned to it, also in order.
         servers: list = [
-            {
-                "address": remote.get("address", "1.1.1.1"),
-                "port": remote.get("port", 53),
-            }
+            {"address": entry["address"], "port": entry["port"]}
+            for entry in self._remote_resolvers
         ]
         if self._is_geoip_split_enabled and self._is_anything_proxied:
-            servers.insert(
-                0,
-                {
-                    "address": direct.get("address", "223.5.5.5"),
-                    "port": direct.get("port", 53),
-                    "domains": self._routing.get("direct_domains", []),
-                    "skipFallback": True,
-                },
+            servers = (
+                self._direct_servers(self._routing.get("direct_domains", [])) + servers
             )
         own_names = self._exit_hostnames
         if own_names and self._resident_nodes:
-            # An exit's name resolves at the direct resolver: it is the
-            # resolver that answers that name correctly without the proxy,
-            # and a lookup sent through an exit waits on the exit it is
-            # asking about. This holds while a node is rendered, whatever the
-            # scopes say, because the probe dials that node by the address
-            # this pin resolves.
-            servers.insert(
-                0,
-                {
-                    "address": direct.get("address", "223.5.5.5"),
-                    "port": direct.get("port", 53),
-                    "domains": [f"full:{host}" for host in own_names],
-                    "skipFallback": True,
-                },
+            # An exit's name resolves at the direct resolvers: they answer
+            # that name correctly without the proxy, and a lookup sent through
+            # an exit waits on the exit it is asking about. This holds while a
+            # node is rendered, whatever the scopes say, because the probe
+            # dials that node by the address this pin resolves.
+            servers = (
+                self._direct_servers([f"full:{host}" for host in own_names]) + servers
             )
         return {
             "tag": XRAY_DNS_INTERNAL_TAG,
             "servers": servers,
             "queryStrategy": XRAY_DNS_QUERY_STRATEGY,
         }
+
+    def _direct_servers(self, domains: list) -> list[dict]:
+        """One server per direct resolver, each answering only these names."""
+        return [
+            {
+                "address": entry["address"],
+                "port": entry["port"],
+                "domains": list(domains),
+                "skipFallback": True,
+            }
+            for entry in self._direct_resolvers
+        ]
 
     @property
     def _exit_hostnames(self) -> list[str]:
@@ -265,10 +273,8 @@ class XrayConfigRenderer:
                 "port": XRAY_DNS_PORT,
                 "protocol": "dokodemo-door",
                 "settings": {
-                    "address": self._routing.get("remote_dns", {}).get(
-                        "address", "1.1.1.1"
-                    ),
-                    "port": self._routing.get("remote_dns", {}).get("port", 53),
+                    "address": self._remote_resolvers[0]["address"],
+                    "port": self._remote_resolvers[0]["port"],
                     "network": "tcp,udp",
                 },
             },
@@ -481,19 +487,22 @@ class XrayConfigRenderer:
                 },
             ]
         if self._resident_nodes:
-            # The direct resolver is reached directly, whatever the split
-            # says about its address: the exits' names are looked up there,
-            # and a lookup sent through an exit waits on its own answer. It
-            # is rendered with the pin above rather than left to the first
-            # outbound, which carries an unmatched query only by accident of
-            # the order.
-            direct = self._routing.get("direct_dns", {})
+            # The direct resolvers are reached directly, whatever the split
+            # says about their addresses: the exits' names are looked up
+            # there, and a lookup sent through an exit waits on its own
+            # answer. They are rendered with the pin above rather than left
+            # to the first outbound, which carries an unmatched query only by
+            # accident of the order.
             rules.append(
                 {
                     "type": "field",
                     "ruleTag": XRAY_RULE_TAG_DNS_DIRECT,
                     "inboundTag": [XRAY_DNS_INTERNAL_TAG],
-                    "ip": [direct.get("address", "223.5.5.5")],
+                    "ip": list(
+                        dict.fromkeys(
+                            entry["address"] for entry in self._direct_resolvers
+                        )
+                    ),
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )

@@ -73,16 +73,16 @@ def point_at(address: str) -> bool:
     return True
 
 
-def hand_back(*, fallback_address: str = "") -> str:
+def hand_back(*, fallback_addresses: list | tuple = ()) -> str:
     """Give name resolution back to whatever the machine had.
 
     In order: a symlink to `systemd-resolved`'s stub when that unit is
     enabled; the file kept before the first write; a file naming the
-    fallback address.
+    fallback addresses.
 
     Args:
-        fallback_address: The direct resolver, written when neither of the
-            first two applies; empty leaves the file as it is.
+        fallback_addresses: The network's resolvers, written when neither of
+            the first two applies; empty leaves the file as it is.
 
     Returns:
         :data:`ROUTER_RESOLVER_TO_RESOLVED`,
@@ -109,8 +109,9 @@ def hand_back(*, fallback_address: str = "") -> str:
     if original.is_symlink() or original.exists():
         _restore(original, target)
         return ROUTER_RESOLVER_TO_ORIGINAL
-    if fallback_address:
-        _replace(target, f"{RESOLVER_HEADER}nameserver {fallback_address}\n")
+    if fallback_addresses:
+        lines = "".join(f"nameserver {address}\n" for address in fallback_addresses)
+        _replace(target, RESOLVER_HEADER + lines)
         return ROUTER_RESOLVER_TO_FALLBACK
     return ""
 

@@ -14,6 +14,7 @@ import { SavedNetworksPanel } from "../components/saved_networks_panel";
 import { SignalBars } from "../components/signal_bars";
 import { StaticLeasePanel } from "../components/static_lease_panel";
 import { StatusDot } from "../components/status_dot";
+import { StringListEditor } from "../components/string_list_editor";
 import { TabStrip } from "../components/tab_strip";
 import type { StripTab } from "../components/tab_strip";
 import { ToggleSwitch } from "../components/toggle_switch";
@@ -26,6 +27,7 @@ import {
   validateInterface,
 } from "../network_validation";
 import { interruptionWarning } from "../network_warnings";
+import { resolversOf, resolverRow } from "../resolver_rows";
 import type { InterfaceErrors, ServedNetwork } from "../network_validation";
 import { useDraftSeeding } from "../use_draft_seeding";
 import { useApiResource } from "../use_api_resource";
@@ -167,6 +169,7 @@ function newVlanSettings(parent: string, id: number): InterfaceSettings {
       gateway: null,
       intent: "auto",
       cloned_mac: null,
+      dns: [],
     },
     lan: {
       address: "",
@@ -580,6 +583,7 @@ export function NetworkPage() {
                     draft={draft}
                     errors={errors}
                     isWifi={isWifi}
+                    leaseDns={selected.link.lease_dns}
                     update={update}
                     onJoined={handleJoined}
                   />
@@ -857,9 +861,29 @@ interface FieldsProps {
   onJoined: (view: NetworkView) => void;
 }
 
-function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
+interface WanFieldsProps extends FieldsProps {
+  /** The resolvers the uplink's DHCP lease names now. */
+  leaseDns: string[];
+}
+
+function WanFields({
+  draft,
+  errors,
+  isWifi,
+  leaseDns,
+  update,
+  onJoined,
+}: WanFieldsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
+  // A DHCP uplink lists no resolvers of its own; its lease names them.
+  const leaseHint = (
+    <p className="field_hint">
+      {leaseDns.length > 0
+        ? t("ui.network.dns_from_lease", { resolvers: leaseDns.join(", ") })
+        : t("ui.network.dns_no_lease")}
+    </p>
+  );
   return (
     <>
       {isWifi && (
@@ -872,6 +896,7 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
             joinedSsid={draft.wifi.ssid.length > 0 ? draft.wifi.ssid : null}
             onJoined={onJoined}
           />
+          {leaseHint}
         </div>
       )}
 
@@ -947,6 +972,19 @@ function WanFields({ draft, errors, isWifi, update, onJoined }: FieldsProps) {
                 }
               />
             </div>
+          )}
+          {draft.wan.method === "static" ? (
+            <StringListEditor
+              label={t("ui.network.field_dns")}
+              placeholder="192.168.1.1"
+              emptyText={t("ui.network.dns_built_in")}
+              values={draft.wan.dns.map(resolverRow)}
+              onChange={(rows) =>
+                update((next) => (next.wan.dns = resolversOf(rows)))
+              }
+            />
+          ) : (
+            leaseHint
           )}
 
           {(draft.vlan === null || draft.vlan.id === null) && (

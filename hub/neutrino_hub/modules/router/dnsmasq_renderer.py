@@ -1,11 +1,13 @@
 """Rendering the dnsmasq configuration that serves the LAN.
 
-dnsmasq owns DHCP and DNS on the LAN interfaces only. Its sole upstream is the
-xray DNS inbound on loopback, so a LAN name is resolved at the exit node and no
-plaintext query ever leaves a WAN interface.
+dnsmasq owns DHCP and DNS on the LAN interfaces only. With the LAN scope on,
+its upstream is the xray DNS inbound on loopback, so a LAN name is resolved
+at the exit node and no plaintext query ever leaves a WAN interface. With it
+off, its upstreams are the network's resolvers.
 """
 
 from neutrino_hub.modules.xray.constants import XRAY_DNS_LISTEN, XRAY_DNS_PORT
+from neutrino_hub.modules.xray.resolvers import direct_resolvers
 
 from neutrino_hub.modules.router.constants import (
     ROUTER_DNS_CACHE_SIZE,
@@ -18,6 +20,7 @@ from neutrino_hub.modules.router.interfaces import (
     RouterNetworkConfig,
     RouterStaticLease,
 )
+from neutrino_hub.modules.router.network_resolvers import fallback_resolvers
 
 # Named when the box serves no network at all. dnsmasq with no interface named
 # listens on every one of them, which here would mean answering DNS on the
@@ -30,18 +33,29 @@ NO_LAN_PLACEHOLDER_INTERFACE = "neutrino_none"
 class RouterDnsmasqRenderer:
     """Builds the whole dnsmasq configuration from the router config."""
 
-    def __init__(self, *, network: RouterNetworkConfig, routing: dict | None = None):
+    def __init__(
+        self,
+        *,
+        network: RouterNetworkConfig,
+        routing: dict | None = None,
+        network_resolvers: list[dict] | None = None,
+    ):
         """
         Args:
             network: The parsed router configuration. Every interface with the
                 LAN role gets served; the rest are not mentioned at all.
             routing: Parsed ``config/xray/routing.json``. Only the LAN proxy
-                switch and the direct resolver are read, to decide where
-                queries go.
+                switch, the fallback switch and the direct resolvers are
+                read, to decide where queries go.
+            network_resolvers: The network's resolvers as ``{address, port}``,
+                in the order they are asked; None is the built-in fallbacks.
         """
         self._lans = network.lan_interfaces
         self._static_leases = network.static_leases
         self._routing = routing or {}
+        self._network_resolvers = (
+            fallback_resolvers() if network_resolvers is None else network_resolvers
+        )
 
     def render(self) -> str:
         """Render the configuration file.
@@ -138,12 +152,10 @@ class RouterDnsmasqRenderer:
         uplink. With it off, sending queries through xray anyway would be both
         pointless and fragile — the answer would come from the exit node for
         traffic that is not going there, and the LAN would lose DNS entirely
-        whenever xray was stopped. So they go straight to the direct resolver,
-        and the box works as a plain router with xray not running at all.
+        whenever xray was stopped. So they go straight to the network's
+        resolvers, and the box works as a plain router with xray not running
+        at all.
         """
-        direct = self._routing.get("direct_dns") or {}
-        address = direct.get("address", "223.5.5.5")
-        port = direct.get("port", 53)
         if self._routing.get("is_proxy_enabled", True):
             lines = [
                 "# The first upstream is the xray DNS inbound, so queries resolve at",
@@ -159,23 +171,24 @@ class RouterDnsmasqRenderer:
                     "# is what makes it a fallback instead of a race — dnsmasq would",
                     "# otherwise ask both and leak every query to the direct resolver.",
                     "#",
-                    "# The direct resolver rather than the remote one: the remote is",
-                    "# reached in plaintext once the proxy is out of the path, which",
-                    "# is exactly where it is answered wrongly.",
+                    "# The direct resolvers rather than the remote ones: the remote",
+                    "# is reached in plaintext once the proxy is out of the path,",
+                    "# which is exactly where it is answered wrongly.",
                     "strict-order",
                 ]
             lines.append(f"server={XRAY_DNS_LISTEN}#{XRAY_DNS_PORT}")
             if self._routing.get("is_direct_fallback_enabled", False):
-                lines.append(f"server={address}#{port}")
+                direct = direct_resolvers(self._routing, self._network_resolvers)
+                lines += _server_lines(direct)
             lines.append("")
             return lines
         return [
-            "# LAN traffic is not proxied, so queries go straight to the direct",
-            "# resolver. Routing them through xray would resolve them at an exit",
+            "# LAN traffic is not proxied, so queries go to the network's",
+            "# resolvers. Routing them through xray would resolve them at an exit",
             "# node the traffic is not using, and would take DNS off the LAN",
             "# entirely whenever xray was stopped.",
             "no-resolv",
-            f"server={address}#{port}",
+            *_server_lines(self._network_resolvers),
             "",
         ]
 
@@ -217,3 +230,8 @@ class RouterDnsmasqRenderer:
         if lease.name:
             fields.append(lease.name)
         return "dhcp-host=" + ",".join(fields)
+
+
+def _server_lines(resolvers: list[dict]) -> list[str]:
+    """One ``server=`` line per resolver, in the order they are asked."""
+    return [f"server={entry['address']}#{entry['port']}" for entry in resolvers]

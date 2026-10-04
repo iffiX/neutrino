@@ -30,6 +30,7 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_OVERLAY_NETBIRD,
     ROUTER_POLICIES,
     ROUTER_POLICY_FAILOVER,
+    ROUTER_RESOLVER_PORT,
     ROUTER_ROLE_DISABLED,
     ROUTER_ROLE_LAN,
     ROUTER_ROLE_SPLIT,
@@ -65,6 +66,9 @@ class RouterWanSettings:
             is left.
         cloned_mac: MAC to present upstream, for networks that register a
             device by hardware address. None keeps the real one.
+        dns: A static uplink's resolvers, each ``{address, port}``, in the
+            order they are asked; unused under DHCP, where the lease names
+            them.
     """
 
     method: str = ROUTER_WAN_METHOD_DHCP
@@ -73,6 +77,7 @@ class RouterWanSettings:
     gateway: str | None = None
     intent: str = ROUTER_INTENT_AUTO
     cloned_mac: str | None = None
+    dns: list[dict] = field(default_factory=list)
 
     @property
     def is_backup_only(self) -> bool:
@@ -104,6 +109,7 @@ class RouterWanSettings:
             gateway=_optional_text(data.get("gateway")),
             intent=_read_intent(data),
             cloned_mac=_optional_text(data.get("cloned_mac")),
+            dns=_read_resolvers(data.get("dns")),
         )
 
     def to_dict(self) -> dict:
@@ -119,6 +125,7 @@ class RouterWanSettings:
             "gateway": self.gateway,
             "intent": self.intent,
             "cloned_mac": self.cloned_mac,
+            "dns": [dict(entry) for entry in self.dns],
         }
 
 
@@ -1002,6 +1009,28 @@ def _optional_text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _read_resolvers(value: object) -> list[dict]:
+    """A static uplink's resolver rows, each as ``{address, port}``.
+
+    Args:
+        value: The ``dns`` member as stored.
+
+    Returns:
+        The rows that name an address, in order; a port that is not a number
+        reads as 53.
+    """
+    rows = []
+    for row in value if isinstance(value, list) else []:
+        if not isinstance(row, dict) or not str(row.get("address", "")).strip():
+            continue
+        try:
+            port = int(row.get("port", ROUTER_RESOLVER_PORT))
+        except (TypeError, ValueError):
+            port = ROUTER_RESOLVER_PORT
+        rows.append({"address": str(row["address"]).strip(), "port": port})
+    return rows
 
 
 def _unique(names) -> list[str]:

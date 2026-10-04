@@ -1,5 +1,7 @@
 """What `nhub apply` renders: the hub's own components and nothing hosted."""
 
+import pytest
+
 from neutrino_hub.cli import apply
 from neutrino_hub.modules.easytier.config import EasyTierConfig
 from neutrino_hub.modules.easytier.ops import EASYTIER_CONFIG_NAME
@@ -166,3 +168,45 @@ def test_elsewhere_an_apply_renders_no_ruleset(elsewhere, tmp_path, monkeypatch)
     monkeypatch.setattr(apply, "lookup_xray_uid", refuse)
 
     assert apply._render(("router",)) == {"router": ""}
+
+
+# --- the network's resolvers --------------------------------------------------
+
+
+def test_dnsmasq_forwards_to_the_networks_resolvers_read_for_the_run(
+    tmp_path, monkeypatch, capsys
+):
+    """A dry run prints the resolvers it read beside what it rendered from
+    them, and a real run records them for the lookups until the next one."""
+    _stored_easytier(tmp_path, monkeypatch, [])
+    write_config("xray/routing.json", {"is_proxy_enabled": False})
+    rows = [
+        {"address": "192.168.1.1", "port": 53},
+        {"address": "192.0.2.53", "port": 53},
+    ]
+    monkeypatch.setattr(apply, "read_network_resolvers", lambda network: rows)
+    recorded = []
+    monkeypatch.setattr(apply, "record_network_resolvers", recorded.append)
+
+    artifacts = apply._render(("dnsmasq",))
+    apply._print_artifacts(artifacts)
+    apply._write(artifacts, is_apply_skipped=False)
+
+    assert artifacts["network_resolvers"] == rows
+    servers = [
+        line for line in artifacts["dnsmasq"].splitlines() if line.startswith("server=")
+    ]
+    assert servers == ["server=192.168.1.1#53", "server=192.0.2.53#53"]
+    assert "192.168.1.1#53, 192.0.2.53#53" in capsys.readouterr().out
+    assert recorded == [rows]
+
+
+def test_a_run_of_neither_xray_nor_dnsmasq_reads_no_resolvers(
+    elsewhere, tmp_path, monkeypatch
+):
+    _stored_easytier(tmp_path, monkeypatch, [])
+    monkeypatch.setattr(
+        apply, "read_network_resolvers", lambda network: pytest.fail("read")
+    )
+
+    assert "network_resolvers" not in apply._render(("router",))
