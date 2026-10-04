@@ -96,6 +96,32 @@ def test_the_device_the_ruleset_already_names_runs_nothing(monkeypatch):
     assert passes.passes == 0
 
 
+def test_an_engine_unit_started_again_runs_one_converge(monkeypatch):
+    """A unit that starts again has a cgroup of a new id, which the loaded
+    ruleset does not match."""
+    panel, passes = following(
+        monkeypatch, {"easytier": ["tun0"]}, {"easytier": ["tun0"]}
+    )
+    path = "system.slice/neutrino_hub_easytier.service"
+    controller.ROUTER_ENGINE_CGROUPS_PATH.write_text(json.dumps({path: 11}))
+    monkeypatch.setattr(runtime_module, "engine_cgroups", lambda routing: {path: 12})
+
+    assert panel.follow_overlay_devices() is True
+    assert passes.passes == 1
+
+
+def test_the_engine_cgroups_the_ruleset_already_names_run_nothing(monkeypatch):
+    panel, passes = following(
+        monkeypatch, {"easytier": ["tun0"]}, {"easytier": ["tun0"]}
+    )
+    path = "system.slice/neutrino_hub_easytier.service"
+    controller.ROUTER_ENGINE_CGROUPS_PATH.write_text(json.dumps({path: 11}))
+    monkeypatch.setattr(runtime_module, "engine_cgroups", lambda routing: {path: 11})
+
+    assert panel.follow_overlay_devices() is False
+    assert passes.passes == 0
+
+
 def test_the_network_carries_the_devices_the_ruleset_names(monkeypatch):
     panel, _ = following(monkeypatch, {}, {"easytier": ["tun0"]})
 

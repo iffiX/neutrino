@@ -5,7 +5,9 @@ machine says now, keeps it in the plan file, and hands tun2socks's start
 line to the process controller, enabled while the plan stands and disabled
 when it does not. Inside the service a keeper follows the plan file: once
 tun2socks has opened the device it brings the address, the forwarding and
-the routes up, and when tun2socks ends it withdraws exactly what it added.
+the routes up, keeps a host route for every address the running overlay
+engines reach their peers at as those come and go, and when tun2socks ends
+it withdraws exactly what it added.
 The supervisor ends tun2socks before xray stops, restarts or is found
 ended, so the machine is never left routing into a device nothing reads.
 Linux diverts with nftables and never comes here.
@@ -25,11 +27,19 @@ from pathlib import Path
 
 import psutil
 
-from neutrino_hub.modules.easytier.constants import EASYTIER_DEFAULT_CONFIG_SERVER
+from neutrino_hub.modules.easytier.constants import (
+    EASYTIER_CONSOLE_API_HOST,
+    EASYTIER_DEFAULT_CONFIG_SERVER,
+)
+from neutrino_hub.modules.easytier.ops import EasyTierStatusReader
 from neutrino_hub.modules.easytier.ops import read_stored as read_easytier
 from neutrino_hub.modules.netbird.ops import NetbirdStatusReader
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.constants import OVERLAY_EASYTIER, OVERLAY_NETBIRD
+from neutrino_hub.modules.router.constants import (
+    ROUTER_NETWORK_FILE,
+    ROUTER_ROUTING_FILE,
+)
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.link_status import (
     device_addresses,
@@ -45,6 +55,8 @@ from neutrino_hub.modules.tun.constants import (
     TUN_BINARY_PATH,
     TUN_DEVICE_NAMES,
     TUN_DIVERTED_PREFIXES,
+    TUN_ENDPOINT_NAME_TTL_S,
+    TUN_ENDPOINT_REFRESH_S,
     TUN_PLAN_PATH,
     TUN_RETRY_S,
     TUN_STATE_PATH,
@@ -53,6 +65,7 @@ from neutrino_hub.modules.tun.constants import (
 from neutrino_hub.modules.tun.darwin_applier import TunDarwinApplier
 from neutrino_hub.modules.tun.renderer import (
     TunPlan,
+    host_routes,
     is_tun_wanted,
     render_start_line,
     render_tun_plan,
@@ -100,9 +113,7 @@ def plan_tun(network: RouterNetworkConfig, routing: dict) -> "TunPlan | None":
     uplink = _uplink(device)
     if uplink is None:
         return None
-    direct = routing.get("direct_dns", {})
-    server = str(direct.get("address", "223.5.5.5"))
-    port = int(direct.get("port", 53))
+    server, port = _direct_dns(routing)
     names = [node.address for node in node_list.nodes]
     names.append(urllib.parse.urlsplit(node_list.reference_url).hostname or "")
     names += _overlay_server_hosts(network)
@@ -128,9 +139,7 @@ def plan_tun(network: RouterNetworkConfig, routing: dict) -> "TunPlan | None":
         ),
         uplink=uplink["dev"],
         gateway=uplink.get("gateway", ""),
-        local_networks=[
-            cidr for name, cidr in device_addresses().items() if name != device
-        ],
+        local_networks=_local_networks(device),
         kept_out=kept_out,
         forwarding_devices=forwarding,
     )
@@ -255,10 +264,50 @@ def withdraw_tun(*, state_path: Path = TUN_STATE_PATH) -> list:
     ).withdraw()
 
 
+class TunEndpointSource:
+    """Where the running overlay engines reach their peers and servers now."""
+
+    def __init__(self, *, clock=None):
+        """
+        Args:
+            clock: Returns the time in seconds; None is ``time.monotonic``.
+        """
+        self._clock = clock or time.monotonic
+        self._names: dict = {}
+
+    def addresses(self) -> list:
+        """Every address the running engines name now.
+
+        A name is resolved as the plan's names are, and keeps its address
+        for ``TUN_ENDPOINT_NAME_TTL_S``.
+
+        Returns:
+            The addresses as text, each once; empty before setup.
+
+        Raises:
+            ValueError: When the router or routing configuration is not JSON.
+        """
+        network = RouterNetworkConfig.from_dict(_config(ROUTER_NETWORK_FILE))
+        server, port = _direct_dns(_config(ROUTER_ROUTING_FILE))
+        now = self._clock()
+        names = {}
+        for name in overlay_endpoint_hosts(network):
+            address, expires = self._names.get(name, ("", 0.0))
+            if now >= expires:
+                address = _resolved(name, server=server, port=port)
+                expires = now + TUN_ENDPOINT_NAME_TTL_S
+            names[name] = (address, expires)
+        self._names = names
+        return list(dict.fromkeys(address for address, _ in names.values() if address))
+
+
 class TunRouteKeeper:
     """Keeps the TUN device's routes what the plan says while tun2socks runs.
 
-    The service's supervisor calls :meth:`tick` after each of its ticks and
+    Beside the plan's routes it keeps a host route through the uplink for
+    every address the running overlay engines name, read again every
+    ``TUN_ENDPOINT_REFRESH_S``, and withdraws the ones no longer named. The
+    service's supervisor calls :meth:`tick` after each of its ticks and
     :meth:`child_ended` whenever a child's process ends.
     """
 
@@ -270,6 +319,8 @@ class TunRouteKeeper:
         plan_path: Path = TUN_PLAN_PATH,
         state_path: Path = TUN_STATE_PATH,
         devices=None,
+        endpoints=None,
+        networks=None,
         clock=None,
         log=print,
     ):
@@ -282,6 +333,11 @@ class TunRouteKeeper:
             state_path: Where what was applied is kept.
             devices: Returns the names of the interfaces the machine has
                 now; None asks psutil.
+            endpoints: Returns the addresses the overlay engines name now;
+                None is a :class:`TunEndpointSource`'s.
+            networks: Called with the TUN device's name; returns every
+                network the machine has an address on elsewhere, in CIDR
+                form; None asks the system.
             clock: Returns the time in seconds; None is ``time.monotonic``.
             log: Called with each line worth a person's reading.
         """
@@ -291,48 +347,35 @@ class TunRouteKeeper:
         self._state_path = Path(state_path)
         self._devices = devices if devices is not None else _present_devices
         self._clock = clock or time.monotonic
+        self._endpoints = (
+            endpoints
+            if endpoints is not None
+            else TunEndpointSource(clock=self._clock).addresses
+        )
+        self._networks = networks if networks is not None else _local_networks
         self._log = log
         self._lock = threading.Lock()
         self._tried: "dict | None" = None
         self._retry_at = 0.0
+        self._endpoints_at = 0.0
+        self._endpoints_seen: "tuple | None" = None
 
     def tick(self) -> None:
         """Bring the plan up once tun2socks opened the device; withdraw a stale one.
 
         A bring-up that cannot run is logged and not tried again for the same
         plan until tun2socks starts again; a withdrawal that cannot run is
-        logged and tried again after ``TUN_RETRY_S``.
+        logged and tried again after ``TUN_RETRY_S``. While the plan stands,
+        the engines' endpoints are followed.
 
         Raises:
             OSError: When the state cannot be kept.
         """
         is_up = self._is_running(TUN_SUPERVISED_NAME)
         with self._lock:
-            plan = read_plan(self._plan_path)
-            wanted = plan.to_dict() if plan is not None else None
-            applied = read_applied(self._state_path)
-            if applied is not None and (not is_up or applied.plan != wanted):
-                if self._clock() < self._retry_at:
-                    return
-                if not self._withdraw_logged(applied):
-                    return
-                applied = None
-            if plan is None or not is_up or applied is not None:
-                return
-            if self._tried == wanted or plan.device not in self._devices():
-                return
-            self._tried = wanted
-            try:
-                state = self._applier.bring_up(plan, keep=self._keep)
-            except (OSError, subprocess.SubprocessError) as error:
-                self._log(
-                    f"tun: {plan.device} not brought up: {command_failure_text(error)}"
-                )
-                return
-            self._keep(state)
-            for failure in state.failures:
-                self._log(f"tun: {failure}")
-            self._log(f"tun: {plan.device} up with {len(state.routes)} routes")
+            plan = self._follow_plan(is_up)
+        if plan is not None:
+            self._follow_endpoints(plan)
 
     def child_ended(self, name: str) -> None:
         """Withdraw the routes once tun2socks ended, whatever ended it.
@@ -367,6 +410,112 @@ class TunRouteKeeper:
             if applied is None:
                 return []
             return self._withdraw(applied)
+
+    def _follow_plan(self, is_up: bool) -> "TunPlan | None":
+        """Bring the plan up or withdraw a stale one, under the lock.
+
+        Returns:
+            The plan when it stands applied, None otherwise.
+        """
+        plan = read_plan(self._plan_path)
+        wanted = plan.to_dict() if plan is not None else None
+        applied = read_applied(self._state_path)
+        if applied is not None and (not is_up or applied.plan != wanted):
+            if self._clock() < self._retry_at:
+                return None
+            if not self._withdraw_logged(applied):
+                return None
+            applied = None
+        if plan is None or not is_up:
+            return None
+        if applied is not None:
+            return plan
+        if self._tried == wanted or plan.device not in self._devices():
+            return None
+        self._tried = wanted
+        try:
+            state = self._applier.bring_up(plan, keep=self._keep)
+        except (OSError, subprocess.SubprocessError) as error:
+            self._log(
+                f"tun: {plan.device} not brought up: {command_failure_text(error)}"
+            )
+            return None
+        self._keep(state)
+        for failure in state.failures:
+            self._log(f"tun: {failure}")
+        self._log(f"tun: {plan.device} up with {len(state.routes)} routes")
+        self._endpoints_at = 0.0
+        return plan
+
+    def _follow_endpoints(self, plan: TunPlan) -> None:
+        """Add a host route for each address the engines name, withdraw the rest.
+
+        The engines are asked at most once per ``TUN_ENDPOINT_REFRESH_S``,
+        outside the lock, and nothing runs when neither what they name nor
+        what was added changed since the last time.
+
+        Raises:
+            OSError: When the state cannot be kept.
+        """
+        now = self._clock()
+        if now < self._endpoints_at:
+            return
+        self._endpoints_at = now + TUN_ENDPOINT_REFRESH_S
+        try:
+            addresses = tuple(sorted(set(self._endpoints())))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            self._log(f"tun: overlay endpoints not read: {error}")
+            return
+        with self._lock:
+            applied = read_applied(self._state_path)
+            if applied is None or applied.plan != plan.to_dict():
+                return
+            if (addresses, tuple(applied.endpoints)) == self._endpoints_seen:
+                return
+            planned = {route.destination for route in plan.routes}
+            wanted = {
+                route.destination: route
+                for route in host_routes(
+                    list(addresses),
+                    local_networks=self._networks(plan.device),
+                    uplink=plan.uplink,
+                    gateway=plan.gateway,
+                )
+                if route.destination not in planned
+            }
+            held = set(applied.endpoints)
+            gone = [
+                route
+                for route in applied.routes
+                if route.destination in held and route.destination not in wanted
+            ]
+            new = [route for key, route in wanted.items() if key not in held]
+            try:
+                if gone:
+                    self._applier.delete_routes(gone)
+                    names = {route.destination for route in gone}
+                    applied.routes = [
+                        route for route in applied.routes if route not in gone
+                    ]
+                    applied.endpoints = [
+                        key for key in applied.endpoints if key not in names
+                    ]
+                    self._keep(applied)
+                if new:
+                    added, failures = self._applier.add_routes(new)
+                    applied.routes += added
+                    applied.endpoints += [route.destination for route in added]
+                    self._keep(applied)
+                    for failure in failures:
+                        self._log(f"tun: {failure}")
+            except (OSError, subprocess.SubprocessError) as error:
+                self._log(
+                    f"tun: endpoint routes not changed: {command_failure_text(error)}"
+                )
+                return
+            if gone or new:
+                self._log(f"tun: {len(applied.endpoints)} overlay endpoints kept out")
+            self._endpoints_seen = (addresses, tuple(applied.endpoints))
 
     def _withdraw(self, applied: TunAppliedState) -> list:
         """Take the applied routes away and forget them."""
@@ -433,8 +582,9 @@ def _resolved(name: str, *, server: str, port: int) -> str:
 def _overlay_server_hosts(network: RouterNetworkConfig) -> list:
     """The hosts of the running overlays' servers.
 
-    NetBird's management plane, signal server and relays as its daemon
-    reports them; EasyTier's peers and its console.
+    NetBird's management plane, signal server, relays and STUN servers as
+    its daemon reports them; EasyTier's peers and its console, and for
+    EasyTier's own console the host its peer-resolve addresses name.
     """
     providers = enabled_providers(network)
     urls = []
@@ -448,16 +598,64 @@ def _overlay_server_hosts(network: RouterNetworkConfig) -> list:
                 console = config.config_server()
             except ValueError:
                 console = ""
-            urls.append(console if "://" in console else EASYTIER_DEFAULT_CONFIG_SERVER)
-    hosts = []
-    for url in urls:
-        try:
-            host = urllib.parse.urlsplit(str(url)).hostname
-        except ValueError:
-            continue
-        if host:
-            hosts.append(host)
-    return hosts
+            if "://" in console:
+                urls.append(console)
+            else:
+                urls += [EASYTIER_DEFAULT_CONFIG_SERVER, EASYTIER_CONSOLE_API_HOST]
+    return [host for host in map(_host_of, urls) if host]
+
+
+def overlay_endpoint_hosts(network: RouterNetworkConfig) -> list:
+    """Every host the running overlay engines talk to now.
+
+    Args:
+        network: The parsed router configuration.
+
+    Returns:
+        For NetBird, the servers and every peer endpoint and relay
+        ``netbird status --json`` names; for EasyTier, every connection's
+        remote address and every connector ``easytier-cli`` names. Hosts as
+        written, names and addresses alike; empty when neither runs.
+    """
+    providers = enabled_providers(network)
+    urls = []
+    if OVERLAY_NETBIRD in providers:
+        state = NetbirdStatusReader().survey()
+        urls += state.server_urls + state.peer_endpoints
+    if OVERLAY_EASYTIER in providers:
+        urls += EasyTierStatusReader().endpoints()
+    return [host for host in map(_host_of, urls) if host]
+
+
+def _host_of(text: str) -> str:
+    """The host in a URL, a ``scheme:host:port`` or a ``host:port``.
+
+    Returns:
+        The host, without brackets; empty when there is none.
+    """
+    text = str(text or "").strip()
+    if not text:
+        return ""
+    if "://" not in text:
+        scheme, _, rest = text.partition(":")
+        if rest and not text.startswith("[") and not rest.isdigit():
+            text = rest
+        text = f"//{text}"
+    try:
+        return urllib.parse.urlsplit(text).hostname or ""
+    except ValueError:
+        return ""
+
+
+def _direct_dns(routing: dict) -> tuple:
+    """The direct resolver's address and port."""
+    direct = routing.get("direct_dns", {})
+    return str(direct.get("address", "223.5.5.5")), int(direct.get("port", 53))
+
+
+def _local_networks(device: str) -> list:
+    """Every network the machine has an address on, the TUN device's aside."""
+    return [cidr for name, cidr in device_addresses().items() if name != device]
 
 
 def _config(name: str) -> dict:

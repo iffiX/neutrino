@@ -23,7 +23,9 @@ from neutrino_hub.modules.router.controller import (
     RouterStateController,
     change_codes,
     failure_codes,
+    engine_cgroups,
     failure_text,
+    rendered_engine_cgroups,
     rendered_overlay_devices,
     router_lock,
 )
@@ -234,20 +236,25 @@ class PanelRuntime:
         ).with_overlay_devices(rendered_overlay_devices())
 
     def follow_overlay_devices(self) -> bool:
-        """Converge again when an overlay's device moved.
+        """Converge again when an overlay's device or engine cgroup moved.
 
         Returns:
-            True when the devices found now differ from the ones the loaded
-            ruleset names and a converge ran; False on a box not set up.
+            True when the devices or the engine cgroups found now differ
+            from the ones the loaded ruleset names and a converge ran; False
+            on a box not set up.
         """
         try:
             network = RouterNetworkConfig.from_dict(read_config("router/network.json"))
+            routing = read_config("xray/routing.json")
         except (FileNotFoundError, ValueError):
             return False
         found = overlay_devices(network)
-        if found == rendered_overlay_devices():
+        cgroups = engine_cgroups(routing) if is_linux() else {}
+        if found == rendered_overlay_devices() and (
+            cgroups == rendered_engine_cgroups()
+        ):
             return False
-        LOGGER.info("overlay devices moved: %s", found)
+        LOGGER.info("overlay devices moved: %s; engine cgroups: %s", found, cgroups)
         try:
             self.converge_network_blocking()
         except (

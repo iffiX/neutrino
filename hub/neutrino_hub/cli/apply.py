@@ -46,7 +46,11 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_NFT_PATH,
     ROUTER_STEP_UNCHANGED,
 )
-from neutrino_hub.modules.router.controller import RouterStateController, failure_text
+from neutrino_hub.modules.router.controller import (
+    RouterStateController,
+    engine_cgroups,
+    failure_text,
+)
 from neutrino_hub.modules.router.dnsmasq_renderer import RouterDnsmasqRenderer
 from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
@@ -212,6 +216,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             routing=routing,
             xray_uid=lookup_xray_uid(),
             overlay_devices=overlay_devices(network),
+            engine_cgroups=list(engine_cgroups(routing)),
         ).render()
     if "dnsmasq" in selected:
         artifacts["dnsmasq"] = RouterDnsmasqRenderer(

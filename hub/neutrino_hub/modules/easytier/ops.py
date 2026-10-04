@@ -297,6 +297,29 @@ class EasyTierStatusReader:
                 found.append(address)
         return found
 
+    def endpoints(self) -> list:
+        """Where the engine reaches its peers now, and every peer it dials.
+
+        Returns:
+            URLs such as ``tcp://203.0.113.5:11010``: each open connection's
+            remote address and the one its name resolved to, from the
+            verbose peer list, and each connector's address, which in
+            console mode is what the console handed down; empty when the
+            engine is not running.
+        """
+        found = []
+        for _, rows in _by_instance(self._read("-v", "peer")):
+            for row in rows if isinstance(rows, list) else []:
+                peer = row.get("peer") if isinstance(row, dict) else None
+                for conn in (peer or {}).get("conns") or []:
+                    tunnel = conn.get("tunnel") if isinstance(conn, dict) else None
+                    for key in ("remote_addr", "resolved_remote_addr"):
+                        found.append(_url((tunnel or {}).get(key)))
+        for _, rows in _by_instance(self._read("connector")):
+            for row in rows if isinstance(rows, list) else []:
+                found.append(_url(row.get("url") if isinstance(row, dict) else None))
+        return [url for url in dict.fromkeys(found) if url]
+
     def _read(self, *command: str):
         """One JSON answer of the engine's command line tool.
 
@@ -557,6 +580,20 @@ def _peers(rows) -> list:
     peers = [_peer(row) for row in rows if isinstance(row, dict)]
     peers.sort(key=lambda peer: (peer.link != EASYTIER_LINK_LOCAL, peer.hostname))
     return peers
+
+
+def _url(value) -> str:
+    """One address the engine printed, as ``{"url": ...}`` or as the text.
+
+    Args:
+        value: What the answer carried.
+
+    Returns:
+        The URL, empty when there is none.
+    """
+    if isinstance(value, dict):
+        value = value.get("url")
+    return str(value) if isinstance(value, str) else ""
 
 
 def _network_name(config_text) -> str:

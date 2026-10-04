@@ -63,15 +63,43 @@ TUN_STATE_PATH = UTILS_STATE_ROOT / "tun_routes.json"
 # How long the service waits before it tries again to withdraw routes
 # it could not withdraw.
 TUN_RETRY_S = 30.0
+# How often the service reads again where the overlay engines reach their
+# peers, and how long a name among them keeps the address it resolved to.
+TUN_ENDPOINT_REFRESH_S = 10.0
+TUN_ENDPOINT_NAME_TTL_S = 300.0
 
 # The change and failure codes of the routing pass's TUN step.
 TUN_STEP_NAME = "tun"
 TUN_CODE_ROUTE_FAILED = "tun_route_failed"
 
+# Adds each route in order. A route that cannot be added is reported and
+# the rest are still tried.
+TUN_WINDOWS_ROUTE_LOOP = """
+$added = @()
+$failed = @()
+foreach ($route in @($d.routes)) {
+  if (-not $route) { continue }
+  try {
+    New-NetRoute -DestinationPrefix $route.prefix -InterfaceAlias $route.alias `
+      -NextHop $route.next_hop -RouteMetric $route.metric `
+      -PolicyStore ActiveStore -ErrorAction Stop | Out-Null
+    $added += [string]$route.prefix
+  } catch {
+    $failed += @{prefix = [string]$route.prefix;
+      detail = [string]$_.Exception.Message}
+  }
+}
+"""
+# Adds routes beside a plan already up.
+TUN_WINDOWS_ROUTES_SCRIPT = (
+    TUN_WINDOWS_ROUTE_LOOP
+    + """@{added = $added; failed = $failed} | ConvertTo-Json -Compress -Depth 4
+"""
+)
 # Gives the adapter its address, turns forwarding on where the document
-# asks, then adds each route in order. A route that cannot be added is
-# reported and the rest are still tried.
-TUN_WINDOWS_UP_SCRIPT = """
+# asks, then adds each route in order.
+TUN_WINDOWS_UP_SCRIPT = (
+    """
 $present = Get-NetIPAddress -InterfaceAlias $d.alias -IPAddress $d.address `
   -ErrorAction SilentlyContinue
 if (-not $present) {
@@ -88,24 +116,12 @@ foreach ($alias in @($d.forwarding)) {
       -Forwarding Enabled
     $forwarded += [string]$alias
   }
-}
-$added = @()
-$failed = @()
-foreach ($route in @($d.routes)) {
-  if (-not $route) { continue }
-  try {
-    New-NetRoute -DestinationPrefix $route.prefix -InterfaceAlias $route.alias `
-      -NextHop $route.next_hop -RouteMetric $route.metric `
-      -PolicyStore ActiveStore -ErrorAction Stop | Out-Null
-    $added += [string]$route.prefix
-  } catch {
-    $failed += @{prefix = [string]$route.prefix;
-      detail = [string]$_.Exception.Message}
-  }
-}
-@{added = $added; forwarded = $forwarded; failed = $failed} |
+}"""
+    + TUN_WINDOWS_ROUTE_LOOP
+    + """@{added = $added; forwarded = $forwarded; failed = $failed} |
   ConvertTo-Json -Compress -Depth 4
 """
+)
 # Removes each route in the order given and turns forwarding off again
 # where the hub turned it on. A route already gone is not an error.
 TUN_WINDOWS_DOWN_SCRIPT = """

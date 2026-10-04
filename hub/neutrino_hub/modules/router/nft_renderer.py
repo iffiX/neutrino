@@ -40,6 +40,7 @@ class RouterNftRenderer:
         routing: dict,
         xray_uid: int,
         overlay_devices: dict | None = None,
+        engine_cgroups: list | None = None,
     ):
         """
         Args:
@@ -52,6 +53,11 @@ class RouterNftRenderer:
             overlay_devices: Provider to the kernel devices its overlay rides
                 on, found at run time; a provider left out rides on its
                 engine's own device. None keeps what ``network`` carries.
+            engine_cgroups: The overlay engines' cgroups present now, each a
+                path under the cgroup root such as
+                ``system.slice/neutrino_hub_netbird.service``. Their packets
+                leave directly while the local proxy is on. Only paths that
+                exist: nft refuses one that does not.
         """
         if overlay_devices is not None:
             network = network.with_overlay_devices(overlay_devices)
@@ -78,6 +84,7 @@ class RouterNftRenderer:
         self._is_overlay_proxy_enabled = routing.get("is_overlay_proxy_enabled", False)
         self._is_local_proxy_enabled = routing.get("is_local_proxy_enabled", False)
         self._xray_uid = xray_uid
+        self._engine_cgroups = list(engine_cgroups or [])
 
     def render(self) -> str:
         """Render the complete ruleset.
@@ -191,12 +198,28 @@ class RouterNftRenderer:
                 f"        meta mark {hex(ROUTER_FWMARK_XRAY_EGRESS)} return",
                 "        ip daddr @reserved_v4 return",
                 "",
+                *self._render_engine_accepts(),
                 "        # Mark the rest; the fwmark rule reroutes it to lo for TPROXY.",
                 "        meta l4proto { tcp, udp } "
                 f"meta mark set {hex(ROUTER_FWMARK_TPROXY)}",
                 "    }\n",
             ]
         )
+
+    def _render_engine_accepts(self) -> list:
+        """The output chain's accepts for the hub's own overlay engines.
+
+        Returns:
+            One line per engine cgroup and a blank line after them; empty
+            when no engine cgroup is present.
+        """
+        if not self._engine_cgroups:
+            return []
+        lines = ["        # The hub's own overlay engines reach their peers directly."]
+        for path in self._engine_cgroups:
+            level = len(path.strip("/").split("/"))
+            lines.append(f'        socket cgroupv2 level {level} "{path}" accept')
+        return lines + [""]
 
     def _render_forward(self) -> str:
         if not self._lans and not self._wans:

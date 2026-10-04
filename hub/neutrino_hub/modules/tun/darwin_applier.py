@@ -86,6 +86,40 @@ class TunDarwinApplier:
             _keep(keep, state)
         return state
 
+    def add_routes(self, routes: list) -> tuple:
+        """Add routes beside a plan already up.
+
+        Args:
+            routes: The routes, as :class:`TunRoute`.
+
+        Returns:
+            The routes added, and one line per route that could not be.
+        """
+        added, failures = [], []
+        for route in routes:
+            result = self._run(darwin_route_command("add", route), is_checked=False)
+            if result.is_success:
+                added.append(route)
+            else:
+                failures.append(_failure(result))
+        return added, failures
+
+    def delete_routes(self, routes: list) -> list:
+        """Delete routes added beside a plan; one already gone is not an error.
+
+        Args:
+            routes: The routes, as :class:`TunRoute`.
+
+        Returns:
+            One line per route deleted.
+        """
+        notes = []
+        for route in routes:
+            deleted = self._run(darwin_route_command("delete", route), is_checked=False)
+            if deleted.is_success:
+                notes.append(f"route {route.destination} withdrawn")
+        return notes
+
     def withdraw(self, state: TunAppliedState) -> list:
         """Delete every recorded route in reverse and set forwarding back.
 

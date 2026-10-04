@@ -150,6 +150,15 @@ ROUTER_NFT_PATH = UTILS_GENERATED_DIR / "router.nft"
 ROUTER_OVERLAY_DEVICES_PATH = UTILS_GENERATED_DIR / "router_overlay_devices.json"
 # What a ruleset says when it diverts into the proxy.
 ROUTER_NFT_DIVERT_MARKER = "tproxy ip to"
+# The overlay engines' units, whose own packets the output chain never
+# diverts, matched by their cgroup under the slice systemd puts a service in.
+# nft resolves a cgroup path to its id when it loads the rule and refuses a
+# path that does not exist. The ruleset names the cgroups present when it
+# loads, and the ids it named are kept beside it.
+ROUTER_ENGINE_UNITS = tuple(engine.unit for engine in OVERLAY_ENGINES.values())
+ROUTER_CGROUP_ROOT = Path("/sys/fs/cgroup")
+ROUTER_SERVICE_SLICE = "system.slice"
+ROUTER_ENGINE_CGROUPS_PATH = UTILS_GENERATED_DIR / "router_engine_cgroups.json"
 
 # --- the resident reconciler ---
 # The one lock every writer of the routing state takes, so the resident unit

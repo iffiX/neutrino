@@ -95,6 +95,85 @@ def test_the_servers_the_daemon_talks_to_are_read(monkeypatch):
     ]
 
 
+# What `netbird status --json` prints for a peer reached directly, one
+# reached through a relay, and one not connected.
+PEERS_WITH_ENDPOINTS = {
+    **CONNECTED,
+    "peers": {
+        "total": 3,
+        "connected": 2,
+        "details": [
+            {
+                "fqdn": "laptop.netbird.cloud",
+                "netbirdIp": "100.92.0.2",
+                "publicKey": "c2FtcGxlLWtleS1sYXB0b3A=",  # scan: allow
+                "status": "Connected",
+                "lastStatusUpdate": "2026-10-04T05:00:00Z",
+                "connectionType": "P2P",
+                "iceCandidateType": {"local": "srflx", "remote": "srflx"},
+                "iceCandidateEndpoint": {
+                    "local": "198.51.100.20:51820",
+                    "remote": "203.0.113.25:51820",
+                },
+                "relayAddress": "",
+                "lastWireguardHandshake": "2026-10-04T05:00:10Z",
+                "transferReceived": 1024,
+                "transferSent": 2048,
+                "latency": 42_000_000,
+                "quantumResistance": False,
+                "networks": [],
+            },
+            {
+                "fqdn": "phone.netbird.cloud",
+                "netbirdIp": "100.92.0.3",
+                "status": "Connected",
+                "connectionType": "Relayed",
+                "iceCandidateType": {"local": "", "remote": ""},
+                "iceCandidateEndpoint": {"local": "", "remote": ""},
+                "relayAddress": "rels://streamline-de-fra1-0.relay.netbird.io:443",
+                "latency": 0,
+            },
+            {
+                "fqdn": "nas.netbird.cloud",
+                "netbirdIp": "100.92.0.4",
+                "status": "Idle",
+                "connectionType": "-",
+                "iceCandidateEndpoint": {"local": "-", "remote": "-"},
+                "relayAddress": "-",
+                "latency": 0,
+            },
+        ],
+    },
+}
+
+
+def test_where_the_daemon_reaches_each_peer_is_read(monkeypatch):
+    """The TUN device keeps them out, so a tunnel never leaves by the exit."""
+    state = survey_with(monkeypatch, PEERS_WITH_ENDPOINTS)
+
+    assert state.peer_endpoints == [
+        "203.0.113.25:51820",
+        "rels://streamline-de-fra1-0.relay.netbird.io:443",
+    ]
+
+
+def test_a_flat_remote_endpoint_is_read_too(monkeypatch):
+    payload = {
+        **CONNECTED,
+        "peers": {
+            "details": [
+                {
+                    "status": "Connected",
+                    "localIceCandidateEndpoint": "198.51.100.20:51820",
+                    "remoteIceCandidateEndpoint": "198.51.100.30:51820",
+                }
+            ]
+        },
+    }
+
+    assert survey_with(monkeypatch, payload).peer_endpoints == ["198.51.100.30:51820"]
+
+
 def test_a_daemon_that_names_no_server_has_none(monkeypatch):
     payload = {**NEEDS_LOGIN, "management": {}}
 
