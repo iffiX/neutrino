@@ -17,6 +17,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
 from shared import container_build  # noqa: E402
 
 # What builds the agent for each family, and what that family needs installed
@@ -42,9 +43,10 @@ AGENT_BUILDS = {
 }
 
 AGENT_CONTAINER_BUILD = (
-    "{install} && mkdir -p /build/agent /build/images && "
+    "{install} && mkdir -p /build/agent /build/images /build/packaging && "
     "cp -r /src/agent/neutrino_agent /src/agent/packaging "
     "/src/agent/pyproject.toml /build/agent/ && "
+    "cp -r /src/packaging/shared /build/packaging/ && "
     "cp -r /src/images/icons /build/images/ && cd /build && "
     "python3 agent/packaging/{script} --output-dir /out "
     "--architecture {architecture}"
@@ -58,6 +60,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--output-dir", default="dist", help="where to write packages")
     parser.add_argument(
         "--architecture",
@@ -70,6 +73,7 @@ def main() -> int:
         help="which distribution families to build for",
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     if container_build.container_engine() is None:
         raise SystemExit("podman or docker is needed and neither is on the path")
 
@@ -89,6 +93,7 @@ def main() -> int:
             output_dir,
             arguments.architecture,
             family,
+            edition=arguments.edition,
         )
     return 0
 

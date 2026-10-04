@@ -6,7 +6,9 @@ system and machine and checked against the hash the hub's module states in
 its ``<MODULE>_ASSETS`` table, and the v2fly geodata. The Linux packages put
 the programs under ``/opt/neutrino/hub/bin``, the macOS and Windows packages
 beside ``nhub``; on Windows ``wintun.dll`` comes out of EasyTier's archive
-with them, and tun2socks opens its device with that same driver.
+with them, and tun2socks opens its device with that same driver. A program
+or a database whose module the tree does not hold is a feature its edition
+leaves out, and is not carried.
 
 Not pure: downloads, writes files.
 """
@@ -49,6 +51,8 @@ HUB_ASSET_RENAMED = ("tun2socks",)
 # carries.
 HUB_ASSET_WINDOWS_EXTRAS = {"easytier": ("wintun.dll",)}
 HUB_ASSET_WINDOWS_SUFFIX = ".exe"
+# The module that pins the geodata.
+HUB_ASSET_GEODATA_MODULE = "neutrino_hub.modules.xray.constants"
 HUB_ASSET_FETCH_TIMEOUT_S = 300
 
 
@@ -151,9 +155,11 @@ def stage_geodata(geodata: Path) -> list:
     Raises:
         SystemExit: When what arrived is not what was pinned.
     """
+    if not _has_module(HUB_ASSET_GEODATA_MODULE):
+        return []
     geodata.mkdir(parents=True, exist_ok=True)
     written = []
-    pins = _runtime("neutrino_hub.modules.xray.constants", "XRAY_GEODATA")
+    pins = _runtime(HUB_ASSET_GEODATA_MODULE, "XRAY_GEODATA")
     for file_name, pin in pins.items():
         target = geodata / file_name
         target.write_bytes(fetch(pin["url"], pin["sha256"], file_name))
@@ -189,7 +195,14 @@ def fetch(url: str, digest: str, what: str) -> bytes:
 
 def _is_carried(program: str, os_name: str) -> bool:
     """Whether a system's package carries one program."""
+    if not _has_module(HUB_ASSET_PROGRAMS[program][0]):
+        return False
     return os_name in HUB_ASSET_SYSTEMS.get(program, (os_name,))
+
+
+def _has_module(module_name: str) -> bool:
+    """Whether the tree holds one of the hub's modules."""
+    return (HUB_ROOT / (module_name.replace(".", "/") + ".py")).is_file()
 
 
 def _on(os_name: str, name: str) -> str:

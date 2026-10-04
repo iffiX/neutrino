@@ -24,6 +24,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
 from shared import container_build  # noqa: E402
 
 # What builds the hub for each distribution family, and what that family needs
@@ -93,6 +94,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--output-dir", default="dist", help="where to write packages")
     parser.add_argument(
         "--architecture",
@@ -116,6 +118,7 @@ def main() -> int:
         "package carries the one of its own family and machine",
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     if container_build.container_engine() is None:
         raise SystemExit("podman or docker is needed and neither is on the path")
     if not HUB_PANEL_INDEX.is_file():
@@ -144,6 +147,7 @@ def main() -> int:
             family,
             agent_package_url_base=arguments.agent_package_url_base,
             agent_packages=arguments.agent_packages,
+            edition=arguments.edition,
         )
     return 0
 

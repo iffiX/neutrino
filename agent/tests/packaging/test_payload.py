@@ -97,6 +97,19 @@ def test_the_agent_tree_is_staged_with_its_version_stamped_in(tmp_path):
     assert not list(staged.rglob("__pycache__"))
 
 
+@pytest.mark.parametrize("edition", ["intl", "cn"])
+def test_the_edition_the_build_was_asked_for_is_stamped_beside_it(
+    tmp_path, monkeypatch, edition
+):
+    monkeypatch.setenv("NEUTRINO_EDITION", edition)
+    namespace = {}
+
+    staged = payload.stage_agent_tree(tmp_path / "site-packages", "9.9.9")
+
+    exec((staged / "_version.py").read_text(), namespace)  # noqa: S102
+    assert namespace["EDITION"] == edition
+
+
 def test_the_staged_tree_carries_no_build_machine_modes(tmp_path):
     """Whatever umask the build ran under does not belong in a package."""
     staged = payload.stage_agent_tree(tmp_path / "site-packages", "9.9.9")

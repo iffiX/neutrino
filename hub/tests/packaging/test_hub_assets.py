@@ -270,3 +270,43 @@ def test_a_download_that_is_not_what_was_pinned_stops_the_build(monkeypatch):
         hub_assets.fetch("https://example.invalid/netbird.tar.gz", "0" * 64, "netbird")
 
     assert "not the pinned" in str(refused.value)
+
+
+@pytest.fixture
+def mainland_tree(tmp_path, monkeypatch):
+    """A hub tree holding the modules the mainland edition keeps, and not
+    xray, NetBird or the proxy TUN."""
+    for module in ("cliproxyapi", "easytier"):
+        directory = tmp_path / "hub" / "neutrino_hub" / "modules" / module
+        directory.mkdir(parents=True)
+        (directory / "constants.py").write_text("")
+    monkeypatch.setattr(hub_assets, "HUB_ROOT", tmp_path / "hub")
+
+
+@pytest.mark.parametrize("os_name", ["linux", "darwin", "windows"])
+def test_a_program_whose_module_the_tree_lacks_is_not_carried(
+    tmp_path, fetched, mainland_tree, os_name
+):
+    binaries = tmp_path / "bin"
+
+    written = hub_assets.stage_programs(binaries, os_name, "amd64")
+
+    names = sorted(path.name.removesuffix(".exe") for path in written)
+    assert names == sorted(
+        ["cli-proxy-api", "easytier-cli", "easytier-core"]
+        + (["wintun.dll"] if os_name == "windows" else [])
+    )
+    assert not any(
+        "Xray" in url or "netbird" in url or "tun2socks" in url for url in fetched
+    )
+    assert sorted(hub_assets.carried_names(os_name)) == sorted(
+        path.name for path in written
+    )
+
+
+def test_no_geodata_is_carried_without_the_xray_module(
+    tmp_path, fetched, mainland_tree
+):
+    assert hub_assets.stage_geodata(tmp_path / "geodata") == []
+    assert not (tmp_path / "geodata").exists()
+    assert fetched == []

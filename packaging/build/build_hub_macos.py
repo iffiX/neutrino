@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hub" / "packaging"
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import compiled_tree  # noqa: E402
 from constants import HUB_ICON_NAME  # noqa: E402
+from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared import pkg_build  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
@@ -148,6 +149,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--output-dir", default="dist", help="where to write the .pkg")
     parser.add_argument(
         "--architecture", default="arm64", help="the architecture to build for"
@@ -169,6 +171,7 @@ def main() -> int:
         help="write and check the package root, then stop before pkgbuild",
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     _check_tools(arguments.stage_only)
 
     version = venv_tree.version()

@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
 DOCS_DIR = REPO_ROOT / "docs" / "guide"
 
 # What the site's configuration reads as the path it is served under.
@@ -32,6 +34,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument(
         "--base",
         action="append",
@@ -42,6 +45,7 @@ def main() -> int:
         "--install", action="store_true", help="run npm ci before anything else"
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     for tool in ("node", "npm"):
         if shutil.which(tool) is None:
             raise SystemExit(f"{tool} is needed and is not on the path")

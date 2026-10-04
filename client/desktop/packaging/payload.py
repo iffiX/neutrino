@@ -34,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
+from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 from constants import PACKAGING_GLIBC_FLOOR  # noqa: E402
 from gui_assets import stage_gui  # noqa: E402
@@ -267,7 +268,8 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
     No packaging format installs a ``.dist-info`` for the client, so
     ``importlib.metadata`` cannot answer for a packaged one; the hub compares
     the stamped value against its own. The versions of the programs the
-    package carries are stamped beside it, for the About card.
+    package carries are stamped beside it, for the About card, and the
+    edition the build was asked for.
 
     Args:
         parent: The directory the ``neutrino_client`` package belongs in.
@@ -275,6 +277,9 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
 
     Returns:
         The copied package directory.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
     package_dir = parent / "neutrino_client"
     parent.mkdir(parents=True, exist_ok=True)
@@ -294,7 +299,8 @@ def stage_client_tree(parent: Path, package_version: str) -> Path:
     (package_dir / "_version.py").write_text(
         '"""Written by the packaging build. Do not edit."""\n\n'
         f'CLIENT_VERSION = "{package_version}"\n'
-        f"CLIENT_CARRIED_VERSIONS = {carried!r}\n",
+        f"CLIENT_CARRIED_VERSIONS = {carried!r}\n"
+        f'EDITION = "{edition_build.build_edition()}"\n',
         encoding="utf-8",
     )
     stage_gui(package_dir)
