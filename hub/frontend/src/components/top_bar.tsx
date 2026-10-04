@@ -7,6 +7,7 @@ import { t, useLanguage } from "../i18n";
 import { describeProxy } from "../proxy_status";
 import type { CliproxyApiStatusView, NetworkView } from "../api_types";
 import { NAV_ITEMS } from "../nav_items";
+import type { NavItem } from "../nav_items";
 import { useApiResource } from "../use_api_resource";
 import { useLiveStats } from "../use_live_stats";
 
@@ -84,7 +85,9 @@ export function TopBar() {
             : t(currentItem.labelKey)}
         </span>
         <span className="top_bar_page_sub">
-          {currentItem === undefined ? "" : t(currentItem.descriptionKey)}
+          {currentItem === undefined
+            ? ""
+            : t(describePage(currentItem, mode, network.data?.hub_os ?? null))}
         </span>
       </div>
 
@@ -125,6 +128,17 @@ export function TopBar() {
       </div>
     </header>
   );
+}
+
+/** The line under the page's name, for what the page holds on this hub. */
+function describePage(
+  item: NavItem,
+  mode: string | null,
+  hubOs: string | null,
+): string {
+  const byMode = mode === null ? undefined : item.modeDescriptionKeys?.[mode];
+  const byOs = hubOs === null ? undefined : item.osDescriptionKeys?.[hubOs];
+  return byMode ?? byOs ?? item.descriptionKey;
 }
 
 /** What the network chip says: the mode this machine is in. */

@@ -23,6 +23,12 @@ export interface NavItem {
   labelKey: string;
   icon: IconName;
   descriptionKey: string;
+  /** The description where the page holds something else in one network
+   * mode, by mode. */
+  modeDescriptionKeys?: Record<string, string>;
+  /** The description where the page holds something else on one system, by
+   * the hub's system. */
+  osDescriptionKeys?: Record<string, string>;
   group: NavGroup;
 }
 
@@ -39,6 +45,10 @@ export const NAV_ITEMS: NavItem[] = [
     labelKey: "ui.nav.network",
     icon: "network",
     descriptionKey: "ui.nav.network_description",
+    modeDescriptionKeys: {
+      server: "ui.nav.network_description_server",
+      side_gateway: "ui.nav.network_description_side_gateway",
+    },
     group: "hub",
   },
   {
@@ -116,6 +126,10 @@ export const NAV_ITEMS: NavItem[] = [
     labelKey: "ui.nav.modules",
     icon: "cube",
     descriptionKey: "ui.nav.modules_description",
+    osDescriptionKeys: {
+      darwin: "ui.nav.modules_description_other",
+      windows: "ui.nav.modules_description_other",
+    },
     group: "agent",
   },
 ];

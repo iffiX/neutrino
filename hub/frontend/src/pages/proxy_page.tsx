@@ -269,7 +269,7 @@ export function ProxyPage() {
                 onChange={(isOn) =>
                   updateDraft({ is_geoip_split_enabled: isOn })
                 }
-                label={t("ui.proxy.geoip_title")}
+                ariaLabel={t("ui.proxy.geoip_title")}
               />
             </div>
             <div className="proxy_switch_body">

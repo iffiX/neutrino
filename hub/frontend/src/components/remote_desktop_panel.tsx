@@ -155,6 +155,7 @@ export function RemoteDesktopPanel({
           <RustdeskCard
             sessionId={status.rustdesk_id}
             rdp={device.client?.rdp ?? null}
+            isWindows={device.client?.platform_os === "windows"}
             onResetSeatPassword={resetSeatPassword}
           />
           <ProductCard
@@ -185,6 +186,9 @@ export function RemoteDesktopPanel({
 interface RustdeskCardProps {
   sessionId: string;
   rdp: DeviceRdp | null;
+  /** Whether the machine is Windows, where the start command takes an
+   * administrator PowerShell rather than sudo. */
+  isWindows: boolean;
   onResetSeatPassword: () => void;
 }
 
@@ -200,6 +204,7 @@ interface RustdeskCardProps {
 function RustdeskCard({
   sessionId,
   rdp,
+  isWindows,
   onResetSeatPassword,
 }: RustdeskCardProps) {
   const isReported = sessionId !== "";
@@ -262,7 +267,13 @@ function RustdeskCard({
           </span>
         </>
       ) : (
-        <span className="field_hint">{t("ui.remote_desktop.start_hint")}</span>
+        <span className="field_hint">
+          {t(
+            isWindows
+              ? "ui.remote_desktop.start_hint_windows"
+              : "ui.remote_desktop.start_hint",
+          )}
+        </span>
       )}
 
       {attention.length > 0 && (

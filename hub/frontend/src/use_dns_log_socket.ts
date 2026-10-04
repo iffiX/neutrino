@@ -14,7 +14,8 @@ import type { DnsLogEntry } from "./api_types";
  * The two kinds of frame the backend sends are ordered differently and have
  * to be treated differently. On connect it sends the log tail already
  * newest-first, which is the authoritative view and replaces whatever the
- * hook held. Every later frame is the incremental follow, oldest-first, and is
+ * hook held, an empty one included: a log that was cleared clears the list.
+ * Every later frame is the incremental follow, oldest-first, and is
  * reversed onto the front. Getting this wrong is invisible in the types and
  * shows up only as a list that reads backwards, so it is handled explicitly.
  */
@@ -49,7 +50,7 @@ export function useDnsLogSocket(
   const handleMessage = useCallback(
     (message: unknown) => {
       const incoming = readEntries(message);
-      if (incoming.length === 0) {
+      if (incoming === null) {
         return;
       }
       const isBacklog = isBacklogPendingRef.current;
@@ -70,13 +71,14 @@ export function useDnsLogSocket(
   return { entries, status };
 }
 
-function readEntries(message: unknown): DnsLogEntry[] {
+/** The entries a frame carries; null for a message that is no frame. */
+function readEntries(message: unknown): DnsLogEntry[] | null {
   if (typeof message !== "object" || message === null) {
-    return [];
+    return null;
   }
   const frame = message as Record<string, unknown>;
   if (!Array.isArray(frame.entries)) {
-    return [];
+    return null;
   }
   return frame.entries.filter(isDnsLogEntry);
 }

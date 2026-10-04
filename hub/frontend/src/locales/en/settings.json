@@ -12,7 +12,7 @@
   "ui.settings.about_unavailable": "Version info unavailable",
   "ui.settings.about_uptime": "Uptime",
   "ui.settings.backup_downloaded": "Backup downloaded.",
-  "ui.settings.backup_hint": "Restoring asks for the vault master passphrase.",
+  "ui.settings.backup_hint": "Restoring asks for the vault passphrase.",
   "ui.settings.backup_title": "Configuration archive",
   "ui.settings.cancel": "Cancel",
   "ui.settings.change_password": "Change password",
@@ -119,7 +119,7 @@
   "ui.settings.update_room": "needs {needed}, {free} free",
   "ui.settings.update_room_short": "The update needs {needed} free and the disk has {free}; make room before installing.",
   "ui.settings.update_title": "Update",
-  "ui.settings.vault_password": "Vault master password",
-  "ui.settings.vault_password_hint": "The master password of the vault this backup was taken from.",
+  "ui.settings.vault_passphrase": "Vault passphrase",
+  "ui.settings.vault_passphrase_hint": "The vault passphrase this backup was sealed with.",
   "ui.settings.wrong_file": "That is not a .tar.gz file."
 }

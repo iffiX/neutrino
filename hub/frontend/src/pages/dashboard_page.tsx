@@ -88,9 +88,14 @@ export function DashboardPage() {
     apiPath("/hub/dashboard/history", { range: historyRange }),
   );
   const dnsLog = useDnsLogSocket();
-  // The DNS log is dnsmasq's, and dnsmasq runs only on a hub on Linux.
+  // The DNS log is dnsmasq's, and dnsmasq answers only on a Linux hub that
+  // serves or forwards for a network: never in server mode.
   const network = useApiResource<NetworkView>("/hub/network");
-  const isDnsLogShown = network.data?.hub_os === "linux";
+  const isDnsLogShown =
+    network.data?.hub_os === "linux" && network.data.mode !== "server";
+  // The history is vnstat's, which runs only on a hub on Linux.
+  const isHistoryKept =
+    network.data?.hub_os !== "darwin" && network.data?.hub_os !== "windows";
   // The same status view the top bar reads. A gateway that is absent or has
   // served nothing leaves the tile blank rather than reporting a failure.
   const ai = useApiResource<CliproxyApiStatusView>("/hub/ai/gateway", {
@@ -372,21 +377,29 @@ export function DashboardPage() {
             <div className="card_header">
               <div className="card_title">
                 <h2>{t("ui.dashboard.history_title")}</h2>
-                <span className="badge">
-                  {t("ui.dashboard.history_source")}
-                </span>
+                {isHistoryKept && (
+                  <span className="badge">
+                    {t("ui.dashboard.history_source")}
+                  </span>
+                )}
               </div>
-              <RangeSwitch
-                options={HISTORY_RANGE_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: t(option.labelKey),
-                }))}
-                value={historyRange}
-                onChange={setHistoryRange}
-              />
+              {isHistoryKept && (
+                <RangeSwitch
+                  options={HISTORY_RANGE_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: t(option.labelKey),
+                  }))}
+                  value={historyRange}
+                  onChange={setHistoryRange}
+                />
+              )}
             </div>
 
-            {history.error !== null ? (
+            {!isHistoryKept ? (
+              <div className="placeholder">
+                <span>{t("ui.dashboard.history_none")}</span>
+              </div>
+            ) : history.error !== null ? (
               <ErrorPanel
                 title={t("ui.dashboard.history_unavailable")}
                 message={history.error}

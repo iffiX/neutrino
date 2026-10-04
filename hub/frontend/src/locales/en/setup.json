@@ -14,7 +14,7 @@
   "ui.setup.language_label": "Language",
   "ui.setup.secrets_lead": "Restoring a backup asks for the passphrase again; keep it somewhere safe.",
   "ui.setup.panel_password": "Panel password",
-  "ui.setup.vault_passphrase": "Vault master passphrase",
+  "ui.setup.vault_passphrase": "Vault passphrase",
   "ui.setup.ports_server_lead": "Every port keeps its address and serves on it.",
   "ui.setup.machine_ports": "This machine's ports",
   "ui.setup.way_out_today": "the way out today",
