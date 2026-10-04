@@ -113,6 +113,9 @@ class AgentPortProtocol(asyncio.Protocol):
             transport: The accepted TCP transport.
         """
         self._raw = transport
+        # Nothing is read until the handshake takes the socket: a ClientHello
+        # read here would never reach the TLS layer.
+        transport.pause_reading()
         peer = transport.get_extra_info("peername") or ("", 0)
         self._key = (str(peer[0]), int(peer[1]))
         self._guard.accepted(self._key, transport.abort, transport.is_closing)
