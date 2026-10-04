@@ -44,6 +44,7 @@ from neutrino_agent.constants import (
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules import installers, rustdesk
 from neutrino_agent.modules.cloudcli.runner import CloudcliModuleRunner
+from neutrino_agent.modules.code_server.runner import CodeServerModuleRunner
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.package import PackageModuleRunner, verify_passes
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
@@ -197,6 +198,7 @@ class ModuleEngine(ReconcileWorker):
                 PodmanModuleRunner,
                 ZfsModuleRunner,
                 VscodeModuleRunner,
+                CodeServerModuleRunner,
                 CloudcliModuleRunner,
             ]
         else:
@@ -204,6 +206,8 @@ class ModuleEngine(ReconcileWorker):
                 kinds.append(SambaNativeServerRunner)
             if "hub_packages" in platform.capabilities:
                 kinds.append(VscodeModuleRunner)
+                if platform.os_name == "darwin":
+                    kinds.append(CodeServerModuleRunner)
                 kinds.append(CloudcliModuleRunner)
         self._module_runners = {}
         for kind in kinds:

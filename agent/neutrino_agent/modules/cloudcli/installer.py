@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import stat
 import tarfile
 import tempfile
 import zipfile
@@ -37,13 +36,16 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_NPM_USERCONFIG_NAME,
     CLOUDCLI_PACKAGE,
     CLOUDCLI_PACKAGE_PARTS,
-    CLOUDCLI_PACKAGE_TAR,
-    CLOUDCLI_PACKAGE_ZIP,
     CLOUDCLI_SERVER_PARTS,
     CLOUDCLI_SYSTEM_PATH,
     CLOUDCLI_UPSTREAM_HOST,
     CLOUDCLI_VERSION,
     CLOUDCLI_WINDOWS_SERVICE_PATH,
+)
+from neutrino_agent.modules.unpacked_tree import (
+    extract_archive,
+    remove_tree,
+    seal_tree,
 )
 
 # The words in npm's output that say a native module could not get its
@@ -83,7 +85,7 @@ def unpack_node(path: str, *, package_kind: str, root: str) -> str:
     staging = tempfile.mkdtemp(prefix=".unpack_", dir=root)
     try:
         try:
-            _extract(path, package_kind, staging)
+            extract_archive(path, package_kind, staging)
         except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
             raise ModuleApplyError(
                 "cloudcli_node_download_failed", {"detail": str(error)[:200]}
@@ -101,12 +103,12 @@ def unpack_node(path: str, *, package_kind: str, root: str) -> str:
             )
         for held in os.listdir(root):
             if held.startswith(CLOUDCLI_NODE_PREFIX):
-                _remove_tree(os.path.join(root, held))
+                remove_tree(os.path.join(root, held))
         target = os.path.join(root, names[0])
         os.replace(os.path.join(staging, names[0]), target)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    _seal(target)
+    seal_tree(target)
     return target
 
 
@@ -144,7 +146,7 @@ def remove_node(root: str) -> None:
     Args:
         root: The module's directory.
     """
-    _remove_tree(root)
+    remove_tree(root)
 
 
 def account_dir(home: str, os_name: str, join=os.path.join) -> str:
@@ -329,66 +331,3 @@ def claude_of(output: str) -> str:
         if line.startswith("/"):
             return line
     return ""
-
-
-def _extract(path: str, package_kind: str, directory: str) -> None:
-    """Unpack an archive whole into a directory, refusing a path outside it."""
-    if package_kind == CLOUDCLI_PACKAGE_TAR:
-        with tarfile.open(path, "r:*") as archive:
-            if hasattr(tarfile, "data_filter"):
-                archive.extractall(directory, filter="data")
-                return
-            for member in archive.getmembers():
-                _check_member(member.name, directory)
-                if member.issym() or member.islnk():
-                    _check_member(
-                        os.path.join(os.path.dirname(member.name), member.linkname),
-                        directory,
-                    )
-            archive.extractall(directory)
-    elif package_kind == CLOUDCLI_PACKAGE_ZIP:
-        with zipfile.ZipFile(path) as archive:
-            for name in archive.namelist():
-                _check_member(name, directory)
-            archive.extractall(directory)
-    else:
-        raise ValueError(f"unknown package kind {package_kind!r}")
-
-
-def _check_member(name: str, directory: str) -> None:
-    """Refuse an archive member that would land outside the directory."""
-    root = os.path.realpath(directory)
-    target = os.path.realpath(os.path.join(directory, name))
-    if target != root and not target.startswith(root + os.sep):
-        raise ValueError(f"the archive names a path outside it: {name}")
-
-
-def _seal(directory: str) -> None:
-    """Make a tree the agent's own account's and take away every write bit."""
-    is_root = hasattr(os, "geteuid") and os.geteuid() == 0
-    for parent, directories, files in os.walk(directory):
-        for name in [*directories, *files]:
-            path = os.path.join(parent, name)
-            if os.path.islink(path):
-                if is_root:
-                    os.lchown(path, 0, 0)
-                continue
-            if is_root:
-                os.chown(path, 0, 0)
-            mode = stat.S_IMODE(os.stat(path).st_mode)
-            os.chmod(path, mode & ~0o222)
-    if is_root:
-        os.chown(directory, 0, 0)
-    os.chmod(directory, 0o555)
-
-
-def _remove_tree(path: str) -> None:
-    """Delete a tree, giving its owner the write bits sealing took first."""
-    for parent, directories, _files in os.walk(path):
-        for name in directories:
-            child = os.path.join(parent, name)
-            if not os.path.islink(child):
-                os.chmod(child, stat.S_IMODE(os.stat(child).st_mode) | 0o700)
-    if os.path.isdir(path) and not os.path.islink(path):
-        os.chmod(path, stat.S_IMODE(os.stat(path).st_mode) | 0o700)
-    shutil.rmtree(path, ignore_errors=True)

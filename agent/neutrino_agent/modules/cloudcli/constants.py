@@ -13,10 +13,7 @@ CLOUDCLI_SERVER_PARTS = ("dist-server", "server", "index.js")
 # The native modules npm fetches a prebuilt binary for during the install.
 CLOUDCLI_NATIVE_MODULES = ("better-sqlite3", "node-pty", "bcrypt")
 
-# The Node.js archive the hub sends: its kinds, and the prefix of the one
-# directory each archive holds.
-CLOUDCLI_PACKAGE_TAR = "tar"
-CLOUDCLI_PACKAGE_ZIP = "zip"
+# The prefix of the one directory each Node.js archive the hub sends holds.
 CLOUDCLI_NODE_PREFIX = "node-v"
 # Inside that directory: the interpreter and npm, by system.
 CLOUDCLI_NODE_PARTS = {
@@ -80,26 +77,14 @@ CLOUDCLI_USERNAME_MIN = 3
 # matches.
 CLOUDCLI_LOGIN_LIFETIME_S = 7 * 24 * 3600
 
-# The token a client opens an instance with: ``?tkn=`` holding
-# ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``.
-CLOUDCLI_TOKEN_PARAMETER = "tkn"
-CLOUDCLI_TOKEN_EXPIRY_BYTES = 8
-CLOUDCLI_TOKEN_NONCE_BYTES = 16
-CLOUDCLI_TOKEN_MAC_BYTES = 32
-# A token is refused when its expiry is further ahead than this, so the
-# nonces held stay few.
-CLOUDCLI_TOKEN_HORIZON_S = 300
 # The cookie the forwarder keeps CloudCLI's login in, per port, since a
 # cookie belongs to a host and not to a port.
 CLOUDCLI_COOKIE_PREFIX = "neutrino_cloudcli_"
 # The text CloudCLI's login secret is derived from the instance's secret by.
 CLOUDCLI_JWT_LABEL = b"neutrino cloudcli jwt"
 
-# How the forwarder reads one request, and how it waits for CloudCLI.
-CLOUDCLI_HEAD_LIMIT_BYTES = 65536
-CLOUDCLI_RELAY_CHUNK_BYTES = 65536
+# How long the forwarder waits for CloudCLI.
 CLOUDCLI_UPSTREAM_TIMEOUT_S = 10.0
-CLOUDCLI_IDLE_TIMEOUT_S = 3600.0
 CLOUDCLI_READY_POLL_S = 3.0
 CLOUDCLI_REGISTER_RETRY_S = 30.0
 
