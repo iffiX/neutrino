@@ -1,6 +1,6 @@
 [Unit]
 Description=Neutrino way in through a server you own (reverse SSH forward)
-Documentation=https://neutrino.beyond-infinity.top/hub/relay
+Documentation=https://neutrino.beyond-infinity.top/hub/relay.html
 After=network-online.target
 Wants=network-online.target
 # The key file is written by the panel's apply while the relay is on.

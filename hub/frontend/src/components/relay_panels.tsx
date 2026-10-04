@@ -35,8 +35,8 @@ const RELAY_RELOAD_MS = 10000;
 
 /** The guide page that says what to set up on the server, per language. */
 const GUIDE_URLS: Record<string, string> = {
-  en: "https://neutrino.beyond-infinity.top/hub/relay",
-  "zh-CN": "https://neutrino.beyond-infinity.top/zh-CN/hub/relay",
+  en: "https://neutrino.beyond-infinity.top/hub/relay.html",
+  "zh-CN": "https://neutrino.beyond-infinity.top/zh-CN/hub/relay.html",
 };
 
 const STATE_TONES: Record<RelayState, StatusTone> = {

@@ -149,7 +149,7 @@ OVERLAY_RELAY_STATES = (
 )
 # What ssh writes to standard error before it exits, and the state each line
 # means. The last line ssh wrote decides; a line holding none of these is
-# `unreachable`. Measured against OpenSSH 9.2 and 9.6:
+# `unreachable`. Measured on 2026-10-05, the OpenSSH 8.9 client against a 9.2 server:
 #
 # | ssh writes                                                       | state            |
 # | ---------------------------------------------------------------- | ---------------- |
