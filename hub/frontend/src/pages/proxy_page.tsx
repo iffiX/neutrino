@@ -21,8 +21,8 @@ import type { ProxyTone } from "../proxy_status";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { useLiveStats } from "../use_live_stats";
+import { resolversOf, resolverRow } from "../resolver_rows";
 import type {
-  DnsServer,
   ApplyResult,
   NetworkView,
   ProxySettings,
@@ -140,16 +140,8 @@ export function ProxyPage() {
     resetDraft();
   };
 
-  const updateDns = (
-    key: "remote_dns" | "direct_dns",
-    patch: Partial<DnsServer>,
-  ) => {
-    setNotice({});
-    setDraft((current) => ({
-      ...current,
-      [key]: { ...current[key], ...patch },
-    }));
-  };
+  const updateResolvers = (key: "remote_dns" | "direct_dns", rows: string[]) =>
+    updateDraft({ [key]: resolversOf(rows) });
 
   if (resource.error !== null && resource.data === null) {
     return (
@@ -338,61 +330,21 @@ export function ProxyPage() {
             </div>
           </div>
           <div className="proxy_dns_grid">
-            <div className="field">
-              <span className="field_label">
-                {t("ui.proxy.remote_dns_label")}
-              </span>
-              <div className="proxy_dns_pair">
-                <input
-                  className="input"
-                  value={draft.remote_dns.address}
-                  onChange={(event) =>
-                    updateDns("remote_dns", { address: event.target.value })
-                  }
-                />
-                <input
-                  className="input"
-                  inputMode="numeric"
-                  value={String(draft.remote_dns.port)}
-                  onChange={(event) =>
-                    updateDns("remote_dns", {
-                      port: Number(event.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
-              <span className="field_hint">
-                {t("ui.proxy.remote_dns_hint")}
-              </span>
-            </div>
-
-            <div className="field">
-              <span className="field_label">
-                {t("ui.proxy.direct_dns_label")}
-              </span>
-              <div className="proxy_dns_pair">
-                <input
-                  className="input"
-                  value={draft.direct_dns.address}
-                  onChange={(event) =>
-                    updateDns("direct_dns", { address: event.target.value })
-                  }
-                />
-                <input
-                  className="input"
-                  inputMode="numeric"
-                  value={String(draft.direct_dns.port)}
-                  onChange={(event) =>
-                    updateDns("direct_dns", {
-                      port: Number(event.target.value) || 0,
-                    })
-                  }
-                />
-              </div>
-              <span className="field_hint">
-                {t("ui.proxy.direct_dns_hint")}
-              </span>
-            </div>
+            <StringListEditor
+              label={t("ui.proxy.remote_dns_label")}
+              description={t("ui.proxy.remote_dns_hint")}
+              placeholder="1.1.1.1"
+              values={draft.remote_dns.map(resolverRow)}
+              onChange={(rows) => updateResolvers("remote_dns", rows)}
+            />
+            <StringListEditor
+              label={t("ui.proxy.direct_dns_label")}
+              description={t("ui.proxy.direct_dns_hint")}
+              placeholder="223.5.5.5"
+              emptyText={t("ui.proxy.direct_dns_follows_network")}
+              values={draft.direct_dns.map(resolverRow)}
+              onChange={(rows) => updateResolvers("direct_dns", rows)}
+            />
           </div>
         </section>
 
