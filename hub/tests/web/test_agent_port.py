@@ -166,3 +166,44 @@ def test_the_oldest_open_handshake_is_closed_to_make_room(tmp_path):
         return is_closed, guard.pause_remaining_s()
 
     assert asyncio.run(scenario()) == (True, 0)
+
+
+class LateProtocol(AgentPortProtocol):
+    """The port's protocol with its handshake starting a moment late, as on a
+    loop that runs it a few iterations after the accept."""
+
+    async def _handshake(self) -> None:
+        await asyncio.sleep(0.2)
+        await super()._handshake()
+
+
+def test_a_client_hello_sent_before_the_handshake_starts_is_not_lost(tmp_path):
+    async def scenario():
+        certificate, key, _ = self_signed_pair(tmp_path)
+        context = agent_port_context(str(certificate), str(key))
+        loop = asyncio.get_running_loop()
+
+        def protocol():
+            return LateProtocol(
+                guard=ChannelPortGuard(),
+                ssl_context=context,
+                config=None,
+                server_state=None,
+                app_state=None,
+                _loop=loop,
+                serve_protocol=Echo,
+            )
+
+        server = await loop.create_server(protocol, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection("127.0.0.1", port, ssl=client_context()), 5
+        )
+        writer.write(b"late")
+        await writer.drain()
+        answer = await asyncio.wait_for(reader.read(4), 5)
+        writer.close()
+        server.close()
+        return answer
+
+    assert asyncio.run(scenario()) == b"LATE"
