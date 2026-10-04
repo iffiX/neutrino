@@ -154,8 +154,8 @@ class ClientController(
         }
     }
 
-    override fun connectDesktop(bindingId: String, entryId: String, name: String) =
-        desktops.connect(bindingId, entryId, name)
+    override fun connectDesktop(bindingId: String, entryId: String, name: String, platformOs: String) =
+        desktops.connect(bindingId, entryId, name, platformOs)
 
     override fun remoteDesktopChoiceOf(bindingId: String, entryId: String): RemoteDesktopChoice =
         desktopChoices.get(RemoteDesktopSessions.keyOf(bindingId, entryId))

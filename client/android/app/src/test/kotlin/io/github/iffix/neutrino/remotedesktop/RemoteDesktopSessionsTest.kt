@@ -25,8 +25,8 @@ class RemoteDesktopSessionsTest {
             asked += 1
             answer.await()
         }, backgroundScope)
-        sessions.connect("b1", "r1", "Neutrino:desk")
-        sessions.connect("b1", "r1", "Neutrino:desk")
+        sessions.connect("b1", "r1", "Neutrino:desk", "")
+        sessions.connect("b1", "r1", "Neutrino:desk", "")
         runCurrent()
         assertEquals(setOf("b1/r1"), sessions.connecting.value)
         assertEquals(1, asked)
@@ -43,15 +43,23 @@ class RemoteDesktopSessionsTest {
         val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope) { key ->
             if (key == "b1/r1") kept else RemoteDesktopChoice()
         }
-        sessions.connect("b1", "r1", "x")
+        sessions.connect("b1", "r1", "x", "")
         runCurrent()
         assertEquals(kept, sessions.viewing.value?.second?.choice)
     }
 
     @Test
+    fun theViewerOpensWithTheEntrysPlatform() = runTest {
+        val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
+        sessions.connect("b1", "r1", "x", "linux")
+        runCurrent()
+        assertEquals("linux", sessions.viewing.value?.second?.platformOs)
+    }
+
+    @Test
     fun aRefusedConnectWritesItsCodeUntilARefresh() = runTest {
         val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.refused("rdp_not_shared") }, backgroundScope)
-        sessions.connect("b1", "r1", "x")
+        sessions.connect("b1", "r1", "x", "")
         runCurrent()
         assertEquals("rdp_not_shared", sessions.errors.value["b1/r1"]?.code)
         assertNull(sessions.viewing.value)
@@ -62,7 +70,7 @@ class RemoteDesktopSessionsTest {
     @Test
     fun leavingTheHubClosesItsViewer() = runTest {
         val sessions = RemoteDesktopSessions({ _, _ -> ChannelResult.Ok(material) }, backgroundScope)
-        sessions.connect("b1", "r1", "x")
+        sessions.connect("b1", "r1", "x", "")
         runCurrent()
         sessions.forget("b2")
         assertEquals("b1/r1", sessions.viewing.value?.first)

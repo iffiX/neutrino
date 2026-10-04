@@ -15,7 +15,8 @@ class RemoteDesktopInputSenderTest {
     private val core = FakeRemoteDesktopCore()
     private val reported = mutableListOf<Set<RemoteDesktopKey>>()
 
-    private fun TestScope.sender() = RemoteDesktopInputSender(core, backgroundScope) { reported += it }
+    private fun TestScope.sender(platformOs: String = "") =
+        RemoteDesktopInputSender(core, platformOs, backgroundScope) { reported += it }
 
     private fun TestScope.drain() {
         advanceTimeBy(RDP_TYPE_PACE_MILLIS * 10)
@@ -124,6 +125,71 @@ class RemoteDesktopInputSenderTest {
                 "key VK_V up",
                 "key VK_CONTROL up",
             ),
+            core.calls,
+        )
+    }
+
+    @Test
+    fun chineseToALinuxHostIsOnePasteWithShiftInsert() = runTest {
+        sender("linux").type("我在测试输入法")
+        drain()
+        assertEquals(
+            listOf(
+                "clipboard 我在测试输入法",
+                "key VK_SHIFT down",
+                "key VK_INSERT down",
+                "key VK_INSERT up",
+                "key VK_SHIFT up",
+            ),
+            core.calls,
+        )
+    }
+
+    @Test
+    fun asciiToALinuxHostIsTyped() = runTest {
+        sender("linux").type("ok")
+        drain()
+        assertEquals(listOf("text o", "text k"), core.calls)
+    }
+
+    @Test
+    fun chineseToAWindowsHostIsTyped() = runTest {
+        sender("windows").type("你好")
+        drain()
+        assertEquals(listOf("text 你", "text 好"), core.calls)
+    }
+
+    @Test
+    fun aPasteToALinuxHostKeepsItsPlaceAmongKeys() = runTest {
+        val sender = sender("linux")
+        sender.type("ab")
+        sender.type("中文")
+        sender.press(RemoteDesktopKey.BACKSPACE)
+        drain()
+        assertEquals(
+            listOf(
+                "text a",
+                "text b",
+                "clipboard 中文",
+                "key VK_SHIFT down",
+                "key VK_INSERT down",
+                "key VK_INSERT up",
+                "key VK_SHIFT up",
+                "key VK_BACK down",
+                "key VK_BACK up",
+            ),
+            core.calls,
+        )
+    }
+
+    @Test
+    fun aModifierHeldWithOneLetterToALinuxHostIsThatKey() = runTest {
+        val sender = sender("linux")
+        sender.barKey(RemoteDesktopKey.CTRL)
+        sender.type("c")
+        runCurrent()
+        assertEquals(
+            listOf("key VK_CONTROL down", "key VK_C down", "key VK_C up", "key VK_CONTROL up"),
             core.calls,
         )
     }

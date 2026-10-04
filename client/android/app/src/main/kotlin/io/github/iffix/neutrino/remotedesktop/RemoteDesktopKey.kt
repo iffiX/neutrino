@@ -33,6 +33,9 @@ enum class RemoteDesktopKey(val label: String, val code: String, val isModifier:
         /** RustDesk's name for the V that Ctrl turns into a paste. */
         const val PASTE = "VK_V"
 
+        /** RustDesk's name for the Insert that Shift turns into a paste. */
+        const val INSERT = "VK_INSERT"
+
         /**
          * RustDesk's name for a typed character that a held modifier applies to: a letter or a digit.
          *

@@ -45,8 +45,9 @@ class RemoteDesktopSessions(
      * @param bindingId The hub.
      * @param entryId The entry.
      * @param name What the viewer's bar shows.
+     * @param platformOs The `platform_os` the entry carries, or empty when it names none.
      */
-    fun connect(bindingId: String, entryId: String, name: String) {
+    fun connect(bindingId: String, entryId: String, name: String, platformOs: String) {
         val key = keyOf(bindingId, entryId)
         if (key in connectingKeys.value || open.value != null) {
             Log.i(CLIENT_LOG_TAG, "a viewer runs or opens; the connect of $key is dropped")
@@ -57,7 +58,10 @@ class RemoteDesktopSessions(
         scope.launch {
             when (val target = RemoteDesktopTarget.of(name, material(bindingId, entryId))) {
                 is ChannelResult.Refused -> failures.update { it + (key to target) }
-                is ChannelResult.Ok -> open.value = key to target.value.copy(choice = choiceOf(key))
+
+                is ChannelResult.Ok -> {
+                    open.value = key to target.value.copy(choice = choiceOf(key), platformOs = platformOs)
+                }
             }
             connectingKeys.update { it - key }
         }
