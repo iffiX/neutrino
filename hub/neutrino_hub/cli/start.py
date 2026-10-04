@@ -37,6 +37,11 @@ from neutrino_hub.utils.subprocess_run import command_failure_text
 # --- config ---
 # The routing state first, the panel last: each stands on the one before it.
 START_ORDER = tuple(reversed(STOP_ORDER))
+# What a command that asks says when there is no terminal to ask on.
+CLI_NO_TERMINAL_LINE = (
+    "error: no terminal to answer on; run it again with --yes to go ahead "
+    "without asking"
+)
 
 
 def main() -> int:
@@ -72,7 +77,9 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        if not arguments.yes and not _asked("Start the hub's service?"):
+        if not arguments.yes and not is_confirmed_on_terminal(
+            "Start the hub's service?"
+        ):
             return 1
         return start_service()
     if arguments.only in STOP_PER_INTERFACE and not arguments.interface:
@@ -81,7 +88,7 @@ def main() -> int:
     what = arguments.only or "the hub's units"
     if arguments.interface and arguments.only in STOP_PER_INTERFACE:
         what = f"{arguments.only} on {arguments.interface}"
-    if not arguments.yes and not _asked(f"Start {what}?"):
+    if not arguments.yes and not is_confirmed_on_terminal(f"Start {what}?"):
         return 1
     if arguments.only in STOP_PER_INTERFACE:
         return start_engine(arguments.only, arguments.interface)
@@ -168,10 +175,27 @@ def start_engine(name: str, interface: str) -> int:
     return 0
 
 
-def _asked(question: str) -> bool:
-    """One yes-or-no question on the terminal."""
-    answer = input(f"{question} [y/N] ").strip().lower()
-    return answer in ("y", "yes")
+def is_confirmed_on_terminal(question: str) -> bool:
+    """Ask one yes-or-no question on the terminal.
+
+    With no terminal on stdin nothing is asked: one line on stderr says that
+    ``--yes`` goes ahead without asking.
+
+    Args:
+        question: The question, without ``[y/N]``.
+
+    Returns:
+        True only for ``y`` or ``yes``; no input and no terminal are a no.
+    """
+    if sys.stdin is None or not sys.stdin.isatty():
+        print(CLI_NO_TERMINAL_LINE, file=sys.stderr)
+        return False
+    try:
+        answer = input(f"{question} [y/N] ")
+    except EOFError:
+        print()
+        return False
+    return answer.strip().lower() in ("y", "yes")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Starting the hub's units, as the pair of ``nhub stop``."""
 
 import subprocess
+import io
 
 import pytest
 
@@ -126,7 +127,7 @@ def test_every_service_stop_can_name_start_can_name(monkeypatch):
     ]
 
 
-def test_it_asks_first_and_a_no_starts_nothing(monkeypatch):
+def test_it_asks_first_and_a_no_starts_nothing(terminal, monkeypatch):
     chosen: list = []
     monkeypatch.setattr(
         start_module,
@@ -140,7 +141,7 @@ def test_it_asks_first_and_a_no_starts_nothing(monkeypatch):
     assert chosen == []
 
 
-def test_a_yes_at_the_prompt_starts_every_enabled_unit(monkeypatch):
+def test_a_yes_at_the_prompt_starts_every_enabled_unit(terminal, monkeypatch):
     chosen: list = []
     monkeypatch.setattr(
         start_module,
@@ -156,6 +157,29 @@ def test_a_yes_at_the_prompt_starts_every_enabled_unit(monkeypatch):
     assert start_module.main() == 0
     assert questions == ["Start the hub's units? [y/N] "]
     assert chosen == [(list(start_module.START_ORDER), True)]
+
+
+def test_with_no_terminal_it_names_yes_and_starts_nothing(monkeypatch, capsys):
+    chosen: list = []
+    monkeypatch.setattr(
+        start_module,
+        "start",
+        lambda names, *, is_enabled_only: chosen.extend(names) or 0,
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO("y\n"))
+    monkeypatch.setattr("builtins.input", refuse_to_ask)
+    monkeypatch.setattr("sys.argv", ["nhub-start"])
+
+    assert start_module.main() == 1
+
+    assert chosen == []
+    error = capsys.readouterr().err
+    assert error.strip().count("\n") == 0
+    assert "--yes" in error
+
+
+def refuse_to_ask(prompt):
+    raise AssertionError("asked with no terminal")
 
 
 def test_a_per_interface_engine_needs_the_interface(monkeypatch, capsys):
