@@ -37,6 +37,7 @@ from constants import HUB_ICON_NAME, PACKAGING_GLIBC_FLOOR
 SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
 if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
+from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared.constants import PACKAGING_ASSET_PATTERNS  # noqa: E402
 
@@ -331,7 +332,8 @@ def version_stamp(version: str, asset: str) -> str:
 
     No packaging format installs a .dist-info for the hub itself, so the
     version is stamped where importlib.metadata cannot answer, and the
-    package's own release file name beside it, with the version left open.
+    package's own release file name beside it, with the version left open,
+    and the edition the build was asked for.
 
     Args:
         version: The version being packaged.
@@ -340,11 +342,15 @@ def version_stamp(version: str, asset: str) -> str:
 
     Returns:
         The text of ``neutrino_hub/_version.py``.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
     return (
         '"""Written by the packaging build. Do not edit."""\n\n'
         f'HUB_VERSION = "{version}"\n'
         f'HUB_PACKAGE_ASSET = "{asset}"\n'
+        f'EDITION = "{edition_build.build_edition()}"\n'
     )
 
 

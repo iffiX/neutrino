@@ -1,7 +1,11 @@
 name: publish
 
 # Turns the draft the release workflow opened for a tag into the published
-# release, with the notes a person wrote.
+# release, with the notes a person wrote, and then publishes the mainland
+# release on Gitee from the same run's release_dist_cn. A tag with a suffix
+# is a pre-release and is published on GitHub alone. dry_run leaves GitHub
+# alone and runs the Gitee publish up to, and not including, the push and
+# every request that changes Gitee.
 on:
   workflow_dispatch:
     inputs:
@@ -13,13 +17,19 @@ on:
         description: "the release notes, Markdown"
         required: true
         type: string
+      dry_run:
+        description: "check the Gitee publish without pushing or changing anything"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   publish:
     name: publish the draft
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-24.04
     steps:
       - env:
@@ -30,3 +40,43 @@ jobs:
           printf '%s\n' "$NOTES" > notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes-file notes.md
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,url --jq '"draft="+(.isDraft|tostring)+" "+.url'
+
+  # Runs only when GITEE_TOKEN and GITEE_SSH_KEY are set; a dry run needs the
+  # token alone.
+  publish_cn:
+    name: publish the mainland release on Gitee
+    needs: [publish]
+    if: >-
+      ${{ always() && !contains(inputs.tag, '-')
+          && (needs.publish.result == 'success'
+              || (inputs.dry_run && needs.publish.result == 'skipped')) }}
+    runs-on: ubuntu-24.04
+    env:
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+      GITEE_SSH_KEY: ${{ secrets.GITEE_SSH_KEY }}
+      IS_DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Check the Gitee secrets
+        id: secrets
+        run: |
+          if [ -n "$GITEE_TOKEN" ] && { [ -n "$GITEE_SSH_KEY" ] || [ "$IS_DRY_RUN" = true ]; }; then
+            echo "is_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "GITEE_TOKEN or GITEE_SSH_KEY is not set; nothing is published on Gitee"
+            echo "is_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.secrets.outputs.is_present == 'true'
+        with:
+          ref: ${{ inputs.tag }}
+
+      - if: steps.secrets.outputs.is_present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          printf '%s\n' "$NOTES" > notes.md
+          if [ "$IS_DRY_RUN" = true ]; then dry_run=--dry-run; else dry_run=; fi
+          python3 packaging/ci/publish_cn.py --tag "$TAG" --notes-file notes.md ${dry_run}

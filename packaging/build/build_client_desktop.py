@@ -16,6 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
 from shared import container_build  # noqa: E402
 
 # What builds the client for each format, and what the container needs
@@ -78,6 +79,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--output-dir", default="dist", help="where to write packages")
     parser.add_argument(
         "--architecture",
@@ -90,6 +92,7 @@ def main() -> int:
         help="which distribution families to build for",
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     if container_build.container_engine() is None:
         raise SystemExit("podman or docker is needed and neither is on the path")
 
@@ -109,6 +112,7 @@ def main() -> int:
             output_dir,
             arguments.architecture,
             family,
+            edition=arguments.edition,
         )
     return 0
 

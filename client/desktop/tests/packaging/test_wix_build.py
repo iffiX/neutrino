@@ -40,6 +40,24 @@ def test_the_package_wraps_the_body_and_upgrades_over_earlier_versions():
     assert package.find(WXS + "Property").get("Id") == "X"
 
 
+@pytest.mark.parametrize("level, expected", [("", None), ("high", "high")])
+def test_the_cabinet_takes_the_compression_level_asked_for(level, expected):
+    source = wix_build.package_source(
+        name="Neutrino Hub",
+        manufacturer="iffiX",
+        version="9.9.9",
+        upgrade_code="{00000000-0000-0000-0000-000000000000}",
+        body="",
+        compression_level=level,
+    )
+
+    media = xml.etree.ElementTree.fromstring(source).find(
+        f"{WXS}Package/{WXS}MediaTemplate"
+    )
+    assert media.get("EmbedCab") == "yes"
+    assert media.get("CompressionLevel") == expected
+
+
 def test_a_service_is_installed_controlled_and_permitted():
     body = wix_build.element(
         "StandardDirectory",

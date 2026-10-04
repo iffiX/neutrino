@@ -13,6 +13,11 @@ plugins {
 val neutrinoVersion: String = providers.gradleProperty("neutrinoVersion").get()
 val repositoryRoot: File = rootDir.resolve("../..")
 
+// The edition, intl or cn, from the file the repository's root holds.
+val neutrinoEdition: String =
+    repositoryRoot.resolve("EDITION").takeIf { it.isFile }?.readText()?.trim()
+        ?: error("the repository holds no EDITION file at its root")
+
 // 0.5.0 is 500: two digits each for the minor and the patch.
 fun versionCodeOf(version: String): Int {
     val (major, minor, patch) = version.substringBefore('-').split('.').map { it.toInt() }
@@ -40,6 +45,7 @@ android {
         targetSdk = 35
         versionName = neutrinoVersion
         versionCode = versionCodeOf(neutrinoVersion)
+        buildConfigField("String", "EDITION", "\"$neutrinoEdition\"")
     }
 
     signingConfigs {
@@ -68,6 +74,14 @@ android {
             reset()
             include("arm64-v8a", "x86_64")
             isUniversalApk = false
+        }
+    }
+
+    // The native libraries are stored compressed, which halves the apk; the
+    // phone unpacks them at install.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 

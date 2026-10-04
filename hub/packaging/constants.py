@@ -15,3 +15,6 @@ PACKAGING_GLIBC_FLOOR = "2.34"
 # The hub's icon set under images/icons: the mark with the panel's accent edge
 # and glow, told apart from the client's plain mark.
 HUB_ICON_NAME = "neutrino_hub"
+
+# How dpkg-deb compresses the mainland hub package: xz at its strongest.
+HUB_DEB_CN_COMPRESSION = ("-Zxz", "-z9", "-Sextreme")

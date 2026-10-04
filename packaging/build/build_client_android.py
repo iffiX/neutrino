@@ -6,7 +6,9 @@ Runs on: Linux or macOS with JDK 17 and the Android SDK, ``ANDROID_HOME``
 naming it. The NetBird, EasyTier and RustDesk cores come from the cores
 cache, or are built when it does not have them, which needs what
 ``build_core_netbird.py``, ``build_core_easytier.py`` and
-``build_core_rustdesk.py`` name.
+``build_core_rustdesk.py`` name. ``--edition cn`` runs in the mainland
+source tree, which holds no NetBird core script, so its apk carries no
+NetBird core.
 
 Then ``gradlew assembleDebug`` or ``assembleRelease`` runs in
 ``client/android``. A release build is signed when the four variables
@@ -29,10 +31,13 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import edition_build  # noqa: E402
 BUILD_DIR = Path(__file__).resolve().parent
 ANDROID_DIR = REPO_ROOT / "client" / "android"
 
-# The scripts that put each core into the app, in the order they run.
+# The scripts that put each core into the app, in the order they run; one
+# the tree does not hold is a core its edition leaves out.
 CORE_SCRIPTS = (
     "build_core_netbird.py",
     "build_core_easytier.py",
@@ -59,6 +64,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument(
         "--variant", choices=("debug", "release"), default="debug", help="what to build"
     )
@@ -67,13 +73,14 @@ def main() -> int:
         "--cache-key", action="store_true", help="print the cores' cache name and stop"
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     if arguments.cache_key:
-        keys = [_run_core(script, "--cache-key") for script in CORE_SCRIPTS]
+        keys = [_run_core(script, "--cache-key") for script in _core_scripts()]
         print("cores-" + "-".join(" ".join(keys).split()))
         return 0
     _check_tools()
 
-    for script in CORE_SCRIPTS:
+    for script in _core_scripts():
         _run_core(script)
     signing = [name for name in SIGNING_VARIABLES if os.environ.get(name)]
     if arguments.variant == "release" and len(signing) != len(SIGNING_VARIABLES):
@@ -101,8 +108,16 @@ def main() -> int:
     return 0
 
 
+def _core_scripts() -> list:
+    """The core scripts this tree holds, in the order they run."""
+    return [script for script in CORE_SCRIPTS if (BUILD_DIR / script).is_file()]
+
+
 def _run_core(script: str, *arguments: str) -> str:
     """Run one core script, which puts its core into the app.
+
+    The core scripts take no edition: a core is the same in both, and the
+    script's own bytes are what its cache name digests.
 
     Args:
         script: The script's name in this directory.

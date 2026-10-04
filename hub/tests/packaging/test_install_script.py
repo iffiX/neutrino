@@ -8,6 +8,7 @@ stops a wrong file, and the one sentence each refusal prints.
 """
 
 import hashlib
+import sys
 import os
 import subprocess
 from pathlib import Path
@@ -17,6 +18,8 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.sh"
 
 RELEASE = "https://github.com/iffiX/neutrino/releases"
+CN_RELEASE = "https://gitee.com/iffiX/neutrino/releases"
+CN_LATEST = "https://gitee.com/api/v5/repos/iffiX/neutrino/releases/latest"
 
 PACKAGES = (
     "neutrino-hub_9.9.9_amd64.deb",
@@ -101,11 +104,13 @@ def stand_ins(tmp_path):
         os_release="ubuntu",
         uid="1000",
         environment=None,
+        edition="intl",
+        script=SCRIPT,
     ):
         release_file = tmp_path / "os-release"
         release_file.write_text(OS_RELEASES[os_release])
         functions = tmp_path / "functions.sh"
-        text = SCRIPT.read_text()
+        text = script.read_text().replace('EDITION="intl"', f'EDITION="{edition}"', 1)
         assert text.rstrip().endswith('main "$@"')
         functions.write_text(text.rstrip()[: -len('main "$@"')])
         env = {
@@ -334,3 +339,97 @@ def test_a_release_that_cannot_be_reached_stops_with_one_sentence(stand_ins):
     assert result.stderr.strip() == (
         f"Downloading {RELEASE}/latest/download/SHA256SUMS failed."
     )
+
+
+def test_the_committed_script_is_the_intl_edition():
+    assert '\nEDITION="intl"\n' in SCRIPT.read_text()
+
+
+def test_a_cn_script_reads_the_latest_tag_from_gitee_then_its_files(stand_ins):
+    (stand_ins.served / "latest").write_text(
+        '{"id":7,"tag_name":"v9.9.9","name":"v9.9.9","assets":[]}'
+    )
+
+    result, asked = stand_ins(edition="cn")
+
+    assert result.returncode == 0, result.stderr
+    assert asked[:3] == [
+        f"curl {CN_LATEST}",
+        f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
+        f"curl {CN_RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
+    ]
+    (install,) = _installs(asked)
+    assert install.endswith("/neutrino-hub_9.9.9_amd64.deb")
+
+
+def test_a_cn_script_given_a_version_asks_the_api_nothing(stand_ins):
+    result, asked = stand_ins(edition="cn", environment={"NEUTRINO_VERSION": "v9.9.9"})
+
+    assert result.returncode == 0, result.stderr
+    assert asked[0] == f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS"
+
+
+def test_a_cn_latest_release_with_no_tag_stops_with_one_sentence(stand_ins):
+    (stand_ins.served / "latest").write_text("null")
+
+    result, asked = stand_ins(edition="cn")
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (f"The latest release at {CN_LATEST} names no tag.")
+    assert _installs(asked) == []
+
+
+def test_a_cn_release_with_its_files_not_yet_uploaded_stops_with_one_sentence(
+    stand_ins,
+):
+    (stand_ins.served / "latest").write_text('{"tag_name": "v9.9.9"}')
+    (stand_ins.served / "SHA256SUMS").unlink()
+
+    result, asked = stand_ins(edition="cn")
+
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        f"Downloading {CN_RELEASE}/download/v9.9.9/SHA256SUMS failed."
+    )
+    assert _installs(asked) == []
+
+
+@pytest.fixture(scope="module")
+def mainland_tree(tmp_path_factory):
+    """The mainland tree ``build_sources.py --edition cn --tree`` writes."""
+    target = tmp_path_factory.mktemp("mainland") / "tree"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT.parents[1] / "build" / "build_sources.py"),
+            "--edition",
+            "cn",
+            "--tree",
+            str(target),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return target
+
+
+def test_the_mainland_tree_stamps_both_scripts_cn(mainland_tree):
+    install = mainland_tree / "packaging" / "install"
+
+    assert '\nEDITION="cn"\n' in (install / "install.sh").read_text()
+    assert "\n$script:NeutrinoEdition = 'cn'\n" in (install / "install.ps1").read_text()
+
+
+def test_the_mainland_script_installs_from_gitee(stand_ins, mainland_tree):
+    (stand_ins.served / "latest").write_text('{"tag_name": "v9.9.9"}')
+
+    result, asked = stand_ins(
+        script=mainland_tree / "packaging" / "install" / "install.sh"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert asked[:3] == [
+        f"curl {CN_LATEST}",
+        f"curl {CN_RELEASE}/download/v9.9.9/SHA256SUMS",
+        f"curl {CN_RELEASE}/download/v9.9.9/neutrino-hub_9.9.9_amd64.deb",
+    ]

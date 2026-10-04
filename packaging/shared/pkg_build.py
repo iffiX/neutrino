@@ -213,6 +213,7 @@ def build(
     identifier: str,
     version: str,
     scripts_dir: Path | None = None,
+    min_os_version: str = "",
 ) -> None:
     """Run pkgbuild over the package root, then productbuild around it.
 
@@ -223,6 +224,8 @@ def build(
         version: The version the package declares.
         scripts_dir: What :func:`write_scripts` wrote, when the package
             runs any.
+        min_os_version: The oldest macOS the package installs on; given, the
+            payload takes the strongest compression that version reads.
 
     Raises:
         SystemExit: When the tools are not installed, or refuse.
@@ -244,6 +247,8 @@ def build(
     ]
     if scripts_dir is not None:
         command += ["--scripts", str(scripts_dir)]
+    if min_os_version:
+        command += ["--compression", "latest", "--min-os-version", min_os_version]
     _run(command + ["--install-location", "/", str(component)])
     try:
         _run(["productbuild", "--package", str(component), str(target)])

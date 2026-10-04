@@ -38,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "agent" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
+from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
@@ -171,6 +172,7 @@ def main() -> int:
         The process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    edition_build.add_edition_argument(parser)
     parser.add_argument("--output-dir", default="dist", help="where to write the .msi")
     parser.add_argument(
         "--architecture", default="x64", help="the architecture to build for"
@@ -186,6 +188,7 @@ def main() -> int:
         help="write and check the payload, then stop before wix",
     )
     arguments = parser.parse_args()
+    edition_build.require_edition_tree(arguments.edition)
     _check_tools(arguments.stage_only)
 
     version = payload.version()
