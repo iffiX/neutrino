@@ -45,7 +45,7 @@ title: 通道
 | 字段       | 内容                                                                                                                                     |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `urls`     | 中枢在被控端端口上开放的每个地址；其中一个在加入方所在的网络里，程序按顺序逐个尝试                                                       |
-| `token`    | 加入凭证，三十分钟内有效，只能用一次                                                                                                       |
+| `token`    | 加入凭证，三十分钟内有效，只能用一次                                                                                                     |
 | `fp`       | 要固定的指纹                                                                                                                             |
 | `role`     | `client` 或 `agent`                                                                                                                      |
 | `overlays` | 只在客户端链接里有：和客户端状态里的 `overlays` 是同一个列表，按生成链接时的默认权限取；默认权限不含 `overlay`，或没有可用的虚拟网时为空 |
@@ -72,8 +72,8 @@ title: 通道
 
 | 状态码 | `detail`                                      | 什么时候                               |
 | ------ | --------------------------------------------- | -------------------------------------- |
-| 409    | `protocol_too_old`，params `{peer, hub, min}` | 协议号低于中枢的 `PROTOCOL_MIN`       |
-| 409    | `protocol_too_new`，params `{peer, hub, min}` | 协议号高于中枢的 `PROTOCOL`           |
+| 409    | `protocol_too_old`，params `{peer, hub, min}` | 协议号低于中枢的 `PROTOCOL_MIN`        |
+| 409    | `protocol_too_new`，params `{peer, hub, min}` | 协议号高于中枢的 `PROTOCOL`            |
 | 409    | `role_mismatch`，params `{role}`              | 凭证是为另一种角色生成的               |
 | 401    | `ticket_spent`                                | 凭证不存在、已过期或已用过             |
 | 401    | `binding_unknown`                             | `leave` 给出的 id 和令牌对不上任何绑定 |
@@ -132,14 +132,16 @@ title: 通道
 
 客户端的汇报里 `state_hash` 和中枢的不同时，或汇报带 `is_refresh: true` 时，或中枢自己的状态变了时，中枢下发 `state`。
 
-| 段            | 内容                                                                                         |
-| ------------- | -------------------------------------------------------------------------------------------- |
-| `hash`        | 一个不透明的字符串，客户端在每次汇报里原样带回                                               |
-| `is_disabled` | 在**客户端**页选择**停用**（Disable）后为 `true`：列表为空，所有操作都返回 `client_disabled` |
-| `services`    | 这个客户端有权使用的已发布条目，按它的套接字来源地址解析                                     |
-| `urls`        | 中枢提供通道的每个地址，客户端存下来供下次重连                                               |
-| `overlays`    | 客户端加入中枢每个虚拟网要用的材料，首选的排在前面                                          |
-| `terminals`   | 客户端有权打开 shell 的受管机器，每台是 `{device_id, name, is_online, sessions}`             |
+| 段                 | 内容                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| `hash`             | 一个不透明的字符串，客户端在每次汇报里原样带回                                               |
+| `is_disabled`      | 在**客户端**页选择**停用**（Disable）后为 `true`：列表为空，所有操作都返回 `client_disabled` |
+| `services`         | 这个客户端有权使用的已发布条目，按它的套接字来源地址解析                                     |
+| `urls`             | 中枢提供通道的每个地址，客户端存下来供下次重连                                               |
+| `overlays`         | 客户端加入中枢每个虚拟网要用的材料，首选的排在前面                                           |
+| `terminals`        | 客户端有权打开 shell 的受管机器，每台是 `{device_id, name, is_online, sessions}`             |
+| `is_panel_allowed` | 客户端未停用且权限含 `panel` 时为 `true`：可以经 `connect` 打开中枢的面板                    |
+| `reached_through`  | 这个客户端的套接字以哪种方式连到中枢：`lan`、`netbird`、`easytier` 或 `relay`                |
 
 ### 虚拟网
 
@@ -180,7 +182,7 @@ title: 通道
 | `account`        | shell 运行所用的账户                                                         |
 | `started_at`     | 打开时间，Unix 秒                                                            |
 | `title`          | shell 最后设置的标题，或 shell 名                                            |
-| `owner`          | 谁打开的，即中枢在 `shell` 的 open 上盖的标记                               |
+| `owner`          | 谁打开的，即中枢在 `shell` 的 open 上盖的标记                                |
 | `is_attached`    | 现在有没有流连着                                                             |
 | `is_persistent`  | 最后一个流关闭后会话是否保留                                                 |
 | `is_shared`      | 对这台机器有终端权限的客户端是否都能连上；共享的会话在最后一个流关闭后也保留 |
@@ -211,23 +213,23 @@ title: 通道
 
 `services` 里每个条目是 `{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_name}`。
 
-| `type` | `payload`                                                            |
-| ------ | -------------------------------------------------------------------- |
-| `web`  | `{url, is_local_only}`；只有 VS Code 的条目带 `is_local_only` 且为真 |
-| `port` | `{host, port}`                                                       |
-| `ai`   | `{endpoint, protocol, models}`，`protocol` 是 `openai`               |
-| `file` | `{protocol, host, share, users}`，`protocol` 是 `smb`                |
-| `rdp`  | `{protocol, host, port, attention}`，`protocol` 是 `rustdesk`        |
+| `type` | `payload`                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `web`  | `{url, is_token_required}`；只有 VS Code、code-server 和 CloudCLI 实例带 `is_token_required` 且为真                                   |
+| `port` | `{host, port}`                                                                                                                        |
+| `ai`   | `{endpoint, protocol, models}`，`protocol` 是 `openai`                                                                                |
+| `file` | `{protocol, host, share, users}`，`protocol` 是 `smb`                                                                                 |
+| `rdp`  | `{protocol, host, port, attention, platform_os}`，`protocol` 是 `rustdesk`，`platform_os` 是共享机器的 `linux`、`windows` 或 `darwin` |
 
-带 `is_local_only` 的条目只能通过转发到客户端本机 `127.0.0.1` 的端口打开，所以手机上显示为仅桌面可用。`rdp` 条目的 `attention` 写明共享桌面的那台机器前要先做什么：`rdp_nobody_seated`、`rdp_screen_not_allowed`，或为空。`file` 条目的 `users` 列出能打开这个共享的账户，手机据此给出用户名，只让人输密码。手动声明的共享这一项为空，0.5.0 之前的中枢不发这一项。
+payload 里的 `host`、`port`、`url` 和 `endpoint` 是服务在中枢网络上的位置，按客户端套接字的来源地址解析。客户端只把它显示给人看，一个也不拨；到服务的每个字节都走 `connect` 流。`rdp` 条目的 `attention` 写明共享桌面的那台机器前要先做什么：`rdp_nobody_seated`、`rdp_screen_not_allowed`，或为空。`file` 条目的 `users` 列出能打开这个共享的账户，手机据此给出用户名，只让人输密码。手动声明的共享这一项为空，0.5.0 之前的中枢不发这一项。
 
-| 字段                 | 内容                                                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `is_healthy`         | 最近一次探测的结果，从没探测过时为 `null`                                                                                                        |
-| `source`             | `module`、`declared` 或 `device`                                                                                                                 |
-| `description_code`   | 来源说明的错误码形式，由程序自己翻成文字：`ai_gateway`、`container`、`declared`、`device_share`、`gitea_module`、`samba_module`、`vscode_module` |
-| `description_params` | 那句话要用的值；`vscode_module` 用 `{host, account}`                                                                                             |
-| `device_name`        | 提供这个条目的机器名；中枢记录里没有这台机器时为空                                                                                               |
+| 字段                 | 内容                                                                                                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `is_healthy`         | 最近一次探测的结果，从没探测过时为 `null`                                                                                                                                                 |
+| `source`             | `module`、`declared` 或 `device`                                                                                                                                                          |
+| `description_code`   | 来源说明的错误码形式，由程序自己翻成文字：`ai_gateway`、`container`、`declared`、`device_share`、`gitea_module`、`samba_module`、`vscode_module`、`code_server_module`、`cloudcli_module` |
+| `description_params` | 那句话要用的值；`vscode_module`、`code_server_module` 和 `cloudcli_module` 用 `{host, account}`                                                                                           |
+| `device_name`        | 提供这个条目的机器名；中枢记录里没有这台机器时为空                                                                                                                                        |
 
 ## 客户端打开的流
 
@@ -235,23 +237,49 @@ title: 通道
 
 `open {kind: service, id}` 请求某个条目要从中枢取的材料。中枢按下面的顺序检查，第一项不通过的检查决定 close 的错误码：
 
-| `code`              | 什么时候                                             |
-| ------------------- | ---------------------------------------------------- |
-| `binding_unknown`   | 没有哪个客户端行的 id 是这条套接字绑定的 id          |
-| `client_disabled`   | 这个客户端在**客户端**页上停用了                     |
-| `service_unknown`   | 为这个客户端解析出的列表里没有这个 id                |
-| `permission_denied` | 这个客户端的权限不含条目的类型，或不含提供条目的机器 |
-| `rdp_not_shared`    | 条目所在的机器已停止共享桌面                         |
-| `vault_locked`      | 中枢的保险库已锁，打不开 AI 密钥或 VS Code 令牌      |
+| `code`              | 什么时候                                                                        |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `binding_unknown`   | 没有哪个客户端行的 id 是这条套接字绑定的 id                                     |
+| `client_disabled`   | 这个客户端在**客户端**页上停用了                                                |
+| `service_unknown`   | 为这个客户端解析出的列表里没有这个 id                                           |
+| `permission_denied` | 这个客户端的权限不含条目的类型，或不含提供条目的机器                            |
+| `rdp_not_shared`    | 条目所在的机器已停止共享桌面                                                    |
+| `vault_locked`      | 中枢的保险库已锁，打不开 AI 密钥、VS Code 令牌，或 code-server、CloudCLI 的密钥 |
 
-不带错误码的 close 带回材料：
+不带错误码的 close 带回材料。带 `is_token_required` 的 `web` 条目，客户端在自己转发的地址上加 `?tkn=<token>` 打开，从不打开条目自己的地址：
 
-| 条目                                           | close 的 `params`                                                                                |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `rdp`                                          | `{host, port, password}`：当前解析出的地址和座位密码                                             |
-| `ai`                                           | `{base_url, api_key, model}`：网关地址、这个客户端自己的密钥、网关提供的第一个模型               |
-| `description_code` 为 `vscode_module` 的 `web` | `{token}`；客户端把条目的端口转发到本机 `127.0.0.1`，打开 `http://127.0.0.1:<port>/?tkn=<token>` |
-| 其他 `web`、`port`、`file`                     | 空；payload 已经是客户端需要的全部                                                               |
+| 条目                                                                     | close 的 `params`                                                                        |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `rdp`                                                                    | `{password}`：共享桌面那台机器的座位密码                                                 |
+| `ai`                                                                     | `{api_key, model}`：这个客户端自己的密钥，网关每个请求都核对它；以及网关提供的第一个模型 |
+| `description_code` 为 `vscode_module` 的 `web`                           | `{token}`：实例的连接令牌                                                                |
+| `description_code` 为 `code_server_module` 或 `cloudcli_module` 的 `web` | `{token}`：中枢只为这次回答签发的令牌，60 秒内有效，只能用一次                           |
+| 其他 `web`、`port`、`file`                                               | 空；payload 已经是客户端需要的全部                                                       |
+
+### connect 流
+
+`open {kind: connect, id}` 承载到一个已发布条目的一条 TCP 连接，`open {kind: connect, is_panel: true}` 承载到中枢自己面板的一条。客户端的本地监听每接受一条连接，就开一个流；条目 payload 里的地址，客户端一个也不拨。中枢做 service 流的那些检查，流的上限也在其中；这里没有 `vault_locked`：
+
+| `code`                         | 什么时候                                                                |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| `binding_unknown`              | 没有哪个客户端行的 id 是这条套接字绑定的 id                             |
+| `client_disabled`              | 这个客户端在**客户端**页上停用了                                        |
+| `connect_limit {limit}`        | 这条套接字上已经开着 256 个 `connect` 流                                |
+| `service_unknown {service_id}` | 为这个客户端解析出的列表里没有这个 id                                   |
+| `permission_denied {kind}`     | 权限不含条目的类型；连面板时不含 `panel`                                |
+| `rdp_not_shared {service_id}`  | 条目所在的机器已停止共享桌面                                            |
+| `agent_offline {device}`       | 提供条目的机器没有通道，或通道在流还开着时断了                          |
+| `connect_failed {reason}`      | 拨不通对端；`reason` 是 `refused`、`timeout`（10 秒后）或 `unreachable` |
+| `port_not_published {port}`    | 提供条目的机器已不再发布这个端口                                        |
+
+| 条目               | 中枢把流接到哪里                           |
+| ------------------ | ------------------------------------------ |
+| 受管机器提供的条目 | 那台机器的被控端，由它拨本机回环上的端口   |
+| 手动声明的记录     | 记录自己的地址，由中枢去拨                 |
+| `ai`               | 中枢回环上的网关                           |
+| 面板               | 中枢回环上面板的 HTTP 端口，不跳转到 HTTPS |
+
+字节以二进制帧双向传送，受额度约束，窗口和单帧大小与 `shell` 流相同。任一端读到文件结束，读到的字节发完后，流以空 params 关闭；收到 close 的一方写完手上的字节，再关自己的套接字。流没有半关闭；客户端的套接字断了，上面所有 `connect` 流一并结束。
 
 ### shell 与 command 流
 
@@ -277,7 +305,7 @@ title: 通道
 | `urls`    | 中枢提供通道的每个地址                         |                                                                           |
 | `error`   |                                                | `{code, params}`：被控端最近一次值得显示的失败                            |
 
-被控端每 5 秒汇报一次。中枢向它打开 `shell`、`file` 和 `command` 流，它向中枢打开 `log` 和 `package` 流。
+被控端每 5 秒汇报一次。中枢向它打开 `shell`、`file`、`command` 和 `connect` 流，它向中枢打开 `log` 和 `package` 流。一个 `connect {port}` 流是被控端在 `127.0.0.1` 上拨出的一条 TCP 连接；容器端口只发布在某一个地址上时，拨那个地址。机器此刻没有发布的端口以 `port_not_published {port}` 关闭，拨不通以 `connect_failed {reason}` 关闭。
 
 ## 拒绝与绑定
 

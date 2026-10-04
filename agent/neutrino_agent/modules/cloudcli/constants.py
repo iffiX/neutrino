@@ -108,8 +108,9 @@ CLOUDCLI_INSTALL_TASK_PREFIX = "neutrino_cloudcli_install_"
 CLOUDCLI_TASK_MARKER = "neutrino:"
 CLOUDCLI_WINDOWS_SHELL = "cmd.exe"
 CLOUDCLI_WINDOWS_SCRIPT_DIR_NAME = "run"
+# The name an older build gave the inbound firewall rule of an instance's
+# port; an apply removes every rule under it.
 CLOUDCLI_WINDOWS_RULE_PREFIX = "neutrino_cloudcli_port_"
-CLOUDCLI_WINDOWS_RULE_TITLE = "Neutrino CloudCLI ({account})"
 # What follows Node's directory on a task's PATH, expanded by the task's
 # script in the account's context: for the service the account's own PATH,
 # for npm the system's own directories first.

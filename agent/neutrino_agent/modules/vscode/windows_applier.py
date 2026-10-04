@@ -12,8 +12,8 @@ the CLI. The token file and the log file are reachable by their account,
 SYSTEM and the administrators alone. An instance's processes are the ones
 whose command line names its token file and every process they started; a
 stop ends all of them, and an instance runs while one of them listens on
-its port. Every operation is one PowerShell script, the passwords on its
-standard input.
+its port, which listens on loopback and opens no firewall port. Every
+operation is one PowerShell script, the passwords on its standard input.
 
 Not pure: runs PowerShell.
 """
@@ -40,7 +40,6 @@ from neutrino_agent.modules.vscode.constants import (
     VSCODE_TASK_MARKER,
     VSCODE_TASK_PREFIX,
     VSCODE_WINDOWS_RULE_PREFIX,
-    VSCODE_WINDOWS_RULE_TITLE,
     VSCODE_TOKEN_DIR_NAME,
     VSCODE_WINDOWS_SHELL,
 )
@@ -88,8 +87,8 @@ function Get-TokenFile($task) {
 """
 
 # Writes the token files, registers the tasks that changed, starts them,
-# opens each instance's port in the firewall, and unregisters the module's
-# tasks no instance names, closing their ports.
+# unregisters the module's tasks no instance names, and removes every
+# firewall rule an older build opened for an instance's port.
 APPLY_SCRIPT = TREE_FUNCTIONS + """
 $notes = @()
 foreach ($i in @($d.instances)) {
@@ -131,16 +130,6 @@ foreach ($i in @($d.instances)) {
     Stop-Instance $i.task $i.token_file
     Start-ScheduledTask -TaskName $i.task
   }
-  $rule = Get-NetFirewallRule -Name $i.rule -ErrorAction SilentlyContinue
-  if (-not $rule) {
-    New-NetFirewallRule -Name $i.rule -DisplayName $i.rule_title `
-      -Direction Inbound -Action Allow -Protocol TCP -LocalPort $i.port `
-      -Profile Any | Out-Null
-    $notes += "opened port $($i.port) for $($i.account)"
-  } elseif ("$(($rule | Get-NetFirewallPortFilter).LocalPort)" -ne "$($i.port)") {
-    $rule | Set-NetFirewallRule -LocalPort $i.port
-    $notes += "moved the port of $($i.account) to $($i.port)"
-  }
 }
 foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
   if (@($d.tasks) -notcontains $task.TaskName) {
@@ -149,15 +138,19 @@ foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction Sil
     $account = $task.TaskName.Substring($d.prefix.Length)
     $log = Join-Path $d.log_dir "$account$($d.log_suffix)"
     Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
-    Remove-NetFirewallRule -Name "$($d.rule_prefix)$account" -ErrorAction SilentlyContinue
     $notes += "removed $($task.TaskName)"
   }
+}
+$stale = @(Get-NetFirewallRule -Name "$($d.rule_prefix)*" -ErrorAction SilentlyContinue)
+if ($stale.Count -gt 0) {
+  $stale | Remove-NetFirewallRule
+  $notes += "closed the ports an older build opened"
 }
 @{notes = $notes} | ConvertTo-Json -Compress -Depth 4
 """
 
 # Stops the module's tasks; with ``is_removed`` also unregisters them,
-# deletes the token files and closes their ports.
+# deletes the token files and the firewall rules an older build added.
 WITHDRAW_SCRIPT = TREE_FUNCTIONS + """
 foreach ($task in @(Get-ScheduledTask -TaskName "$($d.prefix)*" -ErrorAction SilentlyContinue)) {
   Stop-Instance $task.TaskName (Get-TokenFile $task.TaskName)
@@ -201,11 +194,6 @@ def task_name(account: str) -> str:
         ``neutrino_vscode_<account>``.
     """
     return VSCODE_TASK_PREFIX + account
-
-
-def rule_name(account: str) -> str:
-    """The firewall rule of the account's instance, which opens its port."""
-    return VSCODE_WINDOWS_RULE_PREFIX + account
 
 
 def task_arguments(cli_path: str, serve_arguments: list, log_file: str) -> str:
@@ -308,10 +296,6 @@ class VscodeWindowsApplier:
                     "log_file": log_file,
                     "task": task_name(instance.account),
                     "port": instance.port,
-                    "rule": rule_name(instance.account),
-                    "rule_title": VSCODE_WINDOWS_RULE_TITLE.format(
-                        account=instance.account
-                    ),
                     "arguments": arguments,
                     "description": VSCODE_TASK_MARKER
                     + _digest(VSCODE_WINDOWS_SHELL, arguments, instance),
