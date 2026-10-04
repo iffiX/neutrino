@@ -149,7 +149,8 @@
   }
 
   function openMenu(x, y) {
-    const pane = panes[active];
+    const id = active;
+    const pane = panes[id];
     if (!pane) return;
     const items = [
       [labels.copy, pane.term.hasSelection(), () => window.NeutrinoBridge.copy(pane.term.getSelection())],
@@ -162,7 +163,14 @@
         },
       ],
       [labels.selectAll, true, () => pane.term.selectAll()],
-      [labels.clear, true, () => pane.term.clear()],
+      [
+        labels.clear,
+        true,
+        () => {
+          window.NeutrinoBridge.input(id, toBase64("\x03"));
+          pane.term.clear();
+        },
+      ],
     ];
     menu.replaceChildren();
     for (const [label, isEnabled, act] of items) {

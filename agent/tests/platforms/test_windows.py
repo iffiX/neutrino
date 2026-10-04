@@ -790,6 +790,58 @@ def test_a_directory_opened_to_accounts_grants_the_users_group_read_and_run():
     assert "'*S-1-5-32-545:(OI)(CI)RX'" in script
 
 
+class FakeSeat:
+    """The console session, with whoever is signed in at it."""
+
+    def __init__(self, accounts):
+        self.accounts = accounts
+
+    def graphical_accounts(self):
+        return None if self.accounts is None else list(self.accounts)
+
+
+def test_a_shell_starts_in_the_console_accounts_profile(tmp_path):
+    platform = WindowsPlatform(
+        seat=FakeSeat(["alice"]),
+        powershell=lambda script, document: {"is_present": True, "home": str(tmp_path)},
+    )
+
+    assert platform.shell_start_dir() == str(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "accounts, read",
+    [
+        ([], {"is_present": True, "home": "unused"}),
+        (None, {"is_present": True, "home": "unused"}),
+        (["alice"], {"is_present": False, "home": ""}),
+        (["alice"], {"is_present": True, "home": ""}),
+        (["alice"], {"is_present": True, "home": "Z:\\no\\such\\profile"}),
+    ],
+    ids=["nobody", "no_session_api", "no_account", "no_profile", "missing_profile"],
+)
+def test_a_shell_without_a_profile_starts_at_the_system_drives_root(
+    monkeypatch, accounts, read
+):
+    monkeypatch.setenv("SystemDrive", "D:")
+    platform = WindowsPlatform(
+        seat=FakeSeat(accounts), powershell=lambda script, document: read
+    )
+
+    assert platform.shell_start_dir() == "D:\\"
+
+
+def test_a_powershell_that_cannot_answer_starts_the_shell_at_the_root(monkeypatch):
+    monkeypatch.delenv("SystemDrive", raising=False)
+
+    def powershell(script, document):
+        raise subprocess.TimeoutExpired("powershell", 1)
+
+    platform = WindowsPlatform(seat=FakeSeat(["alice"]), powershell=powershell)
+
+    assert platform.shell_start_dir() == "C:\\"
+
+
 @pytest.mark.parametrize(
     "action, command",
     [

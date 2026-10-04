@@ -2,7 +2,8 @@
 
 Two anonymous pipes carry the console's input and output, and the console is
 created at the size the hub opened the stream with. PowerShell is started
-suspended on it, with the agent's own standard handles set aside so the
+suspended on it, in the console account's profile directory or the system
+drive's root, with the agent's own standard handles set aside so the
 child is born with the console's, put into a job object that kills every
 process in it when its last handle closes, and then resumed. The console's
 output is read and sent up, no faster than the hub's credit; the hub's bytes
@@ -35,6 +36,7 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.windows import WindowsPlatform
 from neutrino_agent.streams.shell_session import SessionShellStream, ShellSession
 
 # How long the wait for the shell's exit sleeps before looking again.
@@ -108,13 +110,14 @@ def _attribute_list(kernel32, console):
     return attributes
 
 
-def _start(kernel32, argv: list, attributes):
+def _start(kernel32, argv: list, attributes, start_dir: str):
     """Start the shell suspended on the pseudo console.
 
     Args:
         kernel32: The bound kernel32.
         argv: Argument vector.
         attributes: The attribute list naming the console.
+        start_dir: The shell's working directory.
 
     Returns:
         The :class:`win32.ProcessInformation` of the started shell.
@@ -142,7 +145,7 @@ def _start(kernel32, argv: list, attributes):
             False,
             win32.EXTENDED_STARTUPINFO_PRESENT | win32.CREATE_SUSPENDED,
             None,
-            None,
+            start_dir,
             ctypes.byref(startup),
             ctypes.byref(process),
         )
@@ -186,14 +189,16 @@ def _kill_on_close_job(kernel32):
 class ConsoleTerminal:
     """PowerShell on a pseudo console, as a shell session drives it."""
 
-    def __init__(self, kernel32, *, cols: int, rows: int):
+    def __init__(self, kernel32, *, cols: int, rows: int, start_dir: str):
         """
         Args:
             kernel32: The bound kernel32.
             cols: The console's first width.
             rows: The console's first height.
+            start_dir: The shell's working directory.
         """
         self._kernel32 = kernel32
+        self._start_dir = start_dir
         self._columns = cols
         self._rows = rows
         self._console = None
@@ -232,7 +237,10 @@ class ConsoleTerminal:
         try:
             self._attributes = _attribute_list(kernel32, console)
             self._process = _start(
-                kernel32, list(AGENT_SHELL_COMMANDS["win32"]), self._attributes
+                kernel32,
+                list(AGENT_SHELL_COMMANDS["win32"]),
+                self._attributes,
+                self._start_dir,
             )
             self._job = _kill_on_close_job(kernel32)
             kernel32.AssignProcessToJobObject(self._job, self._process.hProcess)
@@ -348,7 +356,9 @@ class ConsoleTerminal:
 class WindowsShellStream(SessionShellStream):
     """PowerShell on a pseudo console, kept by id when the open names one."""
 
-    def __init__(self, channel, args: dict, *, kernel32=None, sessions=None):
+    def __init__(
+        self, channel, args: dict, *, kernel32=None, sessions=None, platform=None
+    ):
         """
         Args:
             channel: The stream's channel.
@@ -357,9 +367,12 @@ class WindowsShellStream(SessionShellStream):
             kernel32: The bound kernel32; None binds the real one.
             sessions: The agent's shell registry; None keeps no shell past
                 its stream.
+            platform: Names the directory the shell starts in; None asks
+                the Windows platform.
         """
         super().__init__(channel, args, sessions=sessions)
         self._kernel32 = kernel32
+        self._platform = platform
 
     def _check_platform(self) -> None:
         """Refuse a Windows with no pseudo console, or no kernel32."""
@@ -374,13 +387,22 @@ class WindowsShellStream(SessionShellStream):
         return ShellSession(
             session_id=self._session_id,
             terminal=ConsoleTerminal(
-                self._bound_kernel32(), cols=self._columns, rows=self._rows
+                self._bound_kernel32(),
+                cols=self._columns,
+                rows=self._rows,
+                start_dir=self._bound_platform().shell_start_dir(),
             ),
             account=AGENT_SHELL_WINDOWS_ACCOUNT,
             title=AGENT_SHELL_COMMANDS["win32"][0],
             on_change=on_change,
             on_end=on_end,
         )
+
+    def _bound_platform(self):
+        """The Windows platform, made on first use."""
+        if self._platform is None:
+            self._platform = WindowsPlatform()
+        return self._platform
 
     def _bound_kernel32(self):
         """kernel32, bound on first use."""

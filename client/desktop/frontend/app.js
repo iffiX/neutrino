@@ -1707,7 +1707,7 @@ function openTerminalMenu(tab, x, y) {
     [t('ui.menu.copy'), !tab.term.hasSelection(), () => copySelection(tab)],
     [t('ui.menu.paste'), tab.state !== 'open', () => pasteClipboard(tab)],
     [t('ui.menu.select_all'), false, () => tab.term.selectAll()],
-    [t('ui.menu.clear'), false, () => tab.term.clear()],
+    [t('ui.menu.clear'), false, () => clearTerminal(tab)],
   ];
   for (const [label, isDisabled, onPick] of items) {
     const item = document.createElement('button');
@@ -1725,6 +1725,12 @@ function openTerminalMenu(tab, x, y) {
   menu.style.left = Math.min(x, window.innerWidth - width - 4) + 'px';
   menu.style.top = Math.min(y, window.innerHeight - height - 4) + 'px';
   openMenu = menu;
+}
+
+// Clear sends Ctrl+C to the shell first, then clears the screen.
+function clearTerminal(tab) {
+  sendShellKeys(tab, '\x03');
+  tab.term.clear();
 }
 
 function closeTerminalMenu() {

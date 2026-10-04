@@ -7,8 +7,9 @@ these pin: the console's output arrives as bytes and the exit code closes
 the stream, the hub's bytes reach the console with credit offered back, a
 resize resizes the console, a close from the hub terminates the shell and
 closes its job, the shell starts suspended with the agent's standard
-handles set aside and is resumed only once it is in the job, and a Windows
-without a pseudo console is refused.
+handles set aside and is resumed only once it is in the job, it starts in
+the console account's profile directory or the system drive's root when
+nobody is signed in, and a Windows without a pseudo console is refused.
 """
 
 import ctypes
@@ -19,6 +20,7 @@ import pytest
 
 from neutrino_agent.exceptions import StreamRefused
 from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.windows import WindowsPlatform
 from neutrino_agent.streams import shell as shell_module
 from neutrino_agent.streams.shell_session import ShellSessionRegistry
 from neutrino_agent.streams.windows_shell import WindowsShellStream
@@ -45,6 +47,7 @@ class FakeKernel32:
         self.closed = []
         self.std = dict(zip(win32.STD_HANDLE_NAMES, STD_HANDLES))
         self.std_at_create = None
+        self.start_dir = None
         self.exit_code = None
         self.is_console_closed = threading.Event()
         self.next_handle = 0x100
@@ -111,6 +114,7 @@ class FakeKernel32:
         flags = rest[3]
         process = rest[-1]._obj
         self.std_at_create = dict(self.std)
+        self.start_dir = rest[5]
         self.calls.append(("CreateProcessW", command_line, flags))
         process.hProcess = PROCESS
         process.hThread = THREAD
@@ -161,9 +165,29 @@ class NoConsoleKernel32:
     """A Windows before 1809: kernel32 with no pseudo console."""
 
 
-def run_shell(kernel32, channel, **args):
+class FakeSeat:
+    """The console session, with whoever is signed in at it."""
+
+    def __init__(self, accounts):
+        self.accounts = accounts
+
+    def graphical_accounts(self):
+        return list(self.accounts)
+
+
+class FakePlatform:
+    """A platform that names one start directory."""
+
+    def shell_start_dir(self):
+        return "C:\\Users\\alice"
+
+
+def run_shell(kernel32, channel, *, platform=None, **args):
     stream = WindowsShellStream(
-        channel, {"cols": 80, "rows": 24, **args}, kernel32=kernel32
+        channel,
+        {"cols": 80, "rows": 24, **args},
+        kernel32=kernel32,
+        platform=platform or FakePlatform(),
     )
     stream.open()
     return stream.run()
@@ -261,6 +285,38 @@ def test_powershell_starts_suspended_and_is_resumed_once_in_the_job():
     ) in kernel32.calls
 
 
+def test_the_shell_starts_in_the_console_accounts_profile(tmp_path):
+    kernel32 = FakeKernel32()
+    channel = FakeChannel()
+    channel.feed(("data", b"exit 0\r"))
+    homes = {"alice": str(tmp_path)}
+    platform = WindowsPlatform(
+        seat=FakeSeat(["alice"]),
+        powershell=lambda script, document: {
+            "is_present": True,
+            "home": homes[document["name"]],
+        },
+    )
+
+    run_shell(kernel32, channel, platform=platform)
+
+    assert kernel32.start_dir == str(tmp_path)
+
+
+def test_with_nobody_signed_in_the_shell_starts_at_the_system_drives_root(
+    monkeypatch,
+):
+    monkeypatch.setenv("SystemDrive", "D:")
+    kernel32 = FakeKernel32()
+    channel = FakeChannel()
+    channel.feed(("data", b"exit 0\r"))
+    platform = WindowsPlatform(seat=FakeSeat([]))
+
+    run_shell(kernel32, channel, platform=platform)
+
+    assert kernel32.start_dir == "D:\\"
+
+
 def test_the_agents_standard_handles_are_set_aside_while_the_shell_is_made():
     kernel32 = FakeKernel32()
     channel = FakeChannel()
@@ -297,6 +353,7 @@ def test_a_persistent_powershell_survives_its_stream_and_is_attached_again():
             {"cols": 80, "rows": 24, "session_id": "tab-1", **args},
             kernel32=kernel32,
             sessions=registry,
+            platform=FakePlatform(),
         )
         stream.open()
         outcome.clear()
