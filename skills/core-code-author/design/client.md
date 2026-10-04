@@ -334,7 +334,11 @@ share's `users`, with typed text accepted), the password, and the mount path
 with **Browse…**, or a drive letter picker on Windows. The form is a
 configurable panel with a dirty frame, **Save** and **Cancel**. **Mount** is
 disabled until the form has a user name and a path, with the reason on the
-row.
+row. The default path is `~/nas/<share>` on Linux and `/Volumes/<share>` on
+macOS, where the Finder lists a network volume under the server it came
+from; the mounted row on macOS says so under the path (`ui.mount_finder`,
+with the server's address), so what the row shows and what the Finder shows
+are one thing.
 
 A phone has no mount. Its row shows **Open in Files**, which makes the share
 a location in the system's Files app through the client's file provider. The
@@ -439,6 +443,7 @@ The phone's viewer page is built for the picture first:
 | No title bar. Three translucent round buttons sit at the top right and stay: **Keyboard** raises the phone's keyboard and takes typing; **Keys** shows the key bar; **Close** ends the session. Both the keyboard and the key bar start off, so the page opens on the picture alone. | A title the person already knows and bars that hide on a timer take the picture away and make the way back hard to find; three buttons that never move are found by feel. |
 | The keyboard never shrinks the picture: the picture keeps its size and the keyboard covers its lower part, the key bar sits right above the keyboard, and the two-finger drag and pinch reach what the keyboard covers. | A picture squeezed to a strip above the keyboard cannot be worked on. |
 | Typing goes through an input connection of the page's own, not through a text field that is diffed: the text the keyboard commits is sent as text, the text it is still composing is sent nowhere, a delete is sent as Backspace, Enter as Enter, and a single key with a modifier held is sent as that key. The connection keeps the focus while the keyboard is up. No ASCII-only keyboard type, no autocorrect, no suggestions. | The person's own keyboard, in its own language, is the input; a Chinese keyboard composes before it commits, and a field diffed on every change sends the composition and loses the focus when the page redraws. |
+| Committed text with any character outside ASCII goes to a Linux host (`platform_os` `linux` on the entry) as a paste: the text is put on the remote clipboard and Shift+Insert is pressed once. ASCII-only text, and every text to a Windows or Mac host, is typed as before. | RustDesk types a character X11 has no key for by remapping a spare key, pressing it and mapping it back, and the programs read the map late, so a run of Chinese comes out doubled or with characters missing whatever the pace; a paste lands whole, and Shift+Insert pastes in terminals, browsers, GTK and Qt programs alike where Ctrl+V does not. |
 
 A row whose entry is unhealthy shows the code's wording on the reason line:
 `rdp_nobody_seated`, `rdp_screen_not_allowed`. A row whose entry's

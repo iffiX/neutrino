@@ -16,7 +16,7 @@ the panel writes all of them off.
 | --- | --- | --- | --- | --- | --- |
 | served networks | `is_proxy_enabled` | every TCP and UDP connection forwarded from a LAN interface to a public address | `prerouting` TPROXY on the LAN interfaces | no such scope | router and side_gateway; the switch is not drawn in server mode |
 | overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed interface of any running overlay | every running overlay's exposed interfaces join the TPROXY set, NetBird's and EasyTier's alike when both run | the TUN below, with forwarding on the overlay interfaces | every mode |
-| the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray | `output` marks the packet, it hairpins through `lo`, TPROXY takes it | the TUN below | every mode |
+| the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray and the hub's own overlay engines | `output` marks the packet, it hairpins through `lo`, TPROXY takes it; a packet from the NetBird or EasyTier unit's cgroup is accepted before the mark | the TUN below, with the engines' endpoints kept out | every mode |
 | SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port | the same | every mode |
 
 ### The TUN on macOS and Windows
@@ -32,9 +32,17 @@ with sniffing on, so the domain rules of the split apply as they do to
 and its upper twin) at the device, which win over the uplink's default route without touching
 it, and keeps a host route through the uplink's gateway for every address
 that has to stay out: every exit node's address, `direct_dns`, the
-reference host, and the servers of the running overlays; a name among them
-is resolved by the direct resolver, and by the system's when that one has
-no answer. The local networks
+reference host, and everything the running overlay engines talk to, which
+is their servers as the engines report them, EasyTier's console and its
+peer-resolve host, and every peer endpoint the engines hold now; a name
+among them is resolved by the direct resolver, and by the system's when that
+one has no answer. The engines' endpoints change as peers come and go, so
+the keeper reads them again on every tick (`netbird status --json`,
+`easytier-cli peer`) and adds and withdraws host routes to match; the first
+packets to a peer the engines did not name yet may still cross the exit. On
+every system the hub's own engines never go through xray: through xray a
+tunnel's handshakes leave from the exit's address and its peers see two
+addresses for one machine. The local networks
 need no route, since the link's own route is longer than a half. xray's
 `direct` and node outbounds are bound to the uplink with
 `sockopt.interface`, so a connection the split sends direct never enters

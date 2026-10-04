@@ -357,7 +357,7 @@ another:
 | --- | --- | --- | --- | --- |
 | Machines on a served network | — | yes | yes | the prerouting chain, into the TPROXY inbound |
 | Overlay members whose exit this box is | yes | yes | yes | the prerouting chain on the overlay interfaces on Linux, behind `is_overlay_proxy_enabled`; the TUN on macOS and Windows |
-| This box's own traffic | yes | yes | yes | the output chain on Linux, behind `is_local_proxy_enabled`; the TUN on macOS and Windows |
+| This box's own traffic | yes | yes | yes | the output chain on Linux, behind `is_local_proxy_enabled`, which accepts the hub's own NetBird and EasyTier units' packets (matched by their cgroup) before anything is marked; the TUN on macOS and Windows, with the engines' endpoints routed past it ([proxy.md](proxy.md)) |
 | Applications pointed at a SOCKS port | yes | yes | yes | the port's own `is_proxied` answer |
 | The served networks' DNS | — | yes | yes | dnsmasq's only upstream, the xray DNS inbound |
 
