@@ -7,10 +7,13 @@ and an enable minting one again, a delete taking key, record and socket —
 and that every change says ``clients`` on the event bus.
 """
 
+import hashlib
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
@@ -46,7 +49,7 @@ class RecordingSessions(ChannelSessionRegistry):
 
 class FakeRuntime:
     def __init__(self):
-        self.enrollments = {}
+        self.enrollments = ChannelTicketRegistry()
         self.events = RecordingEvents()
         self.client_sessions = RecordingSessions()
         self.client_catalog_host = {}
@@ -130,12 +133,14 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
     payload = decoded_link(body["link"])
     assert payload["role"] == "client" and payload["fp"] == FINGERPRINT
     assert payload["urls"] == ["https://192.168.100.1:8443"]
-    ticket = runtime.enrollments[payload["token"]]
+    ticket = runtime.enrollments.get(payload["token"])
     rows = client.get("/api/hub/client").json()["clients"]
     assert len(rows) == 1
     assert ticket == {
+        "token_sha256": hashlib.sha256(payload["token"].encode()).hexdigest(),
         "kind": "client",
         "name": "alice",
+        "device_id": None,
         "client_id": rows[0]["id"],
         "expires_at": ticket["expires_at"],
     }
@@ -159,7 +164,7 @@ def test_a_link_creates_the_row_and_carries_the_client_role(api):
 
 def test_a_blank_name_is_refused_and_a_new_link_replaces_only_client_tickets(api):
     client, runtime = api
-    runtime.enrollments["dev"] = {"name": "", "device_id": None, "expires_at": 9e12}
+    runtime.enrollments.put("dev", kind="agent", expires_at=9e12)
 
     refused = client.post("/api/hub/client/enrollment/create", json={"name": "  "})
     first = decoded_link(
@@ -175,7 +180,10 @@ def test_a_blank_name_is_refused_and_a_new_link_replaces_only_client_tickets(api
 
     assert refused.status_code == 400
     assert refused.json()["detail"] == {"code": "client_name_required", "params": {}}
-    assert set(runtime.enrollments) == {"dev", second["token"]}
+    assert runtime.enrollments.get("dev") is not None
+    assert runtime.enrollments.get(first["token"]) is None
+    assert runtime.enrollments.get(second["token"]) is not None
+    assert len(runtime.enrollments.entries()) == 2
     assert first["token"] != second["token"]
 
 

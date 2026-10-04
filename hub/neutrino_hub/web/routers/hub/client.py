@@ -6,8 +6,6 @@ hostname, platform and version come from its live session where it has
 one, and from what it last reported otherwise.
 """
 
-import secrets
-import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,7 +21,10 @@ from neutrino_hub.modules.clients.constants import (
     CLIENT_PERMISSION_OVERLAY,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
-from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_ROLE_CLIENT,
+    ENROLLMENT_TTL_S,
+)
 from neutrino_hub.modules.clients.permissions import permitted_kinds
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.services.constants import SERVICES_TYPE_AI
@@ -44,9 +45,6 @@ from neutrino_hub.web.models import (
 from neutrino_hub.web.channel_addresses import enrollment_link_parts
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.hub.device import (
-    ENROLLMENT_TOKEN_BYTES,
-    ENROLLMENT_TTL_S,
-    clear_enrollments,
     enrollment_link,
 )
 
@@ -86,6 +84,7 @@ def create_enrollment(
     Raises:
         HTTPException: 400 with ``client_name_required`` when the name is
             blank; the link's own refusals as the device link's.
+        OSError: When the ticket file cannot be written.
     """
     name = request.name.strip()
     if not name:
@@ -99,15 +98,9 @@ def create_enrollment(
     if CLIENT_PERMISSION_OVERLAY in registry.default_permission():
         overlays = channel_overlay.overlay_materials(runtime)
     client_id = registry.create(name)
-    clear_enrollments(runtime, kind=CHANNEL_ROLE_CLIENT)
-    token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
-    expires_at = time.time() + ENROLLMENT_TTL_S
-    runtime.enrollments[token] = {
-        "kind": CHANNEL_ROLE_CLIENT,
-        "name": name,
-        "client_id": client_id,
-        "expires_at": expires_at,
-    }
+    token, expires_at = runtime.enrollments.make(
+        kind=CHANNEL_ROLE_CLIENT, name=name, client_id=client_id
+    )
     runtime.events.publish(WEB_EVENT_CLIENTS)
     return ClientEnrollmentView(
         link=enrollment_link(

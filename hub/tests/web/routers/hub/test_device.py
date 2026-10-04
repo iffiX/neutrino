@@ -17,6 +17,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.exceptions import TaskExitStatusError
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices import desired_state as desired_state_module
@@ -783,7 +784,7 @@ class InstallRuntime:
         self.device_hostname = {}
         self.device_last_error = {}
         self.device_modules = {}
-        self.enrollments = {}
+        self.enrollments = ChannelTicketRegistry()
         self.agent_sessions = FakeChannelSessions()
         self.agent_packages = AgentPackageCache(
             root=packages_dir / "agent_cache",
@@ -1084,7 +1085,7 @@ def test_the_install_ticket_binds_to_the_device(install_api, monkeypatch):
     started = install(client, device_id, login_id=stored_login())
 
     assert started.status_code == 200
-    tickets = list(InstallRuntime.instance.enrollments.values())
+    tickets = list(InstallRuntime.instance.enrollments.entries())
     assert tickets and tickets[-1]["device_id"] == device_id
 
 
@@ -1100,7 +1101,7 @@ def test_installing_on_a_scan_row_stores_it_under_an_id_of_its_own(
     (adopted,) = [d for d in DeviceRegistry().all_stored() if d.name != "xenode"]
     assert adopted.mac_addresses == ["aa:bb:cc:dd:ee:09"]
     assert adopted.ssh["host"] == "192.168.100.2"
-    tickets = list(InstallRuntime.instance.enrollments.values())
+    tickets = list(InstallRuntime.instance.enrollments.entries())
     assert tickets[-1]["device_id"] == adopted.id
 
 
@@ -1465,14 +1466,14 @@ def test_renaming_a_device_keeps_its_monitor_alive(box_api):
 
 def test_a_link_that_cannot_be_built_generates_no_ticket(box_api, monkeypatch):
     """The ticket is a join secret. One nobody was ever shown is one lying
-    around until the panel restarts."""
+    around until it expires."""
     client, runtime = box_api
     monkeypatch.setattr(channel_addresses, "channel_urls", lambda runtime: [])
 
     response = client.post(ENROLLMENT_PATH, json={"name": "laptop"})
 
     assert response.status_code == 400
-    assert runtime.enrollments == {}
+    assert runtime.enrollments.entries() == []
 
 
 def test_a_link_generated_for_a_device_binds_to_that_device(box_api, monkeypatch):
@@ -1489,7 +1490,7 @@ def test_a_link_generated_for_a_device_binds_to_that_device(box_api, monkeypatch
     )
 
     assert response.status_code == 200
-    ticket = runtime.enrollments[response.json()["token"]]
+    ticket = runtime.enrollments.get(response.json()["token"])
     assert ticket["device_id"] == DEVICE
     assert ticket["name"] == "xenode"
 
@@ -1508,7 +1509,7 @@ def test_a_link_generated_for_a_scan_row_stores_it_and_binds_to_the_new_row(
     )
 
     assert response.status_code == 200
-    ticket = runtime.enrollments[response.json()["token"]]
+    ticket = runtime.enrollments.get(response.json()["token"])
     assert ticket["device_id"] == "adopted-id"
 
 
@@ -1522,7 +1523,7 @@ def test_a_link_for_an_unknown_device_is_refused_typed(box_api, monkeypatch):
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "device_unknown"
-    assert runtime.enrollments == {}
+    assert runtime.enrollments.entries() == []
 
 
 def test_the_link_is_one_shell_safe_token(box_api, monkeypatch):
@@ -1555,13 +1556,13 @@ def test_a_lapsed_ticket_is_swept_when_the_next_one_is_generated(box_api, monkey
     monkeypatch.setattr(
         channel_addresses, "channel_urls", lambda runtime: ["http://192.168.8.1:8080"]
     )
-    runtime.enrollments["stale"] = {"expires_at": 0.0}
+    runtime.enrollments.put("stale", kind="client", expires_at=0.0)
 
     response = client.post(ENROLLMENT_PATH, json={"name": "laptop"})
 
     assert response.status_code == 200
-    assert "stale" not in runtime.enrollments
-    assert len(runtime.enrollments) == 1
+    assert runtime.enrollments.spend("stale") is None
+    assert len(runtime.enrollments.entries()) == 1
 
 
 # --- the agent's verbs: each press is one command {module: agent, verb} ---

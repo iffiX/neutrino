@@ -72,6 +72,7 @@ def box(tmp_path, monkeypatch):
     (state / "panel_tls_certificate.pem").write_text("leaf")
     (state / "panel_tls_key.pem").write_text("key")
     (state / "xray_node_health.json").write_text("{}")
+    (state / "enrollment_tickets.json").write_text("[]")
     (state / "hub_update").mkdir()
     (state / "hub_update/neutrino-hub_0.3.0_amd64.deb").write_bytes(b"deb")
     (state / "hub_update/state.json").write_text("{}")
@@ -121,6 +122,13 @@ def test_reset_all_forgets_what_this_box_read_about_its_nodes(box):
     reset._reset_all()
 
     assert not (box.parent / "state" / "xray_node_health.json").exists()
+
+
+def test_reset_all_closes_every_open_enrolment_ticket(box):
+    """A link the last owner made joins nothing on the next owner's hub."""
+    reset._reset_all()
+
+    assert not (box.parent / "state" / "enrollment_tickets.json").exists()
 
 
 def test_reset_all_forgets_the_packages_the_hub_downloaded_for_itself(box):

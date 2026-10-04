@@ -16,6 +16,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.netbird.ops import NetbirdState
 from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.web import channel_addresses
@@ -32,7 +33,7 @@ class FakeRuntime:
     def __init__(self, network, *, settings=None):
         self.events = PanelEventBus()
         self.settings = settings or {}
-        self.enrollments = {}
+        self.enrollments = ChannelTicketRegistry()
         self._network = network
 
     def network(self):
@@ -206,9 +207,9 @@ def test_generating_again_replaces_the_outstanding_ticket(
     second = client.post("/api/hub/device/enrollment/create", json={"name": "two"})
 
     assert first.status_code == 200 and second.status_code == 200
-    assert len(runtime.enrollments) == 1
+    assert len(runtime.enrollments.entries()) == 1
     token = decoded(second.json()["link"])["token"]
-    assert runtime.enrollments[token]["name"] == "two"
+    assert runtime.enrollments.get(token)["name"] == "two"
 
 
 def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch, live_addresses):
@@ -226,7 +227,7 @@ def test_a_hub_without_a_certificate_generates_no_ticket(monkeypatch, live_addre
 
     assert answer.status_code == 409
     assert answer.json()["detail"] == {"code": "agent_tls_missing", "params": {}}
-    assert runtime.enrollments == {}
+    assert runtime.enrollments.entries() == []
 
 
 def test_a_box_with_nothing_exposed_has_no_link_to_give(fingerprinted, live_addresses):

@@ -1,9 +1,20 @@
 """Fixed values of the channel: its number, its words, its limits and its codes."""
 
+from neutrino_hub.utils.constants import UTILS_STATE_ROOT
+
 # The protocol number this hub speaks, and the oldest it still accepts. One
 # number has one name in every package, so neither carries a package prefix.
 PROTOCOL = 3
 PROTOCOL_MIN = 3
+
+# An enrolment ticket: its size in bytes before encoding, and how long it
+# lives, counted across hub restarts. The standard names both, so neither
+# carries a package prefix.
+ENROLLMENT_TOKEN_BYTES = 18
+ENROLLMENT_TTL_S = 30 * 60
+# The open tickets, each as its SHA-256, mode 0600.
+CHANNEL_TICKET_PATH = UTILS_STATE_ROOT / "enrollment_tickets.json"
+CHANNEL_TICKET_FILE_MODE = 0o600
 
 # Who is on the other end of a socket, and what the hub answers as.
 CHANNEL_ROLE_AGENT = "agent"

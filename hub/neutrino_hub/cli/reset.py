@@ -65,6 +65,7 @@ RESET_COLLECTED_PATHS = (
 # The vault's data key in particular — left behind, it opens whatever store
 # the next owner restores under the same wrap. The node health file is not a
 # secret; it is this box's readings of nodes the next owner does not have.
+# An open enrolment ticket would join a machine to the next owner's hub.
 RESET_STATE_PATHS = (
     "session.secret",
     "vault.key",
@@ -72,6 +73,7 @@ RESET_STATE_PATHS = (
     "panel_tls_certificate.pem",
     "panel_tls_key.pem",
     "xray_node_health.json",
+    "enrollment_tickets.json",
     # The children the service runs on macOS and Windows, and their start
     # lines; the next setup enables them again.
     "services.json",
