@@ -78,6 +78,10 @@ class RouterDhcpRenderer:
             "    option rapid_commit",
             "    option classless_static_routes",
             "    option interface_mtu",
+            # The lease's resolvers are dnsmasq's upstreams. A server sends
+            # this option only when it is asked for, and no hook writes it
+            # anywhere: the hub reads it from the lease.
+            "    option domain_name_servers",
             # A server that will not identify itself is not one to take a
             # lease from.
             "    require dhcp_server_identifier",
