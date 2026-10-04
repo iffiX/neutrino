@@ -50,8 +50,10 @@ code-server, CloudCLI, Gitea, Samba, Podman, ZFS and the AI gateway.
 The build writes the edition into each package as `EDITION`, `intl` or `cn`,
 beside the version in `neutrino_hub/_version.py`,
 `neutrino_agent/_version.py` and `neutrino_client/_version.py`, and into the
-Android app as `BuildConfig.EDITION`. A checkout has no stamp and reads as
-`intl`. The stamp chooses where a package fetches from
+Android app as `BuildConfig.EDITION`. A checkout has no stamp and reads
+the file `EDITION` at the repository's root, one line holding `intl` in the
+GitHub repository; the Android build reads the same file. The stamp, or
+that file, chooses where a package fetches from
 ([../design/install_and_dev.md](../design/install_and_dev.md), "Where each
 edition fetches from"). Which features a package has follows from the files
 its tree holds ([../design/architecture.md](../design/architecture.md), "A
@@ -73,8 +75,10 @@ no other file repeats it.
 
 `packaging/build/build_sources.py --edition cn` writes
 `neutrino-<version>-cn-source.tar.gz`. It holds the tree at the tagged
-commit without the listed paths, with `EDITION` stamped `cn` in
-`install.sh` and `install.ps1`, and `third_party/` holding the upstream
+commit without the listed paths, with the root `EDITION` file holding
+`cn` and `EDITION` stamped `cn` in `install.sh` and `install.ps1`, so a clone
+of the Gitee repository, a development run from it and its install scripts
+all read `cn`, and `third_party/` holding the upstream
 source of what the `cn` packages carry. Every `cn` package is built from
 this tree, unpacked, and never from the full checkout.
 

@@ -60,8 +60,8 @@ final class ChannelSocketClient {
 - Types and protocols are PascalCase; functions, properties, cases and locals
   are camelCase.
 - Booleans read as questions: `isConnected`, `hasPassword`. A property decoded
-  from a wire field is the camelCase form of that field (`is_local_only`
-  becomes `isLocalOnly`), mapped once in its `CodingKeys`.
+  from a wire field is the camelCase form of that field (`is_token_required`
+  becomes `isTokenRequired`), mapped once in its `CodingKeys`.
 - Classes follow the `<Domain><Thing><Role>` families of
   [../design/class_hierarchy.md](../design/class_hierarchy.md). A system base
   class names the role: `OverlayPacketTunnelProvider`,

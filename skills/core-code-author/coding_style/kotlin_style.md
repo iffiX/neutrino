@@ -56,8 +56,8 @@ class ChannelSocketClient(private val socket: WebSocket) {
 
 - Types are PascalCase; functions, properties and locals are camelCase.
 - Booleans read as questions: `isConnected`, `hasPassword`. A property decoded
-  from a wire field is the camelCase form of that field (`is_local_only`
-  becomes `isLocalOnly`), mapped once with `@SerialName`.
+  from a wire field is the camelCase form of that field (`is_token_required`
+  becomes `isTokenRequired`), mapped once with `@SerialName`.
 - Classes follow the `<Domain><Thing><Role>` families of
   [../design/class_hierarchy.md](../design/class_hierarchy.md). An Android
   base class names the role: `OverlayVpnService`, `FilesDocumentsProvider`.

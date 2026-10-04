@@ -112,7 +112,8 @@ leaked into the rendering layer.
 ## One service supervises the daemons on macOS and Windows
 
 On Linux each daemon the hub runs is a systemd unit of its own, and that set
-of units does not change. On macOS and Windows the hub is one binary, `nhub`,
+of units does not change; the relay's `ssh` is the unit
+`neutrino_hub_relay.service` among them. On macOS and Windows the hub is one binary, `nhub`,
 compiled by Nuitka as the agent is, and its package registers one service:
 the LaunchDaemon `com.neutrino.hub`, run as root and starting `nhub run`, and
 the Windows service `neutrino_hub`, run as SYSTEM and starting
@@ -125,6 +126,7 @@ as its own child:
 | CLIProxyAPI | `cli-proxy-api --config` the rendered YAML |
 | NetBird | `netbird service run --config <state>/netbird/config.json --log-file <log>/netbird.log --daemon-addr` the hub's own address: `unix:///var/run/neutrino/hub/netbird.sock` on macOS, a loopback TCP port of the hub's own on Windows |
 | EasyTier | `easytier-core` with its rendered file and `--rpc-portal 127.0.0.1:15888` |
+| the relay | the system's OpenSSH client with the start line rendered from `config/overlay/relay.json`, while the relay is on and configured; its output in `relay.log` ([network.md](modules/network.md), "The relay, the third way in") |
 | tun2socks | `tun2socks` on the hub's TUN device, pointed at xray's `socks_local_in`, while the box's own scope or the overlay scope is on and xray runs; it requires xray, so it is ended before xray stops or restarts and started again once xray is back, and the routes follow it ([proxy.md](modules/proxy.md), "The TUN on macOS and Windows") |
 
 - Every `netbird` command the hub runs names the same `--daemon-addr`, so a
@@ -134,7 +136,8 @@ as its own child:
   them with it.
 - Each child's standard output and error go to `<name>.log` under the log
   root, rotated by size ([files.md](files.md)).
-- EasyTier's start line is held by the supervisor; no drop-in file exists.
+- EasyTier's and the relay's start lines are held by the supervisor; no
+  drop-in file exists.
 - No code calls `systemctl` itself. The runtime hands out one process
   controller with one set of methods (is active, show, start, stop, restart,
   enable, disable, reload, journal): `SystemdServiceController` on Linux,

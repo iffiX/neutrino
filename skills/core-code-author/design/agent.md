@@ -540,8 +540,12 @@ under the account's home.
 
 **The release comes from its publisher.** `data/manifests/code_server.json`
 pins the standalone release for Linux and macOS on amd64 and arm64, each
-with its url and sha256, at the source the edition names. The module's
-installer fetches the archive into the module cache and sends it down
+with its url and sha256, at the source the edition names. In `cn` the
+installer tries the pinned version at the mirror and checks its sha256; when
+the mirror no longer carries it, the installer takes the mirror's current
+release, checked by HTTPS alone, and `details` name the version installed
+([install_and_dev.md](install_and_dev.md), "Where each edition fetches
+from"). The module's installer fetches the archive into the module cache and sends it down
 `package {module: code_server}`. The agent unpacks it under its state root,
 `/var/lib/neutrino/agent/code_server/` on Linux and `/Library/Application
 Support/Neutrino/agent/state/code_server` on macOS: owned by root, read-only
@@ -594,19 +598,24 @@ enrolled after the LAN is exposed. A hub on macOS or Windows has no
 exposure, and the agent port answers on every interface there
 ([network.md](modules/network.md), "Outside Linux, the system firewall").
 
-## Joining: one ticket, five minutes, spent in one step
+## Joining: one ticket, thirty minutes, spent in one step
 
 Generation happens on the panel port, behind the session: the Devices page's
 per-device link, the blank link `nhub setup` prints, and the SSH install
 action all call one path. A ticket is `secrets.token_urlsafe(18)`
-(144 bits), held in panel memory only, dead after **five minutes**. That is
-long enough to walk to another machine and paste, and short enough that a
-forgotten link is not a standing invitation.
+(144 bits), dead after **thirty minutes**, `ENROLLMENT_TTL_S`. It is on
+disk as its SHA-256 from the moment it is made, in
+`<state>/enrollment_tickets.json`, mode 0600, and the ticket itself is
+written nowhere ([protocol.md](protocol.md), "The hub group"). That is long
+enough to walk to another machine, or to raise a network on a phone, and
+short enough that a forgotten link is not a standing invitation.
 
-**Generating replaces whatever ticket was out**: there is exactly one open
-invitation at a time. The machine the link was made for is the only one that
-can join, and refreshing the page quietly retires the link before it. A hub
-restart forgets tickets entirely.
+**Generating replaces whatever ticket of its kind was out**: there is
+exactly one open device invitation and one open client invitation at a time.
+The machine the link was made for is the only one that can join, and
+refreshing the page quietly retires the link before it. A hub restart keeps
+an open ticket: the hub reads the file back when it starts and drops the
+entries past their expiry.
 
 The link is `neutrino://enroll/<base64url payload>`, the payload one JSON
 object written with no spaces, compressed with zlib and encoded base64url
@@ -640,16 +649,16 @@ move to the next address. Something answering with the wrong certificate is
 being impersonated, and moving on quietly hides that.
 
 `POST /api/channel/join` is admitted by `protocol` first, so a rejected
-protocol spends no ticket. Then the hub spends the ticket **atomically**: it
-is removed from the store in the same step that fetches it (`dict.pop`), then
-judged. Expired and unknown read identically as 401 `ticket_spent`, so two
+protocol spends no ticket. Then the hub spends the ticket **atomically**:
+the entry with the ticket's hash leaves the file and the memory in the same
+step that fetches it, then it is judged. Expired and unknown read identically as 401 `ticket_spent`, so two
 machines racing one link cannot both join.
 
 A ticket generated for a device names its row. A blank ticket is matched to
 the row whose `machine_id` the request names, or a new row is created. The
 `machine_id` decides **which row**, never **whether**. The ticket is the whole
-authenticator, which is why a link is treated like a password and lasts five
-minutes.
+authenticator, which is why a link is treated like a password and lasts
+thirty minutes.
 
 The reply is `{id, token}`, the token `secrets.token_urlsafe(24)` (192 bits).
 The agent stores `{gateway_url, id, token, fingerprint, machine_id}` in its
@@ -692,10 +701,10 @@ binding's URLs came out of a link the hub generated, are `https` by
 construction, `http.client` follows no redirects, and https-without-a-pin
 is not connected to.
 
-**Holding a captured link**: an unspent link within its five minutes joins
+**Holding a captured link**: an unspent link within its thirty minutes joins
 their machine as the device the link was generated for; the link *is* the
-credential. Everything narrows that window: one outstanding ticket, five
-minutes, single atomic spend, and the SSH install path generating and spending
+credential. Everything narrows that window: one outstanding ticket of each
+kind, thirty minutes, single atomic spend, and the SSH install path generating and spending
 in the same action. A spent or replaced link is dead.
 
 **Impersonating an agent** without a token: enrolment needs the one live

@@ -216,7 +216,8 @@ the local agent, and writes each turn into `state.json`.
 A package reads its edition from the `EDITION` its build stamped
 ([../agent_work_rule/release.md](../agent_work_rule/release.md), "Two
 editions from one source"), and every address it fetches from follows it. A
-checkout reads as `intl`.
+checkout reads the root `EDITION` file, `intl` in the GitHub repository
+and `cn` in the mainland source tree.
 
 | What | `intl` | `cn` |
 | --- | --- | --- |
@@ -235,9 +236,12 @@ checkout reads as `intl`.
   `cn_url` when the entry has one.
 - The hub sends the npm registry of its edition in the module's state, and
   the agent runs `npm` with the registry the state names.
-- The USTC mirror keeps the latest code-server release alone. A pin older
-  than that release fails its fetch with the cache's own code until the pin
-  moves.
+- The USTC mirror keeps the latest code-server release alone, and npmmirror
+  carries none. A `cn` installer tries the pinned version at the mirror and
+  checks its sha256; when the mirror no longer carries that version, it
+  installs the mirror's current release, checked by HTTPS alone, and the
+  module's `details` name the version installed. An `intl` installer always
+  installs the pinned archive and checks its sha256.
 
 ## Development runs from a checkout, against a root of its own
 
