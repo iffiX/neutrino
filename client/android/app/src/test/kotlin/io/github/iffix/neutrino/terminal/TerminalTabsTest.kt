@@ -1,5 +1,7 @@
 package io.github.iffix.neutrino.terminal
 
+import io.github.iffix.neutrino.CHANNEL_STREAM_ID_BYTES
+import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_DROP_MS
 import io.github.iffix.neutrino.GoldenSchema
 import io.github.iffix.neutrino.channel.ChannelInbound
 import io.github.iffix.neutrino.channel.ChannelStreamRegistry
@@ -10,10 +12,17 @@ import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubView
 import io.github.iffix.neutrino.channel.Samples
 import java.nio.ByteBuffer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
@@ -40,6 +49,16 @@ class TerminalTabsTest {
 
     private fun closeStream(id: Int, code: String = "") =
         registry.takeClose(ChannelInbound.Close(id, code, JsonObject(emptyMap())))
+
+    private fun typed(): String = synchronized(socket) {
+        socket.binaries.joinToString("") { String(it, CHANNEL_STREAM_ID_BYTES, it.size - CHANNEL_STREAM_ID_BYTES) }
+    }
+
+    private fun TestScope.output(text: String) {
+        val bytes = text.toByteArray()
+        registry.takeBinary(ByteBuffer.allocate(CHANNEL_STREAM_ID_BYTES + bytes.size).putInt(1).put(bytes).array())
+        runCurrent()
+    }
 
     @Test
     fun aNewTabOpensItsShellAtTheFirstSizeWithItsSessionId() = runTest {
@@ -153,6 +172,76 @@ class TerminalTabsTest {
         runCurrent()
         assertEquals(TerminalPhase.ENDED, tabs.tabs.value.single().phase)
         assertEquals("session_unknown", tabs.tabs.value.single().note?.code)
+    }
+
+    @Test
+    fun keysReachTheShellInTheOrderTyped() = runTest {
+        val tabs = tabs()
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        val keys = (0 until 200).map { "k$it;" }
+        for (key in keys) tabs.input(id, key.toByteArray())
+        runCurrent()
+        for (step in 0 until keys.sumOf { it.length }) {
+            registry.takeCredit(ChannelInbound.Credit(1, 1))
+            runCurrent()
+        }
+        assertEquals(keys.joinToString(""), typed())
+    }
+
+    @Test
+    fun keysReachTheShellInTheOrderTypedOnAPoolOfThreads() = runBlocking {
+        val scope = CoroutineScope(Dispatchers.Default + Job())
+        try {
+            val tabs = TerminalTabs({ opener }, scope)
+            val id = tabs.create("b1", "d1", "Argon")
+            tabs.sized(id, 80, 24)
+            val keys = (0 until 200).map { "k$it;" }
+            val expected = keys.joinToString("")
+            for (key in keys) tabs.input(id, key.toByteArray())
+            withTimeout(10_000) {
+                while (typed().length < expected.length) {
+                    registry.takeCredit(ChannelInbound.Credit(1, 3))
+                    delay(1)
+                }
+            }
+            assertEquals(expected, typed())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun clearSendsCtrlCAfterTheKeysBeforeIt() = runTest {
+        val tabs = tabs()
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        registry.takeCredit(ChannelInbound.Credit(1, 64))
+        tabs.input(id, "yes".toByteArray())
+        tabs.clear(id)
+        runCurrent()
+        assertEquals("yes\u0003", typed())
+    }
+
+    @Test
+    fun clearDropsTheKeptOutputAndWhatArrivesInTheNextSecond() = runTest {
+        var now = 5_000L
+        val tabs = TerminalTabs({ opener }, backgroundScope, clock = { now })
+        val id = tabs.create("b1", "d1", "Argon")
+        tabs.sized(id, 80, 24)
+        val seen = StringBuilder()
+        tabs.watch { _, bytes -> seen.append(String(bytes)) }
+        output("flood ")
+        assertEquals("flood ", seen.toString())
+        tabs.clear(id)
+        now += CLIENT_TERMINAL_CLEAR_DROP_MS - 1
+        output("late ")
+        now += 1
+        output("$ ")
+        assertEquals("flood $ ", seen.toString())
+        val again = StringBuilder()
+        tabs.watch { _, bytes -> again.append(String(bytes)) }
+        assertEquals("$ ", again.toString())
     }
 
     @Test

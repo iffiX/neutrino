@@ -29,9 +29,9 @@ class FakeChannelSocket(private var isOpen: Boolean = true) : ChannelSocket {
         return isOpen
     }
 
-    override fun sendBytes(bytes: ByteArray): Boolean {
+    override fun sendBytes(bytes: ByteArray): Boolean = synchronized(this) {
         if (isOpen) binaries += bytes
-        return isOpen
+        isOpen
     }
 
     override fun close(code: Int, reason: String) {
