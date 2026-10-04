@@ -169,7 +169,11 @@ def test_an_instance_is_a_task_running_its_script(applier, powershell, ready):
     assert instance["task"] == "neutrino_cloudcli_ann"
     assert instance["password"] == "login-pw"
     assert instance["port"] == 3001
-    assert instance["rule"] == "neutrino_cloudcli_port_ann"
+    assert "rule" not in instance
+    assert "New-NetFirewallRule" not in APPLY_SCRIPT
+    assert document["rule_prefix"] == "neutrino_cloudcli_port_"
+    assert 'Get-NetFirewallRule -Name "$($d.rule_prefix)*"' in APPLY_SCRIPT
+    assert "$stale | Remove-NetFirewallRule" in APPLY_SCRIPT
     text = instance["script_text"]
     assert 'set "HOST=127.0.0.1"' in text
     assert 'set "SERVER_PORT=41234"' in text

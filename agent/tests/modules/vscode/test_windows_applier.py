@@ -80,7 +80,7 @@ def test_an_instance_is_a_task_signed_in_with_its_login():
     assert "-ExecutionTimeLimit ([TimeSpan]::Zero)" in APPLY_SCRIPT
 
 
-def test_an_instance_opens_its_port_in_the_firewall_and_a_removal_closes_it():
+def test_an_apply_opens_no_port_and_removes_the_rules_an_older_build_opened():
     powershell = FakePowerShell({APPLY_SCRIPT: {"notes": []}})
     applier = VscodeWindowsApplier(root=ROOT, powershell=powershell)
 
@@ -90,16 +90,13 @@ def test_an_instance_opens_its_port_in_the_firewall_and_a_removal_closes_it():
     apply_run, withdraw_run = powershell.runs
     (instance,) = apply_run[1]["instances"]
     assert instance["port"] == 8000
-    assert instance["rule"] == "neutrino_vscode_port_hanha"
-    assert instance["rule_title"] == "Neutrino VS Code (hanha)"
+    assert "rule" not in instance
+    assert "New-NetFirewallRule" not in APPLY_SCRIPT
     assert apply_run[1]["rule_prefix"] == "neutrino_vscode_port_"
     assert (
-        "New-NetFirewallRule -Name $i.rule -DisplayName $i.rule_title" in APPLY_SCRIPT
+        'Get-NetFirewallRule -Name "$($d.rule_prefix)*"' in APPLY_SCRIPT
+        and "$stale | Remove-NetFirewallRule" in APPLY_SCRIPT
     )
-    assert "-Direction Inbound -Action Allow -Protocol TCP -LocalPort $i.port" in (
-        APPLY_SCRIPT
-    )
-    assert 'Remove-NetFirewallRule -Name "$($d.rule_prefix)$account"' in APPLY_SCRIPT
     assert withdraw_run[1]["rule_prefix"] == "neutrino_vscode_port_"
     assert withdraw_run[1]["is_removed"] is True
     assert 'Remove-NetFirewallRule -Name "$($d.rule_prefix)*"' in WITHDRAW_SCRIPT
