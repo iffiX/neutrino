@@ -12,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $NeutrinoReleases = 'https://github.com/iffiX/neutrino/releases'
+# The edition this script installs; the mainland source tree stamps it cn.
+$script:NeutrinoEdition = 'intl'
 # What msiexec answers for a finished install, with and without a reboot owed.
 $NeutrinoInstalledCodes = @(0, 3010)
 
