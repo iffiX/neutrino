@@ -163,7 +163,7 @@ def check_socket_path(root: str, account: str, os_name: str) -> None:
         raise ModuleApplyError("account_invalid", {"account": account})
 
 
-def prepare_run_dir(root: str, account: str, uid: int, gid: int, chown=os.chown) -> str:
+def prepare_run_dir(root: str, account: str, uid: int, gid: int, chown=None) -> str:
     """Make one account's run directory, the account's own and mode 0700.
 
     Args:
@@ -171,7 +171,8 @@ def prepare_run_dir(root: str, account: str, uid: int, gid: int, chown=os.chown)
         account: The account.
         uid: The account's user id.
         gid: The account's group id.
-        chown: Changes a file's owner as :func:`os.chown` does.
+        chown: Changes a file's owner as :func:`os.chown` does, which it
+            is when none is given.
 
     Returns:
         The directory.
@@ -185,7 +186,7 @@ def prepare_run_dir(root: str, account: str, uid: int, gid: int, chown=os.chown)
     directory = run_dir(root, account)
     os.makedirs(directory, mode=0o700, exist_ok=True)
     os.chmod(directory, 0o700)
-    chown(directory, uid, gid)
+    (chown or os.chown)(directory, uid, gid)
     return directory
 
 

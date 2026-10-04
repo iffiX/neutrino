@@ -17,12 +17,38 @@ AGENT_ROOT = Path(__file__).resolve().parent.parent
 # The standard library modules only POSIX has, which Windows lacks.
 POSIX_ONLY_MODULES = ("pwd", "grp", "fcntl", "termios", "pty")
 
+# The functions of ``os`` only POSIX has. A module that names one where it is
+# imported, a default argument among those places, cannot be imported on
+# Windows.
+POSIX_ONLY_OS_NAMES = (
+    "chown",
+    "fchown",
+    "lchown",
+    "geteuid",
+    "getuid",
+    "getgid",
+    "getegid",
+    "setuid",
+    "setgid",
+    "setsid",
+    "getpgid",
+    "killpg",
+    "initgroups",
+    "setgroups",
+    "getgroups",
+    "mkfifo",
+    "fork",
+)
+
 # Every module imported in a fresh interpreter that has none of them and no
 # Unix sockets, the way Windows is.
 WINDOWS_IMPORT_PROBE = """
-import importlib, pkgutil, socket, sys
+import importlib, os, pkgutil, socket, sys
 for name in {names!r}:
     sys.modules[name] = None
+for name in {os_names!r}:
+    if hasattr(os, name):
+        delattr(os, name)
 del socket.AF_UNIX
 import neutrino_agent
 for found in pkgutil.walk_packages(neutrino_agent.__path__, "neutrino_agent."):
@@ -171,7 +197,9 @@ def test_the_tree_is_the_one_that_survived_the_prune():
 
 
 def test_every_module_imports_without_the_posix_only_modules():
-    probe = WINDOWS_IMPORT_PROBE.format(names=POSIX_ONLY_MODULES)
+    probe = WINDOWS_IMPORT_PROBE.format(
+        names=POSIX_ONLY_MODULES, os_names=POSIX_ONLY_OS_NAMES
+    )
 
     result = subprocess.run(
         [sys.executable, "-c", probe],
