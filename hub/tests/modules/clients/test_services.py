@@ -380,3 +380,50 @@ def test_a_cloudcli_secret_that_does_not_open_is_vault_locked(config_dir):
         "vault_locked",
         {},
     )
+
+
+CODE_SERVER_ENTRY = {
+    **ENTRY,
+    "id": "code_server_dev_alice",
+    "title": "code-server (alice)",
+    "payload": {"url": "http://192.168.100.7:8443/", "is_token_required": True},
+    "description_code": "code_server_module",
+    "description_params": {"host": "192.168.100.7", "account": "alice"},
+    "device_id": "dev",
+}
+
+
+class CodeServerDesiredStates(StubDesiredStates):
+    def __init__(self):
+        super().__init__()
+        self.minted: list = []
+
+    def code_server_token(self, key, account):
+        self.minted.append((key, account))
+        return f"fresh-{len(self.minted)}" if key == "dev" else ""
+
+
+def test_a_code_server_instances_material_is_a_token_minted_for_each_answer(
+    config_dir,
+):
+    runtime = FakeRuntime(entries=(CODE_SERVER_ENTRY,))
+    runtime.desired_states = CodeServerDesiredStates()
+    client_id = ClientRegistry().create("alice")
+
+    first = service_material(runtime, client_id, "code_server_dev_alice")
+    second = service_material(runtime, client_id, "code_server_dev_alice")
+
+    assert (first, second) == (("", {"token": "fresh-1"}), ("", {"token": "fresh-2"}))
+    assert runtime.desired_states.minted == [("dev", "alice"), ("dev", "alice")]
+
+
+def test_a_code_server_secret_that_does_not_open_is_vault_locked(config_dir):
+    entry = {**CODE_SERVER_ENTRY, "device_id": "elsewhere"}
+    runtime = FakeRuntime(entries=(entry,))
+    runtime.desired_states = CodeServerDesiredStates()
+    client_id = ClientRegistry().create("alice")
+
+    assert service_material(runtime, client_id, "code_server_dev_alice") == (
+        "vault_locked",
+        {},
+    )

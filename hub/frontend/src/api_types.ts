@@ -1504,6 +1504,38 @@ export interface CloudcliConfigUpdate {
   instances: CloudcliInstance[];
 }
 
+/** One code-server instance: the account it runs as and the port its
+ * forwarder listens on. */
+export interface CodeServerInstance {
+  account: string;
+  port: number;
+}
+
+/** One instance as configured, with what the machine says of it. */
+export interface CodeServerInstanceView extends CodeServerInstance {
+  is_running: boolean;
+  /** Why it does not run, typed; empty when nothing is in the way. */
+  code: string;
+}
+
+/** code-server on one device: the release, its instances and the machine's
+ * accounts. */
+export interface CodeServerDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  /** The release the machine reports installed; empty before it reports. */
+  version: string;
+  instances: CodeServerInstanceView[];
+  /** The human accounts the machine last reported. */
+  accounts: string[];
+  is_active: boolean;
+}
+
+export interface CodeServerConfigUpdate {
+  device_id: string;
+  instances: CodeServerInstance[];
+}
+
 export interface GiteaConfigUpdate {
   device_id: string;
   listen_port: number;

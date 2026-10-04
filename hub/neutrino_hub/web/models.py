@@ -2675,3 +2675,40 @@ class CloudcliConfigUpdate(BaseModel):
 
     device_id: str
     instances: list[CloudcliInstance] = Field(default_factory=list)
+
+
+# --- code-server: one instance per account on a device ---
+
+
+class CodeServerInstance(BaseModel):
+    """One code-server instance: the account it runs as and the port its
+    forwarder listens on."""
+
+    account: str = Field(min_length=1)
+    port: int = Field(ge=1024, le=65535)
+
+
+class CodeServerInstanceView(CodeServerInstance):
+    """One instance as configured, with what the machine says of it."""
+
+    is_running: bool = False
+    # Why it does not run, typed, such as ``code_server_port_taken``.
+    code: str = ""
+
+
+class CodeServerDeviceView(ModuleDeviceFields):
+    """One device's code-server: the release, the instances and the accounts."""
+
+    # The release the machine reports installed; empty before it reports one.
+    version: str = ""
+    instances: list[CodeServerInstanceView] = Field(default_factory=list)
+    # The human accounts the machine last reported, for the account field.
+    accounts: list[str] = Field(default_factory=list)
+    is_active: bool = False
+
+
+class CodeServerConfigUpdate(BaseModel):
+    """The instances being saved."""
+
+    device_id: str
+    instances: list[CodeServerInstance] = Field(default_factory=list)

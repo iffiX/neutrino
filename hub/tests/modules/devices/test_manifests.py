@@ -80,6 +80,7 @@ def test_every_shipped_manifest_names_its_installer_tier():
         "zfs": "platform",
         "gitea": "hub",
         "vscode": "hub",
+        "code_server": "hub",
         "cloudcli": "hub",
         "anydesk": "user",
         "teamviewer": "user",
@@ -97,6 +98,7 @@ def test_every_shipped_manifest_says_where_its_software_comes_from():
         "zfs": "system",
         "gitea": "go-gitea/gitea",
         "vscode": "Microsoft",
+        "code_server": "Coder",
         "cloudcli": "nodejs.org",
         "anydesk": "AnyDesk Software GmbH",
         "teamviewer": "TeamViewer Germany GmbH",
@@ -111,6 +113,7 @@ def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
         "samba",
         "zfs",
         "cloudcli",
+        "code_server",
         "gitea",
         "vscode",
         "anydesk",
@@ -565,6 +568,64 @@ def test_vscode_verifies_the_cli_where_the_agent_unpacks_it(key, path):
 
     assert path in verify
     assert "--version" in verify
+
+
+CODE_SERVER_VERSION = "4.140.0"
+# The sha256 of each of the publisher's release archives, computed here from
+# the files the release serves, since the publisher ships no checksum file.
+CODE_SERVER_BUILDS = {
+    "linux-amd64": (
+        "linux-amd64",
+        "864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64",
+        "ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "macos-amd64",
+        "a5393b6eed4aa68b084e724c3c565f805abd996c609356043119f0323e40cf52",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "macos-arm64",
+        "82c7144406ac31c373acfa786b6705c7c5463d895f728fde2cb94402b945b301",  # scan: allow
+    ),
+}
+CODE_SERVER_RELEASES = "https://github.com/coder/code-server/releases/download/"
+CODE_SERVER_MIRROR = "https://mirrors.ustc.edu.cn/github-release/coder/code-server/"
+
+
+def test_code_server_pins_coders_release_per_platform_with_its_mirror():
+    manifest = load_module_manifests()["code_server"]
+
+    assert manifest["version"] == CODE_SERVER_VERSION
+    assert manifest["license"] == "MIT"
+    assert manifest["kind"] == "code_server"
+    assert set(manifest["platforms"]) == set(CODE_SERVER_BUILDS)
+    for key, (build, digest) in CODE_SERVER_BUILDS.items():
+        entry = manifest["platforms"][key]
+        name = f"code-server-{CODE_SERVER_VERSION}-{build}.tar.gz"
+        assert entry["url"] == f"{CODE_SERVER_RELEASES}v{CODE_SERVER_VERSION}/{name}"
+        assert entry["cn_url"] == f"{CODE_SERVER_MIRROR}v{CODE_SERVER_VERSION}/{name}"
+        assert entry["cn_latest_url"] == f"{CODE_SERVER_MIRROR}LatestRelease/"
+        assert entry["sha256"] == digest
+        assert entry["package_kind"] == "tar"
+        assert "code_server/release/lib/node" in entry["verify"]
+        assert entry.get("min_version", "") == (
+            "2.28" if key.startswith("linux") else ""
+        )
+
+
+def test_code_server_has_no_windows_branch_and_needs_glibc_2_28():
+    manifest = load_module_manifests()["code_server"]
+    windows = {"os": "windows", "family": "", "arch": "amd64", "version": "17763"}
+    old = {**DEBIAN, "version": "2.27"}
+
+    assert resolve_platform_entry(manifest, windows) == ("", None)
+    assert resolve_platform_entry(manifest, old) == ("", None)
+    assert resolve_platform_entry(manifest, {**DEBIAN, "version": "2.36"})[0] == (
+        "linux-amd64"
+    )
 
 
 def test_an_archive_package_is_recognised_by_its_compressor():

@@ -2,8 +2,8 @@
 
 The stream's close is the material: ``{host, port, password}`` for a
 desktop, ``{base_url, api_key, model}`` for the AI gateway, ``{token}`` for
-a VS Code instance, and for a CloudCLI instance a ``{token}`` minted for
-that one answer. Every host in
+a VS Code instance, and for a CloudCLI or code-server instance a
+``{token}`` minted for that one answer. Every host in
 it is resolved for the scope the client's socket arrived from, at that
 moment. The published list carries no secret; this is where the one
 secret a service takes from the hub is opened, for one close.
@@ -31,6 +31,7 @@ from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
+    SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_VSCODE_MODULE,
     SERVICES_TYPE_AI,
     SERVICES_TYPE_RDP,
@@ -98,6 +99,13 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         device_id = str(_raw_entry(runtime, scope, entry_id).get("device_id") or "")
         account = str(entry["description_params"].get("account", "") or "")
         token = runtime.desired_states.cloudcli_token(device_id, account)
+        if not token:
+            return VaultLockedError.code, {}
+        return "", {"token": token}
+    if entry["description_code"] == SERVICES_DESCRIPTION_CODE_SERVER_MODULE:
+        device_id = str(_raw_entry(runtime, scope, entry_id).get("device_id") or "")
+        account = str(entry["description_params"].get("account", "") or "")
+        token = runtime.desired_states.code_server_token(device_id, account)
         if not token:
             return VaultLockedError.code, {}
         return "", {"token": token}

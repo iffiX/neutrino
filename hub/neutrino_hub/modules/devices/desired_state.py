@@ -48,9 +48,13 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CLOUDCLI_SECRET_AAD,
     DEVICE_CLOUDCLI_SECRET_BYTES,
     DEVICE_CLOUDCLI_SECRET_KEY,
-    DEVICE_CLOUDCLI_TOKEN_EXPIRY_BYTES,
-    DEVICE_CLOUDCLI_TOKEN_LIFETIME_S,
-    DEVICE_CLOUDCLI_TOKEN_NONCE_BYTES,
+    DEVICE_CODE_SERVER_MODULE,
+    DEVICE_CODE_SERVER_SECRET_AAD,
+    DEVICE_CODE_SERVER_SECRET_BYTES,
+    DEVICE_CODE_SERVER_SECRET_KEY,
+    DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES,
+    DEVICE_FORWARDER_TOKEN_LIFETIME_S,
+    DEVICE_FORWARDER_TOKEN_NONCE_BYTES,
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
     DEVICE_MODULES_FILE,
@@ -166,8 +170,35 @@ def cloudcli_agent_config(stored: dict, platform: dict, gateway: dict) -> dict:
     }
 
 
-def cloudcli_token(secret: str, *, expiry: int, nonce: bytes) -> str:
-    """One token a CloudCLI instance's forwarder takes once.
+def code_server_agent_config(stored: dict) -> dict:
+    """What the agent is sent for code-server.
+
+    Args:
+        stored: The module's file: the instances, each with its sealed
+            token secret.
+
+    Returns:
+        ``{instances: [{account, port, secret}]}``, each secret opened.
+    """
+    instances = []
+    for instance in stored.get("instances") or []:
+        if not isinstance(instance, dict):
+            continue
+        instances.append(
+            {
+                "account": str(instance.get("account", "") or ""),
+                "port": instance.get("port", 0),
+                "secret": _unsealed_text(
+                    instance.get(DEVICE_CODE_SERVER_SECRET_KEY),
+                    DEVICE_CODE_SERVER_SECRET_AAD,
+                ),
+            }
+        )
+    return {"instances": instances}
+
+
+def forwarder_token(secret: str, *, expiry: int, nonce: bytes) -> str:
+    """One token a CloudCLI or code-server instance's forwarder takes once.
 
     Args:
         secret: The instance's token secret.
@@ -178,7 +209,7 @@ def cloudcli_token(secret: str, *, expiry: int, nonce: bytes) -> str:
         ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``
         without padding.
     """
-    body = int(expiry).to_bytes(DEVICE_CLOUDCLI_TOKEN_EXPIRY_BYTES, "big") + nonce
+    body = int(expiry).to_bytes(DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES, "big") + nonce
     mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(body + mac).rstrip(b"=").decode("ascii")
 
@@ -482,12 +513,64 @@ class DesiredStateStore:
             )
             if not secret:
                 return ""
-            moment = time.time() if now is None else now
-            return cloudcli_token(
-                secret,
-                expiry=int(moment) + DEVICE_CLOUDCLI_TOKEN_LIFETIME_S,
-                nonce=secrets.token_bytes(DEVICE_CLOUDCLI_TOKEN_NONCE_BYTES),
+            return _fresh_token(secret, now)
+        return ""
+
+    def sealed_code_server_secret(self, key: str, account: str) -> dict:
+        """One code-server instance's token secret, made the first time.
+
+        Args:
+            key: The device key.
+            account: The account the instance runs as.
+
+        Returns:
+            The seal ``code_server.json`` holds for that account's instance,
+            or a fresh one to store with it.
+
+        Raises:
+            VaultLockedError: If there is no data key to seal a fresh one
+                under.
+        """
+        for instance in (
+            self.read(key, DEVICE_CODE_SERVER_MODULE).get("instances") or []
+        ):
+            if not isinstance(instance, dict) or instance.get("account") != account:
+                continue
+            held = instance.get(DEVICE_CODE_SERVER_SECRET_KEY)
+            if isinstance(held, dict) and held:
+                return dict(held)
+        return seal_bytes(
+            secrets.token_urlsafe(DEVICE_CODE_SERVER_SECRET_BYTES).encode(),
+            DEVICE_CODE_SERVER_SECRET_AAD,
+        )
+
+    def code_server_token(
+        self, key: str, account: str, *, now: "float | None" = None
+    ) -> str:
+        """A fresh token for one code-server instance, good for one open.
+
+        Args:
+            key: The device key.
+            account: The account the instance runs as.
+            now: Seconds since the epoch; None is the clock.
+
+        Returns:
+            The token, its expiry 60 seconds ahead; empty when the device
+            has no such instance, when the vault is locked, or when the
+            secret does not open under this box's data key.
+        """
+        for instance in (
+            self.read(key, DEVICE_CODE_SERVER_MODULE).get("instances") or []
+        ):
+            if not isinstance(instance, dict) or instance.get("account") != account:
+                continue
+            secret = _unsealed_text(
+                instance.get(DEVICE_CODE_SERVER_SECRET_KEY),
+                DEVICE_CODE_SERVER_SECRET_AAD,
             )
+            if not secret:
+                return ""
+            return _fresh_token(secret, now)
         return ""
 
     def compose(
@@ -532,6 +615,8 @@ class DesiredStateStore:
                 config["secrets"] = self.gitea_secrets(key)
             elif name == DEVICE_VSCODE_MODULE:
                 config = vscode_agent_config(config, platform)
+            elif name == DEVICE_CODE_SERVER_MODULE:
+                config = code_server_agent_config(config)
             elif name == DEVICE_CLOUDCLI_MODULE:
                 config = cloudcli_agent_config(
                     config, platform, device_gateway(key, hub_address)
@@ -619,6 +704,16 @@ def _recipes(resolved: dict) -> dict:
     install = {name: value for name, value in entry.items() if name != "uninstall"}
     install["kind"] = str(resolved.get("kind", "") or "")
     return {"install": install, "uninstall": dict(entry.get("uninstall") or {})}
+
+
+def _fresh_token(secret: str, now: "float | None") -> str:
+    """A token minted from an instance's secret, its expiry 60 seconds ahead."""
+    moment = time.time() if now is None else now
+    return forwarder_token(
+        secret,
+        expiry=int(moment) + DEVICE_FORWARDER_TOKEN_LIFETIME_S,
+        nonce=secrets.token_bytes(DEVICE_FORWARDER_TOKEN_NONCE_BYTES),
+    )
 
 
 def _unsealed_text(sealed, aad: bytes) -> str:

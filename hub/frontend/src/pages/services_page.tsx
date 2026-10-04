@@ -87,6 +87,7 @@ const DESCRIPTION_KEYS: Record<string, string> = {
   samba_module: "ui.services.description_samba_module",
   vscode_module: "ui.services.description_vscode_module",
   cloudcli_module: "ui.services.description_cloudcli_module",
+  code_server_module: "ui.services.description_code_server_module",
 };
 const SOURCE_KEYS: Record<PublishedService["source"], string> = {
   module: "state.module",

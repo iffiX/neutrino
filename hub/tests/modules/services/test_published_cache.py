@@ -523,3 +523,37 @@ def test_a_cloudcli_still_installing_lists_nothing(box):
     ).entries()
 
     assert entries == []
+
+
+def test_a_devices_code_server_instances_are_listed_only_while_they_run(box):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "code_server", "running")
+    store.write(
+        DEVICE,
+        "code_server",
+        {
+            "instances": [
+                {"account": "alice", "port": 8443},
+                {"account": "bob", "port": 8444},
+            ]
+        },
+    )
+    reported = report(
+        code_server={
+            "version": "4.140.0",
+            "instances": [
+                {"account": "alice", "is_running": True},
+                {"account": "bob", "is_running": False},
+            ],
+        }
+    )
+    sessions = StubSessions({DEVICE: reported})
+
+    entries, _ = cache(
+        StubUnits(), sessions=sessions, addresses={DEVICE: "192.168.100.7"}
+    ).entries()
+
+    (alice,) = entries
+    assert alice["id"] == "code_server_device-one_alice"
+    assert alice["payload"]["is_token_required"] is True
+    assert alice["description_code"] == "code_server_module"

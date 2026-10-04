@@ -68,6 +68,12 @@ AGENT_MODULE_FETCH_CHUNK_BYTES = 64 * 1024
 AGENT_MODULE_PROGRESS_PERCENT_STEP = 5
 AGENT_MODULE_PROGRESS_INTERVAL_S = 2.0
 AGENT_MODULE_GITHUB_API = "https://api.github.com/repos/{repo}/releases/latest"
+# The edition whose installer fetches from a manifest entry's ``cn_url``
+# where the entry names one, and how much of a mirror's listing of its
+# latest release is read.
+AGENT_MODULE_EDITION_INTL = "intl"
+AGENT_MODULE_EDITION_CN = "cn"
+AGENT_MODULE_LISTING_LIMIT_BYTES = 1024 * 1024
 
 # The hub's own agent packages, which are not third-party modules: the hub's
 # package lands the builds it was made with here, and a platform it carries
@@ -127,7 +133,15 @@ AGENT_MODULE_PACKAGE_MAGIC = {
 
 # The modules a device hosts from the hub's desired state, in the order the
 # agent applies them. One file per module under the device's directory.
-DEVICE_MODULE_NAMES = ("zfs", "samba", "gitea", "podman", "vscode", "cloudcli")
+DEVICE_MODULE_NAMES = (
+    "zfs",
+    "samba",
+    "gitea",
+    "podman",
+    "vscode",
+    "code_server",
+    "cloudcli",
+)
 # What ``config/devices/<id>/modules.json`` is called, and the per-module
 # files beside it. A device directory is named by the device's id.
 DEVICE_MODULES_FILE = "modules.json"
@@ -159,13 +173,20 @@ DEVICE_CLOUDCLI_SECRET_KEY = "token_secret_sealed"  # scan: allow
 DEVICE_CLOUDCLI_PASSWORD_AAD = b"device_cloudcli:web_password"
 DEVICE_CLOUDCLI_SECRET_AAD = b"device_cloudcli:token_secret"
 DEVICE_CLOUDCLI_SECRET_BYTES = 32
-# A token: ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry ||
-# nonce))``, the expiry eight bytes big-endian in seconds since the epoch,
-# minted for one ``service`` answer; the agent's forwarder checks the same
-# layout.
-DEVICE_CLOUDCLI_TOKEN_LIFETIME_S = 60
-DEVICE_CLOUDCLI_TOKEN_EXPIRY_BYTES = 8
-DEVICE_CLOUDCLI_TOKEN_NONCE_BYTES = 16
+# code-server, once per account. Each instance in its file holds, beside its
+# account and port, the secret its tokens are signed with, which the hub
+# generates once and keeps sealed.
+DEVICE_CODE_SERVER_MODULE = "code_server"
+DEVICE_CODE_SERVER_SECRET_KEY = "secret_sealed"  # scan: allow
+DEVICE_CODE_SERVER_SECRET_AAD = b"device_code_server:secret"
+DEVICE_CODE_SERVER_SECRET_BYTES = 32
+# A token a CloudCLI or code-server instance's forwarder takes once:
+# ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``,
+# the expiry eight bytes big-endian in seconds since the epoch, minted for
+# one ``service`` answer; the agent's forwarder checks the same layout.
+DEVICE_FORWARDER_TOKEN_LIFETIME_S = 60
+DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES = 8
+DEVICE_FORWARDER_TOKEN_NONCE_BYTES = 16
 # The remote desktop host every agent package carries, as the module report
 # names it, and the two states its row can take.
 DEVICE_RDP_MODULE = "rustdesk"

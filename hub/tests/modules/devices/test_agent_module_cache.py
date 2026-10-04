@@ -16,6 +16,7 @@ from neutrino_hub.modules.devices.agent_module_cache import (
     AgentModuleCache,
     AgentModuleFetchProgress,
     is_version_below,
+    latest_release_url,
     looks_like_package,
     platform_keys,
     read_in_chunks,
@@ -44,6 +45,7 @@ AMD64 = {"os": "linux", "family": "debian", "arch": "amd64"}
 ARM64 = {"os": "linux", "family": "debian", "arch": "arm64"}
 DARWIN = {"os": "darwin", "family": "", "arch": "arm64"}
 UNKNOWN = {"os": "windows", "family": "", "arch": "amd64"}
+LINUX_AMD = {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"}
 
 
 @pytest.fixture
@@ -464,3 +466,152 @@ def test_a_fetch_tells_its_progress_and_a_held_artifact_says_it_is_cached(
 def _serve_deb_telling(url, progress=None):
     progress.note(len(DEB), len(DEB), is_done=True)
     return DEB
+
+
+# --- the edition's own source: cn_url, and a mirror that kept only its latest ---
+
+TARBALL = b"\x1f\x8bcode-server-release-bytes"
+MIRROR = "https://mirror.example/code-server/"
+PINNED_NAME = "code-server-4.140.0-linux-amd64.tar.gz"
+MIRRORED_MANIFEST = {
+    "name": "code_server",
+    "title": "code-server",
+    "version": "4.140.0",
+    "platforms": {
+        "linux-amd64": {
+            "url": f"https://publisher.example/v4.140.0/{PINNED_NAME}",
+            "cn_url": f"{MIRROR}v4.140.0/{PINNED_NAME}",
+            "cn_latest_url": f"{MIRROR}LatestRelease/",
+            "sha256": hashlib.sha256(TARBALL).hexdigest(),
+            "package_kind": "tar",
+        }
+    },
+}
+LISTING = (
+    '<a href="..">..</a>'
+    '<a href="/code-server/LatestRelease/code-server-4.141.0-amd64.rpm">x</a>'
+    '<a href="/code-server/LatestRelease/code-server-4.141.0-linux-arm64.tar.gz">x</a>'
+    '<a href="/code-server/LatestRelease/code-server-4.141.0-linux-amd64.tar.gz">x</a>'
+)
+
+
+class MirrorFetches:
+    """``_fetch_plain`` and ``_fetch_listing`` stood in for, every url recorded."""
+
+    def __init__(self, *, missing=(), served=TARBALL, listing=LISTING):
+        self.urls: list = []
+        self._missing = set(missing)
+        self._served = served
+        self._listing = listing
+
+    def plain(self, url, progress=None):
+        self.urls.append(url)
+        if url in self._missing:
+            raise AgentArtifactFetchError("module_fetch_failed", status=404)
+        return self._served
+
+    def listing(self, url):
+        self.urls.append(url)
+        return self._listing
+
+
+def mirrored(monkeypatch, tmp_path, edition, fetches):
+    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(fetches.plain))
+    monkeypatch.setattr(
+        AgentModuleCache, "_fetch_listing", staticmethod(fetches.listing)
+    )
+    return AgentModuleCache(root=tmp_path / "cache", edition=edition)
+
+
+def test_an_intl_hub_fetches_the_publishers_url(monkeypatch, tmp_path):
+    fetches = MirrorFetches()
+    cache = mirrored(monkeypatch, tmp_path, "intl", fetches)
+
+    cache.artifact(name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD)
+
+    assert fetches.urls == [MIRRORED_MANIFEST["platforms"]["linux-amd64"]["url"]]
+
+
+def test_a_cn_hub_fetches_the_pinned_file_from_the_mirror_and_checks_it(
+    monkeypatch, tmp_path
+):
+    fetches = MirrorFetches(served=b"\x1f\x8bsomething else")
+    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        cache.artifact(
+            name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD
+        )
+
+    assert fetches.urls == [f"{MIRROR}v4.140.0/{PINNED_NAME}"]
+    assert refusal.value.code == "module_sha256_mismatch"
+
+
+def test_a_cn_hub_takes_the_mirrors_current_release_when_the_pin_is_gone(
+    monkeypatch, tmp_path
+):
+    lines: list = []
+    fetches = MirrorFetches(
+        missing={f"{MIRROR}v4.140.0/{PINNED_NAME}"}, served=b"\x1f\x8bnewer release"
+    )
+    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
+
+    artifact = cache.artifact(
+        name="code_server",
+        manifest=MIRRORED_MANIFEST,
+        platform=LINUX_AMD,
+        on_progress=lines.append,
+    )
+
+    assert fetches.urls == [
+        f"{MIRROR}v4.140.0/{PINNED_NAME}",
+        f"{MIRROR}LatestRelease/",
+        "https://mirror.example/code-server/LatestRelease/"
+        "code-server-4.141.0-linux-amd64.tar.gz",
+    ]
+    assert artifact.path.read_bytes() == b"\x1f\x8bnewer release"
+    assert any("4.141.0" in line and "HTTPS alone" in line for line in lines)
+
+
+def test_a_mirror_whose_latest_holds_no_such_file_names_no_download(
+    monkeypatch, tmp_path
+):
+    fetches = MirrorFetches(
+        missing={f"{MIRROR}v4.140.0/{PINNED_NAME}"}, listing='<a href="x.deb">x</a>'
+    )
+    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        cache.artifact(
+            name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD
+        )
+
+    assert refusal.value.code == "no_download_named"
+
+
+def test_a_mirror_that_fails_otherwise_is_not_read_for_its_latest(
+    monkeypatch, tmp_path
+):
+    def broken(url, progress=None):
+        raise AgentArtifactFetchError("module_fetch_failed", status=503)
+
+    fetches = MirrorFetches()
+    cache = mirrored(monkeypatch, tmp_path, "cn", fetches)
+    monkeypatch.setattr(AgentModuleCache, "_fetch_plain", staticmethod(broken))
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        cache.artifact(
+            name="code_server", manifest=MIRRORED_MANIFEST, platform=LINUX_AMD
+        )
+
+    assert refusal.value.params["status"] == 503
+    assert fetches.urls == []
+
+
+def test_the_latest_file_is_the_pinned_name_with_its_version_left_open():
+    url, version = latest_release_url(
+        f"{MIRROR}LatestRelease/", f"{MIRROR}v4.140.0/{PINNED_NAME}", LISTING
+    )
+
+    assert version == "4.141.0"
+    assert url.endswith("/LatestRelease/code-server-4.141.0-linux-amd64.tar.gz")

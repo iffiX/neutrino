@@ -21,6 +21,8 @@ import re
 import shutil
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -31,11 +33,14 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_PACKAGE_MAGIC,
     AGENT_MODULE_BROWSER_HEADERS,
     AGENT_MODULE_CACHE_DIR,
+    AGENT_MODULE_EDITION_CN,
+    AGENT_MODULE_EDITION_INTL,
     AGENT_MODULE_FETCH_CHUNK_BYTES,
     AGENT_MODULE_FETCH_LIMIT_BYTES,
     AGENT_MODULE_FETCH_TIMEOUT_S,
     AGENT_MODULE_GITHUB_API,
     AGENT_MODULE_KEY_DIGEST_CHARS,
+    AGENT_MODULE_LISTING_LIMIT_BYTES,
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
 )
@@ -218,6 +223,42 @@ def artifact_title(name: str, manifest: dict) -> str:
     return f"{title} {version}" if version else title
 
 
+def latest_release_url(listing_url: str, pinned_url: str, listing: str) -> tuple:
+    """The file a mirror's latest release holds in place of the pinned one.
+
+    The pinned file's name with its version left open is looked for among
+    the listing's links.
+
+    Args:
+        listing_url: The mirror's directory of its latest release.
+        pinned_url: The pinned file on the mirror; its name gives the shape.
+        listing: The directory's listing page.
+
+    Returns:
+        ``(url, version)``: the file's address and the version its name holds.
+
+    Raises:
+        AgentArtifactFetchError: ``no_download_named`` when no link has the
+            pinned name's shape.
+    """
+    name = urllib.parse.unquote(pinned_url.rsplit("/", 1)[-1])
+    found = re.search(r"\d+(?:\.\d+)+", name)
+    if found is None:
+        raise AgentArtifactFetchError("no_download_named", url=listing_url)
+    shape = re.compile(
+        re.escape(name[: found.start()])
+        + r"(\d+(?:\.\d+)+)"
+        + re.escape(name[found.end() :])
+        + r"\Z"
+    )
+    for link in re.findall(r'href="([^"]+)"', listing):
+        candidate = urllib.parse.unquote(link.rsplit("/", 1)[-1])
+        matched = shape.match(candidate)
+        if matched:
+            return urllib.parse.urljoin(listing_url, link), matched.group(1)
+    raise AgentArtifactFetchError("no_download_named", url=listing_url)
+
+
 class AgentModuleFetchProgress:
     """Turns a download's running byte count into ``hub: downloading`` lines.
 
@@ -272,6 +313,14 @@ class AgentModuleFetchProgress:
         self._last_percent = percent
         self._on_line(self._line(received, total))
 
+    def say(self, line: str) -> None:
+        """Write one line of the fetch's own beside the progress.
+
+        Args:
+            line: The line.
+        """
+        self._on_line(line)
+
     def _line(self, received: int, total: int) -> str:
         """One progress line for this byte count."""
         amount = format_megabytes(received)
@@ -284,13 +333,18 @@ class AgentModuleFetchProgress:
 class AgentModuleCache:
     """Resolves a module to bytes, fetching each artifact exactly once."""
 
-    def __init__(self, *, root: "Path | None" = None):
+    def __init__(
+        self, *, root: "Path | None" = None, edition: str = AGENT_MODULE_EDITION_INTL
+    ):
         """
         Args:
             root: Where artifacts are kept; the state root's own directory
                 by default.
+            edition: The hub's edition; ``cn`` fetches from an entry's
+                ``cn_url`` where the entry names one.
         """
         self._root = Path(root) if root is not None else AGENT_MODULE_CACHE_DIR
+        self._edition = edition
         self._guard = threading.Lock()
         self._fetch_locks: dict = {}
 
@@ -482,6 +536,11 @@ class AgentModuleCache:
     ) -> bytes:
         """Get one module's bytes.
 
+        A ``cn`` hub fetches from the entry's ``cn_url`` where it names one;
+        when that mirror no longer carries the pinned file and the entry
+        names ``cn_latest_url``, the mirror's current release is taken
+        instead, checked by HTTPS alone.
+
         Args:
             entry: The manifest's entry for this platform.
             progress: Told the byte count after each chunk; None tells nobody.
@@ -501,9 +560,13 @@ class AgentModuleCache:
             url = self._resolve_github_asset(
                 str(entry["github_repo"]), str(entry.get("asset_pattern", "") or "")
             )
-        if not url:
+        is_pinned = True
+        if self._edition == AGENT_MODULE_EDITION_CN and entry.get("cn_url"):
+            content, is_pinned = self._fetch_from_mirror(entry, progress=progress)
+        elif not url:
             raise AgentArtifactFetchError("no_download_named")
-        content = self._fetch_plain(url, progress=progress)
+        else:
+            content = self._fetch_plain(url, progress=progress)
         if len(content) > AGENT_MODULE_FETCH_LIMIT_BYTES:
             raise AgentArtifactFetchError(
                 "module_fetch_too_large",
@@ -517,11 +580,74 @@ class AgentModuleCache:
             )
         pinned = str(entry.get("sha256", "") or "").lower()
         received = hashlib.sha256(content).hexdigest()
-        if pinned and pinned != received:
+        if is_pinned and pinned and pinned != received:
             raise AgentArtifactFetchError(
                 "module_sha256_mismatch", expected=pinned, received=received
             )
         return content
+
+    def _fetch_from_mirror(
+        self, entry: dict, *, progress: "AgentModuleFetchProgress | None" = None
+    ) -> tuple:
+        """The pinned file from the mirror, or the mirror's current release.
+
+        Args:
+            entry: The manifest's entry, naming ``cn_url`` and maybe
+                ``cn_latest_url``.
+            progress: Told the byte count after each chunk; None tells nobody.
+
+        Returns:
+            ``(content, is_pinned)``: whether the content is the pinned file,
+            which its ``sha256`` checks.
+
+        Raises:
+            AgentArtifactFetchError: ``module_fetch_failed`` when the mirror
+                does not answer, and ``no_download_named`` when its latest
+                release holds no file of the pinned one's name.
+        """
+        pinned_url = str(entry["cn_url"])
+        latest_url = str(entry.get("cn_latest_url", "") or "")
+        try:
+            return self._fetch_plain(pinned_url, progress=progress), True
+        except AgentArtifactFetchError as error:
+            if error.params.get("status") != 404 or not latest_url:
+                raise
+        url, version = latest_release_url(
+            latest_url, pinned_url, self._fetch_listing(latest_url)
+        )
+        if progress is not None:
+            progress.say(
+                f"hub: the mirror no longer carries the pinned release; "
+                f"fetching its current one, {version}, checked by HTTPS alone"
+            )
+        return self._fetch_plain(url, progress=progress), False
+
+    @staticmethod
+    def _fetch_listing(url: str) -> str:
+        """A mirror directory's listing page, up to the listing limit.
+
+        Args:
+            url: The directory.
+
+        Returns:
+            The page's text.
+
+        Raises:
+            AgentArtifactFetchError: ``module_fetch_failed``.
+        """
+        request = urllib.request.Request(url, headers=AGENT_MODULE_BROWSER_HEADERS)
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=AGENT_MODULE_FETCH_TIMEOUT_S,
+                context=public_ssl_context(),
+            ) as response:
+                body = response.read(AGENT_MODULE_LISTING_LIMIT_BYTES)
+        except OSError as error:
+            raise AgentArtifactFetchError(
+                "module_fetch_failed", detail=str(error)[:200]
+            ) from error
+        return body.decode("utf-8", "replace")
 
     @staticmethod
     def _fetch_plain(
@@ -547,6 +673,10 @@ class AgentModuleCache:
                 context=public_ssl_context(),
             ) as response:
                 return read_in_chunks(response, progress)
+        except urllib.error.HTTPError as error:
+            raise AgentArtifactFetchError(
+                "module_fetch_failed", detail=str(error)[:200], status=error.code
+            ) from error
         except OSError as error:
             raise AgentArtifactFetchError(
                 "module_fetch_failed", detail=str(error)[:200]

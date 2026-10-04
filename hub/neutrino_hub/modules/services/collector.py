@@ -25,8 +25,12 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_CLOUDCLI_DESCRIPTION,
     SERVICES_CLOUDCLI_ID,
     SERVICES_CLOUDCLI_TITLE,
+    SERVICES_CODE_SERVER_DESCRIPTION,
+    SERVICES_CODE_SERVER_ID,
+    SERVICES_CODE_SERVER_TITLE,
     SERVICES_DESCRIPTION_AI_GATEWAY,
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
+    SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_DECLARED,
     SERVICES_DESCRIPTION_DEVICE_SHARE,
@@ -107,8 +111,8 @@ class ServiceListCollector:
                 the accounts that can open it,
                 ``gitea: {"is_healthy", "url"}``,
                 ``vscode: {"is_healthy", "instances": [{"account", "port"}]}``,
-                ``cloudcli: {"instances": [{"account", "port",
-                "is_healthy"}]}`` and
+                ``cloudcli`` and ``code_server``: ``{"instances":
+                [{"account", "port", "is_healthy"}]}`` and
                 ``podman: {"containers": [{"name", "image", "is_running",
                 "host_ports"}]}``.
             declared_services: Every declared service.
@@ -237,6 +241,31 @@ class ServiceListCollector:
                             host=host, account=account
                         ),
                         description_code=SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
+                        description_params={"host": host, "account": account},
+                        device_id=_device_id(device),
+                    )
+                )
+        for device in self._device_modules:
+            code_server = device.get("code_server")
+            host = device.get("host", "")
+            if not code_server or not host:
+                continue
+            for instance in code_server.get("instances") or []:
+                account = instance["account"]
+                entries.append(
+                    _entry(
+                        id=f"{SERVICES_CODE_SERVER_ID}_{_device_id(device)}_{account}",
+                        type=SERVICES_TYPE_WEB,
+                        title=SERVICES_CODE_SERVER_TITLE.format(account=account),
+                        payload={
+                            "url": f"http://{host}:{instance['port']}/",
+                            "is_token_required": True,
+                        },
+                        is_healthy=bool(instance.get("is_healthy")),
+                        description=SERVICES_CODE_SERVER_DESCRIPTION.format(
+                            host=host, account=account
+                        ),
+                        description_code=SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
                         description_params={"host": host, "account": account},
                         device_id=_device_id(device),
                     )
