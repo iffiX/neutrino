@@ -42,7 +42,11 @@ the keeper reads them again on every tick (`netbird status --json`,
 packets to a peer the engines did not name yet may still cross the exit. On
 every system the hub's own engines never go through xray: through xray a
 tunnel's handshakes leave from the exit's address and its peers see two
-addresses for one machine. The local networks
+addresses for one machine. On Linux the output chain names an engine's
+cgroup only while its unit runs, since nft refuses a cgroup that does not
+exist and takes a new one's id only when it loads, and the panel loads the
+ruleset again within half a minute of a unit starting; until then the
+engine's first packets may still cross the exit. The local networks
 need no route, since the link's own route is longer than a half. xray's
 `direct` and node outbounds are bound to the uplink with
 `sockopt.interface`, so a connection the split sends direct never enters
