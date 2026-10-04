@@ -13,7 +13,7 @@ The hub box stacks its layers in the order of the table. Each layer needs only t
 | Layer         | What it is                                                                                                                                                                                            | When it is off                                              |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | Network shape | Where the box is in your network. **Server** routes nothing, **Side gateway** forwards for hosts that name it as their gateway, and **Router** routes between its uplinks and the networks it serves. | Every box has one; server keeps the box's network as it is. |
-| Overlay       | A private network across the internet on NetBird, EasyTier, or both at once. Machines outside reach the box and the LAN behind it over that network.                                                  | Only machines on your own network reach the box.            |
+| Access        | The ways in from outside: a private network across the internet on NetBird or EasyTier, or a relay on a server you own. Machines outside reach the box through any of them.                           | Only machines on your own network reach the box.            |
 | Proxy         | One xray process with exit nodes imported from share links. It diverts the box's own traffic and its SOCKS ports, and in the routing shapes the devices behind it.                                    | Every connection leaves through the box's own uplink.       |
 | AI gateway    | One endpoint, port 8317 by default, in front of API keys and subscription accounts, with a key and a usage count per client.                                                                          | Each AI tool keeps its own configuration.                   |
 
@@ -25,9 +25,11 @@ With both overlay engines on, the hub keeps their networks apart. It rejects an 
 
 ## Providers and consumers
 
-Every module runs under an agent, on the machine that has what the module needs: the drives for the file share, the repositories for Gitea, the GPU for containers. A Linux machine runs every module. A Windows machine or a Mac runs the file share on the system's SMB server, VS Code and a shared desktop. [Supported platforms](./reference/platforms.md) has the full table.
+Every module runs under an agent, on the machine that has what the module needs: the drives for the file share, the repositories for Gitea, the GPU for containers. A Linux machine runs every module. A Windows machine or a Mac runs the file share on the system's SMB server, VS Code, CloudCLI and a shared desktop, and a Mac also runs code-server. [Supported platforms](./reference/platforms.md) has the full table.
 
 A client consumes what those machines provide. It opens a page, forwards a port, points AI tools at the gateway, mounts a share, connects to a desktop and opens a shell. `nhub setup` installs an agent on the hub's own box, so that box hosts modules as one managed machine among the others. The AI gateway is the one service the hub provides itself.
+
+A client reaches every one of these services through the hub. Each connection to a port on the client's own loopback address becomes a stream to the hub's port 8443. The hub passes the stream to the agent of the machine that provides the service, or connects itself to the AI gateway and to a service declared by hand. The client therefore needs one address of the hub, on the LAN or through a way in from [Access](./hub/overlay.md), and no route to the machine itself.
 
 The panel's sidebar follows the same split. Its **Hub** group, from **Dashboard** to **Settings**, acts on the box. Its **Agent** group, **Terminals**, **Files** and **Modules**, acts on one managed machine at a time.
 
@@ -35,19 +37,19 @@ The panel's sidebar follows the same split. Its **Hub** group, from **Dashboard*
 
 A service reaches a client from a module, from a declaration, or from the machine itself:
 
-- A module publishes its own entries. The file share publishes each share, Gitea its address, VS Code each instance, and a container each host port it publishes.
+- A module publishes its own entries. The file share publishes each share, Gitea its address, VS Code, code-server and CloudCLI each instance, and a container each host port it publishes.
 - The **Services** page publishes what you declare by hand: a web address, a TCP port, or an SMB share on a server the hub does not manage.
 - A machine reports its own shared desktop while `sudo nagent rdp start` is running on it.
 
 Each entry has a kind, and the client draws one panel per kind with a button for each entry:
 
-| Panel               | Published by                                         | The client's button                                                                                  |
-| ------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Web**             | Gitea, VS Code, or a declared address                | **Open**, or **Open locally** for a VS Code instance, which the client first forwards to `127.0.0.1` |
-| **Ports**           | a container's published port, or a declared TCP port | **Connect**, which forwards the port to `127.0.0.1`                                                  |
-| **AI**              | the AI gateway                                       | **Config**, and the switch **The AI tools use this gateway**                                         |
-| **Files**           | the file share module, or a declared SMB share       | **Config**, then **Mount**                                                                           |
-| **Remote desktops** | the machine's own agent                              | **Connect**                                                                                          |
+| Panel               | Published by                                                 | The client's button                                                           |
+| ------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| **Web**             | Gitea, VS Code, code-server, CloudCLI, or a declared address | **Open**, which forwards the entry to `127.0.0.1` and opens it in the browser |
+| **Ports**           | a container's published port, or a declared TCP port         | **Connect**, which forwards the port to `127.0.0.1`                           |
+| **AI**              | the AI gateway                                               | **Configure**, and the switch **The AI tools use this gateway**               |
+| **Files**           | the file share module, or a declared SMB share               | **Configure**, then **Mount**                                                 |
+| **Remote desktops** | the machine's own agent                                      | **Connect**                                                                   |
 
 The **Terminals** panel lists the managed machines this client can open a shell on, and **New terminal** opens one. The hub sends each client only the kinds and machines that its permissions on the **Clients** page allow. [Services](./hub/services.md) lists every entry the hub publishes, and [Desktop client](./client/desktop.md) shows each panel.
 
