@@ -9,6 +9,13 @@ let go of without touching another's, two hubs cannot share one mount
 point, a failed record holds none, and a record an older build wrote without a hub is unmounted by path
 and dropped at start. A mount follows the host its entry names now, and a
 record whose entry moved is written back; an absent entry leaves it alone.
+
+Every share is mounted from the hub's channel: on Linux and macOS the
+system mounts ``//127.0.0.1/<share>`` at the port of the entry's forward,
+made before the mount and ended once the share is unmounted or refused for
+good; on Windows it mounts the files adapter's address for the share's
+machine, and an adapter that cannot be made fails the record with
+``files_adapter_unavailable`` and is not retried.
 """
 
 import json
@@ -17,11 +24,39 @@ import os
 import pytest
 
 from neutrino_client.exceptions import ShareAttachError
-from neutrino_client.services.file import FileServiceHandler, mount_record_id
+from neutrino_client.services.file import (
+    FileServiceHandler,
+    files_adapter_host,
+    mount_record_id,
+)
 from neutrino_client.services.store import ClientServiceStore
 from tests.conftest import FakeClientPlatform, discard
 
 PAYLOAD = {"protocol": "smb", "host": "hub", "share": "media"}
+# Where the fake registry says each entry's forward listens.
+FORWARD_PORT = 20445
+
+
+class FakeForwards:
+    """The forward registry, a port handed out per entry and nothing listening."""
+
+    def __init__(self):
+        self.running = {}
+        self.ensured = []
+        self.error = None
+
+    def ensure(self, *, hub_id, entry_id, own_port, kind, local_port=0):
+        if self.error is not None:
+            raise self.error
+        self.ensured.append((hub_id, entry_id, own_port, kind))
+        port = FORWARD_PORT + len(self.running)
+        return self.running.setdefault((hub_id, entry_id), port)
+
+    def stop(self, hub_id, entry_id):
+        return self.running.pop((hub_id, entry_id), None) is not None
+
+    def port_of(self, hub_id, entry_id):
+        return self.running.get((hub_id, entry_id), 0)
 
 
 def entry_for(payload, hub_id="h1"):
@@ -45,6 +80,7 @@ def service(tmp_path):
         platform=platform,
         store=store,
         credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
         log=discard,
     )
     return subject, platform, store, tmp_path
@@ -73,7 +109,8 @@ def test_a_creatable_path_is_made_and_mounted(service):
 
     assert platform.fs_calls == [("mkdir", location)]
     call = platform.attach_calls[0]
-    assert call["share_url"] == "//hub/media" and call["location"] == location
+    assert call["share_url"] == "//127.0.0.1/media" and call["location"] == location
+    assert call["port"] == FORWARD_PORT
     record = store.mounts()[mount_record_id("h1", "share_media", location)]
     assert record["path"] == location
     assert record["hub_id"] == "h1"
@@ -196,6 +233,7 @@ def following_entries(tmp_path, entries: list):
         platform=platform,
         store=store,
         credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
         log=lines.append,
         entries_of=lambda: list(entries),
     )
@@ -209,14 +247,14 @@ def test_a_mount_follows_the_host_its_entry_names_now(tmp_path):
     subject, platform, store, lines = following_entries(tmp_path, entries)
     location = str(tmp_path / "nas")
     assert attach(subject, path=location) == {}
-    assert platform.attach_calls[0]["share_url"] == "//hub/media"
+    assert platform.attach_calls[0]["share_url"] == "//127.0.0.1/media"
     record_id = mount_record_id("h1", "share_media", location)
 
     platform.attached.discard(location)
     entries.append(entry_for(dict(PAYLOAD, host="nas2")))
     subject.reconcile()
 
-    assert platform.attach_calls[1]["share_url"] == "//nas2/media"
+    assert platform.attach_calls[1]["share_url"] == "//127.0.0.1/media"
     assert store.mounts()[record_id]["host"] == "nas2"
     assert store.mounts()[record_id]["share"] == "media"
     assert subject.rows()[0]["host"] == "nas2"
@@ -234,7 +272,7 @@ def test_a_mount_whose_entry_is_absent_keeps_the_records_host(tmp_path):
     platform.attached.discard(location)
     subject.reconcile()
 
-    assert platform.attach_calls[1]["share_url"] == "//hub/media"
+    assert platform.attach_calls[1]["share_url"] == "//127.0.0.1/media"
     assert store.mounts()[record_id]["host"] == "hub"
     assert not any(line.startswith("share moved") for line in lines)
 
@@ -248,7 +286,7 @@ def test_an_entry_naming_the_same_host_writes_nothing_back(tmp_path):
     platform.attached.discard(location)
     subject.reconcile()
 
-    assert platform.attach_calls[1]["share_url"] == "//hub/media"
+    assert platform.attach_calls[1]["share_url"] == "//127.0.0.1/media"
     assert not any(line.startswith("share moved") for line in lines)
 
 
@@ -452,6 +490,7 @@ def test_a_record_of_an_earlier_run_is_not_mounted_by_itself(service, tmp_path):
         platform=platform,
         store=store,
         credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
         log=discard,
     )
     fresh.reconcile()
@@ -473,6 +512,7 @@ def test_leftovers_of_an_unclean_exit_are_detached(service, tmp_path):
         platform=platform,
         store=store,
         credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
         log=discard,
     )
     fresh.clear_leftovers()
@@ -640,6 +680,7 @@ def volume_service(tmp_path):
         platform=platform,
         store=store,
         credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
         log=discard,
     )
     return subject, platform, store
@@ -722,3 +763,133 @@ def test_release_empties_a_volumes_path(volume_service):
 
     assert platform.detach_calls == ["/Volumes/media"]
     assert [record["path"] for record in store.mounts().values()] == [""]
+
+
+# --- the share comes from the hub's channel ---
+
+
+def test_a_mount_takes_the_entrys_forward_and_unmount_ends_it(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "nas")
+
+    assert attach(subject, path=location) == {}
+
+    forwards = subject._forwards
+    assert forwards.ensured == [("h1", "share_media", 0, "file")]
+    assert forwards.running == {("h1", "share_media"): FORWARD_PORT}
+    assert platform.attach_calls[0]["port"] == FORWARD_PORT
+    assert subject.rows()[0]["server"] == "127.0.0.1"
+    (record_id,) = store.mounts()
+
+    assert subject.detach(record_id=record_id) == {}
+
+    assert forwards.running == {}
+
+
+def test_a_refusal_the_person_must_act_on_ends_the_forward(service):
+    subject, platform, _store, tmp_path = service
+    platform.attach_error = ShareAttachError("share_login_rejected")
+
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+
+    assert subject.rows()[0]["code"] == "share_login_rejected"
+    assert subject._forwards.running == {}
+
+
+def test_a_forward_that_cannot_listen_fails_the_record(service):
+    subject, platform, _store, tmp_path = service
+    subject._forwards.error = OSError("no free loopback port")
+
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+
+    row = subject.rows()[0]
+    assert (row["state"], row["code"]) == ("failed", "forward_failed")
+    assert platform.attach_calls == []
+
+
+def test_release_ends_the_forwards_with_the_mounts(service):
+    subject, _platform, _store, tmp_path = service
+    assert attach(subject, path=str(tmp_path / "nas")) == {}
+
+    assert subject.release() == 1
+
+    assert subject._forwards.running == {}
+
+
+class FakeDrivePlatform(FakeClientPlatform):
+    """A platform that maps a share to a drive letter, as Windows does."""
+
+    os_name = "windows"
+    mount_location_shape = "drive_letter"
+
+    def validate_mount_location(self, *, location: str) -> "dict | None":
+        return None
+
+    def prepare_mount_location(self, *, location: str) -> "dict | None":
+        return None
+
+
+def drive_service(tmp_path, adapter_host=None, entries=()):
+    platform = FakeDrivePlatform()
+    subject = FileServiceHandler(
+        platform=platform,
+        store=ClientServiceStore(path=str(tmp_path / "state.json")),
+        credentials_dir=str(tmp_path / "config" / "mount_credentials"),
+        forwards=FakeForwards(),
+        log=discard,
+        entries_of=lambda: list(entries),
+        adapter_host=adapter_host,
+    )
+    return subject, platform
+
+
+def test_windows_mounts_the_files_adapters_address_for_the_machine(tmp_path):
+    asked = []
+
+    def adapter_host(hub_id, machine):
+        asked.append((hub_id, machine))
+        return "198.19.255.2"  # scan: allow
+
+    entry = dict(entry_for(PAYLOAD), device_id="d_nas")
+    subject, platform = drive_service(tmp_path, adapter_host, [entry])
+
+    assert attach(subject, path="Z:") == {}
+
+    call = platform.attach_calls[0]
+    assert call["share_url"] == "//198.19.255.2/media"  # scan: allow
+    assert (call["port"], call["location"]) == (0, "Z:")
+    assert asked == [("h1", "d_nas")]
+    assert subject._forwards.ensured == []
+
+
+def test_a_declared_share_names_its_host_as_the_machine(tmp_path):
+    asked = []
+
+    def adapter_host(hub_id, machine):
+        asked.append(machine)
+        return "198.19.255.3"  # scan: allow
+
+    subject, _platform = drive_service(tmp_path, adapter_host)
+
+    assert attach(subject, path="Z:") == {}
+
+    assert asked == ["hub"]
+
+
+def test_an_adapter_that_cannot_be_made_fails_the_record_once(tmp_path):
+    subject, platform = drive_service(tmp_path)
+
+    assert attach(subject, path="Z:") == {}
+    subject.reconcile()
+
+    row = subject.rows()[0]
+    assert (row["state"], row["code"]) == ("failed", "files_adapter_unavailable")
+    assert row["params"]["detail"]
+    assert platform.attach_calls == []
+
+
+def test_the_adapter_stands_in_until_the_glue_names_it():
+    with pytest.raises(ShareAttachError) as refused:
+        files_adapter_host("h1", "d_nas")
+
+    assert refused.value.code == "files_adapter_unavailable"

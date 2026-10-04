@@ -71,6 +71,27 @@ CLIPBOARD_WRITE_TOOLS = (
 )
 
 
+def mount_helper_arguments(
+    *, share_url: str, port: int, location: str, credentials_path: str
+) -> list:
+    """The root helper's arguments for one mount.
+
+    Args:
+        share_url: The share, as ``//host/name``.
+        port: The port the server answers SMB on; 0 for its own.
+        location: The mount point.
+        credentials_path: The credentials file.
+
+    Returns:
+        ``mount --share <url> [--port <port>] --location <path>
+        --credentials <file>``.
+    """
+    arguments = ["mount", "--share", share_url]
+    if port:
+        arguments += ["--port", str(int(port))]
+    return arguments + ["--location", location, "--credentials", credentials_path]
+
+
 class LinuxPlatform(ClientPlatform):
     """Linux behind the platform contract."""
 
@@ -122,12 +143,13 @@ class LinuxPlatform(ClientPlatform):
         )
 
     def attach_share(
-        self, *, share_url: str, location: str, credentials_path: str
+        self, *, share_url: str, location: str, credentials_path: str, port: int = 0
     ) -> str:
         """Mount a CIFS share through the root helper under ``pkexec``.
 
         Args:
             share_url: The share, as ``//host/name``.
+            port: The port the server answers SMB on; 0 for its own.
             location: The mount point.
             credentials_path: The credentials file.
 
@@ -142,15 +164,12 @@ class LinuxPlatform(ClientPlatform):
         if not os.path.isfile(credentials_path):
             raise ShareAttachError("credentials_missing")
         self._run_mount_helper(
-            [
-                "mount",
-                "--share",
-                share_url,
-                "--location",
-                location,
-                "--credentials",
-                credentials_path,
-            ],
+            mount_helper_arguments(
+                share_url=share_url,
+                port=port,
+                location=location,
+                credentials_path=credentials_path,
+            ),
             failure_code="mount_failed",
         )
         return location

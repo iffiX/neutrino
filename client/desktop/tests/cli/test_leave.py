@@ -1,7 +1,9 @@
 """``nclient leave``: leaving one of the hubs a person joined.
 
-Leaving forgets the binding first and tells the hub after, from a thread of
-its own, so a hub that is slow or cannot be reached holds nobody. Which hub
+Leaving asks first, and ``--yes`` leaves without asking; with no terminal to
+answer on nothing is asked and nothing is left. Leaving forgets the binding
+first and tells the hub after, from a thread of its own, so a hub that is
+slow or cannot be reached holds nobody. Which hub
 goes is the point: one
 joined needs no name, several need ``--hub``, and a name nobody joined is
 refused. A running resident is asked to do it, so one process writes the
@@ -70,8 +72,8 @@ def posted_to(monkeypatch) -> list:
 def joined_after(main):
     """``main``, then every thread it started telling a hub, finished."""
 
-    def run(*args):
-        status = main(*args)
+    def run(*args, **kwargs):
+        status = main(*args, **kwargs)
         for thread in threading.enumerate():
             if thread.name == "client_leave":
                 thread.join(timeout=5)
@@ -88,7 +90,7 @@ def test_the_running_resident_is_asked_to_leave_the_hub_named(
 ):
     bind(config_path, bindings=[dict(BINDING), dict(OFFICE_BINDING)])
 
-    assert leave_cli.main("office") == 0
+    assert leave_cli.main("office", is_forced=True) == 0
 
     assert resident.disconnected == ["h2"]
     assert leave_cli.LEAVE_WORDS.format(hub="office") in capsys.readouterr().out
@@ -98,14 +100,14 @@ def test_the_running_resident_is_asked_to_leave_the_hub_named(
 def test_one_hub_joined_needs_no_name(resident, capsys):
     resident.hubs_value = [dict(HUB_ROW)]
 
-    assert leave_cli.main() == 0
+    assert leave_cli.main(is_forced=True) == 0
 
     assert resident.disconnected == ["h1"]
     assert leave_cli.LEAVE_WORDS.format(hub="home") in capsys.readouterr().out
 
 
 def test_several_hubs_and_no_name_is_refused_in_words(resident, capsys):
-    assert leave_cli.main() == 1
+    assert leave_cli.main(is_forced=True) == 1
 
     assert resident.disconnected == []
     err = capsys.readouterr().err
@@ -114,7 +116,7 @@ def test_several_hubs_and_no_name_is_refused_in_words(resident, capsys):
 
 
 def test_a_hub_nobody_joined_is_refused_in_words(resident, capsys):
-    assert leave_cli.main("nowhere") == 1
+    assert leave_cli.main("nowhere", is_forced=True) == 1
 
     assert resident.disconnected == []
     assert wording.word_code("unknown_hub") in capsys.readouterr().err
@@ -126,7 +128,7 @@ def test_a_resident_that_forgot_the_hub_is_worded(resident, capsys):
 
     resident.leave = forget
 
-    assert leave_cli.main("office") == 1
+    assert leave_cli.main("office", is_forced=True) == 1
 
     assert wording.word_code("unknown_hub") in capsys.readouterr().err
 
@@ -138,7 +140,7 @@ def test_a_bound_person_leaves_and_says_so(monkeypatch, platform, config_path, c
     bind(config_path, url="https://hub.lan:8443")
     posted = posted_to(monkeypatch)
 
-    assert leave_cli.main() == 0
+    assert leave_cli.main(is_forced=True) == 0
 
     assert posted == [("/api/channel/leave", {"id": "c1", "token": "tok"})]
     assert leave_cli.LEAVE_WORDS.format(hub="home") in capsys.readouterr().out
@@ -149,7 +151,7 @@ def test_only_the_hub_named_is_left(monkeypatch, platform, config_path, capsys):
     bind(config_path, bindings=[dict(BINDING), dict(OFFICE_BINDING)])
     posted = posted_to(monkeypatch)
 
-    assert leave_cli.main("office") == 0
+    assert leave_cli.main("office", is_forced=True) == 0
 
     assert posted == [("/api/channel/leave", {"id": "c2", "token": "tok2"})]
     assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
@@ -160,7 +162,7 @@ def test_a_binding_is_named_by_its_id_as_well(monkeypatch, platform, config_path
     bind(config_path, bindings=[dict(BINDING), dict(OFFICE_BINDING)])
     posted_to(monkeypatch)
 
-    assert leave_cli.main("c2") == 0
+    assert leave_cli.main("c2", is_forced=True) == 0
 
     assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
 
@@ -171,7 +173,7 @@ def test_several_bindings_and_no_name_leave_none(
     bind(config_path, bindings=[dict(BINDING), dict(OFFICE_BINDING)])
     posted = posted_to(monkeypatch)
 
-    assert leave_cli.main() == 1
+    assert leave_cli.main(is_forced=True) == 1
 
     assert posted == []
     assert [binding["id"] for binding in enrollment.bindings()] == ["c1", "c2"]
@@ -190,7 +192,7 @@ def test_an_unreachable_hub_does_not_hold_the_person(
 
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", refuse)
 
-    assert leave_cli.main() == 0
+    assert leave_cli.main(is_forced=True) == 0
 
     assert leave_cli.LEAVE_WORDS.format(hub="home") in capsys.readouterr().out
     assert enrollment.bindings() == []
@@ -210,7 +212,7 @@ def test_the_binding_is_forgotten_before_the_hub_answers(
 
     monkeypatch.setattr(channel.GatewayHttpChannel, "post", post)
 
-    status = leave_cli.main()
+    status = leave_cli.main(is_forced=True)
     is_held = not hold.is_set()
     bindings_now = enrollment.bindings()
     hold.set()
@@ -227,15 +229,82 @@ def test_a_pending_binding_is_forgotten_and_no_hub_is_told(
     enrollment.enroll(link_for({"urls": ["https://hub:8443"], "token": "ticket"}))
     posted = posted_to(monkeypatch)
 
-    assert leave_cli.main() == 0
+    assert leave_cli.main(is_forced=True) == 0
 
     assert posted == []
     assert enrollment.bindings() == []
 
 
 def test_an_unbound_person_is_told_they_joined_nothing(platform, capsys):
-    assert leave_cli.main() == 1
+    assert leave_cli.main(is_forced=True) == 1
 
     streams = capsys.readouterr()
     assert wording.NOT_JOINED in streams.err
     assert "left" not in streams.out
+
+
+# --- it asks before it leaves ---
+
+
+class Terminal:
+    """Standard input as a terminal that answers one line."""
+
+    def __init__(self, answer: str):
+        self.answer = answer
+
+    def isatty(self) -> bool:
+        return True
+
+    def readline(self) -> str:
+        return self.answer + "\n"
+
+
+def test_a_yes_at_the_terminal_leaves(monkeypatch, platform, config_path, capsys):
+    bind(config_path, url="https://hub.lan:8443")
+    posted_to(monkeypatch)
+    monkeypatch.setattr("sys.stdin", Terminal("y"))
+
+    assert leave_cli.main() == 0
+
+    assert enrollment.bindings() == []
+    assert "leave home?" in capsys.readouterr().out
+
+
+def test_a_no_at_the_terminal_changes_nothing(
+    monkeypatch, platform, config_path, capsys
+):
+    bind(config_path, url="https://hub.lan:8443")
+    posted = posted_to(monkeypatch)
+    monkeypatch.setattr("sys.stdin", Terminal("n"))
+
+    assert leave_cli.main() == 1
+
+    assert posted == []
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
+    assert wording.NOTHING_CHANGED in capsys.readouterr().out
+
+
+def test_no_terminal_asks_nothing_and_names_yes(
+    monkeypatch, platform, config_path, capsys
+):
+    bind(config_path, url="https://hub.lan:8443")
+    posted = posted_to(monkeypatch)
+    monkeypatch.setattr("sys.stdin", None)
+
+    assert leave_cli.main() == 1
+
+    assert posted == []
+    assert [binding["id"] for binding in enrollment.bindings()] == ["c1"]
+    assert "--yes" in capsys.readouterr().err
+
+
+def test_the_resident_is_asked_only_after_a_yes(resident, monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin", Terminal("no"))
+
+    assert leave_cli.main("office") == 1
+    assert resident.disconnected == []
+
+    monkeypatch.setattr("sys.stdin", Terminal("yes"))
+
+    assert leave_cli.main("office") == 0
+    assert resident.disconnected == ["h2"]

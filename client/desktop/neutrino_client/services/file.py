@@ -22,6 +22,16 @@ place: it is dropped once its hub's list lacks its entry, and when another
 record is set to mount where it was. A record that names no
 hub was written by an older build and is dropped at start, after whatever it
 left mounted is unmounted by path.
+
+Every share is mounted from the hub's channel, never from its own address.
+On Linux and macOS a mount takes the entry's forward of the local port
+table, made before the mount and ended once the share is unmounted, and
+the system mounts ``//127.0.0.1/<share>`` at that port. On Windows the
+system mounts the share at the files adapter's address for the share's
+machine, which :func:`files_adapter_host` names. A mount an earlier run left
+standing, at a device's address by an older build among them, is unmounted
+at start like every leftover, and the person's next Mount goes through the
+hub.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -38,8 +48,33 @@ from neutrino_client.constants import (
 )
 from neutrino_client.exceptions import PlatformUnsupportedError, ShareAttachError
 from neutrino_client.services.base import ServiceTypeHandler, find_entry
+from neutrino_client.services.forward import FORWARD_BIND_HOST
 
 MOUNT_RECORD_ID_LENGTH = 16
+# The mount location shape of the system that mounts through the files
+# adapter rather than a forward.
+MOUNT_SHAPE_ADAPTER = "drive_letter"
+MOUNT_SHAPE_VOLUME = "volume"
+
+
+def files_adapter_host(hub_id: str, machine: str) -> str:
+    """The files adapter's address for one machine's shares, on Windows.
+
+    Args:
+        hub_id: The hub the share came from.
+        machine: The machine that provides it: the entry's ``device_id``,
+            or its host for a declared record.
+
+    Returns:
+        The address the system mounts the share at.
+
+    Raises:
+        ShareAttachError: ``files_adapter_unavailable`` when the adapter
+            cannot be made.
+    """
+    raise ShareAttachError(
+        "files_adapter_unavailable", detail="this build carries no files adapter"
+    )
 
 
 def mount_record_id(hub_id: str, entry_id: str, location: str) -> str:
@@ -87,25 +122,37 @@ class FileServiceHandler(ServiceTypeHandler):
         platform,
         store,
         credentials_dir: str,
+        forwards,
         log=print,
         on_change=None,
         entries_of=None,
+        adapter_host=None,
     ):
         """
         Args:
             platform: The machine's platform, behind the contract.
             store: The :class:`~neutrino_client.services.store.ClientServiceStore`.
             credentials_dir: Where the per-record credentials files live.
+            forwards: The
+                :class:`~neutrino_client.services.forward.ForwardListenerRegistry`
+                a share's forward lives in.
             log: Callable used for progress messages.
             on_change: Called after every change a record's row would show;
                 None for nobody listening.
             entries_of: Callable ``() -> list`` giving the merged service
                 list, each entry stamped with ``hub_id``, as the hubs
                 publish it now; None gives no entry.
+            adapter_host: ``adapter_host(hub_id, machine) -> str``, the
+                files adapter's address for a machine where the system
+                mounts through it; None uses :func:`files_adapter_host`.
         """
         self._platform = platform
         self._store = store
         self._credentials_dir = credentials_dir
+        self._forwards = forwards
+        self._adapter_host = (
+            adapter_host if adapter_host is not None else files_adapter_host
+        )
         self._log = log
         self._on_change = on_change if on_change is not None else _nobody
         self._entries_of = entries_of if entries_of is not None else _no_entries
@@ -379,6 +426,7 @@ class FileServiceHandler(ServiceTypeHandler):
             self._problems.pop(record_id, None)
             self._stages.pop(record_id, None)
             self._attached.discard(record_id)
+            self._end_forward(record)
             self._log(f"unmounted {location}; the record and login stay")
             return {}
 
@@ -415,6 +463,7 @@ class FileServiceHandler(ServiceTypeHandler):
                     "hub_id": record.get("hub_id", ""),
                     "entry_id": record.get("entry_id", ""),
                     "host": record.get("host", ""),
+                    "server": self._server_of(record),
                     "share": record.get("share", ""),
                     "username": record.get("username", ""),
                     "path": location,
@@ -488,8 +537,10 @@ class FileServiceHandler(ServiceTypeHandler):
         self._stages[record_id] = "mounting"
         self._on_change()
         try:
+            share_url, port = self._share_target(record)
             attached_at = self._platform.attach_share(
-                share_url=_share_url(record),
+                share_url=share_url,
+                port=port,
                 location=location,
                 credentials_path=self._credentials_path(record_id),
             )
@@ -502,8 +553,16 @@ class FileServiceHandler(ServiceTypeHandler):
             # retried, since the network comes back on its own.
             if error.code in CLIENT_MOUNT_SETTLED_CODES:
                 self._attached.discard(record_id)
+                self._end_forward(record)
             return
         except PlatformUnsupportedError:
+            self._stages.pop(record_id, None)
+            return
+        except OSError as error:
+            self._problems[record_id] = {
+                "code": "forward_failed",
+                "params": {"detail": str(error)[:200]},
+            }
             self._stages.pop(record_id, None)
             return
         if attached_at and attached_at != location:
@@ -539,6 +598,58 @@ class FileServiceHandler(ServiceTypeHandler):
         self._log(f"share moved to {host}: {_share_url(moved)} at {moved.get('path')}")
         return moved
 
+    def _share_target(self, record: dict) -> "tuple[str, int]":
+        """What the system mounts one record's share from, and at which port.
+
+        Args:
+            record: The mount record.
+
+        Returns:
+            ``(share_url, port)``: the files adapter's address for the
+            share's machine and port 0 where the system mounts through the
+            adapter, else ``//127.0.0.1/<share>`` and the port of the
+            entry's forward, made here when it has none.
+
+        Raises:
+            ShareAttachError: ``files_adapter_unavailable`` when the adapter
+                cannot be made.
+            OSError: When the forward cannot listen.
+        """
+        hub_id = str(record.get("hub_id", ""))
+        entry_id = str(record.get("entry_id", ""))
+        share = str(record.get("share", ""))
+        if self._platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
+            host = self._adapter_host(hub_id, self._machine_of(record))
+            return f"//{host}/{share}", 0
+        port = self._forwards.ensure(
+            hub_id=hub_id, entry_id=entry_id, own_port=0, kind=self.service_type
+        )
+        return f"//{FORWARD_BIND_HOST}/{share}", port
+
+    def _server_of(self, record: dict) -> str:
+        """The server the system lists a record's share under: the loopback
+        a forwarded share is mounted from, else the share's own host."""
+        if self._platform.mount_location_shape == MOUNT_SHAPE_ADAPTER:
+            return str(record.get("host", ""))
+        return FORWARD_BIND_HOST
+
+    def _machine_of(self, record: dict) -> str:
+        """The machine that provides a record's share: its device, else its host."""
+        entry = find_entry(
+            self._entries_of(),
+            self.service_type,
+            str(record.get("hub_id", "")),
+            str(record.get("entry_id", "")),
+        )
+        device_id = str((entry or {}).get("device_id", "") or "")
+        return device_id or str(record.get("host", ""))
+
+    def _end_forward(self, record: dict) -> None:
+        """End the forward one record's share was mounted through."""
+        self._forwards.stop(
+            str(record.get("hub_id", "")), str(record.get("entry_id", ""))
+        )
+
     def _detach_records(self, records: list) -> int:
         """Detach ``(record_id, record)`` pairs and forget their standing; under the lock."""
         detached = 0
@@ -553,6 +664,7 @@ class FileServiceHandler(ServiceTypeHandler):
                 self._log(f"could not unmount {location}: {error}")
             self._stages.pop(record_id, None)
             self._attached.discard(record_id)
+            self._end_forward(record)
         return detached
 
     def _is_failed(self, record_id: str, record: dict) -> bool:
@@ -573,6 +685,9 @@ class FileServiceHandler(ServiceTypeHandler):
 
     def _drop_record(self, record_id: str) -> None:
         """Forget one record, its login and its standing; under the lock."""
+        record = self._store.mounts().get(record_id)
+        if record is not None:
+            self._end_forward(record)
         self._discard_credentials(record_id)
         self._store.remove_mount(record_id)
         self._problems.pop(record_id, None)
@@ -595,7 +710,7 @@ class FileServiceHandler(ServiceTypeHandler):
 
     def _is_volume(self) -> bool:
         """Whether the system places a share's mount point itself."""
-        return self._platform.mount_location_shape == "volume"
+        return self._platform.mount_location_shape == MOUNT_SHAPE_VOLUME
 
     def _place_record(self, record_id: str, path: str) -> None:
         """Write a record's path back to the store; under the lock."""

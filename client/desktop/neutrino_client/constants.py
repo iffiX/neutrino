@@ -41,10 +41,12 @@ CLIENT_CHANNEL_WS_PATH = "/api/channel/socket"
 
 # The stream kinds a client opens, and the code it closes a stream the hub
 # opened with. A ``shell`` carries terminal bytes both ways; a ``command``
-# resizes one.
+# resizes one; a ``connect`` carries one TCP connection to a published entry
+# or to the hub's panel.
 CLIENT_STREAM_KIND_SERVICE = "service"
 CLIENT_STREAM_KIND_SHELL = "shell"
 CLIENT_STREAM_KIND_COMMAND = "command"
+CLIENT_STREAM_KIND_CONNECT = "connect"
 CLIENT_STREAM_CODE_KIND_UNKNOWN = "kind_unknown"
 # The module and verb a resize names on a ``command`` stream.
 CLIENT_SHELL_RESIZE_MODULE = "agent"
@@ -88,6 +90,10 @@ CLIENT_STREAM_CREDIT_BYTES = 1024 * 1024
 CLIENT_WS_CHUNK_BYTES = 64 * 1024
 # How long a send waits for the hub's credit before it gives up.
 CLIENT_WS_CREDIT_TIMEOUT_S = 60
+# A terminal's Clear drops the output until the stream has been quiet this
+# long, and for this long at most.
+CLIENT_TERMINAL_CLEAR_QUIET_S = 0.5
+CLIENT_TERMINAL_CLEAR_MAX_S = 20
 
 # What the hub's close codes mean: a refused hello, and a second socket for
 # the same binding replacing this one.
@@ -180,6 +186,7 @@ CLIENT_MOUNT_SETTLED_CODES = (
     "share_access_denied",
     "share_not_found",
     "share_session_conflict",
+    "files_adapter_unavailable",
 )
 CLIENT_PKEXEC_REFUSAL_EXIT_CODES = (126, 127)
 

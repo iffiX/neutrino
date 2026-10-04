@@ -63,9 +63,11 @@ def test_no_command_prints_the_help(monkeypatch, capsys):
     "argv, target, expected",
     [
         (["join", "L"], "join", (("L",), {})),
-        (["leave"], "leave", (("",), {})),
-        (["leave", "--hub", "office"], "leave", (("office",), {})),
-        (["status"], "status", ((), {})),
+        (["leave"], "leave", (("",), {"is_forced": False})),
+        (["leave", "--hub", "office"], "leave", (("office",), {"is_forced": False})),
+        (["leave", "--yes"], "leave", (("",), {"is_forced": True})),
+        (["status"], "status", ((), {"is_json": False})),
+        (["status", "--json"], "status", ((), {"is_json": True})),
         (["gui", "--hidden"], "gui", ((), {"is_hidden": True})),
         (["quit"], "quit", ((), {})),
         (

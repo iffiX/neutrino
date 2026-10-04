@@ -127,6 +127,8 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return 200, state_payload(resident)
         if route == "/api/exit/set":
             return _set_exit(resident, payload)
+        if route == "/api/panel/open":
+            return _answer(resident, resident.open_panel(_hub_id(payload)))
         if route == TERMINAL_ATTACH_ROUTE:
             return _attach_terminal(resident, payload)
         if route == TERMINAL_OUTPUT_ROUTE:
@@ -149,6 +151,8 @@ def dispatch(method: str, path: str, body: "dict | None", resident):
             return _open_window_terminal(resident, payload)
         if route == "/api/terminal/input":
             return _terminal_input(resident, payload)
+        if route == "/api/terminal/clear":
+            return _answer_empty(resident.clear_terminal(_terminal_id(payload)))
         if route == "/api/terminal/persist":
             return _answer_empty(
                 resident.persist_terminal(

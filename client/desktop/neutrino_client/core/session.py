@@ -8,8 +8,9 @@ network change under the machine starts a round at once. The hub pushes its
 whether this client is switched off, and the session answers each state and
 every interval with a ``report``. What a
 service handler needs from the hub comes down a ``service`` stream the
-session opens on request, and a terminal on a managed machine comes down a
-``shell`` stream carrying bytes both ways. The resident owns the handlers and the store; the
+session opens on request, a terminal on a managed machine comes down a
+``shell`` stream carrying bytes both ways, and every connection a local
+forward accepts rides a ``connect`` stream. The resident owns the handlers and the store; the
 session tells it what changed through its callbacks and never touches them.
 
 A ``refused`` frame ends the socket whenever it arrives, and says the same
@@ -59,6 +60,7 @@ from neutrino_client.constants import (
     CLIENT_SOFTWARE_PREFIX,
     CLIENT_STREAM_CODE_KIND_UNKNOWN,
     CLIENT_STREAM_KIND_COMMAND,
+    CLIENT_STREAM_KIND_CONNECT,
     CLIENT_STREAM_KIND_SERVICE,
     CLIENT_STREAM_KIND_SHELL,
     CLIENT_STREAM_TIMEOUT_S,
@@ -340,6 +342,11 @@ class ClientHubSession:
         self._is_down = False
         self._last_error: "dict | None" = None
         self._services_list: list = []
+        # The state's word for the way this socket reached the hub, and
+        # whether this client may open the hub's panel; empty and False
+        # before the first state.
+        self._reached_through = ""
+        self._is_panel_allowed = False
         self._terminals: dict = {"machines": [], "sessions": []}
         self._state_hash = ""
         self._hub_software = ""
@@ -443,6 +450,21 @@ class ClientHubSession:
             if not self._is_welcomed:
                 return []
             return [entry for entry in self._services_list if isinstance(entry, dict)]
+
+    def reached_through(self) -> str:
+        """The way the channel reached the hub, as the hub's last state named it.
+
+        Returns:
+            ``lan``, ``netbird``, ``easytier`` or ``relay``; empty before
+            the first state.
+        """
+        with self._lock:
+            return self._reached_through
+
+    def is_panel_allowed(self) -> bool:
+        """Whether the hub's last state allows this client to open its panel."""
+        with self._lock:
+            return self._is_panel_allowed
 
     def overlays(self) -> list:
         """How this machine joins each of the hub's virtual networks, as last named.
@@ -651,6 +673,26 @@ class ClientHubSession:
         """
         stream = self._live_streams().open(CLIENT_STREAM_KIND_SERVICE, {"id": entry_id})
         return stream.wait_close(timeout_s)
+
+    def open_connect(self, args: dict) -> ClientStream:
+        """Open a ``connect`` stream: one TCP connection the hub carries.
+
+        The hub's refusal arrives as the stream's close: a read comes back
+        empty and ``wait_close`` raises it.
+
+        Args:
+            args: ``{"id"}`` naming a published entry, or
+                ``{"is_panel": True}`` for the hub's own panel.
+
+        Returns:
+            The open stream, credit granted, to read, send on and close.
+
+        Raises:
+            GatewayUnreachable: When there is no socket, or it is gone.
+        """
+        return self._live_streams().open(
+            CLIENT_STREAM_KIND_CONNECT, dict(args), has_bytes=True
+        )
 
     def open_shell(
         self,
@@ -1416,6 +1458,8 @@ class ClientHubSession:
             self._services_list = [
                 entry for entry in services if isinstance(entry, dict)
             ]
+            self._reached_through = str(message.get("reached_through", "") or "")
+            self._is_panel_allowed = message.get("is_panel_allowed") is True
             self._terminals = clean_terminals(terminals)
             self._state_hash = str(message.get("hash", "") or "")
             self._is_refreshing = False

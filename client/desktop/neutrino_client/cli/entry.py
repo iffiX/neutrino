@@ -5,8 +5,8 @@ runs ``nclient gui``, which is the resident and its window. These commands
 do the same things from a terminal.
 
     nclient join neutrino://enroll/...
-    nclient leave [--hub <name>]
-    nclient status
+    nclient leave [--hub <name>] [--yes]
+    nclient status [--json]
     nclient gui [--hidden]
     nclient quit
     nclient service list | <kind> <action> [--hub <name>]
@@ -63,7 +63,11 @@ def main() -> int:
     )
     leave_parser = subparsers.add_parser("leave", help="leave one hub")
     _add_hub_argument(leave_parser)
-    subparsers.add_parser("status", help="what this person is bound to")
+    leave_parser.add_argument("--yes", action="store_true", help="leave without asking")
+    status_parser = subparsers.add_parser("status", help="what this person is bound to")
+    status_parser.add_argument(
+        "--json", action="store_true", help="print one JSON object"
+    )
     gui_parser = subparsers.add_parser("gui", help="run the client and its window")
     gui_parser.add_argument(
         "--hidden", action="store_true", help="start without showing the window"
@@ -97,7 +101,7 @@ def main() -> int:
     if arguments.command == "join":
         return join.main(arguments.link)
     if arguments.command == "leave":
-        return leave.main(arguments.hub)
+        return leave.main(arguments.hub, is_forced=arguments.yes)
     if arguments.command == "gui":
         return gui.main(is_hidden=arguments.hidden)
     if arguments.command == "quit":
@@ -108,7 +112,7 @@ def main() -> int:
         )
     if arguments.command == "service":
         return _run_service(arguments, service_parser, service_kind_parsers)
-    return status.main()
+    return status.main(is_json=arguments.json)
 
 
 # What Launch Services passes a program it opens: a process serial number on

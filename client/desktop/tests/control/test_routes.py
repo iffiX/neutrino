@@ -84,7 +84,7 @@ def test_state_carries_the_persons_facts_the_hubs_and_no_token():
         ("h2", "file"),
         ("h2", "rdp"),
     ]
-    assert state["forwards"]["h1/svc_tcp"]["local_port"] == 5432
+    assert state["services"][2]["forward"] == 5432
     assert state["mounts"][0]["record_id"] == "r1"
     assert state["mounts"][0]["hub_id"] == "h1"
     assert state["ai"]["is_enabled"] is True
@@ -190,7 +190,7 @@ def test_service_actions_carry_only_the_body():
             {"hub_id": "h2", "id": "svc_tcp", "is_enabled": True, "account": "root"},
         )
     ]
-    assert "forwards" in state
+    assert "services" in state
 
 
 def test_a_local_port_setting_reaches_the_resident_and_answers_the_state():
@@ -700,6 +700,35 @@ def test_the_windows_keys_arrive_as_base64_and_reach_the_shell_as_bytes():
     assert resident.typed == ["ls é\r".encode()]
     assert garbled == (404, {"code": "unknown_request", "params": {}})
     assert unknown[0] == 404
+
+
+def test_clear_on_the_windows_terminal_reaches_the_resident():
+    resident = FakeResident()
+
+    cleared = routes.dispatch(
+        "POST", "/api/terminal/clear", {"terminal_id": "t1"}, resident
+    )
+    unknown = routes.dispatch(
+        "POST", "/api/terminal/clear", {"terminal_id": "t9"}, resident
+    )
+
+    assert cleared == (200, {})
+    assert unknown == (404, {"code": "unknown_terminal", "params": {}})
+    assert resident.terminal_calls == [("clear", "t1"), ("clear", "t9")]
+
+
+def test_panel_reaches_the_resident_and_answers_the_state_or_its_refusal():
+    resident = FakeResident()
+
+    status, state = routes.dispatch(
+        "POST", "/api/panel/open", {"hub_id": "h1"}, resident
+    )
+    resident.panel_reply = {"code": "permission_denied", "params": {"kind": "panel"}}
+    refused = routes.dispatch("POST", "/api/panel/open", {"hub_id": "h2"}, resident)
+
+    assert status == 200 and "hubs" in state
+    assert refused == (400, {"code": "permission_denied", "params": {"kind": "panel"}})
+    assert resident.panel_opens == ["h1", "h2"]
 
 
 def test_closing_the_windows_terminal_reaches_the_resident():

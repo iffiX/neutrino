@@ -623,6 +623,56 @@ def test_a_service_stream_goes_up_odd_and_its_close_comes_back(bound, monkeypatc
     assert answered == MATERIAL
 
 
+def test_the_state_names_the_way_in_and_the_panel(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+    assert (session.reached_through(), session.is_panel_allowed()) == ("", False)
+
+    for way in ("lan", "netbird", "easytier", "relay"):
+        take(session, made, dict(STATE, reached_through=way, is_panel_allowed=True))
+        assert (session.reached_through(), session.is_panel_allowed()) == (way, True)
+
+    take(session, made, dict(STATE, is_panel_allowed="yes"))
+    assert (session.reached_through(), session.is_panel_allowed()) == ("", False)
+
+
+def test_a_connect_stream_carries_bytes_both_ways_under_credit(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    stream = session.open_connect({"id": "svc_tcp"})
+    take(session, made, {"type": "credit", "stream": stream.stream_id, "bytes": 4})
+    stream.send(b"ping")
+    take(session, made, stream.stream_id.to_bytes(4, "big") + b"pong")
+
+    assert made.sent[-3:] == [
+        {"type": "open", "stream": 1, "kind": "connect", "id": "svc_tcp"},
+        {"type": "credit", "stream": 1, "bytes": 1048576},
+        (1, b"ping"),
+    ]
+    assert stream.read(1) == b"pong"
+    take(session, made, {"type": "close", "stream": 1, "code": "", "params": {}})
+    assert stream.read(1) == b""
+
+
+def test_a_connect_stream_for_the_panel_names_it(bound, monkeypatch):
+    session, _listener = bound
+    made = connected(session, socket_of(monkeypatch, [WELCOME]))
+
+    session.open_connect({"is_panel": True})
+
+    assert {"type": "open", "stream": 1, "kind": "connect", "is_panel": True} in (
+        made.sent
+    )
+
+
+def test_a_connect_stream_needs_the_socket(bound):
+    session, _listener = bound
+
+    with pytest.raises(GatewayUnreachable):
+        session.open_connect({"id": "svc_tcp"})
+
+
 def test_a_second_stream_takes_the_next_odd_id(bound, monkeypatch):
     session, _listener = bound
     made = connected(session, socket_of(monkeypatch, [WELCOME]))

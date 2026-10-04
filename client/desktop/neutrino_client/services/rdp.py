@@ -1,10 +1,11 @@
 """The rdp service type: connecting to a desktop another machine shares.
 
-Connect opens a ``service`` stream to the hub for the share's address and
-access password, then starts the carried RustDesk viewer at it. The password
-travels in the one close and the one argument vector and lands in no log
-and no state. The viewer processes are tracked by service key so a shutdown,
-or a hub letting go, closes them.
+Connect opens a ``service`` stream to the hub for the share's access
+password, makes the entry's forward of the local port table, and starts the
+carried RustDesk viewer at the forward on the loopback; the forward ends
+with the viewer. The password travels in the one close and the one argument
+vector and lands in no log and no state. The viewer processes are tracked
+by service key so a shutdown, or a hub letting go, closes them.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -19,12 +20,14 @@ import time
 
 from neutrino_client import bundled
 from neutrino_client.services.base import (
+    SERVICE_KEY_SEPARATOR,
     ServiceTypeHandler,
     channel_refusal,
     find_entry,
     hub_of_key,
     service_key,
 )
+from neutrino_client.services.forward import FORWARD_BIND_HOST
 from neutrino_client.services.worker import ServiceWorker
 
 RDP_ACTION_CONNECT = "connect"
@@ -93,7 +96,14 @@ class RdpViewerHandler(ServiceTypeHandler):
     service_type = "rdp"
 
     def __init__(
-        self, *, platform, open_service, log=print, on_change=None, start_thread=None
+        self,
+        *,
+        platform,
+        open_service,
+        forwards,
+        log=print,
+        on_change=None,
+        start_thread=None,
     ):
         """
         Args:
@@ -101,6 +111,9 @@ class RdpViewerHandler(ServiceTypeHandler):
             open_service: Callable ``(hub_id, entry_id) -> dict`` opening
                 the entry's ``service`` stream on that hub and returning its
                 close's params; raises the channel's exceptions.
+            forwards: The
+                :class:`~neutrino_client.services.forward.ForwardListenerRegistry`
+                the viewer's forward lives in.
             log: Callable used for progress messages.
             on_change: Called after every change of standing; None for
                 nobody listening.
@@ -109,6 +122,7 @@ class RdpViewerHandler(ServiceTypeHandler):
         """
         self._platform = platform
         self._open_service = open_service
+        self._forwards = forwards
         self._log = log
         self._lock = threading.Lock()
         # The viewer processes, by service key.
@@ -146,7 +160,7 @@ class RdpViewerHandler(ServiceTypeHandler):
         return self._worker.submit(f"{RDP_STEP_CONNECTING}:{key}", open_viewer)
 
     def _open(self, entry: dict, key: str) -> dict:
-        """Take the seat's material from the hub and start the viewer at it.
+        """Take the seat's password from the hub and start the viewer at the forward.
 
         Args:
             entry: The desktop's service entry.
@@ -158,26 +172,38 @@ class RdpViewerHandler(ServiceTypeHandler):
         binary = bundled.rustdesk_path()
         if not binary:
             return bundled.bundle_missing("rustdesk")
+        hub_id = str(entry.get("hub_id", ""))
+        entry_id = str(entry.get("id", ""))
         try:
-            reply = self._open_service(
-                str(entry.get("hub_id", "")), str(entry.get("id", ""))
-            )
+            reply = self._open_service(hub_id, entry_id)
         except Exception as error:  # noqa: BLE001 - a refusal, never a crash
             return channel_refusal(error)
         try:
-            port = int(reply.get("port") or RUSTDESK_DIRECT_PORT)
+            own_port = int((entry.get("payload") or {}).get("port") or 0)
         except (TypeError, ValueError):
-            port = RUSTDESK_DIRECT_PORT
-        peer = connect_peer(str(reply.get("host", "")), port)
-        if not peer:
-            return {"code": "rdp_no_address", "params": {}}
+            own_port = 0
         try:
-            invocation = client_invocation(binary, peer, str(reply.get("password", "")))
+            port = self._forwards.ensure(
+                hub_id=hub_id,
+                entry_id=entry_id,
+                own_port=own_port or RUSTDESK_DIRECT_PORT,
+                kind=self.service_type,
+            )
+        except OSError as error:
+            return {"code": "forward_failed", "params": {"detail": str(error)[:200]}}
+        try:
+            invocation = client_invocation(
+                binary,
+                connect_peer(FORWARD_BIND_HOST, port),
+                str((reply or {}).get("password", "")),
+            )
         except LookupError:
+            self._forwards.stop(hub_id, entry_id)
             return {"code": "rdp_no_desktop", "params": {}}
         try:
             process = self._platform.start_on_screen(invocation)
         except (OSError, subprocess.SubprocessError) as error:
+            self._forwards.stop(hub_id, entry_id)
             return {"code": "rdp_launch_failed", "params": {"detail": str(error)}}
         with self._lock:
             self._viewers[key] = process
@@ -192,9 +218,11 @@ class RdpViewerHandler(ServiceTypeHandler):
         while process.poll() is None:
             time.sleep(RDP_WATCH_INTERVAL_S)
         with self._lock:
-            if self._viewers.get(key) is not process:
+            current = self._viewers.get(key)
+            if current is not None and current is not process:
                 return
             self._viewers.pop(key, None)
+        self._end_forward(key)
         self._log(f"the desktop viewer for {key} closed")
         self._on_change()
 
@@ -245,7 +273,9 @@ class RdpViewerHandler(ServiceTypeHandler):
             }
             for key in viewers:
                 self._viewers.pop(key, None)
-        return self._terminate(viewers)
+        closed = self._terminate(viewers)
+        self._forwards.release_kind(self.service_type, hub_id)
+        return closed
 
     def close_all(self) -> int:
         """Terminate every viewer process still running.
@@ -256,7 +286,14 @@ class RdpViewerHandler(ServiceTypeHandler):
         with self._lock:
             viewers = dict(self._viewers)
             self._viewers = {}
-        return self._terminate(viewers)
+        closed = self._terminate(viewers)
+        self._forwards.release_kind(self.service_type)
+        return closed
+
+    def _end_forward(self, key: str) -> None:
+        """End the forward of the viewer that ran under one service key."""
+        hub_id, _, entry_id = key.partition(SERVICE_KEY_SEPARATOR)
+        self._forwards.stop(hub_id, entry_id)
 
     @staticmethod
     def _terminate(viewers: dict) -> int:

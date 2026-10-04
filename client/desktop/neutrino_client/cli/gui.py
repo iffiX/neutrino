@@ -198,6 +198,8 @@ def _open(os_name: str, resident, *, is_hidden: bool) -> int:
             piece = {"id": chunk["id"]}
             if "data" in chunk:
                 piece["data"] = base64.b64encode(chunk["data"]).decode("ascii")
+            elif "clearing" in chunk:
+                piece["clearing"] = bool(chunk["clearing"])
             else:
                 piece["end"] = chunk["end"]
             push({"terminal": piece})

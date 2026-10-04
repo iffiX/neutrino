@@ -566,7 +566,8 @@ function noticeLine(notice) {
 // person has to act on, grey for a hub never reached, amber otherwise.
 function hubTone(hub) {
   const jobs = hub.jobs || {};
-  if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job) return 'pulse';
+  if (jobs.is_refreshing || jobs.is_leaving || jobs.overlay_job
+    || jobs.is_opening_panel) return 'pulse';
   if (isJoinRefused(hub)) return 'bad';
   if (hub.connection === 'pending') return 'off';
   if (hub.connection === 'connecting') return 'pulse';
@@ -578,13 +579,21 @@ function hubTone(hub) {
   return 'wait';
 }
 
-// The hub's state word: the job running on it, else its connection's.
+// The ways the channel reaches a hub, as the hub's state names them.
+const THROUGH_WAYS = ['lan', 'netbird', 'easytier', 'relay'];
+
+// The hub's state word: the job running on it, else its connection's, with
+// the way in once the hub has named it.
 function hubWord(hub) {
   const jobs = hub.jobs || {};
   if (jobs.is_leaving) return t('ui.job.leaving');
   if (jobs.is_refreshing) return t('ui.job.refreshing');
   const connection = CONNECTION_STATES.indexOf(hub.connection) >= 0
     ? hub.connection : 'connecting';
+  if (connection === 'connected' && THROUGH_WAYS.indexOf(hub.reached_through) >= 0) {
+    return t('ui.state.connected_through',
+      { way: t('ui.through.' + hub.reached_through) });
+  }
   return t('ui.state.' + connection);
 }
 
@@ -627,6 +636,7 @@ function hubRow(hub) {
   if (networkPicker) actions.push(networkPicker);
   const network = overlayButton(hub);
   actions.push(network);
+  if (hub.is_panel_allowed) actions.push(panelButton(hub));
   if (hub.connection === 'replaced') {
     const reconnect = document.createElement('button');
     reconnect.type = 'button';
@@ -644,6 +654,19 @@ function hubRow(hub) {
     reason: network.disabled && !jobs.is_leaving ? overlayReason(hub) : '',
     actions: actions,
   });
+}
+
+// Panel: opens the hub's panel in the browser through its forward, and is
+// the row's indicator while it does; it acts on a connected hub only.
+function panelButton(hub) {
+  const jobs = hub.jobs || {};
+  const button = jobButton(t('ui.hub_panel'), jobs.is_opening_panel ? 'opening' : '');
+  if (!jobs.is_opening_panel) {
+    button.disabled = hub.connection !== 'connected' || !!jobs.is_leaving
+      || !!jobs.is_refreshing;
+    button.onclick = () => send('/api/panel/open', { hub_id: hubKey(hub) });
+  }
+  return button;
 }
 
 // A join whose ticket the hub refused: the row is down with the code, and
@@ -921,30 +944,26 @@ function serviceAction(type, body) {
   return send('/api/services/' + type, body);
 }
 
-// A web entry: Open, or for a local-only one Configure, Open locally and,
-// while forwarded, Disconnect, with the loopback port on the mono line. Open
-// on an entry with is_token_required runs as the opening job while the
-// resident reads its token.
+// A web entry: Configure, Open and, while forwarded, Disconnect, with the
+// loopback port on the mono line. Open runs as the opening job while the
+// resident makes the forward and, for an entry with is_token_required,
+// reads its token.
 function drawWebEntry(card, state, hub, entry) {
   const payload = entry.payload || {};
-  const isLocal = payload.is_local_only === true;
-  const isOn = isLocal && !!entry.forward;
+  const isOn = !!entry.forward;
   const opening = entry.job === 'opening' ? entry.job : '';
-  const open = jobButton(isLocal ? t('ui.open_local') : t('ui.open'), opening);
+  const open = jobButton(t('ui.open'), opening);
   if (!opening) {
     open.disabled = !entry.is_healthy || !isEntryFree(hub, entry);
     open.onclick = () => serviceAction('web', { hub_id: entry.hub_id, id: entry.id });
   }
   let reason = open.disabled && !entryWork(hub, entry) ? entryReason(hub, entry, true) : '';
-  const actions = [open];
-  if (isLocal) {
-    const configure = configureButton(hub, entry, isOn);
-    actions.unshift(configure);
-    if (isOn || entry.job === 'disconnecting') {
-      actions.push(disconnectButton('web', entry));
-    }
-    if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
+  const configure = configureButton(hub, entry, isOn);
+  const actions = [configure, open];
+  if (isOn || entry.job === 'disconnecting') {
+    actions.push(disconnectButton('web', entry));
   }
+  if (!reason && configure.disabled && isOn) reason = t('ui.reason.disconnect_first');
   card.appendChild(entryRow(hub, entry, (payload.url || '') + forwardedTo(entry), '',
     actions, reason));
 }
@@ -973,7 +992,7 @@ function forwardedTo(entry) {
   return entry.forward ? ' → ' + t('ui.forwarding_to', { port: entry.forward }) : '';
 }
 
-// The Disconnect of a forwarded local-only page: ends its forward.
+// The Disconnect of a forwarded page: ends its forward.
 function disconnectButton(type, entry) {
   const button = jobButton(t('ui.port_disconnect'),
     entry.job === 'disconnecting' ? entry.job : '', 'danger');
@@ -1142,11 +1161,11 @@ function drawAiEntry(card, state, hub, entry) {
     toggle.appendChild(document.createTextNode(t('ui.ai_use')));
   }
   toggle.onclick = () => askAiUse(hub, entry, !isInUse);
-  const extras = [];
+  const extras = [noteLine(t('ui.ai_needs_client'))];
   if (isExit && ai.code) extras.push(errorLine(wordCode(ai.code, ai.params)));
   const reason = !isFree && !entryWork(hub, entry) && !isAiSwitching(state)
     ? entryReason(hub, entry, true) : '';
-  card.appendChild(entryRow(hub, entry, payload.endpoint || '',
+  card.appendChild(entryRow(hub, entry, (payload.endpoint || '') + forwardedTo(entry),
     isInUse && ai.is_active ? t('ui.ai_on') : '', [config, toggle], reason, extras));
 }
 
@@ -1609,8 +1628,12 @@ function newTab(hubId, machine, sessionId) {
     device_id: machine.device_id, name: machine.name, term: term, fit: fit,
     pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
     isSending: false, hint: '', session_id: sessionId || '', isListed: false,
-    isDropped: false, droppedAt: 0, flags: {},
+    isDropped: false, droppedAt: 0, flags: {}, isClearAsked: false,
+    clearMark: document.createElement('div'),
   };
+  tab.clearMark.className = 'term_clearing hidden';
+  tab.clearMark.textContent = t('ui.job.clearing');
+  pane.appendChild(tab.clearMark);
   shellTabs.push(tab);
   term.open(pane);
   loadTerminalFont();
@@ -1729,10 +1752,22 @@ function openTerminalMenu(tab, x, y) {
   openMenu = menu;
 }
 
-// Clear sends Ctrl+C to the shell first, then clears the screen.
+// Clear: the screen is cleared at once, and the resident sends Ctrl+C after
+// what was typed before it and drops the output until the stream is quiet,
+// telling the page when the dropping starts and ends.
 function clearTerminal(tab) {
-  sendShellKeys(tab, '\x03');
+  if (tab.state !== 'open') return;
   tab.term.clear();
+  tab.isClearAsked = true;
+  if (!tab.isSending) flushShellKeys(tab);
+}
+
+// The Clearing word over a terminal's box: shown while the resident drops
+// its output. What the terminal still had to draw is cleared after it.
+function showClearing(tab, isClearing) {
+  tab.clearMark.textContent = t('ui.job.clearing');
+  tab.clearMark.className = isClearing ? 'term_clearing' : 'term_clearing hidden';
+  if (isClearing) tab.term.write('', () => tab.term.clear());
 }
 
 function closeTerminalMenu() {
@@ -1850,6 +1885,11 @@ function takeShellPiece(piece) {
     tab.term.write(base64Bytes(piece.data));
     return;
   }
+  if (piece.clearing !== undefined) {
+    showClearing(tab, piece.clearing === true);
+    return;
+  }
+  showClearing(tab, false);
   const end = piece.end || {};
   if (!end.code && !tab.isListed && !isGuarded(tab)) { dropShell(tab); return; }
   if (end.code === 'hub_unreachable' && tab.session_id) {
@@ -1903,7 +1943,15 @@ function sendShellKeys(tab, data) {
 }
 
 function flushShellKeys(tab) {
-  if (!tab.typed || tab.state !== 'open') { tab.isSending = false; return; }
+  if (tab.state !== 'open') { tab.isSending = false; return; }
+  if (!tab.typed && tab.isClearAsked) {
+    tab.isClearAsked = false;
+    tab.isSending = true;
+    api('/api/terminal/clear', { terminal_id: tab.terminal_id })
+      .then(() => flushShellKeys(tab));
+    return;
+  }
+  if (!tab.typed) { tab.isSending = false; return; }
   const text = tab.typed;
   tab.typed = '';
   tab.isSending = true;
@@ -2018,6 +2066,8 @@ function dropStaleFileStages(state) {
 // The codes a record can only leave with a new login: mounting it again as
 // it stands would be refused again, so Mount opens the form instead.
 const LOGIN_CODES = ['share_login_rejected', 'credentials_missing'];
+// The server a forwarded share is mounted from, as the Finder lists it.
+const LOOPBACK_SERVER = '127.0.0.1';
 
 // The panel is marked dirty while any entry's form is open. A stage stays
 // through a failed mount and goes once the share is mounted.
@@ -2052,12 +2102,16 @@ function drawFileEntry(card, state, hub, entry) {
     extras.push(drawMountRecord(each));
     // A volume is listed in the Finder under the server it came from.
     if (!asksMountPlace(state) && each.is_attached && each.path) {
-      extras.push(noteLine(t('ui.mount_finder', { server: each.host || '' })));
+      extras.push(noteLine(t('ui.mount_finder', { server: each.server || each.host || '' })));
     }
   }
   let row = null;
   if (staged && staged.is_open) {
-    extras.push(drawFileForm(staged, state, payload.host || '', key, () => {
+    const isLoginRefused = !!record && LOGIN_CODES.indexOf(record.code) >= 0;
+    // After a refused login, Save mounts with the new login at once.
+    const onSave = isLoginRefused && !entry.job
+      ? () => sendFileMount(entry, staged) : null;
+    extras.push(drawFileForm(staged, state, LOOPBACK_SERVER, key, onSave, () => {
       if (!entry.job) {
         mount.disabled = !isEntryFree(hub, entry) || !entry.is_healthy
           || !isMountFormFilled(staged, state);
@@ -2145,15 +2199,7 @@ function mountButton(state, hub, entry, record, staged) {
   if (staged) {
     button.textContent = t('ui.mount');
     button.disabled = !isFree || !entry.is_healthy || !isMountFormFilled(staged, state);
-    button.onclick = () => {
-      staged.is_open = false;
-      staged.is_sent = true;
-      staged.before = null;
-      serviceAction('file', {
-        action: 'mount', hub_id: entry.hub_id, id: entry.id,
-        username: staged.username, password: staged.password, path: staged.path,
-      });
-    };
+    button.onclick = () => sendFileMount(entry, staged);
     return button;
   }
   if (record === undefined) {
@@ -2189,6 +2235,18 @@ function mountButton(state, hub, entry, record, staged) {
   return button;
 }
 
+// A stage sent as a fresh mount: the form closes, and the stage is kept
+// until the share is mounted.
+function sendFileMount(entry, staged) {
+  staged.is_open = false;
+  staged.is_sent = true;
+  staged.before = null;
+  serviceAction('file', {
+    action: 'mount', hub_id: entry.hub_id, id: entry.id,
+    username: staged.username, password: staged.password, path: staged.path,
+  });
+}
+
 // A record's own line carries only where it stands: the words, never a
 // button.
 function drawMountRecord(record) {
@@ -2212,7 +2270,7 @@ function drawMountRecord(record) {
 // The form's fields write the stage as typed, and onChange keeps the Mount
 // button and the reason line in step with them. Save keeps the stage for the
 // next Mount; Cancel puts back what the stage held before the form opened.
-function drawFileForm(staged, state, server, key, onChange) {
+function drawFileForm(staged, state, server, key, onSave, onChange) {
   const form = document.createElement('div');
   form.className = 'form';
   const fields = [
@@ -2245,6 +2303,7 @@ function drawFileForm(staged, state, server, key, onChange) {
   save.type = 'button';
   save.textContent = t('ui.save');
   save.onclick = () => {
+    if (onSave && isMountFormFilled(staged, state)) { onSave(); return; }
     staged.is_open = false;
     staged.before = null;
     redraw();

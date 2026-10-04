@@ -17,7 +17,7 @@ def test_a_request_is_the_route_tables_own_answer():
     assert status == 200 and state["hostname"] == "box"
     assert posted == 200
     assert resident.service_calls == [("port", {"id": "svc_tcp"})]
-    assert "forwards" in reply
+    assert "services" in reply
 
 
 def test_the_bridge_rides_the_channel_end_to_end():
